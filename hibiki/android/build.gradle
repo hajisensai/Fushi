@@ -1,0 +1,63 @@
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+        maven { url "https://jitpack.io" }
+        maven { url 'https://maven.aliyun.com/repository/public' }
+        maven { url 'https://maven.aliyun.com/repository/central' }
+        maven { url 'https://maven.aliyun.com/repository/google' }
+        maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
+        maven { url 'https://maven.aliyun.com/repository/apache-snapshots' }
+    }
+}
+
+// Fix for old Flutter plugins that don't declare namespace (required by AGP 8.x)
+// Also fix Kotlin JVM target to match Java target and avoid mismatch errors
+subprojects {
+    afterEvaluate { proj ->
+        if (proj.plugins.hasPlugin('com.android.library') || proj.plugins.hasPlugin('com.android.application')) {
+            def android = proj.extensions.findByName('android')
+            if (android != null) {
+                // Fix missing namespace
+                if (!android.namespace) {
+                    def manifestFile = android.sourceSets?.main?.manifest?.srcFile
+                    if (manifestFile?.exists()) {
+                        try {
+                            def pkg = new XmlParser().parse(manifestFile)?.attribute('package')
+                            if (pkg) {
+                                android.namespace = pkg
+                            }
+                        } catch (Exception e) {
+                            // ignore parse errors
+                        }
+                    }
+                }
+            }
+        }
+        // Set Kotlin JVM target for plugin subprojects.
+        // kotlin.jvm.target.validation.mode=WARNING suppresses mismatch errors.
+        if (proj.name != 'app') {
+            proj.tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+                kotlinOptions {
+                    jvmTarget = '1.8'
+                }
+            }
+        }
+    }
+}
+
+rootProject.buildDir = '../build'
+subprojects {
+    project.buildDir = "${rootProject.buildDir}/${project.name}"
+}
+subprojects {
+    project.evaluationDependsOn(':app')
+}
+
+tasks.register("clean", Delete) {
+    delete rootProject.buildDir
+}
+
+ext {
+    flutterFFmpegPackage = "full-gpl-lts"
+}
