@@ -282,8 +282,14 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
         ],
       ),
     );
-    if (confirmed == true) {
-      await SrtBookRepository(appModel.database).delete(book.uid);
+    if (confirmed != true) {
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+    await SrtBookRepository(appModel.database).delete(book.uid);
+    if (mounted) {
       setState(() {});
     }
   }

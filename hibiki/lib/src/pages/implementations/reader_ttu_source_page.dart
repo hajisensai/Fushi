@@ -1273,7 +1273,9 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           return ext.endsWith('.mp3') ||
               ext.endsWith('.m4a') ||
               ext.endsWith('.ogg') ||
-              ext.endsWith('.aac');
+              ext.endsWith('.aac') ||
+              ext.endsWith('.wav') ||
+              ext.endsWith('.mp4');
         })
         .toList()
       ..sort((a, b) => a.path.compareTo(b.path));

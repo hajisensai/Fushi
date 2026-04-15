@@ -52,7 +52,10 @@ class PickAudioEnhancement extends AudioEnhancement {
 
     String timestamp = DateFormat('yyyyMMddTkkmmss').format(DateTime.now());
     Directory audioDir = Directory('$pickAudioPath/$timestamp');
-    String audioPath = '${audioDir.path}/audio';
+    String ext = file.path.contains('.')
+        ? '.${file.path.split('.').last.toLowerCase()}'
+        : '';
+    String audioPath = '${audioDir.path}/audio$ext';
     audioDir.createSync(recursive: true);
 
     file.copySync(audioPath);

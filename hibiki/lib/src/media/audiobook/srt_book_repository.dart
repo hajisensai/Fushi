@@ -33,9 +33,10 @@ class SrtBookRepository {
 
   /// 删除指定书籍及其所有 [AudioCue]。
   Future<void> delete(String uid) async {
+    // Query outside writeTxn to avoid using sync reads inside async transactions.
+    final SrtBook? existing =
+        _isar.srtBooks.filter().uidEqualTo(uid).findFirstSync();
     await _isar.writeTxn(() async {
-      final SrtBook? existing =
-          _isar.srtBooks.filter().uidEqualTo(uid).findFirstSync();
       if (existing != null) {
         await _isar.srtBooks.delete(existing.id);
       }

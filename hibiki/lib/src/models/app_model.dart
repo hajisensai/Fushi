@@ -1815,10 +1815,10 @@ class AppModel with ChangeNotifier {
   }
 
   /// Get the file to be written to for audio export.
-  File getAudioExportFile({bool fallback = false}) {
+  File getAudioExportFile({bool fallback = false, String ext = 'mp3'}) {
     String audioPath = path.join(
         (fallback ? alternateExportDirectory : exportDirectory).path,
-        'exportAudio.mp3');
+        'exportAudio.$ext');
     return File(audioPath);
   }
 
@@ -1829,8 +1829,8 @@ class AppModel with ChangeNotifier {
   }
 
   /// Get the file to be written to for audio export.
-  File getAudioPreviewFile(Directory directory) {
-    String audioPath = path.join(directory.path, 'previewAudio.mp3');
+  File getAudioPreviewFile(Directory directory, {String ext = 'mp3'}) {
+    String audioPath = path.join(directory.path, 'previewAudio.$ext');
     return File(audioPath);
   }
 
@@ -2034,7 +2034,11 @@ class AppModel with ChangeNotifier {
     if (mimeType == 'image') {
       destinationFile = getImageExportFile(fallback: fallback);
     } else if (mimeType == 'audio') {
-      destinationFile = getAudioExportFile(fallback: fallback);
+      final srcPath = exportFile.path;
+      final ext = srcPath.contains('.')
+          ? srcPath.split('.').last.toLowerCase()
+          : 'mp3';
+      destinationFile = getAudioExportFile(fallback: fallback, ext: ext);
     } else {
       throw Exception('Invalid mime type, must be image or audio');
     }
