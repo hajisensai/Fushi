@@ -114,7 +114,12 @@ class ReaderTtuSource extends ReaderMediaSource {
         logger: const DebugLogger(),
       );
 
-      await server.serve();
+      await server.serve().timeout(
+        const Duration(seconds: 15),
+        onTimeout: () => throw TimeoutException(
+          'Local assets server failed to start within 15 seconds',
+        ),
+      );
 
       return server;
     } catch (e) {
@@ -301,16 +306,37 @@ class ReaderTtuSource extends ReaderMediaSource {
       },
     );
 
+    final completer = Completer<List<MediaItem>>();
+
     try {
       await webView.run();
-      while (items == null) {
-        await Future.delayed(const Duration(milliseconds: 500));
-      }
+
+      // Poll until items is set or we time out (20 s).
+      Future(() async {
+        const timeout = Duration(seconds: 20);
+        final deadline = DateTime.now().add(timeout);
+        while (items == null) {
+          if (DateTime.now().isAfter(deadline)) {
+            if (!completer.isCompleted) {
+              completer.completeError(
+                TimeoutException(
+                  'Timed out waiting for book list from WebView after 20 s',
+                ),
+              );
+            }
+            return;
+          }
+          await Future.delayed(const Duration(milliseconds: 500));
+        }
+        if (!completer.isCompleted) {
+          completer.complete(items!);
+        }
+      });
+
+      return await completer.future;
     } finally {
       await webView.dispose();
     }
-
-    return items!;
   }
 
   /// Fetch the list of history items given JSON from IndexedDB.
