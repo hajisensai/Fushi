@@ -83,9 +83,7 @@ class AnkiMapping {
       TermField.key: {
         0: ClearFieldEnhancement.key,
         1: SearchDictionaryEnhancement.key,
-        2: MassifExampleSentencesEnhancement.key,
-        3: ImmersionKitEnhancement.key,
-        4: OpenStashEnhancement.key,
+        2: OpenStashEnhancement.key,
       },
       ReadingField.key: {0: ClearFieldEnhancement.key},
       MeaningField.key: {
@@ -100,12 +98,9 @@ class AnkiMapping {
         3: CropImageEnhancement.key,
       },
       AudioField.key: {
-        -1: JapanesePod101AudioEnhancement.key,
         0: ClearFieldEnhancement.key,
-        1: JapanesePod101AudioEnhancement.key,
-        2: ForvoAudioEnhancement.key,
-        3: PickAudioEnhancement.key,
-        4: AudioRecorderEnhancement.key,
+        1: PickAudioEnhancement.key,
+        2: AudioRecorderEnhancement.key,
       },
       AudioSentenceField.key: {
         0: ClearFieldEnhancement.key,
@@ -133,8 +128,7 @@ class AnkiMapping {
       TermField.key: {
         0: ClearFieldEnhancement.key,
         1: SearchDictionaryEnhancement.key,
-        2: TatoebaExampleSentencesEnhancement.key,
-        3: OpenStashEnhancement.key,
+        2: OpenStashEnhancement.key,
       },
       ReadingField.key: {0: ClearFieldEnhancement.key},
       MeaningField.key: {
@@ -149,11 +143,9 @@ class AnkiMapping {
         3: CropImageEnhancement.key,
       },
       AudioField.key: {
-        -1: ForvoAudioEnhancement.key,
         0: ClearFieldEnhancement.key,
-        1: ForvoAudioEnhancement.key,
-        2: PickAudioEnhancement.key,
-        3: AudioRecorderEnhancement.key,
+        1: PickAudioEnhancement.key,
+        2: AudioRecorderEnhancement.key,
       },
       AudioSentenceField.key: {
         0: ClearFieldEnhancement.key,

@@ -18,6 +18,10 @@ subprojects {
         if (proj.plugins.hasPlugin('com.android.library') || proj.plugins.hasPlugin('com.android.application')) {
             def android = proj.extensions.findByName('android')
             if (android != null) {
+                // Force compileSdk for all subprojects so Material You attrs (lStar etc.) resolve
+                // Use 34 (not 36) to avoid null-safety API changes in 35+ breaking old Kotlin plugins
+                android.compileSdkVersion 34
+
                 // Fix missing namespace
                 if (!android.namespace) {
                     def manifestFile = android.sourceSets?.main?.manifest?.srcFile
@@ -42,6 +46,11 @@ subprojects {
                     jvmTarget = '1.8'
                 }
             }
+        }
+        // Remove -Werror from Java compilation so deprecated API warnings don't fail the build
+        proj.tasks.withType(JavaCompile).configureEach {
+            options.compilerArgs.removeAll { it == '-Werror' }
+            options.compilerArgs += ['-Xlint:-deprecation', '-Xlint:-unchecked']
         }
     }
 }

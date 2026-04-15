@@ -701,7 +701,6 @@ class AppModel with ChangeNotifier {
     final Map<MediaType, List<MediaSource>> availableMediaSources = {
       ReaderMediaType.instance: [
         ReaderTtuSource.instance,
-        ReaderClipboardSource.instance,
       ],
       DictionaryMediaType.instance: [],
     };
@@ -763,8 +762,6 @@ class AppModel with ChangeNotifier {
     final Map<Field, List<Enhancement>> availableEnhancements = {
       AudioField.instance: [
         ClearFieldEnhancement(field: AudioField.instance),
-        JapanesePod101AudioEnhancement(),
-        ForvoAudioEnhancement(),
         PickAudioEnhancement(field: AudioField.instance),
         AudioRecorderEnhancement(field: AudioField.instance),
       ],
@@ -803,9 +800,6 @@ class AppModel with ChangeNotifier {
       TermField.instance: [
         ClearFieldEnhancement(field: TermField.instance),
         SearchDictionaryEnhancement(),
-        MassifExampleSentencesEnhancement(),
-        TatoebaExampleSentencesEnhancement(),
-        ImmersionKitEnhancement(),
         OpenStashEnhancement(field: TermField.instance),
         PopFromStashEnhancement(field: TermField.instance),
       ],
@@ -2491,40 +2485,6 @@ class AppModel with ChangeNotifier {
     await showDialog(
       context: _navigatorKey.currentContext!,
       builder: (context) => ExampleSentencesDialogPage(
-        exampleSentences: exampleSentences,
-        onSelect: onSelect,
-        onAppend: onAppend,
-      ),
-    );
-  }
-
-  /// A helper function for opening an example sentence dialog for sentences
-  /// returned from Massif.
-  Future<void> openMassifSentenceDialog({
-    required List<MassifResult> exampleSentences,
-    required Function(List<MassifResult>) onSelect,
-    required Function(List<MassifResult>) onAppend,
-  }) async {
-    await showDialog(
-      context: _navigatorKey.currentContext!,
-      builder: (context) => MassifSentencesDialogPage(
-        exampleSentences: exampleSentences,
-        onSelect: onSelect,
-        onAppend: onAppend,
-      ),
-    );
-  }
-
-  /// A helper function for opening an example sentence dialog for sentences
-  /// returned from ImmersionKitEnhancement.
-  Future<void> openImmersionKitSentenceDialog({
-    required List<ImmersionKitResult> exampleSentences,
-    required Function(List<ImmersionKitResult>) onSelect,
-    required Function(List<ImmersionKitResult>) onAppend,
-  }) async {
-    await showDialog(
-      context: _navigatorKey.currentContext!,
-      builder: (context) => ImmersionKitSentencesDialogPage(
         exampleSentences: exampleSentences,
         onSelect: onSelect,
         onAppend: onAppend,

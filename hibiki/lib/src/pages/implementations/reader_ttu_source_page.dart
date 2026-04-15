@@ -35,9 +35,11 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   late InAppWebViewController _controller;
 
   DateTime? lastMessageTime;
+  DateTime? lastTapLookupTime;
   Orientation? lastOrientation;
 
   Duration get consoleMessageDebounce => const Duration(milliseconds: 50);
+  Duration get tapLookupDebounce => const Duration(milliseconds: 500);
 
   final FocusNode _focusNode = FocusNode();
   bool _isRecursiveSearching = false;
@@ -319,6 +321,26 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
             }
           },
         );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'onTapLookup',
+          callback: (data) async {
+            if (data.isEmpty) return;
+            final DateTime now = DateTime.now();
+            if (lastTapLookupTime != null &&
+                now.difference(lastTapLookupTime!) < tapLookupDebounce) {
+              return;
+            }
+            lastTapLookupTime = now;
+            try {
+              final Map<String, dynamic> payload =
+                  Map<String, dynamic>.from(data[0] as Map);
+              await _processLookup(payload);
+            } catch (e) {
+              debugPrint('onTapLookup error: $e');
+            }
+          },
+        );
       },
       onCreateWindow: (controller, createWindowRequest) async {
         showDialog(
@@ -443,118 +465,122 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
 
     switch (messageJson['jidoujisho-message-type']) {
       case 'lookup':
-        FocusScope.of(context).unfocus();
-        _focusNode.requestFocus();
-
-        SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-
-        int index = messageJson['index'];
-        String text = messageJson['text'];
-        int x = messageJson['x'];
-        int y = messageJson['y'];
-
-        late JidoujishoPopupPosition position;
-        if (MediaQuery.of(context).orientation == Orientation.portrait) {
-          if (y < MediaQuery.of(context).size.height / 2) {
-            position = JidoujishoPopupPosition.bottomHalf;
-          } else {
-            position = JidoujishoPopupPosition.topHalf;
-          }
-        } else {
-          if (x < MediaQuery.of(context).size.width / 2) {
-            position = JidoujishoPopupPosition.rightHalf;
-          } else {
-            position = JidoujishoPopupPosition.leftHalf;
-          }
-        }
-
-        text = text.replaceAll('\\n', '\n');
-
-        if (text.isEmpty || index == -1) {
-          clearDictionaryResult();
-          mediaSource.clearCurrentSentence();
-          return;
-        }
-
-        try {
-          /// If we cut off at a lone surrogate, offset the index back by 1. The
-          /// selection meant to select the index before
-          RegExp loneSurrogate = RegExp(
-            '[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]',
-          );
-          if (index != 0 && text.substring(index).startsWith(loneSurrogate)) {
-            index = index - 1;
-          }
-
-          bool isSpaceDelimited = appModel.targetLanguage.isSpaceDelimited;
-
-          String searchTerm = appModel.targetLanguage.getSearchTermFromIndex(
-            text: text,
-            index: index,
-          );
-          int whitespaceOffset =
-              searchTerm.length - searchTerm.trimLeft().length;
-
-          int offsetIndex = appModel.targetLanguage
-                  .getStartingIndex(text: text, index: index) +
-              whitespaceOffset;
-
-          int length = appModel.targetLanguage.getGuessHighlightLength(
-            searchTerm: searchTerm,
-          );
-
-          if (mediaSource.highlightOnTap) {
-            await selectTextOnwards(
-              cursorX: x,
-              cursorY: y,
-              offsetIndex: offsetIndex,
-              length: length,
-              whitespaceOffset: whitespaceOffset,
-              isSpaceDelimited: isSpaceDelimited,
-            );
-          }
-
-          searchDictionaryResult(
-            searchTerm: searchTerm,
-            position: position,
-          ).then((_) async {
-            length = appModel.targetLanguage.getFinalHighlightLength(
-              result: currentResult,
-              searchTerm: searchTerm,
-            );
-
-            if (mediaSource.highlightOnTap) {
-              await selectTextOnwards(
-                cursorX: x,
-                cursorY: y,
-                offsetIndex: offsetIndex,
-                length: length,
-                whitespaceOffset: whitespaceOffset,
-                isSpaceDelimited: isSpaceDelimited,
-              );
-
-              if (!dictionaryPopupShown) {
-                unselectWebViewTextSelection(_controller);
-              }
-            }
-
-            JidoujishoTextSelection selection =
-                appModel.targetLanguage.getSentenceFromParagraph(
-              paragraph: text,
-              index: index,
-              startOffset: offsetIndex,
-              endOffset: offsetIndex + length,
-            );
-
-            mediaSource.setCurrentSentence(
-              selection: selection,
-            );
-          });
-        } catch (e) {
-          clearDictionaryResult();
-        }
-
+        await _processLookup(messageJson);
         break;
+    }
+  }
+
+  Future<void> _processLookup(Map<String, dynamic> payload) async {
+    FocusScope.of(context).unfocus();
+    _focusNode.requestFocus();
+
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+
+    int index = (payload['index'] as num).toInt();
+    String text = (payload['text'] as String?) ?? '';
+    int x = (payload['x'] as num).toInt();
+    int y = (payload['y'] as num).toInt();
+
+    late JidoujishoPopupPosition position;
+    if (MediaQuery.of(context).orientation == Orientation.portrait) {
+      if (y < MediaQuery.of(context).size.height / 2) {
+        position = JidoujishoPopupPosition.bottomHalf;
+      } else {
+        position = JidoujishoPopupPosition.topHalf;
+      }
+    } else {
+      if (x < MediaQuery.of(context).size.width / 2) {
+        position = JidoujishoPopupPosition.rightHalf;
+      } else {
+        position = JidoujishoPopupPosition.leftHalf;
+      }
+    }
+
+    text = text.replaceAll('\\n', '\n');
+
+    if (text.isEmpty || index == -1) {
+      clearDictionaryResult();
+      mediaSource.clearCurrentSentence();
+      return;
+    }
+
+    try {
+      /// If we cut off at a lone surrogate, offset the index back by 1. The
+      /// selection meant to select the index before
+      RegExp loneSurrogate = RegExp(
+        '[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]',
+      );
+      if (index != 0 && text.substring(index).startsWith(loneSurrogate)) {
+        index = index - 1;
+      }
+
+      bool isSpaceDelimited = appModel.targetLanguage.isSpaceDelimited;
+
+      String searchTerm = appModel.targetLanguage.getSearchTermFromIndex(
+        text: text,
+        index: index,
+      );
+      int whitespaceOffset =
+          searchTerm.length - searchTerm.trimLeft().length;
+
+      int offsetIndex = appModel.targetLanguage
+              .getStartingIndex(text: text, index: index) +
+          whitespaceOffset;
+
+      int length = appModel.targetLanguage.getGuessHighlightLength(
+        searchTerm: searchTerm,
+      );
+
+      if (mediaSource.highlightOnTap) {
+        await selectTextOnwards(
+          cursorX: x,
+          cursorY: y,
+          offsetIndex: offsetIndex,
+          length: length,
+          whitespaceOffset: whitespaceOffset,
+          isSpaceDelimited: isSpaceDelimited,
+        );
+      }
+
+      searchDictionaryResult(
+        searchTerm: searchTerm,
+        position: position,
+      ).then((_) async {
+        length = appModel.targetLanguage.getFinalHighlightLength(
+          result: currentResult,
+          searchTerm: searchTerm,
+        );
+
+        if (mediaSource.highlightOnTap) {
+          await selectTextOnwards(
+            cursorX: x,
+            cursorY: y,
+            offsetIndex: offsetIndex,
+            length: length,
+            whitespaceOffset: whitespaceOffset,
+            isSpaceDelimited: isSpaceDelimited,
+          );
+
+          if (!dictionaryPopupShown) {
+            unselectWebViewTextSelection(_controller);
+          }
+        }
+
+        JidoujishoTextSelection selection =
+            appModel.targetLanguage.getSentenceFromParagraph(
+          paragraph: text,
+          index: index,
+          startOffset: offsetIndex,
+          endOffset: offsetIndex + length,
+        );
+
+        mediaSource.setCurrentSentence(
+          selection: selection,
+        );
+      });
+    } catch (e) {
+      debugPrint('_processLookup error: $e');
+      clearDictionaryResult();
     }
   }
 
@@ -732,28 +758,20 @@ xhr.send();
 /*jshint esversion: 6 */
 
 function tapToSelect(e) {
-  if (getSelectionText()) {
-    console.log(JSON.stringify({
-				"index": -1,
-				"text": getSelectionText(),
-				"jidoujisho-message-type": "lookup",
+  console.log('[jidoujisho] tapToSelect x=' + e.clientX + ' y=' + e.clientY + ' target=' + (e.target ? e.target.nodeName : 'null'));
+  var result = document.caretRangeFromPoint(e.clientX, e.clientY);
+  console.log('[jidoujisho] caretRangeFromPoint result=' + (result ? result.startContainer.nodeName + ' offset=' + result.startOffset : 'null'));
+
+  if (!result || e.target.classList.contains('book-content')) {
+    console.log('[jidoujisho] early return: result=' + (!!result) + ' isBookContent=' + (e.target && e.target.classList.contains('book-content')));
+    if (window.flutter_inappwebview) {
+      window.flutter_inappwebview.callHandler('onTapLookup', {
+        "index": -1,
+        "text": "",
         "x": e.clientX,
         "y": e.clientY,
-        "isCreator": "no",
-			}));
-  }
-
-  var result = document.caretRangeFromPoint(e.clientX, e.clientY);
-
-  if (e.target.classList.contains('book-content')) {
-    console.log(JSON.stringify({
-      "index": -1,
-      "text": getSelectionText(),
-      "jidoujisho-message-type": "lookup",
-      "x": e.clientX,
-      "y": e.clientY,
-      "isCreator": "no",
-    }));
+      });
+    }
     return;
   }
 
@@ -837,24 +855,29 @@ function tapToSelect(e) {
   
 
   var character = text[index];
+  console.log('[jidoujisho] character=' + character + ' index=' + index + ' textLen=' + text.length);
   if (character) {
-    console.log(JSON.stringify({
-      "index": index,
-      "text": text,
-      "jidoujisho-message-type": "lookup",
-      "x": e.clientX,
-      "y": e.clientY,
-    }));
-    console.log(character);
+    console.log('[jidoujisho] calling onTapLookup with index=' + index);
+    if (window.flutter_inappwebview) {
+      window.flutter_inappwebview.callHandler('onTapLookup', {
+        "index": index,
+        "text": text,
+        "x": e.clientX,
+        "y": e.clientY,
+      });
+    } else {
+      console.log('[jidoujisho] flutter_inappwebview not available!');
+    }
   } else {
-    console.log(JSON.stringify({
-      "index": -1,
-      "text": getSelectionText(),
-      "jidoujisho-message-type": "lookup",
-      "x": e.clientX,
-      "y": e.clientY,
-      "isCreator": "no",
-    }));
+    console.log('[jidoujisho] no character found, sending index=-1');
+    if (window.flutter_inappwebview) {
+      window.flutter_inappwebview.callHandler('onTapLookup', {
+        "index": -1,
+        "text": "",
+        "x": e.clientX,
+        "y": e.clientY,
+      });
+    }
   }
 }
 function getSelectionText() {
@@ -923,9 +946,41 @@ function getSelectionText() {
     }
     return txt;
 };
-var reader = document.getElementsByClassName('book-content');
-if (reader.length != 0) {
-  reader[0].addEventListener('click', tapToSelect, true);
+if (!window.__jidoujishoClickListenerRegistered) {
+  window.__jidoujishoClickListenerRegistered = true;
+  console.log('[jidoujisho] registering listeners');
+  var __jidoTapStartX = 0, __jidoTapStartY = 0, __jidoLastTouchEnd = 0;
+
+  document.addEventListener('touchstart', function(e) {
+    if (e.touches.length === 1) {
+      __jidoTapStartX = e.touches[0].clientX;
+      __jidoTapStartY = e.touches[0].clientY;
+    }
+  }, {capture: true, passive: true});
+
+  document.addEventListener('touchend', function(e) {
+    console.log('[jidoujisho] touchend touches=' + e.changedTouches.length + ' target=' + (e.target ? e.target.nodeName : 'null') + ' inBookContent=' + (e.target ? !!e.target.closest('.book-content') : false));
+    if (e.changedTouches.length !== 1) return;
+    var touch = e.changedTouches[0];
+    var dx = Math.abs(touch.clientX - __jidoTapStartX);
+    var dy = Math.abs(touch.clientY - __jidoTapStartY);
+    console.log('[jidoujisho] touchend dx=' + dx + ' dy=' + dy);
+    if (dx > 15 || dy > 15) return;
+    if (!e.target.closest('.book-content')) return;
+    __jidoLastTouchEnd = Date.now();
+    tapToSelect({
+      clientX: touch.clientX, clientY: touch.clientY,
+      x: touch.clientX, y: touch.clientY,
+      target: e.target,
+    });
+  }, true);
+
+  document.addEventListener('click', function(e) {
+    console.log('[jidoujisho] click target=' + (e.target ? e.target.nodeName : 'null'));
+    if (!e.target.closest('.book-content')) return;
+    if (Date.now() - __jidoLastTouchEnd < 600) return;
+    tapToSelect(e);
+  }, true);
 }
 document.head.insertAdjacentHTML('beforebegin', `
 <style>

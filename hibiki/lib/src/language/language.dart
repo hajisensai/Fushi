@@ -317,10 +317,10 @@ abstract class Language {
   int getGuessHighlightLength({
     required String searchTerm,
   }) {
-    return textToWords(searchTerm)
-        .firstWhere((e) => e.trim().isNotEmpty)
-        .trim()
-        .length;
+    final word = textToWords(searchTerm)
+        .firstWhere((e) => e.trim().isNotEmpty, orElse: () => '');
+    final length = word.trim().length;
+    return length > 0 ? length : 1;
   }
 
   /// Get final highlight length after a dictionary search.

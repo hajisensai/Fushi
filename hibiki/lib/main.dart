@@ -109,7 +109,7 @@ class HoshiReaderApp extends ConsumerStatefulWidget {
 class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
     with WidgetsBindingObserver {
   final navigatorKey = GlobalKey<NavigatorState>();
-  bool _isMainIntent = false;
+  bool _isMainIntent = true;
 
   late final StreamSubscription _intentsSubscription;
 

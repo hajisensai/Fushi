@@ -75,7 +75,8 @@ abstract class BaseTabPageState<T extends BaseTabPage> extends BasePageState {
           automaticallyImplyBackButton: false,
           onFocusChanged: (focused) => onFocusChanged(focused: focused),
           leadingActions: [
-            buildChangeSourceButton(),
+            if (appModel.mediaSources[mediaType]!.length > 1)
+              buildChangeSourceButton(),
             buildBackButton(),
           ],
           actions: mediaSource.getActions(
