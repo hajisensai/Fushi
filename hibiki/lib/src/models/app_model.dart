@@ -3314,6 +3314,9 @@ class AppModel with ChangeNotifier {
   /// shutdown.
   bool get isDatabaseOpen => _database.isOpen;
 
+  /// Direct access to the Isar database instance.
+  Isar get database => _database;
+
   /// Safely shutdown and stop database operations.
   void shutdown() async {
     databaseCloseNotifier.notifyListeners();

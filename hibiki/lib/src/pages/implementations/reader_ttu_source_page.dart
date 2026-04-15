@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:document_file_save_plus/document_file_save_plus.dart';
 import 'package:flutter/material.dart';
@@ -13,6 +14,10 @@ import 'package:spaces/spaces.dart';
 import 'package:hibiki/creator.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_controller.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
 import 'package:hibiki/utils.dart';
 
 /// The media page used for the [ReaderTtuSource].
@@ -44,14 +49,26 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   final FocusNode _focusNode = FocusNode();
   bool _isRecursiveSearching = false;
 
+  // ── 有声书播放器 ────────────────────────────────────────────────────────────
+  AudiobookPlayerController? _audiobookController;
+
+  /// 当前章节的 href（用于 cue 查询和 JS 注解）。
+  String _currentChapterHref = '';
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // 异步检查是否有挂载有声书
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initAudiobookIfAvailable();
+    });
   }
 
   @override
   void dispose() {
+    _audiobookController?.removeListener(_onCueChanged);
+    _audiobookController?.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -165,6 +182,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
               children: <Widget>[
                 buildBody(),
                 buildDictionary(),
+                buildAudiobookBar(),
               ],
             ),
           ),
@@ -399,6 +417,12 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
 
         await controller.evaluateJavascript(source: javascriptToExecute);
         Future.delayed(const Duration(seconds: 1), _focusNode.requestFocus);
+
+        // 有声书：注入 JS/CSS 桥，并对当前章节自动标注句子
+        if (_audiobookController != null) {
+          _currentChapterHref = uri?.toString() ?? '';
+          await _injectAudiobookBridge(controller);
+        }
       },
       onTitleChanged: (controller, title) async {
         await controller.evaluateJavascript(source: javascriptToExecute);
@@ -466,6 +490,13 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     switch (messageJson['hibiki-message-type']) {
       case 'lookup':
         await _processLookup(messageJson);
+        break;
+      case 'seekToSentence':
+        final AudiobookClickEvent? event =
+            AudiobookBridge.parseMessage(messageJson);
+        if (event != null) {
+          await _seekToSentence(event);
+        }
         break;
     }
   }
@@ -1207,6 +1238,211 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
             ),
           );
         },
+      ),
+    );
+  }
+
+  // ── 有声书辅助方法 ──────────────────────────────────────────────────────────
+
+  /// 从 Isar 查找当前书的 [Audiobook]，若存在则初始化播放器并监听 cue 变化。
+  Future<void> _initAudiobookIfAvailable() async {
+    final String? bookUid = widget.item?.uniqueKey;
+    if (bookUid == null) {
+      return;
+    }
+    final AudiobookRepository repo = AudiobookRepository(appModel.database);
+    final Audiobook? audiobook = repo.findByBookUid(bookUid);
+    if (audiobook == null) {
+      return;
+    }
+
+    // 构建音频文件列表（按名称排序）
+    final Directory audioDir = Directory(audiobook.audioRoot);
+    if (!audioDir.existsSync()) {
+      return;
+    }
+    final List<File> audioFiles = audioDir
+        .listSync()
+        .whereType<File>()
+        .where((f) {
+          final String ext = f.path.toLowerCase();
+          return ext.endsWith('.mp3') ||
+              ext.endsWith('.m4a') ||
+              ext.endsWith('.ogg') ||
+              ext.endsWith('.aac');
+        })
+        .toList()
+      ..sort((a, b) => a.path.compareTo(b.path));
+
+    if (audioFiles.isEmpty) {
+      return;
+    }
+
+    final AudiobookPlayerController controller = AudiobookPlayerController();
+    await controller.load(audiobook: audiobook, audioFiles: audioFiles);
+    controller.addListener(_onCueChanged);
+
+    if (mounted) {
+      setState(() {
+        _audiobookController = controller;
+      });
+    }
+  }
+
+  /// 注入 JS/CSS 桥并自动标注当前章节句子。
+  Future<void> _injectAudiobookBridge(
+      InAppWebViewController controller) async {
+    await AudiobookBridge.inject(controller);
+
+    // 从 Isar 加载当前章节的 cues
+    final String? bookUid = widget.item?.uniqueKey;
+    if (bookUid == null) {
+      return;
+    }
+    final AudiobookRepository repo = AudiobookRepository(appModel.database);
+    final List<AudioCue> cues = repo.cuesForChapter(
+      bookUid: bookUid,
+      chapterHref: _currentChapterHref,
+    );
+
+    _audiobookController?.setChapterCues(cues);
+
+    if (cues.isEmpty) {
+      // 无预对齐 cue，用自动标注
+      await AudiobookBridge.annotate(
+        controller,
+        chapterHref: _currentChapterHref,
+      );
+    }
+  }
+
+  /// currentCue 变化时高亮对应 DOM 元素。
+  void _onCueChanged() {
+    if (!_controllerInitialised) {
+      return;
+    }
+    final AudioCue? cue = _audiobookController?.currentCue;
+    AudiobookBridge.highlight(_controller, cue: cue);
+  }
+
+  /// 用户点击句子，跳转播放器到该 cue。
+  Future<void> _seekToSentence(AudiobookClickEvent event) async {
+    if (_audiobookController == null) {
+      return;
+    }
+    final AudiobookRepository repo = AudiobookRepository(appModel.database);
+    final AudioCue? cue = repo.findCue(
+      bookUid: widget.item?.uniqueKey ?? '',
+      chapterHref: event.chapterHref,
+      sentenceIndex: event.sentenceIndex,
+    );
+    if (cue != null) {
+      await _audiobookController?.skipToCue(cue);
+    }
+  }
+
+  // ── 有声书底部播放条 ────────────────────────────────────────────────────────
+
+  /// 底部播放控制条。仅在 [_audiobookController] 非 null 时显示。
+  Widget buildAudiobookBar() {
+    final AudiobookPlayerController? ctrl = _audiobookController;
+    if (ctrl == null) {
+      return const SizedBox.shrink();
+    }
+    return ListenableBuilder(
+      listenable: ctrl,
+      builder: (context, _) {
+        return Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: _AudiobookPlayBar(controller: ctrl),
+        );
+      },
+    );
+  }
+}
+
+/// 有声书播放控制条（紧凑型，固定于阅读器底部）。
+class _AudiobookPlayBar extends StatelessWidget {
+  const _AudiobookPlayBar({required this.controller});
+
+  final AudiobookPlayerController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+
+    return Material(
+      color: colors.surface.withAlpha(230),
+      elevation: 8,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Row(
+            children: [
+              // 后退 15s
+              IconButton(
+                icon: const Icon(Icons.replay_10),
+                iconSize: 22,
+                onPressed: () => controller.seekRelative(-15),
+                tooltip: '-15s',
+              ),
+              // 播放/暂停
+              IconButton(
+                icon: Icon(
+                  controller.isPlaying ? Icons.pause : Icons.play_arrow,
+                ),
+                iconSize: 28,
+                onPressed: controller.togglePlayPause,
+              ),
+              // 前进 15s
+              IconButton(
+                icon: const Icon(Icons.forward_10),
+                iconSize: 22,
+                onPressed: () => controller.seekRelative(15),
+                tooltip: '+15s',
+              ),
+              const SizedBox(width: 4),
+              // 当前句文本（滚动显示）
+              Expanded(
+                child: Text(
+                  controller.currentCue?.text ?? '',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+              // 倍速选择
+              _SpeedButton(controller: controller),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 倍速切换按钮（0.75 → 1.0 → 1.25 → 1.5 循环）。
+class _SpeedButton extends StatelessWidget {
+  const _SpeedButton({required this.controller});
+
+  final AudiobookPlayerController controller;
+
+  static const List<double> _speeds = [0.75, 1.0, 1.25, 1.5];
+
+  @override
+  Widget build(BuildContext context) {
+    final double current = controller.speed;
+    final int idx = _speeds.indexWhere((s) => (s - current).abs() < 0.01);
+    final double next = _speeds[(idx + 1) % _speeds.length];
+
+    return TextButton(
+      onPressed: () => controller.setSpeed(next),
+      child: Text(
+        '${current.toStringAsFixed(2)}x',
+        style: Theme.of(context).textTheme.labelSmall,
       ),
     );
   }
