@@ -7,6 +7,7 @@ import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
 import 'package:hibiki/src/media/audiobook/json_alignment_parser.dart';
 import 'package:hibiki/src/media/audiobook/smil_parser.dart';
+import 'package:hibiki/src/media/audiobook/srt_parser.dart';
 import 'package:hibiki/utils.dart';
 
 /// 有声书导入/移除对话框。
@@ -165,7 +166,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
   Future<void> _pickAlignment() async {
     final FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['smil', 'json'],
+      allowedExtensions: ['smil', 'json', 'srt'],
     );
     final String? path = result?.files.single.path;
     if (path != null && mounted) {
@@ -184,7 +185,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     try {
       final String ext =
           _alignmentPath!.split('.').last.toLowerCase();
-      final String format = (ext == 'smil') ? 'smil' : 'json';
+      final String format =
+          (ext == 'smil') ? 'smil' : (ext == 'srt') ? 'srt' : 'json';
 
       final Audiobook audiobook = Audiobook()
         ..bookUid = widget.bookUid
@@ -214,7 +216,18 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
   Future<void> _parseCues(String format) async {
     final File alignFile = File(_alignmentPath!);
 
-    if (format == 'json') {
+    if (format == 'srt') {
+      // SRT 作为 EPUB 对齐文件：全书单章节，chapterHref 固定为 srt://default
+      final List<AudioCue> cues = SrtParser.parse(
+        srtFile: alignFile,
+        bookUid: widget.bookUid,
+      );
+      await widget.repo.saveCues(
+        bookUid: widget.bookUid,
+        chapterHref: SrtParser.defaultChapter,
+        cues: cues,
+      );
+    } else if (format == 'json') {
       final List<AudioCue> allCues = JsonAlignmentParser.parse(
         jsonFile: alignFile,
         bookUid: widget.bookUid,

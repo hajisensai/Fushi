@@ -19,6 +19,7 @@ import 'package:hibiki/src/media/audiobook/audiobook_controller.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
+import 'package:hibiki/src/media/audiobook/srt_parser.dart';
 import 'package:hibiki/utils.dart';
 
 /// The media page used for the [ReaderTtuSource].
@@ -1302,9 +1303,16 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       return;
     }
     final AudiobookRepository repo = AudiobookRepository(appModel.database);
+
+    // SRT 格式将全书 cue 存在固定章节 srt://default，不随 EPUB 章节切换
+    final bool isSrt =
+        _audiobookController?.audiobook?.alignmentFormat == 'srt';
+    final String cueChapterHref =
+        isSrt ? SrtParser.defaultChapter : _currentChapterHref;
+
     final List<AudioCue> cues = repo.cuesForChapter(
       bookUid: bookUid,
-      chapterHref: _currentChapterHref,
+      chapterHref: cueChapterHref,
     );
 
     _audiobookController?.setChapterCues(cues);
@@ -1333,9 +1341,12 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       return;
     }
     final AudiobookRepository repo = AudiobookRepository(appModel.database);
+    // SRT 格式的 cue 均存在 srt://default 章节下，点击事件的 chapterHref 不适用
+    final bool isSrt =
+        _audiobookController?.audiobook?.alignmentFormat == 'srt';
     final AudioCue? cue = repo.findCue(
       bookUid: widget.item?.uniqueKey ?? '',
-      chapterHref: event.chapterHref,
+      chapterHref: isSrt ? SrtParser.defaultChapter : event.chapterHref,
       sentenceIndex: event.sentenceIndex,
     );
     if (cue != null) {
