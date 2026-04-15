@@ -153,6 +153,14 @@ class AppModel with ChangeNotifier {
   AndroidDeviceInfo get androidDeviceInfo => _androidDeviceInfo;
   late final AndroidDeviceInfo _androidDeviceInfo;
 
+  /// Whether [initialise] has completed successfully.
+  bool get isInitialised => _isInitialised;
+  bool _isInitialised = false;
+
+  /// Non-null if [initialise] threw; UI should display this instead of spinning.
+  String? get initError => _initError;
+  String? _initError;
+
   /// Used for caching images and audio produced from media seeds.
   DefaultCacheManager get cacheManager => _cacheManager;
   final _cacheManager = DefaultCacheManager();
@@ -1032,109 +1040,129 @@ class AppModel with ChangeNotifier {
   /// the application. [AppModel] is initialised in the main function before
   /// [runApp] is executed.
   Future<void> initialise() async {
-    /// Prepare entities that may be repeatedly used at runtime.
-    _packageInfo = await PackageInfo.fromPlatform();
-    _androidDeviceInfo = await DeviceInfoPlugin().androidInfo;
+    try {
+      debugPrint('[Hibiki] init: PackageInfo + DeviceInfo');
+      /// Prepare entities that may be repeatedly used at runtime.
+      _packageInfo = await PackageInfo.fromPlatform();
+      _androidDeviceInfo = await DeviceInfoPlugin().androidInfo;
 
-    /// Initialise persistent key-value store.
-    await Hive.initFlutter();
-    _preferences = await Hive.openBox('appModel');
-    _dictionaryHistory = await Hive.openBox('dictionaryHistory');
+      debugPrint('[Hibiki] init: Hive');
+      /// Initialise persistent key-value store.
+      await Hive.initFlutter();
+      _preferences = await Hive.openBox('appModel');
+      _dictionaryHistory = await Hive.openBox('dictionaryHistory');
 
-    /// Perform startup activities unnecessary to further initialisation here.
-    await requestExternalStoragePermissions();
-    await requestAnkidroidPermissions();
+      /// Permission requests are deferred to the point of use (file import,
+      /// Anki export) so they do not block startup.
 
-    /// These directories will commonly be accessed.
-    _temporaryDirectory = await getTemporaryDirectory();
-    _appDirectory = await getApplicationDocumentsDirectory();
-    _databaseDirectory = await getApplicationSupportDirectory();
-    _browserDirectory = Directory(path.join(appDirectory.path, 'browser'));
-    _thumbnailsDirectory =
-        Directory(path.join(appDirectory.path, 'thumbnails'));
-    _hiveDirectory = Directory(path.join(appDirectory.path, 'hive'));
+      debugPrint('[Hibiki] init: directories');
+      /// These directories will commonly be accessed.
+      _temporaryDirectory = await getTemporaryDirectory();
+      _appDirectory = await getApplicationDocumentsDirectory();
+      _databaseDirectory = await getApplicationSupportDirectory();
+      _browserDirectory = Directory(path.join(appDirectory.path, 'browser'));
+      _thumbnailsDirectory =
+          Directory(path.join(appDirectory.path, 'thumbnails'));
+      _hiveDirectory = Directory(path.join(appDirectory.path, 'hive'));
 
-    _dictionaryResourceDirectory =
-        Directory(path.join(appDirectory.path, 'dictionaryResources'));
+      _dictionaryResourceDirectory =
+          Directory(path.join(appDirectory.path, 'dictionaryResources'));
 
-    _dictionaryImportWorkingDirectory = Directory(
-        path.join(appDirectory.path, 'dictionaryImportWorkingDirectory'));
-    _exportDirectory = await prepareHibikiDirectory();
-    _alternateExportDirectory = await prepareFallbackHibikiDirectory();
-    _webArchiveDirectory =
-        Directory(path.join(appDirectory.path, 'webArchive'));
+      _dictionaryImportWorkingDirectory = Directory(
+          path.join(appDirectory.path, 'dictionaryImportWorkingDirectory'));
+      _exportDirectory = await prepareHibikiDirectory();
+      _alternateExportDirectory = await prepareFallbackHibikiDirectory();
+      _webArchiveDirectory =
+          Directory(path.join(appDirectory.path, 'webArchive'));
 
-    thumbnailsDirectory.createSync();
-    hiveDirectory.createSync();
-    dictionaryImportWorkingDirectory.createSync();
-    dictionaryResourceDirectory.createSync();
+      thumbnailsDirectory.createSync();
+      hiveDirectory.createSync();
+      dictionaryImportWorkingDirectory.createSync();
+      dictionaryResourceDirectory.createSync();
 
-    /// Inject open source licenses for non-Flutter dependencies that are
-    /// included as assets.
-    await injectAssetLicenses();
+      debugPrint('[Hibiki] init: licenses');
+      /// Inject open source licenses for non-Flutter dependencies that are
+      /// included as assets.
+      await injectAssetLicenses();
 
-    /// Populate entities with key-value maps for constant time performance.
-    /// This is not the initialisation step, which occurs below.
-    populateLanguages();
-    populateLocales();
-    populateMediaTypes();
-    populateMediaSources();
-    populateDictionaryFormats();
-    populateEnhancements();
-    populateQuickActions();
+      debugPrint('[Hibiki] init: populate maps');
+      /// Populate entities with key-value maps for constant time performance.
+      /// This is not the initialisation step, which occurs below.
+      populateLanguages();
+      populateLocales();
+      populateMediaTypes();
+      populateMediaSources();
+      populateDictionaryFormats();
+      populateEnhancements();
+      populateQuickActions();
 
-    /// Get the current target language and prepare its resources for use. This
-    /// will not re-run if the target language is already initialised, as
-    /// a [Language] should always have a singleton instance and will not
-    /// re-prepare its resources if already initialised. See
-    /// [Language.initialise] for more details.
-    await targetLanguage.initialise();
+      debugPrint('[Hibiki] init: targetLanguage (MeCab)');
+      /// Get the current target language and prepare its resources for use. This
+      /// will not re-run if the target language is already initialised, as
+      /// a [Language] should always have a singleton instance and will not
+      /// re-prepare its resources if already initialised. See
+      /// [Language.initialise] for more details.
+      await targetLanguage.initialise();
 
-    /// Ready all enhancements sources for use.
-    for (Field field in globalFields) {
-      for (Enhancement enhancement in enhancements[field]!.values) {
-        await enhancement.initialise();
+      debugPrint('[Hibiki] init: enhancements');
+      /// Ready all enhancements sources for use.
+      for (Field field in globalFields) {
+        for (Enhancement enhancement in enhancements[field]!.values) {
+          await enhancement.initialise();
+        }
       }
-    }
 
-    /// Ready all quick actions for use.
-    for (QuickAction action in quickActions.values) {
-      await action.initialise();
-    }
-
-    /// Ready all media sources for use.
-    for (MediaType type in mediaTypes.values) {
-      for (MediaSource source in mediaSources[type]!.values) {
-        await source.initialise();
+      debugPrint('[Hibiki] init: quick actions');
+      /// Ready all quick actions for use.
+      for (QuickAction action in quickActions.values) {
+        await action.initialise();
       }
-    }
 
-    /// Initialise persistent database.
-    _database = await Isar.open(
-      globalSchemas,
-      directory: _databaseDirectory.path,
-      maxSizeMiB: 8192,
-    );
+      debugPrint('[Hibiki] init: media sources');
+      /// Ready all media sources for use.
+      for (MediaType type in mediaTypes.values) {
+        for (MediaSource source in mediaSources[type]!.values) {
+          await source.initialise();
+        }
+      }
 
-    /// Preloads the search database in memory.
-    searchDictionary(
-      searchTerm: targetLanguage.helloWorld,
-      searchWithWildcards: false,
-      useCache: false,
-    ).then((_) {
-      /// Preloads for wildcard searches.
+      debugPrint('[Hibiki] init: Isar.open');
+      /// Initialise persistent database.
+      _database = await Isar.open(
+        globalSchemas,
+        directory: _databaseDirectory.path,
+        maxSizeMiB: 8192,
+      );
+
+      debugPrint('[Hibiki] init: search preload');
+      /// Preloads the search database in memory.
       searchDictionary(
-        searchTerm: '${targetLanguage.helloWorld.substring(0, 1)}?',
-        searchWithWildcards: true,
+        searchTerm: targetLanguage.helloWorld,
+        searchWithWildcards: false,
         useCache: false,
       ).then((_) {
+        /// Preloads for wildcard searches.
         searchDictionary(
-          searchTerm: '${targetLanguage.helloWorld.substring(0, 1)}*',
+          searchTerm: '${targetLanguage.helloWorld.substring(0, 1)}?',
           searchWithWildcards: true,
           useCache: false,
-        );
+        ).then((_) {
+          searchDictionary(
+            searchTerm: '${targetLanguage.helloWorld.substring(0, 1)}*',
+            searchWithWildcards: true,
+            useCache: false,
+          );
+        });
       });
-    });
+
+      debugPrint('[Hibiki] init: DONE');
+      _isInitialised = true;
+      notifyListeners();
+    } catch (e, stack) {
+      debugPrint('[Hibiki] init FAILED: $e\n$stack');
+      _initError = '$e';
+      notifyListeners();
+    }
   }
 
   /// Get whether or not the current theme is dark mode.
