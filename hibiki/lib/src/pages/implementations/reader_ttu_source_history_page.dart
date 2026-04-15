@@ -133,7 +133,7 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
         alignment: Alignment.bottomLeft,
         children: [
           ColoredBox(
-            color: Colors.grey.shade800.withOpacity(0.3),
+            color: Colors.grey.shade800.withValues(alpha: 0.3),
             child: AspectRatio(
               aspectRatio: mediaSource.aspectRatio,
               child: FadeInImage(
@@ -155,7 +155,7 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
               padding: const EdgeInsets.fromLTRB(2, 2, 2, 4),
               height: constraints.maxHeight * 0.25,
               width: double.maxFinite,
-              color: Colors.black.withOpacity(0.6),
+              color: Colors.black.withValues(alpha: 0.6),
               child: Text(
                 mediaSource.getDisplayTitleFromMediaItem(item),
                 overflow: TextOverflow.ellipsis,
@@ -176,7 +176,7 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
                 : ((item.position / item.duration) > 0.97)
                     ? 1
                     : (item.position / item.duration),
-            backgroundColor: Colors.white.withOpacity(0.6),
+            backgroundColor: Colors.white.withValues(alpha: 0.6),
             valueColor: const AlwaysStoppedAnimation<Color>(Colors.red),
             minHeight: 2,
           ),
@@ -187,7 +187,7 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
               child: Container(
                 padding: const EdgeInsets.all(3),
                 decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.65),
+                  color: Colors.black.withValues(alpha: 0.65),
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: const Icon(
