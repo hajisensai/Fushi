@@ -120,6 +120,7 @@ dependencies:
       url: https://github.com/arianneorpilla/ve_dart
       ref: c366bb1ae24f6fad4f5c7e3a1efad5f2b8122e58
   visibility_detector: ^0.4.0+2
+  xml: ^6.3.0
   wakelock:
     git:
       url: https://github.com/diegotori/wakelock

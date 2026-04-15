@@ -1,0 +1,111 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
+
+/// 解析自定义 JSON 对齐文件，产出 [AudioCue] 列表。
+///
+/// JSON 格式示例：
+/// ```json
+/// {
+///   "bookUid": "reader/path/to/book.epub",
+///   "audio": ["audio/ch01.mp3", "audio/ch02.mp3"],
+///   "cues": [
+///     {
+///       "chapter": "ch01.xhtml",
+///       "i": 0,
+///       "selector": "#p1 > span:nth-child(1)",
+///       "start": 0,
+///       "end": 4230,
+///       "file": 0,
+///       "text": "吾輩は猫である。"
+///     }
+///   ]
+/// }
+/// ```
+class JsonAlignmentParser {
+  /// 解析 [jsonFile] 并返回所有 [AudioCue]。
+  ///
+  /// [bookUid] 用于覆盖 JSON 中的 bookUid 字段（以实际加载的书为准）。
+  static List<AudioCue> parse({
+    required File jsonFile,
+    required String bookUid,
+  }) {
+    final String content = jsonFile.readAsStringSync();
+    final Map<String, dynamic> json =
+        jsonDecode(content) as Map<String, dynamic>;
+
+    final List<dynamic> rawCues = json['cues'] as List<dynamic>? ?? [];
+
+    final List<AudioCue> cues = [];
+
+    for (final dynamic raw in rawCues) {
+      final Map<String, dynamic> c = raw as Map<String, dynamic>;
+
+      final String chapter = c['chapter'] as String? ?? '';
+      final int sentenceIndex = c['i'] as int? ?? 0;
+      final String selector = c['selector'] as String? ?? '';
+      final int startMs = c['start'] as int? ?? 0;
+      final int endMs = c['end'] as int? ?? 0;
+      final int fileIndex = c['file'] as int? ?? 0;
+      final String text = c['text'] as String? ?? '';
+
+      final AudioCue cue = AudioCue()
+        ..bookUid = bookUid
+        ..chapterHref = chapter
+        ..sentenceIndex = sentenceIndex
+        ..textFragmentId = selector
+        ..text = text
+        ..startMs = startMs
+        ..endMs = endMs
+        ..audioFileIndex = fileIndex;
+
+      cues.add(cue);
+    }
+
+    return cues;
+  }
+
+  /// 从 [AudioCue] 列表中提取指定章节的 cues，按 sentenceIndex 排序。
+  static List<AudioCue> cuesForChapter({
+    required List<AudioCue> allCues,
+    required String chapterHref,
+  }) {
+    return allCues
+        .where((c) => c.chapterHref == chapterHref)
+        .toList()
+      ..sort((a, b) => a.sentenceIndex.compareTo(b.sentenceIndex));
+  }
+
+  /// 二分查找：返回 [positionMs] 所在 cue 的下标，找不到返回 -1。
+  ///
+  /// 要求 [cues] 已按 startMs 升序排序（即 sentenceIndex 顺序）。
+  static int findCueIndex({
+    required List<AudioCue> cues,
+    required int positionMs,
+  }) {
+    if (cues.isEmpty) {
+      return -1;
+    }
+
+    int lo = 0;
+    int hi = cues.length - 1;
+    int result = -1;
+
+    while (lo <= hi) {
+      final int mid = (lo + hi) ~/ 2;
+      if (cues[mid].startMs <= positionMs) {
+        result = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+
+    // 确认 positionMs 在该 cue 范围内
+    if (result != -1 && positionMs <= cues[result].endMs) {
+      return result;
+    }
+    return -1;
+  }
+}

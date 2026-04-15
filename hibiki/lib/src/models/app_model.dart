@@ -37,6 +37,7 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 
 /// Schemas used in Isar database.
 final List<CollectionSchema> globalSchemas = [
@@ -50,6 +51,8 @@ final List<CollectionSchema> globalSchemas = [
   MediaItemSchema,
   AnkiMappingSchema,
   SearchHistoryItemSchema,
+  AudiobookSchema,
+  AudioCueSchema,
 ];
 
 /// A list of fields that the app will support at runtime.
