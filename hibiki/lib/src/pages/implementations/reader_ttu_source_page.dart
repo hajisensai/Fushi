@@ -481,20 +481,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     int x = (payload['x'] as num).toInt();
     int y = (payload['y'] as num).toInt();
 
-    late JidoujishoPopupPosition position;
-    if (MediaQuery.of(context).orientation == Orientation.portrait) {
-      if (y < MediaQuery.of(context).size.height / 2) {
-        position = JidoujishoPopupPosition.bottomHalf;
-      } else {
-        position = JidoujishoPopupPosition.topHalf;
-      }
-    } else {
-      if (x < MediaQuery.of(context).size.width / 2) {
-        position = JidoujishoPopupPosition.rightHalf;
-      } else {
-        position = JidoujishoPopupPosition.leftHalf;
-      }
-    }
+    const JidoujishoPopupPosition position = JidoujishoPopupPosition.bottomHalf;
 
     text = text.replaceAll('\\n', '\n');
 
@@ -1133,15 +1120,94 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
 
   String get leftArrowSimulateJs => '''
     var evt = document.createEvent('MouseEvents');
-    evt.initEvent('wheel', true, true); 
+    evt.initEvent('wheel', true, true);
     evt.deltaY = +0.001 * ${mediaSource.volumePageTurningSpeed * (mediaSource.volumePageTurningInverted ? -1 : 1)};
-    document.body.dispatchEvent(evt); 
+    document.body.dispatchEvent(evt);
     ''';
 
   String get rightArrowSimulateJs => '''
     var evt = document.createEvent('MouseEvents');
-    evt.initEvent('wheel', true, true); 
+    evt.initEvent('wheel', true, true);
     evt.deltaY = -0.001 * ${mediaSource.volumePageTurningSpeed * (mediaSource.volumePageTurningInverted ? -1 : 1)};
-    document.body.dispatchEvent(evt); 
+    document.body.dispatchEvent(evt);
     ''';
+
+  /// Override the base class to show a Hoshi-style bottom sheet instead of
+  /// a half-screen overlay. The sheet slides up from the bottom, has rounded
+  /// top corners, a drag handle, and supports drag-to-expand.
+  @override
+  Widget buildBottomHalfDictionary() {
+    Color color = appModel.overrideDictionaryColor ??
+        (appModel.overrideDictionaryTheme ?? theme).cardColor;
+
+    if ((appModel.overrideDictionaryTheme ?? theme).brightness ==
+        Brightness.dark) {
+      color = JidoujishoColor.lighten(color, 0.05);
+    } else {
+      color = JidoujishoColor.darken(color, 0.05);
+    }
+
+    final Color sheetColor = color.withOpacity(dictionaryBackgroundOpacity);
+    final Color handleColor =
+        (appModel.overrideDictionaryTheme ?? theme).dividerColor;
+
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: DraggableScrollableSheet(
+        initialChildSize: 0.45,
+        minChildSize: 0.25,
+        maxChildSize: 0.92,
+        snap: true,
+        snapSizes: const [0.45, 0.92],
+        builder: (context, scrollController) {
+          return Container(
+            decoration: BoxDecoration(
+              color: sheetColor,
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(16)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.25),
+                  blurRadius: 12,
+                  spreadRadius: 2,
+                  offset: const Offset(0, -2),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                // Drag handle — tap to dismiss
+                GestureDetector(
+                  onTap: clearDictionaryResult,
+                  behavior: HitTestBehavior.opaque,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: handleColor.withOpacity(0.4),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                // Dictionary content
+                Expanded(
+                  child: Stack(
+                    children: [
+                      buildSearchResult(),
+                      buildDictionaryLoading(),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
 }
