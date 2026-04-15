@@ -192,7 +192,7 @@ class StructuredContentImage extends StructuredContent
   dom.Node toNode() {
     final imageNode = dom.Element.tag('img');
 
-    final srcAttr = 'jidoujisho://$path';
+    final srcAttr = 'hibiki://$path';
     final widthAttr = (width != null) ? '$width${sizeUnits ?? ''}' : null;
     final heightAttr = (height != null) ? '$height${sizeUnits ?? ''}' : null;
     final altAttr = description;

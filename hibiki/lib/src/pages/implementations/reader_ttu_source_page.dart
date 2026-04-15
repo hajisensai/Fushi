@@ -463,7 +463,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       return;
     }
 
-    switch (messageJson['jidoujisho-message-type']) {
+    switch (messageJson['hibiki-message-type']) {
       case 'lookup':
         await _processLookup(messageJson);
         break;
@@ -758,12 +758,12 @@ xhr.send();
 /*jshint esversion: 6 */
 
 function tapToSelect(e) {
-  console.log('[jidoujisho] tapToSelect x=' + e.clientX + ' y=' + e.clientY + ' target=' + (e.target ? e.target.nodeName : 'null'));
+  console.log('[hibiki] tapToSelect x=' + e.clientX + ' y=' + e.clientY + ' target=' + (e.target ? e.target.nodeName : 'null'));
   var result = document.caretRangeFromPoint(e.clientX, e.clientY);
-  console.log('[jidoujisho] caretRangeFromPoint result=' + (result ? result.startContainer.nodeName + ' offset=' + result.startOffset : 'null'));
+  console.log('[hibiki] caretRangeFromPoint result=' + (result ? result.startContainer.nodeName + ' offset=' + result.startOffset : 'null'));
 
   if (!result || e.target.classList.contains('book-content')) {
-    console.log('[jidoujisho] early return: result=' + (!!result) + ' isBookContent=' + (e.target && e.target.classList.contains('book-content')));
+    console.log('[hibiki] early return: result=' + (!!result) + ' isBookContent=' + (e.target && e.target.classList.contains('book-content')));
     if (window.flutter_inappwebview) {
       window.flutter_inappwebview.callHandler('onTapLookup', {
         "index": -1,
@@ -855,9 +855,9 @@ function tapToSelect(e) {
   
 
   var character = text[index];
-  console.log('[jidoujisho] character=' + character + ' index=' + index + ' textLen=' + text.length);
+  console.log('[hibiki] character=' + character + ' index=' + index + ' textLen=' + text.length);
   if (character) {
-    console.log('[jidoujisho] calling onTapLookup with index=' + index);
+    console.log('[hibiki] calling onTapLookup with index=' + index);
     if (window.flutter_inappwebview) {
       window.flutter_inappwebview.callHandler('onTapLookup', {
         "index": index,
@@ -866,10 +866,10 @@ function tapToSelect(e) {
         "y": e.clientY,
       });
     } else {
-      console.log('[jidoujisho] flutter_inappwebview not available!');
+      console.log('[hibiki] flutter_inappwebview not available!');
     }
   } else {
-    console.log('[jidoujisho] no character found, sending index=-1');
+    console.log('[hibiki] no character found, sending index=-1');
     if (window.flutter_inappwebview) {
       window.flutter_inappwebview.callHandler('onTapLookup', {
         "index": -1,
@@ -946,9 +946,9 @@ function getSelectionText() {
     }
     return txt;
 };
-if (!window.__jidoujishoClickListenerRegistered) {
-  window.__jidoujishoClickListenerRegistered = true;
-  console.log('[jidoujisho] registering listeners');
+if (!window.__hibikiClickListenerRegistered) {
+  window.__hibikiClickListenerRegistered = true;
+  console.log('[hibiki] registering listeners');
   var __jidoTapStartX = 0, __jidoTapStartY = 0, __jidoLastTouchEnd = 0;
 
   document.addEventListener('touchstart', function(e) {
@@ -959,12 +959,12 @@ if (!window.__jidoujishoClickListenerRegistered) {
   }, {capture: true, passive: true});
 
   document.addEventListener('touchend', function(e) {
-    console.log('[jidoujisho] touchend touches=' + e.changedTouches.length + ' target=' + (e.target ? e.target.nodeName : 'null') + ' inBookContent=' + (e.target ? !!e.target.closest('.book-content') : false));
+    console.log('[hibiki] touchend touches=' + e.changedTouches.length + ' target=' + (e.target ? e.target.nodeName : 'null') + ' inBookContent=' + (e.target ? !!e.target.closest('.book-content') : false));
     if (e.changedTouches.length !== 1) return;
     var touch = e.changedTouches[0];
     var dx = Math.abs(touch.clientX - __jidoTapStartX);
     var dy = Math.abs(touch.clientY - __jidoTapStartY);
-    console.log('[jidoujisho] touchend dx=' + dx + ' dy=' + dy);
+    console.log('[hibiki] touchend dx=' + dx + ' dy=' + dy);
     if (dx > 15 || dy > 15) return;
     if (!e.target.closest('.book-content')) return;
     __jidoLastTouchEnd = Date.now();
@@ -976,7 +976,7 @@ if (!window.__jidoujishoClickListenerRegistered) {
   }, true);
 
   document.addEventListener('click', function(e) {
-    console.log('[jidoujisho] click target=' + (e.target ? e.target.nodeName : 'null'));
+    console.log('[hibiki] click target=' + (e.target ? e.target.nodeName : 'null'));
     if (!e.target.closest('.book-content')) return;
     if (Date.now() - __jidoLastTouchEnd < 600) return;
     tapToSelect(e);

@@ -212,7 +212,7 @@ class AnkiMapping {
   };
 
   /// The default mapping name which cannot be deleted or reused.
-  static String standardModelName = 'jidoujisho Kinomoto';
+  static String standardModelName = 'hibiki Kinomoto';
 
   /// The default mapping name which cannot be deleted or reused.
   static String standardProfileName = 'Standard';

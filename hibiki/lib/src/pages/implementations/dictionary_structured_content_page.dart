@@ -100,7 +100,7 @@ class DictionaryHtmlWidget extends ConsumerWidget {
       extensions: [
         const TableHtmlExtension(),
         ImageExtension.inline(
-          networkSchemas: {'jidoujisho'},
+          networkSchemas: {'hibiki'},
           builder: (extensionContext) => WidgetSpan(
             child: JidoujishoDictionaryImage(
               entry: entry,
@@ -131,7 +131,7 @@ class JidoujishoDictionaryImage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final src = (extensionContext.attributes['src'] ?? '')
-        .replaceFirst('jidoujisho://', '');
+        .replaceFirst('hibiki://', '');
 
     final width = double.tryParse((extensionContext.attributes['width'] ?? '')
         .replaceAll(RegExp(r'\D'), ''));

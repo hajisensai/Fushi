@@ -32,7 +32,7 @@ import com.ryanheise.audioservice.AudioServiceActivity;
 import android.content.res.Configuration;
 
 public class MainActivity extends AudioServiceActivity {
-    private static final String ANKIDROID_CHANNEL = "app.arianneorpilla.yuuna/anki";
+    private static final String ANKIDROID_CHANNEL = "app.hibiki.reader/anki";
     private static final int AD_PERM_REQUEST = 0;
 
     private Activity context;
@@ -69,10 +69,10 @@ public class MainActivity extends AudioServiceActivity {
         final AddContentApi api = new AddContentApi(context);
 
         long modelId;
-        if (modelExists("jidoujisho Kinomoto")) {
-            modelId = mAnkiDroid.findModelIdByName("jidoujisho Kinomoto", 17);
+        if (modelExists("hibiki Kinomoto")) {
+            modelId = mAnkiDroid.findModelIdByName("hibiki Kinomoto", 17);
         } else {
-            modelId = api.addNewCustomModel("jidoujisho Kinomoto",
+            modelId = api.addNewCustomModel("hibiki Kinomoto",
                 new String[] {
                     "Term", 
                     "Reading",
@@ -93,7 +93,7 @@ public class MainActivity extends AudioServiceActivity {
                     "Sentence Audio",
                 },
                 new String[] {
-                    "jidoujisho Kinomoto"
+                    "hibiki Kinomoto"
                 },
                 new String[] {
                     "<div id=\"word\">{{Term}}</div>"

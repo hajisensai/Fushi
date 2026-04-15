@@ -109,7 +109,7 @@
     "dialog_content_dictionary_delete": "Deleting a single dictionary may take longer than clearing the entire dictionary database. This will also clear all search results in history.",
     "delete_dictionary_data": "Clearing all dictionary data...",
     "dictionary_tag": "Imported from $name",
-    "legalese": "A full-featured immersion language learning suite for mobile.\n\nOriginally built for the Japanese language learning community by Arianne Orpilla. Logo by suzy and Aaron Marbella.\n\njidoujisho is free and open source software. See the project repository for a comprehensive list of other licenses and attribution notices. Enjoying the application? Help out by providing feedback, making a donation, reporting issues or contributing improvements on GitHub.",
+    "legalese": "A focused Japanese EPUB reader for Android.\n\nBased on jidoujisho, originally built by Arianne Orpilla. Logo by suzy and Aaron Marbella.\n\nhibiki is free and open source software. See the project repository for a comprehensive list of other licenses and attribution notices.",
     "same_name_dictionary_found": "Dictionary with same name found.",
     "import_file_extension_invalid":
         "This format expects files with the following extensions: $extensions",
@@ -127,7 +127,7 @@
         "There was an issue communicating with AnkiDroid.\n\nEnsure that the AnkiDroid background service is active and all relevant app permissions are granted in order to continue.",
     "info_standard_model": "Standard card type added",
     "info_standard_model_content":
-        "『jidoujisho Kinomoto』 has been added to AnkiDroid as a new card type.\n\nSetups making use of a different card type or field order may be used by adding a new export profile.",
+        "『hibiki Kinomoto』 has been added to AnkiDroid as a new card type.\n\nSetups making use of a different card type or field order may be used by adding a new export profile.",
     "error_model_missing": "Missing card type",
     "error_model_missing_content":
         "The corresponding card type of the currently selected profile is missing.\n\nThe profile will be deleted, and the standard profile has now been selected in its place.",
@@ -325,7 +325,7 @@
         "There was an error in exporting media to AnkiDroid.",
     "error_add_note": "There was an error in adding a note to AnkiDroid.",
     "first_time_setup": "First-Time Setup",
-    "first_time_setup_description": "Welcome to jidoujisho! Set your target language and a default profile will be tailored for you. You can change this later at anytime.",
+    "first_time_setup_description": "Welcome to hibiki! Set your target language and a default profile will be tailored for you. You can change this later at anytime.",
     "maximum_entries": "Maximum dictionary entry query limit",
     "maximum_terms": "Maximum dictionary headwords in result",
     "use_br_tags": "Use line break tag instead of newline on export",
@@ -392,7 +392,7 @@
     "cloze": "Cloze",
     "info_standard_update": "New standard profile card type",
     "info_standard_update_content":
-        "The standard profile now uses the『jidoujisho Kinomoto』 card type.\n\nYour legacy standard profile remains available for backwards compatibility.",
+        "The standard profile now uses the『hibiki Kinomoto』 card type.\n\nYour legacy standard profile remains available for backwards compatibility.",
     "retrying_in": {
         "seconds": {
           "one": "Retrying in $n second...",

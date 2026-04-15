@@ -953,51 +953,51 @@ class AppModel with ChangeNotifier {
   /// Return the app external directory found in the public DCIM directory.
   /// This path also initialises the folder if it does not exist, and includes
   /// a .nomedia file within the folder.
-  Future<Directory> prepareJidoujishoDirectory() async {
+  Future<Directory> prepareHibikiDirectory() async {
     String publicDirectory =
         await ExternalPath.getExternalStoragePublicDirectory(
             ExternalPath.DIRECTORY_DCIM);
     try {
-      String directoryPath = path.join(publicDirectory, 'jidoujisho');
+      String directoryPath = path.join(publicDirectory, 'hibiki');
       String noMediaFilePath =
-          path.join(publicDirectory, 'jidoujisho', '.nomedia');
+          path.join(publicDirectory, 'hibiki', '.nomedia');
 
-      Directory jidoujishoDirectory = Directory(directoryPath);
+      Directory hibikiDirectory = Directory(directoryPath);
       File noMediaFile = File(noMediaFilePath);
 
-      if (!jidoujishoDirectory.existsSync()) {
-        jidoujishoDirectory.createSync(recursive: true);
+      if (!hibikiDirectory.existsSync()) {
+        hibikiDirectory.createSync(recursive: true);
       }
       if (!noMediaFile.existsSync()) {
         noMediaFile.createSync();
       }
 
-      return jidoujishoDirectory;
+      return hibikiDirectory;
     } catch (e) {
       debugPrint('Failed to create directory in DCIM.');
-      return prepareFallbackJidoujishoDirectory();
+      return prepareFallbackHibikiDirectory();
     }
   }
 
   /// Return the app external directory found in the internal app directory.
   /// This path also initialises the folder if it does not exist, and includes
   /// a .nomedia file within the folder.
-  Future<Directory> prepareFallbackJidoujishoDirectory() async {
-    String directoryPath = path.join(appDirectory.path, 'jidoujishoExport');
+  Future<Directory> prepareFallbackHibikiDirectory() async {
+    String directoryPath = path.join(appDirectory.path, 'hibikiExport');
     String noMediaFilePath =
-        path.join(appDirectory.path, 'jidoujishoExport', '.nomedia');
+        path.join(appDirectory.path, 'hibikiExport', '.nomedia');
 
-    Directory jidoujishoDirectory = Directory(directoryPath);
+    Directory hibikiDirectory = Directory(directoryPath);
     File noMediaFile = File(noMediaFilePath);
 
-    if (!jidoujishoDirectory.existsSync()) {
-      jidoujishoDirectory.createSync(recursive: true);
+    if (!hibikiDirectory.existsSync()) {
+      hibikiDirectory.createSync(recursive: true);
     }
     if (!noMediaFile.existsSync()) {
       noMediaFile.createSync();
     }
 
-    return jidoujishoDirectory;
+    return hibikiDirectory;
   }
 
   /// Preloads the app icon so that there is no pop-in.
@@ -1056,8 +1056,8 @@ class AppModel with ChangeNotifier {
 
     _dictionaryImportWorkingDirectory = Directory(
         path.join(appDirectory.path, 'dictionaryImportWorkingDirectory'));
-    _exportDirectory = await prepareJidoujishoDirectory();
-    _alternateExportDirectory = await prepareFallbackJidoujishoDirectory();
+    _exportDirectory = await prepareHibikiDirectory();
+    _alternateExportDirectory = await prepareFallbackHibikiDirectory();
     _webArchiveDirectory =
         Directory(path.join(appDirectory.path, 'webArchive'));
 
@@ -1698,7 +1698,7 @@ class AppModel with ChangeNotifier {
 
   /// Used to communicate back and forth with Dart and native code.
   static const MethodChannel methodChannel =
-      MethodChannel('app.arianneorpilla.yuuna/anki');
+      MethodChannel('app.hibiki.reader/anki');
 
   /// Shows the AnkiDroid API message. Called when an Anki-related API get call
   /// fails.
@@ -1740,7 +1740,7 @@ class AppModel with ChangeNotifier {
     await methodChannel.invokeMethod('requestAnkidroidPermissions');
   }
 
-  /// Adds the default 'jidoujisho Kinomoto' model to the list of Anki card types.
+  /// Adds the default 'hibiki Kinomoto' model to the list of Anki card types.
   Future<void> addDefaultModelIfMissing() async {
     List<String> models = await getModelList();
     if (!models.contains(AnkiMapping.standardModelName)) {
@@ -1908,7 +1908,7 @@ class AppModel with ChangeNotifier {
 
       String timestamp =
           intl.DateFormat('yyyyMMddTkkmmss').format(DateTime.now());
-      String preferredName = 'jidoujisho-$timestamp';
+      String preferredName = 'hibiki-$timestamp';
 
       String? imageFileName;
       if (exportFile.existsSync()) {
@@ -1929,7 +1929,7 @@ class AppModel with ChangeNotifier {
 
       String timestamp =
           intl.DateFormat('yyyyMMddTkkmmss').format(DateTime.now());
-      String preferredName = 'jidoujisho-$timestamp';
+      String preferredName = 'hibiki-$timestamp';
 
       String? audioFileName;
       if (exportFile.existsSync()) {
@@ -3158,8 +3158,8 @@ class AppModel with ChangeNotifier {
         },
       ),
       config: const ag.AudioServiceConfig(
-        androidNotificationChannelId: 'app.arianneorpilla.yuuna.channel.audio',
-        androidNotificationChannelName: 'jidoujisho',
+        androidNotificationChannelId: 'app.hibiki.reader.channel.audio',
+        androidNotificationChannelName: 'hibiki',
         androidNotificationIcon: 'drawable/splash',
         notificationColor: Colors.black,
         fastForwardInterval: Duration(seconds: 5),
