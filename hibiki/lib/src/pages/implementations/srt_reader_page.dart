@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_controller.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
@@ -114,6 +115,7 @@ class _SrtReaderPageState extends ConsumerState<SrtReaderPage> {
 
     if (files.isEmpty) {
       _audioInitializing = false;
+      Fluttertoast.showToast(msg: t.srt_no_audio_files);
       return;
     }
 

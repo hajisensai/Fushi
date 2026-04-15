@@ -180,12 +180,15 @@ class ReaderTtuSource extends ReaderMediaSource {
         tooltip: t.srt_import,
         icon: Icons.subtitles_outlined,
         onTap: () async {
-          await showDialog(
+          final bool? imported = await showDialog<bool>(
             context: context,
             builder: (_) => SrtImportDialog(
               repo: SrtBookRepository(appModel.database),
             ),
           );
+          if (imported == true) {
+            ref.invalidate(ttuBooksProvider(appModel.targetLanguage));
+          }
         },
       ),
     );

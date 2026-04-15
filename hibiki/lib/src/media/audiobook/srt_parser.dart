@@ -64,12 +64,13 @@ class SrtParser {
         continue;
       }
 
-      // 时间行之后的所有行合并为文本（多行字幕 → 空格连接）
+      // 时间行之后的所有行合并为文本（多行字幕 → 空格连接），并剥离 HTML 标签
       final int timeLineIndex = lines.indexOf(timeLine);
-      final String text = lines
+      final String rawText = lines
           .skip(timeLineIndex + 1)
           .where((l) => l.isNotEmpty)
           .join(' ');
+      final String text = _stripHtml(rawText);
 
       if (text.isEmpty) {
         continue;
@@ -114,6 +115,14 @@ class SrtParser {
       return null;
     }
     return (start, end);
+  }
+
+  /// 剥离 SRT 文本中的 HTML 标签（`<i>`, `<b>`, `<font color="...">` 等）。
+  ///
+  /// 仅移除标签本身，保留标签内的文本内容。
+  /// 例如：`<i>こんにちは</i>` → `こんにちは`。
+  static String _stripHtml(String text) {
+    return text.replaceAll(RegExp(r'<[^>]+>'), '').trim();
   }
 
   /// 将 SRT 时间码 `HH:MM:SS,mmm`（逗号分隔毫秒）转换为毫秒整数。
