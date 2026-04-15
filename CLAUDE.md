@@ -1,111 +1,58 @@
-项目：Hoshi Reader Android — 基于 jidoujisho 的日语沉浸式 EPUB 阅读器
-背景
-Hoshi Reader (https://github.com/Manhhao/Hoshi-Reader)是一个 iOS 原生（Swift/SwiftUI，面向 iOS 26）的日语 EPUB 阅读器，核心卖点：
+# hibiki（Hoshi Reader Android）
 
-纵书（縦書き）和横书（横書き）支持
-Yomitan 兼容的弹窗词典（含 deinflection）
-支持所有 Yomitan term / frequency / pitch 词典格式
-支持 Yomitan 在线和本地音频源
-AnkiConnect Android 集成制卡
-Lapis 兼容（书架同步协议）
-轻量、快速、专注阅读体验
+基于 jidoujisho fork 的日语沉浸式阅读器，对标 iOS [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader)。核心：EPUB + Yomitan 词典 + Anki 制卡 + 有声书同步。
 
-jidoujisho 是一个 Flutter/Dart 编写的安卓端全功能日语沉浸学习套件（GPL-3.0），包含：
+## 仓库结构
 
-基于 ッツ Ebook Reader 的 EPUB/HTMLZ 阅读器（WebView 渲染）
-Yomichan / Migaku / DSL 词典导入和查词
-视频播放器（VLC）、YouTube、浏览器等多媒体源
-AnkiDroid 制卡集成
-数据库：Isar + Hive
-NLP：Ve + MeCab（日语形态分析）
+- 仓库根：`d:\APP\vs_claude_code\hibiki\`
+- Flutter app：`hibiki/hibiki/`（子目录，非根）
+- 计划文档：根目录下 `AUDIOBOOK_SYNC.md`、`SUBTITLE_TO_EPUB_PLAN.md` 等
+- 遗留 / 参考：`legacy/`、`chisa/`
 
-目标
-从 jidoujisho 仓库 fork，大幅精简为一个专注 EPUB 阅读 + 词典查词 + Anki 制卡的安卓应用，对标 Hoshi Reader 的功能和体验。命名为 Hoshi Reader Android（或自定名称）。
-架构策略
-Phase 1：剥离与精简
+## 当前状态
 
-移除不需要的媒体源：删除 YouTube player、VLC video player、browser media source、lyrics 相关代码。只保留 Reader（ッツ Ebook Reader WebView）作为唯一媒体源。
-移除不需要的外部服务：ChatGPT 集成、Bing 图片搜索、Forvo/JapanesePod101 音频搜索、ImmersionKit/Massif/Tatoeba 例句、Uta-Net 歌词。
-精简 UI：主界面从 jidoujisho 的多 tab 架构（Player / Reader / Dictionary / Browser）简化为：书架（Library）→ 阅读器（Reader）→ 词典弹窗（Popup Dictionary）。
-保留核心依赖：
+**Phase 1 已完成**：剥离 YouTube / VLC / 浏览器 / ChatGPT / 歌词 / Mokuro，保留 Reader + Dictionary + Anki。debug APK 可编译。
 
-ッツ Ebook Reader WebView（EPUB 渲染核心）
-Isar / Hive（词典和阅读进度存储）
-MeCab + Ve（日语分词和 deinflection）
-AnkiDroid 接口（制卡）
+**Phase 2 进行中**：
+- UI 精简：HomePage 已去掉 BottomNavigationBar，直接显示书架
+- 有声书同步（SMIL + JSON 对齐）：已完成全链路（Isar schema → 播放器 → WebView 桥 → 阅读器集成 → 导入 UI）
+- 字幕独立导入：SRT / LRC / VTT / ASS 四种 parser 齐全，导入对话框统一接入
+- 字幕 → EPUB 渲染改造进度（见 `SUBTITLE_TO_EPUB_PLAN.md`）：
+  - PR-A 完成：`CuesToEpub`（EPUB 生成器 + `TtuIdbPayload`/`TtuSection` 数据类）
+  - PR-B 完成：导入时注入 ttu IndexedDB（`ttuBookId` 字段），打开走 `ReaderTtuSourcePage`
+  - **进行中**：PR-C（AudiobookBridge 接字幕 EPUB，cue 高亮/跳转）
 
+**Phase 3 待做**：Material 3 UI 打磨、书架 / 阅读器 / 词典弹窗重设计。
 
+## 核心技术栈
 
-Phase 2：对齐 Hoshi Reader 功能
+- Flutter **3.41.6** / Dart 3.11.4（固定，见 `project_build_env` 记忆）
+- WebView：ッツ (ttu) Ebook Reader 渲染 EPUB
+- 存储：Isar（词典、阅读进度、SrtBook / Audiobook / AudioCue 等）+ Hive（部分偏好）
+- NLP：MeCab + Ve（分词 + deinflection）
+- 制卡：AnkiDroid API（AnkiConnect 为后续可选）
+- 平台最低：Android 8.0（API 26）
 
-词典系统重构：
+## 关键文件（当前仓库，非 jidoujisho 原位置）
 
-保留 Yomichan 词典导入（jidoujisho 已有），确认支持 term bank、frequency、pitch accent 数据
-参考 Hoshi Reader 的 deinflection 逻辑（基于 Yomitan 的 deinflect.json 规则），与 jidoujisho 现有的 MeCab 分词结果交叉验证
-弹窗 UI 参考 Hoshi Reader 的卡片式设计：词条 → 读音 + pitch → 释义 → frequency 标签 → Anki 按钮
+- 阅读器入口：`hibiki/hibiki/lib/src/pages/implementations/reader_ttu_source_page.dart`
+- 书架：`reader_ttu_source_history_page.dart`
+- 有声书桥：`lib/src/media/audiobook/audiobook_bridge.dart`
+- 字幕 parser：`lib/src/media/audiobook/{srt,lrc,vtt,ass}_parser.dart`
+- 字幕导入 UI：`lib/src/media/audiobook/srt_import_dialog.dart`（命名沿用 srt，实际四格式通用）
+- 字幕阅读（**待废弃**）：`lib/src/pages/implementations/srt_reader_page.dart`
 
+## 开发原则
 
-AnkiConnect Android 支持：
+- 不从零重写，在现有代码上删减 / 重构
+- 遇到问题先定位，不回退到简化版
+- 每个 PR 聚焦单一模块，commit 信息说明"为什么"
+- 修改流程三步缺一不可：**analyze → 编译 APK → commit**（见 feedback 记忆）
+- 字幕相关工作遵循 `SUBTITLE_TO_EPUB_PLAN.md`：所有字幕格式统一走 EPUB 渲染，不做字幕列表 UI
 
-jidoujisho 原本通过 AnkiDroid API 直接制卡。增加对 AnkiConnect Android 的支持作为备选方案
-制卡模板应包含：word、reading、glossary、sentence（上下文句子）、sentence_reading、audio（如有）
+## 已知坑
 
-
-阅读器增强：
-
-纵书模式：ッツ Ebook Reader 本身支持纵书，确认此功能正常工作并在设置中暴露切换
-选词交互：点击/长按/拖选文本 → JavaScript bridge → Flutter 侧触发词典查询。参考 jidoujisho 现有的 reader_page.dart 中 WebView JS 通信逻辑
-阅读进度：按字符数计算进度，持久化到 Isar
-书签与高亮：可选功能，jidoujisho 部分已有
-
-
-音频支持：
-
-支持 Yomitan 格式的在线音频源（如 JapanesePod101 URL 模板）
-支持本地音频源（用户自行放置的音频文件包）
-
-
-Lapis 协议（可选/后续）：
-
-Hoshi Reader 支持 Lapis 书架同步，如需对齐可后续实现
-
-
-
-Phase 3：UI/UX 打磨
-
-设计语言：Material 3 / Material You，跟随系统主题
-书架界面：网格/列表视图，显示封面、标题、作者、阅读进度
-阅读器界面：沉浸式全屏，底部/顶部滑动呼出控制栏（字体大小、纵横切换、主题、亮度）
-词典弹窗：底部弹出 Sheet，支持上滑展开更多释义，左右滑动切换词典
-设置页：词典管理（导入/排序/删除）、Anki 连接配置、阅读偏好、外观主题
-
-技术要点
-
-语言：Dart (Flutter)，所有函数加类型注解
-最低 Android 版本：Android 8.0 (API 26)
-关键文件定位（jidoujisho 仓库）：
-
-lib/media/media_sources/reader_media_source.dart — Reader 媒体源入口
-lib/media/media_type.dart — 媒体类型定义
-lib/dictionary/ — 词典导入、查询、格式解析
-lib/anki/ — AnkiDroid 集成
-lib/language/japanese/ — 日语 MeCab 分词、deinflection
-lib/creator/ — 制卡界面和逻辑
-assets/ — ッツ Ebook Reader 的 web assets
-
-
-需要注意的坑：
-
-jidoujisho 使用 Isar 数据库（已停止维护），考虑是否迁移到 Drift/SQFlite 或继续使用
-ッツ Ebook Reader 在 WebView 中运行，需确保 Android WebView 版本兼容
-MeCab 的 Android NDK 编译和字典文件打包
-Structured-content Yomichan 词典目前 jidoujisho 不支持，Hoshi Reader 也可能不支持，可作为后续目标
-
-
-
-开发原则
-
-不要从零重写，从 jidoujisho 现有代码删减和重构
-遇到功能不工作时，先调试定位问题，不要回退到简化版本
-每个 PR 聚焦一个模块的变更（如"移除视频播放器"、"重构词典弹窗 UI"）
-优先保证核心链路可用：打开 EPUB → 选词 → 查词 → 制卡
+- Isar 已停止维护，暂继续使用；`build_runner 2.4.4` 与当前 Flutter / Dart 不兼容，`.g.dart` 需手写或用独立脚本生成
+- 11 个 pub cache 包需打 v1 embedding 补丁（见 `project_build_env` 记忆）
+- MeCab 字典打包走 Android NDK
+- ッツ reader 运行在 WebView，需验证 Android WebView 版本兼容
