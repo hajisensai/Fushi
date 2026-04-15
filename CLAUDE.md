@@ -1,6 +1,6 @@
 项目：Hoshi Reader Android — 基于 jidoujisho 的日语沉浸式 EPUB 阅读器
 背景
-Hoshi Reader 是一个 iOS 原生（Swift/SwiftUI，面向 iOS 26）的日语 EPUB 阅读器，核心卖点：
+Hoshi Reader (https://github.com/Manhhao/Hoshi-Reader)是一个 iOS 原生（Swift/SwiftUI，面向 iOS 26）的日语 EPUB 阅读器，核心卖点：
 
 纵书（縦書き）和横书（横書き）支持
 Yomitan 兼容的弹窗词典（含 deinflection）
