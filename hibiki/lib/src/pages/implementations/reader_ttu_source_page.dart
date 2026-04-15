@@ -16,6 +16,7 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_controller.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
 import 'package:hibiki/utils.dart';
@@ -183,6 +184,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
                 buildBody(),
                 buildDictionary(),
                 buildAudiobookBar(),
+                buildAudiobookImportButton(),
               ],
             ),
           ),
@@ -1338,6 +1340,46 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     );
     if (cue != null) {
       await _audiobookController?.skipToCue(cue);
+    }
+  }
+
+  // ── 有声书导入按钮 ──────────────────────────────────────────────────────────
+
+  /// 右下角耳机图标，仅在无有声书时显示，点击打开导入对话框。
+  Widget buildAudiobookImportButton() {
+    if (_audiobookController != null) {
+      return const SizedBox.shrink();
+    }
+    final String? bookUid = widget.item?.uniqueKey;
+    if (bookUid == null) {
+      return const SizedBox.shrink();
+    }
+    return Positioned(
+      right: 12,
+      bottom: 12,
+      child: Opacity(
+        opacity: 0.6,
+        child: FloatingActionButton.small(
+          heroTag: 'audiobook_import_fab',
+          tooltip: t.audiobook_import,
+          onPressed: () => _openImportDialog(bookUid),
+          child: const Icon(Icons.headphones, size: 20),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openImportDialog(String bookUid) async {
+    final bool? result = await showDialog<bool>(
+      context: context,
+      builder: (_) => AudiobookImportDialog(
+        bookUid: bookUid,
+        repo: AudiobookRepository(appModel.database),
+      ),
+    );
+    // result == true 表示用户完成导入，重新初始化播放器
+    if (result == true && mounted) {
+      await _initAudiobookIfAvailable();
     }
   }
 

@@ -429,5 +429,14 @@
     "video_unavailable": "Video Unavailable",
     "video_unavailable_content": "Cannot fetch streams. There may be restrictions in place that prevent watching this video.",
     "video_file_error": "Cannot Load File",
-    "video_file_error_content": "Unable to load the video file. Please ensure this file exists and is located in a directory accessible by the application."
+    "video_file_error_content": "Unable to load the video file. Please ensure this file exists and is located in a directory accessible by the application.",
+    "audiobook_import": "Import Audiobook",
+    "audiobook_remove": "Remove Audiobook",
+    "audiobook_pick_audio_dir": "Pick Audio Directory",
+    "audiobook_pick_alignment": "Pick Alignment File",
+    "audiobook_attached": "Audiobook attached",
+    "audiobook_not_attached": "No audiobook",
+    "audiobook_import_success": "Audiobook imported",
+    "audiobook_import_error": "Import failed",
+    "audiobook_remove_confirm": "Remove the attached audiobook?"
   }
