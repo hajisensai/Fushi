@@ -2,13 +2,12 @@ import 'package:change_notifier_builder/change_notifier_builder.dart';
 import 'package:flutter/material.dart';
 import 'package:spaces/spaces.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 
 /// Appears at startup as the portal from which a user may select media and
-/// broadly select their activity of choice. The page characteristically has
-/// an [AppBar] and a [BottomNavigationBar].
+/// broadly select their activity of choice. The page shows the library
+/// (book shelf) directly, with dictionary accessible from the AppBar.
 class HomePage extends BasePage {
   /// Construct an instance of the [HomePage].
   const HomePage({
@@ -21,13 +20,8 @@ class HomePage extends BasePage {
 
 class _HomePageState extends BasePageState<HomePage>
     with WidgetsBindingObserver {
-  late final List<Widget> mediaTypeBodies;
-  late final List<BottomNavigationBarItem> navBarItems;
-
   String get appName => appModel.packageInfo.appName;
   String get appVersion => appModel.packageInfo.version;
-
-  int get currentHomeTabIndex => appModel.currentHomeTabIndex;
 
   @override
   void initState() {
@@ -35,21 +29,6 @@ class _HomePageState extends BasePageState<HomePage>
 
     WidgetsBinding.instance.addObserver(this);
     appModelNoUpdate.databaseCloseNotifier.addListener(refresh);
-
-    /// Populate and define the tabs and their respective content bodies based
-    /// on the media types specified and ordered by [AppModel]. As [ref.watch]
-    /// cannot be used here, [ref.read] is used instead, via [appModelNoUpdate].
-    mediaTypeBodies = List.unmodifiable(
-        appModelNoUpdate.mediaTypes.values.map((mediaType) => mediaType.home));
-    navBarItems = List.unmodifiable(
-      appModelNoUpdate.mediaTypes.values.map(
-        (mediaType) => BottomNavigationBarItem(
-          activeIcon: Icon(mediaType.icon),
-          icon: Icon(mediaType.outlinedIcon),
-          label: t[mediaType.uniqueKey],
-        ),
-      ),
-    );
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       appModel.populateDefaultMapping(appModel.targetLanguage);
@@ -103,7 +82,6 @@ class _HomePageState extends BasePageState<HomePage>
         body: SafeArea(
           child: buildBody(),
         ),
-        bottomNavigationBar: buildBottomNavigationBar(),
       ),
     );
   }
@@ -117,48 +95,9 @@ class _HomePageState extends BasePageState<HomePage>
     );
   }
 
+  /// The home body is the library (book shelf) view from the Reader source.
   Widget buildBody() {
-    return IndexedStack(
-      index: currentHomeTabIndex,
-      children: mediaTypeBodies,
-    );
-  }
-
-  Widget? buildBottomNavigationBar() {
-    return BottomNavigationBar(
-      onTap: switchTab,
-      currentIndex: currentHomeTabIndex,
-      items: navBarItems,
-      selectedFontSize: textTheme.labelSmall!.fontSize!,
-      unselectedFontSize: textTheme.labelSmall!.fontSize!,
-    );
-  }
-
-  void switchTab(int index) async {
-    MediaType mediaType = appModelNoUpdate.mediaTypes.values.toList()[index];
-    if (index == currentHomeTabIndex) {
-      mediaType.floatingSearchBarController.close();
-
-      if (mediaType.scrollController.hasClients) {
-        if (mediaType.scrollController.offset > 5000) {
-          mediaType.scrollController.jumpTo(0);
-        } else {
-          mediaType.scrollController.animateTo(
-            0,
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeInOut,
-          );
-        }
-      }
-    } else {
-      await appModel.setCurrentHomeTabIndex(index);
-      setState(() {});
-
-      if (mediaType is DictionaryMediaType && appModel.shouldRefreshTabs) {
-        appModel.shouldRefreshTabs = false;
-        mediaType.refreshTab();
-      }
-    }
+    return const HomeReaderPage();
   }
 
   Widget? buildLeading() {
@@ -195,17 +134,28 @@ class _HomePageState extends BasePageState<HomePage>
 
   List<Widget> buildActions() {
     return [
+      buildDictionarySearchButton(),
       buildCreatorButton(),
       buildShowMenuButton(),
     ];
   }
 
-  Widget buildResumeButton() {
+  Widget buildDictionarySearchButton() {
     return JidoujishoIconButton(
-      tooltip: t.resume_last_media,
-      icon: Icons.update,
-      enabled: false,
-      onTap: resumeAction,
+      tooltip: t.dictionaries,
+      icon: Icons.search,
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (context) => Scaffold(
+              appBar: AppBar(
+                title: Text(t.dictionaries),
+              ),
+              body: const SafeArea(child: HomeDictionaryPage()),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -261,8 +211,6 @@ class _HomePageState extends BasePageState<HomePage>
       ),
     );
   }
-
-  void resumeAction() {}
 
   void openMenu(TapDownDetails details) async {
     RelativeRect position = RelativeRect.fromLTRB(
