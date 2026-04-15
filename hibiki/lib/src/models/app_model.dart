@@ -38,6 +38,7 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
+import 'package:hibiki/src/media/audiobook/srt_book_model.dart';
 
 /// Schemas used in Isar database.
 final List<CollectionSchema> globalSchemas = [
@@ -53,6 +54,7 @@ final List<CollectionSchema> globalSchemas = [
   SearchHistoryItemSchema,
   AudiobookSchema,
   AudioCueSchema,
+  SrtBookSchema,
 ];
 
 /// A list of fields that the app will support at runtime.

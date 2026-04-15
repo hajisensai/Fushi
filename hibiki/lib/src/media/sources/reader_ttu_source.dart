@@ -13,6 +13,8 @@ import 'package:hibiki/language.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
+import 'package:hibiki/src/media/audiobook/srt_import_dialog.dart';
 import 'package:hibiki/utils.dart';
 
 /// A global [Provider] for serving a local ッツ Ebook Reader.
@@ -142,6 +144,11 @@ class ReaderTtuSource extends ReaderMediaSource {
     required AppModel appModel,
   }) {
     return [
+      buildSrtImportButton(
+        context: context,
+        ref: ref,
+        appModel: appModel,
+      ),
       buildTweaksButton(
         context: context,
         ref: ref,
@@ -158,6 +165,30 @@ class ReaderTtuSource extends ReaderMediaSource {
         appModel: appModel,
       ),
     ];
+  }
+
+  /// Opens [SrtImportDialog] to import a standalone SRT audiobook.
+  Widget buildSrtImportButton({
+    required BuildContext context,
+    required WidgetRef ref,
+    required AppModel appModel,
+  }) {
+    return FloatingSearchBarAction(
+      showIfOpened: true,
+      child: JidoujishoIconButton(
+        size: Theme.of(context).textTheme.titleLarge?.fontSize,
+        tooltip: t.srt_import,
+        icon: Icons.subtitles_outlined,
+        onTap: () async {
+          await showDialog(
+            context: context,
+            builder: (_) => SrtImportDialog(
+              repo: SrtBookRepository(appModel.database),
+            ),
+          );
+        },
+      ),
+    );
   }
 
   /// Allows user to close the floating search bar of a media type tab page
