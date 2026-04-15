@@ -91,11 +91,7 @@ class _SrtImportDialogState extends State<SrtImportDialog> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _pickRow(
-          label: t.srt_import_pick_srt,
-          value: _srtPath != null ? _basename(_srtPath!) : null,
-          onTap: _pickSrt,
-        ),
+        _subtitleRow(),
         const SizedBox(height: 8),
         _audioSourceRow(),
         const SizedBox(height: 12),
@@ -120,6 +116,41 @@ class _SrtImportDialogState extends State<SrtImportDialog> {
           const SizedBox(height: 16),
           const LinearProgressIndicator(),
         ],
+      ],
+    );
+  }
+
+  /// 字幕文件行：标签 + [选目录扫描] [选文件] 两个按钮。
+  Widget _subtitleRow() {
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(t.srt_import_pick_srt, style: const TextStyle(fontSize: 13)),
+              if (_srtPath != null)
+                Text(
+                  _basename(_srtPath!),
+                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+            ],
+          ),
+        ),
+        // 扫描目录按钮
+        IconButton(
+          icon: const Icon(Icons.folder_open, size: 20),
+          tooltip: t.srt_import_pick_srt_dir,
+          onPressed: _pickSrtFromFolder,
+        ),
+        // 直接选文件按钮
+        IconButton(
+          icon: const Icon(Icons.subtitles, size: 20),
+          tooltip: t.srt_import_pick_srt,
+          onPressed: _pickSrt,
+        ),
       ],
     );
   }
@@ -170,41 +201,6 @@ class _SrtImportDialogState extends State<SrtImportDialog> {
     );
   }
 
-  Widget _pickRow({
-    required String label,
-    required String? value,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(4),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(label, style: const TextStyle(fontSize: 13)),
-                  if (value != null)
-                    Text(
-                      value,
-                      style:
-                          const TextStyle(fontSize: 11, color: Colors.grey),
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
-                    ),
-                ],
-              ),
-            ),
-            const Icon(Icons.chevron_right, size: 18),
-          ],
-        ),
-      ),
-    );
-  }
-
   // ── 文件/目录选择 ────────────────────────────────────────────────────────────
 
   Future<void> _pickSrt() async {
@@ -221,6 +217,69 @@ class _SrtImportDialogState extends State<SrtImportDialog> {
               .replaceAll(
                   RegExp(r'\.(srt|lrc|vtt|ass|ssa)$',
                       caseSensitive: false),
+                  '');
+        }
+      });
+    }
+  }
+
+  /// 字幕目录扫描：递归扫描选中目录内的字幕文件，单文件自动选，多文件弹窗让用户挑选。
+  Future<void> _pickSrtFromFolder() async {
+    final String? dir = await FilePicker.platform.getDirectoryPath();
+    if (dir == null || !mounted) return;
+
+    final directory = Directory(dir);
+    if (!directory.existsSync()) {
+      Fluttertoast.showToast(msg: t.srt_no_subtitle_files);
+      return;
+    }
+
+    const subtitleExts = ['.srt', '.lrc', '.vtt', '.ass', '.ssa'];
+    final files = directory
+        .listSync(recursive: true)
+        .whereType<File>()
+        .where((f) {
+          final lower = f.path.toLowerCase();
+          return subtitleExts.any(lower.endsWith);
+        })
+        .toList()
+      ..sort((a, b) => a.path.compareTo(b.path));
+
+    if (files.isEmpty) {
+      Fluttertoast.showToast(msg: t.srt_no_subtitle_files);
+      return;
+    }
+
+    String? chosen;
+    if (files.length == 1) {
+      chosen = files.first.path;
+    } else {
+      // 多个字幕文件时弹窗让用户选择
+      chosen = await showDialog<String>(
+        context: context,
+        builder: (ctx) => SimpleDialog(
+          title: Text(t.srt_pick_subtitle_file),
+          children: [
+            for (final f in files)
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(ctx, f.path),
+                child: Text(
+                  _basename(f.path),
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ),
+          ],
+        ),
+      );
+    }
+
+    if (chosen != null && mounted) {
+      setState(() {
+        _srtPath = chosen;
+        if (_titleCtrl.text.isEmpty) {
+          _titleCtrl.text = _basename(_srtPath!)
+              .replaceAll(
+                  RegExp(r'\.(srt|lrc|vtt|ass|ssa)$', caseSensitive: false),
                   '');
         }
       });
