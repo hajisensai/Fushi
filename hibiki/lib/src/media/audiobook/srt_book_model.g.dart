@@ -91,7 +91,12 @@ int _srtBookEstimateSize(
   Map<Type, List<int>> allOffsets,
 ) {
   var bytesCount = offsets.last;
-  bytesCount += 3 + object.audioRoot.length * 3;
+  {
+    final value = object.audioRoot;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
   {
     final value = object.author;
     if (value != null) {
@@ -133,7 +138,7 @@ SrtBook _srtBookDeserialize(
 ) {
   final object = SrtBook();
   object.id = id;
-  object.audioRoot = reader.readString(offsets[0]);
+  object.audioRoot = reader.readStringOrNull(offsets[0]);
   object.author = reader.readStringOrNull(offsets[1]);
   object.coverPath = reader.readStringOrNull(offsets[2]);
   object.importedAt = reader.readLong(offsets[3]);
@@ -151,7 +156,7 @@ P _srtBookDeserializeProp<P>(
 ) {
   switch (propertyId) {
     case 0:
-      return (reader.readString(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 1:
       return (reader.readStringOrNull(offset)) as P;
     case 2:
@@ -661,7 +666,7 @@ extension SrtBookQueryProperty
     });
   }
 
-  QueryBuilder<SrtBook, String, QQueryOperations> audioRootProperty() {
+  QueryBuilder<SrtBook, String?, QQueryOperations> audioRootProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'audioRoot');
     });

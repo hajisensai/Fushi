@@ -94,24 +94,42 @@ class _SrtReaderPageState extends ConsumerState<SrtReaderPage> {
     if (_audioInitializing) return;
     _audioInitializing = true;
 
-    final dir = Directory(widget.book.audioRoot);
-    if (!dir.existsSync()) {
+    final List<File> files;
+
+    final List<String>? audioPaths = widget.book.audioPaths;
+    final String? audioRoot = widget.book.audioRoot;
+
+    if (audioPaths != null && audioPaths.isNotEmpty) {
+      // ── files 模式：直接使用用户选择的文件路径列表 ───────────────────────────
+      files = audioPaths
+          .map(File.new)
+          .where((f) => f.existsSync())
+          .toList();
+    } else if (audioRoot != null) {
+      // ── folder 模式：递归扫描目录中的音频文件 ──────────────────────────────
+      final dir = Directory(audioRoot);
+      if (!dir.existsSync()) {
+        _audioInitializing = false;
+        return;
+      }
+      files = dir
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((f) {
+            final ext = f.path.toLowerCase();
+            return ext.endsWith('.mp3') ||
+                ext.endsWith('.m4a') ||
+                ext.endsWith('.ogg') ||
+                ext.endsWith('.aac') ||
+                ext.endsWith('.wav') ||
+                ext.endsWith('.mp4');
+          })
+          .toList()
+        ..sort((a, b) => a.path.compareTo(b.path));
+    } else {
       _audioInitializing = false;
       return;
     }
-
-    final files = dir
-        .listSync()
-        .whereType<File>()
-        .where((f) {
-          final ext = f.path.toLowerCase();
-          return ext.endsWith('.mp3') ||
-              ext.endsWith('.m4a') ||
-              ext.endsWith('.ogg') ||
-              ext.endsWith('.aac');
-        })
-        .toList()
-      ..sort((a, b) => a.path.compareTo(b.path));
 
     if (files.isEmpty) {
       _audioInitializing = false;
@@ -122,7 +140,7 @@ class _SrtReaderPageState extends ConsumerState<SrtReaderPage> {
     // 临时 Audiobook 供 AudiobookPlayerController 使用（只需 bookUid 字段）
     final fakeBook = Audiobook()
       ..bookUid = widget.book.uid
-      ..audioRoot = widget.book.audioRoot
+      ..audioRoot = widget.book.audioRoot ?? ''
       ..alignmentFormat = 'srt'
       ..alignmentPath = widget.book.srtPath;
 

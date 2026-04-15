@@ -21,8 +21,11 @@ class SrtBook {
   /// 作者（可选）。
   String? author;
 
-  /// 音频文件目录（本地绝对路径）。
-  late String audioRoot;
+  /// 音频文件目录（本地绝对路径）。folder 模式下非 null，files 模式下为 null。
+  String? audioRoot;
+
+  /// 手动选择的音频文件路径列表。files 模式下非 null，folder 模式下为 null。
+  List<String>? audioPaths;
 
   /// SRT 文件路径（本地绝对路径）。
   late String srtPath;
