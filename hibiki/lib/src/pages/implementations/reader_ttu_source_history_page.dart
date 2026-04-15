@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:local_assets_server/local_assets_server.dart';
 import 'package:transparent_image/transparent_image.dart';
 import 'package:spaces/spaces.dart';
@@ -11,7 +12,6 @@ import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_model.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
-import 'package:hibiki/src/pages/implementations/srt_reader_page.dart';
 import 'package:hibiki/utils.dart';
 
 /// A page for [ReaderTtuSource]'s tab body content when selected as a source
@@ -253,10 +253,30 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
   }
 
   void _openSrtBook(SrtBook book) {
+    if (book.ttuBookId <= 0) {
+      Fluttertoast.showToast(msg: t.srt_epub_not_ready);
+      return;
+    }
+    final int port = ReaderTtuSource.instance
+        .getPortForLanguage(appModel.targetLanguage);
+    final String url =
+        'http://localhost:$port/b.html?id=${book.ttuBookId}&?title=${Uri.encodeComponent(book.title)}';
     Navigator.push(
       context,
       MaterialPageRoute<void>(
-        builder: (_) => SrtReaderPage(book: book),
+        builder: (_) => ReaderTtuSourcePage(
+          item: MediaItem(
+            mediaIdentifier: url,
+            title: book.title,
+            mediaTypeIdentifier:
+                ReaderTtuSource.instance.mediaType.uniqueKey,
+            mediaSourceIdentifier: ReaderTtuSource.instance.uniqueKey,
+            position: 0,
+            duration: 1,
+            canDelete: false,
+            canEdit: true,
+          ),
+        ),
       ),
     );
   }

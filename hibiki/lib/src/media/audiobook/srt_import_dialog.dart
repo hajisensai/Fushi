@@ -1,9 +1,13 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
+import 'package:hibiki/src/media/audiobook/cues_to_epub.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_model.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
 import 'package:hibiki/src/media/audiobook/ass_parser.dart';
@@ -21,9 +25,17 @@ import 'package:hibiki/utils.dart';
 /// - Folder：选择目录，运行时递归扫描其中的音频文件（支持嵌套子目录）。
 /// - Files：直接选择一个或多个音频文件，路径写死在 [SrtBook.audioPaths] 中。
 class SrtImportDialog extends StatefulWidget {
-  const SrtImportDialog({required this.repo, super.key});
+  const SrtImportDialog({
+    required this.repo,
+    required this.serverPort,
+    super.key,
+  });
 
   final SrtBookRepository repo;
+
+  /// ッツ Ebook Reader local server port.
+  /// Used to inject the generated book into the reader's IndexedDB.
+  final int serverPort;
 
   @override
   State<SrtImportDialog> createState() => _SrtImportDialogState();
@@ -341,29 +353,42 @@ class _SrtImportDialogState extends State<SrtImportDialog> {
 
     try {
       final String uid = 'srtbook_${DateTime.now().millisecondsSinceEpoch}';
+      final String authorText = _authorCtrl.text.trim();
 
+      // 1. 解析字幕 cues
+      final List<AudioCue> cues = _parseCues(File(_srtPath!), uid);
+
+      // 2. 生成 ttu IndexedDB payload 并注入
+      int ttuBookId = 0;
+      try {
+        final TtuIdbPayload payload = CuesToEpub.buildIdbPayload(
+          title: title,
+          cues: cues,
+        );
+        ttuBookId = await _injectIntoTtuIdb(payload);
+      } catch (e) {
+        debugPrint('SrtImportDialog: ttu IDB inject failed: $e');
+        // 非致命错误，继续保存书籍（ttuBookId 保持 0）
+      }
+
+      // 3. 构建并保存 SrtBook
       final SrtBook book = SrtBook()
         ..uid = uid
         ..title = title
         ..srtPath = _srtPath!
-        ..importedAt = DateTime.now().millisecondsSinceEpoch;
+        ..importedAt = DateTime.now().millisecondsSinceEpoch
+        ..ttuBookId = ttuBookId;
 
-      // 根据模式设置音频来源
       if (_audioPaths != null && _audioPaths!.isNotEmpty) {
         book.audioPaths = _audioPaths;
       } else {
         book.audioRoot = _audioDir;
       }
-
-      final String authorText = _authorCtrl.text.trim();
       if (authorText.isNotEmpty) {
         book.author = authorText;
       }
 
       await widget.repo.save(book);
-
-      final List<AudioCue> cues =
-          _parseCues(File(_srtPath!), uid);
       await widget.repo.saveCues(uid: uid, cues: cues);
 
       if (mounted) {
@@ -379,6 +404,81 @@ class _SrtImportDialogState extends State<SrtImportDialog> {
       if (mounted) {
         setState(() => _importing = false);
       }
+    }
+  }
+
+  /// Injects [payload] into the ッツ Ebook Reader's "books" IndexedDB via a
+  /// headless WebView loaded at the ttu server origin.
+  ///
+  /// Returns the auto-incremented IndexedDB key assigned to the new entry,
+  /// or throws if the injection fails or times out.
+  Future<int> _injectIntoTtuIdb(TtuIdbPayload payload) async {
+    final String jsonStr = jsonEncode(payload.toJson());
+    final String js = '''
+(async function() {
+  const payload = $jsonStr;
+  const id = await new Promise((resolve, reject) => {
+    const req = indexedDB.open('books');
+    req.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains('data'))
+        db.createObjectStore('data', {autoIncrement: true});
+      if (!db.objectStoreNames.contains('bookmark'))
+        db.createObjectStore('bookmark', {autoIncrement: true});
+      if (!db.objectStoreNames.contains('lastItem'))
+        db.createObjectStore('lastItem');
+    };
+    req.onsuccess = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains('data')) {
+        reject('data_store_missing'); return;
+      }
+      const tx = db.transaction(['data'], 'readwrite');
+      const store = tx.objectStore('data');
+      const put = store.put(payload);
+      put.onsuccess = (e) => resolve(e.target.result);
+      put.onerror = (e) => reject(String(e.target.error));
+    };
+    req.onerror = (e) => reject(String(e.target.error));
+  });
+  console.log(JSON.stringify({messageType: 'srt_idb_ok', id: id}));
+})().catch(err => {
+  console.log(JSON.stringify({messageType: 'srt_idb_err', error: String(err)}));
+});
+''';
+
+    final Completer<int> completer = Completer<int>();
+    HeadlessInAppWebView? webView;
+    webView = HeadlessInAppWebView(
+      initialUrlRequest: URLRequest(
+        url: WebUri('http://localhost:${widget.serverPort}/'),
+      ),
+      initialSettings: InAppWebViewSettings(
+        allowFileAccessFromFileURLs: true,
+        allowUniversalAccessFromFileURLs: true,
+      ),
+      onLoadStop: (controller, url) async {
+        await controller.evaluateJavascript(source: js);
+      },
+      onConsoleMessage: (controller, message) {
+        try {
+          final Map<String, dynamic> msg =
+              jsonDecode(message.message) as Map<String, dynamic>;
+          if (completer.isCompleted) return;
+          if (msg['messageType'] == 'srt_idb_ok') {
+            completer.complete((msg['id'] as num).toInt());
+          } else if (msg['messageType'] == 'srt_idb_err') {
+            completer.completeError(msg['error'] ?? 'idb_error');
+          }
+        } catch (_) {}
+      },
+    );
+
+    try {
+      await webView.run();
+      return await completer.future.timeout(const Duration(seconds: 15));
+    } finally {
+      await webView.dispose();
     }
   }
 

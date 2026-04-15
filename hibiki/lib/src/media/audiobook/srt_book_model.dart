@@ -35,4 +35,7 @@ class SrtBook {
 
   /// 导入时间戳（milliseconds since epoch），用于书架排序。
   late int importedAt;
+
+  /// ッツ Ebook Reader IndexedDB 中的 book ID（0 表示尚未导入 ttu）。
+  int ttuBookId = 0;
 }

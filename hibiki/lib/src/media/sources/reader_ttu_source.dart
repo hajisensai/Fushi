@@ -184,6 +184,8 @@ class ReaderTtuSource extends ReaderMediaSource {
             context: context,
             builder: (_) => SrtImportDialog(
               repo: SrtBookRepository(appModel.database),
+              serverPort:
+                  ReaderTtuSource.instance.getPortForLanguage(appModel.targetLanguage),
             ),
           );
           if (imported == true) {

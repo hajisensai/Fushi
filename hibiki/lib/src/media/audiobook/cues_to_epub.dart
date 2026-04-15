@@ -292,6 +292,75 @@ class CuesToEpub {
         '</html>\n';
   }
 
+  // ── ttu IndexedDB payload ────────────────────────────────────────────────
+
+  /// Generates the ッツ Ebook Reader IndexedDB payload for [cues].
+  ///
+  /// The returned [TtuIdbPayload] can be injected into the ttu reader's
+  /// "books" IndexedDB via JavaScript to make the book immediately accessible
+  /// without a manual file-picker import.
+  ///
+  /// The `elementHtml` follows the ttu reader's internal format:
+  /// each chapter is a `<div id="ttu-chapter-N">` with paragraph/span content.
+  /// The `sections` array matches ttu's navigation structure.
+  static TtuIdbPayload buildIdbPayload({
+    required String title,
+    required List<AudioCue> cues,
+  }) {
+    final List<List<AudioCue>> chapters = _splitChapters(cues);
+    final StringBuffer elementHtml = StringBuffer();
+    final List<TtuSection> sections = [];
+    int totalChars = 0;
+
+    for (int i = 0; i < chapters.length; i++) {
+      final String chapterRef = 'ttu-chapter-${i + 1}';
+      final String chapterLabel =
+          chapters.length > 1 ? 'Chapter ${i + 1}' : title;
+      final StringBuffer body = StringBuffer();
+
+      final List<List<AudioCue>> paragraphs = _groupParagraphs(chapters[i]);
+      int chapterChars = 0;
+      for (final List<AudioCue> para in paragraphs) {
+        body.write('<p>');
+        for (final AudioCue cue in para) {
+          final String start = (cue.startMs / 1000).toStringAsFixed(3);
+          final String end = (cue.endMs / 1000).toStringAsFixed(3);
+          body.write(
+            '<span data-cue-id="${cue.sentenceIndex}"'
+            ' data-start="$start"'
+            ' data-end="$end">${_esc(cue.text)}</span>',
+          );
+          chapterChars += cue.text.length;
+        }
+        body.write('</p>');
+      }
+
+      sections.add(TtuSection(
+        reference: chapterRef,
+        charactersWeight: chapterChars == 0 ? 1 : chapterChars,
+        label: chapterLabel,
+        startCharacter: totalChars,
+      ));
+      totalChars += chapterChars;
+
+      elementHtml
+        ..write('<div id="$chapterRef">')
+        ..write('<h1>${_esc(chapterLabel)}</h1>')
+        ..write(body.toString())
+        ..write('</div>');
+    }
+
+    return TtuIdbPayload(
+      title: title,
+      styleSheet:
+          'body{margin:1em 1.5em;line-height:1.8;}p{margin:0.5em 0;}',
+      elementHtml: elementHtml.toString(),
+      characters: totalChars == 0 ? 1 : totalChars,
+      sections: sections,
+      lastBookModified: DateTime.now().millisecondsSinceEpoch,
+    );
+  }
+
   // ── XML escaping ──────────────────────────────────────────────────────────
 
   static String _esc(String s) => s
@@ -442,6 +511,73 @@ class _ZipEntry {
   final String name;
   final Uint8List data;
   final bool store;
+}
+
+// ── ttu IndexedDB data classes ───────────────────────────────────────────────
+
+/// A section entry for the ッツ Ebook Reader's IndexedDB navigation structure.
+class TtuSection {
+  const TtuSection({
+    required this.reference,
+    required this.charactersWeight,
+    required this.label,
+    required this.startCharacter,
+  });
+
+  /// Element ID of the chapter div, e.g. `"ttu-chapter-1"`.
+  final String reference;
+
+  /// Approximate character count for this section (used for progress math).
+  final int charactersWeight;
+
+  /// Display label shown in the ttu reader's chapter navigation.
+  final String label;
+
+  /// Cumulative character count before this section (0-based).
+  final int startCharacter;
+
+  Map<String, dynamic> toJson() => {
+        'reference': reference,
+        'charactersWeight': charactersWeight,
+        'label': label,
+        'startCharacter': startCharacter,
+      };
+}
+
+/// Payload to be inserted into the ッツ Ebook Reader's "books" IndexedDB.
+class TtuIdbPayload {
+  const TtuIdbPayload({
+    required this.title,
+    required this.styleSheet,
+    required this.elementHtml,
+    required this.characters,
+    required this.sections,
+    required this.lastBookModified,
+  });
+
+  final String title;
+  final String styleSheet;
+
+  /// All chapters concatenated as `<div id="ttu-chapter-N">...</div>`.
+  final String elementHtml;
+
+  /// Total character count (used for reading-progress percentage).
+  final int characters;
+
+  final List<TtuSection> sections;
+  final int lastBookModified;
+
+  Map<String, dynamic> toJson() => {
+        'title': title,
+        'hasThumb': false,
+        'styleSheet': styleSheet,
+        'elementHtml': elementHtml,
+        'blobs': <String, dynamic>{},
+        'characters': characters,
+        'sections': sections.map((s) => s.toJson()).toList(),
+        'lastBookModified': lastBookModified,
+        'lastBookOpen': 0,
+      };
 }
 
 class _LocalRecord {

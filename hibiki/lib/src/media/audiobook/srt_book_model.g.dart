@@ -56,6 +56,16 @@ const SrtBookSchema = CollectionSchema(
       name: r'uid',
       type: IsarType.string,
     ),
+    r'audioPaths': PropertySchema(
+      id: 7,
+      name: r'audioPaths',
+      type: IsarType.stringList,
+    ),
+    r'ttuBookId': PropertySchema(
+      id: 8,
+      name: r'ttuBookId',
+      type: IsarType.long,
+    ),
   },
   estimateSize: _srtBookEstimateSize,
   serialize: _srtBookSerialize,
@@ -112,6 +122,15 @@ int _srtBookEstimateSize(
   bytesCount += 3 + object.srtPath.length * 3;
   bytesCount += 3 + object.title.length * 3;
   bytesCount += 3 + object.uid.length * 3;
+  {
+    final list = object.audioPaths;
+    if (list != null) {
+      bytesCount += 3 + list.length * 3;
+      for (var i = 0; i < list.length; i++) {
+        bytesCount += list[i].length * 3;
+      }
+    }
+  }
   return bytesCount;
 }
 
@@ -128,6 +147,8 @@ void _srtBookSerialize(
   writer.writeString(offsets[4], object.srtPath);
   writer.writeString(offsets[5], object.title);
   writer.writeString(offsets[6], object.uid);
+  writer.writeStringList(offsets[7], object.audioPaths);
+  writer.writeLong(offsets[8], object.ttuBookId);
 }
 
 SrtBook _srtBookDeserialize(
@@ -145,6 +166,8 @@ SrtBook _srtBookDeserialize(
   object.srtPath = reader.readString(offsets[4]);
   object.title = reader.readString(offsets[5]);
   object.uid = reader.readString(offsets[6]);
+  object.audioPaths = reader.readStringList(offsets[7]);
+  object.ttuBookId = reader.readLongOrNull(offsets[8]) ?? 0;
   return object;
 }
 
@@ -169,6 +192,10 @@ P _srtBookDeserializeProp<P>(
       return (reader.readString(offset)) as P;
     case 6:
       return (reader.readString(offset)) as P;
+    case 7:
+      return (reader.readStringList(offset)) as P;
+    case 8:
+      return (reader.readLongOrNull(offset) ?? 0) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
   }
