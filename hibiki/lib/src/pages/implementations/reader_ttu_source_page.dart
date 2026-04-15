@@ -18,6 +18,7 @@ import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_controller.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
 import 'package:hibiki/src/media/audiobook/srt_parser.dart';
 import 'package:hibiki/utils.dart';
@@ -1409,94 +1410,9 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           left: 0,
           right: 0,
           bottom: 0,
-          child: _AudiobookPlayBar(controller: ctrl),
+          child: AudiobookPlayBar(controller: ctrl),
         );
       },
-    );
-  }
-}
-
-/// 有声书播放控制条（紧凑型，固定于阅读器底部）。
-class _AudiobookPlayBar extends StatelessWidget {
-  const _AudiobookPlayBar({required this.controller});
-
-  final AudiobookPlayerController controller;
-
-  @override
-  Widget build(BuildContext context) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
-
-    return Material(
-      color: colors.surface.withAlpha(230),
-      elevation: 8,
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: Row(
-            children: [
-              // 后退 10s
-              IconButton(
-                icon: const Icon(Icons.replay_10),
-                iconSize: 22,
-                onPressed: () => controller.seekRelative(-10),
-                tooltip: '-10s',
-              ),
-              // 播放/暂停
-              IconButton(
-                icon: Icon(
-                  controller.isPlaying ? Icons.pause : Icons.play_arrow,
-                ),
-                iconSize: 28,
-                onPressed: controller.togglePlayPause,
-              ),
-              // 前进 10s
-              IconButton(
-                icon: const Icon(Icons.forward_10),
-                iconSize: 22,
-                onPressed: () => controller.seekRelative(10),
-                tooltip: '+10s',
-              ),
-              const SizedBox(width: 4),
-              // 当前句文本（滚动显示）
-              Expanded(
-                child: Text(
-                  controller.currentCue?.text ?? '',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ),
-              // 倍速选择
-              _SpeedButton(controller: controller),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// 倍速切换按钮（0.75 → 1.0 → 1.25 → 1.5 循环）。
-class _SpeedButton extends StatelessWidget {
-  const _SpeedButton({required this.controller});
-
-  final AudiobookPlayerController controller;
-
-  static const List<double> _speeds = [0.75, 1.0, 1.25, 1.5];
-
-  @override
-  Widget build(BuildContext context) {
-    final double current = controller.speed;
-    final int idx = _speeds.indexWhere((s) => (s - current).abs() < 0.01);
-    final double next = _speeds[(idx + 1) % _speeds.length];
-
-    return TextButton(
-      onPressed: () => controller.setSpeed(next),
-      child: Text(
-        '${current.toStringAsFixed(2)}x',
-        style: Theme.of(context).textTheme.labelSmall,
-      ),
     );
   }
 }

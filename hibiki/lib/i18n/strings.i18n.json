@@ -445,5 +445,7 @@
     "srt_import_title_hint": "Book title",
     "srt_import_author_hint": "Author (optional)",
     "srt_import_success": "SRT book imported",
-    "srt_import_error": "Import failed"
+    "srt_import_error": "Import failed",
+    "srt_no_cues": "No subtitles found",
+    "srt_no_audio_files": "No audio files in selected directory"
   }
