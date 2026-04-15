@@ -145,6 +145,8 @@ dev_dependencies:
   dart_mappable_builder: ^4.0.0-dev.2
   dependency_validator: ^3.0.0
   flutter_lints: ^2.0.1
+  flutter_test:
+    sdk: flutter
   isar_generator: ^3.1.0+1
   
 flutter_icons:
