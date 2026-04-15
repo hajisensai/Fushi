@@ -19,7 +19,7 @@ extension GetAudiobookCollection on Isar {
 
 const AudiobookSchema = CollectionSchema(
   name: r'Audiobook',
-  id: 5678901234567890123,
+  id: 7732003324708922976,
   properties: {
     r'alignmentFormat': PropertySchema(
       id: 0,
@@ -49,7 +49,7 @@ const AudiobookSchema = CollectionSchema(
   idName: r'id',
   indexes: {
     r'bookUid': IndexSchema(
-      id: 3876543210987654321,
+      id: 1847233275350761740,
       name: r'bookUid',
       unique: true,
       replace: true,
@@ -520,7 +520,7 @@ extension GetAudioCueCollection on Isar {
 
 const AudioCueSchema = CollectionSchema(
   name: r'AudioCue',
-  id: 1234567890123456789,
+  id: -1488682833208165829,
   properties: {
     r'audioFileIndex': PropertySchema(
       id: 0,
@@ -570,7 +570,7 @@ const AudioCueSchema = CollectionSchema(
   idName: r'id',
   indexes: {
     r'bookUid': IndexSchema(
-      id: 2345678901234567890,
+      id: 1847233275350761740,
       name: r'bookUid',
       unique: false,
       replace: false,
@@ -583,7 +583,7 @@ const AudioCueSchema = CollectionSchema(
       ],
     ),
     r'chapterHref': IndexSchema(
-      id: 3456789012345678901,
+      id: -3374474236128072918,
       name: r'chapterHref',
       unique: false,
       replace: false,
