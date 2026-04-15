@@ -9,6 +9,9 @@ import 'package:spaces/spaces.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
+import 'package:hibiki/src/media/audiobook/srt_book_model.dart';
+import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
+import 'package:hibiki/src/pages/implementations/srt_reader_page.dart';
 import 'package:hibiki/utils.dart';
 
 /// A page for [ReaderTtuSource]'s tab body content when selected as a source
@@ -102,10 +105,186 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
   }
 
   Widget buildBody(List<MediaItem> books) {
-    if (books.isEmpty) {
+    final List<SrtBook> srtBooks =
+        SrtBookRepository(appModel.database).listAll();
+    if (books.isEmpty && srtBooks.isEmpty) {
       return buildPlaceholder();
-    } else {
-      return buildHistory(books);
+    }
+    return RawScrollbar(
+      thumbVisibility: true,
+      thickness: 3,
+      controller: mediaType.scrollController,
+      child: CustomScrollView(
+        controller: mediaType.scrollController,
+        physics: const AlwaysScrollableScrollPhysics(
+          parent: BouncingScrollPhysics(),
+        ),
+        slivers: [
+          // spacing for the floating search bar
+          const SliverToBoxAdapter(child: SizedBox(height: 48)),
+          // ── SRT section ───────────────────────────────────────────────────
+          if (srtBooks.isNotEmpty) ...[
+            SliverToBoxAdapter(child: _buildSectionHeader(t.srt_books_section)),
+            SliverPadding(
+              padding: EdgeInsets.zero,
+              sliver: SliverGrid.builder(
+                gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: 150,
+                  childAspectRatio: mediaSource.aspectRatio,
+                ),
+                itemCount: srtBooks.length,
+                itemBuilder: (_, i) => _buildSrtCard(srtBooks[i]),
+              ),
+            ),
+          ],
+          // ── EPUB section ──────────────────────────────────────────────────
+          if (books.isNotEmpty) ...[
+            if (srtBooks.isNotEmpty)
+              SliverToBoxAdapter(child: _buildSectionHeader('EPUB')),
+            SliverGrid.builder(
+              gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                maxCrossAxisExtent: 150,
+                childAspectRatio: mediaSource.aspectRatio,
+              ),
+              itemCount: books.length,
+              itemBuilder: (_, i) => buildMediaItem(books[i]),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(String label) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 2),
+      child: Text(
+        label,
+        style: textTheme.labelMedium?.copyWith(
+          color: theme.colorScheme.primary,
+          fontWeight: FontWeight.bold,
+          letterSpacing: 0.8,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSrtCard(SrtBook book) {
+    return GestureDetector(
+      onTap: () => _openSrtBook(book),
+      onLongPress: () => _confirmDeleteSrtBook(book),
+      child: Container(
+        padding: Spacing.of(context).insets.all.normal,
+        child: Stack(
+          alignment: Alignment.bottomLeft,
+          children: [
+            ColoredBox(
+              color: Colors.grey.shade800.withValues(alpha: 0.3),
+              child: AspectRatio(
+                aspectRatio: mediaSource.aspectRatio,
+                child: _buildSrtCover(book),
+              ),
+            ),
+            LayoutBuilder(builder: (context, constraints) {
+              return Container(
+                alignment: Alignment.center,
+                padding: const EdgeInsets.fromLTRB(2, 2, 2, 4),
+                height: constraints.maxHeight * 0.25,
+                width: double.maxFinite,
+                color: Colors.black.withValues(alpha: 0.6),
+                child: Text(
+                  book.title,
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 2,
+                  textAlign: TextAlign.center,
+                  softWrap: true,
+                  style: textTheme.bodySmall!.copyWith(
+                    color: Colors.white,
+                    fontSize: textTheme.bodySmall!.fontSize! * 0.9,
+                  ),
+                ),
+              );
+            }),
+            // headphones badge
+            Positioned(
+              top: 4,
+              right: 4,
+              child: Container(
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.65),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Icon(
+                  Icons.subtitles_outlined,
+                  size: 14,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSrtCover(SrtBook book) {
+    if (book.coverPath != null && File(book.coverPath!).existsSync()) {
+      return FadeInImage(
+        key: UniqueKey(),
+        imageErrorBuilder: (_, __, ___) => _srtPlaceholderIcon(),
+        placeholder: MemoryImage(kTransparentImage),
+        image: FileImage(File(book.coverPath!)),
+        alignment: Alignment.topCenter,
+        fit: BoxFit.fitHeight,
+      );
+    }
+    return _srtPlaceholderIcon();
+  }
+
+  Widget _srtPlaceholderIcon() {
+    return Center(
+      child: Icon(
+        Icons.subtitles_outlined,
+        size: 40,
+        color: Colors.white.withValues(alpha: 0.4),
+      ),
+    );
+  }
+
+  void _openSrtBook(SrtBook book) {
+    Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => SrtReaderPage(book: book),
+      ),
+    );
+  }
+
+  Future<void> _confirmDeleteSrtBook(SrtBook book) async {
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(t.srt_delete_title),
+        content: Text(t.srt_delete_confirm(title: book.title)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(t.dialog_cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              t.dialog_delete,
+              style: TextStyle(color: theme.colorScheme.error),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await SrtBookRepository(appModel.database).delete(book.uid);
+      setState(() {});
     }
   }
 
