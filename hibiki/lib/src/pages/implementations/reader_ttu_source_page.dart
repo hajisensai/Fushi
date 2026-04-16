@@ -1667,9 +1667,31 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
 
     book.audioRoot = newDir;
     book.audioPaths = newPaths;
-    await repo.save(book);
+    debugPrint('[hibiki-audiobook] before save: uid=${book.uid} id=${book.id} '
+        'audioPaths=${book.audioPaths} audioRoot=${book.audioRoot}');
+    try {
+      await repo.save(book);
+    } catch (e, st) {
+      debugPrint('[hibiki-audiobook] save failed: $e\n$st');
+      Fluttertoast.showToast(msg: t.srt_audio_load_error);
+      return;
+    }
+
+    // 读回校验：保存后立刻重新查同一 uid，看 DB 实际保存了什么。
+    final SrtBook? reread = repo.findByUid(book.uid);
     debugPrint('[hibiki-audiobook] attached audio to SrtBook ${book.uid}: '
-        'paths=$newPaths root=$newDir');
+        'saved paths=$newPaths root=$newDir '
+        '-> reread audioPaths=${reread?.audioPaths} '
+        'audioRoot=${reread?.audioRoot} '
+        'ttuBookId=${reread?.ttuBookId}');
+
+    // 同时 dump 所有 SrtBook，看是否有同 ttuBookId 冲突
+    final List<SrtBook> all = repo.listAll();
+    for (final SrtBook b in all) {
+      debugPrint('[hibiki-audiobook]   DB entry: uid=${b.uid} '
+          'ttuBookId=${b.ttuBookId} '
+          'audioPaths=${b.audioPaths} audioRoot=${b.audioRoot}');
+    }
 
     if (mounted) {
       await _initAudiobookIfAvailable();
