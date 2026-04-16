@@ -167,12 +167,46 @@ window.__hoshiTick = function() {
 
   if (!target.loggedFirstTurn) {
     target.loggedFirstTurn = true;
+    var se = document.scrollingElement || document.documentElement;
+    var bodyStyle = getComputedStyle(document.body);
+    var seStyle = getComputedStyle(se);
+    var content = document.querySelector('.book-content') ||
+                  document.querySelector('[class*="book"]') ||
+                  document.body;
+    var contentStyle = getComputedStyle(content);
     console.log(JSON.stringify({
       'hibiki-message-type': 'highlightFirstTurn',
       'selector': target.selector,
       'direction': direction,
       'rect': {l: rect.left, t: rect.top, r: rect.right, b: rect.bottom},
-      'vp': {w: vpW, h: vpH}
+      'vp': {w: vpW, h: vpH},
+      'se': {
+        'scrollTop': se.scrollTop, 'scrollLeft': se.scrollLeft,
+        'scrollHeight': se.scrollHeight, 'scrollWidth': se.scrollWidth,
+        'clientHeight': se.clientHeight, 'clientWidth': se.clientWidth,
+        'overflow': seStyle.overflow, 'overflowX': seStyle.overflowX,
+        'overflowY': seStyle.overflowY
+      },
+      'body': {
+        'wmode': bodyStyle.writingMode,
+        'colCount': bodyStyle.columnCount,
+        'colWidth': bodyStyle.columnWidth,
+        'overflow': bodyStyle.overflow,
+        'scrollTop': document.body.scrollTop,
+        'scrollLeft': document.body.scrollLeft
+      },
+      'content': {
+        'tag': content.tagName + (content.className ? '.' + content.className : ''),
+        'wmode': contentStyle.writingMode,
+        'colCount': contentStyle.columnCount,
+        'colWidth': contentStyle.columnWidth,
+        'scrollTop': content.scrollTop,
+        'scrollLeft': content.scrollLeft,
+        'scrollHeight': content.scrollHeight,
+        'scrollWidth': content.scrollWidth,
+        'clientHeight': content.clientHeight,
+        'clientWidth': content.clientWidth
+      }
     }));
   }
   // 不用 scrollIntoView — 它会把 scroll 停在任意像素，破坏 ttu 分页边界
