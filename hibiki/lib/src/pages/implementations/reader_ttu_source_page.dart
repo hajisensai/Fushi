@@ -995,6 +995,29 @@ if (!window.__hibikiClickListenerRegistered) {
   window.__hibikiClickListenerRegistered = true;
   console.log('[hibiki] registering listeners');
   var __jidoTapStartX = 0, __jidoTapStartY = 0, __jidoLastTouchEnd = 0;
+  var __hibikiLastTurn = 0;
+
+  // Hoshi-style page turn via wheel event (matches volume-key path).
+  // direction: 'next' or 'prev'.
+  window.__hibikiTurnPage = function(direction) {
+    var now = Date.now();
+    if (now - __hibikiLastTurn < 200) return;
+    __hibikiLastTurn = now;
+    var sign = (direction === 'next') ? -1 : +1;
+    var evt = document.createEvent('MouseEvents');
+    evt.initEvent('wheel', true, true);
+    evt.deltaY = sign * 0.001;
+    document.body.dispatchEvent(evt);
+  };
+
+  // Edge tap zones: outer 25% on each side turns the page.
+  var __hibikiEdgeRatio = 0.25;
+  function __hibikiEdgeAction(x) {
+    var w = window.innerWidth;
+    if (x < w * __hibikiEdgeRatio) return 'prev';
+    if (x > w * (1 - __hibikiEdgeRatio)) return 'next';
+    return null;
+  }
 
   document.addEventListener('touchstart', function(e) {
     if (e.touches.length === 1) {
@@ -1004,13 +1027,32 @@ if (!window.__hibikiClickListenerRegistered) {
   }, {capture: true, passive: true});
 
   document.addEventListener('touchend', function(e) {
-    console.log('[hibiki] touchend touches=' + e.changedTouches.length + ' target=' + (e.target ? e.target.nodeName : 'null') + ' inBookContent=' + (e.target ? !!e.target.closest('.book-content') : false));
     if (e.changedTouches.length !== 1) return;
     var touch = e.changedTouches[0];
-    var dx = Math.abs(touch.clientX - __jidoTapStartX);
-    var dy = Math.abs(touch.clientY - __jidoTapStartY);
-    console.log('[hibiki] touchend dx=' + dx + ' dy=' + dy);
+    var dxSigned = touch.clientX - __jidoTapStartX;
+    var dySigned = touch.clientY - __jidoTapStartY;
+    var dx = Math.abs(dxSigned);
+    var dy = Math.abs(dySigned);
+
+    // Horizontal swipe → page turn.
+    if (dx > 50 && dx > dy * 1.5) {
+      __jidoLastTouchEnd = Date.now();
+      window.__hibikiTurnPage(dxSigned < 0 ? 'next' : 'prev');
+      return;
+    }
+
+    // Tap (small movement).
     if (dx > 15 || dy > 15) return;
+
+    // Edge tap → page turn (anywhere on screen, not just book-content).
+    var edge = __hibikiEdgeAction(touch.clientX);
+    if (edge) {
+      __jidoLastTouchEnd = Date.now();
+      window.__hibikiTurnPage(edge);
+      return;
+    }
+
+    // Middle tap → existing select-word behavior.
     if (!e.target.closest('.book-content')) return;
     __jidoLastTouchEnd = Date.now();
     tapToSelect({
@@ -1021,9 +1063,13 @@ if (!window.__hibikiClickListenerRegistered) {
   }, true);
 
   document.addEventListener('click', function(e) {
-    console.log('[hibiki] click target=' + (e.target ? e.target.nodeName : 'null'));
-    if (!e.target.closest('.book-content')) return;
     if (Date.now() - __jidoLastTouchEnd < 600) return;
+    var edge = __hibikiEdgeAction(e.clientX);
+    if (edge) {
+      window.__hibikiTurnPage(edge);
+      return;
+    }
+    if (!e.target.closest('.book-content')) return;
     tapToSelect(e);
   }, true);
 }
