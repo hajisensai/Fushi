@@ -21,50 +21,50 @@ const SrtBookSchema = CollectionSchema(
   name: r'SrtBook',
   id: -1096507249270084801,
   properties: {
-    r'audioRoot': PropertySchema(
+    r'audioPaths': PropertySchema(
       id: 0,
+      name: r'audioPaths',
+      type: IsarType.stringList,
+    ),
+    r'audioRoot': PropertySchema(
+      id: 1,
       name: r'audioRoot',
       type: IsarType.string,
     ),
     r'author': PropertySchema(
-      id: 1,
+      id: 2,
       name: r'author',
       type: IsarType.string,
     ),
     r'coverPath': PropertySchema(
-      id: 2,
+      id: 3,
       name: r'coverPath',
       type: IsarType.string,
     ),
     r'importedAt': PropertySchema(
-      id: 3,
+      id: 4,
       name: r'importedAt',
       type: IsarType.long,
     ),
     r'srtPath': PropertySchema(
-      id: 4,
+      id: 5,
       name: r'srtPath',
       type: IsarType.string,
     ),
     r'title': PropertySchema(
-      id: 5,
+      id: 6,
       name: r'title',
       type: IsarType.string,
     ),
-    r'uid': PropertySchema(
-      id: 6,
-      name: r'uid',
-      type: IsarType.string,
-    ),
-    r'audioPaths': PropertySchema(
-      id: 7,
-      name: r'audioPaths',
-      type: IsarType.stringList,
-    ),
     r'ttuBookId': PropertySchema(
-      id: 8,
+      id: 7,
       name: r'ttuBookId',
       type: IsarType.long,
+    ),
+    r'uid': PropertySchema(
+      id: 8,
+      name: r'uid',
+      type: IsarType.string,
     ),
   },
   estimateSize: _srtBookEstimateSize,
@@ -140,15 +140,15 @@ void _srtBookSerialize(
   List<int> offsets,
   Map<Type, List<int>> allOffsets,
 ) {
-  writer.writeString(offsets[0], object.audioRoot);
-  writer.writeString(offsets[1], object.author);
-  writer.writeString(offsets[2], object.coverPath);
-  writer.writeLong(offsets[3], object.importedAt);
-  writer.writeString(offsets[4], object.srtPath);
-  writer.writeString(offsets[5], object.title);
-  writer.writeString(offsets[6], object.uid);
-  writer.writeStringList(offsets[7], object.audioPaths);
-  writer.writeLong(offsets[8], object.ttuBookId);
+  writer.writeStringList(offsets[0], object.audioPaths);
+  writer.writeString(offsets[1], object.audioRoot);
+  writer.writeString(offsets[2], object.author);
+  writer.writeString(offsets[3], object.coverPath);
+  writer.writeLong(offsets[4], object.importedAt);
+  writer.writeString(offsets[5], object.srtPath);
+  writer.writeString(offsets[6], object.title);
+  writer.writeLong(offsets[7], object.ttuBookId);
+  writer.writeString(offsets[8], object.uid);
 }
 
 SrtBook _srtBookDeserialize(
@@ -159,15 +159,15 @@ SrtBook _srtBookDeserialize(
 ) {
   final object = SrtBook();
   object.id = id;
-  object.audioRoot = reader.readStringOrNull(offsets[0]);
-  object.author = reader.readStringOrNull(offsets[1]);
-  object.coverPath = reader.readStringOrNull(offsets[2]);
-  object.importedAt = reader.readLong(offsets[3]);
-  object.srtPath = reader.readString(offsets[4]);
-  object.title = reader.readString(offsets[5]);
-  object.uid = reader.readString(offsets[6]);
-  object.audioPaths = reader.readStringList(offsets[7]);
-  object.ttuBookId = reader.readLongOrNull(offsets[8]) ?? 0;
+  object.audioPaths = reader.readStringList(offsets[0]);
+  object.audioRoot = reader.readStringOrNull(offsets[1]);
+  object.author = reader.readStringOrNull(offsets[2]);
+  object.coverPath = reader.readStringOrNull(offsets[3]);
+  object.importedAt = reader.readLong(offsets[4]);
+  object.srtPath = reader.readString(offsets[5]);
+  object.title = reader.readString(offsets[6]);
+  object.ttuBookId = reader.readLongOrNull(offsets[7]) ?? 0;
+  object.uid = reader.readString(offsets[8]);
   return object;
 }
 
@@ -179,23 +179,23 @@ P _srtBookDeserializeProp<P>(
 ) {
   switch (propertyId) {
     case 0:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readStringList(offset)) as P;
     case 1:
       return (reader.readStringOrNull(offset)) as P;
     case 2:
       return (reader.readStringOrNull(offset)) as P;
     case 3:
-      return (reader.readLong(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 4:
-      return (reader.readString(offset)) as P;
+      return (reader.readLong(offset)) as P;
     case 5:
       return (reader.readString(offset)) as P;
     case 6:
       return (reader.readString(offset)) as P;
     case 7:
-      return (reader.readStringList(offset)) as P;
-    case 8:
       return (reader.readLongOrNull(offset) ?? 0) as P;
+    case 8:
+      return (reader.readString(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
   }
