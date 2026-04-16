@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
+import 'package:hive/hive.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/json_alignment_parser.dart';
@@ -58,6 +59,9 @@ class AudiobookPlayerController extends ChangeNotifier {
   ///
   /// [audiobook]  有声书元数据（已存入 Isar）。
   /// [audioFiles] 按顺序排列的音频文件列表（与 AudioCue.audioFileIndex 对应）。
+  ///
+  /// 加载完成后会从 Hive (`appModel` box) 读取上次保存的播放位置并
+  /// `seek` 过去，避免页面重建（背景回前台 / 路由重建）时音频从头开始。
   Future<void> load({
     required Audiobook audiobook,
     required List<File> audioFiles,
@@ -88,8 +92,58 @@ class AudiobookPlayerController extends ChangeNotifier {
       await _player.setAudioSource(ConcatenatingAudioSource(children: sources));
     }
 
+    // 恢复上次播放位置（页面重建场景下避免音频回到 0）。
+    final int savedMs = _readSavedPositionMs(audiobook.bookUid);
+    if (savedMs > 0) {
+      try {
+        await _player.seek(Duration(milliseconds: savedMs));
+      } catch (e) {
+        debugPrint('[hibiki-audiobook] seek to saved $savedMs ms failed: $e');
+      }
+    }
+
     _startPositionTracking();
     notifyListeners();
+  }
+
+  // ── 进度持久化 ─────────────────────────────────────────────────────────────
+
+  /// Hive 里保存上次播放位置的 key 前缀（值为全局毫秒 int）。
+  static const String _kPositionKeyPrefix = 'audiobook_pos_';
+
+  /// 上次写入的位置（毫秒），用于节流。
+  int _lastSavedPosMs = -1;
+
+  /// 写入节流阈值：position 与上次保存差值小于该值时跳过。
+  static const int _kPositionSaveThresholdMs = 3000;
+
+  Box? _prefsBox() {
+    if (!Hive.isBoxOpen('appModel')) return null;
+    return Hive.box('appModel');
+  }
+
+  int _readSavedPositionMs(String bookUid) {
+    final Box? box = _prefsBox();
+    if (box == null) return 0;
+    final Object? raw = box.get('$_kPositionKeyPrefix$bookUid');
+    if (raw is int) return raw;
+    return 0;
+  }
+
+  /// 把当前播放位置写入 Hive。被节流：3 秒内的连续调用只生效一次。
+  ///
+  /// 调用时机：cue 变化（_updateCurrentCue）、暂停、dispose。
+  void _maybeSavePosition({bool force = false}) {
+    final String? uid = _audiobook?.bookUid;
+    if (uid == null) return;
+    final Box? box = _prefsBox();
+    if (box == null) return;
+    final int posMs = _player.position.inMilliseconds;
+    if (!force && (posMs - _lastSavedPosMs).abs() < _kPositionSaveThresholdMs) {
+      return;
+    }
+    _lastSavedPosMs = posMs;
+    box.put('$_kPositionKeyPrefix$uid', posMs);
   }
 
   /// 切换章节后更新当前章节的 cue 列表。
@@ -111,6 +165,7 @@ class AudiobookPlayerController extends ChangeNotifier {
 
   Future<void> pause() async {
     await _player.pause();
+    _maybeSavePosition(force: true);
     notifyListeners();
   }
 
@@ -182,6 +237,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     final AudioCue? newCue = idx >= 0 ? _chapterCues[idx] : null;
     if (newCue?.textFragmentId != _currentCue?.textFragmentId) {
       _currentCue = newCue;
+      _maybeSavePosition();
       notifyListeners();
     }
   }
@@ -211,6 +267,7 @@ class AudiobookPlayerController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _maybeSavePosition(force: true);
     _positionSub?.cancel();
     _player.dispose();
     super.dispose();
