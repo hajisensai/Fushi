@@ -3,11 +3,14 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
+import 'package:hibiki/src/media/audiobook/ass_parser.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
 import 'package:hibiki/src/media/audiobook/json_alignment_parser.dart';
+import 'package:hibiki/src/media/audiobook/lrc_parser.dart';
 import 'package:hibiki/src/media/audiobook/smil_parser.dart';
 import 'package:hibiki/src/media/audiobook/srt_parser.dart';
+import 'package:hibiki/src/media/audiobook/vtt_parser.dart';
 import 'package:hibiki/utils.dart';
 
 /// 有声书导入/移除对话框。
@@ -247,7 +250,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
   Future<void> _pickAlignment() async {
     final FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['smil', 'json', 'srt'],
+      allowedExtensions: ['smil', 'json', 'srt', 'lrc', 'vtt', 'ass'],
     );
     final String? path = result?.files.single.path;
     if (path != null && mounted) {
@@ -268,8 +271,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     try {
       final String ext =
           _alignmentPath!.split('.').last.toLowerCase();
-      final String format =
-          (ext == 'smil') ? 'smil' : (ext == 'srt') ? 'srt' : 'json';
+      const Set<String> cueFormats = {'smil', 'srt', 'lrc', 'vtt', 'ass'};
+      final String format = cueFormats.contains(ext) ? ext : 'json';
 
       final Audiobook audiobook = Audiobook()
         ..bookUid = widget.bookUid
@@ -304,8 +307,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
   Future<void> _parseCues(String format) async {
     final File alignFile = File(_alignmentPath!);
 
+    // SRT / LRC / VTT / ASS 四种都走"单章节 defaultChapter"路径
     if (format == 'srt') {
-      // SRT 作为 EPUB 对齐文件：全书单章节，chapterHref 固定为 srt://default
       final List<AudioCue> cues = SrtParser.parse(
         srtFile: alignFile,
         bookUid: widget.bookUid,
@@ -313,6 +316,36 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       await widget.repo.saveCues(
         bookUid: widget.bookUid,
         chapterHref: SrtParser.defaultChapter,
+        cues: cues,
+      );
+    } else if (format == 'lrc') {
+      final List<AudioCue> cues = LrcParser.parse(
+        lrcFile: alignFile,
+        bookUid: widget.bookUid,
+      );
+      await widget.repo.saveCues(
+        bookUid: widget.bookUid,
+        chapterHref: LrcParser.defaultChapter,
+        cues: cues,
+      );
+    } else if (format == 'vtt') {
+      final List<AudioCue> cues = VttParser.parse(
+        vttFile: alignFile,
+        bookUid: widget.bookUid,
+      );
+      await widget.repo.saveCues(
+        bookUid: widget.bookUid,
+        chapterHref: VttParser.defaultChapter,
+        cues: cues,
+      );
+    } else if (format == 'ass') {
+      final List<AudioCue> cues = AssParser.parse(
+        assFile: alignFile,
+        bookUid: widget.bookUid,
+      );
+      await widget.repo.saveCues(
+        bookUid: widget.bookUid,
+        chapterHref: AssParser.defaultChapter,
         cues: cues,
       );
     } else if (format == 'json') {
