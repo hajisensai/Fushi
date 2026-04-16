@@ -57,20 +57,6 @@ window.__hoshiTarget = window.__hoshiTarget || null;
 window.__hoshiTickerId = window.__hoshiTickerId || null;
 window.__hoshiTickIntervalMs = 280;
 
-// Center-based "is on current page" check, plus a degenerate-rect guard:
-// (0,0,0,0) means the element is in DOM but unstyled / parent hidden /
-// ttu still hydrating. Treat that as NOT on page so we keep retrying.
-window.__hoshiOnCurrentPage = function(rect) {
-  if (rect.width === 0 && rect.height === 0 &&
-      rect.left === 0 && rect.top === 0) {
-    return false;
-  }
-  var vpW = window.innerWidth, vpH = window.innerHeight;
-  var cx = (rect.left + rect.right) / 2;
-  var cy = (rect.top + rect.bottom) / 2;
-  return cx >= 0 && cx <= vpW && cy >= 0 && cy <= vpH;
-};
-
 window.__hoshiStopTicker = function() {
   if (window.__hoshiTickerId) {
     clearInterval(window.__hoshiTickerId);
@@ -108,10 +94,22 @@ window.__hoshiTick = function() {
   }
 
   var rect = el.getBoundingClientRect();
-  if (window.__hoshiOnCurrentPage(rect)) {
-    // Reached. Clear target but leave highlight class on element.
-    window.__hoshiTarget = null;
-    window.__hoshiStopTicker();
+
+  // Degenerate rect (ttu still hydrating, or element in collapsed/hidden
+  // ancestor). NEVER infer direction from (0,0,0,0) — must retry, not stop.
+  var isDegenerate = rect.width === 0 && rect.height === 0 &&
+                     rect.left === 0 && rect.top === 0;
+  if (isDegenerate) {
+    target.staleAttempts = (target.staleAttempts || 0) + 1;
+    if (target.staleAttempts > 30) {
+      console.log(JSON.stringify({
+        'hibiki-message-type': 'highlightStale',
+        'selector': target.selector,
+        'attempts': target.staleAttempts
+      }));
+      window.__hoshiTarget = null;
+      window.__hoshiStopTicker();
+    }
     return;
   }
 
@@ -119,18 +117,39 @@ window.__hoshiTick = function() {
   var cx = (rect.left + rect.right) / 2;
   var cy = (rect.top + rect.bottom) / 2;
 
+  // On current page? Center within viewport.
+  if (cx >= 0 && cx <= vpW && cy >= 0 && cy <= vpH) {
+    window.__hoshiTarget = null;
+    window.__hoshiStopTicker();
+    return;
+  }
+
   var direction;
   if (cx > vpW) direction = 'next';
   else if (cx < 0) direction = 'prev';
   else if (cy > vpH) direction = 'next';
   else if (cy < 0) direction = 'prev';
-  else { window.__hoshiTarget = null; window.__hoshiStopTicker(); return; }
+  else {
+    // Unreachable now (isDegenerate catches (0,0,0,0)); kept as safety.
+    console.log(JSON.stringify({
+      'hibiki-message-type': 'highlightUnknownDir',
+      'selector': target.selector,
+      'rect': {l: rect.left, t: rect.top, r: rect.right, b: rect.bottom}
+    }));
+    window.__hoshiTarget = null;
+    window.__hoshiStopTicker();
+    return;
+  }
 
   // Cap prev turns: avoid cascading into prev chapters / book start
   // when the cue's chapter isn't where we think it is.
   if (direction === 'prev') {
     target.prevTurns = (target.prevTurns || 0) + 1;
     if (target.prevTurns > 30) {
+      console.log(JSON.stringify({
+        'hibiki-message-type': 'highlightPrevCap',
+        'selector': target.selector
+      }));
       window.__hoshiTarget = null;
       window.__hoshiStopTicker();
       return;
@@ -151,7 +170,9 @@ window.__hoshiHighlight = function(selector) {
   }
   // Replace pending target. Old ticker (if running) will pick up the new
   // selector on its next tick — no double loops fighting over page state.
-  window.__hoshiTarget = { selector: selector, missAttempts: 0, prevTurns: 0 };
+  window.__hoshiTarget = {
+    selector: selector, missAttempts: 0, staleAttempts: 0, prevTurns: 0
+  };
   if (!window.__hoshiTickerId) {
     window.__hoshiTickerId = setInterval(
       window.__hoshiTick, window.__hoshiTickIntervalMs);
