@@ -384,6 +384,13 @@ class _SrtImportDialogState extends State<SrtImportDialog> {
         book.author = authorText;
       }
 
+      debugPrint('[hibiki-audiobook] import save: uid=$uid title="$title" '
+          'ttuBookId=$ttuBookId '
+          'audioPaths=${book.audioPaths} '
+          'audioRoot=${book.audioRoot} '
+          'cues=${cues.length} '
+          '(state: _audioPaths=$_audioPaths _audioDir=$_audioDir)');
+
       await widget.repo.save(book);
       await widget.repo.saveCues(uid: uid, cues: cues);
 

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:document_file_save_plus/document_file_save_plus.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -62,6 +63,10 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
 
   /// 非 null 表示当前书来自 [SrtBook]（字幕 EPUB）；值为 [SrtBook.uid]。
   String? _srtBookUid;
+
+  /// AudiobookBridge 是否已注入当前 WebView。
+  /// ttu reader 是 SPA，单次 WebView 生命周期里注入一次即可。
+  bool _bridgeInjected = false;
 
   @override
   void initState() {
@@ -427,11 +432,13 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         await controller.evaluateJavascript(source: javascriptToExecute);
         Future.delayed(const Duration(seconds: 1), _focusNode.requestFocus);
 
-        // 有声书：注入 JS/CSS 桥，并对当前章节自动标注句子
-        if (_audiobookController != null) {
-          _currentChapterHref = uri?.toString() ?? '';
-          await _injectAudiobookBridge(controller);
-        }
+        debugPrint(
+          '[hibiki-audiobook] onLoadStop uri=$uri '
+          'ctrl=${_audiobookController != null} '
+          'srtUid=$_srtBookUid injected=$_bridgeInjected',
+        );
+        _currentChapterHref = uri?.toString() ?? _currentChapterHref;
+        await _maybeInjectAudiobookBridge(controller, trigger: 'onLoadStop');
       },
       onTitleChanged: (controller, title) async {
         await controller.evaluateJavascript(source: javascriptToExecute);
@@ -439,6 +446,13 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         if (mediaSource.adaptTtuTheme) {
           setDictionaryColors();
         }
+
+        debugPrint(
+          '[hibiki-audiobook] onTitleChanged title=$title '
+          'ctrl=${_audiobookController != null} '
+          'srtUid=$_srtBookUid injected=$_bridgeInjected',
+        );
+        await _maybeInjectAudiobookBridge(controller, trigger: 'onTitleChanged');
       },
       onDownloadStartRequest: onDownloadStartRequest,
     );
@@ -1286,6 +1300,12 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         setState(() {
           _audiobookController = controller;
         });
+        if (_controllerInitialised) {
+          await _maybeInjectAudiobookBridge(
+            _controller,
+            trigger: 'audiobookReady',
+          );
+        }
       }
     } else {
       // ── 字幕 EPUB 路径（SrtBook）──────────────────────────────────────────
@@ -1297,6 +1317,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
   Future<void> _initSrtBookIfAvailable() async {
     final int? ttuId = _extractTtuBookId();
     if (ttuId == null || ttuId <= 0) {
+      debugPrint('[hibiki-audiobook] srt init skip: no ttuId in URL');
       return;
     }
 
@@ -1310,11 +1331,23 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       }
     }
     if (srtBook == null) {
+      debugPrint('[hibiki-audiobook] srt init skip: no SrtBook for ttuId=$ttuId');
       return;
     }
 
+    final bool hasAudioConfig = (srtBook.audioPaths != null &&
+            srtBook.audioPaths!.isNotEmpty) ||
+        (srtBook.audioRoot != null && srtBook.audioRoot!.isNotEmpty);
     final List<File> audioFiles = _audioFilesForSrtBook(srtBook);
     if (audioFiles.isEmpty) {
+      if (hasAudioConfig) {
+        // 配置了音频但解析为空 — 文件丢失/路径失效，告知用户
+        debugPrint('[hibiki-audiobook] srt init: audio configured but '
+            'unresolved. paths=${srtBook.audioPaths} root=${srtBook.audioRoot}');
+        Fluttertoast.showToast(msg: t.srt_audio_unresolved);
+      } else {
+        debugPrint('[hibiki-audiobook] srt init: pure subtitle book, no audio');
+      }
       return;
     }
 
@@ -1327,10 +1360,17 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       ..alignmentPath = srtBook.srtPath;
 
     final AudiobookPlayerController controller = AudiobookPlayerController();
-    await controller.load(
-      audiobook: syntheticAudiobook,
-      audioFiles: audioFiles,
-    );
+    try {
+      await controller.load(
+        audiobook: syntheticAudiobook,
+        audioFiles: audioFiles,
+      );
+    } catch (e) {
+      debugPrint('[hibiki-audiobook] srt init: controller.load failed: $e');
+      Fluttertoast.showToast(msg: t.srt_audio_load_error);
+      controller.dispose();
+      return;
+    }
     controller.addListener(_onCueChanged);
 
     if (mounted) {
@@ -1338,6 +1378,12 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         _audiobookController = controller;
         _srtBookUid = srtBook!.uid;
       });
+      if (_controllerInitialised) {
+        await _maybeInjectAudiobookBridge(
+          _controller,
+          trigger: 'srtBookReady',
+        );
+      }
     }
   }
 
@@ -1390,6 +1436,27 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     return [];
   }
 
+  /// 幂等注入：仅在 audiobook controller 就绪且尚未注入时执行。
+  ///
+  /// ttu reader 是 SPA，同一 WebView 生命周期内 `onLoadStop` 只触发一次，
+  /// 但 `onTitleChanged` 会在章节切换时触发，因此两个入口都要调用此方法。
+  /// 初始化顺序（init audiobook → webview load）也可能反过来，所以
+  /// `_initSrtBookIfAvailable` / `_initAudiobookIfAvailable` 成功后也主动调用。
+  Future<void> _maybeInjectAudiobookBridge(
+    InAppWebViewController controller, {
+    required String trigger,
+  }) async {
+    if (_audiobookController == null) {
+      return;
+    }
+    if (_bridgeInjected) {
+      return;
+    }
+    debugPrint('[hibiki-audiobook] injecting via $trigger');
+    _bridgeInjected = true;
+    await _injectAudiobookBridge(controller);
+  }
+
   /// 注入 JS/CSS 桥并对当前页面注册交互逻辑。
   ///
   /// - **SrtBook 路径**：EPUB 已预置 `data-cue-id` span，直接注册点击处理器，
@@ -1405,10 +1472,25 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       final List<AudioCue> cues = srtRepo.cuesFor(_srtBookUid!);
       _audiobookController?.setChapterCues(cues);
 
+      debugPrint(
+        '[hibiki-audiobook] inject(srt) cues=${cues.length} '
+        'firstSel=${cues.isNotEmpty ? cues.first.textFragmentId : "-"}',
+      );
+
       await AudiobookBridge.injectCueClickHandler(
         controller,
         chapterHref: SrtParser.defaultChapter,
       );
+
+      // 诊断：页面里到底存不存在 data-cue-id span
+      final Object? probe = await controller.evaluateJavascript(source: '''
+(function(){
+  var all = document.querySelectorAll('[data-cue-id]');
+  var sample = all.length > 0 ? all[0].outerHTML.slice(0, 120) : '';
+  return JSON.stringify({count: all.length, sample: sample});
+})();
+''');
+      debugPrint('[hibiki-audiobook] dom probe: $probe');
     } else {
       // ── 常规有声书路径 ────────────────────────────────────────────────────
       final String? bookUid = widget.item?.uniqueKey;
@@ -1421,6 +1503,11 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         chapterHref: _currentChapterHref,
       );
       _audiobookController?.setChapterCues(cues);
+
+      debugPrint(
+        '[hibiki-audiobook] inject(regular) chapter=$_currentChapterHref '
+        'cues=${cues.length}',
+      );
 
       if (cues.isEmpty) {
         // 无预对齐 cue，用自动标注
@@ -1438,6 +1525,10 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       return;
     }
     final AudioCue? cue = _audiobookController?.currentCue;
+    debugPrint(
+      '[hibiki-audiobook] cue changed sid=${cue?.sentenceIndex} '
+      'sel=${cue?.textFragmentId}',
+    );
     AudiobookBridge.highlight(_controller, cue: cue);
   }
 
@@ -1497,6 +1588,23 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
   }
 
   Future<void> _openImportDialog(String bookUid) async {
+    // SrtBook 路径：直接给这本字幕书补音频，不创建独立 Audiobook 记录。
+    final int? ttuId = _extractTtuBookId();
+    if (ttuId != null && ttuId > 0) {
+      final SrtBookRepository srtRepo = SrtBookRepository(appModel.database);
+      SrtBook? srtBook;
+      for (final SrtBook b in srtRepo.listAll()) {
+        if (b.ttuBookId == ttuId) {
+          srtBook = b;
+          break;
+        }
+      }
+      if (srtBook != null) {
+        await _attachAudioToSrtBook(srtBook, srtRepo);
+        return;
+      }
+    }
+
     final bool? result = await showDialog<bool>(
       context: context,
       builder: (_) => AudiobookImportDialog(
@@ -1506,6 +1614,64 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     );
     // result == true 表示用户完成导入，重新初始化播放器
     if (result == true && mounted) {
+      await _initAudiobookIfAvailable();
+    }
+  }
+
+  /// 给已存在的 [SrtBook] 补音频：action sheet 选"目录"或"多文件"，
+  /// 更新 [SrtBook.audioRoot] / [SrtBook.audioPaths] 后重新初始化播放器。
+  Future<void> _attachAudioToSrtBook(
+    SrtBook book,
+    SrtBookRepository repo,
+  ) async {
+    final _SrtAudioSource? source = await showModalBottomSheet<_SrtAudioSource>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.folder_open),
+              title: Text(t.srt_import_pick_audio_dir),
+              onTap: () => Navigator.pop(ctx, _SrtAudioSource.folder),
+            ),
+            ListTile(
+              leading: const Icon(Icons.audio_file),
+              title: Text(t.srt_import_pick_audio_files),
+              onTap: () => Navigator.pop(ctx, _SrtAudioSource.files),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null || !mounted) return;
+
+    String? newDir;
+    List<String>? newPaths;
+    if (source == _SrtAudioSource.folder) {
+      newDir = await FilePicker.platform.getDirectoryPath();
+      if (newDir == null) return;
+    } else {
+      final FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.audio,
+        allowMultiple: true,
+      );
+      if (result == null) return;
+      newPaths = result.files
+          .map((f) => f.path)
+          .whereType<String>()
+          .toList()
+        ..sort();
+      if (newPaths.isEmpty) return;
+    }
+
+    book.audioRoot = newDir;
+    book.audioPaths = newPaths;
+    await repo.save(book);
+    debugPrint('[hibiki-audiobook] attached audio to SrtBook ${book.uid}: '
+        'paths=$newPaths root=$newDir');
+
+    if (mounted) {
       await _initAudiobookIfAvailable();
     }
   }
@@ -1531,3 +1697,5 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     );
   }
 }
+
+enum _SrtAudioSource { folder, files }

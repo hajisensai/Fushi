@@ -458,5 +458,7 @@
     "srt_no_audio_files": "No audio files in selected directory",
     "srt_books_section": "SRT Audiobooks",
     "srt_delete_title": "Delete SRT Book",
-    "srt_delete_confirm": "Delete \u300e$title\u300f? This cannot be undone."
+    "srt_delete_confirm": "Delete \u300e$title\u300f? This cannot be undone.",
+    "srt_audio_unresolved": "Audio file not found — please re-attach",
+    "srt_audio_load_error": "Failed to load audio"
   }
