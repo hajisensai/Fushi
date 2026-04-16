@@ -604,6 +604,10 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         mediaSource.setCurrentSentence(
           selection: selection,
         );
+      }).catchError((Object e) {
+        debugPrint('_processLookup async error: $e');
+        clearDictionaryResult();
+        mediaSource.clearCurrentSentence();
       });
     } catch (e) {
       debugPrint('_processLookup error: $e');

@@ -244,6 +244,7 @@ abstract class Language {
       }
     }
 
+    if (index < 0 || index >= wordTape.length) return '';
     String word = wordTape[index];
 
     return word;
@@ -271,6 +272,7 @@ abstract class Language {
 
       return termBuffer.toString();
     } else {
+      if (index < 0 || index >= text.length) return '';
       return text.substring(index);
     }
   }
