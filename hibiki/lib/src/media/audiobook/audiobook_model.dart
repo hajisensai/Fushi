@@ -11,8 +11,11 @@ class Audiobook {
   @Index(unique: true, replace: true)
   late String bookUid;
 
-  /// 音频文件目录（本地绝对路径）或 base URL。
-  late String audioRoot;
+  /// 音频文件目录（本地绝对路径）。folder 模式下非 null，files 模式下为 null。
+  String? audioRoot;
+
+  /// 手动选择的音频文件路径列表。files 模式下非 null，folder 模式下为 null。
+  List<String>? audioPaths;
 
   /// 对齐文件格式：'smil' | 'json' | 'lrc'。
   late String alignmentFormat;

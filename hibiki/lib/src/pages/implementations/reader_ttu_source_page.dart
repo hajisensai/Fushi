@@ -1269,24 +1269,10 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
 
     if (audiobook != null) {
       // ── 常规 EPUB 有声书路径 ─────────────────────────────────────────────
-      final Directory audioDir = Directory(audiobook.audioRoot);
-      if (!audioDir.existsSync()) {
-        return;
-      }
-      final List<File> audioFiles = audioDir
-          .listSync()
-          .whereType<File>()
-          .where((f) {
-            final String ext = f.path.toLowerCase();
-            return ext.endsWith('.mp3') ||
-                ext.endsWith('.m4a') ||
-                ext.endsWith('.ogg') ||
-                ext.endsWith('.aac') ||
-                ext.endsWith('.wav') ||
-                ext.endsWith('.mp4');
-          })
-          .toList()
-        ..sort((a, b) => a.path.compareTo(b.path));
+      final List<File> audioFiles = _resolveAudioFiles(
+        audioPaths: audiobook.audioPaths,
+        audioRoot: audiobook.audioRoot,
+      );
 
       if (audioFiles.isEmpty) {
         return;
@@ -1335,7 +1321,8 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     // 用合成 Audiobook 对象满足控制器接口；bookUid = SrtBook.uid。
     final Audiobook syntheticAudiobook = Audiobook()
       ..bookUid = srtBook.uid
-      ..audioRoot = srtBook.audioRoot ?? ''
+      ..audioRoot = srtBook.audioRoot
+      ..audioPaths = srtBook.audioPaths
       ..alignmentFormat = 'srt'
       ..alignmentPath = srtBook.srtPath;
 
@@ -1365,15 +1352,23 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
   }
 
   /// 根据 [SrtBook] 的音频来源构建有序文件列表。
-  List<File> _audioFilesForSrtBook(SrtBook book) {
-    if (book.audioPaths != null && book.audioPaths!.isNotEmpty) {
-      return book.audioPaths!
+  List<File> _audioFilesForSrtBook(SrtBook book) =>
+      _resolveAudioFiles(audioPaths: book.audioPaths, audioRoot: book.audioRoot);
+
+  /// 通用音频文件解析：files 模式优先于 folder 模式。
+  /// folder 模式下递归扫描音频扩展名并按路径排序。
+  List<File> _resolveAudioFiles({
+    required List<String>? audioPaths,
+    required String? audioRoot,
+  }) {
+    if (audioPaths != null && audioPaths.isNotEmpty) {
+      return audioPaths
           .map((p) => File(p))
           .where((f) => f.existsSync())
           .toList();
     }
-    if (book.audioRoot != null) {
-      final Directory dir = Directory(book.audioRoot!);
+    if (audioRoot != null) {
+      final Directory dir = Directory(audioRoot);
       if (!dir.existsSync()) {
         return [];
       }

@@ -12,7 +12,8 @@ import 'package:hibiki/utils.dart';
 
 /// 有声书导入/移除对话框。
 ///
-/// 允许用户为当前书籍挂载音频目录 + 对齐文件，或移除已有有声书。
+/// UI 沿用 [SrtImportDialog] 的双图标按钮模式：每一项右侧提供
+/// "选目录"和"选文件"两个按钮，可在两种音频来源模式间切换。
 class AudiobookImportDialog extends StatefulWidget {
   const AudiobookImportDialog({
     required this.bookUid,
@@ -28,9 +29,27 @@ class AudiobookImportDialog extends StatefulWidget {
 }
 
 class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
-  String? _audioDir;
+  // ── 音频来源 ── 两者互斥，最后选的那个生效 ─────────────────────────────────
+  String? _audioDir;          // folder 模式
+  List<String>? _audioPaths;  // files 模式
+
   String? _alignmentPath;
   bool _importing = false;
+
+  // ── 辅助 getter ─────────────────────────────────────────────────────────────
+
+  bool get _hasAudioSource =>
+      (_audioDir != null) || (_audioPaths != null && _audioPaths!.isNotEmpty);
+
+  String get _audioSourceLabel {
+    if (_audioPaths != null && _audioPaths!.isNotEmpty) {
+      return t.srt_import_files_selected(n: _audioPaths!.length);
+    }
+    if (_audioDir != null) return _basename(_audioDir!);
+    return '';
+  }
+
+  // ── 构建 ────────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -44,7 +63,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
         width: double.maxFinite,
         child: existing != null
             ? _buildAttachedView(existing)
-            : _buildImportForm(),
+            : SingleChildScrollView(child: _buildImportForm()),
       ),
       actions: existing != null
           ? [
@@ -71,11 +90,19 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
   }
 
   Widget _buildAttachedView(Audiobook ab) {
+    final String audioLabel = (ab.audioPaths != null && ab.audioPaths!.isNotEmpty)
+        ? t.srt_import_files_selected(n: ab.audioPaths!.length)
+        : (ab.audioRoot ?? '');
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _infoRow(Icons.folder_open, ab.audioRoot),
+        _infoRow(
+          (ab.audioPaths != null && ab.audioPaths!.isNotEmpty)
+              ? Icons.audio_file
+              : Icons.folder_open,
+          audioLabel,
+        ),
         const SizedBox(height: 8),
         _infoRow(Icons.align_horizontal_left, ab.alignmentPath),
       ],
@@ -102,18 +129,11 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
   Widget _buildImportForm() {
     return Column(
       mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _pickRow(
-          label: t.audiobook_pick_audio_dir,
-          value: _audioDir,
-          onTap: _pickAudioDir,
-        ),
+        _audioSourceRow(),
         const SizedBox(height: 12),
-        _pickRow(
-          label: t.audiobook_pick_alignment,
-          value: _alignmentPath,
-          onTap: _pickAlignment,
-        ),
+        _alignmentRow(),
         if (_importing) ...[
           const SizedBox(height: 16),
           const LinearProgressIndicator(),
@@ -122,44 +142,105 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     );
   }
 
-  Widget _pickRow({
-    required String label,
-    required String? value,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(4),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(label, style: const TextStyle(fontSize: 13)),
-                  if (value != null)
-                    Text(
-                      value,
-                      style: const TextStyle(fontSize: 11, color: Colors.grey),
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
-                    ),
-                ],
+  /// 音频来源行：标签 + [选目录] [选文件] 两个按钮。
+  Widget _audioSourceRow() {
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _audioPaths != null
+                    ? t.srt_import_pick_audio_files
+                    : t.srt_import_pick_audio_dir,
+                style: const TextStyle(fontSize: 13),
               ),
-            ),
-            const Icon(Icons.chevron_right, size: 18),
-          ],
+              if (_hasAudioSource)
+                Text(
+                  _audioSourceLabel,
+                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+            ],
+          ),
         ),
-      ),
+        IconButton(
+          icon: const Icon(Icons.folder_open, size: 20),
+          tooltip: t.srt_import_pick_audio_dir,
+          onPressed: _pickAudioDir,
+        ),
+        IconButton(
+          icon: const Icon(Icons.audio_file, size: 20),
+          tooltip: t.srt_import_pick_audio_files,
+          onPressed: _pickAudioFiles,
+        ),
+      ],
     );
   }
+
+  /// 对齐文件行：标签 + [选文件] 按钮。
+  Widget _alignmentRow() {
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                t.audiobook_pick_alignment,
+                style: const TextStyle(fontSize: 13),
+              ),
+              if (_alignmentPath != null)
+                Text(
+                  _basename(_alignmentPath!),
+                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+            ],
+          ),
+        ),
+        IconButton(
+          icon: const Icon(Icons.align_horizontal_left, size: 20),
+          tooltip: t.audiobook_pick_alignment,
+          onPressed: _pickAlignment,
+        ),
+      ],
+    );
+  }
+
+  // ── 文件/目录选择 ────────────────────────────────────────────────────────────
 
   Future<void> _pickAudioDir() async {
     final String? dir = await FilePicker.platform.getDirectoryPath();
     if (dir != null && mounted) {
-      setState(() => _audioDir = dir);
+      setState(() {
+        _audioDir = dir;
+        _audioPaths = null;
+      });
+    }
+  }
+
+  Future<void> _pickAudioFiles() async {
+    final FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.audio,
+      allowMultiple: true,
+    );
+    if (result == null || !mounted) return;
+
+    final List<String> paths = result.files
+        .map((f) => f.path)
+        .whereType<String>()
+        .toList()
+      ..sort();
+
+    if (paths.isNotEmpty) {
+      setState(() {
+        _audioPaths = paths;
+        _audioDir = null;
+      });
     }
   }
 
@@ -174,8 +255,10 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     }
   }
 
+  // ── 导入 ─────────────────────────────────────────────────────────────────────
+
   Future<void> _doImport() async {
-    if (_audioDir == null || _alignmentPath == null) {
+    if (!_hasAudioSource || _alignmentPath == null) {
       Fluttertoast.showToast(msg: t.audiobook_import_error);
       return;
     }
@@ -190,9 +273,14 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
 
       final Audiobook audiobook = Audiobook()
         ..bookUid = widget.bookUid
-        ..audioRoot = _audioDir!
         ..alignmentFormat = format
         ..alignmentPath = _alignmentPath!;
+
+      if (_audioPaths != null && _audioPaths!.isNotEmpty) {
+        audiobook.audioPaths = _audioPaths;
+      } else {
+        audiobook.audioRoot = _audioDir;
+      }
 
       await widget.repo.saveAudiobook(audiobook);
       await _parseCues(format);
@@ -290,4 +378,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       }
     }
   }
+
+  String _basename(String path) =>
+      path.split(Platform.pathSeparator).last;
 }

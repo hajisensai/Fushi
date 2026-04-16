@@ -41,6 +41,11 @@ const AudiobookSchema = CollectionSchema(
       name: r'bookUid',
       type: IsarType.string,
     ),
+    r'audioPaths': PropertySchema(
+      id: 4,
+      name: r'audioPaths',
+      type: IsarType.stringList,
+    ),
   },
   estimateSize: _audiobookEstimateSize,
   serialize: _audiobookSerialize,
@@ -78,8 +83,22 @@ int _audiobookEstimateSize(
   var bytesCount = offsets.last;
   bytesCount += 3 + object.alignmentFormat.length * 3;
   bytesCount += 3 + object.alignmentPath.length * 3;
-  bytesCount += 3 + object.audioRoot.length * 3;
+  {
+    final value = object.audioRoot;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
   bytesCount += 3 + object.bookUid.length * 3;
+  {
+    final list = object.audioPaths;
+    if (list != null) {
+      bytesCount += 3 + list.length * 3;
+      for (var i = 0; i < list.length; i++) {
+        bytesCount += list[i].length * 3;
+      }
+    }
+  }
   return bytesCount;
 }
 
@@ -93,6 +112,7 @@ void _audiobookSerialize(
   writer.writeString(offsets[1], object.alignmentPath);
   writer.writeString(offsets[2], object.audioRoot);
   writer.writeString(offsets[3], object.bookUid);
+  writer.writeStringList(offsets[4], object.audioPaths);
 }
 
 Audiobook _audiobookDeserialize(
@@ -105,8 +125,9 @@ Audiobook _audiobookDeserialize(
   object.id = id;
   object.alignmentFormat = reader.readString(offsets[0]);
   object.alignmentPath = reader.readString(offsets[1]);
-  object.audioRoot = reader.readString(offsets[2]);
+  object.audioRoot = reader.readStringOrNull(offsets[2]);
   object.bookUid = reader.readString(offsets[3]);
+  object.audioPaths = reader.readStringList(offsets[4]);
   return object;
 }
 
@@ -122,9 +143,11 @@ P _audiobookDeserializeProp<P>(
     case 1:
       return (reader.readString(offset)) as P;
     case 2:
-      return (reader.readString(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 3:
       return (reader.readString(offset)) as P;
+    case 4:
+      return (reader.readStringList(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
   }
@@ -497,7 +520,7 @@ extension AudiobookQueryProperty
     });
   }
 
-  QueryBuilder<Audiobook, String, QQueryOperations> audioRootProperty() {
+  QueryBuilder<Audiobook, String?, QQueryOperations> audioRootProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'audioRoot');
     });
