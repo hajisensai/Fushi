@@ -32,46 +32,45 @@ class AudiobookBridge {
 }
 ''';
 
-  /// 高亮函数：移除旧高亮并把目标元素所在页对齐到视口。
+  /// 高亮函数：移除旧高亮并把目标元素翻页到视口内。
   ///
-  /// 不能用 scrollIntoView：ttu 用 CSS multi-column 分页，
-  /// scrollIntoView 只把元素滚到"恰好可见"，会让滚动容器卡在两页之间。
-  /// 改为找到 scrollable ancestor，对齐到包含目标的那一页的边界
-  /// （参照 Hoshi Reader reader.js 的 alignToPage）。
+  /// 直接 set scrollLeft/scrollTop 不可行：ttu 用 Svelte store 跟踪
+  /// 当前页索引，每帧把 scroll 同步回它的 state，外部赋值会被覆盖。
+  /// 改为复用 ttu 自己的翻页 API（wheel event，即 reader 页注入的
+  /// `window.__hibikiTurnPage`），循环翻页直到目标元素进入视口。
   static const String _highlightFn = '''
-window.__hoshiPageAlignedScroll = function(el) {
-  var node = el.parentNode;
-  var scroller = null;
-  while (node && node.nodeType === 1) {
-    if (node.scrollWidth > node.clientWidth + 1 ||
-        node.scrollHeight > node.clientHeight + 1) {
-      scroller = node;
-      break;
+window.__hoshiPageToElement = function(el) {
+  if (typeof window.__hibikiTurnPage !== 'function') return;
+  var maxIter = 60;
+  var prevRect = null;
+  function step() {
+    if (--maxIter < 0) return;
+    var rect = el.getBoundingClientRect();
+    var vpW = window.innerWidth, vpH = window.innerHeight;
+    var visible = rect.left >= 0 && rect.right <= vpW + 1 &&
+                  rect.top >= 0 && rect.bottom <= vpH + 1;
+    if (visible) return;
+
+    // No-progress guard: if last turn didn't move the element, give up.
+    if (prevRect && rect.left === prevRect.left && rect.top === prevRect.top) {
+      return;
     }
-    node = node.parentNode;
-  }
-  if (!scroller) {
-    scroller = document.scrollingElement || document.documentElement;
-    if (!scroller) return;
-  }
+    prevRect = rect;
 
-  var elRect = el.getBoundingClientRect();
-  var sRect = scroller.getBoundingClientRect();
-  var pageW = scroller.clientWidth;
-  var pageH = scroller.clientHeight;
-  var elLeftAbs = scroller.scrollLeft + (elRect.left - sRect.left);
-  var elTopAbs = scroller.scrollTop + (elRect.top - sRect.top);
-
-  if (scroller.scrollWidth > pageW + 1 && pageW > 0) {
-    var targetLeft = Math.floor(elLeftAbs / pageW) * pageW;
-    var maxLeft = scroller.scrollWidth - pageW;
-    scroller.scrollLeft = Math.min(Math.max(0, targetLeft), Math.max(0, maxLeft));
+    // Direction: element below / right of viewport → forward; above / left → back.
+    var direction;
+    if (rect.top > vpH || rect.left > vpW) {
+      direction = 'next';
+    } else if (rect.bottom < 0 || rect.right < 0) {
+      direction = 'prev';
+    } else {
+      direction = 'next';
+    }
+    window.__hibikiTurnPage(direction);
+    // Wait past __hibikiTurnPage's 200ms throttle + ttu transition.
+    setTimeout(step, 260);
   }
-  if (scroller.scrollHeight > pageH + 1 && pageH > 0) {
-    var targetTop = Math.floor(elTopAbs / pageH) * pageH;
-    var maxTop = scroller.scrollHeight - pageH;
-    scroller.scrollTop = Math.min(Math.max(0, targetTop), Math.max(0, maxTop));
-  }
+  step();
 };
 
 window.__hoshiHighlight = function(selector) {
@@ -90,13 +89,13 @@ window.__hoshiHighlight = function(selector) {
   }
   el.classList.add('hoshi-active');
 
-  // Skip scroll if already fully visible (avoid unnecessary jumps mid-page).
+  // Skip turning if already fully visible (avoid unnecessary jumps).
   var rect = el.getBoundingClientRect();
   var vpW = window.innerWidth, vpH = window.innerHeight;
-  var visible = rect.left >= 0 && rect.right <= vpW &&
-                rect.top >= 0 && rect.bottom <= vpH;
+  var visible = rect.left >= 0 && rect.right <= vpW + 1 &&
+                rect.top >= 0 && rect.bottom <= vpH + 1;
   if (!visible) {
-    window.__hoshiPageAlignedScroll(el);
+    window.__hoshiPageToElement(el);
   }
 };
 ''';
