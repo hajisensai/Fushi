@@ -16,16 +16,17 @@ class AudiobookBridge {
   // ── JS / CSS 常量 ──────────────────────────────────────────────────────────
 
   /// 注入到 WebView 的 CSS（高亮当前句、打标句子 hover 效果）。
+  /// 同时覆盖 [data-hoshi-sid]（annotate 路径）和 [data-cue-id]（字幕 EPUB 路径）。
   static const String _css = '''
 .hoshi-active {
   background: rgba(255, 220, 0, 0.42);
   border-radius: 2px;
   transition: background 0.15s ease;
 }
-[data-hoshi-sid] {
+[data-hoshi-sid], [data-cue-id] {
   cursor: pointer;
 }
-[data-hoshi-sid]:hover {
+[data-hoshi-sid]:hover, [data-cue-id]:hover {
   background: rgba(100, 180, 255, 0.18);
   border-radius: 2px;
 }
@@ -165,6 +166,44 @@ window.__hoshiAnnotate = function(chapterHref) {
     await controller.evaluateJavascript(
       source: '__hoshiHighlight(${jsonEncode(selector)});',
     );
+  }
+
+  /// 为字幕 EPUB 中的 `[data-cue-id]` span 注册点击事件。
+  ///
+  /// 调用此方法后，点击 span 会向 Flutter 回传
+  /// `{hibiki-message-type: 'seekToSentence', chapter: chapterHref, sid: N}`。
+  ///
+  /// 与 [annotate] 互斥：字幕 EPUB 已有预打标的 span，不需要 annotate。
+  ///
+  /// 若页面中未找到 `[data-cue-id]` span，会输出 warn 日志但不抛出异常。
+  static Future<void> injectCueClickHandler(
+    InAppWebViewController controller, {
+    required String chapterHref,
+  }) async {
+    final String chapterJson = jsonEncode(chapterHref);
+    await controller.evaluateJavascript(source: '''
+(function() {
+  if (document.__hoshiCueClickRegistered) return;
+  document.__hoshiCueClickRegistered = true;
+
+  var count = document.querySelectorAll('[data-cue-id]').length;
+  if (count === 0) {
+    console.log('[hibiki] warn: no [data-cue-id] spans found in this page');
+  }
+
+  document.addEventListener('click', function(e) {
+    var span = e.target.closest('[data-cue-id]');
+    if (!span) return;
+    var sid = parseInt(span.getAttribute('data-cue-id'), 10);
+    if (isNaN(sid)) return;
+    console.log(JSON.stringify({
+      'hibiki-message-type': 'seekToSentence',
+      'chapter': $chapterJson,
+      'sid': sid
+    }));
+  }, true);
+})();
+''');
   }
 
   /// 解析 WebView console 消息，若为有声书点击事件则返回 [AudiobookClickEvent]。

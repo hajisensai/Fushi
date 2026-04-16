@@ -20,6 +20,8 @@ import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
+import 'package:hibiki/src/media/audiobook/srt_book_model.dart';
+import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
 import 'package:hibiki/src/media/audiobook/srt_parser.dart';
 import 'package:hibiki/utils.dart';
 
@@ -57,6 +59,9 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
 
   /// 当前章节的 href（用于 cue 查询和 JS 注解）。
   String _currentChapterHref = '';
+
+  /// 非 null 表示当前书来自 [SrtBook]（字幕 EPUB）；值为 [SrtBook.uid]。
+  String? _srtBookUid;
 
   @override
   void initState() {
@@ -1249,6 +1254,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
   // ── 有声书辅助方法 ──────────────────────────────────────────────────────────
 
   /// 从 Isar 查找当前书的 [Audiobook]，若存在则初始化播放器并监听 cue 变化。
+  /// 若未找到，再尝试以 [SrtBook] 方式初始化（字幕 EPUB 路径）。
   Future<void> _initAudiobookIfAvailable() async {
     final String? bookUid = widget.item?.uniqueKey;
     if (bookUid == null) {
@@ -1256,76 +1262,174 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     }
     final AudiobookRepository repo = AudiobookRepository(appModel.database);
     final Audiobook? audiobook = repo.findByBookUid(bookUid);
-    if (audiobook == null) {
+
+    if (audiobook != null) {
+      // ── 常规 EPUB 有声书路径 ─────────────────────────────────────────────
+      final Directory audioDir = Directory(audiobook.audioRoot);
+      if (!audioDir.existsSync()) {
+        return;
+      }
+      final List<File> audioFiles = audioDir
+          .listSync()
+          .whereType<File>()
+          .where((f) {
+            final String ext = f.path.toLowerCase();
+            return ext.endsWith('.mp3') ||
+                ext.endsWith('.m4a') ||
+                ext.endsWith('.ogg') ||
+                ext.endsWith('.aac') ||
+                ext.endsWith('.wav') ||
+                ext.endsWith('.mp4');
+          })
+          .toList()
+        ..sort((a, b) => a.path.compareTo(b.path));
+
+      if (audioFiles.isEmpty) {
+        return;
+      }
+
+      final AudiobookPlayerController controller = AudiobookPlayerController();
+      await controller.load(audiobook: audiobook, audioFiles: audioFiles);
+      controller.addListener(_onCueChanged);
+
+      if (mounted) {
+        setState(() {
+          _audiobookController = controller;
+        });
+      }
+    } else {
+      // ── 字幕 EPUB 路径（SrtBook）──────────────────────────────────────────
+      await _initSrtBookIfAvailable();
+    }
+  }
+
+  /// 从 URL 中解析 ttuBookId，查找对应 [SrtBook] 并初始化播放器。
+  Future<void> _initSrtBookIfAvailable() async {
+    final int? ttuId = _extractTtuBookId();
+    if (ttuId == null || ttuId <= 0) {
       return;
     }
 
-    // 构建音频文件列表（按名称排序）
-    final Directory audioDir = Directory(audiobook.audioRoot);
-    if (!audioDir.existsSync()) {
+    final SrtBookRepository srtRepo = SrtBookRepository(appModel.database);
+    final List<SrtBook> allBooks = srtRepo.listAll();
+    SrtBook? srtBook;
+    for (final SrtBook b in allBooks) {
+      if (b.ttuBookId == ttuId) {
+        srtBook = b;
+        break;
+      }
+    }
+    if (srtBook == null) {
       return;
     }
-    final List<File> audioFiles = audioDir
-        .listSync()
-        .whereType<File>()
-        .where((f) {
-          final String ext = f.path.toLowerCase();
-          return ext.endsWith('.mp3') ||
-              ext.endsWith('.m4a') ||
-              ext.endsWith('.ogg') ||
-              ext.endsWith('.aac') ||
-              ext.endsWith('.wav') ||
-              ext.endsWith('.mp4');
-        })
-        .toList()
-      ..sort((a, b) => a.path.compareTo(b.path));
 
+    final List<File> audioFiles = _audioFilesForSrtBook(srtBook);
     if (audioFiles.isEmpty) {
       return;
     }
 
+    // 用合成 Audiobook 对象满足控制器接口；bookUid = SrtBook.uid。
+    final Audiobook syntheticAudiobook = Audiobook()
+      ..bookUid = srtBook.uid
+      ..audioRoot = srtBook.audioRoot ?? ''
+      ..alignmentFormat = 'srt'
+      ..alignmentPath = srtBook.srtPath;
+
     final AudiobookPlayerController controller = AudiobookPlayerController();
-    await controller.load(audiobook: audiobook, audioFiles: audioFiles);
+    await controller.load(
+      audiobook: syntheticAudiobook,
+      audioFiles: audioFiles,
+    );
     controller.addListener(_onCueChanged);
 
     if (mounted) {
       setState(() {
         _audiobookController = controller;
+        _srtBookUid = srtBook!.uid;
       });
     }
   }
 
-  /// 注入 JS/CSS 桥并自动标注当前章节句子。
+  /// 从 [widget.item?.mediaIdentifier] 的 URL 中提取 `id=N` 参数。
+  int? _extractTtuBookId() {
+    final String? identifier = widget.item?.mediaIdentifier;
+    if (identifier == null) {
+      return null;
+    }
+    final Uri? uri = Uri.tryParse(identifier);
+    return int.tryParse(uri?.queryParameters['id'] ?? '');
+  }
+
+  /// 根据 [SrtBook] 的音频来源构建有序文件列表。
+  List<File> _audioFilesForSrtBook(SrtBook book) {
+    if (book.audioPaths != null && book.audioPaths!.isNotEmpty) {
+      return book.audioPaths!
+          .map((p) => File(p))
+          .where((f) => f.existsSync())
+          .toList();
+    }
+    if (book.audioRoot != null) {
+      final Directory dir = Directory(book.audioRoot!);
+      if (!dir.existsSync()) {
+        return [];
+      }
+      return dir
+          .listSync()
+          .whereType<File>()
+          .where((f) {
+            final String ext = f.path.toLowerCase();
+            return ext.endsWith('.mp3') ||
+                ext.endsWith('.m4a') ||
+                ext.endsWith('.ogg') ||
+                ext.endsWith('.aac') ||
+                ext.endsWith('.wav') ||
+                ext.endsWith('.mp4');
+          })
+          .toList()
+        ..sort((a, b) => a.path.compareTo(b.path));
+    }
+    return [];
+  }
+
+  /// 注入 JS/CSS 桥并对当前页面注册交互逻辑。
+  ///
+  /// - **SrtBook 路径**：EPUB 已预置 `data-cue-id` span，直接注册点击处理器，
+  ///   加载全部 cue 供音频轨道追踪，不调用 [AudiobookBridge.annotate]。
+  /// - **常规有声书路径**：按章节 href 查询 cue；若为空则自动标注句子。
   Future<void> _injectAudiobookBridge(
       InAppWebViewController controller) async {
     await AudiobookBridge.inject(controller);
 
-    // 从 Isar 加载当前章节的 cues
-    final String? bookUid = widget.item?.uniqueKey;
-    if (bookUid == null) {
-      return;
-    }
-    final AudiobookRepository repo = AudiobookRepository(appModel.database);
+    if (_srtBookUid != null) {
+      // ── 字幕 EPUB 路径 ────────────────────────────────────────────────────
+      final SrtBookRepository srtRepo = SrtBookRepository(appModel.database);
+      final List<AudioCue> cues = srtRepo.cuesFor(_srtBookUid!);
+      _audiobookController?.setChapterCues(cues);
 
-    // SRT 格式将全书 cue 存在固定章节 srt://default，不随 EPUB 章节切换
-    final bool isSrt =
-        _audiobookController?.audiobook?.alignmentFormat == 'srt';
-    final String cueChapterHref =
-        isSrt ? SrtParser.defaultChapter : _currentChapterHref;
-
-    final List<AudioCue> cues = repo.cuesForChapter(
-      bookUid: bookUid,
-      chapterHref: cueChapterHref,
-    );
-
-    _audiobookController?.setChapterCues(cues);
-
-    if (cues.isEmpty) {
-      // 无预对齐 cue，用自动标注
-      await AudiobookBridge.annotate(
+      await AudiobookBridge.injectCueClickHandler(
         controller,
+        chapterHref: SrtParser.defaultChapter,
+      );
+    } else {
+      // ── 常规有声书路径 ────────────────────────────────────────────────────
+      final String? bookUid = widget.item?.uniqueKey;
+      if (bookUid == null) {
+        return;
+      }
+      final AudiobookRepository repo = AudiobookRepository(appModel.database);
+      final List<AudioCue> cues = repo.cuesForChapter(
+        bookUid: bookUid,
         chapterHref: _currentChapterHref,
       );
+      _audiobookController?.setChapterCues(cues);
+
+      if (cues.isEmpty) {
+        // 无预对齐 cue，用自动标注
+        await AudiobookBridge.annotate(
+          controller,
+          chapterHref: _currentChapterHref,
+        );
+      }
     }
   }
 
@@ -1344,12 +1448,22 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       return;
     }
     final AudiobookRepository repo = AudiobookRepository(appModel.database);
-    // SRT 格式的 cue 均存在 srt://default 章节下，点击事件的 chapterHref 不适用
-    final bool isSrt =
-        _audiobookController?.audiobook?.alignmentFormat == 'srt';
+
+    // SrtBook 的 cue 全部存在 srt://default，bookUid = SrtBook.uid；
+    // 常规有声书使用事件携带的 chapterHref 和 widget uniqueKey。
+    final String bookUid;
+    final String chapterHref;
+    if (_srtBookUid != null) {
+      bookUid = _srtBookUid!;
+      chapterHref = SrtParser.defaultChapter;
+    } else {
+      bookUid = widget.item?.uniqueKey ?? '';
+      chapterHref = event.chapterHref;
+    }
+
     final AudioCue? cue = repo.findCue(
-      bookUid: widget.item?.uniqueKey ?? '',
-      chapterHref: isSrt ? SrtParser.defaultChapter : event.chapterHref,
+      bookUid: bookUid,
+      chapterHref: chapterHref,
       sentenceIndex: event.sentenceIndex,
     );
     if (cue != null) {

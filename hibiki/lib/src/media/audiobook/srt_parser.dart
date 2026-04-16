@@ -23,8 +23,8 @@ class SrtParser {
   /// [bookUid]     对应 MediaItem.uniqueKey。
   /// [chapterHref] 章节标识，默认 [defaultChapter]（单章节策略）。
   ///
-  /// 每条 cue 的 [AudioCue.textFragmentId] 格式为 `srt://<sentenceIndex>`，
-  /// 供 [SrtReaderPage] 按下标定位高亮，无需 DOM。
+  /// 每条 cue 的 [AudioCue.textFragmentId] 格式为 `[data-cue-id="<sentenceIndex>"]`，
+  /// 供 [AudiobookBridge] 以 CSS selector 定位 WebView 内的 span 元素。
   static List<AudioCue> parse({
     required File srtFile,
     required String bookUid,
@@ -80,7 +80,7 @@ class SrtParser {
         ..bookUid = bookUid
         ..chapterHref = chapterHref
         ..sentenceIndex = sentenceIndex
-        ..textFragmentId = 'srt://$sentenceIndex'
+        ..textFragmentId = '[data-cue-id="$sentenceIndex"]'
         ..text = text
         ..startMs = times.$1
         ..endMs = times.$2

@@ -48,16 +48,26 @@
 - 写入前立即用 `epubx` 打开一次 smoke test，失败则回滚并 Toast 提示
 - `generatedEpubPath` 写入前先验证文件存在且 `size > 0`
 
-### PR-C　AudiobookBridge 接字幕 EPUB
+### PR-C　AudiobookBridge 接字幕 EPUB ✅
 
-- 复用现有 bridge，`AudioCue.chapterHref` 指向生成的 EPUB 章节
-- 确认 `data-cue-id` 选择器在注入 CSS 里命中
-- 点击 span → 跳转该 cue 的音频时间
-- 播放中 `positionStream` → 高亮对应 span + 自动滚动（现有逻辑，换 DOM 源）
+实现要点：
+- **textFragmentId 统一**：SRT/LRC/VTT/ASS 四个 parser 的 `textFragmentId` 改为
+  `[data-cue-id="N"]`（之前是 `srt://N`），与 `CuesToEpub` 生成的 span 属性直接对应。
+- **AudiobookBridge.injectCueClickHandler()**：为字幕 EPUB 的 `data-cue-id` span 注册
+  全局 click 监听，回传 `{hibiki-message-type: seekToSentence, chapter: srt://default, sid: N}`；
+  span 数量为 0 时输出 warn 日志。
+- **CSS 覆盖**：`[data-hoshi-sid]` 和 `[data-cue-id]` 共用 hover/cursor 样式。
+- **ReaderTtuSourcePage 双路径初始化**：
+  - `_srtBookUid` 字段区分字幕 EPUB 与常规有声书。
+  - `_initSrtBookIfAvailable()`：解析 URL 中的 `id=N`，查找 `SrtBook.ttuBookId` 匹配项，
+    构造合成 `Audiobook` 并加载 `AudiobookPlayerController`。
+  - `_injectAudiobookBridge()`：SrtBook 路径走 `injectCueClickHandler` + 全量 cue；
+    常规路径保持原 annotate 逻辑。
+  - `_seekToSentence()`：SrtBook 时用 `_srtBookUid` + `srt://default` 查 cue。
+- 修复 `_openSrtBook` URL 中的 `&?title=` → `&title=` typo。
 
-**风险缓解：**
-- 实机验证清单（写入 PR 描述 Test Plan）：SRT/LRC/VTT/ASS 各一本 → 章节打开 → 点击 span 跳转 → 播放高亮 → 跨章节切换
-- bridge 注入前检查 `data-cue-id` 选择器命中数 > 0，否则 log 警告
+**待实机验证：**
+- SRT/LRC/VTT/ASS 各一本 → 章节打开 → 点击 span 跳转 → 播放高亮 → 全局 cue 追踪
 
 ### PR-D　删除旧列表渲染
 

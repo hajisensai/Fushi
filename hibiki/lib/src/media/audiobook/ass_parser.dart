@@ -25,7 +25,7 @@ import 'package:hibiki/src/media/audiobook/srt_parser.dart';
 /// - 时间码格式 `H:MM:SS.cc`（厘秒精度）
 /// - 剥离 ASS 覆盖标签（`{\an8}`、`{\k50}` 等）
 /// - 软换行符 `\N`、`\n`、`\h` 转为空格
-/// - textFragmentId 格式与 SRT 相同（`srt://<sentenceIndex>`），可复用 SrtReaderPage
+/// - textFragmentId 格式为 `[data-cue-id="<sentenceIndex>"]`，供 AudiobookBridge CSS selector 定位
 class AssParser {
   /// 与 [SrtParser.defaultChapter] 共用同一章节标识。
   static const String defaultChapter = SrtParser.defaultChapter;
@@ -124,7 +124,7 @@ class AssParser {
         ..bookUid = bookUid
         ..chapterHref = chapterHref
         ..sentenceIndex = i
-        ..textFragmentId = 'srt://$i'
+        ..textFragmentId = '[data-cue-id="$i"]'
         ..text = text
         ..startMs = start
         ..endMs = end

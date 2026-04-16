@@ -260,7 +260,7 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
     final int port = ReaderTtuSource.instance
         .getPortForLanguage(appModel.targetLanguage);
     final String url =
-        'http://localhost:$port/b.html?id=${book.ttuBookId}&?title=${Uri.encodeComponent(book.title)}';
+        'http://localhost:$port/b.html?id=${book.ttuBookId}&title=${Uri.encodeComponent(book.title)}';
     Navigator.push(
       context,
       MaterialPageRoute<void>(

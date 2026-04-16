@@ -22,7 +22,7 @@ import 'package:hibiki/src/media/audiobook/srt_parser.dart';
 /// - 时间码支持 `[HH:]MM:SS.mmm`（有无小时均可）
 /// - 忽略时间行后的位置指令（`align:left` 等）
 /// - 剥离 HTML/VTT 行内标签（`<b>`、`<ruby>`、`<c.class>` 等）
-/// - textFragmentId 格式与 SRT 相同（`srt://<sentenceIndex>`），可复用 SrtReaderPage
+/// - textFragmentId 格式为 `[data-cue-id="<sentenceIndex>"]`，供 AudiobookBridge CSS selector 定位
 class VttParser {
   /// 与 [SrtParser.defaultChapter] 共用同一章节标识。
   static const String defaultChapter = SrtParser.defaultChapter;
@@ -98,7 +98,7 @@ class VttParser {
           ..bookUid = bookUid
           ..chapterHref = chapterHref
           ..sentenceIndex = sentenceIndex
-          ..textFragmentId = 'srt://$sentenceIndex'
+          ..textFragmentId = '[data-cue-id="$sentenceIndex"]'
           ..text = text
           ..startMs = times.$1
           ..endMs = times.$2

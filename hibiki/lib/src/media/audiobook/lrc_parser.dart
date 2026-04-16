@@ -23,7 +23,7 @@ import 'package:hibiki/src/media/audiobook/srt_parser.dart';
 /// - 同一行多个时间标签（`[T1][T2]text`）分别生成独立 cue
 /// - 剥离增强 LRC 词级时间标签（`<MM:SS.xx>`）
 /// - 忽略纯元数据行（`[tag:value]` 其中 tag 全为字母）
-/// - textFragmentId 格式与 SRT 相同（`srt://<sentenceIndex>`），可复用 SrtReaderPage
+/// - textFragmentId 格式为 `[data-cue-id="<sentenceIndex>"]`，供 AudiobookBridge CSS selector 定位
 class LrcParser {
   /// 与 [SrtParser.defaultChapter] 共用同一章节标识，
   /// 确保 [SrtBookRepository] 可统一查询。
@@ -108,7 +108,7 @@ class LrcParser {
         ..bookUid = bookUid
         ..chapterHref = chapterHref
         ..sentenceIndex = i
-        ..textFragmentId = 'srt://$i'
+        ..textFragmentId = '[data-cue-id="$i"]'
         ..text = rawCues[i].$2
         ..startMs = startMs
         ..endMs = endMs
