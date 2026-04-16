@@ -64,10 +64,6 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   /// 非 null 表示当前书来自 [SrtBook]（字幕 EPUB）；值为 [SrtBook.uid]。
   String? _srtBookUid;
 
-  /// AudiobookBridge 是否已注入当前 WebView。
-  /// ttu reader 是 SPA，单次 WebView 生命周期里注入一次即可。
-  bool _bridgeInjected = false;
-
   @override
   void initState() {
     super.initState();
@@ -434,8 +430,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
 
         debugPrint(
           '[hibiki-audiobook] onLoadStop uri=$uri '
-          'ctrl=${_audiobookController != null} '
-          'srtUid=$_srtBookUid injected=$_bridgeInjected',
+          'ctrl=${_audiobookController != null} srtUid=$_srtBookUid',
         );
         _currentChapterHref = uri?.toString() ?? _currentChapterHref;
         await _maybeInjectAudiobookBridge(controller, trigger: 'onLoadStop');
@@ -449,8 +444,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
 
         debugPrint(
           '[hibiki-audiobook] onTitleChanged title=$title '
-          'ctrl=${_audiobookController != null} '
-          'srtUid=$_srtBookUid injected=$_bridgeInjected',
+          'ctrl=${_audiobookController != null} srtUid=$_srtBookUid',
         );
         await _maybeInjectAudiobookBridge(controller, trigger: 'onTitleChanged');
       },
@@ -1494,12 +1488,15 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     return [];
   }
 
-  /// 幂等注入：仅在 audiobook controller 就绪且尚未注入时执行。
+  /// 注入 / 重新注入 AudiobookBridge，并立即把当前 cue 重新高亮一次。
   ///
-  /// ttu reader 是 SPA，同一 WebView 生命周期内 `onLoadStop` 只触发一次，
-  /// 但 `onTitleChanged` 会在章节切换时触发，因此两个入口都要调用此方法。
-  /// 初始化顺序（init audiobook → webview load）也可能反过来，所以
-  /// `_initSrtBookIfAvailable` / `_initAudiobookIfAvailable` 成功后也主动调用。
+  /// 每次 `onLoadStop` / `onTitleChanged`（章节切换）都要重跑：
+  /// - ttu 章节切换可能换 document，旧 JS 上下文消失，必须重注入函数。
+  /// - 即便 JS 还在，新章节 DOM 落点是首页 — 必须主动跳到当前 cue
+  ///   所在页，否则用户看到的是「回到标题页 / 第一行」。
+  ///
+  /// 注入流程本身是幂等的（CSS 用 id 去重，JS 用 var 覆盖，cue click
+  /// handler 用 document flag 去重），所以重复调用安全。
   Future<void> _maybeInjectAudiobookBridge(
     InAppWebViewController controller, {
     required String trigger,
@@ -1507,12 +1504,10 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     if (_audiobookController == null) {
       return;
     }
-    if (_bridgeInjected) {
-      return;
-    }
     debugPrint('[hibiki-audiobook] injecting via $trigger');
-    _bridgeInjected = true;
     await _injectAudiobookBridge(controller);
+    // 章节加载后立刻把视口拉回当前句所在页（Hoshi pendingFragment 模式）。
+    _onCueChanged();
   }
 
   /// 注入 JS/CSS 桥并对当前页面注册交互逻辑。
