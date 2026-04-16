@@ -67,7 +67,16 @@ window.__hoshiStopTicker = function() {
 window.__hoshiTick = function() {
   var target = window.__hoshiTarget;
   if (!target) { window.__hoshiStopTicker(); return; }
-  if (typeof window.__hibikiTurnPage !== 'function') return;
+  if (typeof window.__hibikiTurnPage !== 'function') {
+    if (!target.loggedNoTurnFn) {
+      target.loggedNoTurnFn = true;
+      console.log(JSON.stringify({
+        'hibiki-message-type': 'highlightNoTurnFn',
+        'selector': target.selector
+      }));
+    }
+    return;
+  }
 
   var el = document.querySelector(target.selector);
   if (!el) {
@@ -156,6 +165,16 @@ window.__hoshiTick = function() {
     }
   }
 
+  if (!target.loggedFirstTurn) {
+    target.loggedFirstTurn = true;
+    console.log(JSON.stringify({
+      'hibiki-message-type': 'highlightFirstTurn',
+      'selector': target.selector,
+      'direction': direction,
+      'rect': {l: rect.left, t: rect.top, r: rect.right, b: rect.bottom},
+      'vp': {w: vpW, h: vpH}
+    }));
+  }
   window.__hibikiTurnPage(direction);
 };
 

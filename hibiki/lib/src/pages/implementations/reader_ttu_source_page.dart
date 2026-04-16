@@ -515,6 +515,10 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
           await _seekToSentence(event);
         }
         break;
+      default:
+        // Unknown types (audiobook bridge diagnostics etc.) → 打日志方便排查
+        debugPrint('[hibiki-audiobook-diag] ${message.message}');
+        break;
     }
   }
 
