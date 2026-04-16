@@ -175,10 +175,9 @@ window.__hoshiTick = function() {
       'vp': {w: vpW, h: vpH}
     }));
   }
-  // 先 scrollIntoView（连续滚动模式有效），再 turnPage（分页模式有效）。
-  // 两个机制互不干扰：如果已在视口里，scrollIntoView 是 no-op；turnPage
-  // 是 wheel 事件，Svelte store 跟踪路径也走得通。
-  try { el.scrollIntoView({block: 'center', inline: 'center'}); } catch (e) {}
+  // 不用 scrollIntoView — 它会把 scroll 停在任意像素，破坏 ttu 分页边界
+  // 对齐（顶栏会露出上一页残留字符）。走 wheel → flipPage 才会按 page
+  // 高度整数倍 scroll。
   window.__hibikiTurnPage(direction);
 };
 
