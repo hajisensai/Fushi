@@ -32,23 +32,30 @@ class AudiobookBridge {
 }
 ''';
 
-  /// 高亮函数：移除旧高亮并把目标元素滚动到视口内。
+  /// 高亮函数：移除旧高亮并把目标元素滚动到视口内，同时对齐到整页。
   ///
   /// ttu 在 IDB 字幕 EPUB 路径下是**连续滚动模式**：真正的滚动容器是
   /// `.book-content`（scrollHeight 远大于 clientHeight），body 自身
   /// `overflow: hidden`。因此既不能通过 window.scroll 也不能通过
-  /// 向 body 派发 wheel 事件来翻页 —— 必须滚动 `.book-content`。
+  /// 向 body 派发 wheel 事件来翻页 —— 必须直接赋值 `.book-content.scrollTop`。
   ///
-  /// 选用 `element.scrollIntoView({block: 'center'})`：浏览器自动识别
-  /// 最近的可滚动祖先（即 `.book-content`）并将其 scrollTop 调整到
-  /// 目标元素居中。ttu 的 Svelte store 不监听 `.book-content.scrollTop`
-  /// 的变化（它监听的是页索引），外部赋值不会被覆盖。
+  /// ## 为什么不用 scrollIntoView
+  ///
+  /// 浏览器默认把目标元素居中到视口中点，scrollTop 停在任意像素上，
+  /// 导致页面上方露出上一页残字、下方露出下一页开头，视觉混乱。
+  /// 改为**按 clientHeight 整数倍对齐**：计算 cue 在 content 内的
+  /// 绝对 top，除以 pageH 取整得到页索引，scrollTop = pageIndex * pageH。
+  /// 这样每次跳转看到的都是一整页的内容，没有跨页残留。
+  ///
+  /// ttu 的 Svelte store 不监听 `.book-content.scrollTop`（它监听页索引），
+  /// 外部赋值不会被覆盖。
   ///
   /// ## 收敛策略：ticker
   ///
-  /// 保留 `setInterval` 轮询，每 280ms 检查目标 rect：已进入视口则停；
-  /// 否则再次 scrollIntoView。新 highlight 替换 pending 目标，旧 ticker
-  /// 自动收敛到新目标。退路：missing 元素重试上限 30 次（≈ 9s）。
+  /// 保留 `setInterval` 轮询。每 280ms 检查 scrollTop 是否已到目标页，
+  /// 已对齐则停；未对齐则再赋值。新 highlight 替换 pending 目标，旧
+  /// ticker 自动收敛到新目标。退路：missing 元素重试上限 30 次（≈ 9s），
+  /// scroll 失败上限 30 次。
   static const String _highlightFn = '''
 window.__hoshiTarget = window.__hoshiTarget || null;
 window.__hoshiTickerId = window.__hoshiTickerId || null;
@@ -109,12 +116,27 @@ window.__hoshiTick = function() {
     return;
   }
 
-  var vpW = window.innerWidth, vpH = window.innerHeight;
-  var cx = (rect.left + rect.right) / 2;
-  var cy = (rect.top + rect.bottom) / 2;
+  var content = document.querySelector('.book-content') ||
+                document.querySelector('[class*="book-content"]') ||
+                document.scrollingElement || document.documentElement;
+  var pageH = content.clientHeight;
+  if (!pageH || pageH < 10) {
+    // 容器尚未布局，下一 tick 再试。
+    return;
+  }
 
-  // 已在视口内：停。
-  if (cx >= 0 && cx <= vpW && cy >= 0 && cy <= vpH) {
+  // 把 cue 的 viewport 坐标换算成 content 内 scroll 坐标。
+  var cRect = content.getBoundingClientRect();
+  var elTopInContent = rect.top - cRect.top + content.scrollTop;
+
+  // 按 clientHeight 的整数倍对齐——ttu 虽然是连续滚动，但用户期望每次
+  // 跳转都显示"一整页"，不能停在任意像素导致上/下露出相邻页残字。
+  var pageIndex = Math.floor(elTopInContent / pageH);
+  var maxScroll = Math.max(0, content.scrollHeight - pageH);
+  var targetScrollTop = Math.max(0, Math.min(pageIndex * pageH, maxScroll));
+
+  // 已对齐到目标页：停。
+  if (Math.abs(content.scrollTop - targetScrollTop) < 1) {
     window.__hoshiTarget = null;
     window.__hoshiStopTicker();
     return;
@@ -126,7 +148,8 @@ window.__hoshiTick = function() {
       'hibiki-message-type': 'highlightScrollCap',
       'selector': target.selector,
       'rect': {l: rect.left, t: rect.top, r: rect.right, b: rect.bottom},
-      'vp': {w: vpW, h: vpH}
+      'curScrollTop': content.scrollTop,
+      'targetScrollTop': targetScrollTop
     }));
     window.__hoshiTarget = null;
     window.__hoshiStopTicker();
@@ -135,30 +158,20 @@ window.__hoshiTick = function() {
 
   if (!target.loggedFirstScroll) {
     target.loggedFirstScroll = true;
-    var content = document.querySelector('.book-content') ||
-                  document.querySelector('[class*="book"]') ||
-                  document.body;
     console.log(JSON.stringify({
       'hibiki-message-type': 'highlightScrollStart',
       'selector': target.selector,
       'rect': {l: rect.left, t: rect.top, r: rect.right, b: rect.bottom},
-      'vp': {w: vpW, h: vpH},
+      'elTopInContent': elTopInContent,
+      'pageH': pageH,
+      'pageIndex': pageIndex,
+      'targetScrollTop': targetScrollTop,
       'contentScrollTop': content.scrollTop,
-      'contentScrollLeft': content.scrollLeft,
-      'contentScrollHeight': content.scrollHeight,
-      'contentScrollWidth': content.scrollWidth
+      'contentScrollHeight': content.scrollHeight
     }));
   }
 
-  // 直接用 scrollIntoView — 浏览器自动找到最近可滚动祖先
-  // （即 .book-content）并居中目标。body overflow:hidden，
-  // window.scroll / wheel-on-body 都无效。
-  try {
-    el.scrollIntoView({block: 'center', inline: 'center', behavior: 'auto'});
-  } catch (e) {
-    // 老浏览器兼容：scrollIntoView options 不支持时 fallback。
-    el.scrollIntoView();
-  }
+  content.scrollTop = targetScrollTop;
 };
 
 window.__hoshiHighlight = function(selector) {
