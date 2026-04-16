@@ -32,26 +32,23 @@ class AudiobookBridge {
 }
 ''';
 
-  /// 高亮函数：移除旧高亮并把目标元素翻页到视口内。
+  /// 高亮函数：移除旧高亮并把目标元素滚动到视口内。
   ///
-  /// 直接 set scrollLeft/scrollTop 不可行：ttu 用 Svelte store 跟踪
-  /// 当前页索引，每帧把 scroll 同步回它的 state，外部赋值会被覆盖。
-  /// 改为复用 ttu 自己的翻页 API（wheel event，即 reader 页注入的
-  /// `window.__hibikiTurnPage`），循环翻页直到目标元素进入视口。
+  /// ttu 在 IDB 字幕 EPUB 路径下是**连续滚动模式**：真正的滚动容器是
+  /// `.book-content`（scrollHeight 远大于 clientHeight），body 自身
+  /// `overflow: hidden`。因此既不能通过 window.scroll 也不能通过
+  /// 向 body 派发 wheel 事件来翻页 —— 必须滚动 `.book-content`。
   ///
-  /// ## 收敛策略：ticker 而非一次性 step 循环
+  /// 选用 `element.scrollIntoView({block: 'center'})`：浏览器自动识别
+  /// 最近的可滚动祖先（即 `.book-content`）并将其 scrollTop 调整到
+  /// 目标元素居中。ttu 的 Svelte store 不监听 `.book-content.scrollTop`
+  /// 的变化（它监听的是页索引），外部赋值不会被覆盖。
   ///
-  /// 旧实现是 `__hoshiHighlight` 调用一次 `step` 循环（最多 12 次翻页）。
-  /// 失败原因：
-  /// - 章节切换 / IDB 水合时 `querySelector` 可能瞬间返回 null 或
-  ///   `getBoundingClientRect` 返回 (0,0,0,0)，被错判为"已在当前页"，
-  ///   循环立即退出，用户停在标题页。
-  /// - 12 次翻页上限对跨多页跳转不够（手动 TOC 跳章节后追赶失败）。
+  /// ## 收敛策略：ticker
   ///
-  /// 新实现：用 `setInterval` 持续轮询 pending 目标，直到元素就绪且
-  /// 进入视口；新 highlight 调用替换 pending 目标，旧 ticker 自动收敛
-  /// 到新目标。退路：missing 元素重试上限 30 次（≈ 9s），prev 方向
-  /// 翻页上限 30 次（防止跨章节 prev 风暴回到标题页）。
+  /// 保留 `setInterval` 轮询，每 280ms 检查目标 rect：已进入视口则停；
+  /// 否则再次 scrollIntoView。新 highlight 替换 pending 目标，旧 ticker
+  /// 自动收敛到新目标。退路：missing 元素重试上限 30 次（≈ 9s）。
   static const String _highlightFn = '''
 window.__hoshiTarget = window.__hoshiTarget || null;
 window.__hoshiTickerId = window.__hoshiTickerId || null;
@@ -67,16 +64,6 @@ window.__hoshiStopTicker = function() {
 window.__hoshiTick = function() {
   var target = window.__hoshiTarget;
   if (!target) { window.__hoshiStopTicker(); return; }
-  if (typeof window.__hibikiTurnPage !== 'function') {
-    if (!target.loggedNoTurnFn) {
-      target.loggedNoTurnFn = true;
-      console.log(JSON.stringify({
-        'hibiki-message-type': 'highlightNoTurnFn',
-        'selector': target.selector
-      }));
-    }
-    return;
-  }
 
   var el = document.querySelector(target.selector);
   if (!el) {
@@ -126,93 +113,52 @@ window.__hoshiTick = function() {
   var cx = (rect.left + rect.right) / 2;
   var cy = (rect.top + rect.bottom) / 2;
 
-  // On current page? Center within viewport.
+  // 已在视口内：停。
   if (cx >= 0 && cx <= vpW && cy >= 0 && cy <= vpH) {
     window.__hoshiTarget = null;
     window.__hoshiStopTicker();
     return;
   }
 
-  var direction;
-  if (cx > vpW) direction = 'next';
-  else if (cx < 0) direction = 'prev';
-  else if (cy > vpH) direction = 'next';
-  else if (cy < 0) direction = 'prev';
-  else {
-    // Unreachable now (isDegenerate catches (0,0,0,0)); kept as safety.
+  target.scrollAttempts = (target.scrollAttempts || 0) + 1;
+  if (target.scrollAttempts > 30) {
     console.log(JSON.stringify({
-      'hibiki-message-type': 'highlightUnknownDir',
+      'hibiki-message-type': 'highlightScrollCap',
       'selector': target.selector,
-      'rect': {l: rect.left, t: rect.top, r: rect.right, b: rect.bottom}
+      'rect': {l: rect.left, t: rect.top, r: rect.right, b: rect.bottom},
+      'vp': {w: vpW, h: vpH}
     }));
     window.__hoshiTarget = null;
     window.__hoshiStopTicker();
     return;
   }
 
-  // Cap prev turns: avoid cascading into prev chapters / book start
-  // when the cue's chapter isn't where we think it is.
-  if (direction === 'prev') {
-    target.prevTurns = (target.prevTurns || 0) + 1;
-    if (target.prevTurns > 30) {
-      console.log(JSON.stringify({
-        'hibiki-message-type': 'highlightPrevCap',
-        'selector': target.selector
-      }));
-      window.__hoshiTarget = null;
-      window.__hoshiStopTicker();
-      return;
-    }
-  }
-
-  if (!target.loggedFirstTurn) {
-    target.loggedFirstTurn = true;
-    var se = document.scrollingElement || document.documentElement;
-    var bodyStyle = getComputedStyle(document.body);
-    var seStyle = getComputedStyle(se);
+  if (!target.loggedFirstScroll) {
+    target.loggedFirstScroll = true;
     var content = document.querySelector('.book-content') ||
                   document.querySelector('[class*="book"]') ||
                   document.body;
-    var contentStyle = getComputedStyle(content);
     console.log(JSON.stringify({
-      'hibiki-message-type': 'highlightFirstTurn',
+      'hibiki-message-type': 'highlightScrollStart',
       'selector': target.selector,
-      'direction': direction,
       'rect': {l: rect.left, t: rect.top, r: rect.right, b: rect.bottom},
       'vp': {w: vpW, h: vpH},
-      'se': {
-        'scrollTop': se.scrollTop, 'scrollLeft': se.scrollLeft,
-        'scrollHeight': se.scrollHeight, 'scrollWidth': se.scrollWidth,
-        'clientHeight': se.clientHeight, 'clientWidth': se.clientWidth,
-        'overflow': seStyle.overflow, 'overflowX': seStyle.overflowX,
-        'overflowY': seStyle.overflowY
-      },
-      'body': {
-        'wmode': bodyStyle.writingMode,
-        'colCount': bodyStyle.columnCount,
-        'colWidth': bodyStyle.columnWidth,
-        'overflow': bodyStyle.overflow,
-        'scrollTop': document.body.scrollTop,
-        'scrollLeft': document.body.scrollLeft
-      },
-      'content': {
-        'tag': content.tagName + (content.className ? '.' + content.className : ''),
-        'wmode': contentStyle.writingMode,
-        'colCount': contentStyle.columnCount,
-        'colWidth': contentStyle.columnWidth,
-        'scrollTop': content.scrollTop,
-        'scrollLeft': content.scrollLeft,
-        'scrollHeight': content.scrollHeight,
-        'scrollWidth': content.scrollWidth,
-        'clientHeight': content.clientHeight,
-        'clientWidth': content.clientWidth
-      }
+      'contentScrollTop': content.scrollTop,
+      'contentScrollLeft': content.scrollLeft,
+      'contentScrollHeight': content.scrollHeight,
+      'contentScrollWidth': content.scrollWidth
     }));
   }
-  // 不用 scrollIntoView — 它会把 scroll 停在任意像素，破坏 ttu 分页边界
-  // 对齐（顶栏会露出上一页残留字符）。走 wheel → flipPage 才会按 page
-  // 高度整数倍 scroll。
-  window.__hibikiTurnPage(direction);
+
+  // 直接用 scrollIntoView — 浏览器自动找到最近可滚动祖先
+  // （即 .book-content）并居中目标。body overflow:hidden，
+  // window.scroll / wheel-on-body 都无效。
+  try {
+    el.scrollIntoView({block: 'center', inline: 'center', behavior: 'auto'});
+  } catch (e) {
+    // 老浏览器兼容：scrollIntoView options 不支持时 fallback。
+    el.scrollIntoView();
+  }
 };
 
 window.__hoshiHighlight = function(selector) {
@@ -227,7 +173,7 @@ window.__hoshiHighlight = function(selector) {
   // Replace pending target. Old ticker (if running) will pick up the new
   // selector on its next tick — no double loops fighting over page state.
   window.__hoshiTarget = {
-    selector: selector, missAttempts: 0, staleAttempts: 0, prevTurns: 0
+    selector: selector, missAttempts: 0, staleAttempts: 0, scrollAttempts: 0
   };
   if (!window.__hoshiTickerId) {
     window.__hoshiTickerId = setInterval(
