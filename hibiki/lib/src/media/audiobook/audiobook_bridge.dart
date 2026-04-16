@@ -32,17 +32,72 @@ class AudiobookBridge {
 }
 ''';
 
-  /// 高亮函数：移除旧高亮并定位到新 selector。
+  /// 高亮函数：移除旧高亮并把目标元素所在页对齐到视口。
+  ///
+  /// 不能用 scrollIntoView：ttu 用 CSS multi-column 分页，
+  /// scrollIntoView 只把元素滚到"恰好可见"，会让滚动容器卡在两页之间。
+  /// 改为找到 scrollable ancestor，对齐到包含目标的那一页的边界
+  /// （参照 Hoshi Reader reader.js 的 alignToPage）。
   static const String _highlightFn = '''
+window.__hoshiPageAlignedScroll = function(el) {
+  var node = el.parentNode;
+  var scroller = null;
+  while (node && node.nodeType === 1) {
+    if (node.scrollWidth > node.clientWidth + 1 ||
+        node.scrollHeight > node.clientHeight + 1) {
+      scroller = node;
+      break;
+    }
+    node = node.parentNode;
+  }
+  if (!scroller) {
+    scroller = document.scrollingElement || document.documentElement;
+    if (!scroller) return;
+  }
+
+  var elRect = el.getBoundingClientRect();
+  var sRect = scroller.getBoundingClientRect();
+  var pageW = scroller.clientWidth;
+  var pageH = scroller.clientHeight;
+  var elLeftAbs = scroller.scrollLeft + (elRect.left - sRect.left);
+  var elTopAbs = scroller.scrollTop + (elRect.top - sRect.top);
+
+  if (scroller.scrollWidth > pageW + 1 && pageW > 0) {
+    var targetLeft = Math.floor(elLeftAbs / pageW) * pageW;
+    var maxLeft = scroller.scrollWidth - pageW;
+    scroller.scrollLeft = Math.min(Math.max(0, targetLeft), Math.max(0, maxLeft));
+  }
+  if (scroller.scrollHeight > pageH + 1 && pageH > 0) {
+    var targetTop = Math.floor(elTopAbs / pageH) * pageH;
+    var maxTop = scroller.scrollHeight - pageH;
+    scroller.scrollTop = Math.min(Math.max(0, targetTop), Math.max(0, maxTop));
+  }
+};
+
 window.__hoshiHighlight = function(selector) {
   document.querySelectorAll('.hoshi-active').forEach(function(e) {
     e.classList.remove('hoshi-active');
   });
   if (!selector) return;
   var el = document.querySelector(selector);
-  if (!el) return;
+  if (!el) {
+    console.log(JSON.stringify({
+      'hibiki-message-type': 'highlightMiss',
+      'selector': selector,
+      'totalCueSpans': document.querySelectorAll('[data-cue-id]').length
+    }));
+    return;
+  }
   el.classList.add('hoshi-active');
-  el.scrollIntoView({block: 'nearest', inline: 'nearest', behavior: 'smooth'});
+
+  // Skip scroll if already fully visible (avoid unnecessary jumps mid-page).
+  var rect = el.getBoundingClientRect();
+  var vpW = window.innerWidth, vpH = window.innerHeight;
+  var visible = rect.left >= 0 && rect.right <= vpW &&
+                rect.top >= 0 && rect.bottom <= vpH;
+  if (!visible) {
+    window.__hoshiPageAlignedScroll(el);
+  }
 };
 ''';
 
