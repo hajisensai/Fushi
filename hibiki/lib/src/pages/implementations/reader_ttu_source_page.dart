@@ -1009,6 +1009,8 @@ if (!window.__hibikiClickListenerRegistered) {
 
   // Hoshi-style page turn via wheel event (matches volume-key path).
   // direction: 'next' or 'prev'.
+  // deltaY magnitude matches volume-key path (0.001 * speed). 纯 sign 对
+  // ttu 分页足够，但连续滚动模式下 0.001 会被当噪音吞掉——音量键用 0.1。
   window.__hibikiTurnPage = function(direction) {
     var now = Date.now();
     if (now - __hibikiLastTurn < 200) return;
@@ -1016,7 +1018,7 @@ if (!window.__hibikiClickListenerRegistered) {
     var sign = (direction === 'next') ? -1 : +1;
     var evt = document.createEvent('MouseEvents');
     evt.initEvent('wheel', true, true);
-    evt.deltaY = sign * 0.001;
+    evt.deltaY = sign * 0.1;
     document.body.dispatchEvent(evt);
   };
 

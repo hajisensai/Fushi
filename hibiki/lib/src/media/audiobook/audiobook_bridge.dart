@@ -175,6 +175,10 @@ window.__hoshiTick = function() {
       'vp': {w: vpW, h: vpH}
     }));
   }
+  // 先 scrollIntoView（连续滚动模式有效），再 turnPage（分页模式有效）。
+  // 两个机制互不干扰：如果已在视口里，scrollIntoView 是 no-op；turnPage
+  // 是 wheel 事件，Svelte store 跟踪路径也走得通。
+  try { el.scrollIntoView({block: 'center', inline: 'center'}); } catch (e) {}
   window.__hibikiTurnPage(direction);
 };
 
