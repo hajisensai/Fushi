@@ -340,10 +340,6 @@ class _SrtImportDialogState extends State<SrtImportDialog> {
       Fluttertoast.showToast(msg: t.srt_import_missing_srt);
       return;
     }
-    if (!_hasAudioSource) {
-      Fluttertoast.showToast(msg: t.srt_import_missing_audio_dir);
-      return;
-    }
     if (title.isEmpty) {
       Fluttertoast.showToast(msg: t.srt_import_missing_title);
       return;
@@ -381,7 +377,7 @@ class _SrtImportDialogState extends State<SrtImportDialog> {
 
       if (_audioPaths != null && _audioPaths!.isNotEmpty) {
         book.audioPaths = _audioPaths;
-      } else {
+      } else if (_audioDir != null) {
         book.audioRoot = _audioDir;
       }
       if (authorText.isNotEmpty) {
