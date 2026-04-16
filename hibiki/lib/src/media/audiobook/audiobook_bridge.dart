@@ -125,15 +125,26 @@ window.__hoshiTick = function() {
     return;
   }
 
+  // ttu 分页 stride = clientHeight + column-gap（40px 来自
+  // .book-content-container 的 CSS `column-gap: 40px`）。单纯用
+  // clientHeight 会导致每页漏掉一段 gap，页边界逐渐偏移。
+  var container = content.querySelector('.book-content-container');
+  var gap = 40;
+  if (container) {
+    var gapStr = getComputedStyle(container).columnGap;
+    var gapNum = parseFloat(gapStr);
+    if (!isNaN(gapNum) && gapNum > 0) gap = gapNum;
+  }
+  var stride = pageH + gap;
+
   // 把 cue 的 viewport 坐标换算成 content 内 scroll 坐标。
   var cRect = content.getBoundingClientRect();
   var elTopInContent = rect.top - cRect.top + content.scrollTop;
 
-  // 按 clientHeight 的整数倍对齐——ttu 虽然是连续滚动，但用户期望每次
-  // 跳转都显示"一整页"，不能停在任意像素导致上/下露出相邻页残字。
-  var pageIndex = Math.floor(elTopInContent / pageH);
+  // 按 stride 整数倍对齐到 ttu 的视觉页边界。
+  var pageIndex = Math.floor(elTopInContent / stride);
   var maxScroll = Math.max(0, content.scrollHeight - pageH);
-  var targetScrollTop = Math.max(0, Math.min(pageIndex * pageH, maxScroll));
+  var targetScrollTop = Math.max(0, Math.min(pageIndex * stride, maxScroll));
 
   // 已对齐到目标页：停。
   if (Math.abs(content.scrollTop - targetScrollTop) < 1) {
@@ -164,6 +175,8 @@ window.__hoshiTick = function() {
       'rect': {l: rect.left, t: rect.top, r: rect.right, b: rect.bottom},
       'elTopInContent': elTopInContent,
       'pageH': pageH,
+      'gap': gap,
+      'stride': stride,
       'pageIndex': pageIndex,
       'targetScrollTop': targetScrollTop,
       'contentScrollTop': content.scrollTop,
