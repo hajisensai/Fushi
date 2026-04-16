@@ -525,7 +525,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
 
     text = text.replaceAll('\\n', '\n');
 
-    if (text.isEmpty || index == -1) {
+    if (text.isEmpty || index < 0 || index >= text.length) {
       clearDictionaryResult();
       mediaSource.clearCurrentSentence();
       return;
