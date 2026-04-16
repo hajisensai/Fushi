@@ -39,33 +39,48 @@ class AudiobookBridge {
   /// 改为复用 ttu 自己的翻页 API（wheel event，即 reader 页注入的
   /// `window.__hibikiTurnPage`），循环翻页直到目标元素进入视口。
   static const String _highlightFn = '''
+window.__hoshiPageGen = window.__hoshiPageGen || 0;
+
+// Center-based "is on current page" check: more lenient than strict bbox
+// containment, which fails for cue spans that straddle column boundaries
+// in ttu's multi-column layout and would loop forever.
+window.__hoshiOnCurrentPage = function(rect) {
+  var vpW = window.innerWidth, vpH = window.innerHeight;
+  var cx = (rect.left + rect.right) / 2;
+  var cy = (rect.top + rect.bottom) / 2;
+  return cx >= 0 && cx <= vpW && cy >= 0 && cy <= vpH;
+};
+
 window.__hoshiPageToElement = function(el) {
   if (typeof window.__hibikiTurnPage !== 'function') return;
-  var maxIter = 60;
-  var prevRect = null;
+  // Generation counter: a newer highlight call invalidates older step loops
+  // so we never have multiple loops fighting over page state.
+  var gen = ++window.__hoshiPageGen;
+  var maxIter = 12;
+  var prevDirection = null;
+
   function step() {
+    if (gen !== window.__hoshiPageGen) return;
     if (--maxIter < 0) return;
     var rect = el.getBoundingClientRect();
+    if (window.__hoshiOnCurrentPage(rect)) return;
+
     var vpW = window.innerWidth, vpH = window.innerHeight;
-    var visible = rect.left >= 0 && rect.right <= vpW + 1 &&
-                  rect.top >= 0 && rect.bottom <= vpH + 1;
-    if (visible) return;
+    var cx = (rect.left + rect.right) / 2;
+    var cy = (rect.top + rect.bottom) / 2;
 
-    // No-progress guard: if last turn didn't move the element, give up.
-    if (prevRect && rect.left === prevRect.left && rect.top === prevRect.top) {
-      return;
-    }
-    prevRect = rect;
-
-    // Direction: element below / right of viewport → forward; above / left → back.
     var direction;
-    if (rect.top > vpH || rect.left > vpW) {
-      direction = 'next';
-    } else if (rect.bottom < 0 || rect.right < 0) {
-      direction = 'prev';
-    } else {
-      direction = 'next';
-    }
+    if (cx > vpW) direction = 'next';
+    else if (cx < 0) direction = 'prev';
+    else if (cy > vpH) direction = 'next';
+    else if (cy < 0) direction = 'prev';
+    else return;
+
+    // Reversal guard: if we already turned the other way once, the target
+    // is bouncing across a boundary — stop instead of oscillating.
+    if (prevDirection && prevDirection !== direction) return;
+    prevDirection = direction;
+
     window.__hibikiTurnPage(direction);
     // Wait past __hibikiTurnPage's 200ms throttle + ttu transition.
     setTimeout(step, 260);
@@ -77,6 +92,8 @@ window.__hoshiHighlight = function(selector) {
   document.querySelectorAll('.hoshi-active').forEach(function(e) {
     e.classList.remove('hoshi-active');
   });
+  // Bumping gen here also cancels any in-flight step loop from the prior cue.
+  window.__hoshiPageGen++;
   if (!selector) return;
   var el = document.querySelector(selector);
   if (!el) {
@@ -89,12 +106,7 @@ window.__hoshiHighlight = function(selector) {
   }
   el.classList.add('hoshi-active');
 
-  // Skip turning if already fully visible (avoid unnecessary jumps).
-  var rect = el.getBoundingClientRect();
-  var vpW = window.innerWidth, vpH = window.innerHeight;
-  var visible = rect.left >= 0 && rect.right <= vpW + 1 &&
-                rect.top >= 0 && rect.bottom <= vpH + 1;
-  if (!visible) {
+  if (!window.__hoshiOnCurrentPage(el.getBoundingClientRect())) {
     window.__hoshiPageToElement(el);
   }
 };
