@@ -802,6 +802,17 @@ xhr.send();
   String javascriptToExecute = """
 /*jshint esversion: 6 */
 
+// Force ttu's avoidPageBreak so paragraphs (and the cue spans inside them)
+// don't get split across pages. Reload once if not already on.
+(function() {
+  try {
+    if (localStorage.getItem('avoidPageBreak') !== 'true') {
+      localStorage.setItem('avoidPageBreak', 'true');
+      location.reload();
+    }
+  } catch (e) {}
+})();
+
 function tapToSelect(e) {
   console.log('[hibiki] tapToSelect x=' + e.clientX + ' y=' + e.clientY + ' target=' + (e.target ? e.target.nodeName : 'null'));
   var result = document.caretRangeFromPoint(e.clientX, e.clientY);
