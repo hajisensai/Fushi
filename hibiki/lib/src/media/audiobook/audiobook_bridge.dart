@@ -38,77 +38,126 @@ class AudiobookBridge {
   /// 当前页索引，每帧把 scroll 同步回它的 state，外部赋值会被覆盖。
   /// 改为复用 ttu 自己的翻页 API（wheel event，即 reader 页注入的
   /// `window.__hibikiTurnPage`），循环翻页直到目标元素进入视口。
+  ///
+  /// ## 收敛策略：ticker 而非一次性 step 循环
+  ///
+  /// 旧实现是 `__hoshiHighlight` 调用一次 `step` 循环（最多 12 次翻页）。
+  /// 失败原因：
+  /// - 章节切换 / IDB 水合时 `querySelector` 可能瞬间返回 null 或
+  ///   `getBoundingClientRect` 返回 (0,0,0,0)，被错判为"已在当前页"，
+  ///   循环立即退出，用户停在标题页。
+  /// - 12 次翻页上限对跨多页跳转不够（手动 TOC 跳章节后追赶失败）。
+  ///
+  /// 新实现：用 `setInterval` 持续轮询 pending 目标，直到元素就绪且
+  /// 进入视口；新 highlight 调用替换 pending 目标，旧 ticker 自动收敛
+  /// 到新目标。退路：missing 元素重试上限 30 次（≈ 9s），prev 方向
+  /// 翻页上限 30 次（防止跨章节 prev 风暴回到标题页）。
   static const String _highlightFn = '''
-window.__hoshiPageGen = window.__hoshiPageGen || 0;
+window.__hoshiTarget = window.__hoshiTarget || null;
+window.__hoshiTickerId = window.__hoshiTickerId || null;
+window.__hoshiTickIntervalMs = 280;
 
-// Center-based "is on current page" check: more lenient than strict bbox
-// containment, which fails for cue spans that straddle column boundaries
-// in ttu's multi-column layout and would loop forever.
+// Center-based "is on current page" check, plus a degenerate-rect guard:
+// (0,0,0,0) means the element is in DOM but unstyled / parent hidden /
+// ttu still hydrating. Treat that as NOT on page so we keep retrying.
 window.__hoshiOnCurrentPage = function(rect) {
+  if (rect.width === 0 && rect.height === 0 &&
+      rect.left === 0 && rect.top === 0) {
+    return false;
+  }
   var vpW = window.innerWidth, vpH = window.innerHeight;
   var cx = (rect.left + rect.right) / 2;
   var cy = (rect.top + rect.bottom) / 2;
   return cx >= 0 && cx <= vpW && cy >= 0 && cy <= vpH;
 };
 
-window.__hoshiPageToElement = function(el) {
-  if (typeof window.__hibikiTurnPage !== 'function') return;
-  // Generation counter: a newer highlight call invalidates older step loops
-  // so we never have multiple loops fighting over page state.
-  var gen = ++window.__hoshiPageGen;
-  var maxIter = 12;
-  var prevDirection = null;
-
-  function step() {
-    if (gen !== window.__hoshiPageGen) return;
-    if (--maxIter < 0) return;
-    var rect = el.getBoundingClientRect();
-    if (window.__hoshiOnCurrentPage(rect)) return;
-
-    var vpW = window.innerWidth, vpH = window.innerHeight;
-    var cx = (rect.left + rect.right) / 2;
-    var cy = (rect.top + rect.bottom) / 2;
-
-    var direction;
-    if (cx > vpW) direction = 'next';
-    else if (cx < 0) direction = 'prev';
-    else if (cy > vpH) direction = 'next';
-    else if (cy < 0) direction = 'prev';
-    else return;
-
-    // Reversal guard: if we already turned the other way once, the target
-    // is bouncing across a boundary — stop instead of oscillating.
-    if (prevDirection && prevDirection !== direction) return;
-    prevDirection = direction;
-
-    window.__hibikiTurnPage(direction);
-    // Wait past __hibikiTurnPage's 200ms throttle + ttu transition.
-    setTimeout(step, 260);
+window.__hoshiStopTicker = function() {
+  if (window.__hoshiTickerId) {
+    clearInterval(window.__hoshiTickerId);
+    window.__hoshiTickerId = null;
   }
-  step();
+};
+
+window.__hoshiTick = function() {
+  var target = window.__hoshiTarget;
+  if (!target) { window.__hoshiStopTicker(); return; }
+  if (typeof window.__hibikiTurnPage !== 'function') return;
+
+  var el = document.querySelector(target.selector);
+  if (!el) {
+    target.missAttempts = (target.missAttempts || 0) + 1;
+    if (target.missAttempts > 30) {
+      console.log(JSON.stringify({
+        'hibiki-message-type': 'highlightMiss',
+        'selector': target.selector,
+        'totalCueSpans': document.querySelectorAll('[data-cue-id]').length,
+        'attempts': target.missAttempts
+      }));
+      window.__hoshiTarget = null;
+      window.__hoshiStopTicker();
+    }
+    return;
+  }
+
+  // Element exists. Add highlight class (idempotent).
+  if (!el.classList.contains('hoshi-active')) {
+    document.querySelectorAll('.hoshi-active').forEach(function(e) {
+      e.classList.remove('hoshi-active');
+    });
+    el.classList.add('hoshi-active');
+  }
+
+  var rect = el.getBoundingClientRect();
+  if (window.__hoshiOnCurrentPage(rect)) {
+    // Reached. Clear target but leave highlight class on element.
+    window.__hoshiTarget = null;
+    window.__hoshiStopTicker();
+    return;
+  }
+
+  var vpW = window.innerWidth, vpH = window.innerHeight;
+  var cx = (rect.left + rect.right) / 2;
+  var cy = (rect.top + rect.bottom) / 2;
+
+  var direction;
+  if (cx > vpW) direction = 'next';
+  else if (cx < 0) direction = 'prev';
+  else if (cy > vpH) direction = 'next';
+  else if (cy < 0) direction = 'prev';
+  else { window.__hoshiTarget = null; window.__hoshiStopTicker(); return; }
+
+  // Cap prev turns: avoid cascading into prev chapters / book start
+  // when the cue's chapter isn't where we think it is.
+  if (direction === 'prev') {
+    target.prevTurns = (target.prevTurns || 0) + 1;
+    if (target.prevTurns > 30) {
+      window.__hoshiTarget = null;
+      window.__hoshiStopTicker();
+      return;
+    }
+  }
+
+  window.__hibikiTurnPage(direction);
 };
 
 window.__hoshiHighlight = function(selector) {
-  document.querySelectorAll('.hoshi-active').forEach(function(e) {
-    e.classList.remove('hoshi-active');
-  });
-  // Bumping gen here also cancels any in-flight step loop from the prior cue.
-  window.__hoshiPageGen++;
-  if (!selector) return;
-  var el = document.querySelector(selector);
-  if (!el) {
-    console.log(JSON.stringify({
-      'hibiki-message-type': 'highlightMiss',
-      'selector': selector,
-      'totalCueSpans': document.querySelectorAll('[data-cue-id]').length
-    }));
+  if (!selector) {
+    document.querySelectorAll('.hoshi-active').forEach(function(e) {
+      e.classList.remove('hoshi-active');
+    });
+    window.__hoshiTarget = null;
+    window.__hoshiStopTicker();
     return;
   }
-  el.classList.add('hoshi-active');
-
-  if (!window.__hoshiOnCurrentPage(el.getBoundingClientRect())) {
-    window.__hoshiPageToElement(el);
+  // Replace pending target. Old ticker (if running) will pick up the new
+  // selector on its next tick — no double loops fighting over page state.
+  window.__hoshiTarget = { selector: selector, missAttempts: 0, prevTurns: 0 };
+  if (!window.__hoshiTickerId) {
+    window.__hoshiTickerId = setInterval(
+      window.__hoshiTick, window.__hoshiTickIntervalMs);
   }
+  // Run once immediately so single-page case doesn't wait 280ms.
+  window.__hoshiTick();
 };
 ''';
 
