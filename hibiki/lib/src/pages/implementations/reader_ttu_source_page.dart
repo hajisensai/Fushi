@@ -802,15 +802,16 @@ xhr.send();
   String javascriptToExecute = """
 /*jshint esversion: 6 */
 
-// Force ttu's avoidPageBreak so paragraphs (and the cue spans inside them)
-// don't get split across pages. Reload once if not already on.
+// Inject our own avoidPageBreak CSS so paragraphs (and cue spans inside them)
+// don't get split across pages. Doing this directly avoids the location.reload()
+// that toggling ttu's localStorage setting would require — reload would wipe
+// the audiobook bridge while Dart still thinks it's injected.
 (function() {
-  try {
-    if (localStorage.getItem('avoidPageBreak') !== 'true') {
-      localStorage.setItem('avoidPageBreak', 'true');
-      location.reload();
-    }
-  } catch (e) {}
+  if (document.getElementById('hibiki-avoid-pagebreak-css')) return;
+  var style = document.createElement('style');
+  style.id = 'hibiki-avoid-pagebreak-css';
+  style.textContent = 'p{break-inside:avoid !important;-webkit-column-break-inside:avoid !important;}';
+  (document.head || document.documentElement).appendChild(style);
 })();
 
 function tapToSelect(e) {
