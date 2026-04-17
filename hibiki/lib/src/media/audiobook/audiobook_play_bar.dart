@@ -28,12 +28,12 @@ class AudiobookPlayBar extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           child: Row(
             children: [
-              // 后退 10s
+              // 上一句
               IconButton(
-                icon: const Icon(Icons.replay_10),
+                icon: const Icon(Icons.skip_previous),
                 iconSize: 22,
-                onPressed: () => controller.seekRelative(-10),
-                tooltip: '-10s',
+                onPressed: controller.skipToPrevCue,
+                tooltip: '上一句',
               ),
               // 播放/暂停
               IconButton(
@@ -43,12 +43,12 @@ class AudiobookPlayBar extends StatelessWidget {
                 iconSize: 28,
                 onPressed: controller.togglePlayPause,
               ),
-              // 前进 10s
+              // 下一句
               IconButton(
-                icon: const Icon(Icons.forward_10),
+                icon: const Icon(Icons.skip_next),
                 iconSize: 22,
-                onPressed: () => controller.seekRelative(10),
-                tooltip: '+10s',
+                onPressed: controller.skipToNextCue,
+                tooltip: '下一句',
               ),
               const SizedBox(width: 4),
               // 当前句文本（单行省略）

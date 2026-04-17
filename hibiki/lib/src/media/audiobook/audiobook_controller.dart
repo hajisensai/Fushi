@@ -196,6 +196,46 @@ class AudiobookPlayerController extends ChangeNotifier {
     await seekMs(globalMs);
   }
 
+  /// 跳到上一句（当前章节 cue 列表内）。
+  ///
+  /// 若距离当前 cue 起始已超过 1.5s，则回到当前 cue 起始（等效 restart）；
+  /// 否则跳到前一个 cue。没有定位到 cue 时跳到第一句。
+  Future<void> skipToPrevCue() async {
+    if (_chapterCues.isEmpty) return;
+    final int posMs = position.inMilliseconds;
+    final int idx = JsonAlignmentParser.findCueIndex(
+      cues: _chapterCues,
+      positionMs: posMs,
+    );
+    if (idx < 0) {
+      await skipToCue(_chapterCues.first);
+      return;
+    }
+    final int cueGlobalMs = _toGlobalMs(_chapterCues[idx]);
+    if (posMs - cueGlobalMs > 1500 || idx == 0) {
+      await skipToCue(_chapterCues[idx]);
+      return;
+    }
+    await skipToCue(_chapterCues[idx - 1]);
+  }
+
+  /// 跳到下一句（当前章节 cue 列表内）。
+  ///
+  /// 已在最后一句则不动作。未定位到 cue 时跳到第一句。
+  Future<void> skipToNextCue() async {
+    if (_chapterCues.isEmpty) return;
+    final int idx = JsonAlignmentParser.findCueIndex(
+      cues: _chapterCues,
+      positionMs: position.inMilliseconds,
+    );
+    if (idx < 0) {
+      await skipToCue(_chapterCues.first);
+      return;
+    }
+    if (idx + 1 >= _chapterCues.length) return;
+    await skipToCue(_chapterCues[idx + 1]);
+  }
+
   /// 设置播放速度（例如 0.75 / 1.0 / 1.25 / 1.5）。
   Future<void> setSpeed(double speed) async {
     await _player.setSpeed(speed);
