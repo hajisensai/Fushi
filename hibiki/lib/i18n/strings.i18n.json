@@ -461,6 +461,7 @@
     "srt_delete_confirm": "Delete \u300e$title\u300f? This cannot be undone.",
     "epub_delete_title": "Delete Book",
     "epub_delete_error": "Failed to delete book",
+    "srt_epub_not_ready": "Book not ready — please re-import",
     "srt_audio_unresolved": "Audio file not found — please re-attach",
     "srt_audio_load_error": "Failed to load audio"
   }

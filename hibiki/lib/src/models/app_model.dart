@@ -677,6 +677,7 @@ class AppModel with ChangeNotifier {
     final List<Locale> availableLocales = List<Locale>.unmodifiable(
       [
         const Locale('en', 'US'),
+        const Locale('zh', 'CN'),
       ],
     );
 
@@ -1092,6 +1093,7 @@ class AppModel with ChangeNotifier {
       /// This is not the initialisation step, which occurs below.
       populateLanguages();
       populateLocales();
+      LocaleSettings.setLocaleRaw(appLocale.toLanguageTag());
       populateMediaTypes();
       populateMediaSources();
       populateDictionaryFormats();
@@ -1263,10 +1265,13 @@ class AppModel with ChangeNotifier {
     notifyListeners();
   }
 
-  /// Persist a new app locale in preferences.
+  /// Persist a new app locale in preferences. Restarts the app so every
+  /// widget re-resolves [t] with the new locale (Method A lookups don't
+  /// automatically rebuild on locale change).
   Future<void> setAppLocale(String localeTag) async {
-    await _preferences.put('appf_locale', localeTag);
-    notifyListeners();
+    await _preferences.put('app_locale', localeTag);
+    LocaleSettings.setLocaleRaw(localeTag);
+    Restart.restartApp();
   }
 
   /// Persist a new last selected dictionary format. This is called when the
