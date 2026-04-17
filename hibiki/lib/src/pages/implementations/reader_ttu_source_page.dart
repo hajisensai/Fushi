@@ -189,7 +189,15 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
               fit: StackFit.expand,
               alignment: Alignment.center,
               children: <Widget>[
-                buildBody(),
+                Padding(
+                  padding: EdgeInsets.only(
+                    bottom: _audiobookController != null
+                        ? _kAudiobookBarHeight +
+                            MediaQuery.of(context).padding.bottom
+                        : 0,
+                  ),
+                  child: buildBody(),
+                ),
                 buildDictionary(),
                 buildAudiobookBar(),
                 buildAudiobookImportButton(),
@@ -1789,5 +1797,8 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     );
   }
 }
+
+/// [AudiobookPlayBar] 的视觉高度（不含底部 SafeArea inset，需调用方叠加）。
+const double _kAudiobookBarHeight = 56;
 
 enum _SrtAudioSource { folder, files }
