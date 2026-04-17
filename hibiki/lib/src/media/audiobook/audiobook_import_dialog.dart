@@ -6,10 +6,13 @@ import 'package:fluttertoast/fluttertoast.dart';
 import 'package:hibiki/src/media/audiobook/ass_parser.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
+import 'package:hibiki/src/media/audiobook/epub_srt_matcher.dart';
 import 'package:hibiki/src/media/audiobook/json_alignment_parser.dart';
 import 'package:hibiki/src/media/audiobook/lrc_parser.dart';
+import 'package:hibiki/src/media/audiobook/sasayaki_match_codec.dart';
 import 'package:hibiki/src/media/audiobook/smil_parser.dart';
 import 'package:hibiki/src/media/audiobook/srt_parser.dart';
+import 'package:hibiki/src/media/audiobook/ttu_idb_reader.dart';
 import 'package:hibiki/src/media/audiobook/vtt_parser.dart';
 import 'package:hibiki/utils.dart';
 
@@ -21,11 +24,21 @@ class AudiobookImportDialog extends StatefulWidget {
   const AudiobookImportDialog({
     required this.bookUid,
     required this.repo,
+    this.ttuBookId,
+    this.serverPort,
     super.key,
   });
 
   final String bookUid;
   final AudiobookRepository repo;
+
+  /// ttu Ebook Reader IndexedDB primary key for this book. 当传入且对齐文件是
+  /// `.srt` 时，走 Sasayaki 路径：读 ttu IDB 取章节文本 → EpubSrtMatcher 匹配
+  /// → 把命中 cue 的偏移编码写回 textFragmentId。
+  final int? ttuBookId;
+
+  /// ttu 本地服务端口，读 IDB 时需要。
+  final int? serverPort;
 
   @override
   State<AudiobookImportDialog> createState() => _AudiobookImportDialogState();
@@ -304,6 +317,39 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     }
   }
 
+  /// 对 SRT + 已导入 ttu 的书，跑 Sasayaki 文本匹配，把命中 cue 的
+  /// section/charStart/charEnd 编码写回 [AudioCue.textFragmentId]。失败不中
+  /// 断导入（cues 仍按原样落库，只是少了跨章节定位能力）。
+  Future<void> _maybeRunSasayakiMatch(List<AudioCue> cues) async {
+    final int? ttuId = widget.ttuBookId;
+    final int? port = widget.serverPort;
+    if (ttuId == null || ttuId <= 0 || port == null || cues.isEmpty) {
+      return;
+    }
+    try {
+      final List<EpubSection> sections = await TtuIdbReader.readSections(
+        ttuBookId: ttuId,
+        serverPort: port,
+      );
+      if (sections.isEmpty) {
+        return;
+      }
+      final MatchResult result = EpubSrtMatcher.match(
+        sections: sections,
+        cues: cues,
+      );
+      SasayakiMatchCodec.applyToCues(cues: cues, result: result);
+      if (mounted) {
+        final int pct = (result.matchRate * 100).round();
+        Fluttertoast.showToast(
+          msg: 'Sasayaki match: $pct% (${result.matchedCues}/${result.totalCues})',
+        );
+      }
+    } catch (e) {
+      debugPrint('Sasayaki match failed: $e');
+    }
+  }
+
   Future<void> _parseCues(String format) async {
     final File alignFile = File(_alignmentPath!);
 
@@ -313,6 +359,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
         srtFile: alignFile,
         bookUid: widget.bookUid,
       );
+      await _maybeRunSasayakiMatch(cues);
       await widget.repo.saveCues(
         bookUid: widget.bookUid,
         chapterHref: SrtParser.defaultChapter,

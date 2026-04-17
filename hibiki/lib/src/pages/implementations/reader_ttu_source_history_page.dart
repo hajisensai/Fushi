@@ -9,6 +9,7 @@ import 'package:transparent_image/transparent_image.dart';
 import 'package:spaces/spaces.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_model.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
@@ -405,5 +406,49 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
         ],
       ),
     );
+  }
+
+  /// 长按 ttu EPUB 书架卡片时，在基类 MediaItemDialogPage 里追加
+  /// "导入音频 / 字幕" 按钮；仅对已导入 ttu（mediaIdentifier 含 `id=`）的书
+  /// 展示。
+  @override
+  List<Widget> extraActions(MediaItem item) {
+    final int? ttuBookId = _parseTtuBookId(item.mediaIdentifier);
+    if (ttuBookId == null) {
+      return const [];
+    }
+    return [
+      TextButton(
+        onPressed: () => _openAudiobookImport(item, ttuBookId),
+        child: Text(t.audiobook_import),
+      ),
+    ];
+  }
+
+  int? _parseTtuBookId(String mediaIdentifier) {
+    final Match? m = RegExp(r'[?&]id=(\d+)').firstMatch(mediaIdentifier);
+    if (m == null) {
+      return null;
+    }
+    return int.tryParse(m.group(1)!);
+  }
+
+  Future<void> _openAudiobookImport(MediaItem item, int ttuBookId) async {
+    final int port = ReaderTtuSource.instance
+        .getPortForLanguage(appModel.targetLanguage);
+    // 先关掉 MediaItemDialogPage 自身
+    Navigator.pop(context);
+    await showDialog<bool>(
+      context: context,
+      builder: (_) => AudiobookImportDialog(
+        bookUid: item.uniqueKey,
+        repo: AudiobookRepository(appModel.database),
+        ttuBookId: ttuBookId,
+        serverPort: port,
+      ),
+    );
+    if (mounted) {
+      setState(() {});
+    }
   }
 }
