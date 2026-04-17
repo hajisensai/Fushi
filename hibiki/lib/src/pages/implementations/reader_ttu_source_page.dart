@@ -1041,15 +1041,6 @@ if (!window.__hibikiClickListenerRegistered) {
     document.body.dispatchEvent(evt);
   };
 
-  // Edge tap zones: outer 25% on each side turns the page.
-  var __hibikiEdgeRatio = 0.25;
-  function __hibikiEdgeAction(x) {
-    var w = window.innerWidth;
-    if (x < w * __hibikiEdgeRatio) return 'prev';
-    if (x > w * (1 - __hibikiEdgeRatio)) return 'next';
-    return null;
-  }
-
   document.addEventListener('touchstart', function(e) {
     if (e.touches.length === 1) {
       __jidoTapStartX = e.touches[0].clientX;
@@ -1075,15 +1066,7 @@ if (!window.__hibikiClickListenerRegistered) {
     // Tap (small movement).
     if (dx > 15 || dy > 15) return;
 
-    // Edge tap → page turn (anywhere on screen, not just book-content).
-    var edge = __hibikiEdgeAction(touch.clientX);
-    if (edge) {
-      __jidoLastTouchEnd = Date.now();
-      window.__hibikiTurnPage(edge);
-      return;
-    }
-
-    // Middle tap → existing select-word behavior.
+    // Tap → existing select-word behavior.
     if (!e.target.closest('.book-content')) return;
     __jidoLastTouchEnd = Date.now();
     tapToSelect({
@@ -1095,11 +1078,6 @@ if (!window.__hibikiClickListenerRegistered) {
 
   document.addEventListener('click', function(e) {
     if (Date.now() - __jidoLastTouchEnd < 600) return;
-    var edge = __hibikiEdgeAction(e.clientX);
-    if (edge) {
-      window.__hibikiTurnPage(edge);
-      return;
-    }
     if (!e.target.closest('.book-content')) return;
     tapToSelect(e);
   }, true);
