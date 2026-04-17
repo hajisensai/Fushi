@@ -18,7 +18,7 @@ import 'package:hibiki/utils.dart';
 
 /// 有声书导入/移除对话框。
 ///
-/// UI 沿用 [SrtImportDialog] 的双图标按钮模式：每一项右侧提供
+/// UI 沿用 [BookImportDialog] 的双图标按钮模式：每一项右侧提供
 /// "选目录"和"选文件"两个按钮，可在两种音频来源模式间切换。
 class AudiobookImportDialog extends StatefulWidget {
   const AudiobookImportDialog({

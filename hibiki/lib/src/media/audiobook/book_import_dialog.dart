@@ -13,19 +13,20 @@ import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
 import 'package:hibiki/src/media/audiobook/ass_parser.dart';
 import 'package:hibiki/src/media/audiobook/lrc_parser.dart';
 import 'package:hibiki/src/media/audiobook/srt_parser.dart';
+import 'package:hibiki/src/media/audiobook/ttu_epub_importer.dart';
 import 'package:hibiki/src/media/audiobook/vtt_parser.dart';
 import 'package:hibiki/utils.dart';
 
-/// SRT 独立有声书导入对话框。
+/// 统一"导入书"对话框：EPUB 或字幕任选其一，字幕可再附加音频。
 ///
-/// 用户选择 SRT 文件 + 音频来源（目录或文件列表），填写书名（可选作者），
-/// 点击导入后创建 [SrtBook] 并解析 [AudioCue] 存入 Isar。
-///
-/// **音频来源两种模式：**
-/// - Folder：选择目录，运行时递归扫描其中的音频文件（支持嵌套子目录）。
-/// - Files：直接选择一个或多个音频文件，路径写死在 [SrtBook.audioPaths] 中。
-class SrtImportDialog extends StatefulWidget {
-  const SrtImportDialog({
+/// - **仅 EPUB**：读取用户选的 EPUB 文件 → [TtuEpubImporter] 驱动 ttu reader
+///   自己的 `<input type=file>` 导入管线，拿到 `ttuBookId`。
+/// - **仅字幕（可带音频）**：解析 cues → [CuesToEpub.buildIdbPayload] 拼 ttu
+///   原生 IDB 载荷并 `put()` 写入（带 `data-cue-id` span，供 AudiobookBridge
+///   做高亮同步）；同时把 cues + audio 路径落到 Isar 的 [SrtBook] / [AudioCue]。
+/// - **EPUB + 字幕**：不支持（要给 EPUB 挂字幕走书架长按里的 AudiobookImportDialog）。
+class BookImportDialog extends StatefulWidget {
+  const BookImportDialog({
     required this.repo,
     required this.serverPort,
     super.key,
@@ -34,26 +35,24 @@ class SrtImportDialog extends StatefulWidget {
   final SrtBookRepository repo;
 
   /// ッツ Ebook Reader local server port.
-  /// Used to inject the generated book into the reader's IndexedDB.
   final int serverPort;
 
   @override
-  State<SrtImportDialog> createState() => _SrtImportDialogState();
+  State<BookImportDialog> createState() => _BookImportDialogState();
 }
 
-class _SrtImportDialogState extends State<SrtImportDialog> {
+class _BookImportDialogState extends State<BookImportDialog> {
   final TextEditingController _titleCtrl = TextEditingController();
   final TextEditingController _authorCtrl = TextEditingController();
 
+  String? _epubPath;
   String? _srtPath;
 
-  // ── 音频来源 ── 两者互斥，最后选的那个生效 ─────────────────────────────────
-  String? _audioDir;          // folder 模式
-  List<String>? _audioPaths;  // files 模式
+  // 音频来源两者互斥，最后选的那个生效。
+  String? _audioDir;
+  List<String>? _audioPaths;
 
   bool _importing = false;
-
-  // ── 辅助 getter ─────────────────────────────────────────────────────────────
 
   bool get _hasAudioSource =>
       (_audioDir != null) || (_audioPaths != null && _audioPaths!.isNotEmpty);
@@ -66,16 +65,12 @@ class _SrtImportDialogState extends State<SrtImportDialog> {
     return '';
   }
 
-  // ── 生命周期 ────────────────────────────────────────────────────────────────
-
   @override
   void dispose() {
     _titleCtrl.dispose();
     _authorCtrl.dispose();
     super.dispose();
   }
-
-  // ── 构建 ────────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -103,6 +98,8 @@ class _SrtImportDialogState extends State<SrtImportDialog> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        _epubRow(),
+        const SizedBox(height: 8),
         _subtitleRow(),
         const SizedBox(height: 8),
         _audioSourceRow(),
@@ -132,7 +129,34 @@ class _SrtImportDialogState extends State<SrtImportDialog> {
     );
   }
 
-  /// 字幕文件行：标签 + [选目录扫描] [选文件] 两个按钮。
+  Widget _epubRow() {
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(t.srt_import_pick_epub,
+                  style: const TextStyle(fontSize: 13)),
+              if (_epubPath != null)
+                Text(
+                  _basename(_epubPath!),
+                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+            ],
+          ),
+        ),
+        IconButton(
+          icon: const Icon(Icons.menu_book, size: 20),
+          tooltip: t.srt_import_pick_epub,
+          onPressed: _pickEpub,
+        ),
+      ],
+    );
+  }
+
   Widget _subtitleRow() {
     return Row(
       children: [
@@ -151,13 +175,11 @@ class _SrtImportDialogState extends State<SrtImportDialog> {
             ],
           ),
         ),
-        // 扫描目录按钮
         IconButton(
           icon: const Icon(Icons.folder_open, size: 20),
           tooltip: t.srt_import_pick_srt_dir,
           onPressed: _pickSrtFromFolder,
         ),
-        // 直接选文件按钮
         IconButton(
           icon: const Icon(Icons.subtitles, size: 20),
           tooltip: t.srt_import_pick_srt,
@@ -167,53 +189,61 @@ class _SrtImportDialogState extends State<SrtImportDialog> {
     );
   }
 
-  /// 音频来源行：标签 + [选目录] [选文件] 两个按钮。
   Widget _audioSourceRow() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Row(
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    // 根据当前模式显示不同标题
-                    _audioPaths != null
-                        ? t.srt_import_pick_audio_files
-                        : t.srt_import_pick_audio_dir,
-                    style: const TextStyle(fontSize: 13),
-                  ),
-                  if (_hasAudioSource)
-                    Text(
-                      _audioSourceLabel,
-                      style: const TextStyle(fontSize: 11, color: Colors.grey),
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
-                    ),
-                ],
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _audioPaths != null
+                    ? t.srt_import_pick_audio_files
+                    : t.srt_import_pick_audio_dir,
+                style: const TextStyle(fontSize: 13),
               ),
-            ),
-            // 选目录按钮
-            IconButton(
-              icon: const Icon(Icons.folder_open, size: 20),
-              tooltip: t.srt_import_pick_audio_dir,
-              onPressed: _pickAudioDir,
-            ),
-            // 选文件按钮
-            IconButton(
-              icon: const Icon(Icons.audio_file, size: 20),
-              tooltip: t.srt_import_pick_audio_files,
-              onPressed: _pickAudioFiles,
-            ),
-          ],
+              if (_hasAudioSource)
+                Text(
+                  _audioSourceLabel,
+                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+            ],
+          ),
+        ),
+        IconButton(
+          icon: const Icon(Icons.folder_open, size: 20),
+          tooltip: t.srt_import_pick_audio_dir,
+          onPressed: _pickAudioDir,
+        ),
+        IconButton(
+          icon: const Icon(Icons.audio_file, size: 20),
+          tooltip: t.srt_import_pick_audio_files,
+          onPressed: _pickAudioFiles,
         ),
       ],
     );
   }
 
-  // ── 文件/目录选择 ────────────────────────────────────────────────────────────
+  // ── 文件/目录选择 ────────────────────────────────────────────────────────
+
+  Future<void> _pickEpub() async {
+    final FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['epub'],
+    );
+    final String? path = result?.files.single.path;
+    if (path != null && mounted) {
+      setState(() {
+        _epubPath = path;
+        if (_titleCtrl.text.isEmpty) {
+          _titleCtrl.text = _basename(path)
+              .replaceAll(RegExp(r'\.epub$', caseSensitive: false), '');
+        }
+      });
+    }
+  }
 
   Future<void> _pickSrt() async {
     final FilePickerResult? result = await FilePicker.platform.pickFiles(
@@ -225,17 +255,13 @@ class _SrtImportDialogState extends State<SrtImportDialog> {
       setState(() {
         _srtPath = path;
         if (_titleCtrl.text.isEmpty) {
-          _titleCtrl.text = _basename(path)
-              .replaceAll(
-                  RegExp(r'\.(srt|lrc|vtt|ass|ssa)$',
-                      caseSensitive: false),
-                  '');
+          _titleCtrl.text = _basename(path).replaceAll(
+              RegExp(r'\.(srt|lrc|vtt|ass|ssa)$', caseSensitive: false), '');
         }
       });
     }
   }
 
-  /// 字幕目录扫描：递归扫描选中目录内的字幕文件，单文件自动选，多文件弹窗让用户挑选。
   Future<void> _pickSrtFromFolder() async {
     final String? dir = await FilePicker.platform.getDirectoryPath();
     if (dir == null || !mounted) return;
@@ -266,7 +292,6 @@ class _SrtImportDialogState extends State<SrtImportDialog> {
     if (files.length == 1) {
       chosen = files.first.path;
     } else {
-      // 多个字幕文件时弹窗让用户选择
       chosen = await showDialog<String>(
         context: context,
         builder: (ctx) => SimpleDialog(
@@ -289,28 +314,23 @@ class _SrtImportDialogState extends State<SrtImportDialog> {
       setState(() {
         _srtPath = chosen;
         if (_titleCtrl.text.isEmpty) {
-          _titleCtrl.text = _basename(_srtPath!)
-              .replaceAll(
-                  RegExp(r'\.(srt|lrc|vtt|ass|ssa)$', caseSensitive: false),
-                  '');
+          _titleCtrl.text = _basename(_srtPath!).replaceAll(
+              RegExp(r'\.(srt|lrc|vtt|ass|ssa)$', caseSensitive: false), '');
         }
       });
     }
   }
 
-  /// 选目录模式：清空 audioPaths，设置 audioDir。
   Future<void> _pickAudioDir() async {
     final String? dir = await FilePicker.platform.getDirectoryPath();
     if (dir != null && mounted) {
       setState(() {
         _audioDir = dir;
-        _audioPaths = null; // 互斥：清空文件模式
+        _audioPaths = null;
       });
     }
   }
 
-  /// 选文件模式：清空 audioDir，设置 audioPaths。
-  /// 支持多选，按文件路径排序（与目录扫描排序一致）。
   Future<void> _pickAudioFiles() async {
     final FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.audio,
@@ -327,19 +347,19 @@ class _SrtImportDialogState extends State<SrtImportDialog> {
     if (paths.isNotEmpty) {
       setState(() {
         _audioPaths = paths;
-        _audioDir = null; // 互斥：清空目录模式
+        _audioDir = null;
       });
     }
   }
 
-  // ── 导入 ─────────────────────────────────────────────────────────────────────
+  // ── 导入 ────────────────────────────────────────────────────────────────
 
   Future<void> _doImport() async {
-    final String title = _titleCtrl.text.trim();
-    if (_srtPath == null) {
-      Fluttertoast.showToast(msg: t.srt_import_missing_srt);
+    if (_epubPath == null && _srtPath == null) {
+      Fluttertoast.showToast(msg: t.srt_import_missing_input);
       return;
     }
+    final String title = _titleCtrl.text.trim();
     if (title.isEmpty) {
       Fluttertoast.showToast(msg: t.srt_import_missing_title);
       return;
@@ -348,58 +368,23 @@ class _SrtImportDialogState extends State<SrtImportDialog> {
     setState(() => _importing = true);
 
     try {
-      final String uid = 'srtbook_${DateTime.now().millisecondsSinceEpoch}';
-      final String authorText = _authorCtrl.text.trim();
+      final bool isSubtitleFlow = _srtPath != null;
+      final String? authorText = _authorCtrl.text.trim().isEmpty
+          ? null
+          : _authorCtrl.text.trim();
 
-      // 1. 解析字幕 cues
-      final List<AudioCue> cues = _parseCues(File(_srtPath!), uid);
-
-      // 2. 生成 ttu IndexedDB payload 并注入
-      int ttuBookId = 0;
-      try {
-        final TtuIdbPayload payload = CuesToEpub.buildIdbPayload(
-          title: title,
-          cues: cues,
-        );
-        ttuBookId = await _injectIntoTtuIdb(payload);
-      } catch (e) {
-        debugPrint('SrtImportDialog: ttu IDB inject failed: $e');
-        // 非致命错误，继续保存书籍（ttuBookId 保持 0）
+      if (isSubtitleFlow) {
+        await _importSubtitleBook(title: title, author: authorText);
+      } else {
+        await _importEpubOnly(title: title);
       }
-
-      // 3. 构建并保存 SrtBook
-      final SrtBook book = SrtBook()
-        ..uid = uid
-        ..title = title
-        ..srtPath = _srtPath!
-        ..importedAt = DateTime.now().millisecondsSinceEpoch
-        ..ttuBookId = ttuBookId;
-
-      if (_audioPaths != null && _audioPaths!.isNotEmpty) {
-        book.audioPaths = _audioPaths;
-      } else if (_audioDir != null) {
-        book.audioRoot = _audioDir;
-      }
-      if (authorText.isNotEmpty) {
-        book.author = authorText;
-      }
-
-      debugPrint('[hibiki-audiobook] import save: uid=$uid title="$title" '
-          'ttuBookId=$ttuBookId '
-          'audioPaths=${book.audioPaths} '
-          'audioRoot=${book.audioRoot} '
-          'cues=${cues.length} '
-          '(state: _audioPaths=$_audioPaths _audioDir=$_audioDir)');
-
-      await widget.repo.save(book);
-      await widget.repo.saveCues(uid: uid, cues: cues);
 
       if (mounted) {
         Fluttertoast.showToast(msg: t.srt_import_success);
         Navigator.pop(context, true);
       }
     } catch (e) {
-      debugPrint('SrtImportDialog error: $e');
+      debugPrint('BookImportDialog error: $e');
       if (mounted) {
         Fluttertoast.showToast(msg: t.srt_import_error);
       }
@@ -410,12 +395,65 @@ class _SrtImportDialogState extends State<SrtImportDialog> {
     }
   }
 
-  /// Injects [payload] into the ッツ Ebook Reader's "books" IndexedDB via a
-  /// headless WebView loaded at the ttu server origin.
-  ///
-  /// Returns the auto-incremented IndexedDB key assigned to the new entry,
-  /// or throws if the injection fails or times out.
-  Future<int> _injectIntoTtuIdb(TtuIdbPayload payload) async {
+  /// Subtitle flow: parse cues → build ttu IDB payload with `data-cue-id`
+  /// spans → inject directly, then persist the [SrtBook] + cues for sync.
+  Future<void> _importSubtitleBook({
+    required String title,
+    required String? author,
+  }) async {
+    final String uid = 'srtbook_${DateTime.now().millisecondsSinceEpoch}';
+    final List<AudioCue> cues = _parseCues(File(_srtPath!), uid);
+
+    int ttuBookId = 0;
+    try {
+      final TtuIdbPayload payload = CuesToEpub.buildIdbPayload(
+        title: title,
+        cues: cues,
+      );
+      ttuBookId = await _injectPayloadIntoTtuIdb(payload);
+    } catch (e) {
+      debugPrint('[hibiki-import] ttu IDB inject failed: $e');
+    }
+
+    final SrtBook book = SrtBook()
+      ..uid = uid
+      ..title = title
+      ..srtPath = _srtPath!
+      ..importedAt = DateTime.now().millisecondsSinceEpoch
+      ..ttuBookId = ttuBookId;
+    if (_audioPaths != null && _audioPaths!.isNotEmpty) {
+      book.audioPaths = _audioPaths;
+    } else if (_audioDir != null) {
+      book.audioRoot = _audioDir;
+    }
+    if (author != null) {
+      book.author = author;
+    }
+
+    debugPrint('[hibiki-import] SrtBook save: uid=$uid title="$title" '
+        'ttuBookId=$ttuBookId cues=${cues.length}');
+
+    await widget.repo.save(book);
+    await widget.repo.saveCues(uid: uid, cues: cues);
+  }
+
+  /// EPUB-only flow: read the file bytes and drive ttu's own file-input
+  /// importer. We don't build a [SrtBook] — the book just shows up in the
+  /// regular EPUB section of the bookshelf.
+  Future<void> _importEpubOnly({required String title}) async {
+    final File file = File(_epubPath!);
+    final int ttuBookId = await TtuEpubImporter.import(
+      bytes: await file.readAsBytes(),
+      filename: _basename(_epubPath!),
+      serverPort: widget.serverPort,
+    );
+    debugPrint('[hibiki-import] EPUB save: title="$title" '
+        'ttuBookId=$ttuBookId path=$_epubPath');
+  }
+
+  /// Injects [payload] into the ッツ reader's "books" IDB via a
+  /// headless WebView and resolves with the auto-incremented row key.
+  Future<int> _injectPayloadIntoTtuIdb(TtuIdbPayload payload) async {
     final String jsonStr = jsonEncode(payload.toJson());
     final String js = '''
 (async function() {

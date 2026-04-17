@@ -13,8 +13,8 @@ import 'package:hibiki/language.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
-import 'package:hibiki/src/media/audiobook/srt_import_dialog.dart';
 import 'package:hibiki/utils.dart';
 
 /// A global [Provider] for serving a local ッツ Ebook Reader.
@@ -144,7 +144,7 @@ class ReaderTtuSource extends ReaderMediaSource {
     required AppModel appModel,
   }) {
     return [
-      buildSrtImportButton(
+      buildBookImportButton(
         context: context,
         ref: ref,
         appModel: appModel,
@@ -162,8 +162,9 @@ class ReaderTtuSource extends ReaderMediaSource {
     ];
   }
 
-  /// Opens [SrtImportDialog] to import a standalone SRT audiobook.
-  Widget buildSrtImportButton({
+  /// Opens [BookImportDialog] to import an EPUB (optionally together with a
+  /// subtitle file + audio, which routes through the subtitle-book flow).
+  Widget buildBookImportButton({
     required BuildContext context,
     required WidgetRef ref,
     required AppModel appModel,
@@ -173,11 +174,11 @@ class ReaderTtuSource extends ReaderMediaSource {
       child: JidoujishoIconButton(
         size: Theme.of(context).textTheme.titleLarge?.fontSize,
         tooltip: t.srt_import,
-        icon: Icons.subtitles_outlined,
+        icon: Icons.library_add_outlined,
         onTap: () async {
           final bool? imported = await showDialog<bool>(
             context: context,
-            builder: (_) => SrtImportDialog(
+            builder: (_) => BookImportDialog(
               repo: SrtBookRepository(appModel.database),
               serverPort:
                   ReaderTtuSource.instance.getPortForLanguage(appModel.targetLanguage),
