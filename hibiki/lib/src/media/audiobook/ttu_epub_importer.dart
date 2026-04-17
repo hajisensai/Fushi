@@ -30,7 +30,7 @@ class TtuEpubImporter {
 
     webView = HeadlessInAppWebView(
       initialUrlRequest: URLRequest(
-        url: WebUri('http://localhost:$serverPort/manage'),
+        url: WebUri('http://localhost:$serverPort/manage.html'),
       ),
       initialSettings: InAppWebViewSettings(
         allowFileAccessFromFileURLs: true,

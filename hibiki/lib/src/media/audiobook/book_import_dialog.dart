@@ -390,7 +390,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
     } catch (e) {
       debugPrint('BookImportDialog error: $e');
       if (mounted) {
-        Fluttertoast.showToast(msg: t.srt_import_error);
+        Fluttertoast.showToast(msg: '${t.srt_import_error}: $e');
       }
     } finally {
       if (mounted) {
