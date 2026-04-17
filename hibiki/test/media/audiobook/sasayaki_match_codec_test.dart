@@ -1,0 +1,131 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
+import 'package:hibiki/src/media/audiobook/epub_srt_matcher.dart';
+import 'package:hibiki/src/media/audiobook/sasayaki_match_codec.dart';
+
+AudioCue mkCue(int idx, {String frag = ''}) {
+  return AudioCue()
+    ..bookUid = 'test'
+    ..chapterHref = 'srt://default'
+    ..sentenceIndex = idx
+    ..textFragmentId = frag.isEmpty ? 'srt://$idx' : frag
+    ..text = 'cue $idx'
+    ..startMs = idx * 1000
+    ..endMs = idx * 1000 + 900
+    ..audioFileIndex = 0;
+}
+
+void main() {
+  group('SasayakiMatchCodec.encode/tryDecode', () {
+    test('编码后解码回相同值', () {
+      final String raw = SasayakiMatchCodec.encodeHit(
+        sectionIndex: 2,
+        normCharStart: 15,
+        normCharEnd: 42,
+      );
+      expect(raw, 'sasayaki://s=2&ns=15&ne=42');
+
+      final SasayakiFragment? f = SasayakiMatchCodec.tryDecode(raw);
+      expect(f, isNotNull);
+      expect(f!.sectionIndex, 2);
+      expect(f.normCharStart, 15);
+      expect(f.normCharEnd, 42);
+    });
+
+    test('srt:// 前缀不被识别为 sasayaki', () {
+      expect(SasayakiMatchCodec.tryDecode('srt://5'), isNull);
+    });
+
+    test('参数缺失返回 null', () {
+      expect(SasayakiMatchCodec.tryDecode('sasayaki://s=1'), isNull);
+      expect(SasayakiMatchCodec.tryDecode('sasayaki://s=1&ns=2'), isNull);
+    });
+
+    test('参数乱序仍能解码', () {
+      final SasayakiFragment? f =
+          SasayakiMatchCodec.tryDecode('sasayaki://ne=9&s=0&ns=4');
+      expect(f, isNotNull);
+      expect(f!.sectionIndex, 0);
+      expect(f.normCharStart, 4);
+      expect(f.normCharEnd, 9);
+    });
+  });
+
+  group('SasayakiMatchCodec.applyToCues', () {
+    test('命中的 cue 写回 sasayaki fragment，未命中保留原值', () {
+      final List<AudioCue> cues = <AudioCue>[
+        mkCue(0),
+        mkCue(1, frag: 'srt://1'),
+        mkCue(2),
+      ];
+      final MatchResult result = const MatchResult(
+        matches: <CueMatch>[
+          const CueMatch(
+            cueSentenceIndex: 0,
+            sectionIndex: 0,
+            normCharStart: 0,
+            normCharEnd: 8,
+            score: 0.95,
+          ),
+          CueMatch.unmatched,
+          const CueMatch(
+            cueSentenceIndex: 2,
+            sectionIndex: 1,
+            normCharStart: 20,
+            normCharEnd: 35,
+            score: 0.80,
+          ),
+        ],
+        totalCues: 3,
+        matchedCues: 2,
+      );
+
+      final int applied = SasayakiMatchCodec.applyToCues(
+        cues: cues,
+        result: result,
+      );
+
+      expect(applied, 2);
+      expect(cues[0].textFragmentId, 'sasayaki://s=0&ns=0&ne=8');
+      expect(cues[1].textFragmentId, 'srt://1');
+      expect(cues[2].textFragmentId, 'sasayaki://s=1&ns=20&ne=35');
+    });
+
+    test('长度不一致抛 ArgumentError', () {
+      final List<AudioCue> cues = <AudioCue>[mkCue(0)];
+      final MatchResult result = const MatchResult(
+        matches: const <CueMatch>[],
+        totalCues: 0,
+        matchedCues: 0,
+      );
+      expect(
+        () => SasayakiMatchCodec.applyToCues(cues: cues, result: result),
+        throwsArgumentError,
+      );
+    });
+  });
+
+  group('SasayakiMatchCodec.computeMatchRate', () {
+    test('全 sasayaki fragment → 1.0', () {
+      final List<AudioCue> cues = <AudioCue>[
+        mkCue(0, frag: 'sasayaki://s=0&ns=0&ne=5'),
+        mkCue(1, frag: 'sasayaki://s=0&ns=5&ne=10'),
+      ];
+      expect(SasayakiMatchCodec.computeMatchRate(cues), 1.0);
+    });
+
+    test('混合 → 正确比例', () {
+      final List<AudioCue> cues = <AudioCue>[
+        mkCue(0, frag: 'sasayaki://s=0&ns=0&ne=5'),
+        mkCue(1, frag: 'srt://1'),
+        mkCue(2, frag: 'sasayaki://s=0&ns=10&ne=15'),
+        mkCue(3, frag: 'srt://3'),
+      ];
+      expect(SasayakiMatchCodec.computeMatchRate(cues), 0.5);
+    });
+
+    test('空 list → 0', () {
+      expect(SasayakiMatchCodec.computeMatchRate(<AudioCue>[]), 0.0);
+    });
+  });
+}
