@@ -347,6 +347,90 @@ class ReaderTtuSource extends ReaderMediaSource {
     }
   }
 
+  /// Delete a book and its bookmark/lastItem entries from ttu IndexedDB.
+  /// Returns true on success.
+  Future<bool> deleteBookFromIdb({
+    required Language language,
+    required int bookId,
+  }) async {
+    final int port = getPortForLanguage(language);
+    final completer = Completer<bool>();
+
+    final HeadlessInAppWebView webView = HeadlessInAppWebView(
+      initialUrlRequest: URLRequest(
+        url: WebUri('http://localhost:$port/'),
+      ),
+      onLoadStop: (controller, url) async {
+        await controller.evaluateJavascript(source: _buildDeleteBookJs(bookId));
+      },
+      onConsoleMessage: (controller, message) async {
+        try {
+          final Map<String, dynamic> json = jsonDecode(message.message);
+          switch (json['messageType']) {
+            case 'deleted':
+              if (!completer.isCompleted) {
+                completer.complete(true);
+              }
+              break;
+            case 'delete_error':
+              if (!completer.isCompleted) {
+                completer.complete(false);
+              }
+              break;
+          }
+        } on FormatException catch (_) {}
+      },
+    );
+
+    try {
+      await webView.run();
+      return await completer.future.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => false,
+      );
+    } finally {
+      await webView.dispose();
+    }
+  }
+
+  String _buildDeleteBookJs(int bookId) {
+    return '''
+new Promise(function(resolve) {
+  var dbRequest = indexedDB.open('books');
+  dbRequest.onerror = function() {
+    console.log(JSON.stringify({messageType: 'delete_error'}));
+    resolve(false);
+  };
+  dbRequest.onsuccess = function(event) {
+    var db = event.target.result;
+    try {
+      var tx = db.transaction(['data', 'bookmark', 'lastItem'], 'readwrite');
+      tx.objectStore('data').delete($bookId);
+      tx.objectStore('bookmark').delete($bookId);
+      var lastItemStore = tx.objectStore('lastItem');
+      var liReq = lastItemStore.get(0);
+      liReq.onsuccess = function() {
+        if (liReq.result && liReq.result.dataId === $bookId) {
+          lastItemStore.delete(0);
+        }
+      };
+      tx.oncomplete = function() {
+        console.log(JSON.stringify({messageType: 'deleted'}));
+        resolve(true);
+      };
+      tx.onerror = function() {
+        console.log(JSON.stringify({messageType: 'delete_error'}));
+        resolve(false);
+      };
+    } catch (e) {
+      console.log(JSON.stringify({messageType: 'delete_error'}));
+      resolve(false);
+    }
+  };
+});
+''';
+  }
+
   /// Fetch the list of history items given JSON from IndexedDB.
   List<MediaItem> getItemsFromJson(Map<String, dynamic> json, int port) {
     List<Map<String, dynamic>> bookmarks =

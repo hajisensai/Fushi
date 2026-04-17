@@ -423,8 +423,8 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
   }
 
   /// 长按 ttu EPUB 书架卡片时，在基类 MediaItemDialogPage 里追加
-  /// "导入音频 / 字幕" 按钮；仅对已导入 ttu（mediaIdentifier 含 `id=`）的书
-  /// 展示。
+  /// "删除" 与 "导入音频 / 字幕" 按钮；仅对已导入 ttu（mediaIdentifier 含
+  /// `id=`）的书展示。
   @override
   List<Widget> extraActions(MediaItem item) {
     final int? ttuBookId = _parseTtuBookId(item.mediaIdentifier);
@@ -433,10 +433,57 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
     }
     return [
       TextButton(
+        onPressed: () => _confirmDeleteEpub(item, ttuBookId),
+        child: Text(
+          t.dialog_delete,
+          style: TextStyle(color: theme.colorScheme.error),
+        ),
+      ),
+      TextButton(
         onPressed: () => _openAudiobookImport(item, ttuBookId),
         child: Text(t.audiobook_import),
       ),
     ];
+  }
+
+  Future<void> _confirmDeleteEpub(MediaItem item, int ttuBookId) async {
+    Navigator.pop(context);
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(t.epub_delete_title),
+        content: Text(t.srt_delete_confirm(title: item.title)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(t.dialog_cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              t.dialog_delete,
+              style: TextStyle(color: theme.colorScheme.error),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) {
+      return;
+    }
+    final bool ok = await ReaderTtuSource.instance.deleteBookFromIdb(
+      language: appModel.targetLanguage,
+      bookId: ttuBookId,
+    );
+    if (!mounted) {
+      return;
+    }
+    if (!ok) {
+      Fluttertoast.showToast(msg: t.epub_delete_error);
+      return;
+    }
+    ref.invalidate(ttuBooksProvider(appModel.targetLanguage));
+    setState(() {});
   }
 
   int? _parseTtuBookId(String mediaIdentifier) {
