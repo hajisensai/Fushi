@@ -71,10 +71,19 @@ window.__hoshiStopTicker = function() {
 window.__hoshiTick = function() {
   var target = window.__hoshiTarget;
   if (!target) { window.__hoshiStopTicker(); return; }
+  target.tickNo = (target.tickNo || 0) + 1;
 
   var el = document.querySelector(target.selector);
   if (!el) {
     target.missAttempts = (target.missAttempts || 0) + 1;
+    if (target.tickNo <= 3) {
+      console.log(JSON.stringify({
+        'hibiki-message-type': 'diagTickMiss',
+        'tickNo': target.tickNo,
+        'selector': target.selector,
+        'totalCueSpans': document.querySelectorAll('[data-cue-id]').length
+      }));
+    }
     if (target.missAttempts > 30) {
       console.log(JSON.stringify({
         'hibiki-message-type': 'highlightMiss',
@@ -184,10 +193,33 @@ window.__hoshiTick = function() {
     }));
   }
 
+  var beforeWrite = content.scrollTop;
   content.scrollTop = targetScrollTop;
+  var afterWrite = content.scrollTop;
+
+  // Diagnostic: does the write stick? Svelte store override / read-only
+  // container shows up as afterWrite !== targetScrollTop on first write.
+  // Also log tickNo to spot Svelte yanking us back on subsequent ticks.
+  if (target.scrollAttempts <= 4) {
+    console.log(JSON.stringify({
+      'hibiki-message-type': 'diagScrollWrite',
+      'tickNo': target.tickNo,
+      'attempt': target.scrollAttempts,
+      'before': beforeWrite,
+      'wanted': targetScrollTop,
+      'afterImmediate': afterWrite,
+      'stuck': Math.abs(afterWrite - targetScrollTop) < 1
+    }));
+  }
 };
 
 window.__hoshiHighlight = function(selector) {
+  console.log(JSON.stringify({
+    'hibiki-message-type': 'diagHighlightEntry',
+    'selector': selector || '',
+    'tickerRunning': !!window.__hoshiTickerId,
+    'hasBookContent': !!document.querySelector('.book-content')
+  }));
   if (!selector) {
     document.querySelectorAll('.hoshi-active').forEach(function(e) {
       e.classList.remove('hoshi-active');

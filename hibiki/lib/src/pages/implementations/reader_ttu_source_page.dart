@@ -486,25 +486,36 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     InAppWebViewController controller,
     ConsoleMessage message,
   ) async {
-    DateTime now = DateTime.now();
-    if (lastMessageTime != null &&
-        now.difference(lastMessageTime!) < consoleMessageDebounce) {
-      return;
-    }
-
-    lastMessageTime = now;
-
     late Map<String, dynamic> messageJson;
+    bool isJson = true;
     try {
       messageJson = jsonDecode(message.message);
     } catch (e) {
+      isJson = false;
+    }
+
+    // diag 消息绕过 50ms 防抖，保证一轮 tick 内多条探针都能到 Flutter 侧。
+    final String? msgType = isJson
+        ? messageJson['hibiki-message-type'] as String?
+        : null;
+    final bool isDiag = msgType != null && msgType.startsWith('diag');
+
+    if (!isDiag) {
+      DateTime now = DateTime.now();
+      if (lastMessageTime != null &&
+          now.difference(lastMessageTime!) < consoleMessageDebounce) {
+        return;
+      }
+      lastMessageTime = now;
+    }
+
+    if (!isJson) {
       JsonEncoder encoder = const JsonEncoder.withIndent('  ');
       debugPrint(encoder.convert(message.toJson()));
-
       return;
     }
 
-    switch (messageJson['hibiki-message-type']) {
+    switch (msgType) {
       case 'lookup':
         await _processLookup(messageJson);
         break;
