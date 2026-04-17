@@ -323,8 +323,17 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
     if (!mounted) {
       return;
     }
+    // 字幕导入时 payload 同时写进了 ttu IDB；只删 SrtBook 会让 IDB 条目
+    // 变孤儿，下次进书架就在 EPUB 区多出一本。
+    if (book.ttuBookId > 0) {
+      await ReaderTtuSource.instance.deleteBookFromIdb(
+        language: appModel.targetLanguage,
+        bookId: book.ttuBookId,
+      );
+    }
     await SrtBookRepository(appModel.database).delete(book.uid);
     if (mounted) {
+      ref.invalidate(ttuBooksProvider(appModel.targetLanguage));
       setState(() {});
     }
   }

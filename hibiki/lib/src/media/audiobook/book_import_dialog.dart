@@ -617,6 +617,9 @@ class _BookImportDialogState extends State<BookImportDialog> {
 
     final Completer<int> completer = Completer<int>();
     HeadlessInAppWebView? webView;
+    // ttu 是 SPA，启动期间可能多次触发 onLoadStop；不去重会让 store.put
+    // 执行多次、产生自增 id 不同的孤儿 IDB 条目，在书架 EPUB 区多出一本。
+    bool jsDispatched = false;
     webView = HeadlessInAppWebView(
       initialUrlRequest: URLRequest(
         url: WebUri('http://localhost:${widget.serverPort}/'),
@@ -626,6 +629,8 @@ class _BookImportDialogState extends State<BookImportDialog> {
         allowUniversalAccessFromFileURLs: true,
       ),
       onLoadStop: (controller, url) async {
+        if (jsDispatched) return;
+        jsDispatched = true;
         await controller.evaluateJavascript(source: js);
       },
       onConsoleMessage: (controller, message) {
