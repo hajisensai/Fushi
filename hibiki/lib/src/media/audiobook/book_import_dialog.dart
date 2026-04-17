@@ -355,6 +355,10 @@ class _BookImportDialogState extends State<BookImportDialog> {
   // ── 导入 ────────────────────────────────────────────────────────────────
 
   Future<void> _doImport() async {
+    if (_epubPath != null && _srtPath != null) {
+      Fluttertoast.showToast(msg: t.srt_import_conflict);
+      return;
+    }
     if (_epubPath == null && _srtPath == null) {
       Fluttertoast.showToast(msg: t.srt_import_missing_input);
       return;
