@@ -108,7 +108,21 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
   Widget buildBody(List<MediaItem> books) {
     final List<SrtBook> srtBooks =
         SrtBookRepository(appModel.database).listAll();
-    if (books.isEmpty && srtBooks.isEmpty) {
+
+    // 字幕导入会把生成的 EPUB 也塞进 ttu IDB，这里把那几条 ID 从 EPUB 区剔除，
+    // 避免同一本书同时出现在「字幕」和「EPUB」两个区。
+    final Set<int> srtTtuIds = {
+      for (final b in srtBooks)
+        if (b.ttuBookId > 0) b.ttuBookId,
+    };
+    final List<MediaItem> epubBooks = srtTtuIds.isEmpty
+        ? books
+        : books.where((item) {
+            final int? id = _parseTtuBookId(item.mediaIdentifier);
+            return id == null || !srtTtuIds.contains(id);
+          }).toList();
+
+    if (epubBooks.isEmpty && srtBooks.isEmpty) {
       return buildPlaceholder();
     }
     return RawScrollbar(
@@ -139,7 +153,7 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
             ),
           ],
           // ── EPUB section ──────────────────────────────────────────────────
-          if (books.isNotEmpty) ...[
+          if (epubBooks.isNotEmpty) ...[
             if (srtBooks.isNotEmpty)
               SliverToBoxAdapter(child: _buildSectionHeader('EPUB')),
             SliverGrid.builder(
@@ -147,8 +161,8 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
                 maxCrossAxisExtent: 150,
                 childAspectRatio: mediaSource.aspectRatio,
               ),
-              itemCount: books.length,
-              itemBuilder: (_, i) => buildMediaItem(books[i]),
+              itemCount: epubBooks.length,
+              itemBuilder: (_, i) => buildMediaItem(epubBooks[i]),
             ),
           ],
         ],
