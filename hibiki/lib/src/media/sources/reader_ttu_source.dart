@@ -13,6 +13,7 @@ import 'package:hibiki/language.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
 import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
 import 'package:hibiki/utils.dart';
@@ -180,8 +181,11 @@ class ReaderTtuSource extends ReaderMediaSource {
             context: context,
             builder: (_) => BookImportDialog(
               repo: SrtBookRepository(appModel.database),
-              serverPort:
-                  ReaderTtuSource.instance.getPortForLanguage(appModel.targetLanguage),
+              audiobookRepo: AudiobookRepository(appModel.database),
+              serverPort: ReaderTtuSource.instance
+                  .getPortForLanguage(appModel.targetLanguage),
+              ttuMediaSourceIdentifier:
+                  ReaderTtuSource.instance.uniqueKey,
             ),
           );
           if (imported == true) {

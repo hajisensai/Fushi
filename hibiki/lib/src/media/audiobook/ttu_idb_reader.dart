@@ -123,4 +123,85 @@ class TtuIdbReader {
       await webView.dispose();
     }
   }
+
+  /// 读取 `ttuBookId` 对应 books 记录的 `title` 字段。
+  ///
+  /// 用于 EPUB 刚被 ttu 导入后、我们需要构造与 `ttuBooksProvider` 一致的
+  /// `MediaItem.uniqueKey`（其 mediaIdentifier 形如 `.../b.html?id=X&?title=Y`）。
+  /// 未找到或字段缺失时返回空串，调用方自行兜底。
+  static Future<String> readTitle({
+    required int ttuBookId,
+    required int serverPort,
+    Duration timeout = const Duration(seconds: 10),
+  }) async {
+    if (ttuBookId <= 0) {
+      throw ArgumentError('ttuBookId must be > 0');
+    }
+
+    final String js = '''
+(async function() {
+  try {
+    const record = await new Promise((resolve, reject) => {
+      const req = indexedDB.open('books');
+      req.onsuccess = (ev) => {
+        const db = ev.target.result;
+        if (!db.objectStoreNames.contains('data')) {
+          reject('data_store_missing'); return;
+        }
+        const tx = db.transaction(['data'], 'readonly');
+        const get = tx.objectStore('data').get($ttuBookId);
+        get.onsuccess = (e) => resolve(e.target.result);
+        get.onerror = (e) => reject(String(e.target.error));
+      };
+      req.onerror = (e) => reject(String(e.target.error));
+    });
+    const title = record && typeof record.title === 'string' ? record.title : '';
+    console.log(JSON.stringify({messageType: 'ttu_title_ok', title: title}));
+  } catch (e) {
+    console.log(JSON.stringify({messageType: 'ttu_title_err', error: String(e)}));
+  }
+})();
+''';
+
+    final Completer<String> completer = Completer<String>();
+    HeadlessInAppWebView? webView;
+    webView = HeadlessInAppWebView(
+      initialUrlRequest: URLRequest(
+        url: WebUri('http://localhost:$serverPort/'),
+      ),
+      initialSettings: InAppWebViewSettings(
+        allowFileAccessFromFileURLs: true,
+        allowUniversalAccessFromFileURLs: true,
+      ),
+      onLoadStop: (controller, url) async {
+        await controller.evaluateJavascript(source: js);
+      },
+      onConsoleMessage: (controller, message) {
+        if (completer.isCompleted) {
+          return;
+        }
+        try {
+          final Map<String, dynamic> msg =
+              jsonDecode(message.message) as Map<String, dynamic>;
+          final String type = msg['messageType'] as String? ?? '';
+          if (type == 'ttu_title_ok') {
+            completer.complete(msg['title'] as String? ?? '');
+          } else if (type == 'ttu_title_err') {
+            completer.completeError(
+              StateError('ttu_title_err: ${msg['error']}'),
+            );
+          }
+        } catch (e) {
+          debugPrint('TtuIdbReader.readTitle console decode error: $e');
+        }
+      },
+    );
+
+    try {
+      await webView.run();
+      return await completer.future.timeout(timeout);
+    } finally {
+      await webView.dispose();
+    }
+  }
 }

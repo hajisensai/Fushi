@@ -7,35 +7,54 @@ import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
 import 'package:hibiki/src/media/audiobook/cues_to_epub.dart';
+import 'package:hibiki/src/media/audiobook/epub_srt_matcher.dart';
+import 'package:hibiki/src/media/audiobook/sasayaki_match_codec.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_model.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
 import 'package:hibiki/src/media/audiobook/ass_parser.dart';
 import 'package:hibiki/src/media/audiobook/lrc_parser.dart';
 import 'package:hibiki/src/media/audiobook/srt_parser.dart';
 import 'package:hibiki/src/media/audiobook/ttu_epub_importer.dart';
+import 'package:hibiki/src/media/audiobook/ttu_idb_reader.dart';
 import 'package:hibiki/src/media/audiobook/vtt_parser.dart';
 import 'package:hibiki/utils.dart';
 
-/// 统一"导入书"对话框：EPUB 或字幕任选其一，字幕可再附加音频。
+/// 统一"导入书"对话框。EPUB、字幕、音频可按需组合，一次导入。
 ///
-/// - **仅 EPUB**：读取用户选的 EPUB 文件 → [TtuEpubImporter] 驱动 ttu reader
-///   自己的 `<input type=file>` 导入管线，拿到 `ttuBookId`。
+/// 路由规则（以"选中了什么"为准）：
+///
+/// - **仅 EPUB**：[TtuEpubImporter] 驱动 ttu 的 `<input type=file>` 管线导入，
+///   不落 [SrtBook] / [Audiobook]，书自然出现在书架的 EPUB 区。
 /// - **仅字幕（可带音频）**：解析 cues → [CuesToEpub.buildIdbPayload] 拼 ttu
 ///   原生 IDB 载荷并 `put()` 写入（带 `data-cue-id` span，供 AudiobookBridge
 ///   做高亮同步）；同时把 cues + audio 路径落到 Isar 的 [SrtBook] / [AudioCue]。
-/// - **EPUB + 字幕**：不支持（要给 EPUB 挂字幕走书架长按里的 AudiobookImportDialog）。
+/// - **EPUB + 字幕（可带音频）**：先用 ttu 导入 EPUB 拿 `ttuBookId`；再从 IDB
+///   读回章节文本，跑 [EpubSrtMatcher] + [SasayakiMatchCodec]，把 cue 对齐到
+///   真实 EPUB；cues + 可选音频落到 [AudiobookRepository]（bookUid 复用
+///   `MediaItem.uniqueKey` 约定：`$sourceId/b.html?id=X&?title=Y`）。
+/// - **音频但无字幕**：非法组合，音频必须配合字幕使用。
 class BookImportDialog extends StatefulWidget {
   const BookImportDialog({
     required this.repo,
+    required this.audiobookRepo,
     required this.serverPort,
+    required this.ttuMediaSourceIdentifier,
     super.key,
   });
 
   final SrtBookRepository repo;
 
+  /// 存 EPUB+字幕 组合路径的 Audiobook / AudioCue。
+  final AudiobookRepository audiobookRepo;
+
   /// ッツ Ebook Reader local server port.
   final int serverPort;
+
+  /// `MediaItem.mediaSourceIdentifier` 值（同 `ReaderTtuSource.instance.uniqueKey`）。
+  /// 用于构造 EPUB+字幕 组合的 bookUid。
+  final String ttuMediaSourceIdentifier;
 
   @override
   State<BookImportDialog> createState() => _BookImportDialogState();
@@ -355,12 +374,13 @@ class _BookImportDialogState extends State<BookImportDialog> {
   // ── 导入 ────────────────────────────────────────────────────────────────
 
   Future<void> _doImport() async {
-    if (_epubPath != null && _srtPath != null) {
-      Fluttertoast.showToast(msg: t.srt_import_conflict);
-      return;
-    }
     if (_epubPath == null && _srtPath == null) {
       Fluttertoast.showToast(msg: t.srt_import_missing_input);
+      return;
+    }
+    if (_epubPath != null && _srtPath == null && _hasAudioSource) {
+      // 音频必须配合字幕使用：EPUB 上没有 cue 时间轴，对不齐。
+      Fluttertoast.showToast(msg: t.srt_import_audio_needs_subtitle);
       return;
     }
     final String title = _titleCtrl.text.trim();
@@ -372,12 +392,13 @@ class _BookImportDialogState extends State<BookImportDialog> {
     setState(() => _importing = true);
 
     try {
-      final bool isSubtitleFlow = _srtPath != null;
       final String? authorText = _authorCtrl.text.trim().isEmpty
           ? null
           : _authorCtrl.text.trim();
 
-      if (isSubtitleFlow) {
+      if (_epubPath != null && _srtPath != null) {
+        await _importEpubWithAlignment(title: title);
+      } else if (_srtPath != null) {
         await _importSubtitleBook(title: title, author: authorText);
       } else {
         await _importEpubOnly(title: title);
@@ -453,6 +474,108 @@ class _BookImportDialogState extends State<BookImportDialog> {
     );
     debugPrint('[hibiki-import] EPUB save: title="$title" '
         'ttuBookId=$ttuBookId path=$_epubPath');
+  }
+
+  /// EPUB + subtitle (+optional audio) flow: import the real EPUB via ttu,
+  /// then attach a Sasayaki-matched [Audiobook] record pointing to the
+  /// same `bookUid` the bookshelf will compute for this book.
+  Future<void> _importEpubWithAlignment({required String title}) async {
+    // 1) 导入 EPUB，拿到 ttu IDB 主键。
+    final File epubFile = File(_epubPath!);
+    final int ttuBookId = await TtuEpubImporter.import(
+      bytes: await epubFile.readAsBytes(),
+      filename: _basename(_epubPath!),
+      serverPort: widget.serverPort,
+    );
+    if (ttuBookId <= 0) {
+      throw StateError('ttu returned invalid book id');
+    }
+
+    // 2) 从 ttu IDB 读回 title，构造和 ttuBooksProvider 一致的 bookUid。
+    String idbTitle = '';
+    try {
+      idbTitle = await TtuIdbReader.readTitle(
+        ttuBookId: ttuBookId,
+        serverPort: widget.serverPort,
+      );
+    } catch (e) {
+      debugPrint('[hibiki-import] readTitle failed: $e');
+    }
+    final String safeTitle = idbTitle.isNotEmpty ? idbTitle : ' ';
+    final String mediaIdentifier =
+        'http://localhost:${widget.serverPort}/b.html?id=$ttuBookId&?title=$safeTitle';
+    final String bookUid =
+        '${widget.ttuMediaSourceIdentifier}/$mediaIdentifier';
+
+    // 3) 解析 cues + 跑 Sasayaki 匹配（仅 SRT 做匹配，其他格式仅落 cue）。
+    final File srtFile = File(_srtPath!);
+    final String ext = srtFile.path.split('.').last.toLowerCase();
+    final List<AudioCue> cues = _parseCues(srtFile, bookUid);
+    final String chapterHref = _defaultChapterFor(ext);
+
+    if (ext == 'srt') {
+      await _runSasayakiMatch(ttuBookId: ttuBookId, cues: cues);
+    }
+
+    // 4) 存 Audiobook（挂 audio 源）+ cues。
+    final Audiobook audiobook = Audiobook()
+      ..bookUid = bookUid
+      ..alignmentFormat = ext
+      ..alignmentPath = _srtPath!;
+    if (_audioPaths != null && _audioPaths!.isNotEmpty) {
+      audiobook.audioPaths = _audioPaths;
+    } else if (_audioDir != null) {
+      audiobook.audioRoot = _audioDir;
+    }
+
+    debugPrint('[hibiki-import] EPUB+align save: bookUid="$bookUid" '
+        'ttuBookId=$ttuBookId cues=${cues.length}');
+
+    await widget.audiobookRepo.saveAudiobook(audiobook);
+    await widget.audiobookRepo.saveCues(
+      bookUid: bookUid,
+      chapterHref: chapterHref,
+      cues: cues,
+    );
+  }
+
+  /// 跑 Sasayaki 文本匹配，把 section/normChar 偏移编码写回 cue.textFragmentId。
+  /// 失败不抛——cues 仍可落库，只是退化成"整本单章"定位。
+  Future<void> _runSasayakiMatch({
+    required int ttuBookId,
+    required List<AudioCue> cues,
+  }) async {
+    if (cues.isEmpty) return;
+    try {
+      final List<EpubSection> sections = await TtuIdbReader.readSections(
+        ttuBookId: ttuBookId,
+        serverPort: widget.serverPort,
+      );
+      if (sections.isEmpty) return;
+      final MatchResult result = EpubSrtMatcher.match(
+        sections: sections,
+        cues: cues,
+      );
+      SasayakiMatchCodec.applyToCues(cues: cues, result: result);
+      debugPrint('[hibiki-import] Sasayaki match: '
+          '${result.matchedCues}/${result.totalCues}');
+    } catch (e) {
+      debugPrint('[hibiki-import] Sasayaki match failed: $e');
+    }
+  }
+
+  String _defaultChapterFor(String ext) {
+    switch (ext) {
+      case 'lrc':
+        return LrcParser.defaultChapter;
+      case 'vtt':
+        return VttParser.defaultChapter;
+      case 'ass':
+      case 'ssa':
+        return AssParser.defaultChapter;
+      default:
+        return SrtParser.defaultChapter;
+    }
   }
 
   /// Injects [payload] into the ッツ reader's "books" IDB via a
