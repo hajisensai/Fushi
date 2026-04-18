@@ -26,6 +26,19 @@ class AudiobookRepository {
         .findAllSync();
   }
 
+  /// 查询指定书的所有 [AudioCue]，跨章节汇总。
+  ///
+  /// Sasayaki 路径下 cue 的位置信息编码在 textFragmentId 上（sectionIndex +
+  /// normChar 偏移），与原始 chapterHref 无关，需要不分章节地取全部 cue 供
+  /// 音频控制器跨章节追踪。
+  List<AudioCue> cuesForBook(String bookUid) {
+    return _isar.audioCues
+        .filter()
+        .bookUidEqualTo(bookUid)
+        .sortBySentenceIndex()
+        .findAllSync();
+  }
+
   /// 查找指定书+章节+句序对应的 [AudioCue]，未找到返回 null。
   AudioCue? findCue({
     required String bookUid,

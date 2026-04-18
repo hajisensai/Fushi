@@ -21,6 +21,7 @@ import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
+import 'package:hibiki/src/media/audiobook/sasayaki_match_codec.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_model.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
 import 'package:hibiki/src/media/audiobook/srt_parser.dart';
@@ -1554,18 +1555,47 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         return;
       }
       final AudiobookRepository repo = AudiobookRepository(appModel.database);
-      final List<AudioCue> cues = repo.cuesForChapter(
-        bookUid: bookUid,
-        chapterHref: _currentChapterHref,
+
+      // Sasayaki 路径的 cue 把位置编码在 textFragmentId 上（`sasayaki://...`），
+      // 与原始 chapterHref 解耦：cues 存在某个默认 chapter（srt:// 等）下，但
+      // 跨章节定位靠 sectionIndex + 归一化偏移。按章节过滤会返回空集，所以
+      // 先抓全部 cue，检测到 Sasayaki 编码就沿用；否则退回按章节过滤。
+      final List<AudioCue> allCues = repo.cuesForBook(bookUid);
+      final bool sasayaki = allCues.any(
+        (AudioCue c) => SasayakiMatchCodec.tryDecode(c.textFragmentId) != null,
       );
+
+      final List<AudioCue> cues;
+      if (sasayaki) {
+        cues = allCues;
+      } else {
+        cues = repo.cuesForChapter(
+          bookUid: bookUid,
+          chapterHref: _currentChapterHref,
+        );
+      }
       _audiobookController?.setChapterCues(cues);
 
       debugPrint(
         '[hibiki-audiobook] inject(regular) chapter=$_currentChapterHref '
-        'cues=${cues.length}',
+        'cues=${cues.length} sasayaki=$sasayaki',
       );
 
-      if (cues.isEmpty) {
+      if (sasayaki) {
+        // Sasayaki 模式不做句级 annotate（cue 位置由 normChar 偏移编码）；
+        // 只需把 sectionIndex → DOM id 映射拉起来，高亮时现场定位。
+        final int? ttuId = _extractTtuBookId();
+        if (ttuId != null && ttuId > 0) {
+          await AudiobookBridge.initSasayakiRefs(
+            controller,
+            ttuBookId: ttuId,
+          );
+        } else {
+          debugPrint(
+            '[hibiki-audiobook] sasayaki init skipped: ttuBookId missing',
+          );
+        }
+      } else if (cues.isEmpty) {
         // 无预对齐 cue，用自动标注
         await AudiobookBridge.annotate(
           controller,
@@ -1661,11 +1691,23 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       }
     }
 
+    // 若是 ttu 里的真 EPUB（带 ?id=N）且本地服务已启动，把 ttuBookId +
+    // serverPort 一并传给 dialog，SRT 对齐时才会跑 Sasayaki 文本匹配，把
+    // cue 位置编码到 textFragmentId（否则 cue 只带默认 `[data-cue-id]`，
+    // 在没有 data-cue-id 的真 EPUB 上点不到也高亮不了）。
+    final int? ttuBookIdForDialog = _extractTtuBookId();
+    final int? serverPort = ref
+        .read(ttuServerProvider(appModel.targetLanguage))
+        .valueOrNull
+        ?.boundPort;
+
     final bool? result = await showDialog<bool>(
       context: context,
       builder: (_) => AudiobookImportDialog(
         bookUid: bookUid,
         repo: AudiobookRepository(appModel.database),
+        ttuBookId: ttuBookIdForDialog,
+        serverPort: serverPort,
       ),
     );
     // result == true 表示用户完成导入，重新初始化播放器

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
+import 'package:hibiki/src/media/audiobook/sasayaki_match_codec.dart';
 
 /// WebView ↔ Flutter 双向通道，用于有声书句子高亮和点击跳转。
 ///
@@ -242,6 +243,218 @@ window.__hoshiHighlight = function(selector) {
 };
 ''';
 
+  /// Sasayaki 路径的辅助 JS：
+  ///
+  /// - `__hoshiLoadSasayakiRefs(ttuBookId)`：从 ttu IndexedDB 读 `sections`，
+  ///   缓存 `sectionIndex → reference`（章节根元素 id）到 `__hoshiSasayakiRefs`。
+  /// - `__hoshiIsSkippable(code)`：镜像 Dart 的 `EpubSrtMatcher._isSkippable`
+  ///   归一化规则（空白 / ASCII 标点 / CJK 标点），大写 ASCII 仍计数一次。
+  /// - `__hoshiUnwrapSasayaki()`：拆掉上一次 Sasayaki 高亮包裹的 span。
+  /// - `__hoshiHighlightSasayaki(s, ns, ne)`：定位章节元素 → 按归一化偏移
+  ///   在 text node 上找到 Range → 包 `span.hoshi-active` → 触发 ticker 滚动。
+  ///
+  /// 与字幕 EPUB 路径（`[data-cue-id]`）互不冲突：入口在 Dart 侧的
+  /// [highlight] 根据 `textFragmentId` 前缀分派。
+  static const String _sasayakiFn = '''
+window.__hoshiSasayakiRefs = window.__hoshiSasayakiRefs || null;
+
+window.__hoshiLoadSasayakiRefs = function(ttuBookId) {
+  try {
+    var req = indexedDB.open('books');
+    req.onsuccess = function(ev) {
+      var db = ev.target.result;
+      if (!db.objectStoreNames.contains('data')) {
+        console.log(JSON.stringify({
+          'hibiki-message-type': 'sasayakiRefsErr',
+          'error': 'no_data_store'
+        }));
+        return;
+      }
+      var tx = db.transaction(['data'], 'readonly');
+      var g = tx.objectStore('data').get(ttuBookId);
+      g.onsuccess = function(e) {
+        var rec = e.target.result;
+        var sections = (rec && rec.sections) || [];
+        window.__hoshiSasayakiRefs = sections.map(function(s) {
+          return (s && s.reference) || '';
+        });
+        console.log(JSON.stringify({
+          'hibiki-message-type': 'sasayakiRefsReady',
+          'count': window.__hoshiSasayakiRefs.length
+        }));
+      };
+      g.onerror = function(e) {
+        console.log(JSON.stringify({
+          'hibiki-message-type': 'sasayakiRefsErr',
+          'error': String(e.target.error)
+        }));
+      };
+    };
+    req.onerror = function(e) {
+      console.log(JSON.stringify({
+        'hibiki-message-type': 'sasayakiRefsErr',
+        'error': String(e.target.error)
+      }));
+    };
+  } catch (e) {
+    console.log(JSON.stringify({
+      'hibiki-message-type': 'sasayakiRefsErr',
+      'error': String(e)
+    }));
+  }
+};
+
+window.__hoshiIsSkippable = function(c) {
+  if (c === 0x20 || c === 0x09 || c === 0x0A || c === 0x0D) return true;
+  if (c >= 0x21 && c <= 0x2F) return true;
+  if (c >= 0x3A && c <= 0x40) return true;
+  if (c >= 0x5B && c <= 0x60) return true;
+  if (c >= 0x7B && c <= 0x7E) return true;
+  return (
+    c === 0x3000 || c === 0x3001 || c === 0x3002 || c === 0x300C ||
+    c === 0x300D || c === 0x300E || c === 0x300F || c === 0x301C ||
+    c === 0x301D || c === 0x301E || c === 0x301F || c === 0x2026 ||
+    c === 0x2014 || c === 0x2015 || c === 0xFF01 || c === 0xFF0C ||
+    c === 0xFF0E || c === 0xFF1A || c === 0xFF1B || c === 0xFF1F ||
+    c === 0xFF08 || c === 0xFF09 || c === 0xFF0D || c === 0xFF3B ||
+    c === 0xFF3D || c === 0xFF5B || c === 0xFF5D
+  );
+};
+
+window.__hoshiUnwrapSasayaki = function() {
+  var spans = document.querySelectorAll('span.hoshi-active');
+  for (var i = 0; i < spans.length; i++) {
+    var span = spans[i];
+    var p = span.parentNode;
+    if (!p) continue;
+    while (span.firstChild) p.insertBefore(span.firstChild, span);
+    p.removeChild(span);
+    if (p.normalize) p.normalize();
+  }
+};
+
+window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normCharEnd) {
+  var refs = window.__hoshiSasayakiRefs;
+  if (!refs) {
+    console.log(JSON.stringify({
+      'hibiki-message-type': 'sasayakiRefsMissing',
+      'sectionIndex': sectionIndex
+    }));
+    return;
+  }
+  if (sectionIndex < 0 || sectionIndex >= refs.length) {
+    console.log(JSON.stringify({
+      'hibiki-message-type': 'sasayakiNoRef',
+      'sectionIndex': sectionIndex,
+      'total': refs.length
+    }));
+    return;
+  }
+  var refId = refs[sectionIndex];
+  if (!refId) return;
+
+  var root = document.getElementById(refId);
+  if (!root) {
+    console.log(JSON.stringify({
+      'hibiki-message-type': 'sasayakiSectionMissing',
+      'refId': refId,
+      'sectionIndex': sectionIndex
+    }));
+    return;
+  }
+
+  // Clear any previous Sasayaki wrap + class-only legacy highlight BEFORE
+  // walking, so offsets into text nodes aren't affected by artificial spans.
+  window.__hoshiUnwrapSasayaki();
+  var legacy = document.querySelectorAll('.hoshi-active');
+  for (var li = 0; li < legacy.length; li++) {
+    legacy[li].classList.remove('hoshi-active');
+  }
+
+  // Walk all text nodes under root (include <rt> — the Dart matcher uses
+  // textContent, which includes ruby annotations).
+  var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+  var startNode = null, startOffset = 0;
+  var endNode = null, endOffset = 0;
+  var normPos = 0;
+  var lastNode = null;
+  var node;
+  while ((node = walker.nextNode())) {
+    lastNode = node;
+    var text = node.nodeValue || '';
+    for (var i = 0; i < text.length; i++) {
+      var c = text.charCodeAt(i);
+      if (window.__hoshiIsSkippable(c)) continue;
+      if (startNode === null && normPos >= normCharStart) {
+        startNode = node;
+        startOffset = i;
+      }
+      normPos++;
+      if (startNode !== null && normPos >= normCharEnd) {
+        endNode = node;
+        endOffset = i + 1;
+        break;
+      }
+    }
+    if (endNode !== null) break;
+  }
+
+  // normCharEnd can exceed section's normalized length when matcher window
+  // spilled into the next section. Clamp to last node's end so we still
+  // highlight from start through section's tail.
+  if (startNode !== null && endNode === null && lastNode !== null) {
+    endNode = lastNode;
+    endOffset = lastNode.nodeValue ? lastNode.nodeValue.length : 0;
+  }
+
+  if (!startNode || !endNode) {
+    console.log(JSON.stringify({
+      'hibiki-message-type': 'sasayakiOffsetMissing',
+      'refId': refId,
+      'normCharStart': normCharStart,
+      'normCharEnd': normCharEnd,
+      'scannedChars': normPos
+    }));
+    return;
+  }
+
+  var range = document.createRange();
+  try {
+    range.setStart(startNode, startOffset);
+    range.setEnd(endNode, endOffset);
+  } catch (e) {
+    console.log(JSON.stringify({
+      'hibiki-message-type': 'sasayakiRangeErr',
+      'error': String(e)
+    }));
+    return;
+  }
+
+  var span = document.createElement('span');
+  span.className = 'hoshi-active';
+  try {
+    span.appendChild(range.extractContents());
+    range.insertNode(span);
+  } catch (e) {
+    console.log(JSON.stringify({
+      'hibiki-message-type': 'sasayakiWrapErr',
+      'error': String(e)
+    }));
+    return;
+  }
+
+  console.log(JSON.stringify({
+    'hibiki-message-type': 'sasayakiHighlightOk',
+    'sectionIndex': sectionIndex,
+    'normCharStart': normCharStart,
+    'normCharEnd': normCharEnd
+  }));
+
+  // Reuse existing ticker to scroll to the freshly wrapped span.
+  window.__hoshiHighlight('.hoshi-active');
+};
+''';
+
   /// 自动句子标注函数：按日文句末标点分割文本节点，包裹 data-hoshi-sid span。
   ///
   /// 跳过 ruby 内部节点，避免破坏振假名结构。
@@ -326,7 +539,21 @@ window.__hoshiAnnotate = function(chapterHref) {
 
     // 注入 JS 函数
     await controller.evaluateJavascript(source: _highlightFn);
+    await controller.evaluateJavascript(source: _sasayakiFn);
     await controller.evaluateJavascript(source: _annotateFn);
+  }
+
+  /// 初始化 Sasayaki 路径所需的 `sectionIndex → DOM id` 映射。
+  ///
+  /// 在 [inject] 之后、首次 [highlight] Sasayaki-encoded cue 之前调用一次；
+  /// 异步读 ttu IndexedDB，完成后控制台会打 `sasayakiRefsReady`。
+  static Future<void> initSasayakiRefs(
+    InAppWebViewController controller, {
+    required int ttuBookId,
+  }) async {
+    await controller.evaluateJavascript(
+      source: '__hoshiLoadSasayakiRefs($ttuBookId);',
+    );
   }
 
   /// 自动标注当前章节的句子（在 [inject] 之后调用）。
@@ -343,14 +570,28 @@ window.__hoshiAnnotate = function(chapterHref) {
 
   /// 高亮 [cue] 对应的句子。
   ///
-  /// [cue] 为 null 时清除所有高亮。
+  /// [cue] 为 null 时清除所有高亮。textFragmentId 以 `sasayaki://` 开头时走
+  /// Sasayaki 路径（按 sectionIndex + 归一化字符偏移在 DOM 中定位）；否则
+  /// 按普通 CSS selector 处理。
   static Future<void> highlight(
     InAppWebViewController controller, {
     AudioCue? cue,
   }) async {
-    final String selector = cue?.textFragmentId ?? '';
+    if (cue == null) {
+      await controller.evaluateJavascript(source: '__hoshiHighlight("");');
+      return;
+    }
+    final String raw = cue.textFragmentId;
+    final SasayakiFragment? frag = SasayakiMatchCodec.tryDecode(raw);
+    if (frag != null) {
+      await controller.evaluateJavascript(
+        source: '__hoshiHighlightSasayaki(${frag.sectionIndex}, '
+            '${frag.normCharStart}, ${frag.normCharEnd});',
+      );
+      return;
+    }
     await controller.evaluateJavascript(
-      source: '__hoshiHighlight(${jsonEncode(selector)});',
+      source: '__hoshiHighlight(${jsonEncode(raw)});',
     );
   }
 
