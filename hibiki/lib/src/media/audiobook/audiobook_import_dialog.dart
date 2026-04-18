@@ -110,6 +110,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     final String audioLabel = (ab.audioPaths != null && ab.audioPaths!.isNotEmpty)
         ? t.srt_import_files_selected(n: ab.audioPaths!.length)
         : (ab.audioRoot ?? '');
+    final AudiobookHealth health = AudiobookHealth.fromAudiobook(ab);
+    final Widget? healthRow = _buildHealthRow(health);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -122,6 +124,53 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
         ),
         const SizedBox(height: 8),
         _infoRow(Icons.align_horizontal_left, ab.alignmentPath),
+        if (healthRow != null) ...[
+          const SizedBox(height: 8),
+          healthRow,
+        ],
+      ],
+    );
+  }
+
+  /// 已附加有声书时展示匹配状态。notApplicable / unrun → 不渲染（无信息可看）。
+  /// reason 来自 matcher（如 "123/140 cues matched"），直接展示给用户。
+  Widget? _buildHealthRow(AudiobookHealth health) {
+    IconData icon;
+    Color color;
+    String label;
+    final int pct = health.ratePct ?? 0;
+    final String? reason = health.reason;
+    final String tail = (reason == null || reason.isEmpty) ? '' : ' · $reason';
+    switch (health.kind) {
+      case HealthKind.ok:
+        icon = Icons.check_circle;
+        color = Colors.green;
+        label = 'Sasayaki $pct%$tail';
+      case HealthKind.partial:
+        icon = Icons.warning_amber;
+        color = Colors.amber;
+        label = 'Sasayaki $pct%$tail';
+      case HealthKind.failed:
+        icon = Icons.error_outline;
+        color = Colors.red;
+        label = 'Sasayaki $pct%$tail';
+      case HealthKind.running:
+      case HealthKind.unrun:
+      case HealthKind.notApplicable:
+        return null;
+    }
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: color),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(fontSize: 12, color: color),
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
       ],
     );
   }
@@ -365,8 +414,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       final int pct = (result.matchRate * 100).round();
       return AudiobookHealth.fromRatePct(
         ratePct: pct,
-        reason: '${result.matchedCues}/${result.totalCues} cues matched'
-            '${result.rescuedCues > 0 ? ' (${result.rescuedCues} rescued)' : ''}',
+        reason: '${result.matchedCues}/${result.totalCues} cues matched',
       );
     } catch (e) {
       debugPrint('EpubCueMatcher failed: $e');

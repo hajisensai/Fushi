@@ -9,7 +9,9 @@ import 'package:transparent_image/transparent_image.dart';
 import 'package:spaces/spaces.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_health.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_model.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
@@ -352,9 +354,28 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
   /// 书架卡片，附加有声书角标。
   @override
   Widget buildMediaItemContent(MediaItem item) {
-    final bool hasAudiobook = AudiobookRepository(appModel.database)
-            .findByBookUid(item.uniqueKey) !=
-        null;
+    // findByBookUid 读 Isar 时，如果某个 String 字段存了非法 UTF-8（历史脏
+    // 数据，常见于路径带日文却被错误编码的旧记录），严格 utf8.decode 会抛
+    // FormatException。这里 build 阶段不能让它冒出去，否则整张书卡退化成
+    // ErrorWidget，用户看见一坨错误文字。抓到后打堆栈到 logcat 便于定位，
+    // 角标按"没有"处理即可。
+    Audiobook? ab;
+    try {
+      ab = AudiobookRepository(appModel.database)
+          .findByBookUid(item.uniqueKey);
+    } catch (e, st) {
+      debugPrint(
+        '[hibiki-audiobook] findByBookUid crashed for '
+        'bookUid=${item.uniqueKey}: $e\n$st',
+      );
+      ab = null;
+    }
+    final bool hasAudiobook = ab != null;
+    // 角标按健康度上色：ok 白 / partial 黄 / failed 红 / 其他保持白色（不
+    // 强行报警，因为 unrun 是旧记录、notApplicable 是合成书的合法状态）。
+    final Color audiobookBadgeColor = ab == null
+        ? Colors.white
+        : _badgeColorFor(AudiobookHealth.fromAudiobook(ab).kind);
 
     return Container(
       padding: Spacing.of(context).insets.all.normal,
@@ -419,10 +440,10 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
                   color: Colors.black.withValues(alpha: 0.65),
                   borderRadius: BorderRadius.circular(4),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.headphones,
                   size: 14,
-                  color: Colors.white,
+                  color: audiobookBadgeColor,
                 ),
               ),
             ),
@@ -493,6 +514,21 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
     }
     ref.invalidate(ttuBooksProvider(appModel.targetLanguage));
     setState(() {});
+  }
+
+  Color _badgeColorFor(HealthKind kind) {
+    switch (kind) {
+      case HealthKind.ok:
+        return Colors.white;
+      case HealthKind.partial:
+        return Colors.amber;
+      case HealthKind.failed:
+        return Colors.redAccent;
+      case HealthKind.unrun:
+      case HealthKind.running:
+      case HealthKind.notApplicable:
+        return Colors.white;
+    }
   }
 
   int? _parseTtuBookId(String mediaIdentifier) {
