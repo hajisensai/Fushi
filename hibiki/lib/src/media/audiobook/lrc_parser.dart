@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/srt_parser.dart';
+import 'package:hibiki/src/media/audiobook/text_file_io.dart';
 
 /// 解析 LRC（歌词）字幕文件，产出 [AudioCue] 列表。
 ///
@@ -39,23 +40,40 @@ class LrcParser {
   /// 元数据标签：`[letters:anything]`（tag 全为字母）。
   static final RegExp _metaTag = RegExp(r'^\[([a-zA-Z]+):[^\]]*\]$');
 
-  /// 解析 [lrcFile] 并返回 [AudioCue] 列表。
+  /// 读取 [lrcFile] 并返回 [AudioCue] 列表。
+  ///
+  /// 走 [readTextWithEncoding] 自动识别编码，兼容 Shift-JIS / CP932 等非 UTF-8 源。
   ///
   /// [bookUid]            对应 MediaItem.uniqueKey。
   /// [chapterHref]        章节标识，默认 [defaultChapter]（单章节策略）。
   /// [lastCueDurationMs]  最后一条 cue 的持续时长（毫秒），默认 5000。
-  static List<AudioCue> parse({
+  static Future<List<AudioCue>> parse({
     required File lrcFile,
     required String bookUid,
     String chapterHref = defaultChapter,
     int lastCueDurationMs = 5000,
-  }) {
-    final String raw = lrcFile.readAsStringSync();
-    // 移除 UTF-8 BOM
-    final String content =
-        raw.startsWith('\uFEFF') ? raw.substring(1) : raw;
+  }) async {
+    final String content = await readTextWithEncoding(lrcFile);
+    return parseString(
+      content: content,
+      bookUid: bookUid,
+      chapterHref: chapterHref,
+      lastCueDurationMs: lastCueDurationMs,
+    );
+  }
 
-    final List<String> lines = content
+  /// 解析 LRC 文本字符串并返回 [AudioCue] 列表。纯函数，测试入口。
+  static List<AudioCue> parseString({
+    required String content,
+    required String bookUid,
+    String chapterHref = defaultChapter,
+    int lastCueDurationMs = 5000,
+  }) {
+    // 移除 UTF-8 BOM
+    final String stripped =
+        content.startsWith('\uFEFF') ? content.substring(1) : content;
+
+    final List<String> lines = stripped
         .replaceAll('\r\n', '\n')
         .replaceAll('\r', '\n')
         .split('\n');

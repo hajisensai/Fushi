@@ -769,11 +769,14 @@ window.__hoshiAnnotate = function(chapterHref) {
   /// [cue] 为 null 时清除所有高亮。textFragmentId 以 `sasayaki://` 开头时走
   /// Sasayaki 路径（按 sectionIndex + 归一化字符偏移在 DOM 中定位）；否则
   /// 按普通 CSS selector 处理。
+  ///
+  /// 若 textFragmentId 为空（Sasayaki 匹配失败、且不是字幕合成书路径），
+  /// 视为"无可用定位"：只清一次高亮，不再每 tick 刷 `[data-cue-id]` 回落。
   static Future<void> highlight(
     InAppWebViewController controller, {
     AudioCue? cue,
   }) async {
-    if (cue == null) {
+    if (cue == null || cue.textFragmentId.isEmpty) {
       await controller.evaluateJavascript(source: '__hoshiHighlight("");');
       return;
     }

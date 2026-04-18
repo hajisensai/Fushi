@@ -1,28 +1,9 @@
-import 'dart:convert';
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/audiobook/ass_parser.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/srt_parser.dart';
 
 void main() {
-  late Directory tmpDir;
-
-  setUp(() {
-    tmpDir = Directory.systemTemp.createTempSync('ass_parser_test_');
-  });
-
-  tearDown(() {
-    tmpDir.deleteSync(recursive: true);
-  });
-
-  File writeAss(String name, String content) {
-    final File f = File('${tmpDir.path}/$name');
-    f.writeAsStringSync(content);
-    return f;
-  }
-
   const String header = '''
 [Script Info]
 Title: Test
@@ -35,16 +16,14 @@ Style: Default,Arial,20,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 ''';
 
-  group('AssParser.parse', () {
+  group('AssParser.parseString', () {
     test('正常解析三条字幕', () {
-      final File ass = writeAss('normal.ass', '''
+      final List<AudioCue> cues = AssParser.parseString(
+        content: '''
 ${header}Dialogue: 0,0:00:01.00,0:00:04.23,Default,,0,0,0,,吾輩は猫である。
 Dialogue: 0,0:00:04.50,0:00:08.10,Default,,0,0,0,,名前はまだない。
 Dialogue: 0,0:00:08.20,0:00:12.00,Default,,0,0,0,,どこで生れたかとんと見当がつかぬ。
-''');
-
-      final List<AudioCue> cues = AssParser.parse(
-        assFile: ass,
+''',
         bookUid: 'test/book.ass',
       );
 
@@ -59,12 +38,10 @@ Dialogue: 0,0:00:08.20,0:00:12.00,Default,,0,0,0,,どこで生れたかとんと
     });
 
     test('ASS 覆盖标签被剥离', () {
-      final File ass = writeAss('tags.ass', '''
+      final List<AudioCue> cues = AssParser.parseString(
+        content: '''
 ${header}Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,{\\an8}{\\b1}強調テキスト{\\b0}
-''');
-
-      final List<AudioCue> cues = AssParser.parse(
-        assFile: ass,
+''',
         bookUid: 'test/book.ass',
       );
 
@@ -73,12 +50,10 @@ ${header}Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,{\\an8}{\\b1}強調�
     });
 
     test('软换行符 \\N 转为空格', () {
-      final File ass = writeAss('softbreak.ass', '''
+      final List<AudioCue> cues = AssParser.parseString(
+        content: '''
 ${header}Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,一行目\\N二行目
-''');
-
-      final List<AudioCue> cues = AssParser.parse(
-        assFile: ass,
+''',
         bookUid: 'test/book.ass',
       );
 
@@ -87,12 +62,10 @@ ${header}Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,一行目\\N二行目
     });
 
     test('Text 列中含逗号的内容正确拼合', () {
-      final File ass = writeAss('comma_text.ass', '''
+      final List<AudioCue> cues = AssParser.parseString(
+        content: '''
 ${header}Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,はい、そうです。
-''');
-
-      final List<AudioCue> cues = AssParser.parse(
-        assFile: ass,
+''',
         bookUid: 'test/book.ass',
       );
 
@@ -101,13 +74,11 @@ ${header}Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,はい、そうです
     });
 
     test('按 startMs 排序（Dialogue 顺序不影响结果）', () {
-      final File ass = writeAss('unsorted.ass', '''
+      final List<AudioCue> cues = AssParser.parseString(
+        content: '''
 ${header}Dialogue: 0,0:00:05.00,0:00:07.00,Default,,0,0,0,,後の行
 Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,前の行
-''');
-
-      final List<AudioCue> cues = AssParser.parse(
-        assFile: ass,
+''',
         bookUid: 'test/book.ass',
       );
 
@@ -117,12 +88,10 @@ Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,前の行
     });
 
     test('时间码厘秒精度正确（.67 → 670ms）', () {
-      final File ass = writeAss('centisec.ass', '''
+      final List<AudioCue> cues = AssParser.parseString(
+        content: '''
 ${header}Dialogue: 0,0:00:01.67,0:00:03.00,Default,,0,0,0,,厘秒テスト
-''');
-
-      final List<AudioCue> cues = AssParser.parse(
-        assFile: ass,
+''',
         bookUid: 'test/book.ass',
       );
 
@@ -130,15 +99,10 @@ ${header}Dialogue: 0,0:00:01.67,0:00:03.00,Default,,0,0,0,,厘秒テスト
       expect(cues[0].startMs, 1000 + 670);
     });
 
-    test('带 UTF-8 BOM 的文件正常解析', () {
-      final File ass = File('${tmpDir.path}/bom.ass');
-      final List<int> bom = [0xEF, 0xBB, 0xBF];
-      const String content =
-          '${header}Dialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,BOM テスト\n';
-      ass.writeAsBytesSync([...bom, ...utf8.encode(content)]);
-
-      final List<AudioCue> cues = AssParser.parse(
-        assFile: ass,
+    test('带 UTF-8 BOM 的内容正常解析', () {
+      final List<AudioCue> cues = AssParser.parseString(
+        content:
+            '\uFEFF${header}Dialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,BOM テスト\n',
         bookUid: 'test/book.ass',
       );
 
@@ -147,10 +111,8 @@ ${header}Dialogue: 0,0:00:01.67,0:00:03.00,Default,,0,0,0,,厘秒テスト
     });
 
     test('空文件（无 Events 段）返回空列表', () {
-      final File ass = writeAss('empty.ass', '[Script Info]\nTitle: Empty\n');
-
-      final List<AudioCue> cues = AssParser.parse(
-        assFile: ass,
+      final List<AudioCue> cues = AssParser.parseString(
+        content: '[Script Info]\nTitle: Empty\n',
         bookUid: 'test/book.ass',
       );
 

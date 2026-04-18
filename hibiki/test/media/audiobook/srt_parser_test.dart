@@ -1,30 +1,12 @@
-import 'dart:convert';
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/srt_parser.dart';
 
 void main() {
-  late Directory tmpDir;
-
-  setUp(() {
-    tmpDir = Directory.systemTemp.createTempSync('srt_parser_test_');
-  });
-
-  tearDown(() {
-    tmpDir.deleteSync(recursive: true);
-  });
-
-  File writeSrt(String name, String content) {
-    final File f = File('${tmpDir.path}/$name');
-    f.writeAsStringSync(content, encoding: utf8);
-    return f;
-  }
-
-  group('SrtParser.parse', () {
+  group('SrtParser.parseString', () {
     test('正常解析三条字幕', () {
-      final File srt = writeSrt('normal.srt', '''
+      final List<AudioCue> cues = SrtParser.parseString(
+        content: '''
 1
 00:00:01,000 --> 00:00:04,230
 吾輩は猫である。
@@ -36,10 +18,7 @@ void main() {
 3
 00:00:08,200 --> 00:00:12,000
 どこで生れたかとんと見当がつかぬ。
-''');
-
-      final List<AudioCue> cues = SrtParser.parse(
-        srtFile: srt,
+''',
         bookUid: 'test/book.srt',
       );
 
@@ -66,15 +45,13 @@ void main() {
     });
 
     test('多行文本合并为空格连接', () {
-      final File srt = writeSrt('multiline.srt', '''
+      final List<AudioCue> cues = SrtParser.parseString(
+        content: '''
 1
 00:00:01,000 --> 00:00:05,000
 これは一行目。
 これは二行目。
-''');
-
-      final List<AudioCue> cues = SrtParser.parse(
-        srtFile: srt,
+''',
         bookUid: 'test/book.srt',
       );
 
@@ -82,17 +59,10 @@ void main() {
       expect(cues[0].text, 'これは一行目。 これは二行目。');
     });
 
-    test('带 UTF-8 BOM 的文件正常解析', () {
-      // 手动写入 BOM + 内容
-      final File srt = File('${tmpDir.path}/bom.srt');
-      final List<int> bom = [0xEF, 0xBB, 0xBF];
-      final List<int> body = utf8.encode(
-        '1\n00:00:01,000 --> 00:00:02,000\nBOM テスト\n',
-      );
-      srt.writeAsBytesSync([...bom, ...body]);
-
-      final List<AudioCue> cues = SrtParser.parse(
-        srtFile: srt,
+    test('带 UTF-8 BOM 的内容正常解析', () {
+      final List<AudioCue> cues = SrtParser.parseString(
+        content:
+            '\uFEFF1\n00:00:01,000 --> 00:00:02,000\nBOM テスト\n',
         bookUid: 'test/book.srt',
       );
 
@@ -101,7 +71,8 @@ void main() {
     });
 
     test('空文本 block 被跳过', () {
-      final File srt = writeSrt('empty_text.srt', '''
+      final List<AudioCue> cues = SrtParser.parseString(
+        content: '''
 1
 00:00:01,000 --> 00:00:02,000
 正常テキスト
@@ -112,10 +83,7 @@ void main() {
 3
 00:00:03,500 --> 00:00:04,500
 もう一行
-''');
-
-      final List<AudioCue> cues = SrtParser.parse(
-        srtFile: srt,
+''',
         bookUid: 'test/book.srt',
       );
 
@@ -128,14 +96,12 @@ void main() {
     });
 
     test('chapterHref 自定义值正确写入', () {
-      final File srt = writeSrt('custom_chapter.srt', '''
+      final List<AudioCue> cues = SrtParser.parseString(
+        content: '''
 1
 00:00:00,500 --> 00:00:02,000
 カスタム章節
-''');
-
-      final List<AudioCue> cues = SrtParser.parse(
-        srtFile: srt,
+''',
         bookUid: 'test/book.srt',
         chapterHref: 'srt://chapter1',
       );
@@ -145,14 +111,12 @@ void main() {
     });
 
     test('时间码点号分隔（HH:MM:SS.mmm）也能解析', () {
-      final File srt = writeSrt('dot_separator.srt', '''
+      final List<AudioCue> cues = SrtParser.parseString(
+        content: '''
 1
 00:00:01.500 --> 00:00:03.750
 ドット区切りテスト
-''');
-
-      final List<AudioCue> cues = SrtParser.parse(
-        srtFile: srt,
+''',
         bookUid: 'test/book.srt',
       );
 
@@ -162,10 +126,8 @@ void main() {
     });
 
     test('空文件返回空列表', () {
-      final File srt = writeSrt('empty.srt', '');
-
-      final List<AudioCue> cues = SrtParser.parse(
-        srtFile: srt,
+      final List<AudioCue> cues = SrtParser.parseString(
+        content: '',
         bookUid: 'test/book.srt',
       );
 
@@ -173,14 +135,12 @@ void main() {
     });
 
     test('时间码毫秒补齐（1位→100ms，2位→120ms）', () {
-      final File srt = writeSrt('ms_padding.srt', '''
+      final List<AudioCue> cues = SrtParser.parseString(
+        content: '''
 1
 00:00:01,1 --> 00:00:02,12
 ミリ秒補完テスト
-''');
-
-      final List<AudioCue> cues = SrtParser.parse(
-        srtFile: srt,
+''',
         bookUid: 'test/book.srt',
       );
 

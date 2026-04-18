@@ -382,7 +382,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     // SRT / LRC / VTT / ASS：都走"单章节 defaultChapter"路径，都会尝试
     // matcher（前提是绑定了 ttu 书）。
     if (format == 'srt') {
-      final List<AudioCue> cues = SrtParser.parse(
+      final List<AudioCue> cues = await SrtParser.parse(
         srtFile: alignFile,
         bookUid: widget.bookUid,
       );
@@ -394,7 +394,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       );
       return health;
     } else if (format == 'lrc') {
-      final List<AudioCue> cues = LrcParser.parse(
+      final List<AudioCue> cues = await LrcParser.parse(
         lrcFile: alignFile,
         bookUid: widget.bookUid,
       );
@@ -406,7 +406,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       );
       return health;
     } else if (format == 'vtt') {
-      final List<AudioCue> cues = VttParser.parse(
+      final List<AudioCue> cues = await VttParser.parse(
         vttFile: alignFile,
         bookUid: widget.bookUid,
       );
@@ -418,7 +418,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       );
       return health;
     } else if (format == 'ass') {
-      final List<AudioCue> cues = AssParser.parse(
+      final List<AudioCue> cues = await AssParser.parse(
         assFile: alignFile,
         bookUid: widget.bookUid,
       );
@@ -430,7 +430,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       );
       return health;
     } else if (format == 'json') {
-      final List<AudioCue> allCues = JsonAlignmentParser.parse(
+      final List<AudioCue> allCues = await JsonAlignmentParser.parse(
         jsonFile: alignFile,
         bookUid: widget.bookUid,
       );
@@ -459,7 +459,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       final String chapterHref =
           fileName.replaceAll(RegExp(r'\.smil$', caseSensitive: false), '.xhtml');
 
-      final List<AudioCue> cues = SmilParser.parse(
+      final List<AudioCue> cues = await SmilParser.parse(
         smilFile: alignFile,
         bookUid: widget.bookUid,
         chapterHref: chapterHref,

@@ -64,10 +64,17 @@ class SasayakiMatchCodec {
   /// 把匹配结果写回 cues 的 `textFragmentId`。
   ///
   /// [cues] 与 `result.matches` 必须一一对应（相同顺序 / 相同 sentenceIndex）。
-  /// 未命中的 cue 的 `textFragmentId` 保持原值。返回新增命中的数量。
+  ///
+  /// 未命中的 cue：[clearUnmatched] 为 true（默认）时将 `textFragmentId` 置空，
+  /// 供 bridge 跳过无效的 `[data-cue-id="N"]` 回落选择器（普通 EPUB 里根本没
+  /// 这种 span，每次 tick 都 diagTickMiss 刷屏）。set 为 false 则保留原值，
+  /// 适合字幕合成书路径（`CuesToEpub` 生成的 EPUB 里确实存在 data-cue-id span）。
+  ///
+  /// 返回新增命中的数量。
   static int applyToCues({
     required List<AudioCue> cues,
     required MatchResult result,
+    bool clearUnmatched = true,
   }) {
     if (cues.length != result.matches.length) {
       throw ArgumentError(
@@ -78,15 +85,16 @@ class SasayakiMatchCodec {
     int applied = 0;
     for (int i = 0; i < cues.length; i++) {
       final CueMatch m = result.matches[i];
-      if (!m.matched) {
-        continue;
+      if (m.matched) {
+        cues[i].textFragmentId = encodeHit(
+          sectionIndex: m.sectionIndex,
+          normCharStart: m.normCharStart,
+          normCharEnd: m.normCharEnd,
+        );
+        applied++;
+      } else if (clearUnmatched) {
+        cues[i].textFragmentId = '';
       }
-      cues[i].textFragmentId = encodeHit(
-        sectionIndex: m.sectionIndex,
-        normCharStart: m.normCharStart,
-        normCharEnd: m.normCharEnd,
-      );
-      applied++;
     }
     return applied;
   }

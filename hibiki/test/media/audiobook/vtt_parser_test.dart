@@ -1,31 +1,13 @@
-import 'dart:convert';
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/srt_parser.dart';
 import 'package:hibiki/src/media/audiobook/vtt_parser.dart';
 
 void main() {
-  late Directory tmpDir;
-
-  setUp(() {
-    tmpDir = Directory.systemTemp.createTempSync('vtt_parser_test_');
-  });
-
-  tearDown(() {
-    tmpDir.deleteSync(recursive: true);
-  });
-
-  File writeVtt(String name, String content) {
-    final File f = File('${tmpDir.path}/$name');
-    f.writeAsStringSync(content);
-    return f;
-  }
-
-  group('VttParser.parse', () {
+  group('VttParser.parseString', () {
     test('正常解析三条字幕', () {
-      final File vtt = writeVtt('normal.vtt', '''
+      final List<AudioCue> cues = VttParser.parseString(
+        content: '''
 WEBVTT
 
 1
@@ -39,10 +21,7 @@ WEBVTT
 3
 00:00:08.200 --> 00:00:12.000
 どこで生れたかとんと見当がつかぬ。
-''');
-
-      final List<AudioCue> cues = VttParser.parse(
-        vttFile: vtt,
+''',
         bookUid: 'test/book.vtt',
       );
 
@@ -57,15 +36,13 @@ WEBVTT
     });
 
     test('无小时时间码（MM:SS.mmm）正常解析', () {
-      final File vtt = writeVtt('no_hours.vtt', '''
+      final List<AudioCue> cues = VttParser.parseString(
+        content: '''
 WEBVTT
 
 01:30.500 --> 02:15.000
 短尺度タイムコード
-''');
-
-      final List<AudioCue> cues = VttParser.parse(
-        vttFile: vtt,
+''',
         bookUid: 'test/book.vtt',
       );
 
@@ -75,15 +52,13 @@ WEBVTT
     });
 
     test('时间行后位置指令被忽略', () {
-      final File vtt = writeVtt('positioning.vtt', '''
+      final List<AudioCue> cues = VttParser.parseString(
+        content: '''
 WEBVTT
 
 00:00:01.000 --> 00:00:04.000 align:left position:20%
 位置指令テスト
-''');
-
-      final List<AudioCue> cues = VttParser.parse(
-        vttFile: vtt,
+''',
         bookUid: 'test/book.vtt',
       );
 
@@ -93,7 +68,8 @@ WEBVTT
     });
 
     test('NOTE、STYLE 块被跳过', () {
-      final File vtt = writeVtt('blocks.vtt', '''
+      final List<AudioCue> cues = VttParser.parseString(
+        content: '''
 WEBVTT
 
 NOTE これはコメント
@@ -103,10 +79,7 @@ STYLE
 
 00:00:01.000 --> 00:00:03.000
 本文
-''');
-
-      final List<AudioCue> cues = VttParser.parse(
-        vttFile: vtt,
+''',
         bookUid: 'test/book.vtt',
       );
 
@@ -115,15 +88,13 @@ STYLE
     });
 
     test('VTT 行内标签被剥离', () {
-      final File vtt = writeVtt('tags.vtt', '''
+      final List<AudioCue> cues = VttParser.parseString(
+        content: '''
 WEBVTT
 
 00:00:01.000 --> 00:00:03.000
 <b>太字</b>と<i>斜体</i>と<c.color>カラー</c.color>
-''');
-
-      final List<AudioCue> cues = VttParser.parse(
-        vttFile: vtt,
+''',
         bookUid: 'test/book.vtt',
       );
 
@@ -131,15 +102,10 @@ WEBVTT
       expect(cues[0].text, '太字と斜体とカラー');
     });
 
-    test('带 UTF-8 BOM 的文件正常解析', () {
-      final File vtt = File('${tmpDir.path}/bom.vtt');
-      final List<int> bom = [0xEF, 0xBB, 0xBF];
-      final List<int> body =
-          utf8.encode('WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nBOM テスト\n');
-      vtt.writeAsBytesSync([...bom, ...body]);
-
-      final List<AudioCue> cues = VttParser.parse(
-        vttFile: vtt,
+    test('带 UTF-8 BOM 的内容正常解析', () {
+      final List<AudioCue> cues = VttParser.parseString(
+        content:
+            '\uFEFFWEBVTT\n\n00:00:01.000 --> 00:00:02.000\nBOM テスト\n',
         bookUid: 'test/book.vtt',
       );
 
@@ -148,10 +114,8 @@ WEBVTT
     });
 
     test('空文件返回空列表', () {
-      final File vtt = writeVtt('empty.vtt', 'WEBVTT\n');
-
-      final List<AudioCue> cues = VttParser.parse(
-        vttFile: vtt,
+      final List<AudioCue> cues = VttParser.parseString(
+        content: 'WEBVTT\n',
         bookUid: 'test/book.vtt',
       );
 

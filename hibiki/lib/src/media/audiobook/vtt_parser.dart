@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/srt_parser.dart';
+import 'package:hibiki/src/media/audiobook/text_file_io.dart';
 
 /// 解析 WebVTT（.vtt）字幕文件，产出 [AudioCue] 列表。
 ///
@@ -27,17 +28,32 @@ class VttParser {
   /// 与 [SrtParser.defaultChapter] 共用同一章节标识。
   static const String defaultChapter = SrtParser.defaultChapter;
 
-  /// 解析 [vttFile] 并返回 [AudioCue] 列表。
-  static List<AudioCue> parse({
+  /// 读取 [vttFile] 并返回 [AudioCue] 列表。
+  ///
+  /// 走 [readTextWithEncoding] 自动识别编码，兼容 Shift-JIS / CP932 等非 UTF-8 源。
+  static Future<List<AudioCue>> parse({
     required File vttFile,
     required String bookUid,
     String chapterHref = defaultChapter,
-  }) {
-    final String raw = vttFile.readAsStringSync();
-    final String content =
-        raw.startsWith('\uFEFF') ? raw.substring(1) : raw;
+  }) async {
+    final String content = await readTextWithEncoding(vttFile);
+    return parseString(
+      content: content,
+      bookUid: bookUid,
+      chapterHref: chapterHref,
+    );
+  }
 
-    final List<String> blocks = content
+  /// 解析 VTT 文本字符串并返回 [AudioCue] 列表。纯函数，测试入口。
+  static List<AudioCue> parseString({
+    required String content,
+    required String bookUid,
+    String chapterHref = defaultChapter,
+  }) {
+    final String stripped =
+        content.startsWith('\uFEFF') ? content.substring(1) : content;
+
+    final List<String> blocks = stripped
         .replaceAll('\r\n', '\n')
         .replaceAll('\r', '\n')
         .split(RegExp(r'\n{2,}'));

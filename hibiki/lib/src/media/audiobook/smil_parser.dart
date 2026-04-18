@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
+import 'package:hibiki/src/media/audiobook/text_file_io.dart';
 import 'package:xml/xml.dart';
 
 /// 解析 EPUB 3 Media Overlays（SMIL）对齐文件，产出 [AudioCue] 列表。
@@ -19,19 +20,36 @@ import 'package:xml/xml.dart';
 /// </smil>
 /// ```
 class SmilParser {
-  /// 解析 [smilFile] 并返回该章节的 [AudioCue] 列表。
+  /// 读取 [smilFile] 并返回该章节的 [AudioCue] 列表。
+  ///
+  /// 走 [readTextWithEncoding] 自动识别编码。
   ///
   /// [bookUid]       对应 MediaItem.uniqueKey。
   /// [chapterHref]   EPUB spine item 路径，如 'OEBPS/ch01.xhtml'。
   /// [audioFileMap]  将音频 src（相对 SMIL 文件）映射到 audioFileIndex。
   ///                 若为 null，则所有 cue 的 audioFileIndex = 0。
-  static List<AudioCue> parse({
+  static Future<List<AudioCue>> parse({
     required File smilFile,
     required String bookUid,
     required String chapterHref,
     Map<String, int>? audioFileMap,
+  }) async {
+    final String content = await readTextWithEncoding(smilFile);
+    return parseString(
+      content: content,
+      bookUid: bookUid,
+      chapterHref: chapterHref,
+      audioFileMap: audioFileMap,
+    );
+  }
+
+  /// 解析 SMIL 字符串并返回 [AudioCue] 列表。纯函数，测试入口。
+  static List<AudioCue> parseString({
+    required String content,
+    required String bookUid,
+    required String chapterHref,
+    Map<String, int>? audioFileMap,
   }) {
-    final String content = smilFile.readAsStringSync();
     final XmlDocument doc = XmlDocument.parse(content);
 
     final List<AudioCue> cues = [];

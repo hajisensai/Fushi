@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
+import 'package:hibiki/src/media/audiobook/text_file_io.dart';
 
 /// 解析 SubRip（.srt）字幕文件，产出 [AudioCue] 列表。
 ///
@@ -18,25 +19,41 @@ class SrtParser {
   /// SRT 独立书籍使用的固定章节标识。
   static const String defaultChapter = 'srt://default';
 
-  /// 解析 [srtFile] 并返回 [AudioCue] 列表。
+  /// 读取 [srtFile] 并返回 [AudioCue] 列表。
+  ///
+  /// 日文字幕常见 Shift-JIS / CP932 编码，读文件走 [readTextWithEncoding]
+  /// 自动识别，避免 UTF-8 严格解码时抛 [FormatException]。
   ///
   /// [bookUid]     对应 MediaItem.uniqueKey。
   /// [chapterHref] 章节标识，默认 [defaultChapter]（单章节策略）。
   ///
   /// 每条 cue 的 [AudioCue.textFragmentId] 格式为 `[data-cue-id="<sentenceIndex>"]`，
   /// 供 [AudiobookBridge] 以 CSS selector 定位 WebView 内的 span 元素。
-  static List<AudioCue> parse({
+  static Future<List<AudioCue>> parse({
     required File srtFile,
     required String bookUid,
     String chapterHref = defaultChapter,
+  }) async {
+    final String content = await readTextWithEncoding(srtFile);
+    return parseString(
+      content: content,
+      bookUid: bookUid,
+      chapterHref: chapterHref,
+    );
+  }
+
+  /// 解析 SRT 文本字符串并返回 [AudioCue] 列表。纯函数，测试入口。
+  static List<AudioCue> parseString({
+    required String content,
+    required String bookUid,
+    String chapterHref = defaultChapter,
   }) {
-    final String raw = srtFile.readAsStringSync();
     // 移除 UTF-8 BOM
-    final String content =
-        raw.startsWith('\uFEFF') ? raw.substring(1) : raw;
+    final String stripped =
+        content.startsWith('\uFEFF') ? content.substring(1) : content;
 
     // 统一换行符，按空行分割 block
-    final List<String> blocks = content
+    final List<String> blocks = stripped
         .replaceAll('\r\n', '\n')
         .replaceAll('\r', '\n')
         .split(RegExp(r'\n{2,}'));

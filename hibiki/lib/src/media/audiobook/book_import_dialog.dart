@@ -427,7 +427,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
     required String? author,
   }) async {
     final String uid = 'srtbook_${DateTime.now().millisecondsSinceEpoch}';
-    final List<AudioCue> cues = _parseCues(File(_srtPath!), uid);
+    final List<AudioCue> cues = await _parseCues(File(_srtPath!), uid);
 
     int ttuBookId = 0;
     try {
@@ -515,7 +515,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
     // 3) 解析 cues + 跑 Sasayaki 匹配（仅 SRT 做匹配，其他格式仅落 cue）。
     final File srtFile = File(_srtPath!);
     final String ext = srtFile.path.split('.').last.toLowerCase();
-    final List<AudioCue> cues = _parseCues(srtFile, bookUid);
+    final List<AudioCue> cues = await _parseCues(srtFile, bookUid);
     final String chapterHref = _defaultChapterFor(ext);
 
     if (ext == 'srt') {
@@ -667,7 +667,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
     }
   }
 
-  List<AudioCue> _parseCues(File file, String bookUid) {
+  Future<List<AudioCue>> _parseCues(File file, String bookUid) {
     final String ext = file.path.split('.').last.toLowerCase();
     switch (ext) {
       case 'lrc':

@@ -52,37 +52,55 @@ void main() {
   });
 
   group('SasayakiMatchCodec.applyToCues', () {
-    test('命中的 cue 写回 sasayaki fragment，未命中保留原值', () {
+    const MatchResult fixture = MatchResult(
+      matches: <CueMatch>[
+        CueMatch(
+          cueSentenceIndex: 0,
+          sectionIndex: 0,
+          normCharStart: 0,
+          normCharEnd: 8,
+          score: 0.95,
+        ),
+        CueMatch.unmatched,
+        CueMatch(
+          cueSentenceIndex: 2,
+          sectionIndex: 1,
+          normCharStart: 20,
+          normCharEnd: 35,
+          score: 0.80,
+        ),
+      ],
+      totalCues: 3,
+      matchedCues: 2,
+    );
+
+    test('默认清除未命中 cue 的 textFragmentId，避免死 fallback 选择器', () {
+      final List<AudioCue> cues = <AudioCue>[
+        mkCue(0),
+        mkCue(1, frag: '[data-cue-id="1"]'),
+        mkCue(2),
+      ];
+
+      final int applied =
+          SasayakiMatchCodec.applyToCues(cues: cues, result: fixture);
+
+      expect(applied, 2);
+      expect(cues[0].textFragmentId, 'sasayaki://s=0&ns=0&ne=8');
+      expect(cues[1].textFragmentId, '');
+      expect(cues[2].textFragmentId, 'sasayaki://s=1&ns=20&ne=35');
+    });
+
+    test('clearUnmatched=false 时未命中保留原值（字幕合成书路径）', () {
       final List<AudioCue> cues = <AudioCue>[
         mkCue(0),
         mkCue(1, frag: 'srt://1'),
         mkCue(2),
       ];
-      final MatchResult result = const MatchResult(
-        matches: <CueMatch>[
-          const CueMatch(
-            cueSentenceIndex: 0,
-            sectionIndex: 0,
-            normCharStart: 0,
-            normCharEnd: 8,
-            score: 0.95,
-          ),
-          CueMatch.unmatched,
-          const CueMatch(
-            cueSentenceIndex: 2,
-            sectionIndex: 1,
-            normCharStart: 20,
-            normCharEnd: 35,
-            score: 0.80,
-          ),
-        ],
-        totalCues: 3,
-        matchedCues: 2,
-      );
 
       final int applied = SasayakiMatchCodec.applyToCues(
         cues: cues,
-        result: result,
+        result: fixture,
+        clearUnmatched: false,
       );
 
       expect(applied, 2);

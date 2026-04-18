@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
+import 'package:hibiki/src/media/audiobook/text_file_io.dart';
 
 /// 解析自定义 JSON 对齐文件，产出 [AudioCue] 列表。
 ///
@@ -24,14 +25,24 @@ import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 /// }
 /// ```
 class JsonAlignmentParser {
-  /// 解析 [jsonFile] 并返回所有 [AudioCue]。
+  /// 读取 [jsonFile] 并返回所有 [AudioCue]。
+  ///
+  /// 走 [readTextWithEncoding] 自动识别编码，以防对齐 JSON 被用 CP932 保存。
   ///
   /// [bookUid] 用于覆盖 JSON 中的 bookUid 字段（以实际加载的书为准）。
-  static List<AudioCue> parse({
+  static Future<List<AudioCue>> parse({
     required File jsonFile,
     required String bookUid,
+  }) async {
+    final String content = await readTextWithEncoding(jsonFile);
+    return parseString(content: content, bookUid: bookUid);
+  }
+
+  /// 解析 JSON 对齐字符串并返回所有 [AudioCue]。纯函数，测试入口。
+  static List<AudioCue> parseString({
+    required String content,
+    required String bookUid,
   }) {
-    final String content = jsonFile.readAsStringSync();
     final Map<String, dynamic> json =
         jsonDecode(content) as Map<String, dynamic>;
 
