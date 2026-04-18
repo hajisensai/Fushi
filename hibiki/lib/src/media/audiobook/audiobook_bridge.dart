@@ -245,18 +245,24 @@ window.__hoshiHighlight = function(selector) {
 
   /// Sasayaki 路径的辅助 JS：
   ///
-  /// - `__hoshiLoadSasayakiRefs(ttuBookId)`：从 ttu IndexedDB 读 `sections`，
-  ///   缓存 `sectionIndex → reference`（章节根元素 id）到 `__hoshiSasayakiRefs`。
+  /// - `__hoshiLoadSasayakiRefs(ttuBookId)`：从 ttu IndexedDB 读 `sections` +
+  ///   `elementHtml`，缓存 `sectionIndex → reference` 和每个 section 的
+  ///   **归一化文本长度**（以及累计起点）。ttu 在渲染时会剥掉 section
+  ///   原始 id，所以我们放弃"找章节根"这条路，改为用"整本书归一化偏移"
+  ///   在 `.book-content-container` 里定位。
   /// - `__hoshiIsSkippable(code)`：镜像 Dart 的 `EpubSrtMatcher._isSkippable`
   ///   归一化规则（空白 / ASCII 标点 / CJK 标点），大写 ASCII 仍计数一次。
   /// - `__hoshiUnwrapSasayaki()`：拆掉上一次 Sasayaki 高亮包裹的 span。
-  /// - `__hoshiHighlightSasayaki(s, ns, ne)`：定位章节元素 → 按归一化偏移
-  ///   在 text node 上找到 Range → 包 `span.hoshi-active` → 触发 ticker 滚动。
+  /// - `__hoshiHighlightSasayaki(s, ns, ne)`：把 (sectionIndex, normChar*)
+  ///   换算成全书归一化全局偏移 → 在 `.book-content-container` 里按归一化
+  ///   字符数走 text node 找到 Range → 包 `span.hoshi-active` → 触发 ticker
+  ///   滚动。
   ///
   /// 与字幕 EPUB 路径（`[data-cue-id]`）互不冲突：入口在 Dart 侧的
   /// [highlight] 根据 `textFragmentId` 前缀分派。
   static const String _sasayakiFn = '''
 window.__hoshiSasayakiRefs = window.__hoshiSasayakiRefs || null;
+window.__hoshiSasayakiSectionStarts = window.__hoshiSasayakiSectionStarts || null;
 
 window.__hoshiLoadSasayakiRefs = function(ttuBookId) {
   try {
@@ -275,12 +281,41 @@ window.__hoshiLoadSasayakiRefs = function(ttuBookId) {
       g.onsuccess = function(e) {
         var rec = e.target.result;
         var sections = (rec && rec.sections) || [];
-        window.__hoshiSasayakiRefs = sections.map(function(s) {
-          return (s && s.reference) || '';
-        });
+        var html = (rec && rec.elementHtml) || '';
+
+        // 每段正文归一化字符数 —— 复用 DOMParser 从原始 elementHtml 中按
+        // section.reference 取元素的 textContent 再数字符。必须和 Dart 侧
+        // EpubSrtMatcher._buildIndex 的累加方式严格一致，否则累计起点
+        // 会漂移。
+        var parser = new DOMParser();
+        var doc = parser.parseFromString('<div>' + html + '</div>', 'text/html');
+
+        function normLen(t) {
+          var n = 0;
+          for (var i = 0; i < t.length; i++) {
+            if (!window.__hoshiIsSkippable(t.charCodeAt(i))) n++;
+          }
+          return n;
+        }
+
+        var refs = [];
+        var starts = [];
+        var cumulative = 0;
+        for (var i = 0; i < sections.length; i++) {
+          var ref = (sections[i] && sections[i].reference) || '';
+          refs.push(ref);
+          starts.push(cumulative);
+          var el = ref ? doc.getElementById(ref) : null;
+          var text = el ? (el.textContent || '') : '';
+          cumulative += normLen(text);
+        }
+        window.__hoshiSasayakiRefs = refs;
+        window.__hoshiSasayakiSectionStarts = starts;
         console.log(JSON.stringify({
           'hibiki-message-type': 'sasayakiRefsReady',
-          'count': window.__hoshiSasayakiRefs.length
+          'count': refs.length,
+          'totalNormChars': cumulative,
+          'firstStarts': starts.slice(0, 5)
         }));
       };
       g.onerror = function(e) {
@@ -334,62 +369,36 @@ window.__hoshiUnwrapSasayaki = function() {
 };
 
 window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normCharEnd) {
+  var starts = window.__hoshiSasayakiSectionStarts;
   var refs = window.__hoshiSasayakiRefs;
-  if (!refs) {
+  if (!starts || !refs) {
     console.log(JSON.stringify({
       'hibiki-message-type': 'sasayakiRefsMissing',
       'sectionIndex': sectionIndex
     }));
     return;
   }
-  if (sectionIndex < 0 || sectionIndex >= refs.length) {
+  if (sectionIndex < 0 || sectionIndex >= starts.length) {
     console.log(JSON.stringify({
       'hibiki-message-type': 'sasayakiNoRef',
       'sectionIndex': sectionIndex,
-      'total': refs.length
+      'total': starts.length
     }));
     return;
   }
-  var refId = refs[sectionIndex];
-  if (!refId) return;
 
-  // `id` lookup is the fast path (ttu concatenates all sections into one
-  // document; section root keeps the original EPUB id). Some builds wrap the
-  // section in an extra element — walk common alternatives.
-  var root =
-    document.getElementById(refId) ||
-    document.querySelector('[data-original-id="' + refId + '"]') ||
-    document.querySelector('[data-ttu-id="' + refId + '"]') ||
-    document.querySelector('[name="' + refId + '"]');
+  // ttu 渲染时剥掉了 section 原始 id（实测只剩 .book-content-container 一个
+  // 容器装全书），所以 (sectionIndex, normChar*) 必须换算成整本书的归一化
+  // 全局偏移，再在容器的 text node 上顺序查找。
+  var base = starts[sectionIndex];
+  var targetStart = base + normCharStart;
+  var targetEnd = base + normCharEnd;
 
+  var root = document.querySelector('.book-content-container') ||
+             document.querySelector('.book-content');
   if (!root) {
-    // Diagnostic: sample of what ids actually exist, so we can figure out
-    // ttu's real naming convention the first time this runs.
-    var idNodes = document.querySelectorAll('[id]');
-    var sampleIds = [];
-    var ttuLike = [];
-    for (var di = 0; di < idNodes.length; di++) {
-      var v = idNodes[di].id;
-      if (di < 20) sampleIds.push(v);
-      if (v && v.indexOf('ttu') === 0 && ttuLike.length < 20) ttuLike.push(v);
-    }
-    var bookContent = document.querySelector('.book-content');
-    var childTags = [];
-    if (bookContent) {
-      var kids = bookContent.children;
-      for (var k = 0; k < Math.min(6, kids.length); k++) {
-        childTags.push(kids[k].tagName + '#' + (kids[k].id || '') +
-          '.' + (kids[k].className || '').slice(0, 40));
-      }
-    }
     console.log(JSON.stringify({
-      'hibiki-message-type': 'sasayakiSectionMissing',
-      'refId': refId,
-      'sectionIndex': sectionIndex,
-      'totalIdNodes': idNodes.length,
-      'sampleIds': sampleIds,
-      'ttuLikeIds': ttuLike,
-      'bookContentChildren': childTags
+      'hibiki-message-type': 'sasayakiContainerMissing'
     }));
     return;
   }
@@ -416,12 +425,12 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
     for (var i = 0; i < text.length; i++) {
       var c = text.charCodeAt(i);
       if (window.__hoshiIsSkippable(c)) continue;
-      if (startNode === null && normPos >= normCharStart) {
+      if (startNode === null && normPos >= targetStart) {
         startNode = node;
         startOffset = i;
       }
       normPos++;
-      if (startNode !== null && normPos >= normCharEnd) {
+      if (startNode !== null && normPos >= targetEnd) {
         endNode = node;
         endOffset = i + 1;
         break;
@@ -430,9 +439,8 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
     if (endNode !== null) break;
   }
 
-  // normCharEnd can exceed section's normalized length when matcher window
-  // spilled into the next section. Clamp to last node's end so we still
-  // highlight from start through section's tail.
+  // targetEnd 超出全书归一化字符数（最后几章的 cue、或 matcher 溢出到尾部）
+  // 时高亮到尾节点结束。
   if (startNode !== null && endNode === null && lastNode !== null) {
     endNode = lastNode;
     endOffset = lastNode.nodeValue ? lastNode.nodeValue.length : 0;
@@ -441,9 +449,9 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
   if (!startNode || !endNode) {
     console.log(JSON.stringify({
       'hibiki-message-type': 'sasayakiOffsetMissing',
-      'refId': refId,
-      'normCharStart': normCharStart,
-      'normCharEnd': normCharEnd,
+      'sectionIndex': sectionIndex,
+      'targetStart': targetStart,
+      'targetEnd': targetEnd,
       'scannedChars': normPos
     }));
     return;
