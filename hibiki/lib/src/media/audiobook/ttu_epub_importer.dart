@@ -28,6 +28,10 @@ class TtuEpubImporter {
 
     final String js = _buildDriverJs(b64: b64, filename: filename);
 
+    // ttu 是 SPA，onLoadStop 会多次触发（navigation / service-worker 激活等）；
+    // 重复执行会把同一份 13MB base64 再塞一次 JS 源码 + 再开一次 ttu 导入，
+    // 既浪费主线程也可能造出重复的 IDB row。
+    bool jsDispatched = false;
     webView = HeadlessInAppWebView(
       initialUrlRequest: URLRequest(
         url: WebUri('http://localhost:$serverPort/manage.html'),
@@ -37,6 +41,8 @@ class TtuEpubImporter {
         allowUniversalAccessFromFileURLs: true,
       ),
       onLoadStop: (controller, url) async {
+        if (jsDispatched) return;
+        jsDispatched = true;
         // Manage page may lazy-mount its input; give Svelte a tick.
         await Future<void>.delayed(const Duration(milliseconds: 300));
         await controller.evaluateJavascript(source: js);

@@ -327,14 +327,16 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       return;
     }
     try {
-      final List<EpubSection> sections = await TtuIdbReader.readSections(
+      final TtuBookRecord rec = await TtuIdbReader.readBookRecord(
         ttuBookId: ttuId,
         serverPort: port,
       );
+      final List<EpubSection> sections = rec.sections;
       if (sections.isEmpty) {
         return;
       }
-      final MatchResult result = EpubSrtMatcher.match(
+      // 匹配器放 isolate 跑，主线程不能被大书的 bigram 扫描挤出 ANR。
+      final MatchResult result = await EpubSrtMatcher.matchInIsolate(
         sections: sections,
         cues: cues,
       );

@@ -5,21 +5,30 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:hibiki/src/media/audiobook/epub_srt_matcher.dart';
 
-/// 从 ッツ Ebook Reader 的 IndexedDB `books` store 读取一本书的章节纯文本。
+/// ttu IDB 里一本书的基本元数据（当前只暴露 title + 章节文本）。
+class TtuBookRecord {
+  const TtuBookRecord({required this.title, required this.sections});
+
+  final String title;
+  final List<EpubSection> sections;
+}
+
+/// 从 ッツ Ebook Reader 的 IndexedDB `books` store 读取一本书的元数据与
+/// 章节纯文本。
 ///
-/// Sasayaki 匹配需要 EPUB 文本，但 fork 没有 Flutter 侧的 EPUB 解析器——书籍
-/// 的文本由 ttu 解析后放在 `elementHtml`。这里用 HeadlessInAppWebView 在
-/// ttu 源域下打开 IDB，用 `DOMParser` 把 `elementHtml` 拆成章节并取
-/// `textContent`，避免在 Dart 侧再写一套 HTML 剥离。
+/// 原本 readTitle + readSections 各自开一个 HeadlessInAppWebView（每个都要走
+/// 完整的 ttu SPA 启动，含 service-worker 预缓存），在 EPUB+字幕 导入路径上
+/// 连续新建多个 WebView 容易触发 ANR。合并成一次 IDB.get(id) 调用后，title
+/// 与 sections 一起返回。
 class TtuIdbReader {
-  /// 读取 `ttuBookId` 对应 books 记录的章节文本。
+  /// 读取 `ttuBookId` 对应 books 记录的 title + 章节文本。
   ///
   /// 返回按 ttu 顺序（`sections` 字段）的 [EpubSection] 列表；若该 id 不存在
   /// 抛 `StateError`。
-  static Future<List<EpubSection>> readSections({
+  static Future<TtuBookRecord> readBookRecord({
     required int ttuBookId,
     required int serverPort,
-    Duration timeout = const Duration(seconds: 15),
+    Duration timeout = const Duration(seconds: 20),
   }) async {
     if (ttuBookId <= 0) {
       throw ArgumentError('ttuBookId must be > 0');
@@ -46,6 +55,7 @@ class TtuIdbReader {
       console.log(JSON.stringify({messageType: 'ttu_read_err', error: 'not_found'}));
       return;
     }
+    const title = typeof record.title === 'string' ? record.title : '';
     const html = record.elementHtml || '';
     const sectionsMeta = Array.isArray(record.sections) ? record.sections : [];
     const parser = new DOMParser();
@@ -59,22 +69,27 @@ class TtuIdbReader {
       const text = el ? (el.textContent || '') : '';
       out.push({ index: i, href: ref, label: s.label || '', text: text });
     }
-    // Fallback: 没有 sections 时，把整份 elementHtml 当一章
     if (out.length === 0) {
       const body = doc.body.firstChild;
       const text = body ? (body.textContent || '') : '';
       out.push({ index: 0, href: 'ttu-body', label: '', text: text });
     }
-    console.log(JSON.stringify({messageType: 'ttu_read_ok', sections: out}));
+    console.log(JSON.stringify({
+      messageType: 'ttu_read_ok',
+      title: title,
+      sections: out,
+    }));
   } catch (e) {
     console.log(JSON.stringify({messageType: 'ttu_read_err', error: String(e)}));
   }
 })();
 ''';
 
-    final Completer<List<EpubSection>> completer =
-        Completer<List<EpubSection>>();
+    final Completer<TtuBookRecord> completer = Completer<TtuBookRecord>();
     HeadlessInAppWebView? webView;
+    // ttu 是 SPA，service-worker 激活等过程会让 onLoadStop 多次触发；不去重
+    // 会让 IDB get + DOMParser 重复执行，堆在主线程上触发 ANR。
+    bool jsDispatched = false;
     webView = HeadlessInAppWebView(
       initialUrlRequest: URLRequest(
         url: WebUri('http://localhost:$serverPort/'),
@@ -84,6 +99,8 @@ class TtuIdbReader {
         allowUniversalAccessFromFileURLs: true,
       ),
       onLoadStop: (controller, url) async {
+        if (jsDispatched) return;
+        jsDispatched = true;
         await controller.evaluateJavascript(source: js);
       },
       onConsoleMessage: (controller, message) {
@@ -95,6 +112,7 @@ class TtuIdbReader {
               jsonDecode(message.message) as Map<String, dynamic>;
           final String type = msg['messageType'] as String? ?? '';
           if (type == 'ttu_read_ok') {
+            final String title = msg['title'] as String? ?? '';
             final List<dynamic> raw = msg['sections'] as List<dynamic>;
             final List<EpubSection> sections = raw.map((dynamic e) {
               final Map<String, dynamic> m = e as Map<String, dynamic>;
@@ -104,7 +122,9 @@ class TtuIdbReader {
                 text: m['text'] as String? ?? '',
               );
             }).toList();
-            completer.complete(sections);
+            completer.complete(
+              TtuBookRecord(title: title, sections: sections),
+            );
           } else if (type == 'ttu_read_err') {
             completer.completeError(
               StateError('ttu_read_err: ${msg['error']}'),
@@ -112,87 +132,6 @@ class TtuIdbReader {
           }
         } catch (e) {
           debugPrint('TtuIdbReader console decode error: $e');
-        }
-      },
-    );
-
-    try {
-      await webView.run();
-      return await completer.future.timeout(timeout);
-    } finally {
-      await webView.dispose();
-    }
-  }
-
-  /// 读取 `ttuBookId` 对应 books 记录的 `title` 字段。
-  ///
-  /// 用于 EPUB 刚被 ttu 导入后、我们需要构造与 `ttuBooksProvider` 一致的
-  /// `MediaItem.uniqueKey`（其 mediaIdentifier 形如 `.../b.html?id=X&?title=Y`）。
-  /// 未找到或字段缺失时返回空串，调用方自行兜底。
-  static Future<String> readTitle({
-    required int ttuBookId,
-    required int serverPort,
-    Duration timeout = const Duration(seconds: 10),
-  }) async {
-    if (ttuBookId <= 0) {
-      throw ArgumentError('ttuBookId must be > 0');
-    }
-
-    final String js = '''
-(async function() {
-  try {
-    const record = await new Promise((resolve, reject) => {
-      const req = indexedDB.open('books');
-      req.onsuccess = (ev) => {
-        const db = ev.target.result;
-        if (!db.objectStoreNames.contains('data')) {
-          reject('data_store_missing'); return;
-        }
-        const tx = db.transaction(['data'], 'readonly');
-        const get = tx.objectStore('data').get($ttuBookId);
-        get.onsuccess = (e) => resolve(e.target.result);
-        get.onerror = (e) => reject(String(e.target.error));
-      };
-      req.onerror = (e) => reject(String(e.target.error));
-    });
-    const title = record && typeof record.title === 'string' ? record.title : '';
-    console.log(JSON.stringify({messageType: 'ttu_title_ok', title: title}));
-  } catch (e) {
-    console.log(JSON.stringify({messageType: 'ttu_title_err', error: String(e)}));
-  }
-})();
-''';
-
-    final Completer<String> completer = Completer<String>();
-    HeadlessInAppWebView? webView;
-    webView = HeadlessInAppWebView(
-      initialUrlRequest: URLRequest(
-        url: WebUri('http://localhost:$serverPort/'),
-      ),
-      initialSettings: InAppWebViewSettings(
-        allowFileAccessFromFileURLs: true,
-        allowUniversalAccessFromFileURLs: true,
-      ),
-      onLoadStop: (controller, url) async {
-        await controller.evaluateJavascript(source: js);
-      },
-      onConsoleMessage: (controller, message) {
-        if (completer.isCompleted) {
-          return;
-        }
-        try {
-          final Map<String, dynamic> msg =
-              jsonDecode(message.message) as Map<String, dynamic>;
-          final String type = msg['messageType'] as String? ?? '';
-          if (type == 'ttu_title_ok') {
-            completer.complete(msg['title'] as String? ?? '');
-          } else if (type == 'ttu_title_err') {
-            completer.completeError(
-              StateError('ttu_title_err: ${msg['error']}'),
-            );
-          }
-        } catch (e) {
-          debugPrint('TtuIdbReader.readTitle console decode error: $e');
         }
       },
     );

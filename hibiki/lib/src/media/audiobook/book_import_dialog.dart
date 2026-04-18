@@ -491,15 +491,20 @@ class _BookImportDialogState extends State<BookImportDialog> {
       throw StateError('ttu returned invalid book id');
     }
 
-    // 2) 从 ttu IDB 读回 title，构造和 ttuBooksProvider 一致的 bookUid。
+    // 2) 从 ttu IDB 读回 title + 章节文本（一个 HeadlessWebView 搞定两件事）。
+    //    原本 readTitle / readSections 分两次跑 → 两个 WebView → 两轮 ttu SPA
+    //    启动，主线程被挤出 ANR。
     String idbTitle = '';
+    List<EpubSection> sections = const <EpubSection>[];
     try {
-      idbTitle = await TtuIdbReader.readTitle(
+      final TtuBookRecord rec = await TtuIdbReader.readBookRecord(
         ttuBookId: ttuBookId,
         serverPort: widget.serverPort,
       );
+      idbTitle = rec.title;
+      sections = rec.sections;
     } catch (e) {
-      debugPrint('[hibiki-import] readTitle failed: $e');
+      debugPrint('[hibiki-import] readBookRecord failed: $e');
     }
     final String safeTitle = idbTitle.isNotEmpty ? idbTitle : ' ';
     final String mediaIdentifier =
@@ -514,7 +519,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
     final String chapterHref = _defaultChapterFor(ext);
 
     if (ext == 'srt') {
-      await _runSasayakiMatch(ttuBookId: ttuBookId, cues: cues);
+      await _runSasayakiMatch(sections: sections, cues: cues);
     }
 
     // 4) 存 Audiobook（挂 audio 源）+ cues。
@@ -542,17 +547,14 @@ class _BookImportDialogState extends State<BookImportDialog> {
   /// 跑 Sasayaki 文本匹配，把 section/normChar 偏移编码写回 cue.textFragmentId。
   /// 失败不抛——cues 仍可落库，只是退化成"整本单章"定位。
   Future<void> _runSasayakiMatch({
-    required int ttuBookId,
+    required List<EpubSection> sections,
     required List<AudioCue> cues,
   }) async {
-    if (cues.isEmpty) return;
+    if (cues.isEmpty || sections.isEmpty) return;
     try {
-      final List<EpubSection> sections = await TtuIdbReader.readSections(
-        ttuBookId: ttuBookId,
-        serverPort: widget.serverPort,
-      );
-      if (sections.isEmpty) return;
-      final MatchResult result = EpubSrtMatcher.match(
+      // 大书 + 千条 cue 的 bigram 匹配会跑几秒到十几秒，必须挪到后台 isolate，
+      // 否则主线程 5s+ 无响应 → ANR → 系统杀进程。
+      final MatchResult result = await EpubSrtMatcher.matchInIsolate(
         sections: sections,
         cues: cues,
       );

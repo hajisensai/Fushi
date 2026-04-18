@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 
 /// EPUB 一个章节，供 [EpubSrtMatcher] 使用。
@@ -99,6 +100,31 @@ class EpubSrtMatcher {
 
   /// 救援扫描接受命中所需的最低分（总是 ≥ [shortCueThreshold]）。
   static const double defaultRescueThreshold = 0.75;
+
+  /// 在后台 isolate 里跑 [match]。
+  ///
+  /// 匹配器对大书（几十万归一化字符 × 上千 cue）会跑几秒到十几秒；放在主
+  /// isolate 上会把 UI 线程挤成 ANR。这里把只需要的字段拷成可跨 isolate
+  /// 传输的简单结构，然后 `compute()` 到后台。
+  static Future<MatchResult> matchInIsolate({
+    required List<EpubSection> sections,
+    required List<AudioCue> cues,
+    int searchWindow = defaultSearchWindow,
+    double scoreThreshold = defaultScoreThreshold,
+    int rescueAfterMisses = defaultRescueAfterMisses,
+    double rescueThreshold = defaultRescueThreshold,
+  }) {
+    final _MatchRequest req = _MatchRequest(
+      sections: sections,
+      cueTexts: <String>[for (final AudioCue c in cues) c.text],
+      cueIndexes: <int>[for (final AudioCue c in cues) c.sentenceIndex],
+      searchWindow: searchWindow,
+      scoreThreshold: scoreThreshold,
+      rescueAfterMisses: rescueAfterMisses,
+      rescueThreshold: rescueThreshold,
+    );
+    return compute(_matchEntrypoint, req);
+  }
 
   static MatchResult match({
     required List<EpubSection> sections,
@@ -361,4 +387,51 @@ class _Index {
 
   final String normText;
   final List<int> sectionNormStarts;
+}
+
+class _MatchRequest {
+  const _MatchRequest({
+    required this.sections,
+    required this.cueTexts,
+    required this.cueIndexes,
+    required this.searchWindow,
+    required this.scoreThreshold,
+    required this.rescueAfterMisses,
+    required this.rescueThreshold,
+  });
+
+  final List<EpubSection> sections;
+  final List<String> cueTexts;
+  final List<int> cueIndexes;
+  final int searchWindow;
+  final double scoreThreshold;
+  final int rescueAfterMisses;
+  final double rescueThreshold;
+}
+
+/// compute() 入口必须是 top-level / static。这里把 request 复原成一批轻量
+/// `AudioCue`（仅填 matcher 实际读的 `text` / `sentenceIndex`），再走同步
+/// [EpubSrtMatcher.match]。`Isar.autoIncrement` 只是个常量，isolate 里也能
+/// 无副作用构造。
+MatchResult _matchEntrypoint(_MatchRequest req) {
+  final List<AudioCue> cues = <AudioCue>[
+    for (int i = 0; i < req.cueTexts.length; i++)
+      (AudioCue()
+        ..bookUid = ''
+        ..chapterHref = ''
+        ..sentenceIndex = req.cueIndexes[i]
+        ..textFragmentId = ''
+        ..text = req.cueTexts[i]
+        ..startMs = 0
+        ..endMs = 0
+        ..audioFileIndex = 0),
+  ];
+  return EpubSrtMatcher.match(
+    sections: req.sections,
+    cues: cues,
+    searchWindow: req.searchWindow,
+    scoreThreshold: req.scoreThreshold,
+    rescueAfterMisses: req.rescueAfterMisses,
+    rescueThreshold: req.rescueThreshold,
+  );
 }
