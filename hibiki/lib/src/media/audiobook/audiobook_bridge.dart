@@ -353,12 +353,43 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
   var refId = refs[sectionIndex];
   if (!refId) return;
 
-  var root = document.getElementById(refId);
+  // `id` lookup is the fast path (ttu concatenates all sections into one
+  // document; section root keeps the original EPUB id). Some builds wrap the
+  // section in an extra element — walk common alternatives.
+  var root =
+    document.getElementById(refId) ||
+    document.querySelector('[data-original-id="' + refId + '"]') ||
+    document.querySelector('[data-ttu-id="' + refId + '"]') ||
+    document.querySelector('[name="' + refId + '"]');
+
   if (!root) {
+    // Diagnostic: sample of what ids actually exist, so we can figure out
+    // ttu's real naming convention the first time this runs.
+    var idNodes = document.querySelectorAll('[id]');
+    var sampleIds = [];
+    var ttuLike = [];
+    for (var di = 0; di < idNodes.length; di++) {
+      var v = idNodes[di].id;
+      if (di < 20) sampleIds.push(v);
+      if (v && v.indexOf('ttu') === 0 && ttuLike.length < 20) ttuLike.push(v);
+    }
+    var bookContent = document.querySelector('.book-content');
+    var childTags = [];
+    if (bookContent) {
+      var kids = bookContent.children;
+      for (var k = 0; k < Math.min(6, kids.length); k++) {
+        childTags.push(kids[k].tagName + '#' + (kids[k].id || '') +
+          '.' + (kids[k].className || '').slice(0, 40));
+      }
+    }
     console.log(JSON.stringify({
       'hibiki-message-type': 'sasayakiSectionMissing',
       'refId': refId,
-      'sectionIndex': sectionIndex
+      'sectionIndex': sectionIndex,
+      'totalIdNodes': idNodes.length,
+      'sampleIds': sampleIds,
+      'ttuLikeIds': ttuLike,
+      'bookContentChildren': childTags
     }));
     return;
   }
