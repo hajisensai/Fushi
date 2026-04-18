@@ -447,26 +447,49 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
   }
 
   if (!startNode || !endNode) {
-    // scannedChars === 0 ⇒ TreeWalker 在 container 里一个 text node 都没
-    // 找到，需要 dump 一下容器结构定位 ttu 把正文放哪了（Shadow DOM？
-    // iframe？虚拟化？）。只记录几个候选信号，避免把整页 HTML 塞进日志。
-    var containerOuter = root.outerHTML ? root.outerHTML.slice(0, 400) : '';
-    var iframeCount = document.querySelectorAll('iframe').length;
-    var shadowHostCount = 0;
-    var allEls = root.querySelectorAll('*');
-    var descendantCount = allEls.length;
-    for (var si = 0; si < Math.min(50, allEls.length); si++) {
-      if (allEls[si].shadowRoot) shadowHostCount++;
-    }
-    var childTags = [];
-    var kids = root.children;
-    for (var k = 0; k < Math.min(8, kids.length); k++) {
-      var kid = kids[k];
-      childTags.push(kid.tagName + '#' + (kid.id || '') +
-        '.' + (kid.className || '').toString().slice(0, 40) +
-        ' tnlen=' + (kid.textContent ? kid.textContent.length : 0));
-    }
+    // scannedChars === 0 + root 里只有封面 SVG ⇒ ttu 把正文放在别的地方
+    // 或正文还没挂载（点封面才开书？）。全文档扫一下所有 textContent
+    // 很大的容器，顺带看有没有隐藏节点。
     var rootTextLen = root.textContent ? root.textContent.length : 0;
+    var bigContainers = [];
+    var candidates = document.querySelectorAll('body *');
+    for (var ci = 0; ci < candidates.length; ci++) {
+      var el = candidates[ci];
+      // 只看直接 textContent 大的；排除祖先（body / html）
+      if (!el.textContent) continue;
+      var tlen = el.textContent.length;
+      if (tlen < 200) continue;
+      // 取 children 都没这么长的（即它自己贡献了主要 text）
+      var hasBigger = false;
+      for (var kj = 0; kj < el.children.length; kj++) {
+        if (el.children[kj].textContent &&
+            el.children[kj].textContent.length >= tlen - 20) {
+          hasBigger = true; break;
+        }
+      }
+      if (hasBigger) continue;
+      bigContainers.push({
+        tag: el.tagName,
+        id: el.id || '',
+        cls: (el.className || '').toString().slice(0, 60),
+        textLen: tlen,
+        hidden: el.hidden,
+        display: (el.style && el.style.display) || ''
+      });
+      if (bigContainers.length >= 8) break;
+    }
+    var allIds = [];
+    var idAll = document.querySelectorAll('[id]');
+    for (var ii = 0; ii < idAll.length; ii++) {
+      allIds.push(idAll[ii].id);
+    }
+    var allBookContent = [];
+    var bcAll = document.querySelectorAll('[class*="book-content"]');
+    for (var bi = 0; bi < bcAll.length; bi++) {
+      allBookContent.push(bcAll[bi].tagName + '.' +
+        (bcAll[bi].className || '').toString().slice(0, 60) +
+        ' tnlen=' + (bcAll[bi].textContent ? bcAll[bi].textContent.length : 0));
+    }
     console.log(JSON.stringify({
       'hibiki-message-type': 'sasayakiOffsetMissing',
       'sectionIndex': sectionIndex,
@@ -476,11 +499,11 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
       'rootTag': root.tagName,
       'rootClass': (root.className || '').toString().slice(0, 40),
       'rootTextLen': rootTextLen,
-      'descendantCount': descendantCount,
-      'iframeCount': iframeCount,
-      'shadowHostCount': shadowHostCount,
-      'childTags': childTags,
-      'containerHeadOuter': containerOuter
+      'docTextLen': document.body ? document.body.textContent.length : 0,
+      'bigContainers': bigContainers,
+      'allBookContent': allBookContent,
+      'allIds': allIds,
+      'url': location.href
     }));
     return;
   }
