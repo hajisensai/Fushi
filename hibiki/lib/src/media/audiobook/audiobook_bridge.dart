@@ -447,12 +447,40 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
   }
 
   if (!startNode || !endNode) {
+    // scannedChars === 0 ⇒ TreeWalker 在 container 里一个 text node 都没
+    // 找到，需要 dump 一下容器结构定位 ttu 把正文放哪了（Shadow DOM？
+    // iframe？虚拟化？）。只记录几个候选信号，避免把整页 HTML 塞进日志。
+    var containerOuter = root.outerHTML ? root.outerHTML.slice(0, 400) : '';
+    var iframeCount = document.querySelectorAll('iframe').length;
+    var shadowHostCount = 0;
+    var allEls = root.querySelectorAll('*');
+    var descendantCount = allEls.length;
+    for (var si = 0; si < Math.min(50, allEls.length); si++) {
+      if (allEls[si].shadowRoot) shadowHostCount++;
+    }
+    var childTags = [];
+    var kids = root.children;
+    for (var k = 0; k < Math.min(8, kids.length); k++) {
+      var kid = kids[k];
+      childTags.push(kid.tagName + '#' + (kid.id || '') +
+        '.' + (kid.className || '').toString().slice(0, 40) +
+        ' tnlen=' + (kid.textContent ? kid.textContent.length : 0));
+    }
+    var rootTextLen = root.textContent ? root.textContent.length : 0;
     console.log(JSON.stringify({
       'hibiki-message-type': 'sasayakiOffsetMissing',
       'sectionIndex': sectionIndex,
       'targetStart': targetStart,
       'targetEnd': targetEnd,
-      'scannedChars': normPos
+      'scannedChars': normPos,
+      'rootTag': root.tagName,
+      'rootClass': (root.className || '').toString().slice(0, 40),
+      'rootTextLen': rootTextLen,
+      'descendantCount': descendantCount,
+      'iframeCount': iframeCount,
+      'shadowHostCount': shadowHostCount,
+      'childTags': childTags,
+      'containerHeadOuter': containerOuter
     }));
     return;
   }
