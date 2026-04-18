@@ -299,10 +299,13 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       }
 
       await widget.repo.saveAudiobook(audiobook);
-      await _parseCues(format);
+      final String? matchSummary = await _parseCues(format);
 
       if (mounted) {
-        Fluttertoast.showToast(msg: t.audiobook_import_success);
+        final String msg = matchSummary == null
+            ? t.audiobook_import_success
+            : '${t.audiobook_import_success} · $matchSummary';
+        Fluttertoast.showToast(msg: msg);
         Navigator.pop(context, true); // true = reload player
       }
     } catch (e) {
@@ -319,12 +322,13 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
 
   /// 对 SRT + 已导入 ttu 的书，跑 Sasayaki 文本匹配，把命中 cue 的
   /// section/charStart/charEnd 编码写回 [AudioCue.textFragmentId]。失败不中
-  /// 断导入（cues 仍按原样落库，只是少了跨章节定位能力）。
-  Future<void> _maybeRunSasayakiMatch(List<AudioCue> cues) async {
+  /// 断导入（cues 仍按原样落库，只是少了跨章节定位能力）。返回匹配摘要字符串
+  /// 供调用方拼到最终 toast 里；未跑 / 失败时返回 null。
+  Future<String?> _maybeRunSasayakiMatch(List<AudioCue> cues) async {
     final int? ttuId = widget.ttuBookId;
     final int? port = widget.serverPort;
     if (ttuId == null || ttuId <= 0 || port == null || cues.isEmpty) {
-      return;
+      return null;
     }
     try {
       final TtuBookRecord rec = await TtuIdbReader.readBookRecord(
@@ -333,7 +337,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       );
       final List<EpubSection> sections = rec.sections;
       if (sections.isEmpty) {
-        return;
+        return null;
       }
       // 匹配器放 isolate 跑，主线程不能被大书的 bigram 扫描挤出 ANR。
       final MatchResult result = await EpubSrtMatcher.matchInIsolate(
@@ -341,18 +345,16 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
         cues: cues,
       );
       SasayakiMatchCodec.applyToCues(cues: cues, result: result);
-      if (mounted) {
-        final int pct = (result.matchRate * 100).round();
-        Fluttertoast.showToast(
-          msg: 'Sasayaki match: $pct% (${result.matchedCues}/${result.totalCues})',
-        );
-      }
+      final int pct = (result.matchRate * 100).round();
+      return 'Sasayaki $pct% (${result.matchedCues}/${result.totalCues})';
     } catch (e) {
       debugPrint('Sasayaki match failed: $e');
+      return null;
     }
   }
 
-  Future<void> _parseCues(String format) async {
+  /// 返回 Sasayaki 匹配摘要（仅 SRT 路径可能非空），调用方据此组合最终 toast。
+  Future<String?> _parseCues(String format) async {
     final File alignFile = File(_alignmentPath!);
 
     // SRT / LRC / VTT / ASS 四种都走"单章节 defaultChapter"路径
@@ -361,12 +363,13 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
         srtFile: alignFile,
         bookUid: widget.bookUid,
       );
-      await _maybeRunSasayakiMatch(cues);
+      final String? matchSummary = await _maybeRunSasayakiMatch(cues);
       await widget.repo.saveCues(
         bookUid: widget.bookUid,
         chapterHref: SrtParser.defaultChapter,
         cues: cues,
       );
+      return matchSummary;
     } else if (format == 'lrc') {
       final List<AudioCue> cues = LrcParser.parse(
         lrcFile: alignFile,
@@ -434,6 +437,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
         cues: cues,
       );
     }
+    return null;
   }
 
   Future<void> _removeAudiobook(Audiobook ab) async {
