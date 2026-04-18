@@ -515,6 +515,78 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
 };
 ''';
 
+  /// PR8a 的 Flutter 侧准备：ttu fork 之前就把"调用面"铺好，所有消费者只
+  /// 认 `__sasayakiRequestNav` 这个统一入口，fork 落地后只改这一段 JS，其他
+  /// 位置无感。
+  ///
+  /// ### 组件
+  ///
+  /// - `window.__sasayakiAutoNav`：系统触发的章节跳转期间为 true，用户翻页
+  ///   为 false。PR8b 的 "Follow audio" 判断用户意图靠这个 flag，不用时间
+  ///   窗。ttu fork 暴露 section API 时也必须在"恢复阅读位置"这类程序化
+  ///   调用里手动置 true（或用另起的 `__ttuInternalNav`），否则会被误判。
+  /// - `window.__sasayakiRequestNav(n)`：PR8b 调用的入口。当前实现两条分支：
+  ///   ttu fork 已落地（`__ttuGoToSection` 存在）→ 调用并 await；否则打
+  ///   `ttuForkMissing` 日志直接 resolve，让上层降级为 pill 提示。两种状态
+  ///   调用面一致，上层不做分支。
+  /// - `window.__hoshiTtuProbe()`：一次性探针，返回 `{hasGoToSection,
+  ///   hasCurrentSection, hasSectionCount, sectionCount, currentSection}`，
+  ///   供 [AudiobookBridge.probeTtuApi] 消费写进 AudiobookHealth.reason。
+  static const String _ttuApiShimFn = '''
+window.__sasayakiAutoNav = window.__sasayakiAutoNav || false;
+
+window.__sasayakiRequestNav = async function(n) {
+  window.__sasayakiAutoNav = true;
+  try {
+    if (typeof window.__ttuGoToSection === 'function') {
+      await window.__ttuGoToSection(n);
+      console.log(JSON.stringify({
+        'hibiki-message-type': 'sasayakiNavOk', 'section': n
+      }));
+    } else {
+      console.log(JSON.stringify({
+        'hibiki-message-type': 'ttuForkMissing',
+        'api': '__ttuGoToSection',
+        'requestedSection': n
+      }));
+    }
+  } catch (e) {
+    console.log(JSON.stringify({
+      'hibiki-message-type': 'sasayakiNavErr',
+      'section': n,
+      'error': String(e)
+    }));
+  } finally {
+    // queueMicrotask 保证 ttu 的 sectionChange 回调读到 true —— 它们通常
+    // 在同一个 task 里同步派发，再下一个 microtask 才轮到我们复位。
+    queueMicrotask(function() { window.__sasayakiAutoNav = false; });
+  }
+};
+
+window.__hoshiTtuProbe = function() {
+  var result = {
+    'hibiki-message-type': 'ttuProbe',
+    'hasGoToSection': typeof window.__ttuGoToSection === 'function',
+    'hasCurrentSection': typeof window.__ttuCurrentSection === 'function',
+    'hasSectionCount': typeof window.__ttuSectionCount === 'function',
+    'sectionCount': null,
+    'currentSection': null
+  };
+  try {
+    if (result.hasSectionCount) {
+      result.sectionCount = window.__ttuSectionCount();
+    }
+    if (result.hasCurrentSection) {
+      result.currentSection = window.__ttuCurrentSection();
+    }
+  } catch (e) {
+    result.probeError = String(e);
+  }
+  console.log(JSON.stringify(result));
+  return JSON.stringify(result);
+};
+''';
+
   /// 自动句子标注函数：按日文句末标点分割文本节点，包裹 data-hoshi-sid span。
   ///
   /// 跳过 ruby 内部节点，避免破坏振假名结构。
@@ -600,7 +672,52 @@ window.__hoshiAnnotate = function(chapterHref) {
     // 注入 JS 函数
     await controller.evaluateJavascript(source: _highlightFn);
     await controller.evaluateJavascript(source: _sasayakiFn);
+    await controller.evaluateJavascript(source: _ttuApiShimFn);
     await controller.evaluateJavascript(source: _annotateFn);
+  }
+
+  /// 探测 ttu 侧是否已挂出 PR8a 的 section 导航 API。
+  ///
+  /// fork 落地前预期全部 `hasXxx` 为 false；落地后为 true。调用方据此填
+  /// AudiobookHealth.reason / UI 角标。在 [inject] 之后任何时候调用都行，
+  /// 结果反映当次 WebView 上下文。
+  ///
+  /// 返回结构镜像 `window.__hoshiTtuProbe()` 的 JSON：
+  /// `hasGoToSection` / `hasCurrentSection` / `hasSectionCount` /
+  /// `sectionCount` / `currentSection`。
+  static Future<TtuApiProbe> probeTtuApi(
+    InAppWebViewController controller,
+  ) async {
+    final Object? raw = await controller.evaluateJavascript(
+      source: '__hoshiTtuProbe();',
+    );
+    if (raw is! String) {
+      return const TtuApiProbe.missing();
+    }
+    try {
+      final Map<String, dynamic> json =
+          jsonDecode(raw) as Map<String, dynamic>;
+      return TtuApiProbe(
+        hasGoToSection: json['hasGoToSection'] == true,
+        hasCurrentSection: json['hasCurrentSection'] == true,
+        hasSectionCount: json['hasSectionCount'] == true,
+        sectionCount: (json['sectionCount'] as num?)?.toInt(),
+        currentSection: (json['currentSection'] as num?)?.toInt(),
+      );
+    } catch (_) {
+      return const TtuApiProbe.missing();
+    }
+  }
+
+  /// 请求跳转到指定 section。fork 未落地时此调用会在 JS 侧打
+  /// `ttuForkMissing` 日志后直接 resolve，外层据此降级为 pill 提示。
+  static Future<void> requestSectionNav(
+    InAppWebViewController controller, {
+    required int sectionIndex,
+  }) async {
+    await controller.evaluateJavascript(
+      source: '__sasayakiRequestNav($sectionIndex);',
+    );
   }
 
   /// 初始化 Sasayaki 路径所需的 `sectionIndex → DOM id` 映射。
@@ -716,6 +833,50 @@ window.__hoshiAnnotate = function(chapterHref) {
       return null;
     }
     return AudiobookClickEvent(chapterHref: chapter, sentenceIndex: sid);
+  }
+}
+
+/// PR8a 的 ttu section 导航 API 探针结果。
+///
+/// fork 未落地时 [hasGoToSection] / [hasCurrentSection] / [hasSectionCount]
+/// 全部为 false，[sectionCount] 与 [currentSection] 为 null。UI 不会显示
+/// 跨章自动跳转开关（PR8b 的 "Follow audio"），仅显示 pill 提示。
+class TtuApiProbe {
+  const TtuApiProbe({
+    required this.hasGoToSection,
+    required this.hasCurrentSection,
+    required this.hasSectionCount,
+    this.sectionCount,
+    this.currentSection,
+  });
+
+  const TtuApiProbe.missing()
+      : hasGoToSection = false,
+        hasCurrentSection = false,
+        hasSectionCount = false,
+        sectionCount = null,
+        currentSection = null;
+
+  final bool hasGoToSection;
+  final bool hasCurrentSection;
+  final bool hasSectionCount;
+  final int? sectionCount;
+  final int? currentSection;
+
+  /// 三项都挂上才算 fork 就绪；任何一项缺失都走兼容路径。
+  bool get forkReady =>
+      hasGoToSection && hasCurrentSection && hasSectionCount;
+
+  /// 人话版摘要，方便写进 `AudiobookHealth.reason` 或 debug 日志。
+  String describe() {
+    if (forkReady) {
+      return 'ttu fork ready (sections=$sectionCount, cur=$currentSection)';
+    }
+    final List<String> missing = <String>[];
+    if (!hasGoToSection) missing.add('goToSection');
+    if (!hasCurrentSection) missing.add('currentSection');
+    if (!hasSectionCount) missing.add('sectionCount');
+    return 'ttu fork missing: ${missing.join(", ")}';
   }
 }
 
