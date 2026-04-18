@@ -23,29 +23,38 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#37474f" />
     <link rel="mask-icon" href="/safari-pinned-tab.svg" color="#37474f" />
-    <meta http-equiv="content-security-policy" content="">
-		<link rel="modulepreload" href="/_app/immutable/start-31285994.js">
-		<link rel="modulepreload" href="/_app/immutable/chunks/index-be8ea2fc.js">
-		<link rel="modulepreload" href="/_app/immutable/chunks/singletons-6176161c.js">
-		<script>
-			if ('serviceWorker' in navigator) {
-				addEventListener('load', function () {
-					navigator.serviceWorker.register('/service-worker.js');
-				});
-			}
-		</script>
+    
+		<link rel="modulepreload" href="/_app/immutable/entry/start._lxF0VH5.js">
+		<link rel="modulepreload" href="/_app/immutable/chunks/scheduler.xm7B0uVb.js">
+		<link rel="modulepreload" href="/_app/immutable/chunks/singletons.vuzTPHDV.js">
+		<link rel="modulepreload" href="/_app/immutable/entry/app.tel61u_x.js">
+		<link rel="modulepreload" href="/_app/immutable/chunks/index.41uptdMM.js">
   </head>
   <body class="h-full w-full break-words font-sans">
     <div class="h-full w-full">
-		<script type="module" data-sveltekit-hydrate="45h">
-			import { start } from "/_app/immutable/start-31285994.js";
+			<script>
+				{
+					__sveltekit_124ry7p = {
+						base: "",
+						env: {}
+					};
 
-			start({
-				env: {},
-				paths: {"base":"","assets":""},
-				target: document.querySelector('[data-sveltekit-hydrate="45h"]').parentNode,
-				version: "1682741589948"
-			});
-		</script></div>
+					const element = document.currentScript.parentElement;
+
+					Promise.all([
+						import("/_app/immutable/entry/start._lxF0VH5.js"),
+						import("/_app/immutable/entry/app.tel61u_x.js")
+					]).then(([kit, app]) => {
+						kit.start(app, element);
+					});
+
+					if ('serviceWorker' in navigator) {
+						addEventListener('load', function () {
+							navigator.serviceWorker.register('/service-worker.js');
+						});
+					}
+				}
+			</script>
+		</div>
   </body>
 </html>

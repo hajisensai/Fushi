@@ -1,154 +1,184 @@
 # ttu-ebook-reader fork 补丁清单（PR8a）
 
-对应上游：https://github.com/ttu-ebook-reader/ttu-ebook-reader
+**上游仓库**：https://github.com/ttu-ttu/ebook-reader
 
-当前 hibiki 把 ttu 的 dist 直接塞在 `hibiki/hibiki/assets/ttu-ebook-reader/`，**没有源码**。PR8b 的跨章自动同步需要 ttu 暴露 section 导航 API，本文档记录：
-1. 需要挂在 `window` 上的新 API 契约（Flutter 侧已按该契约注入 shim）
-2. 需要改的 ttu 源码位置与思路
-3. 编译 → 替换 dist 的流程
-4. 后续追上游的策略
+**fork 基准**：commit `7086bdc`（"chore(deps): update dependency vite to v5.0.9"，2023-12-15），@sveltejs/kit 1.30.3 + svelte 4.2.8，**SvelteKit 1.x 最后一个稳态**。上游随后 `0535909` 升 kit v2，输出目录结构有较大变化（chunks 结构、服务端 adapter 约定都换了）。hibiki 的 AudiobookBridge 是在 kit-v1 的 DOM 结构上反向对齐的（`.book-content` / `.book-content-container` / `column-gap: 40px` / `data-cue-id`），跟 kit-v1 dist 兼容性最强，所以 fork 锁在 kit-v1 最后一个可构建版本。
 
-Flutter 侧在 fork 未落地时已经能安全运行：`AudiobookBridge.probeTtuApi` 探不到 API 会返回 `forkReady=false`，`__sasayakiRequestNav(n)` 会打 `ttuForkMissing` 日志并 resolve，上层自动降级为 pill 提示（见 `SASAYAKI_PARITY_PLAN.md` 的 PR8b）。
+**fork 存放位置**：本机 `/d/ttu-fork/`（branch `hibiki-patches`），未推到远程。每个 patch 以 `feat(reader): [hibiki] ...` 开头便于 rebase 时辨识。
+
+**编译产物去向**：`hibiki/hibiki/assets/ttu-ebook-reader/`（替换整套，保留 hibiki 自维护的 `fonts/` 预打包字体目录）。
 
 ---
 
 ## 1. API 契约
 
-**所有 API 必须挂在全局 `window` 对象上**。Flutter 侧通过 `evaluateJavascript` 调用它们，不走 Svelte store。
+所有 API 挂在全局 `window`。Flutter 侧 `AudiobookBridge.probeTtuApi` / `requestSectionNav` 是唯一消费者。
 
-### 1.1 `window.__ttuGoToSection(n: number): Promise<void>`
+| API | 签名 | 语义 |
+|---|---|---|
+| `window.__ttuGoToSection(n)` | `(n: number) => Promise<void>` | 跳到第 n 个 section（0-based）。resolve 时新 section 的 DOM 已挂载（paginated）或 viewport 已滚到位（continuous）。越界 reject `RangeError`，5s 超时 reject。 |
+| `window.__ttuCurrentSection()` | `() => number` | 当前 section index。书未打开 / 未挂载任何章返回 `-1`。 |
+| `window.__ttuSectionCount()` | `() => number` | 当前书的 spine 段数。未打开书返回 `0`。 |
 
-- **语义**：跳转到 spine 中第 `n` 个 section，`n` 为 0-based。
-- **Promise resolve 条件**：目标 section 的 DOM 已挂载进 `.book-content-container`，Flutter 侧的 `MutationObserver` 能立刻看到新文本节点。**不允许**早于 DOM 挂载 resolve（否则 PR8b 的 cue 高亮会打空）。
-- **实现思路**：调用 ttu 内部切换 section 的 Svelte store setter；setter 派发异步渲染，在下一 `tick()` 之后 DOM 挂载完成即可 resolve。若无法精确挂钩 tick，可在模块内部 mount MutationObserver 监听 `.book-content-container`，第一次 mutation 即视为挂载完成。
-- **reject**：越界（`n < 0` 或 `n >= sectionCount`）应 reject 一个 `RangeError`。其他内部错误原样抛。
-
-### 1.2 `window.__ttuCurrentSection(): number`
-
-- 返回当前展示的 section 的 0-based 索引。未挂载任何 section（封面）时返回 `-1`。
-- 必须是同步读取（直接读 Svelte store 的 current value），供 `__sasayakiRequestNav` 做幂等判断。
-
-### 1.3 `window.__ttuSectionCount(): number`
-
-- 当前书的 spine 总段数。书未打开时返回 `0`。
-
-### 1.4 `window.__ttuInternalNav: boolean`（可选，推荐）
-
-- ttu 自身做的"恢复阅读位置"这种程序化 scroll 会派发 sectionChange 回调；PR8b 用 `__sasayakiAutoNav` 区分用户 / 系统意图，但那个 flag 只在 `__sasayakiRequestNav` 调用期间为 true。ttu 内部的程序化导航要另起一个 flag，否则会被误判为"用户翻页"→ Follow audio 被自动关掉。
-- 如果 fork 时方便，给 ttu 内部所有"非用户触发"的 section 切换包上 `window.__ttuInternalNav = true; try { ... } finally { __ttuInternalNav = false; }`。
-- Flutter 侧（PR8b）读 `__ttuInternalNav || __sasayakiAutoNav` 合并判断。
-
-### 1.5 保留 / 透传 section id（可选，强推）
-
-- ttu 当前在渲染时会剥掉 section 原始 id（实测只剩一个 `.book-content-container`）。当前 hibiki 依赖 `__hoshiSasayakiSectionStarts`（整书归一化偏移表）反推位置，既贵又脆。
-- 理想做法：找到 ttu 把 section HTML 写进 DOM 前的 sanitize 点，要么允许 id 透传，要么在 section root 元素上挂 `data-ttu-section-ref="<reference>"`。
-- 挂上之后 `audiobook_bridge.dart` 可以切一条 "按 section root 定位" 的捷径，省掉整书偏移扫描；但这不阻塞 PR8b。标记为 **可选**。
+额外：`window.__ttuInternalNav` / `__ttuInternalNav` 字段暂未实现。PR8b 如果需要区分 ttu 内部程序化导航（如"恢复阅读位置"）与用户翻页，再补。
 
 ---
 
-## 2. 需要改的 ttu 源码位置（估计，fork 后确认）
+## 2. 当前 patch 清单
 
-**警告：下面都是"按 ttu 项目结构规律推断"的位置，fork 后需要用 ripgrep 实地核对。**
+基准：`7086bdc`。
 
-1. **Section loader / book store**
-   - 期望位置：`apps/web/src/lib/data/book/...` 或 `apps/web/src/lib/components/book-reader/...`
-   - 找 "switch section" / "setSection" 逻辑；Svelte store 的 setter 在这里暴露。
-   - 新增一个 top-level 模块导出：
-     ```ts
-     // apps/web/src/lib/ttu-fork-bridge.ts（新建）
-     import { currentSection, sectionCount } from './book-store'; // 实际路径随 fork 确认
-     import { tick } from 'svelte';
-
-     if (typeof window !== 'undefined') {
-       (window as any).__ttuGoToSection = async (n: number): Promise<void> => {
-         const total = get(sectionCount);
-         if (n < 0 || n >= total) throw new RangeError(`section ${n} / ${total}`);
-         (window as any).__ttuInternalNav = true;
-         try {
-           currentSection.set(n);
-           await tick();
-           // 加一层 MutationObserver 兜底，等 DOM 真的挂上
-           await waitForContainer();
-         } finally {
-           (window as any).__ttuInternalNav = false;
-         }
-       };
-       (window as any).__ttuCurrentSection = () => get(currentSection);
-       (window as any).__ttuSectionCount = () => get(sectionCount);
-     }
-     ```
-   - 在 reader 页面入口（`+page.svelte` / `+layout.svelte`）`import '$lib/ttu-fork-bridge'` 触发副作用。
-
-2. **Section id 透传（可选）**
-   - 估计在 "sanitizeHtml" / "sectionProcessor" 类文件；ripgrep `stripId` / `removeId` / `id=` 找剥 id 的地方。
-   - 要么去掉这段剥 id 的逻辑，要么在写入 DOM 前把 `record.sections[i].reference` 作为 `data-ttu-section-ref` 挂到 section 根元素。
-
-3. **恢复阅读位置的程序化 scroll**
-   - ttu 打开书时会恢复上次位置；找这段代码，把它包在 `window.__ttuInternalNav = true; ... finally { false }` 里。
+| # | Commit | 作用域 | 说明 |
+|---|---|---|---|
+| 1 | `0a60fd6` feat(reader): [hibiki] expose window.__ttuGoToSection / Current / Count | 整套 | 见 §3 四个文件的改动合集 |
+| 2 | `d832837` fix(reader): [hibiki] onMount-cleanup instead of onDestroy to avoid SSR window | `+page.svelte` | SvelteKit prerender 会在 SSR 阶段调用 onDestroy，早期版本在 onDestroy 里 `delete window.xxx` 会抛 "window is not defined"。改为 onMount return 清理函数（onMount 只在 client 跑）规避。 |
 
 ---
 
-## 3. 编译 & 替换流程
+## 3. 改动细节
 
-前置：Node 20+, pnpm（ttu 项目常用），git。
+### 3.1 `apps/web/src/lib/components/book-reader/book-toc/book-toc.ts`
 
-```bash
-# 1. Fork 并克隆
-git clone https://github.com/<your-fork>/ttu-ebook-reader.git
-cd ttu-ebook-reader
-# 基于某个具体 tag 建 fork 分支，便于追上游
-git checkout -b hibiki-patches <upstream-tag>
+新增两个全局 RxJS subject：
 
-# 2. 装依赖 & 确认能跑
-pnpm install
-pnpm -C apps/web dev
-
-# 3. 应用 hibiki patches（见 §2 位置清单），每个 patch 一个 commit
-#    推荐 commit message 前缀 `[hibiki]`，便于 rebase 时辨认
-
-# 4. 构建生产 dist
-pnpm -C apps/web build
-
-# 5. 替换 hibiki 的 assets
-rm -rf <hibiki>/hibiki/hibiki/assets/ttu-ebook-reader/*
-cp -r apps/web/build/* <hibiki>/hibiki/hibiki/assets/ttu-ebook-reader/
+```ts
+export const currentSectionIndex$ = new BehaviorSubject<number>(-1);
+export const sectionRenderCompleteGlobal$ = new Subject<number>();
 ```
 
-### 验证步骤（必做）
+**为什么不用 store 里现成的**：ttu 自己的 `sectionIndex$` / `sectionRenderComplete$` 定义在 `book-reader-paginated.svelte` 的组件作用域，外部 import 不到；continuous reader 又根本没有 sectionIndex 概念。所以 `book-toc.ts`（原本就是章节相关全局状态的 home）是最合适的放置点。
 
-构建产物替换后，不能盲信编译通过就等于 API 可用。验证：
+### 3.2 `apps/web/src/lib/components/book-reader/book-reader-paginated/book-reader-paginated.svelte`
 
-1. hibiki 里跑 debug APK，打开任意 ttu 书。
-2. 在 Flutter 侧调用 `AudiobookBridge.probeTtuApi(controller)`，预期返回 `forkReady == true`、`sectionCount > 0`。
-3. 调用 `AudiobookBridge.requestSectionNav(controller, sectionIndex: 1)`，console 看到 `sasayakiNavOk`；book-content-container 里是第 2 段的文本。
-4. Flutter 侧立刻调 `probeTtuApi` 再读 `currentSection`，应为 1。
+1. import 追加 `currentSectionIndex$`, `sectionRenderCompleteGlobal$`。
+2. 在已有的 `sectionRenderComplete$.next(sectionIndex$.getValue())` 调用旁边多发一份 `sectionRenderCompleteGlobal$.next(...)`。
+3. 模块 top-level 增加一次性订阅：
+
+```ts
+sectionIndex$.pipe(takeUntil(destroy$)).subscribe((i) => {
+  currentSectionIndex$.next(i);
+});
+```
+
+（takeUntil destroy$ 保证 reader 组件 destroy 时订阅释放，避免跨书泄漏。）
+
+### 3.3 `apps/web/src/lib/components/book-reader/book-reader-continuous/book-reader-continuous.svelte`
+
+1. import 追加两个全局 subject + `sectionList$` （已有）。
+2. 在已有的 `nextChapter$.subscribe((chapterId) => { ... })` 开头，根据 `sectionList$` 查 `reference == chapterId` 的 index：
+
+```ts
+const list = sectionList$.getValue();
+const idx = list.findIndex((s) => s.reference === chapterId);
+if (idx > -1) {
+  currentSectionIndex$.next(idx);
+  requestAnimationFrame(() => sectionRenderCompleteGlobal$.next(idx));
+}
+```
+
+rAF 是因为连续模式 `window.scrollBy` 是同步调用，但 getBoundingClientRect 之后浏览器还需要一帧才真正把新滚动位置刷到 layout；等 rAF 再发 render-complete 信号对调用方更保险。
+
+### 3.4 `apps/web/src/routes/b/+page.svelte`
+
+1. import 追加 `currentSectionIndex$` / `sectionRenderCompleteGlobal$`；追加 `onMount` from svelte。
+2. 在已有的 `sectionList$.next(rawBookData.sections || []);` 后补一行：
+
+```ts
+currentSectionIndex$.next(-1);  // 换书复位，防止跨书残留
+```
+
+3. 在已有 `onDestroy(() => readerImageGalleryPictures$.next([]));` 之后追加 onMount，把 window API 挂上去；**return 一个清理函数**等价于 onDestroy 在 client 的那份，这样 SSR 阶段不会碰到 window（onMount 自身只在 client 跑）。
+
+```ts
+onMount(() => {
+  const w = window as unknown as { ... };
+  w.__ttuGoToSection = (n) => new Promise((resolve, reject) => {
+    const list = sectionList$.getValue();
+    if (n < 0 || n >= list.length) { reject(new RangeError(...)); return; }
+    let done = false;
+    const sub = sectionRenderCompleteGlobal$.pipe(take(1)).subscribe(() => {
+      if (done) return; done = true;
+      clearTimeout(navTimer); resolve();
+    });
+    const navTimer = setTimeout(() => {
+      if (done) return; done = true;
+      sub.unsubscribe();
+      reject(new Error(`__ttuGoToSection(${n}) timed out`));
+    }, 5000);
+    nextChapter$.next(list[n].reference);
+  });
+  w.__ttuCurrentSection = () => currentSectionIndex$.getValue();
+  w.__ttuSectionCount = () => sectionList$.getValue().length;
+  return () => {
+    delete w.__ttuGoToSection;
+    delete w.__ttuCurrentSection;
+    delete w.__ttuSectionCount;
+  };
+});
+```
 
 ---
 
-## 4. 追上游策略
+## 4. 构建 & 替换流程
 
-- 每个 hibiki patch 独立 commit + `[hibiki]` 前缀。
-- ttu 上游出新版 → `git rebase <new-tag>`，手工合并冲突。section loader 这种核心文件最可能冲突，`ttu-fork-bridge.ts` 是新增文件基本不会冲突，值得在结构上尽量把逻辑推进新文件、最小侵入已有文件。
-- 冲突多到无法 rebase 时：在新上游上重新走一遍 §2 的 patch 清单，写新 commit，不强追之前的 commit hash。
-- 本文档跟 fork 走——fork commit 对应的 patch 编号、位置改动要回填到此文件"当前 patch 清单"小节（现阶段还没落，空着）。
+前置：Node 20+（本机用 24）、pnpm（`npm install -g pnpm@8 --prefix ~/.npm-global`，然后 `export PATH=~/.npm-global:$PATH`）。
+
+```bash
+# 1. 切到 fork 分支 & 确认补丁在
+cd /d/ttu-fork
+git switch hibiki-patches
+git log --oneline | grep '\[hibiki\]'
+
+# 2. 装依赖（首次 ~35s）
+pnpm install
+
+# 3. build（首次前必须一次 svelte-kit sync 生成 .svelte-kit/tsconfig.json，
+#    否则 husky pre-commit 的 eslint 会失败；pnpm install 的 prepare 阶段
+#    会触发一次 svelte-kit sync，正常情况下无需手动。）
+pnpm build
+
+# 4. 替换 hibiki dist（保留 hibiki 自维护的 fonts/）
+cd /d/APP/vs_claude_code/hibiki/hibiki/assets/ttu-ebook-reader
+mv fonts /tmp/hibiki-ttu-fonts
+cd /d/APP/vs_claude_code/hibiki/hibiki/assets
+rm -rf ttu-ebook-reader && mkdir ttu-ebook-reader
+cp -r /d/ttu-fork/apps/web/build/. ttu-ebook-reader/
+mv /tmp/hibiki-ttu-fonts ttu-ebook-reader/fonts
+
+# 5. pubspec.yaml assets 目录列表：新 build 里 _app/immutable/ 下只有
+#    {assets,chunks,entry,nodes}（kit v1 的 components/ 消失），顶层多了
+#    statistics/ 目录。更新完后 flutter build apk --debug 验证。
+```
+
+### 运行时验证
+
+1. debug APK 装到设备，开一本已导入 ttu 的书。
+2. 在 audiobook_bridge 注入完成后（调 `AudiobookBridge.probeTtuApi(controller)`），预期返回 `forkReady == true`、`sectionCount > 0`。
+3. `AudiobookBridge.requestSectionNav(controller, sectionIndex: 1)` → console 看到 `sasayakiNavOk`，`.book-content-container` 里是第 2 段文本。
+4. 立即再调 `probeTtuApi` 读 `currentSection`，应为 1。
+5. 翻回第 0 章（UI 层），`probeTtuApi.currentSection` 在 paginated 模式会自动更新；continuous 模式只在用目录点跳转时更新（用户滚动不更新，当前 patch 不跟踪）。
 
 ---
 
-## 5. 当前 patch 清单
+## 5. 追上游策略
 
-> fork 尚未创建。落地后在此记录每个 patch 的：commit hash / 改动文件 / 对应本文 §2 编号 / 验证结果。
-
-（空）
+- 每个 hibiki patch 独立 commit + `feat/fix(reader): [hibiki] ...` 前缀（conventional commits，ttu 的 husky commit-msg 钩子要求这个格式）。
+- 上游出新版：`git fetch origin && git rebase <new-tag>`。预期冲突点：
+  - book-toc.ts：低风险（仅新增 export）
+  - book-reader-paginated.svelte / book-reader-continuous.svelte：中风险（subscribe 块位置可能被上游重排）
+  - +page.svelte：中风险（import 块、onMount 位置）
+- kit 从 v1 升 v2 后，adapter-static 的 build 目录结构、`.svelte-kit/output/` 路径都变了，可能需要重新对齐 hibiki 的 pubspec assets 列表和 ttu_epub_importer 里硬编码的页面 URL。
+- 冲突严重时：不强追旧 commit hash，重新走一遍 §3 的清单写新 commit。
 
 ---
 
-## 6. Flutter 侧契约（不需要改）
+## 6. Flutter 侧契约（已固定）
 
-以下代码在 fork 未落地时就已经按本契约写好，fork 落地后**自动**生效，不需要再动 Flutter：
+以下在 fork 存在前就已按本契约写好（见 `feat(audiobook): PR8a Flutter 侧 ttu API shim + fork notes` commit），fork 落地后**自动**生效：
 
 - `hibiki/hibiki/lib/src/media/audiobook/audiobook_bridge.dart`
-  - `_ttuApiShimFn`：定义 `window.__sasayakiAutoNav` / `window.__sasayakiRequestNav(n)` / `window.__hoshiTtuProbe()`。
-  - `AudiobookBridge.probeTtuApi(controller) → TtuApiProbe`：探针封装。
-  - `AudiobookBridge.requestSectionNav(controller, sectionIndex)`：上层统一入口，fork 未落地打 `ttuForkMissing` 日志后降级。
+  - `_ttuApiShimFn`：`window.__sasayakiAutoNav` / `window.__sasayakiRequestNav(n)` / `window.__hoshiTtuProbe()`
+  - `AudiobookBridge.probeTtuApi(controller) → TtuApiProbe`
+  - `AudiobookBridge.requestSectionNav(controller, sectionIndex)`
 
-fork 落地后建议：在 `AudiobookBridge.inject()` 完成后调一次 `probeTtuApi`，把 `describe()` 写进 `AudiobookHealth.reason`（目前只在导入时写一次；fork 落地后这里再补一轮"打开书时复测"）。
+PR8b 在 Flutter 侧消费这些入口（Follow audio 开关 + pill 降级），不需要再动 ttu 源码。
