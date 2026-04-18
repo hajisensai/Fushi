@@ -1,4 +1,5 @@
 import 'package:isar/isar.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_health.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 
 /// 有声书数据访问层，封装所有 Isar 查询。
@@ -80,6 +81,28 @@ class AudiobookRepository {
   Future<void> saveAudiobook(Audiobook audiobook) async {
     await _isar.writeTxn(() async {
       await _isar.audiobooks.put(audiobook);
+    });
+  }
+
+  /// 更新指定书的健康度指标。未找到 [Audiobook] 时静默跳过。
+  ///
+  /// 拆开写是因为导入流程是"先保存 Audiobook → 再跑匹配（耗时）→ 最后
+  /// 写健康度"，不能把 matcher 塞进 saveAudiobook 事务里（matcher 跑在
+  /// isolate，writeTxn 会卡 UI 线程直到 isolate 回来）。
+  Future<void> updateHealth({
+    required String bookUid,
+    required AudiobookHealth health,
+  }) async {
+    await _isar.writeTxn(() async {
+      final Audiobook? ab = await _isar.audiobooks
+          .filter()
+          .bookUidEqualTo(bookUid)
+          .findFirst();
+      if (ab == null) {
+        return;
+      }
+      health.packInto(ab);
+      await _isar.audiobooks.put(ab);
     });
   }
 

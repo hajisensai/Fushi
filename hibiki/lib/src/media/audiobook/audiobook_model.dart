@@ -22,6 +22,24 @@ class Audiobook {
 
   /// 对齐文件路径（本地绝对路径）。
   late String alignmentPath;
+
+  // ── PR2 健康度指标 ────────────────────────────────────────────────────────
+  // 所有字段 nullable：旧记录读出来 kind 回退为 unrun，Isar 不需要迁移脚本。
+  // 语义见 [AudiobookHealth] / [HealthKind]；UI 侧永远 switch(kind)，
+  // 不直接读 matchRatePct。
+
+  /// [HealthKind] 的 name（持久化为字符串，Isar 枚举不稳定，用名字更稳）。
+  String? healthKindRaw;
+
+  /// 0..100 的匹配率。仅当 kind ∈ {ok, partial} 时有意义。
+  int? matchRatePct;
+
+  /// health 计算时间，用于"指标过期 → 重跑"判断。
+  DateTime? healthMeasuredAt;
+
+  /// partial/failed 时的人话解释，直接展示给用户（"3 章 SMIL fragment
+  /// 找不到"，"ttu IDB 未就绪" 等）。
+  String? healthReason;
 }
 
 /// 单条对齐片段，粒度为句子级别。

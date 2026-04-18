@@ -4,9 +4,10 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:hibiki/src/media/audiobook/ass_parser.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_health.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
-import 'package:hibiki/src/media/audiobook/epub_srt_matcher.dart';
+import 'package:hibiki/src/media/audiobook/epub_cue_matcher.dart';
 import 'package:hibiki/src/media/audiobook/json_alignment_parser.dart';
 import 'package:hibiki/src/media/audiobook/lrc_parser.dart';
 import 'package:hibiki/src/media/audiobook/sasayaki_match_codec.dart';
@@ -299,12 +300,17 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       }
 
       await widget.repo.saveAudiobook(audiobook);
-      final String? matchSummary = await _parseCues(format);
+      final AudiobookHealth health = await _parseCues(format);
+      await widget.repo.updateHealth(
+        bookUid: widget.bookUid,
+        health: health,
+      );
 
       if (mounted) {
-        final String msg = matchSummary == null
+        final String? tail = _summarizeHealth(health);
+        final String msg = tail == null
             ? t.audiobook_import_success
-            : '${t.audiobook_import_success} · $matchSummary';
+            : '${t.audiobook_import_success} · $tail';
         Fluttertoast.showToast(msg: msg);
         Navigator.pop(context, true); // true = reload player
       }
@@ -320,15 +326,24 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     }
   }
 
-  /// 对 SRT + 已导入 ttu 的书，跑 Sasayaki 文本匹配，把命中 cue 的
-  /// section/charStart/charEnd 编码写回 [AudioCue.textFragmentId]。失败不中
-  /// 断导入（cues 仍按原样落库，只是少了跨章节定位能力）。返回匹配摘要字符串
-  /// 供调用方拼到最终 toast 里；未跑 / 失败时返回 null。
-  Future<String?> _maybeRunSasayakiMatch(List<AudioCue> cues) async {
+  /// 对 SRT/LRC/VTT/ASS 四格式：若本书已挂 ttu，跑 [EpubCueMatcher] 把命中
+  /// cue 的 section/charStart/charEnd 编码写回 [AudioCue.textFragmentId]。
+  /// 失败不中断导入（cues 仍按原样落库，少的只是跨章定位能力）。
+  ///
+  /// 返回值是本次匹配的健康度：matcher 跑起来 → fromRatePct；没 ttu 绑定 →
+  /// notApplicable；reader 失败 / cues 为空 → failed。调用方据此写回
+  /// [Audiobook.healthKindRaw] 等字段。
+  Future<AudiobookHealth> _matchCuesToTtu(List<AudioCue> cues) async {
     final int? ttuId = widget.ttuBookId;
     final int? port = widget.serverPort;
-    if (ttuId == null || ttuId <= 0 || port == null || cues.isEmpty) {
-      return null;
+    if (ttuId == null || ttuId <= 0 || port == null) {
+      return AudiobookHealth.notApplicable(
+        reason: 'no ttu book bound — subtitle playback works, but no '
+            'cross-chapter highlight',
+      );
+    }
+    if (cues.isEmpty) {
+      return AudiobookHealth.failed(reason: 'parser returned 0 cues');
     }
     try {
       final TtuBookRecord rec = await TtuIdbReader.readBookRecord(
@@ -337,69 +352,83 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       );
       final List<EpubSection> sections = rec.sections;
       if (sections.isEmpty) {
-        return null;
+        return AudiobookHealth.failed(
+          reason: 'ttu IDB record had 0 sections',
+        );
       }
       // 匹配器放 isolate 跑，主线程不能被大书的 bigram 扫描挤出 ANR。
-      final MatchResult result = await EpubSrtMatcher.matchInIsolate(
+      final MatchResult result = await EpubCueMatcher.matchInIsolate(
         sections: sections,
         cues: cues,
       );
       SasayakiMatchCodec.applyToCues(cues: cues, result: result);
       final int pct = (result.matchRate * 100).round();
-      return 'Sasayaki $pct% (${result.matchedCues}/${result.totalCues})';
+      return AudiobookHealth.fromRatePct(
+        ratePct: pct,
+        reason: '${result.matchedCues}/${result.totalCues} cues matched'
+            '${result.rescuedCues > 0 ? ' (${result.rescuedCues} rescued)' : ''}',
+      );
     } catch (e) {
-      debugPrint('Sasayaki match failed: $e');
-      return null;
+      debugPrint('EpubCueMatcher failed: $e');
+      return AudiobookHealth.failed(reason: 'matcher threw: $e');
     }
   }
 
-  /// 返回 Sasayaki 匹配摘要（仅 SRT 路径可能非空），调用方据此组合最终 toast。
-  Future<String?> _parseCues(String format) async {
+  /// 返回本次导入的健康度。所有格式都要给出一个 [AudiobookHealth]，调用方
+  /// 会写回 Audiobook 记录，书卡上的角标据此展示。
+  Future<AudiobookHealth> _parseCues(String format) async {
     final File alignFile = File(_alignmentPath!);
 
-    // SRT / LRC / VTT / ASS 四种都走"单章节 defaultChapter"路径
+    // SRT / LRC / VTT / ASS：都走"单章节 defaultChapter"路径，都会尝试
+    // matcher（前提是绑定了 ttu 书）。
     if (format == 'srt') {
       final List<AudioCue> cues = SrtParser.parse(
         srtFile: alignFile,
         bookUid: widget.bookUid,
       );
-      final String? matchSummary = await _maybeRunSasayakiMatch(cues);
+      final AudiobookHealth health = await _matchCuesToTtu(cues);
       await widget.repo.saveCues(
         bookUid: widget.bookUid,
         chapterHref: SrtParser.defaultChapter,
         cues: cues,
       );
-      return matchSummary;
+      return health;
     } else if (format == 'lrc') {
       final List<AudioCue> cues = LrcParser.parse(
         lrcFile: alignFile,
         bookUid: widget.bookUid,
       );
+      final AudiobookHealth health = await _matchCuesToTtu(cues);
       await widget.repo.saveCues(
         bookUid: widget.bookUid,
         chapterHref: LrcParser.defaultChapter,
         cues: cues,
       );
+      return health;
     } else if (format == 'vtt') {
       final List<AudioCue> cues = VttParser.parse(
         vttFile: alignFile,
         bookUid: widget.bookUid,
       );
+      final AudiobookHealth health = await _matchCuesToTtu(cues);
       await widget.repo.saveCues(
         bookUid: widget.bookUid,
         chapterHref: VttParser.defaultChapter,
         cues: cues,
       );
+      return health;
     } else if (format == 'ass') {
       final List<AudioCue> cues = AssParser.parse(
         assFile: alignFile,
         bookUid: widget.bookUid,
       );
+      final AudiobookHealth health = await _matchCuesToTtu(cues);
       await widget.repo.saveCues(
         bookUid: widget.bookUid,
         chapterHref: AssParser.defaultChapter,
         cues: cues,
       );
+      return health;
     } else if (format == 'json') {
       final List<AudioCue> allCues = JsonAlignmentParser.parse(
         jsonFile: alignFile,
@@ -418,6 +447,10 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
           cues: entry.value,
         );
       }
+      return _healthFromFragmentIntegrity(
+        allCues,
+        formatLabel: 'json',
+      );
     } else {
       // SMIL：单文件对应单章节，文件名（去扩展）推断 chapterHref
       final String fileName = _alignmentPath!
@@ -436,8 +469,50 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
         chapterHref: chapterHref,
         cues: cues,
       );
+      return _healthFromFragmentIntegrity(cues, formatLabel: 'smil');
     }
-    return null;
+  }
+
+  /// SMIL/JSON 的静态健康度：基于 cue 自带的 textFragmentId 完整度。
+  ///
+  /// SMIL fragment 形如 `#sN`，JSON 是 CSS selector。非空即视为"有定位能力"。
+  /// PR8 落地后 JSON 还会追加一次 DOM 命中率复核，此处先给兜底值。
+  AudiobookHealth _healthFromFragmentIntegrity(
+    List<AudioCue> cues, {
+    required String formatLabel,
+  }) {
+    if (cues.isEmpty) {
+      return AudiobookHealth.failed(
+        reason: '$formatLabel parser returned 0 cues',
+      );
+    }
+    int intact = 0;
+    for (final AudioCue c in cues) {
+      if (c.textFragmentId.isNotEmpty) {
+        intact++;
+      }
+    }
+    final int pct = (intact * 100 / cues.length).round();
+    return AudiobookHealth.fromRatePct(
+      ratePct: pct,
+      reason: '$intact/${cues.length} cues have fragment id',
+    );
+  }
+
+  /// 把 [AudiobookHealth] 压成一段 toast 尾巴；notApplicable/unrun 返回 null
+  /// 省掉冗余提示。
+  String? _summarizeHealth(AudiobookHealth h) {
+    switch (h.kind) {
+      case HealthKind.ok:
+      case HealthKind.partial:
+      case HealthKind.failed:
+        final int p = h.ratePct ?? 0;
+        return 'match $p%';
+      case HealthKind.notApplicable:
+      case HealthKind.unrun:
+      case HealthKind.running:
+        return null;
+    }
   }
 
   Future<void> _removeAudiobook(Audiobook ab) async {

@@ -1,6 +1,6 @@
 # hibiki（Hoshi Reader Android）
 
-基于 jidoujisho fork 的日语沉浸式阅读器，对标 iOS [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader)。核心：EPUB + Yomitan 词典 + Anki 制卡 + 有声书同步。
+基于 jidoujisho fork 的日语沉浸式阅读器，对标 iOS [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader)、https://github.com/Manhhao/Hoshi-Reader/blob/develop/SASAYAKI.md 。核心：EPUB + Yomitan 词典 + Anki 制卡 + 有声书同步。
 
 ## 仓库结构
 

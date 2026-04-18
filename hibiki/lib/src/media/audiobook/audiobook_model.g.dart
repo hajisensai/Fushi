@@ -46,6 +46,26 @@ const AudiobookSchema = CollectionSchema(
       name: r'audioPaths',
       type: IsarType.stringList,
     ),
+    r'healthKindRaw': PropertySchema(
+      id: 5,
+      name: r'healthKindRaw',
+      type: IsarType.string,
+    ),
+    r'healthMeasuredAt': PropertySchema(
+      id: 6,
+      name: r'healthMeasuredAt',
+      type: IsarType.dateTime,
+    ),
+    r'healthReason': PropertySchema(
+      id: 7,
+      name: r'healthReason',
+      type: IsarType.string,
+    ),
+    r'matchRatePct': PropertySchema(
+      id: 8,
+      name: r'matchRatePct',
+      type: IsarType.long,
+    ),
   },
   estimateSize: _audiobookEstimateSize,
   serialize: _audiobookSerialize,
@@ -99,6 +119,18 @@ int _audiobookEstimateSize(
       }
     }
   }
+  {
+    final value = object.healthKindRaw;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
+  {
+    final value = object.healthReason;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
   return bytesCount;
 }
 
@@ -113,6 +145,10 @@ void _audiobookSerialize(
   writer.writeString(offsets[2], object.audioRoot);
   writer.writeString(offsets[3], object.bookUid);
   writer.writeStringList(offsets[4], object.audioPaths);
+  writer.writeString(offsets[5], object.healthKindRaw);
+  writer.writeDateTime(offsets[6], object.healthMeasuredAt);
+  writer.writeString(offsets[7], object.healthReason);
+  writer.writeLong(offsets[8], object.matchRatePct);
 }
 
 Audiobook _audiobookDeserialize(
@@ -128,6 +164,10 @@ Audiobook _audiobookDeserialize(
   object.audioRoot = reader.readStringOrNull(offsets[2]);
   object.bookUid = reader.readString(offsets[3]);
   object.audioPaths = reader.readStringList(offsets[4]);
+  object.healthKindRaw = reader.readStringOrNull(offsets[5]);
+  object.healthMeasuredAt = reader.readDateTimeOrNull(offsets[6]);
+  object.healthReason = reader.readStringOrNull(offsets[7]);
+  object.matchRatePct = reader.readLongOrNull(offsets[8]);
   return object;
 }
 
@@ -148,6 +188,14 @@ P _audiobookDeserializeProp<P>(
       return (reader.readString(offset)) as P;
     case 4:
       return (reader.readStringList(offset)) as P;
+    case 5:
+      return (reader.readStringOrNull(offset)) as P;
+    case 6:
+      return (reader.readDateTimeOrNull(offset)) as P;
+    case 7:
+      return (reader.readStringOrNull(offset)) as P;
+    case 8:
+      return (reader.readLongOrNull(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
   }
