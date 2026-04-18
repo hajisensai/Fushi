@@ -60,18 +60,27 @@ class TtuIdbReader {
     const sectionsMeta = Array.isArray(record.sections) ? record.sections : [];
     const parser = new DOMParser();
     const doc = parser.parseFromString('<div>' + html + '</div>', 'text/html');
+    // 日文 EPUB 常用 <ruby><rt>假名</rt></ruby> 标注振假名；textContent 会把 rt
+    // 里的读音和底字拼接成 "魔ま法ほう"，而 SRT 是纯文本 "魔法"，bigram 匹配
+    // 会被稀释到 0.2~0.3，导致整本匹配率崩到个位数。抽文本前统一剥掉 rt/rp。
+    function stripRuby(el) {
+      const clone = el.cloneNode(true);
+      const rts = clone.querySelectorAll('rt, rp');
+      for (let j = 0; j < rts.length; j++) rts[j].remove();
+      return clone.textContent || '';
+    }
     const out = [];
     for (let i = 0; i < sectionsMeta.length; i++) {
       const s = sectionsMeta[i];
       const ref = s && s.reference;
       if (!ref) continue;
       const el = doc.getElementById(ref);
-      const text = el ? (el.textContent || '') : '';
+      const text = el ? stripRuby(el) : '';
       out.push({ index: i, href: ref, label: s.label || '', text: text });
     }
     if (out.length === 0) {
       const body = doc.body.firstChild;
-      const text = body ? (body.textContent || '') : '';
+      const text = body ? stripRuby(body) : '';
       out.push({ index: 0, href: 'ttu-body', label: '', text: text });
     }
     console.log(JSON.stringify({

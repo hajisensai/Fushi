@@ -286,7 +286,8 @@ window.__hoshiLoadSasayakiRefs = function(ttuBookId) {
         // 每段正文归一化字符数 —— 复用 DOMParser 从原始 elementHtml 中按
         // section.reference 取元素的 textContent 再数字符。必须和 Dart 侧
         // EpubSrtMatcher._buildIndex 的累加方式严格一致，否则累计起点
-        // 会漂移。
+        // 会漂移。剥 <rt>/<rp> 的规则也必须和 TtuIdbReader 保持一致，否则
+        // 匹配时的偏移基准 vs 运行期高亮基准会错位。
         var parser = new DOMParser();
         var doc = parser.parseFromString('<div>' + html + '</div>', 'text/html');
 
@@ -298,6 +299,13 @@ window.__hoshiLoadSasayakiRefs = function(ttuBookId) {
           return n;
         }
 
+        function stripRubyText(el) {
+          var clone = el.cloneNode(true);
+          var rts = clone.querySelectorAll('rt, rp');
+          for (var j = 0; j < rts.length; j++) rts[j].parentNode.removeChild(rts[j]);
+          return clone.textContent || '';
+        }
+
         var refs = [];
         var starts = [];
         var cumulative = 0;
@@ -306,7 +314,7 @@ window.__hoshiLoadSasayakiRefs = function(ttuBookId) {
           refs.push(ref);
           starts.push(cumulative);
           var el = ref ? doc.getElementById(ref) : null;
-          var text = el ? (el.textContent || '') : '';
+          var text = el ? stripRubyText(el) : '';
           cumulative += normLen(text);
         }
         window.__hoshiSasayakiRefs = refs;
@@ -430,9 +438,20 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
     legacy[li].classList.remove('hoshi-active');
   }
 
-  // Walk all text nodes under root (include <rt> — the Dart matcher uses
-  // textContent, which includes ruby annotations).
-  var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+  // Walk text nodes under root, skipping <rt>/<rp> (furigana). Dart 侧
+  // 匹配用的是剥掉振假名的纯正文；这里必须对齐，否则带 ruby 的章节每过
+  // 一段就被读音的额外字符挤偏，高亮会漂到后面几十字。
+  var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: function(n) {
+      var p = n.parentNode;
+      while (p && p !== root) {
+        var tag = p.nodeName ? p.nodeName.toLowerCase() : '';
+        if (tag === 'rt' || tag === 'rp') return NodeFilter.FILTER_REJECT;
+        p = p.parentNode;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    }
+  });
   var startNode = null, startOffset = 0;
   var endNode = null, endOffset = 0;
   var normPos = 0;
