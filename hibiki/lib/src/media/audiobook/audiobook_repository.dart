@@ -73,8 +73,10 @@ class AudiobookRepository {
   /// 删除指定书的所有有声书数据（元数据 + 所有 cue）。
   Future<void> deleteAudiobook(String bookUid) async {
     await _isar.writeTxn(() async {
-      final Audiobook? existing =
-          _isar.audiobooks.filter().bookUidEqualTo(bookUid).findFirstSync();
+      final Audiobook? existing = await _isar.audiobooks
+          .filter()
+          .bookUidEqualTo(bookUid)
+          .findFirst();
       if (existing != null) {
         await _isar.audiobooks.delete(existing.id);
       }
