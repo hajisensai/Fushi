@@ -50,7 +50,7 @@ WEBVTT
       expect(cues[0].startMs, 1000);
       expect(cues[0].endMs, 4230);
       expect(cues[0].text, '吾輩は猫である。');
-      expect(cues[0].textFragmentId, 'srt://0');
+      expect(cues[0].textFragmentId, '[data-cue-id="0"]');
       expect(cues[0].chapterHref, VttParser.defaultChapter);
       expect(cues[1].startMs, 4500);
       expect(cues[2].endMs, 12000);

@@ -45,7 +45,7 @@ void main() {
       expect(cues[0].startMs, 1000);
       expect(cues[0].endMs, 4500);
       expect(cues[0].text, '吾輩は猫である。');
-      expect(cues[0].textFragmentId, 'srt://0');
+      expect(cues[0].textFragmentId, '[data-cue-id="0"]');
       expect(cues[0].chapterHref, LrcParser.defaultChapter);
       expect(cues[0].bookUid, 'test/book.lrc');
       expect(cues[0].audioFileIndex, 0);
@@ -54,7 +54,7 @@ void main() {
       expect(cues[1].startMs, 4500);
       expect(cues[1].endMs, 8200);
       expect(cues[1].text, '名前はまだない。');
-      expect(cues[1].textFragmentId, 'srt://1');
+      expect(cues[1].textFragmentId, '[data-cue-id="1"]');
 
       expect(cues[2].sentenceIndex, 2);
       expect(cues[2].startMs, 8200);

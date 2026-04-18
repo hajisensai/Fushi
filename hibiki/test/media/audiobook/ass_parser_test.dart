@@ -52,7 +52,7 @@ Dialogue: 0,0:00:08.20,0:00:12.00,Default,,0,0,0,,どこで生れたかとんと
       expect(cues[0].startMs, 1000);
       expect(cues[0].endMs, 4230);
       expect(cues[0].text, '吾輩は猫である。');
-      expect(cues[0].textFragmentId, 'srt://0');
+      expect(cues[0].textFragmentId, '[data-cue-id="0"]');
       expect(cues[0].chapterHref, AssParser.defaultChapter);
       expect(cues[1].startMs, 4500);
       expect(cues[2].endMs, 12000);
