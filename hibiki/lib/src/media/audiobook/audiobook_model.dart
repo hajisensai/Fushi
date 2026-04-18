@@ -40,6 +40,13 @@ class Audiobook {
   /// partial/failed 时的人话解释，直接展示给用户（"3 章 SMIL fragment
   /// 找不到"，"ttu IDB 未就绪" 等）。
   String? healthReason;
+
+  /// PR8b "Follow audio" 开关的持久化状态。
+  ///
+  /// null / false：OFF —— cue 跨章时弹 pill "→ 第 N 章"，用户手点才跳。
+  /// true：ON —— cue 跨章时自动调 __ttuGoToSection；用户手动翻页触发
+  /// auto-off 回到 false。nullable 是为了旧记录读出来默认 OFF，不需迁移。
+  bool? followAudio;
 }
 
 /// 单条对齐片段，粒度为句子级别。

@@ -66,6 +66,11 @@ const AudiobookSchema = CollectionSchema(
       name: r'matchRatePct',
       type: IsarType.long,
     ),
+    r'followAudio': PropertySchema(
+      id: 9,
+      name: r'followAudio',
+      type: IsarType.bool,
+    ),
   },
   estimateSize: _audiobookEstimateSize,
   serialize: _audiobookSerialize,
@@ -149,6 +154,7 @@ void _audiobookSerialize(
   writer.writeDateTime(offsets[6], object.healthMeasuredAt);
   writer.writeString(offsets[7], object.healthReason);
   writer.writeLong(offsets[8], object.matchRatePct);
+  writer.writeBool(offsets[9], object.followAudio);
 }
 
 Audiobook _audiobookDeserialize(
@@ -168,6 +174,7 @@ Audiobook _audiobookDeserialize(
   object.healthMeasuredAt = reader.readDateTimeOrNull(offsets[6]);
   object.healthReason = reader.readStringOrNull(offsets[7]);
   object.matchRatePct = reader.readLongOrNull(offsets[8]);
+  object.followAudio = reader.readBoolOrNull(offsets[9]);
   return object;
 }
 
@@ -196,6 +203,8 @@ P _audiobookDeserializeProp<P>(
       return (reader.readStringOrNull(offset)) as P;
     case 8:
       return (reader.readLongOrNull(offset)) as P;
+    case 9:
+      return (reader.readBoolOrNull(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
   }

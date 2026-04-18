@@ -7,6 +7,7 @@ import 'package:hive/hive.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/json_alignment_parser.dart';
+import 'package:hibiki/src/media/audiobook/sasayaki_match_codec.dart';
 
 /// 有声书播放控制器。
 ///
@@ -42,6 +43,32 @@ class AudiobookPlayerController extends ChangeNotifier {
   AudioCue? get currentCue => _currentCue;
   AudioCue? _currentCue;
 
+  // ── PR8b: Follow audio ────────────────────────────────────────────────────
+
+  /// 持久化后的 Follow audio 开关。UI 监听这个 ValueNotifier 切换磁铁图标。
+  /// 值以 [Audiobook.followAudio] 为准（加载时初始化，写入靠 [setFollowAudio]）。
+  final ValueNotifier<bool> followAudio = ValueNotifier<bool>(false);
+
+  /// cue 跨章回调。仅当 cue 的 textFragmentId 能解码出 sectionIndex 且
+  /// 相邻 cue 的 sectionIndex 不同时触发；只报新章的 index，不报旧的。
+  ///
+  /// Reader 页面接这个回调决定：
+  /// - [followAudio] == true → 调 `AudiobookBridge.requestSectionNav`；
+  /// - false → 展示 pill "→ 第 N 章"，点了才跳。
+  ///
+  /// 控制器不直接调桥，避免和 WebView 耦合；reader 页面是唯一持有
+  /// InAppWebViewController 的地方。
+  void Function(int sectionIndex)? onCrossChapter;
+
+  /// Follow audio 开关变化时的持久化回调。Reader 页面 attach audiobook 时
+  /// 装入这个字段（一般是 `(v) => repo.updateFollowAudio(bookUid, v)`），
+  /// [setFollowAudio] 内部调用。独立于按钮 UI 让 play bar 只翻内存状态
+  /// 不用知道 Isar。
+  Future<void> Function(bool value)? onFollowAudioPersist;
+
+  /// 上一条 cue 解码出的 sectionIndex，用来和新 cue 比对是否跨章。
+  int? _lastCueSectionIndex;
+
   /// 是否正在播放。
   bool get isPlaying => _player.playing;
 
@@ -68,6 +95,10 @@ class AudiobookPlayerController extends ChangeNotifier {
     required List<File> audioFiles,
   }) async {
     _audiobook = audiobook;
+    // 从持久化记录恢复 Follow audio 开关；旧记录为 null，回退为 false。
+    // 不触发 onCrossChapter —— 新书没有历史 cue，_lastCueSectionIndex 清零。
+    followAudio.value = audiobook.followAudio ?? false;
+    _lastCueSectionIndex = null;
 
     await _player.stop();
     _positionSub?.cancel();
@@ -292,7 +323,37 @@ class AudiobookPlayerController extends ChangeNotifier {
     if (newCue?.textFragmentId != _currentCue?.textFragmentId) {
       _currentCue = newCue;
       _maybeSavePosition();
+      _maybeEmitCrossChapter(newCue);
       notifyListeners();
+    }
+  }
+
+  /// 如果 [cue] 的 textFragmentId 编码了 sectionIndex（Sasayaki 路径），
+  /// 且 index 与上一条不同，触发一次 [onCrossChapter]。SMIL/JSON 路径
+  /// 的 textFragmentId 是 DOM id / selector，解码会返回 null，自然跳过
+  /// 这套逻辑（它们本来就没有跨章同步需求）。
+  void _maybeEmitCrossChapter(AudioCue? cue) {
+    if (cue == null) return;
+    final SasayakiFragment? frag =
+        SasayakiMatchCodec.tryDecode(cue.textFragmentId);
+    if (frag == null) return;
+    final int sec = frag.sectionIndex;
+    final int? prev = _lastCueSectionIndex;
+    _lastCueSectionIndex = sec;
+    if (prev != null && prev != sec) {
+      onCrossChapter?.call(sec);
+    }
+  }
+
+  /// 翻转 Follow audio 开关并经 [onFollowAudioPersist] 落库。相同值调用
+  /// 不 notify 也不写库。持久化失败不回滚内存状态——下次启动时从 Isar
+  /// 读回会自动纠偏，比"静默回滚"更易排查。
+  void setFollowAudio(bool value) {
+    if (followAudio.value == value) return;
+    followAudio.value = value;
+    final Future<void> Function(bool)? persist = onFollowAudioPersist;
+    if (persist != null) {
+      unawaited(persist(value));
     }
   }
 
@@ -324,6 +385,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     _maybeSavePosition(force: true);
     _positionSub?.cancel();
     _playingSub?.cancel();
+    followAudio.dispose();
     _player.dispose();
     super.dispose();
   }

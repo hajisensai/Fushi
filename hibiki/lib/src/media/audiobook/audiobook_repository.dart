@@ -84,6 +84,24 @@ class AudiobookRepository {
     });
   }
 
+  /// 更新指定书的 Follow audio 开关。未找到 [Audiobook] 时静默跳过。
+  Future<void> updateFollowAudio({
+    required String bookUid,
+    required bool value,
+  }) async {
+    await _isar.writeTxn(() async {
+      final Audiobook? ab = await _isar.audiobooks
+          .filter()
+          .bookUidEqualTo(bookUid)
+          .findFirst();
+      if (ab == null) {
+        return;
+      }
+      ab.followAudio = value;
+      await _isar.audiobooks.put(ab);
+    });
+  }
+
   /// 更新指定书的健康度指标。未找到 [Audiobook] 时静默跳过。
   ///
   /// 拆开写是因为导入流程是"先保存 Audiobook → 再跑匹配（耗时）→ 最后

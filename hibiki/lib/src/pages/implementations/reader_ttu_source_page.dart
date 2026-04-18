@@ -65,6 +65,17 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   /// 非 null 表示当前书来自 [SrtBook]（字幕 EPUB）；值为 [SrtBook.uid]。
   String? _srtBookUid;
 
+  // ── PR8b: Follow audio pill + auto-off 状态 ─────────────────────────────
+
+  /// Follow=OFF 时 cue 跨章触发：悬浮 pill "→ 第 N 章"，点击跳转后清空。
+  /// null 表示无 pending；setState 驱动重绘。
+  int? _pendingNavSection;
+
+  /// 已被请求跳章（`requestSectionNav` 调用后），用来过滤掉那条由自己
+  /// 触发的 sectionChanged 回报事件——否则 ON 模式下系统自己跳的章会
+  /// 被当成用户意图，立刻又把 Follow auto-off 掉。
+  int? _inFlightNavSection;
+
   @override
   void initState() {
     super.initState();
@@ -534,6 +545,9 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         if (event != null) {
           await _seekToSentence(event);
         }
+        break;
+      case 'sectionChanged':
+        _handleTtuSectionChanged(messageJson);
         break;
       default:
         // Unknown types (audiobook bridge diagnostics etc.) → 打日志方便排查
@@ -1351,6 +1365,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       final AudiobookPlayerController controller = AudiobookPlayerController();
       await controller.load(audiobook: audiobook, audioFiles: audioFiles);
       controller.addListener(_onCueChanged);
+      _wireFollowAudio(controller, bookUid: bookUid, repo: repo);
 
       if (mounted) {
         setState(() {
@@ -1428,6 +1443,11 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       return;
     }
     controller.addListener(_onCueChanged);
+    // SRT-book 的 audiobook 是合成对象，没写进 Isar audiobooks 集合，
+    // updateFollowAudio 会找不到记录。暂先只接 onCrossChapter（会话内
+    // 磁铁按钮仍可切换），不落库。真正落库需要把 followAudio 搬到
+    // SrtBook 模型，属于独立的数据层工作。
+    controller.onCrossChapter = _handleCueCrossChapter;
 
     if (mounted) {
       setState(() {
@@ -1616,6 +1636,99 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       'sel=${cue?.textFragmentId}',
     );
     AudiobookBridge.highlight(_controller, cue: cue);
+  }
+
+  // ── PR8b Follow audio wiring ────────────────────────────────────────────
+
+  /// 把 Follow audio 的持久化回调和跨章事件挂到控制器上。
+  /// 常规 EPUB audiobook 路径走这里；SRT-book 路径暂不落库（见 caller 注释）。
+  void _wireFollowAudio(
+    AudiobookPlayerController controller, {
+    required String bookUid,
+    required AudiobookRepository repo,
+  }) {
+    controller.onFollowAudioPersist = (bool value) async {
+      await repo.updateFollowAudio(bookUid: bookUid, value: value);
+    };
+    controller.onCrossChapter = _handleCueCrossChapter;
+  }
+
+  /// cue 跨章时由控制器触发。
+  ///
+  /// Follow=ON：立刻请求 ttu 跳章；记 `_inFlightNavSection` 避免 ttu 回来
+  /// 的 sectionChanged 又被当成用户意图。失败降级为 pill。
+  /// Follow=OFF：显示 pill "→ 第 N 章"，点了手动跳。
+  Future<void> _handleCueCrossChapter(int newSection) async {
+    final AudiobookPlayerController? controller = _audiobookController;
+    if (controller == null || !_controllerInitialised) return;
+
+    if (controller.followAudio.value) {
+      _inFlightNavSection = newSection;
+      try {
+        await AudiobookBridge.requestSectionNav(
+          _controller,
+          sectionIndex: newSection,
+        );
+      } catch (e) {
+        debugPrint('[hibiki-audiobook] requestSectionNav failed: $e');
+        // 降级到 pill，保留 Follow 状态让用户重试下一次跨章
+        if (mounted) {
+          setState(() => _pendingNavSection = newSection);
+        }
+      }
+    } else {
+      if (mounted) {
+        setState(() => _pendingNavSection = newSection);
+      }
+    }
+  }
+
+  /// pill 被点击时的跳章入口；成功后清空 pill。
+  Future<void> _followPillTap() async {
+    final int? target = _pendingNavSection;
+    if (target == null) return;
+    _inFlightNavSection = target;
+    try {
+      await AudiobookBridge.requestSectionNav(
+        _controller,
+        sectionIndex: target,
+      );
+      if (mounted) setState(() => _pendingNavSection = null);
+    } catch (e) {
+      debugPrint('[hibiki-audiobook] pill tap requestSectionNav failed: $e');
+      Fluttertoast.showToast(msg: 'Follow audio: 跳章失败');
+    }
+  }
+
+  /// 处理 ttu fork 外发的 sectionChanged console 事件。
+  ///
+  /// auto=true 来自 `__sasayakiRequestNav`，要么是我们自己刚请求的跳章
+  /// （_inFlightNavSection 相等），要么是未来其他系统触发——两种都不是
+  /// 用户意图，忽略。
+  /// auto=false 来自 ToC 点击 / 滑动翻页等用户操作：如果 Follow=ON，
+  /// 把它自动翻到 OFF（并 toast 提示），让用户的意图覆盖系统行为。
+  void _handleTtuSectionChanged(Map<String, dynamic> json) {
+    final int? idx = (json['sectionIndex'] as num?)?.toInt();
+    final bool auto = json['auto'] == true;
+    if (idx == null) return;
+    // 我们自己刚发起的跳章回报，清掉 in-flight 标记，不算用户意图。
+    if (_inFlightNavSection == idx) {
+      _inFlightNavSection = null;
+      return;
+    }
+    if (auto) {
+      // 系统触发但不是我们发的（未来 ttu 内部可能有别的程序化路径），
+      // 保守跳过，不关 Follow。
+      return;
+    }
+    final AudiobookPlayerController? controller = _audiobookController;
+    if (controller == null) return;
+    if (controller.followAudio.value) {
+      controller.setFollowAudio(false);
+      if (mounted) {
+        Fluttertoast.showToast(msg: 'Follow audio 已暂停（用户手动翻页）');
+      }
+    }
   }
 
   /// 用户点击句子，跳转播放器到该 cue。
@@ -1811,9 +1924,62 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           left: 0,
           right: 0,
           bottom: 0,
-          child: AudiobookPlayBar(controller: ctrl),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildFollowPill(),
+              AudiobookPlayBar(controller: ctrl),
+            ],
+          ),
         );
       },
+    );
+  }
+
+  /// Follow=OFF 跨章时的悬浮 pill。点击跳章，成功后自动消失。
+  /// 没有 pending 时返回空 widget（SizedBox）——不占高度不留白。
+  Widget _buildFollowPill() {
+    final int? target = _pendingNavSection;
+    if (target == null) return const SizedBox.shrink();
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4, left: 12, right: 12),
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: Material(
+          color: colors.primary,
+          borderRadius: BorderRadius.circular(20),
+          elevation: 2,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(20),
+            onTap: _followPillTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 6,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.arrow_forward,
+                    size: 16,
+                    color: colors.onPrimary,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '第 ${target + 1} 章',
+                    style: TextStyle(
+                      color: colors.onPrimary,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

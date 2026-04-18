@@ -60,12 +60,48 @@ class AudiobookPlayBar extends StatelessWidget {
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
+              // Follow audio 开关（磁铁图标；PR8b）
+              AudiobookFollowAudioButton(controller: controller),
               // 倍速按钮
               AudiobookSpeedButton(controller: controller),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Follow audio 开关按钮（磁铁图标；PR8b）。
+///
+/// 独立于 [AudiobookPlayBar] 的 [ListenableBuilder] 订阅 —— 按钮只随
+/// [AudiobookPlayerController.followAudio] 变化重绘，避免每次 cue 更新
+/// 整条 play bar 都跟着刷新时这颗按钮也 rebuild。点击 toggle 并持久化
+/// （controller 侧内部调 onCrossChapter 用户传入的 persist 回调）。
+class AudiobookFollowAudioButton extends StatelessWidget {
+  const AudiobookFollowAudioButton({required this.controller, super.key});
+
+  final AudiobookPlayerController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: controller.followAudio,
+      builder: (BuildContext context, bool on, _) {
+        final ColorScheme colors = Theme.of(context).colorScheme;
+        return IconButton(
+          icon: Icon(on ? Icons.link : Icons.link_off),
+          iconSize: 20,
+          color: on ? colors.primary : colors.onSurface.withAlpha(140),
+          tooltip: on ? 'Follow audio: ON（跨章自动跳转）' : 'Follow audio: OFF',
+          onPressed: () {
+            // persist 回调在 reader 页面把 controller 和 repo 绑上；这里
+            // 只翻内存状态，controller.setFollowAudio 内部会用绑好的回调
+            // 落库，按钮自己不碰 Isar。
+            controller.setFollowAudio(!on);
+          },
+        );
+      },
     );
   }
 }
