@@ -77,9 +77,15 @@ class JsonAlignmentParser {
       ..sort((a, b) => a.sentenceIndex.compareTo(b.sentenceIndex));
   }
 
-  /// 二分查找：返回 [positionMs] 所在 cue 的下标，找不到返回 -1。
+  /// 二分查找：返回 [positionMs] 所处或最近播放过的 cue 下标。
+  ///
+  /// 策略为 "sustain"：返回满足 `startMs <= positionMs` 的最后一条 cue。
+  /// SRT 字幕两条 cue 之间普遍有 gap，若严格要求 `positionMs <= endMs`，在 gap
+  /// 期间高亮会被清除、滚动会停止，体验是"语句消失然后又出现"。改为 sustain
+  /// 后，gap 期间保持上一句高亮，直到下一句 startMs 抵达。
   ///
   /// 要求 [cues] 已按 startMs 升序排序（即 sentenceIndex 顺序）。
+  /// [positionMs] 早于第一条 cue 时返回 -1。
   static int findCueIndex({
     required List<AudioCue> cues,
     required int positionMs,
@@ -102,10 +108,6 @@ class JsonAlignmentParser {
       }
     }
 
-    // 确认 positionMs 在该 cue 范围内
-    if (result != -1 && positionMs <= cues[result].endMs) {
-      return result;
-    }
-    return -1;
+    return result;
   }
 }

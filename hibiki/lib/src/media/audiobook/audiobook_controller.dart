@@ -22,6 +22,7 @@ class AudiobookPlayerController extends ChangeNotifier {
 
   final AudioPlayer _player = AudioPlayer();
   StreamSubscription<Duration>? _positionSub;
+  StreamSubscription<bool>? _playingSub;
 
   /// 当前书的元数据（null = 未加载）。PR4 中用于更新锁屏媒体卡片。
   Audiobook? _audiobook;
@@ -70,6 +71,7 @@ class AudiobookPlayerController extends ChangeNotifier {
 
     await _player.stop();
     _positionSub?.cancel();
+    _playingSub?.cancel();
 
     await _configureAudioSession();
 
@@ -149,24 +151,31 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 切换章节后更新当前章节的 cue 列表。
   ///
   /// 调用后控制器会继续播放（若已在播放），高亮随之跳转到新章节的 cue。
+  /// 立即基于当前播放位置解析 currentCue，避免播放栏/高亮在 positionStream
+  /// 下一次 tick 之前出现空白（尤其是暂停状态下 positionStream 不发事件）。
   void setChapterCues(List<AudioCue> cues) {
     _chapterCues = List<AudioCue>.from(cues)
       ..sort((a, b) => a.startMs.compareTo(b.startMs));
     _currentCue = null;
+    _updateCurrentCue(_player.position.inMilliseconds);
     notifyListeners();
   }
 
   // ── 播放控制 API ───────────────────────────────────────────────────────────
 
+  /// 开始播放。
+  ///
+  /// 不 await `_player.play()`：just_audio 的 `play()` 返回的 Future 在播放
+  /// **结束或暂停**时才完成，await 会让调用方误以为播放迟迟没启动。真正的
+  /// 播放状态翻转通过 [_playingSub] 订阅 `playingStream` 拿到，立刻触发
+  /// `notifyListeners()`，按钮图标不需要等网络/缓冲。
   Future<void> play() async {
-    await _player.play();
-    notifyListeners();
+    unawaited(_player.play());
   }
 
   Future<void> pause() async {
     await _player.pause();
     _maybeSavePosition(force: true);
-    notifyListeners();
   }
 
   Future<void> togglePlayPause() async {
@@ -256,13 +265,18 @@ class AudiobookPlayerController extends ChangeNotifier {
       ),
     );
     session.becomingNoisyEventStream.listen((_) {
-      _player.pause().then((_) => notifyListeners());
+      _player.pause();
     });
   }
 
   void _startPositionTracking() {
     _positionSub = _player.positionStream.listen((pos) {
       _updateCurrentCue(pos.inMilliseconds);
+    });
+    // 订阅播放状态流：just_audio 内部状态翻转（包括焦点丢失、播完自动暂停）
+    // 都会在这里得到通知，UI 即时刷新播放/暂停图标。
+    _playingSub = _player.playingStream.listen((_) {
+      notifyListeners();
     });
   }
 
@@ -309,6 +323,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   void dispose() {
     _maybeSavePosition(force: true);
     _positionSub?.cancel();
+    _playingSub?.cancel();
     _player.dispose();
     super.dispose();
   }
