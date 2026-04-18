@@ -435,27 +435,42 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
   }
 
   Future<void> _removeAudiobook(Audiobook ab) async {
+    debugPrint('AudiobookImportDialog: remove tapped for ${widget.bookUid}');
+    final NavigatorState outerNavigator =
+        Navigator.of(context, rootNavigator: true);
+
     final bool? confirm = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         content: Text(t.audiobook_remove_confirm),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () => Navigator.of(ctx).pop(true),
             child: Text(t.audiobook_remove),
           ),
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.of(ctx).pop(false),
             child: Text(t.dialog_cancel),
           ),
         ],
       ),
     );
-    if (confirm == true) {
+    debugPrint('AudiobookImportDialog: confirm=$confirm');
+    if (confirm != true) return;
+
+    try {
       await widget.repo.deleteAudiobook(widget.bookUid);
+      debugPrint('AudiobookImportDialog: deleteAudiobook done');
+    } catch (e, st) {
+      debugPrint('AudiobookImportDialog: deleteAudiobook failed: $e\n$st');
       if (mounted) {
-        Navigator.pop(context, false); // false = no audiobook
+        Fluttertoast.showToast(msg: t.audiobook_import_error);
       }
+      return;
+    }
+
+    if (mounted) {
+      outerNavigator.pop(false); // false = no audiobook
     }
   }
 
