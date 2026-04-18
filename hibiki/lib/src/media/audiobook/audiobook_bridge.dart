@@ -403,6 +403,25 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
     return;
   }
 
+  // ttu 实测默认停在封面：`.book-content-container` 只装封面 SVG，正文
+  // 要用户点进去才挂载。这时 TreeWalker 找不到任何 text，每条 cue 都刷
+  // 日志没意义。rootTextLen 很小（封面通常 < 50 字）就一次性告知"书还
+  // 没挂载"，静默跳过后续 cue 直到用户翻过去。下次出现真正可高亮的
+  // 节点时 __hoshiSasayakiNotMountedLogged 被清零。
+  var rootTextLen = root.textContent ? root.textContent.length : 0;
+  if (rootTextLen < 80) {
+    if (!window.__hoshiSasayakiNotMountedLogged) {
+      window.__hoshiSasayakiNotMountedLogged = true;
+      console.log(JSON.stringify({
+        'hibiki-message-type': 'sasayakiBookNotMounted',
+        'rootTextLen': rootTextLen,
+        'hint': 'navigate past cover to mount chapter text'
+      }));
+    }
+    return;
+  }
+  window.__hoshiSasayakiNotMountedLogged = false;
+
   // Clear any previous Sasayaki wrap + class-only legacy highlight BEFORE
   // walking, so offsets into text nodes aren't affected by artificial spans.
   window.__hoshiUnwrapSasayaki();
@@ -447,63 +466,14 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
   }
 
   if (!startNode || !endNode) {
-    // scannedChars === 0 + root 里只有封面 SVG ⇒ ttu 把正文放在别的地方
-    // 或正文还没挂载（点封面才开书？）。全文档扫一下所有 textContent
-    // 很大的容器，顺带看有没有隐藏节点。
-    var rootTextLen = root.textContent ? root.textContent.length : 0;
-    var bigContainers = [];
-    var candidates = document.querySelectorAll('body *');
-    for (var ci = 0; ci < candidates.length; ci++) {
-      var el = candidates[ci];
-      // 只看直接 textContent 大的；排除祖先（body / html）
-      if (!el.textContent) continue;
-      var tlen = el.textContent.length;
-      if (tlen < 200) continue;
-      // 取 children 都没这么长的（即它自己贡献了主要 text）
-      var hasBigger = false;
-      for (var kj = 0; kj < el.children.length; kj++) {
-        if (el.children[kj].textContent &&
-            el.children[kj].textContent.length >= tlen - 20) {
-          hasBigger = true; break;
-        }
-      }
-      if (hasBigger) continue;
-      bigContainers.push({
-        tag: el.tagName,
-        id: el.id || '',
-        cls: (el.className || '').toString().slice(0, 60),
-        textLen: tlen,
-        hidden: el.hidden,
-        display: (el.style && el.style.display) || ''
-      });
-      if (bigContainers.length >= 8) break;
-    }
-    var allIds = [];
-    var idAll = document.querySelectorAll('[id]');
-    for (var ii = 0; ii < idAll.length; ii++) {
-      allIds.push(idAll[ii].id);
-    }
-    var allBookContent = [];
-    var bcAll = document.querySelectorAll('[class*="book-content"]');
-    for (var bi = 0; bi < bcAll.length; bi++) {
-      allBookContent.push(bcAll[bi].tagName + '.' +
-        (bcAll[bi].className || '').toString().slice(0, 60) +
-        ' tnlen=' + (bcAll[bi].textContent ? bcAll[bi].textContent.length : 0));
-    }
+    // targetStart 超过当前挂载章节的归一化字符数——cue 在尚未挂载的
+    // 章节里。ttu 只在当前显示章节挂载 DOM，用户翻过去就行。
     console.log(JSON.stringify({
       'hibiki-message-type': 'sasayakiOffsetMissing',
       'sectionIndex': sectionIndex,
       'targetStart': targetStart,
       'targetEnd': targetEnd,
-      'scannedChars': normPos,
-      'rootTag': root.tagName,
-      'rootClass': (root.className || '').toString().slice(0, 40),
-      'rootTextLen': rootTextLen,
-      'docTextLen': document.body ? document.body.textContent.length : 0,
-      'bigContainers': bigContainers,
-      'allBookContent': allBookContent,
-      'allIds': allIds,
-      'url': location.href
+      'scannedChars': normPos
     }));
     return;
   }
