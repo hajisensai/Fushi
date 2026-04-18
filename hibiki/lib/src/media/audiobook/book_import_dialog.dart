@@ -558,7 +558,17 @@ class _BookImportDialogState extends State<BookImportDialog> {
       );
       SasayakiMatchCodec.applyToCues(cues: cues, result: result);
       debugPrint('[hibiki-import] Sasayaki match: '
-          '${result.matchedCues}/${result.totalCues}');
+          '${result.matchedCues}/${result.totalCues} '
+          '(rescued=${result.rescuedCues} maxMissRun=${result.maxMissRun})');
+      if (mounted) {
+        final int pct = (result.matchRate * 100).round();
+        final String rescueTag =
+            result.rescuedCues > 0 ? ' +${result.rescuedCues} rescued' : '';
+        Fluttertoast.showToast(
+          msg: 'Sasayaki $pct% '
+              '(${result.matchedCues}/${result.totalCues}$rescueTag)',
+        );
+      }
     } catch (e) {
       debugPrint('[hibiki-import] Sasayaki match failed: $e');
     }

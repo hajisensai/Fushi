@@ -51,11 +51,20 @@ class MatchResult {
     required this.matches,
     required this.totalCues,
     required this.matchedCues,
+    this.rescuedCues = 0,
+    this.maxMissRun = 0,
   });
 
   final List<CueMatch> matches;
   final int totalCues;
   final int matchedCues;
+
+  /// 在局部窗口失败后被全局扫描救回的 cue 数（含在 [matchedCues] 里）。
+  final int rescuedCues;
+
+  /// 整轮匹配过程中出现的最长连续未命中段长度。>5 通常意味着
+  /// SRT 与 EPUB 对不上，或者 `searchWindow` 太小。
+  final int maxMissRun;
 
   double get matchRate => totalCues == 0 ? 0.0 : matchedCues / totalCues;
 }
@@ -67,17 +76,37 @@ class MatchResult {
 /// 2. 按 cue 顺序向前滑窗：窗口 `[cursor, cursor + searchWindow)`
 /// 3. 取与 cue 等长切片，用字符 bigram Jaccard 打分
 /// 4. 粗扫（step = max(1, cueLen/10)）+ 命中后步长=1 精修
-/// 5. 分数 ≥ `scoreThreshold` 视为命中，cursor 前进到命中末尾；
-///    未命中则 cursor 不动，给下一条 cue 重新对齐的机会。
+/// 5. 分数 ≥ 有效阈值视为命中，cursor 前进到命中末尾；未命中则
+///    cursor 不动，给下一条 cue 重新对齐的机会。
+/// 6. **连续未命中救援**：当连续 ≥ `rescueAfterMisses` 条 cue 失败时，
+///    下一条 cue 放宽到"从 cursor 到全书末尾"的大窗口全扫，并要求
+///    ≥ `rescueThreshold` 才接受——避免被局部窗口卡死，又不会被
+///    松阈值下的任意巧合位置拉偏。
+///
+/// 阈值分级（见 [shortCueMaxLen] / [shortCueThreshold]）：短 cue
+/// 的 bigram 集合小，Jaccard 方差大，容易蒙到 0.4~0.5 的假阳性，
+/// 因此对短 cue 单独提高阈值。
 class EpubSrtMatcher {
-  static const int defaultSearchWindow = 500;
-  static const double defaultScoreThreshold = 0.4;
+  static const int defaultSearchWindow = 1500;
+  static const double defaultScoreThreshold = 0.6;
+
+  /// 归一化长度 < [shortCueMaxLen] 的 cue 使用 [shortCueThreshold]。
+  static const int shortCueMaxLen = 8;
+  static const double shortCueThreshold = 0.75;
+
+  /// 连续未命中达到该数，下一条 cue 触发全书救援扫描。
+  static const int defaultRescueAfterMisses = 3;
+
+  /// 救援扫描接受命中所需的最低分（总是 ≥ [shortCueThreshold]）。
+  static const double defaultRescueThreshold = 0.75;
 
   static MatchResult match({
     required List<EpubSection> sections,
     required List<AudioCue> cues,
     int searchWindow = defaultSearchWindow,
     double scoreThreshold = defaultScoreThreshold,
+    int rescueAfterMisses = defaultRescueAfterMisses,
+    double rescueThreshold = defaultRescueThreshold,
   }) {
     if (cues.isEmpty) {
       return const MatchResult(
@@ -101,21 +130,48 @@ class EpubSrtMatcher {
     final List<CueMatch> results = <CueMatch>[];
     int cursor = 0;
     int matched = 0;
+    int rescued = 0;
+    int consecutiveMisses = 0;
+    int maxMissRun = 0;
 
     for (final AudioCue cue in cues) {
       final String nc = _normalize(cue.text);
       if (nc.length < 2) {
         results.add(CueMatch.unmatched);
+        consecutiveMisses++;
+        if (consecutiveMisses > maxMissRun) {
+          maxMissRun = consecutiveMisses;
+        }
         continue;
       }
 
       final Set<String> cueGrams = _bigrams(nc);
       if (cueGrams.isEmpty) {
         results.add(CueMatch.unmatched);
+        consecutiveMisses++;
+        if (consecutiveMisses > maxMissRun) {
+          maxMissRun = consecutiveMisses;
+        }
         continue;
       }
 
-      final int windowEnd = (cursor + searchWindow).clamp(0, totalLen);
+      // 分级阈值：短 cue 的 bigram 少，Jaccard 容易偏高；全局救援阈值
+      // 也不低于短 cue 的阈值。
+      final bool isShort = nc.length < shortCueMaxLen;
+      final double baseThreshold =
+          isShort ? shortCueThreshold : scoreThreshold;
+      final double effRescueThreshold = rescueThreshold < shortCueThreshold
+          ? shortCueThreshold
+          : rescueThreshold;
+
+      final bool rescueMode = consecutiveMisses >= rescueAfterMisses;
+      final int effectiveWindow = rescueMode
+          ? (totalLen - cursor)
+          : searchWindow;
+      final double effectiveThreshold =
+          rescueMode ? effRescueThreshold : baseThreshold;
+
+      final int windowEnd = (cursor + effectiveWindow).clamp(0, totalLen);
       final int searchEnd = (windowEnd - nc.length).clamp(cursor, totalLen);
       final int step = (nc.length ~/ 10).clamp(1, 3);
 
@@ -142,7 +198,7 @@ class EpubSrtMatcher {
         }
       }
 
-      if (bestStart >= 0 && bestScore >= scoreThreshold) {
+      if (bestStart >= 0 && bestScore >= effectiveThreshold) {
         final int endN = (bestStart + nc.length).clamp(0, totalLen);
         final int secIdx = _sectionForOffset(idx.sectionNormStarts, bestStart);
         results.add(CueMatch(
@@ -154,8 +210,16 @@ class EpubSrtMatcher {
         ));
         cursor = endN;
         matched++;
+        if (rescueMode) {
+          rescued++;
+        }
+        consecutiveMisses = 0;
       } else {
         results.add(CueMatch.unmatched);
+        consecutiveMisses++;
+        if (consecutiveMisses > maxMissRun) {
+          maxMissRun = consecutiveMisses;
+        }
       }
     }
 
@@ -163,6 +227,8 @@ class EpubSrtMatcher {
       matches: results,
       totalCues: cues.length,
       matchedCues: matched,
+      rescuedCues: rescued,
+      maxMissRun: maxMissRun,
     );
   }
 
