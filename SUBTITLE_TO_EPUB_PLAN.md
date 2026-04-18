@@ -16,7 +16,7 @@
 | VTT parser | `lib/src/media/audiobook/vtt_parser.dart` | ✅ |
 | ASS parser | `lib/src/media/audiobook/ass_parser.dart` | ✅ |
 | 导入对话框（四格式） | `lib/src/media/audiobook/srt_import_dialog.dart` | ✅ |
-| 当前渲染（**字幕列表式**，待替换） | `lib/src/pages/implementations/srt_reader_page.dart` | ⚠️ |
+| 当前渲染（**字幕列表式**，已删除） | ~~`lib/src/pages/implementations/srt_reader_page.dart`~~ | ✅ |
 | EPUB 阅读器 | `lib/src/pages/implementations/reader_ttu_source_page.dart` | ✅ |
 | 音频桥 | `lib/src/media/audiobook/audiobook_bridge.dart` | ✅ |
 
@@ -69,14 +69,13 @@
 **待实机验证：**
 - SRT/LRC/VTT/ASS 各一本 → 章节打开 → 点击 span 跳转 → 播放高亮 → 全局 cue 追踪
 
-### PR-D　删除旧列表渲染
+### PR-D　删除旧列表渲染 ✅
 
-- 移除 `SrtReaderPage` 及其路由
-- 书架 tap 一律进 ttu reader
+- `SrtReaderPage` 已从代码库移除——grep 确认无任何路由/导入引用后直接删除
+- 书架 tap 已在 PR-B 改成走 ttu reader，无需额外改动
+- 跳过 `@Deprecated` 保留周期：PR-C 合并后多次 audiobook 相关 commit 未出现回退需求，风险可控
 
-**风险缓解：**
-- 回归矩阵：**4 格式 × (查词 / Anki 制卡 / 音频对齐 / 纵书切换)** 全绿才合并
-- `SrtReaderPage` 保留一个 PR 周期（标 `@Deprecated`），确认无回退需求再删
+**回归矩阵待实机覆盖：** 4 格式 × (查词 / Anki 制卡 / 音频对齐 / 纵书切换)
 
 ## 验收标准（全局）
 

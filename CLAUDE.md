@@ -20,7 +20,8 @@
 - 字幕 → EPUB 渲染改造进度（见 `SUBTITLE_TO_EPUB_PLAN.md`）：
   - PR-A 完成：`CuesToEpub`（EPUB 生成器 + `TtuIdbPayload`/`TtuSection` 数据类）
   - PR-B 完成：导入时注入 ttu IndexedDB（`ttuBookId` 字段），打开走 `ReaderTtuSourcePage`
-  - **进行中**：PR-C（AudiobookBridge 接字幕 EPUB，cue 高亮/跳转）
+  - PR-C 完成：AudiobookBridge 接字幕 EPUB（`data-cue-id` 高亮/点击跳转），后续一路修 cue 滚动/翻页/章节切换的细节 bug
+  - PR-D 完成：删除旧的 `SrtReaderPage` 字幕列表渲染，字幕书统一走 ttu reader
 
 **Phase 3 待做**：Material 3 UI 打磨、书架 / 阅读器 / 词典弹窗重设计。
 
@@ -40,7 +41,6 @@
 - 有声书桥：`lib/src/media/audiobook/audiobook_bridge.dart`
 - 字幕 parser：`lib/src/media/audiobook/{srt,lrc,vtt,ass}_parser.dart`
 - 字幕导入 UI：`lib/src/media/audiobook/srt_import_dialog.dart`（命名沿用 srt，实际四格式通用）
-- 字幕阅读（**待废弃**）：`lib/src/pages/implementations/srt_reader_page.dart`
 
 ## 开发原则
 
