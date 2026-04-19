@@ -1606,8 +1606,38 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     }
     debugPrint('[hibiki-audiobook] injecting via $trigger');
     await _injectAudiobookBridge(controller);
+    // 引导 _currentTtuSection：ttu fork 的 sectionChanged 订阅带 skip(1)，
+    // 首次挂载（封面 / 最近阅读章）那次 Wn 发射被吃掉，字段会一直卡在 -1。
+    // 跨章守卫 currentSec<0 下就永远不会自动跳章——用户在封面开 Follow
+    // audio 时音频的 section 明明和当前页不同，但也跳不过去。inject 之后
+    // 立即 probe ttu 的 __ttuCurrentSection() 把字段拨正。
+    await _bootstrapCurrentTtuSection(controller);
     // 章节加载后立刻把视口拉回当前句所在页（Hoshi pendingFragment 模式）。
     _onCueChanged();
+  }
+
+  /// 从 ttu fork 的 `__ttuCurrentSection()` 读一次当前段，用来兜住
+  /// sectionChanged 初次发射被 skip(1) 吃掉的情况。fork 未就绪或 probe
+  /// 失败时保留原值（多半仍是 -1，跨章守卫就继续等真正的 sectionChanged）。
+  Future<void> _bootstrapCurrentTtuSection(
+    InAppWebViewController controller,
+  ) async {
+    try {
+      final TtuApiProbe probe = await AudiobookBridge.probeTtuApi(controller);
+      if (!probe.hasCurrentSection || probe.currentSection == null) {
+        return;
+      }
+      final int prev = _currentTtuSection;
+      _currentTtuSection = probe.currentSection!;
+      if (prev != _currentTtuSection) {
+        debugPrint(
+          '[hibiki-audiobook] bootstrap _currentTtuSection='
+          '$_currentTtuSection (prev=$prev) via ttu probe',
+        );
+      }
+    } catch (e) {
+      debugPrint('[hibiki-audiobook] probeTtuApi failed: $e');
+    }
   }
 
   /// 注入 JS/CSS 桥并对当前页面注册交互逻辑。
