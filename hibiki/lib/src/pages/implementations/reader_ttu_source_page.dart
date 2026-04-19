@@ -76,6 +76,10 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   /// 被当成用户意图，立刻又把 Follow auto-off 掉。
   int? _inFlightNavSection;
 
+  /// 本次打开书页是否已做过"首次把 reader 拉到音频所在章"的一次性同步。
+  /// 和 Follow audio 解耦：开关管"播放中跨章"，这里只管开书的初次对齐。
+  bool _didInitialAudioSync = false;
+
   @override
   void initState() {
     super.initState();
@@ -1558,6 +1562,41 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     await _injectAudiobookBridge(controller);
     // 章节加载后立刻把视口拉回当前句所在页（Hoshi pendingFragment 模式）。
     _onCueChanged();
+    // 开书第一次注入完（controller 已装、setChapterCues 已把 currentCue
+    // 定位）时，如果音频所在章 ≠ reader 当前章，把 reader 拉过去。只做一
+    // 次，后续 onLoadStop（包括被这次 nav 触发的）都直接跳过。
+    await _maybeSyncReaderToAudioOnce();
+  }
+
+  /// 打开有声书时的一次性"reader → audio section"对齐。
+  ///
+  /// 触发点：[_maybeInjectAudiobookBridge] 末尾；此时 [setChapterCues] 已
+  /// 用当前播放位置定位出 currentCue。如果 cue 编码了 sasayaki sectionIndex
+  /// 且 reader 当前挂载的是别的章，通过 `__sasayakiRequestNav` 把 reader
+  /// 拉到音频所在章 —— requestSectionNav 内部会把 `__sasayakiAutoNav`
+  /// 翻成 true，[_handleTtuSectionChanged] 会按 `auto=true` 忽略，不会误
+  /// 把 Follow audio 翻到 OFF。
+  ///
+  /// 仅 sasayaki 路径有多章跳转概念；SrtBook / 普通单章 EPUB 的 cue 不带
+  /// sectionIndex，解码返回 null 自然跳过。
+  Future<void> _maybeSyncReaderToAudioOnce() async {
+    if (_didInitialAudioSync) return;
+    final AudiobookPlayerController? controller = _audiobookController;
+    if (controller == null) return;
+    final AudioCue? cue = controller.currentCue;
+    if (cue == null) return;
+    final SasayakiFragment? frag =
+        SasayakiMatchCodec.tryDecode(cue.textFragmentId);
+    if (frag == null) return;
+    _didInitialAudioSync = true;
+    try {
+      await AudiobookBridge.requestSectionNav(
+        _controller,
+        sectionIndex: frag.sectionIndex,
+      );
+    } catch (e) {
+      debugPrint('[hibiki-audiobook] initial audio sync nav failed: $e');
+    }
   }
 
   /// 注入 JS/CSS 桥并对当前页面注册交互逻辑。
