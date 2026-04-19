@@ -132,6 +132,31 @@ class TtuEpubImporter {
     extra: (extra == null ? ('+' + (Date.now() - t0) + 'ms')
                           : ('+' + (Date.now() - t0) + 'ms ' + extra)),
   });
+  // 捕获 ttu 自己吃掉之后只 toast 的错误 —— 把原始 stack 也回传 Dart。
+  const origErr = console.error;
+  console.error = function(...args) {
+    try {
+      const payload = args.map(a => {
+        if (a && a.stack) return String(a) + '\\n' + a.stack;
+        if (a && typeof a === 'object') {
+          try { return JSON.stringify(a); } catch (_) { return String(a); }
+        }
+        return String(a);
+      }).join(' | ');
+      logStage('js:console.error', payload.slice(0, 2000));
+    } catch (_) {}
+    return origErr.apply(this, args);
+  };
+  window.addEventListener('error', (e) => {
+    logStage('js:window.error', (e.error && e.error.stack)
+        ? String(e.error) + '\\n' + e.error.stack
+        : (e.message || 'unknown'));
+  });
+  window.addEventListener('unhandledrejection', (e) => {
+    const r = e.reason;
+    logStage('js:unhandled', (r && r.stack)
+        ? String(r) + '\\n' + r.stack : String(r));
+  });
   try {
     logStage('driver-start');
 
