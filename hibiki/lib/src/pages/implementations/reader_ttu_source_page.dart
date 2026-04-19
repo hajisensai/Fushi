@@ -149,6 +149,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       mediaSource.clearCurrentSentence();
       return;
     }
+    _autoOffFollowOnManualTurn();
     unselectWebViewTextSelection(_controller);
     _controller.evaluateJavascript(source: leftArrowSimulateJs);
   }
@@ -161,8 +162,23 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       mediaSource.clearCurrentSentence();
       return;
     }
+    _autoOffFollowOnManualTurn();
     unselectWebViewTextSelection(_controller);
     _controller.evaluateJavascript(source: rightArrowSimulateJs);
+  }
+
+  /// 音量键翻页是显式用户操作——ttu 连续滚动模式下 wheel 只滚不翻章，
+  /// sectionChanged 那条 Follow auto-off 路径接不住；这里主动关一下
+  /// Follow，不然按着音量键往下读，下一条 cue 会把 reader 拖回原位。
+  /// 无有声书或 Follow=OFF 时直接跳过。
+  void _autoOffFollowOnManualTurn() {
+    final AudiobookPlayerController? controller = _audiobookController;
+    if (controller == null) return;
+    if (!controller.followAudio.value) return;
+    controller.setFollowAudio(false);
+    if (mounted) {
+      Fluttertoast.showToast(msg: 'Follow audio 已暂停（用户手动翻页）');
+    }
   }
 
   @override
@@ -886,6 +902,75 @@ xhr.send();
   String javascriptToExecute = """
 /*jshint esversion: 6 */
 
+// [hibiki-diag-pos] 开书位置恢复追踪：
+// 1) 打出 IDB 'books' DB 里 bookmark store 的快照 —— 关书时 ttu auto-bookmark
+//    写入的值，下次开书这里读到的就是上次关书状态；
+// 2) 以 150ms 间隔 poll `.book-content` 的 scrollLeft/scrollTop，记录变化，
+//    观察 ttu 的 scrollToBookmark 是否真跑了、是否被后续 inject 覆盖。
+// 带 __hibikiPosDiag 守卫保证多次 evaluate 只跑一次。
+(function() {
+  if (window.__hibikiPosDiag) return;
+  window.__hibikiPosDiag = true;
+  var t0 = Date.now();
+  function diag(tag, extra) {
+    try {
+      // 走 JSON + hibiki-message-type='diag-pos' 以 isDiag 判定绕过 50ms 防抖
+      // （否则 idb-bookmark / bc-scroll 连打多条会被吞到只剩第一条）
+      console.log(JSON.stringify({
+        'hibiki-message-type': 'diag-pos',
+        dt: Date.now() - t0,
+        tag: tag,
+        extra: extra || ''
+      }));
+    } catch (e) {}
+  }
+  diag('init', 'url=' + location.href);
+  try {
+    var req = indexedDB.open('books');
+    req.onerror = function(e) { diag('idb-open-err', String(e)); };
+    req.onsuccess = function() {
+      try {
+        var db = req.result;
+        var stores = Array.prototype.slice.call(db.objectStoreNames);
+        if (stores.indexOf('bookmark') < 0) {
+          diag('idb-no-bookmark-store', 'stores=' + stores.join(','));
+          return;
+        }
+        var getAll = db.transaction('bookmark', 'readonly')
+          .objectStore('bookmark').getAll();
+        getAll.onsuccess = function(e) {
+          var arr = e.target.result || [];
+          diag('idb-bookmark-count', 'n=' + arr.length);
+          arr.forEach(function(b) {
+            diag('idb-bookmark',
+              'dataId=' + b.dataId +
+              ' explored=' + b.exploredCharCount +
+              ' progress=' + ((b.progress || 0).toFixed ? b.progress.toFixed(4) : b.progress) +
+              ' sy=' + b.scrollY +
+              ' sx=' + b.scrollX +
+              ' mod=' + b.lastBookmarkModified);
+          });
+        };
+        getAll.onerror = function(e) { diag('idb-getall-err', String(e)); };
+      } catch (e) { diag('idb-tx-err', String(e)); }
+    };
+  } catch (e) { diag('idb-outer-err', String(e)); }
+  var lastSL = null, lastST = null, ticks = 0;
+  var iv = setInterval(function() {
+    var bc = document.querySelector('.book-content');
+    if (bc) {
+      if (bc.scrollLeft !== lastSL || bc.scrollTop !== lastST) {
+        diag('bc-scroll',
+          'sl=' + bc.scrollLeft + ' st=' + bc.scrollTop +
+          ' sw=' + bc.scrollWidth + ' sh=' + bc.scrollHeight);
+        lastSL = bc.scrollLeft;
+        lastST = bc.scrollTop;
+      }
+    }
+    if (++ticks > 200) { clearInterval(iv); diag('poll-end', 'ticks=' + ticks); }
+  }, 150);
+})();
+
 // Inject our own avoidPageBreak CSS so paragraphs (and cue spans inside them)
 // don't get split across pages. Doing this directly avoids the location.reload()
 // that toggling ttu's localStorage setting would require — reload would wipe
@@ -1171,6 +1256,19 @@ rp {
 ::selection {
   color: white;
   background: rgba(255, 0, 0, 0.6);
+}
+
+/* ttu 顶部 32px 隐形热区 <button>（tap 唤出 reader 工具栏）在 Android
+   WebView 下会被 -webkit-appearance:button 绘成 buttonface 灰白底，
+   盖住正文最上面那一点。强制 appearance:none + 透明背景，解决"白色
+   遮罩挡住顶部文字"。 */
+button.fixed.top-0 {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
 }
 </style>
 `);
@@ -1934,8 +2032,11 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
   /// auto=true 来自 `__sasayakiRequestNav`，要么是我们自己刚请求的跳章
   /// （_inFlightNavSection 相等），要么是未来其他系统触发——两种都不是
   /// 用户意图，忽略。
-  /// auto=false 来自 ToC 点击 / 滑动翻页等用户操作：如果 Follow=ON，
-  /// 把它自动翻到 OFF（并 toast 提示），让用户的意图覆盖系统行为。
+  /// auto=false 来自 ToC 点击 / 滑动翻页等用户操作：
+  /// - Follow=ON：Follow 的语义是"当前页 = 音频所在页"，用户手翻到别段
+  ///   后调 [AudiobookPlayerController.snapReaderToAudio] 立刻拉回 cue
+  ///   所在段，**不关 Follow**。想自由翻请先关 Follow。
+  /// - Follow=OFF：尊重用户翻页，只更新 `_currentTtuSection`。
   void _handleTtuSectionChanged(Map<String, dynamic> json) {
     final int? idx = (json['sectionIndex'] as num?)?.toInt();
     final bool auto = json['auto'] == true;
@@ -1979,10 +2080,10 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     final AudiobookPlayerController? controller = _audiobookController;
     if (controller == null) return;
     if (controller.followAudio.value) {
-      controller.setFollowAudio(false);
-      if (mounted) {
-        Fluttertoast.showToast(msg: 'Follow audio 已暂停（用户手动翻页）');
-      }
+      // Follow ON：用户手翻到别段 → 立刻把 reader 拉回音频所在段。
+      // 不关 Follow，不 toast —— 语义固定为"当前页 = 音频所在页"，
+      // 用户要自由翻请先关 Follow。
+      controller.snapReaderToAudio();
     }
   }
 
