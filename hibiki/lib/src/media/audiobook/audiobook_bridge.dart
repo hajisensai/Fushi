@@ -1192,6 +1192,16 @@ window.__sasayakiRequestNav = async function(n) {
   try {
     if (typeof window.__ttuGoToSection === 'function') {
       await window.__ttuGoToSection(n);
+      // ttu 跳章（哪怕目标段等于当前段）会整体替换 .book-content-container
+      // 的 innerHTML，cueMap 里的 span 立刻变成孤儿节点——再给它们 addClass
+      // 也找不到 .hoshi-active 了（见 highlightMiss 病症）。所以这里强制
+      // 失效 applied 状态 + 丢掉旧 map，下一个 sasayakiMountedSection 事件
+      // 会让上层跑 applySasayakiCues，新 DOM 上重建 cueMap。
+      window.__hoshiSasayakiAppliedForSection = -1;
+      window.__hoshiSasayakiAppliedRootLen = -1;
+      if (typeof window.__hoshiClearSasayakiApplied === 'function') {
+        window.__hoshiClearSasayakiApplied();
+      }
       console.log(JSON.stringify({
         'hibiki-message-type': 'sasayakiNavOk', 'section': n
       }));

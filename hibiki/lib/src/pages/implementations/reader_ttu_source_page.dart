@@ -76,6 +76,15 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   /// 被当成用户意图，立刻又把 Follow auto-off 掉。
   int? _inFlightNavSection;
 
+  /// 跨章跳章超时兜底。`requestSectionNav` 用 `evaluateJavascript`，不 await
+  /// JS Promise——Dart 侧 await 几乎瞬间返回。之前立刻调
+  /// `notifySectionRestoreCompleted` 会提前清 `_chapterTransition`，期间
+  /// 另一条 cue tick 看到段不匹配再发一次跳章，ttu 被轮番 `__ttuGoToSection`，
+  /// scrollTop 反复被清零到章首（翻页被拽回首页的视觉来源）。改为等 ttu
+  /// 自己把 `sectionChanged(auto=true, idx==target)` 推回来再 notify；本
+  /// Timer 兜底 ttu fork 缺失 / 跳章失败 3s 内没回报时强制降级为 pill。
+  Timer? _navRestoreTimeout;
+
   /// reader 当前挂载的 ttu section index。-1 = 还没收到任何 sectionChanged
   /// 事件（开书前 / ttu 还没初始化）。供 controller 通过
   /// [AudiobookPlayerController.getCurrentReaderSection] 读取，作为"cue 是否
@@ -1750,6 +1759,13 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         );
         navOk = true;
         _currentTtuSection = newSection;
+        // ttu 重新挂载了章节 DOM（即便 newSection == 之前 section），旧 cueMap
+        // 里的 span 已经游离。放 Dart 这层早返回守卫失效，让下一个
+        // sasayakiMountedSection 事件重新跑 applySasayakiCues。JS 侧
+        // __sasayakiRequestNav 里也同步清了 __hoshiSasayakiAppliedForSection，
+        // 两道守卫一起下让 apply 一定重跑。
+        _lastSasayakiAppliedSection = -1;
+        _lastSasayakiAppliedRootLen = -1;
       } catch (e) {
         debugPrint('[hibiki-audiobook] requestSectionNav failed: $e');
         // 降级到 pill，保留 Follow 状态让用户重试下一次跨章
@@ -1790,6 +1806,10 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         sectionIndex: target,
       );
       _currentTtuSection = target;
+      // 同 _handleCueCrossChapter：ttu 换过 DOM，cueMap 旧 span 作废，
+      // 必须清 Dart 早返回守卫，否则 mountedSection handler 会 skip。
+      _lastSasayakiAppliedSection = -1;
+      _lastSasayakiAppliedRootLen = -1;
       if (mounted) setState(() => _pendingNavSection = null);
     } catch (e) {
       debugPrint('[hibiki-audiobook] pill tap requestSectionNav failed: $e');
