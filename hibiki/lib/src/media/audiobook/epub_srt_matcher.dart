@@ -133,6 +133,17 @@ class EpubSrtMatcher {
     final int start = _findStart(big, cues);
     debugPrint('[sasayaki] matcher: sections=${sections.length} '
         'totalNormLen=$totalLen cues=${cues.length} startCursor=$start');
+    // dump 每段累计起点 + 长度，方便和 JS __hoshiLoadSasayakiRefs 的
+    // sasayakiRefsReady 日志对账（两侧累计 norm 长度必须一致，否则
+    // sectionIndex 索引到的 base 会偏，命中率高也会高亮错位）。
+    for (int si = 0; si < sections.length; si++) {
+      final int s0 = idx.sectionNormStarts[si];
+      final int s1 = (si + 1 < sections.length)
+          ? idx.sectionNormStarts[si + 1]
+          : totalLen;
+      debugPrint('[sasayaki] matcher.section[$si] href="${sections[si].href}" '
+          'normStart=$s0 normLen=${s1 - s0}');
+    }
 
     final List<CueMatch> results = <CueMatch>[];
     int cursor = start;
@@ -166,6 +177,19 @@ class EpubSrtMatcher {
         normCharEnd: matchEnd - idx.sectionNormStarts[secIdx],
         score: 1.0,
       ));
+
+      // 抽样打印前 5 / 最后 1 条命中：把 cue.text、normalize 后的串、以及 big
+      // 串里实际命中的子串放在一起。三者应当是同一段（normalized cue == big
+      // 子串），如果不一致说明 normalize 规则与 big 拼接逻辑不同步。
+      if (matched < 5 || cue == cues.last) {
+        final String snippet = big.substring(found, matchEnd);
+        debugPrint('[sasayaki] matcher.hit#${matched} sid=${cue.sentenceIndex} '
+            'sec=$secIdx ns=${found - idx.sectionNormStarts[secIdx]} '
+            'cue="${_clip(cue.text, 24)}" '
+            'norm="${_clip(nc, 24)}" '
+            'big="${_clip(snippet, 24)}"');
+      }
+
       cursor = matchEnd;
       matched++;
     }
@@ -203,6 +227,12 @@ class EpubSrtMatcher {
       }
     }
     return minStart ?? 0;
+  }
+
+  /// 截断中含日文字符串到 [n] 字符，给日志用，避免 30+ 字的句子刷屏。
+  static String _clip(String s, int n) {
+    final String r = s.replaceAll('\n', '\\n').replaceAll('\r', '\\r');
+    return r.length <= n ? r : '${r.substring(0, n)}…';
   }
 
   // ---------- normalize ----------

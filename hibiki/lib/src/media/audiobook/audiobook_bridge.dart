@@ -319,11 +319,22 @@ window.__hoshiLoadSasayakiRefs = function(ttuBookId) {
         }
         window.__hoshiSasayakiRefs = refs;
         window.__hoshiSasayakiSectionStarts = starts;
+        // 计算每段 normLen（starts 末尾差分），方便和 Dart matcher 的
+        // [sasayaki] matcher.section[N] 日志逐行比对。两侧任何一行的
+        // normLen 不一样就是 normalize 规则 / ruby 处理 / DOMParser 行为
+        // 的偏移，立刻能定位到具体哪段崩了。
+        var lens = [];
+        for (var k = 0; k < starts.length; k++) {
+          var nextStart = (k + 1 < starts.length) ? starts[k + 1] : cumulative;
+          lens.push(nextStart - starts[k]);
+        }
         console.log(JSON.stringify({
           'hibiki-message-type': 'sasayakiRefsReady',
           'count': refs.length,
           'totalNormChars': cumulative,
-          'firstStarts': starts.slice(0, 5)
+          'starts': starts,
+          'normLens': lens,
+          'refs': refs
         }));
       };
       g.onerror = function(e) {
@@ -380,7 +391,7 @@ window.__hoshiUnwrapSasayaki = function() {
   }
 };
 
-window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normCharEnd) {
+window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normCharEnd, expectedCue) {
   var starts = window.__hoshiSasayakiSectionStarts;
   var refs = window.__hoshiSasayakiRefs;
   if (!starts || !refs) {
@@ -513,6 +524,13 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
     return;
   }
 
+  // ★ 关键诊断：在包裹 span 之前先抓 range.toString()，与 expectedCue
+  // 直接对账。如果两者不同就是 sectionIndex/normChar 偏移或 normalize
+  // 规则有问题；如果两者相同但用户视觉上还是错位，那是 Svelte 重渲染
+  // 把 span 吃掉了之类的渲染层 bug。
+  var actualText = '';
+  try { actualText = range.toString(); } catch (_) {}
+
   var span = document.createElement('span');
   span.className = 'hoshi-active';
   try {
@@ -526,11 +544,34 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
     return;
   }
 
+  function clip(s, n) {
+    if (!s) return '';
+    s = String(s).replace(/\\n/g, '\\\\n').replace(/\\r/g, '\\\\r');
+    return s.length <= n ? s : s.slice(0, n) + '…';
+  }
+
   console.log(JSON.stringify({
     'hibiki-message-type': 'sasayakiHighlightOk',
     'sectionIndex': sectionIndex,
     'normCharStart': normCharStart,
-    'normCharEnd': normCharEnd
+    'normCharEnd': normCharEnd,
+    'targetStart': targetStart,
+    'targetEnd': targetEnd,
+    'expectedCue': clip(expectedCue, 32),
+    'actualText': clip(actualText, 32),
+    'match': (actualText && expectedCue)
+      ? (function() {
+          // 用 normalize 后的串比，避免标点差异造成误报
+          function norm(t) {
+            var b = '';
+            for (var i = 0; i < t.length; i++) {
+              if (!window.__hoshiIsSkippable(t.charCodeAt(i))) b += t[i];
+            }
+            return b;
+          }
+          return norm(actualText) === norm(expectedCue);
+        })()
+      : null
   }));
 
   // Reuse existing ticker to scroll to the freshly wrapped span.
@@ -787,9 +828,11 @@ window.__hoshiAnnotate = function(chapterHref) {
     final String raw = cue.textFragmentId;
     final SasayakiFragment? frag = SasayakiMatchCodec.tryDecode(raw);
     if (frag != null) {
+      // 把 cue.text 传过去，JS 高亮后能直接打"期望 vs 实际"对账日志。
+      final String cueJson = jsonEncode(cue.text);
       await controller.evaluateJavascript(
         source: '__hoshiHighlightSasayaki(${frag.sectionIndex}, '
-            '${frag.normCharStart}, ${frag.normCharEnd});',
+            '${frag.normCharStart}, ${frag.normCharEnd}, $cueJson);',
       );
       return;
     }
