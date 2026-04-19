@@ -83,7 +83,11 @@ class MatchResult {
 ///    跑有界 Levenshtein，相似度 ≥ [fuzzyThreshold] 就补一条 CueMatch。
 ///    只在两条锚点之间搜，不做全书漫搜，误配率可控。
 class EpubSrtMatcher {
-  static const int defaultSearchWindow = 1500;
+  /// 对齐官方 iOS Sasayaki `SasayakiMatchView` 的默认值（`searchWindow: Double = 200`）。
+  /// 窗口越小越不容易被短 `＊` 噪声 cue 拉飞 cursor：当 SRT 是 Whisper 裸转写
+  /// 把书名/作者/出版社朗读套了 `＊` 前缀时，1500 级别窗口会让 2 字 cue（`いつ`
+  /// 之类）在 1500 字内蒙到一个假命中，后续长 cue 全部掉到 cursor 之后。
+  static const int defaultSearchWindow = 200;
 
   /// 起点检测扫描的 cue 数量上限。
   static const int defaultProbeCount = 15;

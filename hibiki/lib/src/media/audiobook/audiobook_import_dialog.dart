@@ -8,6 +8,7 @@ import 'package:hibiki/src/media/audiobook/audiobook_health.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
 import 'package:hibiki/src/media/audiobook/epub_cue_matcher.dart';
+import 'package:hibiki/src/media/audiobook/epub_srt_matcher.dart';
 import 'package:hibiki/src/media/audiobook/json_alignment_parser.dart';
 import 'package:hibiki/src/media/audiobook/lrc_parser.dart';
 import 'package:hibiki/src/media/audiobook/sasayaki_match_codec.dart';
@@ -53,6 +54,17 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
 
   String? _alignmentPath;
   bool _importing = false;
+
+  int _searchWindow = EpubSrtMatcher.defaultSearchWindow;
+
+  /// 只有 srt/lrc/vtt/ass 才跑 matcher（SMIL/JSON 有硬时间码锚点，与
+  /// window 无关），且必须绑定了 ttu 才有 sections 可查，否则 slider 隐藏。
+  bool get _willRunMatcher {
+    if (_alignmentPath == null) return false;
+    if (widget.ttuBookId == null || widget.ttuBookId! <= 0) return false;
+    final String ext = _alignmentPath!.split('.').last.toLowerCase();
+    return SasayakiRematch.supportedFormats.contains(ext);
+  }
 
   // ── 辅助 getter ─────────────────────────────────────────────────────────────
 
@@ -237,6 +249,13 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
         _audioSourceRow(),
         const SizedBox(height: 12),
         _alignmentRow(),
+        if (_willRunMatcher) ...[
+          const SizedBox(height: 12),
+          SasayakiWindowSlider(
+            value: _searchWindow,
+            onChanged: (int v) => setState(() => _searchWindow = v),
+          ),
+        ],
         if (_importing) ...[
           const SizedBox(height: 16),
           const LinearProgressIndicator(),
@@ -474,12 +493,14 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       final MatchResult result = await EpubCueMatcher.matchInIsolate(
         sections: sections,
         cues: cues,
+        searchWindow: _searchWindow,
       );
       SasayakiMatchCodec.applyToCues(cues: cues, result: result);
       final int pct = (result.matchRate * 100).round();
       return AudiobookHealth.fromRatePct(
         ratePct: pct,
-        reason: '${result.matchedCues}/${result.totalCues} cues matched',
+        reason: '${result.matchedCues}/${result.totalCues} cues matched '
+            '(window=$_searchWindow)',
       );
     } catch (e) {
       debugPrint('EpubCueMatcher failed: $e');

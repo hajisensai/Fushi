@@ -11,6 +11,7 @@ import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
 import 'package:hibiki/src/media/audiobook/cues_to_epub.dart';
 import 'package:hibiki/src/media/audiobook/epub_srt_matcher.dart';
 import 'package:hibiki/src/media/audiobook/sasayaki_match_codec.dart';
+import 'package:hibiki/src/media/audiobook/sasayaki_rematch.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_model.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
 import 'package:hibiki/src/media/audiobook/ass_parser.dart';
@@ -72,6 +73,16 @@ class _BookImportDialogState extends State<BookImportDialog> {
   List<String>? _audioPaths;
 
   bool _importing = false;
+
+  int _searchWindow = EpubSrtMatcher.defaultSearchWindow;
+
+  /// 只有 EPUB + SRT 组合导入会跑 Sasayaki matcher，其他路径（仅 EPUB /
+  /// 字幕自身渲染）不受 window 影响，UI 上对应地隐藏滑杆。
+  bool get _willRunMatcher {
+    if (_epubPath == null || _srtPath == null) return false;
+    final String ext = _srtPath!.split('.').last.toLowerCase();
+    return ext == 'srt';
+  }
 
   bool get _hasAudioSource =>
       (_audioDir != null) || (_audioPaths != null && _audioPaths!.isNotEmpty);
@@ -140,6 +151,13 @@ class _BookImportDialogState extends State<BookImportDialog> {
             border: const OutlineInputBorder(),
           ),
         ),
+        if (_willRunMatcher) ...[
+          const SizedBox(height: 12),
+          SasayakiWindowSlider(
+            value: _searchWindow,
+            onChanged: (int v) => setState(() => _searchWindow = v),
+          ),
+        ],
         if (_importing) ...[
           const SizedBox(height: 16),
           const LinearProgressIndicator(),
@@ -524,7 +542,11 @@ class _BookImportDialogState extends State<BookImportDialog> {
 
     String? matchTail;
     if (ext == 'srt') {
-      matchTail = await _runSasayakiMatch(sections: sections, cues: cues);
+      matchTail = await _runSasayakiMatch(
+        sections: sections,
+        cues: cues,
+        searchWindow: _searchWindow,
+      );
     }
 
     // 4) 存 Audiobook（挂 audio 源）+ cues。
@@ -557,6 +579,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
   Future<String?> _runSasayakiMatch({
     required List<EpubSection> sections,
     required List<AudioCue> cues,
+    required int searchWindow,
   }) async {
     if (cues.isEmpty || sections.isEmpty) return null;
     try {
@@ -564,12 +587,14 @@ class _BookImportDialogState extends State<BookImportDialog> {
       final MatchResult result = await EpubSrtMatcher.matchInIsolate(
         sections: sections,
         cues: cues,
+        searchWindow: searchWindow,
       );
       SasayakiMatchCodec.applyToCues(cues: cues, result: result);
       debugPrint('[hibiki-import] Sasayaki match: '
-          '${result.matchedCues}/${result.totalCues}');
+          '${result.matchedCues}/${result.totalCues} window=$searchWindow');
       final int pct = (result.matchRate * 100).round();
-      return 'Sasayaki $pct% (${result.matchedCues}/${result.totalCues})';
+      return 'Sasayaki $pct% '
+          '(${result.matchedCues}/${result.totalCues} · window=$searchWindow)';
     } catch (e) {
       debugPrint('[hibiki-import] Sasayaki match failed: $e');
       return null;

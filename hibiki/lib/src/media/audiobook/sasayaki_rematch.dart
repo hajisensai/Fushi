@@ -77,7 +77,10 @@ class SasayakiRematch {
       final RegExpMatch? m = RegExp(r'window=(\d+)').firstMatch(previousReason);
       final int? prev = m == null ? null : int.tryParse(m.group(1)!);
       if (prev != null) {
-        window = prev.clamp(300, 5000);
+        window = prev.clamp(
+          SasayakiWindowSlider.minWindow,
+          SasayakiWindowSlider.maxWindow,
+        );
       }
     }
     return showModalBottomSheet<int>(
@@ -87,7 +90,6 @@ class SasayakiRematch {
       builder: (BuildContext sheetCtx) {
         return StatefulBuilder(
           builder: (BuildContext ctx, StateSetter setSheet) {
-            final ThemeData theme = Theme.of(ctx);
             return SafeArea(
               child: Padding(
                 padding: EdgeInsets.only(
@@ -100,46 +102,9 @@ class SasayakiRematch {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('搜索窗口', style: theme.textTheme.titleMedium),
-                    const SizedBox(height: 4),
-                    Text(
-                      '每条 cue 在正文里向前找的字符数。命中率低时加大；'
-                      '文本重复段多可收紧避免误匹配。',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Slider(
-                            min: 300,
-                            max: 5000,
-                            divisions: 47,
-                            value: window.toDouble(),
-                            label: '$window',
-                            onChanged: (double v) {
-                              setSheet(() => window = v.round());
-                            },
-                          ),
-                        ),
-                        SizedBox(
-                          width: 64,
-                          child: Text(
-                            '$window',
-                            textAlign: TextAlign.end,
-                            style: theme.textTheme.titleMedium,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '默认 ${EpubSrtMatcher.defaultSearchWindow}',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
+                    SasayakiWindowSlider(
+                      value: window,
+                      onChanged: (int v) => setSheet(() => window = v),
                     ),
                     const SizedBox(height: 16),
                     Row(
@@ -221,5 +186,73 @@ class SasayakiRematch {
       debugPrint('[hibiki-audiobook] SasayakiRematch failed: $e\n$st');
       Fluttertoast.showToast(msg: '重跑失败：$e');
     }
+  }
+}
+
+/// 复用的 searchWindow 选择器。范围 / 步长对齐 iOS Sasayaki
+/// `SasayakiMatchView` 的 `Slider(value:$searchWindow, in:50...350, step:25)`，
+/// 供重跑底表单与两个导入对话框共用。
+class SasayakiWindowSlider extends StatelessWidget {
+  const SasayakiWindowSlider({
+    required this.value,
+    required this.onChanged,
+    super.key,
+  });
+
+  static const int minWindow = 50;
+  static const int maxWindow = 350;
+  static const int step = 25;
+  static const int divisions = (maxWindow - minWindow) ~/ step;
+
+  final int value;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('搜索窗口', style: theme.textTheme.titleMedium),
+        const SizedBox(height: 4),
+        Text(
+          '每条 cue 在正文里向前找的字符数。命中率低时可左右调整，'
+          '过大容易被短噪声 cue 拉偏 cursor。',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: Slider(
+                min: minWindow.toDouble(),
+                max: maxWindow.toDouble(),
+                divisions: divisions,
+                value: value.toDouble(),
+                label: '$value',
+                onChanged: (double v) => onChanged(v.round()),
+              ),
+            ),
+            SizedBox(
+              width: 48,
+              child: Text(
+                '$value',
+                textAlign: TextAlign.end,
+                style: theme.textTheme.titleMedium,
+              ),
+            ),
+          ],
+        ),
+        Text(
+          '默认 ${EpubSrtMatcher.defaultSearchWindow}',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
   }
 }
