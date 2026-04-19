@@ -265,9 +265,17 @@ window.__hoshiSasayakiRefs = window.__hoshiSasayakiRefs || null;
 window.__hoshiSasayakiSectionStarts = window.__hoshiSasayakiSectionStarts || null;
 
 window.__hoshiLoadSasayakiRefs = function(ttuBookId) {
+  console.log(JSON.stringify({
+    'hibiki-message-type': 'sasayakiRefsLoading',
+    'ttuBookId': ttuBookId
+  }));
   try {
     var req = indexedDB.open('books');
     req.onsuccess = function(ev) {
+      console.log(JSON.stringify({
+        'hibiki-message-type': 'sasayakiRefsDbOpen',
+        'stores': Array.prototype.slice.call(ev.target.result.objectStoreNames)
+      }));
       var db = ev.target.result;
       if (!db.objectStoreNames.contains('data')) {
         console.log(JSON.stringify({
@@ -282,6 +290,13 @@ window.__hoshiLoadSasayakiRefs = function(ttuBookId) {
         var rec = e.target.result;
         var sections = (rec && rec.sections) || [];
         var html = (rec && rec.elementHtml) || '';
+        console.log(JSON.stringify({
+          'hibiki-message-type': 'sasayakiRefsRecord',
+          'ttuBookId': ttuBookId,
+          'recFound': !!rec,
+          'sectionsLen': sections.length,
+          'htmlLen': html.length
+        }));
 
         // 每段正文归一化字符数 —— 复用 DOMParser 从原始 elementHtml 中按
         // section.reference 取元素的 textContent 再数字符。必须和 Dart 侧
@@ -328,14 +343,21 @@ window.__hoshiLoadSasayakiRefs = function(ttuBookId) {
           var nextStart = (k + 1 < starts.length) ? starts[k + 1] : cumulative;
           lens.push(nextStart - starts[k]);
         }
+        // 单条消息太长会被 Android logcat 截断，把大数组拆短条打。
         console.log(JSON.stringify({
           'hibiki-message-type': 'sasayakiRefsReady',
           'count': refs.length,
-          'totalNormChars': cumulative,
-          'starts': starts,
-          'normLens': lens,
-          'refs': refs
+          'totalNormChars': cumulative
         }));
+        for (var pi = 0; pi < refs.length; pi++) {
+          console.log(JSON.stringify({
+            'hibiki-message-type': 'sasayakiRefsSection',
+            'i': pi,
+            'ref': refs[pi],
+            'start': starts[pi],
+            'normLen': lens[pi]
+          }));
+        }
       };
       g.onerror = function(e) {
         console.log(JSON.stringify({
@@ -427,23 +449,25 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
   }
 
   // ttu 实测默认停在封面：`.book-content-container` 只装封面 SVG，正文
-  // 要用户点进去才挂载。这时 TreeWalker 找不到任何 text，每条 cue 都刷
-  // 日志没意义。rootTextLen 很小（封面通常 < 50 字）就一次性告知"书还
-  // 没挂载"，静默跳过后续 cue 直到用户翻过去。下次出现真正可高亮的
-  // 节点时 __hoshiSasayakiNotMountedLogged 被清零。
+  // 要用户点进去才挂载。rootTextLen 很小（封面通常 < 50 字）说明还在封面。
+  // 为了排查 "挂载状态何时变化"，按 tick 序号采样打（前 3 次 + 每 20 次一次），
+  // 既能捕捉状态翻转也不会刷屏。
   var rootTextLen = root.textContent ? root.textContent.length : 0;
   if (rootTextLen < 80) {
-    if (!window.__hoshiSasayakiNotMountedLogged) {
-      window.__hoshiSasayakiNotMountedLogged = true;
+    window.__hoshiNotMountedCount = (window.__hoshiNotMountedCount || 0) + 1;
+    if (window.__hoshiNotMountedCount <= 3 ||
+        window.__hoshiNotMountedCount % 20 === 0) {
       console.log(JSON.stringify({
         'hibiki-message-type': 'sasayakiBookNotMounted',
         'rootTextLen': rootTextLen,
+        'count': window.__hoshiNotMountedCount,
         'hint': 'navigate past cover to mount chapter text'
       }));
     }
     return;
   }
-  window.__hoshiSasayakiNotMountedLogged = false;
+  // 挂载上了就清零计数，用户翻回封面再翻回来还能重新打挂载日志。
+  window.__hoshiNotMountedCount = 0;
 
   // Clear any previous Sasayaki wrap + class-only legacy highlight BEFORE
   // walking, so offsets into text nodes aren't affected by artificial spans.
