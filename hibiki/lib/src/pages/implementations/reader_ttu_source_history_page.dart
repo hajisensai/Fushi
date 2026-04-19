@@ -44,6 +44,35 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
   final ValueNotifier<int> _tryAgainCountdownNotifier = ValueNotifier(0);
   Timer? _timer;
 
+  /// 本次 app 进程内是否已跑过 [AudiobookRepository.sweepCorrupt] —— 启动后
+  /// 第一次进书架时清一次历史脏 Audiobook / AudioCue 记录，后续重建不重复跑。
+  bool _didSweepCorrupt = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // appModel 来自基类的 InheritedWidget，initState 阶段还不能 read inherited
+    // —— 直接调会抛 dependOnInheritedWidgetOfExactType called before initState
+    // completed。挂到首帧之后跑就 OK。
+    WidgetsBinding.instance.addPostFrameCallback((_) => _sweepCorruptOnce());
+  }
+
+  Future<void> _sweepCorruptOnce() async {
+    if (!mounted || _didSweepCorrupt) {
+      return;
+    }
+    _didSweepCorrupt = true;
+    try {
+      final int removed =
+          await AudiobookRepository(appModel.database).sweepCorrupt();
+      if (removed > 0 && mounted) {
+        setState(() {}); // 让书卡角标按新的真相重算
+      }
+    } catch (e, st) {
+      debugPrint('[hibiki-audiobook] sweepCorruptOnce failed: $e\n$st');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     AsyncValue<LocalAssetsServer> server =

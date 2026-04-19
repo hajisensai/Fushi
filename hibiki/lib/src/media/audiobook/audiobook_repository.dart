@@ -69,8 +69,8 @@ class AudiobookRepository {
               'recovered via id scan id=$id');
           return row;
         }
-      } catch (_) {
-        // 脏记录，跳过（sweepCorrupt 会专门清理）。
+      } catch (e) {
+        debugPrint('[hibiki-audiobook] findByBookUid scan: id=$id READ FAILED: $e');
       }
     }
     return null;
@@ -88,8 +88,9 @@ class AudiobookRepository {
               'recovered via id scan id=$id');
           return row;
         }
-      } catch (_) {
-        // skip corrupt
+      } catch (e) {
+        debugPrint('[hibiki-audiobook] findByBookUid(txn) scan: id=$id '
+            'READ FAILED: $e');
       }
     }
     return null;
@@ -161,9 +162,19 @@ class AudiobookRepository {
 
   /// 保存 [Audiobook] 元数据。
   Future<void> saveAudiobook(Audiobook audiobook) async {
-    await _isar.writeTxn(() async {
-      await _isar.audiobooks.put(audiobook);
+    final int id = await _isar.writeTxn(() async {
+      final int newId = await _isar.audiobooks.put(audiobook);
+      return newId;
     });
+    debugPrint('[hibiki-audiobook] saveAudiobook put id=$id '
+        'bookUid.len=${audiobook.bookUid.length} hash=${audiobook.bookUid.hashCode}');
+    try {
+      final Audiobook? readBack = await _isar.audiobooks.get(id);
+      debugPrint('[hibiki-audiobook] saveAudiobook readback id=$id '
+          'ok=${readBack != null} bookUid.hash=${readBack?.bookUid.hashCode}');
+    } catch (e) {
+      debugPrint('[hibiki-audiobook] saveAudiobook readback id=$id THREW: $e');
+    }
   }
 
   /// 更新指定书的 Follow audio 开关。未找到 [Audiobook] 时静默跳过。
@@ -192,16 +203,34 @@ class AudiobookRepository {
     required String bookUid,
     required AudiobookHealth health,
   }) async {
+    int? touchedId;
     await _isar.writeTxn(() async {
       Audiobook? ab =
           await _isar.audiobooks.where().bookUidEqualTo(bookUid).findFirst();
       ab ??= await _findByBookUidScanAsync(bookUid);
       if (ab == null) {
+        debugPrint('[hibiki-audiobook] updateHealth: no record for bookUid.hash='
+            '${bookUid.hashCode}');
         return;
       }
+      debugPrint('[hibiki-audiobook] updateHealth: pre-put id=${ab.id} '
+          'bookUid.hash=${ab.bookUid.hashCode} '
+          'kind=${health.kind.name} pct=${health.ratePct} '
+          'reason.len=${health.reason?.length ?? -1}');
       health.packInto(ab);
-      await _isar.audiobooks.put(ab);
+      touchedId = await _isar.audiobooks.put(ab);
     });
+    if (touchedId != null) {
+      try {
+        final Audiobook? readBack = await _isar.audiobooks.get(touchedId!);
+        debugPrint('[hibiki-audiobook] updateHealth readback id=$touchedId '
+            'ok=${readBack != null} '
+            'bookUid.hash=${readBack?.bookUid.hashCode}');
+      } catch (e) {
+        debugPrint('[hibiki-audiobook] updateHealth readback id=$touchedId '
+            'THREW: $e');
+      }
+    }
   }
 
   /// 删除指定书的所有有声书数据（元数据 + 所有 cue）。
