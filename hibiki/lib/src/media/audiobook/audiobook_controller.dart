@@ -50,16 +50,41 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 靠 [setFollowAudio] 经 [onFollowAudioPersist] 落 Hive。
   final ValueNotifier<bool> followAudio = ValueNotifier<bool>(false);
 
-  /// cue 跨章回调。仅当 cue 的 textFragmentId 能解码出 sectionIndex 且
-  /// 相邻 cue 的 sectionIndex 不同时触发；只报新章的 index，不报旧的。
+  /// cue 跨章回调。当 cue 的 textFragmentId 解码出的 sectionIndex 与
+  /// reader 当前挂载章节（[getCurrentReaderSection]）不一致、且 [followAudio]
+  /// 与 [_hasPlayedOnce] 都已就绪时触发；只报新章的 index。
   ///
-  /// Reader 页面接这个回调决定：
-  /// - [followAudio] == true → 调 `AudiobookBridge.requestSectionNav`；
-  /// - false → 展示 pill "→ 第 N 章"，点了才跳。
+  /// 对齐 Sasayaki 原版 SasayakiPlayer.updateCue 行为：cue 与当前 reader 章
+  /// 不同 → loadChapter(cue.chapterIndex, 0)。reader 页面接这个回调调
+  /// `AudiobookBridge.requestSectionNav`，跳完务必回调
+  /// [notifySectionRestoreCompleted] 把 chapterTransition 守卫清掉。
   ///
   /// 控制器不直接调桥，避免和 WebView 耦合；reader 页面是唯一持有
   /// InAppWebViewController 的地方。
   void Function(int sectionIndex)? onCrossChapter;
+
+  /// 由 reader 页面提供：返回 ttu 当前挂载的 section index（开书前 -1）。
+  /// 对齐 Sasayaki SasayakiPlayer 构造时注入的 `getCurrentIndex` 闭包，
+  /// 跨章判定的"参照系"必须是 reader 真实挂载的章节，而非"上一条 cue 的章"。
+  /// 否则用户手动翻到错误章节后，cue 一直在原章，永远不会自动拉回。
+  int Function()? getCurrentReaderSection;
+
+  /// 对齐 Sasayaki `hasPlayedOnce`：true 之前不允许跨章自动翻页，避免
+  /// 打开书 / 恢复位置瞬间 cue 与 reader 当前章不一致就立刻跳章，
+  /// 把用户当前阅读位置吃掉。在首次 [play] 调用时翻为 true，不会复位
+  /// （即使中途暂停）。换书走 [load] 显式复位。
+  bool _hasPlayedOnce = false;
+
+  /// 对齐 Sasayaki `chapterTransition`：跨章 await 期间为 true，期间
+  /// [_updateCurrentCue] 直接 return，避免 cue 继续推进重复触发跨章
+  /// 请求 / 把 pendingCue 反复覆盖。reader 完成跳章后调
+  /// [notifySectionRestoreCompleted] 清回 false。
+  bool _chapterTransition = false;
+
+  /// 对齐 Sasayaki `pendingCue`：触发跨章的那条 cue。新章节 DOM 挂载完
+  /// 之后 reader 调 [notifySectionRestoreCompleted]，控制器会重新尝试
+  /// 高亮这条 cue（避免等到下一条 positionStream tick 才有视觉反馈）。
+  AudioCue? _pendingCue;
 
   /// Follow audio 开关变化时的持久化回调。Reader 页面 attach audiobook 时
   /// 装入这个字段（一般是 `(v) => repo.updateFollowAudio(bookUid, v)`），
@@ -81,8 +106,6 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 播放速度变化时的持久化回调。内部在 [setSpeed] 调用。
   Future<void> Function(double speed)? onSpeedPersist;
 
-  /// 上一条 cue 解码出的 sectionIndex，用来和新 cue 比对是否跨章。
-  int? _lastCueSectionIndex;
 
   /// 是否正在播放。
   bool get isPlaying => _player.playing;
@@ -119,7 +142,9 @@ class AudiobookPlayerController extends ChangeNotifier {
     // persist 回调 —— 载入不是用户操作，又把同值写回 Hive 就是循环。
     followAudio.value = initialFollowAudio;
     delayMs.value = initialDelayMs;
-    _lastCueSectionIndex = null;
+    _hasPlayedOnce = false;
+    _chapterTransition = false;
+    _pendingCue = null;
 
     await _player.stop();
     _positionSub?.cancel();
@@ -232,6 +257,10 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 播放状态翻转通过 [_playingSub] 订阅 `playingStream` 拿到，立刻触发
   /// `notifyListeners()`，按钮图标不需要等网络/缓冲。
   Future<void> play() async {
+    // 对齐 Sasayaki：首次 play 之后才允许跨章自动翻页。打开书 / 恢复
+    // 位置阶段 cue 与 reader 当前章不一致是常态，不应在用户没按播放时
+    // 就把 reader 拉到音频章。
+    _hasPlayedOnce = true;
     unawaited(_player.play());
   }
 
@@ -351,6 +380,11 @@ class AudiobookPlayerController extends ChangeNotifier {
   }
 
   void _updateCurrentCue(int posMs) {
+    // 对齐 Sasayaki SasayakiPlayer.updateCue 开头的 `guard !chapterTransition`：
+    // 跨章 await 期间不推进 cue，否则 reader 还没挂上新章 DOM 时 positionStream
+    // 会连续推进若干条 cue，每条都触发 _maybeEmitCrossChapter，pendingCue 被
+    // 反复覆盖、onCrossChapter 重复调用。
+    if (_chapterTransition) return;
     if (_chapterCues.isEmpty) {
       return;
     }
@@ -372,21 +406,62 @@ class AudiobookPlayerController extends ChangeNotifier {
     }
   }
 
-  /// 如果 [cue] 的 textFragmentId 编码了 sectionIndex（Sasayaki 路径），
-  /// 且 index 与上一条不同，触发一次 [onCrossChapter]。SMIL/JSON 路径
-  /// 的 textFragmentId 是 DOM id / selector，解码会返回 null，自然跳过
-  /// 这套逻辑（它们本来就没有跨章同步需求）。
+  /// 对齐 Sasayaki SasayakiPlayer.updateCue 的 if/else 分支：
+  /// `cue.chapterIndex == currentIndex` 走 displayCue，否则在 autoScroll +
+  /// hasPlayedOnce 时缓存 pendingCue + 触发 loadChapter。
+  ///
+  /// 关键差异（修正点）：以前用 `_lastCueSectionIndex`（上一条 cue 的 sec）
+  /// 判定跨章，结果用户手动翻到错误章节后 cue 持续在原章、prev == sec、
+  /// 永不触发自动跳回。改为对比 [getCurrentReaderSection]——reader 实际
+  /// 挂载的是哪一章，才是 Sasayaki 的判定参照系。
+  ///
+  /// SMIL/JSON 等非 sasayaki 路径 cue 的 textFragmentId 解码返回 null，
+  /// 自然跳过这套逻辑（它们没有跨章同步概念）。
   void _maybeEmitCrossChapter(AudioCue? cue) {
     if (cue == null) return;
     final SasayakiFragment? frag =
         SasayakiMatchCodec.tryDecode(cue.textFragmentId);
     if (frag == null) return;
-    final int sec = frag.sectionIndex;
-    final int? prev = _lastCueSectionIndex;
-    _lastCueSectionIndex = sec;
-    if (prev != null && prev != sec) {
-      onCrossChapter?.call(sec);
+    final int cueSec = frag.sectionIndex;
+    final int currentSec = getCurrentReaderSection?.call() ?? -1;
+    if (currentSec < 0) {
+      // reader 还没汇报过当前章（一般是开书前），先等等 —— 别按 0 假设
+      // 否则 cue 在第 5 章会立刻请求跳章。
+      return;
     }
+    if (cueSec == currentSec) return;
+    if (!followAudio.value) return;
+    if (!_hasPlayedOnce) return;
+    // 进入跨章状态：缓存 pendingCue，竖起 chapterTransition 守卫，
+    // 通知 reader 跳章。reader 完成后调 notifySectionRestoreCompleted。
+    _pendingCue = cue;
+    _chapterTransition = true;
+    onCrossChapter?.call(cueSec);
+  }
+
+  /// 由 reader 在 `__ttuGoToSection` 完成（或失败）后调用，对齐 Sasayaki
+  /// `handleRestoreCompleted(currentIndex:)`：清 chapterTransition 守卫，
+  /// 让 [_updateCurrentCue] 重新放行；如果 pendingCue 命中目标章节，
+  /// 立刻 notifyListeners 让 reader 在新章上重画高亮，无需等 positionStream
+  /// 下一 tick（暂停状态下 positionStream 不发事件，否则会黑屏几秒）。
+  ///
+  /// [success] = false 时（跳章请求超时 / reject）也务必调用，否则
+  /// _chapterTransition 永远卡 true，cue 完全停止推进。
+  void notifySectionRestoreCompleted({
+    required int currentReaderSection,
+    required bool success,
+  }) {
+    _chapterTransition = false;
+    final AudioCue? pending = _pendingCue;
+    _pendingCue = null;
+    if (!success || pending == null) return;
+    final SasayakiFragment? frag =
+        SasayakiMatchCodec.tryDecode(pending.textFragmentId);
+    if (frag == null) return;
+    if (frag.sectionIndex != currentReaderSection) return;
+    // pendingCue 仍然是 currentCue，强制 notify 让 reader 在新章节 DOM
+    // 上重新跑一次 highlight。
+    notifyListeners();
   }
 
   /// 翻转 Follow audio 开关并经 [onFollowAudioPersist] 落 Hive。相同值调用

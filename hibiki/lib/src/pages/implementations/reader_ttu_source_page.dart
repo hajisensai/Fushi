@@ -80,6 +80,15 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   /// 和 Follow audio 解耦：开关管"播放中跨章"，这里只管开书的初次对齐。
   bool _didInitialAudioSync = false;
 
+  /// reader 当前挂载的 ttu section index。-1 = 还没收到任何 sectionChanged
+  /// 事件（开书前 / ttu 还没初始化）。供 controller 通过
+  /// [AudiobookPlayerController.getCurrentReaderSection] 读取，作为"cue 是否
+  /// 跨章"的判定参照系（对齐 Sasayaki SasayakiPlayer 的 getCurrentIndex 闭包）。
+  ///
+  /// 不能默认 0：cue 在第 5 章但 reader 还没汇报时，0 会被误判为"跨章"。
+  /// controller 端遇到 -1 直接 return 不触发跨章逻辑。
+  int _currentTtuSection = -1;
+
   @override
   void initState() {
     super.initState();
@@ -1478,6 +1487,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       await abRepo.updateSpeed(bookUid: srtBookUid, speed: speed);
     };
     controller.onCrossChapter = _handleCueCrossChapter;
+    controller.getCurrentReaderSection = () => _currentTtuSection;
 
     if (mounted) {
       setState(() {
@@ -1594,6 +1604,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         _controller,
         sectionIndex: frag.sectionIndex,
       );
+      _currentTtuSection = frag.sectionIndex;
     } catch (e) {
       debugPrint('[hibiki-audiobook] initial audio sync nav failed: $e');
     }
@@ -1722,6 +1733,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       await repo.updateSpeed(bookUid: bookUid, speed: speed);
     };
     controller.onCrossChapter = _handleCueCrossChapter;
+    controller.getCurrentReaderSection = () => _currentTtuSection;
   }
 
   /// cue 跨章时由控制器触发。
@@ -1735,11 +1747,14 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
 
     if (controller.followAudio.value) {
       _inFlightNavSection = newSection;
+      bool navOk = false;
       try {
         await AudiobookBridge.requestSectionNav(
           _controller,
           sectionIndex: newSection,
         );
+        navOk = true;
+        _currentTtuSection = newSection;
       } catch (e) {
         debugPrint('[hibiki-audiobook] requestSectionNav failed: $e');
         // 降级到 pill，保留 Follow 状态让用户重试下一次跨章
@@ -1747,7 +1762,22 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           setState(() => _pendingNavSection = newSection);
         }
       }
+      // 对齐 Sasayaki handleRestoreCompleted：跳章 await 结束（成功或
+      // 失败）必须告诉 controller 清 chapterTransition 守卫，否则 cue
+      // 推进会永久卡住。成功时 currentReaderSection=newSection 让 controller
+      // 重新派发 pendingCue 高亮。
+      controller.notifySectionRestoreCompleted(
+        currentReaderSection: navOk ? newSection : _currentTtuSection,
+        success: navOk,
+      );
     } else {
+      // Follow=OFF：不自动跳章，只显示 pill。controller 不会触发 onCrossChapter
+      // 这条路径（_maybeEmitCrossChapter 已用 followAudio 守卫），但保险起见
+      // 走 fallback 也清一下守卫。
+      controller.notifySectionRestoreCompleted(
+        currentReaderSection: _currentTtuSection,
+        success: false,
+      );
       if (mounted) {
         setState(() => _pendingNavSection = newSection);
       }
@@ -1764,6 +1794,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         _controller,
         sectionIndex: target,
       );
+      _currentTtuSection = target;
       if (mounted) setState(() => _pendingNavSection = null);
     } catch (e) {
       debugPrint('[hibiki-audiobook] pill tap requestSectionNav failed: $e');
@@ -1782,6 +1813,10 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     final int? idx = (json['sectionIndex'] as num?)?.toInt();
     final bool auto = json['auto'] == true;
     if (idx == null) return;
+    // 任何 sectionChanged 事件都更新 _currentTtuSection（无论 auto 或用户
+    // 翻页）。controller 通过 getCurrentReaderSection 读这个值判定 cue
+    // 是否跨章——必须始终反映 reader 真实挂载的章节。
+    _currentTtuSection = idx;
     // 我们自己刚发起的跳章回报，清掉 in-flight 标记，不算用户意图。
     if (_inFlightNavSection == idx) {
       _inFlightNavSection = null;
