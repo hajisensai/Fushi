@@ -401,16 +401,27 @@ class AppModel with ChangeNotifier {
         labelSmall: textStyle,
       );
 
+  /// Material 3 主色种子 —— 深青 / 夜空蓝，贴近 Hoshi Reader iOS 的
+  /// 日式沉浸阅读调性。所有 surface / primary / secondary / 对比色都由
+  /// [ColorScheme.fromSeed] 推导出来，后续 PR 在组件级替换硬编码色时
+  /// 统一走 `colorScheme.*` token。
+  static const Color _seedColor = Color(0xFF1F4959);
+
   /// Shows when the current mode is a light theme.
+  ///
+  /// PR-1：启用 Material 3，颜色体系整体由 seed 推导；scaffold / appBar /
+  /// card / dialog 的硬编码背景色删掉交给 M3 surface token。switch/slider/
+  /// input 这些组件内还残留 `Colors.red` 引用，留给后续 PR 按组件清理。
   ThemeData get theme => ThemeData(
-        scaffoldBackgroundColor: Colors.white,
-        unselectedWidgetColor: Colors.black54,
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: _seedColor,
+          brightness: Brightness.light,
+        ),
         textTheme: textTheme,
         appBarTheme: const AppBarTheme(
           elevation: 0,
           centerTitle: false,
-          backgroundColor: Colors.white,
-          foregroundColor: Colors.black,
         ),
         switchTheme: SwitchThemeData(
           thumbColor: MaterialStateColor.resolveWith((states) {
@@ -431,26 +442,15 @@ class AppModel with ChangeNotifier {
           unselectedLabelStyle: textTheme.labelSmall,
           showSelectedLabels: true,
           showUnselectedLabels: true,
-          backgroundColor: Colors.white,
         ),
         popupMenuTheme: const PopupMenuThemeData(
-          color: Colors.white,
           shape: RoundedRectangleBorder(),
         ),
         dialogTheme: const DialogThemeData(
-          backgroundColor: Colors.white,
           shape: RoundedRectangleBorder(),
         ),
-        cardColor: Colors.white,
-        textButtonTheme: TextButtonThemeData(
-          style: TextButton.styleFrom(
-            foregroundColor: Colors.black,
-          ),
-        ),
-        listTileTheme: ListTileThemeData(
+        listTileTheme: const ListTileThemeData(
           dense: true,
-          selectedTileColor: Colors.grey.shade300,
-          selectedColor: Colors.black,
           horizontalTitleGap: 0,
         ),
         inputDecorationTheme: const InputDecorationTheme(
@@ -475,19 +475,20 @@ class AppModel with ChangeNotifier {
           trackHeight: 2,
           thumbShape: RoundSliderThumbShape(enabledThumbRadius: 6),
         ),
-        colorScheme: ColorScheme.fromSwatch()
-            .copyWith(
-              primary: Colors.red,
-              secondary: Colors.red,
-              brightness: Brightness.light,
-            )
-            .copyWith(background: Colors.white),
       );
 
   /// Shows when the current mode is a dark theme.
   ThemeData get darkTheme => ThemeData(
-        scaffoldBackgroundColor: Colors.black,
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: _seedColor,
+          brightness: Brightness.dark,
+        ),
         textTheme: textTheme,
+        appBarTheme: const AppBarTheme(
+          elevation: 0,
+          centerTitle: false,
+        ),
         switchTheme: SwitchThemeData(
           thumbColor: MaterialStateColor.resolveWith((states) {
             return states.contains(MaterialState.selected)
@@ -500,12 +501,6 @@ class AppModel with ChangeNotifier {
                 : Colors.grey;
           }),
         ),
-        appBarTheme: const AppBarTheme(
-          elevation: 0,
-          centerTitle: false,
-          backgroundColor: Colors.black,
-          foregroundColor: Colors.white,
-        ),
         bottomNavigationBarTheme: BottomNavigationBarThemeData(
           elevation: 0,
           type: BottomNavigationBarType.fixed,
@@ -513,26 +508,15 @@ class AppModel with ChangeNotifier {
           unselectedLabelStyle: textTheme.labelSmall,
           showSelectedLabels: true,
           showUnselectedLabels: true,
-          backgroundColor: Colors.black,
         ),
         popupMenuTheme: const PopupMenuThemeData(
-          color: Color.fromARGB(255, 30, 30, 30),
           shape: RoundedRectangleBorder(),
         ),
         dialogTheme: const DialogThemeData(
-          backgroundColor: Color.fromARGB(255, 30, 30, 30),
           shape: RoundedRectangleBorder(),
         ),
-        cardColor: const Color.fromARGB(255, 30, 30, 30),
-        textButtonTheme: TextButtonThemeData(
-          style: TextButton.styleFrom(
-            foregroundColor: Colors.white,
-          ),
-        ),
-        listTileTheme: ListTileThemeData(
+        listTileTheme: const ListTileThemeData(
           dense: true,
-          selectedTileColor: Colors.grey.shade600,
-          selectedColor: Colors.white,
           horizontalTitleGap: 0,
         ),
         inputDecorationTheme: const InputDecorationTheme(
@@ -556,13 +540,6 @@ class AppModel with ChangeNotifier {
           trackHeight: 2,
           thumbShape: RoundSliderThumbShape(enabledThumbRadius: 6),
         ),
-        colorScheme: ColorScheme.fromSwatch()
-            .copyWith(
-              primary: Colors.red,
-              secondary: Colors.red,
-              brightness: Brightness.dark,
-            )
-            .copyWith(background: Colors.black),
       );
 
   /// Get the sentence to be used by the [SentenceField] upon card creation.
