@@ -1348,6 +1348,8 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     if (bookUid == null) {
       return;
     }
+    debugPrint('[hibiki-audiobook] initAudiobook bookUid.len=${bookUid.length} '
+        'hash=${bookUid.hashCode} uid=$bookUid');
     final AudiobookRepository repo = AudiobookRepository(appModel.database);
     final Audiobook? audiobook = repo.findByBookUid(bookUid);
 

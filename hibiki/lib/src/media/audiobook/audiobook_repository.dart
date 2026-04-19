@@ -42,10 +42,29 @@ class AudiobookRepository {
   Audiobook? _findByBookUidScanSync(String bookUid) {
     final List<int> ids =
         _isar.audiobooks.where().idProperty().findAllSync();
+    debugPrint('[hibiki-audiobook] findByBookUid scan: target.len=${bookUid.length} '
+        'target.hash=${bookUid.hashCode} ids=$ids');
     for (final int id in ids) {
       try {
         final Audiobook? row = _isar.audiobooks.getSync(id);
-        if (row != null && row.bookUid == bookUid) {
+        if (row == null) continue;
+        final bool match = row.bookUid == bookUid;
+        if (!match) {
+          debugPrint('[hibiki-audiobook] findByBookUid scan: id=$id no-match '
+              'row.len=${row.bookUid.length} row.hash=${row.bookUid.hashCode}');
+          if (row.bookUid.length == bookUid.length) {
+            // 逐字符对比，找首个差异位置
+            for (int i = 0; i < bookUid.length; i++) {
+              if (row.bookUid.codeUnitAt(i) != bookUid.codeUnitAt(i)) {
+                debugPrint('[hibiki-audiobook]   first diff @$i: '
+                    'row=U+${row.bookUid.codeUnitAt(i).toRadixString(16)} '
+                    'target=U+${bookUid.codeUnitAt(i).toRadixString(16)}');
+                break;
+              }
+            }
+          }
+        }
+        if (match) {
           debugPrint('[hibiki-audiobook] findByBookUid: index miss, '
               'recovered via id scan id=$id');
           return row;

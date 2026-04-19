@@ -71,6 +71,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
   @override
   Widget build(BuildContext context) {
     final Audiobook? existing = widget.repo.findByBookUid(widget.bookUid);
+    debugPrint('[hibiki-audiobook] dialog build bookUid.len=${widget.bookUid.length} '
+        'hash=${widget.bookUid.hashCode} existing=${existing != null}');
 
     return AlertDialog(
       title: Text(
@@ -329,6 +331,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       return;
     }
 
+    debugPrint('[hibiki-audiobook] doImport bookUid.len=${widget.bookUid.length} '
+        'hash=${widget.bookUid.hashCode} uid=${widget.bookUid}');
     setState(() => _importing = true);
 
     try {
