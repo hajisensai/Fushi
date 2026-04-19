@@ -1,16 +1,79 @@
+import 'package:flutter/foundation.dart';
 import 'package:isar/isar.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_health.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 
 /// 有声书数据访问层，封装所有 Isar 查询。
+///
+/// 查询 **优先** 走 `.where().bookUidEqualTo(...)` 命中 hash 索引；失败时回退
+/// 到 "遍历 id → 逐条 get" 的扫描（同 [sweepCorrupt] 的兜底手段）：
+///
+/// 1. `.filter().bookUidEqualTo(...)` 是全表扫描 + 内存反序列化，只要 Isar
+///    里存在一条字段字节损坏的旧记录（历史导入流程写脏的），扫到它就会抛
+///    `FormatException: Unexpected extension byte`，整个查询 ErrorWidget。
+///    所以不能用 filter。
+/// 2. 实测 Isar hash 索引在 bookUid 是 "URL + 日文长串" 这类字符串时 **put
+///    写得进但 `bookUidEqualTo` 查不到**（写入时和查询时对同一字符串算出的
+///    hash 不一致，疑似 Isar 停止维护遗留的 bug）。只靠 where 会回到 "Audiobook
+///    已保存但永远找不到" 的状态。
+/// 3. 回退路径用 `idProperty()` 拿 id 列表（不反序列化记录体），对每个 id
+///    单独 `get(id)` 读出对象，读失败（脏记录）的静默跳过，读成功后比 bookUid。
+///    既避开索引 bug，也避开某一条脏记录把整次查询带崩。
 class AudiobookRepository {
+  /// 绑定一个已经打开的 [Isar] 实例供后续查询使用。
   const AudiobookRepository(this._isar);
 
   final Isar _isar;
 
   /// 按书的 uniqueKey 查找挂载的 [Audiobook]，未找到返回 null。
+  ///
+  /// 先 hash 索引，失败走 id 遍历兜底（见类注释）。
   Audiobook? findByBookUid(String bookUid) {
-    return _isar.audiobooks.filter().bookUidEqualTo(bookUid).findFirstSync();
+    final Audiobook? byIndex =
+        _isar.audiobooks.where().bookUidEqualTo(bookUid).findFirstSync();
+    if (byIndex != null) {
+      return byIndex;
+    }
+    return _findByBookUidScanSync(bookUid);
+  }
+
+  /// 同步版的 "遍历 id → 逐条 get" 回退查找。仅在 [findByBookUid] 的同步路径
+  /// 里用。写事务中要用 async 版本的 [_findByBookUidScanAsync]。
+  Audiobook? _findByBookUidScanSync(String bookUid) {
+    final List<int> ids =
+        _isar.audiobooks.where().idProperty().findAllSync();
+    for (final int id in ids) {
+      try {
+        final Audiobook? row = _isar.audiobooks.getSync(id);
+        if (row != null && row.bookUid == bookUid) {
+          debugPrint('[hibiki-audiobook] findByBookUid: index miss, '
+              'recovered via id scan id=$id');
+          return row;
+        }
+      } catch (_) {
+        // 脏记录，跳过（sweepCorrupt 会专门清理）。
+      }
+    }
+    return null;
+  }
+
+  /// async 版，用在 [Isar.writeTxn] 内。
+  Future<Audiobook?> _findByBookUidScanAsync(String bookUid) async {
+    final List<int> ids =
+        await _isar.audiobooks.where().idProperty().findAll();
+    for (final int id in ids) {
+      try {
+        final Audiobook? row = await _isar.audiobooks.get(id);
+        if (row != null && row.bookUid == bookUid) {
+          debugPrint('[hibiki-audiobook] findByBookUid(txn): index miss, '
+              'recovered via id scan id=$id');
+          return row;
+        }
+      } catch (_) {
+        // skip corrupt
+      }
+    }
+    return null;
   }
 
   /// 查询指定书+章节的所有 [AudioCue]（已按 sentenceIndex 排序）。
@@ -19,9 +82,9 @@ class AudiobookRepository {
     required String chapterHref,
   }) {
     return _isar.audioCues
-        .filter()
+        .where()
         .bookUidEqualTo(bookUid)
-        .and()
+        .filter()
         .chapterHrefEqualTo(chapterHref)
         .sortBySentenceIndex()
         .findAllSync();
@@ -34,7 +97,7 @@ class AudiobookRepository {
   /// 音频控制器跨章节追踪。
   List<AudioCue> cuesForBook(String bookUid) {
     return _isar.audioCues
-        .filter()
+        .where()
         .bookUidEqualTo(bookUid)
         .sortBySentenceIndex()
         .findAllSync();
@@ -47,9 +110,9 @@ class AudiobookRepository {
     required int sentenceIndex,
   }) {
     return _isar.audioCues
-        .filter()
+        .where()
         .bookUidEqualTo(bookUid)
-        .and()
+        .filter()
         .chapterHrefEqualTo(chapterHref)
         .and()
         .sentenceIndexEqualTo(sentenceIndex)
@@ -65,9 +128,9 @@ class AudiobookRepository {
     await _isar.writeTxn(() async {
       // 删除旧数据
       final List<int> oldIds = await _isar.audioCues
-          .filter()
+          .where()
           .bookUidEqualTo(bookUid)
-          .and()
+          .filter()
           .chapterHrefEqualTo(chapterHref)
           .idProperty()
           .findAll();
@@ -90,10 +153,9 @@ class AudiobookRepository {
     required bool value,
   }) async {
     await _isar.writeTxn(() async {
-      final Audiobook? ab = await _isar.audiobooks
-          .filter()
-          .bookUidEqualTo(bookUid)
-          .findFirst();
+      Audiobook? ab =
+          await _isar.audiobooks.where().bookUidEqualTo(bookUid).findFirst();
+      ab ??= await _findByBookUidScanAsync(bookUid);
       if (ab == null) {
         return;
       }
@@ -112,10 +174,9 @@ class AudiobookRepository {
     required AudiobookHealth health,
   }) async {
     await _isar.writeTxn(() async {
-      final Audiobook? ab = await _isar.audiobooks
-          .filter()
-          .bookUidEqualTo(bookUid)
-          .findFirst();
+      Audiobook? ab =
+          await _isar.audiobooks.where().bookUidEqualTo(bookUid).findFirst();
+      ab ??= await _findByBookUidScanAsync(bookUid);
       if (ab == null) {
         return;
       }
@@ -125,21 +186,122 @@ class AudiobookRepository {
   }
 
   /// 删除指定书的所有有声书数据（元数据 + 所有 cue）。
+  ///
+  /// 优先走 `.where().bookUidEqualTo(...).idProperty()` 只取 id，绕开目标
+  /// 记录可能存在的字段反序列化失败 —— 脏记录照样能删掉。
+  ///
+  /// 索引命中失败时（见类注释里那条 Isar hash-index bug：URL+日文 bookUid
+  /// 写得进查不出）回退到 id 扫描，逐条 get 比对 bookUid，匹配的收集进
+  /// deleteAll。不然 deleteAll([]) 默默成功，用户看到"点了移除还在"。
   Future<void> deleteAudiobook(String bookUid) async {
     await _isar.writeTxn(() async {
-      final Audiobook? existing = await _isar.audiobooks
-          .filter()
-          .bookUidEqualTo(bookUid)
-          .findFirst();
-      if (existing != null) {
-        await _isar.audiobooks.delete(existing.id);
-      }
-      final List<int> cueIds = await _isar.audioCues
-          .filter()
+      List<int> abIds = await _isar.audiobooks
+          .where()
           .bookUidEqualTo(bookUid)
           .idProperty()
           .findAll();
+      if (abIds.isEmpty) {
+        abIds = await _scanIdsByBookUidAsync<Audiobook>(
+          ids: await _isar.audiobooks.where().idProperty().findAll(),
+          bookUid: bookUid,
+          getById: _isar.audiobooks.get,
+          uidOf: (row) => row.bookUid,
+          label: 'audiobook',
+        );
+      }
+      await _isar.audiobooks.deleteAll(abIds);
+
+      List<int> cueIds = await _isar.audioCues
+          .where()
+          .bookUidEqualTo(bookUid)
+          .idProperty()
+          .findAll();
+      if (cueIds.isEmpty) {
+        cueIds = await _scanIdsByBookUidAsync<AudioCue>(
+          ids: await _isar.audioCues.where().idProperty().findAll(),
+          bookUid: bookUid,
+          getById: _isar.audioCues.get,
+          uidOf: (row) => row.bookUid,
+          label: 'audioCue',
+        );
+      }
       await _isar.audioCues.deleteAll(cueIds);
     });
+  }
+
+  /// 索引未命中时按 id 列表逐条 get，收集 bookUid 匹配的 id。
+  /// 读失败（脏记录）静默跳过。
+  Future<List<int>> _scanIdsByBookUidAsync<T>({
+    required List<int> ids,
+    required String bookUid,
+    required Future<T?> Function(int id) getById,
+    required String Function(T row) uidOf,
+    required String label,
+  }) async {
+    final List<int> hit = [];
+    for (final int id in ids) {
+      try {
+        final T? row = await getById(id);
+        if (row == null) continue;
+        if (uidOf(row) == bookUid) {
+          hit.add(id);
+        }
+      } catch (_) {
+        // skip corrupt
+      }
+    }
+    if (hit.isNotEmpty) {
+      debugPrint('[hibiki-audiobook] deleteAudiobook: index miss for $label, '
+          'recovered via id scan ids=$hit');
+    }
+    return hit;
+  }
+
+  /// 扫全表清理反序列化失败的脏记录。
+  ///
+  /// 场景：历史版本（v1 embedding 补丁期、或某次异常中断的导入）可能把
+  /// 字段字节写坏。正常查询用 `.where()` 能绕开它们，但用户一旦想"移除"
+  /// 那条坏记录（bookUid 本身已不可读），普通 bookUid 查不到。这里按 id
+  /// 逐条 get，失败的直接 delete。
+  ///
+  /// 调用时机建议：app 启动时 or 用户触发"清理有声书数据"按钮。返回删除
+  /// 的脏记录条数。
+  Future<int> sweepCorrupt() async {
+    int removed = 0;
+    final List<int> allAbIds =
+        await _isar.audiobooks.where().idProperty().findAll();
+    final List<int> badAbIds = [];
+    for (final int id in allAbIds) {
+      try {
+        await _isar.audiobooks.get(id);
+      } catch (e) {
+        debugPrint('[hibiki-audiobook] sweepCorrupt: audiobook id=$id '
+            'unreadable, will delete: $e');
+        badAbIds.add(id);
+      }
+    }
+    final List<int> allCueIds =
+        await _isar.audioCues.where().idProperty().findAll();
+    final List<int> badCueIds = [];
+    for (final int id in allCueIds) {
+      try {
+        await _isar.audioCues.get(id);
+      } catch (e) {
+        debugPrint('[hibiki-audiobook] sweepCorrupt: audioCue id=$id '
+            'unreadable, will delete: $e');
+        badCueIds.add(id);
+      }
+    }
+    if (badAbIds.isEmpty && badCueIds.isEmpty) {
+      return 0;
+    }
+    await _isar.writeTxn(() async {
+      await _isar.audiobooks.deleteAll(badAbIds);
+      await _isar.audioCues.deleteAll(badCueIds);
+    });
+    removed = badAbIds.length + badCueIds.length;
+    debugPrint('[hibiki-audiobook] sweepCorrupt: removed $removed records '
+        '(${badAbIds.length} audiobooks, ${badCueIds.length} cues)');
+    return removed;
   }
 }
