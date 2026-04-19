@@ -62,10 +62,13 @@ abstract class BaseTabPageState<T extends BaseTabPage> extends BasePageState {
           builder: (_, __) => const SizedBox.shrink(),
           borderRadius: BorderRadius.zero,
           elevation: 0,
-          backgroundColor: appModel.isDarkMode
-              ? const Color.fromARGB(255, 30, 30, 30)
-              : const Color.fromARGB(255, 229, 229, 229),
-          backdropColor: appModel.isDarkMode ? Colors.black : Colors.white,
+          // M3 token：surfaceContainer 与 AppBar / Scaffold 的 surface tint
+          // 同一体系，深浅色切换由 ColorScheme.fromSeed 自动给出对比度；旧的
+          // Color.fromARGB 30/30/30 与 229/229/229 是 jidoujisho 手调的 M2
+          // 灰阶，在 PR-1 的 seed 下显得突兀。
+          backgroundColor: theme.colorScheme.surfaceContainer,
+          // 打开搜索栏时整屏蒙层：scrim 是 M3 专门给 overlay 用的半透明黑。
+          backdropColor: theme.colorScheme.scrim,
           accentColor: theme.colorScheme.primary,
           scrollPadding: const EdgeInsets.only(top: 6, bottom: 56),
           transitionDuration: Duration.zero,
