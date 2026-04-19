@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 /// Drives the ッツ Ebook Reader's own EPUB import pipeline by simulating a
@@ -22,11 +22,23 @@ class TtuEpubImporter {
     required int serverPort,
     Duration timeout = const Duration(minutes: 5),
   }) async {
+    final Stopwatch sw = Stopwatch()..start();
+    void log(String stage, [String? extra]) {
+      final String s = extra == null
+          ? '[ttu-import ${sw.elapsedMilliseconds}ms] $stage'
+          : '[ttu-import ${sw.elapsedMilliseconds}ms] $stage | $extra';
+      debugPrint(s);
+    }
+
+    log('start', 'file="$filename" bytes=${bytes.length}');
     final String b64 = base64Encode(bytes);
+    log('b64-encoded', 'b64_len=${b64.length}');
+
     final Completer<int> completer = Completer<int>();
     HeadlessInAppWebView? webView;
 
     final String js = _buildDriverJs(b64: b64, filename: filename);
+    log('js-built', 'js_len=${js.length}');
 
     // ttu 是 SPA，onLoadStop 会多次触发（navigation / service-worker 激活等）；
     // 重复执行会把同一份 13MB base64 再塞一次 JS 源码 + 再开一次 ttu 导入，
@@ -41,37 +53,62 @@ class TtuEpubImporter {
         allowUniversalAccessFromFileURLs: true,
       ),
       onLoadStop: (controller, url) async {
+        log('onLoadStop', 'url=$url jsDispatched=$jsDispatched');
         if (jsDispatched) return;
         jsDispatched = true;
         // Manage page may lazy-mount its input; give Svelte a tick.
         await Future<void>.delayed(const Duration(milliseconds: 300));
+        log('evaluateJavascript:begin');
         await controller.evaluateJavascript(source: js);
+        log('evaluateJavascript:done');
       },
       onConsoleMessage: (controller, message) {
+        final String raw = message.message;
         try {
           final Map<String, dynamic> msg =
-              jsonDecode(message.message) as Map<String, dynamic>;
-          if (completer.isCompleted) return;
-          switch (msg['messageType']) {
+              jsonDecode(raw) as Map<String, dynamic>;
+          final String? type = msg['messageType']?.toString();
+          switch (type) {
+            case 'ttu_import_log':
+              log('js:${msg['stage']}', msg['extra']?.toString());
+              return;
             case 'ttu_import_ok':
-              completer.complete((msg['id'] as num).toInt());
-              break;
+              log('ok', 'id=${msg['id']}');
+              if (!completer.isCompleted) {
+                completer.complete((msg['id'] as num).toInt());
+              }
+              return;
             case 'ttu_import_err':
-              completer.completeError(
-                  msg['error']?.toString() ?? 'ttu_import_err');
-              break;
+              log('err', msg['error']?.toString());
+              if (!completer.isCompleted) {
+                completer.completeError(
+                    msg['error']?.toString() ?? 'ttu_import_err');
+              }
+              return;
           }
+          // Non-matching JSON — surface it so we can see unexpected ttu output.
+          log('js:console', raw);
         } catch (_) {
-          // Ignore non-JSON console noise from ttu.
+          // ttu 内部也会 console.log 一些非 JSON 的东西，打出来帮定位。
+          log('js:console-raw', raw);
         }
       },
     );
 
     try {
+      log('webView.run:begin');
       await webView.run();
-      return await completer.future.timeout(timeout);
+      log('webView.run:done');
+      final int id = await completer.future.timeout(timeout, onTimeout: () {
+        log('dart-timeout', 'limit=${timeout.inSeconds}s');
+        throw TimeoutException(
+            'ttu import did not complete within ${timeout.inSeconds}s');
+      });
+      log('return', 'id=$id');
+      return id;
     } finally {
       await webView.dispose();
+      log('webView.dispose');
     }
   }
 
@@ -88,14 +125,26 @@ class TtuEpubImporter {
     return '''
 (async function() {
   const post = (obj) => console.log(JSON.stringify(obj));
+  const t0 = Date.now();
+  const logStage = (stage, extra) => post({
+    messageType: 'ttu_import_log',
+    stage: stage,
+    extra: (extra == null ? ('+' + (Date.now() - t0) + 'ms')
+                          : ('+' + (Date.now() - t0) + 'ms ' + extra)),
+  });
   try {
+    logStage('driver-start');
+
     // ── 1. Decode base64 payload ─────────────────────────────────────────
     const b64 = "$b64";
+    logStage('atob:begin', 'b64_len=' + b64.length);
     const bin = atob(b64);
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    logStage('atob:done', 'bytes=' + bytes.length);
     const file = new File([bytes], "$safeName",
         { type: 'application/epub+zip' });
+    logStage('file-built');
 
     // ── 2. Record current max id so we can detect the new entry ──────────
     const maxBefore = await new Promise((resolve) => {
@@ -123,6 +172,7 @@ class TtuEpubImporter {
       };
       req.onerror = () => resolve(0);
     });
+    logStage('maxBefore', 'maxBefore=' + maxBefore);
 
     // ── 3. Locate ttu's book-import input on /manage ─────────────────────
     const findInput = () => {
@@ -138,19 +188,23 @@ class TtuEpubImporter {
       input = findInput();
     }
     if (!input) { post({messageType: 'ttu_import_err', error: 'no_input'}); return; }
+    logStage('input-found', 'accept=' + input.getAttribute('accept'));
 
     // ── 4. Drop the File into the input and fire 'change' ────────────────
     const dt = new DataTransfer();
     dt.items.add(file);
     input.files = dt.files;
     input.dispatchEvent(new Event('change', { bubbles: true }));
+    logStage('change-dispatched');
 
     // ── 5. Poll IndexedDB for the new row ────────────────────────────────
     // 大 EPUB（10MB+）在手机上解压 + 解析 + 写入 IDB 常常要一两分钟，
     // 这里给 4.5 分钟余量，与 Dart 侧 5 分钟总 timeout 对齐。
     const pollDeadline = Date.now() + 270000;
+    let tick = 0;
     while (Date.now() < pollDeadline) {
       await new Promise(r => setTimeout(r, 500));
+      tick++;
       const newId = await new Promise((resolve) => {
         const req = indexedDB.open('books');
         req.onsuccess = (e) => {
@@ -167,11 +221,17 @@ class TtuEpubImporter {
         };
         req.onerror = () => resolve(0);
       });
+      // 每 10 次 tick（~5s）汇报一次，避免刷屏。
+      if (tick % 10 === 0) {
+        logStage('poll', 'tick=' + tick + ' newId=' + newId + ' maxBefore=' + maxBefore);
+      }
       if (newId > maxBefore) {
+        logStage('poll-hit', 'id=' + newId + ' after_tick=' + tick);
         post({messageType: 'ttu_import_ok', id: newId});
         return;
       }
     }
+    logStage('poll-exhausted', 'ticks=' + tick);
     post({messageType: 'ttu_import_err', error: 'import_timeout'});
   } catch (err) {
     post({messageType: 'ttu_import_err', error: String(err)});
