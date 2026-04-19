@@ -1365,7 +1365,11 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       }
 
       final AudiobookPlayerController controller = AudiobookPlayerController();
-      await controller.load(audiobook: audiobook, audioFiles: audioFiles);
+      await controller.load(
+        audiobook: audiobook,
+        audioFiles: audioFiles,
+        initialFollowAudio: repo.readFollowAudio(bookUid),
+      );
       controller.addListener(_onCueChanged);
       _wireFollowAudio(controller, bookUid: bookUid, repo: repo);
 

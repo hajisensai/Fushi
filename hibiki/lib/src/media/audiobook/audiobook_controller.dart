@@ -46,7 +46,8 @@ class AudiobookPlayerController extends ChangeNotifier {
   // ── PR8b: Follow audio ────────────────────────────────────────────────────
 
   /// 持久化后的 Follow audio 开关。UI 监听这个 ValueNotifier 切换磁铁图标。
-  /// 值以 [Audiobook.followAudio] 为准（加载时初始化，写入靠 [setFollowAudio]）。
+  /// 值由 [load] 的 `initialFollowAudio` 初始化（调用方从 Hive 读），写入
+  /// 靠 [setFollowAudio] 经 [onFollowAudioPersist] 落 Hive。
   final ValueNotifier<bool> followAudio = ValueNotifier<bool>(false);
 
   /// cue 跨章回调。仅当 cue 的 textFragmentId 能解码出 sectionIndex 且
@@ -63,7 +64,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// Follow audio 开关变化时的持久化回调。Reader 页面 attach audiobook 时
   /// 装入这个字段（一般是 `(v) => repo.updateFollowAudio(bookUid, v)`），
   /// [setFollowAudio] 内部调用。独立于按钮 UI 让 play bar 只翻内存状态
-  /// 不用知道 Isar。
+  /// 不用知道 Hive。
   Future<void> Function(bool value)? onFollowAudioPersist;
 
   /// 上一条 cue 解码出的 sectionIndex，用来和新 cue 比对是否跨章。
@@ -85,19 +86,22 @@ class AudiobookPlayerController extends ChangeNotifier {
 
   /// 加载有声书并配置音频会话。
   ///
-  /// [audiobook]  有声书元数据（已存入 Isar）。
-  /// [audioFiles] 按顺序排列的音频文件列表（与 AudioCue.audioFileIndex 对应）。
+  /// [audiobook]           有声书元数据（已存入 Isar）。
+  /// [audioFiles]          按顺序排列的音频文件列表（与 AudioCue.audioFileIndex 对应）。
+  /// [initialFollowAudio]  Follow audio 开关初值；调用方应从
+  ///                       `AudiobookRepository.readFollowAudio` 取得。
   ///
   /// 加载完成后会从 Hive (`appModel` box) 读取上次保存的播放位置并
   /// `seek` 过去，避免页面重建（背景回前台 / 路由重建）时音频从头开始。
   Future<void> load({
     required Audiobook audiobook,
     required List<File> audioFiles,
+    bool initialFollowAudio = false,
   }) async {
     _audiobook = audiobook;
-    // 从持久化记录恢复 Follow audio 开关；旧记录为 null，回退为 false。
-    // 不触发 onCrossChapter —— 新书没有历史 cue，_lastCueSectionIndex 清零。
-    followAudio.value = audiobook.followAudio ?? false;
+    // Follow audio 状态由调用方从 Hive 读出传入；不触发 onCrossChapter ——
+    // 新书没有历史 cue，_lastCueSectionIndex 清零。
+    followAudio.value = initialFollowAudio;
     _lastCueSectionIndex = null;
 
     await _player.stop();
@@ -345,8 +349,8 @@ class AudiobookPlayerController extends ChangeNotifier {
     }
   }
 
-  /// 翻转 Follow audio 开关并经 [onFollowAudioPersist] 落库。相同值调用
-  /// 不 notify 也不写库。持久化失败不回滚内存状态——下次启动时从 Isar
+  /// 翻转 Follow audio 开关并经 [onFollowAudioPersist] 落 Hive。相同值调用
+  /// 不 notify 也不写库。持久化失败不回滚内存状态——下次启动时从 Hive
   /// 读回会自动纠偏，比"静默回滚"更易排查。
   void setFollowAudio(bool value) {
     if (followAudio.value == value) return;

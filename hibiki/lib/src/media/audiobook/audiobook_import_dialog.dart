@@ -141,22 +141,24 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     IconData icon;
     Color color;
     String label;
-    final int pct = health.ratePct ?? 0;
+    // pct 为 null 时多半是历史脏记录（见 AudiobookHealth.fromAudiobook 的 clamp
+    // 注释）——显示 "?" 而非 0%，避免用绿色对勾配一个假的 0%。
+    final String pctStr = health.ratePct?.toString() ?? '?';
     final String? reason = health.reason;
     final String tail = (reason == null || reason.isEmpty) ? '' : ' · $reason';
     switch (health.kind) {
       case HealthKind.ok:
         icon = Icons.check_circle;
         color = Colors.green;
-        label = 'Sasayaki $pct%$tail';
+        label = 'Sasayaki $pctStr%$tail';
       case HealthKind.partial:
         icon = Icons.warning_amber;
         color = Colors.amber;
-        label = 'Sasayaki $pct%$tail';
+        label = 'Sasayaki $pctStr%$tail';
       case HealthKind.failed:
         icon = Icons.error_outline;
         color = Colors.red;
-        label = 'Sasayaki $pct%$tail';
+        label = 'Sasayaki $pctStr%$tail';
       case HealthKind.running:
       case HealthKind.unrun:
       case HealthKind.notApplicable:

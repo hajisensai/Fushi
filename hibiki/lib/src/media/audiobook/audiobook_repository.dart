@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
+import 'package:hive/hive.dart';
 import 'package:isar/isar.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_health.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 
 /// 有声书数据访问层，封装所有 Isar 查询。
@@ -37,8 +37,8 @@ class AudiobookRepository {
     return _findByBookUidScanSync(bookUid);
   }
 
-  /// 同步版的 "遍历 id → 逐条 get" 回退查找。仅在 [findByBookUid] 的同步路径
-  /// 里用。写事务中要用 async 版本的 [_findByBookUidScanAsync]。
+  /// "遍历 id → 逐条 get" 回退查找。仅在 [findByBookUid] 同步路径里用；
+  /// 写事务路径当前没有读-改-写的需求（Follow audio / 健康度都不再落 Isar）。
   Audiobook? _findByBookUidScanSync(String bookUid) {
     final List<int> ids =
         _isar.audiobooks.where().idProperty().findAllSync();
@@ -71,26 +71,6 @@ class AudiobookRepository {
         }
       } catch (e) {
         debugPrint('[hibiki-audiobook] findByBookUid scan: id=$id READ FAILED: $e');
-      }
-    }
-    return null;
-  }
-
-  /// async 版，用在 [Isar.writeTxn] 内。
-  Future<Audiobook?> _findByBookUidScanAsync(String bookUid) async {
-    final List<int> ids =
-        await _isar.audiobooks.where().idProperty().findAll();
-    for (final int id in ids) {
-      try {
-        final Audiobook? row = await _isar.audiobooks.get(id);
-        if (row != null && row.bookUid == bookUid) {
-          debugPrint('[hibiki-audiobook] findByBookUid(txn): index miss, '
-              'recovered via id scan id=$id');
-          return row;
-        }
-      } catch (e) {
-        debugPrint('[hibiki-audiobook] findByBookUid(txn) scan: id=$id '
-            'READ FAILED: $e');
       }
     }
     return null;
@@ -177,60 +157,33 @@ class AudiobookRepository {
     }
   }
 
-  /// 更新指定书的 Follow audio 开关。未找到 [Audiobook] 时静默跳过。
+  /// Follow audio 开关的 Hive key 前缀。
+  ///
+  /// 不再落 Isar 字段：长 CJK bookUid 的记录第二次 `put` 会把 matchRatePct
+  /// 等字节写坏（曾见过 pct=33554526 的回读值）。改用 Hive KV，导入后 Isar
+  /// 记录就不再被 put。`Audiobook.followAudio` 字段作为 Isar schema 兼容
+  /// 保留，只在导入时一次性写入默认值。
+  static const String _kFollowAudioKeyPrefix = 'audiobook_follow_';
+
+  Box? _prefsBox() {
+    if (!Hive.isBoxOpen('appModel')) return null;
+    return Hive.box('appModel');
+  }
+
+  /// 读取 Follow audio 开关，未设置回退 false。
+  bool readFollowAudio(String bookUid) {
+    final Object? raw = _prefsBox()?.get('$_kFollowAudioKeyPrefix$bookUid');
+    return raw is bool ? raw : false;
+  }
+
+  /// 写入 Follow audio 开关。Hive 未就绪时静默跳过。
   Future<void> updateFollowAudio({
     required String bookUid,
     required bool value,
   }) async {
-    await _isar.writeTxn(() async {
-      Audiobook? ab =
-          await _isar.audiobooks.where().bookUidEqualTo(bookUid).findFirst();
-      ab ??= await _findByBookUidScanAsync(bookUid);
-      if (ab == null) {
-        return;
-      }
-      ab.followAudio = value;
-      await _isar.audiobooks.put(ab);
-    });
-  }
-
-  /// 更新指定书的健康度指标。未找到 [Audiobook] 时静默跳过。
-  ///
-  /// 拆开写是因为导入流程是"先保存 Audiobook → 再跑匹配（耗时）→ 最后
-  /// 写健康度"，不能把 matcher 塞进 saveAudiobook 事务里（matcher 跑在
-  /// isolate，writeTxn 会卡 UI 线程直到 isolate 回来）。
-  Future<void> updateHealth({
-    required String bookUid,
-    required AudiobookHealth health,
-  }) async {
-    int? touchedId;
-    await _isar.writeTxn(() async {
-      Audiobook? ab =
-          await _isar.audiobooks.where().bookUidEqualTo(bookUid).findFirst();
-      ab ??= await _findByBookUidScanAsync(bookUid);
-      if (ab == null) {
-        debugPrint('[hibiki-audiobook] updateHealth: no record for bookUid.hash='
-            '${bookUid.hashCode}');
-        return;
-      }
-      debugPrint('[hibiki-audiobook] updateHealth: pre-put id=${ab.id} '
-          'bookUid.hash=${ab.bookUid.hashCode} '
-          'kind=${health.kind.name} pct=${health.ratePct} '
-          'reason.len=${health.reason?.length ?? -1}');
-      health.packInto(ab);
-      touchedId = await _isar.audiobooks.put(ab);
-    });
-    if (touchedId != null) {
-      try {
-        final Audiobook? readBack = await _isar.audiobooks.get(touchedId!);
-        debugPrint('[hibiki-audiobook] updateHealth readback id=$touchedId '
-            'ok=${readBack != null} '
-            'bookUid.hash=${readBack?.bookUid.hashCode}');
-      } catch (e) {
-        debugPrint('[hibiki-audiobook] updateHealth readback id=$touchedId '
-            'THREW: $e');
-      }
-    }
+    final Box? box = _prefsBox();
+    if (box == null) return;
+    await box.put('$_kFollowAudioKeyPrefix$bookUid', value);
   }
 
   /// 删除指定书的所有有声书数据（元数据 + 所有 cue）。
