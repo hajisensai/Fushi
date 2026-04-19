@@ -89,6 +89,14 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   /// controller 端遇到 -1 直接 return 不触发跨章逻辑。
   int _currentTtuSection = -1;
 
+  /// 上次调 applySasayakiCues 的 section + rootTextLen。
+  /// 对齐 JS 侧 `__hoshiSasayakiAppliedForSection`，防同一挂载周期里
+  /// sasayakiMountedSection 连发多条消息导致重复 apply（apply 本身会包
+  /// 大量 span，代价不小）。JS 侧也有 guard，这里再挡一层减少 console bridge
+  /// 开销。
+  int _lastSasayakiAppliedSection = -1;
+  int _lastSasayakiAppliedRootLen = -1;
+
   @override
   void initState() {
     super.initState();
@@ -564,6 +572,9 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         break;
       case 'sectionChanged':
         _handleTtuSectionChanged(messageJson);
+        break;
+      case 'sasayakiMountedSection':
+        await _handleSasayakiMountedSection(messageJson);
         break;
       default:
         // Unknown types (audiobook bridge diagnostics etc.) → 打日志方便排查
@@ -1804,6 +1815,45 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     } catch (e) {
       debugPrint('[hibiki-audiobook] pill tap requestSectionNav failed: $e');
       Fluttertoast.showToast(msg: 'Follow audio: 跳章失败');
+    }
+  }
+
+  /// 收到 JS 侧 `sasayakiMountedSection` 事件（`__hoshiHighlightSasayaki`
+  /// 在 rootTextLen 变化时测出挂载段后主动打）：对齐 Sasayaki 原版
+  /// reader.js 的 applySasayakiCues 入口，把该段所有 Sasayaki cue 批量预包
+  /// 成 `<span class="hoshi-sasayaki-cue">`，塞进 JS 侧 cueMap。
+  ///
+  /// 之后每条 cue 高亮走 `__hoshiHighlightSasayakiCueById` 的 O(1) Map 查表，
+  /// 不再每句 TreeWalker 全章扫一遍。未命中（跨节点 cue / 该段还没 apply）
+  /// 由 JS 自身 fallback 到旧的 `__hoshiHighlightSasayaki` 偏移定位路径。
+  Future<void> _handleSasayakiMountedSection(Map<String, dynamic> json) async {
+    final int mounted = (json['mountedSection'] as num?)?.toInt() ?? -1;
+    final int rootLen = (json['rootTotalNormChars'] as num?)?.toInt() ?? -1;
+    if (mounted < 0) return;
+    final AudiobookPlayerController? controller = _audiobookController;
+    if (controller == null || !_controllerInitialised) return;
+    // 同段 + 同 rootLen 已 apply 过就跳过。换章 ttu 会换 innerHTML，
+    // rootLen 通常变化；相同是少数 idempotent 路径（例如重复收到事件）。
+    if (_lastSasayakiAppliedSection == mounted &&
+        _lastSasayakiAppliedRootLen == rootLen) {
+      return;
+    }
+    final List<AudioCue> cues = controller.sasayakiCuesForSection(mounted);
+    if (cues.isEmpty) return;
+    _lastSasayakiAppliedSection = mounted;
+    _lastSasayakiAppliedRootLen = rootLen;
+    try {
+      await AudiobookBridge.applySasayakiCues(
+        _controller,
+        sectionIndex: mounted,
+        cues: cues,
+      );
+    } catch (e) {
+      debugPrint('[hibiki-audiobook] applySasayakiCues failed: $e');
+      // apply 失败不致命：高亮路径的 fallback 会走旧 walker 定位。下次
+      // mountedSection 事件仍有机会重试（清 guard 以允许重试）。
+      _lastSasayakiAppliedSection = -1;
+      _lastSasayakiAppliedRootLen = -1;
     }
   }
 

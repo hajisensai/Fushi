@@ -429,6 +429,27 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 这个值传过去。
   bool get shouldRevealCurrentCue => followAudio.value && _hasPlayedOnce;
 
+  /// 返回 [_chapterCues] 中解码成 Sasayaki 且 sectionIndex 匹配给定值的
+  /// cue 列表。对齐 Sasayaki 原版 reader.js 的 `applySasayakiCues(cues)`：
+  /// ttu 切章时，reader 调用这个把"当前挂载段"的所有 cue 一次性批量传给
+  /// WebView，JS 侧提前包好 `<span>` 存进 cueId→spans Map，之后每句高亮
+  /// 只要 O(1) Map 查表，不再每次 TreeWalker 扫归一化字符。
+  ///
+  /// Sasayaki 路径一本书只有一个音频"章"（cue 列表扁平），所以 [_chapterCues]
+  /// 实际就是全书 cue。这里按 `SasayakiMatchCodec` 解码过滤出目标段，
+  /// 不命中 / SMIL/JSON 路径的 cue 自然被跳过。
+  List<AudioCue> sasayakiCuesForSection(int sectionIndex) {
+    final List<AudioCue> out = <AudioCue>[];
+    for (final AudioCue cue in _chapterCues) {
+      final SasayakiFragment? frag =
+          SasayakiMatchCodec.tryDecode(cue.textFragmentId);
+      if (frag == null) continue;
+      if (frag.sectionIndex != sectionIndex) continue;
+      out.add(cue);
+    }
+    return out;
+  }
+
   /// 对齐 Sasayaki SasayakiPlayer.updateCue 的 if/else 分支：
   /// `cue.chapterIndex == currentIndex` 走 displayCue，否则在 autoScroll +
   /// hasPlayedOnce 时缓存 pendingCue + 触发 loadChapter。

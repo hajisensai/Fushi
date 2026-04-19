@@ -916,6 +916,242 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
     window.__hoshiStopTicker();
   }
 };
+
+// ── 章节挂载时批量预包 span + Map 缓存 ─────────────────────────────────
+// 对齐 Sasayaki 原版 reader.js 的 applySasayakiCues / cueWrappers Map /
+// highlightSasayakiCue(id) 模型。动机：原有 __hoshiHighlightSasayaki 每次
+// 高亮都 TreeWalker 扫一遍整章归一化字符再切 Range，每句触发一次，成本高；
+// 改成"章节挂载时一次性遍历，按 normChar 偏移把这一章所有 cue 预先包成
+// <span class="hoshi-sasayaki-cue" data-sasayaki-cue-id="...">，cueKey → spans[]
+// 塞进 Map"，运行期 O(1) 查表加 class 即可。
+//
+// cueKey = Dart 侧 cue.textFragmentId（形如 "sasayaki://s=0&ns=100&ne=120"），
+// 稳定唯一，不需要单独 id 空间。
+//
+// 降级：apply 失败（cue 跨节点、跨段、offsetMissing 等）时 Map 里没有 key，
+// __hoshiHighlightSasayakiCueById 会自己回退到旧的偏移定位路径 __hoshiHighlightSasayaki，
+// 所以全章匹配率不是 100% 也能工作。
+window.__hoshiSasayakiCueMap = window.__hoshiSasayakiCueMap || null;
+window.__hoshiSasayakiAppliedForSection =
+  (typeof window.__hoshiSasayakiAppliedForSection === 'number')
+    ? window.__hoshiSasayakiAppliedForSection : -1;
+window.__hoshiSasayakiAppliedRootLen =
+  (typeof window.__hoshiSasayakiAppliedRootLen === 'number')
+    ? window.__hoshiSasayakiAppliedRootLen : -1;
+
+window.__hoshiClearSasayakiApplied = function() {
+  // 卸载上一次挂载章节留下的 span 包裹：ttu 切章时 .book-content-container
+  // 的旧 innerHTML 会被卸掉，理论上包裹也跟着消失；保留这个方法做显式
+  // cleanup，用在"同一章重复 apply 前先解包"的场景（例如 refs 重新载入）。
+  if (!window.__hoshiSasayakiCueMap) return;
+  try {
+    var it = window.__hoshiSasayakiCueMap.values();
+    var step = it.next();
+    while (!step.done) {
+      var spans = step.value;
+      for (var i = 0; i < spans.length; i++) {
+        var sp = spans[i];
+        var p = sp.parentNode;
+        if (!p) continue;
+        while (sp.firstChild) p.insertBefore(sp.firstChild, sp);
+        p.removeChild(sp);
+        if (p.normalize) p.normalize();
+      }
+      step = it.next();
+    }
+  } catch (e) {
+    // Map 迭代失败不致命；下次 apply 会重建。
+  }
+  window.__hoshiSasayakiCueMap = null;
+};
+
+window.__hoshiApplySasayakiCues = function(sectionIndex, cuesJson) {
+  // cuesJson：[{key, ns, ne}, ...]，ns/ne 是**段内归一化字符偏移**（Sasayaki
+  // 路径 ttu 只挂当前段，不是全书字符）。按 ns 升序排好；调用方保证 ns 单调
+  // 不减且 ne >= ns。TreeWalker 一次线性扫，累积 normPos，匹配到就切 Range 包。
+  var cues;
+  try {
+    cues = (typeof cuesJson === 'string') ? JSON.parse(cuesJson) : cuesJson;
+  } catch (e) {
+    console.log(JSON.stringify({
+      'hibiki-message-type': 'sasayakiApplyParseErr',
+      'error': String(e)
+    }));
+    return;
+  }
+  if (!Array.isArray(cues) || cues.length === 0) {
+    console.log(JSON.stringify({
+      'hibiki-message-type': 'sasayakiApplySkip',
+      'reason': 'no_cues',
+      'sectionIndex': sectionIndex
+    }));
+    return;
+  }
+  var root = document.querySelector('.book-content-container') ||
+             document.querySelector('.book-content');
+  if (!root) {
+    console.log(JSON.stringify({
+      'hibiki-message-type': 'sasayakiApplyNoRoot'
+    }));
+    return;
+  }
+  var rootTextLen = root.textContent ? root.textContent.length : 0;
+  if (rootTextLen < 80) {
+    // 封面 / 尚未挂载，别包；等下次 mountedSection 事件。
+    console.log(JSON.stringify({
+      'hibiki-message-type': 'sasayakiApplySkip',
+      'reason': 'root_too_short',
+      'rootTextLen': rootTextLen
+    }));
+    return;
+  }
+  // 同一段 + 同一 root 已经 apply 过就跳过。ttu 切章会换 root innerHTML，
+  // rootLen 通常随之变化；同段重复 apply 的情况主要来自 sasayakiMountedSection
+  // 连发两条消息。
+  if (window.__hoshiSasayakiAppliedForSection === sectionIndex &&
+      window.__hoshiSasayakiAppliedRootLen === rootTextLen &&
+      window.__hoshiSasayakiCueMap &&
+      window.__hoshiSasayakiCueMap.size > 0) {
+    console.log(JSON.stringify({
+      'hibiki-message-type': 'sasayakiApplySkip',
+      'reason': 'already_applied',
+      'sectionIndex': sectionIndex,
+      'mapSize': window.__hoshiSasayakiCueMap.size
+    }));
+    return;
+  }
+  // 切段/换 root：先卸掉旧包裹，释放旧 Map。
+  window.__hoshiClearSasayakiApplied();
+  window.__hoshiSasayakiCueMap = new Map();
+
+  // 按 ns 升序，防止外部没排好序；同 ns 按 ne 升序作次序。
+  cues.sort(function(a, b) {
+    if (a.ns !== b.ns) return a.ns - b.ns;
+    return (a.ne || 0) - (b.ne || 0);
+  });
+
+  // 采集 text node + 归一化字符 → 原节点/节点内 offset 的映射，一次性建好
+  // 再批量包 span。不能边扫边 surroundContents：一旦包了 span，DOM 结构变，
+  // TreeWalker 的 nextNode 会跳到新插入的 span 内，后续偏移全乱。
+  var fbNodes = [];
+  var fbMap = [];   // [nodeIdx, charIdx]，长度 = 归一化字符总数
+  var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: function(n) {
+      var p = n.parentNode;
+      while (p && p !== root) {
+        var tag = p.nodeName ? p.nodeName.toLowerCase() : '';
+        if (tag === 'rt' || tag === 'rp') return NodeFilter.FILTER_REJECT;
+        p = p.parentNode;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    }
+  });
+  var node;
+  while ((node = walker.nextNode())) {
+    var ti = fbNodes.length;
+    fbNodes.push(node);
+    var text = node.nodeValue || '';
+    for (var i = 0; i < text.length; i++) {
+      if (window.__hoshiIsSkippable(text.charCodeAt(i))) continue;
+      fbMap.push([ti, i]);
+    }
+  }
+
+  var applied = 0;
+  var skippedOob = 0;    // 偏移越界
+  var skippedCross = 0;  // 跨 text node（当前用 surroundContents，不支持跨节点；留给 fallback 处理）
+  for (var ci = 0; ci < cues.length; ci++) {
+    var c = cues[ci];
+    var ns = c.ns | 0;
+    var ne = c.ne | 0;
+    if (ne <= ns) { skippedOob++; continue; }
+    if (ns < 0 || ne > fbMap.length) { skippedOob++; continue; }
+    var sMap = fbMap[ns];
+    var eMap = fbMap[ne - 1];
+    if (!sMap || !eMap) { skippedOob++; continue; }
+    var startNode = fbNodes[sMap[0]];
+    var startOffset = sMap[1];
+    var endNode = fbNodes[eMap[0]];
+    var endOffset = eMap[1] + 1;
+
+    // 跨 text node 的 cue：surroundContents 会失败（DOMException）。直接
+    // 跳过留给 __hoshiHighlightSasayakiCueById 的 fallback 用旧路径处理。
+    // 这类 cue 通常是跨 <b>/<rt> 包边的长句，占比很小，性能损失可忽略。
+    if (startNode !== endNode) { skippedCross++; continue; }
+
+    try {
+      var range = document.createRange();
+      range.setStart(startNode, startOffset);
+      range.setEnd(endNode, endOffset);
+      var span = document.createElement('span');
+      span.className = 'hoshi-sasayaki-cue';
+      span.setAttribute('data-sasayaki-cue-id', c.key);
+      range.surroundContents(span);
+      // Map 里存数组：未来要支持跨节点拆分时多段 span 都要加 active。
+      var arr = window.__hoshiSasayakiCueMap.get(c.key);
+      if (!arr) {
+        arr = [];
+        window.__hoshiSasayakiCueMap.set(c.key, arr);
+      }
+      arr.push(span);
+      applied++;
+    } catch (e) {
+      skippedCross++;
+    }
+  }
+
+  window.__hoshiSasayakiAppliedForSection = sectionIndex;
+  window.__hoshiSasayakiAppliedRootLen = rootTextLen;
+
+  console.log(JSON.stringify({
+    'hibiki-message-type': 'sasayakiApplied',
+    'sectionIndex': sectionIndex,
+    'cuesTotal': cues.length,
+    'applied': applied,
+    'skippedOob': skippedOob,
+    'skippedCross': skippedCross,
+    'mapSize': window.__hoshiSasayakiCueMap.size
+  }));
+};
+
+window.__hoshiHighlightSasayakiCueById = function(key, reveal) {
+  if (reveal === undefined) reveal = true;
+  var map = window.__hoshiSasayakiCueMap;
+  var spans = map ? map.get(key) : null;
+  if (!spans || spans.length === 0) {
+    // Map 未建 / 该 cue 跨节点没包进去 → 回退旧 walker 路径。Dart 侧
+    // 不感知，保持单一入口。
+    console.log(JSON.stringify({
+      'hibiki-message-type': 'sasayakiCueMapMiss',
+      'key': key,
+      'hasMap': !!map,
+      'mapSize': map ? map.size : 0
+    }));
+    return false;
+  }
+  // 清旧 active（来自上一条 cue 的这批 span，或者旧偏移路径留下的
+  // hoshi-active）；和旧 wrap span 共用 .hoshi-active class，所以统一 classList。
+  document.querySelectorAll('.hoshi-active').forEach(function(e) {
+    e.classList.remove('hoshi-active');
+  });
+  for (var i = 0; i < spans.length; i++) {
+    spans[i].classList.add('hoshi-active');
+  }
+  console.log(JSON.stringify({
+    'hibiki-message-type': 'sasayakiCueHighlightOk',
+    'key': key,
+    'spanCount': spans.length,
+    'reveal': reveal
+  }));
+  if (reveal) {
+    // 复用现有 ticker：.hoshi-active 选到第一个 span，按页对齐滚动。
+    window.__hoshiHighlight('.hoshi-active', true);
+  } else {
+    window.__hoshiTarget = null;
+    window.__hoshiStopTicker();
+  }
+  return true;
+};
 ''';
 
   /// PR8a 的 Flutter 侧准备：ttu fork 之前就把"调用面"铺好，所有消费者只
@@ -1136,6 +1372,39 @@ window.__hoshiAnnotate = function(chapterHref) {
     );
   }
 
+  /// 对齐 Sasayaki 原版 reader.js 的 `applySasayakiCues(cues)`：ttu 章节
+  /// 挂载完成（或 sasayakiMountedSection 识别出当前段）后，把该段所有
+  /// Sasayaki cue 批量传给 WebView，JS 侧一次性 TreeWalker 扫归一化字符 →
+  /// 按每条 cue 的 (normCharStart, normCharEnd) 包 `<span>` 存进
+  /// `__hoshiSasayakiCueMap`。之后每句高亮就是 Map 查表，不再走 walker。
+  ///
+  /// [cues] 只需包含本段的 Sasayaki cue（非 Sasayaki 的 cue.textFragmentId
+  /// 解码会返回 null，调用方已过滤）。同段重复调用会被 JS 侧 appliedForSection
+  /// 缓存守卫跳过，不会重新包。
+  static Future<void> applySasayakiCues(
+    InAppWebViewController controller, {
+    required int sectionIndex,
+    required List<AudioCue> cues,
+  }) async {
+    final List<Map<String, dynamic>> payload = <Map<String, dynamic>>[];
+    for (final AudioCue cue in cues) {
+      final SasayakiFragment? frag =
+          SasayakiMatchCodec.tryDecode(cue.textFragmentId);
+      if (frag == null) continue;
+      if (frag.sectionIndex != sectionIndex) continue;
+      payload.add(<String, dynamic>{
+        'key': cue.textFragmentId,
+        'ns': frag.normCharStart,
+        'ne': frag.normCharEnd,
+      });
+    }
+    if (payload.isEmpty) return;
+    await controller.evaluateJavascript(
+      source: '__hoshiApplySasayakiCues($sectionIndex, '
+          '${jsonEncode(payload)});',
+    );
+  }
+
   /// 自动标注当前章节的句子（在 [inject] 之后调用）。
   ///
   /// [chapterHref] 用于 click 回传，标识来源章节。
@@ -1173,11 +1442,22 @@ window.__hoshiAnnotate = function(chapterHref) {
     final String raw = cue.textFragmentId;
     final SasayakiFragment? frag = SasayakiMatchCodec.tryDecode(raw);
     if (frag != null) {
-      // 把 cue.text 传过去，JS 高亮后能直接打"期望 vs 实际"对账日志。
+      // 优先走 Sasayaki 原版模型：章节挂载时已经通过 applySasayakiCues
+      // 批量预包 span，运行期只是 Map 查表加 class。cueMap 未命中时 JS 自己
+      // 回退到旧的 __hoshiHighlightSasayaki（TreeWalker + indexOf 回退）
+      // 处理那条 cue，Dart 侧不分支。
+      //
+      // 为什么不让 Dart 根据 JS 返回值自己分支：evaluateJavascript 的返回
+      // 值类型在不同 WebView 实现下不稳定，把控制流放在 JS 里一条链条
+      // 到底更可靠。
       final String cueJson = jsonEncode(cue.text);
       await controller.evaluateJavascript(
-        source: '__hoshiHighlightSasayaki(${frag.sectionIndex}, '
-            '${frag.normCharStart}, ${frag.normCharEnd}, $cueJson, $reveal);',
+        source: '(function(){'
+            'if (!window.__hoshiHighlightSasayakiCueById(${jsonEncode(raw)}, $reveal)) {'
+            '  window.__hoshiHighlightSasayaki(${frag.sectionIndex}, '
+            '    ${frag.normCharStart}, ${frag.normCharEnd}, $cueJson, $reveal);'
+            '}'
+            '})();',
       );
       return;
     }
