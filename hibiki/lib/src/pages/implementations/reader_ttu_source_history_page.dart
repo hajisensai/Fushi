@@ -13,6 +13,7 @@ import 'package:hibiki/src/media/audiobook/audiobook_health.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
+import 'package:hibiki/src/media/audiobook/sasayaki_rematch.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_model.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
 import 'package:hibiki/utils.dart';
@@ -554,14 +555,19 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
 
   /// 长按 ttu EPUB 书架卡片时，在基类 MediaItemDialogPage 里追加
   /// "删除" 与 "导入音频 / 字幕" 按钮；仅对已导入 ttu（mediaIdentifier 含
-  /// `id=`）的书展示。
+  /// `id=`）的书展示。若这本书已经挂了 matcher 格式（SRT/LRC/VTT/ASS）
+  /// 的字幕，额外挂一个"重新匹配"快捷入口，省得每次都要先点"导入音频"
+  /// 进对话框再找按钮。
   @override
   List<Widget> extraActions(MediaItem item) {
     final int? ttuBookId = _parseTtuBookId(item.mediaIdentifier);
     if (ttuBookId == null) {
       return const [];
     }
-    return [
+    final AudiobookRepository abRepo = AudiobookRepository(appModel.database);
+    final Audiobook? ab = abRepo.findByBookUid(item.uniqueKey);
+    final bool canRematch = ab != null && SasayakiRematch.isEligible(ab);
+    return <Widget>[
       _destructiveConfirmButton(
         label: t.dialog_delete,
         onPressed: () => _confirmDeleteEpub(item, ttuBookId),
@@ -570,7 +576,34 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
         onPressed: () => _openAudiobookImport(item, ttuBookId),
         child: Text(t.audiobook_import),
       ),
+      if (canRematch)
+        TextButton.icon(
+          icon: const Icon(Icons.tune, size: 18),
+          onPressed: () => _openRematch(ab, ttuBookId, abRepo),
+          label: const Text('重新匹配'),
+        ),
     ];
+  }
+
+  Future<void> _openRematch(
+    Audiobook ab,
+    int ttuBookId,
+    AudiobookRepository repo,
+  ) async {
+    final int port = ReaderTtuSource.instance
+        .getPortForLanguage(appModel.targetLanguage);
+    // 先关掉 MediaItemDialogPage 自身，sheet 用书架页 context 弹。
+    Navigator.pop(context);
+    await SasayakiRematch.promptAndRun(
+      context: context,
+      ab: ab,
+      repo: repo,
+      ttuBookId: ttuBookId,
+      serverPort: port,
+    );
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   /// 删除按钮统一样式：FilledButton + errorContainer（M3 破坏性操作），
