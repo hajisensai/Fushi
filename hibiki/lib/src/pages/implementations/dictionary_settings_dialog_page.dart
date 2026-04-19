@@ -212,7 +212,7 @@ class _DictionaryDialogPageState extends BasePageState {
       Theme.of(context).unselectedWidgetColor.withOpacity(0.1);
   Color get inactiveButtonColor =>
       Theme.of(context).unselectedWidgetColor.withOpacity(0.05);
-  Color get activeTextColor => Theme.of(context).appBarTheme.foregroundColor!;
+  Color get activeTextColor => Theme.of(context).colorScheme.onSurface;
   Color get inactiveTextColor => Theme.of(context).unselectedWidgetColor;
 
   Widget buildManageDuplicateChecks() {
