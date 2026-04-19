@@ -48,7 +48,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 持久化后的 Follow audio 开关。UI 监听这个 ValueNotifier 切换磁铁图标。
   /// 值由 [load] 的 `initialFollowAudio` 初始化（调用方从 Hive 读），写入
   /// 靠 [setFollowAudio] 经 [onFollowAudioPersist] 落 Hive。
-  final ValueNotifier<bool> followAudio = ValueNotifier<bool>(false);
+  final ValueNotifier<bool> followAudio = ValueNotifier<bool>(true);
 
   /// cue 跨章回调。当 cue 的 textFragmentId 解码出的 sectionIndex 与
   /// reader 当前挂载章节（[getCurrentReaderSection]）不一致、且 [followAudio]
@@ -133,7 +133,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   Future<void> load({
     required Audiobook audiobook,
     required List<File> audioFiles,
-    bool initialFollowAudio = false,
+    bool initialFollowAudio = true,
     int initialDelayMs = 0,
     double initialSpeed = 1.0,
   }) async {

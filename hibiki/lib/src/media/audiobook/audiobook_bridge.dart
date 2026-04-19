@@ -1057,9 +1057,12 @@ window.__hoshiApplySasayakiCues = function(sectionIndex, cuesJson) {
     }
   }
 
+  // 阶段 1：把每条 cue 在 fbNodes/fbMap 上解析成 Range 端点。DOM 还没动，
+  // 所有 node/offset 都对应原始结构。
+  var targets = [];
   var applied = 0;
-  var skippedOob = 0;    // 偏移越界
-  var skippedCross = 0;  // 跨 text node（当前用 surroundContents，不支持跨节点；留给 fallback 处理）
+  var skippedOob = 0;    // ns/ne 越界或 fbMap 取不到
+  var skippedCross = 0;  // 阶段 2 wrap 时抛异常（跨 block 等极端结构）
   for (var ci = 0; ci < cues.length; ci++) {
     var c = cues[ci];
     var ns = c.ns | 0;
@@ -1069,29 +1072,39 @@ window.__hoshiApplySasayakiCues = function(sectionIndex, cuesJson) {
     var sMap = fbMap[ns];
     var eMap = fbMap[ne - 1];
     if (!sMap || !eMap) { skippedOob++; continue; }
-    var startNode = fbNodes[sMap[0]];
-    var startOffset = sMap[1];
-    var endNode = fbNodes[eMap[0]];
-    var endOffset = eMap[1] + 1;
+    targets.push({
+      key: c.key,
+      startNode: fbNodes[sMap[0]],
+      startOffset: sMap[1],
+      endNode: fbNodes[eMap[0]],
+      endOffset: eMap[1] + 1
+    });
+  }
 
-    // 跨 text node 的 cue：surroundContents 会失败（DOMException）。直接
-    // 跳过留给 __hoshiHighlightSasayakiCueById 的 fallback 用旧路径处理。
-    // 这类 cue 通常是跨 <b>/<rt> 包边的长句，占比很小，性能损失可忽略。
-    if (startNode !== endNode) { skippedCross++; continue; }
-
+  // 阶段 2：**倒序** wrap。extractContents 会对起止 text node 做 splitText
+  // 把原 node 截短到起点之前；正序处理则后面 cue 的 fbNodes[k] 还指向这个
+  // 已被截短的 node，setEnd 用原始 offset 会越界 / 命中错误位置。倒序下，
+  // 后面的 cue 先被切走，前面的 cue 范围完全落在未被触碰的前半段里。
+  //
+  // 这条分支吃掉旧版本 70% 被 skippedCross 的跨 text node cue（<ruby>/<rt>
+  // 把一句拆成多个 text node），不再回退到旧 walker 路径。
+  for (var ti = targets.length - 1; ti >= 0; ti--) {
+    var t = targets[ti];
     try {
       var range = document.createRange();
-      range.setStart(startNode, startOffset);
-      range.setEnd(endNode, endOffset);
+      range.setStart(t.startNode, t.startOffset);
+      range.setEnd(t.endNode, t.endOffset);
       var span = document.createElement('span');
       span.className = 'hoshi-sasayaki-cue';
-      span.setAttribute('data-sasayaki-cue-id', c.key);
-      range.surroundContents(span);
-      // Map 里存数组：未来要支持跨节点拆分时多段 span 都要加 active。
-      var arr = window.__hoshiSasayakiCueMap.get(c.key);
+      span.setAttribute('data-sasayaki-cue-id', t.key);
+      span.appendChild(range.extractContents());
+      range.insertNode(span);
+      // Map value 仍用数组，给未来"一句多 span"扩展留口；当前一条 cue
+      // 对应单个 span。
+      var arr = window.__hoshiSasayakiCueMap.get(t.key);
       if (!arr) {
         arr = [];
-        window.__hoshiSasayakiCueMap.set(c.key, arr);
+        window.__hoshiSasayakiCueMap.set(t.key, arr);
       }
       arr.push(span);
       applied++;

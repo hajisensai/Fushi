@@ -180,10 +180,13 @@ class AudiobookRepository {
     return Hive.box('appModel');
   }
 
-  /// 读取 Follow audio 开关，未设置回退 false。
+  /// 读取 Follow audio 开关，未设置回退 true（对齐 Hoshi-Reader iOS 原版
+  /// Sasayaki 的 `autoScroll` UserDefaults 默认值 true：首次打开一本
+  /// 匹配好的有声书，用户不做任何操作就能看到高亮跟随音频滚动）。
+  /// 用户显式关过一次（写入 false）就持久化走 false，不会被这里覆盖。
   bool readFollowAudio(String bookUid) {
     final Object? raw = _prefsBox()?.get('$_kFollowAudioKeyPrefix$bookUid');
-    return raw is bool ? raw : false;
+    return raw is bool ? raw : true;
   }
 
   /// 写入 Follow audio 开关。Hive 未就绪时静默跳过。
