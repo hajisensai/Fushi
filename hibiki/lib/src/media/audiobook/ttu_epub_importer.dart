@@ -77,14 +77,32 @@ class TtuEpubImporter {
   //     ttu 内部 try/catch 把错吞了、调 console.error 时只剩 e.message，
   //     stack 要在 TypeError 构造现场就拍下来。
   const OrigTypeError = globalThis.TypeError;
+  const flatten = (s) => String(s == null ? '' : s).replace(/\\n/g, ' || ');
   function PatchedTypeError(message) {
     const err = new OrigTypeError(message);
     try {
       if (typeof message === 'string' &&
           message.indexOf('Path must be a string') === 0) {
-        safeLog('preload:TypeError-thrown', message + '\\n' + (err.stack || ''));
+        let stack = err.stack;
+        // captureStackTrace 在 V8/Chromium 上把当前调用栈挂到对象 .stack 上。
+        if ((!stack || stack.length < 40) && OrigTypeError.captureStackTrace) {
+          const o = {};
+          try { OrigTypeError.captureStackTrace(o, PatchedTypeError); stack = o.stack; }
+          catch (_) {}
+        }
+        // 再不行就靠 throw+catch 拿当前栈。
+        if (!stack || stack.length < 40) {
+          try { throw new OrigTypeError('probe'); }
+          catch (e) { stack = e.stack; }
+        }
+        safeLog('preload:TypeError-thrown',
+            'msg=' + message + ' | stack_len=' +
+            (stack ? stack.length : 'null') +
+            ' | stack=' + flatten(stack));
       }
-    } catch (_) {}
+    } catch (e) {
+      safeLog('preload:TypeError-hook-err', String(e));
+    }
     return err;
   }
   PatchedTypeError.prototype = OrigTypeError.prototype;
