@@ -396,8 +396,9 @@ class _BookImportDialogState extends State<BookImportDialog> {
           ? null
           : _authorCtrl.text.trim();
 
+      String? tail;
       if (_epubPath != null && _srtPath != null) {
-        await _importEpubWithAlignment(title: title);
+        tail = await _importEpubWithAlignment(title: title);
       } else if (_srtPath != null) {
         await _importSubtitleBook(title: title, author: authorText);
       } else {
@@ -405,7 +406,10 @@ class _BookImportDialogState extends State<BookImportDialog> {
       }
 
       if (mounted) {
-        Fluttertoast.showToast(msg: t.srt_import_success);
+        final String msg = tail == null
+            ? t.srt_import_success
+            : '${t.srt_import_success} · $tail';
+        Fluttertoast.showToast(msg: msg);
         Navigator.pop(context, true);
       }
     } catch (e) {
@@ -479,7 +483,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
   /// EPUB + subtitle (+optional audio) flow: import the real EPUB via ttu,
   /// then attach a Sasayaki-matched [Audiobook] record pointing to the
   /// same `bookUid` the bookshelf will compute for this book.
-  Future<void> _importEpubWithAlignment({required String title}) async {
+  Future<String?> _importEpubWithAlignment({required String title}) async {
     // 1) 导入 EPUB，拿到 ttu IDB 主键。
     final File epubFile = File(_epubPath!);
     final int ttuBookId = await TtuEpubImporter.import(
@@ -518,8 +522,9 @@ class _BookImportDialogState extends State<BookImportDialog> {
     final List<AudioCue> cues = await _parseCues(srtFile, bookUid);
     final String chapterHref = _defaultChapterFor(ext);
 
+    String? matchTail;
     if (ext == 'srt') {
-      await _runSasayakiMatch(sections: sections, cues: cues);
+      matchTail = await _runSasayakiMatch(sections: sections, cues: cues);
     }
 
     // 4) 存 Audiobook（挂 audio 源）+ cues。
@@ -542,37 +547,32 @@ class _BookImportDialogState extends State<BookImportDialog> {
       chapterHref: chapterHref,
       cues: cues,
     );
+
+    return matchTail;
   }
 
   /// 跑 Sasayaki 文本匹配，把 section/normChar 偏移编码写回 cue.textFragmentId。
   /// 失败不抛——cues 仍可落库，只是退化成"整本单章"定位。
-  Future<void> _runSasayakiMatch({
+  /// 返回一段可拼到导入成功 toast 尾巴的匹配率摘要；失败或无可匹配内容时返回 null。
+  Future<String?> _runSasayakiMatch({
     required List<EpubSection> sections,
     required List<AudioCue> cues,
   }) async {
-    if (cues.isEmpty || sections.isEmpty) return;
+    if (cues.isEmpty || sections.isEmpty) return null;
     try {
-      // 大书 + 千条 cue 的 bigram 匹配会跑几秒到十几秒，必须挪到后台 isolate，
-      // 否则主线程 5s+ 无响应 → ANR → 系统杀进程。
+      // 大书 + 千条 cue 的 indexOf 扫描主线程会卡，挪到后台 isolate。
       final MatchResult result = await EpubSrtMatcher.matchInIsolate(
         sections: sections,
         cues: cues,
       );
       SasayakiMatchCodec.applyToCues(cues: cues, result: result);
       debugPrint('[hibiki-import] Sasayaki match: '
-          '${result.matchedCues}/${result.totalCues} '
-          '(rescued=${result.rescuedCues} maxMissRun=${result.maxMissRun})');
-      if (mounted) {
-        final int pct = (result.matchRate * 100).round();
-        final String rescueTag =
-            result.rescuedCues > 0 ? ' +${result.rescuedCues} rescued' : '';
-        Fluttertoast.showToast(
-          msg: 'Sasayaki $pct% '
-              '(${result.matchedCues}/${result.totalCues}$rescueTag)',
-        );
-      }
+          '${result.matchedCues}/${result.totalCues}');
+      final int pct = (result.matchRate * 100).round();
+      return 'Sasayaki $pct% (${result.matchedCues}/${result.totalCues})';
     } catch (e) {
       debugPrint('[hibiki-import] Sasayaki match failed: $e');
+      return null;
     }
   }
 

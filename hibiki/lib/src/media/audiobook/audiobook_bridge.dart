@@ -250,8 +250,8 @@ window.__hoshiHighlight = function(selector) {
   ///   **归一化文本长度**（以及累计起点）。ttu 在渲染时会剥掉 section
   ///   原始 id，所以我们放弃"找章节根"这条路，改为用"整本书归一化偏移"
   ///   在 `.book-content-container` 里定位。
-  /// - `__hoshiIsSkippable(code)`：镜像 Dart 的 `EpubSrtMatcher._isSkippable`
-  ///   归一化规则（空白 / ASCII 标点 / CJK 标点），大写 ASCII 仍计数一次。
+  /// - `__hoshiIsSkippable(code)`：镜像 Dart 的 `EpubSrtMatcher._isKeepable`
+  ///   的反函数。白名单规则（只留假名/汉字/字母数字），其余一律视为可跳过。
   /// - `__hoshiUnwrapSasayaki()`：拆掉上一次 Sasayaki 高亮包裹的 span。
   /// - `__hoshiHighlightSasayaki(s, ns, ne)`：把 (sectionIndex, normChar*)
   ///   换算成全书归一化全局偏移 → 在 `.book-content-container` 里按归一化
@@ -285,7 +285,7 @@ window.__hoshiLoadSasayakiRefs = function(ttuBookId) {
 
         // 每段正文归一化字符数 —— 复用 DOMParser 从原始 elementHtml 中按
         // section.reference 取元素的 textContent 再数字符。必须和 Dart 侧
-        // EpubSrtMatcher._buildIndex 的累加方式严格一致，否则累计起点
+        // `EpubSrtMatcher._buildIndex` 的累加方式严格一致，否则累计起点
         // 会漂移。剥 <rt>/<rp> 的规则也必须和 TtuIdbReader 保持一致，否则
         // 匹配时的偏移基准 vs 运行期高亮基准会错位。
         var parser = new DOMParser();
@@ -348,20 +348,24 @@ window.__hoshiLoadSasayakiRefs = function(ttuBookId) {
 };
 
 window.__hoshiIsSkippable = function(c) {
-  if (c === 0x20 || c === 0x09 || c === 0x0A || c === 0x0D) return true;
-  if (c >= 0x21 && c <= 0x2F) return true;
-  if (c >= 0x3A && c <= 0x40) return true;
-  if (c >= 0x5B && c <= 0x60) return true;
-  if (c >= 0x7B && c <= 0x7E) return true;
-  return (
-    c === 0x3000 || c === 0x3001 || c === 0x3002 || c === 0x300C ||
-    c === 0x300D || c === 0x300E || c === 0x300F || c === 0x301C ||
-    c === 0x301D || c === 0x301E || c === 0x301F || c === 0x2026 ||
-    c === 0x2014 || c === 0x2015 || c === 0xFF01 || c === 0xFF0C ||
-    c === 0xFF0E || c === 0xFF1A || c === 0xFF1B || c === 0xFF1F ||
-    c === 0xFF08 || c === 0xFF09 || c === 0xFF0D || c === 0xFF3B ||
-    c === 0xFF3D || c === 0xFF5B || c === 0xFF5D
-  );
+  // 与 Dart EpubSrtMatcher._isKeepable 对应的"反函数"：只要不在白名单里
+  // 就视为 skippable（不计入 normChar 计数）。白名单必须与 Dart 严格一致，
+  // 否则匹配期写回的 normCharStart/End 与 WebView 运行期计数对不上 → 高亮漂。
+  if (c >= 0x30 && c <= 0x39) return false;   // 0-9
+  if (c >= 0x41 && c <= 0x5A) return false;   // A-Z
+  if (c >= 0x61 && c <= 0x7A) return false;   // a-z
+  if (c === 0x3005 || c === 0x3006 || c === 0x3007) return false; // 々 〆 〇
+  if (c >= 0x3041 && c <= 0x3096) return false; // ぁ-ゖ
+  if (c >= 0x309D && c <= 0x309F) return false; // ゝゞゟ
+  if (c >= 0x30A1 && c <= 0x30FA) return false; // ァ-ヺ
+  if (c >= 0x30FC && c <= 0x30FF) return false; // ー ヽ ヾ ヿ
+  if (c >= 0x3400 && c <= 0x4DBF) return false; // CJK Ext A
+  if (c >= 0x4E00 && c <= 0x9FFF) return false; // CJK Unified
+  if (c >= 0xFF10 && c <= 0xFF19) return false; // ０-９
+  if (c >= 0xFF21 && c <= 0xFF3A) return false; // Ａ-Ｚ
+  if (c >= 0xFF41 && c <= 0xFF5A) return false; // ａ-ｚ
+  if (c >= 0xFF66 && c <= 0xFF9D) return false; // ｦ-ﾝ
+  return true;
 };
 
 window.__hoshiUnwrapSasayaki = function() {

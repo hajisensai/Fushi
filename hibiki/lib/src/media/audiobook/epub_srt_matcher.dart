@@ -3,8 +3,8 @@ import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 
 /// EPUB 一个章节，供 [EpubSrtMatcher] 使用。
 ///
-/// `text` 必须是剥离 HTML 后的纯文本，一般通过 ttu IDB 的 `elementHtml`
-/// 或原始 XHTML 抽取得到。
+/// `text` 必须是剥离 HTML（含 ruby `<rt>/<rp>`）后的纯文本，一般通过 ttu IDB
+/// 的 `elementHtml` 或原始 XHTML 抽取得到。
 class EpubSection {
   const EpubSection({
     required this.index,
@@ -19,8 +19,9 @@ class EpubSection {
 
 /// 单条 cue 在 EPUB 里的匹配结果。
 ///
-/// 偏移以**规范化后**（去掉空白与常见标点、ASCII 小写化）的字符位置给出。
-/// S4 popup/高亮若需要 DOM 坐标，需在渲染时再做一次同规则的反向映射。
+/// 偏移以**规范化后**（白名单保留假名/汉字/字母数字，其余剥掉）的字符位置
+/// 给出。运行时高亮若需要 DOM 坐标，WebView 侧必须用**完全相同的规范化
+/// 规则**（见 `audiobook_bridge.dart::__hoshiIsSkippable`）走 text node 数过来。
 class CueMatch {
   const CueMatch({
     required this.cueSentenceIndex,
@@ -42,6 +43,9 @@ class CueMatch {
   final int sectionIndex;
   final int normCharStart;
   final int normCharEnd;
+
+  /// 精确子串匹配命中 = 1.0，未命中 = 0.0。字段保留是为了给 UI / codec 留
+  /// 一个可扩展口子，不再用于阈值判断。
   final double score;
 
   bool get matched => sectionIndex >= 0;
@@ -52,76 +56,52 @@ class MatchResult {
     required this.matches,
     required this.totalCues,
     required this.matchedCues,
-    this.rescuedCues = 0,
-    this.maxMissRun = 0,
   });
 
   final List<CueMatch> matches;
   final int totalCues;
   final int matchedCues;
 
-  /// 在局部窗口失败后被全局扫描救回的 cue 数（含在 [matchedCues] 里）。
-  final int rescuedCues;
-
-  /// 整轮匹配过程中出现的最长连续未命中段长度。>5 通常意味着
-  /// SRT 与 EPUB 对不上，或者 `searchWindow` 太小。
-  final int maxMissRun;
-
   double get matchRate => totalCues == 0 ? 0.0 : matchedCues / totalCues;
 }
 
-/// Sasayaki 风格 EPUB↔SRT 匹配器。
+/// Sasayaki 风格 EPUB↔SRT 匹配器（对齐 Hoshi-Reader iOS 实现）。
 ///
 /// 算法：
-/// 1. 章节文本线性化 + 规范化（去空白/标点、ASCII 小写）
-/// 2. 按 cue 顺序向前滑窗：窗口 `[cursor, cursor + searchWindow)`
-/// 3. 取与 cue 等长切片，用字符 bigram Jaccard 打分
-/// 4. 粗扫（step = max(1, cueLen/10)）+ 命中后步长=1 精修
-/// 5. 分数 ≥ 有效阈值视为命中，cursor 前进到命中末尾；未命中则
-///    cursor 不动，给下一条 cue 重新对齐的机会。
-/// 6. **连续未命中救援**：当连续 ≥ `rescueAfterMisses` 条 cue 失败时，
-///    下一条 cue 放宽到"从 cursor 到全书末尾"的大窗口全扫，并要求
-///    ≥ `rescueThreshold` 才接受——避免被局部窗口卡死，又不会被
-///    松阈值下的任意巧合位置拉偏。
-///
-/// 阈值分级（见 [shortCueMaxLen] / [shortCueThreshold]）：短 cue
-/// 的 bigram 集合小，Jaccard 方差大，容易蒙到 0.4~0.5 的假阳性，
-/// 因此对短 cue 单独提高阈值。
+/// 1. 章节文本拼成一串 `big`，同时记录每章在 `big` 里的起点。
+/// 2. 规范化用**白名单**：只保留 假名 / 汉字 / CJK 扩展 A / ASCII & 全角字母
+///    数字 / 半角假名。其它（句读、引号、`＊` 叙述标记、空白、ruby 注音
+///    剥完后的残留空格等）一律扔掉。
+/// 3. **起点检测**：取前 15 条 cue，跳过以 `＊` 开头的旁白 / 标题 cue，
+///    跳过规范化后 < 6 字的短 cue，在全书做一次精确 `indexOf`，取最小命中
+///    位置作为 cursor 起点。可以跳过音频前置的 OP 朗读。
+/// 4. **主循环**：对每条 cue，在 `big[cursor, cursor + searchWindow]` 内做
+///    精确子串 `indexOf`。命中则 cursor 推到子串末尾；未命中直接标记
+///    unmatched，cursor 不动，下条 cue 重新找。
+/// 5. 不做 bigram 模糊匹配、不做阈值、不做后向救援 —— 白名单 normalize 把
+///    标点 / 叙述符号剥干净后，精确匹配对多数日文小说可达 95%+（见
+///    Hoshi-Reader 经验值 98%）。
 class EpubSrtMatcher {
   static const int defaultSearchWindow = 1500;
-  static const double defaultScoreThreshold = 0.6;
 
-  /// 归一化长度 < [shortCueMaxLen] 的 cue 使用 [shortCueThreshold]。
-  static const int shortCueMaxLen = 8;
-  static const double shortCueThreshold = 0.75;
+  /// 起点检测扫描的 cue 数量上限。
+  static const int defaultProbeCount = 15;
 
-  /// 连续未命中达到该数，下一条 cue 触发全书救援扫描。
-  static const int defaultRescueAfterMisses = 3;
-
-  /// 救援扫描接受命中所需的最低分（总是 ≥ [shortCueThreshold]）。
-  static const double defaultRescueThreshold = 0.75;
+  /// 起点检测 probe cue 的最小归一化长度，短于此忽略（避免短词在全书
+  /// 命中偏前的歧义位置拉偏起点）。
+  static const int defaultProbeMinLen = 6;
 
   /// 在后台 isolate 里跑 [match]。
-  ///
-  /// 匹配器对大书（几十万归一化字符 × 上千 cue）会跑几秒到十几秒；放在主
-  /// isolate 上会把 UI 线程挤成 ANR。这里把只需要的字段拷成可跨 isolate
-  /// 传输的简单结构，然后 `compute()` 到后台。
   static Future<MatchResult> matchInIsolate({
     required List<EpubSection> sections,
     required List<AudioCue> cues,
     int searchWindow = defaultSearchWindow,
-    double scoreThreshold = defaultScoreThreshold,
-    int rescueAfterMisses = defaultRescueAfterMisses,
-    double rescueThreshold = defaultRescueThreshold,
   }) {
     final _MatchRequest req = _MatchRequest(
       sections: sections,
       cueTexts: <String>[for (final AudioCue c in cues) c.text],
       cueIndexes: <int>[for (final AudioCue c in cues) c.sentenceIndex],
       searchWindow: searchWindow,
-      scoreThreshold: scoreThreshold,
-      rescueAfterMisses: rescueAfterMisses,
-      rescueThreshold: rescueThreshold,
     );
     return compute(_matchEntrypoint, req);
   }
@@ -130,9 +110,6 @@ class EpubSrtMatcher {
     required List<EpubSection> sections,
     required List<AudioCue> cues,
     int searchWindow = defaultSearchWindow,
-    double scoreThreshold = defaultScoreThreshold,
-    int rescueAfterMisses = defaultRescueAfterMisses,
-    double rescueThreshold = defaultRescueThreshold,
   }) {
     if (cues.isEmpty) {
       return const MatchResult(
@@ -153,134 +130,82 @@ class EpubSrtMatcher {
     final String big = idx.normText;
     final int totalLen = big.length;
 
+    final int start = _findStart(big, cues);
+    debugPrint('[sasayaki] matcher: sections=${sections.length} '
+        'totalNormLen=$totalLen cues=${cues.length} startCursor=$start');
+
     final List<CueMatch> results = <CueMatch>[];
-    int cursor = 0;
+    int cursor = start;
     int matched = 0;
-    int rescued = 0;
-    int consecutiveMisses = 0;
-    int maxMissRun = 0;
 
     for (final AudioCue cue in cues) {
       final String nc = _normalize(cue.text);
-      if (nc.length < 2) {
+      if (nc.isEmpty) {
         results.add(CueMatch.unmatched);
-        consecutiveMisses++;
-        if (consecutiveMisses > maxMissRun) {
-          maxMissRun = consecutiveMisses;
-        }
         continue;
       }
 
-      final Set<String> cueGrams = _bigrams(nc);
-      if (cueGrams.isEmpty) {
+      final int windowEnd = (cursor + searchWindow).clamp(0, totalLen);
+      if (windowEnd - cursor < nc.length) {
         results.add(CueMatch.unmatched);
-        consecutiveMisses++;
-        if (consecutiveMisses > maxMissRun) {
-          maxMissRun = consecutiveMisses;
-        }
         continue;
       }
 
-      // 分级阈值：短 cue 的 bigram 少，Jaccard 容易偏高；全局救援阈值
-      // 也不低于短 cue 的阈值。
-      final bool isShort = nc.length < shortCueMaxLen;
-      final double baseThreshold =
-          isShort ? shortCueThreshold : scoreThreshold;
-      final double effRescueThreshold = rescueThreshold < shortCueThreshold
-          ? shortCueThreshold
-          : rescueThreshold;
-
-      final bool rescueMode = consecutiveMisses >= rescueAfterMisses;
-      final int effectiveWindow = rescueMode
-          ? (totalLen - cursor)
-          : searchWindow;
-      final double effectiveThreshold =
-          rescueMode ? effRescueThreshold : baseThreshold;
-
-      final int windowEnd = (cursor + effectiveWindow).clamp(0, totalLen);
-      final int searchEnd = (windowEnd - nc.length).clamp(cursor, totalLen);
-      final int step = (nc.length ~/ 10).clamp(1, 3);
-
-      double bestScore = 0;
-      int bestStart = -1;
-
-      for (int i = cursor; i <= searchEnd; i += step) {
-        final double s = _scoreAt(big, i, nc.length, cueGrams);
-        if (s > bestScore) {
-          bestScore = s;
-          bestStart = i;
-        }
-      }
-
-      if (bestStart >= 0 && step > 1) {
-        final int lo = (bestStart - step).clamp(cursor, totalLen);
-        final int hi = (bestStart + step).clamp(0, searchEnd);
-        for (int i = lo; i <= hi; i++) {
-          final double s = _scoreAt(big, i, nc.length, cueGrams);
-          if (s > bestScore) {
-            bestScore = s;
-            bestStart = i;
-          }
-        }
-      }
-
-      if (bestStart >= 0 && bestScore >= effectiveThreshold) {
-        final int endN = (bestStart + nc.length).clamp(0, totalLen);
-        final int secIdx = _sectionForOffset(idx.sectionNormStarts, bestStart);
-        results.add(CueMatch(
-          cueSentenceIndex: cue.sentenceIndex,
-          sectionIndex: secIdx,
-          normCharStart: bestStart - idx.sectionNormStarts[secIdx],
-          normCharEnd: endN - idx.sectionNormStarts[secIdx],
-          score: bestScore,
-        ));
-        cursor = endN;
-        matched++;
-        if (rescueMode) {
-          rescued++;
-        }
-        consecutiveMisses = 0;
-      } else {
+      final int found = big.indexOf(nc, cursor);
+      if (found < 0 || found + nc.length > windowEnd) {
         results.add(CueMatch.unmatched);
-        consecutiveMisses++;
-        if (consecutiveMisses > maxMissRun) {
-          maxMissRun = consecutiveMisses;
-        }
+        continue;
       }
+
+      final int matchEnd = found + nc.length;
+      final int secIdx = _sectionForOffset(idx.sectionNormStarts, found);
+      results.add(CueMatch(
+        cueSentenceIndex: cue.sentenceIndex,
+        sectionIndex: secIdx,
+        normCharStart: found - idx.sectionNormStarts[secIdx],
+        normCharEnd: matchEnd - idx.sectionNormStarts[secIdx],
+        score: 1.0,
+      ));
+      cursor = matchEnd;
+      matched++;
     }
+
+    debugPrint('[sasayaki] matcher done: matched=$matched/${cues.length} '
+        'finalCursor=$cursor/$totalLen');
 
     return MatchResult(
       matches: results,
       totalCues: cues.length,
       matchedCues: matched,
-      rescuedCues: rescued,
-      maxMissRun: maxMissRun,
     );
   }
 
-  // ---------- internals ----------
-
-  static double _scoreAt(String big, int start, int len, Set<String> grams) {
-    final int end = start + len;
-    if (end > big.length) {
-      return 0;
+  /// 取前 [defaultProbeCount] 条 cue，跳过 `＊` 开头 & 太短的，在全书做 indexOf，
+  /// 返回最小命中偏移；全部 miss 则回到 0。
+  static int _findStart(String big, List<AudioCue> cues) {
+    int? minStart;
+    final int limit =
+        cues.length < defaultProbeCount ? cues.length : defaultProbeCount;
+    for (int i = 0; i < limit; i++) {
+      final String raw = cues[i].text;
+      if (raw.startsWith('＊') || raw.startsWith('*')) {
+        continue;
+      }
+      final String nc = _normalize(raw);
+      if (nc.length < defaultProbeMinLen) {
+        continue;
+      }
+      final int found = big.indexOf(nc);
+      if (found >= 0) {
+        if (minStart == null || found < minStart) {
+          minStart = found;
+        }
+      }
     }
-    final Set<String> sliceGrams = _bigramsRange(big, start, end);
-    if (sliceGrams.isEmpty) {
-      return 0;
-    }
-    return _jaccard(grams, sliceGrams);
+    return minStart ?? 0;
   }
 
-  static _Index _buildIndex(List<EpubSection> sections) {
-    final StringBuffer buf = StringBuffer();
-    final List<int> normStarts = <int>[];
-    for (final EpubSection s in sections) {
-      normStarts.add(buf.length);
-      _appendNormalized(buf, s.text);
-    }
-    return _Index(buf.toString(), normStarts);
-  }
+  // ---------- normalize ----------
 
   static String _normalize(String s) {
     final StringBuffer buf = StringBuffer();
@@ -291,10 +216,14 @@ class EpubSrtMatcher {
   static void _appendNormalized(StringBuffer buf, String s) {
     for (int i = 0; i < s.length; i++) {
       final int c = s.codeUnitAt(i);
-      if (_isSkippable(c)) {
+      if (!_isKeepable(c)) {
         continue;
       }
       if (c >= 0x41 && c <= 0x5A) {
+        // ASCII uppercase → lowercase
+        buf.writeCharCode(c + 0x20);
+      } else if (c >= 0xFF21 && c <= 0xFF3A) {
+        // Fullwidth uppercase → fullwidth lowercase
         buf.writeCharCode(c + 0x20);
       } else {
         buf.writeCharCode(c);
@@ -302,67 +231,54 @@ class EpubSrtMatcher {
     }
   }
 
-  static const Set<int> _cjkPunct = <int>{
-    0x3000, 0x3001, 0x3002, 0x300C, 0x300D, 0x300E, 0x300F,
-    0x301C, 0x301D, 0x301E, 0x301F, 0x2026, 0x2014, 0x2015,
-    0xFF01, 0xFF0C, 0xFF0E, 0xFF1A, 0xFF1B, 0xFF1F, 0xFF08, 0xFF09,
-    0xFF0D, 0xFF3B, 0xFF3D, 0xFF5B, 0xFF5D,
-  };
-
-  static bool _isSkippable(int c) {
-    if (c == 0x20 || c == 0x09 || c == 0x0A || c == 0x0D) {
-      return true;
-    }
-    if (c >= 0x21 && c <= 0x2F) {
-      return true;
-    }
-    if (c >= 0x3A && c <= 0x40) {
-      return true;
-    }
-    if (c >= 0x5B && c <= 0x60) {
-      return true;
-    }
-    if (c >= 0x7B && c <= 0x7E) {
-      return true;
-    }
-    return _cjkPunct.contains(c);
+  /// 白名单：只保留日文正文字符（假名 / 汉字 / CJK 扩展 A / 迭代符）+ 字母
+  /// 数字（ASCII 与全角 / 半角）。
+  ///
+  /// 与 `audiobook_bridge.dart::__hoshiIsSkippable` 的 JS 镜像必须**严格一致**，
+  /// 否则 matcher 写回的 normCharStart/End 与 WebView 运行期计数对不上，高亮
+  /// 会漂。
+  static bool _isKeepable(int c) {
+    // ASCII 0-9
+    if (c >= 0x30 && c <= 0x39) return true;
+    // ASCII A-Z
+    if (c >= 0x41 && c <= 0x5A) return true;
+    // ASCII a-z
+    if (c >= 0x61 && c <= 0x7A) return true;
+    // 々 〆 〇
+    if (c == 0x3005 || c == 0x3006 || c == 0x3007) return true;
+    // Hiragana ぁ-ゖ
+    if (c >= 0x3041 && c <= 0x3096) return true;
+    // Hiragana ゝゞゟ
+    if (c >= 0x309D && c <= 0x309F) return true;
+    // Katakana ァ-ヺ
+    if (c >= 0x30A1 && c <= 0x30FA) return true;
+    // Katakana ー ヽ ヾ ヿ
+    if (c >= 0x30FC && c <= 0x30FF) return true;
+    // CJK Extension A
+    if (c >= 0x3400 && c <= 0x4DBF) return true;
+    // CJK Unified Ideographs
+    if (c >= 0x4E00 && c <= 0x9FFF) return true;
+    // Fullwidth ０-９
+    if (c >= 0xFF10 && c <= 0xFF19) return true;
+    // Fullwidth Ａ-Ｚ
+    if (c >= 0xFF21 && c <= 0xFF3A) return true;
+    // Fullwidth ａ-ｚ
+    if (c >= 0xFF41 && c <= 0xFF5A) return true;
+    // Halfwidth katakana ｦ-ﾝ
+    if (c >= 0xFF66 && c <= 0xFF9D) return true;
+    return false;
   }
 
-  static Set<String> _bigrams(String s) {
-    if (s.length < 2) {
-      return <String>{};
-    }
-    final Set<String> out = <String>{};
-    for (int i = 0; i < s.length - 1; i++) {
-      out.add(s.substring(i, i + 2));
-    }
-    return out;
-  }
+  // ---------- index ----------
 
-  static Set<String> _bigramsRange(String s, int start, int end) {
-    if (end - start < 2) {
-      return <String>{};
+  static _Index _buildIndex(List<EpubSection> sections) {
+    final StringBuffer buf = StringBuffer();
+    final List<int> normStarts = <int>[];
+    for (final EpubSection s in sections) {
+      normStarts.add(buf.length);
+      _appendNormalized(buf, s.text);
     }
-    final Set<String> out = <String>{};
-    for (int i = start; i < end - 1; i++) {
-      out.add(s.substring(i, i + 2));
-    }
-    return out;
-  }
-
-  static double _jaccard(Set<String> a, Set<String> b) {
-    if (a.isEmpty || b.isEmpty) {
-      return 0;
-    }
-    final Set<String> small = a.length < b.length ? a : b;
-    final Set<String> big = identical(small, a) ? b : a;
-    int inter = 0;
-    for (final String k in small) {
-      if (big.contains(k)) {
-        inter++;
-      }
-    }
-    return inter / (a.length + b.length - inter);
+    return _Index(buf.toString(), normStarts);
   }
 
   static int _sectionForOffset(List<int> starts, int offset) {
@@ -395,24 +311,14 @@ class _MatchRequest {
     required this.cueTexts,
     required this.cueIndexes,
     required this.searchWindow,
-    required this.scoreThreshold,
-    required this.rescueAfterMisses,
-    required this.rescueThreshold,
   });
 
   final List<EpubSection> sections;
   final List<String> cueTexts;
   final List<int> cueIndexes;
   final int searchWindow;
-  final double scoreThreshold;
-  final int rescueAfterMisses;
-  final double rescueThreshold;
 }
 
-/// compute() 入口必须是 top-level / static。这里把 request 复原成一批轻量
-/// `AudioCue`（仅填 matcher 实际读的 `text` / `sentenceIndex`），再走同步
-/// [EpubSrtMatcher.match]。`Isar.autoIncrement` 只是个常量，isolate 里也能
-/// 无副作用构造。
 MatchResult _matchEntrypoint(_MatchRequest req) {
   final List<AudioCue> cues = <AudioCue>[
     for (int i = 0; i < req.cueTexts.length; i++)
@@ -430,8 +336,5 @@ MatchResult _matchEntrypoint(_MatchRequest req) {
     sections: req.sections,
     cues: cues,
     searchWindow: req.searchWindow,
-    scoreThreshold: req.scoreThreshold,
-    rescueAfterMisses: req.rescueAfterMisses,
-    rescueThreshold: req.rescueThreshold,
   );
 }
