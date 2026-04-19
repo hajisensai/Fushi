@@ -168,9 +168,11 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     _controller.evaluateJavascript(source: rightArrowSimulateJs);
   }
 
-  /// 音量键翻页是显式用户操作——ttu 连续滚动模式下 wheel 只滚不翻章，
-  /// sectionChanged 那条 Follow auto-off 路径接不住；这里主动关一下
-  /// Follow，不然按着音量键往下读，下一条 cue 会把 reader 拖回原位。
+  /// 所有显式手翻的 Follow auto-off 公共入口：音量键 / swipe 跨段 /
+  /// ToC 点击都调这里。音量键在 ttu 连续滚动模式下 wheel 只滚不翻章，
+  /// 不触发 sectionChanged，所以必须在 arrow simulate 之前主动调；
+  /// swipe / ToC 则由 [_handleTtuSectionChanged] 的 auto=false 分支转发。
+  /// 没这一层，按着音量键往下读，下一条 cue 会把 reader 拖回原位。
   /// 无有声书或 Follow=OFF 时直接跳过。
   void _autoOffFollowOnManualTurn() {
     final AudiobookPlayerController? controller = _audiobookController;
@@ -2090,11 +2092,11 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
   /// auto=true 来自 `__sasayakiRequestNav`，要么是我们自己刚请求的跳章
   /// （_inFlightNavSection 相等），要么是未来其他系统触发——两种都不是
   /// 用户意图，忽略。
-  /// auto=false 来自 ToC 点击 / 滑动翻页等用户操作：
-  /// - Follow=ON：Follow 的语义是"当前页 = 音频所在页"，用户手翻到别段
-  ///   后调 [AudiobookPlayerController.snapReaderToAudio] 立刻拉回 cue
-  ///   所在段，**不关 Follow**。想自由翻请先关 Follow。
-  /// - Follow=OFF：尊重用户翻页，只更新 `_currentTtuSection`。
+  /// auto=false 来自 ToC 点击 / 滑动翻页等用户操作，都是明确用户意图：
+  /// 复用 [_autoOffFollowOnManualTurn]，Follow=ON 时自动关 Follow 并 toast，
+  /// 让用户停在翻到的位置，下一条 cue 不会 reveal 把页面拉回。
+  /// Follow=OFF 时 [_autoOffFollowOnManualTurn] 自身短路，相当于只更新
+  /// `_currentTtuSection`、尊重用户翻页。
   void _handleTtuSectionChanged(Map<String, dynamic> json) {
     final int? idx = (json['sectionIndex'] as num?)?.toInt();
     final bool auto = json['auto'] == true;
@@ -2135,14 +2137,10 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       // 保守跳过，不关 Follow。
       return;
     }
-    final AudiobookPlayerController? controller = _audiobookController;
-    if (controller == null) return;
-    if (controller.followAudio.value) {
-      // Follow ON：用户手翻到别段 → 立刻把 reader 拉回音频所在段。
-      // 不关 Follow，不 toast —— 语义固定为"当前页 = 音频所在页"，
-      // 用户要自由翻请先关 Follow。
-      controller.snapReaderToAudio();
-    }
+    // Follow ON 时 swipe / ToC 跨段 = 明确用户意图，走和音量键翻页同款
+    // 的 auto-off 语义：关 Follow + toast，用户停在翻到的位置。
+    // Follow=OFF 时 _autoOffFollowOnManualTurn 自身短路，不动状态。
+    _autoOffFollowOnManualTurn();
   }
 
   /// 用户点击句子，跳转播放器到该 cue。
