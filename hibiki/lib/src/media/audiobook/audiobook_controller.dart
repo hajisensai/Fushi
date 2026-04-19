@@ -462,6 +462,11 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// SMIL/JSON 等非 sasayaki 路径 cue 的 textFragmentId 解码返回 null，
   /// 自然跳过这套逻辑（它们没有跨章同步概念）。
   void _maybeEmitCrossChapter(AudioCue? cue) {
+    // 已在跨章 await 中直接忽略 —— 多个 caller 路径（_updateCurrentCue /
+    // setFollowAudio / 未来其他入口）都可能在 transition 尚未完成时再次踩到
+    // 这里；没守卫会把 _pendingCue 反复覆盖 + 重复 onCrossChapter，
+    // ttu 被轮番 __ttuGoToSection，每次 scrollTop 都被清零到章首。
+    if (_chapterTransition) return;
     if (cue == null) return;
     final SasayakiFragment? frag =
         SasayakiMatchCodec.tryDecode(cue.textFragmentId);
@@ -527,14 +532,18 @@ class AudiobookPlayerController extends ChangeNotifier {
       unawaited(persist(value));
     }
     if (!value) return;
+    // 正处于跨章 await：让现有 transition 自己跑完、由
+    // notifySectionRestoreCompleted 接力 notify，不重入
+    // _maybeEmitCrossChapter（它自己也会守卫，这里再挡一层只是少走一遍
+    // 解码 + reader section 闭包）。
+    if (_chapterTransition) return;
     final AudioCue? cue = _currentCue;
     if (cue == null) return;
     // _maybeEmitCrossChapter 自带 _hasPlayedOnce / followAudio / 同段短路
     // 等守卫；跨段命中时它会把 _chapterTransition 翻为 true 并请跳章，
     // 跳章完的 notifySectionRestoreCompleted 自己会 notify，这里不重复。
-    final bool beforeTransition = _chapterTransition;
     _maybeEmitCrossChapter(cue);
-    if (_chapterTransition && !beforeTransition) return;
+    if (_chapterTransition) return;
     notifyListeners();
   }
 

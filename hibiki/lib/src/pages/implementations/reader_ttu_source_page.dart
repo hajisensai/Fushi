@@ -117,6 +117,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   void dispose() {
     VolumeKeyChannel.instance.setHandlers();
     VolumeKeyChannel.instance.setInterceptEnabled(false);
+    _navRestoreTimeout?.cancel();
     _audiobookController?.removeListener(_onCueChanged);
     _audiobookController?.dispose();
     WidgetsBinding.instance.removeObserver(this);
@@ -1751,36 +1752,35 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
 
     if (controller.followAudio.value) {
       _inFlightNavSection = newSection;
-      bool navOk = false;
+      _armNavRestoreTimeout(newSection, controller);
+      // ttu 重新挂载了章节 DOM（即便 newSection == 之前 section），旧 cueMap
+      // 里的 span 已经游离。放 Dart 这层早返回守卫失效，让下一个
+      // sasayakiMountedSection 事件重新跑 applySasayakiCues。JS 侧
+      // __sasayakiRequestNav 里也同步清了 __hoshiSasayakiAppliedForSection，
+      // 两道守卫一起下让 apply 一定重跑。
+      _lastSasayakiAppliedSection = -1;
+      _lastSasayakiAppliedRootLen = -1;
       try {
         await AudiobookBridge.requestSectionNav(
           _controller,
           sectionIndex: newSection,
         );
-        navOk = true;
-        _currentTtuSection = newSection;
-        // ttu 重新挂载了章节 DOM（即便 newSection == 之前 section），旧 cueMap
-        // 里的 span 已经游离。放 Dart 这层早返回守卫失效，让下一个
-        // sasayakiMountedSection 事件重新跑 applySasayakiCues。JS 侧
-        // __sasayakiRequestNav 里也同步清了 __hoshiSasayakiAppliedForSection，
-        // 两道守卫一起下让 apply 一定重跑。
-        _lastSasayakiAppliedSection = -1;
-        _lastSasayakiAppliedRootLen = -1;
       } catch (e) {
         debugPrint('[hibiki-audiobook] requestSectionNav failed: $e');
-        // 降级到 pill，保留 Follow 状态让用户重试下一次跨章
+        _completeNavRestore(
+          controller: controller,
+          currentReaderSection: _currentTtuSection,
+          success: false,
+        );
         if (mounted) {
           setState(() => _pendingNavSection = newSection);
         }
       }
-      // 对齐 Sasayaki handleRestoreCompleted：跳章 await 结束（成功或
-      // 失败）必须告诉 controller 清 chapterTransition 守卫，否则 cue
-      // 推进会永久卡住。成功时 currentReaderSection=newSection 让 controller
-      // 重新派发 pendingCue 高亮。
-      controller.notifySectionRestoreCompleted(
-        currentReaderSection: navOk ? newSection : _currentTtuSection,
-        success: navOk,
-      );
+      // 成功路径不在这里 notify —— evaluateJavascript 不 await JS Promise，
+      // 在这里 notify 会提前清 _chapterTransition，期间下一条 cue tick 再
+      // 触发跨章、scrollTop 被第二次清零到章首。改为等 ttu 真正跳完从 Wn
+      // 推 sectionChanged(auto=true, idx==newSection) 回来，由
+      // _handleTtuSectionChanged 调 _completeNavRestore。Timer 兜底 3s。
     } else {
       // Follow=OFF：不自动跳章，只显示 pill。controller 不会触发 onCrossChapter
       // 这条路径（_maybeEmitCrossChapter 已用 followAudio 守卫），但保险起见
@@ -1793,6 +1793,49 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         setState(() => _pendingNavSection = newSection);
       }
     }
+  }
+
+  /// 挂 3s 跳章兜底 Timer：ttu 没在期限内推 `sectionChanged(target,
+  /// auto=true)` 回来（fork 缺失 / ttu 内部 5s 超时）时，强制 notify 一次
+  /// 让 `_chapterTransition` 释放，不然 cue 推进永久卡死。3s 落在 ttu
+  /// 自身 5s 超时之前，先走 pill 降级，体感比干等 5s 好。
+  void _armNavRestoreTimeout(
+    int newSection,
+    AudiobookPlayerController controller,
+  ) {
+    _navRestoreTimeout?.cancel();
+    _navRestoreTimeout = Timer(const Duration(seconds: 3), () {
+      if (!mounted) return;
+      if (_inFlightNavSection != newSection) return;
+      debugPrint(
+        '[hibiki-audiobook] nav restore timeout, section=$newSection',
+      );
+      _completeNavRestore(
+        controller: controller,
+        currentReaderSection: _currentTtuSection,
+        success: false,
+      );
+      if (mounted) {
+        setState(() => _pendingNavSection = newSection);
+      }
+    });
+  }
+
+  /// 统一跳章完成出口：取消兜底 Timer、清 in-flight 标记、调 notifyRestore。
+  /// 成功路径由 [_handleTtuSectionChanged] 在 auto=true 命中 target 时调用；
+  /// 失败路径由 Timer / requestSectionNav catch 调用。
+  void _completeNavRestore({
+    required AudiobookPlayerController controller,
+    required int currentReaderSection,
+    required bool success,
+  }) {
+    _navRestoreTimeout?.cancel();
+    _navRestoreTimeout = null;
+    _inFlightNavSection = null;
+    controller.notifySectionRestoreCompleted(
+      currentReaderSection: currentReaderSection,
+      success: success,
+    );
   }
 
   /// pill 被点击时的跳章入口；成功后清空 pill。
@@ -1867,13 +1910,35 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     final int? idx = (json['sectionIndex'] as num?)?.toInt();
     final bool auto = json['auto'] == true;
     if (idx == null) return;
+    // 跳章 in-flight 期间，auto=true 但 idx 不是我们的 target——通常是 ttu
+    // 内部中间态（Wn 在最终值前被别的管道短暂推了一次）。**不能**更新
+    // _currentTtuSection，否则下一条 cue tick 看到段不匹配又会触发一次
+    // 跨章跳章，ttu 被二次 __ttuGoToSection，scrollTop 被二次清零到章首。
+    if (_inFlightNavSection != null &&
+        auto &&
+        _inFlightNavSection != idx) {
+      return;
+    }
     // 任何 sectionChanged 事件都更新 _currentTtuSection（无论 auto 或用户
     // 翻页）。controller 通过 getCurrentReaderSection 读这个值判定 cue
     // 是否跨章——必须始终反映 reader 真实挂载的章节。
     _currentTtuSection = idx;
-    // 我们自己刚发起的跳章回报，清掉 in-flight 标记，不算用户意图。
+    // 我们自己刚发起的跳章回报：这是 ttu 真正跳完的信号——现在（而不是
+    // requestSectionNav await 返回时）才是 notifyRestore 的正确时机，
+    // 避免 _chapterTransition 被提前清。
     if (_inFlightNavSection == idx) {
-      _inFlightNavSection = null;
+      final AudiobookPlayerController? controller = _audiobookController;
+      if (controller != null) {
+        _completeNavRestore(
+          controller: controller,
+          currentReaderSection: idx,
+          success: true,
+        );
+      } else {
+        _navRestoreTimeout?.cancel();
+        _navRestoreTimeout = null;
+        _inFlightNavSection = null;
+      }
       return;
     }
     if (auto) {
