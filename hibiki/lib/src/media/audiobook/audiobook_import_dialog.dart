@@ -341,6 +341,12 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       const Set<String> cueFormats = {'smil', 'srt', 'lrc', 'vtt', 'ass'};
       final String format = cueFormats.contains(ext) ? ext : 'json';
 
+      // 先跑 parse + matcher（含 saveCues）拿到 health；此时 Audiobook 还
+      // 没写入。然后一次性带全字段 saveAudiobook —— **不能两次 put**，否则
+      // Isar 会把带长 CJK bookUid 的记录写坏（FormatException offset 43）。
+      // 见 `updateHealth readback THREW`。
+      final AudiobookHealth health = await _parseCues(format);
+
       final Audiobook audiobook = Audiobook()
         ..bookUid = widget.bookUid
         ..alignmentFormat = format
@@ -352,12 +358,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
         audiobook.audioRoot = _audioDir;
       }
 
+      health.packInto(audiobook);
       await widget.repo.saveAudiobook(audiobook);
-      final AudiobookHealth health = await _parseCues(format);
-      await widget.repo.updateHealth(
-        bookUid: widget.bookUid,
-        health: health,
-      );
 
       if (mounted) {
         final String? tail = _summarizeHealth(health);
