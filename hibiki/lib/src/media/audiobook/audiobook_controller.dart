@@ -511,6 +511,14 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 翻转 Follow audio 开关并经 [onFollowAudioPersist] 落 Hive。相同值调用
   /// 不 notify 也不写库。持久化失败不回滚内存状态——下次启动时从 Hive
   /// 读回会自动纠偏，比"静默回滚"更易排查。
+  ///
+  /// OFF → ON 时主动让 reader 回到当前 cue：
+  /// - 跨 section：复用 [_maybeEmitCrossChapter] 请求跳章，跳完
+  ///   [notifySectionRestoreCompleted] 自己会 notify。
+  /// - 同 section：notifyListeners 让 `_onCueChanged` 以 `reveal=true`
+  ///   重新拉回当前 cue。
+  /// 否则用户手动翻页后再开 Follow 只翻图标，要等下一条 cue 才被动回跳，
+  /// 体感是"跳不回去"。
   void setFollowAudio(bool value) {
     if (followAudio.value == value) return;
     followAudio.value = value;
@@ -518,6 +526,16 @@ class AudiobookPlayerController extends ChangeNotifier {
     if (persist != null) {
       unawaited(persist(value));
     }
+    if (!value) return;
+    final AudioCue? cue = _currentCue;
+    if (cue == null) return;
+    // _maybeEmitCrossChapter 自带 _hasPlayedOnce / followAudio / 同段短路
+    // 等守卫；跨段命中时它会把 _chapterTransition 翻为 true 并请跳章，
+    // 跳章完的 notifySectionRestoreCompleted 自己会 notify，这里不重复。
+    final bool beforeTransition = _chapterTransition;
+    _maybeEmitCrossChapter(cue);
+    if (_chapterTransition && !beforeTransition) return;
+    notifyListeners();
   }
 
   /// 设置音画延迟（毫秒），带边界夹取。超出 ±30s 的值几乎不可能是
