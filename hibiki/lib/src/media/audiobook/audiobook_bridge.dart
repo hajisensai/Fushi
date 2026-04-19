@@ -469,6 +469,58 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
   // 挂载上了就清零计数，用户翻回封面再翻回来还能重新打挂载日志。
   window.__hoshiNotMountedCount = 0;
 
+  // 一次性测 walker 看到的 root 里总 norm 字符数 + 每章段首尾采样，和
+  // Dart matcher 的 totalNormLen / 各段 normLen 对账。如果总数不等 →
+  // ttu 渲染期动过文本；如果总数相等但段内有错位 → 某段内 DOM 顺序
+  // 和 elementHtml 不同。只算一次就够，结果存 window.__hoshiDomMeasured。
+  if (!window.__hoshiDomMeasured) {
+    window.__hoshiDomMeasured = true;
+    try {
+      var measureWalker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+        acceptNode: function(n) {
+          var p = n.parentNode;
+          while (p && p !== root) {
+            var tag = p.nodeName ? p.nodeName.toLowerCase() : '';
+            if (tag === 'rt' || tag === 'rp') return NodeFilter.FILTER_REJECT;
+            p = p.parentNode;
+          }
+          return NodeFilter.FILTER_ACCEPT;
+        }
+      });
+      var totalNorm = 0;
+      var firstChars = '';
+      var sampleAt1000 = '';
+      var sampleAt10000 = '';
+      var mnode;
+      while ((mnode = measureWalker.nextNode())) {
+        var mtxt = mnode.nodeValue || '';
+        for (var mi = 0; mi < mtxt.length; mi++) {
+          var mc = mtxt.charCodeAt(mi);
+          if (window.__hoshiIsSkippable(mc)) continue;
+          if (totalNorm < 32) firstChars += mtxt[mi];
+          if (totalNorm === 1000) sampleAt1000 = '';
+          if (totalNorm >= 1000 && sampleAt1000.length < 32) sampleAt1000 += mtxt[mi];
+          if (totalNorm === 10000) sampleAt10000 = '';
+          if (totalNorm >= 10000 && sampleAt10000.length < 32) sampleAt10000 += mtxt[mi];
+          totalNorm++;
+        }
+      }
+      console.log(JSON.stringify({
+        'hibiki-message-type': 'sasayakiDomMeasure',
+        'rootTotalNormChars': totalNorm,
+        'rootTextContentLen': root.textContent ? root.textContent.length : 0,
+        'firstChars': firstChars,
+        'sampleAt1000': sampleAt1000,
+        'sampleAt10000': sampleAt10000
+      }));
+    } catch (me) {
+      console.log(JSON.stringify({
+        'hibiki-message-type': 'sasayakiDomMeasureErr',
+        'error': String(me)
+      }));
+    }
+  }
+
   // Clear any previous Sasayaki wrap + class-only legacy highlight BEFORE
   // walking, so offsets into text nodes aren't affected by artificial spans.
   window.__hoshiUnwrapSasayaki();

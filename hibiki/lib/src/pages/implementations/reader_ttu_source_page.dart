@@ -514,11 +514,14 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       isJson = false;
     }
 
-    // diag 消息绕过 50ms 防抖，保证一轮 tick 内多条探针都能到 Flutter 侧。
+    // diag / sasayaki 消息绕过 50ms 防抖：一次 IDB 回调里连打五六条初始化
+    // 探针，只放第一条过去会让 sasayakiRefsReady / sasayakiRefsSection 等
+    // 关键诊断消失，表面看像"refs 没加载"。
     final String? msgType = isJson
         ? messageJson['hibiki-message-type'] as String?
         : null;
-    final bool isDiag = msgType != null && msgType.startsWith('diag');
+    final bool isDiag = msgType != null &&
+        (msgType.startsWith('diag') || msgType.startsWith('sasayaki'));
 
     if (!isDiag) {
       DateTime now = DateTime.now();
