@@ -20,7 +20,7 @@ class TtuEpubImporter {
     required Uint8List bytes,
     required String filename,
     required int serverPort,
-    Duration timeout = const Duration(seconds: 60),
+    Duration timeout = const Duration(minutes: 5),
   }) async {
     final String b64 = base64Encode(bytes);
     final Completer<int> completer = Completer<int>();
@@ -146,7 +146,9 @@ class TtuEpubImporter {
     input.dispatchEvent(new Event('change', { bubbles: true }));
 
     // ── 5. Poll IndexedDB for the new row ────────────────────────────────
-    const pollDeadline = Date.now() + 55000;
+    // 大 EPUB（10MB+）在手机上解压 + 解析 + 写入 IDB 常常要一两分钟，
+    // 这里给 4.5 分钟余量，与 Dart 侧 5 分钟总 timeout 对齐。
+    const pollDeadline = Date.now() + 270000;
     while (Date.now() < pollDeadline) {
       await new Promise(r => setTimeout(r, 500));
       const newId = await new Promise((resolve) => {
