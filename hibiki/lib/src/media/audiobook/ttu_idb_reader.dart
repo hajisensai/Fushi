@@ -69,14 +69,21 @@ class TtuIdbReader {
       for (let j = 0; j < rts.length; j++) rts[j].remove();
       return clone.textContent || '';
     }
+    // 与 audiobook_bridge 的 __hoshiLoadSasayakiRefs 必须用**同一份 section
+    // 列表**：JS 侧无条件遍历 record.sections，所以这里也不能过滤掉无
+    // reference 的封面/目录页等。否则 matcher 写回的 sectionIndex 是"过滤后
+    // 列表的位置"，而 JS 的 starts[sectionIndex] 是"完整列表的位置"，错位
+    // 一帧就会让高亮跳到上一章/封面，外层却显示 90%+ 匹配率（matcher 在
+    // 拼接 big string 上 indexOf 仍然成功）。
+    // 无 ref 的 stub 段 text='' 不向 normalize 字符串贡献内容，对匹配算法
+    // 透明；只是占位让后面真章节的索引 == ttu IDB 原始 index。
     const out = [];
     for (let i = 0; i < sectionsMeta.length; i++) {
       const s = sectionsMeta[i];
-      const ref = s && s.reference;
-      if (!ref) continue;
-      const el = doc.getElementById(ref);
+      const ref = (s && s.reference) || '';
+      const el = ref ? doc.getElementById(ref) : null;
       const text = el ? stripRuby(el) : '';
-      out.push({ index: i, href: ref, label: s.label || '', text: text });
+      out.push({ index: i, href: ref, label: (s && s.label) || '', text: text });
     }
     if (out.length === 0) {
       const body = doc.body.firstChild;
