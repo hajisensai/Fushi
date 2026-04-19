@@ -369,7 +369,16 @@ class AudiobookPlayerController extends ChangeNotifier {
   }
 
   void _startPositionTracking() {
-    _positionSub = _player.positionStream.listen((pos) {
+    // 对齐 Sasayaki 的 CMTime(0.125) 周期观察者：just_audio 的 positionStream
+    // 默认 200ms 间隔，改用 createPositionStream 锁到 125ms，让 cue 切换
+    // 和高亮跟随更贴近 Sasayaki 的节奏。min == max 是固定周期（避免
+    // 状态变化时 just_audio 自发降频到 maxPeriod）。
+    _positionSub = _player
+        .createPositionStream(
+      minPeriod: const Duration(milliseconds: 125),
+      maxPeriod: const Duration(milliseconds: 125),
+    )
+        .listen((pos) {
       _updateCurrentCue(pos.inMilliseconds);
     });
     // 订阅播放状态流：just_audio 内部状态翻转（包括焦点丢失、播完自动暂停）
@@ -380,6 +389,12 @@ class AudiobookPlayerController extends ChangeNotifier {
   }
 
   void _updateCurrentCue(int posMs) {
+    // 位置持久化挪到 chapterTransition guard 之前，对齐 Sasayaki tick 的
+    // 结构：位置保存在 tick() 主体，updateCue() 的 guard 不影响保存节奏。
+    // 跨章 await 几秒内，如果 guard 把 save 一起卡住，用户此时杀进程会
+    // 丢掉这几秒的进度。_maybeSavePosition 自身有 3s 阈值，不会每 tick
+    // 写 Hive。
+    _maybeSavePosition();
     // 对齐 Sasayaki SasayakiPlayer.updateCue 开头的 `guard !chapterTransition`：
     // 跨章 await 期间不推进 cue，否则 reader 还没挂上新章 DOM 时 positionStream
     // 会连续推进若干条 cue，每条都触发 _maybeEmitCrossChapter，pendingCue 被
@@ -400,11 +415,19 @@ class AudiobookPlayerController extends ChangeNotifier {
     final AudioCue? newCue = idx >= 0 ? _chapterCues[idx] : null;
     if (newCue?.textFragmentId != _currentCue?.textFragmentId) {
       _currentCue = newCue;
-      _maybeSavePosition();
       _maybeEmitCrossChapter(newCue);
       notifyListeners();
     }
   }
+
+  /// 对齐 Sasayaki `displayCue(cue, reveal: autoScroll && hasPlayedOnce)`：
+  /// 高亮时是否把 cue 滚进视口。Follow audio OFF 或者还没按过 play 时，
+  /// 即使 cue 切换也**只加高亮 class、不动视口**，让用户保持当前阅读位置
+  /// 不被音频位置覆盖。
+  ///
+  /// reader 的 `_onCueChanged` 在调 AudiobookBridge.highlight 时读一次
+  /// 这个值传过去。
+  bool get shouldRevealCurrentCue => followAudio.value && _hasPlayedOnce;
 
   /// 对齐 Sasayaki SasayakiPlayer.updateCue 的 if/else 分支：
   /// `cue.chapterIndex == currentIndex` 走 displayCue，否则在 autoScroll +

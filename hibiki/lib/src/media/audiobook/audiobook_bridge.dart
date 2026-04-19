@@ -231,10 +231,15 @@ window.__hoshiTick = function() {
   }
 };
 
-window.__hoshiHighlight = function(selector) {
+window.__hoshiHighlight = function(selector, reveal) {
+  // reveal 对齐 Sasayaki displayCue 的 reveal 参数：false 时只加高亮
+  // class、不翻页（用户 Follow audio OFF 或尚未 play 时，保持阅读位置）。
+  // 省略该参数视为 true，保持兼容。
+  if (reveal === undefined) reveal = true;
   console.log(JSON.stringify({
     'hibiki-message-type': 'diagHighlightEntry',
     'selector': selector || '',
+    'reveal': reveal,
     'tickerRunning': !!window.__hoshiTickerId,
     'hasBookContent': !!document.querySelector('.book-content')
   }));
@@ -244,6 +249,18 @@ window.__hoshiHighlight = function(selector) {
     });
     window.__hoshiTarget = null;
     window.__hoshiStopTicker();
+    return;
+  }
+  if (!reveal) {
+    // 停掉可能还在跑的老 ticker（之前一次 reveal=true 留下的）并清旧 class，
+    // 然后只把目标元素标上 hoshi-active，不进入 ticker 翻页循环。
+    window.__hoshiTarget = null;
+    window.__hoshiStopTicker();
+    document.querySelectorAll('.hoshi-active').forEach(function(e) {
+      e.classList.remove('hoshi-active');
+    });
+    var el = document.querySelector(selector);
+    if (el) el.classList.add('hoshi-active');
     return;
   }
   // Replace pending target. Old ticker (if running) will pick up the new
@@ -455,7 +472,8 @@ window.__hoshiUnwrapSasayaki = function() {
   }
 };
 
-window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normCharEnd, expectedCue) {
+window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normCharEnd, expectedCue, reveal) {
+  if (reveal === undefined) reveal = true;
   var starts = window.__hoshiSasayakiSectionStarts;
   var refs = window.__hoshiSasayakiRefs;
   if (!starts || !refs) {
@@ -886,8 +904,17 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
       : null
   }));
 
-  // Reuse existing ticker to scroll to the freshly wrapped span.
-  window.__hoshiHighlight('.hoshi-active');
+  // Reuse existing ticker to scroll to the freshly wrapped span. reveal=false
+  // 时（Follow audio OFF / 未 play）跳过 ticker 翻页——span 已经带上
+  // hoshi-active class，视觉高亮已达成，但视口保持用户当前位置。
+  if (reveal) {
+    window.__hoshiHighlight('.hoshi-active', true);
+  } else {
+    // 停掉可能残留的 ticker（上一条 cue reveal=true 启动的），否则它会
+    // 把刚包好的 span 滚进视口，和 reveal=false 的承诺不符。
+    window.__hoshiTarget = null;
+    window.__hoshiStopTicker();
+  }
 };
 ''';
 
@@ -1127,11 +1154,17 @@ window.__hoshiAnnotate = function(chapterHref) {
   /// Sasayaki 路径（按 sectionIndex + 归一化字符偏移在 DOM 中定位）；否则
   /// 按普通 CSS selector 处理。
   ///
+  /// [reveal] 对齐 Sasayaki 原版 `displayCue(cue, reveal:)`：true 时把
+  /// cue 滚进视口（ticker 翻页），false 时**只加高亮 class**，保持用户
+  /// 当前阅读位置不动。Reader 端一般传
+  /// `controller.shouldRevealCurrentCue`（= followAudio && hasPlayedOnce）。
+  ///
   /// 若 textFragmentId 为空（Sasayaki 匹配失败、且不是字幕合成书路径），
   /// 视为"无可用定位"：只清一次高亮，不再每 tick 刷 `[data-cue-id]` 回落。
   static Future<void> highlight(
     InAppWebViewController controller, {
     AudioCue? cue,
+    bool reveal = true,
   }) async {
     if (cue == null || cue.textFragmentId.isEmpty) {
       await controller.evaluateJavascript(source: '__hoshiHighlight("");');
@@ -1144,12 +1177,12 @@ window.__hoshiAnnotate = function(chapterHref) {
       final String cueJson = jsonEncode(cue.text);
       await controller.evaluateJavascript(
         source: '__hoshiHighlightSasayaki(${frag.sectionIndex}, '
-            '${frag.normCharStart}, ${frag.normCharEnd}, $cueJson);',
+            '${frag.normCharStart}, ${frag.normCharEnd}, $cueJson, $reveal);',
       );
       return;
     }
     await controller.evaluateJavascript(
-      source: '__hoshiHighlight(${jsonEncode(raw)});',
+      source: '__hoshiHighlight(${jsonEncode(raw)}, $reveal);',
     );
   }
 

@@ -1706,12 +1706,17 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     if (!_controllerInitialised) {
       return;
     }
-    final AudioCue? cue = _audiobookController?.currentCue;
+    final AudiobookPlayerController? controller = _audiobookController;
+    final AudioCue? cue = controller?.currentCue;
+    // 对齐 Sasayaki `reveal: autoScroll && hasPlayedOnce`：Follow audio OFF
+    // 或者还没按过 play 时，只加高亮 class、不把页面滚到 cue 所在页，
+    // 保持用户当前阅读位置。
+    final bool reveal = controller?.shouldRevealCurrentCue ?? true;
     debugPrint(
       '[hibiki-audiobook] cue changed sid=${cue?.sentenceIndex} '
-      'sel=${cue?.textFragmentId}',
+      'sel=${cue?.textFragmentId} reveal=$reveal',
     );
-    AudiobookBridge.highlight(_controller, cue: cue);
+    AudiobookBridge.highlight(_controller, cue: cue, reveal: reveal);
   }
 
   // ── PR8b Follow audio wiring ────────────────────────────────────────────
