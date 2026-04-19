@@ -50,6 +50,14 @@ class TtuEpubImporter {
     const String preloadHook = '''
 (function() {
   const post = (obj) => console.log(JSON.stringify(obj));
+  const safeLog = (stage, extra) => {
+    try {
+      post({messageType: 'ttu_import_log', stage: stage,
+            extra: String(extra).slice(0, 4000)});
+    } catch (_) {}
+  };
+
+  // ── 1. console.error wrapper — 即便只拿到 e.message 也能标注时间。
   const origErr = console.error;
   console.error = function(...args) {
     try {
@@ -60,30 +68,41 @@ class TtuEpubImporter {
         }
         return String(a);
       }).join(' | ');
-      post({
-        messageType: 'ttu_import_log',
-        stage: 'preload:console.error',
-        extra: payload.slice(0, 2000),
-      });
+      safeLog('preload:console.error', payload);
     } catch (_) {}
     return origErr.apply(this, args);
   };
+
+  // ── 2. 把 TypeError 构造包一层，专门抓 "Path must be a string" 的 stack。
+  //     ttu 内部 try/catch 把错吞了、调 console.error 时只剩 e.message，
+  //     stack 要在 TypeError 构造现场就拍下来。
+  const OrigTypeError = globalThis.TypeError;
+  function PatchedTypeError(message) {
+    const err = new OrigTypeError(message);
+    try {
+      if (typeof message === 'string' &&
+          message.indexOf('Path must be a string') === 0) {
+        safeLog('preload:TypeError-thrown', message + '\\n' + (err.stack || ''));
+      }
+    } catch (_) {}
+    return err;
+  }
+  PatchedTypeError.prototype = OrigTypeError.prototype;
+  Object.setPrototypeOf(PatchedTypeError, OrigTypeError);
+  try {
+    globalThis.TypeError = PatchedTypeError;
+  } catch (_) {}
+
+  // ── 3. 全局 error / unhandledrejection（某些情况下还是有机会抓到）。
   window.addEventListener('error', (e) => {
-    post({
-      messageType: 'ttu_import_log',
-      stage: 'preload:window.error',
-      extra: (e.error && e.error.stack)
-          ? String(e.error) + '\\n' + e.error.stack
-          : (e.message || 'unknown'),
-    });
+    safeLog('preload:window.error', (e.error && e.error.stack)
+        ? String(e.error) + '\\n' + e.error.stack
+        : (e.message || 'unknown'));
   });
   window.addEventListener('unhandledrejection', (e) => {
     const r = e.reason;
-    post({
-      messageType: 'ttu_import_log',
-      stage: 'preload:unhandled',
-      extra: (r && r.stack) ? String(r) + '\\n' + r.stack : String(r),
-    });
+    safeLog('preload:unhandled',
+        (r && r.stack) ? String(r) + '\\n' + r.stack : String(r));
   });
 })();
 ''';
