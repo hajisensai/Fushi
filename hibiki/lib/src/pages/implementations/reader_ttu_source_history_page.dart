@@ -216,60 +216,24 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
   }
 
   Widget _buildSrtCard(SrtBook book) {
-    return GestureDetector(
+    return _bookCardShell(
       onTap: () => _openSrtBook(book),
       onLongPress: () => _confirmDeleteSrtBook(book),
-      child: Container(
-        padding: Spacing.of(context).insets.all.normal,
-        child: Stack(
-          alignment: Alignment.bottomLeft,
-          children: [
-            ColoredBox(
-              color: Colors.grey.shade800.withValues(alpha: 0.3),
-              child: AspectRatio(
-                aspectRatio: mediaSource.aspectRatio,
-                child: _buildSrtCover(book),
-              ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          _buildSrtCover(book),
+          _titleOverlay(book.title),
+          Positioned(
+            top: 6,
+            right: 6,
+            child: _cardBadge(
+              icon: Icons.subtitles_outlined,
+              background: theme.colorScheme.secondaryContainer,
+              foreground: theme.colorScheme.onSecondaryContainer,
             ),
-            LayoutBuilder(builder: (context, constraints) {
-              return Container(
-                alignment: Alignment.center,
-                padding: const EdgeInsets.fromLTRB(2, 2, 2, 4),
-                height: constraints.maxHeight * 0.25,
-                width: double.maxFinite,
-                color: Colors.black.withValues(alpha: 0.6),
-                child: Text(
-                  book.title,
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 2,
-                  textAlign: TextAlign.center,
-                  softWrap: true,
-                  style: textTheme.bodySmall!.copyWith(
-                    color: Colors.white,
-                    fontSize: textTheme.bodySmall!.fontSize! * 0.9,
-                  ),
-                ),
-              );
-            }),
-            // headphones badge
-            Positioned(
-              top: 4,
-              right: 4,
-              child: Container(
-                padding: const EdgeInsets.all(3),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.65),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: const Icon(
-                  Icons.subtitles_outlined,
-                  size: 14,
-                  color: Colors.white,
-                ),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -278,23 +242,102 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
     if (book.coverPath != null && File(book.coverPath!).existsSync()) {
       return FadeInImage(
         key: UniqueKey(),
-        imageErrorBuilder: (_, __, ___) => _srtPlaceholderIcon(),
+        imageErrorBuilder: (_, __, ___) => _coverPlaceholderIcon(
+          Icons.subtitles_outlined,
+        ),
         placeholder: MemoryImage(kTransparentImage),
         image: FileImage(File(book.coverPath!)),
         alignment: Alignment.topCenter,
         fit: BoxFit.fitHeight,
       );
     }
-    return _srtPlaceholderIcon();
+    return _coverPlaceholderIcon(Icons.subtitles_outlined);
   }
 
-  Widget _srtPlaceholderIcon() {
+  Widget _coverPlaceholderIcon(IconData icon) {
     return Center(
       child: Icon(
-        Icons.subtitles_outlined,
+        icon,
         size: 40,
-        color: Colors.white.withValues(alpha: 0.4),
+        color: theme.colorScheme.onSurfaceVariant,
       ),
+    );
+  }
+
+  /// 共用的 M3 书卡外壳：圆角 12、`surfaceContainerLow` 底色，InkWell 放在
+  /// 圆角 Material 内部，ripple 自然被裁到卡片形状。外层 padding 用
+  /// `Spacing.insets.all.normal` 与 grid 其它空位匹配。
+  Widget _bookCardShell({
+    required VoidCallback onTap,
+    required VoidCallback onLongPress,
+    required Widget child,
+  }) {
+    return Padding(
+      padding: Spacing.of(context).insets.all.normal,
+      child: Material(
+        color: theme.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(12),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          onLongPress: onLongPress,
+          child: AspectRatio(
+            aspectRatio: mediaSource.aspectRatio,
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 书名条：底部透明→`surface.withAlpha(0.85)` 渐变遮罩 + `onSurface` 字色，
+  /// 取代旧的纯黑半透明块 + `Colors.white` 字。
+  Widget _titleOverlay(String title) {
+    return LayoutBuilder(builder: (context, constraints) {
+      return Align(
+        alignment: Alignment.bottomCenter,
+        child: Container(
+          height: constraints.maxHeight * 0.32,
+          width: double.infinity,
+          alignment: Alignment.bottomCenter,
+          padding: const EdgeInsets.fromLTRB(6, 10, 6, 8),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                theme.colorScheme.surface.withValues(alpha: 0),
+                theme.colorScheme.surface.withValues(alpha: 0.85),
+              ],
+            ),
+          ),
+          child: Text(
+            title,
+            overflow: TextOverflow.ellipsis,
+            maxLines: 2,
+            textAlign: TextAlign.center,
+            softWrap: true,
+            style: textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurface,
+            ),
+          ),
+        ),
+      );
+    });
+  }
+
+  Widget _cardBadge({
+    required IconData icon,
+    required Color background,
+    required Color foreground,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Icon(icon, size: 14, color: foreground),
     );
   }
 
@@ -380,7 +423,9 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
-  /// 书架卡片，附加有声书角标。
+  /// EPUB 书架卡片；基类 `buildMediaItem` 会再套 Material+InkWell，我们在
+  /// `_epubCardTap` / `_epubCardLongPress` 里复用同样的语义并把它们搬进圆角
+  /// 卡里，所以这里直接返回卡片内部的 Stack（不再自带 padding / 外框）。
   @override
   Widget buildMediaItemContent(MediaItem item) {
     // findByBookUid 读 Isar 时，如果某个 String 字段存了非法 UTF-8（历史脏
@@ -400,84 +445,113 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
       ab = null;
     }
     final bool hasAudiobook = ab != null;
-    // 角标按健康度上色：ok 白 / partial 黄 / failed 红 / 其他保持白色（不
-    // 强行报警，因为 unrun 是旧记录、notApplicable 是合成书的合法状态）。
-    final Color audiobookBadgeColor = ab == null
-        ? Colors.white
-        : _badgeColorFor(AudiobookHealth.fromAudiobook(ab).kind);
+    final HealthKind healthKind = ab == null
+        ? HealthKind.notApplicable
+        : AudiobookHealth.fromAudiobook(ab).kind;
 
-    return Container(
-      padding: Spacing.of(context).insets.all.normal,
-      child: Stack(
-        alignment: Alignment.bottomLeft,
-        children: [
-          ColoredBox(
-            color: Colors.grey.shade800.withValues(alpha: 0.3),
-            child: AspectRatio(
-              aspectRatio: mediaSource.aspectRatio,
-              child: FadeInImage(
-                key: UniqueKey(),
-                imageErrorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                placeholder: MemoryImage(kTransparentImage),
-                image: mediaSource.getDisplayThumbnailFromMediaItem(
-                  appModel: appModel,
-                  item: item,
-                ),
-                alignment: Alignment.topCenter,
-                fit: BoxFit.fitHeight,
-              ),
-            ),
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        FadeInImage(
+          key: UniqueKey(),
+          imageErrorBuilder: (_, __, ___) =>
+              _coverPlaceholderIcon(Icons.menu_book_outlined),
+          placeholder: MemoryImage(kTransparentImage),
+          image: mediaSource.getDisplayThumbnailFromMediaItem(
+            appModel: appModel,
+            item: item,
           ),
-          LayoutBuilder(builder: (context, constraints) {
-            return Container(
-              alignment: Alignment.center,
-              padding: const EdgeInsets.fromLTRB(2, 2, 2, 4),
-              height: constraints.maxHeight * 0.25,
-              width: double.maxFinite,
-              color: Colors.black.withValues(alpha: 0.6),
-              child: Text(
-                mediaSource.getDisplayTitleFromMediaItem(item),
-                overflow: TextOverflow.ellipsis,
-                maxLines: 2,
-                textAlign: TextAlign.center,
-                softWrap: true,
-                style: textTheme.bodySmall!.copyWith(
-                    color: Colors.white,
-                    fontSize: textTheme.bodySmall!.fontSize! * 0.9),
-              ),
-            );
-          }),
-          LinearProgressIndicator(
-            value: (item.position / item.duration).isNaN ||
-                    (item.position / item.duration) == double.infinity ||
-                    (item.position == 0 && item.duration == 0)
-                ? 0
-                : ((item.position / item.duration) > 0.97)
-                    ? 1
-                    : (item.position / item.duration),
-            backgroundColor: Colors.white.withValues(alpha: 0.6),
-            valueColor: const AlwaysStoppedAnimation<Color>(Colors.red),
-            minHeight: 2,
+          alignment: Alignment.topCenter,
+          fit: BoxFit.fitHeight,
+        ),
+        _titleOverlay(mediaSource.getDisplayTitleFromMediaItem(item)),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: _progressBar(item),
+        ),
+        if (hasAudiobook)
+          Positioned(
+            top: 6,
+            right: 6,
+            child: _audiobookBadge(healthKind),
           ),
-          if (hasAudiobook)
-            Positioned(
-              top: 4,
-              right: 4,
-              child: Container(
-                padding: const EdgeInsets.all(3),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.65),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Icon(
-                  Icons.headphones,
-                  size: 14,
-                  color: audiobookBadgeColor,
-                ),
-              ),
-            ),
-        ],
-      ),
+      ],
+    );
+  }
+
+  /// 覆盖基类的 `buildMediaItem`：把 Material+InkWell 搬进圆角卡壳里，ripple
+  /// 才能跟随卡片形状；同时让 padding 与 SRT 卡保持一致。
+  @override
+  Widget buildMediaItem(MediaItem item) {
+    return _bookCardShell(
+      onTap: () async {
+        final MediaSource source = item.getMediaSource(appModel: appModel);
+        await appModel.openMedia(
+          ref: ref,
+          mediaSource: source,
+          item: item,
+        );
+      },
+      onLongPress: () async {
+        await showDialog(
+          context: context,
+          builder: (_) => MediaItemDialogPage(
+            item: item,
+            isHistory: isHistory,
+            extraActions: extraActions,
+          ),
+        );
+        if (isHistory) {
+          setState(() {});
+        }
+      },
+      child: buildMediaItemContent(item),
+    );
+  }
+
+  Widget _progressBar(MediaItem item) {
+    double value = 0;
+    if (item.duration > 0) {
+      final double v = item.position / item.duration;
+      if (v.isFinite) {
+        value = v > 0.97 ? 1 : v;
+      }
+    }
+    return LinearProgressIndicator(
+      value: value,
+      backgroundColor: theme.colorScheme.surfaceContainerHighest,
+      valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.primary),
+      minHeight: 3,
+    );
+  }
+
+  /// 角标按健康度上色：ok / unrun / running / notApplicable 走中性
+  /// `secondaryContainer`，partial 走 `tertiaryContainer`（seed 下呈暖色，
+  /// 起到警示作用但比错误低一档），failed 走 `errorContainer`。
+  Widget _audiobookBadge(HealthKind kind) {
+    final ColorScheme cs = theme.colorScheme;
+    final Color bg;
+    final Color fg;
+    switch (kind) {
+      case HealthKind.failed:
+        bg = cs.errorContainer;
+        fg = cs.onErrorContainer;
+      case HealthKind.partial:
+        bg = cs.tertiaryContainer;
+        fg = cs.onTertiaryContainer;
+      case HealthKind.ok:
+      case HealthKind.unrun:
+      case HealthKind.running:
+      case HealthKind.notApplicable:
+        bg = cs.secondaryContainer;
+        fg = cs.onSecondaryContainer;
+    }
+    return _cardBadge(
+      icon: Icons.headphones,
+      background: bg,
+      foreground: fg,
     );
   }
 
@@ -543,21 +617,6 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
     }
     ref.invalidate(ttuBooksProvider(appModel.targetLanguage));
     setState(() {});
-  }
-
-  Color _badgeColorFor(HealthKind kind) {
-    switch (kind) {
-      case HealthKind.ok:
-        return Colors.white;
-      case HealthKind.partial:
-        return Colors.amber;
-      case HealthKind.failed:
-        return Colors.redAccent;
-      case HealthKind.unrun:
-      case HealthKind.running:
-      case HealthKind.notApplicable:
-        return Colors.white;
-    }
   }
 
   int? _parseTtuBookId(String mediaIdentifier) {
