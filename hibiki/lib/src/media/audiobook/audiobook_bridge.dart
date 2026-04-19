@@ -432,12 +432,18 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
     return;
   }
 
-  // ttu 渲染时剥掉了 section 原始 id（实测只剩 .book-content-container 一个
-  // 容器装全书），所以 (sectionIndex, normChar*) 必须换算成整本书的归一化
-  // 全局偏移，再在容器的 text node 上顺序查找。
+  // 实测 ttu **只挂载当前 section** 的 DOM 到 .book-content-container（rootText
+  // 长度恰好等于当前段 normLen），不是全书共用一个容器。所以 walker 的
+  // normPos=0 就是当前段起点，target 直接用段内偏移 (normCharStart/End)，
+  // 不能再加 starts[sectionIndex] —— 以前加了 base 等于往后多走了前面所有
+  // 段的字符数，高亮就落到后一句。
+  //
+  // 代价是：如果 cue 的 sectionIndex 与用户当前挂载的 section 不同，walker
+  // 会在当前段内找不到（normCharStart 可能超出当前段长度），走 offsetMissing
+  // 分支降级。跨 section 自动跳章要等 PR8a ttu fork API 落地。
   var base = starts[sectionIndex];
-  var targetStart = base + normCharStart;
-  var targetEnd = base + normCharEnd;
+  var targetStart = normCharStart;
+  var targetEnd = normCharEnd;
 
   var root = document.querySelector('.book-content-container') ||
              document.querySelector('.book-content');
@@ -469,12 +475,11 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
   // 挂载上了就清零计数，用户翻回封面再翻回来还能重新打挂载日志。
   window.__hoshiNotMountedCount = 0;
 
-  // 一次性测 walker 看到的 root 里总 norm 字符数 + 每章段首尾采样，和
-  // Dart matcher 的 totalNormLen / 各段 normLen 对账。如果总数不等 →
-  // ttu 渲染期动过文本；如果总数相等但段内有错位 → 某段内 DOM 顺序
-  // 和 elementHtml 不同。只算一次就够，结果存 window.__hoshiDomMeasured。
-  if (!window.__hoshiDomMeasured) {
-    window.__hoshiDomMeasured = true;
+  // 测 walker 看到的 root 里总 norm 字符数 + 首尾采样。用 rootTextLen
+  // 作脏标记：rootTextLen 变了说明 ttu 切换了 section 挂载内容，要重新
+  // 测。否则一段内反复测浪费 CPU。
+  if (window.__hoshiDomMeasuredFor !== rootTextLen) {
+    window.__hoshiDomMeasuredFor = rootTextLen;
     try {
       var measureWalker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
         acceptNode: function(n) {
@@ -633,6 +638,7 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
     'normCharEnd': normCharEnd,
     'targetStart': targetStart,
     'targetEnd': targetEnd,
+    'base': base,
     'expectedCue': clip(expectedCue, 32),
     'actualText': clip(actualText, 32),
     'match': (actualText && expectedCue)
