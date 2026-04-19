@@ -141,7 +141,7 @@ class _DictionaryEntryTagsWrap extends ConsumerWidget {
     List<Widget> children = [
       JidoujishoTag(
         text: dictionary.name,
-        backgroundColor: Colors.red.shade900,
+        backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
       ),
       ...entry.tags.map((tag) {
         return JidoujishoTag(

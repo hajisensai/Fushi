@@ -222,8 +222,8 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
       onPressed: showDictionaryClearDialog,
       child: Text(
         t.dialog_clear,
-        style: const TextStyle(
-          color: Colors.red,
+        style: TextStyle(
+          color: Theme.of(context).colorScheme.error,
         ),
       ),
     );

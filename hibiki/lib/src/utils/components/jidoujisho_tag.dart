@@ -12,7 +12,7 @@ class JidoujishoTag extends StatelessWidget {
     this.message,
     this.trailingText,
     this.icon,
-    this.foregroundColor = Colors.white,
+    this.foregroundColor,
     this.iconSize,
     this.style,
     super.key,
@@ -33,8 +33,9 @@ class JidoujishoTag extends StatelessWidget {
   /// The color of the tag background.
   final Color backgroundColor;
 
-  /// The color of the icon and text.
-  final Color foregroundColor;
+  /// The color of the icon and text. `null` falls back to
+  /// `colorScheme.onSecondaryContainer`，适用于 M3 secondaryContainer 背景。
+  final Color? foregroundColor;
 
   /// The display size for the [icon].
   final double? iconSize;
@@ -44,6 +45,12 @@ class JidoujishoTag extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final Color effectiveForeground =
+        foregroundColor ?? scheme.onSecondaryContainer;
+    // trailingText 常用来显示频率等级等附加信息，用 tertiaryContainer 区分主标签。
+    final Color trailingBg = scheme.tertiaryContainer;
+    final Color trailingFg = scheme.onTertiaryContainer;
     return Padding(
       padding: Spacing.of(context).insets.onlyRight.small,
       child: InkWell(
@@ -51,7 +58,7 @@ class JidoujishoTag extends StatelessWidget {
             ? () {
                 Fluttertoast.showToast(
                   backgroundColor: backgroundColor,
-                  textColor: foregroundColor,
+                  textColor: effectiveForeground,
                   msg: message!,
                   toastLength: Toast.LENGTH_SHORT,
                   gravity: ToastGravity.BOTTOM,
@@ -67,7 +74,7 @@ class JidoujishoTag extends StatelessWidget {
               if (icon != null)
                 Icon(
                   icon,
-                  color: foregroundColor,
+                  color: effectiveForeground,
                   size: Theme.of(context).textTheme.labelSmall?.fontSize,
                 ),
               if (icon != null) const Space.small(),
@@ -77,7 +84,7 @@ class JidoujishoTag extends StatelessWidget {
                   style: Theme.of(context)
                       .textTheme
                       .labelSmall
-                      ?.copyWith(color: foregroundColor),
+                      ?.copyWith(color: effectiveForeground),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -87,13 +94,13 @@ class JidoujishoTag extends StatelessWidget {
                 Flexible(
                   child: Container(
                     padding: Spacing.of(context).insets.all.extraSmall,
-                    color: Colors.red.shade400,
+                    color: trailingBg,
                     child: Text(
                       trailingText!,
                       style: Theme.of(context)
                           .textTheme
                           .labelSmall
-                          ?.copyWith(color: foregroundColor),
+                          ?.copyWith(color: trailingFg),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),

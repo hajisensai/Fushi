@@ -68,8 +68,6 @@ class DictionaryTermPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    AppModel appModel = ref.watch(appProvider);
-
     List<DictionaryEntry> entries = heading.entries
         .where(
             (entry) => !dictionaryNamesByHidden[entry.dictionary.value!.name]!)
@@ -82,14 +80,13 @@ class DictionaryTermPage extends ConsumerWidget {
       return const SliverPadding(padding: EdgeInsets.zero);
     }
 
+    final ColorScheme scheme = Theme.of(context).colorScheme;
     return SliverStack(
       children: [
         SliverPositioned.fill(
           child: Card(
             color: cardColor?.withOpacity(opacity) ??
-                (appModel.isDarkMode
-                    ? Color.fromRGBO(16, 16, 16, opacity)
-                    : Color.fromRGBO(249, 249, 249, opacity)),
+                scheme.surfaceContainerHigh.withOpacity(opacity),
             elevation: 0,
             shape: const RoundedRectangleBorder(),
           ),
@@ -253,10 +250,8 @@ class _DictionaryTermActionsRowState
         button = const SizedBox.shrink();
       } else {
         late Color enabledColor;
-        Color defaultColor = Theme.of(context).brightness == Brightness.dark
-            ? Colors.white
-            : Colors.black;
-        enabledColor = colors[quickAction.uniqueKey] ?? defaultColor;
+        final ColorScheme scheme = Theme.of(context).colorScheme;
+        enabledColor = colors[quickAction.uniqueKey] ?? scheme.onSurface;
         button = Padding(
           padding: Spacing.of(context).insets.onlyLeft.semiSmall,
           child: JidoujishoIconButton(
@@ -264,9 +259,7 @@ class _DictionaryTermActionsRowState
             enabledColor: enabledColor,
             disabledColor: enabledColor.withOpacity(0.5),
             shapeBorder: const RoundedRectangleBorder(),
-            backgroundColor: Theme.of(context).brightness == Brightness.dark
-                ? Colors.white.withOpacity(0.05)
-                : Colors.black.withOpacity(0.05),
+            backgroundColor: scheme.surfaceContainerHighest,
             size: Spacing.of(context).spaces.semiBig,
             tooltip: quickAction.getLocalisedLabel(appModel),
             icon: quickAction.icon,
@@ -355,7 +348,8 @@ class _DictionaryTermPitchList extends ConsumerWidget {
                 padding: Spacing.of(context).insets.onlyBottom.semiSmall,
                 child: JidoujishoTag(
                   text: dictionary.name,
-                  backgroundColor: Colors.red.shade900,
+                  backgroundColor:
+                      Theme.of(context).colorScheme.secondaryContainer,
                 ),
               ),
               ...pitchWidgets,
@@ -380,7 +374,8 @@ class _DictionaryTermPitchList extends ConsumerWidget {
             children: [
               JidoujishoTag(
                 text: dictionary.name,
-                backgroundColor: Colors.red.shade900,
+                backgroundColor:
+                    Theme.of(context).colorScheme.secondaryContainer,
               ),
               ...pitchWidgets,
             ],
@@ -439,7 +434,7 @@ class _DictionaryTermFreqList extends ConsumerWidget {
           trailingText: frequenciesForDictionary.value
               .map((e) => e.displayValue)
               .join(', '),
-          backgroundColor: Colors.red.shade900,
+          backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
         ),
       );
     }).toList();
