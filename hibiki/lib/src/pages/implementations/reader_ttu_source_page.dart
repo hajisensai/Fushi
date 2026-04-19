@@ -1967,42 +1967,19 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
   Widget _buildFollowPill() {
     final int? target = _pendingNavSection;
     if (target == null) return const SizedBox.shrink();
-    final ColorScheme colors = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.only(bottom: 4, left: 12, right: 12),
       child: Align(
         alignment: Alignment.centerRight,
-        child: Material(
-          color: colors.primary,
-          borderRadius: BorderRadius.circular(20),
-          elevation: 2,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(20),
-            onTap: _followPillTap,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 14,
-                vertical: 6,
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.arrow_forward,
-                    size: 16,
-                    color: colors.onPrimary,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    '第 ${target + 1} 章',
-                    style: TextStyle(
-                      color: colors.onPrimary,
-                      fontSize: 13,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+        child: FilledButton.icon(
+          onPressed: _followPillTap,
+          icon: const Icon(Icons.arrow_forward, size: 16),
+          label: Text('第 ${target + 1} 章'),
+          style: FilledButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            minimumSize: const Size(0, 32),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            textStyle: const TextStyle(fontSize: 13),
           ),
         ),
       ),
