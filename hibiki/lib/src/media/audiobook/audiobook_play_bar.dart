@@ -17,55 +17,45 @@ class AudiobookPlayBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
-
-    return Material(
-      color: colors.surface.withAlpha(230),
-      elevation: 8,
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: Row(
-            children: [
-              // 上一句
-              IconButton(
-                icon: const Icon(Icons.skip_previous),
-                iconSize: 22,
-                onPressed: controller.skipToPrevCue,
-                tooltip: '上一句',
+    return SafeArea(
+      top: false,
+      child: BottomAppBar(
+        height: 56,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Row(
+          children: [
+            IconButton(
+              icon: const Icon(Icons.skip_previous),
+              iconSize: 22,
+              onPressed: controller.skipToPrevCue,
+              tooltip: '上一句',
+            ),
+            IconButton.filledTonal(
+              icon: Icon(
+                controller.isPlaying ? Icons.pause : Icons.play_arrow,
               ),
-              // 播放/暂停
-              IconButton(
-                icon: Icon(
-                  controller.isPlaying ? Icons.pause : Icons.play_arrow,
-                ),
-                iconSize: 28,
-                onPressed: controller.togglePlayPause,
+              iconSize: 24,
+              onPressed: controller.togglePlayPause,
+              tooltip: controller.isPlaying ? '暂停' : '播放',
+            ),
+            IconButton(
+              icon: const Icon(Icons.skip_next),
+              iconSize: 22,
+              onPressed: controller.skipToNextCue,
+              tooltip: '下一句',
+            ),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Text(
+                controller.currentCue?.text ?? '',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
               ),
-              // 下一句
-              IconButton(
-                icon: const Icon(Icons.skip_next),
-                iconSize: 22,
-                onPressed: controller.skipToNextCue,
-                tooltip: '下一句',
-              ),
-              const SizedBox(width: 4),
-              // 当前句文本（单行省略）
-              Expanded(
-                child: Text(
-                  controller.currentCue?.text ?? '',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ),
-              // Follow audio 开关（磁铁图标；PR8b）
-              AudiobookFollowAudioButton(controller: controller),
-              // 倍速按钮
-              AudiobookSpeedButton(controller: controller),
-            ],
-          ),
+            ),
+            AudiobookFollowAudioButton(controller: controller),
+            AudiobookSpeedButton(controller: controller),
+          ],
         ),
       ),
     );
@@ -92,7 +82,7 @@ class AudiobookFollowAudioButton extends StatelessWidget {
         return IconButton(
           icon: Icon(on ? Icons.link : Icons.link_off),
           iconSize: 20,
-          color: on ? colors.primary : colors.onSurface.withAlpha(140),
+          color: on ? colors.primary : colors.onSurfaceVariant,
           tooltip: on ? 'Follow audio: ON（跨章自动跳转）' : 'Follow audio: OFF',
           onPressed: () {
             // persist 回调在 reader 页面把 controller 和 repo 绑上；这里
@@ -122,9 +112,14 @@ class AudiobookSpeedButton extends StatelessWidget {
 
     return TextButton(
       onPressed: () => controller.setSpeed(next),
+      style: TextButton.styleFrom(
+        minimumSize: const Size(48, 36),
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        visualDensity: VisualDensity.compact,
+      ),
       child: Text(
         '${current.toStringAsFixed(2)}x',
-        style: Theme.of(context).textTheme.labelSmall,
+        style: Theme.of(context).textTheme.labelMedium,
       ),
     );
   }
