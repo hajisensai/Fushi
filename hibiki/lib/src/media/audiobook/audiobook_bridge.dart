@@ -150,9 +150,26 @@ window.__hoshiTick = function() {
   // 把 cue 的 viewport 坐标换算成 content 内 scroll 坐标。
   var cRect = content.getBoundingClientRect();
   var elTopInContent = rect.top - cRect.top + content.scrollTop;
+  var elBotInContent = rect.bottom - cRect.top + content.scrollTop;
 
-  // 按 stride 整数倍对齐到 ttu 的视觉页边界。
-  var pageIndex = Math.floor(elTopInContent / stride);
+  // 按 stride 整数倍对齐到 ttu 的视觉页边界。单纯 Math.floor(top/stride)
+  // 在 top 卡在 (N+1)*stride 前几像素（落在第 N 页尾 pageH 和下一页开头
+  // 之间的 column-gap 区域）时会把 span 误判到第 N 页 —— 真正可见区是
+  // [N*stride, N*stride+pageH]，span 顶部已经越过 pageH，滚到 N*stride
+  // 后 span 反而跑出视口下方。
+  // 改为"选 span 与 [N*stride, N*stride+pageH] 交集最大的那一页"——候选
+  // 只看 floor(top/stride) 和 +1 两页。
+  function pageVisible(N) {
+    var vTop = N * stride;
+    var vBot = vTop + pageH;
+    return Math.max(0, Math.min(elBotInContent, vBot) -
+                       Math.max(elTopInContent, vTop));
+  }
+  var pageN = Math.floor(elTopInContent / stride);
+  var pageIndex = pageN;
+  if (pageVisible(pageN + 1) > pageVisible(pageN)) {
+    pageIndex = pageN + 1;
+  }
   var maxScroll = Math.max(0, content.scrollHeight - pageH);
   var targetScrollTop = Math.max(0, Math.min(pageIndex * stride, maxScroll));
 
@@ -648,6 +665,11 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
   var endNode = null, endOffset = 0;
   var normPos = 0;
   var lastNode = null;
+  // 顺便累积 walker 视角的 **纯化文本**（跳过 rt/rp + skippable）。
+  // 不能用 range.toString() 做 match 对账：DOM Range 规范会把 Range 跨越
+  // 的所有 Text 节点内容拼进去（包括被 walker 跳过的 <rt> 振假名），对
+  // 日文带 ruby 的正文必然比 expectedCue 多出一串假名，match 永远假阳性。
+  var actualNormText = '';
   var node;
   while ((node = walker.nextNode())) {
     lastNode = node;
@@ -658,6 +680,9 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
       if (startNode === null && normPos >= targetStart) {
         startNode = node;
         startOffset = i;
+      }
+      if (startNode !== null && normPos < targetEnd) {
+        actualNormText += text[i];
       }
       normPos++;
       if (startNode !== null && normPos >= targetEnd) {
@@ -701,20 +726,18 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
     return;
   }
 
-  // ★ 关键诊断：在包裹 span 之前先抓 range.toString()，与 expectedCue
-  // 直接对账。如果两者不同就是 sectionIndex/normChar 偏移或 normalize
-  // 规则有问题；如果两者相同但用户视觉上还是错位，那是 Svelte 重渲染
-  // 把 span 吃掉了之类的渲染层 bug。
-  var actualText = '';
-  try { actualText = range.toString(); } catch (_) {}
+  // ★ 关键诊断：在包裹 span 之前用 walker 累积的纯化文本与 expectedCue
+  // 直接对账。两者不同 → sectionIndex/normChar 偏移或 normalize 规则有
+  // 问题；两者相同但用户视觉上仍错位 → 渲染层 bug（Svelte 重渲染吃掉
+  // span 之类）。注意不能用 range.toString()：Range 会把跨越的 <rt>
+  // 假名一起拼进字符串，对带 ruby 的正文永远假阳性。
+  var actualText = actualNormText;
 
   // ── 兜底：cue 文本对不上时按 indexOf 重定位 ──
-  // 按 Dart 侧 normChar 偏移定位到的 range 落在错位的句子上，大多是因为
-  // ttu 渲染期对 HTML 做了 Dart 侧 DOMParser 不会做的改写（例如重排 ruby
-  // 结构、注入排版节点），累计计数就和 matcher 写回的 normChar 漂移。
-  // 这里用 expectedCue normalize 后的串在当前挂载段里 indexOf 定位，按
-  // "离原 targetStart 最近"的命中重建 range。找不到就放弃本条，不 wrap、
-  // 不滚动、保持视口不动。
+  // 按 Dart 侧 normChar 偏移定位到的 range 落在错位的句子上（ttu 渲染
+  // 期对 HTML 做了 Dart 侧 DOMParser 不会做的改写时触发）。用 expectedCue
+  // normalize 后的串在当前挂载段里 indexOf 定位，按"离原 targetStart 最
+  // 近"的命中重建 range。找不到就放弃本条，不 wrap、不滚动、保持视口不动。
   function normKeep(t) {
     var b = '';
     for (var i = 0; i < t.length; i++) {
@@ -722,7 +745,7 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
     }
     return b;
   }
-  var normActual = normKeep(actualText);
+  var normActual = actualNormText;
   var normExpected = normKeep(expectedCue || '');
   var usedFallback = false;
   var fallbackDelta = 0;
@@ -776,7 +799,9 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
         range = document.createRange();
         range.setStart(startNode, startOffset);
         range.setEnd(endNode, endOffset);
-        actualText = range.toString();
+        // 走 fbStr 切片而不是 range.toString()：后者会把 Range 跨越的
+        // <rt>/<rp> 拼进来导致日志假阳性。
+        actualText = fbStr.slice(bestIdx, bestIdx + normExpected.length);
         usedFallback = true;
         fallbackDelta = bestIdx - targetStart;
         console.log(JSON.stringify({
