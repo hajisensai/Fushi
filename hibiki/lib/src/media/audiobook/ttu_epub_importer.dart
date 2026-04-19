@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
 
+import 'package:archive/archive.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
@@ -32,7 +33,15 @@ class TtuEpubImporter {
     }
 
     log('start', 'file="$filename" bytes=${bytes.length}');
-    final String b64 = base64Encode(bytes);
+
+    // 某些 EPUB（例如 calibre 2.0 导出）的 manifest 用 media-type="text/html"
+    // 而非 "application/xhtml+xml"；ttu 的 ah() 里构造 id→href 映射时只认
+    // xhtml+xml，结果整个 map 是空的，下游 zt.dirname(undefined) 直接抛
+    // "Path must be a string"。导入前把 OPF 里的 text/html 改写成
+    // xhtml+xml，再喂给 ttu。
+    final Uint8List normalised = _rewriteHtmlMediaType(bytes, log);
+
+    final String b64 = base64Encode(normalised);
     log('b64-encoded', 'b64_len=${b64.length}');
 
     final Completer<int> completer = Completer<int>();
@@ -328,4 +337,83 @@ class TtuEpubImporter {
 ''';
   }
 
+  /// If the EPUB's OPF manifest uses `media-type="text/html"` for xhtml
+  /// items, rewrite it to `application/xhtml+xml` and re-zip. Returns the
+  /// original [bytes] untouched when no rewrite is needed or when anything
+  /// goes wrong (ttu will then fail loudly, which is better than silently
+  /// producing a corrupted archive).
+  static Uint8List _rewriteHtmlMediaType(
+    Uint8List bytes,
+    void Function(String stage, [String? extra]) log,
+  ) {
+    try {
+      final Archive archive = ZipDecoder().decodeBytes(bytes);
+
+      // Find container.xml → OPF path.
+      final ArchiveFile? container = archive.findFile('META-INF/container.xml');
+      if (container == null) {
+        log('rewrite:skip', 'no container.xml');
+        return bytes;
+      }
+      final String containerXml = utf8.decode(container.content as List<int>);
+      final RegExp fullPathRe =
+          RegExp(r'full-path\s*=\s*"([^"]+)"', caseSensitive: false);
+      final Match? m = fullPathRe.firstMatch(containerXml);
+      if (m == null) {
+        log('rewrite:skip', 'no full-path in container');
+        return bytes;
+      }
+      final String opfPath = m.group(1)!;
+      final ArchiveFile? opfFile = archive.findFile(opfPath);
+      if (opfFile == null) {
+        log('rewrite:skip', 'opf not found at $opfPath');
+        return bytes;
+      }
+
+      final String opfContent = utf8.decode(opfFile.content as List<int>);
+      // 只替换 <manifest>…</manifest> 里的 <item … media-type="text/html" …>。
+      final RegExp manifestRe =
+          RegExp(r'<manifest\b[^>]*>([\s\S]*?)</manifest>', caseSensitive: false);
+      final Match? mm = manifestRe.firstMatch(opfContent);
+      if (mm == null) {
+        log('rewrite:skip', 'no <manifest> in opf');
+        return bytes;
+      }
+      final String manifestBlock = mm.group(0)!;
+      final RegExp itemHtmlRe = RegExp(
+          r'(<item\b[^>]*\bmedia-type\s*=\s*")text/html(\s*"[^>]*/?>)',
+          caseSensitive: false);
+      final int hits = itemHtmlRe.allMatches(manifestBlock).length;
+      if (hits == 0) {
+        log('rewrite:skip', 'opf already xhtml');
+        return bytes;
+      }
+      final String newManifest = manifestBlock.replaceAllMapped(
+          itemHtmlRe, (m) => '${m.group(1)}application/xhtml+xml${m.group(2)}');
+      final String newOpf = opfContent.replaceFirst(manifestBlock, newManifest);
+      log('rewrite:hit', 'items=$hits opf=$opfPath');
+
+      // 替换 archive 里的 OPF 条目（保持其它条目原样）。
+      final Archive rebuilt = Archive();
+      for (final ArchiveFile f in archive) {
+        if (f.name == opfPath) {
+          final List<int> newBytes = utf8.encode(newOpf);
+          rebuilt.addFile(ArchiveFile(f.name, newBytes.length, newBytes));
+        } else {
+          rebuilt.addFile(f);
+        }
+      }
+
+      final List<int>? zipped = ZipEncoder().encode(rebuilt);
+      if (zipped == null) {
+        log('rewrite:encode-null');
+        return bytes;
+      }
+      log('rewrite:done', 'new_size=${zipped.length}');
+      return Uint8List.fromList(zipped);
+    } catch (e) {
+      log('rewrite:err', e.toString());
+      return bytes;
+    }
+  }
 }

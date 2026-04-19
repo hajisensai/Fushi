@@ -7,6 +7,7 @@ environment:
   flutter: "^3.13.5"
 
 dependencies:
+  archive: ^3.6.1
   async_zip: ^0.1.0
   audio_service: ^0.18.9
   audio_session: ^0.1.13
