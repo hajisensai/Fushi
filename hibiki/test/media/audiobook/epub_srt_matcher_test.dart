@@ -348,6 +348,28 @@ void main() {
       }
     });
 
+    test('模糊兜底：首条 cue 精确失败，靠后续锚点也能被补上（bolded 首句场景）', () {
+      // 真实现象：EPUB 首句 `<b>…</b>` 后原作者多加 1 字标点/送り仮名差异，
+      // SRT 听写与 EPUB 差 1 字 → exact 失败。旧 gap-fill 把 gapStart 钉在
+      // probe 起点（= 首条已匹配 cue 的位置），gap 为空跳过。新版允许从
+      // nextAnchor - searchWindow 开始向前兜底。
+      final List<EpubSection> sections = <EpubSection>[
+        mkSection(0, '最初の文はここにある二番目の文で続く最後の文で終わる'),
+      ];
+      final List<AudioCue> cues = <AudioCue>[
+        mkCue(0, '最初の文はここにアる'), // る → ア 差 1 字
+        mkCue(1, '二番目の文で続く'),
+        mkCue(2, '最後の文で終わる'),
+      ];
+
+      final MatchResult r = EpubSrtMatcher.match(sections: sections, cues: cues);
+
+      expect(r.matches[0].matched, isTrue, reason: '首条靠 gap-fill 补上');
+      expect(r.matches[1].matched, isTrue);
+      expect(r.matches[2].matched, isTrue);
+      expect(r.matches[0].normCharStart, 0);
+    });
+
     test('模糊兜底：尾段无后锚仍可在章末窗口内兜底', () {
       // 最后一条 cue 精确失败，但后面再没有已匹配 cue。此时 gap 终点 = big.length，
       // 仍允许在正文末尾附近做一次模糊。

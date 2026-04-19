@@ -212,7 +212,6 @@ class EpubSrtMatcher {
       cues: cues,
       big: big,
       idx: idx,
-      initialCursor: start,
       searchWindow: searchWindow,
     );
     if (filled > 0) {
@@ -240,7 +239,6 @@ class EpubSrtMatcher {
     required List<AudioCue> cues,
     required String big,
     required _Index idx,
-    required int initialCursor,
     required int searchWindow,
   }) {
     int added = 0;
@@ -255,16 +253,34 @@ class EpubSrtMatcher {
         j++;
       }
 
-      // 前锚：首条未匹配 cue 之前若无任何匹配，用 initialCursor（起点检测结果）
-      // 作为 gap 起点，避免从 0 回头错配音频前置 OP 已经被 probe 绕过的段。
-      // 后锚：尾段未匹配 cue 之后若无匹配，用 gapStart + searchWindow 作为 gap
-      // 终点，尊重用户对 searchWindow 的精度调参（否则 gap-fill 会漫搜到 EOF）。
-      final int gapStart =
-          (i == 0) ? initialCursor : _globalEnd(results[i - 1], idx);
-      final int hardEnd =
-          (j == results.length) ? big.length : _globalStart(results[j], idx);
-      final int windowEnd = (gapStart + searchWindow).clamp(0, hardEnd);
-      final int gapEnd = windowEnd;
+      // 三种锚点形态决定 gap 在 big 里的搜索范围（都尊重 searchWindow，
+      // 避免漫搜全书）：
+      // - 两端皆有锚：[prevEnd, min(prevEnd + searchWindow, nextStart)]。
+      //   正常夹心场景。
+      // - 仅后有锚（i==0）：[max(0, nextStart - searchWindow), nextStart]。
+      //   首条 cue 因微差精确失败、但后续正常锚点到位时走这里；旧实现
+      //   把 gapStart 钉在 probe 起点，等价于 nextStart，gap 为空错过首句。
+      // - 仅前有锚（j==len）：[prevEnd, prevEnd + searchWindow]。尾段兜底。
+      // - 全书无锚：跳过，避免误把完全不匹配的 SRT/EPUB 对靠模糊拼起来。
+      final bool hasPrev = i > 0;
+      final bool hasNext = j < results.length;
+      int gapStart;
+      int gapEnd;
+      if (hasPrev && hasNext) {
+        gapStart = _globalEnd(results[i - 1], idx);
+        final int nextStart = _globalStart(results[j], idx);
+        gapEnd = (gapStart + searchWindow).clamp(0, nextStart);
+      } else if (hasNext) {
+        final int nextStart = _globalStart(results[j], idx);
+        gapEnd = nextStart;
+        gapStart = (nextStart - searchWindow).clamp(0, nextStart);
+      } else if (hasPrev) {
+        gapStart = _globalEnd(results[i - 1], idx);
+        gapEnd = (gapStart + searchWindow).clamp(0, big.length);
+      } else {
+        i = j;
+        continue;
+      }
 
       if (gapEnd > gapStart && (gapEnd - gapStart) <= fuzzyMaxGapScan) {
         int cursor = gapStart;
