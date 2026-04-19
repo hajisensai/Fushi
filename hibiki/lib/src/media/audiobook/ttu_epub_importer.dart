@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -43,6 +44,50 @@ class TtuEpubImporter {
     // ttu 是 SPA，onLoadStop 会多次触发（navigation / service-worker 激活等）；
     // 重复执行会把同一份 13MB base64 再塞一次 JS 源码 + 再开一次 ttu 导入，
     // 既浪费主线程也可能造出重复的 IDB row。
+    // ttu 在模块加载时把 `console.error` 的引用捕获成常量
+    // （`et = {3: console.error, ...}`），我们等 onLoadStop 再包装就太晚了。
+    // 在 document-start 阶段就注入包装，保证 ttu 捕获到的是我们的版本。
+    const String preloadHook = '''
+(function() {
+  const post = (obj) => console.log(JSON.stringify(obj));
+  const origErr = console.error;
+  console.error = function(...args) {
+    try {
+      const payload = args.map(a => {
+        if (a && a.stack) return String(a) + '\\n' + a.stack;
+        if (a && typeof a === 'object') {
+          try { return JSON.stringify(a); } catch (_) { return String(a); }
+        }
+        return String(a);
+      }).join(' | ');
+      post({
+        messageType: 'ttu_import_log',
+        stage: 'preload:console.error',
+        extra: payload.slice(0, 2000),
+      });
+    } catch (_) {}
+    return origErr.apply(this, args);
+  };
+  window.addEventListener('error', (e) => {
+    post({
+      messageType: 'ttu_import_log',
+      stage: 'preload:window.error',
+      extra: (e.error && e.error.stack)
+          ? String(e.error) + '\\n' + e.error.stack
+          : (e.message || 'unknown'),
+    });
+  });
+  window.addEventListener('unhandledrejection', (e) => {
+    const r = e.reason;
+    post({
+      messageType: 'ttu_import_log',
+      stage: 'preload:unhandled',
+      extra: (r && r.stack) ? String(r) + '\\n' + r.stack : String(r),
+    });
+  });
+})();
+''';
+
     bool jsDispatched = false;
     webView = HeadlessInAppWebView(
       initialUrlRequest: URLRequest(
@@ -52,6 +97,12 @@ class TtuEpubImporter {
         allowFileAccessFromFileURLs: true,
         allowUniversalAccessFromFileURLs: true,
       ),
+      initialUserScripts: UnmodifiableListView<UserScript>([
+        UserScript(
+          source: preloadHook,
+          injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+        ),
+      ]),
       onLoadStop: (controller, url) async {
         log('onLoadStop', 'url=$url jsDispatched=$jsDispatched');
         if (jsDispatched) return;
@@ -131,31 +182,6 @@ class TtuEpubImporter {
     stage: stage,
     extra: (extra == null ? ('+' + (Date.now() - t0) + 'ms')
                           : ('+' + (Date.now() - t0) + 'ms ' + extra)),
-  });
-  // 捕获 ttu 自己吃掉之后只 toast 的错误 —— 把原始 stack 也回传 Dart。
-  const origErr = console.error;
-  console.error = function(...args) {
-    try {
-      const payload = args.map(a => {
-        if (a && a.stack) return String(a) + '\\n' + a.stack;
-        if (a && typeof a === 'object') {
-          try { return JSON.stringify(a); } catch (_) { return String(a); }
-        }
-        return String(a);
-      }).join(' | ');
-      logStage('js:console.error', payload.slice(0, 2000));
-    } catch (_) {}
-    return origErr.apply(this, args);
-  };
-  window.addEventListener('error', (e) => {
-    logStage('js:window.error', (e.error && e.error.stack)
-        ? String(e.error) + '\\n' + e.error.stack
-        : (e.message || 'unknown'));
-  });
-  window.addEventListener('unhandledrejection', (e) => {
-    const r = e.reason;
-    logStage('js:unhandled', (r && r.stack)
-        ? String(r) + '\\n' + r.stack : String(r));
   });
   try {
     logStage('driver-start');
