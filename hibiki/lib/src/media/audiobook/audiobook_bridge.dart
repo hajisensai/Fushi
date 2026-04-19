@@ -708,6 +708,113 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
   var actualText = '';
   try { actualText = range.toString(); } catch (_) {}
 
+  // ── 兜底：cue 文本对不上时按 indexOf 重定位 ──
+  // 按 Dart 侧 normChar 偏移定位到的 range 落在错位的句子上，大多是因为
+  // ttu 渲染期对 HTML 做了 Dart 侧 DOMParser 不会做的改写（例如重排 ruby
+  // 结构、注入排版节点），累计计数就和 matcher 写回的 normChar 漂移。
+  // 这里用 expectedCue normalize 后的串在当前挂载段里 indexOf 定位，按
+  // "离原 targetStart 最近"的命中重建 range。找不到就放弃本条，不 wrap、
+  // 不滚动、保持视口不动。
+  function normKeep(t) {
+    var b = '';
+    for (var i = 0; i < t.length; i++) {
+      if (!window.__hoshiIsSkippable(t.charCodeAt(i))) b += t[i];
+    }
+    return b;
+  }
+  var normActual = normKeep(actualText);
+  var normExpected = normKeep(expectedCue || '');
+  var usedFallback = false;
+  var fallbackDelta = 0;
+  if (normExpected.length >= 4 && normActual !== normExpected) {
+    var fbNodes = [];
+    var fbMap = [];
+    var fbStr = '';
+    var fbWalker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode: function(n) {
+        var p = n.parentNode;
+        while (p && p !== root) {
+          var tag = p.nodeName ? p.nodeName.toLowerCase() : '';
+          if (tag === 'rt' || tag === 'rp') return NodeFilter.FILTER_REJECT;
+          p = p.parentNode;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    var fbNode;
+    while ((fbNode = fbWalker.nextNode())) {
+      var ti = fbNodes.length;
+      fbNodes.push(fbNode);
+      var ftext = fbNode.nodeValue || '';
+      for (var fi = 0; fi < ftext.length; fi++) {
+        var fc = ftext.charCodeAt(fi);
+        if (window.__hoshiIsSkippable(fc)) continue;
+        fbStr += ftext[fi];
+        fbMap.push([ti, fi]);
+      }
+    }
+    // 选离原 targetStart 最近的命中——同一段内同句多次出现时避免 indexOf
+    // 总是挑第一个。
+    var bestIdx = -1;
+    var bestDelta = Infinity;
+    var from = 0;
+    while (from <= fbStr.length - normExpected.length) {
+      var p = fbStr.indexOf(normExpected, from);
+      if (p < 0) break;
+      var d = Math.abs(p - targetStart);
+      if (d < bestDelta) { bestDelta = d; bestIdx = p; }
+      from = p + 1;
+    }
+    if (bestIdx >= 0 && bestIdx + normExpected.length <= fbMap.length) {
+      var sMap = fbMap[bestIdx];
+      var eMap = fbMap[bestIdx + normExpected.length - 1];
+      startNode = fbNodes[sMap[0]];
+      startOffset = sMap[1];
+      endNode = fbNodes[eMap[0]];
+      endOffset = eMap[1] + 1;
+      try {
+        range = document.createRange();
+        range.setStart(startNode, startOffset);
+        range.setEnd(endNode, endOffset);
+        actualText = range.toString();
+        usedFallback = true;
+        fallbackDelta = bestIdx - targetStart;
+        console.log(JSON.stringify({
+          'hibiki-message-type': 'sasayakiHighlightFallback',
+          'sectionIndex': sectionIndex,
+          'origNormStart': targetStart,
+          'foundNormStart': bestIdx,
+          'delta': fallbackDelta,
+          'fbStrLen': fbStr.length
+        }));
+      } catch (fbErr) {
+        console.log(JSON.stringify({
+          'hibiki-message-type': 'sasayakiHighlightFallbackErr',
+          'error': String(fbErr)
+        }));
+        return;
+      }
+    } else {
+      // 当前段里确实找不到这条 cue —— 要么 cue 指向别段而挂载识别误判，
+      // 要么 cue 文本来源（字幕）和当前章节正文差异超出 indexOf 能容忍的
+      // 范围。保持视口不动，放弃本条高亮，等下一条对得上的 cue 恢复。
+      var stale3 = document.querySelectorAll('.hoshi-active');
+      for (var sl3 = 0; sl3 < stale3.length; sl3++) {
+        stale3[sl3].classList.remove('hoshi-active');
+      }
+      window.__hoshiTarget = null;
+      window.__hoshiStopTicker();
+      console.log(JSON.stringify({
+        'hibiki-message-type': 'sasayakiHighlightFallbackMiss',
+        'sectionIndex': sectionIndex,
+        'fbStrLen': fbStr.length,
+        'normExpectedLen': normExpected.length,
+        'expectedHead': normExpected.slice(0, 16)
+      }));
+      return;
+    }
+  }
+
   var span = document.createElement('span');
   span.className = 'hoshi-active';
   try {
@@ -737,6 +844,8 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
     'base': base,
     'expectedCue': clip(expectedCue, 32),
     'actualText': clip(actualText, 32),
+    'usedFallback': usedFallback,
+    'fallbackDelta': fallbackDelta,
     'match': (actualText && expectedCue)
       ? (function() {
           // 用 normalize 后的串比，避免标点差异造成误报
