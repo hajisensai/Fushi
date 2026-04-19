@@ -75,12 +75,13 @@ class MatchResult {
 /// 3. **起点检测**：取前 15 条 cue，跳过以 `＊` 开头的旁白 / 标题 cue，
 ///    跳过规范化后 < 6 字的短 cue，在全书做一次精确 `indexOf`，取最小命中
 ///    位置作为 cursor 起点。可以跳过音频前置的 OP 朗读。
-/// 4. **主循环**：对每条 cue，在 `big[cursor, cursor + searchWindow]` 内做
+/// 4. **精确主循环**：对每条 cue，在 `big[cursor, cursor + searchWindow]` 内做
 ///    精确子串 `indexOf`。命中则 cursor 推到子串末尾；未命中直接标记
 ///    unmatched，cursor 不动，下条 cue 重新找。
-/// 5. 不做 bigram 模糊匹配、不做阈值、不做后向救援 —— 白名单 normalize 把
-///    标点 / 叙述符号剥干净后，精确匹配对多数日文小说可达 95%+（见
-///    Hoshi-Reader 经验值 98%）。
+/// 5. **模糊兜底（gap-fill）**：对"夹在两条已精确匹配 cue 之间"的未匹配
+///    cue，在已知的狭窄区间 `big[prev.end, next.start]` 内滑动固定长度窗口
+///    跑有界 Levenshtein，相似度 ≥ [fuzzyThreshold] 就补一条 CueMatch。
+///    只在两条锚点之间搜，不做全书漫搜，误配率可控。
 class EpubSrtMatcher {
   static const int defaultSearchWindow = 1500;
 
@@ -90,6 +91,15 @@ class EpubSrtMatcher {
   /// 起点检测 probe cue 的最小归一化长度，短于此忽略（避免短词在全书
   /// 命中偏前的歧义位置拉偏起点）。
   static const int defaultProbeMinLen = 6;
+
+  /// 模糊兜底的相似度下限（1 - editDistance / len）。
+  static const double fuzzyThreshold = 0.85;
+
+  /// 模糊兜底对 cue 的最小归一化长度下限，太短不做模糊（假命中概率高）。
+  static const int fuzzyMinLen = 6;
+
+  /// 单个 gap 内最多扫多长（上限保险，防病态 cue 在一大段空白里拖时间）。
+  static const int fuzzyMaxGapScan = 4000;
 
   /// 在后台 isolate 里跑 [match]。
   static Future<MatchResult> matchInIsolate({
@@ -194,8 +204,22 @@ class EpubSrtMatcher {
       matched++;
     }
 
-    debugPrint('[sasayaki] matcher done: matched=$matched/${cues.length} '
+    debugPrint('[sasayaki] matcher done (exact): matched=$matched/${cues.length} '
         'finalCursor=$cursor/$totalLen');
+
+    final int filled = _gapFill(
+      results: results,
+      cues: cues,
+      big: big,
+      idx: idx,
+      initialCursor: start,
+      searchWindow: searchWindow,
+    );
+    if (filled > 0) {
+      matched += filled;
+      debugPrint('[sasayaki] matcher done (fuzzy gap-fill): +$filled '
+          'final=$matched/${cues.length}');
+    }
 
     return MatchResult(
       matches: results,
@@ -203,6 +227,184 @@ class EpubSrtMatcher {
       matchedCues: matched,
     );
   }
+
+  /// 第二遍：对"夹在两条已匹配 cue 之间"的未匹配 cue 做模糊兜底。
+  ///
+  /// 只在两条锚点之间的狭窄 gap（`big[prev.globalEnd, next.globalStart]`）里搜，
+  /// 不漫搜全书。命中后推进 gap 内的局部 cursor，下一条未匹配 cue 继续从这里
+  /// 往后搜，保证同一 gap 内多条 cue 的相对顺序。
+  ///
+  /// 返回本次补上的 cue 数。
+  static int _gapFill({
+    required List<CueMatch> results,
+    required List<AudioCue> cues,
+    required String big,
+    required _Index idx,
+    required int initialCursor,
+    required int searchWindow,
+  }) {
+    int added = 0;
+    int i = 0;
+    while (i < results.length) {
+      if (results[i].matched) {
+        i++;
+        continue;
+      }
+      int j = i;
+      while (j < results.length && !results[j].matched) {
+        j++;
+      }
+
+      // 前锚：首条未匹配 cue 之前若无任何匹配，用 initialCursor（起点检测结果）
+      // 作为 gap 起点，避免从 0 回头错配音频前置 OP 已经被 probe 绕过的段。
+      // 后锚：尾段未匹配 cue 之后若无匹配，用 gapStart + searchWindow 作为 gap
+      // 终点，尊重用户对 searchWindow 的精度调参（否则 gap-fill 会漫搜到 EOF）。
+      final int gapStart =
+          (i == 0) ? initialCursor : _globalEnd(results[i - 1], idx);
+      final int hardEnd =
+          (j == results.length) ? big.length : _globalStart(results[j], idx);
+      final int windowEnd = (gapStart + searchWindow).clamp(0, hardEnd);
+      final int gapEnd = windowEnd;
+
+      if (gapEnd > gapStart && (gapEnd - gapStart) <= fuzzyMaxGapScan) {
+        int cursor = gapStart;
+        for (int k = i; k < j; k++) {
+          final String nc = _normalize(cues[k].text);
+          if (nc.length < fuzzyMinLen) {
+            continue;
+          }
+          if (gapEnd - cursor < nc.length) {
+            break;
+          }
+          final _FuzzyHit? hit = _fuzzyFind(big, nc, cursor, gapEnd);
+          if (hit == null) {
+            continue;
+          }
+          final int secIdx =
+              _sectionForOffset(idx.sectionNormStarts, hit.start);
+          results[k] = CueMatch(
+            cueSentenceIndex: cues[k].sentenceIndex,
+            sectionIndex: secIdx,
+            normCharStart: hit.start - idx.sectionNormStarts[secIdx],
+            normCharEnd: hit.end - idx.sectionNormStarts[secIdx],
+            score: hit.similarity,
+          );
+          added++;
+          cursor = hit.end;
+          if (added <= 5) {
+            final String snippet = big.substring(hit.start, hit.end);
+            debugPrint('[sasayaki] matcher.fuzzy#$added sid=${cues[k].sentenceIndex} '
+                'sec=$secIdx sim=${hit.similarity.toStringAsFixed(2)} '
+                'cue="${_clip(cues[k].text, 24)}" '
+                'norm="${_clip(nc, 24)}" '
+                'big="${_clip(snippet, 24)}"');
+          }
+        }
+      }
+
+      i = j;
+    }
+    return added;
+  }
+
+  /// 在 `big[start, end)` 内，以长度 L=nc.length 滑动窗口跑有界 Levenshtein，
+  /// 取编辑距离最小的窗口；若 1 - d/L ≥ [fuzzyThreshold] 则返回该窗口。
+  ///
+  /// 注：保守使用等长窗口，让 Levenshtein 自己吞小的插入/删除；窗口长度
+  /// 与 cue 差 1 字的情形，边界 1~2 的 edit cost 会被吸收，不影响阈值判断。
+  static _FuzzyHit? _fuzzyFind(String big, String nc, int start, int end) {
+    final int L = nc.length;
+    final int scanEnd = end - L;
+    if (scanEnd < start) {
+      return null;
+    }
+    final int allowed = (L * (1 - fuzzyThreshold)).floor();
+    int bestD = allowed + 1;
+    int bestPos = -1;
+    for (int p = start; p <= scanEnd; p++) {
+      final int d = _levBounded(nc, big, p, L, bestD - 1);
+      if (d < bestD) {
+        bestD = d;
+        bestPos = p;
+        if (bestD == 0) {
+          break;
+        }
+      }
+    }
+    if (bestPos < 0) {
+      return null;
+    }
+    final double sim = 1.0 - bestD / L;
+    if (sim < fuzzyThreshold) {
+      return null;
+    }
+    return _FuzzyHit(bestPos, bestPos + L, sim);
+  }
+
+  /// Levenshtein(a, big[bStart, bStart+bLen])，超过 [maxDist] 提前终止。
+  static int _levBounded(
+      String a, String big, int bStart, int bLen, int maxDist) {
+    final int n = a.length;
+    final int m = bLen;
+    if (maxDist < 0) {
+      return (n == m) ? _levUnbounded(a, big, bStart, bLen) : 1;
+    }
+    if ((n - m).abs() > maxDist) {
+      return maxDist + 1;
+    }
+    List<int> prev = List<int>.filled(m + 1, 0);
+    List<int> curr = List<int>.filled(m + 1, 0);
+    for (int j = 0; j <= m; j++) {
+      prev[j] = j;
+    }
+    for (int i = 1; i <= n; i++) {
+      curr[0] = i;
+      int rowMin = i;
+      final int ac = a.codeUnitAt(i - 1);
+      for (int j = 1; j <= m; j++) {
+        final int bc = big.codeUnitAt(bStart + j - 1);
+        final int cost = (ac == bc) ? 0 : 1;
+        int v = prev[j] + 1;
+        final int left = curr[j - 1] + 1;
+        if (left < v) {
+          v = left;
+        }
+        final int diag = prev[j - 1] + cost;
+        if (diag < v) {
+          v = diag;
+        }
+        curr[j] = v;
+        if (v < rowMin) {
+          rowMin = v;
+        }
+      }
+      if (rowMin > maxDist) {
+        return maxDist + 1;
+      }
+      final List<int> tmp = prev;
+      prev = curr;
+      curr = tmp;
+    }
+    return prev[m];
+  }
+
+  // maxDist<0 的路径：只在 bestD 已经更新到 0 之后才会走到，这里给个保守
+  // 兜底（逐字符比对），实测几乎不会被命中。
+  static int _levUnbounded(String a, String big, int bStart, int bLen) {
+    int d = 0;
+    for (int i = 0; i < a.length && i < bLen; i++) {
+      if (a.codeUnitAt(i) != big.codeUnitAt(bStart + i)) {
+        d++;
+      }
+    }
+    return d + (a.length - bLen).abs();
+  }
+
+  static int _globalStart(CueMatch m, _Index idx) =>
+      idx.sectionNormStarts[m.sectionIndex] + m.normCharStart;
+
+  static int _globalEnd(CueMatch m, _Index idx) =>
+      idx.sectionNormStarts[m.sectionIndex] + m.normCharEnd;
 
   /// 取前 [defaultProbeCount] 条 cue，跳过 `＊` 开头 & 太短的，在全书做 indexOf，
   /// 返回最小命中偏移；全部 miss 则回到 0。
@@ -333,6 +535,14 @@ class _Index {
 
   final String normText;
   final List<int> sectionNormStarts;
+}
+
+class _FuzzyHit {
+  const _FuzzyHit(this.start, this.end, this.similarity);
+
+  final int start;
+  final int end;
+  final double similarity;
 }
 
 class _MatchRequest {

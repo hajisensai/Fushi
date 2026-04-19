@@ -270,6 +270,100 @@ void main() {
       expect(r.matchedCues, 2);
     });
 
+    test('模糊兜底：夹在两条已命中 cue 之间的微差 cue 仍被补上', () {
+      // 场景：SubPlz 把 "曇" 听成 "雲"，或 EPUB 排版多加一字，cue 前后都精确
+      // 命中，中间这条靠 gap-fill 救回。
+      final List<EpubSection> sections = <EpubSection>[
+        mkSection(
+          0,
+          '昨日は雨だった今日は晴れ時々曇りだった明日は雪の予報だ',
+        ),
+      ];
+      final List<AudioCue> cues = <AudioCue>[
+        mkCue(0, '昨日は雨だった'),
+        mkCue(1, '今日は晴れ時々雲りだった'), // 曇 → 雲（1 char 差，sim=0.917）
+        mkCue(2, '明日は雪の予報だ'),
+      ];
+
+      final MatchResult r = EpubSrtMatcher.match(sections: sections, cues: cues);
+
+      expect(r.matches[0].matched, isTrue);
+      expect(r.matches[1].matched, isTrue,
+          reason: 'gap-fill 应当补上相似度 0.917 的中间句');
+      expect(r.matches[2].matched, isTrue);
+      // 模糊命中的 score 介于阈值和 1.0 之间
+      expect(r.matches[1].score, greaterThanOrEqualTo(0.85));
+      expect(r.matches[1].score, lessThan(1.0));
+      // 位置夹在前后锚点之间
+      expect(r.matches[1].normCharStart,
+          greaterThanOrEqualTo(r.matches[0].normCharEnd));
+      expect(r.matches[1].normCharEnd,
+          lessThanOrEqualTo(r.matches[2].normCharStart));
+    });
+
+    test('模糊兜底：相似度低于阈值不补（避免把噪音塞进 gap）', () {
+      // gap 内文本与 cue 差一半以上字符，sim 远低于 0.85，应保持 unmatched。
+      final List<EpubSection> sections = <EpubSection>[
+        mkSection(
+          0,
+          '昨日は雨だった全然違う文章がここに入る明日は雪の予報だ',
+        ),
+      ];
+      final List<AudioCue> cues = <AudioCue>[
+        mkCue(0, '昨日は雨だった'),
+        mkCue(1, '今日は晴れ時々曇りだった'), // 与 gap 内文本毫不相关
+        mkCue(2, '明日は雪の予報だ'),
+      ];
+
+      final MatchResult r = EpubSrtMatcher.match(sections: sections, cues: cues);
+
+      expect(r.matches[0].matched, isTrue);
+      expect(r.matches[1].matched, isFalse);
+      expect(r.matches[2].matched, isTrue);
+    });
+
+    test('模糊兜底：同一 gap 内多条未匹配 cue 顺序命中，不会错位', () {
+      final List<EpubSection> sections = <EpubSection>[
+        mkSection(
+          0,
+          '最初の文はここにある第二の文が来て第三の文で締めくくる最後の文で終わる',
+        ),
+      ];
+      final List<AudioCue> cues = <AudioCue>[
+        mkCue(0, '最初の文はここにある'),
+        // 以下两条各差 1 字，exact 失败，gap-fill 应按顺序补
+        mkCue(1, '第二の文が末て'), // 来→末
+        mkCue(2, '第三の文で絞めくくる'), // 締→絞
+        mkCue(3, '最後の文で終わる'),
+      ];
+
+      final MatchResult r = EpubSrtMatcher.match(sections: sections, cues: cues);
+
+      expect(r.matchedCues, 4);
+      // 顺序单调
+      for (int i = 1; i < 4; i++) {
+        expect(r.matches[i].normCharStart,
+            greaterThanOrEqualTo(r.matches[i - 1].normCharEnd),
+            reason: 'cue $i 应落在 cue ${i - 1} 之后');
+      }
+    });
+
+    test('模糊兜底：尾段无后锚仍可在章末窗口内兜底', () {
+      // 最后一条 cue 精确失败，但后面再没有已匹配 cue。此时 gap 终点 = big.length，
+      // 仍允许在正文末尾附近做一次模糊。
+      final List<EpubSection> sections = <EpubSection>[
+        mkSection(0, '最初の文はここにある最後の文で終了する'),
+      ];
+      final List<AudioCue> cues = <AudioCue>[
+        mkCue(0, '最初の文はここにある'),
+        mkCue(1, '最後の文で終了すル'), // る → ル 差 1 字
+      ];
+
+      final MatchResult r = EpubSrtMatcher.match(sections: sections, cues: cues);
+
+      expect(r.matchedCues, 2);
+    });
+
     test('normCharStart/End 在 section 内且单调', () {
       final List<EpubSection> sections = <EpubSection>[
         mkSection(0, 'あいうえおかきくけこさしすせそ'),
