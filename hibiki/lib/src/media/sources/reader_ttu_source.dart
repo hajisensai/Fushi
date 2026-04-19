@@ -586,6 +586,22 @@ new Promise(function(resolve) {
     );
   }
 
+  /// Whether the screen should stay awake while the reader is open.
+  bool get keepScreenAwake {
+    return getPreference<bool>(
+      key: 'keep_screen_awake',
+      defaultValue: true,
+    );
+  }
+
+  /// Toggles the keep-screen-awake preference.
+  void toggleKeepScreenAwake() async {
+    await setPreference<bool>(
+      key: 'keep_screen_awake',
+      value: !keepScreenAwake,
+    );
+  }
+
   /// Used to fetch JSON for all books in IndexedDB.
   static const String getHistoryJs = '''
 indexedDB.databases().then((databases) => {

@@ -2320,7 +2320,12 @@ class AppModel with ChangeNotifier {
     _overrideDictionaryColor = null;
     _overrideDictionaryTheme = null;
 
-    await Wakelock.enable();
+    // Only the reader remains as a media source (Phase 1 stripped the rest),
+    // so the keep-screen-awake pref lives on ReaderTtuSource — respect it
+    // here so users who turn the toggle off aren't forced to stay awake.
+    if (ReaderTtuSource.instance.keepScreenAwake) {
+      await Wakelock.enable();
+    }
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
     if (item != null && mediaSource.implementsHistory) {

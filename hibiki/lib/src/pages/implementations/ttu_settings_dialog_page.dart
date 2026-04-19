@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:spaces/spaces.dart';
+import 'package:wakelock/wakelock.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
@@ -76,6 +77,7 @@ class _DictionaryDialogPageState extends BasePageState {
               buildInvertPageTurningSwitch(),
               buildExtendPageSwitch(),
               buildAdaptThemeSwitch(),
+              buildKeepScreenAwakeSwitch(),
               const Space.small(),
               const JidoujishoDivider(),
               buildPageTurningSpeedField(),
@@ -103,6 +105,8 @@ class _DictionaryDialogPageState extends BasePageState {
               onChanged: (value) {
                 source.toggleVolumePageTurningEnabled();
                 notifier.value = source.volumePageTurningEnabled;
+                VolumeKeyChannel.instance
+                    .setInterceptEnabled(source.volumePageTurningEnabled);
               },
             );
           },
@@ -177,6 +181,36 @@ class _DictionaryDialogPageState extends BasePageState {
               onChanged: (value) {
                 source.toggleAdaptTtuTheme();
                 notifier.value = source.adaptTtuTheme;
+              },
+            );
+          },
+        )
+      ],
+    );
+  }
+
+  Widget buildKeepScreenAwakeSwitch() {
+    ValueNotifier<bool> notifier =
+        ValueNotifier<bool>(source.keepScreenAwake);
+
+    return Row(
+      children: [
+        Expanded(
+          child: Text(t.keep_screen_awake),
+        ),
+        ValueListenableBuilder<bool>(
+          valueListenable: notifier,
+          builder: (_, value, __) {
+            return Switch(
+              value: value,
+              onChanged: (value) async {
+                source.toggleKeepScreenAwake();
+                notifier.value = source.keepScreenAwake;
+                if (source.keepScreenAwake) {
+                  await Wakelock.enable();
+                } else {
+                  await Wakelock.disable();
+                }
               },
             );
           },

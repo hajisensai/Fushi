@@ -101,6 +101,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _applyVolumeKeyIntercept();
     // 异步检查是否有挂载有声书
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initAudiobookIfAvailable();
@@ -109,10 +110,53 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
 
   @override
   void dispose() {
+    VolumeKeyChannel.instance.setHandlers();
+    VolumeKeyChannel.instance.setInterceptEnabled(false);
     _audiobookController?.removeListener(_onCueChanged);
     _audiobookController?.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  /// Wire native volume-key interception according to the current setting.
+  /// Called on page mount and whenever the toggle flips via the settings
+  /// dialog so the key handler stops swallowing volume presses once the
+  /// user turns the feature off.
+  void _applyVolumeKeyIntercept() {
+    final enabled = mediaSource.volumePageTurningEnabled;
+    if (enabled) {
+      VolumeKeyChannel.instance.setHandlers(
+        onVolumeUp: _onVolumeKeyUp,
+        onVolumeDown: _onVolumeKeyDown,
+      );
+    } else {
+      VolumeKeyChannel.instance.setHandlers();
+    }
+    VolumeKeyChannel.instance.setInterceptEnabled(enabled);
+  }
+
+  void _onVolumeKeyUp() {
+    if (!_controllerInitialised) return;
+    if (isDictionaryShown) {
+      clearDictionaryResult();
+      unselectWebViewTextSelection(_controller);
+      mediaSource.clearCurrentSentence();
+      return;
+    }
+    unselectWebViewTextSelection(_controller);
+    _controller.evaluateJavascript(source: leftArrowSimulateJs);
+  }
+
+  void _onVolumeKeyDown() {
+    if (!_controllerInitialised) return;
+    if (isDictionaryShown) {
+      clearDictionaryResult();
+      unselectWebViewTextSelection(_controller);
+      mediaSource.clearCurrentSentence();
+      return;
+    }
+    unselectWebViewTextSelection(_controller);
+    _controller.evaluateJavascript(source: rightArrowSimulateJs);
   }
 
   @override
@@ -180,36 +224,11 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         }
       },
       canRequestFocus: true,
-      onKey: (data, event) {
-        if (ModalRoute.of(context)?.isCurrent ?? false) {
-          if (mediaSource.volumePageTurningEnabled) {
-            if (isDictionaryShown) {
-              clearDictionaryResult();
-              unselectWebViewTextSelection(_controller);
-              mediaSource.clearCurrentSentence();
-
-              return KeyEventResult.handled;
-            }
-
-            if (event.isKeyPressed(LogicalKeyboardKey.audioVolumeUp)) {
-              unselectWebViewTextSelection(_controller);
-              _controller.evaluateJavascript(source: leftArrowSimulateJs);
-
-              return KeyEventResult.handled;
-            }
-            if (event.isKeyPressed(LogicalKeyboardKey.audioVolumeDown)) {
-              unselectWebViewTextSelection(_controller);
-              _controller.evaluateJavascript(source: rightArrowSimulateJs);
-
-              return KeyEventResult.handled;
-            }
-          }
-
-          return KeyEventResult.ignored;
-        } else {
-          return KeyEventResult.ignored;
-        }
-      },
+      // Android volume keys don't reach Flutter's key pipeline reliably
+      // (AudioManager consumes them first), so page-turn goes through
+      // VolumeKeyChannel / MainActivity.dispatchKeyEvent instead. This
+      // Focus is kept for other future keyboard bindings (e.g. desktop).
+      onKey: (data, event) => KeyEventResult.ignored,
       child: WillPopScope(
         onWillPop: onWillPop,
         child: Scaffold(

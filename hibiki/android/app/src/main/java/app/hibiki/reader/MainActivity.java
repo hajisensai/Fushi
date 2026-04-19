@@ -7,6 +7,7 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.KeyEvent;
 import androidx.annotation.NonNull;
 import android.net.Uri;
 
@@ -33,10 +34,16 @@ import android.content.res.Configuration;
 
 public class MainActivity extends AudioServiceActivity {
     private static final String ANKIDROID_CHANNEL = "app.hibiki.reader/anki";
+    private static final String VOLUME_KEY_CHANNEL = "app.hibiki.reader/volume_keys";
     private static final int AD_PERM_REQUEST = 0;
 
     private Activity context;
     private AnkiDroidHelper mAnkiDroid;
+
+    // Reader opens this gate when volume-key page turning is enabled so
+    // dispatchKeyEvent swallows VOLUME_UP/DOWN and forwards them to Dart.
+    private volatile boolean volumeKeyIntercept = false;
+    private MethodChannel volumeKeyChannel;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -148,8 +155,39 @@ public class MainActivity extends AudioServiceActivity {
     }
 
     @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (volumeKeyIntercept) {
+            int code = event.getKeyCode();
+            if (code == KeyEvent.KEYCODE_VOLUME_UP || code == KeyEvent.KEYCODE_VOLUME_DOWN) {
+                if (event.getAction() == KeyEvent.ACTION_DOWN && volumeKeyChannel != null) {
+                    final String method = code == KeyEvent.KEYCODE_VOLUME_UP
+                            ? "onVolumeUp"
+                            : "onVolumeDown";
+                    new Handler(Looper.getMainLooper()).post(() -> {
+                        volumeKeyChannel.invokeMethod(method, null);
+                    });
+                }
+                return true;
+            }
+        }
+        return super.dispatchKeyEvent(event);
+    }
+
+    @Override
     public void configureFlutterEngine(@NonNull FlutterEngine flutterEngine) {
         super.configureFlutterEngine(flutterEngine);
+
+        volumeKeyChannel = new MethodChannel(
+                flutterEngine.getDartExecutor().getBinaryMessenger(), VOLUME_KEY_CHANNEL);
+        volumeKeyChannel.setMethodCallHandler((call, result) -> {
+            if ("setInterceptEnabled".equals(call.method)) {
+                Object arg = call.arguments;
+                volumeKeyIntercept = arg instanceof Boolean && (Boolean) arg;
+                result.success(null);
+            } else {
+                result.notImplemented();
+            }
+        });
 
         new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), ANKIDROID_CHANNEL)
             .setMethodCallHandler(
