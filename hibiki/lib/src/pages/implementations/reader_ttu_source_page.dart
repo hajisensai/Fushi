@@ -1823,10 +1823,27 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         serverPort: serverPort,
       ),
     );
-    // result == true 表示用户完成导入，重新初始化播放器
-    if (result == true && mounted) {
+    // result == true 表示用户完成导入，重新初始化播放器；
+    // result == false 表示用户移除，拆掉内存中的控制器/播放条。
+    if (!mounted) return;
+    if (result == true) {
       await _initAudiobookIfAvailable();
+    } else if (result == false) {
+      _tearDownAudiobook();
     }
+  }
+
+  /// 用户从对话框里移除有声书后调用。拆 listener、dispose 控制器、清掉
+  /// SrtBook 关联状态，并 setState 让播放条消失、耳机 FAB 重新出现。
+  /// Isar 那边 deleteAudiobook 已经由对话框负责；这里只管内存状态。
+  void _tearDownAudiobook() {
+    final AudiobookPlayerController? ctrl = _audiobookController;
+    ctrl?.removeListener(_onCueChanged);
+    ctrl?.dispose();
+    setState(() {
+      _audiobookController = null;
+      _srtBookUid = null;
+    });
   }
 
   /// 给已存在的 [SrtBook] 补音频：action sheet 选"目录"或"多文件"，
