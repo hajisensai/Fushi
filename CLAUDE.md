@@ -13,17 +13,11 @@
 
 **Phase 1 已完成**：剥离 YouTube / VLC / 浏览器 / ChatGPT / 歌词 / Mokuro，保留 Reader + Dictionary + Anki。debug APK 可编译。
 
-**Phase 2 进行中**：
-- UI 精简：HomePage 已去掉 BottomNavigationBar，直接显示书架
-- 有声书同步（SMIL + JSON 对齐）：已完成全链路（Isar schema → 播放器 → WebView 桥 → 阅读器集成 → 导入 UI）
-- 字幕独立导入：SRT / LRC / VTT / ASS 四种 parser 齐全，导入对话框统一接入
-- 字幕 → EPUB 渲染改造进度（见 `SUBTITLE_TO_EPUB_PLAN.md`）：
-  - PR-A 完成：`CuesToEpub`（EPUB 生成器 + `TtuIdbPayload`/`TtuSection` 数据类）
-  - PR-B 完成：导入时注入 ttu IndexedDB（`ttuBookId` 字段），打开走 `ReaderTtuSourcePage`
-  - PR-C 完成：AudiobookBridge 接字幕 EPUB（`data-cue-id` 高亮/点击跳转），后续一路修 cue 滚动/翻页/章节切换的细节 bug
-  - PR-D 完成：删除旧的 `SrtReaderPage` 字幕列表渲染，字幕书统一走 ttu reader
+**Phase 2 已完成**：HomePage 去 BottomNavigationBar；有声书同步全链路（SMIL + JSON + SRT/LRC/VTT/ASS → ttu IDB 匹配 → WebView 桥 → 播放/制卡）；字幕统一走 EPUB 渲染，无字幕列表 UI。
 
-**Phase 3 已完成**：Material 3 UI 打磨 7 个 PR 全部落地（主题基座 / 词典弹窗 / 书架卡片 / 搜索栏 / 对话框 / 播放条 / FollowPill），详见 `UI_POLISH_PLAN.md`。
+**Phase 3 已完成**：Material 3 UI 打磨 7 PR 全部落地（主题基座 / 词典弹窗 / 书架卡片 / 搜索栏 / 对话框 / 播放条 / FollowPill）。
+
+**Phase 4 对齐 iOS Sasayaki**：PR1（多格式 matcher）/ PR2（health UI）/ PR8a（ttu fork section API）/ PR8b（Follow audio）已落地，剩 **PR6 `{sasayaki-audio}` Anki handlebar** 未做（见 `SASAYAKI_PARITY_PLAN.md`）。
 
 ## 核心技术栈
 
@@ -48,7 +42,7 @@
 - 遇到问题先定位，不回退到简化版
 - 每个 PR 聚焦单一模块，commit 信息说明"为什么"
 - 修改流程三步缺一不可：**analyze → 编译 APK → commit**（见 feedback 记忆）
-- 字幕相关工作遵循 `SUBTITLE_TO_EPUB_PLAN.md`：所有字幕格式统一走 EPUB 渲染，不做字幕列表 UI
+- 字幕格式（SRT/LRC/VTT/ASS）统一走 EPUB 渲染，不做字幕列表 UI
 
 ## 已知坑
 
