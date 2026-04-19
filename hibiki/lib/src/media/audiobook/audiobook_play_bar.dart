@@ -55,6 +55,7 @@ class AudiobookPlayBar extends StatelessWidget {
             ),
             AudiobookFollowAudioButton(controller: controller),
             AudiobookSpeedButton(controller: controller),
+            AudiobookDelayButton(controller: controller),
           ],
         ),
       ),
@@ -121,6 +122,122 @@ class AudiobookSpeedButton extends StatelessWidget {
         '${current.toStringAsFixed(2)}x',
         style: Theme.of(context).textTheme.labelMedium,
       ),
+    );
+  }
+}
+
+/// 音画同步延迟调节按钮。
+///
+/// 值为 0 时显示 av_timer 图标；非 0 时把数值直接画在按钮上（如 "-200ms"
+/// / "+500ms"），方便扫一眼看到当前偏移是什么方向。点击弹 bottom sheet
+/// 让用户按 ±50 / ±200 / ±1000ms 粒度调整，或归零。
+///
+/// ValueListenableBuilder 只监听 `delayMs`，不跟着 cue 刷新 rebuild。
+class AudiobookDelayButton extends StatelessWidget {
+  const AudiobookDelayButton({required this.controller, super.key});
+
+  final AudiobookPlayerController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<int>(
+      valueListenable: controller.delayMs,
+      builder: (BuildContext context, int ms, _) {
+        final String label = ms == 0
+            ? ''
+            : '${ms > 0 ? '+' : ''}${ms}ms';
+        final Widget child = ms == 0
+            ? const Icon(Icons.av_timer_outlined, size: 20)
+            : Text(label, style: Theme.of(context).textTheme.labelMedium);
+        return TextButton(
+          onPressed: () => _openSheet(context),
+          style: TextButton.styleFrom(
+            minimumSize: const Size(48, 36),
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            visualDensity: VisualDensity.compact,
+          ),
+          child: child,
+        );
+      },
+    );
+  }
+
+  Future<void> _openSheet(BuildContext context) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (BuildContext ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+            child: ValueListenableBuilder<int>(
+              valueListenable: controller.delayMs,
+              builder: (BuildContext ctx2, int ms, _) {
+                final ThemeData theme = Theme.of(ctx2);
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('音画同步 (毫秒)',
+                        style: theme.textTheme.titleMedium),
+                    const SizedBox(height: 4),
+                    Text(
+                      '正数 = 音频先于文字，向回拨 cue；负数 = 音频滞后。',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Center(
+                      child: Text(
+                        '${ms > 0 ? '+' : ''}$ms ms',
+                        style: theme.textTheme.headlineSmall,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        _stepBtn(ctx2, '-1s', -1000),
+                        _stepBtn(ctx2, '-200', -200),
+                        _stepBtn(ctx2, '-50', -50),
+                        _stepBtn(ctx2, '+50', 50),
+                        _stepBtn(ctx2, '+200', 200),
+                        _stepBtn(ctx2, '+1s', 1000),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: ms == 0
+                            ? null
+                            : () => controller.setDelayMs(0),
+                        icon: const Icon(Icons.restart_alt, size: 18),
+                        label: const Text('归零'),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _stepBtn(BuildContext ctx, String label, int delta) {
+    return FilledButton.tonal(
+      onPressed: () {
+        controller.setDelayMs(controller.delayMs.value + delta);
+      },
+      style: FilledButton.styleFrom(
+        minimumSize: const Size(52, 40),
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        visualDensity: VisualDensity.compact,
+      ),
+      child: Text(label),
     );
   }
 }

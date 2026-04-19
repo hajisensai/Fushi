@@ -165,6 +165,13 @@ class AudiobookRepository {
   /// 保留，只在导入时一次性写入默认值。
   static const String _kFollowAudioKeyPrefix = 'audiobook_follow_';
 
+  /// 音画同步延迟（毫秒，正数 = 音频相对文字先播，需从查询位置减去；
+  /// 负数 = 音频滞后，需加上）。同样走 Hive，避开 Isar 二次 put 风险。
+  static const String _kDelayMsKeyPrefix = 'audiobook_delay_';
+
+  /// 每本书独立播放速度。0.75 / 1.0 / 1.25 / 1.5 常用值，用 double 存。
+  static const String _kSpeedKeyPrefix = 'audiobook_speed_';
+
   Box? _prefsBox() {
     if (!Hive.isBoxOpen('appModel')) return null;
     return Hive.box('appModel');
@@ -184,6 +191,40 @@ class AudiobookRepository {
     final Box? box = _prefsBox();
     if (box == null) return;
     await box.put('$_kFollowAudioKeyPrefix$bookUid', value);
+  }
+
+  /// 读取音画同步延迟（毫秒），未设置 / 非 int 回退 0。
+  int readDelayMs(String bookUid) {
+    final Object? raw = _prefsBox()?.get('$_kDelayMsKeyPrefix$bookUid');
+    return raw is int ? raw : 0;
+  }
+
+  /// 写入音画同步延迟（毫秒）。Hive 未就绪时静默跳过。
+  Future<void> updateDelayMs({
+    required String bookUid,
+    required int ms,
+  }) async {
+    final Box? box = _prefsBox();
+    if (box == null) return;
+    await box.put('$_kDelayMsKeyPrefix$bookUid', ms);
+  }
+
+  /// 读取每本书的播放速度，未设置回退 1.0。非 num 类型一律回退。
+  double readSpeed(String bookUid) {
+    final Object? raw = _prefsBox()?.get('$_kSpeedKeyPrefix$bookUid');
+    if (raw is double) return raw;
+    if (raw is int) return raw.toDouble();
+    return 1.0;
+  }
+
+  /// 写入每本书的播放速度。Hive 未就绪时静默跳过。
+  Future<void> updateSpeed({
+    required String bookUid,
+    required double speed,
+  }) async {
+    final Box? box = _prefsBox();
+    if (box == null) return;
+    await box.put('$_kSpeedKeyPrefix$bookUid', speed);
   }
 
   /// 删除指定书的所有有声书数据（元数据 + 所有 cue）。

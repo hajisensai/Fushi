@@ -67,6 +67,20 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 不用知道 Hive。
   Future<void> Function(bool value)? onFollowAudioPersist;
 
+  // ── 每本书独立的音画同步延迟 + 播放速度 ─────────────────────────────────
+  // 对齐 upstream Sasayaki 的 "per-book delay and speed, both saved"。
+  // 延迟为正时音频领先文字（cue 查询位置要向前扣），为负时滞后。
+  // Reader 页面在 load 后经下面两个 persist 回调把新值落 Hive。
+
+  /// 音画同步延迟（毫秒）。UI 订阅这个 ValueNotifier 展示当前偏移。
+  final ValueNotifier<int> delayMs = ValueNotifier<int>(0);
+
+  /// 延迟变化时的持久化回调。
+  Future<void> Function(int ms)? onDelayPersist;
+
+  /// 播放速度变化时的持久化回调。内部在 [setSpeed] 调用。
+  Future<void> Function(double speed)? onSpeedPersist;
+
   /// 上一条 cue 解码出的 sectionIndex，用来和新 cue 比对是否跨章。
   int? _lastCueSectionIndex;
 
@@ -97,11 +111,14 @@ class AudiobookPlayerController extends ChangeNotifier {
     required Audiobook audiobook,
     required List<File> audioFiles,
     bool initialFollowAudio = false,
+    int initialDelayMs = 0,
+    double initialSpeed = 1.0,
   }) async {
     _audiobook = audiobook;
-    // Follow audio 状态由调用方从 Hive 读出传入；不触发 onCrossChapter ——
-    // 新书没有历史 cue，_lastCueSectionIndex 清零。
+    // Follow audio / delay / speed 状态由调用方从 Hive 读出传入；不触发
+    // persist 回调 —— 载入不是用户操作，又把同值写回 Hive 就是循环。
     followAudio.value = initialFollowAudio;
+    delayMs.value = initialDelayMs;
     _lastCueSectionIndex = null;
 
     await _player.stop();
@@ -136,6 +153,16 @@ class AudiobookPlayerController extends ChangeNotifier {
         await _player.seek(Duration(milliseconds: savedMs));
       } catch (e) {
         debugPrint('[hibiki-audiobook] seek to saved $savedMs ms failed: $e');
+      }
+    }
+
+    // 先应用持久化速度再启动跟踪：播放速度由 just_audio 的内部状态持有，
+    // 不走 notifyListeners 也能在下次 setSpeed / UI 读 `speed` getter 时反映。
+    if ((initialSpeed - 1.0).abs() > 0.001) {
+      try {
+        await _player.setSpeed(initialSpeed);
+      } catch (e) {
+        debugPrint('[hibiki-audiobook] initial setSpeed $initialSpeed failed: $e');
       }
     }
 
@@ -281,9 +308,17 @@ class AudiobookPlayerController extends ChangeNotifier {
   }
 
   /// 设置播放速度（例如 0.75 / 1.0 / 1.25 / 1.5）。
+  /// 新值落 [onSpeedPersist]；相同值（容差 0.001）跳过写库但仍 setSpeed
+  /// 一次以处理 just_audio 内部偶发丢速场景。
   Future<void> setSpeed(double speed) async {
+    final double prev = _player.speed;
     await _player.setSpeed(speed);
     notifyListeners();
+    if ((speed - prev).abs() < 0.001) return;
+    final Future<void> Function(double)? persist = onSpeedPersist;
+    if (persist != null) {
+      unawaited(persist(speed));
+    }
   }
 
   // ── 内部实现 ───────────────────────────────────────────────────────────────
@@ -319,9 +354,14 @@ class AudiobookPlayerController extends ChangeNotifier {
     if (_chapterCues.isEmpty) {
       return;
     }
+    // 应用用户设置的音画延迟：delayMs 正值表示"音频比文字先播"，查询
+    // cue 时要把位置往回拨；负值相反。下界 clamp 到 0 避免负位置查询。
+    // 上界不 clamp（_player.duration 可能暂未就绪），超出时 findCueIndex
+    // 自行返回最后一个 cue 即可。
+    final int effectiveMs = (posMs - delayMs.value).clamp(0, 1 << 30);
     final int idx = JsonAlignmentParser.findCueIndex(
       cues: _chapterCues,
-      positionMs: posMs,
+      positionMs: effectiveMs,
     );
     final AudioCue? newCue = idx >= 0 ? _chapterCues[idx] : null;
     if (newCue?.textFragmentId != _currentCue?.textFragmentId) {
@@ -361,6 +401,22 @@ class AudiobookPlayerController extends ChangeNotifier {
     }
   }
 
+  /// 设置音画延迟（毫秒），带边界夹取。超出 ±30s 的值几乎不可能是
+  /// 有意义的对齐偏移，截断防止 UI 意外把位置拨到负数/末尾。
+  /// 写库走 [onDelayPersist]。相同值跳过 notify/写库。
+  void setDelayMs(int ms) {
+    final int clamped = ms.clamp(-30000, 30000);
+    if (delayMs.value == clamped) return;
+    delayMs.value = clamped;
+    // 立刻在当前位置重查 cue，让高亮即时反映新偏移，不用等
+    // positionStream 下一 tick（暂停状态下完全不发）。
+    _updateCurrentCue(_player.position.inMilliseconds);
+    final Future<void> Function(int)? persist = onDelayPersist;
+    if (persist != null) {
+      unawaited(persist(clamped));
+    }
+  }
+
   /// 将 cue 的 per-file 毫秒转换为全局毫秒（多文件场景）。
   int _toGlobalMs(AudioCue cue) {
     final int offset = cue.audioFileIndex < _fileOffsets.length
@@ -390,6 +446,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     _positionSub?.cancel();
     _playingSub?.cancel();
     followAudio.dispose();
+    delayMs.dispose();
     _player.dispose();
     super.dispose();
   }

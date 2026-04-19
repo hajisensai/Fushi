@@ -1372,6 +1372,8 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         audiobook: audiobook,
         audioFiles: audioFiles,
         initialFollowAudio: repo.readFollowAudio(bookUid),
+        initialDelayMs: repo.readDelayMs(bookUid),
+        initialSpeed: repo.readSpeed(bookUid),
       );
       controller.addListener(_onCueChanged);
       _wireFollowAudio(controller, bookUid: bookUid, repo: repo);
@@ -1439,11 +1441,19 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       ..alignmentFormat = 'srt'
       ..alignmentPath = srtBook.srtPath;
 
+    // 闭包捕获：避免 null-promotion 在 async 闭包里丢掉。局部 `srtRepo`
+    // 已是 SrtBookRepository（外层变量），这里换名区分。
+    final String srtBookUid = srtBook.uid;
+    final AudiobookRepository abRepo = AudiobookRepository(appModel.database);
     final AudiobookPlayerController controller = AudiobookPlayerController();
     try {
       await controller.load(
         audiobook: syntheticAudiobook,
         audioFiles: audioFiles,
+        // Follow audio 仍不落库（见下注释），但延迟/速度是纯 Hive KV，按
+        // srtBook.uid 做 key 不碰 Isar，SRT-book 路径安全使用。
+        initialDelayMs: abRepo.readDelayMs(srtBookUid),
+        initialSpeed: abRepo.readSpeed(srtBookUid),
       );
     } catch (e) {
       debugPrint('[hibiki-audiobook] srt init: controller.load failed: $e');
@@ -1456,6 +1466,13 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     // updateFollowAudio 会找不到记录。暂先只接 onCrossChapter（会话内
     // 磁铁按钮仍可切换），不落库。真正落库需要把 followAudio 搬到
     // SrtBook 模型，属于独立的数据层工作。
+    // 延迟/速度走 Hive KV，可以落。
+    controller.onDelayPersist = (int ms) async {
+      await abRepo.updateDelayMs(bookUid: srtBookUid, ms: ms);
+    };
+    controller.onSpeedPersist = (double speed) async {
+      await abRepo.updateSpeed(bookUid: srtBookUid, speed: speed);
+    };
     controller.onCrossChapter = _handleCueCrossChapter;
 
     if (mounted) {
@@ -1649,7 +1666,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
 
   // ── PR8b Follow audio wiring ────────────────────────────────────────────
 
-  /// 把 Follow audio 的持久化回调和跨章事件挂到控制器上。
+  /// 把 Follow audio / 延迟 / 速度 的持久化回调和跨章事件挂到控制器上。
   /// 常规 EPUB audiobook 路径走这里；SRT-book 路径暂不落库（见 caller 注释）。
   void _wireFollowAudio(
     AudiobookPlayerController controller, {
@@ -1658,6 +1675,12 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
   }) {
     controller.onFollowAudioPersist = (bool value) async {
       await repo.updateFollowAudio(bookUid: bookUid, value: value);
+    };
+    controller.onDelayPersist = (int ms) async {
+      await repo.updateDelayMs(bookUid: bookUid, ms: ms);
+    };
+    controller.onSpeedPersist = (double speed) async {
+      await repo.updateSpeed(bookUid: bookUid, speed: speed);
     };
     controller.onCrossChapter = _handleCueCrossChapter;
   }
