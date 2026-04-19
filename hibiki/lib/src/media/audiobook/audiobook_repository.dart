@@ -1,6 +1,9 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
 import 'package:isar/isar.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_health.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 
 /// 有声书数据访问层，封装所有 Isar 查询。
@@ -225,6 +228,71 @@ class AudiobookRepository {
     final Box? box = _prefsBox();
     if (box == null) return;
     await box.put('$_kSpeedKeyPrefix$bookUid', speed);
+  }
+
+  /// 健康度 overlay 的 Hive key 前缀。
+  ///
+  /// 重跑匹配时写这里而不是二次 `put(Audiobook)`：长 CJK bookUid 的记录
+  /// 第二次 put 会把 matchRatePct 等字节写坏（见 `project_hoshi_isar_
+  /// double_put` 记忆）。overlay 用 JSON 字符串存 kind/pct/reason/measuredAt，
+  /// [resolveHealth] 读取时优先于 Isar 字段。
+  static const String _kHealthOverlayKeyPrefix = 'audiobook_health_overlay_';
+
+  /// 读 Hive overlay。不存在 / 解析失败 → null（调用方回退 Isar 字段）。
+  AudiobookHealth? readHealthOverlay(String bookUid) {
+    final Object? raw =
+        _prefsBox()?.get('$_kHealthOverlayKeyPrefix$bookUid');
+    if (raw is! String || raw.isEmpty) return null;
+    try {
+      final Map<String, dynamic> m =
+          jsonDecode(raw) as Map<String, dynamic>;
+      final String kindRaw = (m['kind'] as String?) ?? 'unrun';
+      final HealthKind kind = HealthKind.values.firstWhere(
+        (HealthKind k) => k.name == kindRaw,
+        orElse: () => HealthKind.unrun,
+      );
+      final int? pct = (m['pct'] as num?)?.toInt();
+      final int? pctSafe =
+          (pct == null || pct < 0 || pct > 100) ? null : pct;
+      final int? atMs = (m['at'] as num?)?.toInt();
+      return AudiobookHealth(
+        kind: kind,
+        ratePct: pctSafe,
+        reason: m['reason'] as String?,
+        measuredAt: atMs != null
+            ? DateTime.fromMillisecondsSinceEpoch(atMs)
+            : DateTime.now(),
+      );
+    } catch (e) {
+      debugPrint('[hibiki-audiobook] readHealthOverlay parse failed: $e');
+      return null;
+    }
+  }
+
+  /// 写 overlay。相比 `saveAudiobook(ab)` 二次 put，Hive 字符串 KV 没有 Isar
+  /// 的长 CJK bookUid 字节写坏问题。
+  Future<void> updateHealthOverlay({
+    required String bookUid,
+    required AudiobookHealth health,
+  }) async {
+    final Box? box = _prefsBox();
+    if (box == null) return;
+    final Map<String, dynamic> m = <String, dynamic>{
+      'kind': health.kind.name,
+      'pct': health.ratePct,
+      'reason': health.reason,
+      'at': health.measuredAt.millisecondsSinceEpoch,
+    };
+    await box.put('$_kHealthOverlayKeyPrefix$bookUid', jsonEncode(m));
+  }
+
+  /// 解析一本书的有效健康度：Hive overlay 存在就优先用，否则回落 Isar 字段。
+  /// 调用方（书架角标、导入对话框详情行）都应走这里，避免 overlay 只在
+  /// 一处生效。
+  AudiobookHealth resolveHealth(Audiobook ab) {
+    final AudiobookHealth? overlay = readHealthOverlay(ab.bookUid);
+    if (overlay != null) return overlay;
+    return AudiobookHealth.fromAudiobook(ab);
   }
 
   /// 删除指定书的所有有声书数据（元数据 + 所有 cue）。

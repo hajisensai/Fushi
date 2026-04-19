@@ -8,6 +8,7 @@ import 'package:hibiki/src/media/audiobook/audiobook_health.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
 import 'package:hibiki/src/media/audiobook/epub_cue_matcher.dart';
+import 'package:hibiki/src/media/audiobook/epub_srt_matcher.dart';
 import 'package:hibiki/src/media/audiobook/json_alignment_parser.dart';
 import 'package:hibiki/src/media/audiobook/lrc_parser.dart';
 import 'package:hibiki/src/media/audiobook/sasayaki_match_codec.dart';
@@ -113,8 +114,9 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     final String audioLabel = (ab.audioPaths != null && ab.audioPaths!.isNotEmpty)
         ? t.srt_import_files_selected(n: ab.audioPaths!.length)
         : (ab.audioRoot ?? '');
-    final AudiobookHealth health = AudiobookHealth.fromAudiobook(ab);
+    final AudiobookHealth health = widget.repo.resolveHealth(ab);
     final Widget? healthRow = _buildHealthRow(health);
+    final bool canReMatch = _canReMatch(ab, health);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -131,8 +133,39 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
           const SizedBox(height: 8),
           healthRow,
         ],
+        if (canReMatch) ...[
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: _importing ? null : () => _openReMatchSheet(ab),
+              icon: const Icon(Icons.tune, size: 18),
+              label: const Text('调整搜索窗口重新匹配'),
+            ),
+          ),
+        ],
       ],
     );
+  }
+
+  /// 只有挂了 ttu book 且 alignmentFormat 属于 matcher 管线（srt/lrc/vtt/ass）
+  /// 才显示重跑入口。SMIL/JSON 走信任文件锚点，与 searchWindow 无关。
+  /// unrun 状态也允许重跑 — 历史脏记录的书借此给它跑一次。
+  bool _canReMatch(Audiobook ab, AudiobookHealth health) {
+    if (widget.ttuBookId == null || widget.ttuBookId! <= 0) return false;
+    if (widget.serverPort == null) return false;
+    const Set<String> matcherFormats = {'srt', 'lrc', 'vtt', 'ass'};
+    if (!matcherFormats.contains(ab.alignmentFormat)) return false;
+    switch (health.kind) {
+      case HealthKind.partial:
+      case HealthKind.failed:
+      case HealthKind.unrun:
+      case HealthKind.ok: // 让用户也能收紧窗口搏一个更高的匹配率
+        return true;
+      case HealthKind.running:
+      case HealthKind.notApplicable:
+        return false;
+    }
   }
 
   /// 已附加有声书时展示匹配状态。notApplicable / unrun → 不渲染（无信息可看）。
@@ -376,6 +409,190 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       debugPrint('AudiobookImportDialog import error: $e');
       if (mounted) {
         Fluttertoast.showToast(msg: t.audiobook_import_error);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _importing = false);
+      }
+    }
+  }
+
+  /// 已附加书的重跑匹配入口：弹 sheet 让用户拖滑块改 searchWindow，点"重跑"
+  /// 后调 [_reRunMatch]，新 health 写 Hive overlay（不再 put Audiobook，避免
+  /// 二次 put 把 matchRatePct 字节写坏）。
+  Future<void> _openReMatchSheet(Audiobook ab) async {
+    int window = EpubSrtMatcher.defaultSearchWindow;
+    final AudiobookHealth? current = widget.repo.readHealthOverlay(ab.bookUid);
+    if (current != null && current.reason != null) {
+      // 尝试从上一次 overlay reason 里抠出 window= 的值，让用户看到"上次用
+      // 了多少"，而不是每次从 default 开始。
+      final RegExpMatch? m =
+          RegExp(r'window=(\d+)').firstMatch(current.reason!);
+      final int? prev = m == null ? null : int.tryParse(m.group(1)!);
+      if (prev != null) window = prev.clamp(300, 5000);
+    }
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (BuildContext sheetCtx) {
+        return StatefulBuilder(
+          builder: (BuildContext ctx2, StateSetter setSheet) {
+            final ThemeData theme = Theme.of(ctx2);
+            return SafeArea(
+              child: Padding(
+                padding: EdgeInsets.only(
+                  left: 20,
+                  right: 20,
+                  top: 4,
+                  bottom: MediaQuery.of(ctx2).viewInsets.bottom + 16,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('搜索窗口', style: theme.textTheme.titleMedium),
+                    const SizedBox(height: 4),
+                    Text(
+                      '每条 cue 在正文里向前找的字符数。命中率低时加大；'
+                      '文本重复段多可收紧避免误匹配。',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Slider(
+                            min: 300,
+                            max: 5000,
+                            divisions: 47, // step 100
+                            value: window.toDouble(),
+                            label: '$window',
+                            onChanged: (double v) {
+                              setSheet(() => window = v.round());
+                            },
+                          ),
+                        ),
+                        SizedBox(
+                          width: 64,
+                          child: Text(
+                            '$window',
+                            textAlign: TextAlign.end,
+                            style: theme.textTheme.titleMedium,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '默认 ${EpubSrtMatcher.defaultSearchWindow}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(sheetCtx),
+                          child: const Text('取消'),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton.icon(
+                          icon: const Icon(Icons.play_arrow, size: 18),
+                          label: const Text('重跑匹配'),
+                          onPressed: () {
+                            // 关 sheet 先，重跑用对话框自己的 _importing 进度条
+                            // 反馈。用 sheetCtx 的 Navigator，避免拿到外层
+                            // 对话框的 Navigator 把 dialog 一起关了。
+                            Navigator.pop(sheetCtx);
+                            _reRunMatch(ab, searchWindow: window);
+                          },
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  /// 重跑匹配：从 Isar 读已存 cue → 拉 ttu IDB → matcher（自定 window）→
+  /// saveCues 把新 textFragmentId 写回 → health 写 Hive overlay。
+  Future<void> _reRunMatch(
+    Audiobook ab, {
+    required int searchWindow,
+  }) async {
+    setState(() => _importing = true);
+    try {
+      final int? ttuId = widget.ttuBookId;
+      final int? port = widget.serverPort;
+      if (ttuId == null || ttuId <= 0 || port == null) {
+        Fluttertoast.showToast(msg: '本书未绑定 ttu，无法重跑匹配');
+        return;
+      }
+      final List<AudioCue> cues = widget.repo.cuesForBook(ab.bookUid);
+      if (cues.isEmpty) {
+        Fluttertoast.showToast(msg: '没有已存 cue，无法重跑');
+        return;
+      }
+      final TtuBookRecord rec = await TtuIdbReader.readBookRecord(
+        ttuBookId: ttuId,
+        serverPort: port,
+      );
+      if (rec.sections.isEmpty) {
+        Fluttertoast.showToast(msg: 'ttu IDB 没有章节文本');
+        return;
+      }
+      final MatchResult result = await EpubCueMatcher.matchInIsolate(
+        sections: rec.sections,
+        cues: cues,
+        searchWindow: searchWindow,
+      );
+      SasayakiMatchCodec.applyToCues(cues: cues, result: result);
+      // 保持 cues 的原章节分组；saveCues 要求按 chapterHref 分批写（同
+      // chapterHref 的旧数据会被清掉再重写）。
+      final Map<String, List<AudioCue>> byChapter =
+          <String, List<AudioCue>>{};
+      for (final AudioCue c in cues) {
+        byChapter.putIfAbsent(c.chapterHref, () => []).add(c);
+      }
+      for (final MapEntry<String, List<AudioCue>> entry
+          in byChapter.entries) {
+        await widget.repo.saveCues(
+          bookUid: ab.bookUid,
+          chapterHref: entry.key,
+          cues: entry.value,
+        );
+      }
+      final int pct = (result.matchRate * 100).round();
+      final AudiobookHealth health = AudiobookHealth.fromRatePct(
+        ratePct: pct,
+        reason: '${result.matchedCues}/${result.totalCues} cues matched '
+            '(window=$searchWindow)',
+      );
+      await widget.repo.updateHealthOverlay(
+        bookUid: ab.bookUid,
+        health: health,
+      );
+      if (mounted) {
+        Fluttertoast.showToast(
+          msg: 'Sasayaki $pct% (window=$searchWindow)',
+        );
+        // 让 AlertDialog 重新拉 resolveHealth 画新 healthRow。
+        setState(() {});
+      }
+    } catch (e, st) {
+      debugPrint('[hibiki-audiobook] reRunMatch failed: $e\n$st');
+      if (mounted) {
+        Fluttertoast.showToast(msg: '重跑失败：$e');
       }
     } finally {
       if (mounted) {

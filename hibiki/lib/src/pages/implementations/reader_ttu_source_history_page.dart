@@ -444,7 +444,7 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
     final bool hasAudiobook = ab != null;
     final HealthKind healthKind = ab == null
         ? HealthKind.notApplicable
-        : AudiobookHealth.fromAudiobook(ab).kind;
+        : AudiobookRepository(appModel.database).resolveHealth(ab).kind;
 
     return Stack(
       fit: StackFit.expand,
