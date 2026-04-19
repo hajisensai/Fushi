@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 
@@ -394,6 +395,16 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
               'http://localhost:${server.boundPort}/manage.html',
         ),
       ),
+      initialUserScripts: UnmodifiableListView<UserScript>([
+        // 必须 DOCUMENT_START：ttu bundle 模块顶层
+        // `me()("autoBookmark", !1)` 在 import 时就 getItem 一次做 Subject
+        // 初值，onLoadStop 之后再 setItem 已经晚了（除非再 reload 页面，
+        // 但 reload 会毁掉 audiobook bridge）。
+        UserScript(
+          source: _readerDocumentStartJs,
+          injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+        ),
+      ]),
       onPermissionRequest: (controller, origin) async {
         return PermissionResponse(
           action: PermissionResponseAction.GRANT,
@@ -894,6 +905,53 @@ xhr.onload = function(e) {
   };
 };
 xhr.send();
+''';
+
+  /// AT_DOCUMENT_START 注入：在 ttu bundle 的 Svelte 模块初始化前把
+  /// `localStorage.autoBookmark` 拨到 "1"，让 `me()("autoBookmark",!1)`
+  /// 在建 BehaviorSubject 时读到 true 而非 default false —— 否则整个会话
+  /// 的 Subject 初值就锁死 false，window scroll 的 debounced auto-bookmark
+  /// 永远不注册，IDB bookmark store 一直是空的（日志侧观察 n=0）。
+  ///
+  /// 顺手也打一条 diag-pos 记录注入前后 localStorage 状态，再挂一个一次性
+  /// `window.scroll` 监听，确认 paginated 模式下 window 本身是否真的会滚
+  /// （ttu 的 auto-bookmark trigger 是 `fromEvent(window,'scroll')`；若实际
+  /// 滚动只在 `.book-content-container` 上发 scroll 事件，就算 autoBookmark
+  /// 开了也写不进去，得改走 Flutter 主动调 bookmarkManager.put 的路径）。
+  static const String _readerDocumentStartJs = r'''
+(function(){
+  try {
+    var before = null;
+    try { before = localStorage.getItem('autoBookmark'); } catch(e){}
+    var changed = false;
+    try {
+      if (before !== '1') {
+        localStorage.setItem('autoBookmark', '1');
+        changed = true;
+      }
+    } catch(e){}
+    function diag(tag, extra) {
+      try {
+        console.log(JSON.stringify({
+          'hibiki-message-type': 'diag-pos',
+          tag: tag,
+          extra: extra || ''
+        }));
+      } catch(_){}
+    }
+    diag('docstart-autoBookmark', 'before=' + before + ' changed=' + changed);
+    // 一次性 window scroll 探针：看 paginated mode 下 window 是否真会滚
+    try {
+      var seen = 0;
+      window.addEventListener('scroll', function(){
+        if (seen < 3) {
+          diag('window-scroll', 'sy=' + window.scrollY + ' sx=' + window.scrollX);
+        }
+        seen++;
+      }, { capture: true, passive: true });
+    } catch(e){}
+  } catch(_) {}
+})();
 ''';
 
   /// This is executed upon page load and change.
