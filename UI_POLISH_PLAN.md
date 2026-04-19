@@ -1,6 +1,8 @@
-# UI 打磨计划（Phase 3）
+# UI 打磨计划（Phase 3）— ✅ 已完成
 
 **目标**：把 jidoujisho 遗留的 Material 2 风格 UI 统一升级到 Material 3，清理硬编码颜色 / 尺寸，让书架、词典弹窗、阅读器覆盖层视觉现代化。
+
+**状态**：7 个 PR 全部落地（PR-6 拆成 6a / 6b），见下文每节末尾的 commit 引用。
 
 ## 原则
 
@@ -24,6 +26,8 @@
 
 **风险**：主题改了之后，所有页面视觉都会变，必须跑一遍主要路径（书架 → 打开书 → 查词 → 导入字幕 → 打开设置）确认没有"看不见字"这类对比度问题。
 
+✅ 落地：`afc871bcd`
+
 ### PR-2　词典弹窗
 
 **目的**：用户读书时每分钟触发的 popup，先改这个体感提升最大。
@@ -34,6 +38,8 @@
 - 底部操作区（加入卡片、复制、搜索更多）换 `FilledButton.tonal` / `IconButton.filled`
 
 **验证**：在 ttu reader 里点词 → 弹词典 → 翻页条目 → 加入 Anki，流程不中断。
+
+✅ 落地：`682650d26`
 
 ### PR-3　书架卡片
 
@@ -49,6 +55,8 @@
 
 **验证**：书架滚动流畅，字幕书和 EPUB 两区视觉一致，进度条在深 / 浅主题都清晰。
 
+✅ 落地：`d3417136e`
+
 ### PR-4　AppBar + 浮动搜索栏
 
 **目的**：主题跑通后基本是"删硬编码"。
@@ -61,6 +69,8 @@
 - AppBar 本身靠 M3 默认（`surfaceTint` 自动处理）
 
 **验证**：主页 AppBar 和搜索栏在深浅色切换时无突兀色块。
+
+✅ 落地：`f25d59445`
 
 ### PR-5　对话框统一
 
@@ -79,6 +89,8 @@
 - 主操作按钮 `FilledButton`，次操作 `TextButton`，危险操作 `FilledButton` + `colorScheme.errorContainer`
 - 删除确认文案样式对齐
 
+✅ 落地：`ca1995ca2`
+
 ### PR-6　阅读器 Flutter 侧覆盖层
 
 **目的**：留在最后，和 audiobook bridge 耦合风险最大。
@@ -88,6 +100,10 @@
 - 底部工具栏 M3 `NavigationBar` 或 `BottomAppBar`
 
 **风险**：改覆盖层容易触发 WebView 布局重测 / 字幕高亮失准，必须在真机上验证 cue 滚动、点击 cue 跳转、高亮跟随播放进度三项。
+
+✅ 落地（拆两步）：
+- PR-6a `29184c4d3`：有声书播放条 → M3 `BottomAppBar`
+- PR-6b `ce237e64f`：FollowPill → `FilledButton.icon`；同时审计其余覆盖层（Scaffold 黑底防白闪、AudiobookImportFAB Opacity 0.6、词典主题走用户覆盖路径）均刻意保留，不动
 
 ## 不在本计划范围
 

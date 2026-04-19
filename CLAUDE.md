@@ -23,7 +23,7 @@
   - PR-C 完成：AudiobookBridge 接字幕 EPUB（`data-cue-id` 高亮/点击跳转），后续一路修 cue 滚动/翻页/章节切换的细节 bug
   - PR-D 完成：删除旧的 `SrtReaderPage` 字幕列表渲染，字幕书统一走 ttu reader
 
-**Phase 3 待做**：Material 3 UI 打磨、书架 / 阅读器 / 词典弹窗重设计。
+**Phase 3 已完成**：Material 3 UI 打磨 7 个 PR 全部落地（主题基座 / 词典弹窗 / 书架卡片 / 搜索栏 / 对话框 / 播放条 / FollowPill），详见 `UI_POLISH_PLAN.md`。
 
 ## 核心技术栈
 
