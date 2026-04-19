@@ -101,12 +101,12 @@ class _BookImportDialogState extends State<BookImportDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: _importing ? null : _doImport,
-          child: Text(t.dialog_import),
-        ),
-        TextButton(
           onPressed: () => Navigator.pop(context),
           child: Text(t.dialog_cancel),
+        ),
+        FilledButton(
+          onPressed: _importing ? null : _doImport,
+          child: Text(t.dialog_import),
         ),
       ],
     );

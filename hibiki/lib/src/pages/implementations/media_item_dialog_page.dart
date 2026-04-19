@@ -124,21 +124,19 @@ class _MediaItemDialogPageState extends BasePageState<MediaItemDialogPage> {
   }
 
   Widget buildClearButton() {
+    // Clear 是"擦掉进度"，不动书本身，走次操作 TextButton。
     return TextButton(
       onPressed: executeClear,
-      child: Text(
-        t.dialog_clear,
-        style: TextStyle(color: theme.colorScheme.primary),
-      ),
+      child: Text(t.dialog_clear),
     );
   }
 
+  /// 主操作（打开/阅读）走 FilledButton，视觉上与 Edit / Clear / 扩展按钮
+  /// （如"删除"）拉开层级，让用户一眼看到"读"在哪。
   Widget buildLaunchButton() {
-    return TextButton(
+    return FilledButton(
       onPressed: executeLaunch,
-      child: Text(
-        launchLabel,
-      ),
+      child: Text(launchLabel),
     );
   }
 

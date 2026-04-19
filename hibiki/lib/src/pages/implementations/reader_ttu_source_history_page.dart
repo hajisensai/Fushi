@@ -381,12 +381,9 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
             onPressed: () => Navigator.pop(ctx, false),
             child: Text(t.dialog_cancel),
           ),
-          TextButton(
+          _destructiveConfirmButton(
+            label: t.dialog_delete,
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text(
-              t.dialog_delete,
-              style: TextStyle(color: theme.colorScheme.error),
-            ),
           ),
         ],
       ),
@@ -565,18 +562,32 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
       return const [];
     }
     return [
-      TextButton(
+      _destructiveConfirmButton(
+        label: t.dialog_delete,
         onPressed: () => _confirmDeleteEpub(item, ttuBookId),
-        child: Text(
-          t.dialog_delete,
-          style: TextStyle(color: theme.colorScheme.error),
-        ),
       ),
       TextButton(
         onPressed: () => _openAudiobookImport(item, ttuBookId),
         child: Text(t.audiobook_import),
       ),
     ];
+  }
+
+  /// 删除按钮统一样式：FilledButton + errorContainer（M3 破坏性操作），
+  /// 替代原来的 TextButton + `colorScheme.error` 文字色。确认对话框和
+  /// 长按菜单里的"删除"共享这一入口。
+  Widget _destructiveConfirmButton({
+    required String label,
+    required VoidCallback onPressed,
+  }) {
+    return FilledButton(
+      onPressed: onPressed,
+      style: FilledButton.styleFrom(
+        backgroundColor: theme.colorScheme.errorContainer,
+        foregroundColor: theme.colorScheme.onErrorContainer,
+      ),
+      child: Text(label),
+    );
   }
 
   Future<void> _confirmDeleteEpub(MediaItem item, int ttuBookId) async {
@@ -591,12 +602,9 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
             onPressed: () => Navigator.pop(ctx, false),
             child: Text(t.dialog_cancel),
           ),
-          TextButton(
+          _destructiveConfirmButton(
+            label: t.dialog_delete,
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text(
-              t.dialog_delete,
-              style: TextStyle(color: theme.colorScheme.error),
-            ),
           ),
         ],
       ),

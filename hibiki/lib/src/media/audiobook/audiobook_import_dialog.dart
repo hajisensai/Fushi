@@ -87,22 +87,23 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       actions: existing != null
           ? [
               TextButton(
-                onPressed: () => _removeAudiobook(existing),
-                child: Text(t.audiobook_remove),
-              ),
-              TextButton(
                 onPressed: () => Navigator.pop(context),
                 child: Text(t.dialog_close),
+              ),
+              _destructiveFilledButton(
+                context: context,
+                label: t.audiobook_remove,
+                onPressed: () => _removeAudiobook(existing),
               ),
             ]
           : [
               TextButton(
-                onPressed: _importing ? null : _doImport,
-                child: Text(t.dialog_import),
-              ),
-              TextButton(
                 onPressed: () => Navigator.pop(context),
                 child: Text(t.dialog_cancel),
+              ),
+              FilledButton(
+                onPressed: _importing ? null : _doImport,
+                child: Text(t.dialog_import),
               ),
             ],
     );
@@ -580,12 +581,13 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
         content: Text(t.audiobook_remove_confirm),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(t.audiobook_remove),
-          ),
-          TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
             child: Text(t.dialog_cancel),
+          ),
+          _destructiveFilledButton(
+            context: ctx,
+            label: t.audiobook_remove,
+            onPressed: () => Navigator.of(ctx).pop(true),
           ),
         ],
       ),
@@ -607,6 +609,24 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     if (mounted) {
       outerNavigator.pop(false); // false = no audiobook
     }
+  }
+
+  /// 破坏性操作统一样式：FilledButton + errorContainer。把 `Navigator.pop`
+  /// 的 ctx 通过参数传进来，避免子对话框里复用父 widget 的 context。
+  Widget _destructiveFilledButton({
+    required BuildContext context,
+    required String label,
+    required VoidCallback onPressed,
+  }) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return FilledButton(
+      onPressed: onPressed,
+      style: FilledButton.styleFrom(
+        backgroundColor: cs.errorContainer,
+        foregroundColor: cs.onErrorContainer,
+      ),
+      child: Text(label),
+    );
   }
 
   String _basename(String path) =>

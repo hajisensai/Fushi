@@ -446,8 +446,10 @@ class AppModel with ChangeNotifier {
         popupMenuTheme: const PopupMenuThemeData(
           shape: RoundedRectangleBorder(),
         ),
-        dialogTheme: const DialogThemeData(
-          shape: RoundedRectangleBorder(),
+        dialogTheme: DialogThemeData(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
         ),
         listTileTheme: const ListTileThemeData(
           dense: true,
@@ -512,8 +514,10 @@ class AppModel with ChangeNotifier {
         popupMenuTheme: const PopupMenuThemeData(
           shape: RoundedRectangleBorder(),
         ),
-        dialogTheme: const DialogThemeData(
-          shape: RoundedRectangleBorder(),
+        dialogTheme: DialogThemeData(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
         ),
         listTileTheme: const ListTileThemeData(
           dense: true,

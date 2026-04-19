@@ -66,12 +66,12 @@ class _ProfilesDialogPageState extends BasePageState<ProfilesDialogPage>
   }
 
   List<Widget> get actions => [
-        buildAddNewButton(),
         buildCloseButton(),
+        buildAddNewButton(),
       ];
 
   Widget buildAddNewButton() {
-    return TextButton(
+    return FilledButton(
       child: Text(t.dialog_create),
       onPressed: () async {
         String model = appModel.lastSelectedModel ?? widget.initialModel;
@@ -369,10 +369,15 @@ class _ProfilesDialogPageState extends BasePageState<ProfilesDialogPage>
       ),
       actions: <Widget>[
         TextButton(
-          child: Text(
-            t.dialog_delete,
-            style: TextStyle(color: theme.colorScheme.primary),
+          child: Text(t.dialog_cancel),
+          onPressed: () => Navigator.pop(context),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: theme.colorScheme.errorContainer,
+            foregroundColor: theme.colorScheme.onErrorContainer,
           ),
+          child: Text(t.dialog_delete),
           onPressed: () async {
             appModel.deleteMapping(mapping);
             Navigator.pop(context);
@@ -380,10 +385,6 @@ class _ProfilesDialogPageState extends BasePageState<ProfilesDialogPage>
             _selectedOrder = -1;
             setState(() {});
           },
-        ),
-        TextButton(
-          child: Text(t.dialog_cancel),
-          onPressed: () => Navigator.pop(context),
         ),
       ],
     );
@@ -651,19 +652,17 @@ class _ProfilesDialogPageState extends BasePageState<ProfilesDialogPage>
       ),
       actions: <Widget>[
         TextButton(
-          child: Text(
-            t.dialog_save,
-          ),
+          child: Text(t.dialog_cancel),
+          onPressed: () => Navigator.pop(context),
+        ),
+        FilledButton(
+          child: Text(t.dialog_save),
           onPressed: () async {
             addNewMapping(
               name: controller.text,
               mapping: mappingClone,
             );
           },
-        ),
-        TextButton(
-          child: Text(t.dialog_cancel),
-          onPressed: () => Navigator.pop(context),
         ),
       ],
     );
