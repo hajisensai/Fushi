@@ -263,6 +263,12 @@ window.__hoshiHighlight = function(selector) {
   static const String _sasayakiFn = '''
 window.__hoshiSasayakiRefs = window.__hoshiSasayakiRefs || null;
 window.__hoshiSasayakiSectionStarts = window.__hoshiSasayakiSectionStarts || null;
+window.__hoshiSasayakiSectionFirstChars = window.__hoshiSasayakiSectionFirstChars || null;
+window.__hoshiSasayakiSectionLens = window.__hoshiSasayakiSectionLens || null;
+window.__hoshiSasayakiTotalNorm = (typeof window.__hoshiSasayakiTotalNorm === 'number')
+  ? window.__hoshiSasayakiTotalNorm : null;
+window.__hoshiCurrentMountedSection = (typeof window.__hoshiCurrentMountedSection === 'number')
+  ? window.__hoshiCurrentMountedSection : -1;
 
 window.__hoshiLoadSasayakiRefs = function(ttuBookId) {
   console.log(JSON.stringify({
@@ -314,6 +320,18 @@ window.__hoshiLoadSasayakiRefs = function(ttuBookId) {
           return n;
         }
 
+        // 与运行期 DOM measure 的 firstChars 取样口径严格一致：
+        // 只收非 skippable 字符，最多 32 个。用于后续按章节首字识别
+        // ttu 当前挂载的是哪一段。
+        function firstNormChars(t, cap) {
+          var out = '';
+          for (var i = 0; i < t.length && out.length < cap; i++) {
+            var c = t.charCodeAt(i);
+            if (!window.__hoshiIsSkippable(c)) out += t[i];
+          }
+          return out;
+        }
+
         function stripRubyText(el) {
           var clone = el.cloneNode(true);
           var rts = clone.querySelectorAll('rt, rp');
@@ -323,6 +341,8 @@ window.__hoshiLoadSasayakiRefs = function(ttuBookId) {
 
         var refs = [];
         var starts = [];
+        var firsts = [];
+        var sectionLens = [];
         var cumulative = 0;
         for (var i = 0; i < sections.length; i++) {
           var ref = (sections[i] && sections[i].reference) || '';
@@ -330,19 +350,24 @@ window.__hoshiLoadSasayakiRefs = function(ttuBookId) {
           starts.push(cumulative);
           var el = ref ? doc.getElementById(ref) : null;
           var text = el ? stripRubyText(el) : '';
-          cumulative += normLen(text);
+          firsts.push(firstNormChars(text, 32));
+          var segLen = normLen(text);
+          sectionLens.push(segLen);
+          cumulative += segLen;
         }
         window.__hoshiSasayakiRefs = refs;
         window.__hoshiSasayakiSectionStarts = starts;
-        // 计算每段 normLen（starts 末尾差分），方便和 Dart matcher 的
+        window.__hoshiSasayakiSectionFirstChars = firsts;
+        window.__hoshiSasayakiSectionLens = sectionLens;
+        window.__hoshiSasayakiTotalNorm = cumulative;
+        // 强制下一次 highlight 重新识别当前挂载段（载入后 rootTextLen 可能
+        // 相同但 section 定义换了）。
+        window.__hoshiDomMeasuredFor = -1;
+        window.__hoshiCurrentMountedSection = -1;
+        // sectionLens 已在上面按段累计时记下，方便和 Dart matcher 的
         // [sasayaki] matcher.section[N] 日志逐行比对。两侧任何一行的
         // normLen 不一样就是 normalize 规则 / ruby 处理 / DOMParser 行为
         // 的偏移，立刻能定位到具体哪段崩了。
-        var lens = [];
-        for (var k = 0; k < starts.length; k++) {
-          var nextStart = (k + 1 < starts.length) ? starts[k + 1] : cumulative;
-          lens.push(nextStart - starts[k]);
-        }
         // 单条消息太长会被 Android logcat 截断，把大数组拆短条打。
         console.log(JSON.stringify({
           'hibiki-message-type': 'sasayakiRefsReady',
@@ -355,7 +380,7 @@ window.__hoshiLoadSasayakiRefs = function(ttuBookId) {
             'i': pi,
             'ref': refs[pi],
             'start': starts[pi],
-            'normLen': lens[pi]
+            'normLen': sectionLens[pi]
           }));
         }
       };
@@ -518,6 +543,47 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
         'sampleAt1000': sampleAt1000,
         'sampleAt10000': sampleAt10000
       }));
+
+      // ── 识别 ttu 当前挂载的是哪一段 ──
+      // ttu 只挂当前 section；如果播放中的 cue 指向别的 section 而我们
+      // 仍按"段内偏移"去 walker 找字符，在当前段长度足够长时会命中一个
+      // **错误的句子**，然后 ticker 把页面滚到远离真实播放位置的地方。
+      // 通过首字 + normLen 匹配找出真正挂载的段 idx，供 highlight 主逻辑
+      // 做跨段短路判断。
+      var mounted = -1;
+      var secFirsts = window.__hoshiSasayakiSectionFirstChars;
+      var secLens = window.__hoshiSasayakiSectionLens;
+      // 首字匹配：每段前 32 个归一化字符，取前 16 个比对（够区分且抗
+      // 段首空白 / 标点 / 章号差异的鲁棒性更好）。
+      if (secFirsts && firstChars && firstChars.length > 0) {
+        var probe = firstChars.slice(0, 16);
+        if (probe.length >= 8) {
+          for (var si = 0; si < secFirsts.length; si++) {
+            var sf = secFirsts[si];
+            if (sf && sf.slice(0, probe.length) === probe) {
+              mounted = si;
+              break;
+            }
+          }
+        }
+      }
+      // 首字没匹中（少数纯数字/罗马数字章首）→ 退回 normLen 精确匹配。
+      // 多段同长时取第一个；极少见，日志里能看出。
+      if (mounted === -1 && secLens) {
+        for (var sj = 0; sj < secLens.length; sj++) {
+          if (secLens[sj] === totalNorm) {
+            mounted = sj;
+            break;
+          }
+        }
+      }
+      window.__hoshiCurrentMountedSection = mounted;
+      console.log(JSON.stringify({
+        'hibiki-message-type': 'sasayakiMountedSection',
+        'mountedSection': mounted,
+        'rootTotalNormChars': totalNorm,
+        'firstCharsProbe': firstChars ? firstChars.slice(0, 16) : ''
+      }));
     } catch (me) {
       console.log(JSON.stringify({
         'hibiki-message-type': 'sasayakiDomMeasureErr',
@@ -525,6 +591,36 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
       }));
     }
   }
+
+  // ── 跨段短路 ──
+  // DOM 测出的挂载段 != cue 要高亮的段 → 立刻 return，不调 walker、不动
+  // 页面。避免"段内偏移命中错误句子 → 滚到无关位置"。高亮留空，等用户
+  // 翻到正确段（或 Follow audio 自动跳段）再次 tick 时恢复。
+  var mountedSec = window.__hoshiCurrentMountedSection;
+  if (mountedSec >= 0 && mountedSec !== sectionIndex) {
+    window.__hoshiSectionMismatchCount = (window.__hoshiSectionMismatchCount || 0) + 1;
+    if (window.__hoshiSectionMismatchCount <= 3 ||
+        window.__hoshiSectionMismatchCount % 20 === 0) {
+      console.log(JSON.stringify({
+        'hibiki-message-type': 'sasayakiSectionMismatch',
+        'mountedSection': mountedSec,
+        'cueSection': sectionIndex,
+        'count': window.__hoshiSectionMismatchCount,
+        'hint': 'cue belongs to a different section; skipping highlight'
+      }));
+    }
+    // 清一次旧高亮避免"上一条高亮留在错误位置"。
+    window.__hoshiUnwrapSasayaki();
+    var stale = document.querySelectorAll('.hoshi-active');
+    for (var sli = 0; sli < stale.length; sli++) {
+      stale[sli].classList.remove('hoshi-active');
+    }
+    window.__hoshiTarget = null;
+    window.__hoshiStopTicker();
+    return;
+  }
+  // 匹配上了就清 mismatch 计数。
+  window.__hoshiSectionMismatchCount = 0;
 
   // Clear any previous Sasayaki wrap + class-only legacy highlight BEFORE
   // walking, so offsets into text nodes aren't affected by artificial spans.
