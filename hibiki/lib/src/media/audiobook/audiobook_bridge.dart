@@ -318,17 +318,6 @@ window.__hoshiSasayakiTotalNorm = (typeof window.__hoshiSasayakiTotalNorm === 'n
   ? window.__hoshiSasayakiTotalNorm : null;
 window.__hoshiCurrentMountedSection = (typeof window.__hoshiCurrentMountedSection === 'number')
   ? window.__hoshiCurrentMountedSection : -1;
-// 运行期 fallback 的前向单调锚——记住上一条 cue 在当前段里实际落到的
-// normChar 终点，fallback indexOf 从这里往后找。Sasayaki 上游的导入期
-// matcher（epub_srt_matcher.dart）本身就是 cursor 单调前向的，但运行期
-// 如果 DOM ↔ 导入期 normChar 有系统性偏移（ttu 渲染后正文字符数和 DOMParser
-// 抽的 elementHtml 对不上），fallback 的 Math.abs(p - targetStart) tiebreak
-// 会在重复短句上挑到**上一条 cue 之前**的命中，表现成"高亮往回跳"。
-// 段切换时重置（用 section 判定，不是时间判定）。
-window.__hoshiSasayakiLastFoundSection = (typeof window.__hoshiSasayakiLastFoundSection === 'number')
-  ? window.__hoshiSasayakiLastFoundSection : -1;
-window.__hoshiSasayakiLastFoundEnd = (typeof window.__hoshiSasayakiLastFoundEnd === 'number')
-  ? window.__hoshiSasayakiLastFoundEnd : 0;
 
 window.__hoshiLoadSasayakiRefs = function(ttuBookId) {
   console.log(JSON.stringify({
@@ -788,134 +777,6 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
   // 假名一起拼进字符串，对带 ruby 的正文永远假阳性。
   var actualText = actualNormText;
 
-  // ── 兜底：cue 文本对不上时按 indexOf 重定位 ──
-  // 按 Dart 侧 normChar 偏移定位到的 range 落在错位的句子上（ttu 渲染
-  // 期对 HTML 做了 Dart 侧 DOMParser 不会做的改写时触发）。用 expectedCue
-  // normalize 后的串在当前挂载段里 indexOf 定位，按"离原 targetStart 最
-  // 近"的命中重建 range。找不到就放弃本条，不 wrap、不滚动、保持视口不动。
-  function normKeep(t) {
-    var b = '';
-    for (var i = 0; i < t.length; i++) {
-      if (!window.__hoshiIsSkippable(t.charCodeAt(i))) b += t[i];
-    }
-    return b;
-  }
-  var normActual = actualNormText;
-  var normExpected = normKeep(expectedCue || '');
-  var usedFallback = false;
-  var fallbackDelta = 0;
-  // 阈值从 4 降到 2：原阈值是为了避免短串（"はい""そう"）在整段 indexOf
-  // 里命中过多噪声。下面 fallback 的 indexOf 起点已经被 monotonicFrom 夹到
-  // 上一条 cue 终点附近，搜索域窄到一两句，2 字短串也安全了。
-  if (normExpected.length >= 2 && normActual !== normExpected) {
-    var fbNodes = [];
-    var fbMap = [];
-    var fbStr = '';
-    var fbWalker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-      acceptNode: function(n) {
-        var p = n.parentNode;
-        while (p && p !== root) {
-          var tag = p.nodeName ? p.nodeName.toLowerCase() : '';
-          if (tag === 'rt' || tag === 'rp') return NodeFilter.FILTER_REJECT;
-          p = p.parentNode;
-        }
-        return NodeFilter.FILTER_ACCEPT;
-      }
-    });
-    var fbNode;
-    while ((fbNode = fbWalker.nextNode())) {
-      var ti = fbNodes.length;
-      fbNodes.push(fbNode);
-      var ftext = fbNode.nodeValue || '';
-      for (var fi = 0; fi < ftext.length; fi++) {
-        var fc = ftext.charCodeAt(fi);
-        if (window.__hoshiIsSkippable(fc)) continue;
-        fbStr += ftext[fi];
-        fbMap.push([ti, fi]);
-      }
-    }
-    // 选离原 targetStart 最近的命中——同一段内同句多次出现时避免 indexOf
-    // 总是挑第一个。但起点夹在上一条 cue 的终点附近（同 section 内才生效），
-    // 避免在段头碰到同样短串时挑到上一条 cue 之前的位置 → "高亮往回跳"。
-    // tolerance=64：cue 之间偶有重叠（音轨切换瞬间）或 audio 微秒级回退时，
-    // 允许 fallback 命中比 lastFoundEnd 略早一点的位置；超出就当回退是误匹配。
-    var monotonicFrom = 0;
-    if (window.__hoshiSasayakiLastFoundSection === sectionIndex) {
-      monotonicFrom = Math.max(0, (window.__hoshiSasayakiLastFoundEnd || 0) - 64);
-    }
-    var bestIdx = -1;
-    var bestDelta = Infinity;
-    var from = monotonicFrom;
-    while (from <= fbStr.length - normExpected.length) {
-      var p = fbStr.indexOf(normExpected, from);
-      if (p < 0) break;
-      var d = Math.abs(p - targetStart);
-      if (d < bestDelta) { bestDelta = d; bestIdx = p; }
-      from = p + 1;
-    }
-    // monotonicFrom 卡得太紧时（用户 seek 到段中间或导入后第一条 cue 的
-    // targetStart 实际就在 lastFoundEnd 之前）整段内反而找不到——重试一遍
-    // 全段 indexOf，并把这次回退当成新的锚点起点。
-    if (bestIdx < 0 && monotonicFrom > 0) {
-      from = 0;
-      while (from <= fbStr.length - normExpected.length) {
-        var p2 = fbStr.indexOf(normExpected, from);
-        if (p2 < 0) break;
-        var d2 = Math.abs(p2 - targetStart);
-        if (d2 < bestDelta) { bestDelta = d2; bestIdx = p2; }
-        from = p2 + 1;
-      }
-    }
-    if (bestIdx >= 0 && bestIdx + normExpected.length <= fbMap.length) {
-      var sMap = fbMap[bestIdx];
-      var eMap = fbMap[bestIdx + normExpected.length - 1];
-      startNode = fbNodes[sMap[0]];
-      startOffset = sMap[1];
-      endNode = fbNodes[eMap[0]];
-      endOffset = eMap[1] + 1;
-      try {
-        range = document.createRange();
-        range.setStart(startNode, startOffset);
-        range.setEnd(endNode, endOffset);
-        // 走 fbStr 切片而不是 range.toString()：后者会把 Range 跨越的
-        // <rt>/<rp> 拼进来导致日志假阳性。
-        actualText = fbStr.slice(bestIdx, bestIdx + normExpected.length);
-        usedFallback = true;
-        fallbackDelta = bestIdx - targetStart;
-        console.log(JSON.stringify({
-          'hibiki-message-type': 'sasayakiHighlightFallback',
-          'sectionIndex': sectionIndex,
-          'origNormStart': targetStart,
-          'foundNormStart': bestIdx,
-          'delta': fallbackDelta,
-          'fbStrLen': fbStr.length,
-          'monotonicFrom': monotonicFrom
-        }));
-      } catch (fbErr) {
-        console.log(JSON.stringify({
-          'hibiki-message-type': 'sasayakiHighlightFallbackErr',
-          'error': String(fbErr)
-        }));
-        return;
-      }
-    } else {
-      // 当前段里确实找不到这条 cue —— 要么 cue 指向别段而挂载识别误判，
-      // 要么 cue 文本来源（字幕）和当前章节正文差异超出 indexOf 能容忍的
-      // 范围。保持视口不动，放弃本条高亮，等下一条对得上的 cue 恢复。
-      window.__hoshiClearActiveRanges();
-      window.__hoshiTarget = null;
-      window.__hoshiStopTicker();
-      console.log(JSON.stringify({
-        'hibiki-message-type': 'sasayakiHighlightFallbackMiss',
-        'sectionIndex': sectionIndex,
-        'fbStrLen': fbStr.length,
-        'normExpectedLen': normExpected.length,
-        'expectedHead': normExpected.slice(0, 16)
-      }));
-      return;
-    }
-  }
-
   // 不再包 span：CSS Custom Highlight API / overlay fallback 直接吃 Range，
   // 不动 DOM。extractContents+insertNode 会改 inline 流，让 CSS columns
   // 重排一次，表现为"每次高亮正文都跳一下"。
@@ -935,14 +796,6 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
     return s.length <= n ? s : s.slice(0, n) + '…';
   }
 
-  // 更新前向单调锚——下一条 cue 的 fallback 从这里往后找。fallback 路径
-  // 用 fallback 实际命中的 [bestIdx, bestIdx + normExpected.length) 终点；
-  // 直接路径（offsets 对得上）用 cue 的标称 targetEnd。
-  window.__hoshiSasayakiLastFoundSection = sectionIndex;
-  window.__hoshiSasayakiLastFoundEnd = usedFallback
-    ? (bestIdx + normExpected.length)
-    : targetEnd;
-
   console.log(JSON.stringify({
     'hibiki-message-type': 'sasayakiHighlightOk',
     'sectionIndex': sectionIndex,
@@ -953,9 +806,6 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
     'base': base,
     'expectedCue': clip(expectedCue, 64),
     'actualText': clip(actualText, 64),
-    'usedFallback': usedFallback,
-    'fallbackDelta': fallbackDelta,
-    'monotonicAnchor': monotonicFrom,
     'match': (actualText && expectedCue)
       ? (function() {
           // 用 normalize 后的串比，避免标点差异造成误报
@@ -1791,11 +1641,37 @@ window.__hibikiScrollToNormOffset = function(section, offset) {
       await controller.evaluateJavascript(
         source: '(async function(){'
             'var reveal = $reveal;'
-            'var useForkScroll = reveal && '
+            // cueMap 命中路径优先：span 已在 DOM 里，__hoshiAlignToElement
+            // 用 wrappers[0] 的实际 rect 算页，和 applySasayakiCues 的
+            // TreeWalker 归一化共用一套字符定位；不走 __ttuScrollToCharOffset
+            // 是因为 ttu 的 bookmarkManager.scrollToBookmark 用 section.startCharacter
+            // + charOffset（ttu 自己的 epub 字符计数，和 Sasayaki 的 normCharStart
+            // 不完全对齐，ruby/空白归一化细节有差），小偏差下会把 pageIndex
+            // 算偏一页 —— 反而让音频跑到下一页、reader 停在上一页。
+            'if (window.__hoshiHighlightSasayakiCueById('
+            '    ${jsonEncode(raw)}, reveal)) return;'
+            // cueMap miss：span 不在 cueMap 里（section 尚未 applySasayakiCues
+            // 完成 / 该 cue 被 oob 或 cross-boundary 跳过）。此时没 span 做 rect
+            // 对齐基准，只能靠 __ttuScrollToCharOffset 带页 + walker 补包 span。
+            'var hasApi = '
             '  typeof window.__ttuScrollToCharOffset === "function";'
+            'var useForkScroll = reveal && hasApi;'
+            'console.log(JSON.stringify({'
+            '  "hibiki-message-type": "sasayakiForkScrollEntry",'
+            '  "section": ${frag.sectionIndex},'
+            '  "offset": ${frag.normCharStart},'
+            '  "reveal": reveal,'
+            '  "hasApi": hasApi,'
+            '  "useForkScroll": useForkScroll'
+            '}));'
             'if (useForkScroll) {'
             '  try { await window.__ttuScrollToCharOffset('
-            '    ${frag.sectionIndex}, ${frag.normCharStart}); }'
+            '    ${frag.sectionIndex}, ${frag.normCharStart});'
+            '    console.log(JSON.stringify({'
+            '      "hibiki-message-type": "sasayakiForkScrollOk",'
+            '      "section": ${frag.sectionIndex},'
+            '      "offset": ${frag.normCharStart}'
+            '    })); }'
             '  catch (e) {'
             '    console.log(JSON.stringify({'
             '      "hibiki-message-type": "scrollToCharOffsetErr",'
@@ -1806,13 +1682,6 @@ window.__hibikiScrollToNormOffset = function(section, offset) {
             '    useForkScroll = false;'
             '  }'
             '}'
-            // cueMap 路径。useForkScroll 成功时 reveal 传 false（滚动已完成,
-            // 只 add class）；否则回退老 ticker：reveal 透传让它自己走。
-            'if (window.__hoshiHighlightSasayakiCueById('
-            '    ${jsonEncode(raw)}, useForkScroll ? false : reveal)) return;'
-            // cueMap miss 路径。useForkScroll 成功时滚动已完成，只要 walker
-            // 包 span + add class，reveal=false 跳过旧 ticker；否则交给老路径
-            // 自己 ticker 翻页。
             'window.__hoshiHighlightSasayaki(${frag.sectionIndex}, '
             '  ${frag.normCharStart}, ${frag.normCharEnd}, $cueJson, '
             '  useForkScroll ? false : reveal);'
