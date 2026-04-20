@@ -74,6 +74,10 @@ class _BookImportDialogState extends State<BookImportDialog> {
 
   bool _importing = false;
 
+  /// 默认开启：导入时自动探测多档 searchWindow，取命中率最高的那档。
+  /// 关掉后才暴露手动滑杆 —— 大多数书 auto-probe 的结果已经够好，用户
+  /// 没判断依据去手动拖（导入前还没看到匹配结果）。
+  bool _autoWindow = true;
   int _searchWindow = EpubSrtMatcher.defaultSearchWindow;
 
   /// 只有 EPUB + SRT 组合导入会跑 Sasayaki matcher，其他路径（仅 EPUB /
@@ -153,10 +157,24 @@ class _BookImportDialogState extends State<BookImportDialog> {
         ),
         if (_willRunMatcher) ...[
           const SizedBox(height: 12),
-          SasayakiWindowSlider(
-            value: _searchWindow,
-            onChanged: (int v) => setState(() => _searchWindow = v),
+          SwitchListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            title: const Text('自动选择搜索窗口'),
+            subtitle: const Text(
+              '导入时探测多档 window，取命中率最高的那档',
+              style: TextStyle(fontSize: 11),
+            ),
+            value: _autoWindow,
+            onChanged: _importing
+                ? null
+                : (bool v) => setState(() => _autoWindow = v),
           ),
+          if (!_autoWindow)
+            SasayakiWindowSlider(
+              value: _searchWindow,
+              onChanged: (int v) => setState(() => _searchWindow = v),
+            ),
         ],
         if (_importing) ...[
           const SizedBox(height: 16),
@@ -542,10 +560,21 @@ class _BookImportDialogState extends State<BookImportDialog> {
 
     String? matchTail;
     if (ext == 'srt') {
+      int chosenWindow = _searchWindow;
+      if (_autoWindow && sections.isNotEmpty && cues.isNotEmpty) {
+        // probe 自带 toast，失败时返回 null，这里就保持 default。
+        final int? best = await SasayakiRematch.runAutoProbe(
+          sections: sections,
+          cues: cues,
+        );
+        if (best != null) {
+          chosenWindow = best;
+        }
+      }
       matchTail = await _runSasayakiMatch(
         sections: sections,
         cues: cues,
-        searchWindow: _searchWindow,
+        searchWindow: chosenWindow,
       );
     }
 
