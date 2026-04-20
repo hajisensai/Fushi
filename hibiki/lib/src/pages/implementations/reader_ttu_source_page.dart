@@ -1573,9 +1573,16 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
 }
 
 // ReaderPosition 保存触发：监听 `.book-content` / `.book-content-container`
-// 的 scroll 事件，debounce 1000ms 后调 `__hibikiGetViewportNormOffset()`
+// 的 scroll 事件，debounce 200ms 后调 `__hibikiGetViewportNormOffset()`
 // 反查当前视口的 (section, 章内 normCharOffset)，再通过 flutter_inappwebview
 // 的 saveReaderPos handler 回传 Dart 写 Isar。
+//
+// 为什么 200ms：paginated 翻一页本质是单次 scroll 事件（scrollTop 跳一大步
+// 后稳定），之后无后续 scroll。更长的 debounce 相当于"等一个不会再来的
+// 事件"，让用户翻页后几秒内才写库，关书前 dispose flush 才兜住。200ms
+// 足够过滤同一次翻页动画里的多发 scroll（动画本身 < 100ms），又让翻页
+// 到落盘基本无感延迟。Dart 侧 _persistReaderPos 自带同值去重，即便 JS
+// debounce 偶尔多 fire 一次也不会额外 writeTxn。
 //
 // - scroll 事件不冒泡，必须 capture 阶段监听，并挂到 document 上做事件委托
 //   （ttu 切换章节会重建 `.book-content` DOM，直接绑到那个元素会丢）
@@ -1598,7 +1605,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           window.flutter_inappwebview.callHandler('saveReaderPos', p);
         }
       } catch (e) {}
-    }, 1000);
+    }, 200);
   }
   document.addEventListener('scroll', function(e) {
     var t = e.target;
