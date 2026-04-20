@@ -1402,7 +1402,7 @@ if (!window.__hibikiClickListenerRegistered) {
     tapToSelect(e);
   }, true);
 }
-document.head.insertAdjacentHTML('beforeend', `
+document.head.insertAdjacentHTML('beforebegin', `
 <style>
 rt {
   -webkit-touch-callout:none; /* iOS Safari */
@@ -1440,9 +1440,7 @@ rp {
 button.fixed.h-8.w-full,
 button.fixed.inset-x-0,
 button.fixed.top-0,
-.elevation-4.fixed.top-0,
-div.fixed.top-0.z-10.w-full,
-div.fixed.inset-x-0.top-0 {
+.elevation-4.fixed.top-0 {
   display: none !important;
 }
 
@@ -1464,15 +1462,10 @@ html[data-hibiki-audiobook] div.fixed.bottom-0.left-0.z-10 {
 }
 
 /* ttu 书签指示图标（faBookmark，opacity 0.25）——滚动位置命中 bookmark
-   时显示，用 inline top/left/right 浮在正文上。hibiki 走 ttu 原生
-   auto-bookmark，这颗半透明图钉对用户没用，且容易盖住正文，直接隐藏。
-   两种渲染变体：
-   1. continuous reader：<div class="pointer-events-none absolute
-      [text-sm|text-xl] opacity-25">
-   2. paginated reader：<div class="fixed h-3 w-3 text-base opacity-25
-      sm:text-xl"> —— 注意是 fixed 不是 absolute，也没有 pointer-events-none */
-div.pointer-events-none.absolute.opacity-25,
-div.fixed.h-3.w-3.opacity-25 {
+   时显示。对应 node4 Ou/Gu 渲染的 div.pointer-events-none.absolute.
+   opacity-25，用 inline top/left/right 浮在正文上。hibiki 走 ttu 原生
+   auto-bookmark，这颗半透明图钉对用户没用，且容易盖住正文，直接隐藏。 */
+div.pointer-events-none.absolute.opacity-25 {
   display: none !important;
 }
 </style>
