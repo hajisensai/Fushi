@@ -1979,6 +1979,39 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     }
   }
 
+  /// 打开有声书设置面板（⚙ 按钮入口）。面板里放阅读进度、倍速、
+  /// 音画同步三块。进度 probe 需要 WebView controller，所以这里构造
+  /// 而不是在 [AudiobookPlayBar] 内部做。
+  ///
+  /// probe 结果异步，面板初次打开时先显示 "—"，拿到后 setState 替换；
+  /// 或者先 await probe 再展开（更简单，用户短暂 tap 延迟可接受）。
+  Future<void> _showAudiobookSettingsSheet(
+    AudiobookPlayerController ctrl,
+  ) async {
+    (int, int)? progress;
+    try {
+      final TtuApiProbe probe = await AudiobookBridge.probeTtuApi(_controller);
+      if (probe.currentSection != null &&
+          probe.sectionCount != null &&
+          probe.sectionCount! > 0) {
+        progress = (probe.currentSection!, probe.sectionCount!);
+      }
+    } catch (e) {
+      debugPrint('[hibiki-audiobook] settings probe error: $e');
+    }
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (BuildContext ctx) {
+        return AudiobookSettingsSheet(
+          controller: ctrl,
+          readerProgress: progress,
+        );
+      },
+    );
+  }
+
   /// 从 ttu fork 的 `__ttuCurrentSection()` 读一次当前段，用来兜住
   /// sectionChanged 初次发射被 skip(1) 吃掉的情况。fork 未就绪或 probe
   /// 失败时保留原值（多半仍是 -1，跨章守卫就继续等真正的 sectionChanged）。
@@ -2708,7 +2741,10 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
             mainAxisSize: MainAxisSize.min,
             children: [
               _buildFollowPill(),
-              AudiobookPlayBar(controller: ctrl),
+              AudiobookPlayBar(
+                controller: ctrl,
+                onOpenSettings: () => _showAudiobookSettingsSheet(ctrl),
+              ),
             ],
           ),
         );
