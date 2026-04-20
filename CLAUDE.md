@@ -19,6 +19,8 @@
 
 **Phase 4 对齐 iOS Sasayaki**：PR1（多格式 matcher）/ PR2（health UI）/ PR8a（ttu fork section API）/ PR8b（Follow audio）已落地，剩 **PR6 `{sasayaki-audio}` Anki handlebar** 未做（见 `SASAYAKI_PARITY_PLAN.md`）。
 
+界面的中文和英文混用，未完全遵守语言设置
+
 ## 核心技术栈
 
 - Flutter **3.41.6** / Dart 3.11.4（固定，见 `project_build_env` 记忆）
