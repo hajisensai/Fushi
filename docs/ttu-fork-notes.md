@@ -4,7 +4,12 @@
 
 **fork 基准**：commit `7086bdc`（"chore(deps): update dependency vite to v5.0.9"，2023-12-15），@sveltejs/kit 1.30.3 + svelte 4.2.8，**SvelteKit 1.x 最后一个稳态**。上游随后 `0535909` 升 kit v2，输出目录结构有较大变化（chunks 结构、服务端 adapter 约定都换了）。hibiki 的 AudiobookBridge 是在 kit-v1 的 DOM 结构上反向对齐的（`.book-content` / `.book-content-container` / `column-gap: 40px` / `data-cue-id`），跟 kit-v1 dist 兼容性最强，所以 fork 锁在 kit-v1 最后一个可构建版本。
 
-**fork 存放位置**：本机 `/d/ttu-fork/`（branch `hibiki-patches`），未推到远程。每个 patch 以 `feat(reader): [hibiki] ...` 开头便于 rebase 时辨识。
+**fork 存放位置**：
+- 工作副本：本机 `/d/ttu-fork/`（branch `hibiki-patches`）
+- 远程：https://github.com/hdjsadgfwtg/ttu-fork （`origin/hibiki-patches`）
+- 上游 remote：`upstream` → https://github.com/ttu-ttu/ebook-reader
+
+每个 patch 以 `feat(reader): [hibiki] ...` 开头便于 rebase 时辨识。
 
 **编译产物去向**：`hibiki/hibiki/assets/ttu-ebook-reader/`（替换整套，保留 hibiki 自维护的 `fonts/` 预打包字体目录）。
 
