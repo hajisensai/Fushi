@@ -343,13 +343,12 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
           backgroundColor: Colors.black,
           resizeToAvoidBottomInset: false,
           body: SafeArea(
-            // top: false —— ttu 原生顶部工具栏已通过 CSS 隐藏（见
-            // javascriptToExecute 里 hibiki-hide-ttu-native-ui-css），
-            // 此处再留 SafeArea top padding 会让内容下沉出一条空白横条。
-            // `extendPageBeyondNavigationBar` 偏好原本控制这行，统一 UI
-            // 后页面永远 extend；底部仍走 bottom:false 让 play bar / FAB
-            // 自己处理视觉下沿。
-            top: false,
+            // top 走 `extendPageBeyondNavigationBar` 偏好：默认 true，
+            // 给刘海 / 摄像头挖孔区留黑色 Scaffold 背景做遮罩，避免
+            // WebView 内容被挖孔挡掉。ttu 原生顶部工具栏的"空白横条"
+            // 不在这一层 —— 那一条走 javascriptToExecute 里的
+            // hibiki-hide-ttu-native-ui-css display:none 解决。
+            top: !mediaSource.extendPageBeyondNavigationBar,
             bottom: false,
             child: Stack(
               fit: StackFit.expand,
