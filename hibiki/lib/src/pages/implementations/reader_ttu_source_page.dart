@@ -1478,64 +1478,6 @@ div.fixed.h-3.w-3.opacity-25 {
 </style>
 `);
 
-// CSS `display:none` 历史上被证明不可靠（可能是 Svelte scoped style / 某些
-// transition 机制覆盖）。改用 JS 直接给匹配元素打 inline style —— 比 CSS
-// 选择器优先级更高，且不受浏览器 CSS 加载时机影响。
-//
-// 覆盖三类元素：
-// 1. 顶部触发热区 button.fixed.h-8.w-full —— 拦截 showHeader=true 的唯一入口
-// 2. 顶部展开的工具栏 div.elevation-4.fixed.top-0 —— 即使 showHeader 被触发也盖不住
-// 3. 书签指示图钉 —— continuous/paginated 两种变体
-//
-// MutationObserver 盯 body 子树变化，因为 ttu 的 Svelte 组件会在 hydrate /
-// reactive 状态变化时重新挂载这些元素，只在首次 onLoadStop 跑一次 JS 不够。
-(function(){
-  if (window.__hibikiKillTtuChrome) return;
-  function kill(el){
-    if (!el || el.__hibikiKilled) return;
-    el.__hibikiKilled = true;
-    el.style.setProperty('display','none','important');
-  }
-  function sweep(){
-    try {
-      var sels = [
-        'button.fixed.top-0',
-        'button.fixed.h-8',
-        'button.fixed.inset-x-0',
-        'div.elevation-4.fixed.top-0',
-        'div.fixed.top-0.z-10.w-full',
-        'div.fixed.inset-x-0.top-0',
-        'div.pointer-events-none.absolute.opacity-25',
-        'div.fixed.h-3.w-3.opacity-25'
-      ];
-      for (var i=0;i<sels.length;i++){
-        var nodes = document.querySelectorAll(sels[i]);
-        for (var j=0;j<nodes.length;j++) kill(nodes[j]);
-      }
-    } catch(e){ console.error('[hibiki] kill sweep', e); }
-  }
-  sweep();
-  // 用 rAF 再扫一次，覆盖 Svelte hydrate 完成的首帧
-  requestAnimationFrame(sweep);
-  // DOM 后续变化（ttu 组件 reactive re-mount）持续监听
-  var obs = new MutationObserver(function(muts){
-    for (var i=0;i<muts.length;i++){
-      if (muts[i].addedNodes && muts[i].addedNodes.length) { sweep(); return; }
-    }
-  });
-  obs.observe(document.documentElement, {childList:true, subtree:true});
-  window.__hibikiKillTtuChrome = true;
-})();
-
-document.head.insertAdjacentHTML('beforeend', `
-<style>
-/* 兜底 —— 即使 JS 漏掉某次 mount，CSS 也兜一遍。 */
-div.fixed.h-3.w-3.opacity-25 {
-  display: none !important;
-}
-</style>
-`);
-
 
 function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceDelimited) {
   var result = document.caretRangeFromPoint(x, y);
