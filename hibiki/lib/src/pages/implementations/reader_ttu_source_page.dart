@@ -634,6 +634,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         );
         _currentChapterHref = uri?.toString() ?? _currentChapterHref;
         await _maybeInjectAudiobookBridge(controller, trigger: 'onLoadStop');
+        await _syncAudiobookModeAttr();
       },
       onTitleChanged: (controller, title) async {
         await controller.evaluateJavascript(source: javascriptToExecute);
@@ -647,6 +648,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
           'ctrl=${_audiobookController != null} srtUid=$_srtBookUid',
         );
         await _maybeInjectAudiobookBridge(controller, trigger: 'onTitleChanged');
+        await _syncAudiobookModeAttr();
       },
       onDownloadStartRequest: onDownloadStartRequest,
     );
@@ -1423,20 +1425,32 @@ rp {
   background: rgba(255, 0, 0, 0.6);
 }
 
-/* ttu 顶部 32px 隐形热区 <button>（tap 唤出 reader 工具栏）在 Android
-   WebView 下会被 -webkit-appearance:button 绘成 buttonface 灰白底，
-   盖住正文最上面那一点。SSG 快照里 class 带 top-0，Svelte hydrate 后
-   class 变成 "fixed inset-x-0 z-10 h-8 w-full"（没有 top-0），所以
-   要按 fixed+h-8+w-full 匹配。 */
+/* ttu 顶部 32px 隐形热区 <button>（tap 唤出 reader 工具栏）。hibiki 把
+   reader 工具栏功能（TOC / 书签 / 全屏 / 退出…）挪进了有声书播放栏的
+   设置面板，所以热区和它唤出的工具栏都直接隐藏。SSG 快照里 class 带
+   top-0，Svelte hydrate 后 class 变成 "fixed inset-x-0 z-10 h-8 w-full"
+   （没有 top-0），所以要按 fixed+h-8+w-full 匹配。 */
 button.fixed.h-8.w-full,
 button.fixed.inset-x-0,
 button.fixed.top-0 {
-  -webkit-appearance: none !important;
-  appearance: none !important;
-  background: transparent !important;
-  border: 0 !important;
-  box-shadow: none !important;
-  outline: none !important;
+  display: none !important;
+}
+
+/* ttu 通过 inline style 在 body 或容器上设了 padding-top（viewport
+   padding 用户可调项，默认 40px 左右），给正文顶部留一大截空白。
+   hibiki 不走原生阅读器工具栏，这一截空白没用，整段内容上移。
+   只压顶部，左右和底部的 padding 保留给普通 EPUB 的排版舒适度。 */
+.book-content-container,
+.book-content {
+  padding-top: 0 !important;
+}
+
+/* 有声书模式隐藏 ttu 原生底部进度条（h-8=32px 的 fixed div）。功能
+   在播放栏的设置面板里。普通 EPUB（未挂 audiobook）保持显示，用户
+   阅读进度不至于丢失。html[data-hibiki-audiobook] 属性由 Flutter
+   侧 _syncAudiobookModeAttr 同步到 WebView。 */
+html[data-hibiki-audiobook] div.fixed.bottom-0.left-0.z-10 {
+  display: none !important;
 }
 
 /* ttu 书签指示图标（faBookmark，opacity 0.25）——滚动位置命中 bookmark
@@ -1758,6 +1772,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
             _controller,
             trigger: 'audiobookReady',
           );
+          await _syncAudiobookModeAttr();
         }
       }
     } else {
@@ -1857,6 +1872,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           _controller,
           trigger: 'srtBookReady',
         );
+        await _syncAudiobookModeAttr();
       }
     }
   }
@@ -1942,7 +1958,28 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     _onCueChanged();
   }
 
-/// 从 ttu fork 的 `__ttuCurrentSection()` 读一次当前段，用来兜住
+  /// 把 `data-hibiki-audiobook` 属性同步到 `<html>`，触发静态 CSS 里
+  /// `html[data-hibiki-audiobook] ...` 规则（目前只用来隐藏 ttu 原生底部
+  /// 进度条——功能挪进播放栏设置面板）。ttu 切章节会换 document 丢失
+  /// attribute，所以 onLoadStop / onTitleChanged / audiobookReady /
+  /// srtBookReady / teardown 都要重新同步。
+  Future<void> _syncAudiobookModeAttr() async {
+    if (!_controllerInitialised || !mounted) return;
+    final bool on = _audiobookController != null;
+    try {
+      await _controller.evaluateJavascript(source: '''
+(function(on){
+  var r=document.documentElement;
+  if(on){r.setAttribute('data-hibiki-audiobook','1');}
+  else{r.removeAttribute('data-hibiki-audiobook');}
+})($on);
+''');
+    } catch (e) {
+      debugPrint('[hibiki-audiobook] syncAudiobookModeAttr error: $e');
+    }
+  }
+
+  /// 从 ttu fork 的 `__ttuCurrentSection()` 读一次当前段，用来兜住
   /// sectionChanged 初次发射被 skip(1) 吃掉的情况。fork 未就绪或 probe
   /// 失败时保留原值（多半仍是 -1，跨章守卫就继续等真正的 sectionChanged）。
   Future<void> _bootstrapCurrentTtuSection(
@@ -2569,6 +2606,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       _audiobookController = null;
       _srtBookUid = null;
     });
+    _syncAudiobookModeAttr();
   }
 
   /// 给已存在的 [SrtBook] 补音频：action sheet 选"目录"或"多文件"，
