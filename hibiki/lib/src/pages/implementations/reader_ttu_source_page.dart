@@ -62,6 +62,12 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   // ── 有声书播放器 ────────────────────────────────────────────────────────────
   AudiobookPlayerController? _audiobookController;
 
+  /// 首帧前同步判定：这本书是否有 Audiobook/SrtBook 记录且配置了音频。
+  /// 目的是让 WebView 从第一次 layout 就用"预留 56+bottomPadding"的视口，
+  /// 避免异步 load 完才 setState 翻转 bottom inset、触发 ttu paginated 模式
+  /// resize 重排（vertical-rl 列高变短 → 首页文字整体上移撞到挖孔遮罩）。
+  bool _hasAudioSlot = false;
+
   /// 当前章节的 href（用于 cue 查询和 JS 注解）。
   String _currentChapterHref = '';
 
@@ -136,10 +142,42 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _applyVolumeKeyIntercept();
+    // 同步预判：Isar 查 Audiobook / SrtBook 记录。命中就让 WebView 首帧
+    // 起就带底部 56+padding 槽位，避免异步 load 完再翻转 bottom 触发 ttu
+    // reflow 把首页文字往上抬。
+    _hasAudioSlot = _detectAudioSlotSync();
     // 异步检查是否有挂载有声书
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initAudiobookIfAvailable();
     });
+  }
+
+  /// 同步判定当前书是否有已配置音频的 Audiobook 或 SrtBook 记录。
+  /// 只看记录 + 音频路径字段是否非空；不解析文件是否真实存在（那步会触发
+  /// 文件 I/O，不能在 initState 里跑）。极端情况下路径失效会让预留槽位比
+  /// 实际播放栏多出现几毫秒就消失 —— 比每次开书文字跳一下更可接受。
+  bool _detectAudioSlotSync() {
+    final String? bookUid = widget.item?.uniqueKey;
+    if (bookUid != null) {
+      final Audiobook? ab =
+          AudiobookRepository(appModel.database).findByBookUid(bookUid);
+      if (ab != null) {
+        return (ab.audioPaths?.isNotEmpty ?? false) ||
+            (ab.audioRoot != null && ab.audioRoot!.isNotEmpty);
+      }
+    }
+    final int? ttuId = _extractTtuBookId();
+    if (ttuId == null || ttuId <= 0) {
+      return false;
+    }
+    for (final SrtBook b
+        in SrtBookRepository(appModel.database).listAll()) {
+      if (b.ttuBookId == ttuId) {
+        return (b.audioPaths?.isNotEmpty ?? false) ||
+            (b.audioRoot != null && b.audioRoot!.isNotEmpty);
+      }
+    }
+    return false;
   }
 
   @override
@@ -362,7 +400,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
                 // scrollHeight 变而 clientHeight 没变。外壳缩是两者同
                 // 步收缩，ttu 原生的 paginated 分页仍然对齐。）
                 Positioned.fill(
-                  bottom: _audiobookController != null
+                  bottom: (_audiobookController != null || _hasAudioSlot)
                       ? 56 + MediaQuery.of(context).padding.bottom
                       : 0,
                   child: buildBody(),
@@ -1613,6 +1651,10 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       );
 
       if (audioFiles.isEmpty) {
+        // 记录有、文件解析不到：撤销 initState 预留的 slot，别留空黑条。
+        if (mounted && _hasAudioSlot) {
+          setState(() => _hasAudioSlot = false);
+        }
         return;
       }
 
@@ -1678,6 +1720,10 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         Fluttertoast.showToast(msg: t.srt_audio_unresolved);
       } else {
         debugPrint('[hibiki-audiobook] srt init: pure subtitle book, no audio');
+      }
+      // 撤销 initState 预留的 slot（文件失效 / 纯字幕无音频），别留空黑条。
+      if (mounted && _hasAudioSlot) {
+        setState(() => _hasAudioSlot = false);
       }
       return;
     }
@@ -2543,6 +2589,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     setState(() {
       _audiobookController = null;
       _srtBookUid = null;
+      _hasAudioSlot = false;
     });
   }
 
