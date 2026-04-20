@@ -22,6 +22,7 @@ import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
+import 'package:hibiki/src/media/audiobook/reader_position_repository.dart';
 import 'package:hibiki/src/media/audiobook/sasayaki_match_codec.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_model.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
@@ -103,6 +104,17 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   int _lastSasayakiAppliedSection = -1;
   int _lastSasayakiAppliedRootLen = -1;
 
+  // ── 位置持久化（ReaderPosition Isar 表） ────────────────────────────────
+  //
+  // 保存触发：JS 侧 scroll debounce 1s 调 saveReaderPos handler，Dart 侧
+  // 拿到 {section, offset} 即刻写 Isar（去重：同 section+offset 跳过）。
+  // ttu sectionChanged(auto=false) 翻章也主动写一次（offset=0 记段首）。
+  // dispose 里做一次 flush：evaluate 当前视口位置 → 写库，兜 1s debounce
+  // 窗内关书丢失。
+
+  /// 上一次写进 Isar 的位置，用于去重，避免高频 scroll 里重复 writeTxn。
+  ReaderViewportPos? _lastSavedPos;
+
   @override
   void initState() {
     super.initState();
@@ -119,10 +131,65 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     VolumeKeyChannel.instance.setHandlers();
     VolumeKeyChannel.instance.setInterceptEnabled(false);
     _navRestoreTimeout?.cancel();
+    // 在 WebView 销毁前同步读一次当前视口位置（fire-and-forget 写 Isar），
+    // 兜住 JS 侧 1s scroll-debounce 窗内关书导致的保存丢失。
+    // unawaited 是有意的：dispose 不能 async，Isar 写不依赖 UI 线程，
+    // Future 在 widget 销毁后仍能跑完。
+    _flushReaderPosOnDispose();
     _audiobookController?.removeListener(_onCueChanged);
     _audiobookController?.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  /// Fire-and-forget：读一次视口位置并写库。WebView 可能已开始销毁，
+  /// evaluateJavascript 抛异常就吞掉。
+  void _flushReaderPosOnDispose() {
+    if (!_controllerInitialised) return;
+    final InAppWebViewController controller = _controller;
+    Future<void>.microtask(() async {
+      try {
+        final ReaderViewportPos? pos =
+            await AudiobookBridge.getViewportNormOffset(controller);
+        if (pos == null) return;
+        await _persistReaderPos(
+          section: pos.section,
+          offset: pos.offset,
+          from: 'dispose',
+        );
+      } catch (e) {
+        debugPrint('[hibiki-reader-pos] dispose flush err: $e');
+      }
+    });
+  }
+
+  /// 把位置写进 Isar。同 section+offset 则跳过，避免重复 writeTxn。
+  Future<void> _persistReaderPos({
+    required int section,
+    required int offset,
+    required String from,
+  }) async {
+    if (section < 0 || offset < 0) return;
+    final int? ttuId = _extractTtuBookId();
+    if (ttuId == null || ttuId <= 0) return;
+    if (_lastSavedPos?.section == section && _lastSavedPos?.offset == offset) {
+      return;
+    }
+    _lastSavedPos = ReaderViewportPos(section: section, offset: offset);
+    try {
+      final ReaderPositionRepository repo =
+          ReaderPositionRepository(appModel.database);
+      await repo.save(
+        ttuBookId: ttuId,
+        sectionIndex: section,
+        normCharOffset: offset,
+      );
+      debugPrint(
+        '[hibiki-reader-pos] save($from) ttuId=$ttuId s=$section o=$offset',
+      );
+    } catch (e) {
+      debugPrint('[hibiki-reader-pos] save err: $e');
+    }
   }
 
   /// Wire native volume-key interception according to the current setting.
@@ -266,15 +333,12 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
               fit: StackFit.expand,
               alignment: Alignment.center,
               children: <Widget>[
-                Padding(
-                  padding: EdgeInsets.only(
-                    bottom: _audiobookController != null
-                        ? _kAudiobookBarHeight +
-                            MediaQuery.of(context).padding.bottom
-                        : 0,
-                  ),
-                  child: buildBody(),
-                ),
+                // WebView 全屏渲染，底部留白通过注入 CSS padding-bottom 实现
+                // （见 _syncReaderBottomPadding）。之前用 Flutter Padding 挤
+                // WebView 会让切屏/系统 UI 抖动时 WebView 高度随 MediaQuery
+                // padding 波动，SurfaceView 和 Flutter 截图层不同步，视觉上
+                // 出现"上半上一页、下半下一页"的撕裂。
+                buildBody(),
                 buildDictionary(),
                 buildAudiobookBar(),
                 buildAudiobookImportButton(),
@@ -464,6 +528,30 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
             }
           },
         );
+
+        // JS 侧 `.book-content` scroll debounce 1s 后调这里，把当前视口
+        // 的 (sectionIndex, 章内 normCharOffset) 写进 Isar ReaderPosition。
+        // JS 已经 debounce 过了，Dart 侧直接写，不再加层 debounce。
+        controller.addJavaScriptHandler(
+          handlerName: 'saveReaderPos',
+          callback: (data) async {
+            if (data.isEmpty) return;
+            try {
+              final Map<String, dynamic> payload =
+                  Map<String, dynamic>.from(data[0] as Map);
+              final int? section = (payload['section'] as num?)?.toInt();
+              final int? offset = (payload['offset'] as num?)?.toInt();
+              if (section == null || offset == null) return;
+              await _persistReaderPos(
+                section: section,
+                offset: offset,
+                from: 'scroll',
+              );
+            } catch (e) {
+              debugPrint('[hibiki-reader-pos] saveReaderPos error: $e');
+            }
+          },
+        );
       },
       onCreateWindow: (controller, createWindowRequest) async {
         showDialog(
@@ -529,6 +617,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         );
         _currentChapterHref = uri?.toString() ?? _currentChapterHref;
         await _maybeInjectAudiobookBridge(controller, trigger: 'onLoadStop');
+        await _syncReaderBottomPadding();
       },
       onTitleChanged: (controller, title) async {
         await controller.evaluateJavascript(source: javascriptToExecute);
@@ -542,6 +631,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
           'ctrl=${_audiobookController != null} srtUid=$_srtBookUid',
         );
         await _maybeInjectAudiobookBridge(controller, trigger: 'onTitleChanged');
+        await _syncReaderBottomPadding();
       },
       onDownloadStartRequest: onDownloadStartRequest,
     );
@@ -1320,8 +1410,11 @@ rp {
 
 /* ttu 顶部 32px 隐形热区 <button>（tap 唤出 reader 工具栏）在 Android
    WebView 下会被 -webkit-appearance:button 绘成 buttonface 灰白底，
-   盖住正文最上面那一点。强制 appearance:none + 透明背景，解决"白色
-   遮罩挡住顶部文字"。 */
+   盖住正文最上面那一点。SSG 快照里 class 带 top-0，Svelte hydrate 后
+   class 变成 "fixed inset-x-0 z-10 h-8 w-full"（没有 top-0），所以
+   要按 fixed+h-8+w-full 匹配。 */
+button.fixed.h-8.w-full,
+button.fixed.inset-x-0,
 button.fixed.top-0 {
   -webkit-appearance: none !important;
   appearance: none !important;
@@ -1329,6 +1422,14 @@ button.fixed.top-0 {
   border: 0 !important;
   box-shadow: none !important;
   outline: none !important;
+}
+
+/* ttu 书签指示图标（faBookmark，opacity 0.25）——滚动位置命中 bookmark
+   时显示。对应 node4 Ou/Gu 渲染的 div.pointer-events-none.absolute.
+   opacity-25，用 inline top/left/right 浮在正文上。hibiki 走 ttu 原生
+   auto-bookmark，这颗半透明图钉对用户没用，且容易盖住正文，直接隐藏。 */
+div.pointer-events-none.absolute.opacity-25 {
+  display: none !important;
 }
 </style>
 `);
@@ -1449,11 +1550,52 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
   } else {
     range.setEnd(lastNode, endOffset);
   }
-  
+
   var selection = window.getSelection();
   selection.removeAllRanges();
   selection.addRange(range);
 }
+
+// ReaderPosition 保存触发：监听 `.book-content` / `.book-content-container`
+// 的 scroll 事件，debounce 1000ms 后调 `__hibikiGetViewportNormOffset()`
+// 反查当前视口的 (section, 章内 normCharOffset)，再通过 flutter_inappwebview
+// 的 saveReaderPos handler 回传 Dart 写 Isar。
+//
+// - scroll 事件不冒泡，必须 capture 阶段监听，并挂到 document 上做事件委托
+//   （ttu 切换章节会重建 `.book-content` DOM，直接绑到那个元素会丢）
+// - __hibikiGetViewportNormOffset 由 AudiobookBridge.inject 注入，但 inject
+//   只在有 audiobook 时才跑 —— 纯 EPUB（无有声书）场景该函数不存在，这里
+//   直接 return，不会抛。纯 EPUB 的位置保存后续单独做。
+// - __hibikiPosSaveInstalled guard 防 onLoadStop 多次 evaluate 重复注册。
+(function() {
+  if (window.__hibikiPosSaveInstalled) return;
+  window.__hibikiPosSaveInstalled = true;
+  var timer = null;
+  function schedule() {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(function() {
+      try {
+        if (!window.__hibikiGetViewportNormOffset) return;
+        var p = window.__hibikiGetViewportNormOffset();
+        if (!p) return;
+        if (window.flutter_inappwebview) {
+          window.flutter_inappwebview.callHandler('saveReaderPos', p);
+        }
+      } catch (e) {}
+    }, 1000);
+  }
+  document.addEventListener('scroll', function(e) {
+    var t = e.target;
+    if (!t) return;
+    // Element vs Document 区分：document 的 scroll 事件 target === document
+    // 本身（ttu paginated 下 window 不滚，这里主要过 book-content*）
+    if (t === document) { schedule(); return; }
+    if (t.classList && (t.classList.contains('book-content') ||
+                        t.classList.contains('book-content-container'))) {
+      schedule();
+    }
+  }, true);
+})();
 """;
 
   String get leftArrowSimulateJs => '''
@@ -1594,6 +1736,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
             _controller,
             trigger: 'audiobookReady',
           );
+          await _syncReaderBottomPadding();
         }
       }
     } else {
@@ -1693,6 +1836,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           _controller,
           trigger: 'srtBookReady',
         );
+        await _syncReaderBottomPadding();
       }
     }
   }
@@ -1772,6 +1916,37 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     await _bootstrapCurrentTtuSection(controller);
     // 章节加载后立刻把视口拉回当前句所在页（Hoshi pendingFragment 模式）。
     _onCueChanged();
+  }
+
+  /// 把"播放栏需要的底部留白"用 CSS padding-bottom 注入到 ttu 的滚动容器
+  /// `.book-content`。WebView 永远全屏渲染；播放栏只是浮层，不再挤 WebView
+  /// 高度——避免切屏/系统 UI 抖动时 SurfaceView 与 Flutter 截图层不同步造成
+  /// 视觉撕裂。`scroll-padding-bottom` 让 scrollIntoView 时目标句子不会被
+  /// 播放栏遮住（Sasayaki follow audio 自动滚动受益）。ttu 切章节会换 document
+  /// 丢失 style，所以 onLoadStop / onTitleChanged / attach / teardown 都要
+  /// 重新同步。
+  Future<void> _syncReaderBottomPadding() async {
+    if (!_controllerInitialised || !mounted) return;
+    final double safeBottom = MediaQuery.of(context).padding.bottom;
+    final int px = _audiobookController != null
+        ? (_kAudiobookBarHeight + safeBottom).round()
+        : 0;
+    try {
+      await _controller.evaluateJavascript(source: '''
+(function(px){
+  var id='hibiki-reader-bottom-padding-css';
+  var el=document.getElementById(id);
+  if(!el){
+    el=document.createElement('style');
+    el.id=id;
+    (document.head||document.documentElement).appendChild(el);
+  }
+  el.textContent='.book-content{padding-bottom:'+px+'px !important;scroll-padding-bottom:'+px+'px !important;}';
+})($px);
+''');
+    } catch (e) {
+      debugPrint('[hibiki-audiobook] syncBottomPadding error: $e');
+    }
   }
 
   /// 从 ttu fork 的 `__ttuCurrentSection()` 读一次当前段，用来兜住
@@ -2141,6 +2316,14 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     // 的 auto-off 语义：关 Follow + toast，用户停在翻到的位置。
     // Follow=OFF 时 _autoOffFollowOnManualTurn 自身短路，不动状态。
     _autoOffFollowOnManualTurn();
+    // 用户翻章 → 立即写 ReaderPosition 一次（offset=0 记到段首）。不等
+    // scroll debounce：用户可能翻章后瞬间关书，scroll 事件没来得及触发。
+    // 下一次 scroll 的 debounce 保存会把 offset 精修到章内精确位置。
+    unawaited(_persistReaderPos(
+      section: idx,
+      offset: 0,
+      from: 'sectionChanged',
+    ));
   }
 
   /// 用户点击句子，跳转播放器到该 cue。
@@ -2256,6 +2439,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       _audiobookController = null;
       _srtBookUid = null;
     });
+    _syncReaderBottomPadding();
   }
 
   /// 给已存在的 [SrtBook] 补音频：action sheet 选"目录"或"多文件"，

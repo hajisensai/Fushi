@@ -1315,6 +1315,126 @@ window.__hoshiAnnotate = function(chapterHref) {
 };
 ''';
 
+  /// Reader 位置持久化的 JS 反查 + 跳转 API。
+  ///
+  /// - `__hibikiGetViewportNormOffset()`：从视口左上探针点反查当前挂载段和
+  ///   章内 Sasayaki 归一化字符偏移（和 AudioCue.normCharStart 同基准）。
+  ///   用 `caretRangeFromPoint` 找视口顶部第一个可见文本节点，再用 Sasayaki
+  ///   那套 walker 逐字符累加到命中位置。用于 Flutter 节流后写 Isar
+  ///   [ReaderPosition]。
+  /// - `__hibikiScrollToNormOffset(section, offset)`：包一层 __hoshiHighlightSasayaki
+  ///   复用 ticker 翻页，把目标位置滚进视口；900ms 后 unwrap 掉临时
+  ///   `span.hoshi-active` 避免残留红框。
+  ///
+  /// 依赖 Sasayaki 已经准备好的 `__hoshiSasayakiSectionStarts` /
+  /// `__hoshiCurrentMountedSection` / `__hoshiIsSkippable`，必须在
+  /// [initSasayakiRefs] 和挂载 Sasayaki refs 完成后才用得上。
+  static const String _readerPosFn = '''
+window.__hibikiGetViewportNormOffset = function() {
+  var section = -1;
+  try {
+    if (typeof window.__ttuCurrentSection === 'function') {
+      var v = window.__ttuCurrentSection();
+      if (typeof v === 'number') section = v;
+    }
+  } catch (e) {}
+  // mountedSection 是 Sasayaki walker 实际看到的段，优先它 —— ttu
+  // currentSection 在 sectionChanged skip(1) 的坑下可能滞后。
+  if (typeof window.__hoshiCurrentMountedSection === 'number' &&
+      window.__hoshiCurrentMountedSection >= 0) {
+    section = window.__hoshiCurrentMountedSection;
+  }
+  if (section < 0) return null;
+
+  var root = document.querySelector('.book-content-container') ||
+             document.querySelector('.book-content');
+  if (!root) return null;
+
+  // 视口左上不一定命中文本，多试几个探针点（避开边距 / 段首空行）
+  var w = window.innerWidth || 360;
+  var h = window.innerHeight || 640;
+  var probes = [
+    [16, 32],
+    [Math.floor(w * 0.1), Math.floor(h * 0.15)],
+    [Math.floor(w * 0.2), Math.floor(h * 0.25)],
+    [Math.floor(w * 0.5), Math.floor(h * 0.5)]
+  ];
+  var target = null;
+  for (var i = 0; i < probes.length; i++) {
+    var px = probes[i][0], py = probes[i][1];
+    var r = null;
+    try {
+      if (document.caretRangeFromPoint) {
+        r = document.caretRangeFromPoint(px, py);
+      } else if (document.caretPositionFromPoint) {
+        var cp = document.caretPositionFromPoint(px, py);
+        if (cp && cp.offsetNode) {
+          r = document.createRange();
+          r.setStart(cp.offsetNode, cp.offset);
+        }
+      }
+    } catch (err) { r = null; }
+    if (r && r.startContainer && r.startContainer.nodeType === 3) {
+      target = { node: r.startContainer, offset: r.startOffset };
+      break;
+    }
+  }
+  if (!target) return { section: section, offset: 0 };
+
+  // Sasayaki walker 配方：SHOW_TEXT + 拒绝 rt/rp 祖先（ruby 振假名不计数）
+  var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: function(n) {
+      var p = n.parentNode;
+      while (p && p !== root) {
+        var tag = p.nodeName ? p.nodeName.toLowerCase() : '';
+        if (tag === 'rt' || tag === 'rp') return NodeFilter.FILTER_REJECT;
+        p = p.parentNode;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    }
+  });
+  var normPos = 0;
+  var node;
+  while ((node = walker.nextNode())) {
+    if (node === target.node) {
+      var t = node.nodeValue || '';
+      var cap = Math.min(target.offset, t.length);
+      for (var j = 0; j < cap; j++) {
+        if (!window.__hoshiIsSkippable(t.charCodeAt(j))) normPos++;
+      }
+      return { section: section, offset: normPos };
+    }
+    var txt = node.nodeValue || '';
+    for (var k = 0; k < txt.length; k++) {
+      if (!window.__hoshiIsSkippable(txt.charCodeAt(k))) normPos++;
+    }
+  }
+  // target 不在 walker 可达范围（比如被 rt/rp 拒）→ 拿累加到终点的值兜底
+  return { section: section, offset: normPos };
+};
+
+window.__hibikiScrollToNormOffset = function(section, offset) {
+  // 复用 __hoshiHighlightSasayaki 的 walker + 包 span + ticker 翻页。
+  // 只高亮 1 个归一化字符做锚点，reveal=true 启 ticker，完事后 unwrap 掉
+  // 临时 hoshi-active span（否则那一个字符会一直带红框高亮）。
+  try {
+    window.__hoshiHighlightSasayaki(section, offset, offset + 1, '', true);
+  } catch (e) {
+    console.log(JSON.stringify({
+      'hibiki-message-type': 'hibikiScrollToNormOffsetErr',
+      'error': String(e),
+      'section': section, 'offset': offset
+    }));
+    return;
+  }
+  setTimeout(function(){
+    try {
+      if (window.__hoshiUnwrapSasayaki) window.__hoshiUnwrapSasayaki();
+    } catch (_e) {}
+  }, 900);
+};
+''';
+
   // ── 公开 API ───────────────────────────────────────────────────────────────
 
   /// 向 WebView 注入 CSS 样式和 JS 函数（章节加载完成后调用一次）。
@@ -1336,6 +1456,9 @@ window.__hoshiAnnotate = function(chapterHref) {
     await controller.evaluateJavascript(source: _sasayakiFn);
     await controller.evaluateJavascript(source: _ttuApiShimFn);
     await controller.evaluateJavascript(source: _annotateFn);
+    // _readerPosFn 依赖 __hoshiIsSkippable / __hoshiHighlightSasayaki，
+    // 必须在 _sasayakiFn 之后 evaluate
+    await controller.evaluateJavascript(source: _readerPosFn);
   }
 
   /// 探测 ttu 侧是否已挂出 PR8a 的 section 导航 API。
@@ -1379,6 +1502,46 @@ window.__hoshiAnnotate = function(chapterHref) {
   }) async {
     await controller.evaluateJavascript(
       source: '__sasayakiRequestNav($sectionIndex);',
+    );
+  }
+
+  /// 从视口左上探针反查当前挂载段和章内归一化字符偏移。
+  ///
+  /// null 代表视口里没命中文本节点 / Sasayaki refs 还没挂上 / ttu 还没就位 ——
+  /// 调用方直接跳过这一次保存，别拿 offset=0 瞎写（会覆盖之前保存的有效位置）。
+  static Future<ReaderViewportPos?> getViewportNormOffset(
+    InAppWebViewController controller,
+  ) async {
+    final Object? raw = await controller.evaluateJavascript(
+      source:
+          '(function(){try{return JSON.stringify(window.__hibikiGetViewportNormOffset ? (window.__hibikiGetViewportNormOffset()||null) : null);}catch(e){return "null";}})();',
+    );
+    if (raw is! String || raw.isEmpty || raw == 'null') {
+      return null;
+    }
+    try {
+      final dynamic json = jsonDecode(raw);
+      if (json is! Map<String, dynamic>) return null;
+      final int? section = (json['section'] as num?)?.toInt();
+      final int? offset = (json['offset'] as num?)?.toInt();
+      if (section == null || section < 0 || offset == null || offset < 0) {
+        return null;
+      }
+      return ReaderViewportPos(section: section, offset: offset);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 跳到给定 section + 章内归一化偏移，复用 Sasayaki ticker 翻页。完事后
+  /// 900ms 自动 unwrap 临时锚点 span。
+  static Future<void> scrollToNormOffset(
+    InAppWebViewController controller, {
+    required int section,
+    required int offset,
+  }) async {
+    await controller.evaluateJavascript(
+      source: '__hibikiScrollToNormOffset($section, $offset);',
     );
   }
 
@@ -1595,6 +1758,19 @@ class TtuApiProbe {
     if (!hasSectionCount) missing.add('sectionCount');
     return 'ttu fork missing: ${missing.join(", ")}';
   }
+}
+
+/// Reader 当前视口在全书中的位置 —— 章内 Sasayaki 归一化字符偏移。
+///
+/// 跟 AudioCue.normCharStart 同基准（ruby 剥、skippable 跳过），字号 /
+/// pageColumns 变了也不会飘。对应 Isar 里的 [ReaderPosition]。
+class ReaderViewportPos {
+  const ReaderViewportPos({required this.section, required this.offset});
+  final int section;
+  final int offset;
+
+  @override
+  String toString() => 'ReaderViewportPos(section=$section, offset=$offset)';
 }
 
 /// 用户在 WebView 中点击有声书句子所产生的事件。
