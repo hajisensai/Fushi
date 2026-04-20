@@ -88,37 +88,42 @@ class JsonAlignmentParser {
       ..sort((a, b) => a.sentenceIndex.compareTo(b.sentenceIndex));
   }
 
-  /// 二分查找：返回 [positionMs] 所处或最近播放过的 cue 下标。
+  /// 二分查找：返回 [positionMs] 落在其 `[startMs, endMs]` 区间内的 cue 下标。
   ///
-  /// 策略为 "sustain"：返回满足 `startMs <= positionMs` 的最后一条 cue。
-  /// SRT 字幕两条 cue 之间普遍有 gap，若严格要求 `positionMs <= endMs`，在 gap
-  /// 期间高亮会被清除、滚动会停止，体验是"语句消失然后又出现"。改为 sustain
-  /// 后，gap 期间保持上一句高亮，直到下一句 startMs 抵达。
+  /// 对齐上游 Sasayaki `CueTimeline.cue(at:)`：位置严格在两条 cue 之间的静音
+  /// gap（`prev.endMs < positionMs < next.startMs`）时返回 -1，让上层清高亮。
+  /// 旧实现曾采用 "sustain"（gap 保持上一句）避免 SRT 字幕轻微抖动，但会让
+  /// 重复短句在 cue 切换时因 `textFragmentId` 相同而 `_updateCurrentCue`
+  /// 短路，表现为"高亮偶尔不出现"。
   ///
-  /// 要求 [cues] 已按 startMs 升序排序（即 sentenceIndex 顺序）。
-  /// [positionMs] 早于第一条 cue 时返回 -1。
+  /// 要求 [cues] 已按 startMs 升序排序。[positionMs] 早于第一条 cue 时返回 -1。
   static int findCueIndex({
     required List<AudioCue> cues,
     required int positionMs,
   }) {
-    if (cues.isEmpty) {
-      return -1;
-    }
+    if (cues.isEmpty) return -1;
 
+    // 二分找第一条 startMs >= positionMs 的 cue。
     int lo = 0;
-    int hi = cues.length - 1;
-    int result = -1;
-
-    while (lo <= hi) {
-      final int mid = (lo + hi) ~/ 2;
-      if (cues[mid].startMs <= positionMs) {
-        result = mid;
+    int hi = cues.length;
+    while (lo < hi) {
+      final int mid = (lo + hi) >>> 1;
+      if (cues[mid].startMs < positionMs) {
         lo = mid + 1;
       } else {
-        hi = mid - 1;
+        hi = mid;
       }
     }
 
-    return result;
+    // 精确命中 startMs：返回该 cue。
+    if (lo < cues.length && cues[lo].startMs == positionMs) return lo;
+    // 位置早于第一条 cue。
+    if (lo == 0) return -1;
+
+    final int prev = lo - 1;
+    // 在上一条 cue 区间内（含 endMs）。
+    if (positionMs <= cues[prev].endMs) return prev;
+    // 落在 gap：上游返回 nil。
+    return -1;
   }
 }

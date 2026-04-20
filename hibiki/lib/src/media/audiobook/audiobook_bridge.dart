@@ -43,298 +43,125 @@ class AudiobookBridge {
 }
 ''';
 
-  /// 高亮函数：移除旧高亮并把目标元素滚动到视口内，同时对齐到整页。
+  /// 高亮函数：清掉旧高亮并把目标元素滚动到视口内，同时对齐到整页。
   ///
-  /// ttu 在 IDB 字幕 EPUB 路径下是**连续滚动模式**：真正的滚动容器是
-  /// `.book-content`（scrollHeight 远大于 clientHeight），body 自身
-  /// `overflow: hidden`。因此既不能通过 window.scroll 也不能通过
-  /// 向 body 派发 wheel 事件来翻页 —— 必须直接赋值 `.book-content.scrollTop`。
+  /// ttu 在 IDB 字幕 EPUB 路径下：真正的滚动容器是 `.book-content`
+  /// （scrollHeight 远大于 clientHeight），body 自身 `overflow: hidden`。
+  /// 既不能通过 window.scroll 也不能通过向 body 派发 wheel 事件来翻页 ——
+  /// 必须直接赋值 `.book-content.scrollTop`。
   ///
-  /// ## 为什么不用 scrollIntoView
+  /// ## 翻页算法（对齐上游 Sasayaki reader.js `alignToPage`）
   ///
-  /// 浏览器默认把目标元素居中到视口中点，scrollTop 停在任意像素上，
-  /// 导致页面上方露出上一页残字、下方露出下一页开头，视觉混乱。
-  /// 改为**按 clientHeight 整数倍对齐**：计算 cue 在 content 内的
-  /// 绝对 top，除以 pageH 取整得到页索引，scrollTop = pageIndex * pageH。
-  /// 这样每次跳转看到的都是一整页的内容，没有跨页残留。
+  /// `anchor = (rect.top + rect.bottom) / 2 + scrollTop`（content 滚动坐标），
+  /// `pageIndex = Math.floor(anchor / stride)`，`scrollTop = pageIndex * stride`。
+  /// stride 是 `clientHeight + column-gap`（CSS columns 分栏的实际页步长）。
+  /// 选页按 **rect 中心**落在哪一页定 —— 上游就是这个语义，跨页 cue 选择
+  /// 和上游一致。（旧的 "max-intersection tiebreak" 对长 cue 容易选到"只覆盖
+  /// 上半"的那一页，高亮靠边不稳。）
   ///
-  /// ttu 的 Svelte store 不监听 `.book-content.scrollTop`（它监听页索引），
-  /// 外部赋值不会被覆盖。
+  /// ## 收敛策略：一次写 + 双 RAF 再写
   ///
-  /// ## 收敛策略：ticker
-  ///
-  /// 保留 `setInterval` 轮询。每 280ms 检查 scrollTop 是否已到目标页，
-  /// 已对齐则停；未对齐则再赋值。新 highlight 替换 pending 目标，旧
-  /// ticker 自动收敛到新目标。退路：missing 元素重试上限 30 次（≈ 9s），
-  /// scroll 失败上限 30 次。
+  /// 上游 Sasayaki 是 `scrollTop = target` + 双 RAF 固化，没有常驻 ticker。
+  /// 旧实现用 280ms setInterval 轮询 30 次（≈9s）"追 scrollTop 到目标"，
+  /// 本意是抗 Svelte 可能的 yank，实测 Svelte store 只监听页索引不监听
+  /// scrollTop，yank 从未发生——反而用户手翻页时 ticker 还没收敛，会立刻
+  /// 把用户拽回音频页（体感"翻页时机不对"）。改为一次写 + 双 RAF 再写，
+  /// 失败就吞，让下一条 cue 自己重新尝试。
   static const String _highlightFn = '''
-window.__hoshiTarget = window.__hoshiTarget || null;
-window.__hoshiTickerId = window.__hoshiTickerId || null;
-window.__hoshiTickIntervalMs = 280;
+// 旧 ticker 的 __hoshiTarget / __hoshiTickerId / __hoshiStopTicker / __hoshiTick
+// 仍有若干外部调用点（sasayaki fallback 里的"清 pending 目标"），保留名字
+// 但内部是空操作。一次写 + 双 RAF 再写一次固化就够了。
+window.__hoshiTarget = null;
+window.__hoshiTickerId = null;
+window.__hoshiTickIntervalMs = 0;
+window.__hoshiStopTicker = function() { /* no-op */ };
+window.__hoshiTick = function() { /* no-op */ };
 
-window.__hoshiStopTicker = function() {
-  if (window.__hoshiTickerId) {
-    clearInterval(window.__hoshiTickerId);
-    window.__hoshiTickerId = null;
-  }
-};
-
-window.__hoshiTick = function() {
-  var target = window.__hoshiTarget;
-  if (!target) { window.__hoshiStopTicker(); return; }
-  target.tickNo = (target.tickNo || 0) + 1;
-
-  var rect;
-  if (target.range) {
-    // Range-based target (Sasayaki 路径)。range 对应的节点被 ttu 卸掉时
-    // getBoundingClientRect 会抛或返回 (0,0,0,0)，交给下面的 degenerate 分支。
-    try {
-      rect = target.range.getBoundingClientRect();
-    } catch (e) {
-      rect = null;
-    }
-    if (!rect) {
-      target.missAttempts = (target.missAttempts || 0) + 1;
-      if (target.missAttempts > 30) {
-        console.log(JSON.stringify({
-          'hibiki-message-type': 'highlightMiss',
-          'kind': 'range',
-          'attempts': target.missAttempts
-        }));
-        window.__hoshiTarget = null;
-        window.__hoshiStopTicker();
-      }
-      return;
-    }
-  } else {
-    var el = document.querySelector(target.selector);
-    if (!el) {
-      target.missAttempts = (target.missAttempts || 0) + 1;
-      if (target.tickNo <= 3) {
-        console.log(JSON.stringify({
-          'hibiki-message-type': 'diagTickMiss',
-          'tickNo': target.tickNo,
-          'selector': target.selector,
-          'totalCueSpans': document.querySelectorAll('[data-cue-id]').length
-        }));
-      }
-      if (target.missAttempts > 30) {
-        console.log(JSON.stringify({
-          'hibiki-message-type': 'highlightMiss',
-          'selector': target.selector,
-          'totalCueSpans': document.querySelectorAll('[data-cue-id]').length,
-          'attempts': target.missAttempts
-        }));
-        window.__hoshiTarget = null;
-        window.__hoshiStopTicker();
-      }
-      return;
-    }
-
-    // Element exists. Add highlight class (idempotent). 这条分支只留给
-    // 字幕 EPUB [data-cue-id] 路径——Sasayaki 改走 range 分支后不再动 DOM。
-    if (!el.classList.contains('hoshi-active')) {
-      document.querySelectorAll('.hoshi-active').forEach(function(e) {
-        e.classList.remove('hoshi-active');
-      });
-      el.classList.add('hoshi-active');
-    }
-
-    rect = el.getBoundingClientRect();
-  }
-
-  // Degenerate rect (ttu still hydrating, or element in collapsed/hidden
-  // ancestor). NEVER infer direction from (0,0,0,0) — must retry, not stop.
+// 对齐上游 Sasayaki reader.js alignToPage：
+// anchor = (rect.top + rect.bottom) / 2 + scrollTop（content 滚动坐标）
+// pageIndex = Math.floor(anchor / stride); scrollTop = pageIndex * stride
+// stride = clientHeight + column-gap（ttu CSS columns 的实际页步长）。
+window.__hoshiAlignToRect = function(rect) {
+  if (!rect) return;
   var isDegenerate = rect.width === 0 && rect.height === 0 &&
                      rect.left === 0 && rect.top === 0;
-  if (isDegenerate) {
-    target.staleAttempts = (target.staleAttempts || 0) + 1;
-    if (target.staleAttempts > 30) {
-      console.log(JSON.stringify({
-        'hibiki-message-type': 'highlightStale',
-        'selector': target.selector,
-        'attempts': target.staleAttempts
-      }));
-      window.__hoshiTarget = null;
-      window.__hoshiStopTicker();
-    }
-    return;
-  }
-
+  if (isDegenerate) return;
   var content = document.querySelector('.book-content') ||
                 document.querySelector('[class*="book-content"]') ||
                 document.scrollingElement || document.documentElement;
   var pageH = content.clientHeight;
-  if (!pageH || pageH < 10) {
-    // 容器尚未布局，下一 tick 再试。
-    return;
-  }
-
-  // ttu 分页 stride = clientHeight + column-gap（40px 来自
-  // .book-content-container 的 CSS `column-gap: 40px`）。单纯用
-  // clientHeight 会导致每页漏掉一段 gap，页边界逐渐偏移。
+  if (!pageH || pageH < 10) return;
   var container = content.querySelector('.book-content-container');
   var gap = 40;
   if (container) {
-    var gapStr = getComputedStyle(container).columnGap;
-    var gapNum = parseFloat(gapStr);
+    var gapNum = parseFloat(getComputedStyle(container).columnGap);
     if (!isNaN(gapNum) && gapNum > 0) gap = gapNum;
   }
   var stride = pageH + gap;
-
-  // 把 cue 的 viewport 坐标换算成 content 内 scroll 坐标。
   var cRect = content.getBoundingClientRect();
-  var elTopInContent = rect.top - cRect.top + content.scrollTop;
-  var elBotInContent = rect.bottom - cRect.top + content.scrollTop;
-
-  // 按 stride 整数倍对齐到 ttu 的视觉页边界。单纯 Math.floor(top/stride)
-  // 在 top 卡在 (N+1)*stride 前几像素（落在第 N 页尾 pageH 和下一页开头
-  // 之间的 column-gap 区域）时会把 span 误判到第 N 页 —— 真正可见区是
-  // [N*stride, N*stride+pageH]，span 顶部已经越过 pageH，滚到 N*stride
-  // 后 span 反而跑出视口下方。
-  // 改为"选 span 与 [N*stride, N*stride+pageH] 交集最大的那一页"——候选
-  // 只看 floor(top/stride) 和 +1 两页。
-  function pageVisible(N) {
-    var vTop = N * stride;
-    var vBot = vTop + pageH;
-    return Math.max(0, Math.min(elBotInContent, vBot) -
-                       Math.max(elTopInContent, vTop));
-  }
-  var pageN = Math.floor(elTopInContent / stride);
-  var pageIndex = pageN;
-  if (pageVisible(pageN + 1) > pageVisible(pageN)) {
-    pageIndex = pageN + 1;
-  }
+  var elTop = rect.top - cRect.top + content.scrollTop;
+  var elBot = rect.bottom - cRect.top + content.scrollTop;
+  var anchor = (elTop + elBot) / 2;
+  var pageIndex = Math.floor(anchor / stride);
   var maxScroll = Math.max(0, content.scrollHeight - pageH);
   var targetScrollTop = Math.max(0, Math.min(pageIndex * stride, maxScroll));
-
-  // 已对齐到目标页：停。
-  if (Math.abs(content.scrollTop - targetScrollTop) < 1) {
-    window.__hoshiTarget = null;
-    window.__hoshiStopTicker();
-    return;
-  }
-
-  target.scrollAttempts = (target.scrollAttempts || 0) + 1;
-  if (target.scrollAttempts > 30) {
-    console.log(JSON.stringify({
-      'hibiki-message-type': 'highlightScrollCap',
-      'selector': target.selector,
-      'rect': {l: rect.left, t: rect.top, r: rect.right, b: rect.bottom},
-      'curScrollTop': content.scrollTop,
-      'targetScrollTop': targetScrollTop
-    }));
-    window.__hoshiTarget = null;
-    window.__hoshiStopTicker();
-    return;
-  }
-
-  if (!target.loggedFirstScroll) {
-    target.loggedFirstScroll = true;
-    console.log(JSON.stringify({
-      'hibiki-message-type': 'highlightScrollStart',
-      'selector': target.selector,
-      'rect': {l: rect.left, t: rect.top, r: rect.right, b: rect.bottom},
-      'elTopInContent': elTopInContent,
-      'pageH': pageH,
-      'gap': gap,
-      'stride': stride,
-      'pageIndex': pageIndex,
-      'targetScrollTop': targetScrollTop,
-      'contentScrollTop': content.scrollTop,
-      'contentScrollHeight': content.scrollHeight
-    }));
-  }
-
-  var beforeWrite = content.scrollTop;
+  if (Math.abs(content.scrollTop - targetScrollTop) < 1) return;
   content.scrollTop = targetScrollTop;
-  var afterWrite = content.scrollTop;
+};
 
-  // Diagnostic: does the write stick? Svelte store override / read-only
-  // container shows up as afterWrite !== targetScrollTop on first write.
-  // Also log tickNo to spot Svelte yanking us back on subsequent ticks.
-  if (target.scrollAttempts <= 4) {
-    console.log(JSON.stringify({
-      'hibiki-message-type': 'diagScrollWrite',
-      'tickNo': target.tickNo,
-      'attempt': target.scrollAttempts,
-      'before': beforeWrite,
-      'wanted': targetScrollTop,
-      'afterImmediate': afterWrite,
-      'stuck': Math.abs(afterWrite - targetScrollTop) < 1
-    }));
+window.__hoshiAlignToRange = function(range) {
+  if (!range) return;
+  function doAlign() {
+    var rect;
+    try { rect = range.getBoundingClientRect(); } catch (e) { return; }
+    window.__hoshiAlignToRect(rect);
   }
+  doAlign();
+  requestAnimationFrame(function() {
+    requestAnimationFrame(doAlign);
+  });
+};
+
+window.__hoshiAlignToElement = function(el) {
+  if (!el) return;
+  function doAlign() {
+    var rect;
+    try { rect = el.getBoundingClientRect(); } catch (e) { return; }
+    window.__hoshiAlignToRect(rect);
+  }
+  doAlign();
+  requestAnimationFrame(function() {
+    requestAnimationFrame(doAlign);
+  });
 };
 
 window.__hoshiHighlight = function(selector, reveal) {
-  // reveal 对齐 Sasayaki displayCue 的 reveal 参数：false 时只加高亮
-  // class、不翻页（用户 Follow audio OFF 或尚未 play 时，保持阅读位置）。
-  // 省略该参数视为 true，保持兼容。
   if (reveal === undefined) reveal = true;
   console.log(JSON.stringify({
     'hibiki-message-type': 'diagHighlightEntry',
     'selector': selector || '',
     'reveal': reveal,
-    'tickerRunning': !!window.__hoshiTickerId,
     'hasBookContent': !!document.querySelector('.book-content')
   }));
-  if (!selector) {
-    document.querySelectorAll('.hoshi-active').forEach(function(e) {
-      e.classList.remove('hoshi-active');
-    });
-    window.__hoshiTarget = null;
-    window.__hoshiStopTicker();
-    return;
+  // 无论 selector 是否非空，先清一轮旧 class。
+  document.querySelectorAll('.hoshi-active').forEach(function(e) {
+    e.classList.remove('hoshi-active');
+  });
+  if (!selector) return;
+  var el = document.querySelector(selector);
+  if (el) {
+    el.classList.add('hoshi-active');
+    if (reveal) window.__hoshiAlignToElement(el);
   }
-  if (!reveal) {
-    // 停掉可能还在跑的老 ticker（之前一次 reveal=true 留下的）并清旧 class，
-    // 然后只把目标元素标上 hoshi-active，不进入 ticker 翻页循环。
-    window.__hoshiTarget = null;
-    window.__hoshiStopTicker();
-    document.querySelectorAll('.hoshi-active').forEach(function(e) {
-      e.classList.remove('hoshi-active');
-    });
-    var el = document.querySelector(selector);
-    if (el) el.classList.add('hoshi-active');
-    return;
-  }
-  // Replace pending target. Old ticker (if running) will pick up the new
-  // selector on its next tick — no double loops fighting over page state.
-  window.__hoshiTarget = {
-    selector: selector, missAttempts: 0, staleAttempts: 0, scrollAttempts: 0
-  };
-  if (!window.__hoshiTickerId) {
-    window.__hoshiTickerId = setInterval(
-      window.__hoshiTick, window.__hoshiTickIntervalMs);
-  }
-  // Run once immediately so single-page case doesn't wait 280ms.
-  window.__hoshiTick();
 };
 
-// 用 Range 驱动 ticker 翻页——Sasayaki 路径走这条，target.range 不经过
-// DOM 查询，rect 直接从 range.getBoundingClientRect() 拿，这样高亮不包 span
-// 也能滚动对齐。__hoshiHighlight 的 selector 分支保留给字幕 EPUB
-// `[data-cue-id]` 路径。
+// Sasayaki 路径：cueMap miss 时 walker fallback 会传进一个 Range。reveal=true
+// 才翻页，reveal=false 只是静默（高亮自身由 __hoshiSetActiveRanges 或
+// span toggle 另行负责）。
 window.__hoshiHighlightRange = function(range, reveal) {
   if (reveal === undefined) reveal = true;
-  if (!range) {
-    window.__hoshiTarget = null;
-    window.__hoshiStopTicker();
-    return;
-  }
-  if (!reveal) {
-    window.__hoshiTarget = null;
-    window.__hoshiStopTicker();
-    return;
-  }
-  window.__hoshiTarget = {
-    range: range, missAttempts: 0, staleAttempts: 0, scrollAttempts: 0
-  };
-  if (!window.__hoshiTickerId) {
-    window.__hoshiTickerId = setInterval(
-      window.__hoshiTick, window.__hoshiTickIntervalMs);
-  }
-  window.__hoshiTick();
+  if (!range || !reveal) return;
+  window.__hoshiAlignToRange(range);
 };
 ''';
 
@@ -1180,11 +1007,33 @@ window.__hoshiSasayakiAppliedRootLen =
     ? window.__hoshiSasayakiAppliedRootLen : -1;
 
 window.__hoshiClearSasayakiApplied = function() {
-  // 高亮不再 wrap span，cueMap 的 value 是 Range 列表。Range 对象在
-  // ttu 切章时因节点销毁自然失效（getBoundingClientRect 变 degenerate），
-  // 不需要逐个拆节点，只丢 Map 引用即可；当前高亮也清掉，避免 overlay
-  // 残留到新章节。
+  // 对齐上游 Sasayaki：apply 时把 cue 包进 <span class="hoshi-sasayaki-cue">，
+  // 这里拆包。ttu 切章 innerHTML 整体替换时 span 会被一起清掉，但同段 re-apply
+  // （rootLen 变、被 requestSectionNav 强制失效等）必须手动 unwrap，否则上一轮
+  // span 残留在 DOM 里，新一轮再包一层，嵌套累积。
+  if (document.body) {
+    var spans = document.querySelectorAll('.hoshi-sasayaki-cue');
+    var parents = [];
+    var seen = new Set();
+    for (var i = 0; i < spans.length; i++) {
+      var span = spans[i];
+      var parent = span.parentNode;
+      if (!parent) continue;
+      while (span.firstChild) parent.insertBefore(span.firstChild, span);
+      parent.removeChild(span);
+      if (!seen.has(parent)) {
+        seen.add(parent);
+        parents.push(parent);
+      }
+    }
+    // 合并相邻 text node，避免每次 apply/clear 把节点数量越拆越多影响
+    // 后续 TreeWalker 扫描成本。
+    for (var pi = 0; pi < parents.length; pi++) {
+      try { parents[pi].normalize(); } catch (e) {}
+    }
+  }
   window.__hoshiSasayakiCueMap = null;
+  // range-based fallback（walker miss 路径）可能留的 CSS Highlight API 记录也清掉。
   if (typeof window.__hoshiClearActiveRanges === 'function') {
     window.__hoshiClearActiveRanges();
   }
@@ -1282,34 +1131,85 @@ window.__hoshiApplySasayakiCues = function(sectionIndex, cuesJson) {
     }
   }
 
-  // 为每条 cue 构造 Range 存入 Map。value 仍是数组，给未来"一句多 Range"
-  // 扩展留口；当前一条 cue 一个 Range。顺序无关紧要——不再动 DOM，不会
-  // 污染后面 cue 的 offset。
-  var applied = 0;
-  var skippedOob = 0;   // ns/ne 越界或 fbMap 取不到
-  var skippedCross = 0; // setStart/setEnd 抛异常
+  // 对齐上游 Sasayaki 原版：先按每条 cue 把 [ns, ne) 映射成**节点内 char 段**
+  // 列表 ({nodeIdx, startChar, endChar})，一条 cue 可能跨多个 text node。
+  // 然后按 cue 逆序 × 段逆序包 <span class="hoshi-sasayaki-cue">。
+  //
+  // 为什么逆序：Range.surroundContents 把 text node 从中间切开，原 node
+  // 保留"前半段"、span 里是"中段"、再插一个 node 装"后半段"。先包节点内
+  // 靠后的段、再包靠前的段，靠前段用的 charOffset 仍然落在原 node 的"前半段"
+  // 里，索引不失效。cue 维度同理：后面的 cue 先包，前面的 cue 的 fbMap 条目
+  // 不受影响。
+  //
+  // 运行期高亮只 toggle 这些 span 的 class，不再 TreeWalker / 不再 Range +
+  // CSS Highlight API —— 上游 paginated reader.js 走同样 CSS columns 布局用
+  // 同样 span 策略，重排问题在"只 apply 一次"前提下是不成立的。
+  var perCue = [];  // [{key, segs: [{nodeIdx, startChar, endChar}, ...]}]
+  var skippedOob = 0;
   for (var ci = 0; ci < cues.length; ci++) {
     var c = cues[ci];
     var ns = c.ns | 0;
     var ne = c.ne | 0;
     if (ne <= ns) { skippedOob++; continue; }
     if (ns < 0 || ne > fbMap.length) { skippedOob++; continue; }
-    var sMap = fbMap[ns];
-    var eMap = fbMap[ne - 1];
-    if (!sMap || !eMap) { skippedOob++; continue; }
-    try {
-      var range = document.createRange();
-      range.setStart(fbNodes[sMap[0]], sMap[1]);
-      range.setEnd(fbNodes[eMap[0]], eMap[1] + 1);
-      var arr = window.__hoshiSasayakiCueMap.get(c.key);
-      if (!arr) {
-        arr = [];
-        window.__hoshiSasayakiCueMap.set(c.key, arr);
+    var segs = [];
+    var curNode = -1;
+    var curStart = -1;
+    var curEnd = -1;
+    var ok = true;
+    for (var k = ns; k < ne; k++) {
+      var m = fbMap[k];
+      if (!m) { ok = false; break; }
+      if (m[0] !== curNode) {
+        if (curNode !== -1) {
+          segs.push({nodeIdx: curNode, startChar: curStart, endChar: curEnd + 1});
+        }
+        curNode = m[0];
+        curStart = m[1];
       }
-      arr.push(range);
+      curEnd = m[1];
+    }
+    if (!ok) { skippedOob++; continue; }
+    if (curNode !== -1) {
+      segs.push({nodeIdx: curNode, startChar: curStart, endChar: curEnd + 1});
+    }
+    if (segs.length === 0) { skippedOob++; continue; }
+    perCue.push({key: c.key, segs: segs});
+  }
+
+  var applied = 0;
+  var skippedCross = 0;
+  for (var pi = perCue.length - 1; pi >= 0; pi--) {
+    var entry = perCue[pi];
+    var wrappers = [];
+    for (var si = entry.segs.length - 1; si >= 0; si--) {
+      var seg = entry.segs[si];
+      var tn = fbNodes[seg.nodeIdx];
+      if (!tn || !tn.parentNode) continue;
+      // 节点长度变化（同节点前面已有 span 被包出来切短）时 endChar 可能超界——
+      // 被裁剪过的 tn 只保留"第一个被包 range 之前的"部分，而我们逆序处理
+      // 保证当前 seg 正好落在这个"前半段"里，endChar <= tn.length 仍然成立。
+      // 但 tn 可能已经完全被拆到 span 里（startChar == tn.length），这时直接跳。
+      if (seg.startChar >= (tn.nodeValue || '').length) continue;
+      try {
+        var r = document.createRange();
+        r.setStart(tn, seg.startChar);
+        r.setEnd(tn, Math.min(seg.endChar, (tn.nodeValue || '').length));
+        var span = document.createElement('span');
+        span.className = 'hoshi-sasayaki-cue';
+        span.setAttribute('data-sasayaki-key', entry.key);
+        r.surroundContents(span);
+        // 逆序 push + 最后 reverse，让 wrappers 与 DOM 顺序一致（第一个
+        // wrapper 对应最靠前的段），高亮入口用 wrappers[0] 做翻页锚点。
+        wrappers.push(span);
+      } catch (e) {
+        skippedCross++;
+      }
+    }
+    if (wrappers.length > 0) {
+      wrappers.reverse();
+      window.__hoshiSasayakiCueMap.set(entry.key, wrappers);
       applied++;
-    } catch (e) {
-      skippedCross++;
     }
   }
 
@@ -1330,10 +1230,19 @@ window.__hoshiApplySasayakiCues = function(sectionIndex, cuesJson) {
 window.__hoshiHighlightSasayakiCueById = function(key, reveal) {
   if (reveal === undefined) reveal = true;
   var map = window.__hoshiSasayakiCueMap;
-  var ranges = map ? map.get(key) : null;
-  if (!ranges || ranges.length === 0) {
-    // Map 未建 / 该 cue 未预解析 → 回退旧 walker 路径。Dart 侧不感知，
-    // 保持单一入口。
+  var wrappers = map ? map.get(key) : null;
+  // 先清上一条 cue 的 active class。class toggle 不动 DOM 结构，不会触发
+  // CSS columns 重排，相邻 cue 切换时视觉稳定。
+  var prev = document.querySelectorAll('.hoshi-sasayaki-cue.hoshi-active');
+  for (var pi = 0; pi < prev.length; pi++) {
+    prev[pi].classList.remove('hoshi-active');
+  }
+  // 同时清 range-based fallback 留下的 CSS Highlight/overlay（如果上一条
+  // 是 cueMap miss 走了 walker 路径）。
+  if (typeof window.__hoshiClearActiveRanges === 'function') {
+    window.__hoshiClearActiveRanges();
+  }
+  if (!wrappers || wrappers.length === 0) {
     console.log(JSON.stringify({
       'hibiki-message-type': 'sasayakiCueMapMiss',
       'key': key,
@@ -1342,20 +1251,16 @@ window.__hoshiHighlightSasayakiCueById = function(key, reveal) {
     }));
     return false;
   }
-  window.__hoshiSetActiveRanges(ranges);
+  for (var wi = 0; wi < wrappers.length; wi++) {
+    wrappers[wi].classList.add('hoshi-active');
+  }
   console.log(JSON.stringify({
     'hibiki-message-type': 'sasayakiCueHighlightOk',
     'key': key,
-    'rangeCount': ranges.length,
+    'wrapperCount': wrappers.length,
     'reveal': reveal
   }));
-  if (reveal) {
-    // 用第一个 range 驱动 ticker 翻页；后续 range 仅作视觉高亮叠加。
-    window.__hoshiHighlightRange(ranges[0], true);
-  } else {
-    window.__hoshiTarget = null;
-    window.__hoshiStopTicker();
-  }
+  if (reveal) window.__hoshiAlignToElement(wrappers[0]);
   return true;
 };
 ''';
