@@ -1505,6 +1505,45 @@ window.__hibikiScrollToNormOffset = function(section, offset) {
     );
   }
 
+  /// 拿 ttu 的章节列表（`window.__ttuGetToc()`）。ttu fork 未就绪时
+  /// 返回空列表。label 缺失的 section 退回 reference（fork 已处理）。
+  static Future<List<TtuTocEntry>> fetchToc(
+    InAppWebViewController controller,
+  ) async {
+    final Object? raw = await controller.evaluateJavascript(
+      source:
+          '(function(){try{return JSON.stringify(window.__ttuGetToc?window.__ttuGetToc():[]);}catch(e){return "[]";}})();',
+    );
+    if (raw is! String || raw.isEmpty) return const <TtuTocEntry>[];
+    try {
+      final dynamic decoded = jsonDecode(raw);
+      if (decoded is! List) return const <TtuTocEntry>[];
+      return decoded
+          .whereType<Map<String, dynamic>>()
+          .map((Map<String, dynamic> m) => TtuTocEntry(
+                index: (m['index'] as num?)?.toInt() ?? -1,
+                label: (m['label'] as String?) ?? '',
+                parent: m['parent'] as String?,
+              ))
+          .where((TtuTocEntry e) => e.index >= 0)
+          .toList(growable: false);
+    } catch (_) {
+      return const <TtuTocEntry>[];
+    }
+  }
+
+  /// 触发 ttu 的"添加当前位置为书签"（`window.__ttuBookmarkPage()`）。
+  /// fork 已处理 paginated / continuous 分支 + selection bookmark +
+  /// database.putBookmark 落库。fork 未落地时是 no-op。
+  static Future<void> bookmarkCurrentPage(
+    InAppWebViewController controller,
+  ) async {
+    await controller.evaluateJavascript(
+      source:
+          '(async function(){try{if(window.__ttuBookmarkPage){await window.__ttuBookmarkPage();}}catch(e){console.error("[hibiki] __ttuBookmarkPage",e);}})();',
+    );
+  }
+
   /// 从视口左上探针反查当前挂载段和章内归一化字符偏移。
   ///
   /// null 代表视口里没命中文本节点 / Sasayaki refs 还没挂上 / ttu 还没就位 ——
@@ -1758,6 +1797,23 @@ class TtuApiProbe {
     if (!hasSectionCount) missing.add('sectionCount');
     return 'ttu fork missing: ${missing.join(", ")}';
   }
+}
+
+/// ttu 章节列表（`__ttuGetToc`）的单项。`index` 可直接传给
+/// [AudiobookBridge.requestSectionNav] / ttu fork 的 `__ttuGoToSection`。
+class TtuTocEntry {
+  const TtuTocEntry({
+    required this.index,
+    required this.label,
+    this.parent,
+  });
+
+  final int index;
+  final String label;
+
+  /// ttu `Section.parentChapter` —— 父章节 reference 字符串。UI 侧据此
+  /// 缩进渲染二级章节（null 表示顶级章节）。
+  final String? parent;
 }
 
 /// Reader 当前视口在全书中的位置 —— 章内 Sasayaki 归一化字符偏移。

@@ -1979,16 +1979,18 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     }
   }
 
-  /// 打开有声书设置面板（⚙ 按钮入口）。面板里放阅读进度、倍速、
-  /// 音画同步三块。进度 probe 需要 WebView controller，所以这里构造
-  /// 而不是在 [AudiobookPlayBar] 内部做。
+  /// 打开有声书设置面板（⚙ 按钮入口）。面板里放阅读进度 / 章节列表 /
+  /// 倍速 / 音画同步 / 书签 / 全屏 / 退出。ttu probe、TOC 请求、书签
+  /// 触发、fullscreen 切换、Navigator.pop 都要访问 WebView controller
+  /// 或 Navigator，所以构造和回调注入都在 reader 页面侧。
   ///
-  /// probe 结果异步，面板初次打开时先显示 "—"，拿到后 setState 替换；
-  /// 或者先 await probe 再展开（更简单，用户短暂 tap 延迟可接受）。
+  /// probe 结果 await 完再展开 —— 用户短暂 tap 延迟可接受，比先展开空
+  /// 面板再填要好；TOC 列表在一次阅读会话里是静态的，一次 probe 够用。
   Future<void> _showAudiobookSettingsSheet(
     AudiobookPlayerController ctrl,
   ) async {
     (int, int)? progress;
+    List<TtuTocEntry> toc = const <TtuTocEntry>[];
     try {
       final TtuApiProbe probe = await AudiobookBridge.probeTtuApi(_controller);
       if (probe.currentSection != null &&
@@ -1996,6 +1998,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           probe.sectionCount! > 0) {
         progress = (probe.currentSection!, probe.sectionCount!);
       }
+      toc = await AudiobookBridge.fetchToc(_controller);
     } catch (e) {
       debugPrint('[hibiki-audiobook] settings probe error: $e');
     }
@@ -2003,12 +2006,50 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
+      isScrollControlled: true,
       builder: (BuildContext ctx) {
         return AudiobookSettingsSheet(
           controller: ctrl,
+          toc: toc,
           readerProgress: progress,
+          onJumpSection: (int idx) async {
+            // 复用 sasayakiRequestNav：会在 follow audio 视角下打 auto 标记，
+            // 避免用户主动跳章被 sectionChanged 误判成外部触发。
+            await AudiobookBridge.requestSectionNav(
+              _controller,
+              sectionIndex: idx,
+            );
+          },
+          onBookmark: () async {
+            try {
+              await AudiobookBridge.bookmarkCurrentPage(_controller);
+              if (mounted) {
+                Fluttertoast.showToast(msg: '已添加书签');
+              }
+            } catch (e) {
+              debugPrint('[hibiki-audiobook] bookmark error: $e');
+            }
+          },
+          onToggleFullscreen: _toggleReaderFullscreen,
+          onExitReader: () {
+            if (mounted) Navigator.of(context).pop();
+          },
         );
       },
+    );
+  }
+
+  /// 当前 reader 是否处于 `immersiveSticky`（默认 true：reader 开场就入）。
+  /// 给"全屏切换"按钮做 toggle 状态用。不追求和外部状态精确同步 ——
+  /// 字典搜索等路径会临时切 edgeToEdge，那些是短时切换、用户合上后我们
+  /// 再回 immersive，标志位不受影响。
+  bool _readerFullscreen = true;
+
+  Future<void> _toggleReaderFullscreen() async {
+    final bool next = !_readerFullscreen;
+    _readerFullscreen = next;
+    await SystemChrome.setEnabledSystemUIMode(
+      next ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge,
     );
   }
 
