@@ -354,13 +354,19 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
               fit: StackFit.expand,
               alignment: Alignment.center,
               children: <Widget>[
-                // WebView 全屏渲染，bar 作为 overlay 叠在底部。不能往
-                // `.book-content` 注 padding-bottom —— 那会让 ttu paginated
-                // 模式每页的实际绘制高度大于 --book-content-child-height
-                // （ttu 算步长用 child-height，绘制区带上 padding），翻页
-                // 滚动步长 < 实际可视高，视觉上就是"上半上一页、下半下一页"
-                // 的撕裂。
-                buildBody(),
+                // WebView 在有声书模式下显式留出底部 play bar 的空间，
+                // 而不是让 bar 作为透明 overlay 盖在 WebView 之上。
+                // 这样 ttu 看到的是缩小后的 viewport / clientHeight，
+                // 分页步长和绘制区一起收缩，底部行不会被播放栏挡。
+                // （往 `.book-content` 注 padding-bottom 才会撕裂：那是
+                // scrollHeight 变而 clientHeight 没变。外壳缩是两者同
+                // 步收缩，ttu 原生的 paginated 分页仍然对齐。）
+                Positioned.fill(
+                  bottom: _audiobookController != null
+                      ? 56 + MediaQuery.of(context).padding.bottom
+                      : 0,
+                  child: buildBody(),
+                ),
                 buildDictionary(),
                 buildAudiobookBar(),
                 buildAudiobookImportButton(),
@@ -1179,7 +1185,12 @@ xhr.send();
     // 底部进度条（章节标题 + 百分比 + 翻页）。左下固定 h-8。
     '.fixed.bottom-0.left-0.z-10.h-8.w-full{display:none !important;}' +
     // 右下角独立的阅读百分比小标（与 ⚙ FAB 同位，必须藏）。
-    '.fixed.bottom-2.right-2.z-10{display:none !important;}';
+    '.fixed.bottom-2.right-2.z-10{display:none !important;}' +
+    // ttu 给正文容器留了 ~40px viewport padding-top（用户可调），用来
+    // 和原生顶部工具栏错开。hibiki 把顶部工具栏 display:none 后这条
+    // padding 变成纯视觉空白，压到 0 让正文直接贴 WebView 顶端。只动
+    // top，左右和底部保留给 paginated 翻页 / 排版舒适度。
+    '.book-content-container,.book-content{padding-top:0 !important;}';
   (document.head || document.documentElement).appendChild(style);
 })();
 
