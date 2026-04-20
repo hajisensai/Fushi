@@ -310,6 +310,158 @@ window.__hoshiHighlight = function(selector, reveal) {
   // Run once immediately so single-page case doesn't wait 280ms.
   window.__hoshiTick();
 };
+
+// 用 Range 驱动 ticker 翻页——Sasayaki 路径走这条，target.range 不经过
+// DOM 查询，rect 直接从 range.getBoundingClientRect() 拿，这样高亮不包 span
+// 也能滚动对齐。__hoshiHighlight 的 selector 分支保留给字幕 EPUB
+// `[data-cue-id]` 路径。
+window.__hoshiHighlightRange = function(range, reveal) {
+  if (reveal === undefined) reveal = true;
+  if (!range) {
+    window.__hoshiTarget = null;
+    window.__hoshiStopTicker();
+    return;
+  }
+  if (!reveal) {
+    window.__hoshiTarget = null;
+    window.__hoshiStopTicker();
+    return;
+  }
+  window.__hoshiTarget = {
+    range: range, missAttempts: 0, staleAttempts: 0, scrollAttempts: 0
+  };
+  if (!window.__hoshiTickerId) {
+    window.__hoshiTickerId = setInterval(
+      window.__hoshiTick, window.__hoshiTickIntervalMs);
+  }
+  window.__hoshiTick();
+};
+''';
+
+  /// 高亮绘制抽象层：
+  ///
+  /// - `__hoshiPaintApiOk`：feature detect CSS Custom Highlight API（Chromium
+  ///   105+）。现代 WebView 上 true，走 `CSS.highlights.set('hoshi-active', ...)`，
+  ///   零 DOM 改动。
+  /// - `__hoshiSetActiveRanges(ranges)` / `__hoshiClearActiveRanges()`：
+  ///   Sasayaki 路径的统一入口。所有定位逻辑（TreeWalker / indexOf fallback /
+  ///   cueMap 查表）产出 Range 后都交给它；内部按 feature detect 走 Highlight
+  ///   API 或 overlay fallback。
+  /// - 旧设备 overlay fallback：按 `range.getClientRects()` 在 `document.body`
+  ///   上 `position: fixed` 画多个黄色矩形，跟随视口。`.book-content` 滚动时
+  ///   通过 `__hoshiInstallOverlayScrollSync` 自动重画一次。
+  ///
+  /// 为什么不继续用 wrap span：`range.extractContents() + insertNode(span)`
+  /// 会把 text node 拆成 "前半段 + <span>中段</span> + 后半段"。ttu 正文走
+  /// CSS columns 分栏，inline DOM 一变，浏览器重跑 inline layout，文字会在
+  /// 列边界漂移——用户看到的就是"每句高亮都让正文跳一下"。
+  static const String _paintFn = '''
+window.__hoshiActiveRanges = window.__hoshiActiveRanges || [];
+window.__hoshiOverlayEls = window.__hoshiOverlayEls || [];
+window.__hoshiOverlayScrollHandler = window.__hoshiOverlayScrollHandler || null;
+
+window.__hoshiPaintApiOk = (function() {
+  try {
+    if (typeof CSS === 'undefined') return false;
+    if (!CSS.highlights || typeof CSS.highlights.set !== 'function') return false;
+    if (typeof Highlight !== 'function') return false;
+    var probe = new Highlight();
+    CSS.highlights.set('__hoshi_probe', probe);
+    CSS.highlights.delete('__hoshi_probe');
+    return true;
+  } catch (e) {
+    return false;
+  }
+})();
+
+window.__hoshiEnsureHighlightRegistry = function() {
+  if (!window.__hoshiPaintApiOk) return null;
+  var h = CSS.highlights.get('hoshi-active');
+  if (!h) {
+    h = new Highlight();
+    CSS.highlights.set('hoshi-active', h);
+  }
+  return h;
+};
+
+window.__hoshiClearOverlay = function() {
+  var els = window.__hoshiOverlayEls;
+  for (var i = 0; i < els.length; i++) {
+    var el = els[i];
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+  }
+  window.__hoshiOverlayEls = [];
+};
+
+window.__hoshiPaintOverlay = function(ranges) {
+  window.__hoshiClearOverlay();
+  if (!document.body) return;
+  for (var i = 0; i < ranges.length; i++) {
+    var rects;
+    try { rects = ranges[i].getClientRects(); } catch (e) { rects = null; }
+    if (!rects) continue;
+    for (var r = 0; r < rects.length; r++) {
+      var rect = rects[r];
+      if (!rect || rect.width < 1 || rect.height < 1) continue;
+      var div = document.createElement('div');
+      div.className = '__hoshi-overlay-rect';
+      div.style.left = rect.left + 'px';
+      div.style.top = rect.top + 'px';
+      div.style.width = rect.width + 'px';
+      div.style.height = rect.height + 'px';
+      document.body.appendChild(div);
+      window.__hoshiOverlayEls.push(div);
+    }
+  }
+};
+
+window.__hoshiSetActiveRanges = function(ranges) {
+  window.__hoshiActiveRanges = ranges && ranges.length ? ranges.slice() : [];
+  if (window.__hoshiPaintApiOk) {
+    var h = window.__hoshiEnsureHighlightRegistry();
+    if (h) {
+      h.clear();
+      for (var i = 0; i < window.__hoshiActiveRanges.length; i++) {
+        try { h.add(window.__hoshiActiveRanges[i]); } catch (e) {}
+      }
+    }
+    // 若之前走过 overlay 路径（比如调试切换），顺带清一次残留。
+    window.__hoshiClearOverlay();
+  } else {
+    window.__hoshiPaintOverlay(window.__hoshiActiveRanges);
+  }
+};
+
+window.__hoshiClearActiveRanges = function() {
+  window.__hoshiActiveRanges = [];
+  if (window.__hoshiPaintApiOk) {
+    var h = window.__hoshiEnsureHighlightRegistry();
+    if (h) h.clear();
+  }
+  window.__hoshiClearOverlay();
+};
+
+// 旧 WebView 的 overlay 走 position:fixed（视口坐标），内容滚动时 overlay
+// 不会自动跟着移；监听 .book-content 的 scroll，再画一次。ticker 到位后
+// scroll 稳定，overlay 也就稳定。用户手动翻页时同样重画。
+window.__hoshiInstallOverlayScrollSync = function() {
+  if (window.__hoshiPaintApiOk) return;
+  if (window.__hoshiOverlayScrollHandler) return;
+  var c = document.querySelector('.book-content');
+  if (!c) return;
+  window.__hoshiOverlayScrollHandler = function() {
+    if (window.__hoshiActiveRanges.length > 0) {
+      window.__hoshiPaintOverlay(window.__hoshiActiveRanges);
+    }
+  };
+  c.addEventListener('scroll', window.__hoshiOverlayScrollHandler,
+      { passive: true });
+};
+
+console.log(JSON.stringify({
+  'hibiki-message-type': 'paintInit',
+  'apiOk': window.__hoshiPaintApiOk
+}));
 ''';
 
   /// Sasayaki 路径的辅助 JS：
@@ -321,11 +473,12 @@ window.__hoshiHighlight = function(selector, reveal) {
   ///   在 `.book-content-container` 里定位。
   /// - `__hoshiIsSkippable(code)`：镜像 Dart 的 `EpubSrtMatcher._isKeepable`
   ///   的反函数。白名单规则（只留假名/汉字/字母数字），其余一律视为可跳过。
-  /// - `__hoshiUnwrapSasayaki()`：拆掉上一次 Sasayaki 高亮包裹的 span。
+  /// - `__hoshiUnwrapSasayaki()`：历史名；现在重定向到 `__hoshiClearActiveRanges()`
+  ///   （高亮改走 CSS Highlight API / overlay，没有 span 可拆）。
   /// - `__hoshiHighlightSasayaki(s, ns, ne)`：把 (sectionIndex, normChar*)
   ///   换算成全书归一化全局偏移 → 在 `.book-content-container` 里按归一化
-  ///   字符数走 text node 找到 Range → 包 `span.hoshi-active` → 触发 ticker
-  ///   滚动。
+  ///   字符数走 text node 找到 Range → 交给 `__hoshiSetActiveRanges` 画层 →
+  ///   `__hoshiHighlightRange` 触发 ticker 滚动。不再动 DOM。
   ///
   /// 与字幕 EPUB 路径（`[data-cue-id]`）互不冲突：入口在 Dart 侧的
   /// [highlight] 根据 `textFragmentId` 前缀分派。
@@ -506,15 +659,13 @@ window.__hoshiIsSkippable = function(c) {
   return true;
 };
 
+// 历史遗留名字。过去 Sasayaki 路径靠 wrap span 做高亮，unwrap 就是把
+// 那批 span 的内容重新插回父节点。现在高亮改走 CSS Highlight API / overlay
+// 路径（零 DOM 改动），没有 span 可拆；保留 API 签名供既有调用点复用，
+// 语义变成"清当前高亮"。
 window.__hoshiUnwrapSasayaki = function() {
-  var spans = document.querySelectorAll('span.hoshi-active');
-  for (var i = 0; i < spans.length; i++) {
-    var span = spans[i];
-    var p = span.parentNode;
-    if (!p) continue;
-    while (span.firstChild) p.insertBefore(span.firstChild, span);
-    p.removeChild(span);
-    if (p.normalize) p.normalize();
+  if (typeof window.__hoshiClearActiveRanges === 'function') {
+    window.__hoshiClearActiveRanges();
   }
 };
 
@@ -924,10 +1075,7 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
       // 当前段里确实找不到这条 cue —— 要么 cue 指向别段而挂载识别误判，
       // 要么 cue 文本来源（字幕）和当前章节正文差异超出 indexOf 能容忍的
       // 范围。保持视口不动，放弃本条高亮，等下一条对得上的 cue 恢复。
-      var stale3 = document.querySelectorAll('.hoshi-active');
-      for (var sl3 = 0; sl3 < stale3.length; sl3++) {
-        stale3[sl3].classList.remove('hoshi-active');
-      }
+      window.__hoshiClearActiveRanges();
       window.__hoshiTarget = null;
       window.__hoshiStopTicker();
       console.log(JSON.stringify({
@@ -941,14 +1089,14 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
     }
   }
 
-  var span = document.createElement('span');
-  span.className = 'hoshi-active';
+  // 不再包 span：CSS Custom Highlight API / overlay fallback 直接吃 Range，
+  // 不动 DOM。extractContents+insertNode 会改 inline 流，让 CSS columns
+  // 重排一次，表现为"每次高亮正文都跳一下"。
   try {
-    span.appendChild(range.extractContents());
-    range.insertNode(span);
+    window.__hoshiSetActiveRanges([range]);
   } catch (e) {
     console.log(JSON.stringify({
-      'hibiki-message-type': 'sasayakiWrapErr',
+      'hibiki-message-type': 'sasayakiPaintErr',
       'error': String(e)
     }));
     return;
@@ -996,26 +1144,26 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
       : null
   }));
 
-  // Reuse existing ticker to scroll to the freshly wrapped span. reveal=false
-  // 时（Follow audio OFF / 未 play）跳过 ticker 翻页——span 已经带上
-  // hoshi-active class，视觉高亮已达成，但视口保持用户当前位置。
+  // reveal=true 时把当前 Range 喂给 ticker；Range 不消失 ttu 正常滚动。
+  // reveal=false（Follow audio OFF / 未 play）视觉高亮已由 paint 层落地，
+  // 视口保持用户当前位置。
   if (reveal) {
-    window.__hoshiHighlight('.hoshi-active', true);
+    window.__hoshiHighlightRange(range, true);
   } else {
-    // 停掉可能残留的 ticker（上一条 cue reveal=true 启动的），否则它会
-    // 把刚包好的 span 滚进视口，和 reveal=false 的承诺不符。
     window.__hoshiTarget = null;
     window.__hoshiStopTicker();
   }
 };
 
-// ── 章节挂载时批量预包 span + Map 缓存 ─────────────────────────────────
+// ── 章节挂载时批量预解析 Range + Map 缓存 ──────────────────────────────
 // 对齐 Sasayaki 原版 reader.js 的 applySasayakiCues / cueWrappers Map /
 // highlightSasayakiCue(id) 模型。动机：原有 __hoshiHighlightSasayaki 每次
 // 高亮都 TreeWalker 扫一遍整章归一化字符再切 Range，每句触发一次，成本高；
-// 改成"章节挂载时一次性遍历，按 normChar 偏移把这一章所有 cue 预先包成
-// <span class="hoshi-sasayaki-cue" data-sasayaki-cue-id="...">，cueKey → spans[]
-// 塞进 Map"，运行期 O(1) 查表加 class 即可。
+// 改成"章节挂载时一次性遍历，按 normChar 偏移把这一章所有 cue 预解析成
+// Range，cueKey → Range[] 塞进 Map"，运行期 O(1) 查表交给 paint 层。
+//
+// 不再 wrap span——extractContents+insertNode 会改 DOM，让 CSS columns
+// 重排导致正文"跳位"。高亮改走 CSS Custom Highlight API / overlay 画层。
 //
 // cueKey = Dart 侧 cue.textFragmentId（形如 "sasayaki://s=0&ns=100&ne=120"），
 // 稳定唯一，不需要单独 id 空间。
@@ -1032,29 +1180,14 @@ window.__hoshiSasayakiAppliedRootLen =
     ? window.__hoshiSasayakiAppliedRootLen : -1;
 
 window.__hoshiClearSasayakiApplied = function() {
-  // 卸载上一次挂载章节留下的 span 包裹：ttu 切章时 .book-content-container
-  // 的旧 innerHTML 会被卸掉，理论上包裹也跟着消失；保留这个方法做显式
-  // cleanup，用在"同一章重复 apply 前先解包"的场景（例如 refs 重新载入）。
-  if (!window.__hoshiSasayakiCueMap) return;
-  try {
-    var it = window.__hoshiSasayakiCueMap.values();
-    var step = it.next();
-    while (!step.done) {
-      var spans = step.value;
-      for (var i = 0; i < spans.length; i++) {
-        var sp = spans[i];
-        var p = sp.parentNode;
-        if (!p) continue;
-        while (sp.firstChild) p.insertBefore(sp.firstChild, sp);
-        p.removeChild(sp);
-        if (p.normalize) p.normalize();
-      }
-      step = it.next();
-    }
-  } catch (e) {
-    // Map 迭代失败不致命；下次 apply 会重建。
-  }
+  // 高亮不再 wrap span，cueMap 的 value 是 Range 列表。Range 对象在
+  // ttu 切章时因节点销毁自然失效（getBoundingClientRect 变 degenerate），
+  // 不需要逐个拆节点，只丢 Map 引用即可；当前高亮也清掉，避免 overlay
+  // 残留到新章节。
   window.__hoshiSasayakiCueMap = null;
+  if (typeof window.__hoshiClearActiveRanges === 'function') {
+    window.__hoshiClearActiveRanges();
+  }
 };
 
 window.__hoshiApplySasayakiCues = function(sectionIndex, cuesJson) {
@@ -1122,9 +1255,9 @@ window.__hoshiApplySasayakiCues = function(sectionIndex, cuesJson) {
     return (a.ne || 0) - (b.ne || 0);
   });
 
-  // 采集 text node + 归一化字符 → 原节点/节点内 offset 的映射，一次性建好
-  // 再批量包 span。不能边扫边 surroundContents：一旦包了 span，DOM 结构变，
-  // TreeWalker 的 nextNode 会跳到新插入的 span 内，后续偏移全乱。
+  // 采集 text node + 归一化字符 → 原节点/节点内 offset 的映射。一次性建好
+  // 再批量解析 Range。不再 wrap span——Range 保留原始节点引用，高亮由
+  // CSS Highlight API / overlay 自己画，不动 DOM，CSS columns 布局不抖。
   var fbNodes = [];
   var fbMap = [];   // [nodeIdx, charIdx]，长度 = 归一化字符总数
   var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
@@ -1149,12 +1282,12 @@ window.__hoshiApplySasayakiCues = function(sectionIndex, cuesJson) {
     }
   }
 
-  // 阶段 1：把每条 cue 在 fbNodes/fbMap 上解析成 Range 端点。DOM 还没动，
-  // 所有 node/offset 都对应原始结构。
-  var targets = [];
+  // 为每条 cue 构造 Range 存入 Map。value 仍是数组，给未来"一句多 Range"
+  // 扩展留口；当前一条 cue 一个 Range。顺序无关紧要——不再动 DOM，不会
+  // 污染后面 cue 的 offset。
   var applied = 0;
-  var skippedOob = 0;    // ns/ne 越界或 fbMap 取不到
-  var skippedCross = 0;  // 阶段 2 wrap 时抛异常（跨 block 等极端结构）
+  var skippedOob = 0;   // ns/ne 越界或 fbMap 取不到
+  var skippedCross = 0; // setStart/setEnd 抛异常
   for (var ci = 0; ci < cues.length; ci++) {
     var c = cues[ci];
     var ns = c.ns | 0;
@@ -1164,41 +1297,16 @@ window.__hoshiApplySasayakiCues = function(sectionIndex, cuesJson) {
     var sMap = fbMap[ns];
     var eMap = fbMap[ne - 1];
     if (!sMap || !eMap) { skippedOob++; continue; }
-    targets.push({
-      key: c.key,
-      startNode: fbNodes[sMap[0]],
-      startOffset: sMap[1],
-      endNode: fbNodes[eMap[0]],
-      endOffset: eMap[1] + 1
-    });
-  }
-
-  // 阶段 2：**倒序** wrap。extractContents 会对起止 text node 做 splitText
-  // 把原 node 截短到起点之前；正序处理则后面 cue 的 fbNodes[k] 还指向这个
-  // 已被截短的 node，setEnd 用原始 offset 会越界 / 命中错误位置。倒序下，
-  // 后面的 cue 先被切走，前面的 cue 范围完全落在未被触碰的前半段里。
-  //
-  // 这条分支吃掉旧版本 70% 被 skippedCross 的跨 text node cue（<ruby>/<rt>
-  // 把一句拆成多个 text node），不再回退到旧 walker 路径。
-  for (var ti = targets.length - 1; ti >= 0; ti--) {
-    var t = targets[ti];
     try {
       var range = document.createRange();
-      range.setStart(t.startNode, t.startOffset);
-      range.setEnd(t.endNode, t.endOffset);
-      var span = document.createElement('span');
-      span.className = 'hoshi-sasayaki-cue';
-      span.setAttribute('data-sasayaki-cue-id', t.key);
-      span.appendChild(range.extractContents());
-      range.insertNode(span);
-      // Map value 仍用数组，给未来"一句多 span"扩展留口；当前一条 cue
-      // 对应单个 span。
-      var arr = window.__hoshiSasayakiCueMap.get(t.key);
+      range.setStart(fbNodes[sMap[0]], sMap[1]);
+      range.setEnd(fbNodes[eMap[0]], eMap[1] + 1);
+      var arr = window.__hoshiSasayakiCueMap.get(c.key);
       if (!arr) {
         arr = [];
-        window.__hoshiSasayakiCueMap.set(t.key, arr);
+        window.__hoshiSasayakiCueMap.set(c.key, arr);
       }
-      arr.push(span);
+      arr.push(range);
       applied++;
     } catch (e) {
       skippedCross++;
@@ -1222,10 +1330,10 @@ window.__hoshiApplySasayakiCues = function(sectionIndex, cuesJson) {
 window.__hoshiHighlightSasayakiCueById = function(key, reveal) {
   if (reveal === undefined) reveal = true;
   var map = window.__hoshiSasayakiCueMap;
-  var spans = map ? map.get(key) : null;
-  if (!spans || spans.length === 0) {
-    // Map 未建 / 该 cue 跨节点没包进去 → 回退旧 walker 路径。Dart 侧
-    // 不感知，保持单一入口。
+  var ranges = map ? map.get(key) : null;
+  if (!ranges || ranges.length === 0) {
+    // Map 未建 / 该 cue 未预解析 → 回退旧 walker 路径。Dart 侧不感知，
+    // 保持单一入口。
     console.log(JSON.stringify({
       'hibiki-message-type': 'sasayakiCueMapMiss',
       'key': key,
@@ -1234,23 +1342,16 @@ window.__hoshiHighlightSasayakiCueById = function(key, reveal) {
     }));
     return false;
   }
-  // 清旧 active（来自上一条 cue 的这批 span，或者旧偏移路径留下的
-  // hoshi-active）；和旧 wrap span 共用 .hoshi-active class，所以统一 classList。
-  document.querySelectorAll('.hoshi-active').forEach(function(e) {
-    e.classList.remove('hoshi-active');
-  });
-  for (var i = 0; i < spans.length; i++) {
-    spans[i].classList.add('hoshi-active');
-  }
+  window.__hoshiSetActiveRanges(ranges);
   console.log(JSON.stringify({
     'hibiki-message-type': 'sasayakiCueHighlightOk',
     'key': key,
-    'spanCount': spans.length,
+    'rangeCount': ranges.length,
     'reveal': reveal
   }));
   if (reveal) {
-    // 复用现有 ticker：.hoshi-active 选到第一个 span，按页对齐滚动。
-    window.__hoshiHighlight('.hoshi-active', true);
+    // 用第一个 range 驱动 ticker 翻页；后续 range 仅作视觉高亮叠加。
+    window.__hoshiHighlightRange(ranges[0], true);
   } else {
     window.__hoshiTarget = null;
     window.__hoshiStopTicker();
@@ -1415,8 +1516,8 @@ window.__hoshiAnnotate = function(chapterHref) {
   ///   那套 walker 逐字符累加到命中位置。用于 Flutter 节流后写 Isar
   ///   [ReaderPosition]。
   /// - `__hibikiScrollToNormOffset(section, offset)`：包一层 __hoshiHighlightSasayaki
-  ///   复用 ticker 翻页，把目标位置滚进视口；900ms 后 unwrap 掉临时
-  ///   `span.hoshi-active` 避免残留红框。
+  ///   复用 ticker 翻页，把目标位置滚进视口；900ms 后调用
+  ///   `__hoshiClearActiveRanges()` 清掉临时锚点高亮。
   ///
   /// 依赖 Sasayaki 已经准备好的 `__hoshiSasayakiSectionStarts` /
   /// `__hoshiCurrentMountedSection` / `__hoshiIsSkippable`，必须在
@@ -1506,9 +1607,9 @@ window.__hibikiGetViewportNormOffset = function() {
 };
 
 window.__hibikiScrollToNormOffset = function(section, offset) {
-  // 复用 __hoshiHighlightSasayaki 的 walker + 包 span + ticker 翻页。
-  // 只高亮 1 个归一化字符做锚点，reveal=true 启 ticker，完事后 unwrap 掉
-  // 临时 hoshi-active span（否则那一个字符会一直带红框高亮）。
+  // 复用 __hoshiHighlightSasayaki 的 walker + ticker 翻页。只高亮 1 个归一化
+  // 字符做锚点，reveal=true 启 ticker；完事后清掉临时高亮（CSS Highlight API
+  // 或 overlay），否则那一个字符会一直带黄色高亮。
   try {
     window.__hoshiHighlightSasayaki(section, offset, offset + 1, '', true);
   } catch (e) {
@@ -1521,7 +1622,7 @@ window.__hibikiScrollToNormOffset = function(section, offset) {
   }
   setTimeout(function(){
     try {
-      if (window.__hoshiUnwrapSasayaki) window.__hoshiUnwrapSasayaki();
+      if (window.__hoshiClearActiveRanges) window.__hoshiClearActiveRanges();
     } catch (_e) {}
   }, 900);
 };
@@ -1543,11 +1644,18 @@ window.__hibikiScrollToNormOffset = function(section, offset) {
 })();
 ''');
 
-    // 注入 JS 函数
+    // 注入 JS 函数。顺序：highlight ticker → paint（CSS Highlight API /
+    // overlay 抽象） → sasayaki（依赖 paint 的 setActiveRanges / clear）。
     await controller.evaluateJavascript(source: _highlightFn);
+    await controller.evaluateJavascript(source: _paintFn);
     await controller.evaluateJavascript(source: _sasayakiFn);
     await controller.evaluateJavascript(source: _ttuApiShimFn);
     await controller.evaluateJavascript(source: _annotateFn);
+    // 旧 WebView 的 overlay 走 position:fixed，.book-content 滚动时需要
+    // 重画一次。Highlight API 可用时此调用内部提前 return。
+    await controller.evaluateJavascript(
+      source: '__hoshiInstallOverlayScrollSync();',
+    );
     // _readerPosFn 依赖 __hoshiIsSkippable / __hoshiHighlightSasayaki，
     // 必须在 _sasayakiFn 之后 evaluate
     await controller.evaluateJavascript(source: _readerPosFn);
@@ -1770,10 +1878,10 @@ window.__hibikiScrollToNormOffset = function(section, offset) {
       //
       // 翻页路径：reveal=true 时先 await 新的 `window.__ttuScrollToCharOffset`
       // （ttu fork 原生，走 bookmarkManager.scrollToBookmark 的 charCount
-      // 反推路径，paginated / continuous 都支持），再加 class。feature-detect
-      // 兜底：API 不在（早期 fork 或上游 ttu）时 cueMap 命中路径退回原 ticker
-      // （__hoshiHighlight('.hoshi-active', true)），cueMap miss 路径继续用
-      // __hoshiHighlightSasayaki 自带的 walker+ticker，两条兼容路径保住。
+      // 反推路径，paginated / continuous 都支持），再画高亮。feature-detect
+      // 兜底：API 不在（早期 fork 或上游 ttu）时 cueMap 命中路径退回
+      // `__hoshiHighlightRange(ranges[0], true)`（range-based ticker），
+      // cueMap miss 路径继续用 __hoshiHighlightSasayaki 自带的 walker+ticker。
       final String cueJson = jsonEncode(cue.text);
       await controller.evaluateJavascript(
         source: '(async function(){'
