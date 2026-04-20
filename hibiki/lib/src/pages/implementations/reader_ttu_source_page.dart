@@ -1426,21 +1426,14 @@ rp {
   background: rgba(255, 0, 0, 0.6);
 }
 
-/* ttu 顶部工具栏相关元素 —— 功能（TOC / 书签 / 全屏 / 退出）都已挪进
-   hibiki 的设置面板，两种都直接 display:none：
-   1. 触发热区 <button class="fixed inset-x-0 top-0 z-10 h-8 w-full">
-      SSG 快照里带 top-0，Svelte hydrate 后变 "fixed inset-x-0 z-10 h-8
-      w-full"（丢了 top-0），所以按 fixed+h-8+w-full 匹配。
-   2. 工具栏本体 <div class="elevation-4 writing-horizontal-tb fixed
-      inset-x-0 top-0 z-10 w-full"> —— elevation-4 是 ttu 自定义的带
-      白底 + 阴影样式。hibiki 把触发热区 display:none 后没法让用户再
-      触发隐藏，`showHeader` mount 初值又可能是 true，这颗 div 就会一直
-      挡在正文最上面形成"白色遮罩"。补一条 elevation-4.fixed.top-0 把
-      它也 kill 掉。 */
+/* ttu 顶部 32px 隐形热区 <button>（tap 唤出 reader 工具栏）。hibiki 把
+   reader 工具栏功能（TOC / 书签 / 全屏 / 退出…）挪进了有声书播放栏的
+   设置面板，所以热区和它唤出的工具栏都直接隐藏。SSG 快照里 class 带
+   top-0，Svelte hydrate 后 class 变成 "fixed inset-x-0 z-10 h-8 w-full"
+   （没有 top-0），所以要按 fixed+h-8+w-full 匹配。 */
 button.fixed.h-8.w-full,
 button.fixed.inset-x-0,
-button.fixed.top-0,
-.elevation-4.fixed.top-0 {
+button.fixed.top-0 {
   display: none !important;
 }
 
