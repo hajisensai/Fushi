@@ -200,11 +200,10 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// Hive 里保存上次播放位置的 key 前缀（值为全局毫秒 int）。
   static const String _kPositionKeyPrefix = 'audiobook_pos_';
 
-  /// 上次写入的位置（毫秒），用于节流。
-  int _lastSavedPosMs = -1;
-
-  /// 写入节流阈值：position 与上次保存差值小于该值时跳过。
-  static const int _kPositionSaveThresholdMs = 3000;
+  /// 上次写入时位置对应的**整秒下标**（对齐上游 SasayakiPlayer.tick 的
+  /// `Int(seconds.rounded(.down)) != lastUpdate` 语义：只要秒变了就存）。
+  /// -1 表示从未保存过。
+  int _lastSavedWholeSec = -1;
 
   Box? _prefsBox() {
     if (!Hive.isBoxOpen('appModel')) return null;
@@ -219,7 +218,8 @@ class AudiobookPlayerController extends ChangeNotifier {
     return 0;
   }
 
-  /// 把当前播放位置写入 Hive。被节流：3 秒内的连续调用只生效一次。
+  /// 把当前播放位置写入 Hive。对齐上游：**每整秒变化一次**就写。
+  /// 125ms tick 触发 8 次里只有 1 次真的落库，IO 成本和上游等价。
   ///
   /// 调用时机：cue 变化（_updateCurrentCue）、暂停、dispose。
   void _maybeSavePosition({bool force = false}) {
@@ -228,10 +228,11 @@ class AudiobookPlayerController extends ChangeNotifier {
     final Box? box = _prefsBox();
     if (box == null) return;
     final int posMs = _player.position.inMilliseconds;
-    if (!force && (posMs - _lastSavedPosMs).abs() < _kPositionSaveThresholdMs) {
+    final int wholeSec = posMs ~/ 1000;
+    if (!force && wholeSec == _lastSavedWholeSec) {
       return;
     }
-    _lastSavedPosMs = posMs;
+    _lastSavedWholeSec = wholeSec;
     box.put('$_kPositionKeyPrefix$uid', posMs);
   }
 
@@ -298,25 +299,44 @@ class AudiobookPlayerController extends ChangeNotifier {
 
   /// 跳到上一句（当前章节 cue 列表内）。
   ///
-  /// 若距离当前 cue 起始已超过 1.5s，则回到当前 cue 起始（等效 restart）；
-  /// 否则跳到前一个 cue。没有定位到 cue 时跳到第一句。
+  /// 对齐上游 Sasayaki `prevCue()`：以 `currentCue?.startTime ?? currentPosition`
+  /// 为参照 —— 当前 cue 存在就取它的前一条；落在 gap 里就取"最近一条起点早于
+  /// 当前位置"的前一条。始终跳立即邻居，不做 "1.5s 内 restart" 的语义扩展。
   Future<void> skipToPrevCue() async {
     if (_chapterCues.isEmpty) return;
+    // 优先用 currentCue 作参照（播在 gap 里时 findCueIndex 现在返回 -1，
+    // 但 _currentCue 可能仍非空 —— 不对，D1 改完 _updateCurrentCue 在 gap
+    // 也会把 _currentCue 清成 null；此时 fallback 到位置查询）。
+    final AudioCue? cur = _currentCue;
+    if (cur != null) {
+      final int curIdx = _chapterCues.indexWhere(
+        (c) => c.textFragmentId == cur.textFragmentId,
+      );
+      if (curIdx > 0) {
+        await skipToCue(_chapterCues[curIdx - 1]);
+        return;
+      }
+      if (curIdx == 0) return;
+    }
+    // currentCue 为空（gap / 开头 / 未定位）：按位置找最近 startMs <= pos 的 cue
+    // 作为"上一条"。早于所有 cue 则跳第一句。
     final int posMs = position.inMilliseconds;
-    final int idx = JsonAlignmentParser.findCueIndex(
-      cues: _chapterCues,
-      positionMs: posMs,
-    );
-    if (idx < 0) {
+    int lo = 0;
+    int hi = _chapterCues.length;
+    while (lo < hi) {
+      final int mid = (lo + hi) >>> 1;
+      if (_chapterCues[mid].startMs < posMs) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    // lo 是第一条 startMs >= posMs；上一条 = lo - 1（若存在）。
+    if (lo == 0) {
       await skipToCue(_chapterCues.first);
       return;
     }
-    final int cueGlobalMs = _toGlobalMs(_chapterCues[idx]);
-    if (posMs - cueGlobalMs > 1500 || idx == 0) {
-      await skipToCue(_chapterCues[idx]);
-      return;
-    }
-    await skipToCue(_chapterCues[idx - 1]);
+    await skipToCue(_chapterCues[lo - 1]);
   }
 
   /// 跳到下一句（当前章节 cue 列表内）。
@@ -552,11 +572,11 @@ class AudiobookPlayerController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 设置音画延迟（毫秒），带边界夹取。超出 ±30s 的值几乎不可能是
-  /// 有意义的对齐偏移，截断防止 UI 意外把位置拨到负数/末尾。
+  /// 设置音画延迟（毫秒），带边界夹取。对齐上游 Sasayaki sheet 的 ±2s
+  /// slider 范围；超出这个范围几乎不可能是有意义的对齐偏移。
   /// 写库走 [onDelayPersist]。相同值跳过 notify/写库。
   void setDelayMs(int ms) {
-    final int clamped = ms.clamp(-30000, 30000);
+    final int clamped = ms.clamp(-2000, 2000);
     if (delayMs.value == clamped) return;
     delayMs.value = clamped;
     // 立刻在当前位置重查 cue，让高亮即时反映新偏移，不用等
