@@ -343,7 +343,13 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
           backgroundColor: Colors.black,
           resizeToAvoidBottomInset: false,
           body: SafeArea(
-            top: !mediaSource.extendPageBeyondNavigationBar,
+            // top: false —— ttu 原生顶部工具栏已通过 CSS 隐藏（见
+            // javascriptToExecute 里 hibiki-hide-ttu-native-ui-css），
+            // 此处再留 SafeArea top padding 会让内容下沉出一条空白横条。
+            // `extendPageBeyondNavigationBar` 偏好原本控制这行，统一 UI
+            // 后页面永远 extend；底部仍走 bottom:false 让 play bar / FAB
+            // 自己处理视觉下沿。
+            top: false,
             bottom: false,
             child: Stack(
               fit: StackFit.expand,
@@ -1146,6 +1152,35 @@ xhr.send();
   var style = document.createElement('style');
   style.id = 'hibiki-avoid-pagebreak-css';
   style.textContent = 'p{break-inside:avoid !important;-webkit-column-break-inside:avoid !important;}';
+  (document.head || document.documentElement).appendChild(style);
+})();
+
+// 隐藏 ttu 原生阅读器顶部工具栏 + 底部进度条。功能（TOC / 书签 / 全屏 /
+// 退出 / 进度）统一搬进 Flutter 侧的 AudiobookSettingsSheet，由播放栏
+// ⚙（有声书）或右下角 ⚙ FAB（普通 EPUB）召唤。让有声书模式和普通 EPUB
+// 的视觉完全一致：正文直接贴屏幕顶部和底部，底部右下只浮一颗 FAB 或
+// 一条 Flutter play bar。
+//
+// 选择器 = ttu 编译后的原子 Tailwind 类组合（见 assets/ttu-ebook-reader
+// bundle 里 node 4 的 fixed.* 列表）。只隐藏这些 reader UI chrome，侧边
+// 抽屉 / 字典弹窗之类的 fixed 元素都有别的类组合，不会被误伤。
+(function() {
+  if (document.getElementById('hibiki-hide-ttu-native-ui-css')) return;
+  var style = document.createElement('style');
+  style.id = 'hibiki-hide-ttu-native-ui-css';
+  style.textContent =
+    // 顶部工具栏（TOC / 书签 / 全屏 / 退出 图标条）。SSG 快照里带 top-0，
+    // Svelte hydrate 后这颗类会被移除，所以选择器不带 top-0，只按 fixed +
+    // inset-x-0 + h-8 + w-full 的唯一组合匹配。ttu 把这块做成 <button>，
+    // 顺手覆盖 div 形态（如果未来换实现）。
+    'button.fixed.inset-x-0.h-8.w-full,' +
+    'div.fixed.inset-x-0.h-8.w-full,' +
+    'button.fixed.h-8.w-full.top-0,' +
+    'div.fixed.h-8.w-full.top-0{display:none !important;}' +
+    // 底部进度条（章节标题 + 百分比 + 翻页）。左下固定 h-8。
+    '.fixed.bottom-0.left-0.z-10.h-8.w-full{display:none !important;}' +
+    // 右下角独立的阅读百分比小标（与 ⚙ FAB 同位，必须藏）。
+    '.fixed.bottom-2.right-2.z-10{display:none !important;}';
   (document.head || document.documentElement).appendChild(style);
 })();
 
