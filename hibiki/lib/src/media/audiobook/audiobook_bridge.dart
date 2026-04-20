@@ -102,9 +102,16 @@ window.__hoshiAlignToRect = function(rect) {
   var elTop = rect.top - cRect.top + content.scrollTop;
   var elBot = rect.bottom - cRect.top + content.scrollTop;
   var anchor = (elTop + elBot) / 2;
-  var pageIndex = Math.floor(anchor / stride);
+  var rawPageIndex = Math.floor(anchor / stride);
+  // pageIndex 先 clamp 到 [0, maxPageIndex]，再乘 stride 得 targetScrollTop。
+  // 旧写法 Math.min(pageIndex * stride, maxScroll) 在 maxScroll 不是 stride
+  // 整数倍时（columns 最后一页不满 / avoidPageBreak 塞不进 / fractional DPI
+  // 让 stride 有小数）会把 target 夹到"半页"像素，书停在两页中间。按页数
+  // 归一之后保证 targetScrollTop 永远是 stride 整数倍。
   var maxScroll = Math.max(0, content.scrollHeight - pageH);
-  var targetScrollTop = Math.max(0, Math.min(pageIndex * stride, maxScroll));
+  var maxPageIndex = Math.max(0, Math.floor(maxScroll / stride));
+  var pageIndex = Math.max(0, Math.min(rawPageIndex, maxPageIndex));
+  var targetScrollTop = pageIndex * stride;
   // diag 探针：writing-mode + 滚动前状态 + 计算出的 stride/page/target，
   // 用来定位"highlight 报成功但视觉不跳"的根因。竖排日语书 (vertical-rl)
   // 翻页方向是 horizontal / scrollLeft，这里无脑写 scrollTop 对这类书
@@ -120,6 +127,20 @@ window.__hoshiAlignToRect = function(rect) {
   var skip = Math.abs(content.scrollTop - targetScrollTop) < 1;
   if (!skip) {
     content.scrollTop = targetScrollTop;
+  }
+  // 写完再读一次 scrollTop，把"任何原因（pixel rounding / ttu 自己的
+  // bookmark restore 并行跑 / 双 RAF 第二次落在非整页边界）留下的半页
+  // 像素"强制吸回最近的整页。初始化场景最容易触发：ttu 原生 restore 已
+  // 滚到 page N*stride，紧接着我们的 _finishRestore 又按 Sasayaki walker
+  // 挪一次，两条路径相加可能多/少一个 stride。按 Math.round 选最近页
+  // （而不是 floor）保证抖动 ≤ stride/2 时回到 ttu 原生的整页。
+  var readback = content.scrollTop;
+  var snappedPage = Math.max(0, Math.min(
+      Math.round(readback / stride), maxPageIndex));
+  var snappedTop = snappedPage * stride;
+  var needSnap = Math.abs(readback - snappedTop) >= 1;
+  if (needSnap) {
+    content.scrollTop = snappedTop;
   }
   console.log(JSON.stringify({
     'hibiki-message-type': 'diagAlignScroll',
@@ -141,11 +162,16 @@ window.__hoshiAlignToRect = function(rect) {
     'elTop': Math.round(elTop),
     'elBot': Math.round(elBot),
     'anchor': Math.round(anchor),
+    'rawPageIndex': rawPageIndex,
     'pageIndex': pageIndex,
+    'maxPageIndex': maxPageIndex,
     'maxScroll': Math.round(maxScroll),
     'beforeTop': Math.round(beforeTop),
     'beforeLeft': Math.round(beforeLeft),
     'targetTop': Math.round(targetScrollTop),
+    'readbackTop': Math.round(readback),
+    'snappedTop': Math.round(snappedTop),
+    'needSnap': needSnap,
     'afterTop': Math.round(content.scrollTop),
     'afterLeft': Math.round(content.scrollLeft),
     'skip': skip
