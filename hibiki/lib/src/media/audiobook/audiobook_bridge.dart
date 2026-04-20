@@ -24,6 +24,16 @@ class AudiobookBridge {
   border-radius: 2px;
   transition: background 0.15s ease;
 }
+::highlight(hoshi-active) {
+  background-color: rgba(255, 220, 0, 0.42);
+}
+.__hoshi-overlay-rect {
+  position: fixed;
+  background: rgba(255, 220, 0, 0.42);
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 2147483646;
+}
 [data-hoshi-sid], [data-cue-id] {
   cursor: pointer;
 }
@@ -74,39 +84,64 @@ window.__hoshiTick = function() {
   if (!target) { window.__hoshiStopTicker(); return; }
   target.tickNo = (target.tickNo || 0) + 1;
 
-  var el = document.querySelector(target.selector);
-  if (!el) {
-    target.missAttempts = (target.missAttempts || 0) + 1;
-    if (target.tickNo <= 3) {
-      console.log(JSON.stringify({
-        'hibiki-message-type': 'diagTickMiss',
-        'tickNo': target.tickNo,
-        'selector': target.selector,
-        'totalCueSpans': document.querySelectorAll('[data-cue-id]').length
-      }));
+  var rect;
+  if (target.range) {
+    // Range-based target (Sasayaki 路径)。range 对应的节点被 ttu 卸掉时
+    // getBoundingClientRect 会抛或返回 (0,0,0,0)，交给下面的 degenerate 分支。
+    try {
+      rect = target.range.getBoundingClientRect();
+    } catch (e) {
+      rect = null;
     }
-    if (target.missAttempts > 30) {
-      console.log(JSON.stringify({
-        'hibiki-message-type': 'highlightMiss',
-        'selector': target.selector,
-        'totalCueSpans': document.querySelectorAll('[data-cue-id]').length,
-        'attempts': target.missAttempts
-      }));
-      window.__hoshiTarget = null;
-      window.__hoshiStopTicker();
+    if (!rect) {
+      target.missAttempts = (target.missAttempts || 0) + 1;
+      if (target.missAttempts > 30) {
+        console.log(JSON.stringify({
+          'hibiki-message-type': 'highlightMiss',
+          'kind': 'range',
+          'attempts': target.missAttempts
+        }));
+        window.__hoshiTarget = null;
+        window.__hoshiStopTicker();
+      }
+      return;
     }
-    return;
-  }
+  } else {
+    var el = document.querySelector(target.selector);
+    if (!el) {
+      target.missAttempts = (target.missAttempts || 0) + 1;
+      if (target.tickNo <= 3) {
+        console.log(JSON.stringify({
+          'hibiki-message-type': 'diagTickMiss',
+          'tickNo': target.tickNo,
+          'selector': target.selector,
+          'totalCueSpans': document.querySelectorAll('[data-cue-id]').length
+        }));
+      }
+      if (target.missAttempts > 30) {
+        console.log(JSON.stringify({
+          'hibiki-message-type': 'highlightMiss',
+          'selector': target.selector,
+          'totalCueSpans': document.querySelectorAll('[data-cue-id]').length,
+          'attempts': target.missAttempts
+        }));
+        window.__hoshiTarget = null;
+        window.__hoshiStopTicker();
+      }
+      return;
+    }
 
-  // Element exists. Add highlight class (idempotent).
-  if (!el.classList.contains('hoshi-active')) {
-    document.querySelectorAll('.hoshi-active').forEach(function(e) {
-      e.classList.remove('hoshi-active');
-    });
-    el.classList.add('hoshi-active');
-  }
+    // Element exists. Add highlight class (idempotent). 这条分支只留给
+    // 字幕 EPUB [data-cue-id] 路径——Sasayaki 改走 range 分支后不再动 DOM。
+    if (!el.classList.contains('hoshi-active')) {
+      document.querySelectorAll('.hoshi-active').forEach(function(e) {
+        e.classList.remove('hoshi-active');
+      });
+      el.classList.add('hoshi-active');
+    }
 
-  var rect = el.getBoundingClientRect();
+    rect = el.getBoundingClientRect();
+  }
 
   // Degenerate rect (ttu still hydrating, or element in collapsed/hidden
   // ancestor). NEVER infer direction from (0,0,0,0) — must retry, not stop.
@@ -303,6 +338,17 @@ window.__hoshiSasayakiTotalNorm = (typeof window.__hoshiSasayakiTotalNorm === 'n
   ? window.__hoshiSasayakiTotalNorm : null;
 window.__hoshiCurrentMountedSection = (typeof window.__hoshiCurrentMountedSection === 'number')
   ? window.__hoshiCurrentMountedSection : -1;
+// 运行期 fallback 的前向单调锚——记住上一条 cue 在当前段里实际落到的
+// normChar 终点，fallback indexOf 从这里往后找。Sasayaki 上游的导入期
+// matcher（epub_srt_matcher.dart）本身就是 cursor 单调前向的，但运行期
+// 如果 DOM ↔ 导入期 normChar 有系统性偏移（ttu 渲染后正文字符数和 DOMParser
+// 抽的 elementHtml 对不上），fallback 的 Math.abs(p - targetStart) tiebreak
+// 会在重复短句上挑到**上一条 cue 之前**的命中，表现成"高亮往回跳"。
+// 段切换时重置（用 section 判定，不是时间判定）。
+window.__hoshiSasayakiLastFoundSection = (typeof window.__hoshiSasayakiLastFoundSection === 'number')
+  ? window.__hoshiSasayakiLastFoundSection : -1;
+window.__hoshiSasayakiLastFoundEnd = (typeof window.__hoshiSasayakiLastFoundEnd === 'number')
+  ? window.__hoshiSasayakiLastFoundEnd : 0;
 
 window.__hoshiLoadSasayakiRefs = function(ttuBookId) {
   console.log(JSON.stringify({
@@ -619,6 +665,19 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
         'rootTotalNormChars': totalNorm,
         'firstCharsProbe': firstChars ? firstChars.slice(0, 16) : ''
       }));
+      // 把"运行期 DOM 测出的归一化字符数"和"导入期 DOMParser 抽 elementHtml
+      // 数出来的字符数"对账。两者不等说明 ttu 渲染后正文里多/少了字符
+      // （常见：ttu 注入章节标题、版权水印、章末导航）；fallback 的 delta
+      // 字段会跟 drift 完全一致，根因在这一条日志里能直接看到。
+      if (secLens && mounted >= 0 && secLens[mounted] !== totalNorm) {
+        console.log(JSON.stringify({
+          'hibiki-message-type': 'sasayakiSectionLenDrift',
+          'mountedSection': mounted,
+          'expectedNormLen': secLens[mounted],
+          'domNormLen': totalNorm,
+          'delta': totalNorm - secLens[mounted]
+        }));
+      }
     } catch (me) {
       console.log(JSON.stringify({
         'hibiki-message-type': 'sasayakiDomMeasureErr',
@@ -767,7 +826,10 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
   var normExpected = normKeep(expectedCue || '');
   var usedFallback = false;
   var fallbackDelta = 0;
-  if (normExpected.length >= 4 && normActual !== normExpected) {
+  // 阈值从 4 降到 2：原阈值是为了避免短串（"はい""そう"）在整段 indexOf
+  // 里命中过多噪声。下面 fallback 的 indexOf 起点已经被 monotonicFrom 夹到
+  // 上一条 cue 终点附近，搜索域窄到一两句，2 字短串也安全了。
+  if (normExpected.length >= 2 && normActual !== normExpected) {
     var fbNodes = [];
     var fbMap = [];
     var fbStr = '';
@@ -795,16 +857,36 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
       }
     }
     // 选离原 targetStart 最近的命中——同一段内同句多次出现时避免 indexOf
-    // 总是挑第一个。
+    // 总是挑第一个。但起点夹在上一条 cue 的终点附近（同 section 内才生效），
+    // 避免在段头碰到同样短串时挑到上一条 cue 之前的位置 → "高亮往回跳"。
+    // tolerance=64：cue 之间偶有重叠（音轨切换瞬间）或 audio 微秒级回退时，
+    // 允许 fallback 命中比 lastFoundEnd 略早一点的位置；超出就当回退是误匹配。
+    var monotonicFrom = 0;
+    if (window.__hoshiSasayakiLastFoundSection === sectionIndex) {
+      monotonicFrom = Math.max(0, (window.__hoshiSasayakiLastFoundEnd || 0) - 64);
+    }
     var bestIdx = -1;
     var bestDelta = Infinity;
-    var from = 0;
+    var from = monotonicFrom;
     while (from <= fbStr.length - normExpected.length) {
       var p = fbStr.indexOf(normExpected, from);
       if (p < 0) break;
       var d = Math.abs(p - targetStart);
       if (d < bestDelta) { bestDelta = d; bestIdx = p; }
       from = p + 1;
+    }
+    // monotonicFrom 卡得太紧时（用户 seek 到段中间或导入后第一条 cue 的
+    // targetStart 实际就在 lastFoundEnd 之前）整段内反而找不到——重试一遍
+    // 全段 indexOf，并把这次回退当成新的锚点起点。
+    if (bestIdx < 0 && monotonicFrom > 0) {
+      from = 0;
+      while (from <= fbStr.length - normExpected.length) {
+        var p2 = fbStr.indexOf(normExpected, from);
+        if (p2 < 0) break;
+        var d2 = Math.abs(p2 - targetStart);
+        if (d2 < bestDelta) { bestDelta = d2; bestIdx = p2; }
+        from = p2 + 1;
+      }
     }
     if (bestIdx >= 0 && bestIdx + normExpected.length <= fbMap.length) {
       var sMap = fbMap[bestIdx];
@@ -828,7 +910,8 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
           'origNormStart': targetStart,
           'foundNormStart': bestIdx,
           'delta': fallbackDelta,
-          'fbStrLen': fbStr.length
+          'fbStrLen': fbStr.length,
+          'monotonicFrom': monotonicFrom
         }));
       } catch (fbErr) {
         console.log(JSON.stringify({
@@ -877,6 +960,14 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
     return s.length <= n ? s : s.slice(0, n) + '…';
   }
 
+  // 更新前向单调锚——下一条 cue 的 fallback 从这里往后找。fallback 路径
+  // 用 fallback 实际命中的 [bestIdx, bestIdx + normExpected.length) 终点；
+  // 直接路径（offsets 对得上）用 cue 的标称 targetEnd。
+  window.__hoshiSasayakiLastFoundSection = sectionIndex;
+  window.__hoshiSasayakiLastFoundEnd = usedFallback
+    ? (bestIdx + normExpected.length)
+    : targetEnd;
+
   console.log(JSON.stringify({
     'hibiki-message-type': 'sasayakiHighlightOk',
     'sectionIndex': sectionIndex,
@@ -885,10 +976,11 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
     'targetStart': targetStart,
     'targetEnd': targetEnd,
     'base': base,
-    'expectedCue': clip(expectedCue, 32),
-    'actualText': clip(actualText, 32),
+    'expectedCue': clip(expectedCue, 64),
+    'actualText': clip(actualText, 64),
     'usedFallback': usedFallback,
     'fallbackDelta': fallbackDelta,
+    'monotonicAnchor': monotonicFrom,
     'match': (actualText && expectedCue)
       ? (function() {
           // 用 normalize 后的串比，避免标点差异造成误报
