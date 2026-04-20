@@ -1160,37 +1160,31 @@ xhr.send();
   (document.head || document.documentElement).appendChild(style);
 })();
 
-// 隐藏 ttu 原生阅读器顶部工具栏 + 底部进度条。功能（TOC / 书签 / 全屏 /
-// 退出 / 进度）统一搬进 Flutter 侧的 AudiobookSettingsSheet，由播放栏
-// ⚙（有声书）或右下角 ⚙ FAB（普通 EPUB）召唤。让有声书模式和普通 EPUB
-// 的视觉完全一致：正文直接贴屏幕顶部和底部，底部右下只浮一颗 FAB 或
-// 一条 Flutter play bar。
+// 隐藏 ttu 原生阅读器的三个 chrome 元素：顶部工具栏 + 底部进度条 +
+// 右下角百分比。功能（TOC / 书签 / 全屏 / 退出 / 进度）统一搬进 Flutter
+// 侧的 AudiobookSettingsSheet，由播放栏 ⚙（有声书）或右下角 ⚙ FAB
+// （普通 EPUB）召唤。
+//
+// 三条选择器都只命中 `position: fixed` 的 overlay 元素 —— display:none
+// 它们不参与正常文档流，因此不会改变正文排版 / 分页步长 / 行距等任何
+// 会让文字"乱动"的量。不碰 `.book-content` / `.book-content-container`
+// 的 padding / margin / font-* 等与正文相关的样式，让 ttu 原生保持原样。
 //
 // 选择器 = ttu 编译后的原子 Tailwind 类组合（见 assets/ttu-ebook-reader
-// bundle 里 node 4 的 fixed.* 列表）。只隐藏这些 reader UI chrome，侧边
-// 抽屉 / 字典弹窗之类的 fixed 元素都有别的类组合，不会被误伤。
+// bundle 里 node 4 的 fixed.* 列表）。顶部 SSG 快照里带 top-0，Svelte
+// hydrate 后会被移除，所以主选择器走 fixed+inset-x-0+h-8+w-full 无 top-0
+// 组合，带 top-0 的 SSG 态作兜底，两种渲染阶段都盖。
 (function() {
   if (document.getElementById('hibiki-hide-ttu-native-ui-css')) return;
   var style = document.createElement('style');
   style.id = 'hibiki-hide-ttu-native-ui-css';
   style.textContent =
-    // 顶部工具栏（TOC / 书签 / 全屏 / 退出 图标条）。SSG 快照里带 top-0，
-    // Svelte hydrate 后这颗类会被移除，所以选择器不带 top-0，只按 fixed +
-    // inset-x-0 + h-8 + w-full 的唯一组合匹配。ttu 把这块做成 <button>，
-    // 顺手覆盖 div 形态（如果未来换实现）。
     'button.fixed.inset-x-0.h-8.w-full,' +
     'div.fixed.inset-x-0.h-8.w-full,' +
     'button.fixed.h-8.w-full.top-0,' +
-    'div.fixed.h-8.w-full.top-0{display:none !important;}' +
-    // 底部进度条（章节标题 + 百分比 + 翻页）。左下固定 h-8。
-    '.fixed.bottom-0.left-0.z-10.h-8.w-full{display:none !important;}' +
-    // 右下角独立的阅读百分比小标（与 ⚙ FAB 同位，必须藏）。
-    '.fixed.bottom-2.right-2.z-10{display:none !important;}' +
-    // ttu 给正文容器留了 ~40px viewport padding-top（用户可调），用来
-    // 和原生顶部工具栏错开。hibiki 把顶部工具栏 display:none 后这条
-    // padding 变成纯视觉空白，压到 0 让正文直接贴 WebView 顶端。只动
-    // top，左右和底部保留给 paginated 翻页 / 排版舒适度。
-    '.book-content-container,.book-content{padding-top:0 !important;}';
+    'div.fixed.h-8.w-full.top-0,' +
+    '.fixed.bottom-0.left-0.z-10.h-8.w-full,' +
+    '.fixed.bottom-2.right-2.z-10{display:none !important;}';
   (document.head || document.documentElement).appendChild(style);
 })();
 
