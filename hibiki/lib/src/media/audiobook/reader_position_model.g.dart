@@ -16,7 +16,7 @@ extension GetReaderPositionCollection on Isar {
 
 const ReaderPositionSchema = CollectionSchema(
   name: r'ReaderPosition',
-  id: 6125478391052748721,
+  id: 2761005929337993061,
   properties: {
     r'normCharOffset': PropertySchema(
       id: 0,
@@ -46,7 +46,7 @@ const ReaderPositionSchema = CollectionSchema(
   idName: r'id',
   indexes: {
     r'ttuBookId': IndexSchema(
-      id: 8402913650472817403,
+      id: -6268073740859223969,
       name: r'ttuBookId',
       unique: true,
       replace: true,
