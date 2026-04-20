@@ -1997,16 +1997,6 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           onExitReader: () {
             if (mounted) Navigator.of(context).pop();
           },
-          onClearCache: () async {
-            try {
-              await AudiobookBridge.clearReaderCaches(_controller);
-              if (mounted) {
-                Fluttertoast.showToast(msg: '已清除 ttu 缓存，正在重新加载');
-              }
-            } catch (e) {
-              debugPrint('[hibiki-reader] clearReaderCaches error: $e');
-            }
-          },
         );
       },
     );

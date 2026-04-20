@@ -1544,37 +1544,6 @@ window.__hibikiScrollToNormOffset = function(section, offset) {
     );
   }
 
-  /// 擦除 WebView 里 ttu 的 service-worker 注册 + 全部 CacheStorage
-  /// 条目（`build:*` / `other:*` / `ttu-userfonts`），然后 reload 当前
-  /// 页让新 SW 重新从 APK assets 预缓存。
-  ///
-  /// 典型场景：hibiki 打新包后，旧 SW 还在 serve 旧 bundle，导致 hibiki
-  /// 注入的 CSS 或 ttu fork 更新不生效。用户书架数据在 Flutter 侧 Isar，
-  /// ttu IDB 里的书本数据也不在 CacheStorage 范围内 —— 只会掉打包产物
-  /// 本身的缓存，书和阅读进度都保留。
-  static Future<void> clearReaderCaches(
-    InAppWebViewController controller,
-  ) async {
-    await controller.evaluateJavascript(source: r'''
-(async function(){
-  try {
-    if (navigator.serviceWorker) {
-      const regs = await navigator.serviceWorker.getRegistrations();
-      for (const r of regs) { try { await r.unregister(); } catch(_){} }
-    }
-    if (self.caches) {
-      const names = await caches.keys();
-      for (const n of names) { try { await caches.delete(n); } catch(_){} }
-    }
-  } catch (e) {
-    console.error('[hibiki] clearReaderCaches', e);
-  }
-  // hard reload 让浏览器忽略 HTTP cache + SW 拦截
-  try { location.reload(); } catch(_) {}
-})();
-''');
-  }
-
   /// 从视口左上探针反查当前挂载段和章内归一化字符偏移。
   ///
   /// null 代表视口里没命中文本节点 / Sasayaki refs 还没挂上 / ttu 还没就位 ——

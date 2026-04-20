@@ -130,7 +130,6 @@ class AudiobookSettingsSheet extends StatelessWidget {
     required this.onBookmark,
     required this.onToggleFullscreen,
     required this.onExitReader,
-    required this.onClearCache,
     super.key,
   });
 
@@ -155,10 +154,6 @@ class AudiobookSettingsSheet extends StatelessWidget {
 
   /// 点"退出阅读" → reader 页面侧 Navigator.pop。
   final VoidCallback onExitReader;
-
-  /// 点"清除 ttu 缓存" → 擦掉 WebView 的 service worker + CacheStorage
-  /// 然后 reload 页面。用户的书和阅读进度不受影响（在 Isar / IDB 里）。
-  final VoidCallback onClearCache;
 
   static const List<double> _speeds = [0.75, 1.0, 1.25, 1.5];
 
@@ -391,38 +386,6 @@ class AudiobookSettingsSheet extends StatelessWidget {
           onTap: () {
             Navigator.of(context).pop();
             onToggleFullscreen();
-          },
-        ),
-        _actionBtn(
-          context,
-          icon: Icons.refresh,
-          label: '清缓存',
-          onTap: () async {
-            final bool? ok = await showDialog<bool>(
-              context: context,
-              builder: (BuildContext ctx) => AlertDialog(
-                title: const Text('清除 ttu 缓存'),
-                content: const Text(
-                  '清掉 WebView 里 ttu 的 service worker 和资源缓存，'
-                  '然后重新加载当前页。\n\n'
-                  '你的书架、阅读进度、书签都不会受影响。',
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.of(ctx).pop(false),
-                    child: const Text('取消'),
-                  ),
-                  FilledButton(
-                    onPressed: () => Navigator.of(ctx).pop(true),
-                    child: const Text('清除并重载'),
-                  ),
-                ],
-              ),
-            );
-            if (ok == true) {
-              if (context.mounted) Navigator.of(context).pop();
-              onClearCache();
-            }
           },
         ),
         _actionBtn(
