@@ -567,6 +567,9 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
     final AudiobookRepository abRepo = AudiobookRepository(appModel.database);
     final Audiobook? ab = abRepo.findByBookUid(item.uniqueKey);
     final bool canRematch = ab != null && SasayakiRematch.isEligible(ab);
+    debugPrint('[hibiki-bookshelf] extraActions bookUid.len=${item.uniqueKey.length} '
+        'abFound=${ab != null} format=${ab?.alignmentFormat} '
+        'canRematch=$canRematch');
     return <Widget>[
       _destructiveConfirmButton(
         label: t.dialog_delete,
