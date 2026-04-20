@@ -532,16 +532,21 @@ class AudiobookPlayerController extends ChangeNotifier {
       unawaited(persist(value));
     }
     if (!value) return;
-    // 正处于跨章 await：让现有 transition 自己跑完、由
-    // notifySectionRestoreCompleted 接力 notify，不重入
-    // _maybeEmitCrossChapter（它自己也会守卫，这里再挡一层只是少走一遍
-    // 解码 + reader section 闭包）。
+    snapReaderToAudio();
+  }
+
+  /// 把 reader 当前页强制对齐到音频所在页。用于：
+  /// - OFF → ON 翻 Follow audio（[setFollowAudio]）
+  /// - Follow ON 时用户手翻到别段（reader 侧 sectionChanged auto=false）
+  ///
+  /// 跨段走 `_maybeEmitCrossChapter` 请跳章，跳完
+  /// [notifySectionRestoreCompleted] 自己会 notify；同段直接 notifyListeners
+  /// 让 `_onCueChanged` 以 `reveal=true` 把 scrollTop 拉回 cue 那一页。
+  /// 已在跨章 await 中幂等返回（既有 transition 会接管）。
+  void snapReaderToAudio() {
     if (_chapterTransition) return;
     final AudioCue? cue = _currentCue;
     if (cue == null) return;
-    // _maybeEmitCrossChapter 自带 _hasPlayedOnce / followAudio / 同段短路
-    // 等守卫；跨段命中时它会把 _chapterTransition 翻为 true 并请跳章，
-    // 跳章完的 notifySectionRestoreCompleted 自己会 notify，这里不重复。
     _maybeEmitCrossChapter(cue);
     if (_chapterTransition) return;
     notifyListeners();
