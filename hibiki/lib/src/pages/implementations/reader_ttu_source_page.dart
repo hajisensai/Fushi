@@ -738,12 +738,6 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       case 'sasayakiMountedSection':
         await _handleSasayakiMountedSection(messageJson);
         break;
-      case 'diag-chrome':
-        // ttu 顶部工具栏 / 书签图钉定位诊断：用户机器上 JS kill 还没拿下
-        // 那些元素，打一份带 tag+class+rect 的清单帮肉眼对。独立前缀方便
-        // `adb logcat | grep hibiki-chrome` 筛。
-        debugPrint('[hibiki-chrome] ${message.message}');
-        break;
       default:
         // Unknown types (audiobook bridge diagnostics etc.) → 打日志方便排查
         debugPrint('[hibiki-audiobook-diag] ${message.message}');
@@ -1531,51 +1525,6 @@ div.fixed.h-3.w-3.opacity-25 {
   });
   obs.observe(document.documentElement, {childList:true, subtree:true});
   window.__hibikiKillTtuChrome = true;
-
-  // 诊断日志：把顶部 200px 内所有 fixed / absolute 元素 dump 到 logcat。
-  // 用户报告的"深色横条"和"右上角书签"目前 JS kill 还拿不下，必须看
-  // 真实 DOM 才能定位。走 hibiki-message-type=diag-chrome 绕 console 防抖。
-  function dumpTopEls(tag){
-    try {
-      var all = document.querySelectorAll('*');
-      var hits = [];
-      for (var i=0;i<all.length;i++){
-        var el = all[i];
-        var cs = getComputedStyle(el);
-        if (cs.display === 'none' || cs.visibility === 'hidden') continue;
-        if (cs.position !== 'fixed' && cs.position !== 'absolute' && cs.position !== 'sticky') continue;
-        var r = el.getBoundingClientRect();
-        // 只关心顶部 200px 以内的元素、并且是可见的（有面积）
-        if (r.top > 200 || r.bottom < 0 || r.width < 5 || r.height < 5) continue;
-        hits.push({
-          tag: el.tagName.toLowerCase(),
-          cls: (el.className && el.className.baseVal !== undefined ? el.className.baseVal : (''+el.className)).slice(0, 200),
-          id: el.id || null,
-          role: el.getAttribute('role'),
-          top: Math.round(r.top), left: Math.round(r.left),
-          w: Math.round(r.width), h: Math.round(r.height),
-          pos: cs.position, z: cs.zIndex,
-          bg: cs.backgroundColor,
-          killed: !!el.__hibikiKilled
-        });
-      }
-      console.log(JSON.stringify({
-        'hibiki-message-type': 'diag-chrome',
-        at: tag,
-        count: hits.length,
-        items: hits.slice(0, 20)
-      }));
-    } catch(e){
-      console.log(JSON.stringify({
-        'hibiki-message-type': 'diag-chrome',
-        at: tag,
-        error: (''+e).slice(0,200)
-      }));
-    }
-  }
-  dumpTopEls('init');
-  setTimeout(function(){ dumpTopEls('t500'); }, 500);
-  setTimeout(function(){ dumpTopEls('t2000'); }, 2000);
 })();
 
 document.head.insertAdjacentHTML('beforeend', `
