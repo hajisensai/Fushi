@@ -1,4 +1,4 @@
-import{n as d,s as l,b as p,v as u,d as o,c as f,f as h,g as b,i as m,K as g,x as r}from"../chunks/scheduler.1LdzKoqm.js";import{S as _,i as v}from"../chunks/index.yK_HZu36.js";import{g as $}from"../chunks/navigation.jUt-0FH4.js";import{l as x,m as y,p as P,t as E}from"../chunks/store.tYALZJpL.js";import{f as I}from"../chunks/format-page-title.XFnXHO7t.js";/**
+import{n as d,s as l,b as p,v as u,d as o,c as f,f as h,g as b,i as m,K as g,x as r}from"../chunks/scheduler.1LdzKoqm.js";import{S as _,i as v}from"../chunks/index.yK_HZu36.js";import{g as $}from"../chunks/navigation.N-mdRKVW.js";import{l as x,m as y,p as P,t as E}from"../chunks/store.lWhQckVk.js";import{f as I}from"../chunks/format-page-title.XFnXHO7t.js";/**
  * @license BSD-3-Clause
  * Copyright (c) 2023, ッツ Reader Authors
  * All rights reserved.

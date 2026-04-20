@@ -46,7 +46,7 @@
 - **远程（hibiki 私有 fork）**：待创建后设为 `origin`。push 命令：`git push -u origin hibiki-patches`
 - **产物去向**：`pnpm build` 后，`apps/web/build/` 整套拷入 `hibiki/hibiki/assets/ttu-ebook-reader/`（保留手动维护的 `fonts/` 子目录）
 - **补丁清单与构建细节**：见 [`docs/ttu-fork-notes.md`](docs/ttu-fork-notes.md)（每个 `feat/fix(reader): [hibiki] ...` commit 都列了 why）
-- **当前已落地 5 个补丁**：`__ttuGoToSection` / `__ttuCurrentSection` / `__ttuSectionCount` API、onMount-cleanup SSR 修复、`sectionChanged` console 事件、`__ttuGetToc` / `__ttuBookmarkPage`、**删除原生 reader chrome**（顶部工具栏 + 底部进度条 + 右下角百分比）
+- **当前已落地 7 个补丁**：`__ttuGoToSection` / `__ttuCurrentSection` / `__ttuSectionCount` API、onMount-cleanup SSR 修复、`sectionChanged` console 事件、`__ttuGetToc` / `__ttuBookmarkPage`、删除原生 reader chrome（顶部工具栏 + 底部进度条 + 右下角百分比）、`autoBookmark` / `avoidPageBreak` default 翻 true、`__ttuScrollToCharOffset` + `__ttuGetColumnGap` API
 
 **何时改 fork，而非在 hibiki 侧注 CSS/JS**：凡是**动 ttu WebView DOM 结构、原生 UI chrome、全局 JS API**的改动，都优先走 fork 源码。理由：(1) 外部 CSS `display:none` 会随 Svelte hydrate / 重渲染失效；(2) 改正文相关样式（padding / margin / line-height 等）会让文字布局"乱动"；(3) fork 里改一次，rebase 上游就自然带上，比 Flutter 侧打 hack 干净。hibiki 侧只负责：WebView 容器尺寸（`Positioned.fill` 给播放栏让路）、SafeArea、JS 桥接消费 ttu 暴露的 API。
 

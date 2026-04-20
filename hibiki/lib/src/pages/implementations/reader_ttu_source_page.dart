@@ -490,16 +490,10 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
               'http://localhost:${server.boundPort}/manage.html',
         ),
       ),
-      initialUserScripts: UnmodifiableListView<UserScript>([
-        // 必须 DOCUMENT_START：ttu bundle 模块顶层
-        // `me()("autoBookmark", !1)` 在 import 时就 getItem 一次做 Subject
-        // 初值，onLoadStop 之后再 setItem 已经晚了（除非再 reload 页面，
-        // 但 reload 会毁掉 audiobook bridge）。
-        UserScript(
-          source: _readerDocumentStartJs,
-          injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
-        ),
-      ]),
+      // ttu fork 已把 autoBookmark / avoidPageBreak 的 default 翻成 true
+      // （见 ttu fork 的 store.ts patch），所以不再需要 DOCUMENT_START
+      // UserScript 戳 localStorage 绕 bundle 模块顶层那次 getItem race。
+      initialUserScripts: UnmodifiableListView<UserScript>(const <UserScript>[]),
       onPermissionRequest: (controller, origin) async {
         return PermissionResponse(
           action: PermissionResponseAction.GRANT,
@@ -1026,139 +1020,11 @@ xhr.onload = function(e) {
 xhr.send();
 ''';
 
-  /// AT_DOCUMENT_START 注入：在 ttu bundle 的 Svelte 模块初始化前把
-  /// `localStorage.autoBookmark` 拨到 "1"，让 `me()("autoBookmark",!1)`
-  /// 在建 BehaviorSubject 时读到 true 而非 default false —— 否则整个会话
-  /// 的 Subject 初值就锁死 false，window scroll 的 debounced auto-bookmark
-  /// 永远不注册，IDB bookmark store 一直是空的（日志侧观察 n=0）。
-  ///
-  /// 顺手也打一条 diag-pos 记录注入前后 localStorage 状态，再挂一个一次性
-  /// `window.scroll` 监听，确认 paginated 模式下 window 本身是否真的会滚
-  /// （ttu 的 auto-bookmark trigger 是 `fromEvent(window,'scroll')`；若实际
-  /// 滚动只在 `.book-content-container` 上发 scroll 事件，就算 autoBookmark
-  /// 开了也写不进去，得改走 Flutter 主动调 bookmarkManager.put 的路径）。
-  static const String _readerDocumentStartJs = r'''
-(function(){
-  try {
-    var before = null;
-    try { before = localStorage.getItem('autoBookmark'); } catch(e){}
-    var changed = false;
-    try {
-      if (before !== '1') {
-        localStorage.setItem('autoBookmark', '1');
-        changed = true;
-      }
-    } catch(e){}
-    function diag(tag, extra) {
-      try {
-        console.log(JSON.stringify({
-          'hibiki-message-type': 'diag-pos',
-          tag: tag,
-          extra: extra || ''
-        }));
-      } catch(_){}
-    }
-    diag('docstart-autoBookmark', 'before=' + before + ' changed=' + changed);
-    // 一次性 window scroll 探针：看 paginated mode 下 window 是否真会滚
-    try {
-      var seen = 0;
-      window.addEventListener('scroll', function(){
-        if (seen < 3) {
-          diag('window-scroll', 'sy=' + window.scrollY + ' sx=' + window.scrollX);
-        }
-        seen++;
-      }, { capture: true, passive: true });
-    } catch(e){}
-  } catch(_) {}
-})();
-''';
-
   /// This is executed upon page load and change.
   /// More accurate readability courtesy of
   /// https://github.com/birchill/10ten-ja-reader/blob/fbbbde5c429f1467a7b5a938e9d67597d7bd5ffa/src/content/get-text.ts#L314
   String javascriptToExecute = """
 /*jshint esversion: 6 */
-
-// [hibiki-diag-pos] 开书位置恢复追踪：
-// 1) 打出 IDB 'books' DB 里 bookmark store 的快照 —— 关书时 ttu auto-bookmark
-//    写入的值，下次开书这里读到的就是上次关书状态；
-// 2) 以 150ms 间隔 poll `.book-content` 的 scrollLeft/scrollTop，记录变化，
-//    观察 ttu 的 scrollToBookmark 是否真跑了、是否被后续 inject 覆盖。
-// 带 __hibikiPosDiag 守卫保证多次 evaluate 只跑一次。
-(function() {
-  if (window.__hibikiPosDiag) return;
-  window.__hibikiPosDiag = true;
-  var t0 = Date.now();
-  function diag(tag, extra) {
-    try {
-      // 走 JSON + hibiki-message-type='diag-pos' 以 isDiag 判定绕过 50ms 防抖
-      // （否则 idb-bookmark / bc-scroll 连打多条会被吞到只剩第一条）
-      console.log(JSON.stringify({
-        'hibiki-message-type': 'diag-pos',
-        dt: Date.now() - t0,
-        tag: tag,
-        extra: extra || ''
-      }));
-    } catch (e) {}
-  }
-  diag('init', 'url=' + location.href);
-  try {
-    var req = indexedDB.open('books');
-    req.onerror = function(e) { diag('idb-open-err', String(e)); };
-    req.onsuccess = function() {
-      try {
-        var db = req.result;
-        var stores = Array.prototype.slice.call(db.objectStoreNames);
-        if (stores.indexOf('bookmark') < 0) {
-          diag('idb-no-bookmark-store', 'stores=' + stores.join(','));
-          return;
-        }
-        var getAll = db.transaction('bookmark', 'readonly')
-          .objectStore('bookmark').getAll();
-        getAll.onsuccess = function(e) {
-          var arr = e.target.result || [];
-          diag('idb-bookmark-count', 'n=' + arr.length);
-          arr.forEach(function(b) {
-            diag('idb-bookmark',
-              'dataId=' + b.dataId +
-              ' explored=' + b.exploredCharCount +
-              ' progress=' + ((b.progress || 0).toFixed ? b.progress.toFixed(4) : b.progress) +
-              ' sy=' + b.scrollY +
-              ' sx=' + b.scrollX +
-              ' mod=' + b.lastBookmarkModified);
-          });
-        };
-        getAll.onerror = function(e) { diag('idb-getall-err', String(e)); };
-      } catch (e) { diag('idb-tx-err', String(e)); }
-    };
-  } catch (e) { diag('idb-outer-err', String(e)); }
-  var lastSL = null, lastST = null, ticks = 0;
-  var iv = setInterval(function() {
-    var bc = document.querySelector('.book-content');
-    if (bc) {
-      if (bc.scrollLeft !== lastSL || bc.scrollTop !== lastST) {
-        diag('bc-scroll',
-          'sl=' + bc.scrollLeft + ' st=' + bc.scrollTop +
-          ' sw=' + bc.scrollWidth + ' sh=' + bc.scrollHeight);
-        lastSL = bc.scrollLeft;
-        lastST = bc.scrollTop;
-      }
-    }
-    if (++ticks > 200) { clearInterval(iv); diag('poll-end', 'ticks=' + ticks); }
-  }, 150);
-})();
-
-// Inject our own avoidPageBreak CSS so paragraphs (and cue spans inside them)
-// don't get split across pages. Doing this directly avoids the location.reload()
-// that toggling ttu's localStorage setting would require — reload would wipe
-// the audiobook bridge while Dart still thinks it's injected.
-(function() {
-  if (document.getElementById('hibiki-avoid-pagebreak-css')) return;
-  var style = document.createElement('style');
-  style.id = 'hibiki-avoid-pagebreak-css';
-  style.textContent = 'p{break-inside:avoid !important;-webkit-column-break-inside:avoid !important;}';
-  (document.head || document.documentElement).appendChild(style);
-})();
 
 function tapToSelect(e) {
   console.log('[hibiki] tapToSelect x=' + e.clientX + ' y=' + e.clientY + ' target=' + (e.target ? e.target.nodeName : 'null'));

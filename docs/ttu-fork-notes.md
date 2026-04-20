@@ -24,6 +24,10 @@
 | `window.__ttuGoToSection(n)` | `(n: number) => Promise<void>` | 跳到第 n 个 section（0-based）。resolve 时新 section 的 DOM 已挂载（paginated）或 viewport 已滚到位（continuous）。越界 reject `RangeError`，5s 超时 reject。 |
 | `window.__ttuCurrentSection()` | `() => number` | 当前 section index。书未打开 / 未挂载任何章返回 `-1`。 |
 | `window.__ttuSectionCount()` | `() => number` | 当前书的 spine 段数。未打开书返回 `0`。 |
+| `window.__ttuGetToc()` | `() => {label, index, parent?}[]` | 扁平的 TOC，`index` 对齐 `sectionList$` 数组下标（= `__ttuGoToSection` 接受的参数）。label 缺失退回 reference。 |
+| `window.__ttuBookmarkPage()` | `() => Promise<void>` | 触发 ttu 内部 `bookmarkPage()`（paginated / continuous / selection 三分支统一入口）。 |
+| `window.__ttuScrollToCharOffset(s, o)` | `(s: number, o: number) => Promise<void>` | 跳到第 `s` 个 section 里从起始起算的第 `o` 个归一化字符。跨 section 先 `nextChapter$` 等 render complete 再 scroll，5s 超时。复用 `bookmarkManager.scrollToBookmark` 路径。 |
+| `window.__ttuGetColumnGap()` | `() => number` | paginated 模式 `.book-content-container` 的 computed `columnGap` 像素值，continuous 模式返回 0。|
 
 额外：`window.__ttuInternalNav` / `__ttuInternalNav` 字段暂未实现。PR8b 如果需要区分 ttu 内部程序化导航（如"恢复阅读位置"）与用户翻页，再补。
 
@@ -39,7 +43,9 @@
 | 2 | `d832837` fix(reader): [hibiki] onMount-cleanup instead of onDestroy to avoid SSR window | `+page.svelte` | SvelteKit prerender 会在 SSR 阶段调用 onDestroy，早期版本在 onDestroy 里 `delete window.xxx` 会抛 "window is not defined"。改为 onMount return 清理函数（onMount 只在 client 跑）规避。 |
 | 3 | `9ea0a87` feat(reader): [hibiki] emit sectionChanged console event with auto flag | `+page.svelte` | 向 console 发 `sasayakiSectionChanged` 消息，带 auto 标记，供 Flutter 侧区分程序化导航 vs. 用户翻页。 |
 | 4 | `09dda9e` feat(reader): [hibiki] expose window.__ttuGetToc / __ttuBookmarkPage | `+page.svelte` | TOC 列表 + 当前位置书签 的对外 API。配合 AudiobookSettingsSheet 展示章节、触发书签。 |
-| 5 | 本次 feat(reader): [hibiki] remove native reader chrome | `+page.svelte` | 删除顶部 tap 热区 + BookReaderHeader 浮层（TOC/书签/全屏/退出 按钮）、底部进度条整块（tracker/replicate 图标 + 右下角百分比）。功能已由 Flutter 侧 AudiobookSettingsSheet 承载；删源码比外部 CSS `display:none` 更干净，让上游产出与 hibiki UI 一致，不用再在 Flutter 侧注 hide-css。顺带清理 unused imports：`BookReaderHeader` / `faClock` / `faCloudBolt` / `dummyFn` / `copyCurrentProgress` / `showFooter` 变量。 |
+| 5 | `b938d32` feat(reader): [hibiki] remove native reader chrome | `+page.svelte` | 删除顶部 tap 热区 + BookReaderHeader 浮层（TOC/书签/全屏/退出 按钮）、底部进度条整块（tracker/replicate 图标 + 右下角百分比）。功能已由 Flutter 侧 AudiobookSettingsSheet 承载；删源码比外部 CSS `display:none` 更干净，让上游产出与 hibiki UI 一致，不用再在 Flutter 侧注 hide-css。顺带清理 unused imports：`BookReaderHeader` / `faClock` / `faCloudBolt` / `dummyFn` / `copyCurrentProgress` / `showFooter` 变量。 |
+| 6 | `1a419d0` feat(reader): [hibiki] flip autoBookmark / avoidPageBreak defaults to true | `store.ts` | 把两条偏好的 default 从 false 翻成 true。原因：(a) autoBookmark 在 bundle 模块顶层一次性读 localStorage，Flutter 侧再 setItem 已经晚了，原先靠 DOCUMENT_START UserScript 戳；(b) avoidPageBreak 开关需要 `location.reload()` 才生效，reload 会毁掉 audiobook bridge。改 default 后 hibiki 侧的 DOCUMENT_START UserScript 和 `p{break-inside:avoid}` CSS 注入都可以删除。已有 localStorage 值的用户不受影响。 |
+| 7 | `12e56d1` feat(reader): [hibiki] expose __ttuScrollToCharOffset / __ttuGetColumnGap | `+page.svelte` | 两个新 window API：`__ttuScrollToCharOffset(sectionIndex, charOffset)` 按 `(section, 章内归一化字符偏移)` 跳到该位置（paginated / continuous 都支持，跨 section 先 `nextChapter$` 等 `sectionRenderCompleteGlobal$` 再 scroll，5s 超时，rAF 对齐 layout 后 resolve）。`__ttuGetColumnGap()` 返回 paginated 模式 `.book-content-container` computed `columnGap` 数值（continuous 返回 0）。实现走 `bookmarkManager.scrollToBookmark` + `sectionList$[i].startCharacter`，复用 ttu 自己的 charCount 反推逻辑，不动 calculator。|
 
 ---
 

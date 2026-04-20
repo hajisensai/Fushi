@@ -1675,13 +1675,42 @@ window.__hibikiScrollToNormOffset = function(section, offset) {
       // 为什么不让 Dart 根据 JS 返回值自己分支：evaluateJavascript 的返回
       // 值类型在不同 WebView 实现下不稳定，把控制流放在 JS 里一条链条
       // 到底更可靠。
+      //
+      // 翻页路径：reveal=true 时先 await 新的 `window.__ttuScrollToCharOffset`
+      // （ttu fork 原生，走 bookmarkManager.scrollToBookmark 的 charCount
+      // 反推路径，paginated / continuous 都支持），再加 class。feature-detect
+      // 兜底：API 不在（早期 fork 或上游 ttu）时 cueMap 命中路径退回原 ticker
+      // （__hoshiHighlight('.hoshi-active', true)），cueMap miss 路径继续用
+      // __hoshiHighlightSasayaki 自带的 walker+ticker，两条兼容路径保住。
       final String cueJson = jsonEncode(cue.text);
       await controller.evaluateJavascript(
-        source: '(function(){'
-            'if (!window.__hoshiHighlightSasayakiCueById(${jsonEncode(raw)}, $reveal)) {'
-            '  window.__hoshiHighlightSasayaki(${frag.sectionIndex}, '
-            '    ${frag.normCharStart}, ${frag.normCharEnd}, $cueJson, $reveal);'
+        source: '(async function(){'
+            'var reveal = $reveal;'
+            'var useForkScroll = reveal && '
+            '  typeof window.__ttuScrollToCharOffset === "function";'
+            'if (useForkScroll) {'
+            '  try { await window.__ttuScrollToCharOffset('
+            '    ${frag.sectionIndex}, ${frag.normCharStart}); }'
+            '  catch (e) {'
+            '    console.log(JSON.stringify({'
+            '      "hibiki-message-type": "scrollToCharOffsetErr",'
+            '      "section": ${frag.sectionIndex},'
+            '      "offset": ${frag.normCharStart},'
+            '      "error": String(e)'
+            '    }));'
+            '    useForkScroll = false;'
+            '  }'
             '}'
+            // cueMap 路径。useForkScroll 成功时 reveal 传 false（滚动已完成,
+            // 只 add class）；否则回退老 ticker：reveal 透传让它自己走。
+            'if (window.__hoshiHighlightSasayakiCueById('
+            '    ${jsonEncode(raw)}, useForkScroll ? false : reveal)) return;'
+            // cueMap miss 路径。useForkScroll 成功时滚动已完成，只要 walker
+            // 包 span + add class，reveal=false 跳过旧 ticker；否则交给老路径
+            // 自己 ticker 翻页。
+            'window.__hoshiHighlightSasayaki(${frag.sectionIndex}, '
+            '  ${frag.normCharStart}, ${frag.normCharEnd}, $cueJson, '
+            '  useForkScroll ? false : reveal);'
             '})();',
       );
       return;
