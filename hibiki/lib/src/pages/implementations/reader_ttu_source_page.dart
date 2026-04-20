@@ -349,11 +349,12 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
               fit: StackFit.expand,
               alignment: Alignment.center,
               children: <Widget>[
-                // WebView 全屏渲染，底部留白通过注入 CSS padding-bottom 实现
-                // （见 _syncReaderBottomPadding）。之前用 Flutter Padding 挤
-                // WebView 会让切屏/系统 UI 抖动时 WebView 高度随 MediaQuery
-                // padding 波动，SurfaceView 和 Flutter 截图层不同步，视觉上
-                // 出现"上半上一页、下半下一页"的撕裂。
+                // WebView 全屏渲染，bar 作为 overlay 叠在底部。不能往
+                // `.book-content` 注 padding-bottom —— 那会让 ttu paginated
+                // 模式每页的实际绘制高度大于 --book-content-child-height
+                // （ttu 算步长用 child-height，绘制区带上 padding），翻页
+                // 滚动步长 < 实际可视高，视觉上就是"上半上一页、下半下一页"
+                // 的撕裂。
                 buildBody(),
                 buildDictionary(),
                 buildAudiobookBar(),
@@ -633,7 +634,6 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         );
         _currentChapterHref = uri?.toString() ?? _currentChapterHref;
         await _maybeInjectAudiobookBridge(controller, trigger: 'onLoadStop');
-        await _syncReaderBottomPadding();
       },
       onTitleChanged: (controller, title) async {
         await controller.evaluateJavascript(source: javascriptToExecute);
@@ -647,7 +647,6 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
           'ctrl=${_audiobookController != null} srtUid=$_srtBookUid',
         );
         await _maybeInjectAudiobookBridge(controller, trigger: 'onTitleChanged');
-        await _syncReaderBottomPadding();
       },
       onDownloadStartRequest: onDownloadStartRequest,
     );
@@ -1759,7 +1758,6 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
             _controller,
             trigger: 'audiobookReady',
           );
-          await _syncReaderBottomPadding();
         }
       }
     } else {
@@ -1859,7 +1857,6 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           _controller,
           trigger: 'srtBookReady',
         );
-        await _syncReaderBottomPadding();
       }
     }
   }
@@ -1945,38 +1942,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     _onCueChanged();
   }
 
-  /// 把"播放栏需要的底部留白"用 CSS padding-bottom 注入到 ttu 的滚动容器
-  /// `.book-content`。WebView 永远全屏渲染；播放栏只是浮层，不再挤 WebView
-  /// 高度——避免切屏/系统 UI 抖动时 SurfaceView 与 Flutter 截图层不同步造成
-  /// 视觉撕裂。`scroll-padding-bottom` 让 scrollIntoView 时目标句子不会被
-  /// 播放栏遮住（Sasayaki follow audio 自动滚动受益）。ttu 切章节会换 document
-  /// 丢失 style，所以 onLoadStop / onTitleChanged / attach / teardown 都要
-  /// 重新同步。
-  Future<void> _syncReaderBottomPadding() async {
-    if (!_controllerInitialised || !mounted) return;
-    final double safeBottom = MediaQuery.of(context).padding.bottom;
-    final int px = _audiobookController != null
-        ? (_kAudiobookBarHeight + safeBottom).round()
-        : 0;
-    try {
-      await _controller.evaluateJavascript(source: '''
-(function(px){
-  var id='hibiki-reader-bottom-padding-css';
-  var el=document.getElementById(id);
-  if(!el){
-    el=document.createElement('style');
-    el.id=id;
-    (document.head||document.documentElement).appendChild(el);
-  }
-  el.textContent='.book-content{padding-bottom:'+px+'px !important;scroll-padding-bottom:'+px+'px !important;}';
-})($px);
-''');
-    } catch (e) {
-      debugPrint('[hibiki-audiobook] syncBottomPadding error: $e');
-    }
-  }
-
-  /// 从 ttu fork 的 `__ttuCurrentSection()` 读一次当前段，用来兜住
+/// 从 ttu fork 的 `__ttuCurrentSection()` 读一次当前段，用来兜住
   /// sectionChanged 初次发射被 skip(1) 吃掉的情况。fork 未就绪或 probe
   /// 失败时保留原值（多半仍是 -1，跨章守卫就继续等真正的 sectionChanged）。
   Future<void> _bootstrapCurrentTtuSection(
@@ -2603,7 +2569,6 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       _audiobookController = null;
       _srtBookUid = null;
     });
-    _syncReaderBottomPadding();
   }
 
   /// 给已存在的 [SrtBook] 补音频：action sheet 选"目录"或"多文件"，
@@ -2737,8 +2702,5 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     );
   }
 }
-
-/// [AudiobookPlayBar] 的视觉高度（不含底部 SafeArea inset，需调用方叠加）。
-const double _kAudiobookBarHeight = 56;
 
 enum _SrtAudioSource { folder, files }
