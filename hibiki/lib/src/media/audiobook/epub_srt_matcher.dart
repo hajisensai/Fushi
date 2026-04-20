@@ -120,6 +120,24 @@ class EpubSrtMatcher {
     return compute(_matchEntrypoint, req);
   }
 
+  /// 同一份 sections + cues 在 isolate 里顺序试多档 searchWindow，返回每档的
+  /// matchRate（0..1）。数据只拷贝一次，明显快过 7 次 [matchInIsolate]。
+  /// gap-fill 也走一遍，口径与正式匹配一致，用户看到的命中率≈真实导入后的
+  /// 命中率。
+  static Future<ProbeResult> probeInIsolate({
+    required List<EpubSection> sections,
+    required List<AudioCue> cues,
+    required List<int> windows,
+  }) {
+    final _ProbeRequest req = _ProbeRequest(
+      sections: sections,
+      cueTexts: <String>[for (final AudioCue c in cues) c.text],
+      cueIndexes: <int>[for (final AudioCue c in cues) c.sentenceIndex],
+      windows: windows,
+    );
+    return compute(_probeEntrypoint, req);
+  }
+
   static MatchResult match({
     required List<EpubSection> sections,
     required List<AudioCue> cues,
@@ -580,21 +598,77 @@ class _MatchRequest {
 }
 
 MatchResult _matchEntrypoint(_MatchRequest req) {
-  final List<AudioCue> cues = <AudioCue>[
-    for (int i = 0; i < req.cueTexts.length; i++)
-      (AudioCue()
-        ..bookUid = ''
-        ..chapterHref = ''
-        ..sentenceIndex = req.cueIndexes[i]
-        ..textFragmentId = ''
-        ..text = req.cueTexts[i]
-        ..startMs = 0
-        ..endMs = 0
-        ..audioFileIndex = 0),
-  ];
+  final List<AudioCue> cues = _rebuildCues(req.cueTexts, req.cueIndexes);
   return EpubSrtMatcher.match(
     sections: req.sections,
     cues: cues,
     searchWindow: req.searchWindow,
   );
+}
+
+/// [EpubSrtMatcher.probeInIsolate] 的结果。
+class ProbeResult {
+  const ProbeResult({required this.perWindow});
+
+  /// window（字符数） → matchRate（0..1）。
+  final Map<int, double> perWindow;
+
+  /// 取命中率最高者；并列时取窗口较小的一档（更抗短 cue 噪声）。
+  /// perWindow 为空返回 null。
+  MapEntry<int, double>? get best {
+    MapEntry<int, double>? top;
+    for (final MapEntry<int, double> e in perWindow.entries) {
+      if (top == null ||
+          e.value > top.value + 1e-9 ||
+          (e.value > top.value - 1e-9 && e.key < top.key)) {
+        top = e;
+      }
+    }
+    return top;
+  }
+}
+
+class _ProbeRequest {
+  const _ProbeRequest({
+    required this.sections,
+    required this.cueTexts,
+    required this.cueIndexes,
+    required this.windows,
+  });
+
+  final List<EpubSection> sections;
+  final List<String> cueTexts;
+  final List<int> cueIndexes;
+  final List<int> windows;
+}
+
+ProbeResult _probeEntrypoint(_ProbeRequest req) {
+  final Map<int, double> map = <int, double>{};
+  for (final int w in req.windows) {
+    // 每档都用 fresh cues，避免 match() 内部可能对 cue 字段的一次性写入
+    // 污染下一档的探测（目前 match 不写 cue，但新建更稳）。
+    final List<AudioCue> cues = _rebuildCues(req.cueTexts, req.cueIndexes);
+    final MatchResult r = EpubSrtMatcher.match(
+      sections: req.sections,
+      cues: cues,
+      searchWindow: w,
+    );
+    map[w] = r.matchRate;
+  }
+  return ProbeResult(perWindow: map);
+}
+
+List<AudioCue> _rebuildCues(List<String> texts, List<int> indexes) {
+  return <AudioCue>[
+    for (int i = 0; i < texts.length; i++)
+      (AudioCue()
+        ..bookUid = ''
+        ..chapterHref = ''
+        ..sentenceIndex = indexes[i]
+        ..textFragmentId = ''
+        ..text = texts[i]
+        ..startMs = 0
+        ..endMs = 0
+        ..audioFileIndex = 0),
+  ];
 }

@@ -73,6 +73,10 @@ class SasayakiRematch {
     final int? picked = await _pickSearchWindow(
       context: context,
       previousReason: overlay?.reason,
+      repo: repo,
+      bookUid: ab.bookUid,
+      ttuBookId: ttuBookId,
+      serverPort: serverPort,
     );
     if (picked == null) {
       return false;
@@ -95,6 +99,10 @@ class SasayakiRematch {
   static Future<int?> _pickSearchWindow({
     required BuildContext context,
     required String? previousReason,
+    required AudiobookRepository repo,
+    required String bookUid,
+    required int ttuBookId,
+    required int serverPort,
   }) async {
     int window = EpubSrtMatcher.defaultSearchWindow;
     if (previousReason != null) {
@@ -109,6 +117,11 @@ class SasayakiRematch {
         );
       }
     }
+    // sheet 内部的 probe 缓存 — 反复点「自动匹配」时只读一次 ttu IDB /
+    // Isar cues。sheet 关闭即释放。
+    bool autoBusy = false;
+    List<EpubSection>? probedSections;
+    List<AudioCue>? probedCues;
     return showModalBottomSheet<int>(
       context: context,
       isScrollControlled: true,
@@ -116,6 +129,26 @@ class SasayakiRematch {
       builder: (BuildContext sheetCtx) {
         return StatefulBuilder(
           builder: (BuildContext ctx, StateSetter setSheet) {
+            Future<void> handleAuto() async {
+              setSheet(() => autoBusy = true);
+              try {
+                probedSections ??= await _loadSections(
+                  ttuBookId: ttuBookId,
+                  serverPort: serverPort,
+                );
+                probedCues ??= repo.cuesForBook(bookUid);
+                final int? best = await runAutoProbe(
+                  sections: probedSections ?? const <EpubSection>[],
+                  cues: probedCues ?? const <AudioCue>[],
+                );
+                if (best != null) {
+                  setSheet(() => window = best);
+                }
+              } finally {
+                setSheet(() => autoBusy = false);
+              }
+            }
+
             return SafeArea(
               child: Padding(
                 padding: EdgeInsets.only(
@@ -131,20 +164,26 @@ class SasayakiRematch {
                     SasayakiWindowSlider(
                       value: window,
                       onChanged: (int v) => setSheet(() => window = v),
+                      onAutoTap: handleAuto,
+                      autoBusy: autoBusy,
                     ),
                     const SizedBox(height: 16),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
                         TextButton(
-                          onPressed: () => Navigator.pop(sheetCtx),
+                          onPressed: autoBusy
+                              ? null
+                              : () => Navigator.pop(sheetCtx),
                           child: const Text('取消'),
                         ),
                         const SizedBox(width: 8),
                         FilledButton.icon(
                           icon: const Icon(Icons.play_arrow, size: 18),
                           label: const Text('重跑匹配'),
-                          onPressed: () => Navigator.pop(sheetCtx, window),
+                          onPressed: autoBusy
+                              ? null
+                              : () => Navigator.pop(sheetCtx, window),
                         ),
                       ],
                     ),
@@ -156,6 +195,62 @@ class SasayakiRematch {
         );
       },
     );
+  }
+
+  /// 自动匹配按钮的共享实现：在 isolate 里对多档 searchWindow 探测，挑出命中率
+  /// 最高者并 toast。返回选中的 window 值，失败 / 缺数据 / 全 0 → 返回 null
+  /// 供调用方保持原值。
+  ///
+  /// 由 [AudiobookImportDialog] 的导入前 slider 与重跑底表单共用，两边只需
+  /// 各自准备好 sections + cues。
+  static Future<int?> runAutoProbe({
+    required List<EpubSection> sections,
+    required List<AudioCue> cues,
+    List<int> windows = EpubCueMatcher.defaultProbeWindows,
+  }) async {
+    if (sections.isEmpty) {
+      Fluttertoast.showToast(msg: '未读到 ttu 章节文本，无法自动匹配');
+      return null;
+    }
+    if (cues.isEmpty) {
+      Fluttertoast.showToast(msg: '没有 cue 可供匹配');
+      return null;
+    }
+    try {
+      final ProbeResult r = await EpubCueMatcher.probeInIsolate(
+        sections: sections,
+        cues: cues,
+        windows: windows,
+      );
+      final MapEntry<int, double>? best = r.best;
+      if (best == null || best.value <= 0) {
+        Fluttertoast.showToast(msg: '所有窗口命中率都是 0，请人工调整');
+        return null;
+      }
+      final int pct = (best.value * 100).round();
+      Fluttertoast.showToast(msg: '自动选定 ${best.key}（命中 $pct%）');
+      return best.key;
+    } catch (e, st) {
+      debugPrint('[hibiki-audiobook] autoProbe failed: $e\n$st');
+      Fluttertoast.showToast(msg: '自动匹配失败：$e');
+      return null;
+    }
+  }
+
+  static Future<List<EpubSection>> _loadSections({
+    required int ttuBookId,
+    required int serverPort,
+  }) async {
+    try {
+      final TtuBookRecord rec = await TtuIdbReader.readBookRecord(
+        ttuBookId: ttuBookId,
+        serverPort: serverPort,
+      );
+      return rec.sections;
+    } catch (e) {
+      debugPrint('[hibiki-audiobook] loadSections failed: $e');
+      return const <EpubSection>[];
+    }
   }
 
   static Future<void> _run({
@@ -218,10 +313,16 @@ class SasayakiRematch {
 /// 复用的 searchWindow 选择器。范围 / 步长对齐 iOS Sasayaki
 /// `SasayakiMatchView` 的 `Slider(value:$searchWindow, in:50...350, step:25)`，
 /// 供重跑底表单与两个导入对话框共用。
+///
+/// 传入 [onAutoTap] 时在"默认 X"那一行右侧挂「自动匹配」按钮；实际跑
+/// [EpubCueMatcher.probeInIsolate] 和回写 value 的逻辑由调用方负责。
+/// [autoBusy] 为 true 时 slider 与按钮一并禁用。
 class SasayakiWindowSlider extends StatelessWidget {
   const SasayakiWindowSlider({
     required this.value,
     required this.onChanged,
+    this.onAutoTap,
+    this.autoBusy = false,
     super.key,
   });
 
@@ -232,6 +333,8 @@ class SasayakiWindowSlider extends StatelessWidget {
 
   final int value;
   final ValueChanged<int> onChanged;
+  final VoidCallback? onAutoTap;
+  final bool autoBusy;
 
   @override
   Widget build(BuildContext context) {
@@ -259,7 +362,8 @@ class SasayakiWindowSlider extends StatelessWidget {
                 divisions: divisions,
                 value: value.toDouble(),
                 label: '$value',
-                onChanged: (double v) => onChanged(v.round()),
+                onChanged:
+                    autoBusy ? null : (double v) => onChanged(v.round()),
               ),
             ),
             SizedBox(
@@ -272,11 +376,30 @@ class SasayakiWindowSlider extends StatelessWidget {
             ),
           ],
         ),
-        Text(
-          '默认 ${EpubSrtMatcher.defaultSearchWindow}',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: Text(
+                '默认 ${EpubSrtMatcher.defaultSearchWindow}',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+            if (onAutoTap != null)
+              TextButton.icon(
+                onPressed: autoBusy ? null : onAutoTap,
+                icon: autoBusy
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.auto_awesome, size: 16),
+                label: Text(autoBusy ? '匹配中…' : '自动匹配'),
+              ),
+          ],
         ),
       ],
     );

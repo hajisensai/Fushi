@@ -57,6 +57,13 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
 
   int _searchWindow = EpubSrtMatcher.defaultSearchWindow;
 
+  // ── 自动匹配 probe 缓存 ─────────────────────────────────────────────────────
+  // 反复点"自动匹配"时只读一次 ttu IDB / 只 parse 一次 cues。dialog dispose 即释放。
+  bool _autoProbing = false;
+  List<EpubSection>? _probedSections;
+  List<AudioCue>? _probedCues;
+  String? _probedCuesSourcePath;
+
   /// 只有 srt/lrc/vtt/ass 才跑 matcher（SMIL/JSON 有硬时间码锚点，与
   /// window 无关），且必须绑定了 ttu 才有 sections 可查，否则 slider 隐藏。
   bool get _willRunMatcher {
@@ -65,6 +72,9 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     final String ext = _alignmentPath!.split('.').last.toLowerCase();
     return SasayakiRematch.supportedFormats.contains(ext);
   }
+
+  /// 自动匹配还要求 ttu local server 端口可用（probe 要去 IDB 拿 sections）。
+  bool get _canAutoProbe => _willRunMatcher && widget.serverPort != null;
 
   // ── 辅助 getter ─────────────────────────────────────────────────────────────
 
@@ -254,6 +264,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
           SasayakiWindowSlider(
             value: _searchWindow,
             onChanged: (int v) => setState(() => _searchWindow = v),
+            onAutoTap: _canAutoProbe ? _handleAutoProbe : null,
+            autoBusy: _autoProbing,
           ),
         ],
         if (_importing) ...[
@@ -373,7 +385,80 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     );
     final String? path = result?.files.single.path;
     if (path != null && mounted) {
-      setState(() => _alignmentPath = path);
+      setState(() {
+        _alignmentPath = path;
+        // 换了 alignment 文件 → cue 可能完全不同，清掉 probe cue 缓存。
+        // sections 来源只与 ttuBookId 相关，不清。
+        _probedCues = null;
+        _probedCuesSourcePath = null;
+      });
+    }
+  }
+
+  /// 「自动匹配」按钮：probe 当前 alignment 对本书 ttu sections 在多档 window
+  /// 下的命中率，挑最高的一档回写到 slider。cues / sections 缓存避免同一次
+  /// 对话反复点击时重复 IO。
+  Future<void> _handleAutoProbe() async {
+    if (!_canAutoProbe || _alignmentPath == null) return;
+    setState(() => _autoProbing = true);
+    try {
+      _probedSections ??= await _loadSectionsForProbe();
+      if (_probedCues == null || _probedCuesSourcePath != _alignmentPath) {
+        _probedCues = await _parseCuesForProbe();
+        _probedCuesSourcePath = _alignmentPath;
+      }
+      final int? best = await SasayakiRematch.runAutoProbe(
+        sections: _probedSections ?? const <EpubSection>[],
+        cues: _probedCues ?? const <AudioCue>[],
+      );
+      if (best != null && mounted) {
+        setState(() => _searchWindow = best);
+      }
+    } finally {
+      if (mounted) setState(() => _autoProbing = false);
+    }
+  }
+
+  Future<List<EpubSection>> _loadSectionsForProbe() async {
+    if (widget.ttuBookId == null ||
+        widget.ttuBookId! <= 0 ||
+        widget.serverPort == null) {
+      return const <EpubSection>[];
+    }
+    try {
+      final TtuBookRecord rec = await TtuIdbReader.readBookRecord(
+        ttuBookId: widget.ttuBookId!,
+        serverPort: widget.serverPort!,
+      );
+      return rec.sections;
+    } catch (e) {
+      debugPrint('[hibiki-audiobook] probe loadSections failed: $e');
+      return const <EpubSection>[];
+    }
+  }
+
+  /// 只 parse 不落库 —— 导入尚未 commit，不能污染 Isar。正式导入走 _parseCues。
+  Future<List<AudioCue>> _parseCuesForProbe() async {
+    final String? p = _alignmentPath;
+    if (p == null) return const <AudioCue>[];
+    final File f = File(p);
+    final String ext = p.split('.').last.toLowerCase();
+    try {
+      switch (ext) {
+        case 'srt':
+          return await SrtParser.parse(srtFile: f, bookUid: widget.bookUid);
+        case 'lrc':
+          return await LrcParser.parse(lrcFile: f, bookUid: widget.bookUid);
+        case 'vtt':
+          return await VttParser.parse(vttFile: f, bookUid: widget.bookUid);
+        case 'ass':
+          return await AssParser.parse(assFile: f, bookUid: widget.bookUid);
+        default:
+          return const <AudioCue>[];
+      }
+    } catch (e) {
+      debugPrint('[hibiki-audiobook] probe parseCues failed: $e');
+      return const <AudioCue>[];
     }
   }
 
