@@ -81,8 +81,18 @@ window.__hoshiTick = function() { /* no-op */ };
 // anchor = (rect.top + rect.bottom) / 2 + scrollTop（content 滚动坐标）
 // pageIndex = Math.floor(anchor / stride); scrollTop = pageIndex * stride
 // stride = clientHeight + column-gap（ttu CSS columns 的实际页步长）。
+window.__hoshiAutoScrollInFlight = false;
+window.__hoshiAutoScrollTimer = null;
 window.__hoshiAlignToRect = function(rect) {
   if (!rect) return;
+  // Sasayaki reveal 滚动：标记 flag，让 ttu scroll observer 知道这次
+  // 滚动是程序自动对齐，而非用户手动——后者应关 Follow audio。
+  window.__hoshiAutoScrollInFlight = true;
+  if (window.__hoshiAutoScrollTimer) clearTimeout(window.__hoshiAutoScrollTimer);
+  window.__hoshiAutoScrollTimer = setTimeout(function() {
+    window.__hoshiAutoScrollInFlight = false;
+    window.__hoshiAutoScrollTimer = null;
+  }, 800);
   var isDegenerate = rect.width === 0 && rect.height === 0 &&
                      rect.left === 0 && rect.top === 0;
   if (isDegenerate) return;
