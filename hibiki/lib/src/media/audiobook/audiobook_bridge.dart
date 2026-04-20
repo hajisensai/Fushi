@@ -105,8 +105,51 @@ window.__hoshiAlignToRect = function(rect) {
   var pageIndex = Math.floor(anchor / stride);
   var maxScroll = Math.max(0, content.scrollHeight - pageH);
   var targetScrollTop = Math.max(0, Math.min(pageIndex * stride, maxScroll));
-  if (Math.abs(content.scrollTop - targetScrollTop) < 1) return;
-  content.scrollTop = targetScrollTop;
+  // diag 探针：writing-mode + 滚动前状态 + 计算出的 stride/page/target，
+  // 用来定位"highlight 报成功但视觉不跳"的根因。竖排日语书 (vertical-rl)
+  // 翻页方向是 horizontal / scrollLeft，这里无脑写 scrollTop 对这类书
+  // 完全空写，用日志里的 scrollTop/scrollLeft 对比就能立刻看出来。
+  var wm = 'unknown', dir = 'unknown';
+  try {
+    var cs = getComputedStyle(content);
+    wm = cs.writingMode || 'unknown';
+    dir = cs.direction || 'unknown';
+  } catch (e) {}
+  var beforeTop = content.scrollTop;
+  var beforeLeft = content.scrollLeft;
+  var skip = Math.abs(content.scrollTop - targetScrollTop) < 1;
+  if (!skip) {
+    content.scrollTop = targetScrollTop;
+  }
+  console.log(JSON.stringify({
+    'hibiki-message-type': 'diagAlignScroll',
+    'writingMode': wm,
+    'direction': dir,
+    'clientH': content.clientHeight,
+    'clientW': content.clientWidth,
+    'scrollH': content.scrollHeight,
+    'scrollW': content.scrollWidth,
+    'pageH': pageH,
+    'gap': gap,
+    'stride': stride,
+    'rectTop': Math.round(rect.top),
+    'rectBot': Math.round(rect.bottom),
+    'rectLeft': Math.round(rect.left),
+    'rectRight': Math.round(rect.right),
+    'cRectTop': Math.round(cRect.top),
+    'cRectLeft': Math.round(cRect.left),
+    'elTop': Math.round(elTop),
+    'elBot': Math.round(elBot),
+    'anchor': Math.round(anchor),
+    'pageIndex': pageIndex,
+    'maxScroll': Math.round(maxScroll),
+    'beforeTop': Math.round(beforeTop),
+    'beforeLeft': Math.round(beforeLeft),
+    'targetTop': Math.round(targetScrollTop),
+    'afterTop': Math.round(content.scrollTop),
+    'afterLeft': Math.round(content.scrollLeft),
+    'skip': skip
+  }));
 };
 
 window.__hoshiAlignToRange = function(range) {
