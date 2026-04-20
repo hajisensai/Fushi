@@ -569,7 +569,7 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
     final bool canRematch = ab != null && SasayakiRematch.isEligible(ab);
     debugPrint('[hibiki-bookshelf] extraActions bookUid.len=${item.uniqueKey.length} '
         'abFound=${ab != null} format=${ab?.alignmentFormat} '
-        'canRematch=$canRematch');
+        'pathLen=${ab?.alignmentPath.length} canRematch=$canRematch');
     return <Widget>[
       _destructiveConfirmButton(
         label: t.dialog_delete,

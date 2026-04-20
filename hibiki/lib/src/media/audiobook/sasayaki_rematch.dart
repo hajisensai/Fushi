@@ -18,17 +18,23 @@ class SasayakiRematch {
   /// 只有 SRT/LRC/VTT/ASS 走 matcher；SMIL/JSON 有硬时间码锚点，与 window 无关。
   static const Set<String> supportedFormats = <String>{'srt', 'lrc', 'vtt', 'ass'};
 
+  /// 硬时间码格式，matcher 无能为力，直接排除。
+  static const Set<String> nonMatcherFormats = <String>{'smil', 'json'};
+
   /// 书架侧决定是否挂"重新匹配"按钮的前置条件。
   ///
-  /// 优先用存库的 `alignmentFormat`；历史坏数据（Isar 长 CJK bookUid 双 put 后
-  /// 出现的 `alignmentFormat = "s"` 之类脏值，见 `project_hoshi_isar_double_put`
-  /// 记忆）会让 `supportedFormats.contains` 直接 false 让按钮消失，所以再用
-  /// `alignmentPath` 真实扩展名兜一次。
+  /// 历史坏数据（Isar 长 CJK bookUid 双 put 后出现的 `alignmentFormat = "s"`
+  /// 之类脏值，见 `project_hoshi_isar_double_put` 记忆）会同时污染
+  /// `alignmentFormat` 和 `alignmentPath`，无法靠白名单命中。所以改成黑名单：
+  /// 只要 format / path-ext 都不是 smil/json，就放过去让用户重跑。
+  /// 重跑流程本身只读 `bookUid`，不读这两个字段，脏值无害。
   static bool isEligible(Audiobook ab) {
-    if (supportedFormats.contains(ab.alignmentFormat)) {
-      return true;
+    final String fmt = ab.alignmentFormat.toLowerCase();
+    final String ext = _extFromPath(ab.alignmentPath);
+    if (nonMatcherFormats.contains(fmt) || nonMatcherFormats.contains(ext)) {
+      return false;
     }
-    return supportedFormats.contains(_extFromPath(ab.alignmentPath));
+    return true;
   }
 
   static String _extFromPath(String path) {
