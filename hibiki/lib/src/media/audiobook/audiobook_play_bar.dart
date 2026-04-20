@@ -107,16 +107,16 @@ class AudiobookFollowAudioButton extends StatelessWidget {
   }
 }
 
-/// 有声书设置面板 —— ttu 原生顶部工具栏被隐藏后的统一入口。
+/// Reader 设置面板 —— ttu 原生顶部工具栏被隐藏后的统一入口。
 ///
-/// 三大只读/配置块：
-/// - 阅读进度（章节名 + 全书%，点章节展开 TOC 可跳转）
-/// - 倍速（0.75 / 1.0 / 1.25 / 1.5 四选一）
-/// - 音画同步（±50 / ±200 / ±1s / 归零）
+/// 两种召唤场景：
+/// 1. 有声书模式：播放栏的 ⚙ 打开，[controller] 非空，显示全部 —— 阅读
+///    进度 + TOC + 倍速 + 音画同步 + action row
+/// 2. 普通 EPUB：左下角 ⚙ FAB 打开，[controller] 为 null，省略倍速 /
+///    音画同步两节，只显示阅读进度 + TOC + action row
 ///
-/// 四个 action：书签 / 全屏切换 / 退出阅读 / 关闭面板。回调全由 reader
-/// 页面侧注入，因为 ttu probe 和 fullscreen / pop 都要 WebView controller
-/// 或 Navigator。
+/// 类名保留 `Audiobook*` 前缀因为控件和 audiobook 播放栏在同一文件里；
+/// 语义上它已经是 reader-level 的设置面板。
 ///
 /// [toc] / [readerProgress] 是 reader 页面 probe 后一次性传入的快照。
 /// 面板生存期内不自动刷新（TOC 在一次阅读会话里是静态的；当前章节
@@ -133,7 +133,9 @@ class AudiobookSettingsSheet extends StatelessWidget {
     super.key,
   });
 
-  final AudiobookPlayerController controller;
+  /// null 表示普通 EPUB 场景（没有 audiobook controller）—— 倍速 /
+  /// 音画同步两节不渲染。
+  final AudiobookPlayerController? controller;
 
   /// 章节列表。空列表表示 ttu 未就绪或 fork 无 `__ttuGetToc`。
   final List<TtuTocEntry> toc;
@@ -176,10 +178,12 @@ class AudiobookSettingsSheet extends StatelessWidget {
                   const SizedBox(height: 12),
                   _buildTocSection(context, theme),
                 ],
-                const SizedBox(height: 20),
-                _buildSpeedSection(theme),
-                const SizedBox(height: 20),
-                _buildDelaySection(theme),
+                if (controller != null) ...[
+                  const SizedBox(height: 20),
+                  _buildSpeedSection(theme, controller!),
+                  const SizedBox(height: 20),
+                  _buildDelaySection(theme, controller!),
+                ],
                 const SizedBox(height: 16),
                 const Divider(height: 1),
                 const SizedBox(height: 12),
@@ -275,8 +279,8 @@ class AudiobookSettingsSheet extends StatelessWidget {
     );
   }
 
-  Widget _buildSpeedSection(ThemeData theme) {
-    final double current = controller.speed;
+  Widget _buildSpeedSection(ThemeData theme, AudiobookPlayerController ctrl) {
+    final double current = ctrl.speed;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -290,7 +294,7 @@ class AudiobookSettingsSheet extends StatelessWidget {
               label: Text('${s.toStringAsFixed(2)}x'),
               selected: selected,
               onSelected: (bool on) {
-                if (on) controller.setSpeed(s);
+                if (on) ctrl.setSpeed(s);
               },
             );
           }).toList(),
@@ -299,9 +303,9 @@ class AudiobookSettingsSheet extends StatelessWidget {
     );
   }
 
-  Widget _buildDelaySection(ThemeData theme) {
+  Widget _buildDelaySection(ThemeData theme, AudiobookPlayerController ctrl) {
     return ValueListenableBuilder<int>(
-      valueListenable: controller.delayMs,
+      valueListenable: ctrl.delayMs,
       builder: (BuildContext ctx, int ms, _) {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -325,19 +329,19 @@ class AudiobookSettingsSheet extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                _stepBtn('-1s', -1000),
-                _stepBtn('-200', -200),
-                _stepBtn('-50', -50),
-                _stepBtn('+50', 50),
-                _stepBtn('+200', 200),
-                _stepBtn('+1s', 1000),
+                _stepBtn(ctrl, '-1s', -1000),
+                _stepBtn(ctrl, '-200', -200),
+                _stepBtn(ctrl, '-50', -50),
+                _stepBtn(ctrl, '+50', 50),
+                _stepBtn(ctrl, '+200', 200),
+                _stepBtn(ctrl, '+1s', 1000),
               ],
             ),
             const SizedBox(height: 4),
             Align(
               alignment: Alignment.centerRight,
               child: TextButton.icon(
-                onPressed: ms == 0 ? null : () => controller.setDelayMs(0),
+                onPressed: ms == 0 ? null : () => ctrl.setDelayMs(0),
                 icon: const Icon(Icons.restart_alt, size: 18),
                 label: const Text('归零'),
               ),
@@ -348,10 +352,10 @@ class AudiobookSettingsSheet extends StatelessWidget {
     );
   }
 
-  Widget _stepBtn(String label, int delta) {
+  Widget _stepBtn(AudiobookPlayerController ctrl, String label, int delta) {
     return FilledButton.tonal(
       onPressed: () {
-        controller.setDelayMs(controller.delayMs.value + delta);
+        ctrl.setDelayMs(ctrl.delayMs.value + delta);
       },
       style: FilledButton.styleFrom(
         minimumSize: const Size(52, 40),

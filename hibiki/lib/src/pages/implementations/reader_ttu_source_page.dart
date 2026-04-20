@@ -359,6 +359,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
                 buildDictionary(),
                 buildAudiobookBar(),
                 buildAudiobookImportButton(),
+                buildReaderSettingsFab(),
               ],
             ),
           ),
@@ -1979,15 +1980,14 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     }
   }
 
-  /// 打开有声书设置面板（⚙ 按钮入口）。面板里放阅读进度 / 章节列表 /
-  /// 倍速 / 音画同步 / 书签 / 全屏 / 退出。ttu probe、TOC 请求、书签
-  /// 触发、fullscreen 切换、Navigator.pop 都要访问 WebView controller
-  /// 或 Navigator，所以构造和回调注入都在 reader 页面侧。
+  /// 打开 reader 设置面板。两个入口：
+  /// - 有声书模式：播放栏 ⚙，传入 [ctrl] 显示全套（倍速 / 音画同步 等）
+  /// - 普通 EPUB：左下角 FAB，传 null 省略音频相关节
   ///
   /// probe 结果 await 完再展开 —— 用户短暂 tap 延迟可接受，比先展开空
   /// 面板再填要好；TOC 列表在一次阅读会话里是静态的，一次 probe 够用。
-  Future<void> _showAudiobookSettingsSheet(
-    AudiobookPlayerController ctrl,
+  Future<void> _showReaderSettingsSheet(
+    AudiobookPlayerController? ctrl,
   ) async {
     (int, int)? progress;
     List<TtuTocEntry> toc = const <TtuTocEntry>[];
@@ -2000,7 +2000,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       }
       toc = await AudiobookBridge.fetchToc(_controller);
     } catch (e) {
-      debugPrint('[hibiki-audiobook] settings probe error: $e');
+      debugPrint('[hibiki-reader] settings probe error: $e');
     }
     if (!mounted) return;
     await showModalBottomSheet<void>(
@@ -2027,7 +2027,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
                 Fluttertoast.showToast(msg: '已添加书签');
               }
             } catch (e) {
-              debugPrint('[hibiki-audiobook] bookmark error: $e');
+              debugPrint('[hibiki-reader] bookmark error: $e');
             }
           },
           onToggleFullscreen: _toggleReaderFullscreen,
@@ -2607,8 +2607,10 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     if (bookUid == null) {
       return const SizedBox.shrink();
     }
+    // 右下角并排：⚙（right:12）+ 🎧（right:68）。两者都只在未挂 audio
+    // 时显示，挂了之后设置入口挪到播放栏的 ⚙、导入按钮也不再需要。
     return Positioned(
-      right: 12,
+      right: 68,
       bottom: 12,
       child: Opacity(
         opacity: 0.6,
@@ -2617,6 +2619,28 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           tooltip: t.audiobook_import,
           onPressed: () => _openImportDialog(bookUid),
           child: const Icon(Icons.headphones, size: 20),
+        ),
+      ),
+    );
+  }
+
+  /// 普通 EPUB（没挂 audiobook）的 ⚙ 设置入口。位置和 🎧 导入 FAB 并排，
+  /// 靠最右边 —— 有音频时 AudiobookPlayBar 里的 ⚙ 取代它，位置上也是
+  /// 右侧 Row 的末端几个控件之一，保持"设置永远在右下"的肌肉记忆。
+  Widget buildReaderSettingsFab() {
+    if (_audiobookController != null) {
+      return const SizedBox.shrink();
+    }
+    return Positioned(
+      right: 12,
+      bottom: 12,
+      child: Opacity(
+        opacity: 0.6,
+        child: FloatingActionButton.small(
+          heroTag: 'reader_settings_fab',
+          tooltip: '阅读设置',
+          onPressed: () => _showReaderSettingsSheet(null),
+          child: const Icon(Icons.tune, size: 20),
         ),
       ),
     );
@@ -2784,7 +2808,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
               _buildFollowPill(),
               AudiobookPlayBar(
                 controller: ctrl,
-                onOpenSettings: () => _showAudiobookSettingsSheet(ctrl),
+                onOpenSettings: () => _showReaderSettingsSheet(ctrl),
               ),
             ],
           ),
