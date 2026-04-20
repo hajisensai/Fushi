@@ -43,44 +43,9 @@ class AudiobookBridge {
 }
 ''';
 
-  /// 高亮函数：清掉旧高亮并把目标元素滚动到视口内，同时对齐到整页。
-  ///
-  /// ttu 在 IDB 字幕 EPUB 路径下：真正的滚动容器是 `.book-content`
-  /// （scrollHeight 远大于 clientHeight），body 自身 `overflow: hidden`。
-  /// 既不能通过 window.scroll 也不能通过向 body 派发 wheel 事件来翻页 ——
-  /// 必须直接赋值 `.book-content.scrollTop`。
-  ///
-  /// ## 翻页算法（对齐上游 Sasayaki reader.js `alignToPage`）
-  ///
-  /// `anchor = (rect.top + rect.bottom) / 2 + scrollTop`（content 滚动坐标），
-  /// `pageIndex = Math.floor(anchor / stride)`，`scrollTop = pageIndex * stride`。
-  /// stride 是 `clientHeight + column-gap`（CSS columns 分栏的实际页步长）。
-  /// 选页按 **rect 中心**落在哪一页定 —— 上游就是这个语义，跨页 cue 选择
-  /// 和上游一致。（旧的 "max-intersection tiebreak" 对长 cue 容易选到"只覆盖
-  /// 上半"的那一页，高亮靠边不稳。）
-  ///
-  /// ## 收敛策略：一次写 + 双 RAF 再写
-  ///
-  /// 上游 Sasayaki 是 `scrollTop = target` + 双 RAF 固化，没有常驻 ticker。
-  /// 旧实现用 280ms setInterval 轮询 30 次（≈9s）"追 scrollTop 到目标"，
-  /// 本意是抗 Svelte 可能的 yank，实测 Svelte store 只监听页索引不监听
-  /// scrollTop，yank 从未发生——反而用户手翻页时 ticker 还没收敛，会立刻
-  /// 把用户拽回音频页（体感"翻页时机不对"）。改为一次写 + 双 RAF 再写，
-  /// 失败就吞，让下一条 cue 自己重新尝试。
+  /// 对齐到整页：anchor = rect 中心的绝对坐标，pageIndex = floor(anchor / stride)，
+  /// 通过 ttu 的 `__ttuScrollToPos` API 同步写 scrollTop 和 virtualScrollPos$。
   static const String _highlightFn = '''
-// 旧 ticker 的 __hoshiTarget / __hoshiTickerId / __hoshiStopTicker / __hoshiTick
-// 仍有若干外部调用点（sasayaki fallback 里的"清 pending 目标"），保留名字
-// 但内部是空操作。一次写 + 双 RAF 再写一次固化就够了。
-window.__hoshiTarget = null;
-window.__hoshiTickerId = null;
-window.__hoshiTickIntervalMs = 0;
-window.__hoshiStopTicker = function() { /* no-op */ };
-window.__hoshiTick = function() { /* no-op */ };
-
-// 对齐上游 Sasayaki reader.js alignToPage：
-// anchor = (rect.top + rect.bottom) / 2 + scrollTop（content 滚动坐标）
-// pageIndex = Math.floor(anchor / stride); scrollTop = pageIndex * stride
-// stride = clientHeight + column-gap（ttu CSS columns 的实际页步长）。
 window.__hoshiAutoScrollInFlight = false;
 window.__hoshiAutoScrollTimer = null;
 window.__hoshiAlignToRect = function(rect) {
@@ -353,8 +318,7 @@ window.__hoshiClearActiveRanges = function() {
 };
 
 // 旧 WebView 的 overlay 走 position:fixed（视口坐标），内容滚动时 overlay
-// 不会自动跟着移；监听 .book-content 的 scroll，再画一次。ticker 到位后
-// scroll 稳定，overlay 也就稳定。用户手动翻页时同样重画。
+// 不会自动跟着移；监听 .book-content 的 scroll，再画一次。
 window.__hoshiInstallOverlayScrollSync = function() {
   if (window.__hoshiPaintApiOk) return;
   if (window.__hoshiOverlayScrollHandler) return;
@@ -389,7 +353,7 @@ console.log(JSON.stringify({
   /// - `__hoshiHighlightSasayaki(s, ns, ne)`：把 (sectionIndex, normChar*)
   ///   换算成全书归一化全局偏移 → 在 `.book-content-container` 里按归一化
   ///   字符数走 text node 找到 Range → 交给 `__hoshiSetActiveRanges` 画层 →
-  ///   `__hoshiHighlightRange` 触发 ticker 滚动。不再动 DOM。
+  ///   `__hoshiHighlightRange` 触发对齐滚动。不再动 DOM。
   ///
   /// 与字幕 EPUB 路径（`[data-cue-id]`）互不冲突：入口在 Dart 侧的
   /// [highlight] 根据 `textFragmentId` 前缀分派。
@@ -688,7 +652,7 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
       // ── 识别 ttu 当前挂载的是哪一段 ──
       // ttu 只挂当前 section；如果播放中的 cue 指向别的 section 而我们
       // 仍按"段内偏移"去 walker 找字符，在当前段长度足够长时会命中一个
-      // **错误的句子**，然后 ticker 把页面滚到远离真实播放位置的地方。
+      // **错误的句子**，然后对齐把页面滚到远离真实播放位置的地方。
       // 通过首字 + normLen 匹配找出真正挂载的段 idx，供 highlight 主逻辑
       // 做跨段短路判断。
       var mounted = -1;
@@ -769,8 +733,6 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
     for (var sli = 0; sli < stale.length; sli++) {
       stale[sli].classList.remove('hoshi-active');
     }
-    window.__hoshiTarget = null;
-    window.__hoshiStopTicker();
     return;
   }
   // 匹配上了就清 mismatch 计数。
@@ -914,14 +876,8 @@ window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normChar
       : null
   }));
 
-  // reveal=true 时把当前 Range 喂给 ticker；Range 不消失 ttu 正常滚动。
-  // reveal=false（Follow audio OFF / 未 play）视觉高亮已由 paint 层落地，
-  // 视口保持用户当前位置。
   if (reveal) {
     window.__hoshiHighlightRange(range, true);
-  } else {
-    window.__hoshiTarget = null;
-    window.__hoshiStopTicker();
   }
 };
 
@@ -1425,8 +1381,7 @@ window.__hoshiAnnotate = function(chapterHref) {
   ///   那套 walker 逐字符累加到命中位置。用于 Flutter 节流后写 Isar
   ///   [ReaderPosition]。
   /// - `__hibikiScrollToNormOffset(section, offset)`：包一层 __hoshiHighlightSasayaki
-  ///   复用 ticker 翻页，把目标位置滚进视口；900ms 后调用
-  ///   `__hoshiClearActiveRanges()` 清掉临时锚点高亮。
+  ///   对齐翻页，把目标位置滚进视口。
   ///
   /// 依赖 Sasayaki 已经准备好的 `__hoshiSasayakiSectionStarts` /
   /// `__hoshiCurrentMountedSection` / `__hoshiIsSkippable`，必须在
@@ -1550,8 +1505,8 @@ window.__hibikiScrollToNormOffset = function(section, offset) {
 })();
 ''');
 
-    // 注入 JS 函数。顺序：highlight ticker → paint（CSS Highlight API /
-    // overlay 抽象） → sasayaki（依赖 paint 的 setActiveRanges / clear）。
+    // 注入 JS 函数。顺序：highlight（对齐）→ paint（CSS Highlight API /
+    // overlay 抽象）→ sasayaki（依赖 paint 的 setActiveRanges / clear）。
     await controller.evaluateJavascript(source: _highlightFn);
     await controller.evaluateJavascript(source: _paintFn);
     await controller.evaluateJavascript(source: _sasayakiFn);
@@ -1678,8 +1633,7 @@ window.__hibikiScrollToNormOffset = function(section, offset) {
     }
   }
 
-  /// 跳到给定 section + 章内归一化偏移，复用 Sasayaki ticker 翻页。完事后
-  /// 900ms 自动 unwrap 临时锚点 span。
+  /// 跳到给定 section + 章内归一化偏移。
   static Future<void> scrollToNormOffset(
     InAppWebViewController controller, {
     required int section,
@@ -1756,12 +1710,9 @@ window.__hibikiScrollToNormOffset = function(section, offset) {
   /// 按普通 CSS selector 处理。
   ///
   /// [reveal] 对齐 Sasayaki 原版 `displayCue(cue, reveal:)`：true 时把
-  /// cue 滚进视口（ticker 翻页），false 时**只加高亮 class**，保持用户
-  /// 当前阅读位置不动。Reader 端一般传
+  /// cue 滚进视口，false 时**只加高亮 class**，保持用户当前阅读位置不动。
+  /// Reader 端一般传
   /// `controller.shouldRevealCurrentCue`（= followAudio && hasPlayedOnce）。
-  ///
-  /// 若 textFragmentId 为空（Sasayaki 匹配失败、且不是字幕合成书路径），
-  /// 视为"无可用定位"：只清一次高亮，不再每 tick 刷 `[data-cue-id]` 回落。
   static Future<void> highlight(
     InAppWebViewController controller, {
     AudioCue? cue,
@@ -1783,12 +1734,8 @@ window.__hibikiScrollToNormOffset = function(section, offset) {
       // 值类型在不同 WebView 实现下不稳定，把控制流放在 JS 里一条链条
       // 到底更可靠。
       //
-      // 翻页路径：reveal=true 时先 await 新的 `window.__ttuScrollToCharOffset`
-      // （ttu fork 原生，走 bookmarkManager.scrollToBookmark 的 charCount
-      // 反推路径，paginated / continuous 都支持），再画高亮。feature-detect
-      // 兜底：API 不在（早期 fork 或上游 ttu）时 cueMap 命中路径退回
-      // `__hoshiHighlightRange(ranges[0], true)`（range-based ticker），
-      // cueMap miss 路径继续用 __hoshiHighlightSasayaki 自带的 walker+ticker。
+      // cueMap 命中路径优先走 __hoshiAlignToElement；miss 时退回
+      // __ttuScrollToCharOffset + walker fallback。
       final String cueJson = jsonEncode(cue.text);
       await controller.evaluateJavascript(
         source: '(async function(){'
