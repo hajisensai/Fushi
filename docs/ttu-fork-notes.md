@@ -32,6 +32,9 @@
 |---|---|---|---|
 | 1 | `0a60fd6` feat(reader): [hibiki] expose window.__ttuGoToSection / Current / Count | 整套 | 见 §3 四个文件的改动合集 |
 | 2 | `d832837` fix(reader): [hibiki] onMount-cleanup instead of onDestroy to avoid SSR window | `+page.svelte` | SvelteKit prerender 会在 SSR 阶段调用 onDestroy，早期版本在 onDestroy 里 `delete window.xxx` 会抛 "window is not defined"。改为 onMount return 清理函数（onMount 只在 client 跑）规避。 |
+| 3 | `9ea0a87` feat(reader): [hibiki] emit sectionChanged console event with auto flag | `+page.svelte` | 向 console 发 `sasayakiSectionChanged` 消息，带 auto 标记，供 Flutter 侧区分程序化导航 vs. 用户翻页。 |
+| 4 | `09dda9e` feat(reader): [hibiki] expose window.__ttuGetToc / __ttuBookmarkPage | `+page.svelte` | TOC 列表 + 当前位置书签 的对外 API。配合 AudiobookSettingsSheet 展示章节、触发书签。 |
+| 5 | 本次 feat(reader): [hibiki] remove native reader chrome | `+page.svelte` | 删除顶部 tap 热区 + BookReaderHeader 浮层（TOC/书签/全屏/退出 按钮）、底部进度条整块（tracker/replicate 图标 + 右下角百分比）。功能已由 Flutter 侧 AudiobookSettingsSheet 承载；删源码比外部 CSS `display:none` 更干净，让上游产出与 hibiki UI 一致，不用再在 Flutter 侧注 hide-css。顺带清理 unused imports：`BookReaderHeader` / `faClock` / `faCloudBolt` / `dummyFn` / `copyCurrentProgress` / `showFooter` 变量。 |
 
 ---
 

@@ -1160,34 +1160,6 @@ xhr.send();
   (document.head || document.documentElement).appendChild(style);
 })();
 
-// 隐藏 ttu 原生阅读器的三个 chrome 元素：顶部工具栏 + 底部进度条 +
-// 右下角百分比。功能（TOC / 书签 / 全屏 / 退出 / 进度）统一搬进 Flutter
-// 侧的 AudiobookSettingsSheet，由播放栏 ⚙（有声书）或右下角 ⚙ FAB
-// （普通 EPUB）召唤。
-//
-// 三条选择器都只命中 `position: fixed` 的 overlay 元素 —— display:none
-// 它们不参与正常文档流，因此不会改变正文排版 / 分页步长 / 行距等任何
-// 会让文字"乱动"的量。不碰 `.book-content` / `.book-content-container`
-// 的 padding / margin / font-* 等与正文相关的样式，让 ttu 原生保持原样。
-//
-// 选择器 = ttu 编译后的原子 Tailwind 类组合（见 assets/ttu-ebook-reader
-// bundle 里 node 4 的 fixed.* 列表）。顶部 SSG 快照里带 top-0，Svelte
-// hydrate 后会被移除，所以主选择器走 fixed+inset-x-0+h-8+w-full 无 top-0
-// 组合，带 top-0 的 SSG 态作兜底，两种渲染阶段都盖。
-(function() {
-  if (document.getElementById('hibiki-hide-ttu-native-ui-css')) return;
-  var style = document.createElement('style');
-  style.id = 'hibiki-hide-ttu-native-ui-css';
-  style.textContent =
-    'button.fixed.inset-x-0.h-8.w-full,' +
-    'div.fixed.inset-x-0.h-8.w-full,' +
-    'button.fixed.h-8.w-full.top-0,' +
-    'div.fixed.h-8.w-full.top-0,' +
-    '.fixed.bottom-0.left-0.z-10.h-8.w-full,' +
-    '.fixed.bottom-2.right-2.z-10{display:none !important;}';
-  (document.head || document.documentElement).appendChild(style);
-})();
-
 function tapToSelect(e) {
   console.log('[hibiki] tapToSelect x=' + e.clientX + ' y=' + e.clientY + ' target=' + (e.target ? e.target.nodeName : 'null'));
   var result = document.caretRangeFromPoint(e.clientX, e.clientY);
