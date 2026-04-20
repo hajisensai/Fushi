@@ -38,6 +38,18 @@
 - 字幕 parser：`lib/src/media/audiobook/{srt,lrc,vtt,ass}_parser.dart`
 - 字幕导入 UI：`lib/src/media/audiobook/srt_import_dialog.dart`（命名沿用 srt，实际四格式通用）
 
+## ttu-ebook-reader fork
+
+- **位置**：本机 `/d/ttu-fork/`（本地独立 git 仓库，**不是** hibiki 的 submodule）
+- **分支**：`hibiki-patches`
+- **上游**：`ttu-ttu/ebook-reader` commit `7086bdc`（SvelteKit 1.x 最后稳态；名为 `upstream` 的 remote）
+- **远程（hibiki 私有 fork）**：待创建后设为 `origin`。push 命令：`git push -u origin hibiki-patches`
+- **产物去向**：`pnpm build` 后，`apps/web/build/` 整套拷入 `hibiki/hibiki/assets/ttu-ebook-reader/`（保留手动维护的 `fonts/` 子目录）
+- **补丁清单与构建细节**：见 [`docs/ttu-fork-notes.md`](docs/ttu-fork-notes.md)（每个 `feat/fix(reader): [hibiki] ...` commit 都列了 why）
+- **当前已落地 5 个补丁**：`__ttuGoToSection` / `__ttuCurrentSection` / `__ttuSectionCount` API、onMount-cleanup SSR 修复、`sectionChanged` console 事件、`__ttuGetToc` / `__ttuBookmarkPage`、**删除原生 reader chrome**（顶部工具栏 + 底部进度条 + 右下角百分比）
+
+**何时改 fork，而非在 hibiki 侧注 CSS/JS**：凡是**动 ttu WebView DOM 结构、原生 UI chrome、全局 JS API**的改动，都优先走 fork 源码。理由：(1) 外部 CSS `display:none` 会随 Svelte hydrate / 重渲染失效；(2) 改正文相关样式（padding / margin / line-height 等）会让文字布局"乱动"；(3) fork 里改一次，rebase 上游就自然带上，比 Flutter 侧打 hack 干净。hibiki 侧只负责：WebView 容器尺寸（`Positioned.fill` 给播放栏让路）、SafeArea、JS 桥接消费 ttu 暴露的 API。
+
 ## 开发原则
 
 - 不从零重写，在现有代码上删减 / 重构
@@ -45,6 +57,7 @@
 - 每个 PR 聚焦单一模块，commit 信息说明"为什么"
 - 修改流程三步缺一不可：**analyze → 编译 APK → commit**（见 feedback 记忆）
 - 字幕格式（SRT/LRC/VTT/ASS）统一走 EPUB 渲染，不做字幕列表 UI
+- **ttu WebView 的 DOM / 原生 UI / JS API 在 `/d/ttu-fork/` 改源码 + 重 build，不在 hibiki 侧注 CSS/JS 强改**（见上节）
 
 ## 已知坑
 
