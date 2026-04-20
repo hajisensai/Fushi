@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:audio_session/audio_session.dart';
@@ -18,6 +19,21 @@ import 'package:hibiki/src/media/audiobook/sasayaki_match_codec.dart';
 /// - 提供 play/pause/seek/skipToCue/setSpeed API。
 class AudiobookPlayerController extends ChangeNotifier {
   AudiobookPlayerController();
+
+  /// 诊断用：拦截每次 notifyListeners 调用，打印调用链前几帧，定位谁在
+  /// 连续 notify（重复 _onCueChanged → 重复 scroll / 高亮）。问题排掉之后
+  /// 可以直接删除这段 override。
+  @override
+  void notifyListeners() {
+    final String callsite = StackTrace.current.toString().split('\n').take(4).join(' | ');
+    debugPrint(
+      '[hibiki-audiobook-diag] '
+      '{"hibiki-message-type":"sasayakiCtrlNotify",'
+      '"cueSid":${_currentCue?.sentenceIndex ?? -1},'
+      '"stack":${jsonEncode(callsite)}}',
+    );
+    super.notifyListeners();
+  }
 
   // ── 内部状态 ──────────────────────────────────────────────────────────────
 
@@ -292,9 +308,18 @@ class AudiobookPlayerController extends ChangeNotifier {
   }
 
   /// 跳转到指定 cue 的起始位置。
+  ///
+  /// 不复用 [seekMs]：seekMs 末尾会 notify 一次 "位置变了"，但 positionStream
+  /// 在 seek 完会立刻推新位置触发 [_updateCurrentCue]，cue 变化时也 notify
+  /// 一次 —— 同一次跳转会 double-notify，下游 reader._onCueChanged 被重复
+  /// 触发两次 forkScrollEntry / cueMap 查询。这里直接 seek 后显式调一次
+  /// [_updateCurrentCue]：暂停态下 positionStream 不发事件，必须显式；
+  /// 播放态下 positionStream 稍后 tick 到新位置，_updateCurrentCue 判断
+  /// cue 已变化就不再 notify，天然幂等。
   Future<void> skipToCue(AudioCue cue) async {
     final int globalMs = _toGlobalMs(cue);
-    await seekMs(globalMs);
+    await _player.seek(Duration(milliseconds: globalMs));
+    _updateCurrentCue(_player.position.inMilliseconds);
   }
 
   /// 跳到上一句（当前章节 cue 列表内）。
@@ -448,6 +473,9 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// reader 的 `_onCueChanged` 在调 AudiobookBridge.highlight 时读一次
   /// 这个值传过去。
   bool get shouldRevealCurrentCue => followAudio.value && _hasPlayedOnce;
+
+  /// 诊断用：暴露 `_hasPlayedOnce` 供 reader 日志打印，不参与业务判断。
+  bool get hasPlayedOnce => _hasPlayedOnce;
 
   /// 返回 [_chapterCues] 中解码成 Sasayaki 且 sectionIndex 匹配给定值的
   /// cue 列表。对齐 Sasayaki 原版 reader.js 的 `applySasayakiCues(cues)`：
