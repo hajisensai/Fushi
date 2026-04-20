@@ -19,8 +19,28 @@ class SasayakiRematch {
   static const Set<String> supportedFormats = <String>{'srt', 'lrc', 'vtt', 'ass'};
 
   /// 书架侧决定是否挂"重新匹配"按钮的前置条件。
+  ///
+  /// 优先用存库的 `alignmentFormat`；历史坏数据（Isar 长 CJK bookUid 双 put 后
+  /// 出现的 `alignmentFormat = "s"` 之类脏值，见 `project_hoshi_isar_double_put`
+  /// 记忆）会让 `supportedFormats.contains` 直接 false 让按钮消失，所以再用
+  /// `alignmentPath` 真实扩展名兜一次。
   static bool isEligible(Audiobook ab) {
-    return supportedFormats.contains(ab.alignmentFormat);
+    if (supportedFormats.contains(ab.alignmentFormat)) {
+      return true;
+    }
+    return supportedFormats.contains(_extFromPath(ab.alignmentPath));
+  }
+
+  static String _extFromPath(String path) {
+    if (path.isEmpty) {
+      return '';
+    }
+    final String last = path.split('.').last.toLowerCase();
+    // 无扩展名或 split 后等于原路径 → 返回空串，让调用方按"不支持"处理。
+    if (last == path.toLowerCase()) {
+      return '';
+    }
+    return last;
   }
 
   /// 弹 bottom sheet 让用户调 window → 跑 matcher → toast 结果。
