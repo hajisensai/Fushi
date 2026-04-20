@@ -22,6 +22,7 @@ import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
+import 'package:hibiki/src/media/audiobook/reader_position_model.dart';
 import 'package:hibiki/src/media/audiobook/reader_position_repository.dart';
 import 'package:hibiki/src/media/audiobook/sasayaki_match_codec.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_model.dart';
@@ -114,6 +115,21 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
 
   /// 上一次写进 Isar 的位置，用于去重，避免高频 scroll 里重复 writeTxn。
   ReaderViewportPos? _lastSavedPos;
+
+  /// 一本书的 WebView 生命周期里只做一次恢复。**不是只在成功时置 true**：
+  /// 读 Isar 返回 null（新书）/ requestSectionNav 抛异常 / 无 ttuId 都算
+  /// "做过了"，防止每次 Sasayaki mount 事件都反复触发恢复。
+  bool _didRestorePos = false;
+
+  /// 恢复需要两次 mount（第一次 current section，第二次跳完 savedSection）。
+  /// 第一次读 Isar 时把 saved pos 暂存这里，第二次 mount 匹配 section 时
+  /// consume。同段直接恢复时也临时设一下，`_finishRestore` 会立即清掉。
+  ReaderViewportPos? _pendingRestorePos;
+
+  /// 恢复流程进行中（requestSectionNav → 等 mount → scrollToNormOffset）。
+  /// 此期间 `_handleCueCrossChapter` 必须拒绝 Follow audio 的跨章跳转，
+  /// 否则音频 cue 推着 reader 往播放位置跑，恢复目标章就被覆盖。
+  bool _restoreInFlight = false;
 
   @override
   void initState() {
@@ -1914,6 +1930,10 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     // audio 时音频的 section 明明和当前页不同，但也跳不过去。inject 之后
     // 立即 probe ttu 的 __ttuCurrentSection() 把字段拨正。
     await _bootstrapCurrentTtuSection(controller);
+    // 位置恢复：在 _bootstrapCurrentTtuSection 之后，这样 _currentTtuSection
+    // 已经从 ttu probe 拿到真值（fork skip(1) 的坑不然留 -1，跨段判定会
+    // 走错路径）。_didRestorePos 在函数内部自守只跑一次。
+    await _bootstrapRestoreReaderPos();
     // 章节加载后立刻把视口拉回当前句所在页（Hoshi pendingFragment 模式）。
     _onCueChanged();
   }
@@ -2112,6 +2132,16 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
   Future<void> _handleCueCrossChapter(int newSection) async {
     final AudiobookPlayerController? controller = _audiobookController;
     if (controller == null || !_controllerInitialised) return;
+    // 位置恢复期间拒绝 Follow audio 的跨章跳转：否则音频 cue 一推，reader
+    // 就从恢复目标章被带走（用户期望的 "回到上次位置" 变成 "跑到音频章"）。
+    // 等 _finishRestore 清了 _restoreInFlight 再放开。
+    if (_restoreInFlight) {
+      debugPrint(
+        '[hibiki-reader-pos] cross-chapter suppressed during restore '
+        '(newSection=$newSection)',
+      );
+      return;
+    }
 
     if (controller.followAudio.value) {
       _inFlightNavSection = newSection;
@@ -2235,6 +2265,15 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     final int mounted = (json['mountedSection'] as num?)?.toInt() ?? -1;
     final int rootLen = (json['rootTotalNormChars'] as num?)?.toInt() ?? -1;
     if (mounted < 0) return;
+    // 位置恢复第二步：bootstrap 已发的 requestSectionNav 让 ttu 跳到
+    // saved.section，跳完重挂 DOM → 下一次 cue-tick 的 __hoshiHighlightSasayaki
+    // measure 识别出 mountedSection，在这里 consume 起来。cover / 空段触发不
+    // 了 mount（not-mounted 守卫拦在 measure 之前），所以恢复**不能挂在** 这
+    // 里起步 —— 起步逻辑在 _bootstrapRestoreReaderPos 里。
+    final ReaderViewportPos? pending = _pendingRestorePos;
+    if (pending != null && pending.section == mounted) {
+      await _finishRestore();
+    }
     final AudiobookPlayerController? controller = _audiobookController;
     if (controller == null || !_controllerInitialised) return;
     // 同段 + 同 rootLen 已 apply 过就跳过。换章 ttu 会换 innerHTML，
@@ -2259,6 +2298,113 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       // mountedSection 事件仍有机会重试（清 guard 以允许重试）。
       _lastSasayakiAppliedSection = -1;
       _lastSasayakiAppliedRootLen = -1;
+    }
+  }
+
+  /// 一本书 WebView 生命周期里第一次 bootstrap —— 读 Isar 的保存位置，
+  /// 决定是跳章还是什么都不做。
+  ///
+  /// 调用时机：[_maybeInjectAudiobookBridge] 末尾（Sasayaki refs 已在路上
+  /// 加载、_bootstrapCurrentTtuSection 已 probe 过 `_currentTtuSection`）。
+  /// **不挂在 sasayakiMountedSection 事件上** —— 因为 cover 段触发不了 mount
+  /// （`__hoshiHighlightSasayaki` 的 not-mounted 守卫在 measure 之前 return），
+  /// 恢复永远起不来。
+  ///
+  /// 两种路径：
+  /// - saved.section == _currentTtuSection：ttu 已在目标段（上次也停在这段）
+  ///   → [_finishRestore] 当场 scrollToNormOffset。要求正文段（rootTextLen ≥ 80），
+  ///   cover/空段在 scrollToNormOffset 内部 not-mounted 会 return；之后的
+  ///   `sasayakiMountedSection` 回调里 pending 会再兜底消费一次。
+  /// - saved.section != _currentTtuSection：`requestSectionNav(saved.section)`
+  ///   让 ttu 跳过去，跳完 ttu 重挂 DOM，下一次 cue-tick 的
+  ///   `__hoshiHighlightSasayaki` 跑 measure → `sasayakiMountedSection` 事件
+  ///   → [_handleSasayakiMountedSection] 里 pending 匹配 mountedSection
+  ///   → [_finishRestore]。
+  ///
+  /// 无记录（新书）：置 `_didRestorePos=true` 立即返回 —— 对应 Q2 "全新书
+  /// cover 起，不自动跳到音频章"。Follow audio 的 `hasPlayedOnce` 守卫本身
+  /// 也会拦自动跨章；两边一起保证用户按播放之前 reader 停在 cover。
+  Future<void> _bootstrapRestoreReaderPos() async {
+    if (_didRestorePos) return;
+    if (!_controllerInitialised) return;
+    // 先置 true —— 后面任何失败分支都不再重试（防止同一本书反复调 Isar）。
+    // 真正需要重试时用户关书再开就行。
+    _didRestorePos = true;
+    final int? ttuId = _extractTtuBookId();
+    if (ttuId == null || ttuId <= 0) {
+      debugPrint('[hibiki-reader-pos] restore skipped: no ttuId');
+      return;
+    }
+    ReaderPosition? saved;
+    try {
+      saved = ReaderPositionRepository(appModel.database)
+          .findByTtuBookId(ttuId);
+    } catch (e) {
+      debugPrint('[hibiki-reader-pos] restore query err: $e');
+      return;
+    }
+    if (saved == null) {
+      debugPrint('[hibiki-reader-pos] no saved pos for ttuId=$ttuId');
+      return;
+    }
+    debugPrint(
+      '[hibiki-reader-pos] bootstrap restore ttuId=$ttuId '
+      'saved=s${saved.sectionIndex}/o${saved.normCharOffset} '
+      'currentTtuSection=$_currentTtuSection',
+    );
+    _pendingRestorePos = ReaderViewportPos(
+      section: saved.sectionIndex,
+      offset: saved.normCharOffset,
+    );
+    _restoreInFlight = true;
+    if (_currentTtuSection == saved.sectionIndex) {
+      // 已在目标段：直接滚。mount 回调也会再兜底一次（幂等 —— pendingPos
+      // 被 _finishRestore 清掉后就不会重复滚）。
+      await _finishRestore();
+      return;
+    }
+    // 跨段：发 requestSectionNav，`_handleTtuSectionChanged` 的
+    // `_inFlightNavSection` 分支会处理回报；等下次 Sasayaki mount 事件
+    // （mountedSection == saved.sectionIndex）再进来 consume。
+    _inFlightNavSection = saved.sectionIndex;
+    // ttu 重新挂载章节 DOM，旧 cueMap 失效 —— 清 apply 守卫让 Sasayaki
+    // 重新包 span（跟 _handleCueCrossChapter 同一处理）。
+    _lastSasayakiAppliedSection = -1;
+    _lastSasayakiAppliedRootLen = -1;
+    try {
+      await AudiobookBridge.requestSectionNav(
+        _controller,
+        sectionIndex: saved.sectionIndex,
+      );
+    } catch (e) {
+      debugPrint('[hibiki-reader-pos] restore requestSectionNav err: $e');
+      _restoreInFlight = false;
+      _pendingRestorePos = null;
+      _inFlightNavSection = null;
+    }
+  }
+
+  /// consume `_pendingRestorePos`：调 JS 滚到章内归一化偏移，清守卫。
+  Future<void> _finishRestore() async {
+    final ReaderViewportPos? pending = _pendingRestorePos;
+    if (pending == null) {
+      _restoreInFlight = false;
+      return;
+    }
+    _pendingRestorePos = null;
+    try {
+      await AudiobookBridge.scrollToNormOffset(
+        _controller,
+        section: pending.section,
+        offset: pending.offset,
+      );
+      debugPrint(
+        '[hibiki-reader-pos] scrolled s=${pending.section} o=${pending.offset}',
+      );
+    } catch (e) {
+      debugPrint('[hibiki-reader-pos] scrollToNormOffset err: $e');
+    } finally {
+      _restoreInFlight = false;
     }
   }
 
@@ -2304,6 +2450,17 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         _navRestoreTimeout?.cancel();
         _navRestoreTimeout = null;
         _inFlightNavSection = null;
+      }
+      // bootstrap restore 的同段落地：ttu 已挂好新 section DOM
+      // （fork 约定 sectionChanged 发出时 DOM 已 ready），立刻滚到目标
+      // offset —— 不等 Sasayaki mountedSection 事件，因为
+      // `notifySectionRestoreCompleted` 在 `_pendingCue==null` 时不会
+      // notifyListeners，`_onCueChanged` 也就不会触发 highlight，
+      // mountedSection 事件永远不发。`_handleSasayakiMountedSection` 里
+      // 的 pending consume 是幂等兜底（_finishRestore 清 pendingPos 后
+      // 再进来也不会重复滚）。
+      if (_restoreInFlight && _pendingRestorePos?.section == idx) {
+        unawaited(_finishRestore());
       }
       return;
     }
