@@ -319,6 +319,13 @@ class AudiobookPlayerController extends ChangeNotifier {
   Future<void> skipToCue(AudioCue cue) async {
     final int globalMs = _toGlobalMs(cue);
     await _player.seek(Duration(milliseconds: globalMs));
+    // 用户显式跳句是明确意图：先清掉上一次跨章 await 的守卫再更新 cue。
+    // 否则 ttu 没回 sectionChanged（或回了被 intermediateAuto 丢弃）时
+    // `_chapterTransition` 一直为 true，_updateCurrentCue 进来就 return，
+    // _currentCue 停在旧 cue 上 —— 表现为"上一句/下一句按钮没反应，字幕
+    // 和高亮卡死"。目标 cue 若仍跨章，_maybeEmitCrossChapter 会重新 arm。
+    _chapterTransition = false;
+    _pendingCue = null;
     _updateCurrentCue(_player.position.inMilliseconds);
   }
 
