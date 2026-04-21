@@ -499,6 +499,10 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
 
       health.packInto(audiobook);
       await widget.repo.saveAudiobook(audiobook);
+      await widget.repo.updateHealthOverlay(
+        bookUid: widget.bookUid,
+        health: health,
+      );
 
       if (mounted) {
         final String? tail = _summarizeHealth(health);
