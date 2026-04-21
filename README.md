@@ -20,7 +20,7 @@
 | 框架 | Flutter 3.41.6 / Dart 3.11.4 |
 | 阅读器 | ッツ Ebook Reader（WebView，[独立 fork](https://github.com/hdjsadgfwtg/ttu-fork)） |
 | 存储 | Isar + Hive |
-| NLP | MeCab + Ve（分词 / deinflection） |
+| NLP | MeCab + Ve（分词 / deinflection）（预计修改） |
 | 制卡 | AnkiDroid API |
 | 最低版本 | Android 8.0（API 26） |
 
@@ -32,7 +32,46 @@ flutter pub get
 flutter build apk --debug
 ```
 
-> 首次构建前需打 11 个 pub cache v1 embedding 补丁，详见项目内 `CLAUDE.md`。
+> **首次构建前需打 pub cache 补丁**，若 pub cache 被清除或重新 `pub get`，所有补丁需重新应用。
+
+### Flutter API 变更补丁
+
+| 包 | 改动 |
+|---|---|
+| `network_to_file_image-4.0.1` | `load`→`loadImage`、`DecoderCallback`→`ImageDecoderCallback`、`hashValues`→`Object.hash`、`instantiateImageCodec`→`ImmutableBuffer+ImageDescriptor`；替换已移除的 `imageCache.putIfAbsent` |
+| `flutter_blurhash-0.7.0` | 同上 `loadImage` / `hashValues` / `ImmutableBuffer` |
+| `RubyText` (git) | `MediaQuery.boldTextOverride`→`boldTextOf` |
+| `material_floating_search_bar` (git) | `headline6`→`titleLarge`、`subtitle1`→`titleMedium` |
+| `win32-4.1.4` | `UnmodifiableUint8ListView`→`Uint8List` |
+| `carousel_slider-4.2.1` | 内部 import 加 `hide CarouselController` |
+| `fading_edge_scrollview-3.0.0` | `PageView.controller` nullable 修复 |
+
+### v1 Embedding 移除补丁
+
+Flutter 3.41.6 完全移除了 v1 embedding API（`PluginRegistry.Registrar`），以下插件需删除相关引用：
+
+| 包 | 备注 |
+|---|---|
+| `flutter_plugin_android_lifecycle-2.0.15` | |
+| `file_picker-5.3.0` | |
+| `flutter_inappwebview` (git) | 还需移除 FlutterView 字段，修改 Util / InAppWebViewChromeClient / FlutterWebView |
+| `fluttertoast-8.2.1` | |
+| `image_picker_android-0.8.6+16` | |
+| `mecab_dart-0.1.3` | |
+| `permission_handler_android-10.2.1` | |
+| `url_launcher_android-6.0.34` | |
+| `path_provider_android-2.0.27` | |
+| `sqflite-2.2.8+4` | |
+| `record_mp3_plus-1.2.0` | |
+
+### Gradle / Kotlin 补丁
+
+| 目标 | 改动 |
+|---|---|
+| `android/build.gradle` afterEvaluate | 子项目强制 `compileSdkVersion 34`（解决 `lStar not found`）；移除 `-Werror` |
+| `audio_session-0.1.14` build.gradle | 移除自带的 `-Werror`、`-Xlint:deprecation` |
+| `package_info_plus-4.0.2` | Kotlin null 安全：`applicationInfo?.loadLabel`、`versionName ?: ""` |
+| `receive_intent` (git) | Kotlin null 安全：`signingInfo` null check、`?: emptyArray()` |
 
 # 项目结构
 
@@ -49,13 +88,6 @@ hibiki/
 ├── docs/              # 开发文档
 └── CLAUDE.md          # 详细开发指南
 ```
-
-# 开发状态
-
-- **Phase 1** — 精简：剥离 YouTube / VLC / 浏览器 / ChatGPT / 歌词 / Mokuro，保留 Reader + Dictionary + Anki
-- **Phase 2** — 有声书同步全链路（字幕解析 → ttu IDB 匹配 → WebView 桥 → 播放 / 制卡）
-- **Phase 3** — Material 3 UI 打磨
-- **Phase 4** — 对齐 iOS Sasayaki（进行中）
 
 # 致谢
 
