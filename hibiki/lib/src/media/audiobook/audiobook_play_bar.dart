@@ -126,6 +126,7 @@ class AudiobookSettingsSheet extends StatelessWidget {
     required this.controller,
     required this.toc,
     required this.readerProgress,
+    this.pageProgress,
     required this.onJumpSection,
     required this.onBookmark,
     required this.onToggleFullscreen,
@@ -142,6 +143,9 @@ class AudiobookSettingsSheet extends StatelessWidget {
 
   /// (currentSection0, totalSections)；未 probe 时 null。
   final (int section, int total)? readerProgress;
+
+  /// (currentPage, totalPages)；未 probe 或无法计算时 null。
+  final (int current, int total)? pageProgress;
 
   /// 点 TOC 里某一章 → 触发跳转。参数是 ttu sectionIndex（0-based）。
   final Future<void> Function(int sectionIndex) onJumpSection;
@@ -198,27 +202,37 @@ class AudiobookSettingsSheet extends StatelessWidget {
 
   Widget _buildProgressSection(ThemeData theme) {
     final (int section, int total)? prog = readerProgress;
-    final String label;
+    final String chapterLabel;
     if (prog == null || prog.$2 <= 0) {
-      label = '—';
+      chapterLabel = '—';
     } else {
       final int idx1 = prog.$1 + 1;
       final int total = prog.$2;
       final int pct = (idx1 / total * 100).clamp(0, 100).round();
-      // 能从 TOC 里拿到章节名就带上，便于用户定位
       final String? title = toc
           .where((TtuTocEntry e) => e.index == prog.$1)
           .map((TtuTocEntry e) => e.label)
           .firstOrNull;
       final String suffix = title != null && title.isNotEmpty ? '（$title）' : '';
-      label = '第 $idx1 / $total 章$suffix · $pct%';
+      chapterLabel = '第 $idx1 / $total 章$suffix · $pct%';
+    }
+    final String pageLabel;
+    final (int current, int total)? pp = pageProgress;
+    if (pp != null && pp.$2 > 0) {
+      pageLabel = '第 ${pp.$1} / ${pp.$2} 页';
+    } else {
+      pageLabel = '';
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('阅读进度', style: theme.textTheme.titleMedium),
         const SizedBox(height: 8),
-        Text(label, style: theme.textTheme.bodyLarge),
+        Text(chapterLabel, style: theme.textTheme.bodyLarge),
+        if (pageLabel.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(pageLabel, style: theme.textTheme.bodyMedium),
+        ],
       ],
     );
   }
@@ -310,7 +324,22 @@ class AudiobookSettingsSheet extends StatelessWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('音画同步', style: theme.textTheme.titleMedium),
+            Row(
+              children: [
+                Text('音画同步', style: theme.textTheme.titleMedium),
+                const SizedBox(width: 4),
+                TextButton.icon(
+                  onPressed: ms == 0 ? null : () => ctrl.setDelayMs(0),
+                  icon: const Icon(Icons.restart_alt, size: 18),
+                  label: const Text('归零'),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 4),
             Text(
               '正数 = 音频先于文字，向回拨 cue；负数 = 音频滞后。',
@@ -336,15 +365,6 @@ class AudiobookSettingsSheet extends StatelessWidget {
                 _stepBtn(ctrl, '+200', 200),
                 _stepBtn(ctrl, '+1s', 1000),
               ],
-            ),
-            const SizedBox(height: 4),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: ms == 0 ? null : () => ctrl.setDelayMs(0),
-                icon: const Icon(Icons.restart_alt, size: 18),
-                label: const Text('归零'),
-              ),
             ),
           ],
         );
