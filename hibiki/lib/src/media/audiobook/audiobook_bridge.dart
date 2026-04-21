@@ -24,16 +24,6 @@ class AudiobookBridge {
   border-radius: 2px;
   transition: background 0.15s ease;
 }
-::highlight(hoshi-active) {
-  background-color: rgba(255, 220, 0, 0.42);
-}
-.__hoshi-overlay-rect {
-  position: fixed;
-  background: rgba(255, 220, 0, 0.42);
-  border-radius: 2px;
-  pointer-events: none;
-  z-index: 2147483646;
-}
 [data-hoshi-sid], [data-cue-id] {
   cursor: pointer;
 }
@@ -94,24 +84,6 @@ window.__hoshiAlignToRect = function(rect) {
   var maxPageIndex = Math.max(0, Math.floor(maxScroll / stride));
   var pageIndex = Math.max(0, Math.min(rawPageIndex, maxPageIndex));
   var targetScrollTop = pageIndex * stride;
-  // diag 探针：writing-mode + 滚动前状态 + 计算出的 stride/page/target，
-  // 用来定位"highlight 报成功但视觉不跳"的根因。竖排日语书 (vertical-rl)
-  // 翻页方向是 horizontal / scrollLeft，这里无脑写 scrollTop 对这类书
-  // 完全空写，用日志里的 scrollTop/scrollLeft 对比就能立刻看出来。
-  var wm = 'unknown', dir = 'unknown', padT = 0, padB = 0, colW = 'n/a';
-  try {
-    var cs = getComputedStyle(content);
-    wm = cs.writingMode || 'unknown';
-    dir = cs.direction || 'unknown';
-    padT = parseFloat(cs.paddingTop) || 0;
-    padB = parseFloat(cs.paddingBottom) || 0;
-  } catch (e) {}
-  if (container) {
-    try {
-      var ccs = getComputedStyle(container);
-      colW = ccs.columnWidth || 'n/a';
-    } catch (e) {}
-  }
   // 走 ttu 的 pageManager.scrollTo 同步更新 virtualScrollPos，避免
   // 直接写 content.scrollTop 导致脱节——flipPage 从旧值算位置，
   // 翻页再翻回来就不是同一页。
@@ -119,8 +91,6 @@ window.__hoshiAlignToRect = function(rect) {
   var scrollTo = hasTtuApi
     ? function(v) { window.__ttuScrollToPos(v); }
     : function(v) { content.scrollTop = v; };
-  var beforeTop = content.scrollTop;
-  var beforeLeft = content.scrollLeft;
   var skip = Math.abs(content.scrollTop - targetScrollTop) < 1;
   if (!skip) {
     scrollTo(targetScrollTop);
@@ -133,48 +103,6 @@ window.__hoshiAlignToRect = function(rect) {
   if (needSnap) {
     scrollTo(snappedTop);
   }
-  console.log(JSON.stringify({
-    'hibiki-message-type': 'diagAlignScroll',
-    'writingMode': wm,
-    'direction': dir,
-    'clientH': content.clientHeight,
-    'clientW': content.clientWidth,
-    'scrollH': content.scrollHeight,
-    'scrollW': content.scrollWidth,
-    'pageH': pageH,
-    'gap': gap,
-    'stride': stride,
-    'rectTop': Math.round(rect.top),
-    'rectBot': Math.round(rect.bottom),
-    'rectLeft': Math.round(rect.left),
-    'rectRight': Math.round(rect.right),
-    'cRectTop': Math.round(cRect.top),
-    'cRectLeft': Math.round(cRect.left),
-    'elTop': Math.round(elTop),
-    'elBot': Math.round(elBot),
-    'anchor': Math.round(anchor),
-    'rawPageIndex': rawPageIndex,
-    'pageIndex': pageIndex,
-    'maxPageIndex': maxPageIndex,
-    'maxScroll': Math.round(maxScroll),
-    'beforeTop': Math.round(beforeTop),
-    'beforeLeft': Math.round(beforeLeft),
-    'targetTop': Math.round(targetScrollTop),
-    'readbackTop': Math.round(readback),
-    'snappedTop': Math.round(snappedTop),
-    'needSnap': needSnap,
-    'afterTop': Math.round(content.scrollTop),
-    'afterLeft': Math.round(content.scrollLeft),
-    'skip': skip,
-    'padT': padT, 'padB': padB, 'colW': colW
-  }));
-};
-
-window.__hoshiAlignToRange = function(range) {
-  if (!range) return;
-  var rect;
-  try { rect = range.getBoundingClientRect(); } catch (e) { return; }
-  window.__hoshiAlignToRect(rect);
 };
 
 window.__hoshiAlignToElement = function(el) {
@@ -204,140 +132,8 @@ window.__hoshiHighlight = function(selector, reveal) {
   }
 };
 
-// Sasayaki 路径：cueMap miss 时 walker fallback 会传进一个 Range。reveal=true
-// 才翻页，reveal=false 只是静默（高亮自身由 __hoshiSetActiveRanges 或
-// span toggle 另行负责）。
-window.__hoshiHighlightRange = function(range, reveal) {
-  if (reveal === undefined) reveal = true;
-  if (!range || !reveal) return;
-  window.__hoshiAlignToRange(range);
-};
 ''';
 
-  /// 高亮绘制抽象层：
-  ///
-  /// - `__hoshiPaintApiOk`：feature detect CSS Custom Highlight API（Chromium
-  ///   105+）。现代 WebView 上 true，走 `CSS.highlights.set('hoshi-active', ...)`，
-  ///   零 DOM 改动。
-  /// - `__hoshiSetActiveRanges(ranges)` / `__hoshiClearActiveRanges()`：
-  ///   Sasayaki 路径的统一入口。所有定位逻辑（TreeWalker / indexOf fallback /
-  ///   cueMap 查表）产出 Range 后都交给它；内部按 feature detect 走 Highlight
-  ///   API 或 overlay fallback。
-  /// - 旧设备 overlay fallback：按 `range.getClientRects()` 在 `document.body`
-  ///   上 `position: fixed` 画多个黄色矩形，跟随视口。`.book-content` 滚动时
-  ///   通过 `__hoshiInstallOverlayScrollSync` 自动重画一次。
-  ///
-  /// 为什么不继续用 wrap span：`range.extractContents() + insertNode(span)`
-  /// 会把 text node 拆成 "前半段 + <span>中段</span> + 后半段"。ttu 正文走
-  /// CSS columns 分栏，inline DOM 一变，浏览器重跑 inline layout，文字会在
-  /// 列边界漂移——用户看到的就是"每句高亮都让正文跳一下"。
-  static const String _paintFn = '''
-window.__hoshiActiveRanges = window.__hoshiActiveRanges || [];
-window.__hoshiOverlayEls = window.__hoshiOverlayEls || [];
-window.__hoshiOverlayScrollHandler = window.__hoshiOverlayScrollHandler || null;
-
-window.__hoshiPaintApiOk = (function() {
-  try {
-    if (typeof CSS === 'undefined') return false;
-    if (!CSS.highlights || typeof CSS.highlights.set !== 'function') return false;
-    if (typeof Highlight !== 'function') return false;
-    var probe = new Highlight();
-    CSS.highlights.set('__hoshi_probe', probe);
-    CSS.highlights.delete('__hoshi_probe');
-    return true;
-  } catch (e) {
-    return false;
-  }
-})();
-
-window.__hoshiEnsureHighlightRegistry = function() {
-  if (!window.__hoshiPaintApiOk) return null;
-  var h = CSS.highlights.get('hoshi-active');
-  if (!h) {
-    h = new Highlight();
-    CSS.highlights.set('hoshi-active', h);
-  }
-  return h;
-};
-
-window.__hoshiClearOverlay = function() {
-  var els = window.__hoshiOverlayEls;
-  for (var i = 0; i < els.length; i++) {
-    var el = els[i];
-    if (el && el.parentNode) el.parentNode.removeChild(el);
-  }
-  window.__hoshiOverlayEls = [];
-};
-
-window.__hoshiPaintOverlay = function(ranges) {
-  window.__hoshiClearOverlay();
-  if (!document.body) return;
-  for (var i = 0; i < ranges.length; i++) {
-    var rects;
-    try { rects = ranges[i].getClientRects(); } catch (e) { rects = null; }
-    if (!rects) continue;
-    for (var r = 0; r < rects.length; r++) {
-      var rect = rects[r];
-      if (!rect || rect.width < 1 || rect.height < 1) continue;
-      var div = document.createElement('div');
-      div.className = '__hoshi-overlay-rect';
-      div.style.left = rect.left + 'px';
-      div.style.top = rect.top + 'px';
-      div.style.width = rect.width + 'px';
-      div.style.height = rect.height + 'px';
-      document.body.appendChild(div);
-      window.__hoshiOverlayEls.push(div);
-    }
-  }
-};
-
-window.__hoshiSetActiveRanges = function(ranges) {
-  window.__hoshiActiveRanges = ranges && ranges.length ? ranges.slice() : [];
-  if (window.__hoshiPaintApiOk) {
-    var h = window.__hoshiEnsureHighlightRegistry();
-    if (h) {
-      h.clear();
-      for (var i = 0; i < window.__hoshiActiveRanges.length; i++) {
-        try { h.add(window.__hoshiActiveRanges[i]); } catch (e) {}
-      }
-    }
-    // 若之前走过 overlay 路径（比如调试切换），顺带清一次残留。
-    window.__hoshiClearOverlay();
-  } else {
-    window.__hoshiPaintOverlay(window.__hoshiActiveRanges);
-  }
-};
-
-window.__hoshiClearActiveRanges = function() {
-  window.__hoshiActiveRanges = [];
-  if (window.__hoshiPaintApiOk) {
-    var h = window.__hoshiEnsureHighlightRegistry();
-    if (h) h.clear();
-  }
-  window.__hoshiClearOverlay();
-};
-
-// 旧 WebView 的 overlay 走 position:fixed（视口坐标），内容滚动时 overlay
-// 不会自动跟着移；监听 .book-content 的 scroll，再画一次。
-window.__hoshiInstallOverlayScrollSync = function() {
-  if (window.__hoshiPaintApiOk) return;
-  if (window.__hoshiOverlayScrollHandler) return;
-  var c = document.querySelector('.book-content');
-  if (!c) return;
-  window.__hoshiOverlayScrollHandler = function() {
-    if (window.__hoshiActiveRanges.length > 0) {
-      window.__hoshiPaintOverlay(window.__hoshiActiveRanges);
-    }
-  };
-  c.addEventListener('scroll', window.__hoshiOverlayScrollHandler,
-      { passive: true });
-};
-
-console.log(JSON.stringify({
-  'hibiki-message-type': 'paintInit',
-  'apiOk': window.__hoshiPaintApiOk
-}));
-''';
 
   /// Sasayaki 路径的辅助 JS：
   ///
@@ -348,24 +144,13 @@ console.log(JSON.stringify({
   ///   在 `.book-content-container` 里定位。
   /// - `__hoshiIsSkippable(code)`：镜像 Dart 的 `EpubSrtMatcher._isKeepable`
   ///   的反函数。白名单规则（只留假名/汉字/字母数字），其余一律视为可跳过。
-  /// - `__hoshiUnwrapSasayaki()`：历史名；现在重定向到 `__hoshiClearActiveRanges()`
-  ///   （高亮改走 CSS Highlight API / overlay，没有 span 可拆）。
-  /// - `__hoshiHighlightSasayaki(s, ns, ne)`：把 (sectionIndex, normChar*)
-  ///   换算成全书归一化全局偏移 → 在 `.book-content-container` 里按归一化
-  ///   字符数走 text node 找到 Range → 交给 `__hoshiSetActiveRanges` 画层 →
-  ///   `__hoshiHighlightRange` 触发对齐滚动。不再动 DOM。
   ///
   /// 与字幕 EPUB 路径（`[data-cue-id]`）互不冲突：入口在 Dart 侧的
   /// [highlight] 根据 `textFragmentId` 前缀分派。
   static const String _sasayakiFn = '''
-window.__hoshiSasayakiRefs = window.__hoshiSasayakiRefs || null;
-window.__hoshiSasayakiSectionStarts = window.__hoshiSasayakiSectionStarts || null;
-window.__hoshiSasayakiSectionFirstChars = window.__hoshiSasayakiSectionFirstChars || null;
 window.__hoshiSasayakiSectionLens = window.__hoshiSasayakiSectionLens || null;
 window.__hoshiSasayakiTotalNorm = (typeof window.__hoshiSasayakiTotalNorm === 'number')
   ? window.__hoshiSasayakiTotalNorm : null;
-window.__hoshiCurrentMountedSection = (typeof window.__hoshiCurrentMountedSection === 'number')
-  ? window.__hoshiCurrentMountedSection : -1;
 
 window.__hoshiLoadSasayakiRefs = function(ttuBookId) {
   console.log(JSON.stringify({
@@ -411,22 +196,13 @@ window.__hoshiLoadSasayakiRefs = function(ttuBookId) {
 
         function normLen(t) {
           var n = 0;
-          for (var i = 0; i < t.length; i++) {
-            if (!window.__hoshiIsSkippable(t.charCodeAt(i))) n++;
+          for (var i = 0; i < t.length; ) {
+            var c = t.codePointAt(i);
+            var w = (c > 0xFFFF) ? 2 : 1;
+            if (!window.__hoshiIsSkippable(c)) n += w;
+            i += w;
           }
           return n;
-        }
-
-        // 与运行期 DOM measure 的 firstChars 取样口径严格一致：
-        // 只收非 skippable 字符，最多 32 个。用于后续按章节首字识别
-        // ttu 当前挂载的是哪一段。
-        function firstNormChars(t, cap) {
-          var out = '';
-          for (var i = 0; i < t.length && out.length < cap; i++) {
-            var c = t.charCodeAt(i);
-            if (!window.__hoshiIsSkippable(c)) out += t[i];
-          }
-          return out;
         }
 
         function stripRubyText(el) {
@@ -436,50 +212,23 @@ window.__hoshiLoadSasayakiRefs = function(ttuBookId) {
           return clone.textContent || '';
         }
 
-        var refs = [];
-        var starts = [];
-        var firsts = [];
         var sectionLens = [];
         var cumulative = 0;
         for (var i = 0; i < sections.length; i++) {
           var ref = (sections[i] && sections[i].reference) || '';
-          refs.push(ref);
-          starts.push(cumulative);
           var el = ref ? doc.getElementById(ref) : null;
           var text = el ? stripRubyText(el) : '';
-          firsts.push(firstNormChars(text, 32));
           var segLen = normLen(text);
           sectionLens.push(segLen);
           cumulative += segLen;
         }
-        window.__hoshiSasayakiRefs = refs;
-        window.__hoshiSasayakiSectionStarts = starts;
-        window.__hoshiSasayakiSectionFirstChars = firsts;
         window.__hoshiSasayakiSectionLens = sectionLens;
         window.__hoshiSasayakiTotalNorm = cumulative;
-        // 强制下一次 highlight 重新识别当前挂载段（载入后 rootTextLen 可能
-        // 相同但 section 定义换了）。
-        window.__hoshiDomMeasuredFor = -1;
-        window.__hoshiCurrentMountedSection = -1;
-        // sectionLens 已在上面按段累计时记下，方便和 Dart matcher 的
-        // [sasayaki] matcher.section[N] 日志逐行比对。两侧任何一行的
-        // normLen 不一样就是 normalize 规则 / ruby 处理 / DOMParser 行为
-        // 的偏移，立刻能定位到具体哪段崩了。
-        // 单条消息太长会被 Android logcat 截断，把大数组拆短条打。
         console.log(JSON.stringify({
           'hibiki-message-type': 'sasayakiRefsReady',
-          'count': refs.length,
+          'count': sections.length,
           'totalNormChars': cumulative
         }));
-        for (var pi = 0; pi < refs.length; pi++) {
-          console.log(JSON.stringify({
-            'hibiki-message-type': 'sasayakiRefsSection',
-            'i': pi,
-            'ref': refs[pi],
-            'start': starts[pi],
-            'normLen': sectionLens[pi]
-          }));
-        }
       };
       g.onerror = function(e) {
         console.log(JSON.stringify({
@@ -522,7 +271,7 @@ window.__hoshiIsSkippable = function(c) {
   if (c >= 0x2F00 && c <= 0x2FDF) return false; // Kangxi Radicals
   if (c >= 0xF900 && c <= 0xFAFF) return false; // CJK Compat Ideographs
   if (c >= 0x20000 && c <= 0x2A6DF) return false; // CJK Ext B
-  if (c >= 0x2A700 && c <= 0x2CEAF) return false; // CJK Ext C-F
+  if (c >= 0x2A700 && c <= 0x2EBE0) return false; // CJK Ext C-F
   if (c >= 0x2F800 && c <= 0x2FA1F) return false; // CJK Compat Ideo Suppl
   if (c >= 0x30000 && c <= 0x323AF) return false; // CJK Ext G-I
   if (c >= 0xFF10 && c <= 0xFF19) return false; // ０-９
@@ -532,371 +281,12 @@ window.__hoshiIsSkippable = function(c) {
   return true;
 };
 
-// 历史遗留名字。过去 Sasayaki 路径靠 wrap span 做高亮，unwrap 就是把
-// 那批 span 的内容重新插回父节点。现在高亮改走 CSS Highlight API / overlay
-// 路径（零 DOM 改动），没有 span 可拆；保留 API 签名供既有调用点复用，
-// 语义变成"清当前高亮"。
-window.__hoshiUnwrapSasayaki = function() {
-  if (typeof window.__hoshiClearActiveRanges === 'function') {
-    window.__hoshiClearActiveRanges();
-  }
-};
 
-window.__hoshiHighlightSasayaki = function(sectionIndex, normCharStart, normCharEnd, expectedCue, reveal) {
-  if (reveal === undefined) reveal = true;
-  var starts = window.__hoshiSasayakiSectionStarts;
-  var refs = window.__hoshiSasayakiRefs;
-  if (!starts || !refs) {
-    console.log(JSON.stringify({
-      'hibiki-message-type': 'sasayakiRefsMissing',
-      'sectionIndex': sectionIndex
-    }));
-    return;
-  }
-  if (sectionIndex < 0 || sectionIndex >= starts.length) {
-    console.log(JSON.stringify({
-      'hibiki-message-type': 'sasayakiNoRef',
-      'sectionIndex': sectionIndex,
-      'total': starts.length
-    }));
-    return;
-  }
-
-  // 实测 ttu **只挂载当前 section** 的 DOM 到 .book-content-container（rootText
-  // 长度恰好等于当前段 normLen），不是全书共用一个容器。所以 walker 的
-  // normPos=0 就是当前段起点，target 直接用段内偏移 (normCharStart/End)，
-  // 不能再加 starts[sectionIndex] —— 以前加了 base 等于往后多走了前面所有
-  // 段的字符数，高亮就落到后一句。
-  //
-  // 代价是：如果 cue 的 sectionIndex 与用户当前挂载的 section 不同，walker
-  // 会在当前段内找不到（normCharStart 可能超出当前段长度），走 offsetMissing
-  // 分支降级。跨 section 自动跳章要等 PR8a ttu fork API 落地。
-  var base = starts[sectionIndex];
-  var targetStart = normCharStart;
-  var targetEnd = normCharEnd;
-
-  var root = document.querySelector('.book-content-container') ||
-             document.querySelector('.book-content');
-  if (!root) {
-    console.log(JSON.stringify({
-      'hibiki-message-type': 'sasayakiContainerMissing'
-    }));
-    return;
-  }
-
-  // ttu 实测默认停在封面：`.book-content-container` 只装封面 SVG，正文
-  // 要用户点进去才挂载。rootTextLen 很小（封面通常 < 50 字）说明还在封面。
-  // 为了排查 "挂载状态何时变化"，按 tick 序号采样打（前 3 次 + 每 20 次一次），
-  // 既能捕捉状态翻转也不会刷屏。
-  var rootTextLen = root.textContent ? root.textContent.length : 0;
-  if (rootTextLen < 80) {
-    window.__hoshiNotMountedCount = (window.__hoshiNotMountedCount || 0) + 1;
-    if (window.__hoshiNotMountedCount <= 3 ||
-        window.__hoshiNotMountedCount % 20 === 0) {
-      console.log(JSON.stringify({
-        'hibiki-message-type': 'sasayakiBookNotMounted',
-        'rootTextLen': rootTextLen,
-        'count': window.__hoshiNotMountedCount,
-        'hint': 'navigate past cover to mount chapter text'
-      }));
-    }
-    return;
-  }
-  // 挂载上了就清零计数，用户翻回封面再翻回来还能重新打挂载日志。
-  window.__hoshiNotMountedCount = 0;
-
-  // 测 walker 看到的 root 里总 norm 字符数 + 首尾采样。用 rootTextLen
-  // 作脏标记：rootTextLen 变了说明 ttu 切换了 section 挂载内容，要重新
-  // 测。否则一段内反复测浪费 CPU。
-  if (window.__hoshiDomMeasuredFor !== rootTextLen) {
-    window.__hoshiDomMeasuredFor = rootTextLen;
-    try {
-      var measureWalker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-        acceptNode: function(n) {
-          var p = n.parentNode;
-          while (p && p !== root) {
-            var tag = p.nodeName ? p.nodeName.toLowerCase() : '';
-            if (tag === 'rt' || tag === 'rp') return NodeFilter.FILTER_REJECT;
-            p = p.parentNode;
-          }
-          return NodeFilter.FILTER_ACCEPT;
-        }
-      });
-      var totalNorm = 0;
-      var firstChars = '';
-      var sampleAt1000 = '';
-      var sampleAt10000 = '';
-      var mnode;
-      while ((mnode = measureWalker.nextNode())) {
-        var mtxt = mnode.nodeValue || '';
-        for (var mi = 0; mi < mtxt.length; mi++) {
-          var mc = mtxt.charCodeAt(mi);
-          if (window.__hoshiIsSkippable(mc)) continue;
-          if (totalNorm < 32) firstChars += mtxt[mi];
-          if (totalNorm === 1000) sampleAt1000 = '';
-          if (totalNorm >= 1000 && sampleAt1000.length < 32) sampleAt1000 += mtxt[mi];
-          if (totalNorm === 10000) sampleAt10000 = '';
-          if (totalNorm >= 10000 && sampleAt10000.length < 32) sampleAt10000 += mtxt[mi];
-          totalNorm++;
-        }
-      }
-      console.log(JSON.stringify({
-        'hibiki-message-type': 'sasayakiDomMeasure',
-        'rootTotalNormChars': totalNorm,
-        'rootTextContentLen': root.textContent ? root.textContent.length : 0,
-        'firstChars': firstChars,
-        'sampleAt1000': sampleAt1000,
-        'sampleAt10000': sampleAt10000
-      }));
-
-      // ── 识别 ttu 当前挂载的是哪一段 ──
-      // ttu 只挂当前 section；如果播放中的 cue 指向别的 section 而我们
-      // 仍按"段内偏移"去 walker 找字符，在当前段长度足够长时会命中一个
-      // **错误的句子**，然后对齐把页面滚到远离真实播放位置的地方。
-      // 通过首字 + normLen 匹配找出真正挂载的段 idx，供 highlight 主逻辑
-      // 做跨段短路判断。
-      var mounted = -1;
-      var secFirsts = window.__hoshiSasayakiSectionFirstChars;
-      var secLens = window.__hoshiSasayakiSectionLens;
-      // 首字匹配：每段前 32 个归一化字符，取前 16 个比对（够区分且抗
-      // 段首空白 / 标点 / 章号差异的鲁棒性更好）。
-      if (secFirsts && firstChars && firstChars.length > 0) {
-        var probe = firstChars.slice(0, 16);
-        if (probe.length >= 8) {
-          for (var si = 0; si < secFirsts.length; si++) {
-            var sf = secFirsts[si];
-            if (sf && sf.slice(0, probe.length) === probe) {
-              mounted = si;
-              break;
-            }
-          }
-        }
-      }
-      // 首字没匹中（少数纯数字/罗马数字章首）→ 退回 normLen 精确匹配。
-      // 多段同长时取第一个；极少见，日志里能看出。
-      if (mounted === -1 && secLens) {
-        for (var sj = 0; sj < secLens.length; sj++) {
-          if (secLens[sj] === totalNorm) {
-            mounted = sj;
-            break;
-          }
-        }
-      }
-      window.__hoshiCurrentMountedSection = mounted;
-      console.log(JSON.stringify({
-        'hibiki-message-type': 'sasayakiMountedSection',
-        'mountedSection': mounted,
-        'rootTotalNormChars': totalNorm,
-        'firstCharsProbe': firstChars ? firstChars.slice(0, 16) : ''
-      }));
-      // 把"运行期 DOM 测出的归一化字符数"和"导入期 DOMParser 抽 elementHtml
-      // 数出来的字符数"对账。两者不等说明 ttu 渲染后正文里多/少了字符
-      // （常见：ttu 注入章节标题、版权水印、章末导航）；fallback 的 delta
-      // 字段会跟 drift 完全一致，根因在这一条日志里能直接看到。
-      if (secLens && mounted >= 0 && secLens[mounted] !== totalNorm) {
-        console.log(JSON.stringify({
-          'hibiki-message-type': 'sasayakiSectionLenDrift',
-          'mountedSection': mounted,
-          'expectedNormLen': secLens[mounted],
-          'domNormLen': totalNorm,
-          'delta': totalNorm - secLens[mounted]
-        }));
-      }
-    } catch (me) {
-      console.log(JSON.stringify({
-        'hibiki-message-type': 'sasayakiDomMeasureErr',
-        'error': String(me)
-      }));
-    }
-  }
-
-  // ── 跨段短路 ──
-  // DOM 测出的挂载段 != cue 要高亮的段 → 立刻 return，不调 walker、不动
-  // 页面。避免"段内偏移命中错误句子 → 滚到无关位置"。高亮留空，等用户
-  // 翻到正确段（或 Follow audio 自动跳段）再次 tick 时恢复。
-  var mountedSec = window.__hoshiCurrentMountedSection;
-  if (mountedSec >= 0 && mountedSec !== sectionIndex) {
-    window.__hoshiSectionMismatchCount = (window.__hoshiSectionMismatchCount || 0) + 1;
-    if (window.__hoshiSectionMismatchCount <= 3 ||
-        window.__hoshiSectionMismatchCount % 20 === 0) {
-      console.log(JSON.stringify({
-        'hibiki-message-type': 'sasayakiSectionMismatch',
-        'mountedSection': mountedSec,
-        'cueSection': sectionIndex,
-        'count': window.__hoshiSectionMismatchCount,
-        'hint': 'cue belongs to a different section; skipping highlight'
-      }));
-    }
-    // 清一次旧高亮避免"上一条高亮留在错误位置"。
-    window.__hoshiUnwrapSasayaki();
-    var stale = document.querySelectorAll('.hoshi-active');
-    for (var sli = 0; sli < stale.length; sli++) {
-      stale[sli].classList.remove('hoshi-active');
-    }
-    return;
-  }
-  // 匹配上了就清 mismatch 计数。
-  window.__hoshiSectionMismatchCount = 0;
-
-  // Clear any previous Sasayaki wrap + class-only legacy highlight BEFORE
-  // walking, so offsets into text nodes aren't affected by artificial spans.
-  window.__hoshiUnwrapSasayaki();
-  var legacy = document.querySelectorAll('.hoshi-active');
-  for (var li = 0; li < legacy.length; li++) {
-    legacy[li].classList.remove('hoshi-active');
-  }
-
-  // Walk text nodes under root, skipping <rt>/<rp> (furigana). Dart 侧
-  // 匹配用的是剥掉振假名的纯正文；这里必须对齐，否则带 ruby 的章节每过
-  // 一段就被读音的额外字符挤偏，高亮会漂到后面几十字。
-  var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-    acceptNode: function(n) {
-      var p = n.parentNode;
-      while (p && p !== root) {
-        var tag = p.nodeName ? p.nodeName.toLowerCase() : '';
-        if (tag === 'rt' || tag === 'rp') return NodeFilter.FILTER_REJECT;
-        p = p.parentNode;
-      }
-      return NodeFilter.FILTER_ACCEPT;
-    }
-  });
-  var startNode = null, startOffset = 0;
-  var endNode = null, endOffset = 0;
-  var normPos = 0;
-  var lastNode = null;
-  // 顺便累积 walker 视角的 **纯化文本**（跳过 rt/rp + skippable）。
-  // 不能用 range.toString() 做 match 对账：DOM Range 规范会把 Range 跨越
-  // 的所有 Text 节点内容拼进去（包括被 walker 跳过的 <rt> 振假名），对
-  // 日文带 ruby 的正文必然比 expectedCue 多出一串假名，match 永远假阳性。
-  var actualNormText = '';
-  var node;
-  while ((node = walker.nextNode())) {
-    lastNode = node;
-    var text = node.nodeValue || '';
-    for (var i = 0; i < text.length; i++) {
-      var c = text.charCodeAt(i);
-      if (window.__hoshiIsSkippable(c)) continue;
-      if (startNode === null && normPos >= targetStart) {
-        startNode = node;
-        startOffset = i;
-      }
-      if (startNode !== null && normPos < targetEnd) {
-        actualNormText += text[i];
-      }
-      normPos++;
-      if (startNode !== null && normPos >= targetEnd) {
-        endNode = node;
-        endOffset = i + 1;
-        break;
-      }
-    }
-    if (endNode !== null) break;
-  }
-
-  // targetEnd 超出全书归一化字符数（最后几章的 cue、或 matcher 溢出到尾部）
-  // 时高亮到尾节点结束。
-  if (startNode !== null && endNode === null && lastNode !== null) {
-    endNode = lastNode;
-    endOffset = lastNode.nodeValue ? lastNode.nodeValue.length : 0;
-  }
-
-  if (!startNode || !endNode) {
-    // targetStart 超过当前挂载章节的归一化字符数——cue 在尚未挂载的
-    // 章节里。ttu 只在当前显示章节挂载 DOM，用户翻过去就行。
-    console.log(JSON.stringify({
-      'hibiki-message-type': 'sasayakiOffsetMissing',
-      'sectionIndex': sectionIndex,
-      'targetStart': targetStart,
-      'targetEnd': targetEnd,
-      'scannedChars': normPos
-    }));
-    return;
-  }
-
-  var range = document.createRange();
-  try {
-    range.setStart(startNode, startOffset);
-    range.setEnd(endNode, endOffset);
-  } catch (e) {
-    console.log(JSON.stringify({
-      'hibiki-message-type': 'sasayakiRangeErr',
-      'error': String(e)
-    }));
-    return;
-  }
-
-  // ★ 关键诊断：在包裹 span 之前用 walker 累积的纯化文本与 expectedCue
-  // 直接对账。两者不同 → sectionIndex/normChar 偏移或 normalize 规则有
-  // 问题；两者相同但用户视觉上仍错位 → 渲染层 bug（Svelte 重渲染吃掉
-  // span 之类）。注意不能用 range.toString()：Range 会把跨越的 <rt>
-  // 假名一起拼进字符串，对带 ruby 的正文永远假阳性。
-  var actualText = actualNormText;
-
-  // 不再包 span：CSS Custom Highlight API / overlay fallback 直接吃 Range，
-  // 不动 DOM。extractContents+insertNode 会改 inline 流，让 CSS columns
-  // 重排一次，表现为"每次高亮正文都跳一下"。
-  try {
-    window.__hoshiSetActiveRanges([range]);
-  } catch (e) {
-    console.log(JSON.stringify({
-      'hibiki-message-type': 'sasayakiPaintErr',
-      'error': String(e)
-    }));
-    return;
-  }
-
-  function clip(s, n) {
-    if (!s) return '';
-    s = String(s).replace(/\\n/g, '\\\\n').replace(/\\r/g, '\\\\r');
-    return s.length <= n ? s : s.slice(0, n) + '…';
-  }
-
-  console.log(JSON.stringify({
-    'hibiki-message-type': 'sasayakiHighlightOk',
-    'sectionIndex': sectionIndex,
-    'normCharStart': normCharStart,
-    'normCharEnd': normCharEnd,
-    'targetStart': targetStart,
-    'targetEnd': targetEnd,
-    'base': base,
-    'expectedCue': clip(expectedCue, 64),
-    'actualText': clip(actualText, 64),
-    'match': (actualText && expectedCue)
-      ? (function() {
-          // 用 normalize 后的串比，避免标点差异造成误报
-          function norm(t) {
-            var b = '';
-            for (var i = 0; i < t.length; i++) {
-              if (!window.__hoshiIsSkippable(t.charCodeAt(i))) b += t[i];
-            }
-            return b;
-          }
-          return norm(actualText) === norm(expectedCue);
-        })()
-      : null
-  }));
-
-  if (reveal) {
-    window.__hoshiHighlightRange(range, true);
-  }
-};
-
-// ── 章节挂载时批量预解析 Range + Map 缓存 ──────────────────────────────
-// 对齐 Sasayaki 原版 reader.js 的 applySasayakiCues / cueWrappers Map /
-// highlightSasayakiCue(id) 模型。动机：原有 __hoshiHighlightSasayaki 每次
-// 高亮都 TreeWalker 扫一遍整章归一化字符再切 Range，每句触发一次，成本高；
-// 改成"章节挂载时一次性遍历，按 normChar 偏移把这一章所有 cue 预解析成
-// Range，cueKey → Range[] 塞进 Map"，运行期 O(1) 查表交给 paint 层。
-//
-// 不再 wrap span——extractContents+insertNode 会改 DOM，让 CSS columns
-// 重排导致正文"跳位"。高亮改走 CSS Custom Highlight API / overlay 画层。
-//
-// cueKey = Dart 侧 cue.textFragmentId（形如 "sasayaki://s=0&ns=100&ne=120"），
-// 稳定唯一，不需要单独 id 空间。
-//
-// 降级：apply 失败（cue 跨节点、跨段、offsetMissing 等）时 Map 里没有 key，
-// __hoshiHighlightSasayakiCueById 会自己回退到旧的偏移定位路径 __hoshiHighlightSasayaki，
-// 所以全章匹配率不是 100% 也能工作。
+// ── 章节挂载时批量预包 span + Map 缓存（对齐 iOS Sasayaki） ─────────────
+// sectionChanged 触发 → Dart 调 applySasayakiCues → JS 一次性 TreeWalker
+// 把该章所有 cue 包进 <span class="hoshi-sasayaki-cue">，存入 cueMap。
+// 运行期 __hoshiHighlightSasayakiCueById 做 O(1) Map 查表 + class toggle。
+// cueMap miss → 清高亮，不做回退（对齐 iOS Hoshi Reader）。
 window.__hoshiSasayakiCueMap = window.__hoshiSasayakiCueMap || null;
 window.__hoshiSasayakiAppliedForSection =
   (typeof window.__hoshiSasayakiAppliedForSection === 'number')
@@ -906,284 +296,34 @@ window.__hoshiSasayakiAppliedRootLen =
     ? window.__hoshiSasayakiAppliedRootLen : -1;
 
 window.__hoshiClearSasayakiApplied = function() {
-  // 对齐上游 Sasayaki：apply 时把 cue 包进 <span class="hoshi-sasayaki-cue">，
-  // 这里拆包。ttu 切章 innerHTML 整体替换时 span 会被一起清掉，但同段 re-apply
-  // （rootLen 变、被 requestSectionNav 强制失效等）必须手动 unwrap，否则上一轮
-  // span 残留在 DOM 里，新一轮再包一层，嵌套累积。
-  if (document.body) {
-    var spans = document.querySelectorAll('.hoshi-sasayaki-cue');
-    var parents = [];
-    var seen = new Set();
-    for (var i = 0; i < spans.length; i++) {
-      var span = spans[i];
-      var parent = span.parentNode;
-      if (!parent) continue;
-      while (span.firstChild) parent.insertBefore(span.firstChild, span);
-      parent.removeChild(span);
-      if (!seen.has(parent)) {
-        seen.add(parent);
-        parents.push(parent);
-      }
-    }
-    // 合并相邻 text node，避免每次 apply/clear 把节点数量越拆越多影响
-    // 后续 TreeWalker 扫描成本。
-    for (var pi = 0; pi < parents.length; pi++) {
-      try { parents[pi].normalize(); } catch (e) {}
-    }
+  if (typeof window.__ttuClearCueSpans === 'function') {
+    window.__ttuClearCueSpans();
   }
   window.__hoshiSasayakiCueMap = null;
-  // range-based fallback（walker miss 路径）可能留的 CSS Highlight API 记录也清掉。
-  if (typeof window.__hoshiClearActiveRanges === 'function') {
-    window.__hoshiClearActiveRanges();
-  }
 };
 
 window.__hoshiApplySasayakiCues = function(sectionIndex, cuesJson) {
-  // cuesJson：[{key, ns, ne}, ...]，ns/ne 是**段内归一化字符偏移**（Sasayaki
-  // 路径 ttu 只挂当前段，不是全书字符）。按 ns 升序排好；调用方保证 ns 单调
-  // 不减且 ne >= ns。TreeWalker 一次线性扫，累积 normPos，匹配到就切 Range 包。
-  var cues;
-  try {
-    cues = (typeof cuesJson === 'string') ? JSON.parse(cuesJson) : cuesJson;
-  } catch (e) {
-    console.log(JSON.stringify({
-      'hibiki-message-type': 'sasayakiApplyParseErr',
-      'error': String(e)
-    }));
-    return;
-  }
-  if (!Array.isArray(cues) || cues.length === 0) {
+  // 委托给 ttu fork 的 __ttuWrapCueSpans：ttu 自己走 live DOM、realign、包
+  // span，偏移天然一致。skipFn 传 hibiki 的 __hoshiIsSkippable 保持归一化规则。
+  if (typeof window.__ttuWrapCueSpans !== 'function') {
     console.log(JSON.stringify({
       'hibiki-message-type': 'sasayakiApplySkip',
-      'reason': 'no_cues',
+      'reason': 'ttu_api_missing',
       'sectionIndex': sectionIndex
     }));
     return;
   }
+  var result = window.__ttuWrapCueSpans(cuesJson, window.__hoshiIsSkippable);
+  window.__hoshiSasayakiAppliedForSection = sectionIndex;
   var root = document.querySelector('.book-content-container') ||
              document.querySelector('.book-content');
-  if (!root) {
-    console.log(JSON.stringify({
-      'hibiki-message-type': 'sasayakiApplyNoRoot'
-    }));
-    return;
-  }
-  var rootTextLen = root.textContent ? root.textContent.length : 0;
-  if (rootTextLen < 80) {
-    // 封面 / 尚未挂载，别包；等下次 mountedSection 事件。
-    console.log(JSON.stringify({
-      'hibiki-message-type': 'sasayakiApplySkip',
-      'reason': 'root_too_short',
-      'rootTextLen': rootTextLen
-    }));
-    return;
-  }
-  // 同一段 + 同一 root 已经 apply 过就跳过。ttu 切章会换 root innerHTML，
-  // rootLen 通常随之变化；同段重复 apply 的情况主要来自 sasayakiMountedSection
-  // 连发两条消息。
-  if (window.__hoshiSasayakiAppliedForSection === sectionIndex &&
-      window.__hoshiSasayakiAppliedRootLen === rootTextLen &&
-      window.__hoshiSasayakiCueMap &&
-      window.__hoshiSasayakiCueMap.size > 0) {
-    console.log(JSON.stringify({
-      'hibiki-message-type': 'sasayakiApplySkip',
-      'reason': 'already_applied',
-      'sectionIndex': sectionIndex,
-      'mapSize': window.__hoshiSasayakiCueMap.size
-    }));
-    return;
-  }
-  // 切段/换 root：先卸掉旧包裹，释放旧 Map。
-  window.__hoshiClearSasayakiApplied();
-  window.__hoshiSasayakiCueMap = new Map();
-
-  // 按 ns 升序，防止外部没排好序；同 ns 按 ne 升序作次序。
-  cues.sort(function(a, b) {
-    if (a.ns !== b.ns) return a.ns - b.ns;
-    return (a.ne || 0) - (b.ne || 0);
-  });
-
-  // 采集 text node + 归一化字符 → 原节点/节点内 offset 的映射。一次性建好
-  // 再批量解析 Range。不再 wrap span——Range 保留原始节点引用，高亮由
-  // CSS Highlight API / overlay 自己画，不动 DOM，CSS columns 布局不抖。
-  var fbNodes = [];
-  var fbMap = [];   // [nodeIdx, charIdx]，长度 = 归一化字符总数
-  var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-    acceptNode: function(n) {
-      var p = n.parentNode;
-      while (p && p !== root) {
-        var tag = p.nodeName ? p.nodeName.toLowerCase() : '';
-        if (tag === 'rt' || tag === 'rp') return NodeFilter.FILTER_REJECT;
-        p = p.parentNode;
-      }
-      return NodeFilter.FILTER_ACCEPT;
-    }
-  });
-  var node;
-  while ((node = walker.nextNode())) {
-    var ti = fbNodes.length;
-    fbNodes.push(node);
-    var text = node.nodeValue || '';
-    for (var i = 0; i < text.length; i++) {
-      if (window.__hoshiIsSkippable(text.charCodeAt(i))) continue;
-      fbMap.push([ti, i]);
-    }
-  }
-
-  // ── 对齐 iOS Sasayaki 的 collectSasayakiCueRanges：DOM 文本重定位 ──
-  // iOS Sasayaki 的 EPUB 文本源和 DOM 完全一致（直接加载 EPUB），所以
-  // matcher 算出的偏移直接可用。但 hibiki 经过 ttu IDB → formatBookDataHtml
-  // → live DOM 的管线，DOM 归一化字符数可能与 IDB 不同步（差异散落在段中间）。
-  //
-  // 对策：传入 cue 原文 (t)，在 DOM 归一化串里搜索定位，用找到的位置
-  // 覆盖 IDB 偏移。等价于原版 Sasayaki 的"walker cursor 计数 + 逐 cue 匹配"。
-  var expectedLen = (window.__hoshiSasayakiSectionLens &&
-      sectionIndex < window.__hoshiSasayakiSectionLens.length)
-      ? window.__hoshiSasayakiSectionLens[sectionIndex] : null;
-  var needsRealign = (expectedLen !== null && fbMap.length !== expectedLen);
-  if (needsRealign) {
-    // 与 __hoshiIsSkippable 相同口径：只保留 keepable 字符，不做大小写折叠
-    function stripSkippable(s) {
-      var out = '';
-      for (var si2 = 0; si2 < s.length; si2++) {
-        if (!window.__hoshiIsSkippable(s.charCodeAt(si2))) out += s[si2];
-      }
-      return out;
-    }
-    var chars = [];
-    for (var di = 0; di < fbMap.length; di++) {
-      var dm = fbMap[di];
-      chars.push((fbNodes[dm[0]].nodeValue || '').charAt(dm[1]));
-    }
-    var domNormStr = chars.join('');
-    var realigned = 0;
-    for (var ri = 0; ri < cues.length; ri++) {
-      var rc = cues[ri];
-      var rawText = rc.t || '';
-      if (rawText.length === 0) continue;
-      var nt = stripSkippable(rawText);
-      if (nt.length === 0) continue;
-      var searchFrom = Math.max(0, (rc.ns | 0) - 30);
-      var found = domNormStr.indexOf(nt, searchFrom);
-      if (found < 0 && searchFrom > 0) found = domNormStr.indexOf(nt, 0);
-      if (found >= 0) {
-        rc.ns = found;
-        rc.ne = found + nt.length;
-        realigned++;
-      }
-    }
-    console.log(JSON.stringify({
-      'hibiki-message-type': 'sasayakiFbMapAlign',
-      'sectionIndex': sectionIndex,
-      'fbMapLen': fbMap.length,
-      'expectedLen': expectedLen,
-      'realigned': realigned,
-      'total': cues.length
-    }));
-  }
-
-  // 对齐上游 Sasayaki 原版：先按每条 cue 把 [ns, ne) 映射成**节点内 char 段**
-  // 列表 ({nodeIdx, startChar, endChar})，一条 cue 可能跨多个 text node。
-  // 然后按 cue 逆序 × 段逆序包 <span class="hoshi-sasayaki-cue">。
-  //
-  // 为什么逆序：Range.surroundContents 把 text node 从中间切开，原 node
-  // 保留"前半段"、span 里是"中段"、再插一个 node 装"后半段"。先包节点内
-  // 靠后的段、再包靠前的段，靠前段用的 charOffset 仍然落在原 node 的"前半段"
-  // 里，索引不失效。cue 维度同理：后面的 cue 先包，前面的 cue 的 fbMap 条目
-  // 不受影响。
-  //
-  // 运行期高亮只 toggle 这些 span 的 class，不再 TreeWalker / 不再 Range +
-  // CSS Highlight API —— 上游 paginated reader.js 走同样 CSS columns 布局用
-  // 同样 span 策略，重排问题在"只 apply 一次"前提下是不成立的。
-  var perCue = [];  // [{key, segs: [{nodeIdx, startChar, endChar}, ...]}]
-  var skippedOob = 0;
-  for (var ci = 0; ci < cues.length; ci++) {
-    var c = cues[ci];
-    var ns = c.ns | 0;
-    var ne = c.ne | 0;
-    if (ne <= ns) { skippedOob++; continue; }
-    if (ns < 0 || ne > fbMap.length) { skippedOob++; continue; }
-    var segs = [];
-    var curNode = -1;
-    var curStart = -1;
-    var curEnd = -1;
-    var ok = true;
-    for (var k = ns; k < ne; k++) {
-      var m = fbMap[k];
-      if (!m) { ok = false; break; }
-      if (m[0] !== curNode) {
-        if (curNode !== -1) {
-          segs.push({nodeIdx: curNode, startChar: curStart, endChar: curEnd + 1});
-        }
-        curNode = m[0];
-        curStart = m[1];
-      }
-      curEnd = m[1];
-    }
-    if (!ok) { skippedOob++; continue; }
-    if (curNode !== -1) {
-      segs.push({nodeIdx: curNode, startChar: curStart, endChar: curEnd + 1});
-    }
-    if (segs.length === 0) { skippedOob++; continue; }
-    perCue.push({key: c.key, segs: segs});
-  }
-
-  var scrollEl = document.querySelector('.book-content') ||
-                 document.scrollingElement || document.documentElement;
-  var savedScrollTop = scrollEl ? scrollEl.scrollTop : 0;
-  var savedScrollLeft = scrollEl ? scrollEl.scrollLeft : 0;
-  var applied = 0;
-  var skippedCross = 0;
-  for (var pi = perCue.length - 1; pi >= 0; pi--) {
-    var entry = perCue[pi];
-    var wrappers = [];
-    for (var si = entry.segs.length - 1; si >= 0; si--) {
-      var seg = entry.segs[si];
-      var tn = fbNodes[seg.nodeIdx];
-      if (!tn || !tn.parentNode) continue;
-      // 节点长度变化（同节点前面已有 span 被包出来切短）时 endChar 可能超界——
-      // 被裁剪过的 tn 只保留"第一个被包 range 之前的"部分，而我们逆序处理
-      // 保证当前 seg 正好落在这个"前半段"里，endChar <= tn.length 仍然成立。
-      // 但 tn 可能已经完全被拆到 span 里（startChar == tn.length），这时直接跳。
-      if (seg.startChar >= (tn.nodeValue || '').length) continue;
-      try {
-        var r = document.createRange();
-        r.setStart(tn, seg.startChar);
-        r.setEnd(tn, Math.min(seg.endChar, (tn.nodeValue || '').length));
-        var span = document.createElement('span');
-        span.className = 'hoshi-sasayaki-cue';
-        span.setAttribute('data-sasayaki-key', entry.key);
-        span.appendChild(r.extractContents());
-        r.insertNode(span);
-        // 逆序 push + 最后 reverse，让 wrappers 与 DOM 顺序一致（第一个
-        // wrapper 对应最靠前的段），高亮入口用 wrappers[0] 做翻页锚点。
-        wrappers.push(span);
-      } catch (e) {
-        skippedCross++;
-      }
-    }
-    if (wrappers.length > 0) {
-      wrappers.reverse();
-      window.__hoshiSasayakiCueMap.set(entry.key, wrappers);
-      applied++;
-    }
-  }
-
-  if (scrollEl) {
-    scrollEl.scrollTop = savedScrollTop;
-    scrollEl.scrollLeft = savedScrollLeft;
-  }
-  window.__hoshiSasayakiAppliedForSection = sectionIndex;
-  window.__hoshiSasayakiAppliedRootLen = rootTextLen;
-
+  window.__hoshiSasayakiAppliedRootLen = root ? (root.textContent || '').length : -1;
   console.log(JSON.stringify({
     'hibiki-message-type': 'sasayakiApplied',
     'sectionIndex': sectionIndex,
-    'cuesTotal': cues.length,
-    'applied': applied,
-    'skippedOob': skippedOob,
-    'skippedCross': skippedCross,
-    'mapSize': window.__hoshiSasayakiCueMap.size
+    'applied': result ? result.applied : 0,
+    'mapSize': result ? result.mapSize : 0,
+    'total': result ? result.total : 0
   }));
 };
 
@@ -1197,11 +337,6 @@ window.__hoshiHighlightSasayakiCueById = function(key, reveal) {
   for (var pi = 0; pi < prev.length; pi++) {
     prev[pi].classList.remove('hoshi-active');
   }
-  // 同时清 range-based fallback 留下的 CSS Highlight/overlay（如果上一条
-  // 是 cueMap miss 走了 walker 路径）。
-  if (typeof window.__hoshiClearActiveRanges === 'function') {
-    window.__hoshiClearActiveRanges();
-  }
   if (!wrappers || wrappers.length === 0) {
     console.log(JSON.stringify({
       'hibiki-message-type': 'sasayakiCueMapMiss',
@@ -1214,12 +349,6 @@ window.__hoshiHighlightSasayakiCueById = function(key, reveal) {
   for (var wi = 0; wi < wrappers.length; wi++) {
     wrappers[wi].classList.add('hoshi-active');
   }
-  console.log(JSON.stringify({
-    'hibiki-message-type': 'sasayakiCueHighlightOk',
-    'key': key,
-    'wrapperCount': wrappers.length,
-    'reveal': reveal
-  }));
   if (reveal) window.__hoshiAlignToElement(wrappers[0]);
   return true;
 };
@@ -1253,8 +382,8 @@ window.__sasayakiRequestNav = async function(n) {
       // ttu 跳章（哪怕目标段等于当前段）会整体替换 .book-content-container
       // 的 innerHTML，cueMap 里的 span 立刻变成孤儿节点——再给它们 addClass
       // 也找不到 .hoshi-active 了（见 highlightMiss 病症）。所以这里强制
-      // 失效 applied 状态 + 丢掉旧 map，下一个 sasayakiMountedSection 事件
-      // 会让上层跑 applySasayakiCues，新 DOM 上重建 cueMap。
+      // 失效 applied 状态 + 丢掉旧 map，sectionChanged 事件会让 Dart 侧
+      // 重新 applySasayakiCues，新 DOM 上重建 cueMap。
       window.__hoshiSasayakiAppliedForSection = -1;
       window.__hoshiSasayakiAppliedRootLen = -1;
       if (typeof window.__hoshiClearSasayakiApplied === 'function') {
@@ -1290,7 +419,9 @@ window.__hoshiTtuProbe = function() {
     'hasCurrentSection': typeof window.__ttuCurrentSection === 'function',
     'hasSectionCount': typeof window.__ttuSectionCount === 'function',
     'sectionCount': null,
-    'currentSection': null
+    'currentSection': null,
+    'currentPage': null,
+    'totalPages': null
   };
   try {
     if (result.hasSectionCount) {
@@ -1302,6 +433,39 @@ window.__hoshiTtuProbe = function() {
   } catch (e) {
     result.probeError = String(e);
   }
+  try {
+    var el = document.querySelector('.book-content');
+    if (el) {
+      var isPaginated = document.body.classList.contains('overflow-hidden');
+      if (isPaginated) {
+        var cs = getComputedStyle(el);
+        var isVertical = cs.writingMode === 'vertical-rl';
+        var gap = 0;
+        var container = document.querySelector('.book-content-container');
+        if (container) {
+          var g = parseFloat(getComputedStyle(container).columnGap);
+          if (isFinite(g)) gap = g;
+        }
+        if (isVertical) {
+          var sz = el.clientHeight + gap;
+          result.totalPages = Math.max(1, Math.ceil(el.scrollHeight / sz));
+          result.currentPage = Math.floor(el.scrollTop / sz) + 1;
+        } else {
+          var sz = el.clientWidth + gap;
+          result.totalPages = Math.max(1, Math.ceil(el.scrollWidth / sz));
+          result.currentPage = Math.floor(Math.abs(el.scrollLeft) / sz) + 1;
+        }
+      } else {
+        var vh = window.innerHeight;
+        var sh = document.documentElement.scrollHeight;
+        var st = window.scrollY || document.documentElement.scrollTop;
+        if (vh > 0) {
+          result.totalPages = Math.max(1, Math.ceil(sh / vh));
+          result.currentPage = Math.floor(st / vh) + 1;
+        }
+      }
+    }
+  } catch (e) {}
   console.log(JSON.stringify(result));
   return JSON.stringify(result);
 };
@@ -1380,12 +544,10 @@ window.__hoshiAnnotate = function(chapterHref) {
   ///   用 `caretRangeFromPoint` 找视口顶部第一个可见文本节点，再用 Sasayaki
   ///   那套 walker 逐字符累加到命中位置。用于 Flutter 节流后写 Isar
   ///   [ReaderPosition]。
-  /// - `__hibikiScrollToNormOffset(section, offset)`：包一层 __hoshiHighlightSasayaki
-  ///   对齐翻页，把目标位置滚进视口。
+  /// - `__hibikiScrollToNormOffset(section, offset)`：调用 ttu fork 的
+  ///   `__ttuScrollToCharOffset` 把目标位置滚进视口。
   ///
-  /// 依赖 Sasayaki 已经准备好的 `__hoshiSasayakiSectionStarts` /
-  /// `__hoshiCurrentMountedSection` / `__hoshiIsSkippable`，必须在
-  /// [initSasayakiRefs] 和挂载 Sasayaki refs 完成后才用得上。
+  /// 依赖 `__hoshiIsSkippable`，必须在 _sasayakiFn 之后 evaluate。
   static const String _readerPosFn = '''
 window.__hibikiGetViewportNormOffset = function() {
   var section = -1;
@@ -1395,12 +557,6 @@ window.__hibikiGetViewportNormOffset = function() {
       if (typeof v === 'number') section = v;
     }
   } catch (e) {}
-  // mountedSection 是 Sasayaki walker 实际看到的段，优先它 —— ttu
-  // currentSection 在 sectionChanged skip(1) 的坑下可能滞后。
-  if (typeof window.__hoshiCurrentMountedSection === 'number' &&
-      window.__hoshiCurrentMountedSection >= 0) {
-    section = window.__hoshiCurrentMountedSection;
-  }
   if (section < 0) return null;
 
   var root = document.querySelector('.book-content-container') ||
@@ -1456,36 +612,114 @@ window.__hibikiGetViewportNormOffset = function() {
     if (node === target.node) {
       var t = node.nodeValue || '';
       var cap = Math.min(target.offset, t.length);
-      for (var j = 0; j < cap; j++) {
-        if (!window.__hoshiIsSkippable(t.charCodeAt(j))) normPos++;
+      for (var j = 0; j < cap; ) {
+        var cj = t.codePointAt(j);
+        var wj = (cj > 0xFFFF) ? 2 : 1;
+        if (!window.__hoshiIsSkippable(cj)) normPos += Math.min(wj, cap - j);
+        j += wj;
       }
       return { section: section, offset: normPos };
     }
     var txt = node.nodeValue || '';
-    for (var k = 0; k < txt.length; k++) {
-      if (!window.__hoshiIsSkippable(txt.charCodeAt(k))) normPos++;
+    for (var k = 0; k < txt.length; ) {
+      var ck = txt.codePointAt(k);
+      var wk = (ck > 0xFFFF) ? 2 : 1;
+      if (!window.__hoshiIsSkippable(ck)) normPos += wk;
+      k += wk;
     }
   }
   // target 不在 walker 可达范围（比如被 rt/rp 拒）→ 拿累加到终点的值兜底
   return { section: section, offset: normPos };
 };
 
-window.__hibikiScrollToNormOffset = function(section, offset) {
+window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
+  var retry = _retryCount || 0;
+  var maxRetries = 15;
+  console.log(JSON.stringify({
+    'hibiki-message-type': 'scrollToNormOffset-enter',
+    'section': section, 'offset': offset, 'retry': retry,
+    'hasAlignToRect': typeof window.__hoshiAlignToRect === 'function',
+    'hasTtuScrollToPos': typeof window.__ttuScrollToPos === 'function'
+  }));
   try {
-    window.__hoshiHighlightSasayaki(section, offset, offset + 1, '', true);
+    var root = document.querySelector('.book-content-container') ||
+               document.querySelector('.book-content');
+    if (!root) {
+      if (retry < maxRetries) {
+        setTimeout(function() {
+          window.__hibikiScrollToNormOffset(section, offset, retry + 1);
+        }, 100);
+        return;
+      }
+      console.log(JSON.stringify({
+        'hibiki-message-type': 'scrollToNormOffset-noRoot',
+        'triedSelectors': '.book-content-container, .book-content'
+      }));
+      return;
+    }
+    var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode: function(n) {
+        var p = n.parentNode;
+        while (p && p !== root) {
+          var tag = p.nodeName ? p.nodeName.toLowerCase() : '';
+          if (tag === 'rt' || tag === 'rp') return NodeFilter.FILTER_REJECT;
+          p = p.parentNode;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    var normPos = 0;
+    var node;
+    while ((node = walker.nextNode())) {
+      var txt = node.nodeValue || '';
+      for (var k = 0; k < txt.length; ) {
+        var ck = txt.codePointAt(k);
+        var wk = (ck > 0xFFFF) ? 2 : 1;
+        if (!window.__hoshiIsSkippable(ck)) {
+          if (normPos + wk > offset) {
+            var r = document.createRange();
+            r.setStart(node, k);
+            r.collapse(true);
+            var rect = r.getBoundingClientRect();
+            console.log(JSON.stringify({
+              'hibiki-message-type': 'scrollToNormOffset-foundTarget',
+              'normPos': normPos, 'requestedOffset': offset, 'retry': retry,
+              'rectTop': rect.top, 'rectLeft': rect.left,
+              'rectW': rect.width, 'rectH': rect.height
+            }));
+            if (typeof window.__hoshiAlignToRect === 'function') {
+              window.__hoshiAlignToRect(rect);
+            } else {
+              window.scrollBy(0, rect.top - 16);
+            }
+            return;
+          }
+          normPos += wk;
+        }
+        k += wk;
+      }
+    }
+    if (normPos === 0 && retry < maxRetries) {
+      console.log(JSON.stringify({
+        'hibiki-message-type': 'scrollToNormOffset-domNotReady',
+        'retry': retry, 'nextIn': '100ms'
+      }));
+      setTimeout(function() {
+        window.__hibikiScrollToNormOffset(section, offset, retry + 1);
+      }, 100);
+      return;
+    }
+    console.log(JSON.stringify({
+      'hibiki-message-type': 'scrollToNormOffset-exhausted',
+      'totalNormPos': normPos, 'requestedOffset': offset, 'retry': retry
+    }));
   } catch (e) {
     console.log(JSON.stringify({
       'hibiki-message-type': 'hibikiScrollToNormOffsetErr',
       'error': String(e),
       'section': section, 'offset': offset
     }));
-    return;
   }
-  setTimeout(function(){
-    try {
-      if (window.__hoshiClearActiveRanges) window.__hoshiClearActiveRanges();
-    } catch (_e) {}
-  }, 900);
 };
 ''';
 
@@ -1505,20 +739,11 @@ window.__hibikiScrollToNormOffset = function(section, offset) {
 })();
 ''');
 
-    // 注入 JS 函数。顺序：highlight（对齐）→ paint（CSS Highlight API /
-    // overlay 抽象）→ sasayaki（依赖 paint 的 setActiveRanges / clear）。
     await controller.evaluateJavascript(source: _highlightFn);
-    await controller.evaluateJavascript(source: _paintFn);
     await controller.evaluateJavascript(source: _sasayakiFn);
     await controller.evaluateJavascript(source: _ttuApiShimFn);
     await controller.evaluateJavascript(source: _annotateFn);
-    // 旧 WebView 的 overlay 走 position:fixed，.book-content 滚动时需要
-    // 重画一次。Highlight API 可用时此调用内部提前 return。
-    await controller.evaluateJavascript(
-      source: '__hoshiInstallOverlayScrollSync();',
-    );
-    // _readerPosFn 依赖 __hoshiIsSkippable / __hoshiHighlightSasayaki，
-    // 必须在 _sasayakiFn 之后 evaluate
+    // _readerPosFn 依赖 __hoshiIsSkippable，必须在 _sasayakiFn 之后 evaluate
     await controller.evaluateJavascript(source: _readerPosFn);
   }
 
@@ -1549,6 +774,8 @@ window.__hibikiScrollToNormOffset = function(section, offset) {
         hasSectionCount: json['hasSectionCount'] == true,
         sectionCount: (json['sectionCount'] as num?)?.toInt(),
         currentSection: (json['currentSection'] as num?)?.toInt(),
+        currentPage: (json['currentPage'] as num?)?.toInt(),
+        totalPages: (json['totalPages'] as num?)?.toInt(),
       );
     } catch (_) {
       return const TtuApiProbe.missing();
@@ -1657,11 +884,9 @@ window.__hibikiScrollToNormOffset = function(section, offset) {
     );
   }
 
-  /// 对齐 Sasayaki 原版 reader.js 的 `applySasayakiCues(cues)`：ttu 章节
-  /// 挂载完成（或 sasayakiMountedSection 识别出当前段）后，把该段所有
-  /// Sasayaki cue 批量传给 WebView，JS 侧一次性 TreeWalker 扫归一化字符 →
-  /// 按每条 cue 的 (normCharStart, normCharEnd) 包 `<span>` 存进
-  /// `__hoshiSasayakiCueMap`。之后每句高亮就是 Map 查表，不再走 walker。
+  /// 对齐 iOS Sasayaki 的 `applySasayakiCues`：sectionChanged 后把该段所有
+  /// cue 传给 WebView，JS 侧一次性 TreeWalker 按 normChar 偏移包 `<span>`
+  /// 存进 `__hoshiSasayakiCueMap`。运行期 O(1) Map 查表 + class toggle。
   ///
   /// [cues] 只需包含本段的 Sasayaki cue（非 Sasayaki 的 cue.textFragmentId
   /// 解码会返回 null，调用方已过滤）。同段重复调用会被 JS 侧 appliedForSection
@@ -1725,68 +950,11 @@ window.__hibikiScrollToNormOffset = function(section, offset) {
     final String raw = cue.textFragmentId;
     final SasayakiFragment? frag = SasayakiMatchCodec.tryDecode(raw);
     if (frag != null) {
-      // 优先走 Sasayaki 原版模型：章节挂载时已经通过 applySasayakiCues
-      // 批量预包 span，运行期只是 Map 查表加 class。cueMap 未命中时 JS 自己
-      // 回退到旧的 __hoshiHighlightSasayaki（TreeWalker + indexOf 回退）
-      // 处理那条 cue，Dart 侧不分支。
-      //
-      // 为什么不让 Dart 根据 JS 返回值自己分支：evaluateJavascript 的返回
-      // 值类型在不同 WebView 实现下不稳定，把控制流放在 JS 里一条链条
-      // 到底更可靠。
-      //
-      // cueMap 命中路径优先走 __hoshiAlignToElement；miss 时退回
-      // __ttuScrollToCharOffset + walker fallback。
-      final String cueJson = jsonEncode(cue.text);
+      // 对齐 iOS Hoshi Reader：cueMap 命中 → 加 class + 对齐翻页；
+      // cueMap miss → 清高亮，不做 TreeWalker 回退，等下一条命中的 cue。
       await controller.evaluateJavascript(
-        source: '(async function(){'
-            'var reveal = $reveal;'
-            // cueMap 命中路径优先：span 已在 DOM 里，__hoshiAlignToElement
-            // 用 wrappers[0] 的实际 rect 算页，和 applySasayakiCues 的
-            // TreeWalker 归一化共用一套字符定位；不走 __ttuScrollToCharOffset
-            // 是因为 ttu 的 bookmarkManager.scrollToBookmark 用 section.startCharacter
-            // + charOffset（ttu 自己的 epub 字符计数，和 Sasayaki 的 normCharStart
-            // 不完全对齐，ruby/空白归一化细节有差），小偏差下会把 pageIndex
-            // 算偏一页 —— 反而让音频跑到下一页、reader 停在上一页。
-            'if (window.__hoshiHighlightSasayakiCueById('
-            '    ${jsonEncode(raw)}, reveal)) return;'
-            // cueMap miss：span 不在 cueMap 里（section 尚未 applySasayakiCues
-            // 完成 / 该 cue 被 oob 或 cross-boundary 跳过）。此时没 span 做 rect
-            // 对齐基准，只能靠 __ttuScrollToCharOffset 带页 + walker 补包 span。
-            'var hasApi = '
-            '  typeof window.__ttuScrollToCharOffset === "function";'
-            'var bc = document.querySelector(".book-content");'
-            'var alreadyScrolled = bc && bc.scrollTop > 100;'
-            'var useForkScroll = reveal && hasApi && !alreadyScrolled;'
-            'console.log(JSON.stringify({'
-            '  "hibiki-message-type": "sasayakiForkScrollEntry",'
-            '  "section": ${frag.sectionIndex},'
-            '  "offset": ${frag.normCharStart},'
-            '  "reveal": reveal,'
-            '  "hasApi": hasApi,'
-            '  "useForkScroll": useForkScroll'
-            '}));'
-            'if (useForkScroll) {'
-            '  try { await window.__ttuScrollToCharOffset('
-            '    ${frag.sectionIndex}, ${frag.normCharStart});'
-            '    console.log(JSON.stringify({'
-            '      "hibiki-message-type": "sasayakiForkScrollOk",'
-            '      "section": ${frag.sectionIndex},'
-            '      "offset": ${frag.normCharStart}'
-            '    })); }'
-            '  catch (e) {'
-            '    console.log(JSON.stringify({'
-            '      "hibiki-message-type": "scrollToCharOffsetErr",'
-            '      "section": ${frag.sectionIndex},'
-            '      "offset": ${frag.normCharStart},'
-            '      "error": String(e)'
-            '    }));'
-            '    useForkScroll = false;'
-            '  }'
-            '}'
-            'window.__hoshiHighlightSasayaki(${frag.sectionIndex}, '
-            '  ${frag.normCharStart}, ${frag.normCharEnd}, $cueJson, '
-            '  useForkScroll ? false : reveal);'
-            '})();',
+        source: 'window.__hoshiHighlightSasayakiCueById('
+            '${jsonEncode(raw)}, $reveal);',
       );
       return;
     }
@@ -1871,6 +1039,8 @@ class TtuApiProbe {
     required this.hasSectionCount,
     this.sectionCount,
     this.currentSection,
+    this.currentPage,
+    this.totalPages,
   });
 
   const TtuApiProbe.missing()
@@ -1878,13 +1048,17 @@ class TtuApiProbe {
         hasCurrentSection = false,
         hasSectionCount = false,
         sectionCount = null,
-        currentSection = null;
+        currentSection = null,
+        currentPage = null,
+        totalPages = null;
 
   final bool hasGoToSection;
   final bool hasCurrentSection;
   final bool hasSectionCount;
   final int? sectionCount;
   final int? currentSection;
+  final int? currentPage;
+  final int? totalPages;
 
   /// 三项都挂上才算 fork 就绪；任何一项缺失都走兼容路径。
   bool get forkReady =>

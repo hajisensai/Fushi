@@ -44,8 +44,7 @@ class CueMatch {
   final int normCharStart;
   final int normCharEnd;
 
-  /// 精确子串匹配命中 = 1.0，未命中 = 0.0。字段保留是为了给 UI / codec 留
-  /// 一个可扩展口子，不再用于阈值判断。
+  /// 精确子串匹配命中 = 1.0，未命中 = 0.0。
   final double score;
 
   bool get matched => sectionIndex >= 0;
@@ -77,11 +76,8 @@ class MatchResult {
 ///    位置作为 cursor 起点。可以跳过音频前置的 OP 朗读。
 /// 4. **精确主循环**：对每条 cue，在 `big[cursor, cursor + searchWindow]` 内做
 ///    精确子串 `indexOf`。命中则 cursor 推到子串末尾；未命中直接标记
-///    unmatched，cursor 不动，下条 cue 重新找。
-/// 5. **模糊兜底（gap-fill）**：对"夹在两条已精确匹配 cue 之间"的未匹配
-///    cue，在已知的狭窄区间 `big[prev.end, next.start]` 内滑动固定长度窗口
-///    跑有界 Levenshtein，相似度 ≥ [fuzzyThreshold] 就补一条 CueMatch。
-///    只在两条锚点之间搜，不做全书漫搜，误配率可控。
+///    unmatched，cursor 不动，下条 cue 重新找。（对齐 iOS Hoshi Reader：
+///    无模糊兜底，未命中就是未命中。）
 class EpubSrtMatcher {
   /// 对齐官方 iOS Sasayaki `SasayakiMatchView` 的默认值（`searchWindow: Double = 200`）。
   /// 窗口越小越不容易被短 `＊` 噪声 cue 拉飞 cursor：当 SRT 是 Whisper 裸转写
@@ -96,14 +92,6 @@ class EpubSrtMatcher {
   /// 命中偏前的歧义位置拉偏起点）。
   static const int defaultProbeMinLen = 6;
 
-  /// 模糊兜底的相似度下限（1 - editDistance / len）。
-  static const double fuzzyThreshold = 0.85;
-
-  /// 模糊兜底对 cue 的最小归一化长度下限，太短不做模糊（假命中概率高）。
-  static const int fuzzyMinLen = 6;
-
-  /// 单个 gap 内最多扫多长（上限保险，防病态 cue 在一大段空白里拖时间）。
-  static const int fuzzyMaxGapScan = 4000;
 
   /// 在后台 isolate 里跑 [match]。
   static Future<MatchResult> matchInIsolate({
@@ -226,21 +214,8 @@ class EpubSrtMatcher {
       matched++;
     }
 
-    debugPrint('[sasayaki] matcher done (exact): matched=$matched/${cues.length} '
+    debugPrint('[sasayaki] matcher done: matched=$matched/${cues.length} '
         'finalCursor=$cursor/$totalLen');
-
-    final int filled = _gapFill(
-      results: results,
-      cues: cues,
-      big: big,
-      idx: idx,
-      searchWindow: searchWindow,
-    );
-    if (filled > 0) {
-      matched += filled;
-      debugPrint('[sasayaki] matcher done (fuzzy gap-fill): +$filled '
-          'final=$matched/${cues.length}');
-    }
 
     return MatchResult(
       matches: results,
@@ -249,200 +224,6 @@ class EpubSrtMatcher {
     );
   }
 
-  /// 第二遍：对"夹在两条已匹配 cue 之间"的未匹配 cue 做模糊兜底。
-  ///
-  /// 只在两条锚点之间的狭窄 gap（`big[prev.globalEnd, next.globalStart]`）里搜，
-  /// 不漫搜全书。命中后推进 gap 内的局部 cursor，下一条未匹配 cue 继续从这里
-  /// 往后搜，保证同一 gap 内多条 cue 的相对顺序。
-  ///
-  /// 返回本次补上的 cue 数。
-  static int _gapFill({
-    required List<CueMatch> results,
-    required List<AudioCue> cues,
-    required String big,
-    required _Index idx,
-    required int searchWindow,
-  }) {
-    int added = 0;
-    int i = 0;
-    while (i < results.length) {
-      if (results[i].matched) {
-        i++;
-        continue;
-      }
-      int j = i;
-      while (j < results.length && !results[j].matched) {
-        j++;
-      }
-
-      // 三种锚点形态决定 gap 在 big 里的搜索范围（都尊重 searchWindow，
-      // 避免漫搜全书）：
-      // - 两端皆有锚：[prevEnd, min(prevEnd + searchWindow, nextStart)]。
-      //   正常夹心场景。
-      // - 仅后有锚（i==0）：[max(0, nextStart - searchWindow), nextStart]。
-      //   首条 cue 因微差精确失败、但后续正常锚点到位时走这里；旧实现
-      //   把 gapStart 钉在 probe 起点，等价于 nextStart，gap 为空错过首句。
-      // - 仅前有锚（j==len）：[prevEnd, prevEnd + searchWindow]。尾段兜底。
-      // - 全书无锚：跳过，避免误把完全不匹配的 SRT/EPUB 对靠模糊拼起来。
-      final bool hasPrev = i > 0;
-      final bool hasNext = j < results.length;
-      int gapStart;
-      int gapEnd;
-      if (hasPrev && hasNext) {
-        gapStart = _globalEnd(results[i - 1], idx);
-        final int nextStart = _globalStart(results[j], idx);
-        gapEnd = (gapStart + searchWindow).clamp(0, nextStart);
-      } else if (hasNext) {
-        final int nextStart = _globalStart(results[j], idx);
-        gapEnd = nextStart;
-        gapStart = (nextStart - searchWindow).clamp(0, nextStart);
-      } else if (hasPrev) {
-        gapStart = _globalEnd(results[i - 1], idx);
-        gapEnd = (gapStart + searchWindow).clamp(0, big.length);
-      } else {
-        i = j;
-        continue;
-      }
-
-      if (gapEnd > gapStart && (gapEnd - gapStart) <= fuzzyMaxGapScan) {
-        int cursor = gapStart;
-        for (int k = i; k < j; k++) {
-          final String nc = _normalize(cues[k].text);
-          if (nc.length < fuzzyMinLen) {
-            continue;
-          }
-          if (gapEnd - cursor < nc.length) {
-            break;
-          }
-          final _FuzzyHit? hit = _fuzzyFind(big, nc, cursor, gapEnd);
-          if (hit == null) {
-            continue;
-          }
-          final int secIdx =
-              _sectionForOffset(idx.sectionNormStarts, hit.start);
-          results[k] = CueMatch(
-            cueSentenceIndex: cues[k].sentenceIndex,
-            sectionIndex: secIdx,
-            normCharStart: hit.start - idx.sectionNormStarts[secIdx],
-            normCharEnd: hit.end - idx.sectionNormStarts[secIdx],
-            score: hit.similarity,
-          );
-          added++;
-          cursor = hit.end;
-          if (added <= 5) {
-            final String snippet = big.substring(hit.start, hit.end);
-            debugPrint('[sasayaki] matcher.fuzzy#$added sid=${cues[k].sentenceIndex} '
-                'sec=$secIdx sim=${hit.similarity.toStringAsFixed(2)} '
-                'cue="${_clip(cues[k].text, 24)}" '
-                'norm="${_clip(nc, 24)}" '
-                'big="${_clip(snippet, 24)}"');
-          }
-        }
-      }
-
-      i = j;
-    }
-    return added;
-  }
-
-  /// 在 `big[start, end)` 内，以长度 L=nc.length 滑动窗口跑有界 Levenshtein，
-  /// 取编辑距离最小的窗口；若 1 - d/L ≥ [fuzzyThreshold] 则返回该窗口。
-  ///
-  /// 注：保守使用等长窗口，让 Levenshtein 自己吞小的插入/删除；窗口长度
-  /// 与 cue 差 1 字的情形，边界 1~2 的 edit cost 会被吸收，不影响阈值判断。
-  static _FuzzyHit? _fuzzyFind(String big, String nc, int start, int end) {
-    final int L = nc.length;
-    final int scanEnd = end - L;
-    if (scanEnd < start) {
-      return null;
-    }
-    final int allowed = (L * (1 - fuzzyThreshold)).floor();
-    int bestD = allowed + 1;
-    int bestPos = -1;
-    for (int p = start; p <= scanEnd; p++) {
-      final int d = _levBounded(nc, big, p, L, bestD - 1);
-      if (d < bestD) {
-        bestD = d;
-        bestPos = p;
-        if (bestD == 0) {
-          break;
-        }
-      }
-    }
-    if (bestPos < 0) {
-      return null;
-    }
-    final double sim = 1.0 - bestD / L;
-    if (sim < fuzzyThreshold) {
-      return null;
-    }
-    return _FuzzyHit(bestPos, bestPos + L, sim);
-  }
-
-  /// Levenshtein(a, big[bStart, bStart+bLen])，超过 [maxDist] 提前终止。
-  static int _levBounded(
-      String a, String big, int bStart, int bLen, int maxDist) {
-    final int n = a.length;
-    final int m = bLen;
-    if (maxDist < 0) {
-      return (n == m) ? _levUnbounded(a, big, bStart, bLen) : 1;
-    }
-    if ((n - m).abs() > maxDist) {
-      return maxDist + 1;
-    }
-    List<int> prev = List<int>.filled(m + 1, 0);
-    List<int> curr = List<int>.filled(m + 1, 0);
-    for (int j = 0; j <= m; j++) {
-      prev[j] = j;
-    }
-    for (int i = 1; i <= n; i++) {
-      curr[0] = i;
-      int rowMin = i;
-      final int ac = a.codeUnitAt(i - 1);
-      for (int j = 1; j <= m; j++) {
-        final int bc = big.codeUnitAt(bStart + j - 1);
-        final int cost = (ac == bc) ? 0 : 1;
-        int v = prev[j] + 1;
-        final int left = curr[j - 1] + 1;
-        if (left < v) {
-          v = left;
-        }
-        final int diag = prev[j - 1] + cost;
-        if (diag < v) {
-          v = diag;
-        }
-        curr[j] = v;
-        if (v < rowMin) {
-          rowMin = v;
-        }
-      }
-      if (rowMin > maxDist) {
-        return maxDist + 1;
-      }
-      final List<int> tmp = prev;
-      prev = curr;
-      curr = tmp;
-    }
-    return prev[m];
-  }
-
-  // maxDist<0 的路径：只在 bestD 已经更新到 0 之后才会走到，这里给个保守
-  // 兜底（逐字符比对），实测几乎不会被命中。
-  static int _levUnbounded(String a, String big, int bStart, int bLen) {
-    int d = 0;
-    for (int i = 0; i < a.length && i < bLen; i++) {
-      if (a.codeUnitAt(i) != big.codeUnitAt(bStart + i)) {
-        d++;
-      }
-    }
-    return d + (a.length - bLen).abs();
-  }
-
-  static int _globalStart(CueMatch m, _Index idx) =>
-      idx.sectionNormStarts[m.sectionIndex] + m.normCharStart;
-
-  static int _globalEnd(CueMatch m, _Index idx) =>
-      idx.sectionNormStarts[m.sectionIndex] + m.normCharEnd;
 
   /// 取前 [defaultProbeCount] 条 cue，跳过 `＊` 开头 & 太短的，在全书做 indexOf，
   /// 返回最小命中偏移；全部 miss 则回到 0。
@@ -484,19 +265,16 @@ class EpubSrtMatcher {
   }
 
   static void _appendNormalized(StringBuffer buf, String s) {
-    for (int i = 0; i < s.length; i++) {
-      final int c = s.codeUnitAt(i);
-      if (!_isKeepable(c)) {
-        continue;
-      }
-      if (c >= 0x41 && c <= 0x5A) {
+    for (final int cp in s.runes) {
+      if (!_isKeepable(cp)) continue;
+      if (cp >= 0x41 && cp <= 0x5A) {
         // ASCII uppercase → lowercase
-        buf.writeCharCode(c + 0x20);
-      } else if (c >= 0xFF21 && c <= 0xFF3A) {
+        buf.writeCharCode(cp + 0x20);
+      } else if (cp >= 0xFF21 && cp <= 0xFF3A) {
         // Fullwidth uppercase → fullwidth lowercase
-        buf.writeCharCode(c + 0x20);
+        buf.writeCharCode(cp + 0x20);
       } else {
-        buf.writeCharCode(c);
+        buf.writeCharCode(cp);
       }
     }
   }
@@ -528,6 +306,24 @@ class EpubSrtMatcher {
     if (c >= 0x3400 && c <= 0x4DBF) return true;
     // CJK Unified Ideographs
     if (c >= 0x4E00 && c <= 0x9FFF) return true;
+    // ○ (U+25CB) ◯ (U+25EF)
+    if (c == 0x25CB || c == 0x25EF) return true;
+    // 〻 (U+303B) vertical ideograph iteration mark
+    if (c == 0x303B) return true;
+    // CJK Radicals Supplement U+2E80-U+2EFF
+    if (c >= 0x2E80 && c <= 0x2EFF) return true;
+    // Kangxi Radicals U+2F00-U+2FDF
+    if (c >= 0x2F00 && c <= 0x2FDF) return true;
+    // CJK Compatibility Ideographs
+    if (c >= 0xF900 && c <= 0xFAFF) return true;
+    // CJK Ext B
+    if (c >= 0x20000 && c <= 0x2A6DF) return true;
+    // CJK Ext C-F
+    if (c >= 0x2A700 && c <= 0x2EBE0) return true;
+    // CJK Compatibility Ideographs Supplement
+    if (c >= 0x2F800 && c <= 0x2FA1F) return true;
+    // CJK Ext G-I
+    if (c >= 0x30000 && c <= 0x323AF) return true;
     // Fullwidth ０-９
     if (c >= 0xFF10 && c <= 0xFF19) return true;
     // Fullwidth Ａ-Ｚ
@@ -573,14 +369,6 @@ class _Index {
 
   final String normText;
   final List<int> sectionNormStarts;
-}
-
-class _FuzzyHit {
-  const _FuzzyHit(this.start, this.end, this.similarity);
-
-  final int start;
-  final int end;
-  final double similarity;
 }
 
 class _MatchRequest {

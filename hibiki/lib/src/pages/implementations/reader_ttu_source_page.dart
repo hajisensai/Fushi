@@ -103,13 +103,9 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   /// controller 端遇到 -1 直接 return 不触发跨章逻辑。
   int _currentTtuSection = -1;
 
-  /// 上次调 applySasayakiCues 的 section + rootTextLen。
-  /// 对齐 JS 侧 `__hoshiSasayakiAppliedForSection`，防同一挂载周期里
-  /// sasayakiMountedSection 连发多条消息导致重复 apply（apply 本身会包
-  /// 大量 span，代价不小）。JS 侧也有 guard，这里再挡一层减少 console bridge
-  /// 开销。
+  /// 上次调 applySasayakiCues 的 section。JS 侧也有 guard（same section +
+  /// rootLen），Dart 侧再挡一层减少 bridge 开销。
   int _lastSasayakiAppliedSection = -1;
-  int _lastSasayakiAppliedRootLen = -1;
 
   // ── 位置持久化（ReaderPosition Isar 表） ────────────────────────────────
   //
@@ -137,9 +133,16 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   /// 否则音频 cue 推着 reader 往播放位置跑，恢复目标章就被覆盖。
   bool _restoreInFlight = false;
 
+  /// 同段恢复时短暂抑制 reveal scroll，给 ttu 自带 scrollToBookmark 留时间。
+  /// 否则 _onCueChanged 的 reveal=true 会立刻把页面拉到音频 cue 位置，
+  /// 覆盖用户上次阅读的书签。
+  bool _suppressRevealScroll = false;
+
+
   @override
   void initState() {
     super.initState();
+    debugPrint('[hibiki-reader-lifecycle] initState ${identityHashCode(this)}');
     WidgetsBinding.instance.addObserver(this);
     _applyVolumeKeyIntercept();
     // 同步预判：Isar 查 Audiobook / SrtBook 记录。命中就让 WebView 首帧
@@ -157,10 +160,12 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   /// 文件 I/O，不能在 initState 里跑）。极端情况下路径失效会让预留槽位比
   /// 实际播放栏多出现几毫秒就消失 —— 比每次开书文字跳一下更可接受。
   bool _detectAudioSlotSync() {
+    // initState 阶段不能 ref.watch，走 appModelNoUpdate（ref.read）取 DB。
+    final database = appModelNoUpdate.database;
     final String? bookUid = widget.item?.uniqueKey;
     if (bookUid != null) {
       final Audiobook? ab =
-          AudiobookRepository(appModel.database).findByBookUid(bookUid);
+          AudiobookRepository(database).findByBookUid(bookUid);
       if (ab != null) {
         return (ab.audioPaths?.isNotEmpty ?? false) ||
             (ab.audioRoot != null && ab.audioRoot!.isNotEmpty);
@@ -171,7 +176,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       return false;
     }
     for (final SrtBook b
-        in SrtBookRepository(appModel.database).listAll()) {
+        in SrtBookRepository(database).listAll()) {
       if (b.ttuBookId == ttuId) {
         return (b.audioPaths?.isNotEmpty ?? false) ||
             (b.audioRoot != null && b.audioRoot!.isNotEmpty);
@@ -182,6 +187,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
 
   @override
   void dispose() {
+    debugPrint('[hibiki-reader-lifecycle] dispose ${identityHashCode(this)}');
     VolumeKeyChannel.instance.setHandlers();
     VolumeKeyChannel.instance.setInterceptEnabled(false);
     _navRestoreTimeout?.cancel();
@@ -528,10 +534,15 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
               'http://localhost:${server.boundPort}/manage.html',
         ),
       ),
-      // ttu fork 已把 autoBookmark / avoidPageBreak 的 default 翻成 true
-      // （见 ttu fork 的 store.ts patch），所以不再需要 DOCUMENT_START
-      // UserScript 戳 localStorage 绕 bundle 模块顶层那次 getItem race。
-      initialUserScripts: UnmodifiableListView<UserScript>(const <UserScript>[]),
+      initialUserScripts: UnmodifiableListView<UserScript>(<UserScript>[
+        // 有声书模式下告诉 ttu fork 跳过自带的 scrollToBookmark，
+        // 位置恢复由 hibiki 的 _bootstrapRestoreReaderPos 全权负责。
+        if (_hasAudioSlot)
+          UserScript(
+            source: 'window.__hoshiManagesPosition = true;',
+            injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+          ),
+      ]),
       onPermissionRequest: (controller, origin) async {
         return PermissionResponse(
           action: PermissionResponseAction.GRANT,
@@ -738,16 +749,13 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       isJson = false;
     }
 
-    // diag / sasayaki 消息绕过 50ms 防抖：一次 IDB 回调里连打五六条初始化
-    // 探针，只放第一条过去会让 sasayakiRefsReady / sasayakiRefsSection 等
-    // 关键诊断消失，表面看像"refs 没加载"。
     final String? msgType = isJson
         ? messageJson['hibiki-message-type'] as String?
         : null;
-    final bool isDiag = msgType != null &&
-        (msgType.startsWith('diag') || msgType.startsWith('sasayaki'));
 
-    if (!isDiag) {
+    // 带 hibiki-message-type 的都是我们自己的协议消息，一律不防抖；
+    // 防抖只过滤 ttu 原生 console 噪声。
+    if (msgType == null) {
       DateTime now = DateTime.now();
       if (lastMessageTime != null &&
           now.difference(lastMessageTime!) < consoleMessageDebounce) {
@@ -776,8 +784,17 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       case 'sectionChanged':
         _handleTtuSectionChanged(messageJson);
         break;
-      case 'sasayakiMountedSection':
-        await _handleSasayakiMountedSection(messageJson);
+      case 'sasayakiNavOk':
+        // DOM 渲染完成，重试 cueMap 构建（sectionChanged 时可能太早）。
+        final int? navSection =
+            (messageJson['section'] as num?)?.toInt();
+        if (navSection != null) {
+          _lastSasayakiAppliedSection = -1;
+          unawaited(_applySasayakiCuesForSection(navSection));
+        }
+        break;
+      case 'sasayakiApplySkip':
+        _lastSasayakiAppliedSection = -1;
         break;
       default:
         // Unknown types (audiobook bridge diagnostics etc.) → 打日志方便排查
@@ -1851,6 +1868,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       return;
     }
     debugPrint('[hibiki-audiobook] injecting via $trigger');
+    _didRestorePos = false;
     await _injectAudiobookBridge(controller);
     // 引导 _currentTtuSection：ttu fork 的 sectionChanged 订阅带 skip(1)，
     // 首次挂载（封面 / 最近阅读章）那次 Wn 发射被吃掉，字段会一直卡在 -1。
@@ -1862,6 +1880,11 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     // 已经从 ttu probe 拿到真值（fork skip(1) 的坑不然留 -1，跨段判定会
     // 走错路径）。_didRestorePos 在函数内部自守只跑一次。
     await _bootstrapRestoreReaderPos();
+    // 初始章节预建 Sasayaki cueMap（首次 sectionChanged 被 ttu skip(1) 吃掉，
+    // 这里兜住）。
+    if (_currentTtuSection >= 0) {
+      unawaited(_applySasayakiCuesForSection(_currentTtuSection));
+    }
     // 章节加载后立刻把视口拉回当前句所在页（Hoshi pendingFragment 模式）。
     _onCueChanged();
   }
@@ -1876,6 +1899,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     AudiobookPlayerController? ctrl,
   ) async {
     (int, int)? progress;
+    (int, int)? pageProgress;
     List<TtuTocEntry> toc = const <TtuTocEntry>[];
     try {
       final TtuApiProbe probe = await AudiobookBridge.probeTtuApi(_controller);
@@ -1883,6 +1907,11 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           probe.sectionCount != null &&
           probe.sectionCount! > 0) {
         progress = (probe.currentSection!, probe.sectionCount!);
+      }
+      if (probe.currentPage != null &&
+          probe.totalPages != null &&
+          probe.totalPages! > 0) {
+        pageProgress = (probe.currentPage!, probe.totalPages!);
       }
       toc = await AudiobookBridge.fetchToc(_controller);
     } catch (e) {
@@ -1898,6 +1927,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           controller: ctrl,
           toc: toc,
           readerProgress: progress,
+          pageProgress: pageProgress,
           onJumpSection: (int idx) async {
             // 复用 sasayakiRequestNav：会在 follow audio 视角下打 auto 标记，
             // 避免用户主动跳章被 sectionChanged 误判成外部触发。
@@ -2061,14 +2091,17 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     }
     final AudiobookPlayerController? controller = _audiobookController;
     final AudioCue? cue = controller?.currentCue;
-    // 对齐 Sasayaki `reveal: autoScroll && hasPlayedOnce`：Follow audio OFF
-    // 或者还没按过 play 时，只加高亮 class、不把页面滚到 cue 所在页，
-    // 保持用户当前阅读位置。
-    final bool reveal = controller?.shouldRevealCurrentCue ?? true;
     debugPrint(
-      '[hibiki-audiobook] cue changed sid=${cue?.sentenceIndex} '
-      'sel=${cue?.textFragmentId} reveal=$reveal',
+      '[hibiki-audiobook-diag] _onCueChanged: '
+      'cue=${cue?.textFragmentId ?? "NULL"} '
+      'pos=${controller?.position?.inMilliseconds}ms '
+      'followAudio=${controller?.followAudio.value} '
+      'hasPlayed=${controller?.hasPlayedOnce} '
+      'suppress=$_suppressRevealScroll',
     );
+    final bool forceReveal = controller?.consumeForceReveal() ?? false;
+    final bool reveal = !_suppressRevealScroll &&
+        (forceReveal || (controller?.shouldRevealCurrentCue ?? true));
     AudiobookBridge.highlight(_controller, cue: cue, reveal: reveal);
   }
 
@@ -2116,13 +2149,9 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     if (controller.followAudio.value) {
       _inFlightNavSection = newSection;
       _armNavRestoreTimeout(newSection, controller);
-      // ttu 重新挂载了章节 DOM（即便 newSection == 之前 section），旧 cueMap
-      // 里的 span 已经游离。放 Dart 这层早返回守卫失效，让下一个
-      // sasayakiMountedSection 事件重新跑 applySasayakiCues。JS 侧
-      // __sasayakiRequestNav 里也同步清了 __hoshiSasayakiAppliedForSection，
-      // 两道守卫一起下让 apply 一定重跑。
+      // ttu 重新挂载了章节 DOM，旧 cueMap 里的 span 已经游离。清 Dart 守卫，
+      // sectionChanged(auto=true) 到达后 _applySasayakiCuesForSection 重建。
       _lastSasayakiAppliedSection = -1;
-      _lastSasayakiAppliedRootLen = -1;
       try {
         await AudiobookBridge.requestSectionNav(
           _controller,
@@ -2212,10 +2241,8 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         sectionIndex: target,
       );
       _currentTtuSection = target;
-      // 同 _handleCueCrossChapter：ttu 换过 DOM，cueMap 旧 span 作废，
-      // 必须清 Dart 早返回守卫，否则 mountedSection handler 会 skip。
+      // ttu 换过 DOM，cueMap 旧 span 作废，清 apply 守卫。
       _lastSasayakiAppliedSection = -1;
-      _lastSasayakiAppliedRootLen = -1;
       if (mounted) setState(() => _pendingNavSection = null);
     } catch (e) {
       debugPrint('[hibiki-audiobook] pill tap requestSectionNav failed: $e');
@@ -2223,51 +2250,30 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     }
   }
 
-  /// 收到 JS 侧 `sasayakiMountedSection` 事件（`__hoshiHighlightSasayaki`
-  /// 在 rootTextLen 变化时测出挂载段后主动打）：对齐 Sasayaki 原版
-  /// reader.js 的 applySasayakiCues 入口，把该段所有 Sasayaki cue 批量预包
-  /// 成 `<span class="hoshi-sasayaki-cue">`，塞进 JS 侧 cueMap。
-  ///
-  /// 之后每条 cue 高亮走 `__hoshiHighlightSasayakiCueById` 的 O(1) Map 查表，
-  /// 不再每句 TreeWalker 全章扫一遍。未命中（跨节点 cue / 该段还没 apply）
-  /// 由 JS 自身 fallback 到旧的 `__hoshiHighlightSasayaki` 偏移定位路径。
-  Future<void> _handleSasayakiMountedSection(Map<String, dynamic> json) async {
-    final int mounted = (json['mountedSection'] as num?)?.toInt() ?? -1;
-    final int rootLen = (json['rootTotalNormChars'] as num?)?.toInt() ?? -1;
-    if (mounted < 0) return;
-    // 位置恢复第二步：bootstrap 已发的 requestSectionNav 让 ttu 跳到
-    // saved.section，跳完重挂 DOM → 下一次 cue-tick 的 __hoshiHighlightSasayaki
-    // measure 识别出 mountedSection，在这里 consume 起来。cover / 空段触发不
-    // 了 mount（not-mounted 守卫拦在 measure 之前），所以恢复**不能挂在** 这
-    // 里起步 —— 起步逻辑在 _bootstrapRestoreReaderPos 里。
-    final ReaderViewportPos? pending = _pendingRestorePos;
-    if (pending != null && pending.section == mounted) {
-      await _finishRestore();
-    }
+  /// 为指定章节预建 Sasayaki cueMap。由 sectionChanged 和 bootstrap 触发。
+  Future<void> _applySasayakiCuesForSection(int sectionIndex) async {
+    if (sectionIndex < 0) return;
     final AudiobookPlayerController? controller = _audiobookController;
     if (controller == null || !_controllerInitialised) return;
-    // 同段 + 同 rootLen 已 apply 过就跳过。换章 ttu 会换 innerHTML，
-    // rootLen 通常变化；相同是少数 idempotent 路径（例如重复收到事件）。
-    if (_lastSasayakiAppliedSection == mounted &&
-        _lastSasayakiAppliedRootLen == rootLen) {
-      return;
-    }
-    final List<AudioCue> cues = controller.sasayakiCuesForSection(mounted);
+    if (_lastSasayakiAppliedSection == sectionIndex) return;
+    final List<AudioCue> cues = controller.sasayakiCuesForSection(sectionIndex);
     if (cues.isEmpty) return;
-    _lastSasayakiAppliedSection = mounted;
-    _lastSasayakiAppliedRootLen = rootLen;
+    debugPrint(
+      '[hibiki-audiobook] applySasayakiCues section=$sectionIndex cues=${cues.length}',
+    );
     try {
       await AudiobookBridge.applySasayakiCues(
         _controller,
-        sectionIndex: mounted,
+        sectionIndex: sectionIndex,
         cues: cues,
       );
+      // JS 侧 sasayakiApplied / sasayakiApplySkip 都不抛异常，
+      // 但只有真正 applied 才算成功。这里乐观置位，收到
+      // sasayakiApplySkip 时由 _handleSasayakiApplySkip 重置。
+      _lastSasayakiAppliedSection = sectionIndex;
     } catch (e) {
       debugPrint('[hibiki-audiobook] applySasayakiCues failed: $e');
-      // apply 失败不致命：高亮路径的 fallback 会走旧 walker 定位。下次
-      // mountedSection 事件仍有机会重试（清 guard 以允许重试）。
       _lastSasayakiAppliedSection = -1;
-      _lastSasayakiAppliedRootLen = -1;
     }
   }
 
@@ -2276,24 +2282,14 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
   ///
   /// 调用时机：[_maybeInjectAudiobookBridge] 末尾（Sasayaki refs 已在路上
   /// 加载、_bootstrapCurrentTtuSection 已 probe 过 `_currentTtuSection`）。
-  /// **不挂在 sasayakiMountedSection 事件上** —— 因为 cover 段触发不了 mount
-  /// （`__hoshiHighlightSasayaki` 的 not-mounted 守卫在 measure 之前 return），
-  /// 恢复永远起不来。
   ///
   /// 两种路径：
-  /// - saved.section == _currentTtuSection：ttu 已在目标段（上次也停在这段）
-  ///   → [_finishRestore] 当场 scrollToNormOffset。要求正文段（rootTextLen ≥ 80），
-  ///   cover/空段在 scrollToNormOffset 内部 not-mounted 会 return；之后的
-  ///   `sasayakiMountedSection` 回调里 pending 会再兜底消费一次。
-  /// - saved.section != _currentTtuSection：`requestSectionNav(saved.section)`
-  ///   让 ttu 跳过去，跳完 ttu 重挂 DOM，下一次 cue-tick 的
-  ///   `__hoshiHighlightSasayaki` 跑 measure → `sasayakiMountedSection` 事件
-  ///   → [_handleSasayakiMountedSection] 里 pending 匹配 mountedSection
-  ///   → [_finishRestore]。
+  /// - saved.section == _currentTtuSection → [_finishRestore] 当场
+  ///   scrollToNormOffset。
+  /// - saved.section != _currentTtuSection → `requestSectionNav`，跳完
+  ///   sectionChanged(auto=true) 触发 [_finishRestore]。
   ///
-  /// 无记录（新书）：置 `_didRestorePos=true` 立即返回 —— 对应 Q2 "全新书
-  /// cover 起，不自动跳到音频章"。Follow audio 的 `hasPlayedOnce` 守卫本身
-  /// 也会拦自动跨章；两边一起保证用户按播放之前 reader 停在 cover。
+  /// 无记录（新书）：置 `_didRestorePos=true` 立即返回。
   Future<void> _bootstrapRestoreReaderPos() async {
     if (_didRestorePos) return;
     if (!_controllerInitialised) return;
@@ -2328,19 +2324,19 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     );
     _restoreInFlight = true;
     if (_currentTtuSection == saved.sectionIndex) {
-      // 已在目标段：直接滚。mount 回调也会再兜底一次（幂等 —— pendingPos
-      // 被 _finishRestore 清掉后就不会重复滚）。
-      await _finishRestore();
+      // 已在目标段：ttu fork 的 scrollToBookmark 已被
+      // __hoshiManagesPosition 跳过，直接由 hibiki 滚到保存的偏移。
+      // 不需要 suppress reveal：打开时 hasPlayedOnce=false，cue 不会抢位置。
+      debugPrint(
+        '[hibiki-reader-pos] same section, scrolling to o=${saved.normCharOffset}',
+      );
+      unawaited(_finishRestore());
       return;
     }
     // 跨段：发 requestSectionNav，`_handleTtuSectionChanged` 的
-    // `_inFlightNavSection` 分支会处理回报；等下次 Sasayaki mount 事件
-    // （mountedSection == saved.sectionIndex）再进来 consume。
+    // `_inFlightNavSection` 分支会处理回报。
     _inFlightNavSection = saved.sectionIndex;
-    // ttu 重新挂载章节 DOM，旧 cueMap 失效 —— 清 apply 守卫让 Sasayaki
-    // 重新包 span（跟 _handleCueCrossChapter 同一处理）。
     _lastSasayakiAppliedSection = -1;
-    _lastSasayakiAppliedRootLen = -1;
     try {
       await AudiobookBridge.requestSectionNav(
         _controller,
@@ -2380,77 +2376,59 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
 
   /// 处理 ttu fork 外发的 sectionChanged console 事件。
   ///
-  /// auto=true 来自 `__sasayakiRequestNav`，要么是我们自己刚请求的跳章
-  /// （_inFlightNavSection 相等），要么是未来其他系统触发——两种都不是
-  /// 用户意图，忽略。
-  /// auto=false 来自 ToC 点击 / 滑动翻页等用户操作，都是明确用户意图：
-  /// 复用 [_autoOffFollowOnManualTurn]，Follow=ON 时自动关 Follow 并 toast，
-  /// 让用户停在翻到的位置，下一条 cue 不会 reveal 把页面拉回。
-  /// Follow=OFF 时 [_autoOffFollowOnManualTurn] 自身短路，相当于只更新
-  /// `_currentTtuSection`、尊重用户翻页。
+  /// auto=true 只来自 `__sasayakiRequestNav`（我们自己的跳章请求），
+  /// 只在 idx 匹配 [_inFlightNavSection] 时接受并更新 `_currentTtuSection`，
+  /// 其余（中间段 / stale 延迟事件）全部丢弃。
+  /// auto=false 来自用户 swipe / ToC，始终接受并走 [_autoOffFollowOnManualTurn]。
   void _handleTtuSectionChanged(Map<String, dynamic> json) {
     final int? idx = (json['sectionIndex'] as num?)?.toInt();
     final bool auto = json['auto'] == true;
+    debugPrint(
+      '[hibiki-audiobook-diag] {"hibiki-message-type":"ttuSectionChanged","idx":$idx,"auto":$auto,"inFlight":$_inFlightNavSection,"restoreInFlight":$_restoreInFlight,"pendingRestoreSec":${_pendingRestorePos?.section}}',
+    );
     if (idx == null) return;
-    // 跳章 in-flight 期间，auto=true 但 idx 不是我们的 target——通常是 ttu
-    // 内部中间态（Wn 在最终值前被别的管道短暂推了一次）。**不能**更新
-    // _currentTtuSection，否则下一条 cue tick 看到段不匹配又会触发一次
-    // 跨章跳章，ttu 被二次 __ttuGoToSection，scrollTop 被二次清零到章首。
-    if (_inFlightNavSection != null &&
-        auto &&
-        _inFlightNavSection != idx) {
-      return;
-    }
-    // 任何 sectionChanged 事件都更新 _currentTtuSection（无论 auto 或用户
-    // 翻页）。controller 通过 getCurrentReaderSection 读这个值判定 cue
-    // 是否跨章——必须始终反映 reader 真实挂载的章节。
-    _currentTtuSection = idx;
-    // 我们自己刚发起的跳章回报：这是 ttu 真正跳完的信号——现在（而不是
-    // requestSectionNav await 返回时）才是 notifyRestore 的正确时机，
-    // 避免 _chapterTransition 被提前清。
-    if (_inFlightNavSection == idx) {
-      final AudiobookPlayerController? controller = _audiobookController;
-      if (controller != null) {
-        _completeNavRestore(
-          controller: controller,
-          currentReaderSection: idx,
-          success: true,
-        );
-      } else {
-        _navRestoreTimeout?.cancel();
-        _navRestoreTimeout = null;
-        _inFlightNavSection = null;
-      }
-      // bootstrap restore 的同段落地：ttu 已挂好新 section DOM
-      // （fork 约定 sectionChanged 发出时 DOM 已 ready），立刻滚到目标
-      // offset —— 不等 Sasayaki mountedSection 事件，因为
-      // `notifySectionRestoreCompleted` 在 `_pendingCue==null` 时不会
-      // notifyListeners，`_onCueChanged` 也就不会触发 highlight，
-      // mountedSection 事件永远不发。`_handleSasayakiMountedSection` 里
-      // 的 pending consume 是幂等兜底（_finishRestore 清 pendingPos 后
-      // 再进来也不会重复滚）。
-      if (_restoreInFlight && _pendingRestorePos?.section == idx) {
-        unawaited(_finishRestore());
-      }
-      return;
-    }
+    // auto=true 只来自我们自己的 __sasayakiRequestNav，只认匹配
+    // _inFlightNavSection 的那条（导航到达目标段），其余（中间段 /
+    // 导航完成后的 stale 延迟事件）全部丢弃，不更新 _currentTtuSection。
     if (auto) {
-      // 系统触发但不是我们发的（未来 ttu 内部可能有别的程序化路径），
-      // 保守跳过，不关 Follow。
+      if (_inFlightNavSection == idx) {
+        _currentTtuSection = idx;
+        final AudiobookPlayerController? controller = _audiobookController;
+        if (controller != null) {
+          _completeNavRestore(
+            controller: controller,
+            currentReaderSection: idx,
+            success: true,
+          );
+        } else {
+          _navRestoreTimeout?.cancel();
+          _navRestoreTimeout = null;
+          _inFlightNavSection = null;
+        }
+        // Follow audio / requestSectionNav 跳完，重建目标章 cueMap。
+        unawaited(_applySasayakiCuesForSection(idx));
+        if (_restoreInFlight && _pendingRestorePos?.section == idx) {
+          unawaited(_finishRestore());
+        }
+      }
       return;
     }
-    // Follow ON 时 swipe / ToC 跨段 = 明确用户意图，走和音量键翻页同款
-    // 的 auto-off 语义：关 Follow + toast，用户停在翻到的位置。
-    // Follow=OFF 时 _autoOffFollowOnManualTurn 自身短路，不动状态。
+    // auto=false：用户 swipe / ToC 翻页，始终更新 _currentTtuSection。
+    if (!_didRestorePos) {
+      debugPrint(
+        '[hibiki-reader-pos] ignoring pre-bootstrap sectionChanged idx=$idx',
+      );
+      return;
+    }
+    _currentTtuSection = idx;
     _autoOffFollowOnManualTurn();
-    // 用户翻章 → 立即写 ReaderPosition 一次（offset=0 记到段首）。不等
-    // scroll debounce：用户可能翻章后瞬间关书，scroll 事件没来得及触发。
-    // 下一次 scroll 的 debounce 保存会把 offset 精修到章内精确位置。
     unawaited(_persistReaderPos(
       section: idx,
       offset: 0,
       from: 'sectionChanged',
     ));
+    // 用户翻到新章节，预建该章 Sasayaki cueMap。
+    unawaited(_applySasayakiCuesForSection(idx));
   }
 
   /// 用户点击句子，跳转播放器到该 cue。
