@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_controller.dart';
+import 'package:hibiki/src/media/sources/reader_ttu_source.dart';
 
 /// 有声书播放控制条（紧凑型，固定于阅读器底部）。
 ///
@@ -121,8 +123,8 @@ class AudiobookFollowAudioButton extends StatelessWidget {
 /// [toc] / [readerProgress] 是 reader 页面 probe 后一次性传入的快照。
 /// 面板生存期内不自动刷新（TOC 在一次阅读会话里是静态的；当前章节
 /// 会随 follow audio 滚动变，但打开面板的当下已经 probe 了一次）。
-class AudiobookSettingsSheet extends StatelessWidget {
-  const AudiobookSettingsSheet({
+class AudiobookSettingsSheet extends StatefulWidget {
+  AudiobookSettingsSheet({
     required this.controller,
     required this.toc,
     required this.readerProgress,
@@ -131,35 +133,63 @@ class AudiobookSettingsSheet extends StatelessWidget {
     required this.onBookmark,
     required this.onToggleFullscreen,
     required this.onExitReader,
+    required this.webViewController,
     super.key,
   });
 
-  /// null 表示普通 EPUB 场景（没有 audiobook controller）—— 倍速 /
-  /// 音画同步两节不渲染。
   final AudiobookPlayerController? controller;
-
-  /// 章节列表。空列表表示 ttu 未就绪或 fork 无 `__ttuGetToc`。
   final List<TtuTocEntry> toc;
-
-  /// (currentSection0, totalSections)；未 probe 时 null。
   final (int section, int total)? readerProgress;
-
-  /// (currentPage, totalPages)；未 probe 或无法计算时 null。
   final (int current, int total)? pageProgress;
-
-  /// 点 TOC 里某一章 → 触发跳转。参数是 ttu sectionIndex（0-based）。
   final Future<void> Function(int sectionIndex) onJumpSection;
-
-  /// 点"添加书签" → 触发 ttu 内部的 `bookmarkPage()`。
   final Future<void> Function() onBookmark;
-
-  /// 点"全屏切换" → reader 页面侧在 immersive / edgeToEdge 间翻。
   final VoidCallback onToggleFullscreen;
-
-  /// 点"退出阅读" → reader 页面侧 Navigator.pop。
   final VoidCallback onExitReader;
+  final InAppWebViewController webViewController;
 
+  @override
+  State<AudiobookSettingsSheet> createState() => _AudiobookSettingsSheetState();
+}
+
+class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
   static const List<double> _speeds = [0.75, 1.0, 1.25, 1.5];
+
+  TtuReaderSettings? _settings;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    final TtuReaderSettings s =
+        await AudiobookBridge.getReaderSettings(widget.webViewController);
+    if (mounted) setState(() => _settings = s);
+  }
+
+  Future<void> _updateSetting(String key, Object value) async {
+    await AudiobookBridge.setReaderSetting(
+      widget.webViewController,
+      key: key,
+      value: value,
+    );
+    final ReaderTtuSource src = ReaderTtuSource.instance;
+    switch (key) {
+      case 'fontSize':
+        await src.setTtuFontSize((value as num).toDouble());
+      case 'lineHeight':
+        await src.setTtuLineHeight((value as num).toDouble());
+      case 'writingMode':
+        await src.setTtuWritingMode(value as String);
+      case 'viewMode':
+        await src.setTtuViewMode(value as String);
+      case 'theme':
+        await src.setTtuTheme(value as String);
+      case 'hideFurigana':
+        await src.setTtuHideFurigana(value as bool);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -168,7 +198,7 @@ class AudiobookSettingsSheet extends StatelessWidget {
     return SafeArea(
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.75,
+          maxHeight: MediaQuery.of(context).size.height * 0.80,
         ),
         child: SingleChildScrollView(
           child: Padding(
@@ -178,16 +208,18 @@ class AudiobookSettingsSheet extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _buildProgressSection(theme),
-                if (toc.isNotEmpty) ...[
+                if (widget.toc.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   _buildTocSection(context, theme),
                 ],
-                if (controller != null) ...[
+                if (widget.controller != null) ...[
                   const SizedBox(height: 20),
-                  _buildSpeedSection(theme, controller!),
+                  _buildSpeedSection(theme, widget.controller!),
                   const SizedBox(height: 20),
-                  _buildDelaySection(theme, controller!),
+                  _buildDelaySection(theme, widget.controller!),
                 ],
+                const SizedBox(height: 20),
+                _buildReaderSettingsSection(theme),
                 const SizedBox(height: 16),
                 const Divider(height: 1),
                 const SizedBox(height: 12),
@@ -201,7 +233,7 @@ class AudiobookSettingsSheet extends StatelessWidget {
   }
 
   Widget _buildProgressSection(ThemeData theme) {
-    final (int section, int total)? prog = readerProgress;
+    final (int section, int total)? prog = widget.readerProgress;
     final String chapterLabel;
     if (prog == null || prog.$2 <= 0) {
       chapterLabel = '—';
@@ -209,7 +241,7 @@ class AudiobookSettingsSheet extends StatelessWidget {
       final int idx1 = prog.$1 + 1;
       final int total = prog.$2;
       final int pct = (idx1 / total * 100).clamp(0, 100).round();
-      final String? title = toc
+      final String? title = widget.toc
           .where((TtuTocEntry e) => e.index == prog.$1)
           .map((TtuTocEntry e) => e.label)
           .firstOrNull;
@@ -217,7 +249,7 @@ class AudiobookSettingsSheet extends StatelessWidget {
       chapterLabel = '第 $idx1 / $total 章$suffix · $pct%';
     }
     final String pageLabel;
-    final (int current, int total)? pp = pageProgress;
+    final (int current, int total)? pp = widget.pageProgress;
     if (pp != null && pp.$2 > 0) {
       pageLabel = '第 ${pp.$1} / ${pp.$2} 页';
     } else {
@@ -238,15 +270,14 @@ class AudiobookSettingsSheet extends StatelessWidget {
   }
 
   Widget _buildTocSection(BuildContext context, ThemeData theme) {
-    final int? currentIdx = readerProgress?.$1;
+    final int? currentIdx = widget.readerProgress?.$1;
     return Theme(
-      // 去掉 ExpansionTile 外框的 divider
       data: theme.copyWith(dividerColor: Colors.transparent),
       child: ExpansionTile(
         tilePadding: EdgeInsets.zero,
         childrenPadding: EdgeInsets.zero,
         title: Text(
-          '章节列表（${toc.length}）',
+          '章节列表（${widget.toc.length}）',
           style: theme.textTheme.titleMedium,
         ),
         children: [
@@ -254,9 +285,9 @@ class AudiobookSettingsSheet extends StatelessWidget {
             constraints: const BoxConstraints(maxHeight: 320),
             child: ListView.builder(
               shrinkWrap: true,
-              itemCount: toc.length,
+              itemCount: widget.toc.length,
               itemBuilder: (BuildContext ctx, int i) {
-                final TtuTocEntry e = toc[i];
+                final TtuTocEntry e = widget.toc[i];
                 final bool isCurrent = currentIdx == e.index;
                 final bool isChild = e.parent != null;
                 return ListTile(
@@ -282,7 +313,7 @@ class AudiobookSettingsSheet extends StatelessWidget {
                       : null,
                   onTap: () async {
                     Navigator.of(ctx).pop();
-                    await onJumpSection(e.index);
+                    await widget.onJumpSection(e.index);
                   },
                 );
               },
@@ -386,6 +417,197 @@ class AudiobookSettingsSheet extends StatelessWidget {
     );
   }
 
+  Widget _buildReaderSettingsSection(ThemeData theme) {
+    final TtuReaderSettings? s = _settings;
+    if (s == null) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: 12),
+          child: SizedBox(
+            width: 20, height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('阅读设置', style: theme.textTheme.titleMedium),
+        const SizedBox(height: 12),
+        // 字体大小
+        _settingRow(
+          theme,
+          label: '字体大小',
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.remove, size: 18),
+                visualDensity: VisualDensity.compact,
+                onPressed: () {
+                  final double v = (s.fontSize - 1).clamp(8, 64);
+                  s.fontSize = v;
+                  setState(() {});
+                  _updateSetting('fontSize', v);
+                },
+              ),
+              SizedBox(
+                width: 36,
+                child: Text(
+                  '${s.fontSize.round()}',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyLarge,
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.add, size: 18),
+                visualDensity: VisualDensity.compact,
+                onPressed: () {
+                  final double v = (s.fontSize + 1).clamp(8, 64);
+                  s.fontSize = v;
+                  setState(() {});
+                  _updateSetting('fontSize', v);
+                },
+              ),
+            ],
+          ),
+        ),
+        // 行高
+        _settingRow(
+          theme,
+          label: '行高',
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.remove, size: 18),
+                visualDensity: VisualDensity.compact,
+                onPressed: () {
+                  final double v =
+                      ((s.lineHeight - 0.1) * 100).roundToDouble() / 100;
+                  s.lineHeight = v.clamp(1.0, 3.0);
+                  setState(() {});
+                  _updateSetting('lineHeight', s.lineHeight);
+                },
+              ),
+              SizedBox(
+                width: 42,
+                child: Text(
+                  s.lineHeight.toStringAsFixed(2),
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyLarge,
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.add, size: 18),
+                visualDensity: VisualDensity.compact,
+                onPressed: () {
+                  final double v =
+                      ((s.lineHeight + 0.1) * 100).roundToDouble() / 100;
+                  s.lineHeight = v.clamp(1.0, 3.0);
+                  setState(() {});
+                  _updateSetting('lineHeight', s.lineHeight);
+                },
+              ),
+            ],
+          ),
+        ),
+        // 排版方向
+        _settingRow(
+          theme,
+          label: '排版方向',
+          child: SegmentedButton<String>(
+            segments: const <ButtonSegment<String>>[
+              ButtonSegment<String>(value: 'horizontal-tb', label: Text('横排')),
+              ButtonSegment<String>(value: 'vertical-rl', label: Text('竖排')),
+            ],
+            selected: <String>{s.writingMode},
+            onSelectionChanged: (Set<String> sel) {
+              s.writingMode = sel.first;
+              setState(() {});
+              _updateSetting('writingMode', sel.first);
+            },
+            style: ButtonStyle(
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ),
+        ),
+        // 视图模式
+        _settingRow(
+          theme,
+          label: '视图模式',
+          child: SegmentedButton<String>(
+            segments: const <ButtonSegment<String>>[
+              ButtonSegment<String>(value: 'paginated', label: Text('翻页')),
+              ButtonSegment<String>(value: 'continuous', label: Text('滚动')),
+            ],
+            selected: <String>{s.viewMode},
+            onSelectionChanged: (Set<String> sel) {
+              s.viewMode = sel.first;
+              setState(() {});
+              _updateSetting('viewMode', sel.first);
+            },
+            style: ButtonStyle(
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ),
+        ),
+        // 主题
+        const SizedBox(height: 8),
+        Text('主题', style: theme.textTheme.bodyMedium),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: TtuReaderSettings.availableThemes.map((String t) {
+            final bool selected = s.theme == t;
+            return ChoiceChip(
+              label: Text(TtuReaderSettings.themeLabels[t] ?? t),
+              selected: selected,
+              onSelected: (bool on) {
+                if (!on) return;
+                s.theme = t;
+                setState(() {});
+                _updateSetting('theme', t);
+              },
+            );
+          }).toList(),
+        ),
+        // 隐藏假名
+        const SizedBox(height: 8),
+        _settingRow(
+          theme,
+          label: '隐藏振假名',
+          child: Switch(
+            value: s.hideFurigana,
+            onChanged: (bool v) {
+              s.hideFurigana = v;
+              setState(() {});
+              _updateSetting('hideFurigana', v);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _settingRow(ThemeData theme,
+      {required String label, required Widget child}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: theme.textTheme.bodyMedium),
+          child,
+        ],
+      ),
+    );
+  }
+
   Widget _buildActionRow(BuildContext context) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -396,7 +618,7 @@ class AudiobookSettingsSheet extends StatelessWidget {
           label: '书签',
           onTap: () async {
             Navigator.of(context).pop();
-            await onBookmark();
+            await widget.onBookmark();
           },
         ),
         _actionBtn(
@@ -405,7 +627,7 @@ class AudiobookSettingsSheet extends StatelessWidget {
           label: '全屏切换',
           onTap: () {
             Navigator.of(context).pop();
-            onToggleFullscreen();
+            widget.onToggleFullscreen();
           },
         ),
         _actionBtn(
@@ -414,7 +636,7 @@ class AudiobookSettingsSheet extends StatelessWidget {
           label: '退出',
           onTap: () {
             Navigator.of(context).pop();
-            onExitReader();
+            widget.onExitReader();
           },
         ),
       ],

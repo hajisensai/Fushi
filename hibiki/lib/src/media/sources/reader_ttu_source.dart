@@ -39,13 +39,19 @@ class ReaderTtuSource extends ReaderMediaSource {
   ReaderTtuSource._privateConstructor()
       : super(
           uniqueKey: 'reader_ttu',
-          sourceName: 'ッツ Ebook Reader',
-          description: 'Read EPUBs and mine sentences via an embedded web'
-              ' reader.',
-          icon: Icons.chrome_reader_mode_outlined,
+          sourceName: '书架',
+          description: 'EPUB 阅读与词典查询',
+          icon: Icons.auto_stories_outlined,
           implementsSearch: false,
           implementsHistory: false,
         );
+
+  @override
+  Future<void> onSearchBarTap({
+    required BuildContext context,
+    required WidgetRef ref,
+    required AppModel appModel,
+  }) async {}
 
   /// Get the singleton instance of this media type.
   static ReaderTtuSource get instance => _instance;
@@ -155,11 +161,6 @@ class ReaderTtuSource extends ReaderMediaSource {
         ref: ref,
         appModel: appModel,
       ),
-      buildSettingsButton(
-        context: context,
-        ref: ref,
-        appModel: appModel,
-      ),
     ];
   }
 
@@ -191,41 +192,6 @@ class ReaderTtuSource extends ReaderMediaSource {
           if (imported == true) {
             ref.invalidate(ttuBooksProvider(appModel.targetLanguage));
           }
-        },
-      ),
-    );
-  }
-
-  /// Allows user to close the floating search bar of a media type tab page
-  /// when open.
-  Widget buildSettingsButton({
-    required BuildContext context,
-    required WidgetRef ref,
-    required AppModel appModel,
-  }) {
-    int port = getPortForLanguage(appModel.targetLanguage);
-
-    return FloatingSearchBarAction(
-      showIfOpened: true,
-      child: JidoujishoIconButton(
-        size: Theme.of(context).textTheme.titleLarge?.fontSize,
-        tooltip: t.settings,
-        icon: Icons.settings,
-        onTap: () {
-          appModel.openMedia(
-            ref: ref,
-            mediaSource: this,
-            item: MediaItem(
-              mediaIdentifier: 'http://localhost:$port/settings.html',
-              title: '',
-              mediaTypeIdentifier: ReaderTtuSource.instance.mediaType.uniqueKey,
-              mediaSourceIdentifier: ReaderTtuSource.instance.uniqueKey,
-              position: 0,
-              duration: 1,
-              canDelete: false,
-              canEdit: true,
-            ),
-          );
         },
       ),
     );
@@ -600,6 +566,53 @@ new Promise(function(resolve) {
       key: 'keep_screen_awake',
       value: !keepScreenAwake,
     );
+  }
+
+  // ── ttu 阅读器设置（Hive 持久化，打开书时写入 ttu localStorage） ──
+
+  double get ttuFontSize =>
+      getPreference<double>(key: 'ttu_font_size', defaultValue: 20);
+  Future<void> setTtuFontSize(double v) =>
+      setPreference<double>(key: 'ttu_font_size', value: v);
+
+  double get ttuLineHeight =>
+      getPreference<double>(key: 'ttu_line_height', defaultValue: 1.65);
+  Future<void> setTtuLineHeight(double v) =>
+      setPreference<double>(key: 'ttu_line_height', value: v);
+
+  String get ttuWritingMode =>
+      getPreference<String>(key: 'ttu_writing_mode', defaultValue: 'vertical-rl');
+  Future<void> setTtuWritingMode(String v) =>
+      setPreference<String>(key: 'ttu_writing_mode', value: v);
+
+  String get ttuViewMode =>
+      getPreference<String>(key: 'ttu_view_mode', defaultValue: 'paginated');
+  Future<void> setTtuViewMode(String v) =>
+      setPreference<String>(key: 'ttu_view_mode', value: v);
+
+  String get ttuTheme =>
+      getPreference<String>(key: 'ttu_theme', defaultValue: 'light-theme');
+  Future<void> setTtuTheme(String v) =>
+      setPreference<String>(key: 'ttu_theme', value: v);
+
+  bool get ttuHideFurigana =>
+      getPreference<bool>(key: 'ttu_hide_furigana', defaultValue: false);
+  Future<void> setTtuHideFurigana(bool v) =>
+      setPreference<bool>(key: 'ttu_hide_furigana', value: v);
+
+  /// 在 WebView 加载后将 Hive 偏好写入 ttu localStorage。
+  Future<void> applyReaderSettings(
+    InAppWebViewController controller,
+  ) async {
+    final List<String> cmds = [
+      'window.localStorage.setItem("fontSize",${ttuFontSize})',
+      'window.localStorage.setItem("lineHeight",${ttuLineHeight})',
+      'window.localStorage.setItem("writingMode","$ttuWritingMode")',
+      'window.localStorage.setItem("viewMode","$ttuViewMode")',
+      'window.localStorage.setItem("theme","$ttuTheme")',
+      'window.localStorage.setItem("hideFurigana","$ttuHideFurigana")',
+    ];
+    await controller.evaluateJavascript(source: cmds.join(';'));
   }
 
   /// Used to fetch JSON for all books in IndexedDB.

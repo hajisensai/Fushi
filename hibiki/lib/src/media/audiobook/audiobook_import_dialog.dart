@@ -55,6 +55,9 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
   String? _alignmentPath;
   bool _importing = false;
 
+  /// 已有记录但缺音频源 → 进入"补音频"模式，显示导入表单而非只读视图。
+  bool _patchingAudio = false;
+
   int _searchWindow = EpubSrtMatcher.defaultSearchWindow;
 
   // ── 自动匹配 probe 缓存 ─────────────────────────────────────────────────────
@@ -89,37 +92,42 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     return '';
   }
 
+  @override
+  void initState() {
+    super.initState();
+    final Audiobook? existing = widget.repo.findByBookUid(widget.bookUid);
+    if (existing != null && !_existingHasAudio(existing)) {
+      _patchingAudio = true;
+      _alignmentPath = existing.alignmentPath;
+    }
+  }
+
+  static bool _existingHasAudio(Audiobook ab) =>
+      (ab.audioPaths != null && ab.audioPaths!.isNotEmpty) ||
+      (ab.audioRoot != null && ab.audioRoot!.isNotEmpty);
+
   // ── 构建 ────────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     final Audiobook? existing = widget.repo.findByBookUid(widget.bookUid);
     debugPrint('[hibiki-audiobook] dialog build bookUid.len=${widget.bookUid.length} '
-        'hash=${widget.bookUid.hashCode} existing=${existing != null}');
+        'hash=${widget.bookUid.hashCode} existing=${existing != null} patching=$_patchingAudio');
+
+    final bool showImportForm = existing == null || _patchingAudio;
 
     return AlertDialog(
       title: Text(
-        existing != null ? t.audiobook_attached : t.audiobook_import,
+        showImportForm ? t.audiobook_import : t.audiobook_attached,
       ),
       content: SizedBox(
         width: double.maxFinite,
-        child: existing != null
-            ? _buildAttachedView(existing)
-            : SingleChildScrollView(child: _buildImportForm()),
+        child: showImportForm
+            ? SingleChildScrollView(child: _buildImportForm())
+            : _buildAttachedView(existing!),
       ),
-      actions: existing != null
+      actions: showImportForm
           ? [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text(t.dialog_close),
-              ),
-              _destructiveFilledButton(
-                context: context,
-                label: t.audiobook_remove,
-                onPressed: () => _removeAudiobook(existing),
-              ),
-            ]
-          : [
               TextButton(
                 onPressed: () => Navigator.pop(context),
                 child: Text(t.dialog_cancel),
@@ -127,6 +135,17 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
               FilledButton(
                 onPressed: _importing ? null : _doImport,
                 child: Text(t.dialog_import),
+              ),
+            ]
+          : [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text(t.dialog_close),
+              ),
+              _destructiveFilledButton(
+                context: context,
+                label: t.audiobook_remove,
+                onPressed: () => _removeAudiobook(existing!),
               ),
             ],
     );
@@ -498,6 +517,9 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       }
 
       health.packInto(audiobook);
+      if (_patchingAudio) {
+        await widget.repo.deleteAudiobook(widget.bookUid);
+      }
       await widget.repo.saveAudiobook(audiobook);
       await widget.repo.updateHealthOverlay(
         bookUid: widget.bookUid,

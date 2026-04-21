@@ -109,7 +109,7 @@
     "dialog_content_dictionary_delete": "Deleting a single dictionary may take longer than clearing the entire dictionary database. This will also clear all search results in history.",
     "delete_dictionary_data": "Clearing all dictionary data...",
     "dictionary_tag": "Imported from $name",
-    "legalese": "A focused Japanese EPUB reader for Android.\n\nBased on jidoujisho, originally built by Arianne Orpilla. Logo by suzy and Aaron Marbella.\n\nhibiki is free and open source software. See the project repository for a comprehensive list of other licenses and attribution notices.",
+    "legalese": "A focused Japanese EPUB reader for Android.\n\nLogo by suzy and Aaron Marbella.\n\nhibiki is free and open source software. See the project repository for a comprehensive list of other licenses and attribution notices.",
     "same_name_dictionary_found": "Dictionary with same name found.",
     "import_file_extension_invalid":
         "This format expects files with the following extensions: $extensions",

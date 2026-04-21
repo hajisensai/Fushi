@@ -57,10 +57,8 @@
     "dialog_done": "完成",
     "reset": "重置",
     "dialog_launch_ankidroid": "启动 ANKIDROID",
-    "media_item_delete_confirmation":
-        "此操作将从历史记录中移除该项目。确定继续吗？",
-    "dictionaries_delete_confirmation":
-        "删除词典将同时清除所有历史搜索结果。确定继续吗？",
+    "media_item_delete_confirmation": "此操作将从历史记录中移除该项目。确定继续吗？",
+    "dictionaries_delete_confirmation": "删除词典将同时清除所有历史搜索结果。确定继续吗？",
     "mappings_delete_confirmation": "此配置将被删除。确定继续吗？",
     "catalog_delete_confirmation": "此目录将被删除。确定继续吗？",
     "dictionaries_deleting_data": "正在删除词典数据…",
@@ -109,10 +107,9 @@
     "dialog_content_dictionary_delete": "单独删除词典可能比清空整个数据库耗时更长，且会清除所有历史搜索结果。",
     "delete_dictionary_data": "正在清除所有词典数据…",
     "dictionary_tag": "导入自 $name",
-    "legalese": "一款专注的 Android 日语 EPUB 阅读器。\n\n基于 Arianne Orpilla 创建的 jidoujisho。Logo 由 suzy 与 Aaron Marbella 设计。\n\nhibiki 为自由开源软件。完整的许可和致谢请见项目仓库。",
+    "legalese": "一款专注的 Android 日语 EPUB 阅读器。\n\nhibiki 为自由开源软件。完整的许可和致谢请见项目仓库。",
     "same_name_dictionary_found": "已存在同名词典。",
-    "import_file_extension_invalid":
-        "此格式仅接受以下扩展名的文件：$extensions",
+    "import_file_extension_invalid": "此格式仅接受以下扩展名的文件：$extensions",
     "field_label_empty": "空",
     "model_to_map": "新配置使用的卡片类型",
     "mapping_name": "配置名称",
@@ -120,31 +117,22 @@
     "error_profile_name": "无效的配置名称",
     "error_profile_name_content": "同名配置已存在或名称无效，无法保存。",
     "error_standard_profile_name": "无效的配置名称",
-    "error_standard_profile_name_content":
-        "无法重命名标准配置。",
+    "error_standard_profile_name_content": "无法重命名标准配置。",
     "error_ankidroid_api": "AnkiDroid 错误",
-    "error_ankidroid_api_content":
-        "与 AnkiDroid 通信时出错。\n\n请确认 AnkiDroid 的后台服务已启用，并已授予所需权限。",
+    "error_ankidroid_api_content": "与 AnkiDroid 通信时出错。\n\n请确认 AnkiDroid 的后台服务已启用，并已授予所需权限。",
     "info_standard_model": "已添加标准卡片类型",
-    "info_standard_model_content":
-        "『hibiki Kinomoto』已作为新卡片类型添加至 AnkiDroid。\n\n如需使用其他卡片类型或字段顺序，可新建导出配置。",
+    "info_standard_model_content": "『hibiki Kinomoto』已作为新卡片类型添加至 AnkiDroid。\n\n如需使用其他卡片类型或字段顺序，可新建导出配置。",
     "error_model_missing": "缺少卡片类型",
-    "error_model_missing_content":
-        "当前配置对应的卡片类型已不存在。\n\n该配置将被删除，并自动切换到标准配置。",
+    "error_model_missing_content": "当前配置对应的卡片类型已不存在。\n\n该配置将被删除，并自动切换到标准配置。",
     "error_model_changed": "卡片类型已变更",
-    "error_model_changed_content":
-        "当前配置对应的卡片类型字段数量已变更。\n\n当前配置的字段已重置，需要重新配置。",
+    "error_model_changed_content": "当前配置对应的卡片类型字段数量已变更。\n\n当前配置的字段已重置，需要重新配置。",
     "creator_exporting_as": "使用配置创建卡片",
     "creator_exporting_as_fields_editing": "编辑配置字段",
-    "creator_exporting_as_enhancements_editing":
-        "编辑配置的增强功能",
+    "creator_exporting_as_enhancements_editing": "编辑配置的增强功能",
     "creator_export_card": "创建卡片",
-    "info_enhancements":
-        "增强功能可在制卡前自动编辑字段。在字段右侧的槽位中选择以启用增强，每个字段最多可使用五个右侧槽位。左侧槽位中的增强会在即时制卡或打开制卡工具时自动应用。",
-    "info_actions":
-        "快捷操作可对词典搜索结果执行即时制卡或其他自动化。通过下方槽位分配操作，最多可使用六个槽位。",
-    "no_more_available_enhancements":
-        "此字段没有更多可用的增强功能",
+    "info_enhancements": "增强功能可在制卡前自动编辑字段。在字段右侧的槽位中选择以启用增强，每个字段最多可使用五个右侧槽位。左侧槽位中的增强会在即时制卡或打开制卡工具时自动应用。",
+    "info_actions": "快捷操作可对词典搜索结果执行即时制卡或其他自动化。通过下方槽位分配操作，最多可使用六个槽位。",
+    "no_more_available_enhancements": "此字段没有更多可用的增强功能",
     "no_more_available_quick_actions": "没有更多可用的快捷操作",
     "assign_auto_enhancement": "分配自动增强",
     "assign_manual_enhancement": "分配手动增强",
@@ -170,11 +158,9 @@
     "search_label_middle": "共 ",
     "search_label_after": "条搜索结果，关键词：",
     "clear_dictionary_title": "清除词典搜索历史",
-    "clear_dictionary_description":
-        "此操作将清除所有历史词典搜索结果。确定吗？",
+    "clear_dictionary_description": "此操作将清除所有历史词典搜索结果。确定吗？",
     "clear_search_title": "清除搜索历史",
-    "clear_search_description":
-        "此操作将清除该历史中的所有搜索词。确定吗？",
+    "clear_search_description": "此操作将清除该历史中的所有搜索词。确定吗？",
     "clear_creator_title": "清空制卡工具",
     "clear_creator_description": "此操作将清空所有字段。确定吗？",
     "copied_to_clipboard": "已复制到剪贴板。",
@@ -186,8 +172,7 @@
     "add_field_hint": "为该行分配一个字段",
     "no_more_available_fields": "没有更多可用字段",
     "hidden_fields": "其他字段",
-    "field_fallback_used":
-        "$field 字段使用 $secondField 作为备选搜索词。",
+    "field_fallback_used": "$field 字段使用 $secondField 作为备选搜索词。",
     "no_text_to_search": "没有可搜索的文本。",
     "image_search_label_before": "正在选择图片 ",
     "image_search_label_middle": "共 ",
@@ -200,17 +185,13 @@
     "audio_unavailable": "未找到音频。",
     "no_audio_enhancements": "未分配音频增强。",
     "card_exported": "卡片已导出到『$deck』。",
-    "info_incognito_on":
-        "隐身模式已开启。词典、媒体和搜索历史不会被记录。",
-    "info_incognito_off":
-        "隐身模式已关闭。词典、媒体和搜索历史将被记录。",
+    "info_incognito_on": "隐身模式已开启。词典、媒体和搜索历史不会被记录。",
+    "info_incognito_off": "隐身模式已关闭。词典、媒体和搜索历史将被记录。",
     "exit_media_title": "退出媒体",
-    "exit_media_description":
-        "此操作将返回主菜单。确定吗？",
+    "exit_media_description": "此操作将返回主菜单。确定吗？",
     "unimplemented_source": "未实现的来源",
     "clear_browser_title": "清除浏览器数据",
-    "clear_browser_description":
-        "此操作将清除所有使用网页内容的媒体来源的浏览数据。确定吗？",
+    "clear_browser_description": "此操作将清除所有使用网页内容的媒体来源的浏览数据。确定吗？",
     "ttu_no_books_added": "ッツ 电子书阅读器尚未添加任何书籍",
     "local_media_directory_empty": "目录内没有文件夹或视频",
     "pick_video_file": "选择视频文件",
@@ -293,11 +274,9 @@
     "text_segmentation": "文本分词",
     "connect_disconnect": "连接/断开",
     "clear_text_title": "清除文本",
-    "clear_text_description":
-        "此操作将清除所有已接收文本。确定吗？",
+    "clear_text_description": "此操作将清除所有已接收文本。确定吗？",
     "close_connection_title": "关闭连接",
-    "close_connection_description":
-        "此操作将结束 WebSocket 连接并清除所有已接收文本。确定吗？",
+    "close_connection_description": "此操作将结束 WebSocket 连接并清除所有已接收文本。确定吗？",
     "use_slow_import": "慢速导入（导入失败时使用）",
     "settings": "设置",
     "manager": "管理器",
@@ -316,14 +295,10 @@
     "auto_search_debounce_delay": "自动搜索防抖延迟",
     "dictionary_font_size": "词典字号",
     "close_on_export": "导出后关闭",
-    "close_on_export_on":
-        "制卡工具将在导出卡片后自动关闭。",
-    "close_on_export_off":
-        "制卡工具在导出卡片后不再自动关闭。",
-    "export_profile_empty":
-        "当前导出配置没有设置任何字段，需要先进行配置。",
-    "error_export_media_ankidroid":
-        "导出媒体至 AnkiDroid 时出错。",
+    "close_on_export_on": "制卡工具将在导出卡片后自动关闭。",
+    "close_on_export_off": "制卡工具在导出卡片后不再自动关闭。",
+    "export_profile_empty": "当前导出配置没有设置任何字段，需要先进行配置。",
+    "error_export_media_ankidroid": "导出媒体至 AnkiDroid 时出错。",
     "error_add_note": "向 AnkiDroid 添加卡片时出错。",
     "first_time_setup": "首次设置",
     "first_time_setup_description": "欢迎使用 hibiki！请选择目标语言，我们会为你准备一个默认配置，稍后可随时更改。",
@@ -392,20 +367,19 @@
     "display_settings": "显示设置",
     "cloze": "填空",
     "info_standard_update": "新的标准配置卡片类型",
-    "info_standard_update_content":
-        "标准配置现已使用『hibiki Kinomoto』卡片类型。\n\n旧版标准配置仍保留以兼容。",
+    "info_standard_update_content": "标准配置现已使用『hibiki Kinomoto』卡片类型。\n\n旧版标准配置仍保留以兼容。",
     "retrying_in": {
         "seconds": {
-          "one": "$n 秒后重试…",
-          "other": "$n 秒后重试…"
+            "one": "$n 秒后重试…",
+            "other": "$n 秒后重试…"
         }
-      },
+    },
     "view_replies": {
         "reply": {
-          "one": "显示 $n 条回复",
-          "other": "显示 $n 条回复"
+            "one": "显示 $n 条回复",
+            "other": "显示 $n 条回复"
         }
-      },
+    },
     "manage_duplicate_checks": "管理重复检测",
     "playback_normal": "普通播放模式",
     "playback_condensed": "压缩播放模式",
@@ -468,4 +442,4 @@
     "srt_epub_not_ready": "书籍尚未就绪 — 请重新导入",
     "srt_audio_unresolved": "未找到音频文件 — 请重新附加",
     "srt_audio_load_error": "加载音频失败"
-  }
+}

@@ -3,6 +3,7 @@ import 'package:spaces/spaces.dart';
 import 'package:wakelock/wakelock.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart';
 import 'package:hibiki/utils.dart';
 
 /// The content of the dialog used for managing Reader settings.
@@ -72,6 +73,10 @@ class _DictionaryDialogPageState extends BasePageState {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              buildReaderSettingsSection(),
+              const Space.small(),
+              const JidoujishoDivider(),
+              const Space.small(),
               buildHighlightOnTapSwitch(),
               buildEnablePageTurningSwitch(),
               buildInvertPageTurningSwitch(),
@@ -240,6 +245,154 @@ class _DictionaryDialogPageState extends BasePageState {
           },
         )
       ],
+    );
+  }
+
+  Widget buildReaderSettingsSection() {
+    return StatefulBuilder(
+      builder: (BuildContext ctx, StateSetter setLocal) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 字体大小
+            _numberRow(
+              label: '字体大小',
+              value: source.ttuFontSize,
+              step: 1,
+              min: 8,
+              max: 64,
+              format: (v) => '${v.round()}',
+              onChanged: (v) {
+                source.setTtuFontSize(v);
+                setLocal(() {});
+              },
+            ),
+            // 行高
+            _numberRow(
+              label: '行高',
+              value: source.ttuLineHeight,
+              step: 0.1,
+              min: 1.0,
+              max: 3.0,
+              format: (v) => v.toStringAsFixed(2),
+              onChanged: (v) {
+                source.setTtuLineHeight(
+                    (v * 100).roundToDouble() / 100);
+                setLocal(() {});
+              },
+            ),
+            // 排版方向
+            Row(
+              children: [
+                const Expanded(child: Text('排版方向')),
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(value: 'horizontal-tb', label: Text('横排')),
+                    ButtonSegment(value: 'vertical-rl', label: Text('竖排')),
+                  ],
+                  selected: {source.ttuWritingMode},
+                  onSelectionChanged: (sel) {
+                    source.setTtuWritingMode(sel.first);
+                    setLocal(() {});
+                  },
+                  style: const ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            // 视图模式
+            Row(
+              children: [
+                const Expanded(child: Text('视图模式')),
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(value: 'paginated', label: Text('翻页')),
+                    ButtonSegment(value: 'continuous', label: Text('滚动')),
+                  ],
+                  selected: {source.ttuViewMode},
+                  onSelectionChanged: (sel) {
+                    source.setTtuViewMode(sel.first);
+                    setLocal(() {});
+                  },
+                  style: const ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            // 主题
+            const Text('主题'),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: TtuReaderSettings.availableThemes.map((t) {
+                return ChoiceChip(
+                  label: Text(TtuReaderSettings.themeLabels[t] ?? t),
+                  selected: source.ttuTheme == t,
+                  onSelected: (on) {
+                    if (!on) return;
+                    source.setTtuTheme(t);
+                    setLocal(() {});
+                  },
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 4),
+            // 隐藏假名
+            Row(
+              children: [
+                const Expanded(child: Text('隐藏振假名')),
+                Switch(
+                  value: source.ttuHideFurigana,
+                  onChanged: (v) {
+                    source.setTtuHideFurigana(v);
+                    setLocal(() {});
+                  },
+                ),
+              ],
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _numberRow({
+    required String label,
+    required double value,
+    required double step,
+    required double min,
+    required double max,
+    required String Function(double) format,
+    required ValueChanged<double> onChanged,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          Expanded(child: Text(label)),
+          IconButton(
+            icon: const Icon(Icons.remove, size: 18),
+            visualDensity: VisualDensity.compact,
+            onPressed: () => onChanged((value - step).clamp(min, max)),
+          ),
+          SizedBox(
+            width: 42,
+            child: Text(format(value), textAlign: TextAlign.center),
+          ),
+          IconButton(
+            icon: const Icon(Icons.add, size: 18),
+            visualDensity: VisualDensity.compact,
+            onPressed: () => onChanged((value + step).clamp(min, max)),
+          ),
+        ],
+      ),
     );
   }
 

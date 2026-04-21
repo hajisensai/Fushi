@@ -526,6 +526,18 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     Fluttertoast.showToast(msg: t.file_downloaded(name: _suggestedFilename));
   }
 
+  String _buildApplySettingsJs() {
+    final ReaderTtuSource src = ReaderTtuSource.instance;
+    return [
+      'window.localStorage.setItem("fontSize",${src.ttuFontSize})',
+      'window.localStorage.setItem("lineHeight",${src.ttuLineHeight})',
+      'window.localStorage.setItem("writingMode","${src.ttuWritingMode}")',
+      'window.localStorage.setItem("viewMode","${src.ttuViewMode}")',
+      'window.localStorage.setItem("theme","${src.ttuTheme}")',
+      'window.localStorage.setItem("hideFurigana","${src.ttuHideFurigana}")',
+    ].join(';');
+  }
+
   Widget buildReaderArea(LocalAssetsServer server) {
     return InAppWebView(
       initialUrlRequest: URLRequest(
@@ -535,13 +547,15 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         ),
       ),
       initialUserScripts: UnmodifiableListView<UserScript>(<UserScript>[
-        // 有声书模式下告诉 ttu fork 跳过自带的 scrollToBookmark，
-        // 位置恢复由 hibiki 的 _bootstrapRestoreReaderPos 全权负责。
         if (_hasAudioSlot)
           UserScript(
             source: 'window.__hoshiManagesPosition = true;',
             injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
           ),
+        UserScript(
+          source: _buildApplySettingsJs(),
+          injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+        ),
       ]),
       onPermissionRequest: (controller, origin) async {
         return PermissionResponse(
@@ -1537,7 +1551,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           window.flutter_inappwebview.callHandler('saveReaderPos', p);
         }
       } catch (e) {}
-    }, 200);
+    }, 500);
   }
   document.addEventListener('scroll', function(e) {
     var t = e.target;
@@ -1952,6 +1966,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           onExitReader: () {
             if (mounted) Navigator.of(context).pop();
           },
+          webViewController: _controller,
         );
       },
     );

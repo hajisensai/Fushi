@@ -832,6 +832,42 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
     );
   }
 
+  static Future<TtuReaderSettings> getReaderSettings(
+    InAppWebViewController controller,
+  ) async {
+    final Object? raw = await controller.evaluateJavascript(
+      source:
+          '(function(){try{return JSON.stringify(window.__ttuReaderSettings.get());}catch(e){return "{}";}})();',
+    );
+    if (raw is String && raw.isNotEmpty && raw != '{}') {
+      try {
+        final Map<String, dynamic> json =
+            jsonDecode(raw) as Map<String, dynamic>;
+        return TtuReaderSettings.fromMap(json);
+      } catch (_) {}
+    }
+    return TtuReaderSettings.fromMap(const <String, dynamic>{});
+  }
+
+  static Future<void> setReaderSetting(
+    InAppWebViewController controller, {
+    required String key,
+    required Object value,
+  }) async {
+    final String jsValue;
+    if (value is String) {
+      jsValue = '"${value.replaceAll('"', r'\"')}"';
+    } else if (value is bool) {
+      jsValue = value ? 'true' : 'false';
+    } else {
+      jsValue = '$value';
+    }
+    await controller.evaluateJavascript(
+      source:
+          '(function(){try{window.__ttuReaderSettings.set("$key",$jsValue);}catch(e){}})();',
+    );
+  }
+
   /// 从视口左上探针反查当前挂载段和章内归一化字符偏移。
   ///
   /// null 代表视口里没命中文本节点 / Sasayaki refs 还没挂上 / ttu 还没就位 ——
@@ -1105,6 +1141,60 @@ class ReaderViewportPos {
 
   @override
   String toString() => 'ReaderViewportPos(section=$section, offset=$offset)';
+}
+
+/// ttu 阅读器设定的快照，由 `__ttuReaderSettings.get()` 返回。
+class TtuReaderSettings {
+  TtuReaderSettings({
+    required this.fontSize,
+    required this.lineHeight,
+    required this.writingMode,
+    required this.viewMode,
+    required this.theme,
+    required this.hideFurigana,
+    required this.fontFamilyGroupOne,
+    required this.fontFamilyGroupTwo,
+  });
+
+  factory TtuReaderSettings.fromMap(Map<String, dynamic> m) {
+    return TtuReaderSettings(
+      fontSize: (m['fontSize'] as num?)?.toDouble() ?? 20,
+      lineHeight: (m['lineHeight'] as num?)?.toDouble() ?? 1.65,
+      writingMode: m['writingMode'] as String? ?? 'vertical-rl',
+      viewMode: m['viewMode'] as String? ?? 'paginated',
+      theme: m['theme'] as String? ?? 'light-theme',
+      hideFurigana: m['hideFurigana'] as bool? ?? false,
+      fontFamilyGroupOne: m['fontFamilyGroupOne'] as String? ?? 'Noto Serif JP',
+      fontFamilyGroupTwo: m['fontFamilyGroupTwo'] as String? ?? 'Noto Sans JP',
+    );
+  }
+
+  double fontSize;
+  double lineHeight;
+  String writingMode;
+  String viewMode;
+  String theme;
+  bool hideFurigana;
+  String fontFamilyGroupOne;
+  String fontFamilyGroupTwo;
+
+  static const List<String> availableThemes = [
+    'light-theme',
+    'ecru-theme',
+    'water-theme',
+    'gray-theme',
+    'dark-theme',
+    'black-theme',
+  ];
+
+  static const Map<String, String> themeLabels = {
+    'light-theme': '白色',
+    'ecru-theme': '米黄',
+    'water-theme': '水蓝',
+    'gray-theme': '灰暗',
+    'dark-theme': '深暗',
+    'black-theme': '纯黑',
+  };
 }
 
 /// 用户在 WebView 中点击有声书句子所产生的事件。
