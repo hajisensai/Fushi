@@ -6,9 +6,11 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fluttertoast/fluttertoast.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_health.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
 import 'package:hibiki/src/media/audiobook/cues_to_epub.dart';
+import 'package:hibiki/src/media/audiobook/epub_cue_matcher.dart';
 import 'package:hibiki/src/media/audiobook/epub_srt_matcher.dart';
 import 'package:hibiki/src/media/audiobook/sasayaki_match_codec.dart';
 import 'package:hibiki/src/media/audiobook/sasayaki_rematch.dart';
@@ -85,7 +87,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
   bool get _willRunMatcher {
     if (_epubPath == null || _srtPath == null) return false;
     final String ext = _srtPath!.split('.').last.toLowerCase();
-    return ext == 'srt';
+    return SasayakiRematch.supportedFormats.contains(ext);
   }
 
   bool get _hasAudioSource =>
@@ -552,17 +554,17 @@ class _BookImportDialogState extends State<BookImportDialog> {
     final String bookUid =
         '${widget.ttuMediaSourceIdentifier}/$mediaIdentifier';
 
-    // 3) 解析 cues + 跑 Sasayaki 匹配（仅 SRT 做匹配，其他格式仅落 cue）。
+    // 3) 解析 cues + 跑 Sasayaki 匹配。
     final File srtFile = File(_srtPath!);
     final String ext = srtFile.path.split('.').last.toLowerCase();
     final List<AudioCue> cues = await _parseCues(srtFile, bookUid);
     final String chapterHref = _defaultChapterFor(ext);
 
-    String? matchTail;
-    if (ext == 'srt') {
+    AudiobookHealth health;
+    final bool runMatcher = SasayakiRematch.supportedFormats.contains(ext);
+    if (runMatcher && sections.isNotEmpty && cues.isNotEmpty) {
       int chosenWindow = _searchWindow;
-      if (_autoWindow && sections.isNotEmpty && cues.isNotEmpty) {
-        // probe 自带 toast，失败时返回 null，这里就保持 default。
+      if (_autoWindow) {
         final int? best = await SasayakiRematch.runAutoProbe(
           sections: sections,
           cues: cues,
@@ -571,14 +573,22 @@ class _BookImportDialogState extends State<BookImportDialog> {
           chosenWindow = best;
         }
       }
-      matchTail = await _runSasayakiMatch(
+      health = await _runSasayakiMatch(
         sections: sections,
         cues: cues,
         searchWindow: chosenWindow,
       );
+    } else if (runMatcher) {
+      health = sections.isEmpty
+          ? AudiobookHealth.failed(reason: 'ttu IDB record had 0 sections')
+          : AudiobookHealth.failed(reason: 'parser returned 0 cues');
+    } else {
+      health = AudiobookHealth.notApplicable(
+        reason: '$ext format uses file anchors, no matcher needed',
+      );
     }
 
-    // 4) 存 Audiobook（挂 audio 源）+ cues。
+    // 4) 存 Audiobook（挂 audio 源）+ cues + health，一次 put。
     final Audiobook audiobook = Audiobook()
       ..bookUid = bookUid
       ..alignmentFormat = ext
@@ -588,6 +598,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
     } else if (_audioDir != null) {
       audiobook.audioRoot = _audioDir;
     }
+    health.packInto(audiobook);
 
     debugPrint('[hibiki-import] EPUB+align save: bookUid="$bookUid" '
         'ttuBookId=$ttuBookId cues=${cues.length}');
@@ -598,22 +609,21 @@ class _BookImportDialogState extends State<BookImportDialog> {
       chapterHref: chapterHref,
       cues: cues,
     );
+    await widget.audiobookRepo.updateHealthOverlay(
+      bookUid: bookUid,
+      health: health,
+    );
 
-    return matchTail;
+    return _summarizeHealth(health);
   }
 
-  /// 跑 Sasayaki 文本匹配，把 section/normChar 偏移编码写回 cue.textFragmentId。
-  /// 失败不抛——cues 仍可落库，只是退化成"整本单章"定位。
-  /// 返回一段可拼到导入成功 toast 尾巴的匹配率摘要；失败或无可匹配内容时返回 null。
-  Future<String?> _runSasayakiMatch({
+  Future<AudiobookHealth> _runSasayakiMatch({
     required List<EpubSection> sections,
     required List<AudioCue> cues,
     required int searchWindow,
   }) async {
-    if (cues.isEmpty || sections.isEmpty) return null;
     try {
-      // 大书 + 千条 cue 的 indexOf 扫描主线程会卡，挪到后台 isolate。
-      final MatchResult result = await EpubSrtMatcher.matchInIsolate(
+      final MatchResult result = await EpubCueMatcher.matchInIsolate(
         sections: sections,
         cues: cues,
         searchWindow: searchWindow,
@@ -622,11 +632,28 @@ class _BookImportDialogState extends State<BookImportDialog> {
       debugPrint('[hibiki-import] Sasayaki match: '
           '${result.matchedCues}/${result.totalCues} window=$searchWindow');
       final int pct = (result.matchRate * 100).round();
-      return 'Sasayaki $pct% '
-          '(${result.matchedCues}/${result.totalCues} · window=$searchWindow)';
+      return AudiobookHealth.fromRatePct(
+        ratePct: pct,
+        reason: '${result.matchedCues}/${result.totalCues} cues matched '
+            '(window=$searchWindow)',
+      );
     } catch (e) {
       debugPrint('[hibiki-import] Sasayaki match failed: $e');
-      return null;
+      return AudiobookHealth.failed(reason: 'matcher threw: $e');
+    }
+  }
+
+  String? _summarizeHealth(AudiobookHealth h) {
+    switch (h.kind) {
+      case HealthKind.ok:
+      case HealthKind.partial:
+      case HealthKind.failed:
+        final int p = h.ratePct ?? 0;
+        return 'match $p%';
+      case HealthKind.notApplicable:
+      case HealthKind.unrun:
+      case HealthKind.running:
+        return null;
     }
   }
 
