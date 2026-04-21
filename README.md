@@ -57,6 +57,15 @@ hibiki/
 - **Phase 3** — Material 3 UI 打磨
 - **Phase 4** — 对齐 iOS Sasayaki（进行中）
 
+# 致谢
+
+| 项目 | 说明 | 链接 |
+|---|---|---|
+| jidoujisho | 本项目基于 jidoujisho 重构而来 | [arianneorpilla/jidoujisho](https://github.com/arianneorpilla/jidoujisho) |
+| Hoshi Reader | iOS 端日语阅读器，hibiki 的对标目标 | [Manhhao/Hoshi-Reader](https://github.com/Manhhao/Hoshi-Reader) |
+| Sasayaki | Hoshi Reader 的有声书同步方案，hibiki 的音频同步参考 | [Sasayaki 文档](https://github.com/Manhhao/Hoshi-Reader/blob/develop/SASAYAKI.md) |
+| ッツ Ebook Reader | EPUB 渲染引擎（WebView） | [ttu-ebook-reader](https://github.com/ttu-ttu/ebook-reader) |
+
 # 许可
 
 GNU General Public License 3.0
