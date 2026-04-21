@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:audio_session/audio_session.dart';
@@ -19,21 +18,6 @@ import 'package:hibiki/src/media/audiobook/sasayaki_match_codec.dart';
 /// - 提供 play/pause/seek/skipToCue/setSpeed API。
 class AudiobookPlayerController extends ChangeNotifier {
   AudiobookPlayerController();
-
-  /// 诊断用：拦截每次 notifyListeners 调用，打印调用链前几帧，定位谁在
-  /// 连续 notify（重复 _onCueChanged → 重复 scroll / 高亮）。问题排掉之后
-  /// 可以直接删除这段 override。
-  @override
-  void notifyListeners() {
-    final String callsite = StackTrace.current.toString().split('\n').take(4).join(' | ');
-    debugPrint(
-      '[hibiki-audiobook-diag] '
-      '{"hibiki-message-type":"sasayakiCtrlNotify",'
-      '"cueSid":${_currentCue?.sentenceIndex ?? -1},'
-      '"stack":${jsonEncode(callsite)}}',
-    );
-    super.notifyListeners();
-  }
 
   // ── 内部状态 ──────────────────────────────────────────────────────────────
 
@@ -58,6 +42,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 当前正在朗读的 cue，null = 未定位到句子。
   AudioCue? get currentCue => _currentCue;
   AudioCue? _currentCue;
+  int _currentCueIndex = -1;
 
   // ── PR8b: Follow audio ────────────────────────────────────────────────────
 
@@ -91,16 +76,23 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// （即使中途暂停）。换书走 [load] 显式复位。
   bool _hasPlayedOnce = false;
 
-  /// 对齐 Sasayaki `chapterTransition`：跨章 await 期间为 true，期间
-  /// [_updateCurrentCue] 直接 return，避免 cue 继续推进重复触发跨章
-  /// 请求 / 把 pendingCue 反复覆盖。reader 完成跳章后调
-  /// [notifySectionRestoreCompleted] 清回 false。
-  bool _chapterTransition = false;
+  /// [snapReaderToAudio] 设置的一次性强制 reveal 标志。用户显式点击
+  /// Follow audio ON 时，即使 [_hasPlayedOnce] 为 false 也应立刻把
+  /// reader 拉到音频位置。[consumeForceReveal] 消费后自动清零。
+  bool _forceNextReveal = false;
 
-  /// 对齐 Sasayaki `pendingCue`：触发跨章的那条 cue。新章节 DOM 挂载完
-  /// 之后 reader 调 [notifySectionRestoreCompleted]，控制器会重新尝试
-  /// 高亮这条 cue（避免等到下一条 positionStream tick 才有视觉反馈）。
-  AudioCue? _pendingCue;
+  /// 返回并清除 [_forceNextReveal]。reader 的 `_onCueChanged` 读一次
+  /// 决定是否强制 reveal，之后恢复正常 [shouldRevealCurrentCue] 逻辑。
+  bool consumeForceReveal() {
+    if (!_forceNextReveal) return false;
+    _forceNextReveal = false;
+    return true;
+  }
+
+  /// 跨章 await 期间为 true，[_updateCurrentCue] 和 [setChapterCues]
+  /// 直接 return，避免 cue 推进 / _currentCue 被清零。reader 完成跳章后
+  /// 调 [notifySectionRestoreCompleted] 清回 false。
+  bool _chapterTransition = false;
 
   /// Follow audio 开关变化时的持久化回调。Reader 页面 attach audiobook 时
   /// 装入这个字段（一般是 `(v) => repo.updateFollowAudio(bookUid, v)`），
@@ -159,8 +151,8 @@ class AudiobookPlayerController extends ChangeNotifier {
     followAudio.value = initialFollowAudio;
     delayMs.value = initialDelayMs;
     _hasPlayedOnce = false;
+    _forceNextReveal = false;
     _chapterTransition = false;
-    _pendingCue = null;
 
     await _player.stop();
     _positionSub?.cancel();
@@ -260,7 +252,13 @@ class AudiobookPlayerController extends ChangeNotifier {
   void setChapterCues(List<AudioCue> cues) {
     _chapterCues = List<AudioCue>.from(cues)
       ..sort((a, b) => a.startMs.compareTo(b.startMs));
+    // 跨章守卫期间只替换 cue 列表，不清 _currentCue 也不重算——
+    // 否则 _updateCurrentCue 被 guard 挡住，_currentCue 卡 null，
+    // 守卫放下后第一次 tick 会匹配到 cue[0] 导致进度清零。
+    // 守卫放下后 notifySectionRestoreCompleted 会负责恢复。
+    if (_chapterTransition) return;
     _currentCue = null;
+    _currentCueIndex = -1;
     _updateCurrentCue(_player.position.inMilliseconds);
     notifyListeners();
   }
@@ -325,7 +323,6 @@ class AudiobookPlayerController extends ChangeNotifier {
     // _currentCue 停在旧 cue 上 —— 表现为"上一句/下一句按钮没反应，字幕
     // 和高亮卡死"。目标 cue 若仍跨章，_maybeEmitCrossChapter 会重新 arm。
     _chapterTransition = false;
-    _pendingCue = null;
     _updateCurrentCue(_player.position.inMilliseconds);
   }
 
@@ -336,9 +333,8 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 当前位置"的前一条。始终跳立即邻居，不做 "1.5s 内 restart" 的语义扩展。
   Future<void> skipToPrevCue() async {
     if (_chapterCues.isEmpty) return;
-    // 优先用 currentCue 作参照（播在 gap 里时 findCueIndex 现在返回 -1，
-    // 但 _currentCue 可能仍非空 —— 不对，D1 改完 _updateCurrentCue 在 gap
-    // 也会把 _currentCue 清成 null；此时 fallback 到位置查询）。
+    // 优先用 currentCue 作参照。Gap 时 _currentCue 保持上一条 cue（sustain），
+    // 所以 cur 通常非空；只有开书前 / 位置早于第一条 cue 时才 fallback。
     final AudioCue? cur = _currentCue;
     if (cur != null) {
       final int curIdx = _chapterCues.indexWhere(
@@ -447,10 +443,8 @@ class AudiobookPlayerController extends ChangeNotifier {
     // 丢掉这几秒的进度。_maybeSavePosition 自身有 3s 阈值，不会每 tick
     // 写 Hive。
     _maybeSavePosition();
-    // 对齐 Sasayaki SasayakiPlayer.updateCue 开头的 `guard !chapterTransition`：
-    // 跨章 await 期间不推进 cue，否则 reader 还没挂上新章 DOM 时 positionStream
-    // 会连续推进若干条 cue，每条都触发 _maybeEmitCrossChapter，pendingCue 被
-    // 反复覆盖、onCrossChapter 重复调用。
+    // 跨章 await 期间不推进 cue，否则 positionStream 连续触发
+    // _maybeEmitCrossChapter 重复调 onCrossChapter。
     if (_chapterTransition) return;
     if (_chapterCues.isEmpty) {
       return;
@@ -464,12 +458,14 @@ class AudiobookPlayerController extends ChangeNotifier {
       cues: _chapterCues,
       positionMs: effectiveMs,
     );
-    final AudioCue? newCue = idx >= 0 ? _chapterCues[idx] : null;
-    if (newCue?.textFragmentId != _currentCue?.textFragmentId) {
-      _currentCue = newCue;
-      _maybeEmitCrossChapter(newCue);
-      notifyListeners();
-    }
+    // Gap（两条 cue 之间的静音）：保持上一条 cue 不清高亮，避免闪烁。
+    // 用 index 而非 textFragmentId 比较，防止重复短句 id 相同时短路。
+    if (idx < 0) return;
+    if (idx == _currentCueIndex) return;
+    _currentCueIndex = idx;
+    _currentCue = _chapterCues[idx];
+    _maybeEmitCrossChapter(_currentCue);
+    notifyListeners();
   }
 
   /// 对齐 Sasayaki `displayCue(cue, reveal: autoScroll && hasPlayedOnce)`：
@@ -505,9 +501,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     return out;
   }
 
-  /// 对齐 Sasayaki SasayakiPlayer.updateCue 的 if/else 分支：
-  /// `cue.chapterIndex == currentIndex` 走 displayCue，否则在 autoScroll +
-  /// hasPlayedOnce 时缓存 pendingCue + 触发 loadChapter。
+  /// cue 属于不同 section 时竖起守卫并通知 reader 跳章。
   ///
   /// 关键差异（修正点）：以前用 `_lastCueSectionIndex`（上一条 cue 的 sec）
   /// 判定跨章，结果用户手动翻到错误章节后 cue 持续在原章、prev == sec、
@@ -516,11 +510,8 @@ class AudiobookPlayerController extends ChangeNotifier {
   ///
   /// SMIL/JSON 等非 sasayaki 路径 cue 的 textFragmentId 解码返回 null，
   /// 自然跳过这套逻辑（它们没有跨章同步概念）。
-  void _maybeEmitCrossChapter(AudioCue? cue) {
-    // 已在跨章 await 中直接忽略 —— 多个 caller 路径（_updateCurrentCue /
-    // setFollowAudio / 未来其他入口）都可能在 transition 尚未完成时再次踩到
-    // 这里；没守卫会把 _pendingCue 反复覆盖 + 重复 onCrossChapter，
-    // ttu 被轮番 __ttuGoToSection，每次 scrollTop 都被清零到章首。
+  void _maybeEmitCrossChapter(AudioCue? cue, {bool bypassPlayGuard = false}) {
+    // 已在跨章 await 中直接忽略，否则重复触发 onCrossChapter。
     if (_chapterTransition) return;
     if (cue == null) return;
     final SasayakiFragment? frag =
@@ -535,37 +526,21 @@ class AudiobookPlayerController extends ChangeNotifier {
     }
     if (cueSec == currentSec) return;
     if (!followAudio.value) return;
-    if (!_hasPlayedOnce) return;
-    // 进入跨章状态：缓存 pendingCue，竖起 chapterTransition 守卫，
-    // 通知 reader 跳章。reader 完成后调 notifySectionRestoreCompleted。
-    _pendingCue = cue;
+    if (!bypassPlayGuard && !_hasPlayedOnce) return;
     _chapterTransition = true;
     onCrossChapter?.call(cueSec);
   }
 
-  /// 由 reader 在 `__ttuGoToSection` 完成（或失败）后调用，对齐 Sasayaki
-  /// `handleRestoreCompleted(currentIndex:)`：清 chapterTransition 守卫，
-  /// 让 [_updateCurrentCue] 重新放行；如果 pendingCue 命中目标章节，
-  /// 立刻 notifyListeners 让 reader 在新章上重画高亮，无需等 positionStream
-  /// 下一 tick（暂停状态下 positionStream 不发事件，否则会黑屏几秒）。
+  /// 由 reader 在 `__ttuGoToSection` 完成（或失败）后调用：清守卫，
+  /// 用当前播放位置重算 cue 并立刻 notify，暂停态也能即时高亮。
   ///
-  /// [success] = false 时（跳章请求超时 / reject）也务必调用，否则
-  /// _chapterTransition 永远卡 true，cue 完全停止推进。
+  /// 无论成功失败都必须调用，否则 _chapterTransition 永远卡 true。
   void notifySectionRestoreCompleted({
     required int currentReaderSection,
     required bool success,
   }) {
     _chapterTransition = false;
-    final AudioCue? pending = _pendingCue;
-    _pendingCue = null;
-    if (!success || pending == null) return;
-    final SasayakiFragment? frag =
-        SasayakiMatchCodec.tryDecode(pending.textFragmentId);
-    if (frag == null) return;
-    if (frag.sectionIndex != currentReaderSection) return;
-    // pendingCue 仍然是 currentCue，强制 notify 让 reader 在新章节 DOM
-    // 上重新跑一次 highlight。
-    notifyListeners();
+    _updateCurrentCue(_player.position.inMilliseconds);
   }
 
   /// 翻转 Follow audio 开关并经 [onFollowAudioPersist] 落 Hive。相同值调用
@@ -602,7 +577,8 @@ class AudiobookPlayerController extends ChangeNotifier {
     if (_chapterTransition) return;
     final AudioCue? cue = _currentCue;
     if (cue == null) return;
-    _maybeEmitCrossChapter(cue);
+    _forceNextReveal = true;
+    _maybeEmitCrossChapter(cue, bypassPlayGuard: true);
     if (_chapterTransition) return;
     notifyListeners();
   }
