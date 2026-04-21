@@ -1881,9 +1881,11 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     // 走错路径）。_didRestorePos 在函数内部自守只跑一次。
     await _bootstrapRestoreReaderPos();
     // 初始章节预建 Sasayaki cueMap（首次 sectionChanged 被 ttu skip(1) 吃掉，
-    // 这里兜住）。
+    // 这里兜住）。必须 await：_onCueChanged 需要 cueMap 已就绪才能命中首条
+    // cue 的高亮；如果 unawaited，highlight 在 cueMap 构建完成前执行会 miss，
+    // 而 positionStream 不会重发同 index 的 cue 变更。
     if (_currentTtuSection >= 0) {
-      unawaited(_applySasayakiCuesForSection(_currentTtuSection));
+      await _applySasayakiCuesForSection(_currentTtuSection);
     }
     // 章节加载后立刻把视口拉回当前句所在页（Hoshi pendingFragment 模式）。
     _onCueChanged();
