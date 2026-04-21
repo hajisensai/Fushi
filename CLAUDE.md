@@ -41,12 +41,12 @@
 ## ttu-ebook-reader fork
 
 - **位置**：本机 `/d/ttu-fork/`（本地独立 git 仓库，**不是** hibiki 的 submodule）
-- **分支**：`hibiki-patches`
-- **上游**：`ttu-ttu/ebook-reader` commit `7086bdc`（SvelteKit 1.x 最后稳态；名为 `upstream` 的 remote）
-- **远程（hibiki 私有 fork）**：待创建后设为 `origin`。push 命令：`git push -u origin hibiki-patches`
+- **分支**：`hibiki-patches-v2`（旧 `hibiki-patches` 基于 ttu-ttu kit-v1 已弃用）
+- **上游**：`kamperemu/ebook-reader`（后续维护版，SvelteKit v2；remote 名 `kamperemu`）
+- **远程（hibiki 私有 fork）**：`origin` → `https://github.com/hdjsadgfwtg/ttu-fork`
 - **产物去向**：`pnpm build` 后，`apps/web/build/` 整套拷入 `hibiki/hibiki/assets/ttu-ebook-reader/`（保留手动维护的 `fonts/` 子目录）
 - **补丁清单与构建细节**：见 [`docs/ttu-fork-notes.md`](docs/ttu-fork-notes.md)（每个 `feat/fix(reader): [hibiki] ...` commit 都列了 why）
-- **当前已落地 8 个补丁**：`__ttuGoToSection` / `__ttuCurrentSection` / `__ttuSectionCount` API、onMount-cleanup SSR 修复、`sectionChanged` console 事件、`__ttuGetToc` / `__ttuBookmarkPage`、删除原生 reader chrome（顶部工具栏 + 底部进度条 + 右下角百分比）、`autoBookmark` / `avoidPageBreak` default 翻 true、`__ttuScrollToCharOffset` + `__ttuGetColumnGap` API、continuous 模式滚动同步 `currentSectionIndex$`（解决 Sasayaki reveal 滚动后 `__ttuCurrentSection()` stale 的跨章死循环）
+- **当前已落地补丁（v2 单 commit 合并）**：`__ttuGoToSection` / `__ttuCurrentSection` / `__ttuSectionCount` / `__ttuGetToc` / `__ttuBookmarkPage` / `__ttuScrollToCharOffset` / `__ttuGetColumnGap` / `__ttuScrollToPos` API、`sectionChanged` console 事件、删除原生 reader chrome（顶部工具栏 + 底部进度条）、`avoidPageBreak` default 翻 true（`autoBookmark` 上游已默认 true）、continuous 模式滚动同步 `currentSectionIndex$`、`scrollTo` 加入 PageManager 接口
 
 **何时改 fork，而非在 hibiki 侧注 CSS/JS**：凡是**动 ttu WebView DOM 结构、原生 UI chrome、全局 JS API**的改动，都优先走 fork 源码。理由：(1) 外部 CSS `display:none` 会随 Svelte hydrate / 重渲染失效；(2) 改正文相关样式（padding / margin / line-height 等）会让文字布局"乱动"；(3) fork 里改一次，rebase 上游就自然带上，比 Flutter 侧打 hack 干净。hibiki 侧只负责：WebView 容器尺寸（`Positioned.fill` 给播放栏让路）、SafeArea、JS 桥接消费 ttu 暴露的 API。
 
@@ -65,3 +65,7 @@
 - 11 个 pub cache 包需打 v1 embedding 补丁（见 `project_build_env` 记忆）
 - MeCab 字典打包走 Android NDK
 - ッツ reader 运行在 WebView，需验证 Android WebView 版本兼容
+
+## 语言
+
+回复和思考均使用中文
