@@ -60,7 +60,16 @@ class HibikiDatabase extends _$HibikiDatabase {
   Future<void> setPrefTyped<T>(String key, T value) =>
       setPref(key, value.toString());
 
+  Future<Map<String, String>> getAllPrefs() async {
+    final rows = await select(preferences).get();
+    return Map.fromEntries(rows.map((r) => MapEntry(r.key, r.value)));
+  }
+
   // ── media items ─────────────────────────────────────────────────
+  Future<List<MediaItemRow>> getAllMediaItems() =>
+      (select(mediaItems)..orderBy([(t) => OrderingTerm.desc(t.importedAt)]))
+          .get();
+
   Future<void> upsertMediaItem(MediaItemsCompanion item) =>
       into(mediaItems).insertOnConflictUpdate(item);
 
@@ -84,6 +93,29 @@ class HibikiDatabase extends _$HibikiDatabase {
             ..where((t) => t.mediaSourceIdentifier.equals(sourceId))
             ..orderBy([(t) => OrderingTerm.desc(t.importedAt)]))
           .get();
+
+  Future<MediaItemRow?> getMediaItemByUniqueKey(String uk) =>
+      (select(mediaItems)..where((t) => t.uniqueKey.equals(uk)))
+          .getSingleOrNull();
+
+  Future<void> trimMediaHistory(String typeId, int maxItems) async {
+    final cnt = countAll();
+    final q = selectOnly(mediaItems)
+      ..where(mediaItems.mediaTypeIdentifier.equals(typeId))
+      ..addColumns([cnt]);
+    final row = await q.getSingle();
+    final count = row.read(cnt)!;
+    if (count <= maxItems) return;
+    final surplus = count - maxItems;
+    final oldest = await (select(mediaItems)
+          ..where((t) => t.mediaTypeIdentifier.equals(typeId))
+          ..orderBy([(t) => OrderingTerm.asc(t.id)])
+          ..limit(surplus))
+        .get();
+    for (final r in oldest) {
+      await (delete(mediaItems)..where((t) => t.id.equals(r.id))).go();
+    }
+  }
 
   // ── anki mappings ───────────────────────────────────────────────
   Future<List<AnkiMappingRow>> getAllMappings() =>
@@ -109,6 +141,9 @@ class HibikiDatabase extends _$HibikiDatabase {
       });
 
   // ── search history ──────────────────────────────────────────────
+  Future<List<SearchHistoryItemRow>> getAllSearchHistoryItems() =>
+      select(searchHistoryItems).get();
+
   Future<void> upsertSearchHistoryItem(SearchHistoryItemsCompanion item) =>
       into(searchHistoryItems).insertOnConflictUpdate(item);
 
@@ -137,6 +172,21 @@ class HibikiDatabase extends _$HibikiDatabase {
   Future<SearchHistoryItemRow?> getSearchHistoryByUniqueKey(String uk) =>
       (select(searchHistoryItems)..where((t) => t.uniqueKey.equals(uk)))
           .getSingleOrNull();
+
+  Future<void> trimSearchHistory(String historyKey, int maxItems) async {
+    final count = await countSearchHistory(historyKey);
+    if (count <= maxItems) return;
+    final surplus = count - maxItems;
+    final oldest = await (select(searchHistoryItems)
+          ..where((t) => t.historyKey.equals(historyKey))
+          ..orderBy([(t) => OrderingTerm.asc(t.id)])
+          ..limit(surplus))
+        .get();
+    for (final row in oldest) {
+      await (delete(searchHistoryItems)..where((t) => t.id.equals(row.id)))
+          .go();
+    }
+  }
 
   // ── audiobooks ──────────────────────────────────────────────────
   Future<AudiobookRow?> getAudiobookByBookUid(String bookUid) =>

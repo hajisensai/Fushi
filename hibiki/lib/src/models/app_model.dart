@@ -1,5 +1,5 @@
 import 'dart:async';
-
+import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:ui';
@@ -23,8 +23,8 @@ import 'package:flutter_exit_app/flutter_exit_app.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fluttertoast/fluttertoast.dart';
-import 'package:hive_flutter/hive_flutter.dart';
-import 'package:isar/isar.dart';
+import 'package:drift/drift.dart';
+import 'package:hibiki/src/database/database.dart';
 import 'package:intl/intl.dart' as intl;
 import 'package:path/path.dart' as path;
 import 'package:package_info_plus/package_info_plus.dart';
@@ -44,19 +44,6 @@ import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/reader_position_model.dart';
 import 'package:hibiki/src/media/audiobook/reading_statistic_model.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_model.dart';
-
-/// Schemas used in Isar database.
-final List<CollectionSchema> globalSchemas = [
-  DictionaryEntrySchema,
-  MediaItemSchema,
-  AnkiMappingSchema,
-  SearchHistoryItemSchema,
-  AudiobookSchema,
-  AudioCueSchema,
-  SrtBookSchema,
-  ReaderPositionSchema,
-  ReadingStatisticSchema,
-];
 
 /// A list of fields that the app will support at runtime.
 final List<Field> globalFields = List<Field>.unmodifiable(
@@ -139,20 +126,20 @@ class AppModel with ChangeNotifier {
   RouteObserver<PageRoute> get routeObserver => _routeObserver;
   final RouteObserver<PageRoute> _routeObserver = RouteObserver<PageRoute>();
 
-  /// Used for accessing persistent key-value data. See [initialise].
-  late final Box _preferences;
+  /// Persistent database (Drift/SQLite).
+  late final HibikiDatabase _database;
 
-  /// Used for accessing persistent dictionary data (plain Dart class, not Isar).
-  late final Box<String> _dictionariesBox;
+  /// In-memory preference cache for synchronous reads.
+  final Map<String, String> _prefCache = {};
 
-  /// Used for accessing persistent dictionary history as serialized JSON.
-  late final Box<String> _dictionaryHistoryBox;
+  /// In-memory cache of search history items (historyKey → list of terms).
+  final Map<String, List<String>> _searchHistoryCache = {};
+
+  /// In-memory cache of media items for sync access.
+  List<MediaItem> _mediaItemsCache = [];
 
   /// In-memory list of dictionary history results.
   final List<DictionarySearchResult> _dictionaryHistoryResults = [];
-
-  /// Used for accessing persistent database data. See [initialise].
-  late final Isar _database;
 
   /// Used to get the versioning metadata of the app. See [initialise].
   PackageInfo get packageInfo => _packageInfo;
@@ -224,13 +211,6 @@ class AppModel with ChangeNotifier {
   Directory get thumbnailsDirectory => _thumbnailsDirectory;
   late final Directory _thumbnailsDirectory;
 
-  /// Directory where Hive key-value data is stored.
-  Directory get hiveDirectory => _hiveDirectory;
-  late final Directory _hiveDirectory;
-
-  /// Directory where Isar database data is stored.
-  Directory get isarDirectory => _isarDirectory;
-  late final Directory _isarDirectory;
 
   /// Directory where media for export is stored for communication with
   /// third-party APIs.
@@ -312,17 +292,18 @@ class AppModel with ChangeNotifier {
   /// Used to check if the dictionary tab should be refreshed on switching tabs.
   bool shouldRefreshTabs = false;
 
+  /// In-memory cache of dictionaries, kept in sync with the database.
+  List<Dictionary> _dictionariesCache = [];
+
   /// Returns all dictionaries imported into the database. Sorted by the
   /// user-defined order in the dictionary menu.
-  List<Dictionary> get dictionaries =>
-      _dictionariesBox.values
-          .map((e) => Dictionary.fromJson(e))
-          .toList()
-        ..sort((a, b) => a.order.compareTo(b.order));
+  List<Dictionary> get dictionaries => List.unmodifiable(_dictionariesCache);
+
+  /// In-memory cache of anki mappings, kept in sync with the database.
+  List<AnkiMapping> _mappingsCache = [];
 
   /// Returns all export profiles.
-  List<AnkiMapping> get mappings =>
-      _database.ankiMappings.where().sortByOrder().findAllSync();
+  List<AnkiMapping> get mappings => List.unmodifiable(_mappingsCache);
 
 
   /// Returns all dictionary history results. Oldest is first.
@@ -605,7 +586,7 @@ class AppModel with ChangeNotifier {
 
   /// Get a mapping with a given mapping name.
   AnkiMapping? getMappingFromLabel(String label) {
-    return _database.ankiMappings.where().labelEqualTo(label).findFirstSync();
+    return _mappingsCache.where((m) => m.label == label).firstOrNull;
   }
 
   /// Change this once a field hide/show system is in place.
@@ -617,18 +598,19 @@ class AppModel with ChangeNotifier {
   /// Update the user-defined order of a given dictionary in the database.
   /// See the dictionary dialog's [ReorderableListView] for usage.
   void updateDictionaryOrder(List<Dictionary> newDictionaries) async {
+    _dictionariesCache = [...newDictionaries]
+      ..sort((a, b) => a.order.compareTo(b.order));
     for (final dictionary in newDictionaries) {
-      _dictionariesBox.put(dictionary.name, dictionary.toJson());
+      await _database.upsertDictionaryMeta(_dictionaryToCompanion(dictionary));
     }
   }
 
   /// Update the user-defined order of a given dictionary in the database.
   /// See the dictionary dialog's [ReorderableListView] for usage.
   void updateMappingsOrder(List<AnkiMapping> newMappings) async {
-    _database.writeTxnSync(() {
-      _database.ankiMappings.clearSync();
-      _database.ankiMappings.putAllSync(newMappings);
-    });
+    _mappingsCache = [...newMappings];
+    await _database.replaceAllMappings(
+        newMappings.map(_mappingToCompanion).toList());
   }
 
 
@@ -882,27 +864,21 @@ class AppModel with ChangeNotifier {
 
   /// Populate default mapping if it does not exist in the database.
   void populateDefaultMapping(Language language) async {
-    if (_database.ankiMappings.where().findAllSync().isEmpty) {
-      _database.writeTxnSync(() {
-        _database.ankiMappings.putSync(AnkiMapping.defaultMapping(
-          language: language,
-          order: 0,
-        ));
-      });
+    if (_mappingsCache.isEmpty) {
+      final defaultMapping = AnkiMapping.defaultMapping(
+        language: language,
+        order: 0,
+      );
+      await _database.upsertMapping(_mappingToCompanion(defaultMapping));
+      _mappingsCache = [defaultMapping];
     } else {
-      AnkiMapping standardProfile = _database.ankiMappings
-          .where()
-          .labelEqualTo(AnkiMapping.standardProfileName)
-          .findFirstSync()!;
+      AnkiMapping standardProfile = _mappingsCache
+          .firstWhere((m) => m.label == AnkiMapping.standardProfileName);
       if (standardProfile.model != AnkiMapping.standardModelName) {
         String newLabel = 'Legacy Standard';
         int attempts = 1;
 
-        while (_database.ankiMappings
-            .where()
-            .labelEqualTo(newLabel)
-            .findAllSync()
-            .isNotEmpty) {
+        while (_mappingsCache.any((m) => m.label == newLabel)) {
           attempts += 1;
           newLabel = 'Legacy Standard ($attempts)';
         }
@@ -910,18 +886,17 @@ class AppModel with ChangeNotifier {
         AnkiMapping legacyProfile = standardProfile.copyWith(
           label: newLabel,
         );
+        final newDefault = AnkiMapping.defaultMapping(
+          language: language,
+          order: nextMappingOrder,
+        );
 
-        _database.writeTxnSync(() {
-          _database.ankiMappings.putAllSync(
-            [
-              legacyProfile,
-              AnkiMapping.defaultMapping(
-                language: language,
-                order: nextMappingOrder,
-              ),
-            ],
-          );
-        });
+        await _database.replaceAllMappings([
+          ..._mappingsCache.map(_mappingToCompanion),
+          _mappingToCompanion(legacyProfile),
+          _mappingToCompanion(newDefault),
+        ]);
+        _mappingsCache = [..._mappingsCache, legacyProfile, newDefault];
 
         await showDialog(
           barrierDismissible: true,
@@ -1032,18 +1007,46 @@ class AppModel with ChangeNotifier {
       _packageInfo = await PackageInfo.fromPlatform();
       _androidDeviceInfo = await DeviceInfoPlugin().androidInfo;
 
-      debugPrint('[Hibiki] init: Hive');
-      /// Initialise persistent key-value store.
-      await Hive.initFlutter();
-      _preferences = await Hive.openBox('appModel');
-      _dictionariesBox = await Hive.openBox<String>('dictionaries');
-      _dictionaryHistoryBox = await Hive.openBox<String>('dictionaryHistory');
+      debugPrint('[Hibiki] init: directories (early, needed for DB)');
+      _temporaryDirectory = await getTemporaryDirectory();
+      _appDirectory = await getApplicationDocumentsDirectory();
+      _databaseDirectory = await getApplicationSupportDirectory();
 
-      /// Restore dictionary history from Hive into memory.
+      debugPrint('[Hibiki] init: Drift database');
+      _database = HibikiDatabase(_databaseDirectory.path);
+
+      /// Load all preferences into memory for synchronous reads.
+      _prefCache.addAll(await _database.getAllPrefs());
+
+      /// Load dictionary metadata cache.
+      final dictRows = await _database.getAllDictionaryMetadata();
+      _dictionariesCache = dictRows.map(_rowToDictionary).toList()
+        ..sort((a, b) => a.order.compareTo(b.order));
+
+      /// Load mappings cache.
+      final mapRows = await _database.getAllMappings();
+      _mappingsCache = mapRows.map(_rowToMapping).toList();
+
+      /// Load media items cache.
+      final miRows = await _database.getAllMediaItems();
+      _mediaItemsCache = miRows.map(_rowToMediaItem).toList();
+
+      /// Load search history cache (grouped by historyKey).
+      _searchHistoryCache.clear();
+      final shRows = await _database.getAllSearchHistoryItems();
+      for (final row in shRows) {
+        _searchHistoryCache
+            .putIfAbsent(row.historyKey, () => [])
+            .add(row.searchTerm);
+      }
+
+      /// Restore dictionary history from DB into memory.
       _dictionaryHistoryResults.clear();
-      for (final json in _dictionaryHistoryBox.values) {
+      final histRows = await _database.getAllDictionaryHistory();
+      for (final row in histRows) {
         try {
-          _dictionaryHistoryResults.add(DictionarySearchResult.fromJson(json));
+          _dictionaryHistoryResults
+              .add(DictionarySearchResult.fromJson(row.resultJson));
         } catch (_) {}
       }
 
@@ -1051,14 +1054,9 @@ class AppModel with ChangeNotifier {
       /// Anki export) so they do not block startup.
 
       debugPrint('[Hibiki] init: directories');
-      /// These directories will commonly be accessed.
-      _temporaryDirectory = await getTemporaryDirectory();
-      _appDirectory = await getApplicationDocumentsDirectory();
-      _databaseDirectory = await getApplicationSupportDirectory();
       _browserDirectory = Directory(path.join(appDirectory.path, 'browser'));
       _thumbnailsDirectory =
           Directory(path.join(appDirectory.path, 'thumbnails'));
-      _hiveDirectory = Directory(path.join(appDirectory.path, 'hive'));
 
       _dictionaryResourceDirectory =
           Directory(path.join(appDirectory.path, 'dictionaryResources'));
@@ -1071,7 +1069,6 @@ class AppModel with ChangeNotifier {
           Directory(path.join(appDirectory.path, 'webArchive'));
 
       thumbnailsDirectory.createSync();
-      hiveDirectory.createSync();
       dictionaryImportWorkingDirectory.createSync();
       dictionaryResourceDirectory.createSync();
 
@@ -1122,14 +1119,6 @@ class AppModel with ChangeNotifier {
         }
       }
 
-      debugPrint('[Hibiki] init: Isar.open');
-      /// Initialise persistent database.
-      _database = await Isar.open(
-        globalSchemas,
-        directory: _databaseDirectory.path,
-        maxSizeMiB: 8192,
-      );
-
       debugPrint('[Hibiki] init: search preload');
       /// Preloads the search database in memory.
       searchDictionary(
@@ -1162,6 +1151,161 @@ class AppModel with ChangeNotifier {
     }
   }
 
+  // ── sync pref helpers (backed by in-memory cache) ───────────────────
+
+  dynamic _getPref(String key, {dynamic defaultValue}) {
+    final raw = _prefCache[key];
+    if (raw == null) return defaultValue;
+    if (defaultValue is int) return int.tryParse(raw) ?? defaultValue;
+    if (defaultValue is double) return double.tryParse(raw) ?? defaultValue;
+    if (defaultValue is bool) return raw == 'true';
+    if (defaultValue is List) {
+      try {
+        return List<String>.from(jsonDecode(raw));
+      } catch (_) {
+        return defaultValue;
+      }
+    }
+    return raw;
+  }
+
+  Future<void> _setPref(String key, dynamic value) async {
+    String strVal;
+    if (value is List) {
+      strVal = jsonEncode(value);
+    } else {
+      strVal = value.toString();
+    }
+    _prefCache[key] = strVal;
+    await _database.setPref(key, strVal);
+  }
+
+  // ── model / Drift row conversion helpers ──────────────────────────
+
+  static AnkiMapping _rowToMapping(AnkiMappingRow r) {
+    final m = AnkiMapping(
+      label: r.label,
+      model: r.model,
+      exportFieldKeys:
+          (jsonDecode(r.exportFieldKeysJson) as List).cast<String?>(),
+      creatorFieldKeys: List<String>.from(jsonDecode(r.creatorFieldKeysJson)),
+      creatorCollapsedFieldKeys:
+          List<String>.from(jsonDecode(r.creatorCollapsedFieldKeysJson)),
+      order: r.order,
+      tags: List<String>.from(jsonDecode(r.tagsJson)),
+      exportMediaTags: r.exportMediaTags,
+      useBrTags: r.useBrTags,
+      prependDictionaryNames: r.prependDictionaryNames,
+    );
+    m.id = r.id;
+    m.enhancementsJson = r.enhancementsJson;
+    m.actionsJson = r.actionsJson;
+    return m;
+  }
+
+  static AnkiMappingsCompanion _mappingToCompanion(AnkiMapping m) {
+    return AnkiMappingsCompanion(
+      label: Value(m.label),
+      model: Value(m.model),
+      exportFieldKeysJson: Value(jsonEncode(m.exportFieldKeys)),
+      creatorFieldKeysJson: Value(jsonEncode(m.creatorFieldKeys)),
+      creatorCollapsedFieldKeysJson:
+          Value(jsonEncode(m.creatorCollapsedFieldKeys)),
+      order: Value(m.order),
+      tagsJson: Value(jsonEncode(m.tags)),
+      enhancementsJson: Value(m.enhancementsJson),
+      actionsJson: Value(m.actionsJson),
+      exportMediaTags: Value(m.exportMediaTags ?? true),
+      useBrTags: Value(m.useBrTags ?? true),
+      prependDictionaryNames: Value(m.prependDictionaryNames ?? true),
+    );
+  }
+
+  static Dictionary _rowToDictionary(DictionaryMetaRow r) {
+    return Dictionary(
+      name: r.name,
+      formatKey: r.formatKey,
+      order: r.order,
+      metadata: Map<String, String>.from(jsonDecode(r.metadataJson)),
+      hiddenLanguages: List<String>.from(jsonDecode(r.hiddenLanguagesJson)),
+      collapsedLanguages:
+          List<String>.from(jsonDecode(r.collapsedLanguagesJson)),
+    );
+  }
+
+  static DictionaryMetadataCompanion _dictionaryToCompanion(Dictionary d) {
+    return DictionaryMetadataCompanion(
+      name: Value(d.name),
+      formatKey: Value(d.formatKey),
+      order: Value(d.order),
+      metadataJson: Value(jsonEncode(d.metadata)),
+      hiddenLanguagesJson: Value(jsonEncode(d.hiddenLanguages)),
+      collapsedLanguagesJson: Value(jsonEncode(d.collapsedLanguages)),
+    );
+  }
+
+  static MediaItem _rowToMediaItem(MediaItemRow r) {
+    return MediaItem(
+      id: r.id,
+      mediaIdentifier: r.mediaIdentifier,
+      title: r.title,
+      mediaTypeIdentifier: r.mediaTypeIdentifier,
+      mediaSourceIdentifier: r.mediaSourceIdentifier,
+      position: r.position,
+      duration: r.duration,
+      canDelete: r.canDelete,
+      canEdit: r.canEdit,
+      base64Image: r.base64Image,
+      imageUrl: r.imageUrl,
+      audioUrl: r.audioUrl,
+      author: r.author,
+      authorIdentifier: r.authorIdentifier,
+      extraUrl: r.extraUrl,
+      extra: r.extra,
+      sourceMetadata: r.sourceMetadata,
+    );
+  }
+
+  static MediaItemsCompanion _mediaItemToCompanion(MediaItem item) {
+    return MediaItemsCompanion(
+      uniqueKey: Value(item.uniqueKey),
+      mediaIdentifier: Value(item.mediaIdentifier),
+      title: Value(item.title),
+      mediaTypeIdentifier: Value(item.mediaTypeIdentifier),
+      mediaSourceIdentifier: Value(item.mediaSourceIdentifier),
+      position: Value(item.position),
+      duration: Value(item.duration),
+      canDelete: Value(item.canDelete),
+      canEdit: Value(item.canEdit),
+      base64Image: Value(item.base64Image),
+      imageUrl: Value(item.imageUrl),
+      audioUrl: Value(item.audioUrl),
+      author: Value(item.author),
+      authorIdentifier: Value(item.authorIdentifier),
+      extraUrl: Value(item.extraUrl),
+      extra: Value(item.extra),
+      sourceMetadata: Value(item.sourceMetadata),
+      importedAt: Value(DateTime.now().millisecondsSinceEpoch),
+    );
+  }
+
+  void _persistMapping(AnkiMapping mapping) async {
+    await _database.upsertMapping(_mappingToCompanion(mapping));
+    final rows = await _database.getAllMappings();
+    _mappingsCache = rows.map(_rowToMapping).toList();
+  }
+
+  void _persistDictionary(Dictionary dictionary) async {
+    final idx = _dictionariesCache.indexWhere((d) => d.name == dictionary.name);
+    if (idx >= 0) {
+      _dictionariesCache[idx] = dictionary;
+    } else {
+      _dictionariesCache.add(dictionary);
+      _dictionariesCache.sort((a, b) => a.order.compareTo(b.order));
+    }
+    await _database.upsertDictionaryMeta(_dictionaryToCompanion(dictionary));
+  }
+
   // ── App-wide theme (6 presets matching ttu reader themes) ──────────────
 
   static const Map<String, ({Color seed, Brightness brightness, String label})>
@@ -1175,7 +1319,7 @@ class AppModel with ChangeNotifier {
   };
 
   String get appThemeKey {
-    final String key = _preferences.get('app_theme_key', defaultValue: '');
+    final String key = _getPref('app_theme_key', defaultValue: '');
     if (key.isEmpty ||
         (!themePresets.containsKey(key) && key != 'custom-theme')) {
       final bool sysDark =
@@ -1187,25 +1331,25 @@ class AppModel with ChangeNotifier {
   }
 
   Future<void> setAppThemeKey(String key) async {
-    await _preferences.put('app_theme_key', key);
+    await _setPref('app_theme_key', key);
     Restart.restartApp();
   }
 
   Color get customThemeSeed {
-    final int v = _preferences.get('custom_theme_seed', defaultValue: 0xFF1F4959);
+    final int v = _getPref('custom_theme_seed', defaultValue: 0xFF1F4959);
     return Color(v);
   }
 
   Future<void> setCustomThemeSeed(Color color) async {
-    await _preferences.put('custom_theme_seed', color.toARGB32());
+    await _setPref('custom_theme_seed', color.toARGB32());
   }
 
   bool get customThemeDark {
-    return _preferences.get('custom_theme_dark', defaultValue: false);
+    return _getPref('custom_theme_dark', defaultValue: false);
   }
 
   Future<void> setCustomThemeDark(bool dark) async {
-    await _preferences.put('custom_theme_dark', dark);
+    await _setPref('custom_theme_dark', dark);
   }
 
   Future<void> applyCustomTheme({
@@ -1214,7 +1358,7 @@ class AppModel with ChangeNotifier {
   }) async {
     await setCustomThemeSeed(seed);
     await setCustomThemeDark(dark);
-    await _preferences.put('app_theme_key', 'custom-theme');
+    await _setPref('app_theme_key', 'custom-theme');
     Restart.restartApp();
   }
 
@@ -1227,7 +1371,7 @@ class AppModel with ChangeNotifier {
   Language get targetLanguage {
     String defaultLocaleTag = languages.values.first.locale.toLanguageTag();
     String localeTag =
-        _preferences.get('target_language', defaultValue: defaultLocaleTag);
+        _getPref('target_language', defaultValue: defaultLocaleTag);
 
     return languages[localeTag]!;
   }
@@ -1235,14 +1379,14 @@ class AppModel with ChangeNotifier {
   /// Get the last selected deck from persisted preferences.
   String get lastSelectedDeckName {
     String deckName =
-        _preferences.get('last_selected_deck', defaultValue: 'Default');
+        _getPref('last_selected_deck', defaultValue: 'Default');
     return deckName;
   }
 
   /// Get the target language from persisted preferences.
   DictionaryFormat get lastSelectedDictionaryFormat {
     String firstDictionaryFormatName = dictionaryFormats.values.first.uniqueKey;
-    String lastDictionaryFormatName = _preferences.get(
+    String lastDictionaryFormatName = _getPref(
       'last_selected_dictionary_format',
       defaultValue: firstDictionaryFormatName,
     );
@@ -1254,14 +1398,14 @@ class AppModel with ChangeNotifier {
   Locale get appLocale {
     String defaultLocaleTag = locales.values.first.toLanguageTag();
     String localeTag =
-        _preferences.get('app_locale', defaultValue: defaultLocaleTag);
+        _getPref('app_locale', defaultValue: defaultLocaleTag);
 
     return locales[localeTag]!;
   }
 
   /// Get the last selected model from persisted preferences.
   String? get lastSelectedModel {
-    String? modelName = _preferences.get('last_selected_model');
+    String? modelName = _getPref('last_selected_model');
     return modelName;
   }
 
@@ -1269,19 +1413,14 @@ class AppModel with ChangeNotifier {
   /// always be guaranteed to have a result, as it is impossible to delete the
   /// default mapping.
   AnkiMapping get lastSelectedMapping {
-    String mappingName = _preferences.get(
+    String mappingName = _getPref(
       'last_selected_mapping',
       defaultValue: mappings.first.label,
     );
 
-    AnkiMapping mapping = _database.ankiMappings
-            .where()
-            .labelEqualTo(mappingName)
-            .findFirstSync() ??
-        _database.ankiMappings
-            .where()
-            .labelEqualTo(mappings.first.label)
-            .findFirstSync()!;
+    AnkiMapping mapping =
+        _mappingsCache.where((m) => m.label == mappingName).firstOrNull ??
+            _mappingsCache.first;
 
     return mapping;
   }
@@ -1289,7 +1428,7 @@ class AppModel with ChangeNotifier {
   /// Get the last selected mapping's name from persisted preferences. This is
   /// faster than getting the mapping specifically from the database.
   String get lastSelectedMappingName {
-    String mappingName = _preferences.get('last_selected_mapping',
+    String mappingName = _getPref('last_selected_mapping',
         defaultValue: mappings.first.label);
     return mappingName;
   }
@@ -1297,7 +1436,7 @@ class AppModel with ChangeNotifier {
   /// Persist a new target language in preferences.
   Future<void> setTargetLanguage(Language language) async {
     String localeTag = language.locale.toLanguageTag();
-    await _preferences.put('target_language', localeTag);
+    await _setPref('target_language', localeTag);
 
     language.initialise();
 
@@ -1308,7 +1447,7 @@ class AppModel with ChangeNotifier {
   /// widget re-resolves [t] with the new locale (Method A lookups don't
   /// automatically rebuild on locale change).
   Future<void> setAppLocale(String localeTag) async {
-    await _preferences.put('app_locale', localeTag);
+    await _setPref('app_locale', localeTag);
     LocaleSettings.setLocaleRaw(localeTag);
     Restart.restartApp();
   }
@@ -1318,28 +1457,28 @@ class AppModel with ChangeNotifier {
   Future<void> setLastSelectedDictionaryFormat(
       DictionaryFormat dictionaryFormat) async {
     String lastDictionaryFormatName = dictionaryFormat.uniqueKey;
-    await _preferences.put(
+    await _setPref(
         'last_selected_dictionary_format', lastDictionaryFormatName);
   }
 
   /// Persist a new last selected model name. This is called when the user
   /// changes the selected model to map in the profiles menu.
   Future<void> setLastSelectedModelName(String modelName) async {
-    await _preferences.put('last_selected_model', modelName);
+    await _setPref('last_selected_model', modelName);
     notifyListeners();
   }
 
   /// Persist a new last selected deck name. This is called when the user
   /// changes the selected deck to map in the creator.
   Future<void> setLastSelectedDeck(String deckName) async {
-    await _preferences.put('last_selected_deck', deckName);
+    await _setPref('last_selected_deck', deckName);
   }
 
   /// Persist a new last selected model name. This is called when the user
   /// changes the selected model to map in the profiles menu.
   Future<void> setLastSelectedMapping(AnkiMapping mapping,
       {bool notify = true}) async {
-    await _preferences.put('last_selected_mapping', mapping.label);
+    await _setPref('last_selected_mapping', mapping.label);
     if (notify) {
       notifyListeners();
     }
@@ -1348,11 +1487,11 @@ class AppModel with ChangeNotifier {
   /// Get the current home tab index. The order of the tab indexes are based on
   /// the ordering in [mediaTypes].
   int get currentHomeTabIndex =>
-      _preferences.get('current_home_tab_index', defaultValue: 0);
+      _getPref('current_home_tab_index', defaultValue: 0);
 
   /// Persist the new tab after switching home tabs.
   Future<void> setCurrentHomeTabIndex(int index) async {
-    await _preferences.put('current_home_tab_index', index);
+    await _setPref('current_home_tab_index', index);
   }
 
   /// Show the dictionary menu. This should be callable from many parts of the
@@ -1565,7 +1704,7 @@ class AppModel with ChangeNotifier {
           await dictionaryFormat.prepareName(prepareDirectoryParams);
       progressNotifier.value = t.import_name(name: name);
 
-      if (_dictionariesBox.containsKey(name)) {
+      if (_dictionariesCache.any((d) => d.name == name)) {
         throw Exception(t.import_duplicate(name: name));
       }
 
@@ -1601,7 +1740,7 @@ class AppModel with ChangeNotifier {
 
       await compute(depositDictionaryDataHelper, prepareDictionaryParams);
 
-      _dictionariesBox.put(dictionary.name, dictionary.toJson());
+      _persistDictionary(dictionary);
 
       progressNotifier.value = t.import_complete;
       onImportSuccess();
@@ -1698,7 +1837,7 @@ class AppModel with ChangeNotifier {
       progressNotifier.value = t.import_name(name: name);
 
       /// Check for duplicate dictionary by name.
-      if (_dictionariesBox.containsKey(name)) {
+      if (_dictionariesCache.any((d) => d.name == name)) {
         throw Exception(t.import_duplicate(name: name));
       }
 
@@ -1748,8 +1887,7 @@ class AppModel with ChangeNotifier {
 
       await compute(depositDictionaryDataHelper, prepareDictionaryParams);
 
-      /// Persist dictionary metadata to Hive.
-      _dictionariesBox.put(dictionary.name, dictionary.toJson());
+      _persistDictionary(dictionary);
 
       progressNotifier.value = t.import_complete;
       onImportSuccess();
@@ -1777,7 +1915,7 @@ class AppModel with ChangeNotifier {
         targetLanguage.languageCode
       ];
     }
-    _dictionariesBox.put(dictionary.name, dictionary.toJson());
+    _persistDictionary(dictionary);
   }
 
   /// Toggle a dictionary's between hidden and shown state. This will
@@ -1792,7 +1930,7 @@ class AppModel with ChangeNotifier {
         targetLanguage.languageCode
       ];
     }
-    _dictionariesBox.put(dictionary.name, dictionary.toJson());
+    _persistDictionary(dictionary);
   }
 
   /// Delete all dictionary data from the database.
@@ -1809,7 +1947,8 @@ class AppModel with ChangeNotifier {
 
     await compute(deleteDictionariesHelper, params);
     await clearDictionaryHistory();
-    await _dictionariesBox.clear();
+    _dictionariesCache.clear();
+    await _database.clearAllDictionaryMeta();
 
     if (dictionaryResourceDirectory.existsSync()) {
       dictionaryResourceDirectory.deleteSync(recursive: true);
@@ -1834,7 +1973,8 @@ class AppModel with ChangeNotifier {
     await compute(deleteDictionaryHelper, params);
     await clearDictionaryHistory();
 
-    _dictionariesBox.delete(dictionary.name);
+    _dictionariesCache.removeWhere((d) => d.name == dictionary.name);
+    await _database.deleteDictionaryMeta(dictionary.name);
 
     final directory = Directory(
         path.join(dictionaryResourceDirectory.path, dictionary.name));
@@ -1848,9 +1988,8 @@ class AppModel with ChangeNotifier {
 
   /// Delete a selected mapping from the database.
   void deleteMapping(AnkiMapping mapping) async {
-    _database.writeTxnSync(() {
-      _database.ankiMappings.deleteSync(mapping.id!);
-    });
+    _mappingsCache.removeWhere((m) => m.label == mapping.label);
+    await _database.deleteMappingById(mapping.id!);
 
     if (mapping.label == lastSelectedMappingName) {
       await setLastSelectedMapping(mappings.first);
@@ -1859,13 +1998,7 @@ class AppModel with ChangeNotifier {
 
   /// Add a selected mapping to the database.
   void addMapping(AnkiMapping mapping) async {
-    _database.writeTxnSync(() {
-      if (mapping.id != null &&
-          _database.ankiMappings.getSync(mapping.id!) != null) {
-        _database.ankiMappings.deleteSync(mapping.id!);
-      }
-      _database.ankiMappings.putSync(mapping);
-    });
+    _persistMapping(mapping);
   }
 
 
@@ -1938,28 +2071,15 @@ class AppModel with ChangeNotifier {
   /// Check if a mapping with a certain name with a different order already
   /// exists.
   bool mappingNameHasDuplicate(AnkiMapping mapping) {
-    return _database.ankiMappings
-            .where()
-            .labelEqualTo(mapping.label)
-            .filter()
-            .not()
-            .orderEqualTo(mapping.order)
-            .findFirstSync() !=
-        null;
+    return _mappingsCache
+        .any((m) => m.label == mapping.label && m.order != mapping.order);
   }
 
   /// Get the newest available order for a new mapping.
   int get nextMappingOrder {
-    AnkiMapping? highestOrderMapping =
-        _database.ankiMappings.where().sortByOrderDesc().findFirstSync();
-    late int order;
-    if (highestOrderMapping != null) {
-      order = highestOrderMapping.order + 1;
-    } else {
-      order = 0;
-    }
-
-    return order;
+    if (_mappingsCache.isEmpty) return 0;
+    return _mappingsCache.map((m) => m.order).reduce((a, b) => a > b ? a : b) +
+        1;
   }
 
   /// Override flag for when [isMediaOpen] is true but the status bar should
@@ -2447,7 +2567,7 @@ class AppModel with ChangeNotifier {
 
   /// Persist the standard profile as the last selected mapping.
   Future<void> selectStandardProfile() async {
-    await _preferences.put(
+    await _setPref(
         'last_selected_mapping', AnkiMapping.standardProfileName);
     notifyListeners();
   }
@@ -2466,13 +2586,7 @@ class AppModel with ChangeNotifier {
 
     AnkiMapping resetMapping =
         mapping.copyWith(exportFieldKeys: exportFieldKeys);
-    _database.writeTxnSync(() {
-      if (mapping.id != null &&
-          _database.ankiMappings.getSync(resetMapping.id!) != null) {
-        _database.ankiMappings.deleteSync(resetMapping.id!);
-      }
-      _database.ankiMappings.putSync(resetMapping);
-    });
+    _persistMapping(resetMapping);
   }
 
   /// Check for errors relating to the current selected export profile.
@@ -2823,9 +2937,7 @@ class AppModel with ChangeNotifier {
     mapping.enhancements![field.uniqueKey] ??= {};
     mapping.enhancements![field.uniqueKey]![slotNumber] = enhancement.uniqueKey;
 
-    _database.writeTxnSync(() {
-      _database.ankiMappings.putSync(mapping);
-    });
+    _persistMapping(mapping);
   }
 
   /// Updates a given [mapping] to remove a [Field].
@@ -2845,9 +2957,7 @@ class AppModel with ChangeNotifier {
       ];
     }
 
-    _database.writeTxnSync(() {
-      _database.ankiMappings.putSync(mapping);
-    });
+    _persistMapping(mapping);
   }
 
   /// Updates a given [mapping] to include a [Field].
@@ -2868,9 +2978,7 @@ class AppModel with ChangeNotifier {
       ];
     }
 
-    _database.writeTxnSync(() {
-      _database.ankiMappings.putSync(mapping);
-    });
+    _persistMapping(mapping);
   }
 
   /// Removes a given [mapping]'s persisted enhancement for a given [field]
@@ -2882,9 +2990,7 @@ class AppModel with ChangeNotifier {
   }) async {
     mapping.enhancements![field.uniqueKey]!.remove(slotNumber);
 
-    _database.writeTxnSync(() {
-      _database.ankiMappings.putSync(mapping);
-    });
+    _persistMapping(mapping);
   }
 
   /// Updates a given [mapping]'s persisted action for a given [slotNumber].
@@ -2894,9 +3000,7 @@ class AppModel with ChangeNotifier {
       required QuickAction quickAction}) async {
     mapping.actions![slotNumber] = quickAction.uniqueKey;
 
-    _database.writeTxnSync(() {
-      _database.ankiMappings.putSync(mapping);
-    });
+    _persistMapping(mapping);
 
     notifyListeners();
   }
@@ -2908,9 +3012,7 @@ class AppModel with ChangeNotifier {
   }) async {
     mapping.actions!.remove(slotNumber);
 
-    _database.writeTxnSync(() {
-      _database.ankiMappings.putSync(mapping);
-    });
+    _persistMapping(mapping);
   }
 
   /// Updates a given [mapping]'s persisted auto enhancement for a given
@@ -2924,9 +3026,7 @@ class AppModel with ChangeNotifier {
     mapping.enhancements![field.uniqueKey]![AnkiMapping.autoModeSlotNumber] =
         enhancement.uniqueKey;
 
-    _database.writeTxnSync(() {
-      _database.ankiMappings.putSync(mapping);
-    });
+    _persistMapping(mapping);
   }
 
   /// Removes a given [mapping]'s persisted auto enhancement for a given
@@ -2939,9 +3039,7 @@ class AppModel with ChangeNotifier {
     mapping.enhancements![field.uniqueKey]!
         .remove(AnkiMapping.autoModeSlotNumber);
 
-    _database.writeTxnSync(() {
-      _database.ankiMappings.putSync(mapping);
-    });
+    _persistMapping(mapping);
   }
 
   /// Add the [searchTerm] to a search history with the given [historyKey]. If
@@ -2955,32 +3053,26 @@ class AppModel with ChangeNotifier {
       return;
     }
 
-    _database.writeTxnSync(() {
-      SearchHistoryItem searchHistoryItem = SearchHistoryItem(
-        searchTerm: searchTerm,
-        historyKey: historyKey,
-      );
+    final uk = '$historyKey/$searchTerm';
 
-      _database.searchHistoryItems
-          .deleteByUniqueKeySync(searchHistoryItem.uniqueKey);
+    // Update cache: remove existing, add to end
+    final list = _searchHistoryCache.putIfAbsent(historyKey, () => []);
+    list.remove(searchTerm);
+    list.add(searchTerm);
 
-      _database.searchHistoryItems.putSync(searchHistoryItem);
+    // Trim cache
+    while (list.length > maximumSearchHistoryItems) {
+      list.removeAt(0);
+    }
 
-      int countInSameHistory = _database.searchHistoryItems
-          .filter()
-          .historyKeyEqualTo(historyKey)
-          .countSync();
-
-      if (maximumSearchHistoryItems < countInSameHistory) {
-        int surplus = countInSameHistory - maximumSearchHistoryItems;
-        _database.searchHistoryItems
-            .filter()
-            .historyKeyEqualTo(historyKey)
-            .limit(surplus)
-            .build()
-            .deleteAllSync();
-      }
-    });
+    // Persist
+    await _database.deleteSearchHistoryByUniqueKey(uk);
+    await _database.upsertSearchHistoryItem(SearchHistoryItemsCompanion.insert(
+      historyKey: historyKey,
+      searchTerm: searchTerm,
+      uniqueKey: uk,
+    ));
+    await _database.trimSearchHistory(historyKey, maximumSearchHistoryItems);
   }
 
   /// Remove the [searchTerm] from a search history with the given [historyKey].
@@ -2988,41 +3080,22 @@ class AppModel with ChangeNotifier {
     required String historyKey,
     required String searchTerm,
   }) async {
-    _database.writeTxnSync(() {
-      SearchHistoryItem searchHistoryItem = SearchHistoryItem(
-        searchTerm: searchTerm,
-        historyKey: historyKey,
-      );
-
-      _database.searchHistoryItems
-          .deleteByUniqueKeySync(searchHistoryItem.uniqueKey);
-    });
+    _searchHistoryCache[historyKey]?.remove(searchTerm);
+    final uk = '$historyKey/$searchTerm';
+    await _database.deleteSearchHistoryByUniqueKey(uk);
   }
 
   /// Clear the search history with the given [historyKey].
   void clearSearchHistory({
     required String historyKey,
-  }) {
-    _database.writeTxnSync(() {
-      _database.searchHistoryItems
-          .where()
-          .historyKeyEqualTo(historyKey)
-          .build()
-          .deleteAllSync();
-    });
+  }) async {
+    _searchHistoryCache.remove(historyKey);
+    await _database.clearSearchHistory(historyKey);
   }
 
   /// Get the search history for a given collection named [historyKey].
   List<String> getSearchHistory({required String historyKey}) {
-    List<SearchHistoryItem> items = _database.searchHistoryItems
-        .filter()
-        .historyKeyEqualTo(historyKey)
-        .build()
-        .findAllSync();
-
-    List<String> history = items.map((item) => item.searchTerm).toList();
-
-    return history;
+    return List.unmodifiable(_searchHistoryCache[historyKey] ?? []);
   }
 
   /// Get whether or not a certain [searchTerm] is in a certain history.
@@ -3030,15 +3103,7 @@ class AppModel with ChangeNotifier {
     required String historyKey,
     required String searchTerm,
   }) {
-    SearchHistoryItem searchHistoryItem = SearchHistoryItem(
-      searchTerm: searchTerm,
-      historyKey: historyKey,
-    );
-
-    SearchHistoryItem? duplicateItem = _database.searchHistoryItems
-        .getByUniqueKeySync(searchHistoryItem.uniqueKey);
-
-    return duplicateItem != null;
+    return _searchHistoryCache[historyKey]?.contains(searchTerm) ?? false;
   }
 
   /// Adds the [terms] to the Stash and shows a message indicating the addition.
@@ -3136,62 +3201,53 @@ class AppModel with ChangeNotifier {
   /// the necessary dictionary metadata.
   Future<void> clearDictionaryHistory() async {
     _dictionaryHistoryResults.clear();
-    await _dictionaryHistoryBox.clear();
+    await _database.clearDictionaryHistory();
 
     dictionaryEntriesNotifier.notifyListeners();
   }
 
-  /// Persist the in-memory dictionary history to Hive.
-  void _persistDictionaryHistory() {
-    _dictionaryHistoryBox.clear();
+  void _persistDictionaryHistory() async {
+    final items = <DictionaryHistoryCompanion>[];
     for (int i = 0; i < _dictionaryHistoryResults.length; i++) {
-      _dictionaryHistoryBox.put(i.toString(), _dictionaryHistoryResults[i].toJson());
+      items.add(DictionaryHistoryCompanion.insert(
+        position: i,
+        resultJson: _dictionaryHistoryResults[i].toJson(),
+      ));
     }
+    await _database.replaceAllDictionaryHistory(items);
   }
 
   /// Add a [MediaItem] to history. This should be called at startup
   /// when the media item is launched.
-  void addMediaItem(MediaItem item) {
-    _database.writeTxnSync(() {
-      _database.mediaItems.deleteByUniqueKeySync(item.uniqueKey);
-      item.id = null;
+  void addMediaItem(MediaItem item) async {
+    _mediaItemsCache.removeWhere((m) => m.uniqueKey == item.uniqueKey);
+    item.id = null;
+    _mediaItemsCache.insert(0, item);
 
-      _database.mediaItems.putSync(item);
+    await _database.deleteMediaItemByUniqueKey(item.uniqueKey);
+    await _database.upsertMediaItem(_mediaItemToCompanion(item));
+    await _database.trimMediaHistory(
+        item.mediaTypeIdentifier, maximumMediaHistoryItems);
 
-      int countInSameHistory = _database.mediaItems
-          .filter()
-          .mediaTypeIdentifierEqualTo(item.mediaTypeIdentifier)
-          .countSync();
-
-      if (maximumMediaHistoryItems < countInSameHistory) {
-        int surplus = countInSameHistory - maximumSearchHistoryItems;
-        _database.mediaItems
-            .filter()
-            .mediaTypeIdentifierEqualTo(item.mediaTypeIdentifier)
-            .limit(surplus)
-            .build()
-            .deleteAllSync();
-      }
-    });
+    // Refresh cache with DB-assigned IDs
+    final rows = await _database.getAllMediaItems();
+    _mediaItemsCache = rows.map(_rowToMediaItem).toList();
   }
 
   /// Update a media item, without performing any deletion or mutation
   /// operations. This is useful when updating constantly, for example,
   /// with the player where the position needs to be constantly updated.
-  void updateMediaItem(MediaItem item) {
-    _database.writeTxnSync(() {
-      _database.mediaItems.putSync(item);
-    });
+  void updateMediaItem(MediaItem item) async {
+    final idx = _mediaItemsCache.indexWhere((m) => m.uniqueKey == item.uniqueKey);
+    if (idx >= 0) _mediaItemsCache[idx] = item;
+    await _database.upsertMediaItem(_mediaItemToCompanion(item));
   }
 
   /// Deletes a [MediaItem] from the reading list by media identifier.
-  void removeFromReadingList(String mediaIdentifier) {
-    _database.writeTxnSync(() {
-      _database.mediaItems
-          .where()
-          .mediaIdentifierEqualTo(mediaIdentifier)
-          .deleteAllSync();
-    });
+  void removeFromReadingList(String mediaIdentifier) async {
+    _mediaItemsCache
+        .removeWhere((m) => m.mediaIdentifier == mediaIdentifier);
+    await _database.deleteMediaItemsByIdentifier(mediaIdentifier);
   }
 
   /// Deletes a [MediaItem] from history and also rids of override values.
@@ -3200,9 +3256,8 @@ class AppModel with ChangeNotifier {
     await mediaSource.clearOverrideValues(appModel: this, item: item);
     await mediaSource.onMediaItemClear(item);
 
-    _database.writeTxnSync(() {
-      _database.mediaItems.deleteSync(item.id!);
-    });
+    _mediaItemsCache.removeWhere((m) => m.id == item.id);
+    await _database.deleteMediaItemById(item.id!);
   }
 
   /// Copies a [term] to clipboard and shows an appropriate toast.
@@ -3225,7 +3280,7 @@ class AppModel with ChangeNotifier {
     required MediaType mediaType,
   }) {
     MediaSource fallbackSource = mediaSources[mediaType]!.values.first;
-    String uniqueKey = _preferences.get('current_source/${mediaType.uniqueKey}',
+    String uniqueKey = _getPref('current_source/${mediaType.uniqueKey}',
         defaultValue: fallbackSource.uniqueKey);
 
     return mediaSources[mediaType]![uniqueKey] ?? fallbackSource;
@@ -3236,30 +3291,28 @@ class AppModel with ChangeNotifier {
     required MediaType mediaType,
     required MediaSource mediaSource,
   }) {
-    _preferences.put(
+    _setPref(
         'current_source/${mediaType.uniqueKey}', mediaSource.uniqueKey);
   }
 
   /// Get the history of [MediaItem] for a particular [MediaType].
   List<MediaItem> getMediaTypeHistory({required MediaType mediaType}) {
-    return _database.mediaItems
-        .filter()
-        .mediaTypeIdentifierEqualTo(mediaType.uniqueKey)
-        .findAllSync();
+    return _mediaItemsCache
+        .where((m) => m.mediaTypeIdentifier == mediaType.uniqueKey)
+        .toList();
   }
 
   /// Get the history of [MediaItem] for a particular [MediaSource].
   List<MediaItem> getMediaSourceHistory({required MediaSource mediaSource}) {
-    return _database.mediaItems
-        .filter()
-        .mediaSourceIdentifierEqualTo(mediaSource.uniqueKey)
-        .findAllSync();
+    return _mediaItemsCache
+        .where((m) => m.mediaSourceIdentifier == mediaSource.uniqueKey)
+        .toList();
   }
 
   /// Returns the last navigated directory the user used for picking a file for a
   /// certain media type.
   Directory? getLastPickedDirectory(MediaType type) {
-    String path = _preferences.get('${type.uniqueKey}/last_picked_file',
+    String path = _getPref('${type.uniqueKey}/last_picked_file',
         defaultValue: '');
     if (path.isEmpty) {
       return null;
@@ -3278,7 +3331,7 @@ class AppModel with ChangeNotifier {
     required MediaType type,
     required Directory directory,
   }) {
-    _preferences.put('${type.uniqueKey}/last_picked_file', directory.path);
+    _setPref('${type.uniqueKey}/last_picked_file', directory.path);
   }
 
   /// Returns valid file picker directories. If there is a last picked directory for
@@ -3305,24 +3358,24 @@ class AppModel with ChangeNotifier {
 
   /// Get the blur options used in the player.
   BlurOptions get blurOptions {
-    double width = _preferences.get('blur_width', defaultValue: 200.0);
-    double height = _preferences.get('blur_height', defaultValue: 200.0);
-    double left = _preferences.get('blur_left', defaultValue: -1.0);
-    double top = _preferences.get('blur_top', defaultValue: -1.0);
+    double width = _getPref('blur_width', defaultValue: 200.0);
+    double height = _getPref('blur_height', defaultValue: 200.0);
+    double left = _getPref('blur_left', defaultValue: -1.0);
+    double top = _getPref('blur_top', defaultValue: -1.0);
 
-    int red = _preferences.get('blur_red',
+    int red = _getPref('blur_red',
         defaultValue: Colors.black.withOpacity(0).red);
-    int green = _preferences.get('blur_green',
+    int green = _getPref('blur_green',
         defaultValue: Colors.black.withOpacity(0).green);
-    int blue = _preferences.get('blur_blue',
+    int blue = _getPref('blur_blue',
         defaultValue: Colors.black.withOpacity(0).blue);
-    double opacity = _preferences.get('blur_opacity',
+    double opacity = _getPref('blur_opacity',
         defaultValue: Colors.black.withOpacity(0).opacity);
 
     Color color = Color.fromRGBO(red, green, blue, opacity);
 
-    double blurRadius = _preferences.get('blur_radius', defaultValue: 5.0);
-    bool visible = _preferences.get('blur_visible', defaultValue: false);
+    double blurRadius = _getPref('blur_radius', defaultValue: 5.0);
+    bool visible = _getPref('blur_visible', defaultValue: false);
 
     return BlurOptions(
       width: width,
@@ -3337,101 +3390,101 @@ class AppModel with ChangeNotifier {
 
   /// Set the blur options used in the player.
   void setBlurOptions(BlurOptions options) {
-    _preferences.put('blur_width', options.width);
-    _preferences.put('blur_height', options.height);
-    _preferences.put('blur_left', options.left);
-    _preferences.put('blur_top', options.top);
+    _setPref('blur_width', options.width);
+    _setPref('blur_height', options.height);
+    _setPref('blur_left', options.left);
+    _setPref('blur_top', options.top);
 
-    _preferences.put('blur_red', options.color.red);
-    _preferences.put('blur_green', options.color.green);
-    _preferences.put('blur_blue', options.color.blue);
-    _preferences.put('blur_opacity', options.color.opacity);
+    _setPref('blur_red', options.color.red);
+    _setPref('blur_green', options.color.green);
+    _setPref('blur_blue', options.color.blue);
+    _setPref('blur_opacity', options.color.opacity);
 
-    _preferences.put('blur_radius', options.blurRadius);
-    _preferences.put('blur_visible', options.visible);
+    _setPref('blur_radius', options.blurRadius);
+    _setPref('blur_visible', options.visible);
   }
 
   /// Gets the last used audio index of a given media item.
   int getMediaItemPreferredAudioIndex(MediaItem item) {
-    return _preferences.get('audio_index/${item.uniqueKey}', defaultValue: 0);
+    return _getPref('audio_index/${item.uniqueKey}', defaultValue: 0);
   }
 
   /// Sets the last used audio index of a given media item.
   void setMediaItemPreferredAudioIndex(MediaItem item, int index) {
-    _preferences.put('audio_index/${item.uniqueKey}', index);
+    _setPref('audio_index/${item.uniqueKey}', index);
   }
 
   /// Get definition focus mode for player.
   bool get isPlayerListeningComprehensionMode {
-    return _preferences.get('player_listening_comprehension_mode',
+    return _getPref('player_listening_comprehension_mode',
         defaultValue: false);
   }
 
   /// Toggle definition focus mode for player.
   void togglePlayerListeningComprehensionMode() async {
-    await _preferences.put('player_listening_comprehension_mode',
+    await _setPref('player_listening_comprehension_mode',
         !isPlayerListeningComprehensionMode);
   }
 
   /// Get orientation for player.
   bool get isPlayerOrientationPortrait {
-    return _preferences.get('player_orientation_portrait', defaultValue: false);
+    return _getPref('player_orientation_portrait', defaultValue: false);
   }
 
   /// Toggle orientation for player.
   void togglePlayerOrientationPortrait() async {
-    await _preferences.put(
+    await _setPref(
         'player_orientation_portrait', !isPlayerOrientationPortrait);
   }
 
   /// Get whether or not to stretch to fill screen.
   bool get isStretchToFill {
-    return _preferences.get('stretch_to_fill_screen', defaultValue: false);
+    return _getPref('stretch_to_fill_screen', defaultValue: false);
   }
 
   /// Toggle stretch to fill screen.
   void toggleStretchToFill() async {
-    await _preferences.put('stretch_to_fill_screen', !isStretchToFill);
+    await _setPref('stretch_to_fill_screen', !isStretchToFill);
   }
 
   /// Whether or not the player should use hardware acceleration.
   bool get playerHardwareAcceleration {
-    return _preferences.get('player_hardware_acceleration', defaultValue: true);
+    return _getPref('player_hardware_acceleration', defaultValue: true);
   }
 
   /// Set whether or not the player should use hardware acceleration.
   void setPlayerHardwareAcceleration({required bool value}) async {
-    await _preferences.put('player_hardware_acceleration', value);
+    await _setPref('player_hardware_acceleration', value);
   }
 
   /// Whether or not the player should allow background play.
   bool get playerBackgroundPlay {
-    return _preferences.get('player_background_play', defaultValue: true);
+    return _getPref('player_background_play', defaultValue: true);
   }
 
   /// Set whether or not the player should allow background play.
   void setPlayerBackgroundPlay({required bool value}) async {
-    await _preferences.put('player_background_play', value);
+    await _setPref('player_background_play', value);
   }
 
   /// Whether or not the player should show subtitles in notifications.
   bool get showSubtitlesInNotification {
-    return _preferences.get('player_subtitle_notification', defaultValue: true);
+    return _getPref('player_subtitle_notification', defaultValue: true);
   }
 
   /// Set whether or not the player should show subtitles in notifications.
   void setShowSubtitlesInNotification({required bool value}) async {
-    await _preferences.put('player_subtitle_notification', value);
+    await _setPref('player_subtitle_notification', value);
   }
 
   /// Whether or not the player should use hardware acceleration.
   bool get playerUseOpenSLES {
-    return _preferences.get('player_use_opensles', defaultValue: true);
+    return _getPref('player_use_opensles', defaultValue: true);
   }
 
   /// Set whether or not the player should use hardware acceleration.
   void setPlayerUseOpenSLES({required bool value}) async {
-    await _preferences.put('player_use_opensles', value);
+    await _setPref('player_use_opensles', value);
   }
 
   /// Allows the player screen to listen to play/pause changes.
@@ -3493,12 +3546,12 @@ class AppModel with ChangeNotifier {
   /// Whether or not searching in the app is performed without hitting the
   /// submit button.
   bool get autoSearchEnabled {
-    return _preferences.get('auto_search', defaultValue: true);
+    return _getPref('auto_search', defaultValue: true);
   }
 
   /// Toggle auto search option.
   void toggleAutoSearchEnabled() async {
-    await _preferences.put('auto_search', !autoSearchEnabled);
+    await _setPref('auto_search', !autoSearchEnabled);
   }
 
   /// Search debounce delay in milliseconds by default.
@@ -3506,13 +3559,13 @@ class AppModel with ChangeNotifier {
 
   /// The search debounce delay in milliseconds for searching in the app..
   int get searchDebounceDelay {
-    return _preferences.get('auto_search_debounce_delay',
+    return _getPref('auto_search_debounce_delay',
         defaultValue: defaultSearchDebounceDelay);
   }
 
   /// Sets the debounce delay in milliseconds for searching in the app..
   void setSearchDebounceDelay(int debounceDelay) async {
-    await _preferences.put('auto_search_debounce_delay', debounceDelay);
+    await _setPref('auto_search_debounce_delay', debounceDelay);
   }
 
   /// Default dictionary font size for meanings.
@@ -3520,23 +3573,23 @@ class AppModel with ChangeNotifier {
 
   /// The search debounce delay in milliseconds for searching in the app..
   double get dictionaryFontSize {
-    return _preferences.get('dictionary_entry_font_size',
+    return _getPref('dictionary_entry_font_size',
         defaultValue: defaultDictionaryFontSize);
   }
 
   /// Sets the debounce delay in milliseconds for searching in the app..
   void setDictionaryFontSize(double fontSize) async {
-    await _preferences.put('dictionary_entry_font_size', fontSize);
+    await _setPref('dictionary_entry_font_size', fontSize);
   }
 
   /// The search debounce delay in milliseconds for searching in the app..
   bool get closeCreatorOnExport {
-    return _preferences.get('close_on_export', defaultValue: false);
+    return _getPref('close_on_export', defaultValue: false);
   }
 
   /// Sets the debounce delay in milliseconds for searching in the app..
   void toggleCloseCreatorOnExport() async {
-    await _preferences.put('close_on_export', !closeCreatorOnExport);
+    await _setPref('close_on_export', !closeCreatorOnExport);
   }
 
   /// Default value of [doubleTapSeekDuration].
@@ -3545,37 +3598,37 @@ class AppModel with ChangeNotifier {
   /// The default duration that the video player will seek forward or backward
   /// when double tapped by the user.
   int get doubleTapSeekDuration {
-    return _preferences.get('double_tap_seek_duration',
+    return _getPref('double_tap_seek_duration',
         defaultValue: defaultDoubleTapSeekDuration);
   }
 
   /// Sets the default duration that the video player will seek forward or
   /// backward when double tapped by the user.
   void setDoubleTapSeekDuration(int value) async {
-    await _preferences.put('double_tap_seek_duration', value);
+    await _setPref('double_tap_seek_duration', value);
   }
 
   /// Whether or not it is the app's first time setup to show the languages
   /// dialog.
   bool get isFirstTimeSetup {
-    return _preferences.get('first_time_setup', defaultValue: true);
+    return _getPref('first_time_setup', defaultValue: true);
   }
 
   /// Sets the first time setup flag so the first time message does not show
   /// again.
   void setFirstTimeSetupFlag() async {
-    await _preferences.put('first_time_setup', false);
+    await _setPref('first_time_setup', false);
   }
 
   /// The maximum dictionary terms in a result.
   int get maximumTerms {
-    return _preferences.get('maximum_terms',
+    return _getPref('maximum_terms',
         defaultValue: defaultMaximumDictionaryTermsInResult);
   }
 
   /// Sets the maximum dictionary terms in a result.
   void setMaximumTerms(int value) async {
-    await _preferences.put('maximum_terms', value);
+    await _setPref('maximum_terms', value);
   }
 
   /// Adds a [DictionarySearchResult] to dictionary history.
@@ -3608,12 +3661,11 @@ class AppModel with ChangeNotifier {
     _persistDictionaryHistory();
   }
 
-  /// Check if the database is still open or has the app been flagged to be
-  /// shutdown.
-  bool get isDatabaseOpen => _database.isOpen;
+  /// Check if the database is still open.
+  bool get isDatabaseOpen => _isInitialised;
 
-  /// Direct access to the Isar database instance.
-  Isar get database => _database;
+  /// Direct access to the Drift database instance.
+  HibikiDatabase get database => _database;
 
   /// Safely shutdown and stop database operations.
   void shutdown() async {
@@ -3624,12 +3676,12 @@ class AppModel with ChangeNotifier {
 
   /// Get whether or not the transcript should show play/pause.
   bool get isTranscriptPlayerMode {
-    return _preferences.get('is_transcript_player_mode', defaultValue: false);
+    return _getPref('is_transcript_player_mode', defaultValue: false);
   }
 
   /// Toggle transcript player mode.
   void toggleTranscriptPlayerMode() async {
-    await _preferences.put(
+    await _setPref(
       'is_transcript_player_mode',
       !isTranscriptPlayerMode,
     );
@@ -3637,12 +3689,12 @@ class AppModel with ChangeNotifier {
 
   /// Get whether or not the transcript should have a background.
   bool get isTranscriptOpaque {
-    return _preferences.get('is_transcript_opaque', defaultValue: false);
+    return _getPref('is_transcript_opaque', defaultValue: false);
   }
 
   /// Toggle transcript background.
   void toggleTranscriptOpaque() async {
-    await _preferences.put(
+    await _setPref(
       'is_transcript_opaque',
       !isTranscriptOpaque,
     );
@@ -3650,12 +3702,12 @@ class AppModel with ChangeNotifier {
 
   /// Get whether or not subtitle timings are shown.
   bool get subtitleTimingsShown {
-    return _preferences.get('subtitle_timings_shown', defaultValue: true);
+    return _getPref('subtitle_timings_shown', defaultValue: true);
   }
 
   /// Toggle subtitle timings shown.
   void toggleSubtitleTimingsShown() async {
-    await _preferences.put(
+    await _setPref(
       'subtitle_timings_shown',
       !subtitleTimingsShown,
     );
@@ -3663,33 +3715,33 @@ class AppModel with ChangeNotifier {
 
   /// Get the saved value that the user has set for the [TagsField].
   String get savedTags {
-    return _preferences.get('saved_tags', defaultValue: '');
+    return _getPref('saved_tags', defaultValue: '');
   }
 
   /// Set the saved value that the user has set for the [TagsField].
   void setSavedTags(String value) async {
-    await _preferences.put('saved_tags', value);
+    await _setPref('saved_tags', value);
   }
 
   /// Get the list of model names that will be checked for duplicates.
   List<String> get duplicateCheckModels {
-    return _preferences.get('duplicate_check_models', defaultValue: [
+    return _getPref('duplicate_check_models', defaultValue: [
       AnkiMapping.standardModelName,
     ]);
   }
 
   /// Set the list of model names that will be checked for duplicates.
   void setDuplicateCheckModels(List<String> value) async {
-    await _preferences.put('duplicate_check_models', value);
+    await _setPref('duplicate_check_models', value);
   }
 
   /// Get whether or not bookmarks have been populated.
   bool get populateBookmarksFlag {
-    return _preferences.get('populate_bookmarks', defaultValue: false);
+    return _getPref('populate_bookmarks', defaultValue: false);
   }
 
   /// Sets the populate bookmarks flag so bookmarks don't get added again.
   void setPopulateBookmarksFlag() async {
-    await _preferences.put('populate_bookmarks', true);
+    await _setPref('populate_bookmarks', true);
   }
 }
