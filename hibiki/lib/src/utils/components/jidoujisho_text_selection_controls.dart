@@ -109,17 +109,25 @@ class JidoujishoTextSelectionControls extends MaterialTextSelectionControls {
     final TextSelectionPoint startTextSelectionPoint = endpoints[0];
     final TextSelectionPoint endTextSelectionPoint =
         endpoints.length > 1 ? endpoints[1] : endpoints[0];
+    final double midX = globalEditableRegion.left + selectionMidpoint.dx;
+    final double rawAboveY = globalEditableRegion.top +
+        startTextSelectionPoint.point.dy -
+        textLineHeight -
+        _kToolbarContentDistance;
+    final double rawBelowY = globalEditableRegion.top +
+        endTextSelectionPoint.point.dy +
+        _kToolbarContentDistanceBelow;
+
+    final MediaQueryData mq = MediaQuery.of(context);
+    final double topPad = mq.padding.top + kToolbarHeight;
+    final double bottomPad = mq.size.height - mq.padding.bottom;
     final Offset anchorAbove = Offset(
-        globalEditableRegion.left + selectionMidpoint.dx,
-        globalEditableRegion.top +
-            startTextSelectionPoint.point.dy -
-            textLineHeight -
-            _kToolbarContentDistance);
+      midX.clamp(0, mq.size.width),
+      rawAboveY.clamp(topPad, bottomPad),
+    );
     final Offset anchorBelow = Offset(
-      globalEditableRegion.left + selectionMidpoint.dx,
-      globalEditableRegion.top +
-          endTextSelectionPoint.point.dy +
-          _kToolbarContentDistanceBelow,
+      midX.clamp(0, mq.size.width),
+      rawBelowY.clamp(topPad, bottomPad),
     );
 
     return JidoujishoSelectionToolbar(
