@@ -36,6 +36,7 @@ export 'src/pages/implementations/audio_recorder_page.dart';
 export 'src/pages/implementations/loading_page.dart';
 export 'src/pages/implementations/switch_settings_page.dart';
 export 'src/pages/implementations/media_item_edit_dialog_page.dart';
+export 'src/pages/implementations/error_log_page.dart';
 
 export 'src/pages/base_page.dart';
 export 'src/pages/base_history_page.dart';

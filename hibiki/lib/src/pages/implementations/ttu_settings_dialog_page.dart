@@ -392,6 +392,18 @@ class _TtuSettingsDialogContentState extends BasePageState {
         const Space.small(),
         _buildTapRow(
           context: context,
+          icon: Icons.bug_report,
+          label: '错误日志 (${ErrorLogService.instance.entries.length})',
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ErrorLogPage()),
+            ).then((_) => setState(() {}));
+          },
+        ),
+        const Space.small(),
+        _buildTapRow(
+          context: context,
           icon: Icons.code,
           label: t.options_github,
           onTap: () {

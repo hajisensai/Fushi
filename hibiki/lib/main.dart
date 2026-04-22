@@ -69,6 +69,9 @@ void main() {
       ),
     );
 
+    /// Initialise error log service.
+    await ErrorLogService.instance.init();
+
     /// Initialise local file-based logging.
     await FlutterLogs.initLogs(
       logLevelsEnabled: [
@@ -89,11 +92,21 @@ void main() {
     /// [HomePage].
     final appModel = container.read(appProvider);
     await appModel.initialise();
+    /// Capture Flutter framework errors with full details.
+    FlutterError.onError = (details) {
+      FlutterError.presentError(details);
+      ErrorLogService.instance.log(
+        'FlutterError: ${details.context?.toString() ?? 'unknown'}',
+        details.exceptionAsString(),
+        details.stack,
+      );
+    };
   }, (exception, stack) {
     /// Print error details to the console.
     final details = FlutterErrorDetails(exception: exception, stack: stack);
 
     /// Log the error.
+    ErrorLogService.instance.log('UncaughtZone', exception, stack);
     FlutterLogs.logError(
       'hoshi_reader',
       details.exceptionAsString(),

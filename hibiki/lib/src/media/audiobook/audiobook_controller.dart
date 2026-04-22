@@ -5,6 +5,7 @@ import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/json_alignment_parser.dart';
 import 'package:hibiki/src/media/audiobook/sasayaki_match_codec.dart';
@@ -184,7 +185,8 @@ class AudiobookPlayerController extends ChangeNotifier {
     if (savedMs > 0) {
       try {
         await _player.seek(Duration(milliseconds: savedMs));
-      } catch (e) {
+      } catch (e, stack) {
+        ErrorLogService.instance.log('AudiobookController.seekSaved', e, stack);
         debugPrint('[hibiki-audiobook] seek to saved $savedMs ms failed: $e');
       }
     }

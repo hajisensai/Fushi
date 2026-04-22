@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
 import 'package:isar/isar.dart';
+import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_health.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 
@@ -72,7 +73,8 @@ class AudiobookRepository {
               'recovered via id scan id=$id');
           return row;
         }
-      } catch (e) {
+      } catch (e, stack) {
+        ErrorLogService.instance.log('AudiobookRepo.findByBookUid(id=$id)', e, stack);
         debugPrint('[hibiki-audiobook] findByBookUid scan: id=$id READ FAILED: $e');
       }
     }
@@ -155,7 +157,8 @@ class AudiobookRepository {
       final Audiobook? readBack = await _isar.audiobooks.get(id);
       debugPrint('[hibiki-audiobook] saveAudiobook readback id=$id '
           'ok=${readBack != null} bookUid.hash=${readBack?.bookUid.hashCode}');
-    } catch (e) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('AudiobookRepo.saveAudiobook(id=$id)', e, stack);
       debugPrint('[hibiki-audiobook] saveAudiobook readback id=$id THREW: $e');
     }
   }

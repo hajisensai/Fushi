@@ -131,7 +131,8 @@ class ReaderTtuSource extends ReaderMediaSource {
       );
 
       return server;
-    } catch (e) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderTtuSource.serve', e, stack);
       _lastServeFailed = true;
       rethrow;
     }
@@ -269,6 +270,7 @@ class ReaderTtuSource extends ReaderMediaSource {
                   items = getItemsFromJson(messageJson, port);
                 } catch (error, stack) {
                   items = [];
+                  ErrorLogService.instance.log('ReaderTtuSource.parseHistory', error, stack);
                   debugPrint('$error');
                   debugPrint('$stack');
                 }

@@ -779,6 +779,12 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     }
 
     if (!isJson) {
+      if (message.messageLevel == ConsoleMessageLevel.ERROR) {
+        ErrorLogService.instance.log(
+          'WebView.console.error',
+          message.message,
+        );
+      }
       JsonEncoder encoder = const JsonEncoder.withIndent('  ');
       debugPrint(encoder.convert(message.toJson()));
       return;
@@ -811,7 +817,12 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         _lastSasayakiAppliedSection = -1;
         break;
       default:
-        // Unknown types (audiobook bridge diagnostics etc.) → 打日志方便排查
+        if (msgType != null && msgType.toLowerCase().contains('err')) {
+          ErrorLogService.instance.log(
+            'WebView.$msgType',
+            messageJson['error'] ?? message.message,
+          );
+        }
         debugPrint('[hibiki-audiobook-diag] ${message.message}');
         break;
     }
@@ -1315,19 +1326,10 @@ if (!window.__hibikiClickListenerRegistered) {
   document.addEventListener('touchend', function(e) {
     if (e.changedTouches.length !== 1) return;
     var touch = e.changedTouches[0];
-    var dxSigned = touch.clientX - __jidoTapStartX;
-    var dySigned = touch.clientY - __jidoTapStartY;
-    var dx = Math.abs(dxSigned);
-    var dy = Math.abs(dySigned);
+    var dx = Math.abs(touch.clientX - __jidoTapStartX);
+    var dy = Math.abs(touch.clientY - __jidoTapStartY);
 
-    // Horizontal swipe → page turn.
-    if (dx > 50 && dx > dy * 1.5) {
-      __jidoLastTouchEnd = Date.now();
-      window.__hibikiTurnPage(dxSigned < 0 ? 'next' : 'prev');
-      return;
-    }
-
-    // Tap (small movement).
+    // Tap (small movement). Swipe page-turn is handled by ttu natively.
     if (dx > 15 || dy > 15) return;
 
     // Tap → existing select-word behavior.

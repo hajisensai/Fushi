@@ -29,3 +29,4 @@ export 'src/utils/misc/jidoujisho_audio_handler.dart';
 export 'src/utils/misc/jidoujisho_text_selection.dart';
 export 'src/utils/misc/dialog_content.dart';
 export 'src/utils/misc/volume_key_channel.dart';
+export 'src/utils/misc/error_log_service.dart';

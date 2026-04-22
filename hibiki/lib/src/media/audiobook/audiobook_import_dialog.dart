@@ -450,7 +450,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
         serverPort: widget.serverPort!,
       );
       return rec.sections;
-    } catch (e) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('AudiobookImport.loadSections', e, stack);
       debugPrint('[hibiki-audiobook] probe loadSections failed: $e');
       return const <EpubSection>[];
     }
@@ -475,7 +476,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
         default:
           return const <AudioCue>[];
       }
-    } catch (e) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('AudiobookImport.parseCues', e, stack);
       debugPrint('[hibiki-audiobook] probe parseCues failed: $e');
       return const <AudioCue>[];
     }
@@ -534,7 +536,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
         Fluttertoast.showToast(msg: msg);
         Navigator.pop(context, true); // true = reload player
       }
-    } catch (e) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('AudiobookImport.doImport', e, stack);
       debugPrint('AudiobookImportDialog import error: $e');
       if (mounted) {
         Fluttertoast.showToast(msg: t.audiobook_import_error);
@@ -613,7 +616,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
         reason: '${result.matchedCues}/${result.totalCues} cues matched '
             '(window=$_searchWindow)',
       );
-    } catch (e) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('AudiobookImport.epubCueMatcher', e, stack);
       debugPrint('EpubCueMatcher failed: $e');
       return AudiobookHealth.failed(reason: 'matcher threw: $e');
     }
@@ -789,6 +793,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       await widget.repo.deleteAudiobook(widget.bookUid);
       debugPrint('AudiobookImportDialog: deleteAudiobook done');
     } catch (e, st) {
+      ErrorLogService.instance.log('AudiobookImport.deleteAudiobook', e, st);
       debugPrint('AudiobookImportDialog: deleteAudiobook failed: $e\n$st');
       if (mounted) {
         Fluttertoast.showToast(msg: t.audiobook_import_error);
