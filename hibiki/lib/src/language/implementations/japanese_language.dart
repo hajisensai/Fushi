@@ -386,21 +386,32 @@ Future<DictionarySearchResult?> prepareSearchResultsJapaneseLanguage(
       }
     }
   } else {
-    List<String> deinflectionsAlreadySearched = [];
+    Set<String> deinflectionsAlreadySearched = {};
+    Map<String, String> hiraganaCache = {};
 
     bool startsWithAdded = false;
     for (int i = 0; i < searchTerm.length; i++) {
+      if (params.maximumDictionaryTermsInResult <= uniqueEntriesById.length) {
+        break;
+      }
+
       String partialTerm = searchTerm.substring(0, searchTerm.length - i);
 
       bool partialTermIsKana = kanaKit.isKana(partialTerm);
       bool partialTermIsHiragana = kanaKit.isHiragana(partialTerm);
       bool partialTermIsKatakana = kanaKit.isKatakana(partialTerm);
 
+      String? hiraganaPartialTerm;
+      if (partialTermIsKatakana) {
+        hiraganaPartialTerm = hiraganaCache.putIfAbsent(
+            partialTerm, () => kanaKit.toHiragana(partialTerm));
+      }
+
       List<String> possibleDeinflections = Deinflector.deinflect(partialTerm)
           .map((e) => e.term)
           .where((e) => !deinflectionsAlreadySearched.contains(e))
           .toList();
-      possibleDeinflections.toSet().addAll(deinflectionsAlreadySearched);
+      deinflectionsAlreadySearched.addAll(possibleDeinflections);
 
       List<DictionaryEntry> termExactResults = [];
       List<DictionaryEntry> termDeinflectedResults = [];
@@ -418,10 +429,9 @@ Future<DictionarySearchResult?> prepareSearchResultsJapaneseLanguage(
               .wordEqualTo(partialTerm)
               .or()
               .optional(partialTermIsKatakana,
-                  (q) => q.wordEqualTo(kanaKit.toHiragana(partialTerm)))
+                  (q) => q.wordEqualTo(hiraganaPartialTerm!))
               .findAllSync();
         } catch (e) {
-          await Future.delayed(const Duration(milliseconds: 200), () {});
           continue;
         }
 
@@ -439,7 +449,7 @@ Future<DictionarySearchResult?> prepareSearchResultsJapaneseLanguage(
               .readingEqualTo(partialTerm)
               .or()
               .optional(partialTermIsKatakana,
-                  (q) => q.readingEqualTo(kanaKit.toHiragana(partialTerm)))
+                  (q) => q.readingEqualTo(hiraganaPartialTerm!))
               .findAllSync();
 
           uniqueEntriesById.addEntries(
@@ -448,6 +458,13 @@ Future<DictionarySearchResult?> prepareSearchResultsJapaneseLanguage(
                 .map((entry) => MapEntry(entry.id!, entry)),
           );
         }
+      }
+
+      List<String> hiraganaDeinflections = [];
+      if (partialTermIsKatakana) {
+        hiraganaDeinflections = Deinflector.deinflect(hiraganaPartialTerm!)
+            .map((e) => e.term)
+            .toList();
       }
 
       if (params.maximumDictionaryTermsInResult > uniqueEntriesById.length) {
@@ -459,9 +476,7 @@ Future<DictionarySearchResult?> prepareSearchResultsJapaneseLanguage(
             .optional(
                 partialTermIsKatakana,
                 (q) => q.anyOf<String, String>(
-                    Deinflector.deinflect(kanaKit.toHiragana(partialTerm))
-                        .map((e) => e.term)
-                        .toList(),
+                    hiraganaDeinflections,
                     (q, term) => q.wordEqualTo(term)))
             .findAllSync();
 
@@ -485,9 +500,7 @@ Future<DictionarySearchResult?> prepareSearchResultsJapaneseLanguage(
               .optional(
                   partialTermIsKatakana,
                   (q) => q.anyOf<String, String>(
-                      Deinflector.deinflect(kanaKit.toHiragana(partialTerm))
-                          .map((e) => e.term)
-                          .toList(),
+                      hiraganaDeinflections,
                       (q, term) => q.readingEqualTo(term)))
               .limit(limit())
               .findAllSync();
