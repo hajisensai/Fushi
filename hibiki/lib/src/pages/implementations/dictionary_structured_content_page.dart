@@ -111,7 +111,10 @@ class DictionaryHtmlWidget extends ConsumerWidget {
       border: tableBorder,
     );
 
-    final css = ref.watch(dictionaryCssProvider(entry.dictionaryName));
+    var css = ref.watch(dictionaryCssProvider(entry.dictionaryName));
+    // Strip CSS rules with pseudo-class selectors that flutter_html can't handle
+    css = css.replaceAll(
+        RegExp(r'[^{}]*:(?:active|hover|focus|visited|link)[^{]*\{[^}]*\}'), '');
     final html = ref.watch(dictionaryEntryHtmlProvider(entry));
     final dataWithCss =
         css.isNotEmpty ? '<style>$css</style>$html' : html;
