@@ -1718,9 +1718,10 @@ class AppModel with ChangeNotifier {
       );
 
       progressNotifier.value = t.import_extract;
-      await dictionaryFormat.prepareDirectory(prepareDirectoryParams);
+      await compute(dictionaryFormat.prepareDirectory, prepareDirectoryParams);
 
-      String name = await dictionaryFormat.prepareName(prepareDirectoryParams);
+      String name =
+          await compute(dictionaryFormat.prepareName, prepareDirectoryParams);
       progressNotifier.value = t.import_name(name: name);
 
       /// Check for duplicate dictionary by name.
