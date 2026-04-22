@@ -5,6 +5,7 @@ import 'dart:isolate';
 import 'dart:ui';
 
 import 'package:archive/archive.dart';
+import 'package:archive/archive_io.dart';
 
 import 'package:audio_service/audio_service.dart' as ag;
 import 'package:cancelable_compute/cancelable_compute.dart' as cancelable;
@@ -1434,68 +1435,18 @@ class AppModel with ChangeNotifier {
   }
 
   List<String> _readZipFileNames(File file) {
-    final raf = file.openSync();
     try {
-      final fileLength = raf.lengthSync();
-      final searchLen = fileLength < 65557 ? fileLength : 65557;
-      raf.setPositionSync(fileLength - searchLen);
-      final tail = raf.readSync(searchLen);
-
-      int eocdOffset = -1;
-      for (int i = tail.length - 22; i >= 0; i--) {
-        if (tail[i] == 0x50 &&
-            tail[i + 1] == 0x4b &&
-            tail[i + 2] == 0x05 &&
-            tail[i + 3] == 0x06) {
-          eocdOffset = i;
-          break;
-        }
-      }
-      if (eocdOffset == -1) return [];
-
-      final cdOffset =
-          tail[eocdOffset + 16] |
-          (tail[eocdOffset + 17] << 8) |
-          (tail[eocdOffset + 18] << 16) |
-          (tail[eocdOffset + 19] << 24);
-      final cdSize =
-          tail[eocdOffset + 12] |
-          (tail[eocdOffset + 13] << 8) |
-          (tail[eocdOffset + 14] << 16) |
-          (tail[eocdOffset + 15] << 24);
-
-      // zip64 or corrupt: fields set to 0xFFFFFFFF or exceeding file bounds
-      if (cdSize <= 0 || cdSize > fileLength ||
-          cdOffset < 0 || cdOffset > fileLength ||
-          cdSize > 256 * 1024 * 1024) {
-        return [];
-      }
-
-      raf.setPositionSync(cdOffset);
-      final cdBytes = raf.readSync(cdSize);
-
-      final names = <String>[];
-      int pos = 0;
-      while (pos + 46 <= cdBytes.length) {
-        if (cdBytes[pos] != 0x50 || cdBytes[pos + 1] != 0x4b ||
-            cdBytes[pos + 2] != 0x01 || cdBytes[pos + 3] != 0x02) {
-          break;
-        }
-        final nameLen = cdBytes[pos + 28] | (cdBytes[pos + 29] << 8);
-        final extraLen = cdBytes[pos + 30] | (cdBytes[pos + 31] << 8);
-        final commentLen = cdBytes[pos + 32] | (cdBytes[pos + 33] << 8);
-
-        if (pos + 46 + nameLen <= cdBytes.length) {
-          names.add(
-            String.fromCharCodes(cdBytes, pos + 46, pos + 46 + nameLen)
-                .toLowerCase(),
-          );
-        }
-        pos += 46 + nameLen + extraLen + commentLen;
-      }
+      final input = InputFileStream(file.path);
+      final dir = ZipDirectory.read(input);
+      final names = dir.fileHeaders
+          .map((h) => h.filename)
+          .where((n) => n.isNotEmpty)
+          .map((n) => n.toLowerCase())
+          .toList();
+      input.closeSync();
       return names;
-    } finally {
-      raf.closeSync();
+    } catch (_) {
+      return [];
     }
   }
 
