@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:change_notifier_builder/change_notifier_builder.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:flutter/material.dart';
 import 'package:reorderables/reorderables.dart';
 import 'package:spaces/spaces.dart';
@@ -150,237 +149,62 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
     return TextButton(
       child: Text(t.dialog_import),
       onPressed: () async {
-        debugPrint('[DictImport] Import button pressed');
-        final choice = await showDialog<String>(
-          context: context,
-          builder: (context) => SimpleDialog(
-            title: Text(t.dialog_import),
-            children: [
-              SimpleDialogOption(
-                onPressed: () => Navigator.pop(context, 'file'),
-                child: const ListTile(
-                  leading: Icon(Icons.insert_drive_file),
-                  title: Text('File'),
-                  contentPadding: EdgeInsets.zero,
+        ValueNotifier<String> progressNotifier =
+            ValueNotifier<String>(t.import_start);
+        ValueNotifier<int?> countNotifier = ValueNotifier<int?>(null);
+        ValueNotifier<int?> totalNotifier = ValueNotifier<int?>(null);
+        progressNotifier.addListener(() {
+          debugPrint('[Dictionary Import] ${progressNotifier.value}');
+        });
+
+        await FilePicker.platform.clearTemporaryFiles();
+
+        FilePickerResult? result = await FilePicker.platform.pickFiles(
+          type: FileType.custom,
+          allowedExtensions: const ['zip', 'dsl', 'mdx'],
+          allowMultiple: true,
+          onFileLoading: (status) {
+            if (status == FilePickerStatus.done) {
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (context) => DictionaryDialogImportPage(
+                  progressNotifier: progressNotifier,
+                  countNotifier: countNotifier,
+                  totalNotifier: totalNotifier,
                 ),
-              ),
-              SimpleDialogOption(
-                onPressed: () => Navigator.pop(context, 'folder'),
-                child: const ListTile(
-                  leading: Icon(Icons.folder),
-                  title: Text('Folder'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ),
-            ],
-          ),
+              );
+            }
+          },
         );
-        debugPrint('[DictImport] Choice: $choice');
-        if (choice == null) return;
-
-        if (choice == 'file') {
-          debugPrint('[DictImport] Starting file import...');
-          await _importFromFiles();
-        } else {
-          debugPrint('[DictImport] Starting folder import...');
-          await _importFromFolder();
+        if (result == null) {
+          return;
         }
-      },
-    );
-  }
 
-  Future<void> _importFromFiles() async {
-    debugPrint('[DictImport] _importFromFiles entered');
-    ValueNotifier<String> progressNotifier =
-        ValueNotifier<String>(t.import_start);
-    ValueNotifier<int?> countNotifier = ValueNotifier<int?>(null);
-    ValueNotifier<int?> totalNotifier = ValueNotifier<int?>(null);
-    progressNotifier.addListener(() {
-      debugPrint('[Dictionary Import] ${progressNotifier.value}');
-    });
+        totalNotifier.value = result.files.length;
+        for (int i = 0; i < result.files.length; i++) {
+          countNotifier.value = i + 1;
 
-    debugPrint('[DictImport] Clearing temp files...');
-    await FilePicker.platform.clearTemporaryFiles();
+          PlatformFile platformFile = result.files[i];
+          File file = File(platformFile.path!);
 
-    debugPrint('[DictImport] Opening file picker...');
-    FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const ['zip', 'dsl', 'mdx'],
-      allowMultiple: true,
-      onFileLoading: (status) {
-        if (status == FilePickerStatus.done) {
-          showDialog(
-            context: context,
-            barrierDismissible: false,
-            builder: (context) => DictionaryDialogImportPage(
-              progressNotifier: progressNotifier,
-              countNotifier: countNotifier,
-              totalNotifier: totalNotifier,
-            ),
+          await appModel.importDictionary(
+            progressNotifier: progressNotifier,
+            file: file,
+            onImportSuccess: () {
+              _selectedOrder = appModel.dictionaries.last.order;
+              setState(() {});
+            },
           );
         }
+
+        await FilePicker.platform.clearTemporaryFiles();
+
+        if (mounted) {
+          Navigator.pop(context);
+        }
       },
     );
-    debugPrint('[DictImport] File picker result: ${result?.files.length ?? "null"}');
-    if (result == null) {
-      if (mounted) {
-        Navigator.pop(context);
-      }
-      return;
-    }
-
-    totalNotifier.value = result.files.length;
-    for (int i = 0; i < result.files.length; i++) {
-      countNotifier.value = i + 1;
-
-      PlatformFile platformFile = result.files[i];
-      File file = File(platformFile.path!);
-
-      await appModel.importDictionary(
-        progressNotifier: progressNotifier,
-        file: file,
-        onImportSuccess: () {
-          _selectedOrder = appModel.dictionaries.last.order;
-          setState(() {});
-        },
-      );
-    }
-
-    await FilePicker.platform.clearTemporaryFiles();
-
-    if (mounted) {
-      Navigator.pop(context);
-    }
-  }
-
-  static const _dictFileExtensions = ['.zip', '.dsl', '.mdx'];
-
-  bool _isDictionaryDir(Directory dir) {
-    try {
-      return dir.listSync().whereType<File>().any((f) {
-        final lower = f.path.toLowerCase();
-        return lower.endsWith('.json') || lower.endsWith('.dsl');
-      });
-    } catch (_) {
-      return false;
-    }
-  }
-
-  List<File> _findDictionaryFiles(Directory root, [int depth = 0]) {
-    if (depth >= 3) return [];
-    final results = <File>[];
-    try {
-      for (final entity in root.listSync()) {
-        if (entity is File) {
-          final lower = entity.path.toLowerCase();
-          if (_dictFileExtensions.any((ext) => lower.endsWith(ext))) {
-            debugPrint('[DictImport] Found dict file: ${entity.path}');
-            results.add(entity);
-          }
-        } else if (entity is Directory && depth < 3) {
-          results.addAll(_findDictionaryFiles(entity, depth + 1));
-        }
-      }
-    } catch (e) {
-      debugPrint('[DictImport] Error scanning ${root.path}: $e');
-    }
-    return results;
-  }
-
-  List<Directory> _findDictionaryDirs(Directory root, [int depth = 0]) {
-    if (_isDictionaryDir(root)) return [root];
-    if (depth >= 3) return [];
-    final results = <Directory>[];
-    try {
-      for (final entity in root.listSync()) {
-        if (entity is Directory) {
-          results.addAll(_findDictionaryDirs(entity, depth + 1));
-        }
-      }
-    } catch (_) {}
-    return results;
-  }
-
-  Future<void> _importFromFolder() async {
-    final String? dirPath = await FilePicker.platform.getDirectoryPath();
-    debugPrint('[DictImport] Folder picker result: $dirPath');
-    if (dirPath == null) return;
-
-    final picked = Directory(dirPath);
-    debugPrint('[DictImport] Picked dir exists: ${picked.existsSync()}');
-    try {
-      final contents = picked.listSync();
-      debugPrint('[DictImport] Dir contents (${contents.length}):');
-      for (final e in contents) {
-        debugPrint('[DictImport]   ${e.path} (${e is Directory ? "dir" : "file"})');
-      }
-    } catch (e) {
-      debugPrint('[DictImport] Error listing picked dir: $e');
-    }
-
-    final dirsToImport = _findDictionaryDirs(picked);
-    final filesToImport = _findDictionaryFiles(picked);
-
-    final totalItems = dirsToImport.length + filesToImport.length;
-    debugPrint('[DictImport] Found $totalItems items: ${dirsToImport.length} dirs, ${filesToImport.length} files');
-
-    if (totalItems == 0) {
-      if (mounted) {
-        Fluttertoast.showToast(msg: '未找到可导入的词典文件');
-      }
-      return;
-    }
-
-    ValueNotifier<String> progressNotifier =
-        ValueNotifier<String>(t.import_start);
-    ValueNotifier<int?> countNotifier = ValueNotifier<int?>(null);
-    ValueNotifier<int?> totalNotifier = ValueNotifier<int?>(null);
-    progressNotifier.addListener(() {
-      debugPrint('[Dictionary Import] ${progressNotifier.value}');
-    });
-
-    if (mounted) {
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => DictionaryDialogImportPage(
-          progressNotifier: progressNotifier,
-          countNotifier: countNotifier,
-          totalNotifier: totalNotifier,
-        ),
-      );
-    }
-
-    totalNotifier.value = totalItems;
-    int current = 0;
-
-    for (final dir in dirsToImport) {
-      countNotifier.value = ++current;
-      await appModel.importDictionaryFromDirectory(
-        directory: dir,
-        progressNotifier: progressNotifier,
-        onImportSuccess: () {
-          _selectedOrder = appModel.dictionaries.last.order;
-          setState(() {});
-        },
-      );
-    }
-
-    for (final file in filesToImport) {
-      countNotifier.value = ++current;
-      await appModel.importDictionary(
-        file: file,
-        progressNotifier: progressNotifier,
-        onImportSuccess: () {
-          _selectedOrder = appModel.dictionaries.last.order;
-          setState(() {});
-        },
-      );
-    }
-
-    if (mounted) {
-      Navigator.pop(context);
-    }
   }
 
   Widget buildClearButton() {
