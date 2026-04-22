@@ -132,23 +132,19 @@ class YomichanFormat extends DictionaryFormat {
   }
 
   /// For [prepareEntriesYomichanFormat].
-  static String? processDefinition(var definition) {
+  static dynamic processDefinition(dynamic definition) {
     if (definition is String) {
-      final plainText = definition;
-      return plainText;
+      return definition;
     } else if (definition is Map) {
       final type = definition['type'];
-
       switch (type) {
         case 'text':
-          final plainText = definition['text'];
-          return plainText;
+          return definition['text'];
         case 'structured-content':
         case 'image':
-          return jsonEncode(definition['content']);
+          return definition['content'];
       }
     }
-
     return null;
   }
 }
@@ -247,12 +243,24 @@ void prepareEntriesYomichanFormat({
         List<String> entryTagNames =
             spaceSeparatedDefinitionTags?.split(' ') ?? [];
         List<String> headingTagNames = spaceSeparatedTermTags.split(' ');
-        final List<String> definitions = rawDefinitions
+        final definitions = rawDefinitions
             .map(YomichanFormat.processDefinition)
-            .whereType<String>()
+            .where((d) => d != null)
             .toList();
 
-        String meaning = definitions.join('\n');
+        final bool hasStructured = definitions.any((d) => d is! String);
+        String meaning;
+        if (definitions.isEmpty) {
+          continue;
+        } else if (!hasStructured) {
+          meaning = definitions.cast<String>().join('\n');
+        } else if (definitions.length == 1) {
+          meaning = definitions.first is String
+              ? definitions.first as String
+              : jsonEncode(definitions.first);
+        } else {
+          meaning = jsonEncode(definitions);
+        }
 
         // Combine all tag names into extra as JSON
         List<String> allTags = [...entryTagNames, ...headingTagNames]
