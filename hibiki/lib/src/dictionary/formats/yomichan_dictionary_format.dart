@@ -9,7 +9,6 @@ import 'package:beautiful_soup_dart/beautiful_soup.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:html/dom.dart' as dom;
-import 'package:isar/isar.dart';
 import 'package:list_counter/list_counter.dart';
 import 'package:path/path.dart' as path;
 import 'package:recase/recase.dart';
@@ -35,7 +34,7 @@ class YomichanFormat extends DictionaryFormat {
           fileType: FileType.custom,
           prepareDirectory: prepareDirectoryYomichanFormat,
           prepareName: prepareNameYomichanFormat,
-          prepareEntries: prepareEntriesYomichanFormat,
+          prepareEntries: _prepareEntriesYomichanStub,
         );
 
   /// Get the singleton instance of this dictionary format.
@@ -202,10 +201,20 @@ Future<String> prepareNameYomichanFormat(PrepareDirectoryParams params) async {
   return dictionaryName;
 }
 
+/// Stub that matches the [DictionaryFormat.prepareEntries] signature.
+/// Will be replaced by hoshidicts (C++ FFI).
+void _prepareEntriesYomichanStub({
+  required PrepareDictionaryParams params,
+  required dynamic database,
+}) {
+  throw UnimplementedError('Will be replaced by hoshidicts');
+}
+
 /// Top-level function for use in compute. See [DictionaryFormat] for details.
+/// Retained for reference; not called at runtime until hoshidicts migration.
 void prepareEntriesYomichanFormat({
   required PrepareDictionaryParams params,
-  required Isar isar,
+  required dynamic isar,
 }) {
   final List<FileSystemEntity> entities = params.resourceDirectory.listSync();
   final Iterable<File> files = entities.whereType<File>();

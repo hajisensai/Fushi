@@ -1,9 +1,4 @@
-import 'package:isar/isar.dart';
-
-part 'message_item.g.dart';
-
 /// Used to allow persistence of a message from ChatGPT.
-@Collection()
 class MessageItem {
   /// Initialise this object.
   MessageItem({
@@ -13,7 +8,7 @@ class MessageItem {
   });
 
   /// Used for database purposes.
-  Id? id;
+  int? id;
 
   /// Message to show for this item.
   final String message;

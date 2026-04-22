@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
-import 'package:hive/hive.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
@@ -147,7 +146,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     double initialSpeed = 1.0,
   }) async {
     _audiobook = audiobook;
-    // Follow audio / delay / speed 状态由调用方从 Hive 读出传入；不触发
+    // Follow audio / delay / speed 状态由调用方从持久层读出传入；不触发
     // persist 回调 —— 载入不是用户操作，又把同值写回 Hive 就是循环。
     followAudio.value = initialFollowAudio;
     delayMs.value = initialDelayMs;
@@ -215,35 +214,32 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// -1 表示从未保存过。
   int _lastSavedWholeSec = -1;
 
-  Box? _prefsBox() {
-    if (!Hive.isBoxOpen('appModel')) return null;
-    return Hive.box('appModel');
-  }
+  /// 播放位置读取回调。调用方（reader 页面）在 attach 时装入，
+  /// 一般实现为从 Drift database preferences 读 int。
+  int Function(String bookUid)? onPositionRead;
+
+  /// 播放位置写入回调。调用方在 attach 时装入，
+  /// 一般实现为写 Drift database preferences。
+  void Function(String bookUid, int positionMs)? onPositionWrite;
 
   int _readSavedPositionMs(String bookUid) {
-    final Box? box = _prefsBox();
-    if (box == null) return 0;
-    final Object? raw = box.get('$_kPositionKeyPrefix$bookUid');
-    if (raw is int) return raw;
-    return 0;
+    return onPositionRead?.call(bookUid) ?? 0;
   }
 
-  /// 把当前播放位置写入 Hive。对齐上游：**每整秒变化一次**就写。
+  /// 把当前播放位置写入持久化存储。对齐上游：**每整秒变化一次**就写。
   /// 125ms tick 触发 8 次里只有 1 次真的落库，IO 成本和上游等价。
   ///
   /// 调用时机：cue 变化（_updateCurrentCue）、暂停、dispose。
   void _maybeSavePosition({bool force = false}) {
     final String? uid = _audiobook?.bookUid;
     if (uid == null) return;
-    final Box? box = _prefsBox();
-    if (box == null) return;
     final int posMs = _player.position.inMilliseconds;
     final int wholeSec = posMs ~/ 1000;
     if (!force && wholeSec == _lastSavedWholeSec) {
       return;
     }
     _lastSavedWholeSec = wholeSec;
-    box.put('$_kPositionKeyPrefix$uid', posMs);
+    onPositionWrite?.call(uid, posMs);
   }
 
   /// 切换章节后更新当前章节的 cue 列表。

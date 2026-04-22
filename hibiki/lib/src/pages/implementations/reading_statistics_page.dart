@@ -1,9 +1,10 @@
+import 'package:drift/drift.dart' hide Column;
 import 'package:flutter/material.dart';
-import 'package:isar/isar.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
-import 'package:hibiki/src/media/audiobook/reading_statistic_model.dart';
+import 'package:hibiki/src/database/database.dart';
 import 'package:hibiki/src/media/audiobook/reading_statistic_idb_reader.dart';
+import 'package:hibiki/src/media/audiobook/reading_statistic_model.dart';
 import 'package:hibiki/src/media/sources/reader_ttu_source.dart';
 
 class ReadingStatisticsPage extends BasePage {
@@ -18,7 +19,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   bool _loading = true;
   String? _error;
 
-  List<ReadingStatistic> _allStats = [];
+  List<ReadingStatisticRow> _allStats = [];
 
   // 聚合数据
   int _todayChars = 0;
@@ -55,21 +56,27 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       final records =
           await ReadingStatisticIdbReader.readAll(serverPort: port);
 
-      final isar = appModelNoUpdate.database;
-      await isar.writeTxn(() async {
-        await isar.readingStatistics.putAll(records);
-      });
+      final db = appModelNoUpdate.database;
+      for (final stat in records) {
+        await db.upsertReadingStatistic(ReadingStatisticsCompanion.insert(
+          title: stat.title,
+          dateKey: stat.dateKey,
+          charactersRead: stat.charactersRead,
+          readingTimeMs: stat.readingTimeMs,
+          lastStatisticModified: stat.lastStatisticModified,
+        ));
+      }
     } catch (e) {
       debugPrint('stat sync failed: $e');
     }
 
-    _loadFromIsar();
+    await _loadFromDatabase();
   }
 
-  void _loadFromIsar() {
+  Future<void> _loadFromDatabase() async {
     try {
-      final isar = appModelNoUpdate.database;
-      _allStats = isar.readingStatistics.where().findAllSync();
+      final db = appModelNoUpdate.database;
+      _allStats = await db.getAllReadingStatistics();
       _computeAggregates();
     } catch (e) {
       _error = e.toString();

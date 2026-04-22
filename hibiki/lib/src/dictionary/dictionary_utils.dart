@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:isar/isar.dart';
 import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/models.dart';
 
@@ -18,48 +17,23 @@ int fastHash(String string) {
   return hash;
 }
 
+/// Deposit dictionary data into the database.
+///
+/// Previously used Isar; will be replaced by hoshidicts (C++ FFI).
 Future<void> depositDictionaryDataHelper(PrepareDictionaryParams params) async {
-  try {
-    final Isar isar = await Isar.open(
-      globalSchemas,
-      directory: params.directoryPath,
-      maxSizeMiB: 8192,
-    );
-
-    await isar.writeTxnSync(() async {
-      params.dictionaryFormat.prepareEntries(params: params, isar: isar);
-    });
-  } catch (e, stack) {
-    debugPrint('$e');
-    debugPrint('$stack');
-    params.send('$stack');
-    rethrow;
-  }
+  throw UnimplementedError('Will be replaced by hoshidicts');
 }
 
+/// Delete all dictionaries from the database.
+///
+/// Previously used Isar; will be replaced by hoshidicts (C++ FFI).
 Future<void> deleteDictionariesHelper(DeleteDictionaryParams params) async {
-  final Isar database = await Isar.open(
-    globalSchemas,
-    directory: params.directoryPath,
-    maxSizeMiB: 8192,
-  );
-
-  database.writeTxnSync(() {
-    database.dictionaryEntrys.clearSync();
-  });
+  throw UnimplementedError('Will be replaced by hoshidicts');
 }
 
+/// Delete a single dictionary from the database.
+///
+/// Previously used Isar; will be replaced by hoshidicts (C++ FFI).
 Future<void> deleteDictionaryHelper(DeleteDictionaryParams params) async {
-  final Isar database = await Isar.open(
-    globalSchemas,
-    directory: params.directoryPath,
-    maxSizeMiB: 8192,
-  );
-
-  database.writeTxnSync(() {
-    database.dictionaryEntrys
-        .where()
-        .dictionaryNameEqualTo(params.dictionaryName!)
-        .deleteAllSync();
-  });
+  throw UnimplementedError('Will be replaced by hoshidicts');
 }

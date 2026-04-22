@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:isar/isar.dart';
 import 'package:path/path.dart' as path;
 
 import 'package:hibiki/dictionary.dart';
@@ -26,7 +25,7 @@ class AbbyyLingvoFormat extends DictionaryFormat {
           fileType: FileType.any,
           prepareDirectory: prepareDirectoryAbbyyLingvoFormat,
           prepareName: prepareNameAbbyyLingvoFormat,
-          prepareEntries: prepareEntriesAbbyyLingvoFormat,
+          prepareEntries: _prepareEntriesAbbyyLingvoStub,
         );
 
   /// Get the singleton instance of this dictionary format.
@@ -68,10 +67,18 @@ Future<String> prepareNameAbbyyLingvoFormat(
   return name;
 }
 
+/// Stub matching [DictionaryFormat.prepareEntries].
+void _prepareEntriesAbbyyLingvoStub({
+  required PrepareDictionaryParams params,
+  required dynamic database,
+}) {
+  throw UnimplementedError('Will be replaced by hoshidicts');
+}
+
 /// Top-level function for use in compute. See [DictionaryFormat] for details.
 Future<void> prepareEntriesAbbyyLingvoFormat({
   required PrepareDictionaryParams params,
-  required Isar isar,
+  required dynamic isar,
 }) async {
   int count = 0;
 

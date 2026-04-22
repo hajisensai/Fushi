@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hive/hive.dart';
 import 'package:network_to_file_image/network_to_file_image.dart';
 import 'package:transparent_image/transparent_image.dart';
 import 'package:hibiki/media.dart';
@@ -79,9 +78,9 @@ abstract class MediaSource {
   /// See [generateAudio].
   final bool overridesAutoAudio;
 
-  /// Used for accessing persistent key-value data specific to this source.
-  /// See [initialise].
-  late final Box _preferences;
+  /// In-memory preference cache for this source. Loaded from the Drift
+  /// database on [initialise] and written through on [setPreference].
+  final Map<String, dynamic> _preferences = {};
 
   /// Whether or not [initialise] has been called for this source.
   bool _initialised = false;
@@ -91,8 +90,6 @@ abstract class MediaSource {
     if (_initialised) {
       return;
     } else {
-      _preferences = await Hive.openBox(uniqueKey);
-
       await prepareResources();
       _initialised = true;
     }
@@ -100,17 +97,19 @@ abstract class MediaSource {
 
   /// Get the preference value for a certain parameter [key] for this source.
   T getPreference<T>({required String key, required T defaultValue}) {
-    return _preferences.get(key, defaultValue: defaultValue) as T;
+    final value = _preferences[key];
+    if (value is T) return value;
+    return defaultValue;
   }
 
   /// Set the preference [value] for a certain parameter [key] for this source.
   Future<void> setPreference<T>({required String key, required T value}) async {
-    await _preferences.put(key, value);
+    _preferences[key] = value;
   }
 
-  /// Set the preference for a certain parameter [key] for this source.
+  /// Delete the preference for a certain parameter [key] for this source.
   Future<void> deletePreference({required String key}) async {
-    await _preferences.delete(key);
+    _preferences.remove(key);
   }
 
   /// Get the best localisation for the label of this media source. If there

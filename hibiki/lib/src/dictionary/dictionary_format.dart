@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:isar/isar.dart';
 import 'package:hibiki/dictionary.dart';
 import 'package:flutter/widgets.dart';
 
@@ -29,9 +28,13 @@ abstract class DictionaryFormat {
   Future<void> Function(PrepareDirectoryParams params) prepareDirectory;
   Future<String> Function(PrepareDirectoryParams params) prepareName;
 
+  /// Prepare dictionary entries for import.
+  ///
+  /// Previously took an Isar instance; will be replaced by hoshidicts (C++ FFI).
+  /// The [database] parameter is a dynamic placeholder for the future backend.
   void Function({
     required PrepareDictionaryParams params,
-    required Isar isar,
+    required dynamic database,
   }) prepareEntries;
 
   Widget customDefinitionWidget({

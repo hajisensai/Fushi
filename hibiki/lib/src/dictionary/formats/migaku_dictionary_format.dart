@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_archive/flutter_archive.dart';
-import 'package:isar/isar.dart';
 import 'package:path/path.dart' as path;
 
 import 'package:hibiki/dictionary.dart';
@@ -28,7 +27,7 @@ class MigakuFormat extends DictionaryFormat {
           fileType: FileType.any,
           prepareDirectory: prepareDirectoryMigakuFormat,
           prepareName: prepareNameMigakuFormat,
-          prepareEntries: prepareEntriesMigakuFormat,
+          prepareEntries: _prepareEntriesMigakuStub,
         );
 
   /// Get the singleton instance of this dictionary format.
@@ -51,10 +50,18 @@ Future<String> prepareNameMigakuFormat(PrepareDirectoryParams params) async {
   return path.basenameWithoutExtension(originalFile.path);
 }
 
+/// Stub matching [DictionaryFormat.prepareEntries].
+void _prepareEntriesMigakuStub({
+  required PrepareDictionaryParams params,
+  required dynamic database,
+}) {
+  throw UnimplementedError('Will be replaced by hoshidicts');
+}
+
 /// Top-level function for use in compute. See [DictionaryFormat] for details.
 void prepareEntriesMigakuFormat({
   required PrepareDictionaryParams params,
-  required Isar isar,
+  required dynamic isar,
 }) async {
   final List<FileSystemEntity> entities = params.resourceDirectory.listSync();
   final Iterable<File> files = entities

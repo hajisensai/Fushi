@@ -5,7 +5,6 @@ import 'package:dict_reader/dict_reader.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_archive/flutter_archive.dart';
-import 'package:isar/isar.dart';
 import 'package:path/path.dart' as path;
 
 import 'package:hibiki/dictionary.dart';
@@ -22,7 +21,7 @@ class MdictFormat extends DictionaryFormat {
           fileType: FileType.any,
           prepareDirectory: prepareDirectoryMdictFormat,
           prepareName: prepareNameMdictFormat,
-          prepareEntries: prepareEntriesMdictFormat,
+          prepareEntries: _prepareEntriesMdictStub,
         );
 
   static MdictFormat get instance => _instance;
@@ -145,9 +144,17 @@ Future<String> prepareNameMdictFormat(PrepareDirectoryParams params) async {
   return path.basenameWithoutExtension(params.file.path);
 }
 
+/// Stub matching [DictionaryFormat.prepareEntries].
+void _prepareEntriesMdictStub({
+  required PrepareDictionaryParams params,
+  required dynamic database,
+}) {
+  throw UnimplementedError('Will be replaced by hoshidicts');
+}
+
 void prepareEntriesMdictFormat({
   required PrepareDictionaryParams params,
-  required Isar isar,
+  required dynamic isar,
 }) {
   final entities = params.resourceDirectory.listSync();
   final chunkFiles = entities
