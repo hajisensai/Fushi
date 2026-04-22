@@ -433,8 +433,9 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
     return SliverToBoxAdapter(
       child: Padding(
         padding: Spacing.of(context).insets.all.small,
-        child: Tooltip(
-          message: t.show_more,
+        child: Semantics(
+          label: t.show_more,
+          button: true,
           child: InkWell(
             onTap: _isSearching
                 ? null

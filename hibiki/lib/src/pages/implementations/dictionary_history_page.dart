@@ -168,8 +168,9 @@ class _DictionaryHistoryScrollableItemState
   }) {
     return Padding(
       padding: Spacing.of(context).insets.onlyBottom.small,
-      child: Tooltip(
-        message: t.show_more,
+      child: Semantics(
+        label: t.show_more,
+        button: true,
         child: InkWell(
           onTap: () async {
             await appModel.openResultFromHistory(result: result);

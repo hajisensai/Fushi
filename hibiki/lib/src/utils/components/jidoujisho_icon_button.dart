@@ -101,12 +101,15 @@ class _JidoujishoIconButtonState extends State<JidoujishoIconButton> {
   @override
   Widget build(BuildContext context) {
     if (widget.isWideTapArea) {
-      return IconButton(
+      return Semantics(
+        label: widget.tooltip,
+        button: true,
+        child: IconButton(
         constraints: BoxConstraints(
           maxWidth: Spacing.of(context).spaces.extraBig,
           maxHeight: Spacing.of(context).spaces.extraBig,
         ),
-        tooltip: widget.tooltip,
+        tooltip: null,
         icon: Icon(
           widget.icon,
           color: enabled ? enabledColor : disabledColor,
@@ -134,11 +137,13 @@ class _JidoujishoIconButtonState extends State<JidoujishoIconButton> {
                 }
               }
             : null,
+      ),
       );
     }
 
-    return Tooltip(
-      message: widget.tooltip,
+    return Semantics(
+      label: widget.tooltip,
+      button: true,
       child: InkWell(
         enableFeedback: enabled,
         customBorder: widget.shapeBorder,

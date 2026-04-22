@@ -94,10 +94,17 @@ void main() {
     await appModel.initialise();
     /// Capture Flutter framework errors with full details.
     FlutterError.onError = (details) {
+      // Suppress known Flutter framework bug: RawTooltipState creates
+      // multiple tickers from SingleTickerProviderStateMixin.
+      final msg = details.exceptionAsString();
+      if (msg.contains('SingleTickerProviderStateMixin') &&
+          msg.contains('RawTooltipState')) {
+        return;
+      }
       FlutterError.presentError(details);
       ErrorLogService.instance.log(
         'FlutterError: ${details.context?.toString() ?? 'unknown'}',
-        details.exceptionAsString(),
+        msg,
         details.stack,
       );
     };
