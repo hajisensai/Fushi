@@ -4,6 +4,7 @@ import 'dart:isolate';
 
 import 'package:archive/archive.dart' as archive;
 import 'package:archive/archive_io.dart' as archive_io;
+import 'package:async_zip/async_zip.dart';
 import 'package:beautiful_soup_dart/beautiful_soup.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -159,28 +160,37 @@ Future<void> prepareDirectoryYomichanFormat(
   final dirPath = params.resourceDirectory.path;
   final sendPort = params.sendPort;
 
+  // Try fast native FFI extraction first
   await Isolate.run(() {
-    final port = sendPort;
-    final input = archive_io.InputFileStream(filePath);
-    final zip = archive.ZipDecoder().decodeBuffer(input);
-    final total = zip.files.length;
-    int n = 0;
-    for (final file in zip.files) {
-      final outPath = '$dirPath/${file.name}';
-      if (file.isFile) {
-        final outFile = File(outPath);
-        outFile.parent.createSync(recursive: true);
-        outFile.writeAsBytesSync(file.content as List<int>);
-      } else {
-        Directory(outPath).createSync(recursive: true);
-      }
-      n++;
-      if (n % 100 == 0 || n == total) {
-        port.send('$n / $total');
-      }
-    }
-    input.closeSync();
+    extractZipArchiveSync(File(filePath), Directory(dirPath));
   });
+
+  // If native FFI produced nothing, fall back to Dart archive
+  final extracted = Directory(dirPath).listSync();
+  if (extracted.isEmpty) {
+    await Isolate.run(() {
+      final port = sendPort;
+      final input = archive_io.InputFileStream(filePath);
+      final zip = archive.ZipDecoder().decodeBuffer(input);
+      final total = zip.files.length;
+      int n = 0;
+      for (final file in zip.files) {
+        final outPath = '$dirPath/${file.name}';
+        if (file.isFile) {
+          final outFile = File(outPath);
+          outFile.parent.createSync(recursive: true);
+          outFile.writeAsBytesSync(file.content as List<int>);
+        } else {
+          Directory(outPath).createSync(recursive: true);
+        }
+        n++;
+        if (n % 100 == 0 || n == total) {
+          port.send('$n / $total');
+        }
+      }
+      input.closeSync();
+    });
+  }
 }
 
 /// Top-level function for use in compute. See [DictionaryFormat] for details.
