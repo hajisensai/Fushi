@@ -637,7 +637,7 @@ new Promise(function(resolve) {
 
   /// Used to fetch JSON for all books in IndexedDB.
   static const String getHistoryJs = '''
-indexedDB.databases().then((databases) => {
+indexedDB.databases().then(async (databases) => {
   if (databases.length > 0) {
     var bookmarkJson = JSON.stringify([]);
     var dataJson = JSON.stringify([]);
@@ -688,7 +688,7 @@ indexedDB.databases().then((databases) => {
               objectRequest.onsuccess = function(event) {
                 if (objectRequest.result) resolve(objectRequest.result);
                 else reject(Error('Objects not found'));
-              }; 
+              };
             } catch (e) {
               console.log(JSON.stringify({messageType: "error", error: e.name}));
               reject(Error('Error getting objects'));
@@ -698,40 +698,31 @@ indexedDB.databases().then((databases) => {
       );
     }
 
-    async function getTtuData() {
-      try {
-        items = await getAllFromIDBStore("data");
-        await Promise.all(items.map(async (item) => {
-          try {
-            item["coverImage"] = await blobToBase64(item["coverImage"]);
-          } catch (e) {}
-        }));
-        
-        dataJson = JSON.stringify(items);
-      } catch (e) {
-        dataJson = JSON.stringify([]);
-      }
-
-      try {
-        bookmarkJson = JSON.stringify(await getAllFromIDBStore("bookmark"));
-      } catch (e) {
-        bookmarkJson = JSON.stringify([]);
-      }
-      
-      try {
-        lastItemJson = JSON.stringify(await getAllFromIDBStore("lastItem"));
-      } catch (e) {
-        lastItemJson = JSON.stringify([]);
-      }
-
-      console.log(JSON.stringify({messageType: "history", lastItem: lastItemJson, bookmark: bookmarkJson, data: dataJson}));
+    try {
+      var items = await getAllFromIDBStore("data");
+      await Promise.all(items.map(async (item) => {
+        try {
+          item["coverImage"] = await blobToBase64(item["coverImage"]);
+        } catch (e) {}
+      }));
+      dataJson = JSON.stringify(items);
+    } catch (e) {
+      dataJson = JSON.stringify([]);
     }
 
     try {
-      await getTtuData();
+      bookmarkJson = JSON.stringify(await getAllFromIDBStore("bookmark"));
     } catch (e) {
-      console.log(JSON.stringify({messageType: "history", lastItem: lastItemJson, bookmark: bookmarkJson, data: dataJson}));
+      bookmarkJson = JSON.stringify([]);
     }
+
+    try {
+      lastItemJson = JSON.stringify(await getAllFromIDBStore("lastItem"));
+    } catch (e) {
+      lastItemJson = JSON.stringify([]);
+    }
+
+    console.log(JSON.stringify({messageType: "history", lastItem: lastItemJson, bookmark: bookmarkJson, data: dataJson}));
   } else {
 
     console.log(JSON.stringify({messageType: "empty"}));
@@ -742,7 +733,7 @@ indexedDB.databases().then((databases) => {
 
   /// Used to fetch JSON for all books in IndexedDB.
   static const String get = '''
-indexedDB.databases().then((databases) => {
+indexedDB.databases().then(async (databases) => {
   if (databases.length > 0) {
     var bookmarkJson = JSON.stringify([]);
     var dataJson = JSON.stringify([]);
@@ -793,7 +784,7 @@ indexedDB.databases().then((databases) => {
               objectRequest.onsuccess = function(event) {
                 if (objectRequest.result) resolve(objectRequest.result);
                 else reject(Error('Objects not found'));
-              }; 
+              };
             } catch (e) {
               console.log(JSON.stringify({messageType: "error", error: e.name}));
               reject(Error('Error getting objects'));
@@ -803,44 +794,35 @@ indexedDB.databases().then((databases) => {
       );
     }
 
-    async function getTtuData() {
-      try {
-        items = await getAllFromIDBStore("data");
-        await Promise.all(items.map(async (item) => {
-          try {
-            item["coverImage"] = await blobToBase64(item["coverImage"]);
-          } catch (e) {}
-        }));
-        
-        dataJson = JSON.stringify(items);
-      } catch (e) {
-        dataJson = JSON.stringify([]);
-      }
-
-      try {
-        bookmarkJson = JSON.stringify(await getAllFromIDBStore("bookmark"));
-      } catch (e) {
-        bookmarkJson = JSON.stringify([]);
-      }
-      
-      try {
-        lastItemJson = JSON.stringify(await getAllFromIDBStore("lastItem"));
-      } catch (e) {
-        lastItemJson = JSON.stringify([]);
-      }
-
-      console.log(JSON.stringify({messageType: "history", lastItem: lastItemJson, bookmark: bookmarkJson, data: dataJson}));
+    try {
+      var items = await getAllFromIDBStore("data");
+      await Promise.all(items.map(async (item) => {
+        try {
+          item["coverImage"] = await blobToBase64(item["coverImage"]);
+        } catch (e) {}
+      }));
+      dataJson = JSON.stringify(items);
+    } catch (e) {
+      dataJson = JSON.stringify([]);
     }
 
     try {
-      await getTtuData();
+      bookmarkJson = JSON.stringify(await getAllFromIDBStore("bookmark"));
     } catch (e) {
-      console.log(JSON.stringify({messageType: "history", lastItem: lastItemJson, bookmark: bookmarkJson, data: dataJson}));
+      bookmarkJson = JSON.stringify([]);
     }
+
+    try {
+      lastItemJson = JSON.stringify(await getAllFromIDBStore("lastItem"));
+    } catch (e) {
+      lastItemJson = JSON.stringify([]);
+    }
+
+    console.log(JSON.stringify({messageType: "history", lastItem: lastItemJson, bookmark: bookmarkJson, data: dataJson}));
   } else {
-  
+
     console.log(JSON.stringify({messageType: "empty"}));
-    
+
   }
 });
 ''';
