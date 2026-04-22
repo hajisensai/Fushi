@@ -11,7 +11,6 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_health.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_model.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
@@ -43,35 +42,6 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
 
   final ValueNotifier<int> _tryAgainCountdownNotifier = ValueNotifier(0);
   Timer? _timer;
-
-  /// 本次 app 进程内是否已跑过 [AudiobookRepository.sweepCorrupt] —— 启动后
-  /// 第一次进书架时清一次历史脏 Audiobook / AudioCue 记录，后续重建不重复跑。
-  bool _didSweepCorrupt = false;
-
-  @override
-  void initState() {
-    super.initState();
-    // appModel 来自基类的 InheritedWidget，initState 阶段还不能 read inherited
-    // —— 直接调会抛 dependOnInheritedWidgetOfExactType called before initState
-    // completed。挂到首帧之后跑就 OK。
-    WidgetsBinding.instance.addPostFrameCallback((_) => _sweepCorruptOnce());
-  }
-
-  Future<void> _sweepCorruptOnce() async {
-    if (!mounted || _didSweepCorrupt) {
-      return;
-    }
-    _didSweepCorrupt = true;
-    try {
-      final int removed =
-          await AudiobookRepository(appModel.database).sweepCorrupt();
-      if (removed > 0 && mounted) {
-        setState(() {}); // 让书卡角标按新的真相重算
-      }
-    } catch (e, st) {
-      debugPrint('[hibiki-audiobook] sweepCorruptOnce failed: $e\n$st');
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -137,8 +107,16 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
   }
 
   Widget buildBody(List<MediaItem> books) {
-    final List<SrtBook> srtBooks =
-        SrtBookRepository(appModel.database).listAll();
+    return FutureBuilder<List<SrtBook>>(
+      future: SrtBookRepository(appModel.database).listAll(),
+      builder: (context, srtSnapshot) {
+        final List<SrtBook> srtBooks = srtSnapshot.data ?? const [];
+        return _buildBodyWithSrtBooks(books, srtBooks);
+      },
+    );
+  }
+
+  Widget _buildBodyWithSrtBooks(List<MediaItem> books, List<SrtBook> srtBooks) {
 
     // 字幕导入会把生成的 EPUB 也塞进 ttu IDB，这里把那几条 ID 从 EPUB 区剔除，
     // 避免同一本书同时出现在「字幕」和「EPUB」两个区。
@@ -424,57 +402,65 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
   /// 卡里，所以这里直接返回卡片内部的 Stack（不再自带 padding / 外框）。
   @override
   Widget buildMediaItemContent(MediaItem item) {
-    // findByBookUid 读 Isar 时，如果某个 String 字段存了非法 UTF-8（历史脏
-    // 数据，常见于路径带日文却被错误编码的旧记录），严格 utf8.decode 会抛
-    // FormatException。这里 build 阶段不能让它冒出去，否则整张书卡退化成
-    // ErrorWidget，用户看见一坨错误文字。抓到后打堆栈到 logcat 便于定位，
-    // 角标按"没有"处理即可。
-    Audiobook? ab;
+    return FutureBuilder<_AudiobookInfo>(
+      future: _loadAudiobookInfo(item.uniqueKey),
+      builder: (context, snapshot) {
+        final bool hasAudiobook = snapshot.data?.hasAudiobook ?? false;
+        final HealthKind healthKind =
+            snapshot.data?.healthKind ?? HealthKind.notApplicable;
+
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            FadeInImage(
+              key: UniqueKey(),
+              imageErrorBuilder: (_, __, ___) =>
+                  _coverPlaceholderIcon(Icons.menu_book_outlined),
+              placeholder: MemoryImage(kTransparentImage),
+              image: mediaSource.getDisplayThumbnailFromMediaItem(
+                appModel: appModel,
+                item: item,
+              ),
+              alignment: Alignment.topCenter,
+              fit: BoxFit.fitHeight,
+            ),
+            _titleOverlay(mediaSource.getDisplayTitleFromMediaItem(item)),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: _progressBar(item),
+            ),
+            if (hasAudiobook)
+              Positioned(
+                top: 6,
+                right: 6,
+                child: _audiobookBadge(healthKind),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<_AudiobookInfo> _loadAudiobookInfo(String bookUid) async {
     try {
-      ab = AudiobookRepository(appModel.database)
-          .findByBookUid(item.uniqueKey);
+      final repo = AudiobookRepository(appModel.database);
+      final ab = await repo.findByBookUid(bookUid);
+      if (ab == null) {
+        return const _AudiobookInfo(
+            hasAudiobook: false, healthKind: HealthKind.notApplicable);
+      }
+      final health = await repo.resolveHealth(ab);
+      return _AudiobookInfo(hasAudiobook: true, healthKind: health.kind);
     } catch (e, st) {
       debugPrint(
         '[hibiki-audiobook] findByBookUid crashed for '
-        'bookUid=${item.uniqueKey}: $e\n$st',
+        'bookUid=$bookUid: $e\n$st',
       );
-      ab = null;
+      return const _AudiobookInfo(
+          hasAudiobook: false, healthKind: HealthKind.notApplicable);
     }
-    final bool hasAudiobook = ab != null;
-    final HealthKind healthKind = ab == null
-        ? HealthKind.notApplicable
-        : AudiobookRepository(appModel.database).resolveHealth(ab).kind;
-
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        FadeInImage(
-          key: UniqueKey(),
-          imageErrorBuilder: (_, __, ___) =>
-              _coverPlaceholderIcon(Icons.menu_book_outlined),
-          placeholder: MemoryImage(kTransparentImage),
-          image: mediaSource.getDisplayThumbnailFromMediaItem(
-            appModel: appModel,
-            item: item,
-          ),
-          alignment: Alignment.topCenter,
-          fit: BoxFit.fitHeight,
-        ),
-        _titleOverlay(mediaSource.getDisplayTitleFromMediaItem(item)),
-        Positioned(
-          left: 0,
-          right: 0,
-          bottom: 0,
-          child: _progressBar(item),
-        ),
-        if (hasAudiobook)
-          Positioned(
-            top: 6,
-            right: 6,
-            child: _audiobookBadge(healthKind),
-          ),
-      ],
-    );
   }
 
   /// 覆盖基类的 `buildMediaItem`：把 Material+InkWell 搬进圆角卡壳里，ripple
@@ -650,4 +636,10 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
       setState(() {});
     }
   }
+}
+
+class _AudiobookInfo {
+  const _AudiobookInfo({required this.hasAudiobook, required this.healthKind});
+  final bool hasAudiobook;
+  final HealthKind healthKind;
 }

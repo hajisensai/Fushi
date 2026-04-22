@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:dict_reader/dict_reader.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_archive/flutter_archive.dart';
@@ -57,88 +56,16 @@ Future<void> prepareDirectoryMdictFormat(
     throw Exception('找不到 .mdx 文件');
   }
 
-  params.send(t.import_extract);
-
-  final dictReader = DictReader(mdxFile.path);
-  await dictReader.initDict();
-
-  final entries = <Map<String, String>>[];
-  int count = 0;
-  const chunkSize = 5000;
-  int chunkIndex = 0;
-
-  try {
-    await for (final record in dictReader.readWithMdxData()) {
-      final key = record.keyText.trim();
-      if (key.isEmpty) continue;
-
-      entries.add({
-        'word': key,
-        'definition': record.data,
-      });
-      count++;
-
-      if (count % 1000 == 0) {
-        params.send(t.import_found_entry(count: count));
-      }
-
-      if (entries.length >= chunkSize) {
-        final chunkFile = File(
-            path.join(params.resourceDirectory.path, '_entries_$chunkIndex.json'));
-        chunkFile.writeAsStringSync(jsonEncode(entries));
-        entries.clear();
-        chunkIndex++;
-      }
-    }
-  } catch (_) {
-    // dict_reader may throw RangeError on some MDict files; save what we have
-  }
-
-  if (entries.isNotEmpty) {
-    final chunkFile = File(
-        path.join(params.resourceDirectory.path, '_entries_$chunkIndex.json'));
-    chunkFile.writeAsStringSync(jsonEncode(entries));
-  }
-
-  await dictReader.close();
-  params.send(t.import_found_entry(count: count));
-
-  // Extract MDD resources (CSS, images, audio) if present
-  final mddFile = _findFileByExtension(params.resourceDirectory, '.mdd');
-  if (mddFile != null) {
-    try {
-      final mddReader = DictReader(mddFile.path);
-      await mddReader.initDict();
-
-      await for (final record in mddReader.readWithMddData()) {
-        final resourcePath = record.keyText
-            .replaceAll('\\', '/')
-            .replaceFirst(RegExp(r'^/'), '');
-        if (resourcePath.isEmpty) continue;
-
-        final outFile =
-            File(path.join(params.resourceDirectory.path, resourcePath));
-        outFile.parent.createSync(recursive: true);
-        outFile.writeAsBytesSync(record.data);
-      }
-
-      await mddReader.close();
-    } catch (_) {
-      // MDD extraction is best-effort
-    }
-  }
+  // MDict reading via dict_reader has been removed; will be replaced by
+  // hoshidicts. Throw so callers know this format is not yet functional.
+  throw UnimplementedError(
+    'MDict import is not yet available — will be replaced by hoshidicts',
+  );
 }
 
 Future<String> prepareNameMdictFormat(PrepareDirectoryParams params) async {
   final mdxFile = _findFileByExtension(params.resourceDirectory, '.mdx');
   if (mdxFile != null) {
-    try {
-      final dictReader = DictReader(mdxFile.path);
-      await dictReader.initDict(readKeys: false, readRecordBlockInfo: false);
-      final title = dictReader.header['Title'] ?? '';
-      await dictReader.close();
-      if (title.isNotEmpty) return title.trim();
-    } catch (_) {}
     return path.basenameWithoutExtension(mdxFile.path);
   }
   return path.basenameWithoutExtension(params.file.path);

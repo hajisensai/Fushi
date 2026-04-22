@@ -69,7 +69,7 @@ class SasayakiRematch {
       Fluttertoast.showToast(msg: '本书未绑定 ttu，无法重跑匹配');
       return null;
     }
-    final AudiobookHealth? overlay = repo.readHealthOverlay(ab.bookUid);
+    final AudiobookHealth? overlay = await repo.readHealthOverlay(ab.bookUid);
     final int? picked = await _pickSearchWindow(
       context: context,
       previousReason: overlay?.reason,
@@ -136,7 +136,7 @@ class SasayakiRematch {
                   ttuBookId: ttuBookId,
                   serverPort: serverPort,
                 );
-                probedCues ??= repo.cuesForBook(bookUid);
+                probedCues ??= await repo.cuesForBook(bookUid);
                 final int? best = await runAutoProbe(
                   sections: probedSections ?? const <EpubSection>[],
                   cues: probedCues ?? const <AudioCue>[],
@@ -261,7 +261,7 @@ class SasayakiRematch {
     required int searchWindow,
   }) async {
     try {
-      final List<AudioCue> cues = repo.cuesForBook(ab.bookUid);
+      final List<AudioCue> cues = await repo.cuesForBook(ab.bookUid);
       if (cues.isEmpty) {
         Fluttertoast.showToast(msg: '没有已存 cue，无法重跑');
         return;

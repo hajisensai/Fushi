@@ -97,10 +97,16 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
   @override
   void initState() {
     super.initState();
-    final Audiobook? existing = widget.repo.findByBookUid(widget.bookUid);
-    if (existing != null && !_existingHasAudio(existing)) {
-      _patchingAudio = true;
-      _alignmentPath = existing.alignmentPath;
+    _initExisting();
+  }
+
+  Future<void> _initExisting() async {
+    final Audiobook? existing = await widget.repo.findByBookUid(widget.bookUid);
+    if (existing != null && !_existingHasAudio(existing) && mounted) {
+      setState(() {
+        _patchingAudio = true;
+        _alignmentPath = existing.alignmentPath;
+      });
     }
   }
 
@@ -112,44 +118,49 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final Audiobook? existing = widget.repo.findByBookUid(widget.bookUid);
-    debugPrint('[hibiki-audiobook] dialog build bookUid.len=${widget.bookUid.length} '
-        'hash=${widget.bookUid.hashCode} existing=${existing != null} patching=$_patchingAudio');
+    return FutureBuilder<Audiobook?>(
+      future: widget.repo.findByBookUid(widget.bookUid),
+      builder: (context, snapshot) {
+        final Audiobook? existing = snapshot.data;
+        debugPrint('[hibiki-audiobook] dialog build bookUid.len=${widget.bookUid.length} '
+            'hash=${widget.bookUid.hashCode} existing=${existing != null} patching=$_patchingAudio');
 
-    final bool showImportForm = existing == null || _patchingAudio;
+        final bool showImportForm = existing == null || _patchingAudio;
 
-    return AlertDialog(
-      title: Text(
-        showImportForm ? t.audiobook_import : t.audiobook_attached,
-      ),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: showImportForm
-            ? SingleChildScrollView(child: _buildImportForm())
-            : _buildAttachedView(existing!),
-      ),
-      actions: showImportForm
-          ? [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text(t.dialog_cancel),
-              ),
-              FilledButton(
-                onPressed: _importing ? null : _doImport,
-                child: Text(t.dialog_import),
-              ),
-            ]
-          : [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text(t.dialog_close),
-              ),
-              _destructiveFilledButton(
-                context: context,
-                label: t.audiobook_remove,
-                onPressed: () => _removeAudiobook(existing!),
-              ),
-            ],
+        return AlertDialog(
+          title: Text(
+            showImportForm ? t.audiobook_import : t.audiobook_attached,
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: showImportForm
+                ? SingleChildScrollView(child: _buildImportForm())
+                : _buildAttachedView(existing!),
+          ),
+          actions: showImportForm
+              ? [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: Text(t.dialog_cancel),
+                  ),
+                  FilledButton(
+                    onPressed: _importing ? null : _doImport,
+                    child: Text(t.dialog_import),
+                  ),
+                ]
+              : [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: Text(t.dialog_close),
+                  ),
+                  _destructiveFilledButton(
+                    context: context,
+                    label: t.audiobook_remove,
+                    onPressed: () => _removeAudiobook(existing!),
+                  ),
+                ],
+        );
+      },
     );
   }
 
@@ -157,37 +168,42 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     final String audioLabel = (ab.audioPaths != null && ab.audioPaths!.isNotEmpty)
         ? t.srt_import_files_selected(n: ab.audioPaths!.length)
         : (ab.audioRoot ?? '');
-    final AudiobookHealth health = widget.repo.resolveHealth(ab);
-    final Widget? healthRow = _buildHealthRow(health);
-    final bool canReMatch = _canReMatch(ab, health);
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _infoRow(
-          (ab.audioPaths != null && ab.audioPaths!.isNotEmpty)
-              ? Icons.audio_file
-              : Icons.folder_open,
-          audioLabel,
-        ),
-        const SizedBox(height: 8),
-        _infoRow(Icons.align_horizontal_left, ab.alignmentPath),
-        if (healthRow != null) ...[
-          const SizedBox(height: 8),
-          healthRow,
-        ],
-        if (canReMatch) ...[
-          const SizedBox(height: 12),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              onPressed: _importing ? null : () => _openReMatchSheet(ab),
-              icon: const Icon(Icons.tune, size: 18),
-              label: const Text('调整搜索窗口重新匹配'),
+    return FutureBuilder<AudiobookHealth>(
+      future: widget.repo.resolveHealth(ab),
+      builder: (context, snapshot) {
+        final AudiobookHealth health = snapshot.data ?? AudiobookHealth.fromAudiobook(ab);
+        final Widget? healthRow = _buildHealthRow(health);
+        final bool canReMatch = _canReMatch(ab, health);
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _infoRow(
+              (ab.audioPaths != null && ab.audioPaths!.isNotEmpty)
+                  ? Icons.audio_file
+                  : Icons.folder_open,
+              audioLabel,
             ),
-          ),
-        ],
-      ],
+            const SizedBox(height: 8),
+            _infoRow(Icons.align_horizontal_left, ab.alignmentPath),
+            if (healthRow != null) ...[
+              const SizedBox(height: 8),
+              healthRow,
+            ],
+            if (canReMatch) ...[
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: _importing ? null : () => _openReMatchSheet(ab),
+                  icon: const Icon(Icons.tune, size: 18),
+                  label: const Text('调整搜索窗口重新匹配'),
+                ),
+              ),
+            ],
+          ],
+        );
+      },
     );
   }
 
