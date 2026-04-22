@@ -27,6 +27,15 @@ import java.util.List;
 import java.util.Set;
 
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.util.HashMap;
+import java.util.Map;
+
+import android.provider.DocumentsContract;
+import android.database.Cursor;
+import androidx.documentfile.provider.DocumentFile;
 
 import com.ichi2.anki.api.NoteInfo;
 import com.ryanheise.audioservice.AudioServiceActivity;
@@ -35,10 +44,14 @@ import android.content.res.Configuration;
 public class MainActivity extends AudioServiceActivity {
     private static final String ANKIDROID_CHANNEL = "app.hibiki.reader/anki";
     private static final String VOLUME_KEY_CHANNEL = "app.hibiki.reader/volume_keys";
+    private static final String SAF_CHANNEL = "app.hibiki.reader/saf";
     private static final int AD_PERM_REQUEST = 0;
+    private static final int SAF_PICK_DIR_REQUEST = 1001;
 
     private Activity context;
     private AnkiDroidHelper mAnkiDroid;
+    private MethodChannel.Result pendingSafResult;
+    private String pendingSafDestPath;
 
     // Reader opens this gate when volume-key page turning is enabled so
     // dispatchKeyEvent swallows VOLUME_UP/DOWN and forwards them to Dart.
@@ -174,6 +187,52 @@ public class MainActivity extends AudioServiceActivity {
     }
 
     @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == SAF_PICK_DIR_REQUEST) {
+            if (pendingSafResult == null) return;
+            final MethodChannel.Result safResult = pendingSafResult;
+            final String destPath = pendingSafDestPath;
+            pendingSafResult = null;
+            pendingSafDestPath = null;
+            if (resultCode != Activity.RESULT_OK || data == null || data.getData() == null) {
+                safResult.success(null);
+                return;
+            }
+            Uri treeUri = data.getData();
+            new Thread(() -> {
+                try {
+                    DocumentFile dir = DocumentFile.fromTreeUri(context, treeUri);
+                    if (dir == null || !dir.exists()) {
+                        new Handler(Looper.getMainLooper()).post(() ->
+                            safResult.error("NOT_FOUND", "Directory not found", null));
+                        return;
+                    }
+                    File destDir = new File(destPath);
+                    if (destDir.exists()) deleteRecursive(destDir);
+                    destDir.mkdirs();
+                    copyDocumentTree(dir, destDir);
+                    new Handler(Looper.getMainLooper()).post(() ->
+                        safResult.success(destPath));
+                } catch (Exception e) {
+                    new Handler(Looper.getMainLooper()).post(() ->
+                        safResult.error("SAF_ERROR", e.getMessage(), null));
+                }
+            }).start();
+        }
+    }
+
+    private void deleteRecursive(File f) {
+        if (f.isDirectory()) {
+            File[] children = f.listFiles();
+            if (children != null) {
+                for (File child : children) deleteRecursive(child);
+            }
+        }
+        f.delete();
+    }
+
+    @Override
     public void configureFlutterEngine(@NonNull FlutterEngine flutterEngine) {
         super.configureFlutterEngine(flutterEngine);
 
@@ -270,5 +329,78 @@ public class MainActivity extends AudioServiceActivity {
                     }
                 }
             );
+
+        new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), SAF_CHANNEL)
+            .setMethodCallHandler((call, result) -> {
+                switch (call.method) {
+                    case "pickAndCopyDirectory": {
+                        String destPath = call.argument("destPath");
+                        if (destPath == null) {
+                            result.error("INVALID_ARG", "destPath required", null);
+                            return;
+                        }
+                        pendingSafResult = result;
+                        pendingSafDestPath = destPath;
+                        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+                        startActivityForResult(intent, SAF_PICK_DIR_REQUEST);
+                        break;
+                    }
+                    default:
+                        result.notImplemented();
+                }
+            });
+    }
+
+    private void copyDocumentTree(DocumentFile srcDir, File destDir) throws Exception {
+        for (DocumentFile child : srcDir.listFiles()) {
+            String name = child.getName();
+            if (name == null) continue;
+            if (child.isDirectory()) {
+                File subDir = new File(destDir, name);
+                subDir.mkdirs();
+                copyDocumentTree(child, subDir);
+            } else {
+                long size = child.length();
+                if (size > 50 * 1024 * 1024) {
+                    // Large file: create a symlink-like proxy by opening a
+                    // FileDescriptor and hard-linking via /proc/self/fd.
+                    try {
+                        android.os.ParcelFileDescriptor pfd =
+                            getContentResolver().openFileDescriptor(child.getUri(), "r");
+                        if (pfd != null) {
+                            String fdPath = "/proc/self/fd/" + pfd.getFd();
+                            File destFile = new File(destDir, name);
+                            // Copy via fd path which bypasses SAF permission issues
+                            try (InputStream in = new java.io.FileInputStream(fdPath);
+                                 OutputStream out = new FileOutputStream(destFile)) {
+                                byte[] buf = new byte[65536];
+                                int len;
+                                while ((len = in.read(buf)) > 0) {
+                                    out.write(buf, 0, len);
+                                }
+                            }
+                            pfd.close();
+                        }
+                    } catch (Exception e) {
+                        // Fallback: copy via ContentResolver stream
+                        copyFile(child, new File(destDir, name));
+                    }
+                } else {
+                    copyFile(child, new File(destDir, name));
+                }
+            }
+        }
+    }
+
+    private void copyFile(DocumentFile src, File dest) throws Exception {
+        try (InputStream in = getContentResolver().openInputStream(src.getUri());
+             OutputStream out = new FileOutputStream(dest)) {
+            if (in == null) return;
+            byte[] buf = new byte[8192];
+            int len;
+            while ((len = in.read(buf)) > 0) {
+                out.write(buf, 0, len);
+            }
+        }
     }
 }

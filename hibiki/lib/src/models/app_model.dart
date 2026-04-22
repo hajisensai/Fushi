@@ -1513,9 +1513,7 @@ class AppModel with ChangeNotifier {
     required ValueNotifier<int?> totalNotifier,
     required Function() onImportSuccess,
   }) async {
-    debugPrint('[DictFolderImport] scanning ${directory.path}');
     final entities = directory.listSync();
-    debugPrint('[DictFolderImport] found ${entities.length} entities');
     final zipFiles = entities
         .whereType<File>()
         .where((f) {
@@ -1523,7 +1521,6 @@ class AppModel with ChangeNotifier {
           return ext == '.zip' || ext == '.dsl' || ext == '.mdx';
         })
         .toList();
-    debugPrint('[DictFolderImport] zipFiles=${zipFiles.length}');
 
     if (zipFiles.isNotEmpty) {
       final cssFiles = entities
@@ -1539,21 +1536,26 @@ class AppModel with ChangeNotifier {
           });
           if (hasFont) fontDirs.add(d);
         } catch (e) {
-          debugPrint('[DictFolderImport] error scanning subdir ${d.path}: $e');
         }
       }
 
       totalNotifier.value = zipFiles.length;
       for (int i = 0; i < zipFiles.length; i++) {
         countNotifier.value = i + 1;
-        debugPrint('[DictFolderImport] importing ${zipFiles[i].path}');
-        await importDictionary(
-          file: zipFiles[i],
-          progressNotifier: progressNotifier,
-          cssFiles: cssFiles,
-          fontDirs: fontDirs,
-          onImportSuccess: onImportSuccess,
-        );
+        try {
+          await importDictionary(
+            file: zipFiles[i],
+            progressNotifier: progressNotifier,
+            cssFiles: cssFiles,
+            fontDirs: fontDirs,
+            onImportSuccess: onImportSuccess,
+          );
+        } catch (e) {
+          Fluttertoast.showToast(
+            msg: '${path.basenameWithoutExtension(zipFiles[i].path)}: $e',
+            toastLength: Toast.LENGTH_LONG,
+          );
+        }
       }
       return;
     }
@@ -1697,7 +1699,6 @@ class AppModel with ChangeNotifier {
     /// shown below. A dialog is shown to show the progress of the dictionary
     /// file import, with messages pertaining to the above [ValueNotifier].
     try {
-      debugPrint('[DictImport] start file=${file.path} format=${dictionaryFormat.uniqueKey}');
       String charset = '';
 
       if (dictionaryFormat.isTextFormat) {
@@ -1714,7 +1715,6 @@ class AppModel with ChangeNotifier {
       }
 
       resourceDirectory.createSync(recursive: true);
-      debugPrint('[DictImport] tempDir created, starting extract...');
 
       PrepareDirectoryParams prepareDirectoryParams = PrepareDirectoryParams(
         file: file,
@@ -1726,10 +1726,8 @@ class AppModel with ChangeNotifier {
       );
 
       progressNotifier.value = t.import_extract;
-      debugPrint('[DictImport] starting prepareDirectory...');
       await Future<void>.delayed(Duration.zero);
       await dictionaryFormat.prepareDirectory(prepareDirectoryParams);
-      debugPrint('[DictImport] extract done');
 
       String name =
           await dictionaryFormat.prepareName(prepareDirectoryParams);

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:change_notifier_builder/change_notifier_builder.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:reorderables/reorderables.dart';
 import 'package:spaces/spaces.dart';
 import 'package:hibiki/dictionary.dart';
@@ -148,7 +149,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
 
   Widget buildImportButton() {
     return TextButton(
-      child: Text(t.dialog_import),
+      child: Text(t.dialog_import_dictionary),
       onPressed: () async {
         ValueNotifier<String> progressNotifier =
             ValueNotifier<String>(t.import_start);
@@ -217,13 +218,12 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
     );
   }
 
+  static const _safChannel = MethodChannel('app.hibiki.reader/saf');
+
   Widget buildImportFolderButton() {
     return TextButton(
       child: Text(t.dialog_import_folder),
       onPressed: () async {
-        final dirPath = await FilePicker.platform.getDirectoryPath();
-        if (dirPath == null) return;
-
         ValueNotifier<String> progressNotifier =
             ValueNotifier<String>(t.import_start);
         ValueNotifier<int?> countNotifier = ValueNotifier<int?>(null);
@@ -231,6 +231,16 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
         progressNotifier.addListener(() {
           debugPrint('[Dictionary Import] ${progressNotifier.value}');
         });
+
+        final tempDir = Directory(
+          '${appModel.dictionaryResourceDirectory.path}/saf_import_temp',
+        );
+
+        final result = await _safChannel.invokeMethod<String>(
+          'pickAndCopyDirectory',
+          {'destPath': tempDir.path},
+        );
+        if (result == null) return;
 
         if (mounted) {
           showDialog(
@@ -244,16 +254,26 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
           );
         }
 
-        await appModel.importDictionaryFromDirectory(
-          directory: Directory(dirPath),
-          progressNotifier: progressNotifier,
-          countNotifier: countNotifier,
-          totalNotifier: totalNotifier,
-          onImportSuccess: () {
-            _selectedOrder = appModel.dictionaries.last.order;
-            setState(() {});
-          },
-        );
+        try {
+          await appModel.importDictionaryFromDirectory(
+            directory: tempDir,
+            progressNotifier: progressNotifier,
+            countNotifier: countNotifier,
+            totalNotifier: totalNotifier,
+            onImportSuccess: () {
+              _selectedOrder = appModel.dictionaries.last.order;
+              setState(() {});
+            },
+          );
+        } catch (e) {
+          debugPrint('[Dictionary Import] folder import error: $e');
+          progressNotifier.value = '$e';
+          await Future.delayed(const Duration(seconds: 3));
+        } finally {
+          if (tempDir.existsSync()) {
+            tempDir.deleteSync(recursive: true);
+          }
+        }
 
         if (mounted) {
           Navigator.pop(context);
