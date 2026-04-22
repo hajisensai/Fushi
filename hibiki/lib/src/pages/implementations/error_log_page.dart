@@ -30,11 +30,8 @@ class ErrorLogPage extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.share),
             tooltip: '分享',
-            onPressed: () async {
-              final file = await ErrorLogService.instance.getLogFile();
-              if (file != null) {
-                Share.shareXFiles([XFile(file.path)], text: 'Hoshi Reader 错误日志');
-              }
+            onPressed: () {
+              Share.share(log, subject: 'Hoshi Reader 错误日志');
             },
           ),
           IconButton(
