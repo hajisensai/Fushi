@@ -30,7 +30,7 @@ class ClozeAfterField extends Field {
     required WidgetRef ref,
     required AppModel appModel,
     required CreatorModel creatorModel,
-    required DictionaryHeading heading,
+    required DictionaryEntry entry,
     required bool creatorJustLaunched,
     required String? dictionaryName,
   }) {

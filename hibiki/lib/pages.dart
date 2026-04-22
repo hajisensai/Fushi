@@ -30,6 +30,7 @@ export 'src/pages/implementations/reader_ttu_source_page.dart';
 export 'src/pages/implementations/reader_ttu_source_history_page.dart';
 export 'src/pages/implementations/placeholder_source_page.dart';
 export 'src/pages/implementations/ttu_settings_dialog_page.dart';
+export 'src/pages/implementations/custom_theme_page.dart';
 export 'src/pages/implementations/dictionary_settings_dialog_page.dart';
 export 'src/pages/implementations/audio_recorder_page.dart';
 export 'src/pages/implementations/loading_page.dart';

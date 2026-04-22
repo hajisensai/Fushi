@@ -127,6 +127,7 @@ dependencies:
       url: https://github.com/diegotori/wakelock
       ref: 40464c75e908f57f458597ef4912f5273ab89b1a
       path: wakelock
+  dict_reader: ^1.6.0
 dependency_overrides:
   collection: ^1.17.2
   ffi: ^2.0.0

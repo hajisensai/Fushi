@@ -35,7 +35,7 @@ class PlayAudioAction extends QuickAction {
     required WidgetRef ref,
     required AppModel appModel,
     required CreatorModel creatorModel,
-    required DictionaryHeading heading,
+    required DictionaryEntry entry,
     required String? dictionaryName,
   }) async {
     _audioPlayer.stop();
@@ -74,8 +74,8 @@ class PlayAudioAction extends QuickAction {
         File? file = await enhancement.fetchAudio(
           appModel: appModel,
           context: context,
-          term: heading.term,
-          reading: heading.reading,
+          term: entry.word,
+          reading: entry.reading,
         );
 
         if (file != null) {

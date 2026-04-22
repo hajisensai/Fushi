@@ -17,7 +17,7 @@ import 'package:collection/collection.dart';
 class DictionaryTermPage extends ConsumerWidget {
   /// Create the widget for a dictionary word.
   const DictionaryTermPage({
-    required this.heading,
+    required this.entries,
     required this.onSearch,
     required this.onStash,
     required this.onShare,
@@ -31,8 +31,8 @@ class DictionaryTermPage extends ConsumerWidget {
     super.key,
   });
 
-  /// The result made from a dictionary database search.
-  final DictionaryHeading heading;
+  /// The entries for this term grouping.
+  final List<DictionaryEntry> entries;
 
   /// Action to be done upon selecting the search option.
   final Function(String) onSearch;
@@ -44,7 +44,7 @@ class DictionaryTermPage extends ConsumerWidget {
   final Function(String) onShare;
 
   /// Controls expandables by dictionary name.
-  final Map<Dictionary, ExpandableController> expandableControllers;
+  final Map<String, ExpandableController> expandableControllers;
 
   /// Lists whether a dictionary is hidden.
   final Map<String, bool> dictionaryNamesByHidden;
@@ -68,17 +68,21 @@ class DictionaryTermPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    List<DictionaryEntry> entries = heading.entries
+    List<DictionaryEntry> visibleEntries = entries
         .where(
-            (entry) => !dictionaryNamesByHidden[entry.dictionary.value!.name]!)
+            (entry) => !(dictionaryNamesByHidden[entry.dictionaryName] ?? false))
         .toList();
 
-    entries.sort((a, b) => dictionaryNamesByOrder[a.dictionary.value!.name]!
-        .compareTo(dictionaryNamesByOrder[b.dictionary.value!.name]!));
+    visibleEntries.sort((a, b) =>
+        (dictionaryNamesByOrder[a.dictionaryName] ?? 0)
+            .compareTo(dictionaryNamesByOrder[b.dictionaryName] ?? 0));
 
-    if (entries.isEmpty) {
+    if (visibleEntries.isEmpty) {
       return const SliverPadding(padding: EdgeInsets.zero);
     }
+
+    /// Use the first entry for the top row display.
+    final DictionaryEntry primaryEntry = visibleEntries.first;
 
     final ColorScheme scheme = Theme.of(context).colorScheme;
     return SliverStack(
@@ -104,35 +108,24 @@ class DictionaryTermPage extends ConsumerWidget {
                 delegate: SliverChildListDelegate(
                   [
                     _DictionaryTermTopRow(
-                      heading: heading,
+                      entry: primaryEntry,
                       onSearch: onSearch,
                     ),
-                    if (heading.tags.isNotEmpty) const Space.normal(),
-                    if (heading.tags.isNotEmpty)
-                      _DictionaryTermTagsWrap(heading: heading),
                     const Space.normal(),
-                    _DictionaryTermFreqList(
-                      heading: heading,
-                      dictionaryNamesByHidden: dictionaryNamesByHidden,
-                    ),
                   ],
                 ),
-              ),
-              SliverPadding(
-                padding: Spacing.of(context).insets.onlyBottom.normal,
-                sliver: _DictionaryTermPitchList(heading: heading),
               ),
               SliverList(
                 delegate: SliverChildBuilderDelegate(
                   childCount: footerWidget != null
-                      ? entries.length + 1
-                      : entries.length,
+                      ? visibleEntries.length + 1
+                      : visibleEntries.length,
                   (context, index) {
-                    if (index == entries.length && footerWidget != null) {
+                    if (index == visibleEntries.length && footerWidget != null) {
                       return footerWidget;
                     }
 
-                    DictionaryEntry entry = entries[index];
+                    DictionaryEntry entry = visibleEntries[index];
 
                     return DictionaryEntryPage(
                       entry: entry,
@@ -140,7 +133,7 @@ class DictionaryTermPage extends ConsumerWidget {
                       onStash: onStash,
                       onShare: onShare,
                       expandableController:
-                          expandableControllers[entry.dictionary.value!]!,
+                          expandableControllers[entry.dictionaryName]!,
                     );
                   },
                 ),
@@ -155,11 +148,11 @@ class DictionaryTermPage extends ConsumerWidget {
 
 class _DictionaryTermActionsRow extends ConsumerStatefulWidget {
   const _DictionaryTermActionsRow({
-    required this.heading,
+    required this.entry,
   });
 
-  /// The result made from a dictionary database search.
-  final DictionaryHeading heading;
+  /// The primary entry for this term.
+  final DictionaryEntry entry;
 
   @override
   ConsumerState<ConsumerStatefulWidget> createState() =>
@@ -174,7 +167,7 @@ class _DictionaryTermActionsRowState
   Widget build(BuildContext context) {
     AppModel appModel = ref.read(appProvider);
     CreatorModel creatorModel = ref.read(creatorProvider);
-    bool visibleOnce = ref.watch(visibleOnceProvider(widget.heading));
+    bool visibleOnce = ref.watch(visibleOnceProvider(widget.entry));
 
     Map<String, Color?> defaultColors = Map<String, Color?>.fromEntries(
         appModel.quickActions.values.map((e) => MapEntry(e.uniqueKey, null)));
@@ -185,7 +178,7 @@ class _DictionaryTermActionsRowState
         onVisibilityChanged: (info) {
           visibilityInfo = info;
           if (info.visibleFraction > 0) {
-            ref.watch(visibleOnceProvider(widget.heading).notifier).state =
+            ref.watch(visibleOnceProvider(widget.entry).notifier).state =
                 true;
           }
         },
@@ -200,7 +193,7 @@ class _DictionaryTermActionsRowState
     }
 
     AsyncValue<Map<String, Color?>> colors =
-        ref.watch(quickActionColorProvider(widget.heading));
+        ref.watch(quickActionColorProvider(widget.entry));
 
     return colors.when(
       data: (colors) {
@@ -269,11 +262,11 @@ class _DictionaryTermActionsRowState
                 ref: ref,
                 appModel: appModel,
                 creatorModel: creatorModel,
-                heading: widget.heading,
+                entry: widget.entry,
                 dictionaryName: null,
               );
 
-              ref.invalidate(quickActionColorProvider(widget.heading));
+              ref.invalidate(quickActionColorProvider(widget.entry));
             },
           ),
         );
@@ -291,195 +284,20 @@ class _DictionaryTermActionsRowState
   }
 }
 
-class _DictionaryTermPitchList extends ConsumerWidget {
-  const _DictionaryTermPitchList({
-    required this.heading,
-  });
-
-  /// The result made from a dictionary database search.
-  final DictionaryHeading heading;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    AppModel appModel = ref.watch(appProvider);
-
-    List<DictionaryPitch> pitches = heading.pitches
-        .where((pitch) =>
-            !pitch.dictionary.value!.isHidden(appModel.targetLanguage))
-        .toList();
-    if (pitches.isEmpty) {
-      return const SliverPadding(padding: EdgeInsets.zero);
-    }
-
-    pitches.sort((a, b) =>
-        a.dictionary.value!.order.compareTo(b.dictionary.value!.order));
-
-    Map<Dictionary, List<DictionaryPitch>> pitchesByDictionary =
-        groupBy<DictionaryPitch, Dictionary>(
-            pitches, (pitch) => pitch.dictionary.value!);
-
-    return SliverList(
-      delegate: SliverChildBuilderDelegate(
-          childCount: pitchesByDictionary.length, (context, index) {
-        MapEntry<Dictionary, List<DictionaryPitch>> pitchesForDictionary =
-            pitchesByDictionary.entries.elementAt(index);
-        Dictionary dictionary = pitchesForDictionary.key;
-        List<DictionaryPitch> pitches = pitchesForDictionary.value;
-
-        if (pitches.length > 1) {
-          List<Widget> pitchWidgets = pitches
-              .map(
-                (pitch) => Padding(
-                  padding: Spacing.of(context).insets.onlyLeft.normal,
-                  child: appModel.targetLanguage.getPitchWidget(
-                    appModel: appModel,
-                    context: context,
-                    reading: heading.reading,
-                    downstep: pitch.downstep,
-                  ),
-                ),
-              )
-              .toList();
-
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: Spacing.of(context).insets.onlyBottom.semiSmall,
-                child: JidoujishoTag(
-                  text: dictionary.name,
-                  backgroundColor:
-                      Theme.of(context).colorScheme.secondaryContainer,
-                ),
-              ),
-              ...pitchWidgets,
-            ],
-          );
-        } else {
-          List<Widget> pitchWidgets = pitches
-              .map(
-                (pitch) => Padding(
-                  padding: Spacing.of(context).insets.onlyLeft.small,
-                  child: appModel.targetLanguage.getPitchWidget(
-                    appModel: appModel,
-                    context: context,
-                    reading: heading.reading,
-                    downstep: pitch.downstep,
-                  ),
-                ),
-              )
-              .toList();
-
-          return Wrap(
-            children: [
-              JidoujishoTag(
-                text: dictionary.name,
-                backgroundColor:
-                    Theme.of(context).colorScheme.secondaryContainer,
-              ),
-              ...pitchWidgets,
-            ],
-          );
-        }
-      }),
-    );
-  }
-}
-
-class _DictionaryTermFreqList extends ConsumerWidget {
-  const _DictionaryTermFreqList({
-    required this.heading,
-    required this.dictionaryNamesByHidden,
-  });
-
-  /// The result made from a dictionary database search.
-  final DictionaryHeading heading;
-
-  /// Lists whether a dictionary is hidden.
-  final Map<String, bool> dictionaryNamesByHidden;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    AppModel appModel = ref.watch(appProvider);
-
-    List<DictionaryFrequency> frequencies = heading.frequencies
-        .where((frequency) =>
-            !dictionaryNamesByHidden[frequency.dictionary.value!.name]!)
-        .toList();
-
-    frequencies += appModel.getNoReadingFrequencies(heading: heading);
-
-    if (frequencies.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    List<MapEntry<Dictionary, List<DictionaryFrequency>>>
-        frequenciesByDictionary = groupBy<DictionaryFrequency, Dictionary>(
-                frequencies, (frequency) => frequency.dictionary.value!)
-            .entries
-            .toList();
-
-    frequenciesByDictionary.sort((a, b) => a.key.order.compareTo(b.key.order));
-    for (MapEntry<Dictionary, List<DictionaryFrequency>> entries
-        in frequenciesByDictionary) {
-      entries.value.sort((a, b) => a.value.compareTo(b.value));
-    }
-
-    List<Widget> children =
-        frequenciesByDictionary.map((frequenciesForDictionary) {
-      return Padding(
-        padding: Spacing.of(context).insets.onlyBottom.normal,
-        child: JidoujishoTag(
-          text: frequenciesForDictionary.key.name,
-          trailingText: frequenciesForDictionary.value
-              .map((e) => e.displayValue)
-              .join(', '),
-          backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
-        ),
-      );
-    }).toList();
-
-    return Wrap(children: children);
-  }
-}
-
-class _DictionaryTermTagsWrap extends ConsumerWidget {
-  const _DictionaryTermTagsWrap({
-    required this.heading,
-  });
-
-  /// The result made from a dictionary database search.
-  final DictionaryHeading heading;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    List<Widget> children = heading.tags.map((tag) {
-      return JidoujishoTag(
-        text: tag.name,
-        message: tag.notes,
-        backgroundColor: tag.color,
-      );
-    }).toList();
-
-    return Wrap(children: children);
-  }
-}
-
 class _DictionaryTermTopRow extends ConsumerWidget {
   const _DictionaryTermTopRow({
-    required this.heading,
+    required this.entry,
     required this.onSearch,
   });
 
-  /// The result made from a dictionary database search.
-  final DictionaryHeading heading;
+  /// The primary entry for display.
+  final DictionaryEntry entry;
 
   /// Action to be done upon selecting the search option.
   final Function(String) onSearch;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    AppModel appModel = ref.watch(appProvider);
     return FloatColumn(
       children: [
         Floatable(
@@ -490,17 +308,28 @@ class _DictionaryTermTopRow extends ConsumerWidget {
             bottom: Spacing.of(context).spaces.small,
           ),
           child: _DictionaryTermActionsRow(
-            heading: heading,
+            entry: entry,
           ),
         ),
         Floatable(
           float: FCFloat.start,
           child: GestureDetector(
-            child: appModel.targetLanguage.getTermReadingOverrideWidget(
-              context: context,
-              appModel: appModel,
-              heading: heading,
-              onSearch: onSearch,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  entry.word,
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleLarge!
+                      .copyWith(fontWeight: FontWeight.bold),
+                ),
+                if (entry.reading.isNotEmpty)
+                  Text(
+                    entry.reading,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+              ],
             ),
           ),
         ),

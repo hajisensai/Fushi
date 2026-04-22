@@ -86,7 +86,7 @@ abstract class QuickAction {
   /// foreground color.
   Future<Color?> getIconColor({
     required AppModel appModel,
-    required DictionaryHeading heading,
+    required DictionaryEntry entry,
   }) async {
     return null;
   }
@@ -97,7 +97,7 @@ abstract class QuickAction {
     required WidgetRef ref,
     required AppModel appModel,
     required CreatorModel creatorModel,
-    required DictionaryHeading heading,
+    required DictionaryEntry entry,
     required String? dictionaryName,
   });
 }

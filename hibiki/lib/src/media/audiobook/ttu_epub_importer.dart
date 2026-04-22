@@ -135,9 +135,10 @@ class TtuEpubImporter {
 ''';
 
     bool jsDispatched = false;
+    bool navigatedToManage = false;
     webView = HeadlessInAppWebView(
       initialUrlRequest: URLRequest(
-        url: WebUri('http://localhost:$serverPort/manage.html'),
+        url: WebUri('http://localhost:$serverPort/'),
       ),
       initialSettings: InAppWebViewSettings(
         allowFileAccessFromFileURLs: true,
@@ -150,8 +151,15 @@ class TtuEpubImporter {
         ),
       ]),
       onLoadStop: (controller, url) async {
-        log('onLoadStop', 'url=$url jsDispatched=$jsDispatched');
+        log('onLoadStop', 'url=$url navigated=$navigatedToManage jsDispatched=$jsDispatched');
         if (jsDispatched) return;
+        if (!navigatedToManage) {
+          navigatedToManage = true;
+          // SPA 入口已加载，导航到 /manage 让 SvelteKit 路由器挂载文件输入。
+          await controller.evaluateJavascript(
+              source: "window.location.href = '/manage';");
+          return;
+        }
         jsDispatched = true;
         // Manage page may lazy-mount its input; give Svelte a tick.
         await Future<void>.delayed(const Duration(milliseconds: 300));

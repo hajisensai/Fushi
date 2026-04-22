@@ -166,8 +166,7 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
           parent: BouncingScrollPhysics(),
         ),
         slivers: [
-          // spacing for the floating search bar
-          const SliverToBoxAdapter(child: SizedBox(height: 48)),
+          const SliverToBoxAdapter(child: SizedBox(height: 8)),
           // ── SRT section ───────────────────────────────────────────────────
           if (srtBooks.isNotEmpty) ...[
             SliverToBoxAdapter(child: _buildSectionHeader(t.srt_books_section)),

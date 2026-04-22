@@ -4,6 +4,8 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:ui';
 
+import 'package:archive/archive.dart';
+
 import 'package:audio_service/audio_service.dart' as ag;
 import 'package:cancelable_compute/cancelable_compute.dart' as cancelable;
 import 'package:collection/collection.dart';
@@ -39,17 +41,12 @@ import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/reader_position_model.dart';
+import 'package:hibiki/src/media/audiobook/reading_statistic_model.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_model.dart';
 
 /// Schemas used in Isar database.
 final List<CollectionSchema> globalSchemas = [
-  DictionarySchema,
   DictionaryEntrySchema,
-  DictionaryHeadingSchema,
-  DictionaryPitchSchema,
-  DictionaryFrequencySchema,
-  DictionaryTagSchema,
-  DictionarySearchResultSchema,
   MediaItemSchema,
   AnkiMappingSchema,
   SearchHistoryItemSchema,
@@ -57,6 +54,7 @@ final List<CollectionSchema> globalSchemas = [
   AudioCueSchema,
   SrtBookSchema,
   ReaderPositionSchema,
+  ReadingStatisticSchema,
 ];
 
 /// A list of fields that the app will support at runtime.
@@ -100,13 +98,13 @@ final appProvider = ChangeNotifierProvider<AppModel>((ref) {
 
 /// Provides color for all quick actions.
 final quickActionColorProvider =
-    FutureProvider.family<Map<String, Color?>, DictionaryHeading>(
-        (ref, heading) async {
+    FutureProvider.family<Map<String, Color?>, DictionaryEntry>(
+        (ref, entry) async {
   AppModel appModel = ref.watch(appProvider);
   List<Future<Color?>> futures = appModel.quickActions.values.map((e) async {
     return e.getIconColor(
       appModel: appModel,
-      heading: heading,
+      entry: entry,
     );
   }).toList();
 
@@ -119,7 +117,7 @@ final quickActionColorProvider =
 
 /// A global [Provider] for maintaining visible once state.
 final visibleOnceProvider =
-    StateProvider.family<bool, DictionaryHeading>((ref, heading) => false);
+    StateProvider.family<bool, DictionaryEntry>((ref, entry) => false);
 
 /// A global [Provider] for listening to search term changes in PIP mode.
 final pipSearchTermProvider = StateProvider<String>((ref) => '');
@@ -143,8 +141,14 @@ class AppModel with ChangeNotifier {
   /// Used for accessing persistent key-value data. See [initialise].
   late final Box _preferences;
 
-  /// Used for accessing persistent dictonary history. See [initialise].
-  late final Box<int> _dictionaryHistory;
+  /// Used for accessing persistent dictionary data (plain Dart class, not Isar).
+  late final Box<String> _dictionariesBox;
+
+  /// Used for accessing persistent dictionary history as serialized JSON.
+  late final Box<String> _dictionaryHistoryBox;
+
+  /// In-memory list of dictionary history results.
+  final List<DictionarySearchResult> _dictionaryHistoryResults = [];
 
   /// Used for accessing persistent database data. See [initialise].
   late final Isar _database;
@@ -310,7 +314,10 @@ class AppModel with ChangeNotifier {
   /// Returns all dictionaries imported into the database. Sorted by the
   /// user-defined order in the dictionary menu.
   List<Dictionary> get dictionaries =>
-      _database.dictionarys.where().sortByOrder().findAllSync();
+      _dictionariesBox.values
+          .map((e) => Dictionary.fromJson(e))
+          .toList()
+        ..sort((a, b) => a.order.compareTo(b.order));
 
   /// Returns all export profiles.
   List<AnkiMapping> get mappings =>
@@ -319,14 +326,7 @@ class AppModel with ChangeNotifier {
 
   /// Returns all dictionary history results. Oldest is first.
   List<DictionarySearchResult> get dictionaryHistory =>
-      _database.dictionarySearchResults
-          .getAllSync(_dictionaryHistory.values.toList())
-          .nonNulls
-          .toList();
-
-  /// For watching the dictionary history collection.
-  Stream<void> Function(int) get watchDictionaryItem =>
-      _database.dictionarySearchResults.watchObjectLazy;
+      List.unmodifiable(_dictionaryHistoryResults);
 
   /// For invoking pauses from media where needed.
   Stream<void> get currentMediaPauseStream =>
@@ -407,13 +407,11 @@ class AppModel with ChangeNotifier {
   /// 日式沉浸阅读调性。所有 surface / primary / secondary / 对比色都由
   /// [ColorScheme.fromSeed] 推导出来，后续 PR 在组件级替换硬编码色时
   /// 统一走 `colorScheme.*` token。
-  static const Color _seedColor = Color(0xFF1F4959);
+  Color get _seedColor {
+    if (appThemeKey == 'custom-theme') return customThemeSeed;
+    return themePresets[appThemeKey]?.seed ?? const Color(0xFF1F4959);
+  }
 
-  /// Shows when the current mode is a light theme.
-  ///
-  /// PR-1：启用 Material 3，颜色体系整体由 seed 推导；scaffold / appBar /
-  /// card / dialog 的硬编码背景色删掉交给 M3 surface token。switch/slider/
-  /// input 这些组件内还残留 `Colors.red` 引用，留给后续 PR 按组件清理。
   ThemeData get theme => ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
@@ -481,7 +479,6 @@ class AppModel with ChangeNotifier {
         ),
       );
 
-  /// Shows when the current mode is a dark theme.
   ThemeData get darkTheme => ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
@@ -619,9 +616,9 @@ class AppModel with ChangeNotifier {
   /// Update the user-defined order of a given dictionary in the database.
   /// See the dictionary dialog's [ReorderableListView] for usage.
   void updateDictionaryOrder(List<Dictionary> newDictionaries) async {
-    _database.writeTxnSync(() {
-      _database.dictionarys.putAllSync(newDictionaries);
-    });
+    for (final dictionary in newDictionaries) {
+      _dictionariesBox.put(dictionary.name, dictionary.toJson());
+    }
   }
 
   /// Update the user-defined order of a given dictionary in the database.
@@ -727,6 +724,7 @@ class AppModel with ChangeNotifier {
         YomichanFormat.instance,
         MigakuFormat.instance,
         AbbyyLingvoFormat.instance,
+        MdictFormat.instance,
       ],
     );
 
@@ -1036,7 +1034,16 @@ class AppModel with ChangeNotifier {
       /// Initialise persistent key-value store.
       await Hive.initFlutter();
       _preferences = await Hive.openBox('appModel');
-      _dictionaryHistory = await Hive.openBox('dictionaryHistory');
+      _dictionariesBox = await Hive.openBox<String>('dictionaries');
+      _dictionaryHistoryBox = await Hive.openBox<String>('dictionaryHistory');
+
+      /// Restore dictionary history from Hive into memory.
+      _dictionaryHistoryResults.clear();
+      for (final json in _dictionaryHistoryBox.values) {
+        try {
+          _dictionaryHistoryResults.add(DictionarySearchResult.fromJson(json));
+        } catch (_) {}
+      }
 
       /// Permission requests are deferred to the point of use (file import,
       /// Anki export) so they do not block startup.
@@ -1152,19 +1159,65 @@ class AppModel with ChangeNotifier {
     }
   }
 
-  /// Get whether or not the current theme is dark mode.
-  bool get isDarkMode {
-    bool isDarkMode = _preferences.get('is_dark_mode',
-        defaultValue:
-            WidgetsBinding.instance.platformDispatcher.platformBrightness ==
-                Brightness.dark);
-    return isDarkMode;
+  // ── App-wide theme (6 presets matching ttu reader themes) ──────────────
+
+  static const Map<String, ({Color seed, Brightness brightness, String label})>
+      themePresets = {
+    'light-theme': (seed: Color(0xFF1F4959), brightness: Brightness.light, label: '白色'),
+    'ecru-theme': (seed: Color(0xFF8B7355), brightness: Brightness.light, label: '米黄'),
+    'water-theme': (seed: Color(0xFF4A7C8F), brightness: Brightness.light, label: '水蓝'),
+    'gray-theme': (seed: Color(0xFF5C6B73), brightness: Brightness.dark, label: '灰暗'),
+    'dark-theme': (seed: Color(0xFF1F4959), brightness: Brightness.dark, label: '深暗'),
+    'black-theme': (seed: Color(0xFF263238), brightness: Brightness.dark, label: '纯黑'),
+  };
+
+  String get appThemeKey {
+    final String key = _preferences.get('app_theme_key', defaultValue: '');
+    if (key.isEmpty ||
+        (!themePresets.containsKey(key) && key != 'custom-theme')) {
+      final bool sysDark =
+          WidgetsBinding.instance.platformDispatcher.platformBrightness ==
+              Brightness.dark;
+      return sysDark ? 'dark-theme' : 'light-theme';
+    }
+    return key;
   }
 
-  /// Toggle between light and dark mode.
-  void toggleDarkMode() async {
-    await _preferences.put('is_dark_mode', !isDarkMode);
+  Future<void> setAppThemeKey(String key) async {
+    await _preferences.put('app_theme_key', key);
     Restart.restartApp();
+  }
+
+  Color get customThemeSeed {
+    final int v = _preferences.get('custom_theme_seed', defaultValue: 0xFF1F4959);
+    return Color(v);
+  }
+
+  Future<void> setCustomThemeSeed(Color color) async {
+    await _preferences.put('custom_theme_seed', color.toARGB32());
+  }
+
+  bool get customThemeDark {
+    return _preferences.get('custom_theme_dark', defaultValue: false);
+  }
+
+  Future<void> setCustomThemeDark(bool dark) async {
+    await _preferences.put('custom_theme_dark', dark);
+  }
+
+  Future<void> applyCustomTheme({
+    required Color seed,
+    required bool dark,
+  }) async {
+    await setCustomThemeSeed(seed);
+    await setCustomThemeDark(dark);
+    await _preferences.put('app_theme_key', 'custom-theme');
+    Restart.restartApp();
+  }
+
+  bool get isDarkMode {
+    if (appThemeKey == 'custom-theme') return customThemeDark;
+    return themePresets[appThemeKey]?.brightness == Brightness.dark;
   }
 
   /// Get the target language from persisted preferences.
@@ -1342,19 +1395,228 @@ class AppModel with ChangeNotifier {
     notifyListeners();
   }
 
-  /// Start the process of importing a dictionary. This is called from the
-  /// dictionary menu, and starts the process of importing for the
-  /// [lastSelectedDictionaryFormat].
+  DictionaryFormat _detectDictionaryFormat(File file) {
+    final ext = path.extension(file.path).toLowerCase();
+    if (ext == '.dsl') {
+      return dictionaryFormats['abbyy_lingvo']!;
+    }
+    if (ext == '.mdx') {
+      return dictionaryFormats['mdict']!;
+    }
+    if (ext == '.zip') {
+      final fileNames = _readZipFileNames(file);
+
+      if (fileNames.any((f) => f == 'index.json' || f.endsWith('/index.json'))) {
+        return dictionaryFormats['yomichan']!;
+      }
+
+      final hasMdx = fileNames.any((f) => f.endsWith('.mdx') || f.endsWith('.mdd'));
+      if (hasMdx) {
+        return dictionaryFormats['mdict']!;
+      }
+
+      final hasJson = fileNames.any((f) => f.endsWith('.json'));
+      if (hasJson) {
+        return dictionaryFormats['migaku']!;
+      }
+
+      throw Exception('无法识别的词典格式');
+    }
+    throw Exception('不支持的文件格式: $ext');
+  }
+
+  List<String> _readZipFileNames(File file) {
+    final raf = file.openSync();
+    try {
+      final fileLength = raf.lengthSync();
+      final searchLen = fileLength < 65557 ? fileLength : 65557;
+      raf.setPositionSync(fileLength - searchLen);
+      final tail = raf.readSync(searchLen);
+
+      int eocdOffset = -1;
+      for (int i = tail.length - 22; i >= 0; i--) {
+        if (tail[i] == 0x50 &&
+            tail[i + 1] == 0x4b &&
+            tail[i + 2] == 0x05 &&
+            tail[i + 3] == 0x06) {
+          eocdOffset = i;
+          break;
+        }
+      }
+      if (eocdOffset == -1) return [];
+
+      final cdOffset =
+          tail[eocdOffset + 16] |
+          (tail[eocdOffset + 17] << 8) |
+          (tail[eocdOffset + 18] << 16) |
+          (tail[eocdOffset + 19] << 24);
+      final cdSize =
+          tail[eocdOffset + 12] |
+          (tail[eocdOffset + 13] << 8) |
+          (tail[eocdOffset + 14] << 16) |
+          (tail[eocdOffset + 15] << 24);
+
+      raf.setPositionSync(cdOffset);
+      final cdBytes = raf.readSync(cdSize);
+
+      final names = <String>[];
+      int pos = 0;
+      while (pos + 46 <= cdBytes.length) {
+        if (cdBytes[pos] != 0x50 || cdBytes[pos + 1] != 0x4b ||
+            cdBytes[pos + 2] != 0x01 || cdBytes[pos + 3] != 0x02) {
+          break;
+        }
+        final nameLen = cdBytes[pos + 28] | (cdBytes[pos + 29] << 8);
+        final extraLen = cdBytes[pos + 30] | (cdBytes[pos + 31] << 8);
+        final commentLen = cdBytes[pos + 32] | (cdBytes[pos + 33] << 8);
+
+        if (pos + 46 + nameLen <= cdBytes.length) {
+          names.add(
+            String.fromCharCodes(cdBytes, pos + 46, pos + 46 + nameLen)
+                .toLowerCase(),
+          );
+        }
+        pos += 46 + nameLen + extraLen + commentLen;
+      }
+      return names;
+    } finally {
+      raf.closeSync();
+    }
+  }
+
+  DictionaryFormat _detectDictionaryFormatFromDirectory(Directory dir) {
+    final indexFile = File(path.join(dir.path, 'index.json'));
+    if (indexFile.existsSync()) {
+      return dictionaryFormats['yomichan']!;
+    }
+    final hasJson = dir
+        .listSync()
+        .whereType<File>()
+        .any((f) => f.path.toLowerCase().endsWith('.json'));
+    if (hasJson) {
+      return dictionaryFormats['migaku']!;
+    }
+    throw Exception('无法识别的词典格式');
+  }
+
+  Future<void> importDictionaryFromDirectory({
+    required Directory directory,
+    required ValueNotifier<String> progressNotifier,
+    required Function() onImportSuccess,
+  }) async {
+    clearDictionaryResultsCache();
+
+    DictionaryFormat dictionaryFormat =
+        _detectDictionaryFormatFromDirectory(directory);
+
+    ReceivePort receivePort = ReceivePort();
+    receivePort.listen((message) {
+      progressNotifier.value = '$message';
+    });
+
+    ReceivePort alertReceivePort = ReceivePort();
+    alertReceivePort.listen((message) {
+      Fluttertoast.showToast(
+        msg: message.toString(),
+        toastLength: Toast.LENGTH_LONG,
+      );
+    });
+
+    try {
+      final resourceDirectory =
+          Directory(path.join(dictionaryResourceDirectory.path, 'import_temp'));
+      if (resourceDirectory.existsSync()) {
+        resourceDirectory.deleteSync(recursive: true);
+      }
+      _copyDirectory(directory, resourceDirectory);
+
+      PrepareDirectoryParams prepareDirectoryParams = PrepareDirectoryParams(
+        file: File(directory.path),
+        charset: '',
+        directoryPath: _databaseDirectory.path,
+        resourceDirectory: resourceDirectory,
+        dictionaryFormat: dictionaryFormat,
+        sendPort: receivePort.sendPort,
+      );
+
+      progressNotifier.value = t.import_extract;
+
+      String name =
+          await dictionaryFormat.prepareName(prepareDirectoryParams);
+      progressNotifier.value = t.import_name(name: name);
+
+      if (_dictionariesBox.containsKey(name)) {
+        throw Exception(t.import_duplicate(name: name));
+      }
+
+      final currentDictionaries = dictionaries;
+      int order = currentDictionaries.isEmpty
+          ? 1
+          : currentDictionaries
+                  .map((d) => d.order)
+                  .reduce((a, b) => a > b ? a : b) +
+              1;
+
+      final finalResourceDirectory =
+          Directory(path.join(dictionaryResourceDirectory.path, name));
+      if (finalResourceDirectory.existsSync()) {
+        finalResourceDirectory.deleteSync(recursive: true);
+      }
+      resourceDirectory.renameSync(finalResourceDirectory.path);
+
+      Dictionary dictionary = Dictionary(
+        order: order,
+        name: name,
+        formatKey: dictionaryFormat.uniqueKey,
+      );
+
+      PrepareDictionaryParams prepareDictionaryParams = PrepareDictionaryParams(
+        dictionary: dictionary,
+        resourceDirectory: finalResourceDirectory,
+        directoryPath: _databaseDirectory.path,
+        dictionaryFormat: dictionaryFormat,
+        sendPort: receivePort.sendPort,
+        alertSendPort: alertReceivePort.sendPort,
+      );
+
+      await compute(depositDictionaryDataHelper, prepareDictionaryParams);
+
+      _dictionariesBox.put(dictionary.name, dictionary.toJson());
+
+      progressNotifier.value = t.import_complete;
+      onImportSuccess();
+      await Future.delayed(const Duration(seconds: 1), () {});
+    } catch (e) {
+      progressNotifier.value = '$e';
+      await Future.delayed(const Duration(seconds: 3), () {});
+      progressNotifier.value = t.import_failed;
+      await Future.delayed(const Duration(seconds: 1), () {});
+    } finally {
+      receivePort.close();
+    }
+  }
+
+  void _copyDirectory(Directory source, Directory destination) {
+    destination.createSync(recursive: true);
+    for (final entity in source.listSync()) {
+      final newPath =
+          path.join(destination.path, path.basename(entity.path));
+      if (entity is File) {
+        entity.copySync(newPath);
+      } else if (entity is Directory) {
+        _copyDirectory(entity, Directory(newPath));
+      }
+    }
+  }
+
   Future<void> importDictionary({
     required File file,
     required ValueNotifier<String> progressNotifier,
     required Function() onImportSuccess,
   }) async {
-    /// New results may be wrong after dictionary is added so this has to be
-    /// done.
     clearDictionaryResultsCache();
 
-    DictionaryFormat dictionaryFormat = lastSelectedDictionaryFormat;
+    DictionaryFormat dictionaryFormat = _detectDictionaryFormat(file);
 
     /// Importing makes heavy use of isolates as it is very performance
     /// intensive to work with files. In order to ensure the UI isolate isn't
@@ -1390,15 +1652,8 @@ class AppModel with ChangeNotifier {
         charset = result.charset;
       }
 
-      final int highestId = _database.dictionarys
-              .where(sort: Sort.desc)
-              .anyId()
-              .findFirstSync()
-              ?.id ??
-          1;
-      final int id = highestId + 1;
       final Directory resourceDirectory =
-          Directory(path.join(dictionaryResourceDirectory.path, id.toString()));
+          Directory(path.join(dictionaryResourceDirectory.path, 'import_temp'));
       if (resourceDirectory.existsSync()) {
         resourceDirectory.deleteSync(recursive: true);
       }
@@ -1419,21 +1674,27 @@ class AppModel with ChangeNotifier {
 
       String name = await dictionaryFormat.prepareName(prepareDirectoryParams);
       progressNotifier.value = t.import_name(name: name);
-      Dictionary? bottomMostDictionary = _database.dictionarys
-          .where(sort: Sort.desc)
-          .anyOrder()
-          .findFirstSync();
 
-      Dictionary? sameNameDictionary =
-          _database.dictionarys.where().nameEqualTo(name).findFirstSync();
-      if (sameNameDictionary != null) {
+      /// Check for duplicate dictionary by name.
+      if (_dictionariesBox.containsKey(name)) {
         throw Exception(t.import_duplicate(name: name));
       }
 
-      int order = (bottomMostDictionary?.order ?? 0) + 1;
+      /// Determine the order for the new dictionary.
+      final currentDictionaries = dictionaries;
+      int order = currentDictionaries.isEmpty
+          ? 1
+          : currentDictionaries.map((d) => d.order).reduce((a, b) => a > b ? a : b) + 1;
+
+      /// Rename the temp resource directory to use the dictionary name.
+      final finalResourceDirectory =
+          Directory(path.join(dictionaryResourceDirectory.path, name));
+      if (finalResourceDirectory.existsSync()) {
+        finalResourceDirectory.deleteSync(recursive: true);
+      }
+      resourceDirectory.renameSync(finalResourceDirectory.path);
 
       Dictionary dictionary = Dictionary(
-        id: id,
         order: order,
         name: name,
         formatKey: dictionaryFormat.uniqueKey,
@@ -1441,7 +1702,7 @@ class AppModel with ChangeNotifier {
 
       PrepareDictionaryParams prepareDictionaryParams = PrepareDictionaryParams(
         dictionary: dictionary,
-        resourceDirectory: resourceDirectory,
+        resourceDirectory: finalResourceDirectory,
         directoryPath: _databaseDirectory.path,
         dictionaryFormat: dictionaryFormat,
         sendPort: receivePort.sendPort,
@@ -1449,6 +1710,9 @@ class AppModel with ChangeNotifier {
       );
 
       await compute(depositDictionaryDataHelper, prepareDictionaryParams);
+
+      /// Persist dictionary metadata to Hive.
+      _dictionariesBox.put(dictionary.name, dictionary.toJson());
 
       progressNotifier.value = t.import_complete;
       onImportSuccess();
@@ -1466,35 +1730,31 @@ class AppModel with ChangeNotifier {
   /// Toggle a dictionary's between collapsed and expanded state. This will
   /// affect how a dictionary's search results are shown by default.
   void toggleDictionaryCollapsed(Dictionary dictionary) {
-    _database.writeTxnSync(() {
-      if (dictionary.isCollapsed(targetLanguage)) {
-        dictionary.collapsedLanguages = [...dictionary.collapsedLanguages]
-          ..remove(targetLanguage.languageCode);
-      } else {
-        dictionary.collapsedLanguages = [
-          ...dictionary.collapsedLanguages,
-          targetLanguage.languageCode
-        ];
-      }
-      _database.dictionarys.putSync(dictionary);
-    });
+    if (dictionary.isCollapsed(targetLanguage)) {
+      dictionary.collapsedLanguages = [...dictionary.collapsedLanguages]
+        ..remove(targetLanguage.languageCode);
+    } else {
+      dictionary.collapsedLanguages = [
+        ...dictionary.collapsedLanguages,
+        targetLanguage.languageCode
+      ];
+    }
+    _dictionariesBox.put(dictionary.name, dictionary.toJson());
   }
 
   /// Toggle a dictionary's between hidden and shown state. This will
   /// affect how a dictionary's search results are shown by default.
   void toggleDictionaryHidden(Dictionary dictionary) {
-    _database.writeTxnSync(() {
-      if (dictionary.isHidden(targetLanguage)) {
-        dictionary.hiddenLanguages = [...dictionary.hiddenLanguages]
-          ..remove(targetLanguage.languageCode);
-      } else {
-        dictionary.hiddenLanguages = [
-          ...dictionary.hiddenLanguages,
-          targetLanguage.languageCode
-        ];
-      }
-      _database.dictionarys.putSync(dictionary);
-    });
+    if (dictionary.isHidden(targetLanguage)) {
+      dictionary.hiddenLanguages = [...dictionary.hiddenLanguages]
+        ..remove(targetLanguage.languageCode);
+    } else {
+      dictionary.hiddenLanguages = [
+        ...dictionary.hiddenLanguages,
+        targetLanguage.languageCode
+      ];
+    }
+    _dictionariesBox.put(dictionary.name, dictionary.toJson());
   }
 
   /// Delete all dictionary data from the database.
@@ -1510,7 +1770,8 @@ class AppModel with ChangeNotifier {
     );
 
     await compute(deleteDictionariesHelper, params);
-    await _dictionaryHistory.clear();
+    await clearDictionaryHistory();
+    await _dictionariesBox.clear();
 
     if (dictionaryResourceDirectory.existsSync()) {
       dictionaryResourceDirectory.deleteSync(recursive: true);
@@ -1519,7 +1780,7 @@ class AppModel with ChangeNotifier {
     dictionarySearchAgainNotifier.notifyListeners();
   }
 
-  /// Delete all dictionary data from the database.
+  /// Delete a single dictionary's data from the database.
   Future<void> deleteDictionary(Dictionary dictionary) async {
     /// New results may be wrong after dictionary is added so this has to be
     /// done.
@@ -1527,16 +1788,18 @@ class AppModel with ChangeNotifier {
 
     ReceivePort receivePort = ReceivePort();
     DeleteDictionaryParams params = DeleteDictionaryParams(
-      dictionaryId: dictionary.id,
+      dictionaryName: dictionary.name,
       directoryPath: _databaseDirectory.path,
       sendPort: receivePort.sendPort,
     );
 
     await compute(deleteDictionaryHelper, params);
-    await _dictionaryHistory.clear();
+    await clearDictionaryHistory();
+
+    _dictionariesBox.delete(dictionary.name);
 
     final directory = Directory(
-        path.join(dictionaryResourceDirectory.path, dictionary.id.toString()));
+        path.join(dictionaryResourceDirectory.path, dictionary.name));
 
     if (directory.existsSync()) {
       directory.deleteSync(recursive: true);
@@ -1614,7 +1877,6 @@ class AppModel with ChangeNotifier {
       maximumDictionarySearchResults: maximumDictionarySearchResults,
       maximumDictionaryTermsInResult: overrideMaximumTerms ?? maximumTerms,
       searchWithWildcards: searchWithWildcards,
-      enabledDictionaryIds: [],
       sendPort: receivePort.sendPort,
     );
 
@@ -1622,22 +1884,12 @@ class AppModel with ChangeNotifier {
       return DictionarySearchResult(searchTerm: searchTerm);
     }
 
-    /// Searching also persists the result in the database. This is useful for
-    /// dictionary search history, as well as allowing a result to be linked
-    /// to the actual data, rather than duplicating that data within the
-    /// database, which is not ideal for storage purposes.
+    /// Searching returns a DictionarySearchResult directly.
     _searchOperation =
         cancelable.compute(targetLanguage.prepareSearchResults, params);
-    int? id = await _searchOperation?.value;
+    DictionarySearchResult? result = await _searchOperation?.value;
 
-    if (id == null) {
-      return DictionarySearchResult(searchTerm: searchTerm);
-    }
-
-    DictionarySearchResult? result =
-        _database.dictionarySearchResults.getSync(id);
-
-    if (result != null && result.headingIds.isNotEmpty) {
+    if (result != null && result.entries.isNotEmpty) {
       _dictionarySearchCache['$searchTerm/$overrideMaximumTerms'] = result;
       return result;
     } else {
@@ -2832,29 +3084,31 @@ class AppModel with ChangeNotifier {
     );
   }
 
-  /// Update the scroll index of a given [DictionarySearchResult] in the database.
-  Future<void> updateDictionaryResultScrollIndex({
+  /// Update the scroll index of a given [DictionarySearchResult] in memory.
+  void updateDictionaryResultScrollIndex({
     required DictionarySearchResult result,
     required int newIndex,
-  }) async {
-    ReceivePort receivePort = ReceivePort();
-    UpdateDictionaryHistoryParams params = UpdateDictionaryHistoryParams(
-      resultId: result.id!,
-      directoryPath: _databaseDirectory.path,
-      newPosition: newIndex,
-      maximumDictionaryHistoryItems: maximumDictionaryHistoryItems,
-      sendPort: receivePort.sendPort,
-    );
-    await compute(updateDictionaryHistoryHelper, params);
+  }) {
+    result.scrollPosition = newIndex;
+    _persistDictionaryHistory();
   }
 
   /// Clear the entire dictionary history. This must be performed when a
   /// dictionary is deleted, otherwise history data cannot be viewed without
   /// the necessary dictionary metadata.
   Future<void> clearDictionaryHistory() async {
-    await _dictionaryHistory.clear();
+    _dictionaryHistoryResults.clear();
+    await _dictionaryHistoryBox.clear();
 
     dictionaryEntriesNotifier.notifyListeners();
+  }
+
+  /// Persist the in-memory dictionary history to Hive.
+  void _persistDictionaryHistory() {
+    _dictionaryHistoryBox.clear();
+    for (int i = 0; i < _dictionaryHistoryResults.length; i++) {
+      _dictionaryHistoryBox.put(i.toString(), _dictionaryHistoryResults[i].toJson());
+    }
   }
 
   /// Add a [MediaItem] to history. This should be called at startup
@@ -3298,43 +3552,22 @@ class AppModel with ChangeNotifier {
       }
     }
 
-    if (result.headings.isEmpty || result.searchTerm.isEmpty) {
+    if (result.entries.isEmpty || result.searchTerm.isEmpty) {
       return;
     }
 
-    _dictionaryHistory.deleteAll(_dictionaryHistory
-        .toMap()
-        .entries
-        .where((e) => e.value == result.id)
-        .map((e) => e.key)
-        .toList());
+    /// Remove any existing entry with the same search term.
+    _dictionaryHistoryResults.removeWhere(
+        (r) => r.searchTerm == result.searchTerm);
 
-    await _dictionaryHistory.add(result.id!);
+    _dictionaryHistoryResults.add(result);
 
-    int countInSameHistory = _dictionaryHistory.length;
-
-    if (maximumDictionaryHistoryItems < countInSameHistory) {
-      int surplus = countInSameHistory - maximumDictionaryHistoryItems;
-
-      _dictionaryHistory
-          .deleteAll(_dictionaryHistory.keys.toList().sublist(0, surplus));
-    }
-  }
-
-  /// Adds a [DictionarySearchResult] to dictionary history.
-  List<DictionaryFrequency> getNoReadingFrequencies(
-      {required DictionaryHeading heading}) {
-    if (heading.reading.isEmpty) {
-      return [];
+    /// Cap the history to the maximum number of items.
+    while (_dictionaryHistoryResults.length > maximumDictionaryHistoryItems) {
+      _dictionaryHistoryResults.removeAt(0);
     }
 
-    return _database.dictionaryHeadings
-            .getSync(DictionaryHeading.hash(term: heading.term, reading: ''))
-            ?.frequencies
-            .where((frequency) =>
-                !frequency.dictionary.value!.isHidden(targetLanguage))
-            .toList() ??
-        [];
+    _persistDictionaryHistory();
   }
 
   /// Check if the database is still open or has the app been flagged to be

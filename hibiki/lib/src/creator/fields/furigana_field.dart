@@ -6,7 +6,7 @@ import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/language.dart';
 import 'package:hibiki/models.dart';
 
-/// Returns the formatted furigana HTML of a [DictionaryHeading].
+/// Returns the formatted furigana HTML of a [DictionaryEntry].
 class FuriganaField extends Field {
   /// Initialise this field with the predetermined and hardset values.
   FuriganaField._privateConstructor()
@@ -30,7 +30,7 @@ class FuriganaField extends Field {
     required WidgetRef ref,
     required AppModel appModel,
     required CreatorModel creatorModel,
-    required DictionaryHeading heading,
+    required DictionaryEntry entry,
     required bool creatorJustLaunched,
     required String? dictionaryName,
   }) {
@@ -39,7 +39,7 @@ class FuriganaField extends Field {
     }
 
     List<RubyTextData>? rubyDatas = JapaneseLanguage.instance.fetchFurigana(
-      heading: heading,
+      entry: entry,
     );
 
     if (rubyDatas == null) {

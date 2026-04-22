@@ -62,7 +62,7 @@ class _DictionaryEntryPageState extends ConsumerState<DictionaryEntryPage> {
           headerAlignment: ExpandablePanelHeaderAlignment.center,
         ),
         controller: widget.expandableController,
-        header: _DictionaryEntryTagsWrap(entry: widget.entry),
+        header: _DictionaryEntryHeaderWrap(entry: widget.entry),
         collapsed: const SizedBox.shrink(),
         expanded: Padding(
           padding: EdgeInsets.only(
@@ -128,8 +128,8 @@ class _DictionaryEntryPageState extends ConsumerState<DictionaryEntryPage> {
   }
 }
 
-class _DictionaryEntryTagsWrap extends ConsumerWidget {
-  const _DictionaryEntryTagsWrap({
+class _DictionaryEntryHeaderWrap extends ConsumerWidget {
+  const _DictionaryEntryHeaderWrap({
     required this.entry,
   });
 
@@ -137,19 +137,12 @@ class _DictionaryEntryTagsWrap extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    Dictionary dictionary = entry.dictionary.value!;
+    String dictionaryName = entry.dictionaryName;
     List<Widget> children = [
       JidoujishoTag(
-        text: dictionary.name,
+        text: dictionaryName,
         backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
       ),
-      ...entry.tags.map((tag) {
-        return JidoujishoTag(
-          text: tag.name,
-          message: tag.notes,
-          backgroundColor: tag.color,
-        );
-      })
     ];
 
     Widget last = children.removeLast();
@@ -174,9 +167,9 @@ class _DictionaryEntryTagsWrap extends ConsumerWidget {
               onSelected: (value) => value(),
               itemBuilder: (context) => getMenuItems(
                 context: context,
-                dictionary: dictionary,
+                dictionaryName: dictionaryName,
                 ref: ref,
-                heading: entry.heading.value!,
+                entry: entry,
               ),
             ),
           )
@@ -191,9 +184,9 @@ class _DictionaryEntryTagsWrap extends ConsumerWidget {
 
   List<PopupMenuEntry<VoidCallback>> getMenuItems({
     required BuildContext context,
-    required Dictionary dictionary,
+    required String dictionaryName,
     required WidgetRef ref,
-    required DictionaryHeading heading,
+    required DictionaryEntry entry,
   }) {
     AppModel appModel = ref.read(appProvider);
     CreatorModel creatorModel = ref.read(creatorProvider);
@@ -212,11 +205,11 @@ class _DictionaryEntryTagsWrap extends ConsumerWidget {
               ref: ref,
               appModel: appModel,
               creatorModel: creatorModel,
-              heading: heading,
-              dictionaryName: dictionary.name,
+              entry: entry,
+              dictionaryName: dictionaryName,
             );
 
-            ref.invalidate(quickActionColorProvider(heading));
+            ref.invalidate(quickActionColorProvider(entry));
           },
           child: Row(
             children: [

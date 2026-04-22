@@ -56,7 +56,7 @@ class LanguageUtils {
 
   static const KanaKit _kanaKit = KanaKit();
 
-  static const Map<DictionaryHeading, List<RubyTextData>> _furiganaCache = {};
+  static const Map<DictionaryEntry, List<RubyTextData>> _furiganaCache = {};
 
   /// Get whether or not a code point is within the ranges. Assumes [ranges]
   /// is a two element list of integers.
@@ -82,15 +82,15 @@ class LanguageUtils {
     return isCodePointInRanges(codePoint, _kanaRanges);
   }
 
-  /// Generate Furigana for a [DictionaryHeading].
+  /// Generate Furigana for a [DictionaryEntry].
   static List<RubyTextData> distributeFurigana(
-      {required DictionaryHeading heading}) {
-    if (_furiganaCache[heading] != null) {
-      return _furiganaCache[heading]!;
+      {required DictionaryEntry entry}) {
+    if (_furiganaCache[entry] != null) {
+      return _furiganaCache[entry]!;
     }
 
-    String term = heading.term;
-    String reading = heading.reading;
+    String term = entry.word;
+    String reading = entry.reading;
 
     if (reading == term) {
       // The term and reading are the same. No Furigana required.

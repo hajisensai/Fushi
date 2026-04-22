@@ -42,9 +42,9 @@ class JapaneseLanguage extends Language {
   /// Used for processing Japanese characters from Kana to Romaji and so on.
   static KanaKit kanaKit = const KanaKit();
 
-  /// Used to cache furigana segments for already generated [DictionaryHeading]
+  /// Used to cache furigana segments for already generated [DictionaryEntry]
   /// items.
-  final Map<DictionaryHeading, List<RubyTextData>?> segmentsCache = {};
+  final Map<DictionaryEntry, List<RubyTextData>?> segmentsCache = {};
 
   @override
   Future<void> prepareResources() async {
@@ -84,10 +84,10 @@ class JapaneseLanguage extends Language {
   Widget getTermReadingOverrideWidget({
     required BuildContext context,
     required AppModel appModel,
-    required DictionaryHeading heading,
+    required DictionaryEntry entry,
     required Function(String) onSearch,
   }) {
-    /// Responsible for the underline on the heading term.
+    /// Responsible for the underline on the entry word.
     TextStyle indexStyle(int index, String character) {
       if (kanaKit.isKanji(character)) {
         return const TextStyle(
@@ -100,16 +100,16 @@ class JapaneseLanguage extends Language {
     }
 
     /// Responsible for the action performed on tapping a certain character
-    /// on the heading term.
+    /// on the entry word.
     void indexAction(int index, String character) {
       if (kanaKit.isKanji(character)) {
         onSearch(character);
       }
     }
 
-    if (heading.reading.isEmpty) {
+    if (entry.reading.isEmpty) {
       return RubyText(
-        [RubyTextData(heading.term)],
+        [RubyTextData(entry.word)],
         style: Theme.of(context)
             .textTheme
             .titleLarge!
@@ -120,11 +120,11 @@ class JapaneseLanguage extends Language {
       );
     }
 
-    List<RubyTextData>? segments = fetchFurigana(heading: heading);
+    List<RubyTextData>? segments = fetchFurigana(entry: entry);
     return RubyText(
       segments ??
           [
-            RubyTextData(heading.term, ruby: heading.reading),
+            RubyTextData(entry.word, ruby: entry.reading),
           ],
       style: Theme.of(context)
           .textTheme
@@ -138,14 +138,14 @@ class JapaneseLanguage extends Language {
 
   /// Fetch furigana for a certain term and reading. If already obtained,
   /// use the cache.
-  List<RubyTextData>? fetchFurigana({required DictionaryHeading heading}) {
-    if (segmentsCache.containsKey(heading)) {
-      return segmentsCache[heading];
+  List<RubyTextData>? fetchFurigana({required DictionaryEntry entry}) {
+    if (segmentsCache.containsKey(entry)) {
+      return segmentsCache[entry];
     }
     List<RubyTextData> furigana =
-        LanguageUtils.distributeFurigana(heading: heading);
+        LanguageUtils.distributeFurigana(entry: entry);
 
-    segmentsCache[heading] = furigana;
+    segmentsCache[entry] = furigana;
 
     return furigana;
   }
@@ -278,9 +278,7 @@ class JapaneseLanguage extends Language {
 
 /// Top-level function for use in compute. See [Language] for details.
 /// Credits to Matthew Chan for their port of the Yomichan parser to Dart.
-/// Top-level function for use in compute. See [Language] for details.
-/// Credits to Matthew Chan for their port of the Yomichan parser to Dart.
-Future<int?> prepareSearchResultsJapaneseLanguage(
+Future<DictionarySearchResult?> prepareSearchResultsJapaneseLanguage(
     DictionarySearchParams params) async {
   int bestLength = 0;
   String searchTerm = params.searchTerm.trim();
@@ -293,7 +291,7 @@ Future<int?> prepareSearchResultsJapaneseLanguage(
     searchTerm = searchTerm.substring(0, 20);
   }
 
-  int maximumHeadings = params.maximumDictionarySearchResults;
+  int maximumEntries = params.maximumDictionarySearchResults;
 
   if (searchTerm.isEmpty) {
     return null;
@@ -305,10 +303,10 @@ Future<int?> prepareSearchResultsJapaneseLanguage(
     maxSizeMiB: 8192,
   );
 
-  Map<int, DictionaryHeading> uniqueHeadingsById = {};
+  Map<int, DictionaryEntry> uniqueEntriesById = {};
 
   int limit() {
-    return maximumHeadings - uniqueHeadingsById.length;
+    return maximumEntries - uniqueEntriesById.length;
   }
 
   bool shouldSearchWildcards = params.searchWithWildcards &&
@@ -318,9 +316,9 @@ Future<int?> prepareSearchResultsJapaneseLanguage(
           searchTerm.contains('?'));
 
   if (shouldSearchWildcards) {
-    bool noExactMatches = database.dictionaryHeadings
+    bool noExactMatches = database.dictionaryEntrys
         .where()
-        .termEqualTo(searchTerm)
+        .wordEqualTo(searchTerm)
         .isEmptySync();
 
     if (noExactMatches) {
@@ -329,8 +327,8 @@ Future<int?> prepareSearchResultsJapaneseLanguage(
           .replaceAll('？', '?')
           .replaceAll('?', '???');
 
-      List<DictionaryHeading> termMatchHeadings = [];
-      List<DictionaryHeading> readingMatchHeadings = [];
+      List<DictionaryEntry> termMatchEntries = [];
+      List<DictionaryEntry> readingMatchEntries = [];
       String withoutWildcards =
           matchesTerm.replaceAll('?', '').replaceAll('*', '');
       bool matchTermIsKana = kanaKit.isKana(withoutWildcards);
@@ -342,54 +340,47 @@ Future<int?> prepareSearchResultsJapaneseLanguage(
           .replaceAll('？', '?')
           .replaceAll('*', '');
 
-      if (params.maximumDictionaryTermsInResult > uniqueHeadingsById.length) {
+      if (params.maximumDictionaryTermsInResult > uniqueEntriesById.length) {
         if (questionMarkOnly) {
-          termMatchHeadings = database.dictionaryHeadings
+          termMatchEntries = database.dictionaryEntrys
               .where()
-              .termLengthEqualTo(searchTerm.length)
+              .wordLengthEqualTo(searchTerm.length)
               .filter()
-              .termMatches(matchesTerm, caseSensitive: false)
-              .and()
-              .entriesIsNotEmpty()
-              .limit(maximumHeadings - uniqueHeadingsById.length)
+              .wordMatches(matchesTerm, caseSensitive: false)
+              .limit(maximumEntries - uniqueEntriesById.length)
               .findAllSync();
         } else {
-          termMatchHeadings = database.dictionaryHeadings
+          termMatchEntries = database.dictionaryEntrys
               .where()
-              .termLengthGreaterThan(noAsterisks.length, include: true)
+              .wordLengthGreaterThan(noAsterisks.length, include: true)
               .filter()
-              .termMatches(matchesTerm, caseSensitive: false)
-              .and()
-              .entriesIsNotEmpty()
-              .limit(maximumHeadings - uniqueHeadingsById.length)
+              .wordMatches(matchesTerm, caseSensitive: false)
+              .limit(maximumEntries - uniqueEntriesById.length)
               .findAllSync();
         }
       }
 
-      uniqueHeadingsById.addEntries(
-        termMatchHeadings.map(
-          (heading) => MapEntry(heading.id, heading),
-        ),
+      uniqueEntriesById.addEntries(
+        termMatchEntries
+            .where((e) => e.id != null)
+            .map((entry) => MapEntry(entry.id!, entry)),
       );
 
-      if (params.maximumDictionaryTermsInResult > uniqueHeadingsById.length) {
+      if (params.maximumDictionaryTermsInResult > uniqueEntriesById.length) {
         if (matchTermIsKana) {
-          readingMatchHeadings = database.dictionaryHeadings
+          readingMatchEntries = database.dictionaryEntrys
               .where()
               .filter()
-              .entriesIsNotEmpty()
               .readingMatches(matchesTerm)
               .or()
               .optional(matchTermIsKatakana,
                   (q) => q.readingMatches(kanaKit.toHiragana(matchesTerm)))
-              .and()
-              .entriesIsNotEmpty()
               .findAllSync();
 
-          uniqueHeadingsById.addEntries(
-            readingMatchHeadings.map(
-              (heading) => MapEntry(heading.id, heading),
-            ),
+          uniqueEntriesById.addEntries(
+            readingMatchEntries
+                .where((e) => e.id != null)
+                .map((entry) => MapEntry(entry.id!, entry)),
           );
         }
       }
@@ -411,63 +402,59 @@ Future<int?> prepareSearchResultsJapaneseLanguage(
           .toList();
       possibleDeinflections.toSet().addAll(deinflectionsAlreadySearched);
 
-      List<DictionaryHeading> termExactResults = [];
-      List<DictionaryHeading> termDeinflectedResults = [];
-      List<DictionaryHeading> readingExactResults = [];
-      List<DictionaryHeading> readingDeinflectedResults = [];
-      List<DictionaryHeading> termExactKatakanaResults = [];
+      List<DictionaryEntry> termExactResults = [];
+      List<DictionaryEntry> termDeinflectedResults = [];
+      List<DictionaryEntry> readingExactResults = [];
+      List<DictionaryEntry> readingDeinflectedResults = [];
+      List<DictionaryEntry> termExactKatakanaResults = [];
 
-      if (params.maximumDictionaryTermsInResult > uniqueHeadingsById.length) {
+      if (params.maximumDictionaryTermsInResult > uniqueEntriesById.length) {
         /// If an exception is caught, skip the iteration entirely. Something
         /// has gone wrong with building a query for this term and there is
         /// no point continuing for the rest of the queries.
         try {
-          termExactResults = database.dictionaryHeadings
+          termExactResults = database.dictionaryEntrys
               .where()
-              .termEqualTo(partialTerm)
+              .wordEqualTo(partialTerm)
               .or()
               .optional(partialTermIsKatakana,
-                  (q) => q.termEqualTo(kanaKit.toHiragana(partialTerm)))
-              .filter()
-              .entriesIsNotEmpty()
+                  (q) => q.wordEqualTo(kanaKit.toHiragana(partialTerm)))
               .findAllSync();
         } catch (e) {
           await Future.delayed(const Duration(milliseconds: 200), () {});
           continue;
         }
 
-        uniqueHeadingsById.addEntries(
-          termExactResults.map(
-            (heading) => MapEntry(heading.id, heading),
-          ),
+        uniqueEntriesById.addEntries(
+          termExactResults
+              .where((e) => e.id != null)
+              .map((entry) => MapEntry(entry.id!, entry)),
         );
       }
 
-      if (params.maximumDictionaryTermsInResult > uniqueHeadingsById.length) {
+      if (params.maximumDictionaryTermsInResult > uniqueEntriesById.length) {
         if (partialTermIsKana) {
-          readingExactResults = database.dictionaryHeadings
+          readingExactResults = database.dictionaryEntrys
               .where()
               .readingEqualTo(partialTerm)
               .or()
               .optional(partialTermIsKatakana,
                   (q) => q.readingEqualTo(kanaKit.toHiragana(partialTerm)))
-              .filter()
-              .entriesIsNotEmpty()
               .findAllSync();
 
-          uniqueHeadingsById.addEntries(
-            readingExactResults.map(
-              (heading) => MapEntry(heading.id, heading),
-            ),
+          uniqueEntriesById.addEntries(
+            readingExactResults
+                .where((e) => e.id != null)
+                .map((entry) => MapEntry(entry.id!, entry)),
           );
         }
       }
 
-      if (params.maximumDictionaryTermsInResult > uniqueHeadingsById.length) {
-        termDeinflectedResults = database.dictionaryHeadings
+      if (params.maximumDictionaryTermsInResult > uniqueEntriesById.length) {
+        termDeinflectedResults = database.dictionaryEntrys
             .where()
             .anyOf<String, String>(
-                possibleDeinflections, (q, term) => q.termEqualTo(term))
+                possibleDeinflections, (q, term) => q.wordEqualTo(term))
             .or()
             .optional(
                 partialTermIsKatakana,
@@ -475,27 +462,22 @@ Future<int?> prepareSearchResultsJapaneseLanguage(
                     Deinflector.deinflect(kanaKit.toHiragana(partialTerm))
                         .map((e) => e.term)
                         .toList(),
-                    (q, term) => q.termEqualTo(term)))
-            .filter()
-            .entriesIsNotEmpty()
+                    (q, term) => q.wordEqualTo(term)))
             .findAllSync();
 
-        for (DictionaryHeading result in termDeinflectedResults) {
-          result.entries.loadSync();
-        }
         termDeinflectedResults
-            .sort((a, b) => b.popularitySum.compareTo(a.popularitySum));
+            .sort((a, b) => b.popularity.compareTo(a.popularity));
 
-        uniqueHeadingsById.addEntries(
-          termDeinflectedResults.map(
-            (heading) => MapEntry(heading.id, heading),
-          ),
+        uniqueEntriesById.addEntries(
+          termDeinflectedResults
+              .where((e) => e.id != null)
+              .map((entry) => MapEntry(entry.id!, entry)),
         );
       }
 
-      if (params.maximumDictionaryTermsInResult > uniqueHeadingsById.length) {
+      if (params.maximumDictionaryTermsInResult > uniqueEntriesById.length) {
         if (partialTermIsKana) {
-          readingDeinflectedResults = database.dictionaryHeadings
+          readingDeinflectedResults = database.dictionaryEntrys
               .where()
               .anyOf<String, String>(possibleDeinflections,
                   (q, reading) => q.readingEqualTo(reading))
@@ -507,32 +489,28 @@ Future<int?> prepareSearchResultsJapaneseLanguage(
                           .map((e) => e.term)
                           .toList(),
                       (q, term) => q.readingEqualTo(term)))
-              .filter()
-              .entriesIsNotEmpty()
               .limit(limit())
               .findAllSync();
 
-          uniqueHeadingsById.addEntries(
-            readingDeinflectedResults.map(
-              (heading) => MapEntry(heading.id, heading),
-            ),
+          uniqueEntriesById.addEntries(
+            readingDeinflectedResults
+                .where((e) => e.id != null)
+                .map((entry) => MapEntry(entry.id!, entry)),
           );
         }
       }
 
-      if (params.maximumDictionaryTermsInResult > uniqueHeadingsById.length) {
+      if (params.maximumDictionaryTermsInResult > uniqueEntriesById.length) {
         if (partialTermIsHiragana) {
-          termExactKatakanaResults = database.dictionaryHeadings
+          termExactKatakanaResults = database.dictionaryEntrys
               .where()
-              .termEqualTo(kanaKit.toKatakana(partialTerm))
-              .filter()
-              .entriesIsNotEmpty()
+              .wordEqualTo(kanaKit.toKatakana(partialTerm))
               .findAllSync();
 
-          uniqueHeadingsById.addEntries(
-            termExactKatakanaResults.map(
-              (heading) => MapEntry(heading.id, heading),
-            ),
+          uniqueEntriesById.addEntries(
+            termExactKatakanaResults
+                .where((e) => e.id != null)
+                .map((entry) => MapEntry(entry.id!, entry)),
           );
         }
       }
@@ -556,188 +534,83 @@ Future<int?> prepareSearchResultsJapaneseLanguage(
         bestLength = partialTerm.length;
       }
 
-      if (params.maximumDictionaryTermsInResult > uniqueHeadingsById.length) {
+      if (params.maximumDictionaryTermsInResult > uniqueEntriesById.length) {
         if (params.searchWithWildcards) {
           if (i == 0) {
             startsWithAdded = true;
 
-            List<DictionaryHeading> startsWithToAdd = database
-                .dictionaryHeadings
+            List<DictionaryEntry> startsWithToAdd = database.dictionaryEntrys
                 .where()
-                .termStartsWith(searchTerm)
-                .filter()
-                .entriesIsNotEmpty()
-                .sortByTermLength()
+                .wordStartsWith(searchTerm)
+                .sortByWordLength()
                 .findAllSync();
 
-            uniqueHeadingsById.addEntries(startsWithToAdd.map(
-              (heading) => MapEntry(heading.id, heading),
-            ));
+            uniqueEntriesById.addEntries(startsWithToAdd
+                .where((e) => e.id != null)
+                .map((entry) => MapEntry(entry.id!, entry)));
           }
         } else {
-          if (!startsWithAdded && uniqueHeadingsById.isNotEmpty) {
+          if (!startsWithAdded && uniqueEntriesById.isNotEmpty) {
             startsWithAdded = true;
 
-            List<DictionaryHeading> startsWithToAdd = database
-                .dictionaryHeadings
+            List<DictionaryEntry> startsWithToAdd = database.dictionaryEntrys
                 .where()
-                .termStartsWith(searchTerm)
-                .filter()
-                .entriesIsNotEmpty()
-                .sortByTermLength()
+                .wordStartsWith(searchTerm)
+                .sortByWordLength()
                 .findAllSync();
 
-            uniqueHeadingsById.addEntries(startsWithToAdd.map(
-              (heading) => MapEntry(heading.id, heading),
-            ));
+            uniqueEntriesById.addEntries(startsWithToAdd
+                .where((e) => e.id != null)
+                .map((entry) => MapEntry(entry.id!, entry)));
           }
         }
       }
     }
   }
 
-  List<DictionaryHeading> headings =
-      uniqueHeadingsById.values.where((e) => e.entries.isNotEmpty).toList();
-  Map<DictionaryHeading, int> headingOrders = Map.fromEntries(
-    headings.mapIndexed(
-      (index, id) => MapEntry(headings[index], index),
+  List<DictionaryEntry> entries = uniqueEntriesById.values.toList();
+  Map<DictionaryEntry, int> entryOrders = Map.fromEntries(
+    entries.mapIndexed(
+      (index, entry) => MapEntry(entries[index], index),
     ),
   );
 
-  if (headings.isEmpty) {
+  if (entries.isEmpty) {
     return null;
   }
 
-  DictionarySearchResult unsortedResult = DictionarySearchResult(
-    searchTerm: searchTerm,
-    bestLength: bestLength,
-  );
-
-  late int resultId;
-  unsortedResult.headings.addAll(headings);
-
-  database.writeTxnSync(() async {
-    database.dictionarySearchResults.deleteBySearchTermSync(searchTerm);
-    resultId = database.dictionarySearchResults.putSync(unsortedResult);
-  });
-
-  preloadResultSync(resultId);
-
-  List<Dictionary> dictionaries = database.dictionarys.where().findAllSync();
-
-  headings.sort((a, b) {
-    if (a.term == b.term ||
+  /// Sort entries by popularity, preferring entries that match the search term.
+  entries.sort((a, b) {
+    if (a.word == b.word ||
         (a.reading.isNotEmpty && b.reading.isNotEmpty) &&
             a.reading == b.reading) {
-      int hasPopularTag = (a.tags.any((e) => e.name == 'P') ? -1 : 1)
-          .compareTo(b.tags.any((e) => e.name == 'P') ? -1 : 1);
-      if (hasPopularTag != 0) {
-        return hasPopularTag;
-      }
-
-      if (a.term != b.term) {
-        int popularityCompare = b.popularitySum.compareTo(a.popularitySum);
-        if (popularityCompare != 0) {
-          return popularityCompare;
-        }
-      }
-
-      List<DictionaryFrequency> aFrequencies = a.frequencies.toList();
-      List<DictionaryFrequency> bFrequencies = b.frequencies.toList();
-      aFrequencies.sort((a, b) =>
-          a.dictionary.value!.order.compareTo(b.dictionary.value!.order));
-      bFrequencies.sort((a, b) =>
-          a.dictionary.value!.order.compareTo(b.dictionary.value!.order));
-
-      Map<Dictionary, List<DictionaryFrequency>> aFrequenciesByDictionary =
-          groupBy<DictionaryFrequency, Dictionary>(
-              aFrequencies, (frequency) => frequency.dictionary.value!);
-      Map<Dictionary, List<DictionaryFrequency>> bFrequenciesByDictionary =
-          groupBy<DictionaryFrequency, Dictionary>(
-              bFrequencies, (frequency) => frequency.dictionary.value!);
-      Map<Dictionary, double> aValues = aFrequenciesByDictionary
-          .map((k, v) => MapEntry(k, v.map((e) => e.value).min));
-      Map<Dictionary, double> bValues = bFrequenciesByDictionary
-          .map((k, v) => MapEntry(k, v.map((e) => e.value).min));
-
-      Set<Dictionary> sharedDictionaries =
-          aValues.keys.toSet().intersection(bValues.keys.toSet());
-
-      if (aValues.keys.isNotEmpty || bValues.keys.isNotEmpty) {
-        for (Dictionary dictionary in dictionaries) {
-          if (aValues[dictionary] == null && bValues[dictionary] != null) {
-            return 1;
-          } else if (aValues[dictionary] != null &&
-              bValues[dictionary] == null) {
-            return -1;
-          }
-        }
-
-        if (sharedDictionaries.isNotEmpty) {
-          for (Dictionary dictionary in sharedDictionaries) {
-            int freqCompare =
-                aValues[dictionary]!.compareTo(bValues[dictionary]!);
-            if (freqCompare != 0) {
-              return freqCompare;
-            }
-          }
-        }
-      } else {
-        int popularityCompare = b.popularitySum.compareTo(a.popularitySum);
-        if (popularityCompare != 0) {
-          return popularityCompare;
-        }
-      }
-
-      int entriesCompare = b.entries.length.compareTo(a.entries.length);
-      if (entriesCompare != 0) {
-        return entriesCompare;
+      int popularityCompare = b.popularity.compareTo(a.popularity);
+      if (popularityCompare != 0) {
+        return popularityCompare;
       }
     }
 
-    return headingOrders[a]!.compareTo(headingOrders[b]!);
+    return entryOrders[a]!.compareTo(entryOrders[b]!);
   });
 
   /// Prioritise kanji match.
   if (searchTerm.length == 1 && kanaKit.isKanji(searchTerm)) {
-    DictionaryHeading? heading = database.dictionaryHeadings
-        .getSync(DictionaryHeading.hash(term: searchTerm, reading: ''));
-    if (heading != null && heading.entries.isNotEmpty) {
-      headings.remove(heading);
-      headings.insert(0, heading);
+    DictionaryEntry? kanjiEntry = entries.firstWhereOrNull(
+        (e) => e.word == searchTerm && e.reading.isEmpty);
+    if (kanjiEntry != null) {
+      entries.remove(kanjiEntry);
+      entries.insert(0, kanjiEntry);
     }
   }
 
-  headings = headings.sublist(
-      0, min(headings.length, params.maximumDictionaryTermsInResult));
+  entries = entries.sublist(
+      0, min(entries.length, params.maximumDictionaryTermsInResult));
 
-  List<int> headingIds = headings.map((e) => e.id).toList();
-
-  DictionarySearchResult result = DictionarySearchResult(
-    id: resultId,
+  return DictionarySearchResult(
     searchTerm: searchTerm,
+    entries: entries,
     bestLength: bestLength,
-    headingIds: headingIds,
   );
-
-  database.writeTxnSync(() async {
-    result.headings.addAll(headings);
-    resultId =
-        database.dictionarySearchResults.putSync(result, saveLinks: false);
-
-    int countInSameHistory = database.dictionarySearchResults.countSync();
-
-    if (params.maximumDictionarySearchResults < countInSameHistory) {
-      int surplus = countInSameHistory - params.maximumDictionarySearchResults;
-      database.dictionarySearchResults
-          .where()
-          .limit(surplus)
-          .build()
-          .deleteAllSync();
-    }
-  });
-
-  return resultId;
 }
 
 /// Rules for word deinflection.

@@ -108,7 +108,7 @@ class TtuIdbReader {
     bool jsDispatched = false;
     webView = HeadlessInAppWebView(
       initialUrlRequest: URLRequest(
-        url: WebUri('http://localhost:$serverPort/'),
+        url: WebUri('http://localhost:$serverPort/_hibiki_idb.html'),
       ),
       initialSettings: InAppWebViewSettings(
         allowFileAccessFromFileURLs: true,

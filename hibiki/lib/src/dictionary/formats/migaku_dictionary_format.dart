@@ -29,9 +29,6 @@ class MigakuFormat extends DictionaryFormat {
           prepareDirectory: prepareDirectoryMigakuFormat,
           prepareName: prepareNameMigakuFormat,
           prepareEntries: prepareEntriesMigakuFormat,
-          prepareTags: prepareTagsMigakuFormat,
-          preparePitches: preparePitchesMigakuFormat,
-          prepareFrequencies: prepareFrequenciesMigakuFormat,
         );
 
   /// Get the singleton instance of this dictionary format.
@@ -60,7 +57,9 @@ void prepareEntriesMigakuFormat({
   required Isar isar,
 }) async {
   final List<FileSystemEntity> entities = params.resourceDirectory.listSync();
-  final Iterable<File> files = entities.whereType<File>();
+  final Iterable<File> files = entities
+      .whereType<File>()
+      .where((f) => f.path.toLowerCase().endsWith('.json'));
 
   int count = 0;
 
@@ -78,22 +77,15 @@ void prepareEntriesMigakuFormat({
           .replaceAll('<br>', '\n')
           .replaceAll(RegExp('<[^<]+?>'), '');
 
-      int headingId = DictionaryHeading.hash(term: term, reading: reading);
-      DictionaryHeading heading = isar.dictionaryHeadings.getSync(headingId) ??
-          DictionaryHeading(term: term, reading: reading);
-
       DictionaryEntry entry = DictionaryEntry(
-        definitions: [definition],
+        dictionaryName: params.dictionary.name,
+        word: term,
+        reading: reading,
+        meaning: definition,
         popularity: 0,
       );
 
-      entry.heading.value = heading;
-      entry.dictionary.value = params.dictionary;
       isar.dictionaryEntrys.putSync(entry);
-
-      heading.entries.add(entry);
-
-      isar.dictionaryHeadings.putSync(heading);
 
       count++;
       params.send(t.import_found_entry(
@@ -104,21 +96,3 @@ void prepareEntriesMigakuFormat({
 
   params.send(t.import_found_entry(count: count));
 }
-
-/// Top-level function for use in compute. See [DictionaryFormat] for details.
-void prepareTagsMigakuFormat({
-  required PrepareDictionaryParams params,
-  required Isar isar,
-}) async {}
-
-/// Top-level function for use in compute. See [DictionaryFormat] for details.
-void preparePitchesMigakuFormat({
-  required PrepareDictionaryParams params,
-  required Isar isar,
-}) async {}
-
-/// Top-level function for use in compute. See [DictionaryFormat] for details.
-void prepareFrequenciesMigakuFormat({
-  required PrepareDictionaryParams params,
-  required Isar isar,
-}) async {}

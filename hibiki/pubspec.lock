@@ -97,6 +97,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.3.0"
+  blockchain_utils:
+    dependency: transitive
+    description:
+      name: blockchain_utils
+      sha256: "9129a7b13e50c692387b69f24ca82c06360a75094dd0d286e21430c5b1492707"
+      url: "https://pub.dev"
+    source: hosted
+    version: "5.4.0"
   blurrycontainer:
     dependency: "direct main"
     description:
@@ -242,6 +250,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.4.1"
+  charset:
+    dependency: transitive
+    description:
+      name: charset
+      sha256: "27802032a581e01ac565904ece8c8962564b1070690794f0072f6865958ce8b9"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.0.1"
   checked_yaml:
     dependency: transitive
     description:
@@ -402,6 +418,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "7.0.0"
+  dict_reader:
+    dependency: "direct main"
+    description:
+      name: dict_reader
+      sha256: b3b02a7fc90b52875b24f329a1559c68d0a5045f7c321fb4659563a09ef68539
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.6.0"
   dio:
     dependency: "direct main"
     description:
@@ -803,6 +827,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.15.3"
+  html_unescape:
+    dependency: transitive
+    description:
+      name: html_unescape
+      sha256: "15362d7a18f19d7b742ef8dcb811f5fd2a2df98db9f80ea393c075189e0b61e3"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.0.0"
   http:
     dependency: "direct main"
     description:

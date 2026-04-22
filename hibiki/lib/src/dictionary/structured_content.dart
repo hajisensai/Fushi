@@ -4,6 +4,10 @@ import 'package:html/dom.dart' as dom;
 
 part 'structured_content.mapper.dart';
 
+Map<String, String> _toDataAttributes(Map<String, String> data) {
+  return data.map((k, v) => MapEntry('data-$k', v));
+}
+
 /// Used for handling nested content when decoding [StructuredContent].
 class ContentHook extends MappingHook {
   /// Initialise this object.
@@ -307,7 +311,7 @@ class StructuredContentContainer extends StructuredContent
     final containerNode = dom.Element.tag(tag);
 
     containerNode.attributes.addAll({
-      if (data != null) ...data!,
+      if (data != null) ..._toDataAttributes(data!),
       if (lang != null) 'lang': lang!,
     });
 
@@ -363,7 +367,7 @@ class StructuredContentStyledContainer extends StructuredContent
     final containerNode = dom.Element.tag(tag);
 
     containerNode.attributes.addAll({
-      if (data != null) ...data!,
+      if (data != null) ..._toDataAttributes(data!),
       if (lang != null) 'lang': lang!,
       if (style != null) 'style': style!.toInlineStyle()
     });
@@ -425,7 +429,7 @@ class StructuredContentTableElement extends StructuredContent
     final node = dom.Element.tag(tag);
 
     node.attributes.addAll({
-      if (data != null) ...data!,
+      if (data != null) ..._toDataAttributes(data!),
       if (lang != null) 'lang': lang!,
       if (style != null) 'style': style!.toInlineStyle(),
       if (colSpan != null) 'colspan': colSpan!.toString(),

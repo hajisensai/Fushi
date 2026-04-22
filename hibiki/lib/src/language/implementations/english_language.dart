@@ -55,7 +55,7 @@ class EnglishLanguage extends Language {
 }
 
 /// Top-level function for use in compute. See [Language] for details.
-Future<int?> prepareSearchResultsEnglishLanguage(
+Future<DictionarySearchResult?> prepareSearchResultsEnglishLanguage(
     DictionarySearchParams params) async {
   final Lemmatizer lemmatizer = Lemmatizer();
   final Isar database = await Isar.open(
@@ -79,12 +79,8 @@ Future<int?> prepareSearchResultsEnglishLanguage(
       .replaceAll('\'s', ' is')
       .replaceAll('\'re', ' are')
       .replaceAll('\'d', ' would')
-      .replaceAll('won’t', 'will not')
-      .replaceAll('can’t', 'cannot')
-      .replaceAll('i’m', 'i am')
-      .replaceAll('ain’t', 'is not')
+      .replaceAll('’t', ' not')
       .replaceAll('’ll', ' will')
-      .replaceAll('n’t', ' not')
       .replaceAll('’ve', ' have')
       .replaceAll('’s', ' is')
       .replaceAll('’re', ' are')
@@ -94,27 +90,27 @@ Future<int?> prepareSearchResultsEnglishLanguage(
     return null;
   }
 
-  int maximumHeadings = params.maximumDictionarySearchResults;
+  int maximumEntries = params.maximumDictionarySearchResults;
 
-  Map<int, DictionaryHeading> uniqueHeadingsById = {};
+  Map<int, DictionaryEntry> uniqueEntriesById = {};
 
   int limit() {
-    return maximumHeadings - uniqueHeadingsById.length;
+    return maximumEntries - uniqueEntriesById.length;
   }
 
   bool shouldSearchWildcards = params.searchWithWildcards &&
       (searchTerm.contains('*') || searchTerm.contains('?'));
 
   if (shouldSearchWildcards) {
-    bool noExactMatches = database.dictionaryHeadings
+    bool noExactMatches = database.dictionaryEntrys
         .where()
-        .termEqualTo(searchTerm)
+        .wordEqualTo(searchTerm)
         .isEmptySync();
 
     if (noExactMatches) {
       String matchesTerm = searchTerm;
 
-      List<DictionaryHeading> termMatchHeadings = [];
+      List<DictionaryEntry> termMatchEntries = [];
 
       bool questionMarkOnly = !matchesTerm.contains('*');
       String noAsterisks = searchTerm
@@ -122,40 +118,36 @@ Future<int?> prepareSearchResultsEnglishLanguage(
           .replaceAll('？', '?')
           .replaceAll('*', '');
 
-      if (params.maximumDictionaryTermsInResult > uniqueHeadingsById.length) {
+      if (params.maximumDictionaryTermsInResult > uniqueEntriesById.length) {
         if (questionMarkOnly) {
-          termMatchHeadings = database.dictionaryHeadings
+          termMatchEntries = database.dictionaryEntrys
               .where()
-              .termLengthEqualTo(searchTerm.length)
+              .wordLengthEqualTo(searchTerm.length)
               .filter()
-              .termMatches(matchesTerm, caseSensitive: false)
-              .and()
-              .entriesIsNotEmpty()
-              .limit(maximumHeadings - uniqueHeadingsById.length)
+              .wordMatches(matchesTerm, caseSensitive: false)
+              .limit(maximumEntries - uniqueEntriesById.length)
               .findAllSync();
         } else {
-          termMatchHeadings = database.dictionaryHeadings
+          termMatchEntries = database.dictionaryEntrys
               .where()
-              .termLengthGreaterThan(noAsterisks.length, include: true)
+              .wordLengthGreaterThan(noAsterisks.length, include: true)
               .filter()
-              .termMatches(matchesTerm, caseSensitive: false)
-              .and()
-              .entriesIsNotEmpty()
-              .limit(maximumHeadings - uniqueHeadingsById.length)
+              .wordMatches(matchesTerm, caseSensitive: false)
+              .limit(maximumEntries - uniqueEntriesById.length)
               .findAllSync();
         }
       }
 
-      uniqueHeadingsById.addEntries(
-        termMatchHeadings.map(
-          (heading) => MapEntry(heading.id, heading),
+      uniqueEntriesById.addEntries(
+        termMatchEntries.map(
+          (entry) => MapEntry(entry.id!, entry),
         ),
       );
     }
   } else {
-    Map<int, List<DictionaryHeading>> termExactResultsByLength = {};
-    Map<int, List<DictionaryHeading>> termDeinflectedResultsByLength = {};
-    Map<int, List<DictionaryHeading>> termStartsWithResultsByLength = {};
+    Map<int, List<DictionaryEntry>> termExactResultsByLength = {};
+    Map<int, List<DictionaryEntry>> termDeinflectedResultsByLength = {};
+    Map<int, List<DictionaryEntry>> termStartsWithResultsByLength = {};
 
     List<String> segments = searchTerm.splitWithDelim(RegExp('[ -\']'));
 
@@ -228,30 +220,30 @@ Future<int?> prepareSearchResultsEnglishLanguage(
           )
           .toList();
 
-      List<DictionaryHeading> termExactResults = [];
-      List<DictionaryHeading> termDeinflectedResults = [];
-      List<DictionaryHeading> termStartsWithResults = [];
+      List<DictionaryEntry> termExactResults = [];
+      List<DictionaryEntry> termDeinflectedResults = [];
+      List<DictionaryEntry> termStartsWithResults = [];
 
-      termExactResults = database.dictionaryHeadings
+      termExactResults = database.dictionaryEntrys
           .where(sort: Sort.desc)
-          .termEqualTo(partialTerm)
+          .wordEqualTo(partialTerm)
           .limit(limit())
           .findAllSync();
 
       if (possibleDeinflections.isNotEmpty) {
-        termDeinflectedResults = database.dictionaryHeadings
+        termDeinflectedResults = database.dictionaryEntrys
             .where()
             .anyOf<String, String>(
-                possibleDeinflections, (q, term) => q.termEqualTo(term))
+                possibleDeinflections, (q, term) => q.wordEqualTo(term))
             .limit(limit())
             .findAllSync();
       }
 
       if (partialTerm.length >= 3) {
-        termStartsWithResults = database.dictionaryHeadings
+        termStartsWithResults = database.dictionaryEntrys
             .where()
-            .termStartsWith(partialTerm)
-            .sortByTermLength()
+            .wordStartsWith(partialTerm)
+            .sortByWordLength()
             .limit(limit())
             .findAllSync();
       }
@@ -273,89 +265,59 @@ Future<int?> prepareSearchResultsEnglishLanguage(
     }
 
     for (int length = searchTerm.length; length > 0; length--) {
-      List<MapEntry<int, DictionaryHeading>> exactHeadingsToAdd = [
+      List<MapEntry<int, DictionaryEntry>> exactEntriesToAdd = [
         ...(termExactResultsByLength[length] ?? [])
-            .map((heading) => MapEntry(heading.id, heading)),
+            .where((e) => e.id != null)
+            .map((entry) => MapEntry(entry.id!, entry)),
       ];
 
-      List<MapEntry<int, DictionaryHeading>> deinflectedHeadingsToAdd = [
+      List<MapEntry<int, DictionaryEntry>> deinflectedEntriesToAdd = [
         ...(termDeinflectedResultsByLength[length] ?? [])
-            .map((entry) => MapEntry(entry.id, entry)),
+            .where((e) => e.id != null)
+            .map((entry) => MapEntry(entry.id!, entry)),
       ];
 
-      uniqueHeadingsById.addEntries(exactHeadingsToAdd);
-      uniqueHeadingsById.addEntries(deinflectedHeadingsToAdd);
+      uniqueEntriesById.addEntries(exactEntriesToAdd);
+      uniqueEntriesById.addEntries(deinflectedEntriesToAdd);
 
       if (params.searchWithWildcards) {
         for (int length = searchTerm.length; length > 0; length--) {
-          List<MapEntry<int, DictionaryHeading>> startsWithHeadingsToAdd = [
+          List<MapEntry<int, DictionaryEntry>> startsWithEntriesToAdd = [
             ...(termStartsWithResultsByLength[length] ?? [])
-                .map((heading) => MapEntry(heading.id, heading)),
+                .where((e) => e.id != null)
+                .map((entry) => MapEntry(entry.id!, entry)),
           ];
 
-          uniqueHeadingsById.addEntries(startsWithHeadingsToAdd);
+          uniqueEntriesById.addEntries(startsWithEntriesToAdd);
         }
       }
     }
 
     if (!params.searchWithWildcards) {
       for (int length = searchTerm.length; length > 0; length--) {
-        List<MapEntry<int, DictionaryHeading>> startsWithHeadingsToAdd = [
+        List<MapEntry<int, DictionaryEntry>> startsWithEntriesToAdd = [
           ...(termStartsWithResultsByLength[length] ?? [])
-              .map((heading) => MapEntry(heading.id, heading)),
+              .where((e) => e.id != null)
+              .map((entry) => MapEntry(entry.id!, entry)),
         ];
 
-        uniqueHeadingsById.addEntries(startsWithHeadingsToAdd);
+        uniqueEntriesById.addEntries(startsWithEntriesToAdd);
       }
     }
   }
 
-  List<DictionaryHeading> headings =
-      uniqueHeadingsById.values.where((e) => e.entries.isNotEmpty).toList();
+  List<DictionaryEntry> entries = uniqueEntriesById.values.toList();
 
-  if (headings.isEmpty) {
+  if (entries.isEmpty) {
     return null;
   }
 
-  DictionarySearchResult unsortedResult = DictionarySearchResult(
+  entries = entries.sublist(
+      0, min(entries.length, params.maximumDictionaryTermsInResult));
+
+  return DictionarySearchResult(
     searchTerm: searchTerm,
+    entries: entries,
     bestLength: bestLength,
   );
-  unsortedResult.headings.addAll(headings);
-
-  late int resultId;
-  database.writeTxnSync(() async {
-    database.dictionarySearchResults.deleteBySearchTermSync(searchTerm);
-    resultId = database.dictionarySearchResults.putSync(unsortedResult);
-  });
-
-  preloadResultSync(resultId);
-
-  headings = headings.sublist(
-      0, min(headings.length, params.maximumDictionaryTermsInResult));
-  List<int> headingIds = headings.map((e) => e.id).toList();
-
-  DictionarySearchResult result = DictionarySearchResult(
-    id: resultId,
-    searchTerm: searchTerm,
-    bestLength: bestLength,
-    headingIds: headingIds,
-  );
-
-  database.writeTxnSync(() async {
-    resultId = database.dictionarySearchResults.putSync(result);
-
-    int countInSameHistory = database.dictionarySearchResults.countSync();
-
-    if (params.maximumDictionarySearchResults < countInSameHistory) {
-      int surplus = countInSameHistory - params.maximumDictionarySearchResults;
-      database.dictionarySearchResults
-          .where()
-          .limit(surplus)
-          .build()
-          .deleteAllSync();
-    }
-  });
-
-  return resultId;
 }

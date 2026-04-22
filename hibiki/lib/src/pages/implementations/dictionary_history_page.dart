@@ -104,14 +104,20 @@ class _DictionaryHistoryScrollableItemState
     super.build(context);
 
     DictionarySearchResult result = widget.result;
-    Map<int, DictionaryHeading> headingsById = Map.fromEntries(
-      result.headings.map(
-        (heading) => MapEntry(heading.id, heading),
-      ),
-    );
+    List<DictionaryEntry> entries = result.entries;
 
-    List<DictionaryHeading> headings =
-        result.headingIds.map((id) => headingsById[id]).nonNulls.toList();
+    if (entries.isEmpty) {
+      return const SliverPadding(padding: EdgeInsets.zero);
+    }
+
+    /// Group entries by (word, reading) to form term groups.
+    final Map<String, List<DictionaryEntry>> groupedEntries = {};
+    for (final entry in entries) {
+      final key = '${entry.word}\n${entry.reading}';
+      groupedEntries.putIfAbsent(key, () => []).add(entry);
+    }
+
+    final termKeys = groupedEntries.keys.toList();
 
     List<Dictionary> dictionaries = appModel.dictionaries;
     Map<String, bool> dictionaryNamesByHidden = Map<String, bool>.fromEntries(
@@ -123,38 +129,35 @@ class _DictionaryHistoryScrollableItemState
     Map<String, int> dictionaryNamesByOrder = Map<String, int>.fromEntries(
         dictionaries.map((e) => MapEntry(e.name, e.order)));
 
-    final Map<DictionaryHeading, Map<Dictionary, ExpandableController>>
-        expandableControllersByHeading = {};
-    for (DictionaryHeading heading in headings) {
-      expandableControllersByHeading.putIfAbsent(heading, () => {});
-      for (DictionaryEntry entry in heading.entries) {
-        Dictionary dictionary = entry.dictionary.value!;
-        expandableControllersByHeading[heading]?.putIfAbsent(
-          dictionary,
+    final Map<String, Map<String, ExpandableController>>
+        expandableControllersByTermKey = {};
+    for (final termKey in termKeys) {
+      expandableControllersByTermKey.putIfAbsent(termKey, () => {});
+      for (DictionaryEntry entry in groupedEntries[termKey]!) {
+        expandableControllersByTermKey[termKey]?.putIfAbsent(
+          entry.dictionaryName,
           () => ExpandableController(
-            initialExpanded: !dictionaryNamesByCollapsed[dictionary.name]!,
+            initialExpanded:
+                !(dictionaryNamesByCollapsed[entry.dictionaryName] ?? false),
           ),
         );
       }
     }
 
-    if (headings.isEmpty) {
-      return const SliverPadding(padding: EdgeInsets.zero);
-    }
-
-    DictionaryHeading heading = headings.first;
+    /// Show the first term group.
+    final firstTermKey = termKeys.first;
 
     return DictionaryTermPage(
       lastSelectedMapping: widget.lastSelectedMapping,
-      heading: heading,
+      entries: groupedEntries[firstTermKey]!,
       onSearch: widget.onSearch,
       onStash: widget.onStash,
       onShare: widget.onShare,
-      expandableControllers: expandableControllersByHeading[heading]!,
+      expandableControllers: expandableControllersByTermKey[firstTermKey]!,
       dictionaryNamesByHidden: dictionaryNamesByHidden,
       dictionaryNamesByOrder: dictionaryNamesByOrder,
-      footerWidget: headings.length > 1
-          ? buildFooterWidget(result: result, length: headings.length)
+      footerWidget: termKeys.length > 1
+          ? buildFooterWidget(result: result, length: termKeys.length)
           : null,
     );
   }

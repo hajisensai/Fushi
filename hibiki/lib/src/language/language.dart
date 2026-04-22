@@ -74,7 +74,7 @@ abstract class Language {
 
   /// Overrides the base search function and implements search specific to
   /// a language.
-  final Future<int?> Function(DictionarySearchParams params)
+  final Future<DictionarySearchResult?> Function(DictionarySearchParams params)
       prepareSearchResults;
 
   /// A standard format that dictionaries of this language can be found in.
@@ -333,9 +333,9 @@ abstract class Language {
     if (isSpaceDelimited) {
       RegExp regex = RegExp('[ ]');
 
-      int numberOfWords = result?.headings
-              .firstWhereOrNull((e) => e.id == result.headingIds.first)
-              ?.term
+      int numberOfWords = result?.entries
+              .firstOrNull
+              ?.word
               .splitWithDelim(regex)
               .length ??
           1;
@@ -378,21 +378,21 @@ abstract class Language {
   Widget getTermReadingOverrideWidget({
     required BuildContext context,
     required AppModel appModel,
-    required DictionaryHeading heading,
+    required DictionaryEntry entry,
     required Function(String) onSearch,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          heading.term,
+          entry.word,
           style: Theme.of(context)
               .textTheme
               .titleLarge!
               .copyWith(fontWeight: FontWeight.bold),
         ),
         Text(
-          heading.reading,
+          entry.reading,
           style: Theme.of(context).textTheme.titleMedium,
         ),
       ],
@@ -412,6 +412,7 @@ abstract class Language {
 }
 
 /// Top-level function for use in compute. See [Language] for details.
-Future<int?> prepareSearchResultsStandard(DictionarySearchParams params) {
+Future<DictionarySearchResult?> prepareSearchResultsStandard(
+    DictionarySearchParams params) {
   throw UnimplementedError();
 }

@@ -238,12 +238,25 @@ class ReaderTtuSource extends ReaderMediaSource {
 
     List<MediaItem>? items;
 
+    bool jsInjected = false;
     HeadlessInAppWebView webView = HeadlessInAppWebView(
       initialUrlRequest: URLRequest(
-        url: WebUri('http://localhost:$port/'),
+        url: WebUri('http://localhost:$port/_hibiki_idb.html'),
       ),
+      onLoadStart: (controller, url) {
+        debugPrint('[hibiki-books] headless onLoadStart: $url');
+      },
       onLoadStop: (controller, url) async {
-        controller.evaluateJavascript(source: getHistoryJs);
+        debugPrint('[hibiki-books] headless onLoadStop: $url');
+        if (!jsInjected) {
+          jsInjected = true;
+          controller.evaluateJavascript(source: getHistoryJs);
+        }
+      },
+      onReceivedError: (controller, request, error) {
+        debugPrint('[hibiki-books] headless onReceivedError: '
+            '${error.type} ${error.description} url=${request.url}');
+        items ??= [];
       },
       onConsoleMessage: (controller, message) async {
         try {
@@ -281,7 +294,9 @@ class ReaderTtuSource extends ReaderMediaSource {
                 break;
             }
           }
-        } on FormatException catch (_) {}
+        } on FormatException catch (e) {
+          debugPrint('[hibiki-books] non-JSON console: ${message.message.length > 200 ? message.message.substring(0, 200) : message.message}');
+        }
       },
     );
 
@@ -327,12 +342,16 @@ class ReaderTtuSource extends ReaderMediaSource {
     final int port = getPortForLanguage(language);
     final completer = Completer<bool>();
 
+    bool jsInjected = false;
     final HeadlessInAppWebView webView = HeadlessInAppWebView(
       initialUrlRequest: URLRequest(
-        url: WebUri('http://localhost:$port/'),
+        url: WebUri('http://localhost:$port/_hibiki_idb.html'),
       ),
       onLoadStop: (controller, url) async {
-        await controller.evaluateJavascript(source: _buildDeleteBookJs(bookId));
+        if (!jsInjected) {
+          jsInjected = true;
+          await controller.evaluateJavascript(source: _buildDeleteBookJs(bookId));
+        }
       },
       onConsoleMessage: (controller, message) async {
         try {
@@ -602,14 +621,15 @@ new Promise(function(resolve) {
 
   /// 在 WebView 加载后将 Hive 偏好写入 ttu localStorage。
   Future<void> applyReaderSettings(
-    InAppWebViewController controller,
-  ) async {
+    InAppWebViewController controller, {
+    required String appThemeKey,
+  }) async {
     final List<String> cmds = [
       'window.localStorage.setItem("fontSize",${ttuFontSize})',
       'window.localStorage.setItem("lineHeight",${ttuLineHeight})',
       'window.localStorage.setItem("writingMode","$ttuWritingMode")',
       'window.localStorage.setItem("viewMode","$ttuViewMode")',
-      'window.localStorage.setItem("theme","$ttuTheme")',
+      'window.localStorage.setItem("theme","$appThemeKey")',
       'window.localStorage.setItem("hideFurigana","$ttuHideFurigana")',
     ];
     await controller.evaluateJavascript(source: cmds.join(';'));

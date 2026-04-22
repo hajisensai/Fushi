@@ -191,7 +191,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
           if (mounted) {
             setState(() {
               _isSearching = false;
-              _showMore = _result!.headings.length < overrideMaximumTerms!;
+              _showMore = _result!.entries.length < overrideMaximumTerms!;
             });
           }
           Future.delayed(historyDelay, () async {
@@ -200,7 +200,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
                 historyKey: mediaType.uniqueKey,
                 searchTerm: mediaType.floatingSearchBarController.query,
               );
-              if (_result!.headings.isNotEmpty) {
+              if (_result!.entries.isNotEmpty) {
                 appModel.addToDictionaryHistory(result: _result!);
               }
             }
@@ -401,14 +401,14 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
       }
     }
     if (_isSearching) {
-      if (_result != null && _result!.headings.isNotEmpty) {
+      if (_result != null && _result!.entries.isNotEmpty) {
         return buildSearchResult();
       } else {
         return const SizedBox.shrink();
       }
     }
 
-    if (_result == null || _result!.headings.isEmpty) {
+    if (_result == null || _result!.entries.isEmpty) {
       return buildNoSearchResultsPlaceholderMessage();
     }
 
@@ -442,7 +442,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
                     search(
                       mediaType.floatingSearchBarController.query,
                       overrideMaximumTerms:
-                          _result!.headingIds.length + appModel.maximumTerms,
+                          _result!.entries.length + appModel.maximumTerms,
                     );
                   },
             child: Container(

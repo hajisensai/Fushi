@@ -35,49 +35,17 @@ class MeaningField extends Field {
     Map<String, List<DictionaryEntry>> entriesByDictionaryName =
         groupBy<DictionaryEntry, String>(
       entries,
-      (entry) => entry.dictionary.value!.name,
+      (entry) => entry.dictionaryName,
     );
 
     entriesByDictionaryName.forEach((dictionaryName, singleDictionaryEntries) {
-      int meaningsCount = 0;
-      for (DictionaryEntry entry in singleDictionaryEntries) {
-        meaningsCount += entry.definitions.length;
-      }
-
       if (prependDictionaryNames) {
         meaningBuffer.writeln('【$dictionaryName】');
       }
 
       for (DictionaryEntry entry in singleDictionaryEntries) {
-        DictionaryFormat dictionaryFormat =
-            appModel.getDictionaryFormat(entry.dictionary.value!);
-
-        if (singleDictionaryEntries.length == 1) {
-          entry.definitions.forEachIndexed((index, meaning) {
-            if (dictionaryFormat.shouldUseCustomDefinitionWidget(meaning)) {
-              meaning = dictionaryFormat.getCustomDefinitionText(meaning);
-            }
-            meaning = meaning.trim();
-            if (meaningsCount != 1) {
-              meaningBuffer.write('• $meaning');
-            } else {
-              meaningBuffer.write(meaning);
-            }
-
-            if (index != entry.definitions.length - 1) {
-              meaningBuffer.write('\n');
-            }
-          });
-        } else {
-          entry.definitions.forEachIndexed((index, meaning) {
-            if (dictionaryFormat.shouldUseCustomDefinitionWidget(meaning)) {
-              meaning = dictionaryFormat.getCustomDefinitionText(meaning);
-            }
-            meaning = meaning.trim();
-            meaningBuffer.write('$meaning\n');
-          });
-        }
-
+        String meaning = entry.meaning.trim();
+        meaningBuffer.write(meaning);
         meaningBuffer.write('\n');
       }
 
@@ -92,33 +60,13 @@ class MeaningField extends Field {
     required WidgetRef ref,
     required AppModel appModel,
     required CreatorModel creatorModel,
-    required DictionaryHeading heading,
+    required DictionaryEntry entry,
     required bool creatorJustLaunched,
     required String? dictionaryName,
   }) {
-    List<Dictionary> dictionaries = appModel.dictionaries;
-
-    Map<String, bool> dictionaryNamesByHidden = Map<String, bool>.fromEntries(
-        dictionaries
-            .map((e) => MapEntry(e.name, e.isHidden(appModel.targetLanguage))));
-    Map<String, int> dictionaryNamesByOrder = Map<String, int>.fromEntries(
-        dictionaries.map((e) => MapEntry(e.name, e.order)));
-
-    List<DictionaryEntry> entries = heading.entries
-        .where(
-            (entry) => !dictionaryNamesByHidden[entry.dictionary.value!.name]!)
-        .toList();
-    if (dictionaryName != null) {
-      entries = [
-        ...entries.where((e) => dictionaryName == e.dictionary.value!.name)
-      ];
-    }
-    entries.sort((a, b) => dictionaryNamesByOrder[a.dictionary.value!.name]!
-        .compareTo(dictionaryNamesByOrder[b.dictionary.value!.name]!));
-
     return flattenMeanings(
       appModel: appModel,
-      entries: entries,
+      entries: [entry],
       prependDictionaryNames:
           appModel.lastSelectedMapping.prependDictionaryNames ?? false,
     );

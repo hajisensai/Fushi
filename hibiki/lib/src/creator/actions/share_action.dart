@@ -26,39 +26,19 @@ class ShareAction extends QuickAction {
     required WidgetRef ref,
     required AppModel appModel,
     required CreatorModel creatorModel,
-    required DictionaryHeading heading,
+    required DictionaryEntry entry,
     required String? dictionaryName,
   }) async {
-    List<Dictionary> dictionaries = appModel.dictionaries;
-
-    Map<String, bool> dictionaryNamesByHidden = Map<String, bool>.fromEntries(
-        dictionaries
-            .map((e) => MapEntry(e.name, e.isHidden(appModel.targetLanguage))));
-    Map<String, int> dictionaryNamesByOrder = Map<String, int>.fromEntries(
-        dictionaries.map((e) => MapEntry(e.name, e.order)));
-
-    List<DictionaryEntry> entries = heading.entries
-        .where(
-            (entry) => !dictionaryNamesByHidden[entry.dictionary.value!.name]!)
-        .toList();
-    if (dictionaryName != null) {
-      entries = [
-        ...entries.where((e) => dictionaryName == e.dictionary.value!.name)
-      ];
-    }
-    entries.sort((a, b) => dictionaryNamesByOrder[a.dictionary.value!.name]!
-        .compareTo(dictionaryNamesByOrder[b.dictionary.value!.name]!));
-
     StringBuffer buffer = StringBuffer();
-    buffer.write(heading.term);
-    if (heading.reading.isNotEmpty) {
-      buffer.write(' (${heading.reading})');
+    buffer.write(entry.word);
+    if (entry.reading.isNotEmpty) {
+      buffer.write(' (${entry.reading})');
     }
     buffer.write('\n\n');
     buffer.write(
       MeaningField.flattenMeanings(
         appModel: appModel,
-        entries: entries,
+        entries: [entry],
         prependDictionaryNames:
             appModel.lastSelectedMapping.prependDictionaryNames ?? false,
       ),

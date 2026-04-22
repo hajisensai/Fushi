@@ -116,33 +116,6 @@ class _LanguageDialogPageState extends BasePageState<LanguageDialogPage> {
                   setState(() {});
                 },
               ),
-              const Space.small(),
-              ListTile(
-                dense: true,
-                title: Text.rich(
-                  TextSpan(
-                    text: '',
-                    children: <InlineSpan>[
-                      WidgetSpan(
-                        child: Icon(
-                          Icons.info,
-                          size: textTheme.bodySmall?.fontSize,
-                        ),
-                      ),
-                      const WidgetSpan(
-                        child: SizedBox(width: 8),
-                      ),
-                      TextSpan(
-                        text: t.app_locale_warning,
-                        style: TextStyle(
-                          fontSize: textTheme.bodySmall?.fontSize,
-                        ),
-                      ),
-                    ],
-                  ),
-                  textAlign: TextAlign.justify,
-                ),
-              ),
             ],
           ),
         ),

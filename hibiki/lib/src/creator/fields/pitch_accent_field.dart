@@ -6,9 +6,8 @@ import 'package:hibiki/creator.dart';
 import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/language.dart';
 import 'package:hibiki/models.dart';
-import 'package:collection/collection.dart';
 
-/// Returns the formatted pitch accent diagram HTML of a [DictionaryHeading].
+/// Returns the formatted pitch accent diagram HTML of a [DictionaryEntry].
 class PitchAccentField extends Field {
   /// Initialise this field with the predetermined and hardset values.
   PitchAccentField._privateConstructor()
@@ -28,43 +27,11 @@ class PitchAccentField extends Field {
   /// The unique key for this field.
   static const String key = 'pitch_accent';
 
-  /// Returns Furigana for multiple [DictionaryPitch].
+  /// Returns pitch accent HTML. Pitches are no longer available on
+  /// DictionaryEntry, so this always returns empty.
   static String getAllHtmlPitch(
-      {required AppModel appModel, required DictionaryHeading heading}) {
-    List<Dictionary> dictionaries = appModel.dictionaries;
-
-    Map<String, bool> dictionaryNamesByHidden = Map<String, bool>.fromEntries(
-        dictionaries
-            .map((e) => MapEntry(e.name, e.isHidden(appModel.targetLanguage))));
-    Map<String, int> dictionaryNamesByOrder = Map<String, int>.fromEntries(
-        dictionaries.map((e) => MapEntry(e.name, e.order)));
-
-    List<DictionaryPitch> pitches = heading.pitches
-        .where(
-            (entry) => !dictionaryNamesByHidden[entry.dictionary.value!.name]!)
-        .toList();
-    pitches.sort((a, b) => dictionaryNamesByOrder[a.dictionary.value!.name]!
-        .compareTo(dictionaryNamesByOrder[b.dictionary.value!.name]!));
-
-    if (pitches.isEmpty) {
-      return '';
-    }
-
-    StringBuffer html = StringBuffer();
-
-    pitches.forEachIndexed((index, pitch) {
-      html.write(
-        PitchSvg._pitchSvg(
-          heading.reading,
-          PitchSvg._pitchValueToPatt(heading.reading, pitch.downstep),
-        ),
-      );
-      if (index != pitches.length - 1) {
-        html.write('<br>');
-      }
-    });
-
-    return html.toString();
+      {required AppModel appModel, required DictionaryEntry entry}) {
+    return '';
   }
 
   @override
@@ -72,7 +39,7 @@ class PitchAccentField extends Field {
     required WidgetRef ref,
     required AppModel appModel,
     required CreatorModel creatorModel,
-    required DictionaryHeading heading,
+    required DictionaryEntry entry,
     required bool creatorJustLaunched,
     required String? dictionaryName,
   }) {
@@ -82,7 +49,7 @@ class PitchAccentField extends Field {
 
     return getAllHtmlPitch(
       appModel: appModel,
-      heading: heading,
+      entry: entry,
     );
   }
 }

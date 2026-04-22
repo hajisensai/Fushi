@@ -5,10 +5,7 @@ import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 
 /// A template for a single media type's tab body content in the main menu.
-/// Has a floating search bar which can be customised depending on the
-/// current selected media source.
 abstract class BaseTabPage extends BasePage {
-  /// Create an instance of this tab page.
   const BaseTabPage({
     super.key,
   });
@@ -17,9 +14,6 @@ abstract class BaseTabPage extends BasePage {
   BaseTabPageState<BaseTabPage> createState();
 }
 
-/// A base class for providing all tabs in the main menu. In large part, this
-/// was implemented to define shortcuts for common lengthy methods across UI
-/// code.
 abstract class BaseTabPageState<T extends BaseTabPage> extends BasePageState {
   @override
   void initState() {
@@ -27,71 +21,22 @@ abstract class BaseTabPageState<T extends BaseTabPage> extends BasePageState {
     mediaType.tabRefreshNotifier.addListener(refresh);
   }
 
-  /// Refresh this tab.
   void refresh() {
     setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
-    return Stack(children: [
-      mediaSource.buildHistoryPage(),
-      buildFloatingSearchBar(),
-    ]);
+    return mediaSource.buildHistoryPage();
   }
 
-  /// Each tab in the home page represents a media type.
   MediaType get mediaType;
 
-  /// Get the active media source for the current media type.
   MediaSource get mediaSource =>
       appModel.getCurrentSourceForMediaType(mediaType: mediaType);
 
-  /// Whether or not the search bar is currently in focus.
   bool _isSearchBarFocused = false;
 
-  /// The search bar to show at the topmost of the tab body. When selected,
-  /// [buildSearchBarBody] will take the place of the remainder tab body, or
-  /// the elements below the search bar when unselected.
-  Widget buildFloatingSearchBar() {
-    return mediaSource.buildBar() ??
-        FloatingSearchBar(
-          isScrollControlled: true,
-          hint: mediaSource.getLocalisedSourceName(appModel),
-          controller: mediaType.floatingSearchBarController,
-          builder: (_, __) => const SizedBox.shrink(),
-          borderRadius: BorderRadius.zero,
-          elevation: 0,
-          // M3 token：surfaceContainer 与 AppBar / Scaffold 的 surface tint
-          // 同一体系，深浅色切换由 ColorScheme.fromSeed 自动给出对比度；旧的
-          // Color.fromARGB 30/30/30 与 229/229/229 是 jidoujisho 手调的 M2
-          // 灰阶，在 PR-1 的 seed 下显得突兀。
-          backgroundColor: theme.colorScheme.surfaceContainer,
-          // 打开搜索栏时整屏蒙层：scrim 是 M3 专门给 overlay 用的半透明黑。
-          backdropColor: theme.colorScheme.scrim,
-          accentColor: theme.colorScheme.primary,
-          scrollPadding: const EdgeInsets.only(top: 6, bottom: 56),
-          transitionDuration: Duration.zero,
-          margins: const EdgeInsets.symmetric(horizontal: 6),
-          width: double.maxFinite,
-          transition: SlideFadeFloatingSearchBarTransition(),
-          automaticallyImplyBackButton: false,
-          onFocusChanged: (focused) => onFocusChanged(focused: focused),
-          leadingActions: [
-            if (appModel.mediaSources[mediaType]!.length > 1)
-              buildChangeSourceButton(),
-            buildBackButton(),
-          ],
-          actions: mediaSource.getActions(
-            context: context,
-            ref: ref,
-            appModel: appModel,
-          ),
-        );
-  }
-
-  /// Respond to tapping to the search bar and execute an action if the source
-  /// does not implement search.
   void onFocusChanged({required bool focused}) async {
     _isSearchBarFocused = focused;
 
@@ -114,13 +59,6 @@ abstract class BaseTabPageState<T extends BaseTabPage> extends BasePageState {
     }
   }
 
-  /// The body to show when the search bar is currently selected.
-  Widget buildSearchBarBody(
-      BuildContext context, Animation<double> transition) {
-    return Container();
-  }
-
-  /// Allows user to swap the current active [MediaSource].
   Widget buildChangeSourceButton() {
     return FloatingSearchBarAction(
       child: JidoujishoIconButton(
@@ -141,7 +79,6 @@ abstract class BaseTabPageState<T extends BaseTabPage> extends BasePageState {
     );
   }
 
-  /// Allows user to close the [FloatingSearchBar] when open.
   Widget buildBackButton() {
     return FloatingSearchBarAction(
       showIfOpened: true,

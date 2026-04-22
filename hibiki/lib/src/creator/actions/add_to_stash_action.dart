@@ -23,9 +23,9 @@ class AddToStashAction extends QuickAction {
   @override
   Future<Color?> getIconColor({
     required AppModel appModel,
-    required DictionaryHeading heading,
+    required DictionaryEntry entry,
   }) async {
-    if (appModel.isTermInStash(heading.term)) {
+    if (appModel.isTermInStash(entry.word)) {
       return Colors.red;
     } else {
       return null;
@@ -38,13 +38,13 @@ class AddToStashAction extends QuickAction {
     required WidgetRef ref,
     required AppModel appModel,
     required CreatorModel creatorModel,
-    required DictionaryHeading heading,
+    required DictionaryEntry entry,
     required String? dictionaryName,
   }) async {
-    if (!appModel.isTermInStash(heading.term)) {
-      appModel.addToStash(terms: [heading.term]);
+    if (!appModel.isTermInStash(entry.word)) {
+      appModel.addToStash(terms: [entry.word]);
     } else {
-      appModel.removeFromStash(term: heading.term);
+      appModel.removeFromStash(term: entry.word);
     }
   }
 }

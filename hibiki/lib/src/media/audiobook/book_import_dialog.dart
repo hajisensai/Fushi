@@ -715,7 +715,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
     bool jsDispatched = false;
     webView = HeadlessInAppWebView(
       initialUrlRequest: URLRequest(
-        url: WebUri('http://localhost:${widget.serverPort}/'),
+        url: WebUri('http://localhost:${widget.serverPort}/_hibiki_idb.html'),
       ),
       initialSettings: InAppWebViewSettings(
         allowFileAccessFromFileURLs: true,

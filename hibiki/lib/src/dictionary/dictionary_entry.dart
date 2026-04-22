@@ -1,90 +1,81 @@
-import 'package:hibiki/dictionary.dart';
+import 'dart:convert';
+
 import 'package:isar/isar.dart';
 
 part 'dictionary_entry.g.dart';
 
-/// A database entity that represents single or multiple dictionary definitions,
-/// which can be in text, media or in a custom format.
-///
-/// A dictionary value belongs to a certain imported dictionary. There may be
-/// multiple distinct values belonging to a single key.
 @Collection()
 class DictionaryEntry {
-  /// A standard dictionary entry would only contain text content, but may
-  /// also be represented with image or audio, or in a custom format.
   DictionaryEntry({
-    required this.definitions,
-    required this.popularity,
-    this.headingTagNames = const [],
-    this.entryTagNames = const [],
-    this.imagePaths,
-    this.audioPaths,
-    this.extra,
     this.id,
+    this.dictionaryName = '',
+    this.word = '',
+    this.reading = '',
+    this.meaning = '',
+    this.extra = '',
+    this.popularity = 0,
   });
 
-  /// Identifier for database purposes.
   Id? id;
 
-  /// This field is used for definitions that can be represented in text form,
-  /// which will probably make up the majority of use cases.
-  final List<String> definitions;
+  @Index()
+  final String dictionaryName;
 
-  /// Name of tags that add detail to and describe the heading this entry
-  /// belongs to. This entity is non-null only during the import process. Use
-  /// [tags] from the [heading] instead.
-  @ignore
-  final List<String> headingTagNames;
+  @Index(type: IndexType.value, caseSensitive: false)
+  final String word;
 
-  /// Name of tags that add detail to and describe this entry. This entity is
-  /// non-null only during the import process. Use [tags] instead.
-  @ignore
-  final List<String> entryTagNames;
+  @Index(type: IndexType.value, caseSensitive: false)
+  final String reading;
 
-  /// An optional value that if non-null, contains a path that will point to
-  /// an image resource. The resource contained in the path is deleted if it
-  /// exists in the file system.
-  final List<String>? imagePaths;
+  final String meaning;
 
-  /// An optional value that if non-null, contains a path that will point to
-  /// audio resources. All paths in this will all be deleted if it
-  /// exists in the file system.
-  final List<String>? audioPaths;
+  final String extra;
 
-  /// An optional value that may be used to store structured content or
-  /// metadata that cannot be represented in any other parameters.
-  final String? extra;
-
-  /// A value that can be used to sort entries when performing a database
-  /// search. Lower negative values mean rarer, and higher positive values are
-  /// more common.
   @Index()
   final double popularity;
 
-  /// Returns all definitions bullet pointed if multiple, and returns the
-  /// single definition if otherwise.
-  String get compactDefinitions {
-    if (definitions.length > 1) {
-      return definitions
-          .map((definition) => '• ${definition.trim()}')
-          .join('\n');
-    }
+  @Index()
+  int get wordLength => word.length;
 
-    return definitions.join().trim();
+  @ignore
+  Map<dynamic, dynamic> workingArea = {};
+
+  String toJson() {
+    return jsonEncode({
+      'dictionaryName': dictionaryName,
+      'word': word,
+      'reading': reading,
+      'meaning': meaning,
+      'extra': extra,
+      'popularity': popularity,
+    });
   }
 
-  /// Each dictionary entry belongs to a certain heading.
-  final IsarLink<DictionaryHeading> heading = IsarLink<DictionaryHeading>();
-
-  /// Each dictionary entry belongs to a dictionary.
-  final IsarLink<Dictionary> dictionary = IsarLink<Dictionary>();
-
-  /// Each dictionary entry may have a set of tags.
-  final IsarLinks<DictionaryTag> tags = IsarLinks<DictionaryTag>();
+  factory DictionaryEntry.fromJson(String json) {
+    final map = Map<String, dynamic>.from(jsonDecode(json));
+    return DictionaryEntry(
+      dictionaryName: map['dictionaryName'] as String? ?? '',
+      word: map['word'] as String? ?? '',
+      reading: map['reading'] as String? ?? '',
+      meaning: map['meaning'] as String? ?? '',
+      extra: (map['extra'] ?? '').toString(),
+      popularity: (map['popularity'] as num?)?.toDouble() ?? 0,
+    );
+  }
 
   @override
-  bool operator ==(Object other) => other is DictionaryEntry && id == other.id;
+  bool operator ==(Object other) =>
+      other is DictionaryEntry &&
+      other.word == word &&
+      other.reading == reading &&
+      other.meaning == meaning;
 
   @override
-  int get hashCode => id.hashCode;
+  int get hashCode => Object.hash(word, reading, meaning);
+
+  bool get isEmpty => word.isEmpty && reading.isEmpty && meaning.isEmpty;
+
+  @override
+  String toString() =>
+      'DictionaryEntry(word: $word, reading: $reading, meaning: $meaning)';
 }

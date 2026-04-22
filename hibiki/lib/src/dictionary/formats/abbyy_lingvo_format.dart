@@ -27,9 +27,6 @@ class AbbyyLingvoFormat extends DictionaryFormat {
           prepareDirectory: prepareDirectoryAbbyyLingvoFormat,
           prepareName: prepareNameAbbyyLingvoFormat,
           prepareEntries: prepareEntriesAbbyyLingvoFormat,
-          prepareTags: prepareTagsAbbyyLingvoFormat,
-          preparePitches: preparePitchesAbbyyLingvoFormat,
-          prepareFrequencies: prepareFrequenciesAbbyyLingvoFormat,
         );
 
   /// Get the singleton instance of this dictionary format.
@@ -118,23 +115,14 @@ Future<void> prepareEntriesAbbyyLingvoFormat({
       buffer.clear();
 
       if (term.isNotEmpty && definition.isNotEmpty) {
-        int headingId = DictionaryHeading.hash(term: term, reading: '');
-        DictionaryHeading heading =
-            isar.dictionaryHeadings.getSync(headingId) ??
-                DictionaryHeading(term: term);
-
         DictionaryEntry entry = DictionaryEntry(
-          definitions: [definition],
+          dictionaryName: params.dictionary.name,
+          word: term,
+          meaning: definition,
           popularity: 0,
         );
 
-        entry.heading.value = heading;
-        entry.dictionary.value = params.dictionary;
         isar.dictionaryEntrys.putSync(entry);
-
-        heading.entries.add(entry);
-
-        isar.dictionaryHeadings.putSync(heading);
 
         params.send(t.import_found_entry(count: count));
 
@@ -145,21 +133,3 @@ Future<void> prepareEntriesAbbyyLingvoFormat({
     }
   }
 }
-
-/// Top-level function for use in compute. See [DictionaryFormat] for details.
-void prepareTagsAbbyyLingvoFormat({
-  required PrepareDictionaryParams params,
-  required Isar isar,
-}) async {}
-
-/// Top-level function for use in compute. See [DictionaryFormat] for details.
-void preparePitchesAbbyyLingvoFormat({
-  required PrepareDictionaryParams params,
-  required Isar isar,
-}) async {}
-
-/// Top-level function for use in compute. See [DictionaryFormat] for details.
-void prepareFrequenciesAbbyyLingvoFormat({
-  required PrepareDictionaryParams params,
-  required Isar isar,
-}) async {}

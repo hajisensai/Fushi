@@ -30,7 +30,7 @@ class CardCreatorAction extends QuickAction {
     required WidgetRef ref,
     required AppModel appModel,
     required CreatorModel creatorModel,
-    required DictionaryHeading heading,
+    required DictionaryEntry entry,
     required String? dictionaryName,
   }) async {
     if (appModel.isCreatorOpen) {
@@ -40,7 +40,7 @@ class CardCreatorAction extends QuickAction {
           ref: ref,
           appModel: appModel,
           creatorModel: creatorModel,
-          heading: heading,
+          entry: entry,
           creatorJustLaunched: false,
           dictionaryName: dictionaryName,
         );
@@ -86,7 +86,7 @@ class CardCreatorAction extends QuickAction {
           ref: ref,
           appModel: appModel,
           creatorModel: creatorModel,
-          heading: heading,
+          entry: entry,
           creatorJustLaunched: true,
           dictionaryName: dictionaryName,
         );
@@ -111,9 +111,9 @@ class CardCreatorAction extends QuickAction {
   @override
   Future<Color?> getIconColor({
     required AppModel appModel,
-    required DictionaryHeading heading,
+    required DictionaryEntry entry,
   }) async {
-    bool hasDuplicates = await appModel.checkForDuplicates(heading.term);
+    bool hasDuplicates = await appModel.checkForDuplicates(entry.word);
     if (hasDuplicates) {
       return Colors.red;
     } else {

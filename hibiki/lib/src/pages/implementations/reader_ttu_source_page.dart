@@ -533,7 +533,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       'window.localStorage.setItem("lineHeight",${src.ttuLineHeight})',
       'window.localStorage.setItem("writingMode","${src.ttuWritingMode}")',
       'window.localStorage.setItem("viewMode","${src.ttuViewMode}")',
-      'window.localStorage.setItem("theme","${src.ttuTheme}")',
+      'window.localStorage.setItem("theme","${appModel.appThemeKey}")',
       'window.localStorage.setItem("hideFurigana","${src.ttuHideFurigana}")',
     ].join(';');
   }

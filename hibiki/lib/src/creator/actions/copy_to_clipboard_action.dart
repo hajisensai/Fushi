@@ -26,9 +26,9 @@ class CopyToClipboardAction extends QuickAction {
     required WidgetRef ref,
     required AppModel appModel,
     required CreatorModel creatorModel,
-    required DictionaryHeading heading,
+    required DictionaryEntry entry,
     required String? dictionaryName,
   }) async {
-    appModel.copyToClipboard(heading.term);
+    appModel.copyToClipboard(entry.word);
   }
 }

@@ -1,31 +1,287 @@
 import 'package:flutter/material.dart';
 import 'package:spaces/spaces.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:wakelock/wakelock.dart';
 import 'package:hibiki/media.dart';
+import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart';
 import 'package:hibiki/utils.dart';
 
-/// The content of the dialog used for managing Reader settings.
+// ─── Shared setting-item builders ────────────────────────────────────────────
+
+ReaderTtuSource get _source => ReaderTtuSource.instance;
+
+Widget _buildSwitch({
+  required String label,
+  required bool value,
+  required ValueChanged<bool> onChanged,
+}) {
+  return Row(
+    children: [
+      Expanded(child: Text(label)),
+      Switch(value: value, onChanged: onChanged),
+    ],
+  );
+}
+
+Widget _buildTapRow({
+  required BuildContext context,
+  required IconData icon,
+  required String label,
+  required VoidCallback onTap,
+}) {
+  return InkWell(
+    onTap: onTap,
+    child: Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          Icon(icon, size: Theme.of(context).textTheme.bodyMedium?.fontSize),
+          const Space.normal(),
+          Text(label),
+        ],
+      ),
+    ),
+  );
+}
+
+Widget _buildNumberRow({
+  required String label,
+  required double value,
+  required double step,
+  required double min,
+  required double max,
+  required String Function(double) format,
+  required ValueChanged<double> onChanged,
+}) {
+  return Padding(
+    padding: const EdgeInsets.symmetric(vertical: 2),
+    child: Row(
+      children: [
+        Expanded(child: Text(label)),
+        IconButton(
+          icon: const Icon(Icons.remove, size: 18),
+          visualDensity: VisualDensity.compact,
+          onPressed: () => onChanged((value - step).clamp(min, max)),
+        ),
+        SizedBox(
+          width: 42,
+          child: Text(format(value), textAlign: TextAlign.center),
+        ),
+        IconButton(
+          icon: const Icon(Icons.add, size: 18),
+          visualDensity: VisualDensity.compact,
+          onPressed: () => onChanged((value + step).clamp(min, max)),
+        ),
+      ],
+    ),
+  );
+}
+
+Widget _buildDisplaySettings(VoidCallback rebuild) {
+  return StatefulBuilder(
+    builder: (_, StateSetter setLocal) {
+      void update(VoidCallback fn) {
+        fn();
+        setLocal(() {});
+        rebuild();
+      }
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildNumberRow(
+            label: '字体大小',
+            value: _source.ttuFontSize,
+            step: 1, min: 8, max: 64,
+            format: (v) => '${v.round()}',
+            onChanged: (v) => update(() => _source.setTtuFontSize(v)),
+          ),
+          _buildNumberRow(
+            label: '行高',
+            value: _source.ttuLineHeight,
+            step: 0.1, min: 1.0, max: 3.0,
+            format: (v) => v.toStringAsFixed(2),
+            onChanged: (v) => update(
+                () => _source.setTtuLineHeight((v * 100).roundToDouble() / 100)),
+          ),
+          Row(
+            children: [
+              const Expanded(child: Text('排版方向')),
+              SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(value: 'horizontal-tb', label: Text('横排')),
+                  ButtonSegment(value: 'vertical-rl', label: Text('竖排')),
+                ],
+                selected: {_source.ttuWritingMode},
+                onSelectionChanged: (sel) =>
+                    update(() => _source.setTtuWritingMode(sel.first)),
+                style: const ButtonStyle(
+                  visualDensity: VisualDensity.compact,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              const Expanded(child: Text('视图模式')),
+              SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(value: 'paginated', label: Text('翻页')),
+                  ButtonSegment(value: 'continuous', label: Text('滚动')),
+                ],
+                selected: {_source.ttuViewMode},
+                onSelectionChanged: (sel) =>
+                    update(() => _source.setTtuViewMode(sel.first)),
+                style: const ButtonStyle(
+                  visualDensity: VisualDensity.compact,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              const Expanded(child: Text('隐藏振假名')),
+              Switch(
+                value: _source.ttuHideFurigana,
+                onChanged: (v) => update(() => _source.setTtuHideFurigana(v)),
+              ),
+            ],
+          ),
+        ],
+      );
+    },
+  );
+}
+
+List<Widget> _buildReaderOnlySwitches(VoidCallback rebuild) {
+  return [
+    _buildSwitch(
+      label: t.highlight_on_tap,
+      value: _source.highlightOnTap,
+      onChanged: (_) { _source.toggleHighlightOnTap(); rebuild(); },
+    ),
+    _buildSwitch(
+      label: t.volume_button_page_turning,
+      value: _source.volumePageTurningEnabled,
+      onChanged: (_) {
+        _source.toggleVolumePageTurningEnabled();
+        VolumeKeyChannel.instance
+            .setInterceptEnabled(_source.volumePageTurningEnabled);
+        rebuild();
+      },
+    ),
+    _buildSwitch(
+      label: t.invert_volume_buttons,
+      value: _source.volumePageTurningInverted,
+      onChanged: (_) { _source.toggleVolumePageTurningInverted(); rebuild(); },
+    ),
+    _buildSwitch(
+      label: t.extend_page_beyond_navbar,
+      value: _source.extendPageBeyondNavigationBar,
+      onChanged: (_) { _source.toggleExtendPageBeyondNavigationBar(); rebuild(); },
+    ),
+    _buildSwitch(
+      label: t.adapt_ttu_theme,
+      value: _source.adaptTtuTheme,
+      onChanged: (_) { _source.toggleAdaptTtuTheme(); rebuild(); },
+    ),
+    _buildSwitch(
+      label: t.keep_screen_awake,
+      value: _source.keepScreenAwake,
+      onChanged: (_) async {
+        _source.toggleKeepScreenAwake();
+        if (_source.keepScreenAwake) {
+          await Wakelock.enable();
+        } else {
+          await Wakelock.disable();
+        }
+        rebuild();
+      },
+    ),
+  ];
+}
+
+Widget _buildPageTurningSpeed({
+  required BuildContext context,
+  required TextEditingController controller,
+}) {
+  return TextField(
+    onChanged: (value) {
+      double newSpeed = double.tryParse(value) ??
+          ReaderTtuSource.defaultScrollingSpeed.toDouble();
+      if (newSpeed.isNegative) {
+        newSpeed = ReaderTtuSource.defaultScrollingSpeed.toDouble();
+        controller.text = newSpeed.toString();
+      }
+      _source.setVolumePageTurningSpeed(newSpeed.toInt());
+    },
+    controller: controller,
+    keyboardType: TextInputType.number,
+    decoration: InputDecoration(
+      floatingLabelBehavior: FloatingLabelBehavior.always,
+      suffixIcon: JidoujishoIconButton(
+        tooltip: t.reset,
+        size: 18,
+        onTap: () async {
+          controller.text = ReaderTtuSource.defaultScrollingSpeed.toString();
+          _source.setVolumePageTurningSpeed(
+              ReaderTtuSource.defaultScrollingSpeed);
+          FocusScope.of(context).unfocus();
+        },
+        icon: Icons.undo,
+      ),
+      labelText: t.volume_button_turning_speed,
+    ),
+  );
+}
+
+/// Theme selector (6 presets) — calls [AppModel.setAppThemeKey] which restarts.
+Widget _buildThemeSelector(AppModel appModel) {
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const Text('主题'),
+      const SizedBox(height: 6),
+      Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        children: AppModel.themePresets.entries.map((e) {
+          return ChoiceChip(
+            label: Text(e.value.label),
+            selected: appModel.appThemeKey == e.key,
+            onSelected: (on) {
+              if (!on) return;
+              appModel.setAppThemeKey(e.key);
+            },
+          );
+        }).toList(),
+      ),
+    ],
+  );
+}
+
+// ─── Dialog version (used inside the reader) ─────────────────────────────────
+
 class TtuSettingsDialogPage extends BasePage {
-  /// Create an instance of this page.
   const TtuSettingsDialogPage({super.key});
 
   @override
-  BasePageState createState() => _DictionaryDialogPageState();
+  BasePageState createState() => _TtuSettingsDialogPageState();
 }
 
-class _DictionaryDialogPageState extends BasePageState {
-  ReaderTtuSource get source => ReaderTtuSource.instance;
-
+class _TtuSettingsDialogPageState extends BasePageState {
   late TextEditingController _speedController;
 
   @override
   void initState() {
     super.initState();
-
-    _speedController =
-        TextEditingController(text: source.volumePageTurningSpeed.toString());
+    _speedController = TextEditingController(
+        text: _source.volumePageTurningSpeed.toString());
   }
 
   @override
@@ -43,389 +299,109 @@ class _DictionaryDialogPageState extends BasePageState {
             bottom: Spacing.of(context).spaces.normal,
             top: Spacing.of(context).spaces.extraSmall,
           ),
-      content: buildContent(),
-      actions: actions,
+      content: _buildContent(),
+      actions: [
+        TextButton(
+          child: Text(t.dialog_close),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ],
     );
   }
 
-  List<Widget> get actions => [
-        buildCloseButton(),
-      ];
-
-  Widget buildCloseButton() {
-    return TextButton(
-      child: Text(t.dialog_close),
-      onPressed: () => Navigator.pop(context),
-    );
-  }
-
-  Widget buildContent() {
-    ScrollController contentController = ScrollController();
-
+  Widget _buildContent() {
+    final controller = ScrollController();
     return SizedBox(
       width: double.maxFinite,
       child: RawScrollbar(
         thickness: 3,
         thumbVisibility: true,
-        controller: contentController,
+        controller: controller,
         child: SingleChildScrollView(
-          controller: contentController,
+          controller: controller,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              buildReaderSettingsSection(),
+              _buildDisplaySettings(() => setState(() {})),
               const Space.small(),
               const JidoujishoDivider(),
               const Space.small(),
-              buildHighlightOnTapSwitch(),
-              buildEnablePageTurningSwitch(),
-              buildInvertPageTurningSwitch(),
-              buildExtendPageSwitch(),
-              buildAdaptThemeSwitch(),
-              buildKeepScreenAwakeSwitch(),
+              ..._buildReaderOnlySwitches(() => setState(() {})),
               const Space.small(),
               const JidoujishoDivider(),
-              buildPageTurningSpeedField(),
+              _buildPageTurningSpeed(
+                context: context,
+                controller: _speedController,
+              ),
             ],
           ),
         ),
       ),
     );
   }
+}
 
-  Widget buildEnablePageTurningSwitch() {
-    ValueNotifier<bool> notifier =
-        ValueNotifier<bool>(source.volumePageTurningEnabled);
+// ─── Full-page version (home "调整" tab) ──────────────────────────────────────
 
-    return Row(
+class TtuSettingsDialogContent extends BasePage {
+  const TtuSettingsDialogContent({super.key});
+
+  @override
+  BasePageState createState() => _TtuSettingsDialogContentState();
+}
+
+class _TtuSettingsDialogContentState extends BasePageState {
+  late TextEditingController _speedController;
+
+  @override
+  void initState() {
+    super.initState();
+    _speedController = TextEditingController(
+        text: _source.volumePageTurningSpeed.toString());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       children: [
-        Expanded(
-          child: Text(t.volume_button_page_turning),
+        _buildThemeSelector(appModel),
+        const Space.small(),
+        const JidoujishoDivider(),
+        const Space.small(),
+        _buildDisplaySettings(() => setState(() {})),
+        const Space.small(),
+        const JidoujishoDivider(),
+        const Space.small(),
+        ..._buildReaderOnlySwitches(() => setState(() {})),
+        const Space.small(),
+        const JidoujishoDivider(),
+        _buildPageTurningSpeed(
+          context: context,
+          controller: _speedController,
         ),
-        ValueListenableBuilder<bool>(
-          valueListenable: notifier,
-          builder: (_, value, __) {
-            return Switch(
-              value: value,
-              onChanged: (value) {
-                source.toggleVolumePageTurningEnabled();
-                notifier.value = source.volumePageTurningEnabled;
-                VolumeKeyChannel.instance
-                    .setInterceptEnabled(source.volumePageTurningEnabled);
-              },
+        const Space.small(),
+        const JidoujishoDivider(),
+        const Space.small(),
+        _buildTapRow(
+          context: context,
+          icon: Icons.translate,
+          label: t.options_language,
+          onTap: appModel.showLanguageMenu,
+        ),
+        const Space.small(),
+        _buildTapRow(
+          context: context,
+          icon: Icons.code,
+          label: t.options_github,
+          onTap: () {
+            launchUrl(
+              Uri.parse('https://github.com/hdjsadgfwtg/hibiki'),
+              mode: LaunchMode.externalApplication,
             );
           },
-        )
-      ],
-    );
-  }
-
-  Widget buildInvertPageTurningSwitch() {
-    ValueNotifier<bool> notifier =
-        ValueNotifier<bool>(source.volumePageTurningInverted);
-
-    return Row(
-      children: [
-        Expanded(
-          child: Text(t.invert_volume_buttons),
         ),
-        ValueListenableBuilder<bool>(
-          valueListenable: notifier,
-          builder: (_, value, __) {
-            return Switch(
-              value: value,
-              onChanged: (value) {
-                source.toggleVolumePageTurningInverted();
-                notifier.value = source.volumePageTurningInverted;
-              },
-            );
-          },
-        )
       ],
-    );
-  }
-
-  Widget buildExtendPageSwitch() {
-    ValueNotifier<bool> notifier =
-        ValueNotifier<bool>(source.extendPageBeyondNavigationBar);
-
-    return Row(
-      children: [
-        Expanded(
-          child: Text(t.extend_page_beyond_navbar),
-        ),
-        ValueListenableBuilder<bool>(
-          valueListenable: notifier,
-          builder: (_, value, __) {
-            return Switch(
-              value: value,
-              onChanged: (value) {
-                source.toggleExtendPageBeyondNavigationBar();
-                notifier.value = source.extendPageBeyondNavigationBar;
-              },
-            );
-          },
-        )
-      ],
-    );
-  }
-
-  Widget buildAdaptThemeSwitch() {
-    ValueNotifier<bool> notifier = ValueNotifier<bool>(source.adaptTtuTheme);
-
-    return Row(
-      children: [
-        Expanded(
-          child: Text(t.adapt_ttu_theme),
-        ),
-        ValueListenableBuilder<bool>(
-          valueListenable: notifier,
-          builder: (_, value, __) {
-            return Switch(
-              value: value,
-              onChanged: (value) {
-                source.toggleAdaptTtuTheme();
-                notifier.value = source.adaptTtuTheme;
-              },
-            );
-          },
-        )
-      ],
-    );
-  }
-
-  Widget buildKeepScreenAwakeSwitch() {
-    ValueNotifier<bool> notifier =
-        ValueNotifier<bool>(source.keepScreenAwake);
-
-    return Row(
-      children: [
-        Expanded(
-          child: Text(t.keep_screen_awake),
-        ),
-        ValueListenableBuilder<bool>(
-          valueListenable: notifier,
-          builder: (_, value, __) {
-            return Switch(
-              value: value,
-              onChanged: (value) async {
-                source.toggleKeepScreenAwake();
-                notifier.value = source.keepScreenAwake;
-                if (source.keepScreenAwake) {
-                  await Wakelock.enable();
-                } else {
-                  await Wakelock.disable();
-                }
-              },
-            );
-          },
-        )
-      ],
-    );
-  }
-
-  Widget buildHighlightOnTapSwitch() {
-    ValueNotifier<bool> notifier = ValueNotifier<bool>(source.highlightOnTap);
-
-    return Row(
-      children: [
-        Expanded(
-          child: Text(t.highlight_on_tap),
-        ),
-        ValueListenableBuilder<bool>(
-          valueListenable: notifier,
-          builder: (_, value, __) {
-            return Switch(
-              value: value,
-              onChanged: (value) {
-                source.toggleHighlightOnTap();
-                notifier.value = source.highlightOnTap;
-              },
-            );
-          },
-        )
-      ],
-    );
-  }
-
-  Widget buildReaderSettingsSection() {
-    return StatefulBuilder(
-      builder: (BuildContext ctx, StateSetter setLocal) {
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 字体大小
-            _numberRow(
-              label: '字体大小',
-              value: source.ttuFontSize,
-              step: 1,
-              min: 8,
-              max: 64,
-              format: (v) => '${v.round()}',
-              onChanged: (v) {
-                source.setTtuFontSize(v);
-                setLocal(() {});
-              },
-            ),
-            // 行高
-            _numberRow(
-              label: '行高',
-              value: source.ttuLineHeight,
-              step: 0.1,
-              min: 1.0,
-              max: 3.0,
-              format: (v) => v.toStringAsFixed(2),
-              onChanged: (v) {
-                source.setTtuLineHeight(
-                    (v * 100).roundToDouble() / 100);
-                setLocal(() {});
-              },
-            ),
-            // 排版方向
-            Row(
-              children: [
-                const Expanded(child: Text('排版方向')),
-                SegmentedButton<String>(
-                  segments: const [
-                    ButtonSegment(value: 'horizontal-tb', label: Text('横排')),
-                    ButtonSegment(value: 'vertical-rl', label: Text('竖排')),
-                  ],
-                  selected: {source.ttuWritingMode},
-                  onSelectionChanged: (sel) {
-                    source.setTtuWritingMode(sel.first);
-                    setLocal(() {});
-                  },
-                  style: const ButtonStyle(
-                    visualDensity: VisualDensity.compact,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            // 视图模式
-            Row(
-              children: [
-                const Expanded(child: Text('视图模式')),
-                SegmentedButton<String>(
-                  segments: const [
-                    ButtonSegment(value: 'paginated', label: Text('翻页')),
-                    ButtonSegment(value: 'continuous', label: Text('滚动')),
-                  ],
-                  selected: {source.ttuViewMode},
-                  onSelectionChanged: (sel) {
-                    source.setTtuViewMode(sel.first);
-                    setLocal(() {});
-                  },
-                  style: const ButtonStyle(
-                    visualDensity: VisualDensity.compact,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            // 主题
-            const Text('主题'),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: TtuReaderSettings.availableThemes.map((t) {
-                return ChoiceChip(
-                  label: Text(TtuReaderSettings.themeLabels[t] ?? t),
-                  selected: source.ttuTheme == t,
-                  onSelected: (on) {
-                    if (!on) return;
-                    source.setTtuTheme(t);
-                    setLocal(() {});
-                  },
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 4),
-            // 隐藏假名
-            Row(
-              children: [
-                const Expanded(child: Text('隐藏振假名')),
-                Switch(
-                  value: source.ttuHideFurigana,
-                  onChanged: (v) {
-                    source.setTtuHideFurigana(v);
-                    setLocal(() {});
-                  },
-                ),
-              ],
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _numberRow({
-    required String label,
-    required double value,
-    required double step,
-    required double min,
-    required double max,
-    required String Function(double) format,
-    required ValueChanged<double> onChanged,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        children: [
-          Expanded(child: Text(label)),
-          IconButton(
-            icon: const Icon(Icons.remove, size: 18),
-            visualDensity: VisualDensity.compact,
-            onPressed: () => onChanged((value - step).clamp(min, max)),
-          ),
-          SizedBox(
-            width: 42,
-            child: Text(format(value), textAlign: TextAlign.center),
-          ),
-          IconButton(
-            icon: const Icon(Icons.add, size: 18),
-            visualDensity: VisualDensity.compact,
-            onPressed: () => onChanged((value + step).clamp(min, max)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget buildPageTurningSpeedField() {
-    return TextField(
-      onChanged: (value) {
-        double newSpeed = double.tryParse(value) ??
-            ReaderTtuSource.defaultScrollingSpeed.toDouble();
-        if (newSpeed.isNegative) {
-          newSpeed = ReaderTtuSource.defaultScrollingSpeed.toDouble();
-          _speedController.text = newSpeed.toString();
-        }
-
-        source.setVolumePageTurningSpeed(newSpeed.toInt());
-      },
-      controller: _speedController,
-      keyboardType: TextInputType.number,
-      decoration: InputDecoration(
-        floatingLabelBehavior: FloatingLabelBehavior.always,
-        suffixIcon: JidoujishoIconButton(
-          tooltip: t.reset,
-          size: 18,
-          onTap: () async {
-            _speedController.text =
-                ReaderTtuSource.defaultScrollingSpeed.toString();
-            source.setVolumePageTurningSpeed(
-                ReaderTtuSource.defaultScrollingSpeed);
-            FocusScope.of(context).unfocus();
-          },
-          icon: Icons.undo,
-        ),
-        labelText: t.volume_button_turning_speed,
-      ),
     );
   }
 }

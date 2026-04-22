@@ -31,43 +31,13 @@ class CollapsedMeaningField extends Field {
     required WidgetRef ref,
     required AppModel appModel,
     required CreatorModel creatorModel,
-    required DictionaryHeading heading,
+    required DictionaryEntry entry,
     required bool creatorJustLaunched,
     required String? dictionaryName,
   }) {
-    List<Dictionary> dictionaries = appModel.dictionaries;
-
-    Map<String, bool> dictionaryNamesByHidden = Map<String, bool>.fromEntries(
-        dictionaries
-            .map((e) => MapEntry(e.name, e.isHidden(appModel.targetLanguage))));
-    Map<String, bool> dictionaryNamesByCollapsed =
-        Map<String, bool>.fromEntries(dictionaries.map(
-            (e) => MapEntry(e.name, e.isCollapsed(appModel.targetLanguage))));
-    Map<String, int> dictionaryNamesByOrder = Map<String, int>.fromEntries(
-        dictionaries.map((e) => MapEntry(e.name, e.order)));
-
-    late List<DictionaryEntry> collapsedEntries;
-    if (dictionaryName != null) {
-      collapsedEntries = heading.entries
-          .where((entry) =>
-              !dictionaryNamesByHidden[entry.dictionary.value!.name]! &&
-              dictionaryName != entry.dictionary.value!.name)
-          .toList();
-    } else {
-      collapsedEntries = heading.entries
-          .where((entry) =>
-              !dictionaryNamesByHidden[entry.dictionary.value!.name]! &&
-              dictionaryNamesByCollapsed[entry.dictionary.value!.name]!)
-          .toList();
-    }
-
-    collapsedEntries.sort((a, b) =>
-        dictionaryNamesByOrder[a.dictionary.value!.name]!
-            .compareTo(dictionaryNamesByOrder[b.dictionary.value!.name]!));
-
     return MeaningField.flattenMeanings(
         appModel: appModel,
-        entries: collapsedEntries,
+        entries: [entry],
         prependDictionaryNames:
             appModel.lastSelectedMapping.prependDictionaryNames ?? false);
   }

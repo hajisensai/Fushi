@@ -16,35 +16,46 @@ import 'package:hibiki/utils.dart';
 /// performance.
 final dictionaryEntryHtmlProvider =
     Provider.family<String, DictionaryEntry>((ref, entry) {
-  return entry.definitions
-      .map((e) {
-        try {
-          final node =
-              StructuredContent.processContent(jsonDecode(e))?.toNode();
-          if (node == null) {
-            return '';
-          }
+  final meaning = entry.meaning;
+  try {
+    final node =
+        StructuredContent.processContent(jsonDecode(meaning))?.toNode();
+    if (node == null) {
+      return meaning.replaceAll('\n', '<br>');
+    }
 
-          final document = dom.Document.html('');
-          document.body?.append(node);
-          final html = document.body?.innerHtml ?? '';
-
-          return html;
-        } catch (_) {
-          return e.replaceAll('\n', '<br>');
-        }
-      })
-      .toList()
-      .join('<br>');
+    final document = dom.Document.html('');
+    document.body?.append(node);
+    return document.body?.innerHtml ?? '';
+  } catch (e, stack) {
+    debugPrint('[DictHTML] Error processing structured content: $e');
+    debugPrint('[DictHTML] $stack');
+    return meaning.replaceAll('\n', '<br>');
+  }
 });
 
-/// Get the [Directory] used as a resource directory for a certain [Dictionary].
+final dictionaryCssProvider =
+    Provider.family<String, String>((ref, dictionaryName) {
+  final appModel = ref.read(appProvider);
+  final cssFile = File(path.join(
+    appModel.dictionaryResourceDirectory.path,
+    dictionaryName,
+    'styles.css',
+  ));
+  if (cssFile.existsSync()) {
+    return cssFile.readAsStringSync();
+  }
+  return '';
+});
+
+/// Get the [Directory] used as a resource directory for a certain dictionary
+/// name.
 final dictionaryResourceDirectoryProvider =
-    Provider.family<Directory, int>((ref, dictionaryId) {
+    Provider.family<Directory, String>((ref, dictionaryName) {
   final appModel = ref.watch(appProvider);
 
   return Directory(
-      path.join(appModel.dictionaryResourceDirectory.path, '$dictionaryId'));
+      path.join(appModel.dictionaryResourceDirectory.path, dictionaryName));
 });
 
 /// HTML renderer for dictionary definitions.
@@ -76,8 +87,13 @@ class DictionaryHtmlWidget extends ConsumerWidget {
       border: tableBorder,
     );
 
+    final css = ref.watch(dictionaryCssProvider(entry.dictionaryName));
+    final html = ref.watch(dictionaryEntryHtmlProvider(entry));
+    final dataWithCss =
+        css.isNotEmpty ? '<style>$css</style>$html' : html;
+
     return Html(
-      data: ref.watch(dictionaryEntryHtmlProvider(entry)),
+      data: dataWithCss,
       shrinkWrap: true,
       onAnchorTap: (url, attributes, element) {
         onSearch.call(attributes['query'] ?? element?.text ?? 'f');
@@ -139,7 +155,7 @@ class JidoujishoDictionaryImage extends ConsumerWidget {
         .replaceAll(RegExp(r'\D'), ''));
 
     final directory = ref
-        .read(dictionaryResourceDirectoryProvider(entry.dictionary.value!.id));
+        .read(dictionaryResourceDirectoryProvider(entry.dictionaryName));
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [

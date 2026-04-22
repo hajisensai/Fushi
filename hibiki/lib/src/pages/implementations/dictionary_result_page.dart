@@ -67,21 +67,22 @@ class _DictionaryResultPageState extends BasePageState<DictionaryResultPage> {
 
   late ScrollController _scrollController;
 
-  Map<DictionaryHeading, Map<Dictionary, ExpandableController>>
-      expandableControllersByHeading = {};
+  /// Group entries by (word, reading) key for expandable controllers.
+  Map<String, Map<String, ExpandableController>>
+      expandableControllersByTermKey = {};
 
   @override
   Widget build(BuildContext context) {
     AnkiMapping lastSelectedMapping = appModel.lastSelectedMapping;
 
-    Map<int, DictionaryHeading> headingsById = Map.fromEntries(
-      widget.result.headings.map(
-        (heading) => MapEntry(heading.id, heading),
-      ),
-    );
+    /// Group entries by (word, reading) to form term groups.
+    final Map<String, List<DictionaryEntry>> groupedEntries = {};
+    for (final entry in widget.result.entries) {
+      final key = '${entry.word}\n${entry.reading}';
+      groupedEntries.putIfAbsent(key, () => []).add(entry);
+    }
 
-    List<DictionaryHeading> headings =
-        widget.result.headingIds.map((id) => headingsById[id]!).toList();
+    final termKeys = groupedEntries.keys.toList();
 
     List<Dictionary> dictionaries = appModel.dictionaries;
     Map<String, bool> dictionaryNamesByHidden = Map<String, bool>.fromEntries(
@@ -93,14 +94,14 @@ class _DictionaryResultPageState extends BasePageState<DictionaryResultPage> {
     Map<String, int> dictionaryNamesByOrder = Map<String, int>.fromEntries(
         dictionaries.map((e) => MapEntry(e.name, e.order)));
 
-    for (DictionaryHeading heading in headings) {
-      expandableControllersByHeading.putIfAbsent(heading, () => {});
-      for (DictionaryEntry entry in heading.entries) {
-        Dictionary dictionary = entry.dictionary.value!;
-        expandableControllersByHeading[heading]?.putIfAbsent(
-          dictionary,
+    for (final termKey in termKeys) {
+      expandableControllersByTermKey.putIfAbsent(termKey, () => {});
+      for (DictionaryEntry entry in groupedEntries[termKey]!) {
+        expandableControllersByTermKey[termKey]?.putIfAbsent(
+          entry.dictionaryName,
           () => ExpandableController(
-            initialExpanded: !dictionaryNamesByCollapsed[dictionary.name]!,
+            initialExpanded:
+                !(dictionaryNamesByCollapsed[entry.dictionaryName] ?? false),
           ),
         );
       }
@@ -130,17 +131,17 @@ class _DictionaryResultPageState extends BasePageState<DictionaryResultPage> {
                   padding: widget.spaceBeforeFirstResult
                       ? Spacing.of(context).insets.onlyTop.normal
                       : EdgeInsets.zero),
-              ...headings
-                  .map((heading) => DictionaryTermPage(
+              ...termKeys
+                  .map((termKey) => DictionaryTermPage(
                         lastSelectedMapping: lastSelectedMapping,
                         opacity: widget.opacity,
                         cardColor: widget.cardColor,
-                        heading: heading,
+                        entries: groupedEntries[termKey]!,
                         onSearch: widget.onSearch,
                         onStash: widget.onStash,
                         onShare: widget.onShare,
                         expandableControllers:
-                            expandableControllersByHeading[heading]!,
+                            expandableControllersByTermKey[termKey]!,
                         dictionaryNamesByHidden: dictionaryNamesByHidden,
                         dictionaryNamesByOrder: dictionaryNamesByOrder,
                       ))
