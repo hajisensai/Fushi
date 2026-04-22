@@ -18,19 +18,38 @@ final dictionaryEntryHtmlProvider =
     Provider.family<String, DictionaryEntry>((ref, entry) {
   final meaning = entry.meaning;
   try {
-    final node =
-        StructuredContent.processContent(jsonDecode(meaning))?.toNode();
+    final decoded = jsonDecode(meaning);
+    final node = StructuredContent.processContent(decoded)?.toNode();
     if (node == null) {
       return meaning.replaceAll('\n', '<br>');
     }
-
     final document = dom.Document.html('');
     document.body?.append(node);
     return document.body?.innerHtml ?? '';
-  } catch (e, stack) {
-    debugPrint('[DictHTML] Error processing structured content: $e');
-    debugPrint('[DictHTML] $stack');
-    return meaning.replaceAll('\n', '<br>');
+  } catch (_) {
+    // Multiple structured content definitions joined by \n
+    final parts = meaning.split('\n');
+    final nodes = <dom.Node>[];
+    for (final part in parts) {
+      if (part.trim().isEmpty) continue;
+      try {
+        final decoded = jsonDecode(part);
+        final node = StructuredContent.processContent(decoded)?.toNode();
+        if (node != null) {
+          nodes.add(node);
+        } else {
+          nodes.add(dom.Text(part));
+        }
+      } catch (_) {
+        nodes.add(dom.Text(part));
+      }
+    }
+    if (nodes.isEmpty) return meaning.replaceAll('\n', '<br>');
+    final document = dom.Document.html('');
+    for (final node in nodes) {
+      document.body?.append(node);
+    }
+    return document.body?.innerHtml ?? '';
   }
 });
 
