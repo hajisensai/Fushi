@@ -162,6 +162,26 @@ class DictionarySearchWidgetState extends State<DictionarySearchWidget> {
     );
   }
 
+  Widget buildSearchHistory() {
+    List<String> searchHistory = appModel.getSearchHistory().reversed.toList();
+    return ClipRRect(
+      borderRadius: BorderRadius.zero,
+      child: Material(
+        color: Colors.transparent,
+        child: ListView.builder(
+          physics: const AlwaysScrollableScrollPhysics(
+            parent: BouncingScrollPhysics(),
+          ),
+          shrinkWrap: true,
+          itemCount: searchHistory.length,
+          itemBuilder: (context, index) {
+            return buildSearchHistoryItem(searchHistory[index]);
+          },
+        ),
+      ),
+    );
+  }
+
   Widget buildSearchHistoryItem(String historyItem) {
     return InkWell(
       onTap: () {
