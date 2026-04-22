@@ -1408,6 +1408,11 @@ class AppModel with ChangeNotifier {
     if (ext == '.zip') {
       final fileNames = _readZipFileNames(file);
 
+      if (fileNames.isEmpty) {
+        // zip64 or unreadable central directory — default to yomichan
+        return dictionaryFormats['yomichan']!;
+      }
+
       if (fileNames.any((f) => f == 'index.json' || f.endsWith('/index.json'))) {
         return dictionaryFormats['yomichan']!;
       }
@@ -1422,7 +1427,8 @@ class AppModel with ChangeNotifier {
         return dictionaryFormats['migaku']!;
       }
 
-      throw Exception('无法识别的词典格式');
+      // fallback: try yomichan
+      return dictionaryFormats['yomichan']!;
     }
     throw Exception('不支持的文件格式: $ext');
   }
@@ -1457,6 +1463,13 @@ class AppModel with ChangeNotifier {
           (tail[eocdOffset + 13] << 8) |
           (tail[eocdOffset + 14] << 16) |
           (tail[eocdOffset + 15] << 24);
+
+      // zip64 or corrupt: fields set to 0xFFFFFFFF or exceeding file bounds
+      if (cdSize <= 0 || cdSize > fileLength ||
+          cdOffset < 0 || cdOffset > fileLength ||
+          cdSize > 256 * 1024 * 1024) {
+        return [];
+      }
 
       raf.setPositionSync(cdOffset);
       final cdBytes = raf.readSync(cdSize);
