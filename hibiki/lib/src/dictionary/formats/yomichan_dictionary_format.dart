@@ -2,7 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 
-import 'package:async_zip/async_zip.dart';
+import 'package:archive/archive.dart' as archive;
+import 'package:archive/archive_io.dart' as archive_io;
 import 'package:beautiful_soup_dart/beautiful_soup.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -157,7 +158,19 @@ Future<void> prepareDirectoryYomichanFormat(
   final filePath = params.file.path;
   final dirPath = params.resourceDirectory.path;
   await Isolate.run(() {
-    extractZipArchiveSync(File(filePath), Directory(dirPath));
+    final input = archive_io.InputFileStream(filePath);
+    final zip = archive.ZipDecoder().decodeBuffer(input);
+    for (final file in zip.files) {
+      final outPath = '$dirPath/${file.name}';
+      if (file.isFile) {
+        final outFile = File(outPath);
+        outFile.parent.createSync(recursive: true);
+        outFile.writeAsBytesSync(file.content as List<int>);
+      } else {
+        Directory(outPath).createSync(recursive: true);
+      }
+    }
+    input.closeSync();
   });
 }
 
