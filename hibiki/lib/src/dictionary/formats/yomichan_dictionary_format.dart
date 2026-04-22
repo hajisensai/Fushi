@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:async_zip/async_zip.dart';
 import 'package:beautiful_soup_dart/beautiful_soup.dart';
@@ -153,11 +154,10 @@ class YomichanFormat extends DictionaryFormat {
 /// Top-level function for use in compute. See [DictionaryFormat] for details.
 Future<void> prepareDirectoryYomichanFormat(
     PrepareDirectoryParams params) async {
-  int n = 0;
-  await extractZipArchive(params.file, params.resourceDirectory,
-      callback: (_, __) {
-    n++;
-    params.send(t.import_extract_count(n: n));
+  final filePath = params.file.path;
+  final dirPath = params.resourceDirectory.path;
+  await Isolate.run(() {
+    extractZipArchiveSync(File(filePath), Directory(dirPath));
   });
 }
 
