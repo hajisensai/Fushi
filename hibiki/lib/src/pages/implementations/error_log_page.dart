@@ -18,11 +18,13 @@ class ErrorLogPage extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.copy),
             tooltip: '复制',
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: log));
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('已复制到剪贴板')),
-              );
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: log));
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('已复制到剪贴板')),
+                );
+              }
             },
           ),
           IconButton(
