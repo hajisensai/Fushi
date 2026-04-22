@@ -430,6 +430,7 @@ Future<DictionarySearchResult?> prepareSearchResultsJapaneseLanguage(
               .or()
               .optional(partialTermIsKatakana,
                   (q) => q.wordEqualTo(hiraganaPartialTerm!))
+              .limit(limit())
               .findAllSync();
         } catch (e) {
           continue;
@@ -450,6 +451,7 @@ Future<DictionarySearchResult?> prepareSearchResultsJapaneseLanguage(
               .or()
               .optional(partialTermIsKatakana,
                   (q) => q.readingEqualTo(hiraganaPartialTerm!))
+              .limit(limit())
               .findAllSync();
 
           uniqueEntriesById.addEntries(
@@ -478,6 +480,7 @@ Future<DictionarySearchResult?> prepareSearchResultsJapaneseLanguage(
                 (q) => q.anyOf<String, String>(
                     hiraganaDeinflections,
                     (q, term) => q.wordEqualTo(term)))
+            .limit(limit())
             .findAllSync();
 
         termDeinflectedResults
@@ -518,6 +521,7 @@ Future<DictionarySearchResult?> prepareSearchResultsJapaneseLanguage(
           termExactKatakanaResults = database.dictionaryEntrys
               .where()
               .wordEqualTo(kanaKit.toKatakana(partialTerm))
+              .limit(limit())
               .findAllSync();
 
           uniqueEntriesById.addEntries(
@@ -556,6 +560,7 @@ Future<DictionarySearchResult?> prepareSearchResultsJapaneseLanguage(
                 .where()
                 .wordStartsWith(searchTerm)
                 .sortByWordLength()
+                .limit(limit())
                 .findAllSync();
 
             uniqueEntriesById.addEntries(startsWithToAdd
@@ -570,6 +575,7 @@ Future<DictionarySearchResult?> prepareSearchResultsJapaneseLanguage(
                 .where()
                 .wordStartsWith(searchTerm)
                 .sortByWordLength()
+                .limit(limit())
                 .findAllSync();
 
             uniqueEntriesById.addEntries(startsWithToAdd

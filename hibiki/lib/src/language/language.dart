@@ -319,7 +319,9 @@ abstract class Language {
   int getGuessHighlightLength({
     required String searchTerm,
   }) {
-    final word = textToWords(searchTerm)
+    final truncated =
+        searchTerm.length > 40 ? searchTerm.substring(0, 40) : searchTerm;
+    final word = textToWords(truncated)
         .firstWhere((e) => e.trim().isNotEmpty, orElse: () => '');
     final length = word.trim().length;
     return length > 0 ? length : 1;

@@ -344,6 +344,8 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   /// Hide the dictionary and dispose of the current result.
   @override
   void clearDictionaryResult() async {
+    debugPrint('[hibiki-dict-debug] clearDictionaryResult called');
+    debugPrint('[hibiki-dict-debug] ${StackTrace.current}');
     super.clearDictionaryResult();
     unselectWebViewTextSelection(_controller);
   }
@@ -743,12 +745,12 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     required int whitespaceOffset,
     required bool isSpaceDelimited,
   }) async {
-    await _controller.setContextMenu(emptyContextMenu);
+    _controller.setContextMenu(emptyContextMenu);
     await _controller.evaluateJavascript(
       source:
           'selectTextForTextLength($cursorX, $cursorY, $offsetIndex, $length, $whitespaceOffset, $isSpaceDelimited);',
     );
-    await _controller.setContextMenu(contextMenu);
+    _controller.setContextMenu(contextMenu);
   }
 
   void onConsoleMessage(
@@ -829,6 +831,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   }
 
   Future<void> _processLookup(Map<String, dynamic> payload) async {
+    debugPrint('[hibiki-dict-debug] _processLookup called index=${payload['index']} textLen=${(payload['text'] as String?)?.length}');
     FocusScope.of(context).unfocus();
     _focusNode.requestFocus();
 
@@ -877,7 +880,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       );
 
       if (mediaSource.highlightOnTap) {
-        await selectTextOnwards(
+        selectTextOnwards(
           cursorX: x,
           cursorY: y,
           offsetIndex: offsetIndex,
@@ -922,8 +925,9 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         mediaSource.setCurrentSentence(
           selection: selection,
         );
-      }).catchError((Object e) {
+      }).catchError((Object e, StackTrace st) {
         debugPrint('_processLookup async error: $e');
+        debugPrint('_processLookup async stacktrace: $st');
         clearDictionaryResult();
         mediaSource.clearCurrentSentence();
       });
