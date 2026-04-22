@@ -159,13 +159,8 @@ Future<void> prepareDirectoryYomichanFormat(
   final dirPath = params.resourceDirectory.path;
   final sendPort = params.sendPort;
 
-  final receivePort = ReceivePort();
-  receivePort.listen((message) {
-    sendPort.send(message);
-  });
-
   await Isolate.run(() {
-    final port = receivePort.sendPort;
+    final port = sendPort;
     final input = archive_io.InputFileStream(filePath);
     final zip = archive.ZipDecoder().decodeBuffer(input);
     final total = zip.files.length;
@@ -186,8 +181,6 @@ Future<void> prepareDirectoryYomichanFormat(
     }
     input.closeSync();
   });
-
-  receivePort.close();
 }
 
 /// Top-level function for use in compute. See [DictionaryFormat] for details.
