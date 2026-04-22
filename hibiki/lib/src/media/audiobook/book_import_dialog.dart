@@ -6,6 +6,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fluttertoast/fluttertoast.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
 import 'package:hibiki/src/media/audiobook/audiobook_health.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
@@ -482,16 +484,29 @@ class _BookImportDialogState extends State<BookImportDialog> {
       debugPrint('[hibiki-import] ttu IDB inject failed: $e');
     }
 
+    final Directory persistDir = await _ensurePersistDir(uid);
+    final String persistedSrt = await _persistFile(File(_srtPath!), persistDir);
+    List<String>? persistedAudioPaths;
+    String? persistedAudioRoot;
+    if (_audioPaths != null && _audioPaths!.isNotEmpty) {
+      persistedAudioPaths = [];
+      for (final String src in _audioPaths!) {
+        persistedAudioPaths.add(await _persistFile(File(src), persistDir));
+      }
+    } else if (_audioDir != null) {
+      persistedAudioRoot = _audioDir;
+    }
+
     final SrtBook book = SrtBook()
       ..uid = uid
       ..title = title
-      ..srtPath = _srtPath!
+      ..srtPath = persistedSrt
       ..importedAt = DateTime.now().millisecondsSinceEpoch
       ..ttuBookId = ttuBookId;
-    if (_audioPaths != null && _audioPaths!.isNotEmpty) {
-      book.audioPaths = _audioPaths;
-    } else if (_audioDir != null) {
-      book.audioRoot = _audioDir;
+    if (persistedAudioPaths != null && persistedAudioPaths.isNotEmpty) {
+      book.audioPaths = persistedAudioPaths;
+    } else if (persistedAudioRoot != null) {
+      book.audioRoot = persistedAudioRoot;
     }
     if (author != null) {
       book.author = author;
@@ -589,14 +604,28 @@ class _BookImportDialogState extends State<BookImportDialog> {
     }
 
     // 4) 存 Audiobook（挂 audio 源）+ cues + health，一次 put。
+    //    file_picker cache 路径不持久，复制到 docs/audiobooks/。
+    final Directory persistDir = await _ensurePersistDir(bookUid);
+    final String persistedSrt = await _persistFile(File(_srtPath!), persistDir);
+    List<String>? persistedAudioPaths;
+    String? persistedAudioRoot;
+    if (_audioPaths != null && _audioPaths!.isNotEmpty) {
+      persistedAudioPaths = [];
+      for (final String src in _audioPaths!) {
+        persistedAudioPaths.add(await _persistFile(File(src), persistDir));
+      }
+    } else if (_audioDir != null) {
+      persistedAudioRoot = _audioDir;
+    }
+
     final Audiobook audiobook = Audiobook()
       ..bookUid = bookUid
       ..alignmentFormat = ext
-      ..alignmentPath = _srtPath!;
-    if (_audioPaths != null && _audioPaths!.isNotEmpty) {
-      audiobook.audioPaths = _audioPaths;
-    } else if (_audioDir != null) {
-      audiobook.audioRoot = _audioDir;
+      ..alignmentPath = persistedSrt;
+    if (persistedAudioPaths != null && persistedAudioPaths.isNotEmpty) {
+      audiobook.audioPaths = persistedAudioPaths;
+    } else if (persistedAudioRoot != null) {
+      audiobook.audioRoot = persistedAudioRoot;
     }
     health.packInto(audiobook);
 
@@ -765,4 +794,22 @@ class _BookImportDialogState extends State<BookImportDialog> {
 
   String _basename(String path) =>
       path.split(Platform.pathSeparator).last;
+
+  Future<Directory> _ensurePersistDir(String key) async {
+    final Directory docs = await getApplicationDocumentsDirectory();
+    final String hash = key.hashCode.toRadixString(16);
+    final Directory dir = Directory(p.join(docs.path, 'audiobooks', hash));
+    if (!dir.existsSync()) {
+      dir.createSync(recursive: true);
+    }
+    return dir;
+  }
+
+  Future<String> _persistFile(File src, Directory persistDir) async {
+    if (src.path.startsWith(persistDir.path)) return src.path;
+    final String dest = p.join(persistDir.path, p.basename(src.path));
+    await src.copy(dest);
+    debugPrint('[hibiki-import] persisted ${src.path} → $dest');
+    return dest;
+  }
 }

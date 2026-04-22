@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:hibiki/src/media/audiobook/ass_parser.dart';
@@ -507,15 +509,33 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       // 见 `updateHealth readback THREW`。
       final AudiobookHealth health = await _parseCues(format);
 
+      // file_picker 返回的路径在 cache/ 下，Android 随时会清理。
+      // 把音频和对齐文件复制到持久目录再存路径。
+      final Directory persistDir = await _ensurePersistDir();
+
+      final String persistedAlignment =
+          await _persistFile(File(_alignmentPath!), persistDir);
+
+      List<String>? persistedAudioPaths;
+      String? persistedAudioRoot;
+      if (_audioPaths != null && _audioPaths!.isNotEmpty) {
+        persistedAudioPaths = [];
+        for (final String src in _audioPaths!) {
+          persistedAudioPaths.add(await _persistFile(File(src), persistDir));
+        }
+      } else {
+        persistedAudioRoot = _audioDir;
+      }
+
       final Audiobook audiobook = Audiobook()
         ..bookUid = widget.bookUid
         ..alignmentFormat = format
-        ..alignmentPath = _alignmentPath!;
+        ..alignmentPath = persistedAlignment;
 
-      if (_audioPaths != null && _audioPaths!.isNotEmpty) {
-        audiobook.audioPaths = _audioPaths;
+      if (persistedAudioPaths != null && persistedAudioPaths.isNotEmpty) {
+        audiobook.audioPaths = persistedAudioPaths;
       } else {
-        audiobook.audioRoot = _audioDir;
+        audiobook.audioRoot = persistedAudioRoot;
       }
 
       health.packInto(audiobook);
@@ -826,4 +846,23 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
 
   String _basename(String path) =>
       path.split(Platform.pathSeparator).last;
+
+  Future<Directory> _ensurePersistDir() async {
+    final Directory docs = await getApplicationDocumentsDirectory();
+    final String hash = widget.bookUid.hashCode.toRadixString(16);
+    final Directory dir = Directory(p.join(docs.path, 'audiobooks', hash));
+    if (!dir.existsSync()) {
+      dir.createSync(recursive: true);
+    }
+    return dir;
+  }
+
+  /// 如果 [src] 已经在持久目录内就原样返回路径，否则复制过去。
+  Future<String> _persistFile(File src, Directory persistDir) async {
+    if (src.path.startsWith(persistDir.path)) return src.path;
+    final String dest = p.join(persistDir.path, p.basename(src.path));
+    await src.copy(dest);
+    debugPrint('[hibiki-audiobook] persisted ${src.path} → $dest');
+    return dest;
+  }
 }
