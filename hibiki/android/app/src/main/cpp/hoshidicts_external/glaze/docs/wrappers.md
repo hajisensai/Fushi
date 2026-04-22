@@ -1,0 +1,1288 @@
+# Wrappers
+
+Glaze provides a number of wrappers that indicate at compile time how a value should be read and/or written. These wrappers allow you to modify the read/write behavior of a type without affecting your C++ class.
+
+## Available Wrappers
+
+```c++
+glz::append_arrays<&T::x> // When reading into an array that is appendable, the new data will be appended rather than overwrite
+glz::bools_as_numbers<&T::x> // Read and write booleans as numbers
+glz::cast<&T::x, CastType> // Casts a value to and from the CastType, which is parsed/serialized
+glz::quoted_num<&T::x> // Read and write numbers as strings
+glz::quoted<&T::x> // Read a value as a string and unescape, to avoid the user having to parse twice
+glz::string_as_number<&T::x> // Read a string as a number and writes the string as a number
+glz::unquoted<&T::x> // Write out string like types without quotes
+glz::raw_string<&T::string> // Do not decode/encode escaped characters for strings (improves read/write performance)
+glz::escaped<&T::string> // Opposite of glz::raw_string, it turns off this behavior
+glz::escape_bytes_t<T> // A wrapper type for local use to treat char array or vector as byte sequence to be fully escaped (prevents null termination truncation)
+glz::escape_bytes<&T::x> // For meta usage: treats char array or vector as byte sequence to be fully escaped (prevents null termination truncation)
+
+glz::read_constraint<&T::x, constraint_function, "Message"> // Applies a constraint function when reading
+
+glz::max_length<&T::x, N> // Limits string length or array size to N when reading (BEVE format)
+
+glz::partial_read<&T::x> // Reads into only existing fields and elements and then exits without parsing the rest of the input
+
+glz::invoke<&T::func> // Invoke a std::function, lambda, or member function with n-arguments as an array input
+
+glz::write_float32<&T::x> // Writes out numbers with a maximum precision of float32_t
+glz::write_float64<&T::x> // Writes out numbers with a maximum precision of float64_t
+glz::write_float_full<&T::x> // Writes out numbers with full precision (turns off higher level float precision wrappers)
+glz::float_format<&T::x, "{:.2f}"> // Format floats using std::format syntax (C++23)
+
+glz::custom<&T::read, &T::write> // Calls custom read and write std::functions, lambdas, or member functions
+glz::manage<&T::x, &T::read_x, &T::write_x> // Calls read_x() after reading x and calls write_x() before writing x
+glz::as_array<&T::member> // Treat a reflected/member-annotated type as a positional array for read and write
+glz::flatten_map<&T::member> // Flatten map-like containers into a JSON array [key..., value, ...]
+```
+
+## Associated glz::opts
+
+`glz::opts` is the compile time options struct passed to most of Glaze functions to configure read/write behavior. Many wrappers are associated with compile time options that can be set via a custom options struct inheriting from `glz::opts`.
+
+> [!NOTE]
+> Options like `quoted_num`, `string_as_number`, `unquoted`, `raw_string`, and `structs_as_arrays` are **inheritable options** - they are not part of the default `glz::opts` struct. To use them globally, add them to a custom options struct:
+> ```c++
+> struct my_opts : glz::opts {
+>    bool quoted_num = true;      // treat numbers as quoted strings
+>    bool string_as_number = true; // treat strings as numbers
+>    bool unquoted = true;         // write without quotes
+>    bool raw_string = true;       // skip escape processing
+>    bool structs_as_arrays = true; // serialize structs as arrays
+> };
+> ```
+
+## append_arrays
+
+When reading into an array that is appendable, the new data will be appended rather than overwrite
+
+Associated option: add `bool append_arrays = true;` to a custom options struct (for example,
+`struct append_arrays_opts : glz::opts { bool append_arrays = true; };`).
+
+```c++
+struct append_obj
+{
+   std::vector<std::string> names{};
+   std::vector<std::array<int, 2>> arrays{};
+};
+
+template <>
+struct glz::meta<append_obj>
+{
+   using T = append_obj;
+   static constexpr auto value = object("names", append_arrays<&T::names>, "arrays", append_arrays<&T::arrays>);
+};
+```
+
+In use:
+
+```c++
+append_obj obj{};
+expect(not glz::read_json(obj, R"({"names":["Bob"],"arrays":[[0,0]]})"));
+expect(obj.names == std::vector<std::string>{"Bob"});
+expect(obj.arrays == std::vector<std::array<int, 2>>{{0,0}});
+
+expect(not glz::read_json(obj, R"({"names":["Liz"],"arrays":[[1,1]]})"));
+expect(obj.names == std::vector<std::string>{"Bob", "Liz"});
+expect(obj.arrays == std::vector<std::array<int, 2>>{{0,0},{1,1}});
+```
+
+## bools_as_numbers
+
+Read and write booleans as numbers
+
+Associated option: add `bool bools_as_numbers = true;` to a custom options struct (for example,
+`struct bools_as_numbers_opts : glz::opts { bool bools_as_numbers = true; };`).
+
+```c++
+struct bools_as_numbers_struct
+{
+   bool a{};
+   bool b{};
+   bool c{};
+   bool d{};
+   
+   struct glaze {
+      using T = bools_as_numbers_struct;
+      static constexpr auto value = glz::object("a", glz::bools_as_numbers<&T::a>, "b", glz::bools_as_numbers<&T::b>, &T::c, &T::d);
+   };
+};
+```
+
+In use:
+
+```c++
+std::string s = R"({"a":1,"b":0,"c":true,"d":false})";
+bools_as_numbers_struct obj{};
+expect(!glz::read_json(obj, s));
+expect(obj.a == true);
+expect(obj.b == false);
+expect(glz::write_json(obj) == s);
+```
+
+### bools_as_numbers from glz::opts
+
+You don't have to use wrappers if you want the global behavior to handle booleans as numbers.
+
+```c++
+std::string s = R"([1,0,1,0])";
+std::array<bool, 4> obj{};
+struct bools_as_numbers_opts : glz::opts
+{
+   bool bools_as_numbers = true;
+};
+constexpr bools_as_numbers_opts opts{};
+expect(!glz::read<opts>(obj, s));
+expect(glz::write<opts>(obj) == s);
+```
+
+## cast
+
+`glz::cast` is a simple wrapper that will serialize and deserialize the cast type rather than underlying type. This enables the user to parse JSON for a floating point value into an integer, or perform similar `static_cast` behaviors.
+
+```c++
+struct cast_obj
+{
+   int integer{};
+};
+
+template <>
+struct glz::meta<cast_obj>
+{
+   using T = cast_obj;
+   static constexpr auto value = object("integer", cast<&T::integer, double>);
+};
+```
+
+In use:
+
+```c++
+cast_obj obj{};
+std::string buffer = R"({"integer":5.7})";
+expect(not glz::read_json(obj, buffer));
+expect(obj.integer == 5);
+```
+
+When a cast-backed type is used as a key in a map (for example `std::map<MyId, T>`), BEVE now recognises the wrapper and emits the same header as the cast target. This means strong-ID wrappers can be reused across JSON, TOML, and BEVE without specialising custom read/write logic.
+
+## quoted_num
+
+Read and write numbers as strings.
+
+Associated option: add `bool quoted_num = true;` to a custom options struct (for example, `struct quoted_num_opts : glz::opts { bool quoted_num = true; };`).
+
+```c++
+struct foo {
+  int x{};
+};
+
+template <>
+struct glz::meta<foo> {
+  using T = foo;
+  static constexpr auto value = object("x", quoted_num<&T::x>);
+};
+```
+
+In use:
+
+```c++
+std::string input = R"({ "x": "5" })";
+foo obj{};
+expect(!glz::read_json(obj, input));
+expect(glz::write_json(obj) == R"({ "x": "5" })");
+```
+
+> `quoted_num` is more efficient than `quoted` for numbers.
+
+## quoted
+
+When reading, first reads a value as a string, which unescapes, and then reads the value normally. When writing, will first write the value as a string and then write the string to produce escapes.
+
+> `glz::quoted` is useful for storing escaped JSON inside of a higher level JSON object.
+
+```c++
+struct client_state
+{
+   uint64_t id{};
+   std::map<std::string, std::vector<std::string>> layouts{};
+};
+
+template <>
+struct glz::meta<client_state>
+{
+   using T = client_state;
+   static constexpr auto value = object("id", &T::id, "layouts", quoted<&T::layouts>);
+};
+```
+
+In use:
+
+```c++
+client_state obj{};
+std::string input = R"({
+"id": 4848,
+"layouts": "{\"first layout\": [ \"inner1\", \"inner2\" ] }"
+})";
+expect(!glz::read_json(obj, input));
+expect(obj.id == 4848);
+expect(obj.layouts.at("first layout") == std::vector<std::string>{"inner1", "inner2"});
+
+std::string out{};
+glz::write_json(obj, out);
+expect(out == R"({"id":4848,"layouts":"{\"first layout\":[\"inner1\",\"inner2\"]}"})");
+```
+
+## as_array
+
+Convert a positional JSON array into an existing struct while writing back out as an array. Use `glz::as_array<&T::member>` when declaring the member in `glz::object`. Handy when a service sends compact arrays but your C++ type is a struct in memory.
+
+```c++
+struct Person_details
+{
+   std::string_view name;
+   std::string_view surname;
+   std::string_view city;
+   std::string_view street;
+};
+
+struct Person
+{
+   int id{};
+   Person_details person{};
+};
+
+template <>
+struct glz::meta<Person>
+{
+   using T = Person;
+   static constexpr auto value = glz::object(
+      "id", &T::id,
+      "person", glz::as_array<&T::person>
+   );
+};
+
+std::string payload = R"({
+   "id": 1,
+   "person": ["Joe", "Doe", "London", "Chamber St"]
+})";
+
+Person p{};
+expect(!glz::read_json(p, payload));
+expect(p.person.city == "London");
+
+auto written = glz::write_json(p).value();
+expect(written ==
+       R"({"id":1,"person":["Joe","Doe","London","Chamber St"]})"
+);
+```
+
+## flatten_map
+
+Flatten a map-like container or range of pairs into a JSON array. This wrapper lives in the optional header `glaze/json/flatten_map.hpp`.
+
+```c++
+#include "glaze/json/flatten_map.hpp"
+```
+
+Use `glz::flatten_map<&T::member>` inside `glz::object` when the member is a map-like container with a fixed-size key, such as `std::pair<int, int>`.
+
+```c++
+struct pair_hash
+{
+   size_t operator()(const std::pair<int, int>& value) const noexcept
+   {
+      return std::hash<int>{}(value.first) ^ (std::hash<int>{}(value.second) << 1);
+   }
+};
+
+struct payload
+{
+   std::unordered_map<std::pair<int, int>, std::string, pair_hash> map{};
+};
+
+template <>
+struct glz::meta<payload>
+{
+   using T = payload;
+   static constexpr auto value = glz::object("map", glz::flatten_map<&T::map>);
+};
+```
+
+In use:
+
+```c++
+payload value{};
+value.map[{1, 2}] = "example";
+
+std::string json{};
+expect(!glz::write_json(glz::flatten_map<&payload::map>(value), json));
+expect(json == R"([1,2,"example"])");
+
+payload parsed{};
+auto wrapped = glz::flatten_map<&payload::map>(parsed);
+expect(!glz::read_json(wrapped, json));
+expect(parsed.map.at({1, 2}) == "example");
+```
+
+The wrapper flattens each entry as `[key elements..., mapped value]`, so multiple entries look like:
+
+```json
+[1,2,"example",3,4,"another"]
+```
+
+This is intended for pair-ranges and map-like containers whose keys can be flattened without additional metadata, including `std::pair`, tuples, Glaze arrays, and fixed-size containers like `std::array`.
+
+## string_as_number
+
+Read JSON numbers into strings and write strings as JSON numbers.
+
+Associated option: add `bool string_as_number = true;` to a custom options struct (for example, `struct string_as_number_opts : glz::opts { bool string_as_number = true; };`).
+
+```c++
+struct numbers_as_strings
+{
+   std::string x{};
+   std::string y{};
+};
+
+template <>
+struct glz::meta<numbers_as_strings>
+{
+   using T = numbers_as_strings;
+   static constexpr auto value = object("x", glz::string_as_number<&T::x>, "y", glz::string_as_number<&T::y>);
+};
+```
+
+In use:
+
+```c++
+std::string input = R"({"x":555,"y":3.14})";
+numbers_as_strings obj{};
+expect(!glz::read_json(obj, input));
+expect(obj.x == "555");
+expect(obj.y == "3.14");
+
+std::string output;
+glz::write_json(obj, output);
+expect(input == output);
+```
+
+## unquoted
+
+Write out string like types without quotes.
+
+> Useful for when a string is already in JSON format and doesn't need to be quoted.
+
+Associated option: add `bool unquoted = true;` to a custom options struct (for example, `struct unquoted_opts : glz::opts { bool unquoted = true; };`).
+
+```c++
+struct unquoted_struct
+{
+   std::string str{};
+};
+
+template <>
+struct glz::meta<unquoted_struct>
+{
+   using T = unquoted_struct;
+   static constexpr auto value = object("str", glz::unquoted<&T::str>);
+};
+```
+
+In use:
+
+```c++
+suite unquoted_test = [] {
+  unquoted_struct obj{.str = R"("Hello")"};
+  // quotes would have been escaped if str were not wrapped with unquoted
+  expect(glz::write_json(obj) == R"({"str":"Hello"})");
+};
+```
+
+## raw_string
+
+Do not decode/encode escaped characters for strings (improves read/write performance).
+
+> If your code does not care about decoding escaped characters or you know your input will never have escaped characters, this wrapper makes reading/writing that string faster.
+
+Associated option: add `bool raw_string = true;` to a custom options struct (for example, `struct raw_string_opts : glz::opts { bool raw_string = true; };`).
+
+```c++
+struct raw_stuff
+{
+   std::string a{};
+   std::string b{};
+   std::string c{};
+
+   struct glaze
+   {
+      using T = raw_stuff;
+      static constexpr auto value = glz::object(&T::a, &T::b, &T::c);
+   };
+};
+
+struct raw_stuff_wrapper
+{
+   raw_stuff data{};
+
+   struct glaze
+   {
+      using T = raw_stuff_wrapper;
+      static constexpr auto value{glz::raw_string<&T::data>};
+   };
+};
+```
+
+In use:
+
+```c++
+raw_stuff_wrapper obj{};
+std::string buffer = R"({"a":"Hello\nWorld","b":"Hello World","c":"\tHello\bWorld"})";
+
+expect(!glz::read_json(obj, buffer));
+expect(obj.data.a == R"(Hello\nWorld)");
+expect(obj.data.b == R"(Hello World)");
+expect(obj.data.c == R"(\tHello\bWorld)");
+
+buffer.clear();
+glz::write_json(obj, buffer);
+expect(buffer == R"({"a":"Hello\nWorld","b":"Hello World","c":"\tHello\bWorld"})");
+```
+
+## escaped
+
+The `glz::escaped` wrapper turns off the effects of `glz::raw_string`.
+
+```c++
+struct raw_stuff_escaped
+{
+   raw_stuff data{};
+
+   struct glaze
+   {
+      using T = raw_stuff_escaped;
+      static constexpr auto value{glz::escaped<&T::data>};
+   };
+};
+```
+
+In use:
+
+```c++
+raw_stuff_escaped obj{};
+std::string buffer = R"({"a":"Hello\nWorld"})";
+
+expect(!glz::read_json(obj, buffer));
+expect(obj.data.a ==
+       R"(Hello
+World)");
+
+buffer.clear();
+glz::write_json(obj, buffer);
+expect(buffer == R"({"a":"Hello\nWorld","b":"","c":""})");
+```
+
+## escape_bytes
+
+The `glz::escape_bytes_t` wrapper (for local usage) and `glz::escape_bytes` (for meta usage) are used to read and write binary data stored in character arrays (`char[]`) or vectors (`std::vector<char>`) as fully escaped JSON strings. This is particularly useful for handling binary data that might contain null characters or other control characters that would otherwise be truncated or cause issues.
+
+**Meta Usage (`glz::escape_bytes<&T::member>`):**
+
+```c++
+struct binary_data
+{
+   char data[4];
+};
+
+template <>
+struct glz::meta<binary_data>
+{
+   using T = binary_data;
+   static constexpr auto value = object("data", glz::escape_bytes<&T::data>);
+};
+```
+
+In use:
+
+```c++
+binary_data obj;
+obj.data[0] = 0;
+obj.data[1] = 1;
+obj.data[2] = 0;
+obj.data[3] = 2;
+
+std::string out;
+glz::write_json(obj, out);
+expect(out == R"({"data":"\u0000\u0001\u0000\u0002"})");
+
+binary_data obj2;
+glz::read_json(obj2, out);
+expect(std::memcmp(obj.data, obj2.data, 4) == 0);
+```
+
+**Local Usage (`glz::escape_bytes_t{value}`):**
+
+```c++
+char local_data[4] = {0, 'A', 0, 'B'};
+std::string out;
+glz::write_json(glz::escape_bytes_t{local_data}, out);
+expect(out == R"("\u0000A\u0000B")");
+
+char read_back_data[4];
+glz::read_json(glz::escape_bytes_t{read_back_data}, out);
+expect(read_back_data[0] == 0);
+expect(read_back_data[1] == 'A');
+expect(read_back_data[2] == 0);
+expect(read_back_data[3] == 'B');
+```
+
+## read_constraint
+
+Enables complex constraints to be defined within a `glz::meta` or using member functions. Parsing is short circuited upon violating a constraint and a nicely formatted error can be produced with a custom error message.
+
+### Field order and optional members
+
+Object members are visited in the order that the JSON input supplies them. This is an intentional design choice so
+that input streams do not have to be re-ordered to match the declaration order. Because of this, a
+`read_constraint` may only rely on fields that have already appeared in the JSON payload. If you need to validate the
+final state of the entire object, use a `self_constraint` as shown below—those run after every field has been read.
+
+Optional members are parsed lazily: if the JSON payload does not contain the key, the member is left untouched and the
+corresponding `read_constraint` is not evaluated. This guarantees that absent optional data does not trigger
+constraints. Keep in mind that reusing the same C++ object across multiple reads will retain the previous value for any
+field that is omitted in later payloads, so reset or re-initialize the instance when you expect fresh state.
+
+```c++
+struct constrained_object
+{
+   int age{};
+   std::string name{};
+};
+
+template <>
+struct glz::meta<constrained_object>
+{
+   using T = constrained_object;
+   static constexpr auto limit_age = [](const T&, int age) { return (age >= 0 && age <= 120); };
+
+   static constexpr auto limit_name = [](const T&, const std::string& name) { return name.size() <= 8; };
+
+   static constexpr auto value = object("age", read_constraint<&T::age, limit_age, "Age out of range">, //
+                                        "name", read_constraint<&T::name, limit_name, "Name is too long">);
+};
+```
+
+### Skipping read_constraint validation
+
+In some cases you may want to skip `read_constraint` validation—for example, when performance is critical and the data
+is known to be valid. You can disable `read_constraint` checks by creating a custom options struct
+with `skip_read_constraint = true`:
+
+```c++
+struct skip_constraint_opts : glz::opts
+{
+   bool skip_read_constraint = true;
+};
+
+// Use it like this:
+constexpr skip_constraint_opts opts{};
+auto ec = glz::read<opts>(obj, buffer);
+```
+
+With this option enabled, the `read_constraint` is still defined in `glz::meta<T>` but will not be evaluated during
+deserialization. This allows you to toggle validation on or off at compile time based on your use case.
+
+### Object level validation
+
+To validate combinations of fields after the object has been fully deserialized, provide a single
+`self_constraint` entry. This constraint runs once after all object members have been populated and can therefore
+reason about the final state.
+
+```c++
+struct cross_constrained
+{
+   int age{};
+   std::string name{};
+};
+
+template <>
+struct glz::meta<cross_constrained>
+{
+   using T = cross_constrained;
+
+   static constexpr auto combined = [](const T& v) {
+      return ((v.name.starts_with('A') && v.age > 10) || v.age > 5);
+   };
+
+   static constexpr auto value = object(&T::age, &T::name);
+   static constexpr auto self_constraint = glz::self_constraint<combined, "Age/name combination invalid">;
+};
+```
+
+You can perform more elaborate business logic as well, such as validating that user credentials are consistent and
+secure:
+
+```c++
+struct registration_request
+{
+   std::string username{};
+   std::string password{};
+   std::string confirm_password{};
+   std::optional<std::string> email{};
+};
+
+template <>
+struct glz::meta<registration_request>
+{
+   using T = registration_request;
+
+   static constexpr auto strong_credentials = [](const T& value) {
+      const bool strong_length = value.password.size() >= 12;
+      const bool matches = value.password == value.confirm_password;
+      const bool has_username = !value.username.empty();
+      return strong_length && matches && has_username;
+   };
+
+   static constexpr auto value = object(
+      &T::username,
+      &T::password,
+      &T::confirm_password,
+      &T::email);
+
+   static constexpr auto self_constraint = glz::self_constraint<strong_credentials,
+      "Password must be at least 12 characters and match confirmation">;
+};
+```
+
+If a self constraint fails, deserialization stops and `glz::error_code::constraint_violated` is reported with the
+associated message.
+
+When it is important that object memory remains valid after every individual assignment—for example, when other code
+observes the partially constructed object during parsing—prefer `read_constraint` on the specific members. Those
+constraints fire before the member is written, so the in-memory representation never stores an invalid value. In
+contrast, `self_constraint` runs after fields are populated, so it can detect issues that span multiple members but the
+object may hold the problematic data until the constraint handler reports an error.
+
+### Skipping self_constraint validation
+
+In some cases you may want to skip `self_constraint` validation—for example, when performance is critical and the data
+is known to be valid, or when validation should be deferred to a later stage. You can disable `self_constraint` checks
+by creating a custom options struct with `skip_self_constraint = true`:
+
+```c++
+struct skip_constraint_opts : glz::opts
+{
+   bool skip_self_constraint = true;
+};
+
+// Use it like this:
+constexpr skip_constraint_opts opts{};
+auto ec = glz::read<opts>(obj, buffer);
+```
+
+With this option enabled, the `self_constraint` is still defined in `glz::meta<T>` but will not be evaluated during
+deserialization. This allows you to toggle validation on or off at compile time based on your use case.
+
+## max_length
+
+Limits string length or array/vector size when reading from binary formats (currently BEVE). This wrapper provides per-field control over allocation limits to prevent memory exhaustion from malicious or malformed input.
+
+For strings (`std::string`), limits the maximum character count. For arrays/vectors, limits the maximum element count.
+
+```c++
+struct user_input
+{
+   std::string username;
+   std::string bio;
+   std::vector<int> scores;
+   std::vector<std::string> tags;
+};
+
+template <>
+struct glz::meta<user_input>
+{
+   using T = user_input;
+   static constexpr auto value = object(
+      "username", glz::max_length<&T::username, 64>,    // Max 64 characters
+      "bio", &T::bio,                                    // No limit
+      "scores", glz::max_length<&T::scores, 100>,       // Max 100 elements
+      "tags", glz::max_length<&T::tags, 10>             // Max 10 strings
+   );
+};
+```
+
+In use:
+
+```c++
+user_input obj{};
+std::string buffer;
+
+// Valid data within limits
+user_input valid{.username = "alice", .bio = "Hello!", .scores = {95, 87, 92}, .tags = {"cpp", "glaze"}};
+glz::write_beve(valid, buffer);
+
+auto ec = glz::read_beve(obj, buffer);
+expect(!ec); // Success
+
+// Data exceeding limits
+user_input oversized{.username = std::string(100, 'x'), .bio = "", .scores = {}, .tags = {}};
+buffer.clear();
+glz::write_beve(oversized, buffer);
+
+ec = glz::read_beve(obj, buffer);
+expect(ec.ec == glz::error_code::invalid_length); // Rejected - username exceeds 64 chars
+```
+
+### Works with complex types
+
+The wrapper also works with arrays of complex structs:
+
+```c++
+struct item
+{
+   std::string name;
+   int value;
+   std::vector<double> data;
+};
+
+struct container
+{
+   std::vector<item> items;
+};
+
+template <>
+struct glz::meta<container>
+{
+   using T = container;
+   static constexpr auto value = object(
+      "items", glz::max_length<&T::items, 50>  // Max 50 complex items
+   );
+};
+```
+
+### Associated options
+
+For global limits (applying to all strings/arrays), use custom options instead:
+
+```c++
+struct secure_opts : glz::opts
+{
+   uint32_t format = glz::BEVE;
+   size_t max_string_length = 1024;    // Max 1KB per string
+   size_t max_array_size = 10000;      // Max 10,000 elements per array
+};
+
+auto ec = glz::read<secure_opts{}>(obj, buffer);
+```
+
+See [Security](./security.md) for more details on allocation limits and DoS prevention.
+
+## partial_read
+
+Reads into existing object and array elements and then exits without parsing the rest of the input. More documentation concerning `partial_read` can be found in the [Partial Read documentation](./partial-read.md).
+
+> `partial_read` is useful when parsing header information before deciding how to decode the rest of a document. Or, when you only care about the first few elements of an array.
+
+## invoke
+
+Invoke a std::function or member function with n-arguments as an array input.
+
+```c++
+struct invoke_struct
+{
+   int y{};
+   std::function<void(int x)> square{};
+   void add_one() { ++y; }
+
+   // MSVC requires this constructor for 'this' to be captured
+   invoke_struct()
+   {
+      square = [&](int x) { y = x * x; };
+   }
+};
+
+template <>
+struct glz::meta<invoke_struct>
+{
+   using T = invoke_struct;
+   static constexpr auto value = object("square", invoke<&T::square>, "add_one", invoke<&T::add_one>);
+};
+```
+
+In use:
+
+```c++
+std::string s = R"(
+{
+	"square":[5],
+	"add_one":[]
+})";
+invoke_struct obj{};
+expect(!glz::read_json(obj, s));
+expect(obj.y == 26); // 5 * 5 + 1
+};
+```
+
+## write_float32
+
+Writes out numbers with a maximum precision of `float32_t`.
+
+```c++
+struct write_precision_t
+{
+   double pi = std::numbers::pi_v<double>;
+
+   struct glaze
+   {
+      using T = write_precision_t;
+      static constexpr auto value = glz::object("pi", glz::write_float32<&T::pi>);
+   };
+};
+```
+
+> [!IMPORTANT]
+>
+> The `glz::float_precision float_max_write_precision` is not a core option in `glz::opts`. You must create an options structure that adds this field to enable float precision control. The example below shows this user defined options struct that inherits from `glz::opts`.
+
+In use:
+
+```c++
+struct float_opts : glz::opts {
+   glz::float_precision float_max_write_precision{};
+};
+
+write_precision_t obj{};
+std::string json_float = glz::write<float_opts{}>(obj);
+expect(json_float == R"({"pi":3.1415927})") << json_float;
+```
+
+## write_float64
+
+Writes out numbers with a maximum precision of `float64_t`.
+
+## write_float_full
+
+Writes out numbers with full precision  (turns off higher level float precision wrappers).
+
+## float_format
+
+Format floating-point numbers using `std::format` syntax (C++23). This wrapper provides per-member control over float formatting with the full flexibility of C++ format specifications.
+
+```c++
+struct coordinates
+{
+   double latitude{37.7749295};
+   double longitude{-122.4194155};
+   float altitude{10.5f};
+};
+
+template <>
+struct glz::meta<coordinates>
+{
+   using T = coordinates;
+   static constexpr auto value = glz::object(
+      "lat", glz::float_format<&T::latitude, "{:.4f}">,
+      "lon", glz::float_format<&T::longitude, "{:.4f}">,
+      "alt", glz::float_format<&T::altitude, "{:.1f}">
+   );
+};
+```
+
+In use:
+
+```c++
+coordinates point{};
+std::string json = glz::write_json(point).value_or("error");
+// Output: {"lat":37.7749,"lon":-122.4194,"alt":10.5}
+
+// Reading works normally - format only affects writing
+coordinates point2{};
+glz::read_json(point2, R"({"lat":40.7128,"lon":-74.0060,"alt":5.0})");
+```
+
+### Format String Syntax
+
+The format string follows `std::format` syntax. Common specifiers for floats:
+
+| Format | Description | Example Input | Example Output |
+|--------|-------------|---------------|----------------|
+| `{:.2f}` | Fixed, 2 decimal places | `3.14159` | `3.14` |
+| `{:.0f}` | Fixed, no decimals (rounds) | `3.7` | `4` |
+| `{:.6f}` | Fixed, 6 decimal places | `3.14159` | `3.141590` |
+| `{:.2e}` | Scientific (lowercase) | `1234567.89` | `1.23e+06` |
+| `{:.3E}` | Scientific (uppercase) | `0.000123` | `1.230E-04` |
+| `{:.4g}` | General (auto-selects f/e) | `0.0001234` | `0.0001234` |
+
+### Mixing Formatted and Unformatted Members
+
+You can combine `float_format` with regular member pointers:
+
+```c++
+struct sensor_data
+{
+   double temperature{23.456789};  // High precision needed
+   double display_value{23.456789}; // Formatted for display
+   int sensor_id{42};
+};
+
+template <>
+struct glz::meta<sensor_data>
+{
+   using T = sensor_data;
+   static constexpr auto value = glz::object(
+      "temperature", &T::temperature,  // Full precision (default behavior)
+      "display", glz::float_format<&T::display_value, "{:.1f}">,  // Formatted
+      "id", &T::sensor_id
+   );
+};
+```
+
+Output: `{"temperature":23.456789,"display":23.5,"id":42}`
+
+### Special Values
+
+The wrapper handles special floating-point values using `std::format` behavior:
+
+```c++
+coordinates point{std::numeric_limits<double>::infinity(), -0.0, 0.0f};
+// Output includes "inf" for infinity values
+```
+
+### Comparison with Global float_format Option
+
+| Feature | Per-member `glz::float_format` | Global `float_format` option |
+|---------|-------------------------------|------------------------------|
+| Scope | Individual members | All floats in serialization |
+| Flexibility | Different format per member | Same format for all |
+| Usage | `glz::meta` wrappers | Custom `glz::opts` struct |
+
+Use the per-member wrapper when different fields need different formatting. Use the global option when all floats should be formatted the same way.
+
+### Global float_format Option
+
+For formatting all floats globally, add `float_format` to a custom options struct:
+
+```c++
+struct format_opts : glz::opts
+{
+   static constexpr std::string_view float_format = "{:.2f}";
+};
+
+double pi = 3.14159265358979;
+std::string json = glz::write<format_opts{}>(pi).value_or("error");
+// Output: 3.14
+```
+
+> [!NOTE]
+> The `float_format` option uses `std::format` internally and requires C++23. The format string is validated at compile time via `std::format_string`.
+
+## Associated glz::opts for float precision
+
+```c++
+enum struct float_precision : uint8_t { full, float32 = 4, float64 = 8, float128 = 16 };
+```
+
+glz::opts
+
+```c++
+// The maximum precision type used for writing floats, higher precision floats will be cast down to this precision
+float_precision float_max_write_precision{};
+```
+
+## custom
+
+Calls custom read and write std::functions, lambdas, or member functions.
+
+```c++
+struct custom_encoding
+{
+   uint64_t x{};
+   std::string y{};
+   std::array<uint32_t, 3> z{};
+
+   void read_x(const std::string& s) { x = std::stoi(s); }
+
+   uint64_t write_x() { return x; }
+
+   void read_y(const std::string& s) { y = "hello" + s; }
+
+   auto& write_z()
+   {
+      z[0] = 5;
+      return z;
+   }
+};
+
+template <>
+struct glz::meta<custom_encoding>
+{
+   using T = custom_encoding;
+   static constexpr auto value = object("x", custom<&T::read_x, &T::write_x>, //
+                                        "y", custom<&T::read_y, &T::y>, //
+                                        "z", custom<&T::z, &T::write_z>);
+};
+```
+
+In use:
+
+```c++
+"custom_reading"_test = [] {
+  custom_encoding obj{};
+  std::string s = R"({"x":"3","y":"world","z":[1,2,3]})";
+  expect(!glz::read_json(obj, s));
+  expect(obj.x == 3);
+  expect(obj.y == "helloworld");
+  expect(obj.z == std::array<uint32_t, 3>{1, 2, 3});
+};
+
+"custom_writing"_test = [] {
+  custom_encoding obj{};
+  std::string s = R"({"x":"3","y":"world","z":[1,2,3]})";
+  expect(!glz::read_json(obj, s));
+  std::string out{};
+  glz::write_json(obj, out);
+  expect(out == R"({"x":3,"y":"helloworld","z":[5,2,3]})");
+};
+```
+
+### Another custom example
+
+Showing use of constexpr lambdas for customization.
+
+```c++
+struct custom_buffer_input
+{
+   std::string str{};
+};
+
+template <>
+struct glz::meta<custom_buffer_input>
+{
+   static constexpr auto read_x = [](custom_buffer_input& s, const std::string& input) { s.str = input; };
+   static constexpr auto write_x = [](auto& s) -> auto& { return s.str; };
+   static constexpr auto value = glz::object("str", glz::custom<read_x, write_x>);
+};
+```
+
+In use:
+
+```c++
+std::string s = R"({"str":"Hello!"})";
+custom_buffer_input obj{};
+expect(!glz::read_json(obj, s));
+expect(obj.str == "Hello!");
+s.clear();
+glz::write_json(obj, s);
+expect(s == R"({"str":"Hello!"})");
+expect(obj.str == "Hello!");
+```
+
+> [!NOTE]
+>
+> With read lambdas like `[](custom_buffer_input& s, const std::string& input)`, both types must be concrete (cannot use `auto`), otherwise you'll get a compilation error noting this. The reason is that Glaze must be able to determine what type to decode into before passing the decoded value to `input`.
+
+## manage
+
+Calls a read function after reading and calls a write function before writing.
+
+> `glz::manage` is useful for transforming state from a user facing format into a more complex or esoteric internal format.
+
+```c++
+struct manage_x
+{
+   std::vector<int> x{};
+   std::vector<int> y{};
+
+   bool read_x()
+   {
+      y = x;
+      return true;
+   }
+
+   bool write_x()
+   {
+      x = y;
+      return true;
+   }
+};
+
+template <>
+struct glz::meta<manage_x>
+{
+   using T = manage_x;
+   static constexpr auto value = object("x", manage<&T::x, &T::read_x, &T::write_x>);
+};
+```
+
+In use:
+
+```c++
+manage_x obj{};
+std::string s = R"({"x":[1,2,3]})";
+expect(!glz::read_json(obj, s));
+expect(obj.y[0] == 1);
+expect(obj.y[1] == 2);
+obj.x.clear();
+s.clear();
+glz::write_json(obj, s);
+expect(s == R"({"x":[1,2,3]})");
+expect(obj.x[0] == 1);
+expect(obj.x[1] == 2);
+```
+
+### Another manage example
+
+```c++
+struct manage_x_lambda
+{
+   std::vector<int> x{};
+   std::vector<int> y{};
+};
+
+template <>
+struct glz::meta<manage_x_lambda>
+{
+   using T = manage_x_lambda;
+   static constexpr auto read_x = [](auto& s) {
+      s.y = s.x;
+      return true;
+   };
+   static constexpr auto write_x = [](auto& s) {
+      s.x = s.y;
+      return true;
+   };
+   [[maybe_unused]] static constexpr auto value = object("x", manage<&T::x, read_x, write_x>);
+};
+```
+
+In use:
+
+```c++
+manage_x_lambda obj{};
+std::string s = R"({"x":[1,2,3]})";
+expect(!glz::read_json(obj, s));
+expect(obj.y[0] == 1);
+expect(obj.y[1] == 2);
+obj.x.clear();
+s.clear();
+glz::write_json(obj, s);
+expect(s == R"({"x":[1,2,3]})");
+expect(obj.x[0] == 1);
+expect(obj.x[1] == 2);
+```
+
+## skip_null_members_on_read
+
+The `skip_null_members_on_read` option allows reading JSON or BEVE data with null values without requiring `std::optional` wrappers on your C++ types. When enabled, null values in the input are simply skipped, leaving the existing field values unchanged.
+
+This option is particularly useful when:
+- You receive JSON from external sources that may include null values but you want to maintain default or existing values
+- You want to avoid wrapping all your types in `std::optional` just to handle occasional null values
+- You're implementing partial updates where null means "don't change this field"
+
+### Usage
+
+Add `bool skip_null_members_on_read = true;` to a custom options struct:
+
+```c++
+struct Person {
+   std::string name = "Unknown";
+   int age = 0;
+   double salary = 0.0;
+};
+
+template <>
+struct glz::meta<Person> {
+   using T = Person;
+   static constexpr auto value = glz::object(&T::name, &T::age, &T::salary);
+};
+
+struct opts_skip_null : glz::opts {
+   bool skip_null_members_on_read = true;
+};
+```
+
+### Example: Preserving Existing Values
+
+```c++
+Person person;
+person.name = "Alice";
+person.age = 30;
+person.salary = 75000.0;
+
+// JSON with null values
+std::string json = R"({"name":null,"age":35,"salary":null})";
+
+glz::read<opts_skip_null{}>(person, json);
+
+// null fields were skipped, preserving existing values
+expect(person.name == "Alice");    // Unchanged (was null in JSON)
+expect(person.age == 35);          // Updated
+expect(person.salary == 75000.0);  // Unchanged (was null in JSON)
+```
+
+### Format Support
+
+This option works with both JSON and BEVE formats:
+
+**JSON:**
+```c++
+struct opts_skip_null_json : glz::opts {
+   bool skip_null_members_on_read = true;
+   // format = JSON (default)
+};
+```
+
+**BEVE:**
+```c++
+struct opts_skip_null_beve : glz::opts {
+   uint32_t format = glz::BEVE;
+   bool skip_null_members_on_read = true;
+};
+```
+
+### Behavior
+
+- **With option enabled:** Null values in input are skipped; C++ field retains its existing value
+- **With option disabled (default):** Null values cause errors for non-nullable types, or reset `std::optional` types to empty
+
+### Comparison with std::optional
+
+**Without skip_null_members_on_read:**
+```c++
+struct PersonWithOptional {
+   std::optional<std::string> name;
+   std::optional<int> age;
+};
+
+PersonWithOptional p;
+p.name = "Alice";
+p.age = 30;
+
+glz::read_json(p, R"({"name":null,"age":35})");
+
+// name is reset to empty by null
+expect(!p.name.has_value());
+expect(p.age == 35);
+```
+
+**With skip_null_members_on_read:**
+```c++
+struct Person {
+   std::string name;  // No std::optional needed
+   int age;
+};
+
+Person p;
+p.name = "Alice";
+p.age = 30;
+
+glz::read<opts_skip_null{}>(p, R"({"name":null,"age":35})");
+
+// name preserves existing value
+expect(p.name == "Alice");
+expect(p.age == 35);
+```
+
+> [!NOTE]
+> This option is not a core field in `glz::opts`. You must create a custom options struct that adds this field, as shown in the examples above.

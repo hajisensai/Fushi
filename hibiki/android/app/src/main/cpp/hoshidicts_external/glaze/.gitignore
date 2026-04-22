@@ -1,0 +1,64 @@
+# Build directories and binary files
+out/
+**/bin/
+**/build*/
+**/lib*/
+**/_build*/
+
+# CMake specific settings
+CMakeUserPresets.json
+**/CMakeFiles/
+**/CMakeCache.txt
+**/Testing/
+
+# IDE files
+.idea/
+.vs/
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.swp
+*~
+_ReSharper*
+*.log
+.cache/
+compile_commands.json
+
+# Package Manager Files
+conan/
+conan-cache/
+conanbuildinfo.txt
+conaninfo.txt
+graph_info.json
+
+# OS Generated Files
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+.Trash-*
+$RECYCLE.BIN/
+.TemporaryItems
+ehthumbs.db
+Thumbs.db
+*.json
+
+# Allow mock test data
+!tests/mock_json_test/json/*.json
+*.jsonc
+*.csv
+*.beve
+*.pem
+
+# Benchmark build artifacts
+benchmarks/build*/
+**/_deps/
+pr_description.md
+/size_tests
+/tmp_benchmark
+/exterior
+pr.md

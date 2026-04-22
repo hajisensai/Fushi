@@ -1,0 +1,160 @@
+site_name: Glaze Documentation
+site_description: Extremely fast, in memory, JSON and interface library for modern C++
+site_url: https://stephenberry.github.io/glaze/
+repo_url: https://github.com/stephenberry/glaze
+repo_name: stephenberry/glaze
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    # Palette toggle for automatic mode
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+    # Palette toggle for light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: blue
+      accent: blue
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    # Palette toggle for dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: blue
+      accent: blue
+      toggle:
+        icon: material/brightness-4
+        name: Switch to system preference
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.path
+    - navigation.top
+    - search.highlight
+    - search.share
+    - content.action.edit
+    - content.action.view
+    - content.code.copy
+    - content.code.annotate
+
+plugins:
+  - search
+  - autorefs
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.details
+  - admonition
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+
+nav:
+ - Home: index.md
+ - Getting Started:
+   - Installation: installation.md
+   - Quick Start: quick-start.md
+   - Compile Time Options: options.md
+   - Optimization Levels: optimization-levels.md
+   - Optimizing Performance: optimizing-performance.md
+   - Security: security.md
+   - Rename Keys: rename-keys.md
+   - Skip Keys: skip-keys.md
+   - Generic JSON: generic-json.md
+   - Ordered Maps: ordered-maps.md
+ - Reflection:
+   - Pure Reflection: pure-reflection.md
+   - Modify Reflection: modify-reflection.md
+ - Formats:
+   - JSON: json.md
+   - BEVE (binary): binary.md
+   - CBOR: cbor.md
+   - JSONB: jsonb.md
+   - CSV: csv.md
+   - MessagePack: msgpack.md
+   - Stencil/Mustache: stencil-mustache.md
+   - TOML: toml.md
+   - YAML: yaml.md
+   - EETF: EETF/erlang-external-term-format.md
+ - Serialization/Parsing:
+   - Automatic Enum Strings: enum-reflection.md
+   - Exceptions: exceptions.md
+   - Wrappers: wrappers.md
+   - Custom Wrappers: custom-wrappers.md
+   - Custom Serialization: custom-serialization.md
+   - Chrono Support: chrono.md
+   - Variant Handling: variant-handling.md
+   - Unknown Keys: unknown-keys.md
+   - JSON Pointer Syntax: json-pointer-syntax.md
+   - Struct JSON Pointer Operations: struct-json-pointer.md
+   - JSON Patch (RFC 6902): json-patch.md
+   - JSON Merge Patch (RFC 7386): json-merge-patch.md
+   - JMESPath: JMESPath.md
+   - JSON Schema: json-schema.md
+   - Field Validation: field-validation.md
+   - Partial Read/Write:
+     - Partial Read: partial-read.md
+     - Partial Write: partial-write.md
+   - Reading: reading.md
+   - Lazy JSON (On-Demand): lazy-json.md
+   - Writing: writing.md
+   - Streaming I/O: streaming.md
+   - Max Float Precision: max-float-precision.md
+   - Ranges: ranges.md
+ - Networking:
+   - networking/http-rest-support.md
+   - networking/http-server.md
+   - networking/http-router.md
+   - networking/url.md
+   - networking/rest-registry.md
+   - networking/tls-support.md
+   - networking/http-client.md
+   - networking/websocket-client.md
+   - networking/body-size-limits.md
+   - networking/advanced-networking.md
+   - networking/http-examples.md
+ - RPC:
+   - REPE RPC: rpc/repe-rpc.md
+   - REPE Buffer Handling: rpc/repe-buffer.md
+   - REPE Plugin Interface: rpc/repe-plugin.md
+   - JSON-RPC 2.0 Registry: rpc/jsonrpc-registry.md
+   - JSON-RPC 2.0 Client/Server: rpc/json-rpc.md
+   - REPE to JSON-RPC: rpc/repe-jsonrpc-conversion.md
+ - Interface Utilities:
+   - JSON Include: json-include.md
+   - CLI Menu: cli-menu.md
+   - Glaze Interfaces: glaze-interfaces.md
+   - Building Shared Libraries: building-shared-libraries.md
+   - Advanced API Usage: advanced-api-usage.md
+ - Data Recording/Logging:
+   - Time Trace Profiles: time-trace.md
+   - Data Recorder: recorder.md
+ - Threading:
+   - Thread Pool: thread-pool.md
+   - Volatile Support: volatile-support.md
+ - FAQ: FAQ.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/stephenberry/glaze
+      name: GitHub Repository
+    - icon: fontawesome/solid/star
+      link: https://github.com/stephenberry/glaze/stargazers
+      name: Star on GitHub
+
+copyright: Copyright &copy; 2025 Stephen Berry
