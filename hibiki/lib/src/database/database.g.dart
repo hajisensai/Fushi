@@ -2451,6 +2451,477 @@ class AudiobooksCompanion extends UpdateCompanion<AudiobookRow> {
   }
 }
 
+class $AudioCuesTable extends AudioCues
+    with TableInfo<$AudioCuesTable, AudioCueRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $AudioCuesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _bookUidMeta =
+      const VerificationMeta('bookUid');
+  @override
+  late final GeneratedColumn<String> bookUid = GeneratedColumn<String>(
+      'book_uid', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _chapterHrefMeta =
+      const VerificationMeta('chapterHref');
+  @override
+  late final GeneratedColumn<String> chapterHref = GeneratedColumn<String>(
+      'chapter_href', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _sentenceIndexMeta =
+      const VerificationMeta('sentenceIndex');
+  @override
+  late final GeneratedColumn<int> sentenceIndex = GeneratedColumn<int>(
+      'sentence_index', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _textFragmentIdMeta =
+      const VerificationMeta('textFragmentId');
+  @override
+  late final GeneratedColumn<String> textFragmentId = GeneratedColumn<String>(
+      'text_fragment_id', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _cueTextMeta =
+      const VerificationMeta('cueText');
+  @override
+  late final GeneratedColumn<String> cueText = GeneratedColumn<String>(
+      'cue_text', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _startMsMeta =
+      const VerificationMeta('startMs');
+  @override
+  late final GeneratedColumn<int> startMs = GeneratedColumn<int>(
+      'start_ms', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _endMsMeta = const VerificationMeta('endMs');
+  @override
+  late final GeneratedColumn<int> endMs = GeneratedColumn<int>(
+      'end_ms', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _audioFileIndexMeta =
+      const VerificationMeta('audioFileIndex');
+  @override
+  late final GeneratedColumn<int> audioFileIndex = GeneratedColumn<int>(
+      'audio_file_index', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns => [
+        id,
+        bookUid,
+        chapterHref,
+        sentenceIndex,
+        textFragmentId,
+        cueText,
+        startMs,
+        endMs,
+        audioFileIndex
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'audio_cues';
+  @override
+  VerificationContext validateIntegrity(Insertable<AudioCueRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('book_uid')) {
+      context.handle(_bookUidMeta,
+          bookUid.isAcceptableOrUnknown(data['book_uid']!, _bookUidMeta));
+    } else if (isInserting) {
+      context.missing(_bookUidMeta);
+    }
+    if (data.containsKey('chapter_href')) {
+      context.handle(
+          _chapterHrefMeta,
+          chapterHref.isAcceptableOrUnknown(
+              data['chapter_href']!, _chapterHrefMeta));
+    } else if (isInserting) {
+      context.missing(_chapterHrefMeta);
+    }
+    if (data.containsKey('sentence_index')) {
+      context.handle(
+          _sentenceIndexMeta,
+          sentenceIndex.isAcceptableOrUnknown(
+              data['sentence_index']!, _sentenceIndexMeta));
+    } else if (isInserting) {
+      context.missing(_sentenceIndexMeta);
+    }
+    if (data.containsKey('text_fragment_id')) {
+      context.handle(
+          _textFragmentIdMeta,
+          textFragmentId.isAcceptableOrUnknown(
+              data['text_fragment_id']!, _textFragmentIdMeta));
+    } else if (isInserting) {
+      context.missing(_textFragmentIdMeta);
+    }
+    if (data.containsKey('cue_text')) {
+      context.handle(_cueTextMeta,
+          cueText.isAcceptableOrUnknown(data['cue_text']!, _cueTextMeta));
+    } else if (isInserting) {
+      context.missing(_cueTextMeta);
+    }
+    if (data.containsKey('start_ms')) {
+      context.handle(_startMsMeta,
+          startMs.isAcceptableOrUnknown(data['start_ms']!, _startMsMeta));
+    } else if (isInserting) {
+      context.missing(_startMsMeta);
+    }
+    if (data.containsKey('end_ms')) {
+      context.handle(
+          _endMsMeta, endMs.isAcceptableOrUnknown(data['end_ms']!, _endMsMeta));
+    } else if (isInserting) {
+      context.missing(_endMsMeta);
+    }
+    if (data.containsKey('audio_file_index')) {
+      context.handle(
+          _audioFileIndexMeta,
+          audioFileIndex.isAcceptableOrUnknown(
+              data['audio_file_index']!, _audioFileIndexMeta));
+    } else if (isInserting) {
+      context.missing(_audioFileIndexMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  AudioCueRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return AudioCueRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      bookUid: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}book_uid'])!,
+      chapterHref: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}chapter_href'])!,
+      sentenceIndex: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}sentence_index'])!,
+      textFragmentId: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}text_fragment_id'])!,
+      cueText: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}cue_text'])!,
+      startMs: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}start_ms'])!,
+      endMs: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}end_ms'])!,
+      audioFileIndex: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}audio_file_index'])!,
+    );
+  }
+
+  @override
+  $AudioCuesTable createAlias(String alias) {
+    return $AudioCuesTable(attachedDatabase, alias);
+  }
+}
+
+class AudioCueRow extends DataClass implements Insertable<AudioCueRow> {
+  final int id;
+  final String bookUid;
+  final String chapterHref;
+  final int sentenceIndex;
+  final String textFragmentId;
+  final String cueText;
+  final int startMs;
+  final int endMs;
+  final int audioFileIndex;
+  const AudioCueRow(
+      {required this.id,
+      required this.bookUid,
+      required this.chapterHref,
+      required this.sentenceIndex,
+      required this.textFragmentId,
+      required this.cueText,
+      required this.startMs,
+      required this.endMs,
+      required this.audioFileIndex});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['book_uid'] = Variable<String>(bookUid);
+    map['chapter_href'] = Variable<String>(chapterHref);
+    map['sentence_index'] = Variable<int>(sentenceIndex);
+    map['text_fragment_id'] = Variable<String>(textFragmentId);
+    map['cue_text'] = Variable<String>(cueText);
+    map['start_ms'] = Variable<int>(startMs);
+    map['end_ms'] = Variable<int>(endMs);
+    map['audio_file_index'] = Variable<int>(audioFileIndex);
+    return map;
+  }
+
+  AudioCuesCompanion toCompanion(bool nullToAbsent) {
+    return AudioCuesCompanion(
+      id: Value(id),
+      bookUid: Value(bookUid),
+      chapterHref: Value(chapterHref),
+      sentenceIndex: Value(sentenceIndex),
+      textFragmentId: Value(textFragmentId),
+      cueText: Value(cueText),
+      startMs: Value(startMs),
+      endMs: Value(endMs),
+      audioFileIndex: Value(audioFileIndex),
+    );
+  }
+
+  factory AudioCueRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return AudioCueRow(
+      id: serializer.fromJson<int>(json['id']),
+      bookUid: serializer.fromJson<String>(json['bookUid']),
+      chapterHref: serializer.fromJson<String>(json['chapterHref']),
+      sentenceIndex: serializer.fromJson<int>(json['sentenceIndex']),
+      textFragmentId: serializer.fromJson<String>(json['textFragmentId']),
+      cueText: serializer.fromJson<String>(json['cueText']),
+      startMs: serializer.fromJson<int>(json['startMs']),
+      endMs: serializer.fromJson<int>(json['endMs']),
+      audioFileIndex: serializer.fromJson<int>(json['audioFileIndex']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'bookUid': serializer.toJson<String>(bookUid),
+      'chapterHref': serializer.toJson<String>(chapterHref),
+      'sentenceIndex': serializer.toJson<int>(sentenceIndex),
+      'textFragmentId': serializer.toJson<String>(textFragmentId),
+      'cueText': serializer.toJson<String>(cueText),
+      'startMs': serializer.toJson<int>(startMs),
+      'endMs': serializer.toJson<int>(endMs),
+      'audioFileIndex': serializer.toJson<int>(audioFileIndex),
+    };
+  }
+
+  AudioCueRow copyWith(
+          {int? id,
+          String? bookUid,
+          String? chapterHref,
+          int? sentenceIndex,
+          String? textFragmentId,
+          String? cueText,
+          int? startMs,
+          int? endMs,
+          int? audioFileIndex}) =>
+      AudioCueRow(
+        id: id ?? this.id,
+        bookUid: bookUid ?? this.bookUid,
+        chapterHref: chapterHref ?? this.chapterHref,
+        sentenceIndex: sentenceIndex ?? this.sentenceIndex,
+        textFragmentId: textFragmentId ?? this.textFragmentId,
+        cueText: cueText ?? this.cueText,
+        startMs: startMs ?? this.startMs,
+        endMs: endMs ?? this.endMs,
+        audioFileIndex: audioFileIndex ?? this.audioFileIndex,
+      );
+  AudioCueRow copyWithCompanion(AudioCuesCompanion data) {
+    return AudioCueRow(
+      id: data.id.present ? data.id.value : this.id,
+      bookUid: data.bookUid.present ? data.bookUid.value : this.bookUid,
+      chapterHref:
+          data.chapterHref.present ? data.chapterHref.value : this.chapterHref,
+      sentenceIndex: data.sentenceIndex.present
+          ? data.sentenceIndex.value
+          : this.sentenceIndex,
+      textFragmentId: data.textFragmentId.present
+          ? data.textFragmentId.value
+          : this.textFragmentId,
+      cueText: data.cueText.present ? data.cueText.value : this.cueText,
+      startMs: data.startMs.present ? data.startMs.value : this.startMs,
+      endMs: data.endMs.present ? data.endMs.value : this.endMs,
+      audioFileIndex: data.audioFileIndex.present
+          ? data.audioFileIndex.value
+          : this.audioFileIndex,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('AudioCueRow(')
+          ..write('id: $id, ')
+          ..write('bookUid: $bookUid, ')
+          ..write('chapterHref: $chapterHref, ')
+          ..write('sentenceIndex: $sentenceIndex, ')
+          ..write('textFragmentId: $textFragmentId, ')
+          ..write('cueText: $cueText, ')
+          ..write('startMs: $startMs, ')
+          ..write('endMs: $endMs, ')
+          ..write('audioFileIndex: $audioFileIndex')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, bookUid, chapterHref, sentenceIndex,
+      textFragmentId, cueText, startMs, endMs, audioFileIndex);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is AudioCueRow &&
+          other.id == this.id &&
+          other.bookUid == this.bookUid &&
+          other.chapterHref == this.chapterHref &&
+          other.sentenceIndex == this.sentenceIndex &&
+          other.textFragmentId == this.textFragmentId &&
+          other.cueText == this.cueText &&
+          other.startMs == this.startMs &&
+          other.endMs == this.endMs &&
+          other.audioFileIndex == this.audioFileIndex);
+}
+
+class AudioCuesCompanion extends UpdateCompanion<AudioCueRow> {
+  final Value<int> id;
+  final Value<String> bookUid;
+  final Value<String> chapterHref;
+  final Value<int> sentenceIndex;
+  final Value<String> textFragmentId;
+  final Value<String> cueText;
+  final Value<int> startMs;
+  final Value<int> endMs;
+  final Value<int> audioFileIndex;
+  const AudioCuesCompanion({
+    this.id = const Value.absent(),
+    this.bookUid = const Value.absent(),
+    this.chapterHref = const Value.absent(),
+    this.sentenceIndex = const Value.absent(),
+    this.textFragmentId = const Value.absent(),
+    this.cueText = const Value.absent(),
+    this.startMs = const Value.absent(),
+    this.endMs = const Value.absent(),
+    this.audioFileIndex = const Value.absent(),
+  });
+  AudioCuesCompanion.insert({
+    this.id = const Value.absent(),
+    required String bookUid,
+    required String chapterHref,
+    required int sentenceIndex,
+    required String textFragmentId,
+    required String cueText,
+    required int startMs,
+    required int endMs,
+    required int audioFileIndex,
+  })  : bookUid = Value(bookUid),
+        chapterHref = Value(chapterHref),
+        sentenceIndex = Value(sentenceIndex),
+        textFragmentId = Value(textFragmentId),
+        cueText = Value(cueText),
+        startMs = Value(startMs),
+        endMs = Value(endMs),
+        audioFileIndex = Value(audioFileIndex);
+  static Insertable<AudioCueRow> custom({
+    Expression<int>? id,
+    Expression<String>? bookUid,
+    Expression<String>? chapterHref,
+    Expression<int>? sentenceIndex,
+    Expression<String>? textFragmentId,
+    Expression<String>? cueText,
+    Expression<int>? startMs,
+    Expression<int>? endMs,
+    Expression<int>? audioFileIndex,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (bookUid != null) 'book_uid': bookUid,
+      if (chapterHref != null) 'chapter_href': chapterHref,
+      if (sentenceIndex != null) 'sentence_index': sentenceIndex,
+      if (textFragmentId != null) 'text_fragment_id': textFragmentId,
+      if (cueText != null) 'cue_text': cueText,
+      if (startMs != null) 'start_ms': startMs,
+      if (endMs != null) 'end_ms': endMs,
+      if (audioFileIndex != null) 'audio_file_index': audioFileIndex,
+    });
+  }
+
+  AudioCuesCompanion copyWith(
+      {Value<int>? id,
+      Value<String>? bookUid,
+      Value<String>? chapterHref,
+      Value<int>? sentenceIndex,
+      Value<String>? textFragmentId,
+      Value<String>? cueText,
+      Value<int>? startMs,
+      Value<int>? endMs,
+      Value<int>? audioFileIndex}) {
+    return AudioCuesCompanion(
+      id: id ?? this.id,
+      bookUid: bookUid ?? this.bookUid,
+      chapterHref: chapterHref ?? this.chapterHref,
+      sentenceIndex: sentenceIndex ?? this.sentenceIndex,
+      textFragmentId: textFragmentId ?? this.textFragmentId,
+      cueText: cueText ?? this.cueText,
+      startMs: startMs ?? this.startMs,
+      endMs: endMs ?? this.endMs,
+      audioFileIndex: audioFileIndex ?? this.audioFileIndex,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (bookUid.present) {
+      map['book_uid'] = Variable<String>(bookUid.value);
+    }
+    if (chapterHref.present) {
+      map['chapter_href'] = Variable<String>(chapterHref.value);
+    }
+    if (sentenceIndex.present) {
+      map['sentence_index'] = Variable<int>(sentenceIndex.value);
+    }
+    if (textFragmentId.present) {
+      map['text_fragment_id'] = Variable<String>(textFragmentId.value);
+    }
+    if (cueText.present) {
+      map['cue_text'] = Variable<String>(cueText.value);
+    }
+    if (startMs.present) {
+      map['start_ms'] = Variable<int>(startMs.value);
+    }
+    if (endMs.present) {
+      map['end_ms'] = Variable<int>(endMs.value);
+    }
+    if (audioFileIndex.present) {
+      map['audio_file_index'] = Variable<int>(audioFileIndex.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('AudioCuesCompanion(')
+          ..write('id: $id, ')
+          ..write('bookUid: $bookUid, ')
+          ..write('chapterHref: $chapterHref, ')
+          ..write('sentenceIndex: $sentenceIndex, ')
+          ..write('textFragmentId: $textFragmentId, ')
+          ..write('cueText: $cueText, ')
+          ..write('startMs: $startMs, ')
+          ..write('endMs: $endMs, ')
+          ..write('audioFileIndex: $audioFileIndex')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $SrtBooksTable extends SrtBooks
     with TableInfo<$SrtBooksTable, SrtBookRow> {
   @override
@@ -4429,6 +4900,7 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
   late final $SearchHistoryItemsTable searchHistoryItems =
       $SearchHistoryItemsTable(this);
   late final $AudiobooksTable audiobooks = $AudiobooksTable(this);
+  late final $AudioCuesTable audioCues = $AudioCuesTable(this);
   late final $SrtBooksTable srtBooks = $SrtBooksTable(this);
   late final $ReaderPositionsTable readerPositions =
       $ReaderPositionsTable(this);
@@ -4448,6 +4920,7 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
         ankiMappings,
         searchHistoryItems,
         audiobooks,
+        audioCues,
         srtBooks,
         readerPositions,
         readingStatistics,
@@ -5565,6 +6038,236 @@ typedef $$AudiobooksTableProcessedTableManager = ProcessedTableManager<
     ),
     AudiobookRow,
     PrefetchHooks Function()>;
+typedef $$AudioCuesTableCreateCompanionBuilder = AudioCuesCompanion Function({
+  Value<int> id,
+  required String bookUid,
+  required String chapterHref,
+  required int sentenceIndex,
+  required String textFragmentId,
+  required String cueText,
+  required int startMs,
+  required int endMs,
+  required int audioFileIndex,
+});
+typedef $$AudioCuesTableUpdateCompanionBuilder = AudioCuesCompanion Function({
+  Value<int> id,
+  Value<String> bookUid,
+  Value<String> chapterHref,
+  Value<int> sentenceIndex,
+  Value<String> textFragmentId,
+  Value<String> cueText,
+  Value<int> startMs,
+  Value<int> endMs,
+  Value<int> audioFileIndex,
+});
+
+class $$AudioCuesTableFilterComposer
+    extends Composer<_$HibikiDatabase, $AudioCuesTable> {
+  $$AudioCuesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get bookUid => $composableBuilder(
+      column: $table.bookUid, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get chapterHref => $composableBuilder(
+      column: $table.chapterHref, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get sentenceIndex => $composableBuilder(
+      column: $table.sentenceIndex, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get textFragmentId => $composableBuilder(
+      column: $table.textFragmentId,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get cueText => $composableBuilder(
+      column: $table.cueText, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get startMs => $composableBuilder(
+      column: $table.startMs, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get endMs => $composableBuilder(
+      column: $table.endMs, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get audioFileIndex => $composableBuilder(
+      column: $table.audioFileIndex,
+      builder: (column) => ColumnFilters(column));
+}
+
+class $$AudioCuesTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $AudioCuesTable> {
+  $$AudioCuesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get bookUid => $composableBuilder(
+      column: $table.bookUid, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get chapterHref => $composableBuilder(
+      column: $table.chapterHref, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get sentenceIndex => $composableBuilder(
+      column: $table.sentenceIndex,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get textFragmentId => $composableBuilder(
+      column: $table.textFragmentId,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get cueText => $composableBuilder(
+      column: $table.cueText, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get startMs => $composableBuilder(
+      column: $table.startMs, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get endMs => $composableBuilder(
+      column: $table.endMs, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get audioFileIndex => $composableBuilder(
+      column: $table.audioFileIndex,
+      builder: (column) => ColumnOrderings(column));
+}
+
+class $$AudioCuesTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $AudioCuesTable> {
+  $$AudioCuesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get bookUid =>
+      $composableBuilder(column: $table.bookUid, builder: (column) => column);
+
+  GeneratedColumn<String> get chapterHref => $composableBuilder(
+      column: $table.chapterHref, builder: (column) => column);
+
+  GeneratedColumn<int> get sentenceIndex => $composableBuilder(
+      column: $table.sentenceIndex, builder: (column) => column);
+
+  GeneratedColumn<String> get textFragmentId => $composableBuilder(
+      column: $table.textFragmentId, builder: (column) => column);
+
+  GeneratedColumn<String> get cueText =>
+      $composableBuilder(column: $table.cueText, builder: (column) => column);
+
+  GeneratedColumn<int> get startMs =>
+      $composableBuilder(column: $table.startMs, builder: (column) => column);
+
+  GeneratedColumn<int> get endMs =>
+      $composableBuilder(column: $table.endMs, builder: (column) => column);
+
+  GeneratedColumn<int> get audioFileIndex => $composableBuilder(
+      column: $table.audioFileIndex, builder: (column) => column);
+}
+
+class $$AudioCuesTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $AudioCuesTable,
+    AudioCueRow,
+    $$AudioCuesTableFilterComposer,
+    $$AudioCuesTableOrderingComposer,
+    $$AudioCuesTableAnnotationComposer,
+    $$AudioCuesTableCreateCompanionBuilder,
+    $$AudioCuesTableUpdateCompanionBuilder,
+    (
+      AudioCueRow,
+      BaseReferences<_$HibikiDatabase, $AudioCuesTable, AudioCueRow>
+    ),
+    AudioCueRow,
+    PrefetchHooks Function()> {
+  $$AudioCuesTableTableManager(_$HibikiDatabase db, $AudioCuesTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$AudioCuesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$AudioCuesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$AudioCuesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<String> bookUid = const Value.absent(),
+            Value<String> chapterHref = const Value.absent(),
+            Value<int> sentenceIndex = const Value.absent(),
+            Value<String> textFragmentId = const Value.absent(),
+            Value<String> cueText = const Value.absent(),
+            Value<int> startMs = const Value.absent(),
+            Value<int> endMs = const Value.absent(),
+            Value<int> audioFileIndex = const Value.absent(),
+          }) =>
+              AudioCuesCompanion(
+            id: id,
+            bookUid: bookUid,
+            chapterHref: chapterHref,
+            sentenceIndex: sentenceIndex,
+            textFragmentId: textFragmentId,
+            cueText: cueText,
+            startMs: startMs,
+            endMs: endMs,
+            audioFileIndex: audioFileIndex,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required String bookUid,
+            required String chapterHref,
+            required int sentenceIndex,
+            required String textFragmentId,
+            required String cueText,
+            required int startMs,
+            required int endMs,
+            required int audioFileIndex,
+          }) =>
+              AudioCuesCompanion.insert(
+            id: id,
+            bookUid: bookUid,
+            chapterHref: chapterHref,
+            sentenceIndex: sentenceIndex,
+            textFragmentId: textFragmentId,
+            cueText: cueText,
+            startMs: startMs,
+            endMs: endMs,
+            audioFileIndex: audioFileIndex,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$AudioCuesTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $AudioCuesTable,
+    AudioCueRow,
+    $$AudioCuesTableFilterComposer,
+    $$AudioCuesTableOrderingComposer,
+    $$AudioCuesTableAnnotationComposer,
+    $$AudioCuesTableCreateCompanionBuilder,
+    $$AudioCuesTableUpdateCompanionBuilder,
+    (
+      AudioCueRow,
+      BaseReferences<_$HibikiDatabase, $AudioCuesTable, AudioCueRow>
+    ),
+    AudioCueRow,
+    PrefetchHooks Function()>;
 typedef $$SrtBooksTableCreateCompanionBuilder = SrtBooksCompanion Function({
   Value<int> id,
   required String uid,
@@ -6641,6 +7344,8 @@ class $HibikiDatabaseManager {
       $$SearchHistoryItemsTableTableManager(_db, _db.searchHistoryItems);
   $$AudiobooksTableTableManager get audiobooks =>
       $$AudiobooksTableTableManager(_db, _db.audiobooks);
+  $$AudioCuesTableTableManager get audioCues =>
+      $$AudioCuesTableTableManager(_db, _db.audioCues);
   $$SrtBooksTableTableManager get srtBooks =>
       $$SrtBooksTableTableManager(_db, _db.srtBooks);
   $$ReaderPositionsTableTableManager get readerPositions =>

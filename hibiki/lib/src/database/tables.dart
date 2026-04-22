@@ -75,7 +75,7 @@ class AudioCues extends Table {
   TextColumn get chapterHref => text()();
   IntColumn get sentenceIndex => integer()();
   TextColumn get textFragmentId => text()();
-  TextColumn get text => text()();
+  TextColumn get cueText => text()();
   IntColumn get startMs => integer()();
   IntColumn get endMs => integer()();
   IntColumn get audioFileIndex => integer()();

@@ -58,7 +58,7 @@ class SrtBookRepository {
           chapterHref: c.chapterHref,
           sentenceIndex: c.sentenceIndex,
           textFragmentId: c.textFragmentId,
-          text: c.text,
+          cueText: c.text,
           startMs: c.startMs,
           endMs: c.endMs,
           audioFileIndex: c.audioFileIndex,
@@ -90,7 +90,7 @@ class SrtBookRepository {
     c.chapterHref = r.chapterHref;
     c.sentenceIndex = r.sentenceIndex;
     c.textFragmentId = r.textFragmentId;
-    c.text = r.text;
+    c.text = r.cueText;
     c.startMs = r.startMs;
     c.endMs = r.endMs;
     c.audioFileIndex = r.audioFileIndex;

@@ -148,24 +148,28 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     // 同步预判：Isar 查 Audiobook / SrtBook 记录。命中就让 WebView 首帧
     // 起就带底部 56+padding 槽位，避免异步 load 完再翻转 bottom 触发 ttu
     // reflow 把首页文字往上抬。
-    _hasAudioSlot = _detectAudioSlotSync();
+    _detectAudioSlotAsync().then((hasSlot) {
+      if (mounted && hasSlot != _hasAudioSlot) {
+        setState(() => _hasAudioSlot = hasSlot);
+      }
+    });
     // 异步检查是否有挂载有声书
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initAudiobookIfAvailable();
     });
   }
 
-  /// 同步判定当前书是否有已配置音频的 Audiobook 或 SrtBook 记录。
+  /// 异步判定当前书是否有已配置音频的 Audiobook 或 SrtBook 记录。
   /// 只看记录 + 音频路径字段是否非空；不解析文件是否真实存在（那步会触发
-  /// 文件 I/O，不能在 initState 里跑）。极端情况下路径失效会让预留槽位比
-  /// 实际播放栏多出现几毫秒就消失 —— 比每次开书文字跳一下更可接受。
-  bool _detectAudioSlotSync() {
+  /// 文件 I/O）。极端情况下路径失效会让预留槽位比实际播放栏多出现几毫秒
+  /// 就消失 —— 比每次开书文字跳一下更可接受。
+  Future<bool> _detectAudioSlotAsync() async {
     // initState 阶段不能 ref.watch，走 appModelNoUpdate（ref.read）取 DB。
     final database = appModelNoUpdate.database;
     final String? bookUid = widget.item?.uniqueKey;
     if (bookUid != null) {
       final Audiobook? ab =
-          AudiobookRepository(database).findByBookUid(bookUid);
+          await AudiobookRepository(database).findByBookUid(bookUid);
       if (ab != null) {
         return (ab.audioPaths?.isNotEmpty ?? false) ||
             (ab.audioRoot != null && ab.audioRoot!.isNotEmpty);
@@ -176,7 +180,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       return false;
     }
     for (final SrtBook b
-        in SrtBookRepository(database).listAll()) {
+        in await SrtBookRepository(database).listAll()) {
       if (b.ttuBookId == ttuId) {
         return (b.audioPaths?.isNotEmpty ?? false) ||
             (b.audioRoot != null && b.audioRoot!.isNotEmpty);
@@ -1674,7 +1678,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     debugPrint('[hibiki-audiobook] initAudiobook bookUid.len=${bookUid.length} '
         'hash=${bookUid.hashCode} uid=$bookUid');
     final AudiobookRepository repo = AudiobookRepository(appModel.database);
-    final Audiobook? audiobook = repo.findByBookUid(bookUid);
+    final Audiobook? audiobook = await repo.findByBookUid(bookUid);
 
     if (audiobook != null) {
       // ── 常规 EPUB 有声书路径 ─────────────────────────────────────────────
@@ -1695,9 +1699,9 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       await controller.load(
         audiobook: audiobook,
         audioFiles: audioFiles,
-        initialFollowAudio: repo.readFollowAudio(bookUid),
-        initialDelayMs: repo.readDelayMs(bookUid),
-        initialSpeed: repo.readSpeed(bookUid),
+        initialFollowAudio: await repo.readFollowAudio(bookUid),
+        initialDelayMs: await repo.readDelayMs(bookUid),
+        initialSpeed: await repo.readSpeed(bookUid),
       );
       controller.addListener(_onCueChanged);
       _wireFollowAudio(controller, bookUid: bookUid, repo: repo);
@@ -1728,7 +1732,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     }
 
     final SrtBookRepository srtRepo = SrtBookRepository(appModel.database);
-    final List<SrtBook> allBooks = srtRepo.listAll();
+    final List<SrtBook> allBooks = await srtRepo.listAll();
     SrtBook? srtBook;
     for (final SrtBook b in allBooks) {
       if (b.ttuBookId == ttuId) {
@@ -1780,8 +1784,8 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         audioFiles: audioFiles,
         // Follow audio 仍不落库（见下注释），但延迟/速度是纯 Hive KV，按
         // srtBook.uid 做 key 不碰 Isar，SRT-book 路径安全使用。
-        initialDelayMs: abRepo.readDelayMs(srtBookUid),
-        initialSpeed: abRepo.readSpeed(srtBookUid),
+        initialDelayMs: await abRepo.readDelayMs(srtBookUid),
+        initialSpeed: await abRepo.readSpeed(srtBookUid),
       );
     } catch (e) {
       debugPrint('[hibiki-audiobook] srt init: controller.load failed: $e');
@@ -2024,7 +2028,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     if (_srtBookUid != null) {
       // ── 字幕 EPUB 路径 ────────────────────────────────────────────────────
       final SrtBookRepository srtRepo = SrtBookRepository(appModel.database);
-      final List<AudioCue> cues = srtRepo.cuesFor(_srtBookUid!);
+      final List<AudioCue> cues = await srtRepo.cuesFor(_srtBookUid!);
       _audiobookController?.setChapterCues(cues);
 
       debugPrint(
@@ -2058,7 +2062,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       // 与原始 chapterHref 解耦：cues 存在某个默认 chapter（srt:// 等）下，但
       // 跨章节定位靠 sectionIndex + 归一化偏移。按章节过滤会返回空集，所以
       // 先抓全部 cue，检测到 Sasayaki 编码就沿用；否则退回按章节过滤。
-      final List<AudioCue> allCues = repo.cuesForBook(bookUid);
+      final List<AudioCue> allCues = await repo.cuesForBook(bookUid);
       final bool sasayaki = allCues.any(
         (AudioCue c) => SasayakiMatchCodec.tryDecode(c.textFragmentId) != null,
       );
@@ -2067,7 +2071,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       if (sasayaki) {
         cues = allCues;
       } else {
-        cues = repo.cuesForChapter(
+        cues = await repo.cuesForChapter(
           bookUid: bookUid,
           chapterHref: _currentChapterHref,
         );
@@ -2322,7 +2326,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     }
     ReaderPosition? saved;
     try {
-      saved = ReaderPositionRepository(appModel.database)
+      saved = await ReaderPositionRepository(appModel.database)
           .findByTtuBookId(ttuId);
     } catch (e) {
       debugPrint('[hibiki-reader-pos] restore query err: $e');
@@ -2469,7 +2473,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       chapterHref = event.chapterHref;
     }
 
-    final AudioCue? cue = repo.findCue(
+    final AudioCue? cue = await repo.findCue(
       bookUid: bookUid,
       chapterHref: chapterHref,
       sentenceIndex: event.sentenceIndex,
@@ -2535,7 +2539,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     if (ttuId != null && ttuId > 0) {
       final SrtBookRepository srtRepo = SrtBookRepository(appModel.database);
       SrtBook? srtBook;
-      for (final SrtBook b in srtRepo.listAll()) {
+      for (final SrtBook b in await srtRepo.listAll()) {
         if (b.ttuBookId == ttuId) {
           srtBook = b;
           break;
@@ -2650,7 +2654,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     }
 
     // 读回校验：保存后立刻重新查同一 uid，看 DB 实际保存了什么。
-    final SrtBook? reread = repo.findByUid(book.uid);
+    final SrtBook? reread = await repo.findByUid(book.uid);
     debugPrint('[hibiki-audiobook] attached audio to SrtBook ${book.uid}: '
         'saved paths=$newPaths root=$newDir '
         '-> reread audioPaths=${reread?.audioPaths} '
@@ -2658,7 +2662,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         'ttuBookId=${reread?.ttuBookId}');
 
     // 同时 dump 所有 SrtBook，看是否有同 ttuBookId 冲突
-    final List<SrtBook> all = repo.listAll();
+    final List<SrtBook> all = await repo.listAll();
     for (final SrtBook b in all) {
       debugPrint('[hibiki-audiobook]   DB entry: uid=${b.uid} '
           'ttuBookId=${b.ttuBookId} '
