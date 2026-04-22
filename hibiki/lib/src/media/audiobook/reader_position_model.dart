@@ -1,7 +1,3 @@
-import 'package:isar/isar.dart';
-
-part 'reader_position_model.g.dart';
-
 /// Reader 上次阅读位置 —— 跟音频状态解耦，纯 EPUB 和有声书走同一路。
 ///
 /// 不依赖 ttu 自己的 IDB bookmark（paginated + audiobook 场景下它有几重
@@ -11,12 +7,10 @@ part 'reader_position_model.g.dart';
 /// 位置用 `(sectionIndex, normCharOffset)`：`normCharOffset` 是 **章内** 的
 /// Sasayaki 归一化字符偏移（跟 AudioCue.normCharStart 同基准，ruby 已剥、
 /// 标点/空白 skippable），字号/pageColumns/viewport 变了也不会飘。
-@Collection()
 class ReaderPosition {
-  Id id = Isar.autoIncrement;
+  int? id;
 
   /// ッツ Ebook Reader IndexedDB 中的 book ID，按书一条。
-  @Index(unique: true, replace: true)
   late int ttuBookId;
 
   /// ttu spine 段 index（0-based）。

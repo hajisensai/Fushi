@@ -1,10 +1,5 @@
 import 'dart:convert';
 
-import 'package:isar/isar.dart';
-
-part 'dictionary_entry.g.dart';
-
-@Collection()
 class DictionaryEntry {
   DictionaryEntry({
     this.id,
@@ -16,28 +11,22 @@ class DictionaryEntry {
     this.popularity = 0,
   });
 
-  Id? id;
+  int? id;
 
-  @Index()
   final String dictionaryName;
 
-  @Index(type: IndexType.value, caseSensitive: false)
   final String word;
 
-  @Index(type: IndexType.value, caseSensitive: false)
   final String reading;
 
   final String meaning;
 
   final String extra;
 
-  @Index()
   final double popularity;
 
-  @Index()
   int get wordLength => word.length;
 
-  @ignore
   Map<dynamic, dynamic> workingArea = {};
 
   String toJson() {

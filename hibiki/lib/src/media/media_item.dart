@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'package:isar/isar.dart';
 import 'package:json_annotation/json_annotation.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
@@ -14,7 +13,6 @@ part 'media_item.g.dart';
 /// the number and complexity of CRUD operations, as including all data in this
 /// entity is impractical to include when persisting a progress update.
 @JsonSerializable()
-@Collection()
 class MediaItem {
   /// Initialise a media item with certain details.
   MediaItem({
@@ -45,10 +43,9 @@ class MediaItem {
   Map<String, dynamic> toJson() => _$MediaItemToJson(this);
 
   /// A unique identifier for the purposes of database storage.
-  Id? id;
+  int? id;
 
   /// A unique identifier for the purposes of database storage.
-  @Index(unique: true, replace: true)
   String get uniqueKey => '$mediaSourceIdentifier/$mediaIdentifier';
 
   /// The media identifier of this item. Using this variable alone, a media
@@ -56,7 +53,6 @@ class MediaItem {
   /// If the same item exists in history, then the item is replaced with a
   /// newer item in the addition operation. This key is also used to identify
   /// resources such as thumbnails in the cache.
-  @Index()
   String mediaIdentifier;
 
   /// The name of this item. Typically, this could be the name of a video
@@ -64,11 +60,9 @@ class MediaItem {
   String title;
 
   /// The media type where this item is from.
-  @Index(type: IndexType.hash)
   String mediaTypeIdentifier;
 
   /// The media source where this item is from.
-  @Index(type: IndexType.hash)
   String mediaSourceIdentifier;
 
   /// If [imageUrl] is null and this is not null, this will be used as the

@@ -1,18 +1,12 @@
-import 'package:isar/isar.dart';
-
-part 'srt_book_model.g.dart';
-
 /// 独立 SRT 有声书元数据。
 ///
 /// 不依赖 EPUB，由 SRT 字幕文件 + 音频目录共同构成一本"书"。
-/// 对应的 [AudioCue] 存放在同一 Isar 库，[AudioCue.bookUid] = [uid]，
+/// 对应的 [AudioCue] 存放在同一数据库，[AudioCue.bookUid] = [uid]，
 /// [AudioCue.chapterHref] = `srt://default`（单章节策略）。
-@Collection()
 class SrtBook {
-  Id id = Isar.autoIncrement;
+  int? id;
 
   /// 书的唯一标识，格式 `srtbook_<timestamp_ms>`。
-  @Index(unique: true, replace: true)
   late String uid;
 
   /// 书名（用户可编辑，默认取自 SRT 文件名）。

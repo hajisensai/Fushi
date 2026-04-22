@@ -1,14 +1,8 @@
-import 'package:isar/isar.dart';
-
-part 'audiobook_model.g.dart';
-
 /// 有声书元数据。一本 EPUB 可挂载 0..1 个有声书。
-@Collection()
 class Audiobook {
-  Id id = Isar.autoIncrement;
+  int? id;
 
   /// 对应 MediaItem.uniqueKey（书的唯一标识）。
-  @Index(unique: true, replace: true)
   late String bookUid;
 
   /// 音频文件目录（本地绝对路径）。folder 模式下非 null，files 模式下为 null。
@@ -24,11 +18,11 @@ class Audiobook {
   late String alignmentPath;
 
   // ── PR2 健康度指标 ────────────────────────────────────────────────────────
-  // 所有字段 nullable：旧记录读出来 kind 回退为 unrun，Isar 不需要迁移脚本。
+  // 所有字段 nullable：旧记录读出来 kind 回退为 unrun，不需要迁移脚本。
   // 语义见 [AudiobookHealth] / [HealthKind]；UI 侧永远 switch(kind)，
   // 不直接读 matchRatePct。
 
-  /// [HealthKind] 的 name（持久化为字符串，Isar 枚举不稳定，用名字更稳）。
+  /// [HealthKind] 的 name（持久化为字符串，枚举不稳定，用名字更稳）。
   String? healthKindRaw;
 
   /// 0..100 的匹配率。仅当 kind ∈ {ok, partial} 时有意义。
@@ -52,16 +46,13 @@ class Audiobook {
 /// 单条对齐片段，粒度为句子级别。
 ///
 /// 解析对齐文件后批量写入；运行时按 (bookUid, chapterHref) 查询并缓存。
-@Collection()
 class AudioCue {
-  Id id = Isar.autoIncrement;
+  int? id;
 
   /// 对应 [Audiobook.bookUid]。
-  @Index()
   late String bookUid;
 
   /// EPUB spine item，例如 'OEBPS/ch01.xhtml'。
-  @Index()
   late String chapterHref;
 
   /// 章节内句序（0-based）。
