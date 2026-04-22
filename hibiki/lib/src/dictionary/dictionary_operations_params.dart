@@ -84,6 +84,7 @@ class DictionarySearchParams extends IsolateParams {
     required this.maximumDictionarySearchResults,
     required this.maximumDictionaryTermsInResult,
     required this.searchWithWildcards,
+    required this.dictionaryPaths,
     required super.sendPort,
     required super.directoryPath,
   });
@@ -92,6 +93,7 @@ class DictionarySearchParams extends IsolateParams {
   final int maximumDictionarySearchResults;
   final int maximumDictionaryTermsInResult;
   final bool searchWithWildcards;
+  final List<String> dictionaryPaths;
 
   @override
   bool operator ==(Object other) =>

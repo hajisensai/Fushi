@@ -7,6 +7,7 @@ import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/language.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/utils.dart';
+import 'package:hibiki/src/dictionary/hoshidicts.dart';
 
 /// Defines common characteristics required for tuning locale and text
 /// segmentation behaviour for different languages. Override the variables
@@ -413,8 +414,40 @@ abstract class Language {
   }
 }
 
-/// Top-level function for use in compute. See [Language] for details.
 Future<DictionarySearchResult?> prepareSearchResultsStandard(
-    DictionarySearchParams params) {
-  throw UnimplementedError();
+    DictionarySearchParams params) async {
+  if (params.dictionaryPaths.isEmpty) return null;
+
+  final hoshi = HoshiDicts();
+  try {
+    for (final p in params.dictionaryPaths) {
+      hoshi.addTermDict(p);
+      hoshi.addFreqDict(p);
+      hoshi.addPitchDict(p);
+    }
+
+    final results = hoshi.query(params.searchTerm);
+    if (results.isEmpty) return null;
+
+    final entries = <DictionaryEntry>[];
+    for (final t in results) {
+      for (final g in t.glossaries) {
+        entries.add(DictionaryEntry(
+          dictionaryName: g.dictName,
+          word: t.expression,
+          reading: t.reading,
+          meaning: g.glossary,
+          popularity: 0,
+        ));
+      }
+    }
+
+    return DictionarySearchResult(
+      searchTerm: params.searchTerm,
+      entries: entries,
+      bestLength: params.searchTerm.length,
+    );
+  } finally {
+    hoshi.dispose();
+  }
 }

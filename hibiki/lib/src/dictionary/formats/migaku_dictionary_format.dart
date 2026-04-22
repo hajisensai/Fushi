@@ -55,7 +55,7 @@ void _prepareEntriesMigakuStub({
   required PrepareDictionaryParams params,
   required dynamic database,
 }) {
-  throw UnimplementedError('Will be replaced by hoshidicts');
+  // No-op: hoshidicts only supports Yomitan format
 }
 
 /// Top-level function for use in compute. See [DictionaryFormat] for details.

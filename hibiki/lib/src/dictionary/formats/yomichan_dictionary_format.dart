@@ -201,13 +201,11 @@ Future<String> prepareNameYomichanFormat(PrepareDirectoryParams params) async {
   return dictionaryName;
 }
 
-/// Stub that matches the [DictionaryFormat.prepareEntries] signature.
-/// Will be replaced by hoshidicts (C++ FFI).
 void _prepareEntriesYomichanStub({
   required PrepareDictionaryParams params,
   required dynamic database,
 }) {
-  throw UnimplementedError('Will be replaced by hoshidicts');
+  // No-op: hoshidicts C++ handles import directly via HoshiDicts.importDictionary
 }
 
 /// Top-level function for use in compute. See [DictionaryFormat] for details.

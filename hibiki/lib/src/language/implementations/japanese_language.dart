@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:collection/collection.dart';
@@ -10,6 +11,7 @@ import 'package:ve_dart/ve_dart.dart';
 import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/language.dart';
 import 'package:hibiki/models.dart';
+import 'package:hibiki/src/dictionary/hoshidicts.dart';
 
 /// Language implementation of the Japanese language.
 class JapaneseLanguage extends Language {
@@ -275,14 +277,75 @@ class JapaneseLanguage extends Language {
   }
 }
 
-/// Top-level function for use in compute. See [Language] for details.
-/// Credits to Matthew Chan for their port of the Yomichan parser to Dart.
-///
-/// Previously used Isar for dictionary search; will be replaced by
-/// hoshidicts (C++ FFI).
 Future<DictionarySearchResult?> prepareSearchResultsJapaneseLanguage(
     DictionarySearchParams params) async {
-  throw UnimplementedError('Will be replaced by hoshidicts');
+  if (params.dictionaryPaths.isEmpty) return null;
+
+  final hoshi = HoshiDicts();
+  try {
+    for (final p in params.dictionaryPaths) {
+      hoshi.addTermDict(p);
+      hoshi.addFreqDict(p);
+      hoshi.addPitchDict(p);
+    }
+
+    final results = hoshi.lookup(
+      params.searchTerm,
+      maxResults: params.maximumDictionarySearchResults,
+      scanLength: params.maximumDictionaryTermsInResult,
+    );
+
+    if (results.isEmpty) return null;
+
+    int bestLength = 0;
+    final entries = <DictionaryEntry>[];
+
+    for (final r in results) {
+      if (r.matched.length > bestLength) {
+        bestLength = r.matched.length;
+      }
+      for (final g in r.term.glossaries) {
+        entries.add(DictionaryEntry(
+          dictionaryName: g.dictName,
+          word: r.term.expression,
+          reading: r.term.reading,
+          meaning: g.glossary,
+          extra: jsonEncode({
+            'definitionTags': g.definitionTags,
+            'termTags': g.termTags,
+            'matched': r.matched,
+            'deinflected': r.deinflected,
+            'frequencies': r.term.frequencies
+                .map((f) => {
+                      'dictName': f.dictName,
+                      'values': f.frequencies
+                          .map((v) => {
+                                'value': v.value,
+                                'display': v.displayValue,
+                              })
+                          .toList(),
+                    })
+                .toList(),
+            'pitches': r.term.pitches
+                .map((p) => {
+                      'dictName': p.dictName,
+                      'positions': p.pitchPositions,
+                    })
+                .toList(),
+          }),
+          popularity: 0,
+        ));
+      }
+    }
+
+    return DictionarySearchResult(
+      searchTerm: params.searchTerm,
+      entries: entries,
+      bestLength: bestLength,
+    );
+  } finally {
+    hoshi.dispose();
+  }
 }
 
 

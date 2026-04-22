@@ -1,6 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:hibiki/dictionary.dart';
-import 'package:hibiki/models.dart';
+import 'package:hibiki/src/dictionary/hoshidicts.dart';
 
 int fastHash(String string) {
   var hash = 0xcbf29ce484222325;
@@ -17,23 +19,31 @@ int fastHash(String string) {
   return hash;
 }
 
-/// Deposit dictionary data into the database.
-///
-/// Previously used Isar; will be replaced by hoshidicts (C++ FFI).
+Future<HoshiImportResult> importDictionaryViaHoshidicts({
+  required String zipPath,
+  required String outputDir,
+}) async {
+  return HoshiDicts.importDictionary(zipPath, outputDir);
+}
+
+Future<void> deleteDictionaryDirectory(String directoryPath) async {
+  final dir = Directory(directoryPath);
+  if (dir.existsSync()) {
+    dir.deleteSync(recursive: true);
+  }
+}
+
 Future<void> depositDictionaryDataHelper(PrepareDictionaryParams params) async {
-  throw UnimplementedError('Will be replaced by hoshidicts');
+  debugPrint('[hoshidicts] depositDictionaryDataHelper is now a no-op; '
+      'import is handled by HoshiDicts.importDictionary directly');
 }
 
-/// Delete all dictionaries from the database.
-///
-/// Previously used Isar; will be replaced by hoshidicts (C++ FFI).
 Future<void> deleteDictionariesHelper(DeleteDictionaryParams params) async {
-  throw UnimplementedError('Will be replaced by hoshidicts');
+  debugPrint('[hoshidicts] deleteDictionariesHelper is now a no-op; '
+      'deletion is handled by removing resource directories');
 }
 
-/// Delete a single dictionary from the database.
-///
-/// Previously used Isar; will be replaced by hoshidicts (C++ FFI).
 Future<void> deleteDictionaryHelper(DeleteDictionaryParams params) async {
-  throw UnimplementedError('Will be replaced by hoshidicts');
+  debugPrint('[hoshidicts] deleteDictionaryHelper is now a no-op; '
+      'deletion is handled by removing resource directories');
 }

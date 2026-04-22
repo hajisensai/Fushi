@@ -40,6 +40,7 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
+import 'package:hibiki/src/dictionary/dictionary_utils.dart' show importDictionaryViaHoshidicts;
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/reader_position_model.dart';
 import 'package:hibiki/src/media/audiobook/reading_statistic_model.dart';
@@ -1665,94 +1666,89 @@ class AppModel with ChangeNotifier {
 
     clearDictionaryResultsCache();
 
-    DictionaryFormat dictionaryFormat =
-        _detectDictionaryFormatFromDirectory(directory);
-
-    ReceivePort receivePort = ReceivePort();
-    receivePort.listen((message) {
-      progressNotifier.value = '$message';
-    });
-
-    ReceivePort alertReceivePort = ReceivePort();
-    alertReceivePort.listen((message) {
-      Fluttertoast.showToast(
-        msg: message.toString(),
-        toastLength: Toast.LENGTH_LONG,
-      );
-    });
-
     try {
-      final resourceDirectory =
-          Directory(path.join(dictionaryResourceDirectory.path, 'import_temp'));
-      if (resourceDirectory.existsSync()) {
-        resourceDirectory.deleteSync(recursive: true);
-      }
-      _copyDirectory(directory, resourceDirectory);
-
-      PrepareDirectoryParams prepareDirectoryParams = PrepareDirectoryParams(
-        file: File(directory.path),
-        charset: '',
-        directoryPath: _databaseDirectory.path,
-        resourceDirectory: resourceDirectory,
-        dictionaryFormat: dictionaryFormat,
-        sendPort: receivePort.sendPort,
-      );
-
       progressNotifier.value = t.import_extract;
 
-      String name =
-          await dictionaryFormat.prepareName(prepareDirectoryParams);
-      progressNotifier.value = t.import_name(name: name);
+      final tempZipPath = path.join(
+          dictionaryResourceDirectory.path, 'import_temp_dir.zip');
+      final tempZip = File(tempZipPath);
 
-      if (_dictionariesCache.any((d) => d.name == name)) {
-        throw Exception(t.import_duplicate(name: name));
+      final archive = Archive();
+      for (final entity in directory.listSync(recursive: true)) {
+        if (entity is File) {
+          final relativePath =
+              path.relative(entity.path, from: directory.path);
+          archive.addFile(ArchiveFile(
+              relativePath, entity.lengthSync(), entity.readAsBytesSync()));
+        }
       }
+      tempZip.writeAsBytesSync(ZipEncoder().encode(archive)!);
 
-      final currentDictionaries = dictionaries;
-      int order = currentDictionaries.isEmpty
-          ? 1
-          : currentDictionaries
-                  .map((d) => d.order)
-                  .reduce((a, b) => a > b ? a : b) +
-              1;
+      try {
+        final tempOutputDir = Directory(
+            path.join(dictionaryResourceDirectory.path, 'import_temp'));
+        if (tempOutputDir.existsSync()) {
+          tempOutputDir.deleteSync(recursive: true);
+        }
+        tempOutputDir.createSync(recursive: true);
 
-      final finalResourceDirectory =
-          Directory(path.join(dictionaryResourceDirectory.path, name));
-      if (finalResourceDirectory.existsSync()) {
-        finalResourceDirectory.deleteSync(recursive: true);
+        final result = await importDictionaryViaHoshidicts(
+          zipPath: tempZipPath,
+          outputDir: tempOutputDir.path,
+        );
+
+        if (!result.success) {
+          throw Exception(result.error.isNotEmpty
+              ? result.error
+              : t.import_failed);
+        }
+
+        final name = result.title.trim();
+        if (name.isEmpty) {
+          throw Exception('Dictionary title is empty');
+        }
+
+        progressNotifier.value = t.import_name(name: name);
+
+        if (_dictionariesCache.any((d) => d.name == name)) {
+          throw Exception(t.import_duplicate(name: name));
+        }
+
+        final currentDictionaries = dictionaries;
+        int order = currentDictionaries.isEmpty
+            ? 1
+            : currentDictionaries
+                    .map((d) => d.order)
+                    .reduce((a, b) => a > b ? a : b) +
+                1;
+
+        final finalResourceDirectory =
+            Directory(path.join(dictionaryResourceDirectory.path, name));
+        if (finalResourceDirectory.existsSync()) {
+          finalResourceDirectory.deleteSync(recursive: true);
+        }
+        tempOutputDir.renameSync(finalResourceDirectory.path);
+
+        Dictionary dictionary = Dictionary(
+          order: order,
+          name: name,
+          formatKey: 'yomichan',
+        );
+
+        _persistDictionary(dictionary);
+
+        progressNotifier.value = t.import_complete;
+        onImportSuccess();
+        await Future.delayed(const Duration(seconds: 1), () {});
+      } finally {
+        if (tempZip.existsSync()) tempZip.deleteSync();
       }
-      resourceDirectory.renameSync(finalResourceDirectory.path);
-
-      Dictionary dictionary = Dictionary(
-        order: order,
-        name: name,
-        formatKey: dictionaryFormat.uniqueKey,
-      );
-
-      PrepareDictionaryParams prepareDictionaryParams = PrepareDictionaryParams(
-        dictionary: dictionary,
-        resourceDirectory: finalResourceDirectory,
-        directoryPath: _databaseDirectory.path,
-        dictionaryFormat: dictionaryFormat,
-        sendPort: receivePort.sendPort,
-        alertSendPort: alertReceivePort.sendPort,
-      );
-
-      await compute(depositDictionaryDataHelper, prepareDictionaryParams);
-
-      _persistDictionary(dictionary);
-
-      progressNotifier.value = t.import_complete;
-      onImportSuccess();
-      await Future.delayed(const Duration(seconds: 1), () {});
     } catch (e, stack) {
-      ErrorLogService.instance.log('DictionaryImport(zip)', e, stack);
+      ErrorLogService.instance.log('DictionaryImport(dir)', e, stack);
       progressNotifier.value = '$e';
       await Future.delayed(const Duration(seconds: 3), () {});
       progressNotifier.value = t.import_failed;
       await Future.delayed(const Duration(seconds: 1), () {});
-    } finally {
-      receivePort.close();
     }
   }
 
@@ -1778,82 +1774,50 @@ class AppModel with ChangeNotifier {
   }) async {
     clearDictionaryResultsCache();
 
-    DictionaryFormat dictionaryFormat = _detectDictionaryFormat(file);
-
-    /// Importing makes heavy use of isolates as it is very performance
-    /// intensive to work with files. In order to ensure the UI isolate isn't
-    /// blocked, a [ReceivePort] is necessary to receive UI updates.
-    ReceivePort receivePort = ReceivePort();
-    receivePort.listen((message) {
-      progressNotifier.value = '$message';
-    });
-
-    /// Used to show an [AlertDialog] if critical information needs to be
-    /// given to a user regarding the dictionary they are importing.
-    ReceivePort alertReceivePort = ReceivePort();
-    alertReceivePort.listen((message) {
-      Fluttertoast.showToast(
-        msg: message.toString(),
-        toastLength: Toast.LENGTH_LONG,
-      );
-    });
-
-    /// If any [Exception] occurs, the process is aborted with a message as
-    /// shown below. A dialog is shown to show the progress of the dictionary
-    /// file import, with messages pertaining to the above [ValueNotifier].
     try {
-      String charset = '';
-
-      if (dictionaryFormat.isTextFormat) {
-        var randomAccessFile = file.openSync();
-        var bytes = randomAccessFile.readSync(100);
-        DecodingResult result = await CharsetDetector.autoDecode(bytes);
-        charset = result.charset;
-      }
-
-      final Directory resourceDirectory =
-          Directory(path.join(dictionaryResourceDirectory.path, 'import_temp'));
-      if (resourceDirectory.existsSync()) {
-        resourceDirectory.deleteSync(recursive: true);
-      }
-
-      resourceDirectory.createSync(recursive: true);
-
-      PrepareDirectoryParams prepareDirectoryParams = PrepareDirectoryParams(
-        file: file,
-        charset: charset,
-        directoryPath: _databaseDirectory.path,
-        resourceDirectory: resourceDirectory,
-        dictionaryFormat: dictionaryFormat,
-        sendPort: receivePort.sendPort,
-      );
-
       progressNotifier.value = t.import_extract;
       await Future<void>.delayed(Duration.zero);
-      await dictionaryFormat.prepareDirectory(prepareDirectoryParams);
 
-      String name =
-          await dictionaryFormat.prepareName(prepareDirectoryParams);
+      final tempOutputDir =
+          Directory(path.join(dictionaryResourceDirectory.path, 'import_temp'));
+      if (tempOutputDir.existsSync()) {
+        tempOutputDir.deleteSync(recursive: true);
+      }
+      tempOutputDir.createSync(recursive: true);
+
+      final result = await importDictionaryViaHoshidicts(
+        zipPath: file.path,
+        outputDir: tempOutputDir.path,
+      );
+
+      if (!result.success) {
+        throw Exception(result.error.isNotEmpty
+            ? result.error
+            : t.import_failed);
+      }
+
+      final name = result.title.trim();
+      if (name.isEmpty) {
+        throw Exception('Dictionary title is empty');
+      }
+
       progressNotifier.value = t.import_name(name: name);
 
-      /// Check for duplicate dictionary by name.
       if (_dictionariesCache.any((d) => d.name == name)) {
         throw Exception(t.import_duplicate(name: name));
       }
 
-      /// Determine the order for the new dictionary.
       final currentDictionaries = dictionaries;
       int order = currentDictionaries.isEmpty
           ? 1
           : currentDictionaries.map((d) => d.order).reduce((a, b) => a > b ? a : b) + 1;
 
-      /// Rename the temp resource directory to use the dictionary name.
       final finalResourceDirectory =
           Directory(path.join(dictionaryResourceDirectory.path, name));
       if (finalResourceDirectory.existsSync()) {
         finalResourceDirectory.deleteSync(recursive: true);
       }
-      resourceDirectory.renameSync(finalResourceDirectory.path);
+      tempOutputDir.renameSync(finalResourceDirectory.path);
 
       for (final css in cssFiles) {
         if (css.existsSync()) {
@@ -1873,19 +1837,8 @@ class AppModel with ChangeNotifier {
       Dictionary dictionary = Dictionary(
         order: order,
         name: name,
-        formatKey: dictionaryFormat.uniqueKey,
+        formatKey: 'yomichan',
       );
-
-      PrepareDictionaryParams prepareDictionaryParams = PrepareDictionaryParams(
-        dictionary: dictionary,
-        resourceDirectory: finalResourceDirectory,
-        directoryPath: _databaseDirectory.path,
-        dictionaryFormat: dictionaryFormat,
-        sendPort: receivePort.sendPort,
-        alertSendPort: alertReceivePort.sendPort,
-      );
-
-      await compute(depositDictionaryDataHelper, prepareDictionaryParams);
 
       _persistDictionary(dictionary);
 
@@ -1898,8 +1851,6 @@ class AppModel with ChangeNotifier {
       await Future.delayed(const Duration(seconds: 3), () {});
       progressNotifier.value = t.import_failed;
       await Future.delayed(const Duration(seconds: 1), () {});
-    } finally {
-      receivePort.close();
     }
   }
 
@@ -1933,44 +1884,24 @@ class AppModel with ChangeNotifier {
     _persistDictionary(dictionary);
   }
 
-  /// Delete all dictionary data from the database.
   Future<void> deleteDictionaries() async {
-    /// New results may be wrong after dictionary is added so this has to be
-    /// done.
     clearDictionaryResultsCache();
 
-    ReceivePort receivePort = ReceivePort();
-    DeleteDictionaryParams params = DeleteDictionaryParams(
-      directoryPath: _databaseDirectory.path,
-      sendPort: receivePort.sendPort,
-    );
-
-    await compute(deleteDictionariesHelper, params);
     await clearDictionaryHistory();
     _dictionariesCache.clear();
     await _database.clearAllDictionaryMeta();
 
     if (dictionaryResourceDirectory.existsSync()) {
       dictionaryResourceDirectory.deleteSync(recursive: true);
+      dictionaryResourceDirectory.createSync(recursive: true);
     }
 
     dictionarySearchAgainNotifier.notifyListeners();
   }
 
-  /// Delete a single dictionary's data from the database.
   Future<void> deleteDictionary(Dictionary dictionary) async {
-    /// New results may be wrong after dictionary is added so this has to be
-    /// done.
     clearDictionaryResultsCache();
 
-    ReceivePort receivePort = ReceivePort();
-    DeleteDictionaryParams params = DeleteDictionaryParams(
-      dictionaryName: dictionary.name,
-      directoryPath: _databaseDirectory.path,
-      sendPort: receivePort.sendPort,
-    );
-
-    await compute(deleteDictionaryHelper, params);
     await clearDictionaryHistory();
 
     _dictionariesCache.removeWhere((d) => d.name == dictionary.name);
@@ -2042,12 +1973,18 @@ class AppModel with ChangeNotifier {
       debugPrint(message.toString());
     });
 
+    final dictPaths = _dictionariesCache
+        .map((d) => path.join(dictionaryResourceDirectory.path, d.name))
+        .where((p) => Directory(p).existsSync())
+        .toList();
+
     DictionarySearchParams params = DictionarySearchParams(
       searchTerm: searchTerm,
       directoryPath: _databaseDirectory.path,
       maximumDictionarySearchResults: maximumDictionarySearchResults,
       maximumDictionaryTermsInResult: overrideMaximumTerms ?? maximumTerms,
       searchWithWildcards: searchWithWildcards,
+      dictionaryPaths: dictPaths,
       sendPort: receivePort.sendPort,
     );
 

@@ -58,9 +58,7 @@ Future<void> prepareDirectoryMdictFormat(
 
   // MDict reading via dict_reader has been removed; will be replaced by
   // hoshidicts. Throw so callers know this format is not yet functional.
-  throw UnimplementedError(
-    'MDict import is not yet available — will be replaced by hoshidicts',
-  );
+  // MDict format is not supported by hoshidicts; no-op
 }
 
 Future<String> prepareNameMdictFormat(PrepareDirectoryParams params) async {
@@ -76,7 +74,7 @@ void _prepareEntriesMdictStub({
   required PrepareDictionaryParams params,
   required dynamic database,
 }) {
-  throw UnimplementedError('Will be replaced by hoshidicts');
+  // No-op: hoshidicts only supports Yomitan format
 }
 
 void prepareEntriesMdictFormat({
