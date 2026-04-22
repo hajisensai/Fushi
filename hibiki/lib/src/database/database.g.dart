@@ -1,0 +1,6656 @@
+// GENERATED CODE - DO NOT MODIFY BY HAND
+
+part of 'database.dart';
+
+// ignore_for_file: type=lint
+class $MediaItemsTable extends MediaItems
+    with TableInfo<$MediaItemsTable, MediaItemRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MediaItemsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _mediaIdentifierMeta =
+      const VerificationMeta('mediaIdentifier');
+  @override
+  late final GeneratedColumn<String> mediaIdentifier = GeneratedColumn<String>(
+      'media_identifier', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+      'title', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _mediaTypeIdentifierMeta =
+      const VerificationMeta('mediaTypeIdentifier');
+  @override
+  late final GeneratedColumn<String> mediaTypeIdentifier =
+      GeneratedColumn<String>('media_type_identifier', aliasedName, false,
+          type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _mediaSourceIdentifierMeta =
+      const VerificationMeta('mediaSourceIdentifier');
+  @override
+  late final GeneratedColumn<String> mediaSourceIdentifier =
+      GeneratedColumn<String>('media_source_identifier', aliasedName, false,
+          type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _uniqueKeyMeta =
+      const VerificationMeta('uniqueKey');
+  @override
+  late final GeneratedColumn<String> uniqueKey = GeneratedColumn<String>(
+      'unique_key', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways('UNIQUE'));
+  static const VerificationMeta _base64ImageMeta =
+      const VerificationMeta('base64Image');
+  @override
+  late final GeneratedColumn<String> base64Image = GeneratedColumn<String>(
+      'base64_image', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _imageUrlMeta =
+      const VerificationMeta('imageUrl');
+  @override
+  late final GeneratedColumn<String> imageUrl = GeneratedColumn<String>(
+      'image_url', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _audioUrlMeta =
+      const VerificationMeta('audioUrl');
+  @override
+  late final GeneratedColumn<String> audioUrl = GeneratedColumn<String>(
+      'audio_url', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _authorMeta = const VerificationMeta('author');
+  @override
+  late final GeneratedColumn<String> author = GeneratedColumn<String>(
+      'author', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _authorIdentifierMeta =
+      const VerificationMeta('authorIdentifier');
+  @override
+  late final GeneratedColumn<String> authorIdentifier = GeneratedColumn<String>(
+      'author_identifier', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _extraUrlMeta =
+      const VerificationMeta('extraUrl');
+  @override
+  late final GeneratedColumn<String> extraUrl = GeneratedColumn<String>(
+      'extra_url', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _extraMeta = const VerificationMeta('extra');
+  @override
+  late final GeneratedColumn<String> extra = GeneratedColumn<String>(
+      'extra', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _sourceMetadataMeta =
+      const VerificationMeta('sourceMetadata');
+  @override
+  late final GeneratedColumn<String> sourceMetadata = GeneratedColumn<String>(
+      'source_metadata', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _positionMeta =
+      const VerificationMeta('position');
+  @override
+  late final GeneratedColumn<int> position = GeneratedColumn<int>(
+      'position', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _durationMeta =
+      const VerificationMeta('duration');
+  @override
+  late final GeneratedColumn<int> duration = GeneratedColumn<int>(
+      'duration', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _canDeleteMeta =
+      const VerificationMeta('canDelete');
+  @override
+  late final GeneratedColumn<bool> canDelete = GeneratedColumn<bool>(
+      'can_delete', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: true,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("can_delete" IN (0, 1))'));
+  static const VerificationMeta _canEditMeta =
+      const VerificationMeta('canEdit');
+  @override
+  late final GeneratedColumn<bool> canEdit = GeneratedColumn<bool>(
+      'can_edit', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: true,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("can_edit" IN (0, 1))'));
+  static const VerificationMeta _importedAtMeta =
+      const VerificationMeta('importedAt');
+  @override
+  late final GeneratedColumn<int> importedAt = GeneratedColumn<int>(
+      'imported_at', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  @override
+  List<GeneratedColumn> get $columns => [
+        id,
+        mediaIdentifier,
+        title,
+        mediaTypeIdentifier,
+        mediaSourceIdentifier,
+        uniqueKey,
+        base64Image,
+        imageUrl,
+        audioUrl,
+        author,
+        authorIdentifier,
+        extraUrl,
+        extra,
+        sourceMetadata,
+        position,
+        duration,
+        canDelete,
+        canEdit,
+        importedAt
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'media_items';
+  @override
+  VerificationContext validateIntegrity(Insertable<MediaItemRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('media_identifier')) {
+      context.handle(
+          _mediaIdentifierMeta,
+          mediaIdentifier.isAcceptableOrUnknown(
+              data['media_identifier']!, _mediaIdentifierMeta));
+    } else if (isInserting) {
+      context.missing(_mediaIdentifierMeta);
+    }
+    if (data.containsKey('title')) {
+      context.handle(
+          _titleMeta, title.isAcceptableOrUnknown(data['title']!, _titleMeta));
+    } else if (isInserting) {
+      context.missing(_titleMeta);
+    }
+    if (data.containsKey('media_type_identifier')) {
+      context.handle(
+          _mediaTypeIdentifierMeta,
+          mediaTypeIdentifier.isAcceptableOrUnknown(
+              data['media_type_identifier']!, _mediaTypeIdentifierMeta));
+    } else if (isInserting) {
+      context.missing(_mediaTypeIdentifierMeta);
+    }
+    if (data.containsKey('media_source_identifier')) {
+      context.handle(
+          _mediaSourceIdentifierMeta,
+          mediaSourceIdentifier.isAcceptableOrUnknown(
+              data['media_source_identifier']!, _mediaSourceIdentifierMeta));
+    } else if (isInserting) {
+      context.missing(_mediaSourceIdentifierMeta);
+    }
+    if (data.containsKey('unique_key')) {
+      context.handle(_uniqueKeyMeta,
+          uniqueKey.isAcceptableOrUnknown(data['unique_key']!, _uniqueKeyMeta));
+    } else if (isInserting) {
+      context.missing(_uniqueKeyMeta);
+    }
+    if (data.containsKey('base64_image')) {
+      context.handle(
+          _base64ImageMeta,
+          base64Image.isAcceptableOrUnknown(
+              data['base64_image']!, _base64ImageMeta));
+    }
+    if (data.containsKey('image_url')) {
+      context.handle(_imageUrlMeta,
+          imageUrl.isAcceptableOrUnknown(data['image_url']!, _imageUrlMeta));
+    }
+    if (data.containsKey('audio_url')) {
+      context.handle(_audioUrlMeta,
+          audioUrl.isAcceptableOrUnknown(data['audio_url']!, _audioUrlMeta));
+    }
+    if (data.containsKey('author')) {
+      context.handle(_authorMeta,
+          author.isAcceptableOrUnknown(data['author']!, _authorMeta));
+    }
+    if (data.containsKey('author_identifier')) {
+      context.handle(
+          _authorIdentifierMeta,
+          authorIdentifier.isAcceptableOrUnknown(
+              data['author_identifier']!, _authorIdentifierMeta));
+    }
+    if (data.containsKey('extra_url')) {
+      context.handle(_extraUrlMeta,
+          extraUrl.isAcceptableOrUnknown(data['extra_url']!, _extraUrlMeta));
+    }
+    if (data.containsKey('extra')) {
+      context.handle(
+          _extraMeta, extra.isAcceptableOrUnknown(data['extra']!, _extraMeta));
+    }
+    if (data.containsKey('source_metadata')) {
+      context.handle(
+          _sourceMetadataMeta,
+          sourceMetadata.isAcceptableOrUnknown(
+              data['source_metadata']!, _sourceMetadataMeta));
+    }
+    if (data.containsKey('position')) {
+      context.handle(_positionMeta,
+          position.isAcceptableOrUnknown(data['position']!, _positionMeta));
+    } else if (isInserting) {
+      context.missing(_positionMeta);
+    }
+    if (data.containsKey('duration')) {
+      context.handle(_durationMeta,
+          duration.isAcceptableOrUnknown(data['duration']!, _durationMeta));
+    } else if (isInserting) {
+      context.missing(_durationMeta);
+    }
+    if (data.containsKey('can_delete')) {
+      context.handle(_canDeleteMeta,
+          canDelete.isAcceptableOrUnknown(data['can_delete']!, _canDeleteMeta));
+    } else if (isInserting) {
+      context.missing(_canDeleteMeta);
+    }
+    if (data.containsKey('can_edit')) {
+      context.handle(_canEditMeta,
+          canEdit.isAcceptableOrUnknown(data['can_edit']!, _canEditMeta));
+    } else if (isInserting) {
+      context.missing(_canEditMeta);
+    }
+    if (data.containsKey('imported_at')) {
+      context.handle(
+          _importedAtMeta,
+          importedAt.isAcceptableOrUnknown(
+              data['imported_at']!, _importedAtMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  MediaItemRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MediaItemRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      mediaIdentifier: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}media_identifier'])!,
+      title: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}title'])!,
+      mediaTypeIdentifier: attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}media_type_identifier'])!,
+      mediaSourceIdentifier: attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}media_source_identifier'])!,
+      uniqueKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}unique_key'])!,
+      base64Image: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}base64_image']),
+      imageUrl: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}image_url']),
+      audioUrl: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}audio_url']),
+      author: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}author']),
+      authorIdentifier: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}author_identifier']),
+      extraUrl: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}extra_url']),
+      extra: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}extra']),
+      sourceMetadata: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}source_metadata']),
+      position: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}position'])!,
+      duration: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}duration'])!,
+      canDelete: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}can_delete'])!,
+      canEdit: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}can_edit'])!,
+      importedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}imported_at'])!,
+    );
+  }
+
+  @override
+  $MediaItemsTable createAlias(String alias) {
+    return $MediaItemsTable(attachedDatabase, alias);
+  }
+}
+
+class MediaItemRow extends DataClass implements Insertable<MediaItemRow> {
+  final int id;
+  final String mediaIdentifier;
+  final String title;
+  final String mediaTypeIdentifier;
+  final String mediaSourceIdentifier;
+  final String uniqueKey;
+  final String? base64Image;
+  final String? imageUrl;
+  final String? audioUrl;
+  final String? author;
+  final String? authorIdentifier;
+  final String? extraUrl;
+  final String? extra;
+  final String? sourceMetadata;
+  final int position;
+  final int duration;
+  final bool canDelete;
+  final bool canEdit;
+  final int importedAt;
+  const MediaItemRow(
+      {required this.id,
+      required this.mediaIdentifier,
+      required this.title,
+      required this.mediaTypeIdentifier,
+      required this.mediaSourceIdentifier,
+      required this.uniqueKey,
+      this.base64Image,
+      this.imageUrl,
+      this.audioUrl,
+      this.author,
+      this.authorIdentifier,
+      this.extraUrl,
+      this.extra,
+      this.sourceMetadata,
+      required this.position,
+      required this.duration,
+      required this.canDelete,
+      required this.canEdit,
+      required this.importedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['media_identifier'] = Variable<String>(mediaIdentifier);
+    map['title'] = Variable<String>(title);
+    map['media_type_identifier'] = Variable<String>(mediaTypeIdentifier);
+    map['media_source_identifier'] = Variable<String>(mediaSourceIdentifier);
+    map['unique_key'] = Variable<String>(uniqueKey);
+    if (!nullToAbsent || base64Image != null) {
+      map['base64_image'] = Variable<String>(base64Image);
+    }
+    if (!nullToAbsent || imageUrl != null) {
+      map['image_url'] = Variable<String>(imageUrl);
+    }
+    if (!nullToAbsent || audioUrl != null) {
+      map['audio_url'] = Variable<String>(audioUrl);
+    }
+    if (!nullToAbsent || author != null) {
+      map['author'] = Variable<String>(author);
+    }
+    if (!nullToAbsent || authorIdentifier != null) {
+      map['author_identifier'] = Variable<String>(authorIdentifier);
+    }
+    if (!nullToAbsent || extraUrl != null) {
+      map['extra_url'] = Variable<String>(extraUrl);
+    }
+    if (!nullToAbsent || extra != null) {
+      map['extra'] = Variable<String>(extra);
+    }
+    if (!nullToAbsent || sourceMetadata != null) {
+      map['source_metadata'] = Variable<String>(sourceMetadata);
+    }
+    map['position'] = Variable<int>(position);
+    map['duration'] = Variable<int>(duration);
+    map['can_delete'] = Variable<bool>(canDelete);
+    map['can_edit'] = Variable<bool>(canEdit);
+    map['imported_at'] = Variable<int>(importedAt);
+    return map;
+  }
+
+  MediaItemsCompanion toCompanion(bool nullToAbsent) {
+    return MediaItemsCompanion(
+      id: Value(id),
+      mediaIdentifier: Value(mediaIdentifier),
+      title: Value(title),
+      mediaTypeIdentifier: Value(mediaTypeIdentifier),
+      mediaSourceIdentifier: Value(mediaSourceIdentifier),
+      uniqueKey: Value(uniqueKey),
+      base64Image: base64Image == null && nullToAbsent
+          ? const Value.absent()
+          : Value(base64Image),
+      imageUrl: imageUrl == null && nullToAbsent
+          ? const Value.absent()
+          : Value(imageUrl),
+      audioUrl: audioUrl == null && nullToAbsent
+          ? const Value.absent()
+          : Value(audioUrl),
+      author:
+          author == null && nullToAbsent ? const Value.absent() : Value(author),
+      authorIdentifier: authorIdentifier == null && nullToAbsent
+          ? const Value.absent()
+          : Value(authorIdentifier),
+      extraUrl: extraUrl == null && nullToAbsent
+          ? const Value.absent()
+          : Value(extraUrl),
+      extra:
+          extra == null && nullToAbsent ? const Value.absent() : Value(extra),
+      sourceMetadata: sourceMetadata == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sourceMetadata),
+      position: Value(position),
+      duration: Value(duration),
+      canDelete: Value(canDelete),
+      canEdit: Value(canEdit),
+      importedAt: Value(importedAt),
+    );
+  }
+
+  factory MediaItemRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MediaItemRow(
+      id: serializer.fromJson<int>(json['id']),
+      mediaIdentifier: serializer.fromJson<String>(json['mediaIdentifier']),
+      title: serializer.fromJson<String>(json['title']),
+      mediaTypeIdentifier:
+          serializer.fromJson<String>(json['mediaTypeIdentifier']),
+      mediaSourceIdentifier:
+          serializer.fromJson<String>(json['mediaSourceIdentifier']),
+      uniqueKey: serializer.fromJson<String>(json['uniqueKey']),
+      base64Image: serializer.fromJson<String?>(json['base64Image']),
+      imageUrl: serializer.fromJson<String?>(json['imageUrl']),
+      audioUrl: serializer.fromJson<String?>(json['audioUrl']),
+      author: serializer.fromJson<String?>(json['author']),
+      authorIdentifier: serializer.fromJson<String?>(json['authorIdentifier']),
+      extraUrl: serializer.fromJson<String?>(json['extraUrl']),
+      extra: serializer.fromJson<String?>(json['extra']),
+      sourceMetadata: serializer.fromJson<String?>(json['sourceMetadata']),
+      position: serializer.fromJson<int>(json['position']),
+      duration: serializer.fromJson<int>(json['duration']),
+      canDelete: serializer.fromJson<bool>(json['canDelete']),
+      canEdit: serializer.fromJson<bool>(json['canEdit']),
+      importedAt: serializer.fromJson<int>(json['importedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'mediaIdentifier': serializer.toJson<String>(mediaIdentifier),
+      'title': serializer.toJson<String>(title),
+      'mediaTypeIdentifier': serializer.toJson<String>(mediaTypeIdentifier),
+      'mediaSourceIdentifier': serializer.toJson<String>(mediaSourceIdentifier),
+      'uniqueKey': serializer.toJson<String>(uniqueKey),
+      'base64Image': serializer.toJson<String?>(base64Image),
+      'imageUrl': serializer.toJson<String?>(imageUrl),
+      'audioUrl': serializer.toJson<String?>(audioUrl),
+      'author': serializer.toJson<String?>(author),
+      'authorIdentifier': serializer.toJson<String?>(authorIdentifier),
+      'extraUrl': serializer.toJson<String?>(extraUrl),
+      'extra': serializer.toJson<String?>(extra),
+      'sourceMetadata': serializer.toJson<String?>(sourceMetadata),
+      'position': serializer.toJson<int>(position),
+      'duration': serializer.toJson<int>(duration),
+      'canDelete': serializer.toJson<bool>(canDelete),
+      'canEdit': serializer.toJson<bool>(canEdit),
+      'importedAt': serializer.toJson<int>(importedAt),
+    };
+  }
+
+  MediaItemRow copyWith(
+          {int? id,
+          String? mediaIdentifier,
+          String? title,
+          String? mediaTypeIdentifier,
+          String? mediaSourceIdentifier,
+          String? uniqueKey,
+          Value<String?> base64Image = const Value.absent(),
+          Value<String?> imageUrl = const Value.absent(),
+          Value<String?> audioUrl = const Value.absent(),
+          Value<String?> author = const Value.absent(),
+          Value<String?> authorIdentifier = const Value.absent(),
+          Value<String?> extraUrl = const Value.absent(),
+          Value<String?> extra = const Value.absent(),
+          Value<String?> sourceMetadata = const Value.absent(),
+          int? position,
+          int? duration,
+          bool? canDelete,
+          bool? canEdit,
+          int? importedAt}) =>
+      MediaItemRow(
+        id: id ?? this.id,
+        mediaIdentifier: mediaIdentifier ?? this.mediaIdentifier,
+        title: title ?? this.title,
+        mediaTypeIdentifier: mediaTypeIdentifier ?? this.mediaTypeIdentifier,
+        mediaSourceIdentifier:
+            mediaSourceIdentifier ?? this.mediaSourceIdentifier,
+        uniqueKey: uniqueKey ?? this.uniqueKey,
+        base64Image: base64Image.present ? base64Image.value : this.base64Image,
+        imageUrl: imageUrl.present ? imageUrl.value : this.imageUrl,
+        audioUrl: audioUrl.present ? audioUrl.value : this.audioUrl,
+        author: author.present ? author.value : this.author,
+        authorIdentifier: authorIdentifier.present
+            ? authorIdentifier.value
+            : this.authorIdentifier,
+        extraUrl: extraUrl.present ? extraUrl.value : this.extraUrl,
+        extra: extra.present ? extra.value : this.extra,
+        sourceMetadata:
+            sourceMetadata.present ? sourceMetadata.value : this.sourceMetadata,
+        position: position ?? this.position,
+        duration: duration ?? this.duration,
+        canDelete: canDelete ?? this.canDelete,
+        canEdit: canEdit ?? this.canEdit,
+        importedAt: importedAt ?? this.importedAt,
+      );
+  MediaItemRow copyWithCompanion(MediaItemsCompanion data) {
+    return MediaItemRow(
+      id: data.id.present ? data.id.value : this.id,
+      mediaIdentifier: data.mediaIdentifier.present
+          ? data.mediaIdentifier.value
+          : this.mediaIdentifier,
+      title: data.title.present ? data.title.value : this.title,
+      mediaTypeIdentifier: data.mediaTypeIdentifier.present
+          ? data.mediaTypeIdentifier.value
+          : this.mediaTypeIdentifier,
+      mediaSourceIdentifier: data.mediaSourceIdentifier.present
+          ? data.mediaSourceIdentifier.value
+          : this.mediaSourceIdentifier,
+      uniqueKey: data.uniqueKey.present ? data.uniqueKey.value : this.uniqueKey,
+      base64Image:
+          data.base64Image.present ? data.base64Image.value : this.base64Image,
+      imageUrl: data.imageUrl.present ? data.imageUrl.value : this.imageUrl,
+      audioUrl: data.audioUrl.present ? data.audioUrl.value : this.audioUrl,
+      author: data.author.present ? data.author.value : this.author,
+      authorIdentifier: data.authorIdentifier.present
+          ? data.authorIdentifier.value
+          : this.authorIdentifier,
+      extraUrl: data.extraUrl.present ? data.extraUrl.value : this.extraUrl,
+      extra: data.extra.present ? data.extra.value : this.extra,
+      sourceMetadata: data.sourceMetadata.present
+          ? data.sourceMetadata.value
+          : this.sourceMetadata,
+      position: data.position.present ? data.position.value : this.position,
+      duration: data.duration.present ? data.duration.value : this.duration,
+      canDelete: data.canDelete.present ? data.canDelete.value : this.canDelete,
+      canEdit: data.canEdit.present ? data.canEdit.value : this.canEdit,
+      importedAt:
+          data.importedAt.present ? data.importedAt.value : this.importedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaItemRow(')
+          ..write('id: $id, ')
+          ..write('mediaIdentifier: $mediaIdentifier, ')
+          ..write('title: $title, ')
+          ..write('mediaTypeIdentifier: $mediaTypeIdentifier, ')
+          ..write('mediaSourceIdentifier: $mediaSourceIdentifier, ')
+          ..write('uniqueKey: $uniqueKey, ')
+          ..write('base64Image: $base64Image, ')
+          ..write('imageUrl: $imageUrl, ')
+          ..write('audioUrl: $audioUrl, ')
+          ..write('author: $author, ')
+          ..write('authorIdentifier: $authorIdentifier, ')
+          ..write('extraUrl: $extraUrl, ')
+          ..write('extra: $extra, ')
+          ..write('sourceMetadata: $sourceMetadata, ')
+          ..write('position: $position, ')
+          ..write('duration: $duration, ')
+          ..write('canDelete: $canDelete, ')
+          ..write('canEdit: $canEdit, ')
+          ..write('importedAt: $importedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+      id,
+      mediaIdentifier,
+      title,
+      mediaTypeIdentifier,
+      mediaSourceIdentifier,
+      uniqueKey,
+      base64Image,
+      imageUrl,
+      audioUrl,
+      author,
+      authorIdentifier,
+      extraUrl,
+      extra,
+      sourceMetadata,
+      position,
+      duration,
+      canDelete,
+      canEdit,
+      importedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MediaItemRow &&
+          other.id == this.id &&
+          other.mediaIdentifier == this.mediaIdentifier &&
+          other.title == this.title &&
+          other.mediaTypeIdentifier == this.mediaTypeIdentifier &&
+          other.mediaSourceIdentifier == this.mediaSourceIdentifier &&
+          other.uniqueKey == this.uniqueKey &&
+          other.base64Image == this.base64Image &&
+          other.imageUrl == this.imageUrl &&
+          other.audioUrl == this.audioUrl &&
+          other.author == this.author &&
+          other.authorIdentifier == this.authorIdentifier &&
+          other.extraUrl == this.extraUrl &&
+          other.extra == this.extra &&
+          other.sourceMetadata == this.sourceMetadata &&
+          other.position == this.position &&
+          other.duration == this.duration &&
+          other.canDelete == this.canDelete &&
+          other.canEdit == this.canEdit &&
+          other.importedAt == this.importedAt);
+}
+
+class MediaItemsCompanion extends UpdateCompanion<MediaItemRow> {
+  final Value<int> id;
+  final Value<String> mediaIdentifier;
+  final Value<String> title;
+  final Value<String> mediaTypeIdentifier;
+  final Value<String> mediaSourceIdentifier;
+  final Value<String> uniqueKey;
+  final Value<String?> base64Image;
+  final Value<String?> imageUrl;
+  final Value<String?> audioUrl;
+  final Value<String?> author;
+  final Value<String?> authorIdentifier;
+  final Value<String?> extraUrl;
+  final Value<String?> extra;
+  final Value<String?> sourceMetadata;
+  final Value<int> position;
+  final Value<int> duration;
+  final Value<bool> canDelete;
+  final Value<bool> canEdit;
+  final Value<int> importedAt;
+  const MediaItemsCompanion({
+    this.id = const Value.absent(),
+    this.mediaIdentifier = const Value.absent(),
+    this.title = const Value.absent(),
+    this.mediaTypeIdentifier = const Value.absent(),
+    this.mediaSourceIdentifier = const Value.absent(),
+    this.uniqueKey = const Value.absent(),
+    this.base64Image = const Value.absent(),
+    this.imageUrl = const Value.absent(),
+    this.audioUrl = const Value.absent(),
+    this.author = const Value.absent(),
+    this.authorIdentifier = const Value.absent(),
+    this.extraUrl = const Value.absent(),
+    this.extra = const Value.absent(),
+    this.sourceMetadata = const Value.absent(),
+    this.position = const Value.absent(),
+    this.duration = const Value.absent(),
+    this.canDelete = const Value.absent(),
+    this.canEdit = const Value.absent(),
+    this.importedAt = const Value.absent(),
+  });
+  MediaItemsCompanion.insert({
+    this.id = const Value.absent(),
+    required String mediaIdentifier,
+    required String title,
+    required String mediaTypeIdentifier,
+    required String mediaSourceIdentifier,
+    required String uniqueKey,
+    this.base64Image = const Value.absent(),
+    this.imageUrl = const Value.absent(),
+    this.audioUrl = const Value.absent(),
+    this.author = const Value.absent(),
+    this.authorIdentifier = const Value.absent(),
+    this.extraUrl = const Value.absent(),
+    this.extra = const Value.absent(),
+    this.sourceMetadata = const Value.absent(),
+    required int position,
+    required int duration,
+    required bool canDelete,
+    required bool canEdit,
+    this.importedAt = const Value.absent(),
+  })  : mediaIdentifier = Value(mediaIdentifier),
+        title = Value(title),
+        mediaTypeIdentifier = Value(mediaTypeIdentifier),
+        mediaSourceIdentifier = Value(mediaSourceIdentifier),
+        uniqueKey = Value(uniqueKey),
+        position = Value(position),
+        duration = Value(duration),
+        canDelete = Value(canDelete),
+        canEdit = Value(canEdit);
+  static Insertable<MediaItemRow> custom({
+    Expression<int>? id,
+    Expression<String>? mediaIdentifier,
+    Expression<String>? title,
+    Expression<String>? mediaTypeIdentifier,
+    Expression<String>? mediaSourceIdentifier,
+    Expression<String>? uniqueKey,
+    Expression<String>? base64Image,
+    Expression<String>? imageUrl,
+    Expression<String>? audioUrl,
+    Expression<String>? author,
+    Expression<String>? authorIdentifier,
+    Expression<String>? extraUrl,
+    Expression<String>? extra,
+    Expression<String>? sourceMetadata,
+    Expression<int>? position,
+    Expression<int>? duration,
+    Expression<bool>? canDelete,
+    Expression<bool>? canEdit,
+    Expression<int>? importedAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (mediaIdentifier != null) 'media_identifier': mediaIdentifier,
+      if (title != null) 'title': title,
+      if (mediaTypeIdentifier != null)
+        'media_type_identifier': mediaTypeIdentifier,
+      if (mediaSourceIdentifier != null)
+        'media_source_identifier': mediaSourceIdentifier,
+      if (uniqueKey != null) 'unique_key': uniqueKey,
+      if (base64Image != null) 'base64_image': base64Image,
+      if (imageUrl != null) 'image_url': imageUrl,
+      if (audioUrl != null) 'audio_url': audioUrl,
+      if (author != null) 'author': author,
+      if (authorIdentifier != null) 'author_identifier': authorIdentifier,
+      if (extraUrl != null) 'extra_url': extraUrl,
+      if (extra != null) 'extra': extra,
+      if (sourceMetadata != null) 'source_metadata': sourceMetadata,
+      if (position != null) 'position': position,
+      if (duration != null) 'duration': duration,
+      if (canDelete != null) 'can_delete': canDelete,
+      if (canEdit != null) 'can_edit': canEdit,
+      if (importedAt != null) 'imported_at': importedAt,
+    });
+  }
+
+  MediaItemsCompanion copyWith(
+      {Value<int>? id,
+      Value<String>? mediaIdentifier,
+      Value<String>? title,
+      Value<String>? mediaTypeIdentifier,
+      Value<String>? mediaSourceIdentifier,
+      Value<String>? uniqueKey,
+      Value<String?>? base64Image,
+      Value<String?>? imageUrl,
+      Value<String?>? audioUrl,
+      Value<String?>? author,
+      Value<String?>? authorIdentifier,
+      Value<String?>? extraUrl,
+      Value<String?>? extra,
+      Value<String?>? sourceMetadata,
+      Value<int>? position,
+      Value<int>? duration,
+      Value<bool>? canDelete,
+      Value<bool>? canEdit,
+      Value<int>? importedAt}) {
+    return MediaItemsCompanion(
+      id: id ?? this.id,
+      mediaIdentifier: mediaIdentifier ?? this.mediaIdentifier,
+      title: title ?? this.title,
+      mediaTypeIdentifier: mediaTypeIdentifier ?? this.mediaTypeIdentifier,
+      mediaSourceIdentifier:
+          mediaSourceIdentifier ?? this.mediaSourceIdentifier,
+      uniqueKey: uniqueKey ?? this.uniqueKey,
+      base64Image: base64Image ?? this.base64Image,
+      imageUrl: imageUrl ?? this.imageUrl,
+      audioUrl: audioUrl ?? this.audioUrl,
+      author: author ?? this.author,
+      authorIdentifier: authorIdentifier ?? this.authorIdentifier,
+      extraUrl: extraUrl ?? this.extraUrl,
+      extra: extra ?? this.extra,
+      sourceMetadata: sourceMetadata ?? this.sourceMetadata,
+      position: position ?? this.position,
+      duration: duration ?? this.duration,
+      canDelete: canDelete ?? this.canDelete,
+      canEdit: canEdit ?? this.canEdit,
+      importedAt: importedAt ?? this.importedAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (mediaIdentifier.present) {
+      map['media_identifier'] = Variable<String>(mediaIdentifier.value);
+    }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
+    if (mediaTypeIdentifier.present) {
+      map['media_type_identifier'] =
+          Variable<String>(mediaTypeIdentifier.value);
+    }
+    if (mediaSourceIdentifier.present) {
+      map['media_source_identifier'] =
+          Variable<String>(mediaSourceIdentifier.value);
+    }
+    if (uniqueKey.present) {
+      map['unique_key'] = Variable<String>(uniqueKey.value);
+    }
+    if (base64Image.present) {
+      map['base64_image'] = Variable<String>(base64Image.value);
+    }
+    if (imageUrl.present) {
+      map['image_url'] = Variable<String>(imageUrl.value);
+    }
+    if (audioUrl.present) {
+      map['audio_url'] = Variable<String>(audioUrl.value);
+    }
+    if (author.present) {
+      map['author'] = Variable<String>(author.value);
+    }
+    if (authorIdentifier.present) {
+      map['author_identifier'] = Variable<String>(authorIdentifier.value);
+    }
+    if (extraUrl.present) {
+      map['extra_url'] = Variable<String>(extraUrl.value);
+    }
+    if (extra.present) {
+      map['extra'] = Variable<String>(extra.value);
+    }
+    if (sourceMetadata.present) {
+      map['source_metadata'] = Variable<String>(sourceMetadata.value);
+    }
+    if (position.present) {
+      map['position'] = Variable<int>(position.value);
+    }
+    if (duration.present) {
+      map['duration'] = Variable<int>(duration.value);
+    }
+    if (canDelete.present) {
+      map['can_delete'] = Variable<bool>(canDelete.value);
+    }
+    if (canEdit.present) {
+      map['can_edit'] = Variable<bool>(canEdit.value);
+    }
+    if (importedAt.present) {
+      map['imported_at'] = Variable<int>(importedAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaItemsCompanion(')
+          ..write('id: $id, ')
+          ..write('mediaIdentifier: $mediaIdentifier, ')
+          ..write('title: $title, ')
+          ..write('mediaTypeIdentifier: $mediaTypeIdentifier, ')
+          ..write('mediaSourceIdentifier: $mediaSourceIdentifier, ')
+          ..write('uniqueKey: $uniqueKey, ')
+          ..write('base64Image: $base64Image, ')
+          ..write('imageUrl: $imageUrl, ')
+          ..write('audioUrl: $audioUrl, ')
+          ..write('author: $author, ')
+          ..write('authorIdentifier: $authorIdentifier, ')
+          ..write('extraUrl: $extraUrl, ')
+          ..write('extra: $extra, ')
+          ..write('sourceMetadata: $sourceMetadata, ')
+          ..write('position: $position, ')
+          ..write('duration: $duration, ')
+          ..write('canDelete: $canDelete, ')
+          ..write('canEdit: $canEdit, ')
+          ..write('importedAt: $importedAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $AnkiMappingsTable extends AnkiMappings
+    with TableInfo<$AnkiMappingsTable, AnkiMappingRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $AnkiMappingsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _labelMeta = const VerificationMeta('label');
+  @override
+  late final GeneratedColumn<String> label = GeneratedColumn<String>(
+      'label', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways('UNIQUE'));
+  static const VerificationMeta _modelMeta = const VerificationMeta('model');
+  @override
+  late final GeneratedColumn<String> model = GeneratedColumn<String>(
+      'model', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _exportFieldKeysJsonMeta =
+      const VerificationMeta('exportFieldKeysJson');
+  @override
+  late final GeneratedColumn<String> exportFieldKeysJson =
+      GeneratedColumn<String>('export_field_keys_json', aliasedName, false,
+          type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _creatorFieldKeysJsonMeta =
+      const VerificationMeta('creatorFieldKeysJson');
+  @override
+  late final GeneratedColumn<String> creatorFieldKeysJson =
+      GeneratedColumn<String>('creator_field_keys_json', aliasedName, false,
+          type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _creatorCollapsedFieldKeysJsonMeta =
+      const VerificationMeta('creatorCollapsedFieldKeysJson');
+  @override
+  late final GeneratedColumn<String> creatorCollapsedFieldKeysJson =
+      GeneratedColumn<String>(
+          'creator_collapsed_field_keys_json', aliasedName, false,
+          type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _orderMeta = const VerificationMeta('order');
+  @override
+  late final GeneratedColumn<int> order = GeneratedColumn<int>(
+      'order', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _tagsJsonMeta =
+      const VerificationMeta('tagsJson');
+  @override
+  late final GeneratedColumn<String> tagsJson = GeneratedColumn<String>(
+      'tags_json', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _enhancementsJsonMeta =
+      const VerificationMeta('enhancementsJson');
+  @override
+  late final GeneratedColumn<String> enhancementsJson = GeneratedColumn<String>(
+      'enhancements_json', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _actionsJsonMeta =
+      const VerificationMeta('actionsJson');
+  @override
+  late final GeneratedColumn<String> actionsJson = GeneratedColumn<String>(
+      'actions_json', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _exportMediaTagsMeta =
+      const VerificationMeta('exportMediaTags');
+  @override
+  late final GeneratedColumn<bool> exportMediaTags = GeneratedColumn<bool>(
+      'export_media_tags', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: false,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'CHECK ("export_media_tags" IN (0, 1))'),
+      defaultValue: const Constant(true));
+  static const VerificationMeta _useBrTagsMeta =
+      const VerificationMeta('useBrTags');
+  @override
+  late final GeneratedColumn<bool> useBrTags = GeneratedColumn<bool>(
+      'use_br_tags', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("use_br_tags" IN (0, 1))'),
+      defaultValue: const Constant(true));
+  static const VerificationMeta _prependDictionaryNamesMeta =
+      const VerificationMeta('prependDictionaryNames');
+  @override
+  late final GeneratedColumn<bool> prependDictionaryNames =
+      GeneratedColumn<bool>('prepend_dictionary_names', aliasedName, false,
+          type: DriftSqlType.bool,
+          requiredDuringInsert: false,
+          defaultConstraints: GeneratedColumn.constraintIsAlways(
+              'CHECK ("prepend_dictionary_names" IN (0, 1))'),
+          defaultValue: const Constant(true));
+  @override
+  List<GeneratedColumn> get $columns => [
+        id,
+        label,
+        model,
+        exportFieldKeysJson,
+        creatorFieldKeysJson,
+        creatorCollapsedFieldKeysJson,
+        order,
+        tagsJson,
+        enhancementsJson,
+        actionsJson,
+        exportMediaTags,
+        useBrTags,
+        prependDictionaryNames
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'anki_mappings';
+  @override
+  VerificationContext validateIntegrity(Insertable<AnkiMappingRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('label')) {
+      context.handle(
+          _labelMeta, label.isAcceptableOrUnknown(data['label']!, _labelMeta));
+    } else if (isInserting) {
+      context.missing(_labelMeta);
+    }
+    if (data.containsKey('model')) {
+      context.handle(
+          _modelMeta, model.isAcceptableOrUnknown(data['model']!, _modelMeta));
+    } else if (isInserting) {
+      context.missing(_modelMeta);
+    }
+    if (data.containsKey('export_field_keys_json')) {
+      context.handle(
+          _exportFieldKeysJsonMeta,
+          exportFieldKeysJson.isAcceptableOrUnknown(
+              data['export_field_keys_json']!, _exportFieldKeysJsonMeta));
+    } else if (isInserting) {
+      context.missing(_exportFieldKeysJsonMeta);
+    }
+    if (data.containsKey('creator_field_keys_json')) {
+      context.handle(
+          _creatorFieldKeysJsonMeta,
+          creatorFieldKeysJson.isAcceptableOrUnknown(
+              data['creator_field_keys_json']!, _creatorFieldKeysJsonMeta));
+    } else if (isInserting) {
+      context.missing(_creatorFieldKeysJsonMeta);
+    }
+    if (data.containsKey('creator_collapsed_field_keys_json')) {
+      context.handle(
+          _creatorCollapsedFieldKeysJsonMeta,
+          creatorCollapsedFieldKeysJson.isAcceptableOrUnknown(
+              data['creator_collapsed_field_keys_json']!,
+              _creatorCollapsedFieldKeysJsonMeta));
+    } else if (isInserting) {
+      context.missing(_creatorCollapsedFieldKeysJsonMeta);
+    }
+    if (data.containsKey('order')) {
+      context.handle(
+          _orderMeta, order.isAcceptableOrUnknown(data['order']!, _orderMeta));
+    } else if (isInserting) {
+      context.missing(_orderMeta);
+    }
+    if (data.containsKey('tags_json')) {
+      context.handle(_tagsJsonMeta,
+          tagsJson.isAcceptableOrUnknown(data['tags_json']!, _tagsJsonMeta));
+    } else if (isInserting) {
+      context.missing(_tagsJsonMeta);
+    }
+    if (data.containsKey('enhancements_json')) {
+      context.handle(
+          _enhancementsJsonMeta,
+          enhancementsJson.isAcceptableOrUnknown(
+              data['enhancements_json']!, _enhancementsJsonMeta));
+    } else if (isInserting) {
+      context.missing(_enhancementsJsonMeta);
+    }
+    if (data.containsKey('actions_json')) {
+      context.handle(
+          _actionsJsonMeta,
+          actionsJson.isAcceptableOrUnknown(
+              data['actions_json']!, _actionsJsonMeta));
+    } else if (isInserting) {
+      context.missing(_actionsJsonMeta);
+    }
+    if (data.containsKey('export_media_tags')) {
+      context.handle(
+          _exportMediaTagsMeta,
+          exportMediaTags.isAcceptableOrUnknown(
+              data['export_media_tags']!, _exportMediaTagsMeta));
+    }
+    if (data.containsKey('use_br_tags')) {
+      context.handle(
+          _useBrTagsMeta,
+          useBrTags.isAcceptableOrUnknown(
+              data['use_br_tags']!, _useBrTagsMeta));
+    }
+    if (data.containsKey('prepend_dictionary_names')) {
+      context.handle(
+          _prependDictionaryNamesMeta,
+          prependDictionaryNames.isAcceptableOrUnknown(
+              data['prepend_dictionary_names']!, _prependDictionaryNamesMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  AnkiMappingRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return AnkiMappingRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      label: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}label'])!,
+      model: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}model'])!,
+      exportFieldKeysJson: attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}export_field_keys_json'])!,
+      creatorFieldKeysJson: attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}creator_field_keys_json'])!,
+      creatorCollapsedFieldKeysJson: attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}creator_collapsed_field_keys_json'])!,
+      order: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}order'])!,
+      tagsJson: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}tags_json'])!,
+      enhancementsJson: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}enhancements_json'])!,
+      actionsJson: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}actions_json'])!,
+      exportMediaTags: attachedDatabase.typeMapping.read(
+          DriftSqlType.bool, data['${effectivePrefix}export_media_tags'])!,
+      useBrTags: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}use_br_tags'])!,
+      prependDictionaryNames: attachedDatabase.typeMapping.read(
+          DriftSqlType.bool,
+          data['${effectivePrefix}prepend_dictionary_names'])!,
+    );
+  }
+
+  @override
+  $AnkiMappingsTable createAlias(String alias) {
+    return $AnkiMappingsTable(attachedDatabase, alias);
+  }
+}
+
+class AnkiMappingRow extends DataClass implements Insertable<AnkiMappingRow> {
+  final int id;
+  final String label;
+  final String model;
+  final String exportFieldKeysJson;
+  final String creatorFieldKeysJson;
+  final String creatorCollapsedFieldKeysJson;
+  final int order;
+  final String tagsJson;
+  final String enhancementsJson;
+  final String actionsJson;
+  final bool exportMediaTags;
+  final bool useBrTags;
+  final bool prependDictionaryNames;
+  const AnkiMappingRow(
+      {required this.id,
+      required this.label,
+      required this.model,
+      required this.exportFieldKeysJson,
+      required this.creatorFieldKeysJson,
+      required this.creatorCollapsedFieldKeysJson,
+      required this.order,
+      required this.tagsJson,
+      required this.enhancementsJson,
+      required this.actionsJson,
+      required this.exportMediaTags,
+      required this.useBrTags,
+      required this.prependDictionaryNames});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['label'] = Variable<String>(label);
+    map['model'] = Variable<String>(model);
+    map['export_field_keys_json'] = Variable<String>(exportFieldKeysJson);
+    map['creator_field_keys_json'] = Variable<String>(creatorFieldKeysJson);
+    map['creator_collapsed_field_keys_json'] =
+        Variable<String>(creatorCollapsedFieldKeysJson);
+    map['order'] = Variable<int>(order);
+    map['tags_json'] = Variable<String>(tagsJson);
+    map['enhancements_json'] = Variable<String>(enhancementsJson);
+    map['actions_json'] = Variable<String>(actionsJson);
+    map['export_media_tags'] = Variable<bool>(exportMediaTags);
+    map['use_br_tags'] = Variable<bool>(useBrTags);
+    map['prepend_dictionary_names'] = Variable<bool>(prependDictionaryNames);
+    return map;
+  }
+
+  AnkiMappingsCompanion toCompanion(bool nullToAbsent) {
+    return AnkiMappingsCompanion(
+      id: Value(id),
+      label: Value(label),
+      model: Value(model),
+      exportFieldKeysJson: Value(exportFieldKeysJson),
+      creatorFieldKeysJson: Value(creatorFieldKeysJson),
+      creatorCollapsedFieldKeysJson: Value(creatorCollapsedFieldKeysJson),
+      order: Value(order),
+      tagsJson: Value(tagsJson),
+      enhancementsJson: Value(enhancementsJson),
+      actionsJson: Value(actionsJson),
+      exportMediaTags: Value(exportMediaTags),
+      useBrTags: Value(useBrTags),
+      prependDictionaryNames: Value(prependDictionaryNames),
+    );
+  }
+
+  factory AnkiMappingRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return AnkiMappingRow(
+      id: serializer.fromJson<int>(json['id']),
+      label: serializer.fromJson<String>(json['label']),
+      model: serializer.fromJson<String>(json['model']),
+      exportFieldKeysJson:
+          serializer.fromJson<String>(json['exportFieldKeysJson']),
+      creatorFieldKeysJson:
+          serializer.fromJson<String>(json['creatorFieldKeysJson']),
+      creatorCollapsedFieldKeysJson:
+          serializer.fromJson<String>(json['creatorCollapsedFieldKeysJson']),
+      order: serializer.fromJson<int>(json['order']),
+      tagsJson: serializer.fromJson<String>(json['tagsJson']),
+      enhancementsJson: serializer.fromJson<String>(json['enhancementsJson']),
+      actionsJson: serializer.fromJson<String>(json['actionsJson']),
+      exportMediaTags: serializer.fromJson<bool>(json['exportMediaTags']),
+      useBrTags: serializer.fromJson<bool>(json['useBrTags']),
+      prependDictionaryNames:
+          serializer.fromJson<bool>(json['prependDictionaryNames']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'label': serializer.toJson<String>(label),
+      'model': serializer.toJson<String>(model),
+      'exportFieldKeysJson': serializer.toJson<String>(exportFieldKeysJson),
+      'creatorFieldKeysJson': serializer.toJson<String>(creatorFieldKeysJson),
+      'creatorCollapsedFieldKeysJson':
+          serializer.toJson<String>(creatorCollapsedFieldKeysJson),
+      'order': serializer.toJson<int>(order),
+      'tagsJson': serializer.toJson<String>(tagsJson),
+      'enhancementsJson': serializer.toJson<String>(enhancementsJson),
+      'actionsJson': serializer.toJson<String>(actionsJson),
+      'exportMediaTags': serializer.toJson<bool>(exportMediaTags),
+      'useBrTags': serializer.toJson<bool>(useBrTags),
+      'prependDictionaryNames': serializer.toJson<bool>(prependDictionaryNames),
+    };
+  }
+
+  AnkiMappingRow copyWith(
+          {int? id,
+          String? label,
+          String? model,
+          String? exportFieldKeysJson,
+          String? creatorFieldKeysJson,
+          String? creatorCollapsedFieldKeysJson,
+          int? order,
+          String? tagsJson,
+          String? enhancementsJson,
+          String? actionsJson,
+          bool? exportMediaTags,
+          bool? useBrTags,
+          bool? prependDictionaryNames}) =>
+      AnkiMappingRow(
+        id: id ?? this.id,
+        label: label ?? this.label,
+        model: model ?? this.model,
+        exportFieldKeysJson: exportFieldKeysJson ?? this.exportFieldKeysJson,
+        creatorFieldKeysJson: creatorFieldKeysJson ?? this.creatorFieldKeysJson,
+        creatorCollapsedFieldKeysJson:
+            creatorCollapsedFieldKeysJson ?? this.creatorCollapsedFieldKeysJson,
+        order: order ?? this.order,
+        tagsJson: tagsJson ?? this.tagsJson,
+        enhancementsJson: enhancementsJson ?? this.enhancementsJson,
+        actionsJson: actionsJson ?? this.actionsJson,
+        exportMediaTags: exportMediaTags ?? this.exportMediaTags,
+        useBrTags: useBrTags ?? this.useBrTags,
+        prependDictionaryNames:
+            prependDictionaryNames ?? this.prependDictionaryNames,
+      );
+  AnkiMappingRow copyWithCompanion(AnkiMappingsCompanion data) {
+    return AnkiMappingRow(
+      id: data.id.present ? data.id.value : this.id,
+      label: data.label.present ? data.label.value : this.label,
+      model: data.model.present ? data.model.value : this.model,
+      exportFieldKeysJson: data.exportFieldKeysJson.present
+          ? data.exportFieldKeysJson.value
+          : this.exportFieldKeysJson,
+      creatorFieldKeysJson: data.creatorFieldKeysJson.present
+          ? data.creatorFieldKeysJson.value
+          : this.creatorFieldKeysJson,
+      creatorCollapsedFieldKeysJson: data.creatorCollapsedFieldKeysJson.present
+          ? data.creatorCollapsedFieldKeysJson.value
+          : this.creatorCollapsedFieldKeysJson,
+      order: data.order.present ? data.order.value : this.order,
+      tagsJson: data.tagsJson.present ? data.tagsJson.value : this.tagsJson,
+      enhancementsJson: data.enhancementsJson.present
+          ? data.enhancementsJson.value
+          : this.enhancementsJson,
+      actionsJson:
+          data.actionsJson.present ? data.actionsJson.value : this.actionsJson,
+      exportMediaTags: data.exportMediaTags.present
+          ? data.exportMediaTags.value
+          : this.exportMediaTags,
+      useBrTags: data.useBrTags.present ? data.useBrTags.value : this.useBrTags,
+      prependDictionaryNames: data.prependDictionaryNames.present
+          ? data.prependDictionaryNames.value
+          : this.prependDictionaryNames,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('AnkiMappingRow(')
+          ..write('id: $id, ')
+          ..write('label: $label, ')
+          ..write('model: $model, ')
+          ..write('exportFieldKeysJson: $exportFieldKeysJson, ')
+          ..write('creatorFieldKeysJson: $creatorFieldKeysJson, ')
+          ..write(
+              'creatorCollapsedFieldKeysJson: $creatorCollapsedFieldKeysJson, ')
+          ..write('order: $order, ')
+          ..write('tagsJson: $tagsJson, ')
+          ..write('enhancementsJson: $enhancementsJson, ')
+          ..write('actionsJson: $actionsJson, ')
+          ..write('exportMediaTags: $exportMediaTags, ')
+          ..write('useBrTags: $useBrTags, ')
+          ..write('prependDictionaryNames: $prependDictionaryNames')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+      id,
+      label,
+      model,
+      exportFieldKeysJson,
+      creatorFieldKeysJson,
+      creatorCollapsedFieldKeysJson,
+      order,
+      tagsJson,
+      enhancementsJson,
+      actionsJson,
+      exportMediaTags,
+      useBrTags,
+      prependDictionaryNames);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is AnkiMappingRow &&
+          other.id == this.id &&
+          other.label == this.label &&
+          other.model == this.model &&
+          other.exportFieldKeysJson == this.exportFieldKeysJson &&
+          other.creatorFieldKeysJson == this.creatorFieldKeysJson &&
+          other.creatorCollapsedFieldKeysJson ==
+              this.creatorCollapsedFieldKeysJson &&
+          other.order == this.order &&
+          other.tagsJson == this.tagsJson &&
+          other.enhancementsJson == this.enhancementsJson &&
+          other.actionsJson == this.actionsJson &&
+          other.exportMediaTags == this.exportMediaTags &&
+          other.useBrTags == this.useBrTags &&
+          other.prependDictionaryNames == this.prependDictionaryNames);
+}
+
+class AnkiMappingsCompanion extends UpdateCompanion<AnkiMappingRow> {
+  final Value<int> id;
+  final Value<String> label;
+  final Value<String> model;
+  final Value<String> exportFieldKeysJson;
+  final Value<String> creatorFieldKeysJson;
+  final Value<String> creatorCollapsedFieldKeysJson;
+  final Value<int> order;
+  final Value<String> tagsJson;
+  final Value<String> enhancementsJson;
+  final Value<String> actionsJson;
+  final Value<bool> exportMediaTags;
+  final Value<bool> useBrTags;
+  final Value<bool> prependDictionaryNames;
+  const AnkiMappingsCompanion({
+    this.id = const Value.absent(),
+    this.label = const Value.absent(),
+    this.model = const Value.absent(),
+    this.exportFieldKeysJson = const Value.absent(),
+    this.creatorFieldKeysJson = const Value.absent(),
+    this.creatorCollapsedFieldKeysJson = const Value.absent(),
+    this.order = const Value.absent(),
+    this.tagsJson = const Value.absent(),
+    this.enhancementsJson = const Value.absent(),
+    this.actionsJson = const Value.absent(),
+    this.exportMediaTags = const Value.absent(),
+    this.useBrTags = const Value.absent(),
+    this.prependDictionaryNames = const Value.absent(),
+  });
+  AnkiMappingsCompanion.insert({
+    this.id = const Value.absent(),
+    required String label,
+    required String model,
+    required String exportFieldKeysJson,
+    required String creatorFieldKeysJson,
+    required String creatorCollapsedFieldKeysJson,
+    required int order,
+    required String tagsJson,
+    required String enhancementsJson,
+    required String actionsJson,
+    this.exportMediaTags = const Value.absent(),
+    this.useBrTags = const Value.absent(),
+    this.prependDictionaryNames = const Value.absent(),
+  })  : label = Value(label),
+        model = Value(model),
+        exportFieldKeysJson = Value(exportFieldKeysJson),
+        creatorFieldKeysJson = Value(creatorFieldKeysJson),
+        creatorCollapsedFieldKeysJson = Value(creatorCollapsedFieldKeysJson),
+        order = Value(order),
+        tagsJson = Value(tagsJson),
+        enhancementsJson = Value(enhancementsJson),
+        actionsJson = Value(actionsJson);
+  static Insertable<AnkiMappingRow> custom({
+    Expression<int>? id,
+    Expression<String>? label,
+    Expression<String>? model,
+    Expression<String>? exportFieldKeysJson,
+    Expression<String>? creatorFieldKeysJson,
+    Expression<String>? creatorCollapsedFieldKeysJson,
+    Expression<int>? order,
+    Expression<String>? tagsJson,
+    Expression<String>? enhancementsJson,
+    Expression<String>? actionsJson,
+    Expression<bool>? exportMediaTags,
+    Expression<bool>? useBrTags,
+    Expression<bool>? prependDictionaryNames,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (label != null) 'label': label,
+      if (model != null) 'model': model,
+      if (exportFieldKeysJson != null)
+        'export_field_keys_json': exportFieldKeysJson,
+      if (creatorFieldKeysJson != null)
+        'creator_field_keys_json': creatorFieldKeysJson,
+      if (creatorCollapsedFieldKeysJson != null)
+        'creator_collapsed_field_keys_json': creatorCollapsedFieldKeysJson,
+      if (order != null) 'order': order,
+      if (tagsJson != null) 'tags_json': tagsJson,
+      if (enhancementsJson != null) 'enhancements_json': enhancementsJson,
+      if (actionsJson != null) 'actions_json': actionsJson,
+      if (exportMediaTags != null) 'export_media_tags': exportMediaTags,
+      if (useBrTags != null) 'use_br_tags': useBrTags,
+      if (prependDictionaryNames != null)
+        'prepend_dictionary_names': prependDictionaryNames,
+    });
+  }
+
+  AnkiMappingsCompanion copyWith(
+      {Value<int>? id,
+      Value<String>? label,
+      Value<String>? model,
+      Value<String>? exportFieldKeysJson,
+      Value<String>? creatorFieldKeysJson,
+      Value<String>? creatorCollapsedFieldKeysJson,
+      Value<int>? order,
+      Value<String>? tagsJson,
+      Value<String>? enhancementsJson,
+      Value<String>? actionsJson,
+      Value<bool>? exportMediaTags,
+      Value<bool>? useBrTags,
+      Value<bool>? prependDictionaryNames}) {
+    return AnkiMappingsCompanion(
+      id: id ?? this.id,
+      label: label ?? this.label,
+      model: model ?? this.model,
+      exportFieldKeysJson: exportFieldKeysJson ?? this.exportFieldKeysJson,
+      creatorFieldKeysJson: creatorFieldKeysJson ?? this.creatorFieldKeysJson,
+      creatorCollapsedFieldKeysJson:
+          creatorCollapsedFieldKeysJson ?? this.creatorCollapsedFieldKeysJson,
+      order: order ?? this.order,
+      tagsJson: tagsJson ?? this.tagsJson,
+      enhancementsJson: enhancementsJson ?? this.enhancementsJson,
+      actionsJson: actionsJson ?? this.actionsJson,
+      exportMediaTags: exportMediaTags ?? this.exportMediaTags,
+      useBrTags: useBrTags ?? this.useBrTags,
+      prependDictionaryNames:
+          prependDictionaryNames ?? this.prependDictionaryNames,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (label.present) {
+      map['label'] = Variable<String>(label.value);
+    }
+    if (model.present) {
+      map['model'] = Variable<String>(model.value);
+    }
+    if (exportFieldKeysJson.present) {
+      map['export_field_keys_json'] =
+          Variable<String>(exportFieldKeysJson.value);
+    }
+    if (creatorFieldKeysJson.present) {
+      map['creator_field_keys_json'] =
+          Variable<String>(creatorFieldKeysJson.value);
+    }
+    if (creatorCollapsedFieldKeysJson.present) {
+      map['creator_collapsed_field_keys_json'] =
+          Variable<String>(creatorCollapsedFieldKeysJson.value);
+    }
+    if (order.present) {
+      map['order'] = Variable<int>(order.value);
+    }
+    if (tagsJson.present) {
+      map['tags_json'] = Variable<String>(tagsJson.value);
+    }
+    if (enhancementsJson.present) {
+      map['enhancements_json'] = Variable<String>(enhancementsJson.value);
+    }
+    if (actionsJson.present) {
+      map['actions_json'] = Variable<String>(actionsJson.value);
+    }
+    if (exportMediaTags.present) {
+      map['export_media_tags'] = Variable<bool>(exportMediaTags.value);
+    }
+    if (useBrTags.present) {
+      map['use_br_tags'] = Variable<bool>(useBrTags.value);
+    }
+    if (prependDictionaryNames.present) {
+      map['prepend_dictionary_names'] =
+          Variable<bool>(prependDictionaryNames.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('AnkiMappingsCompanion(')
+          ..write('id: $id, ')
+          ..write('label: $label, ')
+          ..write('model: $model, ')
+          ..write('exportFieldKeysJson: $exportFieldKeysJson, ')
+          ..write('creatorFieldKeysJson: $creatorFieldKeysJson, ')
+          ..write(
+              'creatorCollapsedFieldKeysJson: $creatorCollapsedFieldKeysJson, ')
+          ..write('order: $order, ')
+          ..write('tagsJson: $tagsJson, ')
+          ..write('enhancementsJson: $enhancementsJson, ')
+          ..write('actionsJson: $actionsJson, ')
+          ..write('exportMediaTags: $exportMediaTags, ')
+          ..write('useBrTags: $useBrTags, ')
+          ..write('prependDictionaryNames: $prependDictionaryNames')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $SearchHistoryItemsTable extends SearchHistoryItems
+    with TableInfo<$SearchHistoryItemsTable, SearchHistoryItemRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SearchHistoryItemsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _historyKeyMeta =
+      const VerificationMeta('historyKey');
+  @override
+  late final GeneratedColumn<String> historyKey = GeneratedColumn<String>(
+      'history_key', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _searchTermMeta =
+      const VerificationMeta('searchTerm');
+  @override
+  late final GeneratedColumn<String> searchTerm = GeneratedColumn<String>(
+      'search_term', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _uniqueKeyMeta =
+      const VerificationMeta('uniqueKey');
+  @override
+  late final GeneratedColumn<String> uniqueKey = GeneratedColumn<String>(
+      'unique_key', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways('UNIQUE'));
+  @override
+  List<GeneratedColumn> get $columns => [id, historyKey, searchTerm, uniqueKey];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'search_history_items';
+  @override
+  VerificationContext validateIntegrity(
+      Insertable<SearchHistoryItemRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('history_key')) {
+      context.handle(
+          _historyKeyMeta,
+          historyKey.isAcceptableOrUnknown(
+              data['history_key']!, _historyKeyMeta));
+    } else if (isInserting) {
+      context.missing(_historyKeyMeta);
+    }
+    if (data.containsKey('search_term')) {
+      context.handle(
+          _searchTermMeta,
+          searchTerm.isAcceptableOrUnknown(
+              data['search_term']!, _searchTermMeta));
+    } else if (isInserting) {
+      context.missing(_searchTermMeta);
+    }
+    if (data.containsKey('unique_key')) {
+      context.handle(_uniqueKeyMeta,
+          uniqueKey.isAcceptableOrUnknown(data['unique_key']!, _uniqueKeyMeta));
+    } else if (isInserting) {
+      context.missing(_uniqueKeyMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  SearchHistoryItemRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SearchHistoryItemRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      historyKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}history_key'])!,
+      searchTerm: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}search_term'])!,
+      uniqueKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}unique_key'])!,
+    );
+  }
+
+  @override
+  $SearchHistoryItemsTable createAlias(String alias) {
+    return $SearchHistoryItemsTable(attachedDatabase, alias);
+  }
+}
+
+class SearchHistoryItemRow extends DataClass
+    implements Insertable<SearchHistoryItemRow> {
+  final int id;
+  final String historyKey;
+  final String searchTerm;
+  final String uniqueKey;
+  const SearchHistoryItemRow(
+      {required this.id,
+      required this.historyKey,
+      required this.searchTerm,
+      required this.uniqueKey});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['history_key'] = Variable<String>(historyKey);
+    map['search_term'] = Variable<String>(searchTerm);
+    map['unique_key'] = Variable<String>(uniqueKey);
+    return map;
+  }
+
+  SearchHistoryItemsCompanion toCompanion(bool nullToAbsent) {
+    return SearchHistoryItemsCompanion(
+      id: Value(id),
+      historyKey: Value(historyKey),
+      searchTerm: Value(searchTerm),
+      uniqueKey: Value(uniqueKey),
+    );
+  }
+
+  factory SearchHistoryItemRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SearchHistoryItemRow(
+      id: serializer.fromJson<int>(json['id']),
+      historyKey: serializer.fromJson<String>(json['historyKey']),
+      searchTerm: serializer.fromJson<String>(json['searchTerm']),
+      uniqueKey: serializer.fromJson<String>(json['uniqueKey']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'historyKey': serializer.toJson<String>(historyKey),
+      'searchTerm': serializer.toJson<String>(searchTerm),
+      'uniqueKey': serializer.toJson<String>(uniqueKey),
+    };
+  }
+
+  SearchHistoryItemRow copyWith(
+          {int? id,
+          String? historyKey,
+          String? searchTerm,
+          String? uniqueKey}) =>
+      SearchHistoryItemRow(
+        id: id ?? this.id,
+        historyKey: historyKey ?? this.historyKey,
+        searchTerm: searchTerm ?? this.searchTerm,
+        uniqueKey: uniqueKey ?? this.uniqueKey,
+      );
+  SearchHistoryItemRow copyWithCompanion(SearchHistoryItemsCompanion data) {
+    return SearchHistoryItemRow(
+      id: data.id.present ? data.id.value : this.id,
+      historyKey:
+          data.historyKey.present ? data.historyKey.value : this.historyKey,
+      searchTerm:
+          data.searchTerm.present ? data.searchTerm.value : this.searchTerm,
+      uniqueKey: data.uniqueKey.present ? data.uniqueKey.value : this.uniqueKey,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SearchHistoryItemRow(')
+          ..write('id: $id, ')
+          ..write('historyKey: $historyKey, ')
+          ..write('searchTerm: $searchTerm, ')
+          ..write('uniqueKey: $uniqueKey')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, historyKey, searchTerm, uniqueKey);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SearchHistoryItemRow &&
+          other.id == this.id &&
+          other.historyKey == this.historyKey &&
+          other.searchTerm == this.searchTerm &&
+          other.uniqueKey == this.uniqueKey);
+}
+
+class SearchHistoryItemsCompanion
+    extends UpdateCompanion<SearchHistoryItemRow> {
+  final Value<int> id;
+  final Value<String> historyKey;
+  final Value<String> searchTerm;
+  final Value<String> uniqueKey;
+  const SearchHistoryItemsCompanion({
+    this.id = const Value.absent(),
+    this.historyKey = const Value.absent(),
+    this.searchTerm = const Value.absent(),
+    this.uniqueKey = const Value.absent(),
+  });
+  SearchHistoryItemsCompanion.insert({
+    this.id = const Value.absent(),
+    required String historyKey,
+    required String searchTerm,
+    required String uniqueKey,
+  })  : historyKey = Value(historyKey),
+        searchTerm = Value(searchTerm),
+        uniqueKey = Value(uniqueKey);
+  static Insertable<SearchHistoryItemRow> custom({
+    Expression<int>? id,
+    Expression<String>? historyKey,
+    Expression<String>? searchTerm,
+    Expression<String>? uniqueKey,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (historyKey != null) 'history_key': historyKey,
+      if (searchTerm != null) 'search_term': searchTerm,
+      if (uniqueKey != null) 'unique_key': uniqueKey,
+    });
+  }
+
+  SearchHistoryItemsCompanion copyWith(
+      {Value<int>? id,
+      Value<String>? historyKey,
+      Value<String>? searchTerm,
+      Value<String>? uniqueKey}) {
+    return SearchHistoryItemsCompanion(
+      id: id ?? this.id,
+      historyKey: historyKey ?? this.historyKey,
+      searchTerm: searchTerm ?? this.searchTerm,
+      uniqueKey: uniqueKey ?? this.uniqueKey,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (historyKey.present) {
+      map['history_key'] = Variable<String>(historyKey.value);
+    }
+    if (searchTerm.present) {
+      map['search_term'] = Variable<String>(searchTerm.value);
+    }
+    if (uniqueKey.present) {
+      map['unique_key'] = Variable<String>(uniqueKey.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SearchHistoryItemsCompanion(')
+          ..write('id: $id, ')
+          ..write('historyKey: $historyKey, ')
+          ..write('searchTerm: $searchTerm, ')
+          ..write('uniqueKey: $uniqueKey')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $AudiobooksTable extends Audiobooks
+    with TableInfo<$AudiobooksTable, AudiobookRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $AudiobooksTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _bookUidMeta =
+      const VerificationMeta('bookUid');
+  @override
+  late final GeneratedColumn<String> bookUid = GeneratedColumn<String>(
+      'book_uid', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways('UNIQUE'));
+  static const VerificationMeta _audioRootMeta =
+      const VerificationMeta('audioRoot');
+  @override
+  late final GeneratedColumn<String> audioRoot = GeneratedColumn<String>(
+      'audio_root', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _audioPathsJsonMeta =
+      const VerificationMeta('audioPathsJson');
+  @override
+  late final GeneratedColumn<String> audioPathsJson = GeneratedColumn<String>(
+      'audio_paths_json', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _alignmentFormatMeta =
+      const VerificationMeta('alignmentFormat');
+  @override
+  late final GeneratedColumn<String> alignmentFormat = GeneratedColumn<String>(
+      'alignment_format', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _alignmentPathMeta =
+      const VerificationMeta('alignmentPath');
+  @override
+  late final GeneratedColumn<String> alignmentPath = GeneratedColumn<String>(
+      'alignment_path', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _healthKindRawMeta =
+      const VerificationMeta('healthKindRaw');
+  @override
+  late final GeneratedColumn<String> healthKindRaw = GeneratedColumn<String>(
+      'health_kind_raw', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _matchRatePctMeta =
+      const VerificationMeta('matchRatePct');
+  @override
+  late final GeneratedColumn<int> matchRatePct = GeneratedColumn<int>(
+      'match_rate_pct', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _healthMeasuredAtMeta =
+      const VerificationMeta('healthMeasuredAt');
+  @override
+  late final GeneratedColumn<DateTime> healthMeasuredAt =
+      GeneratedColumn<DateTime>('health_measured_at', aliasedName, true,
+          type: DriftSqlType.dateTime, requiredDuringInsert: false);
+  static const VerificationMeta _healthReasonMeta =
+      const VerificationMeta('healthReason');
+  @override
+  late final GeneratedColumn<String> healthReason = GeneratedColumn<String>(
+      'health_reason', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _followAudioMeta =
+      const VerificationMeta('followAudio');
+  @override
+  late final GeneratedColumn<bool> followAudio = GeneratedColumn<bool>(
+      'follow_audio', aliasedName, true,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: false,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'CHECK ("follow_audio" IN (0, 1))'));
+  @override
+  List<GeneratedColumn> get $columns => [
+        id,
+        bookUid,
+        audioRoot,
+        audioPathsJson,
+        alignmentFormat,
+        alignmentPath,
+        healthKindRaw,
+        matchRatePct,
+        healthMeasuredAt,
+        healthReason,
+        followAudio
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'audiobooks';
+  @override
+  VerificationContext validateIntegrity(Insertable<AudiobookRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('book_uid')) {
+      context.handle(_bookUidMeta,
+          bookUid.isAcceptableOrUnknown(data['book_uid']!, _bookUidMeta));
+    } else if (isInserting) {
+      context.missing(_bookUidMeta);
+    }
+    if (data.containsKey('audio_root')) {
+      context.handle(_audioRootMeta,
+          audioRoot.isAcceptableOrUnknown(data['audio_root']!, _audioRootMeta));
+    }
+    if (data.containsKey('audio_paths_json')) {
+      context.handle(
+          _audioPathsJsonMeta,
+          audioPathsJson.isAcceptableOrUnknown(
+              data['audio_paths_json']!, _audioPathsJsonMeta));
+    }
+    if (data.containsKey('alignment_format')) {
+      context.handle(
+          _alignmentFormatMeta,
+          alignmentFormat.isAcceptableOrUnknown(
+              data['alignment_format']!, _alignmentFormatMeta));
+    } else if (isInserting) {
+      context.missing(_alignmentFormatMeta);
+    }
+    if (data.containsKey('alignment_path')) {
+      context.handle(
+          _alignmentPathMeta,
+          alignmentPath.isAcceptableOrUnknown(
+              data['alignment_path']!, _alignmentPathMeta));
+    } else if (isInserting) {
+      context.missing(_alignmentPathMeta);
+    }
+    if (data.containsKey('health_kind_raw')) {
+      context.handle(
+          _healthKindRawMeta,
+          healthKindRaw.isAcceptableOrUnknown(
+              data['health_kind_raw']!, _healthKindRawMeta));
+    }
+    if (data.containsKey('match_rate_pct')) {
+      context.handle(
+          _matchRatePctMeta,
+          matchRatePct.isAcceptableOrUnknown(
+              data['match_rate_pct']!, _matchRatePctMeta));
+    }
+    if (data.containsKey('health_measured_at')) {
+      context.handle(
+          _healthMeasuredAtMeta,
+          healthMeasuredAt.isAcceptableOrUnknown(
+              data['health_measured_at']!, _healthMeasuredAtMeta));
+    }
+    if (data.containsKey('health_reason')) {
+      context.handle(
+          _healthReasonMeta,
+          healthReason.isAcceptableOrUnknown(
+              data['health_reason']!, _healthReasonMeta));
+    }
+    if (data.containsKey('follow_audio')) {
+      context.handle(
+          _followAudioMeta,
+          followAudio.isAcceptableOrUnknown(
+              data['follow_audio']!, _followAudioMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  AudiobookRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return AudiobookRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      bookUid: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}book_uid'])!,
+      audioRoot: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}audio_root']),
+      audioPathsJson: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}audio_paths_json']),
+      alignmentFormat: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}alignment_format'])!,
+      alignmentPath: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}alignment_path'])!,
+      healthKindRaw: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}health_kind_raw']),
+      matchRatePct: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}match_rate_pct']),
+      healthMeasuredAt: attachedDatabase.typeMapping.read(
+          DriftSqlType.dateTime, data['${effectivePrefix}health_measured_at']),
+      healthReason: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}health_reason']),
+      followAudio: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}follow_audio']),
+    );
+  }
+
+  @override
+  $AudiobooksTable createAlias(String alias) {
+    return $AudiobooksTable(attachedDatabase, alias);
+  }
+}
+
+class AudiobookRow extends DataClass implements Insertable<AudiobookRow> {
+  final int id;
+  final String bookUid;
+  final String? audioRoot;
+  final String? audioPathsJson;
+  final String alignmentFormat;
+  final String alignmentPath;
+  final String? healthKindRaw;
+  final int? matchRatePct;
+  final DateTime? healthMeasuredAt;
+  final String? healthReason;
+  final bool? followAudio;
+  const AudiobookRow(
+      {required this.id,
+      required this.bookUid,
+      this.audioRoot,
+      this.audioPathsJson,
+      required this.alignmentFormat,
+      required this.alignmentPath,
+      this.healthKindRaw,
+      this.matchRatePct,
+      this.healthMeasuredAt,
+      this.healthReason,
+      this.followAudio});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['book_uid'] = Variable<String>(bookUid);
+    if (!nullToAbsent || audioRoot != null) {
+      map['audio_root'] = Variable<String>(audioRoot);
+    }
+    if (!nullToAbsent || audioPathsJson != null) {
+      map['audio_paths_json'] = Variable<String>(audioPathsJson);
+    }
+    map['alignment_format'] = Variable<String>(alignmentFormat);
+    map['alignment_path'] = Variable<String>(alignmentPath);
+    if (!nullToAbsent || healthKindRaw != null) {
+      map['health_kind_raw'] = Variable<String>(healthKindRaw);
+    }
+    if (!nullToAbsent || matchRatePct != null) {
+      map['match_rate_pct'] = Variable<int>(matchRatePct);
+    }
+    if (!nullToAbsent || healthMeasuredAt != null) {
+      map['health_measured_at'] = Variable<DateTime>(healthMeasuredAt);
+    }
+    if (!nullToAbsent || healthReason != null) {
+      map['health_reason'] = Variable<String>(healthReason);
+    }
+    if (!nullToAbsent || followAudio != null) {
+      map['follow_audio'] = Variable<bool>(followAudio);
+    }
+    return map;
+  }
+
+  AudiobooksCompanion toCompanion(bool nullToAbsent) {
+    return AudiobooksCompanion(
+      id: Value(id),
+      bookUid: Value(bookUid),
+      audioRoot: audioRoot == null && nullToAbsent
+          ? const Value.absent()
+          : Value(audioRoot),
+      audioPathsJson: audioPathsJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(audioPathsJson),
+      alignmentFormat: Value(alignmentFormat),
+      alignmentPath: Value(alignmentPath),
+      healthKindRaw: healthKindRaw == null && nullToAbsent
+          ? const Value.absent()
+          : Value(healthKindRaw),
+      matchRatePct: matchRatePct == null && nullToAbsent
+          ? const Value.absent()
+          : Value(matchRatePct),
+      healthMeasuredAt: healthMeasuredAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(healthMeasuredAt),
+      healthReason: healthReason == null && nullToAbsent
+          ? const Value.absent()
+          : Value(healthReason),
+      followAudio: followAudio == null && nullToAbsent
+          ? const Value.absent()
+          : Value(followAudio),
+    );
+  }
+
+  factory AudiobookRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return AudiobookRow(
+      id: serializer.fromJson<int>(json['id']),
+      bookUid: serializer.fromJson<String>(json['bookUid']),
+      audioRoot: serializer.fromJson<String?>(json['audioRoot']),
+      audioPathsJson: serializer.fromJson<String?>(json['audioPathsJson']),
+      alignmentFormat: serializer.fromJson<String>(json['alignmentFormat']),
+      alignmentPath: serializer.fromJson<String>(json['alignmentPath']),
+      healthKindRaw: serializer.fromJson<String?>(json['healthKindRaw']),
+      matchRatePct: serializer.fromJson<int?>(json['matchRatePct']),
+      healthMeasuredAt:
+          serializer.fromJson<DateTime?>(json['healthMeasuredAt']),
+      healthReason: serializer.fromJson<String?>(json['healthReason']),
+      followAudio: serializer.fromJson<bool?>(json['followAudio']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'bookUid': serializer.toJson<String>(bookUid),
+      'audioRoot': serializer.toJson<String?>(audioRoot),
+      'audioPathsJson': serializer.toJson<String?>(audioPathsJson),
+      'alignmentFormat': serializer.toJson<String>(alignmentFormat),
+      'alignmentPath': serializer.toJson<String>(alignmentPath),
+      'healthKindRaw': serializer.toJson<String?>(healthKindRaw),
+      'matchRatePct': serializer.toJson<int?>(matchRatePct),
+      'healthMeasuredAt': serializer.toJson<DateTime?>(healthMeasuredAt),
+      'healthReason': serializer.toJson<String?>(healthReason),
+      'followAudio': serializer.toJson<bool?>(followAudio),
+    };
+  }
+
+  AudiobookRow copyWith(
+          {int? id,
+          String? bookUid,
+          Value<String?> audioRoot = const Value.absent(),
+          Value<String?> audioPathsJson = const Value.absent(),
+          String? alignmentFormat,
+          String? alignmentPath,
+          Value<String?> healthKindRaw = const Value.absent(),
+          Value<int?> matchRatePct = const Value.absent(),
+          Value<DateTime?> healthMeasuredAt = const Value.absent(),
+          Value<String?> healthReason = const Value.absent(),
+          Value<bool?> followAudio = const Value.absent()}) =>
+      AudiobookRow(
+        id: id ?? this.id,
+        bookUid: bookUid ?? this.bookUid,
+        audioRoot: audioRoot.present ? audioRoot.value : this.audioRoot,
+        audioPathsJson:
+            audioPathsJson.present ? audioPathsJson.value : this.audioPathsJson,
+        alignmentFormat: alignmentFormat ?? this.alignmentFormat,
+        alignmentPath: alignmentPath ?? this.alignmentPath,
+        healthKindRaw:
+            healthKindRaw.present ? healthKindRaw.value : this.healthKindRaw,
+        matchRatePct:
+            matchRatePct.present ? matchRatePct.value : this.matchRatePct,
+        healthMeasuredAt: healthMeasuredAt.present
+            ? healthMeasuredAt.value
+            : this.healthMeasuredAt,
+        healthReason:
+            healthReason.present ? healthReason.value : this.healthReason,
+        followAudio: followAudio.present ? followAudio.value : this.followAudio,
+      );
+  AudiobookRow copyWithCompanion(AudiobooksCompanion data) {
+    return AudiobookRow(
+      id: data.id.present ? data.id.value : this.id,
+      bookUid: data.bookUid.present ? data.bookUid.value : this.bookUid,
+      audioRoot: data.audioRoot.present ? data.audioRoot.value : this.audioRoot,
+      audioPathsJson: data.audioPathsJson.present
+          ? data.audioPathsJson.value
+          : this.audioPathsJson,
+      alignmentFormat: data.alignmentFormat.present
+          ? data.alignmentFormat.value
+          : this.alignmentFormat,
+      alignmentPath: data.alignmentPath.present
+          ? data.alignmentPath.value
+          : this.alignmentPath,
+      healthKindRaw: data.healthKindRaw.present
+          ? data.healthKindRaw.value
+          : this.healthKindRaw,
+      matchRatePct: data.matchRatePct.present
+          ? data.matchRatePct.value
+          : this.matchRatePct,
+      healthMeasuredAt: data.healthMeasuredAt.present
+          ? data.healthMeasuredAt.value
+          : this.healthMeasuredAt,
+      healthReason: data.healthReason.present
+          ? data.healthReason.value
+          : this.healthReason,
+      followAudio:
+          data.followAudio.present ? data.followAudio.value : this.followAudio,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('AudiobookRow(')
+          ..write('id: $id, ')
+          ..write('bookUid: $bookUid, ')
+          ..write('audioRoot: $audioRoot, ')
+          ..write('audioPathsJson: $audioPathsJson, ')
+          ..write('alignmentFormat: $alignmentFormat, ')
+          ..write('alignmentPath: $alignmentPath, ')
+          ..write('healthKindRaw: $healthKindRaw, ')
+          ..write('matchRatePct: $matchRatePct, ')
+          ..write('healthMeasuredAt: $healthMeasuredAt, ')
+          ..write('healthReason: $healthReason, ')
+          ..write('followAudio: $followAudio')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+      id,
+      bookUid,
+      audioRoot,
+      audioPathsJson,
+      alignmentFormat,
+      alignmentPath,
+      healthKindRaw,
+      matchRatePct,
+      healthMeasuredAt,
+      healthReason,
+      followAudio);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is AudiobookRow &&
+          other.id == this.id &&
+          other.bookUid == this.bookUid &&
+          other.audioRoot == this.audioRoot &&
+          other.audioPathsJson == this.audioPathsJson &&
+          other.alignmentFormat == this.alignmentFormat &&
+          other.alignmentPath == this.alignmentPath &&
+          other.healthKindRaw == this.healthKindRaw &&
+          other.matchRatePct == this.matchRatePct &&
+          other.healthMeasuredAt == this.healthMeasuredAt &&
+          other.healthReason == this.healthReason &&
+          other.followAudio == this.followAudio);
+}
+
+class AudiobooksCompanion extends UpdateCompanion<AudiobookRow> {
+  final Value<int> id;
+  final Value<String> bookUid;
+  final Value<String?> audioRoot;
+  final Value<String?> audioPathsJson;
+  final Value<String> alignmentFormat;
+  final Value<String> alignmentPath;
+  final Value<String?> healthKindRaw;
+  final Value<int?> matchRatePct;
+  final Value<DateTime?> healthMeasuredAt;
+  final Value<String?> healthReason;
+  final Value<bool?> followAudio;
+  const AudiobooksCompanion({
+    this.id = const Value.absent(),
+    this.bookUid = const Value.absent(),
+    this.audioRoot = const Value.absent(),
+    this.audioPathsJson = const Value.absent(),
+    this.alignmentFormat = const Value.absent(),
+    this.alignmentPath = const Value.absent(),
+    this.healthKindRaw = const Value.absent(),
+    this.matchRatePct = const Value.absent(),
+    this.healthMeasuredAt = const Value.absent(),
+    this.healthReason = const Value.absent(),
+    this.followAudio = const Value.absent(),
+  });
+  AudiobooksCompanion.insert({
+    this.id = const Value.absent(),
+    required String bookUid,
+    this.audioRoot = const Value.absent(),
+    this.audioPathsJson = const Value.absent(),
+    required String alignmentFormat,
+    required String alignmentPath,
+    this.healthKindRaw = const Value.absent(),
+    this.matchRatePct = const Value.absent(),
+    this.healthMeasuredAt = const Value.absent(),
+    this.healthReason = const Value.absent(),
+    this.followAudio = const Value.absent(),
+  })  : bookUid = Value(bookUid),
+        alignmentFormat = Value(alignmentFormat),
+        alignmentPath = Value(alignmentPath);
+  static Insertable<AudiobookRow> custom({
+    Expression<int>? id,
+    Expression<String>? bookUid,
+    Expression<String>? audioRoot,
+    Expression<String>? audioPathsJson,
+    Expression<String>? alignmentFormat,
+    Expression<String>? alignmentPath,
+    Expression<String>? healthKindRaw,
+    Expression<int>? matchRatePct,
+    Expression<DateTime>? healthMeasuredAt,
+    Expression<String>? healthReason,
+    Expression<bool>? followAudio,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (bookUid != null) 'book_uid': bookUid,
+      if (audioRoot != null) 'audio_root': audioRoot,
+      if (audioPathsJson != null) 'audio_paths_json': audioPathsJson,
+      if (alignmentFormat != null) 'alignment_format': alignmentFormat,
+      if (alignmentPath != null) 'alignment_path': alignmentPath,
+      if (healthKindRaw != null) 'health_kind_raw': healthKindRaw,
+      if (matchRatePct != null) 'match_rate_pct': matchRatePct,
+      if (healthMeasuredAt != null) 'health_measured_at': healthMeasuredAt,
+      if (healthReason != null) 'health_reason': healthReason,
+      if (followAudio != null) 'follow_audio': followAudio,
+    });
+  }
+
+  AudiobooksCompanion copyWith(
+      {Value<int>? id,
+      Value<String>? bookUid,
+      Value<String?>? audioRoot,
+      Value<String?>? audioPathsJson,
+      Value<String>? alignmentFormat,
+      Value<String>? alignmentPath,
+      Value<String?>? healthKindRaw,
+      Value<int?>? matchRatePct,
+      Value<DateTime?>? healthMeasuredAt,
+      Value<String?>? healthReason,
+      Value<bool?>? followAudio}) {
+    return AudiobooksCompanion(
+      id: id ?? this.id,
+      bookUid: bookUid ?? this.bookUid,
+      audioRoot: audioRoot ?? this.audioRoot,
+      audioPathsJson: audioPathsJson ?? this.audioPathsJson,
+      alignmentFormat: alignmentFormat ?? this.alignmentFormat,
+      alignmentPath: alignmentPath ?? this.alignmentPath,
+      healthKindRaw: healthKindRaw ?? this.healthKindRaw,
+      matchRatePct: matchRatePct ?? this.matchRatePct,
+      healthMeasuredAt: healthMeasuredAt ?? this.healthMeasuredAt,
+      healthReason: healthReason ?? this.healthReason,
+      followAudio: followAudio ?? this.followAudio,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (bookUid.present) {
+      map['book_uid'] = Variable<String>(bookUid.value);
+    }
+    if (audioRoot.present) {
+      map['audio_root'] = Variable<String>(audioRoot.value);
+    }
+    if (audioPathsJson.present) {
+      map['audio_paths_json'] = Variable<String>(audioPathsJson.value);
+    }
+    if (alignmentFormat.present) {
+      map['alignment_format'] = Variable<String>(alignmentFormat.value);
+    }
+    if (alignmentPath.present) {
+      map['alignment_path'] = Variable<String>(alignmentPath.value);
+    }
+    if (healthKindRaw.present) {
+      map['health_kind_raw'] = Variable<String>(healthKindRaw.value);
+    }
+    if (matchRatePct.present) {
+      map['match_rate_pct'] = Variable<int>(matchRatePct.value);
+    }
+    if (healthMeasuredAt.present) {
+      map['health_measured_at'] = Variable<DateTime>(healthMeasuredAt.value);
+    }
+    if (healthReason.present) {
+      map['health_reason'] = Variable<String>(healthReason.value);
+    }
+    if (followAudio.present) {
+      map['follow_audio'] = Variable<bool>(followAudio.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('AudiobooksCompanion(')
+          ..write('id: $id, ')
+          ..write('bookUid: $bookUid, ')
+          ..write('audioRoot: $audioRoot, ')
+          ..write('audioPathsJson: $audioPathsJson, ')
+          ..write('alignmentFormat: $alignmentFormat, ')
+          ..write('alignmentPath: $alignmentPath, ')
+          ..write('healthKindRaw: $healthKindRaw, ')
+          ..write('matchRatePct: $matchRatePct, ')
+          ..write('healthMeasuredAt: $healthMeasuredAt, ')
+          ..write('healthReason: $healthReason, ')
+          ..write('followAudio: $followAudio')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $SrtBooksTable extends SrtBooks
+    with TableInfo<$SrtBooksTable, SrtBookRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SrtBooksTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _uidMeta = const VerificationMeta('uid');
+  @override
+  late final GeneratedColumn<String> uid = GeneratedColumn<String>(
+      'uid', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways('UNIQUE'));
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+      'title', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _authorMeta = const VerificationMeta('author');
+  @override
+  late final GeneratedColumn<String> author = GeneratedColumn<String>(
+      'author', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _audioRootMeta =
+      const VerificationMeta('audioRoot');
+  @override
+  late final GeneratedColumn<String> audioRoot = GeneratedColumn<String>(
+      'audio_root', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _audioPathsJsonMeta =
+      const VerificationMeta('audioPathsJson');
+  @override
+  late final GeneratedColumn<String> audioPathsJson = GeneratedColumn<String>(
+      'audio_paths_json', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _srtPathMeta =
+      const VerificationMeta('srtPath');
+  @override
+  late final GeneratedColumn<String> srtPath = GeneratedColumn<String>(
+      'srt_path', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _coverPathMeta =
+      const VerificationMeta('coverPath');
+  @override
+  late final GeneratedColumn<String> coverPath = GeneratedColumn<String>(
+      'cover_path', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _importedAtMeta =
+      const VerificationMeta('importedAt');
+  @override
+  late final GeneratedColumn<int> importedAt = GeneratedColumn<int>(
+      'imported_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _ttuBookIdMeta =
+      const VerificationMeta('ttuBookId');
+  @override
+  late final GeneratedColumn<int> ttuBookId = GeneratedColumn<int>(
+      'ttu_book_id', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  @override
+  List<GeneratedColumn> get $columns => [
+        id,
+        uid,
+        title,
+        author,
+        audioRoot,
+        audioPathsJson,
+        srtPath,
+        coverPath,
+        importedAt,
+        ttuBookId
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'srt_books';
+  @override
+  VerificationContext validateIntegrity(Insertable<SrtBookRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('uid')) {
+      context.handle(
+          _uidMeta, uid.isAcceptableOrUnknown(data['uid']!, _uidMeta));
+    } else if (isInserting) {
+      context.missing(_uidMeta);
+    }
+    if (data.containsKey('title')) {
+      context.handle(
+          _titleMeta, title.isAcceptableOrUnknown(data['title']!, _titleMeta));
+    } else if (isInserting) {
+      context.missing(_titleMeta);
+    }
+    if (data.containsKey('author')) {
+      context.handle(_authorMeta,
+          author.isAcceptableOrUnknown(data['author']!, _authorMeta));
+    }
+    if (data.containsKey('audio_root')) {
+      context.handle(_audioRootMeta,
+          audioRoot.isAcceptableOrUnknown(data['audio_root']!, _audioRootMeta));
+    }
+    if (data.containsKey('audio_paths_json')) {
+      context.handle(
+          _audioPathsJsonMeta,
+          audioPathsJson.isAcceptableOrUnknown(
+              data['audio_paths_json']!, _audioPathsJsonMeta));
+    }
+    if (data.containsKey('srt_path')) {
+      context.handle(_srtPathMeta,
+          srtPath.isAcceptableOrUnknown(data['srt_path']!, _srtPathMeta));
+    } else if (isInserting) {
+      context.missing(_srtPathMeta);
+    }
+    if (data.containsKey('cover_path')) {
+      context.handle(_coverPathMeta,
+          coverPath.isAcceptableOrUnknown(data['cover_path']!, _coverPathMeta));
+    }
+    if (data.containsKey('imported_at')) {
+      context.handle(
+          _importedAtMeta,
+          importedAt.isAcceptableOrUnknown(
+              data['imported_at']!, _importedAtMeta));
+    } else if (isInserting) {
+      context.missing(_importedAtMeta);
+    }
+    if (data.containsKey('ttu_book_id')) {
+      context.handle(
+          _ttuBookIdMeta,
+          ttuBookId.isAcceptableOrUnknown(
+              data['ttu_book_id']!, _ttuBookIdMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  SrtBookRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SrtBookRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      uid: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}uid'])!,
+      title: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}title'])!,
+      author: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}author']),
+      audioRoot: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}audio_root']),
+      audioPathsJson: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}audio_paths_json']),
+      srtPath: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}srt_path'])!,
+      coverPath: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}cover_path']),
+      importedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}imported_at'])!,
+      ttuBookId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}ttu_book_id'])!,
+    );
+  }
+
+  @override
+  $SrtBooksTable createAlias(String alias) {
+    return $SrtBooksTable(attachedDatabase, alias);
+  }
+}
+
+class SrtBookRow extends DataClass implements Insertable<SrtBookRow> {
+  final int id;
+  final String uid;
+  final String title;
+  final String? author;
+  final String? audioRoot;
+  final String? audioPathsJson;
+  final String srtPath;
+  final String? coverPath;
+  final int importedAt;
+  final int ttuBookId;
+  const SrtBookRow(
+      {required this.id,
+      required this.uid,
+      required this.title,
+      this.author,
+      this.audioRoot,
+      this.audioPathsJson,
+      required this.srtPath,
+      this.coverPath,
+      required this.importedAt,
+      required this.ttuBookId});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['uid'] = Variable<String>(uid);
+    map['title'] = Variable<String>(title);
+    if (!nullToAbsent || author != null) {
+      map['author'] = Variable<String>(author);
+    }
+    if (!nullToAbsent || audioRoot != null) {
+      map['audio_root'] = Variable<String>(audioRoot);
+    }
+    if (!nullToAbsent || audioPathsJson != null) {
+      map['audio_paths_json'] = Variable<String>(audioPathsJson);
+    }
+    map['srt_path'] = Variable<String>(srtPath);
+    if (!nullToAbsent || coverPath != null) {
+      map['cover_path'] = Variable<String>(coverPath);
+    }
+    map['imported_at'] = Variable<int>(importedAt);
+    map['ttu_book_id'] = Variable<int>(ttuBookId);
+    return map;
+  }
+
+  SrtBooksCompanion toCompanion(bool nullToAbsent) {
+    return SrtBooksCompanion(
+      id: Value(id),
+      uid: Value(uid),
+      title: Value(title),
+      author:
+          author == null && nullToAbsent ? const Value.absent() : Value(author),
+      audioRoot: audioRoot == null && nullToAbsent
+          ? const Value.absent()
+          : Value(audioRoot),
+      audioPathsJson: audioPathsJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(audioPathsJson),
+      srtPath: Value(srtPath),
+      coverPath: coverPath == null && nullToAbsent
+          ? const Value.absent()
+          : Value(coverPath),
+      importedAt: Value(importedAt),
+      ttuBookId: Value(ttuBookId),
+    );
+  }
+
+  factory SrtBookRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SrtBookRow(
+      id: serializer.fromJson<int>(json['id']),
+      uid: serializer.fromJson<String>(json['uid']),
+      title: serializer.fromJson<String>(json['title']),
+      author: serializer.fromJson<String?>(json['author']),
+      audioRoot: serializer.fromJson<String?>(json['audioRoot']),
+      audioPathsJson: serializer.fromJson<String?>(json['audioPathsJson']),
+      srtPath: serializer.fromJson<String>(json['srtPath']),
+      coverPath: serializer.fromJson<String?>(json['coverPath']),
+      importedAt: serializer.fromJson<int>(json['importedAt']),
+      ttuBookId: serializer.fromJson<int>(json['ttuBookId']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'uid': serializer.toJson<String>(uid),
+      'title': serializer.toJson<String>(title),
+      'author': serializer.toJson<String?>(author),
+      'audioRoot': serializer.toJson<String?>(audioRoot),
+      'audioPathsJson': serializer.toJson<String?>(audioPathsJson),
+      'srtPath': serializer.toJson<String>(srtPath),
+      'coverPath': serializer.toJson<String?>(coverPath),
+      'importedAt': serializer.toJson<int>(importedAt),
+      'ttuBookId': serializer.toJson<int>(ttuBookId),
+    };
+  }
+
+  SrtBookRow copyWith(
+          {int? id,
+          String? uid,
+          String? title,
+          Value<String?> author = const Value.absent(),
+          Value<String?> audioRoot = const Value.absent(),
+          Value<String?> audioPathsJson = const Value.absent(),
+          String? srtPath,
+          Value<String?> coverPath = const Value.absent(),
+          int? importedAt,
+          int? ttuBookId}) =>
+      SrtBookRow(
+        id: id ?? this.id,
+        uid: uid ?? this.uid,
+        title: title ?? this.title,
+        author: author.present ? author.value : this.author,
+        audioRoot: audioRoot.present ? audioRoot.value : this.audioRoot,
+        audioPathsJson:
+            audioPathsJson.present ? audioPathsJson.value : this.audioPathsJson,
+        srtPath: srtPath ?? this.srtPath,
+        coverPath: coverPath.present ? coverPath.value : this.coverPath,
+        importedAt: importedAt ?? this.importedAt,
+        ttuBookId: ttuBookId ?? this.ttuBookId,
+      );
+  SrtBookRow copyWithCompanion(SrtBooksCompanion data) {
+    return SrtBookRow(
+      id: data.id.present ? data.id.value : this.id,
+      uid: data.uid.present ? data.uid.value : this.uid,
+      title: data.title.present ? data.title.value : this.title,
+      author: data.author.present ? data.author.value : this.author,
+      audioRoot: data.audioRoot.present ? data.audioRoot.value : this.audioRoot,
+      audioPathsJson: data.audioPathsJson.present
+          ? data.audioPathsJson.value
+          : this.audioPathsJson,
+      srtPath: data.srtPath.present ? data.srtPath.value : this.srtPath,
+      coverPath: data.coverPath.present ? data.coverPath.value : this.coverPath,
+      importedAt:
+          data.importedAt.present ? data.importedAt.value : this.importedAt,
+      ttuBookId: data.ttuBookId.present ? data.ttuBookId.value : this.ttuBookId,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SrtBookRow(')
+          ..write('id: $id, ')
+          ..write('uid: $uid, ')
+          ..write('title: $title, ')
+          ..write('author: $author, ')
+          ..write('audioRoot: $audioRoot, ')
+          ..write('audioPathsJson: $audioPathsJson, ')
+          ..write('srtPath: $srtPath, ')
+          ..write('coverPath: $coverPath, ')
+          ..write('importedAt: $importedAt, ')
+          ..write('ttuBookId: $ttuBookId')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, uid, title, author, audioRoot,
+      audioPathsJson, srtPath, coverPath, importedAt, ttuBookId);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SrtBookRow &&
+          other.id == this.id &&
+          other.uid == this.uid &&
+          other.title == this.title &&
+          other.author == this.author &&
+          other.audioRoot == this.audioRoot &&
+          other.audioPathsJson == this.audioPathsJson &&
+          other.srtPath == this.srtPath &&
+          other.coverPath == this.coverPath &&
+          other.importedAt == this.importedAt &&
+          other.ttuBookId == this.ttuBookId);
+}
+
+class SrtBooksCompanion extends UpdateCompanion<SrtBookRow> {
+  final Value<int> id;
+  final Value<String> uid;
+  final Value<String> title;
+  final Value<String?> author;
+  final Value<String?> audioRoot;
+  final Value<String?> audioPathsJson;
+  final Value<String> srtPath;
+  final Value<String?> coverPath;
+  final Value<int> importedAt;
+  final Value<int> ttuBookId;
+  const SrtBooksCompanion({
+    this.id = const Value.absent(),
+    this.uid = const Value.absent(),
+    this.title = const Value.absent(),
+    this.author = const Value.absent(),
+    this.audioRoot = const Value.absent(),
+    this.audioPathsJson = const Value.absent(),
+    this.srtPath = const Value.absent(),
+    this.coverPath = const Value.absent(),
+    this.importedAt = const Value.absent(),
+    this.ttuBookId = const Value.absent(),
+  });
+  SrtBooksCompanion.insert({
+    this.id = const Value.absent(),
+    required String uid,
+    required String title,
+    this.author = const Value.absent(),
+    this.audioRoot = const Value.absent(),
+    this.audioPathsJson = const Value.absent(),
+    required String srtPath,
+    this.coverPath = const Value.absent(),
+    required int importedAt,
+    this.ttuBookId = const Value.absent(),
+  })  : uid = Value(uid),
+        title = Value(title),
+        srtPath = Value(srtPath),
+        importedAt = Value(importedAt);
+  static Insertable<SrtBookRow> custom({
+    Expression<int>? id,
+    Expression<String>? uid,
+    Expression<String>? title,
+    Expression<String>? author,
+    Expression<String>? audioRoot,
+    Expression<String>? audioPathsJson,
+    Expression<String>? srtPath,
+    Expression<String>? coverPath,
+    Expression<int>? importedAt,
+    Expression<int>? ttuBookId,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (uid != null) 'uid': uid,
+      if (title != null) 'title': title,
+      if (author != null) 'author': author,
+      if (audioRoot != null) 'audio_root': audioRoot,
+      if (audioPathsJson != null) 'audio_paths_json': audioPathsJson,
+      if (srtPath != null) 'srt_path': srtPath,
+      if (coverPath != null) 'cover_path': coverPath,
+      if (importedAt != null) 'imported_at': importedAt,
+      if (ttuBookId != null) 'ttu_book_id': ttuBookId,
+    });
+  }
+
+  SrtBooksCompanion copyWith(
+      {Value<int>? id,
+      Value<String>? uid,
+      Value<String>? title,
+      Value<String?>? author,
+      Value<String?>? audioRoot,
+      Value<String?>? audioPathsJson,
+      Value<String>? srtPath,
+      Value<String?>? coverPath,
+      Value<int>? importedAt,
+      Value<int>? ttuBookId}) {
+    return SrtBooksCompanion(
+      id: id ?? this.id,
+      uid: uid ?? this.uid,
+      title: title ?? this.title,
+      author: author ?? this.author,
+      audioRoot: audioRoot ?? this.audioRoot,
+      audioPathsJson: audioPathsJson ?? this.audioPathsJson,
+      srtPath: srtPath ?? this.srtPath,
+      coverPath: coverPath ?? this.coverPath,
+      importedAt: importedAt ?? this.importedAt,
+      ttuBookId: ttuBookId ?? this.ttuBookId,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (uid.present) {
+      map['uid'] = Variable<String>(uid.value);
+    }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
+    if (author.present) {
+      map['author'] = Variable<String>(author.value);
+    }
+    if (audioRoot.present) {
+      map['audio_root'] = Variable<String>(audioRoot.value);
+    }
+    if (audioPathsJson.present) {
+      map['audio_paths_json'] = Variable<String>(audioPathsJson.value);
+    }
+    if (srtPath.present) {
+      map['srt_path'] = Variable<String>(srtPath.value);
+    }
+    if (coverPath.present) {
+      map['cover_path'] = Variable<String>(coverPath.value);
+    }
+    if (importedAt.present) {
+      map['imported_at'] = Variable<int>(importedAt.value);
+    }
+    if (ttuBookId.present) {
+      map['ttu_book_id'] = Variable<int>(ttuBookId.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SrtBooksCompanion(')
+          ..write('id: $id, ')
+          ..write('uid: $uid, ')
+          ..write('title: $title, ')
+          ..write('author: $author, ')
+          ..write('audioRoot: $audioRoot, ')
+          ..write('audioPathsJson: $audioPathsJson, ')
+          ..write('srtPath: $srtPath, ')
+          ..write('coverPath: $coverPath, ')
+          ..write('importedAt: $importedAt, ')
+          ..write('ttuBookId: $ttuBookId')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $ReaderPositionsTable extends ReaderPositions
+    with TableInfo<$ReaderPositionsTable, ReaderPositionRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ReaderPositionsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _ttuBookIdMeta =
+      const VerificationMeta('ttuBookId');
+  @override
+  late final GeneratedColumn<int> ttuBookId = GeneratedColumn<int>(
+      'ttu_book_id', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways('UNIQUE'));
+  static const VerificationMeta _sectionIndexMeta =
+      const VerificationMeta('sectionIndex');
+  @override
+  late final GeneratedColumn<int> sectionIndex = GeneratedColumn<int>(
+      'section_index', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _normCharOffsetMeta =
+      const VerificationMeta('normCharOffset');
+  @override
+  late final GeneratedColumn<int> normCharOffset = GeneratedColumn<int>(
+      'norm_char_offset', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _updatedAtMeta =
+      const VerificationMeta('updatedAt');
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+      'updated_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns =>
+      [id, ttuBookId, sectionIndex, normCharOffset, updatedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'reader_positions';
+  @override
+  VerificationContext validateIntegrity(Insertable<ReaderPositionRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('ttu_book_id')) {
+      context.handle(
+          _ttuBookIdMeta,
+          ttuBookId.isAcceptableOrUnknown(
+              data['ttu_book_id']!, _ttuBookIdMeta));
+    } else if (isInserting) {
+      context.missing(_ttuBookIdMeta);
+    }
+    if (data.containsKey('section_index')) {
+      context.handle(
+          _sectionIndexMeta,
+          sectionIndex.isAcceptableOrUnknown(
+              data['section_index']!, _sectionIndexMeta));
+    } else if (isInserting) {
+      context.missing(_sectionIndexMeta);
+    }
+    if (data.containsKey('norm_char_offset')) {
+      context.handle(
+          _normCharOffsetMeta,
+          normCharOffset.isAcceptableOrUnknown(
+              data['norm_char_offset']!, _normCharOffsetMeta));
+    } else if (isInserting) {
+      context.missing(_normCharOffsetMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(_updatedAtMeta,
+          updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta));
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  ReaderPositionRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ReaderPositionRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      ttuBookId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}ttu_book_id'])!,
+      sectionIndex: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}section_index'])!,
+      normCharOffset: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}norm_char_offset'])!,
+      updatedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}updated_at'])!,
+    );
+  }
+
+  @override
+  $ReaderPositionsTable createAlias(String alias) {
+    return $ReaderPositionsTable(attachedDatabase, alias);
+  }
+}
+
+class ReaderPositionRow extends DataClass
+    implements Insertable<ReaderPositionRow> {
+  final int id;
+  final int ttuBookId;
+  final int sectionIndex;
+  final int normCharOffset;
+  final int updatedAt;
+  const ReaderPositionRow(
+      {required this.id,
+      required this.ttuBookId,
+      required this.sectionIndex,
+      required this.normCharOffset,
+      required this.updatedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['ttu_book_id'] = Variable<int>(ttuBookId);
+    map['section_index'] = Variable<int>(sectionIndex);
+    map['norm_char_offset'] = Variable<int>(normCharOffset);
+    map['updated_at'] = Variable<int>(updatedAt);
+    return map;
+  }
+
+  ReaderPositionsCompanion toCompanion(bool nullToAbsent) {
+    return ReaderPositionsCompanion(
+      id: Value(id),
+      ttuBookId: Value(ttuBookId),
+      sectionIndex: Value(sectionIndex),
+      normCharOffset: Value(normCharOffset),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory ReaderPositionRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ReaderPositionRow(
+      id: serializer.fromJson<int>(json['id']),
+      ttuBookId: serializer.fromJson<int>(json['ttuBookId']),
+      sectionIndex: serializer.fromJson<int>(json['sectionIndex']),
+      normCharOffset: serializer.fromJson<int>(json['normCharOffset']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'ttuBookId': serializer.toJson<int>(ttuBookId),
+      'sectionIndex': serializer.toJson<int>(sectionIndex),
+      'normCharOffset': serializer.toJson<int>(normCharOffset),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+    };
+  }
+
+  ReaderPositionRow copyWith(
+          {int? id,
+          int? ttuBookId,
+          int? sectionIndex,
+          int? normCharOffset,
+          int? updatedAt}) =>
+      ReaderPositionRow(
+        id: id ?? this.id,
+        ttuBookId: ttuBookId ?? this.ttuBookId,
+        sectionIndex: sectionIndex ?? this.sectionIndex,
+        normCharOffset: normCharOffset ?? this.normCharOffset,
+        updatedAt: updatedAt ?? this.updatedAt,
+      );
+  ReaderPositionRow copyWithCompanion(ReaderPositionsCompanion data) {
+    return ReaderPositionRow(
+      id: data.id.present ? data.id.value : this.id,
+      ttuBookId: data.ttuBookId.present ? data.ttuBookId.value : this.ttuBookId,
+      sectionIndex: data.sectionIndex.present
+          ? data.sectionIndex.value
+          : this.sectionIndex,
+      normCharOffset: data.normCharOffset.present
+          ? data.normCharOffset.value
+          : this.normCharOffset,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ReaderPositionRow(')
+          ..write('id: $id, ')
+          ..write('ttuBookId: $ttuBookId, ')
+          ..write('sectionIndex: $sectionIndex, ')
+          ..write('normCharOffset: $normCharOffset, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(id, ttuBookId, sectionIndex, normCharOffset, updatedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ReaderPositionRow &&
+          other.id == this.id &&
+          other.ttuBookId == this.ttuBookId &&
+          other.sectionIndex == this.sectionIndex &&
+          other.normCharOffset == this.normCharOffset &&
+          other.updatedAt == this.updatedAt);
+}
+
+class ReaderPositionsCompanion extends UpdateCompanion<ReaderPositionRow> {
+  final Value<int> id;
+  final Value<int> ttuBookId;
+  final Value<int> sectionIndex;
+  final Value<int> normCharOffset;
+  final Value<int> updatedAt;
+  const ReaderPositionsCompanion({
+    this.id = const Value.absent(),
+    this.ttuBookId = const Value.absent(),
+    this.sectionIndex = const Value.absent(),
+    this.normCharOffset = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+  });
+  ReaderPositionsCompanion.insert({
+    this.id = const Value.absent(),
+    required int ttuBookId,
+    required int sectionIndex,
+    required int normCharOffset,
+    required int updatedAt,
+  })  : ttuBookId = Value(ttuBookId),
+        sectionIndex = Value(sectionIndex),
+        normCharOffset = Value(normCharOffset),
+        updatedAt = Value(updatedAt);
+  static Insertable<ReaderPositionRow> custom({
+    Expression<int>? id,
+    Expression<int>? ttuBookId,
+    Expression<int>? sectionIndex,
+    Expression<int>? normCharOffset,
+    Expression<int>? updatedAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (ttuBookId != null) 'ttu_book_id': ttuBookId,
+      if (sectionIndex != null) 'section_index': sectionIndex,
+      if (normCharOffset != null) 'norm_char_offset': normCharOffset,
+      if (updatedAt != null) 'updated_at': updatedAt,
+    });
+  }
+
+  ReaderPositionsCompanion copyWith(
+      {Value<int>? id,
+      Value<int>? ttuBookId,
+      Value<int>? sectionIndex,
+      Value<int>? normCharOffset,
+      Value<int>? updatedAt}) {
+    return ReaderPositionsCompanion(
+      id: id ?? this.id,
+      ttuBookId: ttuBookId ?? this.ttuBookId,
+      sectionIndex: sectionIndex ?? this.sectionIndex,
+      normCharOffset: normCharOffset ?? this.normCharOffset,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (ttuBookId.present) {
+      map['ttu_book_id'] = Variable<int>(ttuBookId.value);
+    }
+    if (sectionIndex.present) {
+      map['section_index'] = Variable<int>(sectionIndex.value);
+    }
+    if (normCharOffset.present) {
+      map['norm_char_offset'] = Variable<int>(normCharOffset.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ReaderPositionsCompanion(')
+          ..write('id: $id, ')
+          ..write('ttuBookId: $ttuBookId, ')
+          ..write('sectionIndex: $sectionIndex, ')
+          ..write('normCharOffset: $normCharOffset, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $ReadingStatisticsTable extends ReadingStatistics
+    with TableInfo<$ReadingStatisticsTable, ReadingStatisticRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ReadingStatisticsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+      'title', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _dateKeyMeta =
+      const VerificationMeta('dateKey');
+  @override
+  late final GeneratedColumn<String> dateKey = GeneratedColumn<String>(
+      'date_key', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _charactersReadMeta =
+      const VerificationMeta('charactersRead');
+  @override
+  late final GeneratedColumn<int> charactersRead = GeneratedColumn<int>(
+      'characters_read', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _readingTimeMsMeta =
+      const VerificationMeta('readingTimeMs');
+  @override
+  late final GeneratedColumn<int> readingTimeMs = GeneratedColumn<int>(
+      'reading_time_ms', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _lastStatisticModifiedMeta =
+      const VerificationMeta('lastStatisticModified');
+  @override
+  late final GeneratedColumn<int> lastStatisticModified = GeneratedColumn<int>(
+      'last_statistic_modified', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns => [
+        id,
+        title,
+        dateKey,
+        charactersRead,
+        readingTimeMs,
+        lastStatisticModified
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'reading_statistics';
+  @override
+  VerificationContext validateIntegrity(
+      Insertable<ReadingStatisticRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('title')) {
+      context.handle(
+          _titleMeta, title.isAcceptableOrUnknown(data['title']!, _titleMeta));
+    } else if (isInserting) {
+      context.missing(_titleMeta);
+    }
+    if (data.containsKey('date_key')) {
+      context.handle(_dateKeyMeta,
+          dateKey.isAcceptableOrUnknown(data['date_key']!, _dateKeyMeta));
+    } else if (isInserting) {
+      context.missing(_dateKeyMeta);
+    }
+    if (data.containsKey('characters_read')) {
+      context.handle(
+          _charactersReadMeta,
+          charactersRead.isAcceptableOrUnknown(
+              data['characters_read']!, _charactersReadMeta));
+    } else if (isInserting) {
+      context.missing(_charactersReadMeta);
+    }
+    if (data.containsKey('reading_time_ms')) {
+      context.handle(
+          _readingTimeMsMeta,
+          readingTimeMs.isAcceptableOrUnknown(
+              data['reading_time_ms']!, _readingTimeMsMeta));
+    } else if (isInserting) {
+      context.missing(_readingTimeMsMeta);
+    }
+    if (data.containsKey('last_statistic_modified')) {
+      context.handle(
+          _lastStatisticModifiedMeta,
+          lastStatisticModified.isAcceptableOrUnknown(
+              data['last_statistic_modified']!, _lastStatisticModifiedMeta));
+    } else if (isInserting) {
+      context.missing(_lastStatisticModifiedMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [
+        {title, dateKey},
+      ];
+  @override
+  ReadingStatisticRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ReadingStatisticRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      title: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}title'])!,
+      dateKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}date_key'])!,
+      charactersRead: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}characters_read'])!,
+      readingTimeMs: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}reading_time_ms'])!,
+      lastStatisticModified: attachedDatabase.typeMapping.read(
+          DriftSqlType.int, data['${effectivePrefix}last_statistic_modified'])!,
+    );
+  }
+
+  @override
+  $ReadingStatisticsTable createAlias(String alias) {
+    return $ReadingStatisticsTable(attachedDatabase, alias);
+  }
+}
+
+class ReadingStatisticRow extends DataClass
+    implements Insertable<ReadingStatisticRow> {
+  final int id;
+  final String title;
+  final String dateKey;
+  final int charactersRead;
+  final int readingTimeMs;
+  final int lastStatisticModified;
+  const ReadingStatisticRow(
+      {required this.id,
+      required this.title,
+      required this.dateKey,
+      required this.charactersRead,
+      required this.readingTimeMs,
+      required this.lastStatisticModified});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['title'] = Variable<String>(title);
+    map['date_key'] = Variable<String>(dateKey);
+    map['characters_read'] = Variable<int>(charactersRead);
+    map['reading_time_ms'] = Variable<int>(readingTimeMs);
+    map['last_statistic_modified'] = Variable<int>(lastStatisticModified);
+    return map;
+  }
+
+  ReadingStatisticsCompanion toCompanion(bool nullToAbsent) {
+    return ReadingStatisticsCompanion(
+      id: Value(id),
+      title: Value(title),
+      dateKey: Value(dateKey),
+      charactersRead: Value(charactersRead),
+      readingTimeMs: Value(readingTimeMs),
+      lastStatisticModified: Value(lastStatisticModified),
+    );
+  }
+
+  factory ReadingStatisticRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ReadingStatisticRow(
+      id: serializer.fromJson<int>(json['id']),
+      title: serializer.fromJson<String>(json['title']),
+      dateKey: serializer.fromJson<String>(json['dateKey']),
+      charactersRead: serializer.fromJson<int>(json['charactersRead']),
+      readingTimeMs: serializer.fromJson<int>(json['readingTimeMs']),
+      lastStatisticModified:
+          serializer.fromJson<int>(json['lastStatisticModified']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'title': serializer.toJson<String>(title),
+      'dateKey': serializer.toJson<String>(dateKey),
+      'charactersRead': serializer.toJson<int>(charactersRead),
+      'readingTimeMs': serializer.toJson<int>(readingTimeMs),
+      'lastStatisticModified': serializer.toJson<int>(lastStatisticModified),
+    };
+  }
+
+  ReadingStatisticRow copyWith(
+          {int? id,
+          String? title,
+          String? dateKey,
+          int? charactersRead,
+          int? readingTimeMs,
+          int? lastStatisticModified}) =>
+      ReadingStatisticRow(
+        id: id ?? this.id,
+        title: title ?? this.title,
+        dateKey: dateKey ?? this.dateKey,
+        charactersRead: charactersRead ?? this.charactersRead,
+        readingTimeMs: readingTimeMs ?? this.readingTimeMs,
+        lastStatisticModified:
+            lastStatisticModified ?? this.lastStatisticModified,
+      );
+  ReadingStatisticRow copyWithCompanion(ReadingStatisticsCompanion data) {
+    return ReadingStatisticRow(
+      id: data.id.present ? data.id.value : this.id,
+      title: data.title.present ? data.title.value : this.title,
+      dateKey: data.dateKey.present ? data.dateKey.value : this.dateKey,
+      charactersRead: data.charactersRead.present
+          ? data.charactersRead.value
+          : this.charactersRead,
+      readingTimeMs: data.readingTimeMs.present
+          ? data.readingTimeMs.value
+          : this.readingTimeMs,
+      lastStatisticModified: data.lastStatisticModified.present
+          ? data.lastStatisticModified.value
+          : this.lastStatisticModified,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ReadingStatisticRow(')
+          ..write('id: $id, ')
+          ..write('title: $title, ')
+          ..write('dateKey: $dateKey, ')
+          ..write('charactersRead: $charactersRead, ')
+          ..write('readingTimeMs: $readingTimeMs, ')
+          ..write('lastStatisticModified: $lastStatisticModified')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+      id, title, dateKey, charactersRead, readingTimeMs, lastStatisticModified);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ReadingStatisticRow &&
+          other.id == this.id &&
+          other.title == this.title &&
+          other.dateKey == this.dateKey &&
+          other.charactersRead == this.charactersRead &&
+          other.readingTimeMs == this.readingTimeMs &&
+          other.lastStatisticModified == this.lastStatisticModified);
+}
+
+class ReadingStatisticsCompanion extends UpdateCompanion<ReadingStatisticRow> {
+  final Value<int> id;
+  final Value<String> title;
+  final Value<String> dateKey;
+  final Value<int> charactersRead;
+  final Value<int> readingTimeMs;
+  final Value<int> lastStatisticModified;
+  const ReadingStatisticsCompanion({
+    this.id = const Value.absent(),
+    this.title = const Value.absent(),
+    this.dateKey = const Value.absent(),
+    this.charactersRead = const Value.absent(),
+    this.readingTimeMs = const Value.absent(),
+    this.lastStatisticModified = const Value.absent(),
+  });
+  ReadingStatisticsCompanion.insert({
+    this.id = const Value.absent(),
+    required String title,
+    required String dateKey,
+    required int charactersRead,
+    required int readingTimeMs,
+    required int lastStatisticModified,
+  })  : title = Value(title),
+        dateKey = Value(dateKey),
+        charactersRead = Value(charactersRead),
+        readingTimeMs = Value(readingTimeMs),
+        lastStatisticModified = Value(lastStatisticModified);
+  static Insertable<ReadingStatisticRow> custom({
+    Expression<int>? id,
+    Expression<String>? title,
+    Expression<String>? dateKey,
+    Expression<int>? charactersRead,
+    Expression<int>? readingTimeMs,
+    Expression<int>? lastStatisticModified,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (title != null) 'title': title,
+      if (dateKey != null) 'date_key': dateKey,
+      if (charactersRead != null) 'characters_read': charactersRead,
+      if (readingTimeMs != null) 'reading_time_ms': readingTimeMs,
+      if (lastStatisticModified != null)
+        'last_statistic_modified': lastStatisticModified,
+    });
+  }
+
+  ReadingStatisticsCompanion copyWith(
+      {Value<int>? id,
+      Value<String>? title,
+      Value<String>? dateKey,
+      Value<int>? charactersRead,
+      Value<int>? readingTimeMs,
+      Value<int>? lastStatisticModified}) {
+    return ReadingStatisticsCompanion(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      dateKey: dateKey ?? this.dateKey,
+      charactersRead: charactersRead ?? this.charactersRead,
+      readingTimeMs: readingTimeMs ?? this.readingTimeMs,
+      lastStatisticModified:
+          lastStatisticModified ?? this.lastStatisticModified,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
+    if (dateKey.present) {
+      map['date_key'] = Variable<String>(dateKey.value);
+    }
+    if (charactersRead.present) {
+      map['characters_read'] = Variable<int>(charactersRead.value);
+    }
+    if (readingTimeMs.present) {
+      map['reading_time_ms'] = Variable<int>(readingTimeMs.value);
+    }
+    if (lastStatisticModified.present) {
+      map['last_statistic_modified'] =
+          Variable<int>(lastStatisticModified.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ReadingStatisticsCompanion(')
+          ..write('id: $id, ')
+          ..write('title: $title, ')
+          ..write('dateKey: $dateKey, ')
+          ..write('charactersRead: $charactersRead, ')
+          ..write('readingTimeMs: $readingTimeMs, ')
+          ..write('lastStatisticModified: $lastStatisticModified')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $PreferencesTable extends Preferences
+    with TableInfo<$PreferencesTable, PreferenceRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $PreferencesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _keyMeta = const VerificationMeta('key');
+  @override
+  late final GeneratedColumn<String> key = GeneratedColumn<String>(
+      'key', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _valueMeta = const VerificationMeta('value');
+  @override
+  late final GeneratedColumn<String> value = GeneratedColumn<String>(
+      'value', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns => [key, value];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'preferences';
+  @override
+  VerificationContext validateIntegrity(Insertable<PreferenceRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('key')) {
+      context.handle(
+          _keyMeta, key.isAcceptableOrUnknown(data['key']!, _keyMeta));
+    } else if (isInserting) {
+      context.missing(_keyMeta);
+    }
+    if (data.containsKey('value')) {
+      context.handle(
+          _valueMeta, value.isAcceptableOrUnknown(data['value']!, _valueMeta));
+    } else if (isInserting) {
+      context.missing(_valueMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {key};
+  @override
+  PreferenceRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return PreferenceRow(
+      key: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}key'])!,
+      value: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}value'])!,
+    );
+  }
+
+  @override
+  $PreferencesTable createAlias(String alias) {
+    return $PreferencesTable(attachedDatabase, alias);
+  }
+}
+
+class PreferenceRow extends DataClass implements Insertable<PreferenceRow> {
+  final String key;
+  final String value;
+  const PreferenceRow({required this.key, required this.value});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['key'] = Variable<String>(key);
+    map['value'] = Variable<String>(value);
+    return map;
+  }
+
+  PreferencesCompanion toCompanion(bool nullToAbsent) {
+    return PreferencesCompanion(
+      key: Value(key),
+      value: Value(value),
+    );
+  }
+
+  factory PreferenceRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return PreferenceRow(
+      key: serializer.fromJson<String>(json['key']),
+      value: serializer.fromJson<String>(json['value']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'key': serializer.toJson<String>(key),
+      'value': serializer.toJson<String>(value),
+    };
+  }
+
+  PreferenceRow copyWith({String? key, String? value}) => PreferenceRow(
+        key: key ?? this.key,
+        value: value ?? this.value,
+      );
+  PreferenceRow copyWithCompanion(PreferencesCompanion data) {
+    return PreferenceRow(
+      key: data.key.present ? data.key.value : this.key,
+      value: data.value.present ? data.value.value : this.value,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PreferenceRow(')
+          ..write('key: $key, ')
+          ..write('value: $value')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(key, value);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is PreferenceRow &&
+          other.key == this.key &&
+          other.value == this.value);
+}
+
+class PreferencesCompanion extends UpdateCompanion<PreferenceRow> {
+  final Value<String> key;
+  final Value<String> value;
+  final Value<int> rowid;
+  const PreferencesCompanion({
+    this.key = const Value.absent(),
+    this.value = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  PreferencesCompanion.insert({
+    required String key,
+    required String value,
+    this.rowid = const Value.absent(),
+  })  : key = Value(key),
+        value = Value(value);
+  static Insertable<PreferenceRow> custom({
+    Expression<String>? key,
+    Expression<String>? value,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (key != null) 'key': key,
+      if (value != null) 'value': value,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  PreferencesCompanion copyWith(
+      {Value<String>? key, Value<String>? value, Value<int>? rowid}) {
+    return PreferencesCompanion(
+      key: key ?? this.key,
+      value: value ?? this.value,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (key.present) {
+      map['key'] = Variable<String>(key.value);
+    }
+    if (value.present) {
+      map['value'] = Variable<String>(value.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PreferencesCompanion(')
+          ..write('key: $key, ')
+          ..write('value: $value, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $DictionaryMetadataTable extends DictionaryMetadata
+    with TableInfo<$DictionaryMetadataTable, DictionaryMetaRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $DictionaryMetadataTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+      'name', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _formatKeyMeta =
+      const VerificationMeta('formatKey');
+  @override
+  late final GeneratedColumn<String> formatKey = GeneratedColumn<String>(
+      'format_key', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _orderMeta = const VerificationMeta('order');
+  @override
+  late final GeneratedColumn<int> order = GeneratedColumn<int>(
+      'order', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _metadataJsonMeta =
+      const VerificationMeta('metadataJson');
+  @override
+  late final GeneratedColumn<String> metadataJson = GeneratedColumn<String>(
+      'metadata_json', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant('{}'));
+  static const VerificationMeta _hiddenLanguagesJsonMeta =
+      const VerificationMeta('hiddenLanguagesJson');
+  @override
+  late final GeneratedColumn<String> hiddenLanguagesJson =
+      GeneratedColumn<String>('hidden_languages_json', aliasedName, false,
+          type: DriftSqlType.string,
+          requiredDuringInsert: false,
+          defaultValue: const Constant('[]'));
+  static const VerificationMeta _collapsedLanguagesJsonMeta =
+      const VerificationMeta('collapsedLanguagesJson');
+  @override
+  late final GeneratedColumn<String> collapsedLanguagesJson =
+      GeneratedColumn<String>('collapsed_languages_json', aliasedName, false,
+          type: DriftSqlType.string,
+          requiredDuringInsert: false,
+          defaultValue: const Constant('[]'));
+  @override
+  List<GeneratedColumn> get $columns => [
+        name,
+        formatKey,
+        order,
+        metadataJson,
+        hiddenLanguagesJson,
+        collapsedLanguagesJson
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'dictionary_metadata';
+  @override
+  VerificationContext validateIntegrity(Insertable<DictionaryMetaRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('name')) {
+      context.handle(
+          _nameMeta, name.isAcceptableOrUnknown(data['name']!, _nameMeta));
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('format_key')) {
+      context.handle(_formatKeyMeta,
+          formatKey.isAcceptableOrUnknown(data['format_key']!, _formatKeyMeta));
+    } else if (isInserting) {
+      context.missing(_formatKeyMeta);
+    }
+    if (data.containsKey('order')) {
+      context.handle(
+          _orderMeta, order.isAcceptableOrUnknown(data['order']!, _orderMeta));
+    } else if (isInserting) {
+      context.missing(_orderMeta);
+    }
+    if (data.containsKey('metadata_json')) {
+      context.handle(
+          _metadataJsonMeta,
+          metadataJson.isAcceptableOrUnknown(
+              data['metadata_json']!, _metadataJsonMeta));
+    }
+    if (data.containsKey('hidden_languages_json')) {
+      context.handle(
+          _hiddenLanguagesJsonMeta,
+          hiddenLanguagesJson.isAcceptableOrUnknown(
+              data['hidden_languages_json']!, _hiddenLanguagesJsonMeta));
+    }
+    if (data.containsKey('collapsed_languages_json')) {
+      context.handle(
+          _collapsedLanguagesJsonMeta,
+          collapsedLanguagesJson.isAcceptableOrUnknown(
+              data['collapsed_languages_json']!, _collapsedLanguagesJsonMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {name};
+  @override
+  DictionaryMetaRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return DictionaryMetaRow(
+      name: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}name'])!,
+      formatKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}format_key'])!,
+      order: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}order'])!,
+      metadataJson: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}metadata_json'])!,
+      hiddenLanguagesJson: attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}hidden_languages_json'])!,
+      collapsedLanguagesJson: attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}collapsed_languages_json'])!,
+    );
+  }
+
+  @override
+  $DictionaryMetadataTable createAlias(String alias) {
+    return $DictionaryMetadataTable(attachedDatabase, alias);
+  }
+}
+
+class DictionaryMetaRow extends DataClass
+    implements Insertable<DictionaryMetaRow> {
+  final String name;
+  final String formatKey;
+  final int order;
+  final String metadataJson;
+  final String hiddenLanguagesJson;
+  final String collapsedLanguagesJson;
+  const DictionaryMetaRow(
+      {required this.name,
+      required this.formatKey,
+      required this.order,
+      required this.metadataJson,
+      required this.hiddenLanguagesJson,
+      required this.collapsedLanguagesJson});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['name'] = Variable<String>(name);
+    map['format_key'] = Variable<String>(formatKey);
+    map['order'] = Variable<int>(order);
+    map['metadata_json'] = Variable<String>(metadataJson);
+    map['hidden_languages_json'] = Variable<String>(hiddenLanguagesJson);
+    map['collapsed_languages_json'] = Variable<String>(collapsedLanguagesJson);
+    return map;
+  }
+
+  DictionaryMetadataCompanion toCompanion(bool nullToAbsent) {
+    return DictionaryMetadataCompanion(
+      name: Value(name),
+      formatKey: Value(formatKey),
+      order: Value(order),
+      metadataJson: Value(metadataJson),
+      hiddenLanguagesJson: Value(hiddenLanguagesJson),
+      collapsedLanguagesJson: Value(collapsedLanguagesJson),
+    );
+  }
+
+  factory DictionaryMetaRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return DictionaryMetaRow(
+      name: serializer.fromJson<String>(json['name']),
+      formatKey: serializer.fromJson<String>(json['formatKey']),
+      order: serializer.fromJson<int>(json['order']),
+      metadataJson: serializer.fromJson<String>(json['metadataJson']),
+      hiddenLanguagesJson:
+          serializer.fromJson<String>(json['hiddenLanguagesJson']),
+      collapsedLanguagesJson:
+          serializer.fromJson<String>(json['collapsedLanguagesJson']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'name': serializer.toJson<String>(name),
+      'formatKey': serializer.toJson<String>(formatKey),
+      'order': serializer.toJson<int>(order),
+      'metadataJson': serializer.toJson<String>(metadataJson),
+      'hiddenLanguagesJson': serializer.toJson<String>(hiddenLanguagesJson),
+      'collapsedLanguagesJson':
+          serializer.toJson<String>(collapsedLanguagesJson),
+    };
+  }
+
+  DictionaryMetaRow copyWith(
+          {String? name,
+          String? formatKey,
+          int? order,
+          String? metadataJson,
+          String? hiddenLanguagesJson,
+          String? collapsedLanguagesJson}) =>
+      DictionaryMetaRow(
+        name: name ?? this.name,
+        formatKey: formatKey ?? this.formatKey,
+        order: order ?? this.order,
+        metadataJson: metadataJson ?? this.metadataJson,
+        hiddenLanguagesJson: hiddenLanguagesJson ?? this.hiddenLanguagesJson,
+        collapsedLanguagesJson:
+            collapsedLanguagesJson ?? this.collapsedLanguagesJson,
+      );
+  DictionaryMetaRow copyWithCompanion(DictionaryMetadataCompanion data) {
+    return DictionaryMetaRow(
+      name: data.name.present ? data.name.value : this.name,
+      formatKey: data.formatKey.present ? data.formatKey.value : this.formatKey,
+      order: data.order.present ? data.order.value : this.order,
+      metadataJson: data.metadataJson.present
+          ? data.metadataJson.value
+          : this.metadataJson,
+      hiddenLanguagesJson: data.hiddenLanguagesJson.present
+          ? data.hiddenLanguagesJson.value
+          : this.hiddenLanguagesJson,
+      collapsedLanguagesJson: data.collapsedLanguagesJson.present
+          ? data.collapsedLanguagesJson.value
+          : this.collapsedLanguagesJson,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DictionaryMetaRow(')
+          ..write('name: $name, ')
+          ..write('formatKey: $formatKey, ')
+          ..write('order: $order, ')
+          ..write('metadataJson: $metadataJson, ')
+          ..write('hiddenLanguagesJson: $hiddenLanguagesJson, ')
+          ..write('collapsedLanguagesJson: $collapsedLanguagesJson')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(name, formatKey, order, metadataJson,
+      hiddenLanguagesJson, collapsedLanguagesJson);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is DictionaryMetaRow &&
+          other.name == this.name &&
+          other.formatKey == this.formatKey &&
+          other.order == this.order &&
+          other.metadataJson == this.metadataJson &&
+          other.hiddenLanguagesJson == this.hiddenLanguagesJson &&
+          other.collapsedLanguagesJson == this.collapsedLanguagesJson);
+}
+
+class DictionaryMetadataCompanion extends UpdateCompanion<DictionaryMetaRow> {
+  final Value<String> name;
+  final Value<String> formatKey;
+  final Value<int> order;
+  final Value<String> metadataJson;
+  final Value<String> hiddenLanguagesJson;
+  final Value<String> collapsedLanguagesJson;
+  final Value<int> rowid;
+  const DictionaryMetadataCompanion({
+    this.name = const Value.absent(),
+    this.formatKey = const Value.absent(),
+    this.order = const Value.absent(),
+    this.metadataJson = const Value.absent(),
+    this.hiddenLanguagesJson = const Value.absent(),
+    this.collapsedLanguagesJson = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  DictionaryMetadataCompanion.insert({
+    required String name,
+    required String formatKey,
+    required int order,
+    this.metadataJson = const Value.absent(),
+    this.hiddenLanguagesJson = const Value.absent(),
+    this.collapsedLanguagesJson = const Value.absent(),
+    this.rowid = const Value.absent(),
+  })  : name = Value(name),
+        formatKey = Value(formatKey),
+        order = Value(order);
+  static Insertable<DictionaryMetaRow> custom({
+    Expression<String>? name,
+    Expression<String>? formatKey,
+    Expression<int>? order,
+    Expression<String>? metadataJson,
+    Expression<String>? hiddenLanguagesJson,
+    Expression<String>? collapsedLanguagesJson,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (name != null) 'name': name,
+      if (formatKey != null) 'format_key': formatKey,
+      if (order != null) 'order': order,
+      if (metadataJson != null) 'metadata_json': metadataJson,
+      if (hiddenLanguagesJson != null)
+        'hidden_languages_json': hiddenLanguagesJson,
+      if (collapsedLanguagesJson != null)
+        'collapsed_languages_json': collapsedLanguagesJson,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  DictionaryMetadataCompanion copyWith(
+      {Value<String>? name,
+      Value<String>? formatKey,
+      Value<int>? order,
+      Value<String>? metadataJson,
+      Value<String>? hiddenLanguagesJson,
+      Value<String>? collapsedLanguagesJson,
+      Value<int>? rowid}) {
+    return DictionaryMetadataCompanion(
+      name: name ?? this.name,
+      formatKey: formatKey ?? this.formatKey,
+      order: order ?? this.order,
+      metadataJson: metadataJson ?? this.metadataJson,
+      hiddenLanguagesJson: hiddenLanguagesJson ?? this.hiddenLanguagesJson,
+      collapsedLanguagesJson:
+          collapsedLanguagesJson ?? this.collapsedLanguagesJson,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (formatKey.present) {
+      map['format_key'] = Variable<String>(formatKey.value);
+    }
+    if (order.present) {
+      map['order'] = Variable<int>(order.value);
+    }
+    if (metadataJson.present) {
+      map['metadata_json'] = Variable<String>(metadataJson.value);
+    }
+    if (hiddenLanguagesJson.present) {
+      map['hidden_languages_json'] =
+          Variable<String>(hiddenLanguagesJson.value);
+    }
+    if (collapsedLanguagesJson.present) {
+      map['collapsed_languages_json'] =
+          Variable<String>(collapsedLanguagesJson.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DictionaryMetadataCompanion(')
+          ..write('name: $name, ')
+          ..write('formatKey: $formatKey, ')
+          ..write('order: $order, ')
+          ..write('metadataJson: $metadataJson, ')
+          ..write('hiddenLanguagesJson: $hiddenLanguagesJson, ')
+          ..write('collapsedLanguagesJson: $collapsedLanguagesJson, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $DictionaryHistoryTable extends DictionaryHistory
+    with TableInfo<$DictionaryHistoryTable, DictionaryHistoryRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $DictionaryHistoryTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _positionMeta =
+      const VerificationMeta('position');
+  @override
+  late final GeneratedColumn<int> position = GeneratedColumn<int>(
+      'position', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _resultJsonMeta =
+      const VerificationMeta('resultJson');
+  @override
+  late final GeneratedColumn<String> resultJson = GeneratedColumn<String>(
+      'result_json', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns => [id, position, resultJson];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'dictionary_history';
+  @override
+  VerificationContext validateIntegrity(
+      Insertable<DictionaryHistoryRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('position')) {
+      context.handle(_positionMeta,
+          position.isAcceptableOrUnknown(data['position']!, _positionMeta));
+    } else if (isInserting) {
+      context.missing(_positionMeta);
+    }
+    if (data.containsKey('result_json')) {
+      context.handle(
+          _resultJsonMeta,
+          resultJson.isAcceptableOrUnknown(
+              data['result_json']!, _resultJsonMeta));
+    } else if (isInserting) {
+      context.missing(_resultJsonMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  DictionaryHistoryRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return DictionaryHistoryRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      position: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}position'])!,
+      resultJson: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}result_json'])!,
+    );
+  }
+
+  @override
+  $DictionaryHistoryTable createAlias(String alias) {
+    return $DictionaryHistoryTable(attachedDatabase, alias);
+  }
+}
+
+class DictionaryHistoryRow extends DataClass
+    implements Insertable<DictionaryHistoryRow> {
+  final int id;
+  final int position;
+  final String resultJson;
+  const DictionaryHistoryRow(
+      {required this.id, required this.position, required this.resultJson});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['position'] = Variable<int>(position);
+    map['result_json'] = Variable<String>(resultJson);
+    return map;
+  }
+
+  DictionaryHistoryCompanion toCompanion(bool nullToAbsent) {
+    return DictionaryHistoryCompanion(
+      id: Value(id),
+      position: Value(position),
+      resultJson: Value(resultJson),
+    );
+  }
+
+  factory DictionaryHistoryRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return DictionaryHistoryRow(
+      id: serializer.fromJson<int>(json['id']),
+      position: serializer.fromJson<int>(json['position']),
+      resultJson: serializer.fromJson<String>(json['resultJson']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'position': serializer.toJson<int>(position),
+      'resultJson': serializer.toJson<String>(resultJson),
+    };
+  }
+
+  DictionaryHistoryRow copyWith({int? id, int? position, String? resultJson}) =>
+      DictionaryHistoryRow(
+        id: id ?? this.id,
+        position: position ?? this.position,
+        resultJson: resultJson ?? this.resultJson,
+      );
+  DictionaryHistoryRow copyWithCompanion(DictionaryHistoryCompanion data) {
+    return DictionaryHistoryRow(
+      id: data.id.present ? data.id.value : this.id,
+      position: data.position.present ? data.position.value : this.position,
+      resultJson:
+          data.resultJson.present ? data.resultJson.value : this.resultJson,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DictionaryHistoryRow(')
+          ..write('id: $id, ')
+          ..write('position: $position, ')
+          ..write('resultJson: $resultJson')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, position, resultJson);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is DictionaryHistoryRow &&
+          other.id == this.id &&
+          other.position == this.position &&
+          other.resultJson == this.resultJson);
+}
+
+class DictionaryHistoryCompanion extends UpdateCompanion<DictionaryHistoryRow> {
+  final Value<int> id;
+  final Value<int> position;
+  final Value<String> resultJson;
+  const DictionaryHistoryCompanion({
+    this.id = const Value.absent(),
+    this.position = const Value.absent(),
+    this.resultJson = const Value.absent(),
+  });
+  DictionaryHistoryCompanion.insert({
+    this.id = const Value.absent(),
+    required int position,
+    required String resultJson,
+  })  : position = Value(position),
+        resultJson = Value(resultJson);
+  static Insertable<DictionaryHistoryRow> custom({
+    Expression<int>? id,
+    Expression<int>? position,
+    Expression<String>? resultJson,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (position != null) 'position': position,
+      if (resultJson != null) 'result_json': resultJson,
+    });
+  }
+
+  DictionaryHistoryCompanion copyWith(
+      {Value<int>? id, Value<int>? position, Value<String>? resultJson}) {
+    return DictionaryHistoryCompanion(
+      id: id ?? this.id,
+      position: position ?? this.position,
+      resultJson: resultJson ?? this.resultJson,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (position.present) {
+      map['position'] = Variable<int>(position.value);
+    }
+    if (resultJson.present) {
+      map['result_json'] = Variable<String>(resultJson.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DictionaryHistoryCompanion(')
+          ..write('id: $id, ')
+          ..write('position: $position, ')
+          ..write('resultJson: $resultJson')
+          ..write(')'))
+        .toString();
+  }
+}
+
+abstract class _$HibikiDatabase extends GeneratedDatabase {
+  _$HibikiDatabase(QueryExecutor e) : super(e);
+  $HibikiDatabaseManager get managers => $HibikiDatabaseManager(this);
+  late final $MediaItemsTable mediaItems = $MediaItemsTable(this);
+  late final $AnkiMappingsTable ankiMappings = $AnkiMappingsTable(this);
+  late final $SearchHistoryItemsTable searchHistoryItems =
+      $SearchHistoryItemsTable(this);
+  late final $AudiobooksTable audiobooks = $AudiobooksTable(this);
+  late final $SrtBooksTable srtBooks = $SrtBooksTable(this);
+  late final $ReaderPositionsTable readerPositions =
+      $ReaderPositionsTable(this);
+  late final $ReadingStatisticsTable readingStatistics =
+      $ReadingStatisticsTable(this);
+  late final $PreferencesTable preferences = $PreferencesTable(this);
+  late final $DictionaryMetadataTable dictionaryMetadata =
+      $DictionaryMetadataTable(this);
+  late final $DictionaryHistoryTable dictionaryHistory =
+      $DictionaryHistoryTable(this);
+  @override
+  Iterable<TableInfo<Table, Object?>> get allTables =>
+      allSchemaEntities.whereType<TableInfo<Table, Object?>>();
+  @override
+  List<DatabaseSchemaEntity> get allSchemaEntities => [
+        mediaItems,
+        ankiMappings,
+        searchHistoryItems,
+        audiobooks,
+        srtBooks,
+        readerPositions,
+        readingStatistics,
+        preferences,
+        dictionaryMetadata,
+        dictionaryHistory
+      ];
+}
+
+typedef $$MediaItemsTableCreateCompanionBuilder = MediaItemsCompanion Function({
+  Value<int> id,
+  required String mediaIdentifier,
+  required String title,
+  required String mediaTypeIdentifier,
+  required String mediaSourceIdentifier,
+  required String uniqueKey,
+  Value<String?> base64Image,
+  Value<String?> imageUrl,
+  Value<String?> audioUrl,
+  Value<String?> author,
+  Value<String?> authorIdentifier,
+  Value<String?> extraUrl,
+  Value<String?> extra,
+  Value<String?> sourceMetadata,
+  required int position,
+  required int duration,
+  required bool canDelete,
+  required bool canEdit,
+  Value<int> importedAt,
+});
+typedef $$MediaItemsTableUpdateCompanionBuilder = MediaItemsCompanion Function({
+  Value<int> id,
+  Value<String> mediaIdentifier,
+  Value<String> title,
+  Value<String> mediaTypeIdentifier,
+  Value<String> mediaSourceIdentifier,
+  Value<String> uniqueKey,
+  Value<String?> base64Image,
+  Value<String?> imageUrl,
+  Value<String?> audioUrl,
+  Value<String?> author,
+  Value<String?> authorIdentifier,
+  Value<String?> extraUrl,
+  Value<String?> extra,
+  Value<String?> sourceMetadata,
+  Value<int> position,
+  Value<int> duration,
+  Value<bool> canDelete,
+  Value<bool> canEdit,
+  Value<int> importedAt,
+});
+
+class $$MediaItemsTableFilterComposer
+    extends Composer<_$HibikiDatabase, $MediaItemsTable> {
+  $$MediaItemsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get mediaIdentifier => $composableBuilder(
+      column: $table.mediaIdentifier,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get title => $composableBuilder(
+      column: $table.title, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get mediaTypeIdentifier => $composableBuilder(
+      column: $table.mediaTypeIdentifier,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get mediaSourceIdentifier => $composableBuilder(
+      column: $table.mediaSourceIdentifier,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get uniqueKey => $composableBuilder(
+      column: $table.uniqueKey, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get base64Image => $composableBuilder(
+      column: $table.base64Image, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get imageUrl => $composableBuilder(
+      column: $table.imageUrl, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get audioUrl => $composableBuilder(
+      column: $table.audioUrl, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get author => $composableBuilder(
+      column: $table.author, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get authorIdentifier => $composableBuilder(
+      column: $table.authorIdentifier,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get extraUrl => $composableBuilder(
+      column: $table.extraUrl, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get extra => $composableBuilder(
+      column: $table.extra, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get sourceMetadata => $composableBuilder(
+      column: $table.sourceMetadata,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get position => $composableBuilder(
+      column: $table.position, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get duration => $composableBuilder(
+      column: $table.duration, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get canDelete => $composableBuilder(
+      column: $table.canDelete, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get canEdit => $composableBuilder(
+      column: $table.canEdit, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get importedAt => $composableBuilder(
+      column: $table.importedAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$MediaItemsTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $MediaItemsTable> {
+  $$MediaItemsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get mediaIdentifier => $composableBuilder(
+      column: $table.mediaIdentifier,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get title => $composableBuilder(
+      column: $table.title, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get mediaTypeIdentifier => $composableBuilder(
+      column: $table.mediaTypeIdentifier,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get mediaSourceIdentifier => $composableBuilder(
+      column: $table.mediaSourceIdentifier,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get uniqueKey => $composableBuilder(
+      column: $table.uniqueKey, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get base64Image => $composableBuilder(
+      column: $table.base64Image, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get imageUrl => $composableBuilder(
+      column: $table.imageUrl, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get audioUrl => $composableBuilder(
+      column: $table.audioUrl, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get author => $composableBuilder(
+      column: $table.author, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get authorIdentifier => $composableBuilder(
+      column: $table.authorIdentifier,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get extraUrl => $composableBuilder(
+      column: $table.extraUrl, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get extra => $composableBuilder(
+      column: $table.extra, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get sourceMetadata => $composableBuilder(
+      column: $table.sourceMetadata,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get position => $composableBuilder(
+      column: $table.position, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get duration => $composableBuilder(
+      column: $table.duration, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get canDelete => $composableBuilder(
+      column: $table.canDelete, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get canEdit => $composableBuilder(
+      column: $table.canEdit, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get importedAt => $composableBuilder(
+      column: $table.importedAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$MediaItemsTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $MediaItemsTable> {
+  $$MediaItemsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get mediaIdentifier => $composableBuilder(
+      column: $table.mediaIdentifier, builder: (column) => column);
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<String> get mediaTypeIdentifier => $composableBuilder(
+      column: $table.mediaTypeIdentifier, builder: (column) => column);
+
+  GeneratedColumn<String> get mediaSourceIdentifier => $composableBuilder(
+      column: $table.mediaSourceIdentifier, builder: (column) => column);
+
+  GeneratedColumn<String> get uniqueKey =>
+      $composableBuilder(column: $table.uniqueKey, builder: (column) => column);
+
+  GeneratedColumn<String> get base64Image => $composableBuilder(
+      column: $table.base64Image, builder: (column) => column);
+
+  GeneratedColumn<String> get imageUrl =>
+      $composableBuilder(column: $table.imageUrl, builder: (column) => column);
+
+  GeneratedColumn<String> get audioUrl =>
+      $composableBuilder(column: $table.audioUrl, builder: (column) => column);
+
+  GeneratedColumn<String> get author =>
+      $composableBuilder(column: $table.author, builder: (column) => column);
+
+  GeneratedColumn<String> get authorIdentifier => $composableBuilder(
+      column: $table.authorIdentifier, builder: (column) => column);
+
+  GeneratedColumn<String> get extraUrl =>
+      $composableBuilder(column: $table.extraUrl, builder: (column) => column);
+
+  GeneratedColumn<String> get extra =>
+      $composableBuilder(column: $table.extra, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceMetadata => $composableBuilder(
+      column: $table.sourceMetadata, builder: (column) => column);
+
+  GeneratedColumn<int> get position =>
+      $composableBuilder(column: $table.position, builder: (column) => column);
+
+  GeneratedColumn<int> get duration =>
+      $composableBuilder(column: $table.duration, builder: (column) => column);
+
+  GeneratedColumn<bool> get canDelete =>
+      $composableBuilder(column: $table.canDelete, builder: (column) => column);
+
+  GeneratedColumn<bool> get canEdit =>
+      $composableBuilder(column: $table.canEdit, builder: (column) => column);
+
+  GeneratedColumn<int> get importedAt => $composableBuilder(
+      column: $table.importedAt, builder: (column) => column);
+}
+
+class $$MediaItemsTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $MediaItemsTable,
+    MediaItemRow,
+    $$MediaItemsTableFilterComposer,
+    $$MediaItemsTableOrderingComposer,
+    $$MediaItemsTableAnnotationComposer,
+    $$MediaItemsTableCreateCompanionBuilder,
+    $$MediaItemsTableUpdateCompanionBuilder,
+    (
+      MediaItemRow,
+      BaseReferences<_$HibikiDatabase, $MediaItemsTable, MediaItemRow>
+    ),
+    MediaItemRow,
+    PrefetchHooks Function()> {
+  $$MediaItemsTableTableManager(_$HibikiDatabase db, $MediaItemsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MediaItemsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MediaItemsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$MediaItemsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<String> mediaIdentifier = const Value.absent(),
+            Value<String> title = const Value.absent(),
+            Value<String> mediaTypeIdentifier = const Value.absent(),
+            Value<String> mediaSourceIdentifier = const Value.absent(),
+            Value<String> uniqueKey = const Value.absent(),
+            Value<String?> base64Image = const Value.absent(),
+            Value<String?> imageUrl = const Value.absent(),
+            Value<String?> audioUrl = const Value.absent(),
+            Value<String?> author = const Value.absent(),
+            Value<String?> authorIdentifier = const Value.absent(),
+            Value<String?> extraUrl = const Value.absent(),
+            Value<String?> extra = const Value.absent(),
+            Value<String?> sourceMetadata = const Value.absent(),
+            Value<int> position = const Value.absent(),
+            Value<int> duration = const Value.absent(),
+            Value<bool> canDelete = const Value.absent(),
+            Value<bool> canEdit = const Value.absent(),
+            Value<int> importedAt = const Value.absent(),
+          }) =>
+              MediaItemsCompanion(
+            id: id,
+            mediaIdentifier: mediaIdentifier,
+            title: title,
+            mediaTypeIdentifier: mediaTypeIdentifier,
+            mediaSourceIdentifier: mediaSourceIdentifier,
+            uniqueKey: uniqueKey,
+            base64Image: base64Image,
+            imageUrl: imageUrl,
+            audioUrl: audioUrl,
+            author: author,
+            authorIdentifier: authorIdentifier,
+            extraUrl: extraUrl,
+            extra: extra,
+            sourceMetadata: sourceMetadata,
+            position: position,
+            duration: duration,
+            canDelete: canDelete,
+            canEdit: canEdit,
+            importedAt: importedAt,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required String mediaIdentifier,
+            required String title,
+            required String mediaTypeIdentifier,
+            required String mediaSourceIdentifier,
+            required String uniqueKey,
+            Value<String?> base64Image = const Value.absent(),
+            Value<String?> imageUrl = const Value.absent(),
+            Value<String?> audioUrl = const Value.absent(),
+            Value<String?> author = const Value.absent(),
+            Value<String?> authorIdentifier = const Value.absent(),
+            Value<String?> extraUrl = const Value.absent(),
+            Value<String?> extra = const Value.absent(),
+            Value<String?> sourceMetadata = const Value.absent(),
+            required int position,
+            required int duration,
+            required bool canDelete,
+            required bool canEdit,
+            Value<int> importedAt = const Value.absent(),
+          }) =>
+              MediaItemsCompanion.insert(
+            id: id,
+            mediaIdentifier: mediaIdentifier,
+            title: title,
+            mediaTypeIdentifier: mediaTypeIdentifier,
+            mediaSourceIdentifier: mediaSourceIdentifier,
+            uniqueKey: uniqueKey,
+            base64Image: base64Image,
+            imageUrl: imageUrl,
+            audioUrl: audioUrl,
+            author: author,
+            authorIdentifier: authorIdentifier,
+            extraUrl: extraUrl,
+            extra: extra,
+            sourceMetadata: sourceMetadata,
+            position: position,
+            duration: duration,
+            canDelete: canDelete,
+            canEdit: canEdit,
+            importedAt: importedAt,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$MediaItemsTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $MediaItemsTable,
+    MediaItemRow,
+    $$MediaItemsTableFilterComposer,
+    $$MediaItemsTableOrderingComposer,
+    $$MediaItemsTableAnnotationComposer,
+    $$MediaItemsTableCreateCompanionBuilder,
+    $$MediaItemsTableUpdateCompanionBuilder,
+    (
+      MediaItemRow,
+      BaseReferences<_$HibikiDatabase, $MediaItemsTable, MediaItemRow>
+    ),
+    MediaItemRow,
+    PrefetchHooks Function()>;
+typedef $$AnkiMappingsTableCreateCompanionBuilder = AnkiMappingsCompanion
+    Function({
+  Value<int> id,
+  required String label,
+  required String model,
+  required String exportFieldKeysJson,
+  required String creatorFieldKeysJson,
+  required String creatorCollapsedFieldKeysJson,
+  required int order,
+  required String tagsJson,
+  required String enhancementsJson,
+  required String actionsJson,
+  Value<bool> exportMediaTags,
+  Value<bool> useBrTags,
+  Value<bool> prependDictionaryNames,
+});
+typedef $$AnkiMappingsTableUpdateCompanionBuilder = AnkiMappingsCompanion
+    Function({
+  Value<int> id,
+  Value<String> label,
+  Value<String> model,
+  Value<String> exportFieldKeysJson,
+  Value<String> creatorFieldKeysJson,
+  Value<String> creatorCollapsedFieldKeysJson,
+  Value<int> order,
+  Value<String> tagsJson,
+  Value<String> enhancementsJson,
+  Value<String> actionsJson,
+  Value<bool> exportMediaTags,
+  Value<bool> useBrTags,
+  Value<bool> prependDictionaryNames,
+});
+
+class $$AnkiMappingsTableFilterComposer
+    extends Composer<_$HibikiDatabase, $AnkiMappingsTable> {
+  $$AnkiMappingsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get label => $composableBuilder(
+      column: $table.label, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get model => $composableBuilder(
+      column: $table.model, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get exportFieldKeysJson => $composableBuilder(
+      column: $table.exportFieldKeysJson,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get creatorFieldKeysJson => $composableBuilder(
+      column: $table.creatorFieldKeysJson,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get creatorCollapsedFieldKeysJson => $composableBuilder(
+      column: $table.creatorCollapsedFieldKeysJson,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get order => $composableBuilder(
+      column: $table.order, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get tagsJson => $composableBuilder(
+      column: $table.tagsJson, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get enhancementsJson => $composableBuilder(
+      column: $table.enhancementsJson,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get actionsJson => $composableBuilder(
+      column: $table.actionsJson, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get exportMediaTags => $composableBuilder(
+      column: $table.exportMediaTags,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get useBrTags => $composableBuilder(
+      column: $table.useBrTags, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get prependDictionaryNames => $composableBuilder(
+      column: $table.prependDictionaryNames,
+      builder: (column) => ColumnFilters(column));
+}
+
+class $$AnkiMappingsTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $AnkiMappingsTable> {
+  $$AnkiMappingsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get label => $composableBuilder(
+      column: $table.label, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get model => $composableBuilder(
+      column: $table.model, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get exportFieldKeysJson => $composableBuilder(
+      column: $table.exportFieldKeysJson,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get creatorFieldKeysJson => $composableBuilder(
+      column: $table.creatorFieldKeysJson,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get creatorCollapsedFieldKeysJson =>
+      $composableBuilder(
+          column: $table.creatorCollapsedFieldKeysJson,
+          builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get order => $composableBuilder(
+      column: $table.order, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get tagsJson => $composableBuilder(
+      column: $table.tagsJson, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get enhancementsJson => $composableBuilder(
+      column: $table.enhancementsJson,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get actionsJson => $composableBuilder(
+      column: $table.actionsJson, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get exportMediaTags => $composableBuilder(
+      column: $table.exportMediaTags,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get useBrTags => $composableBuilder(
+      column: $table.useBrTags, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get prependDictionaryNames => $composableBuilder(
+      column: $table.prependDictionaryNames,
+      builder: (column) => ColumnOrderings(column));
+}
+
+class $$AnkiMappingsTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $AnkiMappingsTable> {
+  $$AnkiMappingsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get label =>
+      $composableBuilder(column: $table.label, builder: (column) => column);
+
+  GeneratedColumn<String> get model =>
+      $composableBuilder(column: $table.model, builder: (column) => column);
+
+  GeneratedColumn<String> get exportFieldKeysJson => $composableBuilder(
+      column: $table.exportFieldKeysJson, builder: (column) => column);
+
+  GeneratedColumn<String> get creatorFieldKeysJson => $composableBuilder(
+      column: $table.creatorFieldKeysJson, builder: (column) => column);
+
+  GeneratedColumn<String> get creatorCollapsedFieldKeysJson =>
+      $composableBuilder(
+          column: $table.creatorCollapsedFieldKeysJson,
+          builder: (column) => column);
+
+  GeneratedColumn<int> get order =>
+      $composableBuilder(column: $table.order, builder: (column) => column);
+
+  GeneratedColumn<String> get tagsJson =>
+      $composableBuilder(column: $table.tagsJson, builder: (column) => column);
+
+  GeneratedColumn<String> get enhancementsJson => $composableBuilder(
+      column: $table.enhancementsJson, builder: (column) => column);
+
+  GeneratedColumn<String> get actionsJson => $composableBuilder(
+      column: $table.actionsJson, builder: (column) => column);
+
+  GeneratedColumn<bool> get exportMediaTags => $composableBuilder(
+      column: $table.exportMediaTags, builder: (column) => column);
+
+  GeneratedColumn<bool> get useBrTags =>
+      $composableBuilder(column: $table.useBrTags, builder: (column) => column);
+
+  GeneratedColumn<bool> get prependDictionaryNames => $composableBuilder(
+      column: $table.prependDictionaryNames, builder: (column) => column);
+}
+
+class $$AnkiMappingsTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $AnkiMappingsTable,
+    AnkiMappingRow,
+    $$AnkiMappingsTableFilterComposer,
+    $$AnkiMappingsTableOrderingComposer,
+    $$AnkiMappingsTableAnnotationComposer,
+    $$AnkiMappingsTableCreateCompanionBuilder,
+    $$AnkiMappingsTableUpdateCompanionBuilder,
+    (
+      AnkiMappingRow,
+      BaseReferences<_$HibikiDatabase, $AnkiMappingsTable, AnkiMappingRow>
+    ),
+    AnkiMappingRow,
+    PrefetchHooks Function()> {
+  $$AnkiMappingsTableTableManager(_$HibikiDatabase db, $AnkiMappingsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$AnkiMappingsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$AnkiMappingsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$AnkiMappingsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<String> label = const Value.absent(),
+            Value<String> model = const Value.absent(),
+            Value<String> exportFieldKeysJson = const Value.absent(),
+            Value<String> creatorFieldKeysJson = const Value.absent(),
+            Value<String> creatorCollapsedFieldKeysJson = const Value.absent(),
+            Value<int> order = const Value.absent(),
+            Value<String> tagsJson = const Value.absent(),
+            Value<String> enhancementsJson = const Value.absent(),
+            Value<String> actionsJson = const Value.absent(),
+            Value<bool> exportMediaTags = const Value.absent(),
+            Value<bool> useBrTags = const Value.absent(),
+            Value<bool> prependDictionaryNames = const Value.absent(),
+          }) =>
+              AnkiMappingsCompanion(
+            id: id,
+            label: label,
+            model: model,
+            exportFieldKeysJson: exportFieldKeysJson,
+            creatorFieldKeysJson: creatorFieldKeysJson,
+            creatorCollapsedFieldKeysJson: creatorCollapsedFieldKeysJson,
+            order: order,
+            tagsJson: tagsJson,
+            enhancementsJson: enhancementsJson,
+            actionsJson: actionsJson,
+            exportMediaTags: exportMediaTags,
+            useBrTags: useBrTags,
+            prependDictionaryNames: prependDictionaryNames,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required String label,
+            required String model,
+            required String exportFieldKeysJson,
+            required String creatorFieldKeysJson,
+            required String creatorCollapsedFieldKeysJson,
+            required int order,
+            required String tagsJson,
+            required String enhancementsJson,
+            required String actionsJson,
+            Value<bool> exportMediaTags = const Value.absent(),
+            Value<bool> useBrTags = const Value.absent(),
+            Value<bool> prependDictionaryNames = const Value.absent(),
+          }) =>
+              AnkiMappingsCompanion.insert(
+            id: id,
+            label: label,
+            model: model,
+            exportFieldKeysJson: exportFieldKeysJson,
+            creatorFieldKeysJson: creatorFieldKeysJson,
+            creatorCollapsedFieldKeysJson: creatorCollapsedFieldKeysJson,
+            order: order,
+            tagsJson: tagsJson,
+            enhancementsJson: enhancementsJson,
+            actionsJson: actionsJson,
+            exportMediaTags: exportMediaTags,
+            useBrTags: useBrTags,
+            prependDictionaryNames: prependDictionaryNames,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$AnkiMappingsTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $AnkiMappingsTable,
+    AnkiMappingRow,
+    $$AnkiMappingsTableFilterComposer,
+    $$AnkiMappingsTableOrderingComposer,
+    $$AnkiMappingsTableAnnotationComposer,
+    $$AnkiMappingsTableCreateCompanionBuilder,
+    $$AnkiMappingsTableUpdateCompanionBuilder,
+    (
+      AnkiMappingRow,
+      BaseReferences<_$HibikiDatabase, $AnkiMappingsTable, AnkiMappingRow>
+    ),
+    AnkiMappingRow,
+    PrefetchHooks Function()>;
+typedef $$SearchHistoryItemsTableCreateCompanionBuilder
+    = SearchHistoryItemsCompanion Function({
+  Value<int> id,
+  required String historyKey,
+  required String searchTerm,
+  required String uniqueKey,
+});
+typedef $$SearchHistoryItemsTableUpdateCompanionBuilder
+    = SearchHistoryItemsCompanion Function({
+  Value<int> id,
+  Value<String> historyKey,
+  Value<String> searchTerm,
+  Value<String> uniqueKey,
+});
+
+class $$SearchHistoryItemsTableFilterComposer
+    extends Composer<_$HibikiDatabase, $SearchHistoryItemsTable> {
+  $$SearchHistoryItemsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get historyKey => $composableBuilder(
+      column: $table.historyKey, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get searchTerm => $composableBuilder(
+      column: $table.searchTerm, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get uniqueKey => $composableBuilder(
+      column: $table.uniqueKey, builder: (column) => ColumnFilters(column));
+}
+
+class $$SearchHistoryItemsTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $SearchHistoryItemsTable> {
+  $$SearchHistoryItemsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get historyKey => $composableBuilder(
+      column: $table.historyKey, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get searchTerm => $composableBuilder(
+      column: $table.searchTerm, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get uniqueKey => $composableBuilder(
+      column: $table.uniqueKey, builder: (column) => ColumnOrderings(column));
+}
+
+class $$SearchHistoryItemsTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $SearchHistoryItemsTable> {
+  $$SearchHistoryItemsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get historyKey => $composableBuilder(
+      column: $table.historyKey, builder: (column) => column);
+
+  GeneratedColumn<String> get searchTerm => $composableBuilder(
+      column: $table.searchTerm, builder: (column) => column);
+
+  GeneratedColumn<String> get uniqueKey =>
+      $composableBuilder(column: $table.uniqueKey, builder: (column) => column);
+}
+
+class $$SearchHistoryItemsTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $SearchHistoryItemsTable,
+    SearchHistoryItemRow,
+    $$SearchHistoryItemsTableFilterComposer,
+    $$SearchHistoryItemsTableOrderingComposer,
+    $$SearchHistoryItemsTableAnnotationComposer,
+    $$SearchHistoryItemsTableCreateCompanionBuilder,
+    $$SearchHistoryItemsTableUpdateCompanionBuilder,
+    (
+      SearchHistoryItemRow,
+      BaseReferences<_$HibikiDatabase, $SearchHistoryItemsTable,
+          SearchHistoryItemRow>
+    ),
+    SearchHistoryItemRow,
+    PrefetchHooks Function()> {
+  $$SearchHistoryItemsTableTableManager(
+      _$HibikiDatabase db, $SearchHistoryItemsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SearchHistoryItemsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SearchHistoryItemsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SearchHistoryItemsTableAnnotationComposer(
+                  $db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<String> historyKey = const Value.absent(),
+            Value<String> searchTerm = const Value.absent(),
+            Value<String> uniqueKey = const Value.absent(),
+          }) =>
+              SearchHistoryItemsCompanion(
+            id: id,
+            historyKey: historyKey,
+            searchTerm: searchTerm,
+            uniqueKey: uniqueKey,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required String historyKey,
+            required String searchTerm,
+            required String uniqueKey,
+          }) =>
+              SearchHistoryItemsCompanion.insert(
+            id: id,
+            historyKey: historyKey,
+            searchTerm: searchTerm,
+            uniqueKey: uniqueKey,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$SearchHistoryItemsTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $SearchHistoryItemsTable,
+    SearchHistoryItemRow,
+    $$SearchHistoryItemsTableFilterComposer,
+    $$SearchHistoryItemsTableOrderingComposer,
+    $$SearchHistoryItemsTableAnnotationComposer,
+    $$SearchHistoryItemsTableCreateCompanionBuilder,
+    $$SearchHistoryItemsTableUpdateCompanionBuilder,
+    (
+      SearchHistoryItemRow,
+      BaseReferences<_$HibikiDatabase, $SearchHistoryItemsTable,
+          SearchHistoryItemRow>
+    ),
+    SearchHistoryItemRow,
+    PrefetchHooks Function()>;
+typedef $$AudiobooksTableCreateCompanionBuilder = AudiobooksCompanion Function({
+  Value<int> id,
+  required String bookUid,
+  Value<String?> audioRoot,
+  Value<String?> audioPathsJson,
+  required String alignmentFormat,
+  required String alignmentPath,
+  Value<String?> healthKindRaw,
+  Value<int?> matchRatePct,
+  Value<DateTime?> healthMeasuredAt,
+  Value<String?> healthReason,
+  Value<bool?> followAudio,
+});
+typedef $$AudiobooksTableUpdateCompanionBuilder = AudiobooksCompanion Function({
+  Value<int> id,
+  Value<String> bookUid,
+  Value<String?> audioRoot,
+  Value<String?> audioPathsJson,
+  Value<String> alignmentFormat,
+  Value<String> alignmentPath,
+  Value<String?> healthKindRaw,
+  Value<int?> matchRatePct,
+  Value<DateTime?> healthMeasuredAt,
+  Value<String?> healthReason,
+  Value<bool?> followAudio,
+});
+
+class $$AudiobooksTableFilterComposer
+    extends Composer<_$HibikiDatabase, $AudiobooksTable> {
+  $$AudiobooksTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get bookUid => $composableBuilder(
+      column: $table.bookUid, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get audioRoot => $composableBuilder(
+      column: $table.audioRoot, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get audioPathsJson => $composableBuilder(
+      column: $table.audioPathsJson,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get alignmentFormat => $composableBuilder(
+      column: $table.alignmentFormat,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get alignmentPath => $composableBuilder(
+      column: $table.alignmentPath, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get healthKindRaw => $composableBuilder(
+      column: $table.healthKindRaw, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get matchRatePct => $composableBuilder(
+      column: $table.matchRatePct, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get healthMeasuredAt => $composableBuilder(
+      column: $table.healthMeasuredAt,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get healthReason => $composableBuilder(
+      column: $table.healthReason, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get followAudio => $composableBuilder(
+      column: $table.followAudio, builder: (column) => ColumnFilters(column));
+}
+
+class $$AudiobooksTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $AudiobooksTable> {
+  $$AudiobooksTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get bookUid => $composableBuilder(
+      column: $table.bookUid, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get audioRoot => $composableBuilder(
+      column: $table.audioRoot, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get audioPathsJson => $composableBuilder(
+      column: $table.audioPathsJson,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get alignmentFormat => $composableBuilder(
+      column: $table.alignmentFormat,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get alignmentPath => $composableBuilder(
+      column: $table.alignmentPath,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get healthKindRaw => $composableBuilder(
+      column: $table.healthKindRaw,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get matchRatePct => $composableBuilder(
+      column: $table.matchRatePct,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get healthMeasuredAt => $composableBuilder(
+      column: $table.healthMeasuredAt,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get healthReason => $composableBuilder(
+      column: $table.healthReason,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get followAudio => $composableBuilder(
+      column: $table.followAudio, builder: (column) => ColumnOrderings(column));
+}
+
+class $$AudiobooksTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $AudiobooksTable> {
+  $$AudiobooksTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get bookUid =>
+      $composableBuilder(column: $table.bookUid, builder: (column) => column);
+
+  GeneratedColumn<String> get audioRoot =>
+      $composableBuilder(column: $table.audioRoot, builder: (column) => column);
+
+  GeneratedColumn<String> get audioPathsJson => $composableBuilder(
+      column: $table.audioPathsJson, builder: (column) => column);
+
+  GeneratedColumn<String> get alignmentFormat => $composableBuilder(
+      column: $table.alignmentFormat, builder: (column) => column);
+
+  GeneratedColumn<String> get alignmentPath => $composableBuilder(
+      column: $table.alignmentPath, builder: (column) => column);
+
+  GeneratedColumn<String> get healthKindRaw => $composableBuilder(
+      column: $table.healthKindRaw, builder: (column) => column);
+
+  GeneratedColumn<int> get matchRatePct => $composableBuilder(
+      column: $table.matchRatePct, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get healthMeasuredAt => $composableBuilder(
+      column: $table.healthMeasuredAt, builder: (column) => column);
+
+  GeneratedColumn<String> get healthReason => $composableBuilder(
+      column: $table.healthReason, builder: (column) => column);
+
+  GeneratedColumn<bool> get followAudio => $composableBuilder(
+      column: $table.followAudio, builder: (column) => column);
+}
+
+class $$AudiobooksTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $AudiobooksTable,
+    AudiobookRow,
+    $$AudiobooksTableFilterComposer,
+    $$AudiobooksTableOrderingComposer,
+    $$AudiobooksTableAnnotationComposer,
+    $$AudiobooksTableCreateCompanionBuilder,
+    $$AudiobooksTableUpdateCompanionBuilder,
+    (
+      AudiobookRow,
+      BaseReferences<_$HibikiDatabase, $AudiobooksTable, AudiobookRow>
+    ),
+    AudiobookRow,
+    PrefetchHooks Function()> {
+  $$AudiobooksTableTableManager(_$HibikiDatabase db, $AudiobooksTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$AudiobooksTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$AudiobooksTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$AudiobooksTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<String> bookUid = const Value.absent(),
+            Value<String?> audioRoot = const Value.absent(),
+            Value<String?> audioPathsJson = const Value.absent(),
+            Value<String> alignmentFormat = const Value.absent(),
+            Value<String> alignmentPath = const Value.absent(),
+            Value<String?> healthKindRaw = const Value.absent(),
+            Value<int?> matchRatePct = const Value.absent(),
+            Value<DateTime?> healthMeasuredAt = const Value.absent(),
+            Value<String?> healthReason = const Value.absent(),
+            Value<bool?> followAudio = const Value.absent(),
+          }) =>
+              AudiobooksCompanion(
+            id: id,
+            bookUid: bookUid,
+            audioRoot: audioRoot,
+            audioPathsJson: audioPathsJson,
+            alignmentFormat: alignmentFormat,
+            alignmentPath: alignmentPath,
+            healthKindRaw: healthKindRaw,
+            matchRatePct: matchRatePct,
+            healthMeasuredAt: healthMeasuredAt,
+            healthReason: healthReason,
+            followAudio: followAudio,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required String bookUid,
+            Value<String?> audioRoot = const Value.absent(),
+            Value<String?> audioPathsJson = const Value.absent(),
+            required String alignmentFormat,
+            required String alignmentPath,
+            Value<String?> healthKindRaw = const Value.absent(),
+            Value<int?> matchRatePct = const Value.absent(),
+            Value<DateTime?> healthMeasuredAt = const Value.absent(),
+            Value<String?> healthReason = const Value.absent(),
+            Value<bool?> followAudio = const Value.absent(),
+          }) =>
+              AudiobooksCompanion.insert(
+            id: id,
+            bookUid: bookUid,
+            audioRoot: audioRoot,
+            audioPathsJson: audioPathsJson,
+            alignmentFormat: alignmentFormat,
+            alignmentPath: alignmentPath,
+            healthKindRaw: healthKindRaw,
+            matchRatePct: matchRatePct,
+            healthMeasuredAt: healthMeasuredAt,
+            healthReason: healthReason,
+            followAudio: followAudio,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$AudiobooksTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $AudiobooksTable,
+    AudiobookRow,
+    $$AudiobooksTableFilterComposer,
+    $$AudiobooksTableOrderingComposer,
+    $$AudiobooksTableAnnotationComposer,
+    $$AudiobooksTableCreateCompanionBuilder,
+    $$AudiobooksTableUpdateCompanionBuilder,
+    (
+      AudiobookRow,
+      BaseReferences<_$HibikiDatabase, $AudiobooksTable, AudiobookRow>
+    ),
+    AudiobookRow,
+    PrefetchHooks Function()>;
+typedef $$SrtBooksTableCreateCompanionBuilder = SrtBooksCompanion Function({
+  Value<int> id,
+  required String uid,
+  required String title,
+  Value<String?> author,
+  Value<String?> audioRoot,
+  Value<String?> audioPathsJson,
+  required String srtPath,
+  Value<String?> coverPath,
+  required int importedAt,
+  Value<int> ttuBookId,
+});
+typedef $$SrtBooksTableUpdateCompanionBuilder = SrtBooksCompanion Function({
+  Value<int> id,
+  Value<String> uid,
+  Value<String> title,
+  Value<String?> author,
+  Value<String?> audioRoot,
+  Value<String?> audioPathsJson,
+  Value<String> srtPath,
+  Value<String?> coverPath,
+  Value<int> importedAt,
+  Value<int> ttuBookId,
+});
+
+class $$SrtBooksTableFilterComposer
+    extends Composer<_$HibikiDatabase, $SrtBooksTable> {
+  $$SrtBooksTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get uid => $composableBuilder(
+      column: $table.uid, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get title => $composableBuilder(
+      column: $table.title, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get author => $composableBuilder(
+      column: $table.author, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get audioRoot => $composableBuilder(
+      column: $table.audioRoot, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get audioPathsJson => $composableBuilder(
+      column: $table.audioPathsJson,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get srtPath => $composableBuilder(
+      column: $table.srtPath, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get coverPath => $composableBuilder(
+      column: $table.coverPath, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get importedAt => $composableBuilder(
+      column: $table.importedAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get ttuBookId => $composableBuilder(
+      column: $table.ttuBookId, builder: (column) => ColumnFilters(column));
+}
+
+class $$SrtBooksTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $SrtBooksTable> {
+  $$SrtBooksTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get uid => $composableBuilder(
+      column: $table.uid, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get title => $composableBuilder(
+      column: $table.title, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get author => $composableBuilder(
+      column: $table.author, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get audioRoot => $composableBuilder(
+      column: $table.audioRoot, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get audioPathsJson => $composableBuilder(
+      column: $table.audioPathsJson,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get srtPath => $composableBuilder(
+      column: $table.srtPath, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get coverPath => $composableBuilder(
+      column: $table.coverPath, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get importedAt => $composableBuilder(
+      column: $table.importedAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get ttuBookId => $composableBuilder(
+      column: $table.ttuBookId, builder: (column) => ColumnOrderings(column));
+}
+
+class $$SrtBooksTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $SrtBooksTable> {
+  $$SrtBooksTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get uid =>
+      $composableBuilder(column: $table.uid, builder: (column) => column);
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<String> get author =>
+      $composableBuilder(column: $table.author, builder: (column) => column);
+
+  GeneratedColumn<String> get audioRoot =>
+      $composableBuilder(column: $table.audioRoot, builder: (column) => column);
+
+  GeneratedColumn<String> get audioPathsJson => $composableBuilder(
+      column: $table.audioPathsJson, builder: (column) => column);
+
+  GeneratedColumn<String> get srtPath =>
+      $composableBuilder(column: $table.srtPath, builder: (column) => column);
+
+  GeneratedColumn<String> get coverPath =>
+      $composableBuilder(column: $table.coverPath, builder: (column) => column);
+
+  GeneratedColumn<int> get importedAt => $composableBuilder(
+      column: $table.importedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get ttuBookId =>
+      $composableBuilder(column: $table.ttuBookId, builder: (column) => column);
+}
+
+class $$SrtBooksTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $SrtBooksTable,
+    SrtBookRow,
+    $$SrtBooksTableFilterComposer,
+    $$SrtBooksTableOrderingComposer,
+    $$SrtBooksTableAnnotationComposer,
+    $$SrtBooksTableCreateCompanionBuilder,
+    $$SrtBooksTableUpdateCompanionBuilder,
+    (SrtBookRow, BaseReferences<_$HibikiDatabase, $SrtBooksTable, SrtBookRow>),
+    SrtBookRow,
+    PrefetchHooks Function()> {
+  $$SrtBooksTableTableManager(_$HibikiDatabase db, $SrtBooksTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SrtBooksTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SrtBooksTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SrtBooksTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<String> uid = const Value.absent(),
+            Value<String> title = const Value.absent(),
+            Value<String?> author = const Value.absent(),
+            Value<String?> audioRoot = const Value.absent(),
+            Value<String?> audioPathsJson = const Value.absent(),
+            Value<String> srtPath = const Value.absent(),
+            Value<String?> coverPath = const Value.absent(),
+            Value<int> importedAt = const Value.absent(),
+            Value<int> ttuBookId = const Value.absent(),
+          }) =>
+              SrtBooksCompanion(
+            id: id,
+            uid: uid,
+            title: title,
+            author: author,
+            audioRoot: audioRoot,
+            audioPathsJson: audioPathsJson,
+            srtPath: srtPath,
+            coverPath: coverPath,
+            importedAt: importedAt,
+            ttuBookId: ttuBookId,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required String uid,
+            required String title,
+            Value<String?> author = const Value.absent(),
+            Value<String?> audioRoot = const Value.absent(),
+            Value<String?> audioPathsJson = const Value.absent(),
+            required String srtPath,
+            Value<String?> coverPath = const Value.absent(),
+            required int importedAt,
+            Value<int> ttuBookId = const Value.absent(),
+          }) =>
+              SrtBooksCompanion.insert(
+            id: id,
+            uid: uid,
+            title: title,
+            author: author,
+            audioRoot: audioRoot,
+            audioPathsJson: audioPathsJson,
+            srtPath: srtPath,
+            coverPath: coverPath,
+            importedAt: importedAt,
+            ttuBookId: ttuBookId,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$SrtBooksTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $SrtBooksTable,
+    SrtBookRow,
+    $$SrtBooksTableFilterComposer,
+    $$SrtBooksTableOrderingComposer,
+    $$SrtBooksTableAnnotationComposer,
+    $$SrtBooksTableCreateCompanionBuilder,
+    $$SrtBooksTableUpdateCompanionBuilder,
+    (SrtBookRow, BaseReferences<_$HibikiDatabase, $SrtBooksTable, SrtBookRow>),
+    SrtBookRow,
+    PrefetchHooks Function()>;
+typedef $$ReaderPositionsTableCreateCompanionBuilder = ReaderPositionsCompanion
+    Function({
+  Value<int> id,
+  required int ttuBookId,
+  required int sectionIndex,
+  required int normCharOffset,
+  required int updatedAt,
+});
+typedef $$ReaderPositionsTableUpdateCompanionBuilder = ReaderPositionsCompanion
+    Function({
+  Value<int> id,
+  Value<int> ttuBookId,
+  Value<int> sectionIndex,
+  Value<int> normCharOffset,
+  Value<int> updatedAt,
+});
+
+class $$ReaderPositionsTableFilterComposer
+    extends Composer<_$HibikiDatabase, $ReaderPositionsTable> {
+  $$ReaderPositionsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get ttuBookId => $composableBuilder(
+      column: $table.ttuBookId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get sectionIndex => $composableBuilder(
+      column: $table.sectionIndex, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get normCharOffset => $composableBuilder(
+      column: $table.normCharOffset,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$ReaderPositionsTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $ReaderPositionsTable> {
+  $$ReaderPositionsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get ttuBookId => $composableBuilder(
+      column: $table.ttuBookId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get sectionIndex => $composableBuilder(
+      column: $table.sectionIndex,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get normCharOffset => $composableBuilder(
+      column: $table.normCharOffset,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$ReaderPositionsTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $ReaderPositionsTable> {
+  $$ReaderPositionsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<int> get ttuBookId =>
+      $composableBuilder(column: $table.ttuBookId, builder: (column) => column);
+
+  GeneratedColumn<int> get sectionIndex => $composableBuilder(
+      column: $table.sectionIndex, builder: (column) => column);
+
+  GeneratedColumn<int> get normCharOffset => $composableBuilder(
+      column: $table.normCharOffset, builder: (column) => column);
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$ReaderPositionsTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $ReaderPositionsTable,
+    ReaderPositionRow,
+    $$ReaderPositionsTableFilterComposer,
+    $$ReaderPositionsTableOrderingComposer,
+    $$ReaderPositionsTableAnnotationComposer,
+    $$ReaderPositionsTableCreateCompanionBuilder,
+    $$ReaderPositionsTableUpdateCompanionBuilder,
+    (
+      ReaderPositionRow,
+      BaseReferences<_$HibikiDatabase, $ReaderPositionsTable, ReaderPositionRow>
+    ),
+    ReaderPositionRow,
+    PrefetchHooks Function()> {
+  $$ReaderPositionsTableTableManager(
+      _$HibikiDatabase db, $ReaderPositionsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ReaderPositionsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ReaderPositionsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ReaderPositionsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<int> ttuBookId = const Value.absent(),
+            Value<int> sectionIndex = const Value.absent(),
+            Value<int> normCharOffset = const Value.absent(),
+            Value<int> updatedAt = const Value.absent(),
+          }) =>
+              ReaderPositionsCompanion(
+            id: id,
+            ttuBookId: ttuBookId,
+            sectionIndex: sectionIndex,
+            normCharOffset: normCharOffset,
+            updatedAt: updatedAt,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required int ttuBookId,
+            required int sectionIndex,
+            required int normCharOffset,
+            required int updatedAt,
+          }) =>
+              ReaderPositionsCompanion.insert(
+            id: id,
+            ttuBookId: ttuBookId,
+            sectionIndex: sectionIndex,
+            normCharOffset: normCharOffset,
+            updatedAt: updatedAt,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$ReaderPositionsTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $ReaderPositionsTable,
+    ReaderPositionRow,
+    $$ReaderPositionsTableFilterComposer,
+    $$ReaderPositionsTableOrderingComposer,
+    $$ReaderPositionsTableAnnotationComposer,
+    $$ReaderPositionsTableCreateCompanionBuilder,
+    $$ReaderPositionsTableUpdateCompanionBuilder,
+    (
+      ReaderPositionRow,
+      BaseReferences<_$HibikiDatabase, $ReaderPositionsTable, ReaderPositionRow>
+    ),
+    ReaderPositionRow,
+    PrefetchHooks Function()>;
+typedef $$ReadingStatisticsTableCreateCompanionBuilder
+    = ReadingStatisticsCompanion Function({
+  Value<int> id,
+  required String title,
+  required String dateKey,
+  required int charactersRead,
+  required int readingTimeMs,
+  required int lastStatisticModified,
+});
+typedef $$ReadingStatisticsTableUpdateCompanionBuilder
+    = ReadingStatisticsCompanion Function({
+  Value<int> id,
+  Value<String> title,
+  Value<String> dateKey,
+  Value<int> charactersRead,
+  Value<int> readingTimeMs,
+  Value<int> lastStatisticModified,
+});
+
+class $$ReadingStatisticsTableFilterComposer
+    extends Composer<_$HibikiDatabase, $ReadingStatisticsTable> {
+  $$ReadingStatisticsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get title => $composableBuilder(
+      column: $table.title, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get dateKey => $composableBuilder(
+      column: $table.dateKey, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get charactersRead => $composableBuilder(
+      column: $table.charactersRead,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get readingTimeMs => $composableBuilder(
+      column: $table.readingTimeMs, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get lastStatisticModified => $composableBuilder(
+      column: $table.lastStatisticModified,
+      builder: (column) => ColumnFilters(column));
+}
+
+class $$ReadingStatisticsTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $ReadingStatisticsTable> {
+  $$ReadingStatisticsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get title => $composableBuilder(
+      column: $table.title, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get dateKey => $composableBuilder(
+      column: $table.dateKey, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get charactersRead => $composableBuilder(
+      column: $table.charactersRead,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get readingTimeMs => $composableBuilder(
+      column: $table.readingTimeMs,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get lastStatisticModified => $composableBuilder(
+      column: $table.lastStatisticModified,
+      builder: (column) => ColumnOrderings(column));
+}
+
+class $$ReadingStatisticsTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $ReadingStatisticsTable> {
+  $$ReadingStatisticsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<String> get dateKey =>
+      $composableBuilder(column: $table.dateKey, builder: (column) => column);
+
+  GeneratedColumn<int> get charactersRead => $composableBuilder(
+      column: $table.charactersRead, builder: (column) => column);
+
+  GeneratedColumn<int> get readingTimeMs => $composableBuilder(
+      column: $table.readingTimeMs, builder: (column) => column);
+
+  GeneratedColumn<int> get lastStatisticModified => $composableBuilder(
+      column: $table.lastStatisticModified, builder: (column) => column);
+}
+
+class $$ReadingStatisticsTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $ReadingStatisticsTable,
+    ReadingStatisticRow,
+    $$ReadingStatisticsTableFilterComposer,
+    $$ReadingStatisticsTableOrderingComposer,
+    $$ReadingStatisticsTableAnnotationComposer,
+    $$ReadingStatisticsTableCreateCompanionBuilder,
+    $$ReadingStatisticsTableUpdateCompanionBuilder,
+    (
+      ReadingStatisticRow,
+      BaseReferences<_$HibikiDatabase, $ReadingStatisticsTable,
+          ReadingStatisticRow>
+    ),
+    ReadingStatisticRow,
+    PrefetchHooks Function()> {
+  $$ReadingStatisticsTableTableManager(
+      _$HibikiDatabase db, $ReadingStatisticsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ReadingStatisticsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ReadingStatisticsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ReadingStatisticsTableAnnotationComposer(
+                  $db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<String> title = const Value.absent(),
+            Value<String> dateKey = const Value.absent(),
+            Value<int> charactersRead = const Value.absent(),
+            Value<int> readingTimeMs = const Value.absent(),
+            Value<int> lastStatisticModified = const Value.absent(),
+          }) =>
+              ReadingStatisticsCompanion(
+            id: id,
+            title: title,
+            dateKey: dateKey,
+            charactersRead: charactersRead,
+            readingTimeMs: readingTimeMs,
+            lastStatisticModified: lastStatisticModified,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required String title,
+            required String dateKey,
+            required int charactersRead,
+            required int readingTimeMs,
+            required int lastStatisticModified,
+          }) =>
+              ReadingStatisticsCompanion.insert(
+            id: id,
+            title: title,
+            dateKey: dateKey,
+            charactersRead: charactersRead,
+            readingTimeMs: readingTimeMs,
+            lastStatisticModified: lastStatisticModified,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$ReadingStatisticsTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $ReadingStatisticsTable,
+    ReadingStatisticRow,
+    $$ReadingStatisticsTableFilterComposer,
+    $$ReadingStatisticsTableOrderingComposer,
+    $$ReadingStatisticsTableAnnotationComposer,
+    $$ReadingStatisticsTableCreateCompanionBuilder,
+    $$ReadingStatisticsTableUpdateCompanionBuilder,
+    (
+      ReadingStatisticRow,
+      BaseReferences<_$HibikiDatabase, $ReadingStatisticsTable,
+          ReadingStatisticRow>
+    ),
+    ReadingStatisticRow,
+    PrefetchHooks Function()>;
+typedef $$PreferencesTableCreateCompanionBuilder = PreferencesCompanion
+    Function({
+  required String key,
+  required String value,
+  Value<int> rowid,
+});
+typedef $$PreferencesTableUpdateCompanionBuilder = PreferencesCompanion
+    Function({
+  Value<String> key,
+  Value<String> value,
+  Value<int> rowid,
+});
+
+class $$PreferencesTableFilterComposer
+    extends Composer<_$HibikiDatabase, $PreferencesTable> {
+  $$PreferencesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get key => $composableBuilder(
+      column: $table.key, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get value => $composableBuilder(
+      column: $table.value, builder: (column) => ColumnFilters(column));
+}
+
+class $$PreferencesTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $PreferencesTable> {
+  $$PreferencesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get key => $composableBuilder(
+      column: $table.key, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get value => $composableBuilder(
+      column: $table.value, builder: (column) => ColumnOrderings(column));
+}
+
+class $$PreferencesTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $PreferencesTable> {
+  $$PreferencesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get key =>
+      $composableBuilder(column: $table.key, builder: (column) => column);
+
+  GeneratedColumn<String> get value =>
+      $composableBuilder(column: $table.value, builder: (column) => column);
+}
+
+class $$PreferencesTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $PreferencesTable,
+    PreferenceRow,
+    $$PreferencesTableFilterComposer,
+    $$PreferencesTableOrderingComposer,
+    $$PreferencesTableAnnotationComposer,
+    $$PreferencesTableCreateCompanionBuilder,
+    $$PreferencesTableUpdateCompanionBuilder,
+    (
+      PreferenceRow,
+      BaseReferences<_$HibikiDatabase, $PreferencesTable, PreferenceRow>
+    ),
+    PreferenceRow,
+    PrefetchHooks Function()> {
+  $$PreferencesTableTableManager(_$HibikiDatabase db, $PreferencesTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$PreferencesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$PreferencesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$PreferencesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> key = const Value.absent(),
+            Value<String> value = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              PreferencesCompanion(
+            key: key,
+            value: value,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String key,
+            required String value,
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              PreferencesCompanion.insert(
+            key: key,
+            value: value,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$PreferencesTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $PreferencesTable,
+    PreferenceRow,
+    $$PreferencesTableFilterComposer,
+    $$PreferencesTableOrderingComposer,
+    $$PreferencesTableAnnotationComposer,
+    $$PreferencesTableCreateCompanionBuilder,
+    $$PreferencesTableUpdateCompanionBuilder,
+    (
+      PreferenceRow,
+      BaseReferences<_$HibikiDatabase, $PreferencesTable, PreferenceRow>
+    ),
+    PreferenceRow,
+    PrefetchHooks Function()>;
+typedef $$DictionaryMetadataTableCreateCompanionBuilder
+    = DictionaryMetadataCompanion Function({
+  required String name,
+  required String formatKey,
+  required int order,
+  Value<String> metadataJson,
+  Value<String> hiddenLanguagesJson,
+  Value<String> collapsedLanguagesJson,
+  Value<int> rowid,
+});
+typedef $$DictionaryMetadataTableUpdateCompanionBuilder
+    = DictionaryMetadataCompanion Function({
+  Value<String> name,
+  Value<String> formatKey,
+  Value<int> order,
+  Value<String> metadataJson,
+  Value<String> hiddenLanguagesJson,
+  Value<String> collapsedLanguagesJson,
+  Value<int> rowid,
+});
+
+class $$DictionaryMetadataTableFilterComposer
+    extends Composer<_$HibikiDatabase, $DictionaryMetadataTable> {
+  $$DictionaryMetadataTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get formatKey => $composableBuilder(
+      column: $table.formatKey, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get order => $composableBuilder(
+      column: $table.order, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get metadataJson => $composableBuilder(
+      column: $table.metadataJson, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get hiddenLanguagesJson => $composableBuilder(
+      column: $table.hiddenLanguagesJson,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get collapsedLanguagesJson => $composableBuilder(
+      column: $table.collapsedLanguagesJson,
+      builder: (column) => ColumnFilters(column));
+}
+
+class $$DictionaryMetadataTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $DictionaryMetadataTable> {
+  $$DictionaryMetadataTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get formatKey => $composableBuilder(
+      column: $table.formatKey, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get order => $composableBuilder(
+      column: $table.order, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get metadataJson => $composableBuilder(
+      column: $table.metadataJson,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get hiddenLanguagesJson => $composableBuilder(
+      column: $table.hiddenLanguagesJson,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get collapsedLanguagesJson => $composableBuilder(
+      column: $table.collapsedLanguagesJson,
+      builder: (column) => ColumnOrderings(column));
+}
+
+class $$DictionaryMetadataTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $DictionaryMetadataTable> {
+  $$DictionaryMetadataTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<String> get formatKey =>
+      $composableBuilder(column: $table.formatKey, builder: (column) => column);
+
+  GeneratedColumn<int> get order =>
+      $composableBuilder(column: $table.order, builder: (column) => column);
+
+  GeneratedColumn<String> get metadataJson => $composableBuilder(
+      column: $table.metadataJson, builder: (column) => column);
+
+  GeneratedColumn<String> get hiddenLanguagesJson => $composableBuilder(
+      column: $table.hiddenLanguagesJson, builder: (column) => column);
+
+  GeneratedColumn<String> get collapsedLanguagesJson => $composableBuilder(
+      column: $table.collapsedLanguagesJson, builder: (column) => column);
+}
+
+class $$DictionaryMetadataTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $DictionaryMetadataTable,
+    DictionaryMetaRow,
+    $$DictionaryMetadataTableFilterComposer,
+    $$DictionaryMetadataTableOrderingComposer,
+    $$DictionaryMetadataTableAnnotationComposer,
+    $$DictionaryMetadataTableCreateCompanionBuilder,
+    $$DictionaryMetadataTableUpdateCompanionBuilder,
+    (
+      DictionaryMetaRow,
+      BaseReferences<_$HibikiDatabase, $DictionaryMetadataTable,
+          DictionaryMetaRow>
+    ),
+    DictionaryMetaRow,
+    PrefetchHooks Function()> {
+  $$DictionaryMetadataTableTableManager(
+      _$HibikiDatabase db, $DictionaryMetadataTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$DictionaryMetadataTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$DictionaryMetadataTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$DictionaryMetadataTableAnnotationComposer(
+                  $db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> name = const Value.absent(),
+            Value<String> formatKey = const Value.absent(),
+            Value<int> order = const Value.absent(),
+            Value<String> metadataJson = const Value.absent(),
+            Value<String> hiddenLanguagesJson = const Value.absent(),
+            Value<String> collapsedLanguagesJson = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              DictionaryMetadataCompanion(
+            name: name,
+            formatKey: formatKey,
+            order: order,
+            metadataJson: metadataJson,
+            hiddenLanguagesJson: hiddenLanguagesJson,
+            collapsedLanguagesJson: collapsedLanguagesJson,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String name,
+            required String formatKey,
+            required int order,
+            Value<String> metadataJson = const Value.absent(),
+            Value<String> hiddenLanguagesJson = const Value.absent(),
+            Value<String> collapsedLanguagesJson = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              DictionaryMetadataCompanion.insert(
+            name: name,
+            formatKey: formatKey,
+            order: order,
+            metadataJson: metadataJson,
+            hiddenLanguagesJson: hiddenLanguagesJson,
+            collapsedLanguagesJson: collapsedLanguagesJson,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$DictionaryMetadataTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $DictionaryMetadataTable,
+    DictionaryMetaRow,
+    $$DictionaryMetadataTableFilterComposer,
+    $$DictionaryMetadataTableOrderingComposer,
+    $$DictionaryMetadataTableAnnotationComposer,
+    $$DictionaryMetadataTableCreateCompanionBuilder,
+    $$DictionaryMetadataTableUpdateCompanionBuilder,
+    (
+      DictionaryMetaRow,
+      BaseReferences<_$HibikiDatabase, $DictionaryMetadataTable,
+          DictionaryMetaRow>
+    ),
+    DictionaryMetaRow,
+    PrefetchHooks Function()>;
+typedef $$DictionaryHistoryTableCreateCompanionBuilder
+    = DictionaryHistoryCompanion Function({
+  Value<int> id,
+  required int position,
+  required String resultJson,
+});
+typedef $$DictionaryHistoryTableUpdateCompanionBuilder
+    = DictionaryHistoryCompanion Function({
+  Value<int> id,
+  Value<int> position,
+  Value<String> resultJson,
+});
+
+class $$DictionaryHistoryTableFilterComposer
+    extends Composer<_$HibikiDatabase, $DictionaryHistoryTable> {
+  $$DictionaryHistoryTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get position => $composableBuilder(
+      column: $table.position, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get resultJson => $composableBuilder(
+      column: $table.resultJson, builder: (column) => ColumnFilters(column));
+}
+
+class $$DictionaryHistoryTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $DictionaryHistoryTable> {
+  $$DictionaryHistoryTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get position => $composableBuilder(
+      column: $table.position, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get resultJson => $composableBuilder(
+      column: $table.resultJson, builder: (column) => ColumnOrderings(column));
+}
+
+class $$DictionaryHistoryTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $DictionaryHistoryTable> {
+  $$DictionaryHistoryTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<int> get position =>
+      $composableBuilder(column: $table.position, builder: (column) => column);
+
+  GeneratedColumn<String> get resultJson => $composableBuilder(
+      column: $table.resultJson, builder: (column) => column);
+}
+
+class $$DictionaryHistoryTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $DictionaryHistoryTable,
+    DictionaryHistoryRow,
+    $$DictionaryHistoryTableFilterComposer,
+    $$DictionaryHistoryTableOrderingComposer,
+    $$DictionaryHistoryTableAnnotationComposer,
+    $$DictionaryHistoryTableCreateCompanionBuilder,
+    $$DictionaryHistoryTableUpdateCompanionBuilder,
+    (
+      DictionaryHistoryRow,
+      BaseReferences<_$HibikiDatabase, $DictionaryHistoryTable,
+          DictionaryHistoryRow>
+    ),
+    DictionaryHistoryRow,
+    PrefetchHooks Function()> {
+  $$DictionaryHistoryTableTableManager(
+      _$HibikiDatabase db, $DictionaryHistoryTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$DictionaryHistoryTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$DictionaryHistoryTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$DictionaryHistoryTableAnnotationComposer(
+                  $db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<int> position = const Value.absent(),
+            Value<String> resultJson = const Value.absent(),
+          }) =>
+              DictionaryHistoryCompanion(
+            id: id,
+            position: position,
+            resultJson: resultJson,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required int position,
+            required String resultJson,
+          }) =>
+              DictionaryHistoryCompanion.insert(
+            id: id,
+            position: position,
+            resultJson: resultJson,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$DictionaryHistoryTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $DictionaryHistoryTable,
+    DictionaryHistoryRow,
+    $$DictionaryHistoryTableFilterComposer,
+    $$DictionaryHistoryTableOrderingComposer,
+    $$DictionaryHistoryTableAnnotationComposer,
+    $$DictionaryHistoryTableCreateCompanionBuilder,
+    $$DictionaryHistoryTableUpdateCompanionBuilder,
+    (
+      DictionaryHistoryRow,
+      BaseReferences<_$HibikiDatabase, $DictionaryHistoryTable,
+          DictionaryHistoryRow>
+    ),
+    DictionaryHistoryRow,
+    PrefetchHooks Function()>;
+
+class $HibikiDatabaseManager {
+  final _$HibikiDatabase _db;
+  $HibikiDatabaseManager(this._db);
+  $$MediaItemsTableTableManager get mediaItems =>
+      $$MediaItemsTableTableManager(_db, _db.mediaItems);
+  $$AnkiMappingsTableTableManager get ankiMappings =>
+      $$AnkiMappingsTableTableManager(_db, _db.ankiMappings);
+  $$SearchHistoryItemsTableTableManager get searchHistoryItems =>
+      $$SearchHistoryItemsTableTableManager(_db, _db.searchHistoryItems);
+  $$AudiobooksTableTableManager get audiobooks =>
+      $$AudiobooksTableTableManager(_db, _db.audiobooks);
+  $$SrtBooksTableTableManager get srtBooks =>
+      $$SrtBooksTableTableManager(_db, _db.srtBooks);
+  $$ReaderPositionsTableTableManager get readerPositions =>
+      $$ReaderPositionsTableTableManager(_db, _db.readerPositions);
+  $$ReadingStatisticsTableTableManager get readingStatistics =>
+      $$ReadingStatisticsTableTableManager(_db, _db.readingStatistics);
+  $$PreferencesTableTableManager get preferences =>
+      $$PreferencesTableTableManager(_db, _db.preferences);
+  $$DictionaryMetadataTableTableManager get dictionaryMetadata =>
+      $$DictionaryMetadataTableTableManager(_db, _db.dictionaryMetadata);
+  $$DictionaryHistoryTableTableManager get dictionaryHistory =>
+      $$DictionaryHistoryTableTableManager(_db, _db.dictionaryHistory);
+}

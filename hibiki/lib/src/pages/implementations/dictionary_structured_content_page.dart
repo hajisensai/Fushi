@@ -3,8 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flutter_html/flutter_html.dart';
-import 'package:flutter_html_table/flutter_html_table.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:html/dom.dart' as dom;
 import 'package:path/path.dart' as path;
@@ -82,118 +81,171 @@ final dictionaryResourceDirectoryProvider =
       path.join(appModel.dictionaryResourceDirectory.path, dictionaryName));
 });
 
-/// HTML renderer for dictionary definitions.
-class DictionaryHtmlWidget extends ConsumerWidget {
-  /// Create an instance of this page.
+/// WebView-based HTML renderer for dictionary definitions.
+/// Uses InAppWebView for full CSS support (including pseudo-classes).
+class DictionaryHtmlWidget extends ConsumerStatefulWidget {
   const DictionaryHtmlWidget({
     required this.entry,
     required this.onSearch,
+    this.onStash,
+    this.onShare,
     super.key,
   });
 
-  /// Dictionary entry to be rendered.
   final DictionaryEntry entry;
-
-  /// Action to be done upon selecting the search option.
   final Function(String) onSearch;
+  final Function(String)? onStash;
+  final Function(String)? onShare;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final textColor = Theme.of(context).brightness == Brightness.dark
-        ? Colors.white
-        : Colors.black;
-    final linkColor = Theme.of(context).colorScheme.error;
-    final dictionaryFontSize = ref.read(appProvider).dictionaryFontSize;
-    final fontSize = FontSize(dictionaryFontSize);
-    const tableWidth = 0.3;
-    final tableBorder = Border.all(color: textColor, width: tableWidth);
-    final tableStyle = Style(
-      border: tableBorder,
-    );
-
-    var css = ref.watch(dictionaryCssProvider(entry.dictionaryName));
-    // Strip CSS rules with pseudo-class selectors that flutter_html can't handle
-    css = css.replaceAll(
-        RegExp(r'[^{}]*:(?:active|hover|focus|visited|link)[^{]*\{[^}]*\}'), '');
-    final html = ref.watch(dictionaryEntryHtmlProvider(entry));
-    final dataWithCss =
-        css.isNotEmpty ? '<style>$css</style>$html' : html;
-
-    return Html(
-      data: dataWithCss,
-      shrinkWrap: true,
-      onAnchorTap: (url, attributes, element) {
-        onSearch.call(attributes['query'] ?? element?.text ?? 'f');
-      },
-      style: {
-        '*': Style(
-          fontSize: fontSize,
-          color: textColor,
-        ),
-        'td': tableStyle,
-        'th': tableStyle,
-        'ul': Style(
-          padding: HtmlPaddings.zero,
-        ),
-        'li': Style(
-          padding: HtmlPaddings.zero,
-        ),
-        'a': Style(color: linkColor),
-      },
-      extensions: [
-        const TableHtmlExtension(),
-        ImageExtension.inline(
-          networkSchemas: {'hibiki'},
-          builder: (extensionContext) => WidgetSpan(
-            child: JidoujishoDictionaryImage(
-              entry: entry,
-              extensionContext: extensionContext,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+  ConsumerState<DictionaryHtmlWidget> createState() =>
+      _DictionaryHtmlWidgetState();
 }
 
-/// Handles image rendering of images in a dictionary definition.
-class JidoujishoDictionaryImage extends ConsumerWidget {
-  /// Initialise this widget.
-  const JidoujishoDictionaryImage({
-    required this.entry,
-    required this.extensionContext,
-    super.key,
-  });
-
-  /// Dictionary entry to be rendered.
-  final DictionaryEntry entry;
-
-  /// Provides attributes for building the image.
-  final ExtensionContext extensionContext;
+class _DictionaryHtmlWidgetState extends ConsumerState<DictionaryHtmlWidget> {
+  InAppWebViewController? _controller;
+  double _contentHeight = 1;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final src = (extensionContext.attributes['src'] ?? '')
-        .replaceFirst('hibiki://', '');
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textColorHex = isDark ? '#ffffff' : '#000000';
+    final linkColorHex = _colorToHex(Theme.of(context).colorScheme.error);
+    final dictionaryFontSize = ref.read(appProvider).dictionaryFontSize;
 
-    final width = double.tryParse((extensionContext.attributes['width'] ?? '')
-        .replaceAll(RegExp(r'\D'), ''));
-    final height = double.tryParse((extensionContext.attributes['height'] ?? '')
-        .replaceAll(RegExp(r'\D'), ''));
+    final css = ref.watch(dictionaryCssProvider(widget.entry.dictionaryName));
+    final html = ref.watch(dictionaryEntryHtmlProvider(widget.entry));
 
-    final directory = ref
-        .read(dictionaryResourceDirectoryProvider(entry.dictionaryName));
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Image.file(
-          File(path.join(directory.path, src)),
-          height: height,
-          width: width,
-          scale: 3,
-        )
-      ],
+    final directory = ref.read(
+        dictionaryResourceDirectoryProvider(widget.entry.dictionaryName));
+    final baseUrl = 'file:///${directory.path.replaceAll('\\', '/')}/';
+    final processedHtml = html.replaceAll('hibiki://', baseUrl);
+
+    final fullHtml = '<!DOCTYPE html>'
+        '<html><head>'
+        '<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">'
+        '<style>'
+        '* { color: $textColorHex; font-size: ${dictionaryFontSize}px; }'
+        'body { margin: 0; padding: 4px; background: transparent; word-wrap: break-word; }'
+        'a { color: $linkColorHex; }'
+        'table { border-collapse: collapse; }'
+        'td, th { border: 0.3px solid $textColorHex; padding: 0.25em; vertical-align: top; }'
+        'ul, li { padding: 0; }'
+        'img { max-width: 100%; }'
+        '$css'
+        '</style></head>'
+        '<body>$processedHtml</body>'
+        '<script>'
+        'document.addEventListener("click", function(e) {'
+        '  var a = e.target.closest("a");'
+        '  if (a) {'
+        '    e.preventDefault();'
+        '    var href = a.getAttribute("href") || "";'
+        '    var query = "";'
+        '    if (href.indexOf("?") >= 0) {'
+        '      var params = new URLSearchParams(href.substring(href.indexOf("?")));'
+        '      query = params.get("query") || a.textContent || "";'
+        '    } else {'
+        '      query = a.textContent || "";'
+        '    }'
+        '    window.flutter_inappwebview.callHandler("onLinkClick", query);'
+        '  }'
+        '});'
+        '</script></html>';
+
+    return SizedBox(
+      height: _contentHeight,
+      child: InAppWebView(
+        initialData: InAppWebViewInitialData(
+          data: fullHtml,
+          baseUrl: WebUri(baseUrl),
+          encoding: 'utf-8',
+          mimeType: 'text/html',
+        ),
+        initialSettings: InAppWebViewSettings(
+          transparentBackground: true,
+          allowFileAccessFromFileURLs: true,
+          allowUniversalAccessFromFileURLs: true,
+          supportZoom: false,
+          verticalScrollBarEnabled: false,
+          horizontalScrollBarEnabled: false,
+          disableVerticalScroll: true,
+          disableHorizontalScroll: true,
+        ),
+        contextMenu: ContextMenu(
+          settings: ContextMenuSettings(
+            hideDefaultSystemContextMenuItems: false,
+          ),
+          menuItems: [
+            ContextMenuItem(
+              id: 1,
+              title: t.search,
+              action: () async {
+                final text = await _controller?.getSelectedText();
+                if (text != null && text.isNotEmpty) {
+                  widget.onSearch(text);
+                }
+              },
+            ),
+            if (widget.onStash != null)
+              ContextMenuItem(
+                id: 2,
+                title: t.stash,
+                action: () async {
+                  final text = await _controller?.getSelectedText();
+                  if (text != null && text.isNotEmpty) {
+                    widget.onStash!(text);
+                  }
+                },
+              ),
+            if (widget.onShare != null)
+              ContextMenuItem(
+                id: 3,
+                title: t.share,
+                action: () async {
+                  final text = await _controller?.getSelectedText();
+                  if (text != null && text.isNotEmpty) {
+                    widget.onShare!(text);
+                  }
+                },
+              ),
+          ],
+        ),
+        onWebViewCreated: (controller) {
+          _controller = controller;
+          controller.addJavaScriptHandler(
+            handlerName: 'onLinkClick',
+            callback: (args) {
+              if (args.isNotEmpty) {
+                widget.onSearch(args[0].toString());
+              }
+            },
+          );
+        },
+        onLoadStop: (controller, url) async {
+          await Future.delayed(const Duration(milliseconds: 100));
+          final height = await controller.evaluateJavascript(
+            source: 'document.body.scrollHeight',
+          );
+          if (height != null && mounted) {
+            final h = (height is num)
+                ? height.toDouble()
+                : double.tryParse(height.toString()) ?? _contentHeight;
+            if (h > 0 && h != _contentHeight) {
+              setState(() {
+                _contentHeight = h;
+              });
+            }
+          }
+        },
+      ),
     );
+  }
+
+  String _colorToHex(Color color) {
+    final r = color.r, g = color.g, b = color.b;
+    String c(double v) => (v * 255).round().toRadixString(16).padLeft(2, '0');
+    return '#${c(r)}${c(g)}${c(b)}';
   }
 }
 
@@ -249,11 +301,9 @@ class DictionarySelectionDelegate
 
   @override
   SelectionResult dispatchSelectionEvent(SelectionEvent event) {
-    // _expectSearchSelection = event is SelectWordSelectionEvent;
     return super.dispatchSelectionEvent(event);
   }
 
-  //  bool _expectSearchSelection = false;
   SelectionEvent? _lastEvent;
   JidoujishoTextSelection? _guessSelection;
   JidoujishoTextSelection? _searchSelection;
@@ -293,7 +343,6 @@ class DictionarySelectionDelegate
 
     super.handleSelectWord(event);
     _lastEvent = event;
-    // _expectSearchSelection = true;
 
     if (!(currentSelectionEndIndex < selectables.length &&
         currentSelectionEndIndex >= 0)) {
@@ -336,15 +385,6 @@ class DictionarySelectionDelegate
     late SelectionResult result;
     final guessSelection = onTextSelectionGuessLength(eventSelection);
     result = handleTextSelection(event, guessSelection);
-
-    // onTextSelectionSearchLength(eventSelection, (searchSelection) {
-    //   _guessSelection = guessSelection;
-    //   _searchSelection = searchSelection;
-    //   if (getSelectedContent()?.plainText == guessSelection.textInside &&
-    //       searchSelection.textInside != guessSelection.textInside) {
-    //     dispatchSelectionEvent(event);
-    //   }
-    // });
 
     return result;
   }

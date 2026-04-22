@@ -42,8 +42,6 @@ class DictionaryEntryPage extends ConsumerStatefulWidget {
 }
 
 class _DictionaryEntryPageState extends ConsumerState<DictionaryEntryPage> {
-  String selectedText = '';
-
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -69,58 +67,11 @@ class _DictionaryEntryPageState extends ConsumerState<DictionaryEntryPage> {
             top: Spacing.of(context).spaces.small,
             left: Spacing.of(context).spaces.normal,
           ),
-          child: SelectionArea(
-            onSelectionChanged: (selection) {
-              if (selection?.plainText != null && selection?.plainText != '_') {
-                selectedText = selection?.plainText ?? '';
-              }
-            },
-            contextMenuBuilder: (context, state) {
-              return AdaptiveTextSelectionToolbar.buttonItems(
-                anchors: TextSelectionToolbarAnchors(
-                  primaryAnchor: state.contextMenuAnchors.primaryAnchor,
-                ),
-                buttonItems: <ContextMenuButtonItem>[
-                  ContextMenuButtonItem(
-                    onPressed: () {
-                      widget.onSearch(selectedText);
-                      state.hideToolbar();
-                    },
-                    label: t.search,
-                  ),
-                  ContextMenuButtonItem(
-                    onPressed: () {
-                      widget.onStash(selectedText);
-                      state.hideToolbar();
-                    },
-                    label: t.stash,
-                  ),
-                  ...AdaptiveTextSelectionToolbar.selectableRegion(
-                              selectableRegionState: state)
-                          .buttonItems
-                          ?.where(
-                              (e) => e.type == ContextMenuButtonType.copy) ??
-                      [],
-                  ...AdaptiveTextSelectionToolbar.selectableRegion(
-                              selectableRegionState: state)
-                          .buttonItems
-                          ?.where((e) =>
-                              e.type == ContextMenuButtonType.selectAll) ??
-                      [],
-                  ContextMenuButtonItem(
-                    onPressed: () {
-                      widget.onShare(selectedText);
-                      state.hideToolbar();
-                    },
-                    label: t.share,
-                  ),
-                ],
-              );
-            },
-            child: DictionaryHtmlWidget(
-              entry: widget.entry,
-              onSearch: widget.onSearch,
-            ),
+          child: DictionaryHtmlWidget(
+            entry: widget.entry,
+            onSearch: widget.onSearch,
+            onStash: widget.onStash,
+            onShare: widget.onShare,
           ),
         ),
       ),
