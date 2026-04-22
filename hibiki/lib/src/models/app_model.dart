@@ -1499,11 +1499,57 @@ class AppModel with ChangeNotifier {
     throw Exception('无法识别的词典格式');
   }
 
+  /// Import a dictionary from a folder.
+  ///
+  /// Supports two layouts:
+  /// 1. Folder containing zip/dsl/mdx + optional CSS + optional font dirs
+  /// 2. Folder that IS the extracted dictionary (has index.json / *.json)
   Future<void> importDictionaryFromDirectory({
     required Directory directory,
     required ValueNotifier<String> progressNotifier,
+    required ValueNotifier<int?> countNotifier,
+    required ValueNotifier<int?> totalNotifier,
     required Function() onImportSuccess,
   }) async {
+    final entities = directory.listSync();
+    final zipFiles = entities
+        .whereType<File>()
+        .where((f) {
+          final ext = path.extension(f.path).toLowerCase();
+          return ext == '.zip' || ext == '.dsl' || ext == '.mdx';
+        })
+        .toList();
+
+    if (zipFiles.isNotEmpty) {
+      final cssFiles = entities
+          .whereType<File>()
+          .where((f) => f.path.toLowerCase().endsWith('.css'))
+          .toList();
+      final fontDirs = entities
+          .whereType<Directory>()
+          .where((d) => d
+              .listSync()
+              .whereType<File>()
+              .any((f) {
+                final ext = path.extension(f.path).toLowerCase();
+                return ext == '.otf' || ext == '.ttf' || ext == '.woff' || ext == '.woff2';
+              }))
+          .toList();
+
+      totalNotifier.value = zipFiles.length;
+      for (int i = 0; i < zipFiles.length; i++) {
+        countNotifier.value = i + 1;
+        await importDictionary(
+          file: zipFiles[i],
+          progressNotifier: progressNotifier,
+          cssFiles: cssFiles,
+          fontDirs: fontDirs,
+          onImportSuccess: onImportSuccess,
+        );
+      }
+      return;
+    }
+
     clearDictionaryResultsCache();
 
     DictionaryFormat dictionaryFormat =
@@ -1613,6 +1659,8 @@ class AppModel with ChangeNotifier {
     required File file,
     required ValueNotifier<String> progressNotifier,
     required Function() onImportSuccess,
+    List<File> cssFiles = const [],
+    List<Directory> fontDirs = const [],
   }) async {
     clearDictionaryResultsCache();
 
@@ -1693,6 +1741,21 @@ class AppModel with ChangeNotifier {
         finalResourceDirectory.deleteSync(recursive: true);
       }
       resourceDirectory.renameSync(finalResourceDirectory.path);
+
+      for (final css in cssFiles) {
+        if (css.existsSync()) {
+          css.copySync(
+              path.join(finalResourceDirectory.path, path.basename(css.path)));
+        }
+      }
+      for (final fontDir in fontDirs) {
+        if (fontDir.existsSync()) {
+          _copyDirectory(
+              fontDir,
+              Directory(path.join(
+                  finalResourceDirectory.path, path.basename(fontDir.path))));
+        }
+      }
 
       Dictionary dictionary = Dictionary(
         order: order,

@@ -37,15 +37,42 @@ final dictionaryEntryHtmlProvider =
 final dictionaryCssProvider =
     Provider.family<String, String>((ref, dictionaryName) {
   final appModel = ref.read(appProvider);
-  final cssFile = File(path.join(
+  final dir = Directory(path.join(
     appModel.dictionaryResourceDirectory.path,
     dictionaryName,
-    'styles.css',
   ));
-  if (cssFile.existsSync()) {
-    return cssFile.readAsStringSync();
+  if (!dir.existsSync()) return '';
+
+  final allEntities = dir.listSync();
+  final cssFiles = allEntities
+      .whereType<File>()
+      .where((f) => f.path.toLowerCase().endsWith('.css'));
+
+  final fontFaces = StringBuffer();
+  for (final entity in allEntities) {
+    if (entity is Directory) {
+      for (final f in entity.listSync().whereType<File>()) {
+        final ext = path.extension(f.path).toLowerCase();
+        if (ext == '.otf' || ext == '.ttf' || ext == '.woff' || ext == '.woff2') {
+          final fontName = path.basenameWithoutExtension(f.path);
+          final format = ext == '.otf'
+              ? 'opentype'
+              : ext == '.ttf'
+                  ? 'truetype'
+                  : ext == '.woff2'
+                      ? 'woff2'
+                      : 'woff';
+          fontFaces.writeln(
+              '@font-face { font-family: "$fontName"; src: url("file://${f.path.replaceAll('\\', '/')}") format("$format"); }');
+        }
+      }
+    }
   }
-  return '';
+
+  final cssParts = cssFiles.map((f) => f.readAsStringSync()).toList();
+  if (fontFaces.isNotEmpty) cssParts.insert(0, fontFaces.toString());
+  if (cssParts.isEmpty) return '';
+  return cssParts.join('\n');
 });
 
 /// Get the [Directory] used as a resource directory for a certain dictionary

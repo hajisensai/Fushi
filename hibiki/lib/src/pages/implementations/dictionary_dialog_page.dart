@@ -46,6 +46,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
 
   List<Widget> get actions => [
         buildClearButton(),
+        buildImportFolderButton(),
         buildImportButton(),
         buildCloseButton(),
       ];
@@ -161,7 +162,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
 
         FilePickerResult? result = await FilePicker.platform.pickFiles(
           type: FileType.custom,
-          allowedExtensions: const ['zip', 'dsl', 'mdx'],
+          allowedExtensions: const ['zip', 'dsl', 'mdx', 'css'],
           allowMultiple: true,
           onFileLoading: (status) {
             if (status == FilePickerStatus.done) {
@@ -181,16 +182,25 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
           return;
         }
 
-        totalNotifier.value = result.files.length;
-        for (int i = 0; i < result.files.length; i++) {
+        final dictFiles = result.files
+            .where((f) => !f.path!.toLowerCase().endsWith('.css'))
+            .toList();
+        final cssFiles = result.files
+            .where((f) => f.path!.toLowerCase().endsWith('.css'))
+            .map((f) => File(f.path!))
+            .toList();
+
+        totalNotifier.value = dictFiles.length;
+        for (int i = 0; i < dictFiles.length; i++) {
           countNotifier.value = i + 1;
 
-          PlatformFile platformFile = result.files[i];
+          PlatformFile platformFile = dictFiles[i];
           File file = File(platformFile.path!);
 
           await appModel.importDictionary(
             progressNotifier: progressNotifier,
             file: file,
+            cssFiles: cssFiles,
             onImportSuccess: () {
               _selectedOrder = appModel.dictionaries.last.order;
               setState(() {});
@@ -199,6 +209,51 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
         }
 
         await FilePicker.platform.clearTemporaryFiles();
+
+        if (mounted) {
+          Navigator.pop(context);
+        }
+      },
+    );
+  }
+
+  Widget buildImportFolderButton() {
+    return TextButton(
+      child: Text(t.dialog_import_folder),
+      onPressed: () async {
+        final dirPath = await FilePicker.platform.getDirectoryPath();
+        if (dirPath == null) return;
+
+        ValueNotifier<String> progressNotifier =
+            ValueNotifier<String>(t.import_start);
+        ValueNotifier<int?> countNotifier = ValueNotifier<int?>(null);
+        ValueNotifier<int?> totalNotifier = ValueNotifier<int?>(null);
+        progressNotifier.addListener(() {
+          debugPrint('[Dictionary Import] ${progressNotifier.value}');
+        });
+
+        if (mounted) {
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => DictionaryDialogImportPage(
+              progressNotifier: progressNotifier,
+              countNotifier: countNotifier,
+              totalNotifier: totalNotifier,
+            ),
+          );
+        }
+
+        await appModel.importDictionaryFromDirectory(
+          directory: Directory(dirPath),
+          progressNotifier: progressNotifier,
+          countNotifier: countNotifier,
+          totalNotifier: totalNotifier,
+          onImportSuccess: () {
+            _selectedOrder = appModel.dictionaries.last.order;
+            setState(() {});
+          },
+        );
 
         if (mounted) {
           Navigator.pop(context);
