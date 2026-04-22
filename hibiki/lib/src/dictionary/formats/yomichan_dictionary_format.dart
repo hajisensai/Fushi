@@ -157,9 +157,19 @@ Future<void> prepareDirectoryYomichanFormat(
     PrepareDirectoryParams params) async {
   final filePath = params.file.path;
   final dirPath = params.resourceDirectory.path;
+  final sendPort = params.sendPort;
+
+  final receivePort = ReceivePort();
+  receivePort.listen((message) {
+    sendPort.send(message);
+  });
+
   await Isolate.run(() {
+    final port = receivePort.sendPort;
     final input = archive_io.InputFileStream(filePath);
     final zip = archive.ZipDecoder().decodeBuffer(input);
+    final total = zip.files.length;
+    int n = 0;
     for (final file in zip.files) {
       final outPath = '$dirPath/${file.name}';
       if (file.isFile) {
@@ -169,9 +179,15 @@ Future<void> prepareDirectoryYomichanFormat(
       } else {
         Directory(outPath).createSync(recursive: true);
       }
+      n++;
+      if (n % 100 == 0 || n == total) {
+        port.send('$n / $total');
+      }
     }
     input.closeSync();
   });
+
+  receivePort.close();
 }
 
 /// Top-level function for use in compute. See [DictionaryFormat] for details.
