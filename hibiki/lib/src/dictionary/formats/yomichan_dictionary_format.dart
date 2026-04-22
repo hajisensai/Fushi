@@ -154,7 +154,7 @@ class YomichanFormat extends DictionaryFormat {
 Future<void> prepareDirectoryYomichanFormat(
     PrepareDirectoryParams params) async {
   int n = 0;
-  extractZipArchiveSync(params.file, params.resourceDirectory,
+  await extractZipArchive(params.file, params.resourceDirectory,
       callback: (_, __) {
     n++;
     params.send(t.import_extract_count(n: n));
