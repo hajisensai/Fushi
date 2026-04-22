@@ -46,10 +46,27 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
   }
 
   List<Widget> get actions => [
-        buildClearButton(),
-        buildImportFolderButton(),
-        buildImportButton(),
-        buildCloseButton(),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                buildImportFolderButton(),
+                const SizedBox(width: 8),
+                buildImportButton(),
+              ],
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                buildClearButton(),
+                const SizedBox(width: 8),
+                buildCloseButton(),
+              ],
+            ),
+          ],
+        ),
       ];
 
   Future<void> showDictionaryClearDialog() async {
@@ -286,7 +303,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
     return TextButton(
       onPressed: showDictionaryClearDialog,
       child: Text(
-        t.dialog_clear,
+        t.dialog_clear_all_dictionaries,
         style: TextStyle(
           color: Theme.of(context).colorScheme.error,
         ),
