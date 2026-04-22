@@ -344,8 +344,6 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   /// Hide the dictionary and dispose of the current result.
   @override
   void clearDictionaryResult() async {
-    debugPrint('[hibiki-dict-debug] clearDictionaryResult called');
-    debugPrint('[hibiki-dict-debug] ${StackTrace.current}');
     super.clearDictionaryResult();
     unselectWebViewTextSelection(_controller);
   }
@@ -831,7 +829,6 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   }
 
   Future<void> _processLookup(Map<String, dynamic> payload) async {
-    debugPrint('[hibiki-dict-debug] _processLookup called index=${payload['index']} textLen=${(payload['text'] as String?)?.length}');
     FocusScope.of(context).unfocus();
     _focusNode.requestFocus();
 
@@ -925,9 +922,8 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         mediaSource.setCurrentSentence(
           selection: selection,
         );
-      }).catchError((Object e, StackTrace st) {
+      }).catchError((Object e) {
         debugPrint('_processLookup async error: $e');
-        debugPrint('_processLookup async stacktrace: $st');
         clearDictionaryResult();
         mediaSource.clearCurrentSentence();
       });

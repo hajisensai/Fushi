@@ -156,7 +156,9 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
         searchWithWildcards: false,
         overrideMaximumTerms: overrideMaximumTerms,
       );
-      if (notShowMore && resultScrollController.hasClients) {
+      if (notShowMore &&
+          resultScrollController.hasClients &&
+          resultScrollController.position.hasContentDimensions) {
         resultScrollController
             .jumpTo(resultScrollController.initialScrollOffset);
       }
