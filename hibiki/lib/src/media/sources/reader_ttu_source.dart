@@ -728,14 +728,14 @@ indexedDB.databases().then((databases) => {
     }
 
     try {
-      getTtuData();
+      await getTtuData();
     } catch (e) {
       console.log(JSON.stringify({messageType: "history", lastItem: lastItemJson, bookmark: bookmarkJson, data: dataJson}));
     }
   } else {
-  
+
     console.log(JSON.stringify({messageType: "empty"}));
-    
+
   }
 });
 ''';
@@ -833,7 +833,7 @@ indexedDB.databases().then((databases) => {
     }
 
     try {
-      getTtuData();
+      await getTtuData();
     } catch (e) {
       console.log(JSON.stringify({messageType: "history", lastItem: lastItemJson, bookmark: bookmarkJson, data: dataJson}));
     }
