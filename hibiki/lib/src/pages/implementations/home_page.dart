@@ -6,6 +6,7 @@ import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
 import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
+import 'package:hibiki/src/media/sources/reader_ttu_source.dart';
 import 'package:hibiki/utils.dart';
 
 class HomePage extends BasePage {
@@ -171,7 +172,7 @@ class _HomePageState extends BasePageState<HomePage>
             ttuMediaSourceIdentifier: src.uniqueKey,
           ),
         );
-        setState(() {});
+        ref.invalidate(ttuBooksProvider(appModel.targetLanguage));
       },
     );
   }

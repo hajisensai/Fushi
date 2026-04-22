@@ -135,10 +135,9 @@ class TtuEpubImporter {
 ''';
 
     bool jsDispatched = false;
-    bool navigatedToManage = false;
     webView = HeadlessInAppWebView(
       initialUrlRequest: URLRequest(
-        url: WebUri('http://localhost:$serverPort/'),
+        url: WebUri('http://localhost:$serverPort/manage.html'),
       ),
       initialSettings: InAppWebViewSettings(
         allowFileAccessFromFileURLs: true,
@@ -151,17 +150,9 @@ class TtuEpubImporter {
         ),
       ]),
       onLoadStop: (controller, url) async {
-        log('onLoadStop', 'url=$url navigated=$navigatedToManage jsDispatched=$jsDispatched');
+        log('onLoadStop', 'url=$url jsDispatched=$jsDispatched');
         if (jsDispatched) return;
-        if (!navigatedToManage) {
-          navigatedToManage = true;
-          // SPA 入口已加载，导航到 /manage 让 SvelteKit 路由器挂载文件输入。
-          await controller.evaluateJavascript(
-              source: "window.location.href = '/manage';");
-          return;
-        }
         jsDispatched = true;
-        // Manage page may lazy-mount its input; give Svelte a tick.
         await Future<void>.delayed(const Duration(milliseconds: 300));
         log('evaluateJavascript:begin');
         await controller.evaluateJavascript(source: js);
@@ -279,28 +270,18 @@ class TtuEpubImporter {
     });
     logStage('maxBefore', 'maxBefore=' + maxBefore);
 
-    // ── 3. Locate ttu's book-import input on /manage ─────────────────────
-    const findInput = () => {
-      const all = Array.from(document.querySelectorAll('input[type=file]'));
-      // ttu's book-import input has accept attr containing 'epub' / 'htmlz'.
-      return all.find(i => (i.getAttribute('accept') || '')
-          .toLowerCase().includes('epub'));
-    };
-    let input = findInput();
+    // ── 3. Wait for __hibikiImportFiles to be exposed by manage page ─────
+    const findApi = () => typeof window.__hibikiImportFiles === 'function';
     const deadline = Date.now() + 15000;
-    while (!input && Date.now() < deadline) {
+    while (!findApi() && Date.now() < deadline) {
       await new Promise(r => setTimeout(r, 200));
-      input = findInput();
     }
-    if (!input) { post({messageType: 'ttu_import_err', error: 'no_input'}); return; }
-    logStage('input-found', 'accept=' + input.getAttribute('accept'));
+    if (!findApi()) { post({messageType: 'ttu_import_err', error: 'no_api'}); return; }
+    logStage('api-ready');
 
-    // ── 4. Drop the File into the input and fire 'change' ────────────────
-    const dt = new DataTransfer();
-    dt.items.add(file);
-    input.files = dt.files;
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-    logStage('change-dispatched');
+    // ── 4. Call ttu's import pipeline directly ───────────────────────────
+    window.__hibikiImportFiles([file]);
+    logStage('import-called');
 
     // ── 5. Poll IndexedDB for the new row ────────────────────────────────
     // 大 EPUB（10MB+）在手机上解压 + 解析 + 写入 IDB 常常要一两分钟，
