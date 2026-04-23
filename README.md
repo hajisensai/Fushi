@@ -1,3 +1,5 @@
+<p align="right"><a href="#english">English</a></p>
+
 <h3 align="center">hibiki</h3>
 <p align="center">Android 日语沉浸式阅读器 — EPUB + 词典 + Anki + 有声书同步</p>
 
@@ -129,7 +131,7 @@ GNU General Public License 3.0
 ---
 
 <details>
-<summary><h2>English</h2></summary>
+<summary><h2 id="english">English</h2></summary>
 
 <h3 align="center">hibiki</h3>
 <p align="center">Android immersive Japanese reader — EPUB + Dictionary + Anki + Audiobook sync</p>
