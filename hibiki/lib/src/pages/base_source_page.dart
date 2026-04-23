@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -422,14 +423,15 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
   /// The dictionary result unpositioned. See [buildDictionary] for the
   /// positioned version.
   Widget buildDictionaryResult() {
-    Color color = appModel.overrideDictionaryColor ?? theme.cardColor;
-
-    if ((appModel.overrideDictionaryTheme ?? theme).brightness ==
-        Brightness.dark) {
-      color = JidoujishoColor.lighten(color, 0.05);
-    } else {
-      color = JidoujishoColor.darken(color, 0.05);
-    }
+    final isDark =
+        (appModel.overrideDictionaryTheme ?? theme).brightness ==
+            Brightness.dark;
+    final fillColor = isDark
+        ? Colors.black.withValues(alpha: 0.45)
+        : Colors.white.withValues(alpha: 0.55);
+    final borderColor = isDark
+        ? Colors.white.withValues(alpha: 0.15)
+        : Colors.black.withValues(alpha: 0.12);
 
     return Dismissible(
       key: ValueKey(_dictionaryResultNotifier.value),
@@ -441,15 +443,27 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
       },
       dismissThresholds: const {DismissDirection.horizontal: 0.05},
       movementDuration: const Duration(milliseconds: 20),
-      child: Container(
-        padding: Spacing.of(context).insets.all.semiSmall,
-        margin: Spacing.of(context).insets.all.normal,
-        color: color.withValues(alpha: dictionaryBackgroundOpacity),
-        child: Stack(
-          children: [
-            buildSearchResult(),
-            buildDictionaryLoading(),
-          ],
+      child: Padding(
+        padding: Spacing.of(context).insets.all.normal,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            child: Container(
+              decoration: BoxDecoration(
+                color: fillColor,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: borderColor, width: 1),
+              ),
+              padding: Spacing.of(context).insets.all.semiSmall,
+              child: Stack(
+                children: [
+                  buildSearchResult(),
+                  buildDictionaryLoading(),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );

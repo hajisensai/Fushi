@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui';
 
 import 'package:document_file_save_plus/document_file_save_plus.dart';
 import 'package:file_picker/file_picker.dart';
@@ -1592,19 +1593,18 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
   /// top corners, a drag handle, and supports drag-to-expand.
   @override
   Widget buildBottomHalfDictionary() {
-    Color color = appModel.overrideDictionaryColor ??
-        (appModel.overrideDictionaryTheme ?? theme).cardColor;
-
-    if ((appModel.overrideDictionaryTheme ?? theme).brightness ==
-        Brightness.dark) {
-      color = JidoujishoColor.lighten(color, 0.05);
-    } else {
-      color = JidoujishoColor.darken(color, 0.05);
-    }
-
-    final Color sheetColor = color.withOpacity(dictionaryBackgroundOpacity);
-    final Color handleColor =
-        (appModel.overrideDictionaryTheme ?? theme).dividerColor;
+    final isDark =
+        (appModel.overrideDictionaryTheme ?? theme).brightness ==
+            Brightness.dark;
+    final fillColor = isDark
+        ? Colors.black.withValues(alpha: 0.45)
+        : Colors.white.withValues(alpha: 0.55);
+    final borderColor = isDark
+        ? Colors.white.withValues(alpha: 0.15)
+        : Colors.black.withValues(alpha: 0.12);
+    final handleColor = isDark
+        ? Colors.white.withValues(alpha: 0.35)
+        : Colors.black.withValues(alpha: 0.25);
 
     return Align(
       alignment: Alignment.bottomCenter,
@@ -1615,50 +1615,52 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         snap: true,
         snapSizes: const [0.45, 0.92],
         builder: (context, scrollController) {
-          return Container(
-            decoration: BoxDecoration(
-              color: sheetColor,
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(16)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.25),
-                  blurRadius: 12,
-                  spreadRadius: 2,
-                  offset: const Offset(0, -2),
+          return ClipRRect(
+            borderRadius:
+                const BorderRadius.vertical(top: Radius.circular(12)),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: fillColor,
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(12)),
+                  border: Border(
+                    top: BorderSide(color: borderColor, width: 1),
+                    left: BorderSide(color: borderColor, width: 1),
+                    right: BorderSide(color: borderColor, width: 1),
+                  ),
                 ),
-              ],
-            ),
-            child: Column(
-              children: [
-                // Drag handle — tap to dismiss
-                GestureDetector(
-                  onTap: clearDictionaryResult,
-                  behavior: HitTestBehavior.opaque,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    child: Center(
-                      child: Container(
-                        width: 40,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: handleColor.withOpacity(0.4),
-                          borderRadius: BorderRadius.circular(2),
+                child: Column(
+                  children: [
+                    GestureDetector(
+                      onTap: clearDictionaryResult,
+                      behavior: HitTestBehavior.opaque,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        child: Center(
+                          child: Container(
+                            width: 40,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: handleColor,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
                         ),
                       ),
                     ),
-                  ),
+                    Expanded(
+                      child: Stack(
+                        children: [
+                          buildSearchResult(),
+                          buildDictionaryLoading(),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                // Dictionary content
-                Expanded(
-                  child: Stack(
-                    children: [
-                      buildSearchResult(),
-                      buildDictionaryLoading(),
-                    ],
-                  ),
-                ),
-              ],
+              ),
             ),
           );
         },
