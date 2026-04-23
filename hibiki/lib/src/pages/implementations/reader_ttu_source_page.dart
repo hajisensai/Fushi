@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:ui';
 
 import 'package:document_file_save_plus/document_file_save_plus.dart';
 import 'package:file_picker/file_picker.dart';
@@ -844,7 +843,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     int x = (payload['x'] as num).toInt();
     int y = (payload['y'] as num).toInt();
 
-    const JidoujishoPopupPosition position = JidoujishoPopupPosition.bottomHalf;
+    final Rect selectionRect = Rect.fromLTWH(x.toDouble(), y.toDouble(), 1, 1);
 
     text = text.replaceAll('\\n', '\n');
 
@@ -894,7 +893,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
 
       searchDictionaryResult(
         searchTerm: searchTerm,
-        position: position,
+        selectionRect: selectionRect,
       ).then((_) async {
         length = appModel.targetLanguage.getFinalHighlightLength(
           result: currentResult,
@@ -1587,86 +1586,6 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     evt.deltaY = -0.001 * ${mediaSource.volumePageTurningSpeed * (mediaSource.volumePageTurningInverted ? -1 : 1)};
     document.body.dispatchEvent(evt);
     ''';
-
-  /// Override the base class to show a Hoshi-style bottom sheet instead of
-  /// a half-screen overlay. The sheet slides up from the bottom, has rounded
-  /// top corners, a drag handle, and supports drag-to-expand.
-  @override
-  Widget buildBottomHalfDictionary() {
-    final isDark =
-        (appModel.overrideDictionaryTheme ?? theme).brightness ==
-            Brightness.dark;
-    final fillColor = isDark
-        ? Colors.black.withValues(alpha: 0.45)
-        : Colors.white.withValues(alpha: 0.55);
-    final borderColor = isDark
-        ? Colors.white.withValues(alpha: 0.15)
-        : Colors.black.withValues(alpha: 0.12);
-    final handleColor = isDark
-        ? Colors.white.withValues(alpha: 0.35)
-        : Colors.black.withValues(alpha: 0.25);
-
-    return Align(
-      alignment: Alignment.bottomCenter,
-      child: DraggableScrollableSheet(
-        initialChildSize: 0.45,
-        minChildSize: 0.25,
-        maxChildSize: 0.92,
-        snap: true,
-        snapSizes: const [0.45, 0.92],
-        builder: (context, scrollController) {
-          return ClipRRect(
-            borderRadius:
-                const BorderRadius.vertical(top: Radius.circular(12)),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: fillColor,
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(12)),
-                  border: Border(
-                    top: BorderSide(color: borderColor, width: 1),
-                    left: BorderSide(color: borderColor, width: 1),
-                    right: BorderSide(color: borderColor, width: 1),
-                  ),
-                ),
-                child: Column(
-                  children: [
-                    GestureDetector(
-                      onTap: clearDictionaryResult,
-                      behavior: HitTestBehavior.opaque,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        child: Center(
-                          child: Container(
-                            width: 40,
-                            height: 4,
-                            decoration: BoxDecoration(
-                              color: handleColor,
-                              borderRadius: BorderRadius.circular(2),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child: Stack(
-                        children: [
-                          buildSearchResult(),
-                          buildDictionaryLoading(),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
 
   // ── 有声书辅助方法 ──────────────────────────────────────────────────────────
 

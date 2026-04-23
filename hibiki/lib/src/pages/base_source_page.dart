@@ -3,7 +3,6 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:multi_value_listenable_builder/multi_value_listenable_builder.dart';
 import 'package:spaces/spaces.dart';
 import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/media.dart';
@@ -77,9 +76,9 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
   /// Whether or not there is a present dictionary result.
   bool get isDictionaryShown => _dictionaryResultNotifier.value != null;
 
-  /// The popup position for the [buildDictionary] widget.
-  final _popupPositionNotifier =
-      ValueNotifier<JidoujishoPopupPosition?>(JidoujishoPopupPosition.topHalf);
+  /// The selection rect that triggered the popup, used for positioning.
+  /// null means popup is hidden.
+  final _selectionRectNotifier = ValueNotifier<Rect?>(null);
 
   /// Key for the popup WebView to keep it persistent across rebuilds.
   final GlobalKey<DictionaryPopupWebViewState> _popupWebViewKey =
@@ -138,7 +137,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
   /// be shown on the screen.
   Future<void> searchDictionaryResult({
     required String searchTerm,
-    required JidoujishoPopupPosition position,
+    required Rect selectionRect,
     int? overrideMaximumTerms,
   }) async {
     if (_lastSearchTerm == searchTerm && overrideMaximumTerms == null) {
@@ -152,7 +151,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
     overrideMaximumTerms ??= appModel.maximumTerms;
 
     late DictionarySearchResult dictionaryResult;
-    _popupPositionNotifier.value = position;
+    _selectionRectNotifier.value = selectionRect;
 
     try {
       _isSearchingNotifier.value = true;
@@ -185,134 +184,89 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
   /// Hide the dictionary and dispose of the current result.
   void clearDictionaryResult() async {
     _dictionaryResultNotifier.value = null;
-    _popupPositionNotifier.value = null;
+    _selectionRectNotifier.value = null;
     _lastSearchTerm = null;
     _showMore = false;
     appModel.currentMediaSource?.clearCurrentSentence();
     appModel.currentMediaSource?.clearExtraData();
   }
 
+  double get popupMaxWidth => 400;
+  double get popupMaxHeight => 360;
+  double get popupPadding => 6;
+
   /// Build a dictionary showing the result with positioning.
-  /// If the result is null, show nothing.
   Widget buildDictionary() {
     return Theme(
       data: appModel.overrideDictionaryTheme ?? theme,
-      child: MultiValueListenableBuilder(
-        valueListenables: [
-          _popupPositionNotifier,
-        ],
-        builder: (context, result, _) {
-          if (!_isSearchingNotifier.value &&
+      child: ValueListenableBuilder<Rect?>(
+        valueListenable: _selectionRectNotifier,
+        builder: (context, selectionRect, _) {
+          if (selectionRect == null &&
+              !_isSearchingNotifier.value &&
               _dictionaryResultNotifier.value == null) {
             return const SizedBox.shrink();
           }
-
-          switch (_popupPositionNotifier.value) {
-            case null:
-              return const SizedBox.shrink();
-            case JidoujishoPopupPosition.topHalf:
-              return buildTopHalfDictionary();
-
-            case JidoujishoPopupPosition.bottomHalf:
-              return buildBottomHalfDictionary();
-
-            case JidoujishoPopupPosition.leftHalf:
-              return buildLeftHalfDictionary();
-
-            case JidoujishoPopupPosition.rightHalf:
-              return buildRightHalfDictionary();
-
-            case JidoujishoPopupPosition.topThreeFourths:
-              return buildTopThreeFourths();
+          if (selectionRect == null) {
+            return const SizedBox.shrink();
           }
+
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              final screen = Size(constraints.maxWidth, constraints.maxHeight);
+              final pos = _calculatePopupPosition(selectionRect, screen);
+
+              return Stack(
+                children: [
+                  Positioned.fill(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onTap: clearDictionaryResult,
+                      child: const SizedBox.expand(),
+                    ),
+                  ),
+                  Positioned(
+                    left: pos.left,
+                    top: pos.top,
+                    width: pos.width,
+                    height: pos.height,
+                    child: buildDictionaryResult(),
+                  ),
+                ],
+              );
+            },
+          );
         },
       ),
     );
   }
 
-  /// The dictionary in the case of [JidoujishoPopupPosition.topHalf].
-  Widget buildTopHalfDictionary() {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Flexible(
-          child: buildDictionaryResult(),
-        ),
-        const Space.semiBig(),
-        const Flexible(
-          child: SizedBox.shrink(),
-        ),
-      ],
-    );
-  }
+  Rect _calculatePopupPosition(Rect sel, Size screen) {
+    final double width =
+        (screen.width - popupPadding * 2).clamp(0, popupMaxWidth);
+    final double height =
+        (screen.height * 0.5).clamp(0, popupMaxHeight);
 
-  /// The dictionary in the case of [JidoujishoPopupPosition.bottomHalf].
-  Widget buildBottomHalfDictionary() {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        const Flexible(
-          child: SizedBox.shrink(),
-        ),
-        const Space.semiBig(),
-        Flexible(
-          child: buildDictionaryResult(),
-        ),
-      ],
-    );
-  }
+    final double spaceBelow = screen.height - sel.bottom - popupPadding;
+    final double spaceAbove = sel.top - popupPadding;
+    final bool showBelow = spaceBelow >= height || spaceBelow >= spaceAbove;
 
-  /// The dictionary in the case of [JidoujishoPopupPosition.leftHalf].
-  Widget buildLeftHalfDictionary() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Flexible(
-          child: buildDictionaryResult(),
-        ),
-        const Space.semiBig(),
-        const Flexible(
-          child: SizedBox.shrink(),
-        ),
-      ],
-    );
-  }
+    double top;
+    if (showBelow) {
+      top = sel.bottom + 4;
+    } else {
+      top = sel.top - 4 - height;
+    }
+    top = top.clamp(popupPadding, screen.height - height - popupPadding);
 
-  /// The dictionary in the case of [JidoujishoPopupPosition.rightHalf].
-  Widget buildRightHalfDictionary() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        const Flexible(
-          child: SizedBox.shrink(),
-        ),
-        const Space.semiBig(),
-        Flexible(
-          child: buildDictionaryResult(),
-        ),
-      ],
-    );
-  }
+    double left = sel.left;
+    left = left.clamp(popupPadding, screen.width - width - popupPadding);
 
-  /// The dictionary in the case of [JidoujishoPopupPosition.topThreeFourths].
-  Widget buildTopThreeFourths() {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Flexible(
-          flex: 3,
-          child: buildDictionaryResult(),
-        ),
-        const Space.semiBig(),
-        const Flexible(
-          child: SizedBox.shrink(),
-        ),
-      ],
-    );
+    return Rect.fromLTWH(left, top, width, height);
   }
 
   /// Used to check if the pop-up is open.
-  bool get dictionaryPopupShown => _popupPositionNotifier.value != null;
+  bool get dictionaryPopupShown => _selectionRectNotifier.value != null;
 
   /// The dictionary result unpositioned. See [buildDictionary] for the
   /// positioned version.
@@ -327,35 +281,23 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
         ? Colors.white.withValues(alpha: 0.15)
         : Colors.black.withValues(alpha: 0.12);
 
-    return Dismissible(
-      key: ValueKey(_dictionaryResultNotifier.value),
-      onDismissed: (dismissDirection) {},
-      onUpdate: (details) {
-        if (details.reached) {
-          onDictionaryDismiss();
-        }
-      },
-      dismissThresholds: const {DismissDirection.horizontal: 0.05},
-      movementDuration: const Duration(milliseconds: 20),
-      child: Padding(
-        padding: Spacing.of(context).insets.all.normal,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-            child: Container(
-              decoration: BoxDecoration(
-                color: fillColor,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: borderColor, width: 1),
-              ),
-              padding: Spacing.of(context).insets.all.semiSmall,
-              child: Stack(
-                children: [
-                  buildSearchResult(),
-                  buildDictionaryLoading(),
-                ],
-              ),
+    return _SwipeDismissWrapper(
+      onDismiss: clearDictionaryResult,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+          child: Container(
+            decoration: BoxDecoration(
+              color: fillColor,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: borderColor, width: 1),
+            ),
+            child: Stack(
+              children: [
+                buildSearchResult(),
+                buildDictionaryLoading(),
+              ],
             ),
           ),
         ),
@@ -441,8 +383,8 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
         onTextSelected: (text) {
           searchDictionaryResult(
             searchTerm: text,
-            position: _popupPositionNotifier.value ??
-                JidoujishoPopupPosition.topHalf,
+            selectionRect: _selectionRectNotifier.value ??
+                Rect.fromLTWH(0, 0, 1, 1),
           );
         },
         onMineEntry: onMineFromPopup,
@@ -473,7 +415,8 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
                 : () async {
                     searchDictionaryResult(
                       searchTerm: _lastSearchTerm!,
-                      position: _popupPositionNotifier.value!,
+                      selectionRect: _selectionRectNotifier.value ??
+                          Rect.fromLTWH(0, 0, 1, 1),
                       overrideMaximumTerms:
                           _dictionaryResultNotifier.value!.entries.length +
                               appModel.maximumTerms,
@@ -543,4 +486,39 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
 
   /// Performs an action after closing the Card Creator.
   void onCreatorClose() {}
+}
+
+class _SwipeDismissWrapper extends StatefulWidget {
+  const _SwipeDismissWrapper({required this.child, required this.onDismiss});
+  final Widget child;
+  final VoidCallback onDismiss;
+
+  @override
+  State<_SwipeDismissWrapper> createState() => _SwipeDismissWrapperState();
+}
+
+class _SwipeDismissWrapperState extends State<_SwipeDismissWrapper> {
+  double _dragX = 0;
+  static const double _threshold = 60;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onHorizontalDragUpdate: (d) => setState(() => _dragX += d.delta.dx),
+      onHorizontalDragEnd: (d) {
+        if (_dragX.abs() > _threshold) {
+          widget.onDismiss();
+        }
+        setState(() => _dragX = 0);
+      },
+      onHorizontalDragCancel: () => setState(() => _dragX = 0),
+      child: Transform.translate(
+        offset: Offset(_dragX, 0),
+        child: Opacity(
+          opacity: (1 - (_dragX.abs() / 200)).clamp(0.3, 1.0),
+          child: widget.child,
+        ),
+      ),
+    );
+  }
 }
