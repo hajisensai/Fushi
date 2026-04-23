@@ -499,32 +499,50 @@ class _SwipeDismissWrapper extends StatefulWidget {
 
 class _SwipeDismissWrapperState extends State<_SwipeDismissWrapper> {
   double _dragX = 0;
+  double _dragY = 0;
+  bool _decided = false;
+  bool _isHorizontal = false;
   static const double _threshold = 90;
+  static const double _decisionDistance = 18;
 
   void _reset() {
     setState(() {
       _dragX = 0;
+      _dragY = 0;
+      _decided = false;
+      _isHorizontal = false;
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onHorizontalDragUpdate: (d) {
-        _dragX += d.delta.dx;
-        setState(() {});
+    return Listener(
+      onPointerMove: (e) {
+        _dragX += e.delta.dx;
+        _dragY += e.delta.dy;
+        if (!_decided &&
+            (_dragX.abs() > _decisionDistance ||
+                _dragY.abs() > _decisionDistance)) {
+          _decided = true;
+          _isHorizontal = _dragX.abs() > _dragY.abs() * 2.5;
+        }
+        if (_decided && _isHorizontal) {
+          setState(() {});
+        }
       },
-      onHorizontalDragEnd: (d) {
-        if (_dragX.abs() > _threshold) {
+      onPointerUp: (_) {
+        if (_decided && _isHorizontal && _dragX.abs() > _threshold) {
           widget.onDismiss();
         }
         _reset();
       },
-      onHorizontalDragCancel: _reset,
+      onPointerCancel: (_) => _reset(),
       child: Transform.translate(
-        offset: Offset(_dragX, 0),
+        offset: Offset(_decided && _isHorizontal ? _dragX : 0, 0),
         child: Opacity(
-          opacity: (1 - (_dragX.abs() / 300)).clamp(0.3, 1.0),
+          opacity: _decided && _isHorizontal
+              ? (1 - (_dragX.abs() / 300)).clamp(0.3, 1.0)
+              : 1.0,
           child: widget.child,
         ),
       ),
