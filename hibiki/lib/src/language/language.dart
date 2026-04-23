@@ -418,14 +418,8 @@ Future<DictionarySearchResult?> prepareSearchResultsStandard(
     DictionarySearchParams params) async {
   if (params.dictionaryPaths.isEmpty) return null;
 
-  final hoshi = HoshiDicts();
+  final hoshi = HoshiDicts.withPaths(params.dictionaryPaths);
   try {
-    for (final p in params.dictionaryPaths) {
-      hoshi.addTermDict(p);
-      hoshi.addFreqDict(p);
-      hoshi.addPitchDict(p);
-    }
-
     final results = hoshi.query(params.searchTerm);
     if (results.isEmpty) return null;
 

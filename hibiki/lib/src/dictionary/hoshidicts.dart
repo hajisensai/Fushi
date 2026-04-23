@@ -330,4 +330,14 @@ class HoshiDicts {
       calloc.free(mp);
     }
   }
+
+  static HoshiDicts withPaths(List<String> paths) {
+    final h = HoshiDicts();
+    for (final p in paths) {
+      h.addTermDict(p);
+      h.addFreqDict(p);
+      h.addPitchDict(p);
+    }
+    return h;
+  }
 }

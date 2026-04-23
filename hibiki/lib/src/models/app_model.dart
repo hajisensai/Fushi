@@ -295,10 +295,18 @@ class AppModel with ChangeNotifier {
 
   /// In-memory cache of dictionaries, kept in sync with the database.
   List<Dictionary> _dictionariesCache = [];
+  List<String> _dictPathsCache = [];
 
   /// Returns all dictionaries imported into the database. Sorted by the
   /// user-defined order in the dictionary menu.
   List<Dictionary> get dictionaries => List.unmodifiable(_dictionariesCache);
+
+  void _rebuildDictPathsCache() {
+    _dictPathsCache = _dictionariesCache
+        .map((d) => path.join(dictionaryResourceDirectory.path, d.name))
+        .where((p) => Directory(p).existsSync())
+        .toList();
+  }
 
   /// In-memory cache of anki mappings, kept in sync with the database.
   List<AnkiMapping> _mappingsCache = [];
@@ -601,6 +609,7 @@ class AppModel with ChangeNotifier {
   void updateDictionaryOrder(List<Dictionary> newDictionaries) async {
     _dictionariesCache = [...newDictionaries]
       ..sort((a, b) => a.order.compareTo(b.order));
+    _rebuildDictPathsCache();
     for (final dictionary in newDictionaries) {
       await _database.upsertDictionaryMeta(_dictionaryToCompanion(dictionary));
     }
@@ -1023,6 +1032,7 @@ class AppModel with ChangeNotifier {
       final dictRows = await _database.getAllDictionaryMetadata();
       _dictionariesCache = dictRows.map(_rowToDictionary).toList()
         ..sort((a, b) => a.order.compareTo(b.order));
+      _rebuildDictPathsCache();
 
       /// Load mappings cache.
       final mapRows = await _database.getAllMappings();
@@ -1304,6 +1314,7 @@ class AppModel with ChangeNotifier {
       _dictionariesCache.add(dictionary);
       _dictionariesCache.sort((a, b) => a.order.compareTo(b.order));
     }
+    _rebuildDictPathsCache();
     await _database.upsertDictionaryMeta(_dictionaryToCompanion(dictionary));
   }
 
@@ -1914,6 +1925,7 @@ class AppModel with ChangeNotifier {
 
     await clearDictionaryHistory();
     _dictionariesCache.clear();
+    _dictPathsCache.clear();
     await _database.clearAllDictionaryMeta();
 
     if (dictionaryResourceDirectory.existsSync()) {
@@ -1930,6 +1942,7 @@ class AppModel with ChangeNotifier {
     await clearDictionaryHistory();
 
     _dictionariesCache.removeWhere((d) => d.name == dictionary.name);
+    _rebuildDictPathsCache();
     await _database.deleteDictionaryMeta(dictionary.name);
 
     final directory = Directory(
@@ -1998,18 +2011,13 @@ class AppModel with ChangeNotifier {
       debugPrint(message.toString());
     });
 
-    final dictPaths = _dictionariesCache
-        .map((d) => path.join(dictionaryResourceDirectory.path, d.name))
-        .where((p) => Directory(p).existsSync())
-        .toList();
-
     DictionarySearchParams params = DictionarySearchParams(
       searchTerm: searchTerm,
       directoryPath: _databaseDirectory.path,
       maximumDictionarySearchResults: maximumDictionarySearchResults,
       maximumDictionaryTermsInResult: overrideMaximumTerms ?? maximumTerms,
       searchWithWildcards: searchWithWildcards,
-      dictionaryPaths: dictPaths,
+      dictionaryPaths: _dictPathsCache,
       sendPort: receivePort.sendPort,
     );
 

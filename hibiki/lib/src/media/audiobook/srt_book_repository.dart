@@ -46,24 +46,15 @@ class SrtBookRepository {
               t.chapterHref.equals(SrtParser.defaultChapter))
           ..orderBy([(t) => OrderingTerm.asc(t.sentenceIndex)]))
         .get();
-    return rows.map(_rowToCue).toList();
+    return rows.map(AudioCue.fromRow).toList();
   }
 
   Future<void> saveCues({
     required String uid,
     required List<AudioCue> cues,
   }) async {
-    final companions = cues.map((c) => AudioCuesCompanion.insert(
-          bookUid: c.bookUid,
-          chapterHref: c.chapterHref,
-          sentenceIndex: c.sentenceIndex,
-          textFragmentId: c.textFragmentId,
-          cueText: c.text,
-          startMs: c.startMs,
-          endMs: c.endMs,
-          audioFileIndex: c.audioFileIndex,
-        )).toList();
-    await _db.replaceCuesForBook(uid, companions);
+    await _db.replaceCuesForBook(
+        uid, cues.map(AudioCue.toCompanion).toList());
   }
 
   static SrtBook _rowToModel(SrtBookRow r) {
@@ -81,19 +72,5 @@ class SrtBookRepository {
     book.importedAt = r.importedAt;
     book.ttuBookId = r.ttuBookId;
     return book;
-  }
-
-  static AudioCue _rowToCue(AudioCueRow r) {
-    final c = AudioCue();
-    c.id = r.id;
-    c.bookUid = r.bookUid;
-    c.chapterHref = r.chapterHref;
-    c.sentenceIndex = r.sentenceIndex;
-    c.textFragmentId = r.textFragmentId;
-    c.text = r.cueText;
-    c.startMs = r.startMs;
-    c.endMs = r.endMs;
-    c.audioFileIndex = r.audioFileIndex;
-    return c;
   }
 }

@@ -1,9 +1,8 @@
-﻿import 'package:collection/collection.dart';
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/language.dart';
 import 'package:hibiki/models.dart';
-import 'package:hibiki/src/dictionary/hoshidicts.dart';
 
 /// Language implementation of the English language.
 class EnglishLanguage extends Language {
@@ -18,7 +17,7 @@ class EnglishLanguage extends Language {
           isSpaceDelimited: true,
           textBaseline: TextBaseline.alphabetic,
           helloWorld: 'Hello world',
-          prepareSearchResults: prepareSearchResultsEnglishLanguage,
+          prepareSearchResults: prepareSearchResultsStandard,
           standardFormat: MigakuFormat.instance,
           defaultFontFamily: 'Roboto',
         );
@@ -47,43 +46,5 @@ class EnglishLanguage extends Language {
         })
         .where((e) => e.isNotEmpty)
         .toList();
-  }
-}
-
-Future<DictionarySearchResult?> prepareSearchResultsEnglishLanguage(
-    DictionarySearchParams params) async {
-  if (params.dictionaryPaths.isEmpty) return null;
-
-  final hoshi = HoshiDicts();
-  try {
-    for (final p in params.dictionaryPaths) {
-      hoshi.addTermDict(p);
-      hoshi.addFreqDict(p);
-      hoshi.addPitchDict(p);
-    }
-
-    final results = hoshi.query(params.searchTerm);
-    if (results.isEmpty) return null;
-
-    final entries = <DictionaryEntry>[];
-    for (final t in results) {
-      for (final g in t.glossaries) {
-        entries.add(DictionaryEntry(
-          dictionaryName: g.dictName,
-          word: t.expression,
-          reading: t.reading,
-          meaning: g.glossary,
-          popularity: 0,
-        ));
-      }
-    }
-
-    return DictionarySearchResult(
-      searchTerm: params.searchTerm,
-      entries: entries,
-      bestLength: params.searchTerm.length,
-    );
-  } finally {
-    hoshi.dispose();
   }
 }

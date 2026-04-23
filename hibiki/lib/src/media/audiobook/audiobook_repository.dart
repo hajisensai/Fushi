@@ -24,12 +24,12 @@ class AudiobookRepository {
     required String chapterHref,
   }) async {
     final rows = await _db.getCuesForChapter(bookUid, chapterHref);
-    return rows.map(_rowToCue).toList();
+    return rows.map(AudioCue.fromRow).toList();
   }
 
   Future<List<AudioCue>> cuesForBook(String bookUid) async {
     final rows = await _db.getCuesForBook(bookUid);
-    return rows.map(_rowToCue).toList();
+    return rows.map(AudioCue.fromRow).toList();
   }
 
   Future<AudioCue?> findCue({
@@ -39,7 +39,7 @@ class AudiobookRepository {
   }) async {
     final row = await _db.findCue(bookUid, chapterHref, sentenceIndex);
     if (row == null) return null;
-    return _rowToCue(row);
+    return AudioCue.fromRow(row);
   }
 
   Future<void> saveCues({
@@ -47,17 +47,8 @@ class AudiobookRepository {
     required String chapterHref,
     required List<AudioCue> cues,
   }) async {
-    final companions = cues.map((c) => AudioCuesCompanion.insert(
-          bookUid: c.bookUid,
-          chapterHref: c.chapterHref,
-          sentenceIndex: c.sentenceIndex,
-          textFragmentId: c.textFragmentId,
-          cueText: c.text,
-          startMs: c.startMs,
-          endMs: c.endMs,
-          audioFileIndex: c.audioFileIndex,
-        )).toList();
-    await _db.replaceCuesForBook(bookUid, companions);
+    await _db.replaceCuesForBook(
+        bookUid, cues.map(AudioCue.toCompanion).toList());
   }
 
   Future<void> saveAudiobook(Audiobook audiobook) async {
@@ -198,17 +189,4 @@ class AudiobookRepository {
     );
   }
 
-  static AudioCue _rowToCue(AudioCueRow r) {
-    final c = AudioCue();
-    c.id = r.id;
-    c.bookUid = r.bookUid;
-    c.chapterHref = r.chapterHref;
-    c.sentenceIndex = r.sentenceIndex;
-    c.textFragmentId = r.textFragmentId;
-    c.text = r.cueText;
-    c.startMs = r.startMs;
-    c.endMs = r.endMs;
-    c.audioFileIndex = r.audioFileIndex;
-    return c;
-  }
 }

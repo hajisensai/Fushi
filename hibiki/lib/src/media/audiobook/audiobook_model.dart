@@ -1,3 +1,5 @@
+import 'package:hibiki/src/database/database.dart';
+
 /// 有声书元数据。一本 EPUB 可挂载 0..1 个有声书。
 class Audiobook {
   int? id;
@@ -73,4 +75,30 @@ class AudioCue {
 
   /// 多段音频时的文件下标（对应 [Audiobook] audioRoot 下按名称排序的文件列表）。
   late int audioFileIndex;
+
+  static AudioCue fromRow(AudioCueRow r) {
+    final c = AudioCue();
+    c.id = r.id;
+    c.bookUid = r.bookUid;
+    c.chapterHref = r.chapterHref;
+    c.sentenceIndex = r.sentenceIndex;
+    c.textFragmentId = r.textFragmentId;
+    c.text = r.cueText;
+    c.startMs = r.startMs;
+    c.endMs = r.endMs;
+    c.audioFileIndex = r.audioFileIndex;
+    return c;
+  }
+
+  static AudioCuesCompanion toCompanion(AudioCue c) =>
+      AudioCuesCompanion.insert(
+        bookUid: c.bookUid,
+        chapterHref: c.chapterHref,
+        sentenceIndex: c.sentenceIndex,
+        textFragmentId: c.textFragmentId,
+        cueText: c.text,
+        startMs: c.startMs,
+        endMs: c.endMs,
+        audioFileIndex: c.audioFileIndex,
+      );
 }
