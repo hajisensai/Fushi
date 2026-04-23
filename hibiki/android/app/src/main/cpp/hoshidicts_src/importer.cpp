@@ -42,7 +42,15 @@ struct ProcessedFile {
 void setup_stream_exceptions(std::ofstream& stream) { stream.exceptions(std::ios::failbit | std::ios::badbit); }
 
 std::string_view basename(std::string_view path) {
-  auto pos = path.rfind('/');
+  auto pos1 = path.rfind('/');
+  auto pos2 = path.rfind('\\');
+  auto pos = std::string_view::npos;
+  if (pos1 != std::string_view::npos && pos2 != std::string_view::npos)
+    pos = std::max(pos1, pos2);
+  else if (pos1 != std::string_view::npos)
+    pos = pos1;
+  else
+    pos = pos2;
   return pos == std::string_view::npos ? path : path.substr(pos + 1);
 }
 
@@ -50,7 +58,7 @@ Files get_files(const Zip& zip) {
   Files files;
   for (int i = 0; i < static_cast<int>(zip.entries.size()); i++) {
     const auto& name = zip.entries[i].name;
-    if (name.empty() || name.back() == '/') {
+    if (name.empty() || name.back() == '/' || name.back() == '\\') {
       continue;
     }
 
@@ -452,7 +460,13 @@ ImportResult dictionary_importer::import(const std::string& zip_path, const std:
       }
     }
     if (index_idx < 0) {
-      throw std::runtime_error("could not find index.json");
+      std::string msg = "could not find index.json in zip (" +
+                        std::to_string(zip.entries.size()) + " entries";
+      if (!zip.entries.empty()) {
+        msg += ", first: " + zip.entries[0].name;
+      }
+      msg += ")";
+      throw std::runtime_error(msg);
     }
     std::string index_content = zip.read(index_idx);
     if (index_content.empty()) {
