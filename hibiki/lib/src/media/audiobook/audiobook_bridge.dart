@@ -799,7 +799,7 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
   }
 
   /// 拿 ttu 的章节列表（`window.__ttuGetToc()`）。ttu fork 未就绪时
-  /// 返回空列表。label 缺失的 section 退回 reference（fork 已处理）。
+  /// 返回空列表。
   static Future<List<TtuTocEntry>> fetchToc(
     InAppWebViewController controller,
   ) async {
@@ -818,7 +818,8 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
                 label: (m['label'] as String?) ?? '',
                 parent: m['parent'] as String?,
               ))
-          .where((TtuTocEntry e) => e.index >= 0)
+          .where((TtuTocEntry e) =>
+              e.index >= 0 && !e.label.startsWith('ttu-'))
           .toList(growable: false);
     } catch (_) {
       return const <TtuTocEntry>[];
