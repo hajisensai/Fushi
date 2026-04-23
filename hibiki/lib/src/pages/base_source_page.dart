@@ -502,7 +502,7 @@ class _SwipeDismissWrapperState extends State<_SwipeDismissWrapper> {
   double _dragY = 0;
   bool _decided = false;
   bool _isHorizontal = false;
-  static const double _threshold = 120;
+  static const double _threshold = 90;
   static const double _decisionDistance = 12;
 
   void _reset() {
