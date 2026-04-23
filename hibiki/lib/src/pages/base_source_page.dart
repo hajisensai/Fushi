@@ -222,7 +222,12 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
                     child: GestureDetector(
                       behavior: HitTestBehavior.translucent,
                       onTap: clearDictionaryResult,
-                      child: const SizedBox.expand(),
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                        child: Container(
+                          color: Colors.black.withValues(alpha: 0.15),
+                        ),
+                      ),
                     ),
                   ),
                   Positioned(
