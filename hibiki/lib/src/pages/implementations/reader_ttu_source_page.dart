@@ -1623,7 +1623,11 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         initialFollowAudio: await repo.readFollowAudio(bookUid),
         initialDelayMs: await repo.readDelayMs(bookUid),
         initialSpeed: await repo.readSpeed(bookUid),
+        initialPositionMs: await repo.readPositionMs(bookUid),
       );
+      controller.onPositionWrite = (String uid, int posMs) {
+        repo.updatePositionMs(bookUid: uid, positionMs: posMs);
+      };
       controller.addListener(_onCueChanged);
       _wireFollowAudio(controller, bookUid: bookUid, repo: repo);
 

@@ -65,6 +65,20 @@ class AudiobookRepository {
     });
   }
 
+  // ── playback position (preferences) ────────────────────────────
+
+  static const String _kPositionMsKeyPrefix = 'audiobook_pos_';
+
+  Future<int> readPositionMs(String bookUid) async {
+    return await _db.getPrefTyped('$_kPositionMsKeyPrefix$bookUid', 0);
+  }
+
+  Future<void> updatePositionMs({
+    required String bookUid,
+    required int positionMs,
+  }) =>
+      _db.setPrefTyped('$_kPositionMsKeyPrefix$bookUid', positionMs);
+
   // ── follow audio (preferences) ─────────────────────────────────
 
   static const String _kFollowAudioKeyPrefix = 'audiobook_follow_';

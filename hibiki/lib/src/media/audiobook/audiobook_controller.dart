@@ -144,6 +144,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     bool initialFollowAudio = true,
     int initialDelayMs = 0,
     double initialSpeed = 1.0,
+    int initialPositionMs = 0,
   }) async {
     _audiobook = audiobook;
     // Follow audio / delay / speed 状态由调用方从持久层读出传入；不触发
@@ -180,7 +181,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     }
 
     // 恢复上次播放位置（页面重建场景下避免音频回到 0）。
-    final int savedMs = _readSavedPositionMs(audiobook.bookUid);
+    final int savedMs = initialPositionMs;
     if (savedMs > 0) {
       try {
         await _player.seek(Duration(milliseconds: savedMs));
@@ -214,17 +215,9 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// -1 表示从未保存过。
   int _lastSavedWholeSec = -1;
 
-  /// 播放位置读取回调。调用方（reader 页面）在 attach 时装入，
-  /// 一般实现为从 Drift database preferences 读 int。
-  int Function(String bookUid)? onPositionRead;
-
   /// 播放位置写入回调。调用方在 attach 时装入，
   /// 一般实现为写 Drift database preferences。
   void Function(String bookUid, int positionMs)? onPositionWrite;
-
-  int _readSavedPositionMs(String bookUid) {
-    return onPositionRead?.call(bookUid) ?? 0;
-  }
 
   /// 把当前播放位置写入持久化存储。对齐上游：**每整秒变化一次**就写。
   /// 125ms tick 触发 8 次里只有 1 次真的落库，IO 成本和上游等价。
