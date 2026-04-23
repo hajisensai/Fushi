@@ -32,7 +32,8 @@ body {
     background-color: transparent;
     font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", sans-serif !important;
     overscroll-behavior-y: contain;
-    touch-action: pan-y;
+    touch-action: auto;
+    -webkit-user-select: text;
 }
 
 body {
