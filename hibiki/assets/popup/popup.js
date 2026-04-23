@@ -1431,7 +1431,21 @@ window.renderPopup = function() {
 
 document.addEventListener('click', (e) => {
     const target = e.target?.nodeType === Node.TEXT_NODE ? e.target.parentElement : e.target;
+    if (target?.closest('.mine-button') || target?.closest('.audio-button')) return;
     if (!target?.closest('.glossary-content') && !target?.closest('.entry-header') && !target?.closest('.entry-tags')) {
         window.flutter_inappwebview.callHandler('tapOutside');
+        return;
+    }
+    if (target?.closest('.glossary-content')) {
+        const range = document.caretRangeFromPoint(e.clientX, e.clientY);
+        if (range && range.startContainer.nodeType === Node.TEXT_NODE) {
+            const text = range.startContainer.textContent;
+            const offset = range.startOffset;
+            const extractLen = 20;
+            const extracted = text.substring(offset, offset + extractLen).trim();
+            if (extracted.length > 0) {
+                window.flutter_inappwebview.callHandler('textSelected', extracted);
+            }
+        }
     }
 });

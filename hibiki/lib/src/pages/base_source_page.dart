@@ -498,7 +498,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
   Widget buildSearchResult() {
     return ValueListenableBuilder(
       valueListenable: _dictionaryResultNotifier,
-      builder: (_, __, ___) {
+      builder: (_, __, child) {
         if (_dictionaryResultNotifier.value == null) {
           return SizedBox(
             height: double.infinity,
@@ -522,8 +522,9 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
           return buildNoSearchResultsPlaceholderMessage();
         }
 
-        return _buildPopupWebView();
+        return child!;
       },
+      child: _buildPopupWebView(),
     );
   }
 
@@ -601,17 +602,29 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
         );
 
         controller.addJavaScriptHandler(
-          handlerName: 'openLink',
+          handlerName: 'textSelected',
           callback: (args) {
-            // no-op for now
+            if (args.isNotEmpty && args[0] is String) {
+              final text = args[0] as String;
+              if (text.isNotEmpty) {
+                searchDictionaryResult(
+                  searchTerm: text,
+                  position: _popupPositionNotifier.value ??
+                      JidoujishoPopupPosition.topHalf,
+                );
+              }
+            }
           },
         );
 
         controller.addJavaScriptHandler(
+          handlerName: 'openLink',
+          callback: (args) {},
+        );
+
+        controller.addJavaScriptHandler(
           handlerName: 'playWordAudio',
-          callback: (args) {
-            // no-op for now; audio handled by Sasayaki
-          },
+          callback: (args) {},
         );
       },
       onLoadStop: (controller, url) {
