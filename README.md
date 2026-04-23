@@ -20,7 +20,7 @@
 |---|---|
 | 框架 | Flutter 3.41.6 / Dart 3.11.4 |
 | 阅读器 | ttu Ebook Reader（WebView，[独立 fork](https://github.com/hdjsadgfwtg/ttu-fork)） |
-| 存储 | Drift (SQLite) |
+| 存储 | Drift (SQLite) + hoshidicts (C++ FFI 词典引擎) |
 | NLP | MeCab + Ve（分词 / 词形还原） |
 | 制卡 | AnkiDroid API |
 | 最低版本 | Android 8.0（API 26） |
@@ -153,7 +153,7 @@ Key features:
 |---|---|
 | Framework | Flutter 3.41.6 / Dart 3.11.4 |
 | Reader | ttu Ebook Reader (WebView, [custom fork](https://github.com/hdjsadgfwtg/ttu-fork)) |
-| Storage | Drift (SQLite) |
+| Storage | Drift (SQLite) + hoshidicts (C++ FFI dictionary engine) |
 | NLP | MeCab + Ve (tokenization / deinflection) |
 | Flashcards | AnkiDroid API |
 | Minimum | Android 8.0 (API 26) |
