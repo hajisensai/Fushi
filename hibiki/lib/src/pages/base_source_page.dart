@@ -275,8 +275,8 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
         (appModel.overrideDictionaryTheme ?? theme).brightness ==
             Brightness.dark;
     final fillColor = isDark
-        ? Colors.black.withValues(alpha: 0.45)
-        : Colors.white.withValues(alpha: 0.55);
+        ? Colors.black.withValues(alpha: 0.75)
+        : Colors.white.withValues(alpha: 0.82);
     final borderColor = isDark
         ? Colors.white.withValues(alpha: 0.15)
         : Colors.black.withValues(alpha: 0.12);
@@ -499,23 +499,50 @@ class _SwipeDismissWrapper extends StatefulWidget {
 
 class _SwipeDismissWrapperState extends State<_SwipeDismissWrapper> {
   double _dragX = 0;
-  static const double _threshold = 60;
+  double _dragY = 0;
+  bool _decided = false;
+  bool _isHorizontal = false;
+  static const double _threshold = 120;
+  static const double _decisionDistance = 12;
+
+  void _reset() {
+    setState(() {
+      _dragX = 0;
+      _dragY = 0;
+      _decided = false;
+      _isHorizontal = false;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onHorizontalDragUpdate: (d) => setState(() => _dragX += d.delta.dx),
-      onHorizontalDragEnd: (d) {
-        if (_dragX.abs() > _threshold) {
+      onPanUpdate: (d) {
+        _dragX += d.delta.dx;
+        _dragY += d.delta.dy;
+        if (!_decided &&
+            (_dragX.abs() > _decisionDistance ||
+                _dragY.abs() > _decisionDistance)) {
+          _decided = true;
+          _isHorizontal = _dragX.abs() > _dragY.abs() * 1.8;
+        }
+        if (_decided && _isHorizontal) {
+          setState(() {});
+        }
+      },
+      onPanEnd: (d) {
+        if (_decided && _isHorizontal && _dragX.abs() > _threshold) {
           widget.onDismiss();
         }
-        setState(() => _dragX = 0);
+        _reset();
       },
-      onHorizontalDragCancel: () => setState(() => _dragX = 0),
+      onPanCancel: _reset,
       child: Transform.translate(
-        offset: Offset(_dragX, 0),
+        offset: Offset(_decided && _isHorizontal ? _dragX : 0, 0),
         child: Opacity(
-          opacity: (1 - (_dragX.abs() / 200)).clamp(0.3, 1.0),
+          opacity: _decided && _isHorizontal
+              ? (1 - (_dragX.abs() / 300)).clamp(0.3, 1.0)
+              : 1.0,
           child: widget.child,
         ),
       ),
