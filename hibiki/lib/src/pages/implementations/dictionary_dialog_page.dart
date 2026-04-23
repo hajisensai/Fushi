@@ -182,23 +182,21 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
           type: FileType.custom,
           allowedExtensions: const ['zip', 'dsl', 'mdx', 'css'],
           allowMultiple: true,
-          onFileLoading: (status) {
-            if (status == FilePickerStatus.done) {
-              showDialog(
-                context: context,
-                barrierDismissible: false,
-                builder: (context) => DictionaryDialogImportPage(
-                  progressNotifier: progressNotifier,
-                  countNotifier: countNotifier,
-                  totalNotifier: totalNotifier,
-                ),
-              );
-            }
-          },
         );
-        if (result == null) {
+        if (result == null || result.files.isEmpty) {
           return;
         }
+
+        if (!mounted) return;
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => DictionaryDialogImportPage(
+            progressNotifier: progressNotifier,
+            countNotifier: countNotifier,
+            totalNotifier: totalNotifier,
+          ),
+        );
 
         final dictFiles = result.files
             .where((f) => !f.path!.toLowerCase().endsWith('.css'))
