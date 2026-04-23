@@ -258,7 +258,13 @@ class HibikiDatabase extends _$HibikiDatabase {
           .getSingleOrNull();
 
   Future<void> upsertReaderPosition(ReaderPositionsCompanion pos) =>
-      into(readerPositions).insertOnConflictUpdate(pos);
+      into(readerPositions).insert(
+        pos,
+        onConflict: DoUpdate(
+          (old) => pos,
+          target: [readerPositions.ttuBookId],
+        ),
+      );
 
   Future<int> deleteReaderPosition(int ttuBookId) =>
       (delete(readerPositions)..where((t) => t.ttuBookId.equals(ttuBookId)))
