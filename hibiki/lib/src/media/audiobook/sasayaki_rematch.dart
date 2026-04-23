@@ -21,13 +21,6 @@ class SasayakiRematch {
   /// 硬时间码格式，matcher 无能为力，直接排除。
   static const Set<String> nonMatcherFormats = <String>{'smil', 'json'};
 
-  /// 书架侧决定是否挂"重新匹配"按钮的前置条件。
-  ///
-  /// 历史坏数据（Isar 长 CJK bookUid 双 put 后出现的 `alignmentFormat = "s"`
-  /// 之类脏值，见 `project_hoshi_isar_double_put` 记忆）会同时污染
-  /// `alignmentFormat` 和 `alignmentPath`，无法靠白名单命中。所以改成黑名单：
-  /// 只要 format / path-ext 都不是 smil/json，就放过去让用户重跑。
-  /// 重跑流程本身只读 `bookUid`，不读这两个字段，脏值无害。
   static bool isEligible(Audiobook ab) {
     final String fmt = ab.alignmentFormat.toLowerCase();
     final String ext = _extFromPath(ab.alignmentPath);
@@ -42,21 +35,12 @@ class SasayakiRematch {
       return '';
     }
     final String last = path.split('.').last.toLowerCase();
-    // 无扩展名或 split 后等于原路径 → 返回空串，让调用方按"不支持"处理。
     if (last == path.toLowerCase()) {
       return '';
     }
     return last;
   }
 
-  /// 弹 bottom sheet 让用户调 window → 跑 matcher → toast 结果。
-  ///
-  /// - 用户取消 → 返回 false，不会触发 onRunningChanged。
-  /// - ttu 绑定缺失 → 提前 toast 并返回 null。
-  /// - 跑完（无论命中率高低还是异常） → 返回 true，caller 可据此刷新 UI。
-  ///
-  /// [onRunningChanged] 用于外部显示进度（dialog 本身的 `_importing`
-  /// 灰化 / 书架的 loading barrier 等）。
   static Future<bool?> promptAndRun({
     required BuildContext context,
     required Audiobook ab,
@@ -70,7 +54,7 @@ class SasayakiRematch {
       return null;
     }
     final AudiobookHealth? overlay = await repo.readHealthOverlay(ab.bookUid);
-    final int? picked = await _pickSearchWindow(
+    final _MatchParams? picked = await _pickMatchParams(
       context: context,
       previousReason: overlay?.reason,
       repo: repo,
@@ -88,7 +72,8 @@ class SasayakiRematch {
         repo: repo,
         ttuBookId: ttuBookId,
         serverPort: serverPort,
-        searchWindow: picked,
+        searchWindow: picked.window,
+        similarityThreshold: picked.threshold,
       );
       return true;
     } finally {
@@ -96,7 +81,7 @@ class SasayakiRematch {
     }
   }
 
-  static Future<int?> _pickSearchWindow({
+  static Future<_MatchParams?> _pickMatchParams({
     required BuildContext context,
     required String? previousReason,
     required AudiobookRepository repo,
@@ -105,24 +90,28 @@ class SasayakiRematch {
     required int serverPort,
   }) async {
     int window = EpubSrtMatcher.defaultSearchWindow;
+    double threshold = EpubSrtMatcher.defaultSimilarityThreshold;
     if (previousReason != null) {
-      // 尝试从上一次 overlay reason 里抠 window= 值，让用户看到"上次用
-      // 了多少"，而不是每次从 default 开始。
-      final RegExpMatch? m = RegExp(r'window=(\d+)').firstMatch(previousReason);
-      final int? prev = m == null ? null : int.tryParse(m.group(1)!);
+      final RegExpMatch? mw =
+          RegExp(r'window=(\d+)').firstMatch(previousReason);
+      final int? prev = mw == null ? null : int.tryParse(mw.group(1)!);
       if (prev != null) {
         window = prev.clamp(
           SasayakiWindowSlider.minWindow,
           SasayakiWindowSlider.maxWindow,
         );
       }
+      final RegExpMatch? mt =
+          RegExp(r'threshold=([\d.]+)').firstMatch(previousReason);
+      final double? prevT = mt == null ? null : double.tryParse(mt.group(1)!);
+      if (prevT != null) {
+        threshold = prevT.clamp(0.1, 1.0);
+      }
     }
-    // sheet 内部的 probe 缓存 — 反复点「自动匹配」时只读一次 ttu IDB /
-    // Isar cues。sheet 关闭即释放。
     bool autoBusy = false;
     List<EpubSection>? probedSections;
     List<AudioCue>? probedCues;
-    return showModalBottomSheet<int>(
+    return showModalBottomSheet<_MatchParams>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
@@ -167,6 +156,12 @@ class SasayakiRematch {
                       onAutoTap: handleAuto,
                       autoBusy: autoBusy,
                     ),
+                    const SizedBox(height: 12),
+                    SasayakiThresholdSlider(
+                      value: threshold,
+                      onChanged: (double v) =>
+                          setSheet(() => threshold = v),
+                    ),
                     const SizedBox(height: 16),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.end,
@@ -183,7 +178,10 @@ class SasayakiRematch {
                           label: const Text('重跑匹配'),
                           onPressed: autoBusy
                               ? null
-                              : () => Navigator.pop(sheetCtx, window),
+                              : () => Navigator.pop(
+                                    sheetCtx,
+                                    _MatchParams(window, threshold),
+                                  ),
                         ),
                       ],
                     ),
@@ -197,12 +195,6 @@ class SasayakiRematch {
     );
   }
 
-  /// 自动匹配按钮的共享实现：在 isolate 里对多档 searchWindow 探测，挑出命中率
-  /// 最高者并 toast。返回选中的 window 值，失败 / 缺数据 / 全 0 → 返回 null
-  /// 供调用方保持原值。
-  ///
-  /// 由 [AudiobookImportDialog] 的导入前 slider 与重跑底表单共用，两边只需
-  /// 各自准备好 sections + cues。
   static Future<int?> runAutoProbe({
     required List<EpubSection> sections,
     required List<AudioCue> cues,
@@ -259,6 +251,7 @@ class SasayakiRematch {
     required int ttuBookId,
     required int serverPort,
     required int searchWindow,
+    double similarityThreshold = EpubSrtMatcher.defaultSimilarityThreshold,
   }) async {
     try {
       final List<AudioCue> cues = await repo.cuesForBook(ab.bookUid);
@@ -278,10 +271,9 @@ class SasayakiRematch {
         sections: rec.sections,
         cues: cues,
         searchWindow: searchWindow,
+        similarityThreshold: similarityThreshold,
       );
       SasayakiMatchCodec.applyToCues(cues: cues, result: result);
-      // 保持原章节分组；saveCues 要求按 chapterHref 分批写（同 chapterHref
-      // 的旧数据会被清掉再重写）。
       final Map<String, List<AudioCue>> byChapter = <String, List<AudioCue>>{};
       for (final AudioCue c in cues) {
         byChapter.putIfAbsent(c.chapterHref, () => <AudioCue>[]).add(c);
@@ -297,7 +289,7 @@ class SasayakiRematch {
       final AudiobookHealth health = AudiobookHealth.fromRatePct(
         ratePct: pct,
         reason: '${result.matchedCues}/${result.totalCues} cues matched '
-            '(window=$searchWindow)',
+            '(window=$searchWindow threshold=$similarityThreshold)',
       );
       await repo.updateHealthOverlay(bookUid: ab.bookUid, health: health);
       Fluttertoast.showToast(
@@ -310,13 +302,13 @@ class SasayakiRematch {
   }
 }
 
-/// 复用的 searchWindow 选择器。范围 / 步长对齐 iOS Sasayaki
-/// `SasayakiMatchView` 的 `Slider(value:$searchWindow, in:50...350, step:25)`，
-/// 供重跑底表单与两个导入对话框共用。
-///
-/// 传入 [onAutoTap] 时在"默认 X"那一行右侧挂「自动匹配」按钮；实际跑
-/// [EpubCueMatcher.probeInIsolate] 和回写 value 的逻辑由调用方负责。
-/// [autoBusy] 为 true 时 slider 与按钮一并禁用。
+class _MatchParams {
+  const _MatchParams(this.window, this.threshold);
+  final int window;
+  final double threshold;
+}
+
+/// 复用的 searchWindow 选择器。
 class SasayakiWindowSlider extends StatelessWidget {
   const SasayakiWindowSlider({
     required this.value,
@@ -400,6 +392,68 @@ class SasayakiWindowSlider extends StatelessWidget {
                 label: Text(autoBusy ? '匹配中…' : '自动匹配'),
               ),
           ],
+        ),
+      ],
+    );
+  }
+}
+
+/// 复用的 similarityThreshold 选择器。
+class SasayakiThresholdSlider extends StatelessWidget {
+  const SasayakiThresholdSlider({
+    required this.value,
+    required this.onChanged,
+    super.key,
+  });
+
+  final double value;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('相似度阈值', style: theme.textTheme.titleMedium),
+        const SizedBox(height: 4),
+        Text(
+          '模糊匹配的最低相似度（Dice 系数）。降低可容忍更多文本差异，'
+          '但太低会误匹配。',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: Slider(
+                min: 0.1,
+                max: 1.0,
+                divisions: 9,
+                value: value,
+                label: value.toStringAsFixed(1),
+                onChanged: (double v) =>
+                    onChanged(double.parse(v.toStringAsFixed(1))),
+              ),
+            ),
+            SizedBox(
+              width: 48,
+              child: Text(
+                value.toStringAsFixed(1),
+                textAlign: TextAlign.end,
+                style: theme.textTheme.titleMedium,
+              ),
+            ),
+          ],
+        ),
+        Text(
+          '默认 ${EpubSrtMatcher.defaultSimilarityThreshold}',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
         ),
       ],
     );

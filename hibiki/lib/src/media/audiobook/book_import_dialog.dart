@@ -83,6 +83,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
   /// 没判断依据去手动拖（导入前还没看到匹配结果）。
   bool _autoWindow = true;
   int _searchWindow = EpubSrtMatcher.defaultSearchWindow;
+  double _similarityThreshold = EpubSrtMatcher.defaultSimilarityThreshold;
 
   /// 只有 EPUB + SRT 组合导入会跑 Sasayaki matcher，其他路径（仅 EPUB /
   /// 字幕自身渲染）不受 window 影响，UI 上对应地隐藏滑杆。
@@ -178,6 +179,15 @@ class _BookImportDialogState extends State<BookImportDialog> {
             SasayakiWindowSlider(
               value: _searchWindow,
               onChanged: (int v) => setState(() => _searchWindow = v),
+            ),
+          if (!_autoWindow)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: SasayakiThresholdSlider(
+                value: _similarityThreshold,
+                onChanged: (double v) =>
+                    setState(() => _similarityThreshold = v),
+              ),
             ),
         ],
         if (_importing) ...[
@@ -592,6 +602,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
         sections: sections,
         cues: cues,
         searchWindow: chosenWindow,
+        similarityThreshold: _similarityThreshold,
       );
     } else if (runMatcher) {
       health = sections.isEmpty
@@ -650,21 +661,24 @@ class _BookImportDialogState extends State<BookImportDialog> {
     required List<EpubSection> sections,
     required List<AudioCue> cues,
     required int searchWindow,
+    double similarityThreshold = EpubSrtMatcher.defaultSimilarityThreshold,
   }) async {
     try {
       final MatchResult result = await EpubCueMatcher.matchInIsolate(
         sections: sections,
         cues: cues,
         searchWindow: searchWindow,
+        similarityThreshold: similarityThreshold,
       );
       SasayakiMatchCodec.applyToCues(cues: cues, result: result);
       debugPrint('[hibiki-import] Sasayaki match: '
-          '${result.matchedCues}/${result.totalCues} window=$searchWindow');
+          '${result.matchedCues}/${result.totalCues} window=$searchWindow '
+          'threshold=$similarityThreshold');
       final int pct = (result.matchRate * 100).round();
       return AudiobookHealth.fromRatePct(
         ratePct: pct,
         reason: '${result.matchedCues}/${result.totalCues} cues matched '
-            '(window=$searchWindow)',
+            '(window=$searchWindow threshold=$similarityThreshold)',
       );
     } catch (e) {
       debugPrint('[hibiki-import] Sasayaki match failed: $e');

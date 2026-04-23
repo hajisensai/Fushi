@@ -4,15 +4,11 @@ import 'package:hibiki/src/media/audiobook/epub_srt_matcher.dart';
 export 'package:hibiki/src/media/audiobook/epub_srt_matcher.dart'
     show EpubSection, CueMatch, MatchResult, ProbeResult;
 
-/// 格式无关的 cue↔EPUB 精确匹配器。
+/// 格式无关的 cue↔EPUB 模糊匹配器。
 ///
 /// 上游 Sasayaki 只吃 SRT；hibiki 的 SRT/LRC/VTT/ASS 四个 parser 都归一化到
-/// 同一份 [AudioCue] 列表，所以匹配逻辑与来源格式无关。现阶段实现直接复用
-/// [EpubSrtMatcher]（同一算法，旧名沿用以避免测试面抖动）；新代码一律通过
-/// [EpubCueMatcher] 入口调用，把 matcher 的"格式耦合"限制在文件名层面。
-///
-/// 输入：任意来源的 `List<AudioCue>` + 一份 EPUB 的 `List<EpubSection>`。
-/// 输出：[MatchResult]，含 matchRate 与逐条命中偏移。
+/// 同一份 [AudioCue] 列表，所以匹配逻辑与来源格式无关。底层复用
+/// [EpubSrtMatcher]（Dice 系数模糊匹配，移植自 ttu-whispersync）。
 class EpubCueMatcher {
   const EpubCueMatcher._();
 
@@ -21,11 +17,15 @@ class EpubCueMatcher {
     required List<EpubSection> sections,
     required List<AudioCue> cues,
     int searchWindow = EpubSrtMatcher.defaultSearchWindow,
+    double similarityThreshold = EpubSrtMatcher.defaultSimilarityThreshold,
+    int maxMatchAttempts = EpubSrtMatcher.defaultMaxMatchAttempts,
   }) {
     return EpubSrtMatcher.matchInIsolate(
       sections: sections,
       cues: cues,
       searchWindow: searchWindow,
+      similarityThreshold: similarityThreshold,
+      maxMatchAttempts: maxMatchAttempts,
     );
   }
 
@@ -34,11 +34,15 @@ class EpubCueMatcher {
     required List<EpubSection> sections,
     required List<AudioCue> cues,
     int searchWindow = EpubSrtMatcher.defaultSearchWindow,
+    double similarityThreshold = EpubSrtMatcher.defaultSimilarityThreshold,
+    int maxMatchAttempts = EpubSrtMatcher.defaultMaxMatchAttempts,
   }) {
     return EpubSrtMatcher.match(
       sections: sections,
       cues: cues,
       searchWindow: searchWindow,
+      similarityThreshold: similarityThreshold,
+      maxMatchAttempts: maxMatchAttempts,
     );
   }
 
@@ -54,11 +58,15 @@ class EpubCueMatcher {
     required List<EpubSection> sections,
     required List<AudioCue> cues,
     List<int> windows = defaultProbeWindows,
+    double similarityThreshold = EpubSrtMatcher.defaultSimilarityThreshold,
+    int maxMatchAttempts = EpubSrtMatcher.defaultMaxMatchAttempts,
   }) {
     return EpubSrtMatcher.probeInIsolate(
       sections: sections,
       cues: cues,
       windows: windows,
+      similarityThreshold: similarityThreshold,
+      maxMatchAttempts: maxMatchAttempts,
     );
   }
 }

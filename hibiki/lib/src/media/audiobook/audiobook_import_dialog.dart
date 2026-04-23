@@ -61,6 +61,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
   bool _patchingAudio = false;
 
   int _searchWindow = EpubSrtMatcher.defaultSearchWindow;
+  double _similarityThreshold = EpubSrtMatcher.defaultSimilarityThreshold;
 
   // ── 自动匹配 probe 缓存 ─────────────────────────────────────────────────────
   // 反复点"自动匹配"时只读一次 ttu IDB / 只 parse 一次 cues。dialog dispose 即释放。
@@ -303,6 +304,12 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
             onChanged: (int v) => setState(() => _searchWindow = v),
             onAutoTap: _canAutoProbe ? _handleAutoProbe : null,
             autoBusy: _autoProbing,
+          ),
+          const SizedBox(height: 8),
+          SasayakiThresholdSlider(
+            value: _similarityThreshold,
+            onChanged: (double v) =>
+                setState(() => _similarityThreshold = v),
           ),
         ],
         if (_importing) ...[
@@ -644,13 +651,14 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
         sections: sections,
         cues: cues,
         searchWindow: _searchWindow,
+        similarityThreshold: _similarityThreshold,
       );
       SasayakiMatchCodec.applyToCues(cues: cues, result: result);
       final int pct = (result.matchRate * 100).round();
       return AudiobookHealth.fromRatePct(
         ratePct: pct,
         reason: '${result.matchedCues}/${result.totalCues} cues matched '
-            '(window=$_searchWindow)',
+            '(window=$_searchWindow threshold=$_similarityThreshold)',
       );
     } catch (e, stack) {
       ErrorLogService.instance.log('AudiobookImport.epubCueMatcher', e, stack);
