@@ -206,6 +206,8 @@ class HoshiDicts {
   }
 
   // ── import (static, no handle needed) ───────────────────────────
+  // The C++ side spawns a pthread with 32 MB stack to handle deep
+  // recursion in zip/JSON parsing, so this can safely run in any isolate.
   static Future<HoshiImportResult> importDictionary(
       String zipPath, String outputDir) async {
     return Isolate.run(() {
@@ -223,7 +225,6 @@ class HoshiDicts {
           mediaCount: r.mediaCount,
           error: r.error.toDartString(),
         );
-        // Free the C struct
         final rPtr = calloc<FfiImportResult>();
         rPtr.ref = r;
         _bindings!.freeImportResult(rPtr);

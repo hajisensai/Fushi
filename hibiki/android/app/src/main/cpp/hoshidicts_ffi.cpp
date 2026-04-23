@@ -2,6 +2,7 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#include <pthread.h>
 
 #include "hoshidicts/deinflector.hpp"
 #include "hoshidicts/importer.hpp"
@@ -167,29 +168,60 @@ static void free_term(FfiTermResult& r) {
 
 // ── import ──────────────────────────────────────────────────────────
 
-__attribute__((visibility("default")))
-FfiImportResult hoshidicts_import(const char* zip_path, const char* output_dir) {
-  FfiImportResult r{};
+struct ImportThreadArgs {
+  std::string zip_path;
+  std::string output_dir;
+  FfiImportResult result;
+};
+
+static void* import_thread_fn(void* arg) {
+  auto* a = static_cast<ImportThreadArgs*>(arg);
   try {
-    auto result = dictionary_importer::import(zip_path, output_dir);
-    r.success = result.success ? 1 : 0;
-    r.title = dup(result.title);
-    r.term_count = static_cast<int32_t>(result.term_count);
-    r.meta_count = static_cast<int32_t>(result.meta_count);
-    r.tag_count = static_cast<int32_t>(result.tag_count);
-    r.media_count = static_cast<int32_t>(result.media_count);
+    auto result = dictionary_importer::import(a->zip_path, a->output_dir);
+    a->result.success = result.success ? 1 : 0;
+    a->result.title = dup(result.title);
+    a->result.term_count = static_cast<int32_t>(result.term_count);
+    a->result.meta_count = static_cast<int32_t>(result.meta_count);
+    a->result.tag_count = static_cast<int32_t>(result.tag_count);
+    a->result.media_count = static_cast<int32_t>(result.media_count);
     std::string err;
     for (auto& e : result.errors) {
       if (!err.empty()) err += "\n";
       err += e;
     }
-    r.error = dup(err);
+    a->result.error = dup(err);
   } catch (const std::exception& e) {
-    r.success = 0;
-    r.title = dup("");
-    r.error = dup(e.what());
+    a->result.success = 0;
+    a->result.title = dup("");
+    a->result.error = dup(e.what());
   }
-  return r;
+  return nullptr;
+}
+
+__attribute__((visibility("default")))
+FfiImportResult hoshidicts_import(const char* zip_path, const char* output_dir) {
+  ImportThreadArgs args;
+  args.zip_path = zip_path;
+  args.output_dir = output_dir;
+  args.result = {};
+
+  pthread_t thread;
+  pthread_attr_t attr;
+  pthread_attr_init(&attr);
+  pthread_attr_setstacksize(&attr, 32 * 1024 * 1024);
+
+  int rc = pthread_create(&thread, &attr, import_thread_fn, &args);
+  pthread_attr_destroy(&attr);
+
+  if (rc != 0) {
+    args.result.success = 0;
+    args.result.title = dup("");
+    args.result.error = dup("Failed to create import thread");
+    return args.result;
+  }
+
+  pthread_join(thread, nullptr);
+  return args.result;
 }
 
 __attribute__((visibility("default")))
