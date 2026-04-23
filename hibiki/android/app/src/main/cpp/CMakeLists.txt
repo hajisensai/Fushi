@@ -25,6 +25,7 @@ add_library(hoshidicts STATIC
     hoshidicts_src/memory/memory.cpp
     hoshidicts_src/zip/zip.cpp
     hoshidicts_src/json/yomitan_parser.cpp
+    hoshidicts_src/mdx/mdx_reader.cpp
     hoshidicts_src/text_processor/text_processor.cpp
     hoshidicts_src/deinflector.cpp
     hoshidicts_src/query.cpp
