@@ -78,6 +78,19 @@ abstract class Language {
   final Future<DictionarySearchResult?> Function(DictionarySearchParams params)
       prepareSearchResults;
 
+  /// Direct search using the HoshiDicts singleton (no isolate).
+  DictionarySearchResult? prepareSearchResultsDirect({
+    required String searchTerm,
+    required int maximumDictionarySearchResults,
+    required int maximumDictionaryTermsInResult,
+  }) {
+    return prepareSearchResultsDirectStandard(
+      searchTerm: searchTerm,
+      maximumDictionarySearchResults: maximumDictionarySearchResults,
+      maximumDictionaryTermsInResult: maximumDictionaryTermsInResult,
+    );
+  }
+
   /// A standard format that dictionaries of this language can be found in.
   /// This is only to set this as the default last selected format on first
   /// time setup.
@@ -444,4 +457,34 @@ Future<DictionarySearchResult?> prepareSearchResultsStandard(
   } finally {
     hoshi.dispose();
   }
+}
+
+DictionarySearchResult? prepareSearchResultsDirectStandard({
+  required String searchTerm,
+  required int maximumDictionarySearchResults,
+  required int maximumDictionaryTermsInResult,
+}) {
+  if (!HoshiDicts.isInitialized) return null;
+
+  final results = HoshiDicts.instance.query(searchTerm);
+  if (results.isEmpty) return null;
+
+  final entries = <DictionaryEntry>[];
+  for (final t in results) {
+    for (final g in t.glossaries) {
+      entries.add(DictionaryEntry(
+        dictionaryName: g.dictName,
+        word: t.expression,
+        reading: t.reading,
+        meaning: g.glossary,
+        popularity: 0,
+      ));
+    }
+  }
+
+  return DictionarySearchResult(
+    searchTerm: searchTerm,
+    entries: entries,
+    bestLength: searchTerm.length,
+  );
 }

@@ -165,6 +165,47 @@ class HoshiDicts {
   static HoshidictsFfiBindings? _bindings;
   Pointer<Void>? _handle;
 
+  // ── singleton ──────────────────────────────────────────────────
+  static HoshiDicts? _instance;
+  static Map<String, String> _stylesCache = {};
+
+  static HoshiDicts get instance {
+    assert(_instance != null, 'HoshiDicts.initialize() must be called first');
+    return _instance!;
+  }
+
+  static bool get isInitialized => _instance != null;
+
+  static void initialize(List<String> paths) {
+    _instance?.dispose();
+    final h = HoshiDicts();
+    for (final p in paths) {
+      h.addTermDict(p);
+      h.addFreqDict(p);
+      h.addPitchDict(p);
+    }
+    _instance = h;
+    _rebuildStylesCache();
+  }
+
+  static void rebuild(List<String> paths) {
+    initialize(paths);
+  }
+
+  static Map<String, String> get dictionaryStyles => _stylesCache;
+
+  static void _rebuildStylesCache() {
+    if (_instance == null) {
+      _stylesCache = {};
+      return;
+    }
+    _stylesCache = {
+      for (final s in _instance!.getStyles()) s.dictName: s.styles,
+    };
+  }
+
+  // ── lifecycle ──────────────────────────────────────────────────
+
   HoshiDicts() {
     _bindings ??= HoshidictsFfiBindings();
     _handle = _bindings!.create();

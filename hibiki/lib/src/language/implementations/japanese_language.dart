@@ -48,6 +48,70 @@ class JapaneseLanguage extends Language {
   final Map<DictionaryEntry, List<RubyTextData>?> segmentsCache = {};
 
   @override
+  DictionarySearchResult? prepareSearchResultsDirect({
+    required String searchTerm,
+    required int maximumDictionarySearchResults,
+    required int maximumDictionaryTermsInResult,
+  }) {
+    if (!HoshiDicts.isInitialized) return null;
+
+    final results = HoshiDicts.instance.lookup(
+      searchTerm,
+      maxResults: maximumDictionarySearchResults,
+      scanLength: maximumDictionaryTermsInResult,
+    );
+
+    if (results.isEmpty) return null;
+
+    int bestLength = 0;
+    final entries = <DictionaryEntry>[];
+
+    for (final r in results) {
+      if (r.matched.length > bestLength) {
+        bestLength = r.matched.length;
+      }
+      for (final g in r.term.glossaries) {
+        entries.add(DictionaryEntry(
+          dictionaryName: g.dictName,
+          word: r.term.expression,
+          reading: r.term.reading,
+          meaning: g.glossary,
+          extra: jsonEncode({
+            'definitionTags': g.definitionTags,
+            'termTags': g.termTags,
+            'matched': r.matched,
+            'deinflected': r.deinflected,
+            'frequencies': r.term.frequencies
+                .map((f) => {
+                      'dictName': f.dictName,
+                      'values': f.frequencies
+                          .map((v) => {
+                                'value': v.value,
+                                'display': v.displayValue,
+                              })
+                          .toList(),
+                    })
+                .toList(),
+            'pitches': r.term.pitches
+                .map((p) => {
+                      'dictName': p.dictName,
+                      'positions': p.pitchPositions,
+                    })
+                .toList(),
+          }),
+          popularity: 0,
+        ));
+      }
+    }
+
+    return DictionarySearchResult(
+      searchTerm: searchTerm,
+      entries: entries,
+      bestLength: bestLength,
+    );
+  }
+
+  @override
   Future<void> prepareResources() async {
     await mecab.init('assets/language/japanese/ipadic', true);
   }

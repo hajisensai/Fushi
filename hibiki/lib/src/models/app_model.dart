@@ -1,14 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:isolate';
 import 'dart:ui';
 
 import 'package:archive/archive.dart';
 import 'package:archive/archive_io.dart';
 
 import 'package:audio_service/audio_service.dart' as ag;
-import 'package:cancelable_compute/cancelable_compute.dart' as cancelable;
 import 'package:collection/collection.dart';
 import 'package:clipboard/clipboard.dart';
 import 'package:device_info_plus/device_info_plus.dart';
@@ -35,6 +33,7 @@ import 'package:restart_app/restart_app.dart';
 import 'package:wakelock/wakelock.dart';
 import 'package:hibiki/creator.dart';
 import 'package:hibiki/dictionary.dart';
+import 'package:hibiki/src/dictionary/hoshidicts.dart';
 import 'package:hibiki/language.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
@@ -306,6 +305,9 @@ class AppModel with ChangeNotifier {
         .map((d) => path.join(dictionaryResourceDirectory.path, d.name))
         .where((p) => Directory(p).existsSync())
         .toList();
+    if (_dictPathsCache.isNotEmpty) {
+      HoshiDicts.initialize(_dictPathsCache);
+    }
   }
 
   /// In-memory cache of anki mappings, kept in sync with the database.
@@ -1032,7 +1034,6 @@ class AppModel with ChangeNotifier {
       final dictRows = await _database.getAllDictionaryMetadata();
       _dictionariesCache = dictRows.map(_rowToDictionary).toList()
         ..sort((a, b) => a.order.compareTo(b.order));
-      _rebuildDictPathsCache();
 
       /// Load mappings cache.
       final mapRows = await _database.getAllMappings();
@@ -1082,6 +1083,7 @@ class AppModel with ChangeNotifier {
       thumbnailsDirectory.createSync();
       dictionaryImportWorkingDirectory.createSync();
       dictionaryResourceDirectory.createSync();
+      _rebuildDictPathsCache();
 
       debugPrint('[Hibiki] init: licenses');
       /// Inject open source licenses for non-Flutter dependencies that are
@@ -1981,9 +1983,6 @@ class AppModel with ChangeNotifier {
     _dictionarySearchCache.clear();
   }
 
-  /// Whether or not the app is currently searching.
-  cancelable.ComputeOperation? _searchOperation;
-
   /// Gets the raw unprocessed entries straight from a dictionary database
   /// given a search term. This will be processed later for user viewing.
   Future<DictionarySearchResult> searchDictionary({
@@ -2006,29 +2005,19 @@ class AppModel with ChangeNotifier {
     );
     searchTerm = searchTerm.replaceAll(loneSurrogate, ' ');
 
-    ReceivePort receivePort = ReceivePort();
-    receivePort.listen((message) {
-      debugPrint(message.toString());
-    });
-
-    DictionarySearchParams params = DictionarySearchParams(
-      searchTerm: searchTerm,
-      directoryPath: _databaseDirectory.path,
-      maximumDictionarySearchResults: maximumDictionarySearchResults,
-      maximumDictionaryTermsInResult: overrideMaximumTerms ?? maximumTerms,
-      searchWithWildcards: searchWithWildcards,
-      dictionaryPaths: _dictPathsCache,
-      sendPort: receivePort.sendPort,
-    );
-
-    if (params.searchTerm.trim().isEmpty) {
+    if (searchTerm.trim().isEmpty) {
       return DictionarySearchResult(searchTerm: searchTerm);
     }
 
-    /// Searching returns a DictionarySearchResult directly.
-    _searchOperation =
-        cancelable.compute(targetLanguage.prepareSearchResults, params);
-    DictionarySearchResult? result = await _searchOperation?.value;
+    if (!HoshiDicts.isInitialized) {
+      return DictionarySearchResult(searchTerm: searchTerm);
+    }
+
+    final result = targetLanguage.prepareSearchResultsDirect(
+      searchTerm: searchTerm,
+      maximumDictionarySearchResults: maximumDictionarySearchResults,
+      maximumDictionaryTermsInResult: overrideMaximumTerms ?? maximumTerms,
+    );
 
     if (result != null && result.entries.isNotEmpty) {
       _dictionarySearchCache['$searchTerm/$overrideMaximumTerms'] = result;
