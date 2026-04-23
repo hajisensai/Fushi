@@ -2,28 +2,51 @@ name: Build Android APK
 on:
   push:
     branches: ['main']
-    paths: ['yuuna/**']
+    paths: ['hibiki/**', 'ci/**']
   pull_request:
     branches: ['main']
-    paths: ['yuuna/**']
+    paths: ['hibiki/**', 'ci/**']
   workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
-    - uses: actions/setup-java@v2
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-java@v4
       with:
         distribution: 'zulu'
-        java-version: '11'
+        java-version: '17'
+
     - uses: subosito/flutter-action@v2
       with:
-        flutter-version: '3.13.5'
-    - run: flutter pub get
-      working-directory: yuuna
-    - run: flutter pub run build_runner build --delete-conflicting-outputs
-      working-directory: yuuna
-    - run: flutter analyze
-      working-directory: yuuna
-    - run: flutter build apk --target-platform=android-arm64
-      working-directory: yuuna
+        channel: 'stable'
+
+    - name: Remove local proxy from gradle.properties
+      working-directory: hibiki/android
+      run: |
+        sed -i '/systemProp\.http\.proxyHost/d' gradle.properties
+        sed -i '/systemProp\.http\.proxyPort/d' gradle.properties
+        sed -i '/systemProp\.https\.proxyHost/d' gradle.properties
+        sed -i '/systemProp\.https\.proxyPort/d' gradle.properties
+        sed -i '/systemProp\.http\.nonProxyHosts/d' gradle.properties
+
+    - name: Remove aliyun mirrors from gradle files
+      working-directory: hibiki/android
+      run: |
+        sed -i "/maven.*aliyun/d" build.gradle
+        sed -i "/maven.*aliyun/d" settings.gradle
+
+    - name: Flutter pub get
+      working-directory: hibiki
+      run: flutter pub get
+
+    - name: Apply pub cache patches
+      run: |
+        chmod +x ci/apply-patches.sh
+        bash ci/apply-patches.sh
+
+    - name: Build debug APK
+      working-directory: hibiki
+      run: flutter build apk --debug

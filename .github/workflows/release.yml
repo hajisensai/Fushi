@@ -1,0 +1,59 @@
+name: Build Release APK
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-java@v4
+      with:
+        distribution: 'zulu'
+        java-version: '17'
+
+    - uses: subosito/flutter-action@v2
+      with:
+        channel: 'stable'
+
+    - name: Remove local proxy from gradle.properties
+      working-directory: hibiki/android
+      run: |
+        sed -i '/systemProp\.http\.proxyHost/d' gradle.properties
+        sed -i '/systemProp\.http\.proxyPort/d' gradle.properties
+        sed -i '/systemProp\.https\.proxyHost/d' gradle.properties
+        sed -i '/systemProp\.https\.proxyPort/d' gradle.properties
+        sed -i '/systemProp\.http\.nonProxyHosts/d' gradle.properties
+
+    - name: Remove aliyun mirrors from gradle files
+      working-directory: hibiki/android
+      run: |
+        sed -i "/maven.*aliyun/d" build.gradle
+        sed -i "/maven.*aliyun/d" settings.gradle
+
+    - name: Flutter pub get
+      working-directory: hibiki
+      run: flutter pub get
+
+    - name: Apply pub cache patches
+      run: |
+        chmod +x ci/apply-patches.sh
+        bash ci/apply-patches.sh
+
+    - name: Build release APK (split per ABI)
+      working-directory: hibiki
+      run: flutter build apk --split-per-abi --release
+
+    - name: Upload APKs to release
+      if: github.event_name == 'release'
+      uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          hibiki/build/app/outputs/flutter-apk/*-release.apk
