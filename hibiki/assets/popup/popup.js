@@ -1430,6 +1430,9 @@ window.renderPopup = function() {
 };
 
 document.addEventListener('click', (e) => {
+    const sel = window.getSelection();
+    if (sel && sel.toString().length > 0) return;
+
     const target = e.target?.nodeType === Node.TEXT_NODE ? e.target.parentElement : e.target;
     if (target?.closest('.mine-button') || target?.closest('.audio-button')) return;
     if (!target?.closest('.glossary-content') && !target?.closest('.entry-header') && !target?.closest('.entry-tags')) {
