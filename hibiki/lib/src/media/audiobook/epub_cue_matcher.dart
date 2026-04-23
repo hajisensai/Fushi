@@ -18,14 +18,14 @@ class EpubCueMatcher {
     required List<AudioCue> cues,
     int searchWindow = EpubSrtMatcher.defaultSearchWindow,
     double similarityThreshold = EpubSrtMatcher.defaultSimilarityThreshold,
-    int maxMatchAttempts = EpubSrtMatcher.defaultMaxMatchAttempts,
+    int maxConsecutiveMisses = EpubSrtMatcher.defaultMaxConsecutiveMisses,
   }) {
     return EpubSrtMatcher.matchInIsolate(
       sections: sections,
       cues: cues,
       searchWindow: searchWindow,
       similarityThreshold: similarityThreshold,
-      maxMatchAttempts: maxMatchAttempts,
+      maxConsecutiveMisses: maxConsecutiveMisses,
     );
   }
 
@@ -35,14 +35,14 @@ class EpubCueMatcher {
     required List<AudioCue> cues,
     int searchWindow = EpubSrtMatcher.defaultSearchWindow,
     double similarityThreshold = EpubSrtMatcher.defaultSimilarityThreshold,
-    int maxMatchAttempts = EpubSrtMatcher.defaultMaxMatchAttempts,
+    int maxConsecutiveMisses = EpubSrtMatcher.defaultMaxConsecutiveMisses,
   }) {
     return EpubSrtMatcher.match(
       sections: sections,
       cues: cues,
       searchWindow: searchWindow,
       similarityThreshold: similarityThreshold,
-      maxMatchAttempts: maxMatchAttempts,
+      maxConsecutiveMisses: maxConsecutiveMisses,
     );
   }
 
@@ -59,14 +59,14 @@ class EpubCueMatcher {
     required List<AudioCue> cues,
     List<int> windows = defaultProbeWindows,
     double similarityThreshold = EpubSrtMatcher.defaultSimilarityThreshold,
-    int maxMatchAttempts = EpubSrtMatcher.defaultMaxMatchAttempts,
+    int maxConsecutiveMisses = EpubSrtMatcher.defaultMaxConsecutiveMisses,
   }) {
     return EpubSrtMatcher.probeInIsolate(
       sections: sections,
       cues: cues,
       windows: windows,
       similarityThreshold: similarityThreshold,
-      maxMatchAttempts: maxMatchAttempts,
+      maxConsecutiveMisses: maxConsecutiveMisses,
     );
   }
 }

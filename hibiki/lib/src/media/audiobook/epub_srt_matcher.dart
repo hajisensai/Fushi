@@ -76,23 +76,24 @@ class MatchResult {
 ///    取最小命中位置作为 cursor 起点。
 /// 4. **主循环**（移植自 ttu-whispersync Match.svelte）：
 ///    a. 快速通道：精确 `indexOf` 命中 → score=1.0，cursor 推进。
-///    b. 模糊兜底：在 `[cursor, cursor+searchWindow]` 内滑窗扫描，取 Dice
-///       系数最高的位置；达到 [similarityThreshold] 则接受。
-///    c. 重试机制：未命中时从上次命中位置向前偏移重试，最多
-///       [maxMatchAttempts] 次，全部失败才标 unmatched。
+///    b. 模糊兜底：在 `[cursor, cursor+searchWindow]` 内单次 Dice 滑窗扫描，
+///       取最高位置；达到 [similarityThreshold] 则接受。
+///    c. 恢复机制：连续 miss 达 [maxConsecutiveMisses] 时，用精确 `indexOf`
+///       在全书 `[cursor..]` 范围做一次恢复扫描。cursor 不做逐字偏移重试
+///       （O(attempts×window) 太慢），只靠恢复扫描跳过不匹配的段落。
 class EpubSrtMatcher {
   static const int defaultSearchWindow = 200;
   static const int defaultProbeCount = 15;
   static const int defaultProbeMinLen = 6;
   static const double defaultSimilarityThreshold = 0.8;
-  static const int defaultMaxMatchAttempts = 500;
+  static const int defaultMaxConsecutiveMisses = 20;
 
   static Future<MatchResult> matchInIsolate({
     required List<EpubSection> sections,
     required List<AudioCue> cues,
     int searchWindow = defaultSearchWindow,
     double similarityThreshold = defaultSimilarityThreshold,
-    int maxMatchAttempts = defaultMaxMatchAttempts,
+    int maxConsecutiveMisses = defaultMaxConsecutiveMisses,
   }) {
     final _MatchRequest req = _MatchRequest(
       sections: sections,
@@ -100,7 +101,7 @@ class EpubSrtMatcher {
       cueIndexes: <int>[for (final AudioCue c in cues) c.sentenceIndex],
       searchWindow: searchWindow,
       similarityThreshold: similarityThreshold,
-      maxMatchAttempts: maxMatchAttempts,
+      maxConsecutiveMisses: maxConsecutiveMisses,
     );
     return compute(_matchEntrypoint, req);
   }
@@ -110,7 +111,7 @@ class EpubSrtMatcher {
     required List<AudioCue> cues,
     required List<int> windows,
     double similarityThreshold = defaultSimilarityThreshold,
-    int maxMatchAttempts = defaultMaxMatchAttempts,
+    int maxConsecutiveMisses = defaultMaxConsecutiveMisses,
   }) {
     final _ProbeRequest req = _ProbeRequest(
       sections: sections,
@@ -118,7 +119,7 @@ class EpubSrtMatcher {
       cueIndexes: <int>[for (final AudioCue c in cues) c.sentenceIndex],
       windows: windows,
       similarityThreshold: similarityThreshold,
-      maxMatchAttempts: maxMatchAttempts,
+      maxConsecutiveMisses: maxConsecutiveMisses,
     );
     return compute(_probeEntrypoint, req);
   }
@@ -128,7 +129,7 @@ class EpubSrtMatcher {
     required List<AudioCue> cues,
     int searchWindow = defaultSearchWindow,
     double similarityThreshold = defaultSimilarityThreshold,
-    int maxMatchAttempts = defaultMaxMatchAttempts,
+    int maxConsecutiveMisses = defaultMaxConsecutiveMisses,
   }) {
     if (cues.isEmpty) {
       return const MatchResult(
@@ -164,8 +165,8 @@ class EpubSrtMatcher {
 
     final List<CueMatch> results = <CueMatch>[];
     int cursor = start;
-    int cursorAfterLastMatch = start;
     int matched = 0;
+    int consecutiveMisses = 0;
 
     for (int ci = 0; ci < cues.length; ci++) {
       final AudioCue cue = cues[ci];
@@ -173,6 +174,18 @@ class EpubSrtMatcher {
       if (nc.isEmpty) {
         results.add(CueMatch.unmatched);
         continue;
+      }
+
+      // --- 恢复机制：连续 miss 过多时在全书剩余文本做 indexOf 重锚 ---
+      if (consecutiveMisses >= maxConsecutiveMisses &&
+          nc.length >= defaultProbeMinLen) {
+        final int recovered = big.indexOf(nc, cursor);
+        if (recovered >= 0) {
+          cursor = recovered;
+          consecutiveMisses = 0;
+          debugPrint('[sasayaki] matcher.recover cursor=$cursor '
+              'cue="${_clip(cue.text, 24)}"');
+        }
       }
 
       // --- 快速通道：精确 indexOf ---
@@ -193,95 +206,66 @@ class EpubSrtMatcher {
           _logHit(matched, cue, nc, big, found, matchEnd, secIdx,
               idx.sectionNormStarts[secIdx], 1.0, ci == cues.length - 1);
           cursor = matchEnd;
-          cursorAfterLastMatch = matchEnd;
           matched++;
+          consecutiveMisses = 0;
           continue;
         }
       }
 
-      // --- 模糊通道：Dice 系数滑窗 + 重试 ---
-      bool didMatch = false;
-      int attempt = 0;
-      while (attempt < maxMatchAttempts) {
-        final int tryCursor = cursorAfterLastMatch + attempt;
-        if (tryCursor >= totalLen) break;
-        final int tryWindowEnd =
-            (tryCursor + searchWindow).clamp(0, totalLen);
-        if (tryWindowEnd - tryCursor < nc.length) {
-          attempt++;
-          continue;
-        }
+      // --- 模糊通道：单次 Dice 系数滑窗，无重试 ---
+      double bestSim = 0.0;
+      int bestPos = -1;
+      int bestLen = nc.length;
 
-        double bestSim = 0.0;
-        int bestPos = -1;
-        int bestLen = nc.length;
-
-        // 重试偏移后再尝试精确 indexOf
-        if (attempt > 0) {
-          final int retryFound = big.indexOf(nc, tryCursor);
-          if (retryFound >= 0 && retryFound + nc.length <= tryWindowEnd) {
-            bestSim = 1.0;
-            bestPos = retryFound;
+      if (windowEnd - cursor >= nc.length) {
+        final int scanEnd = windowEnd - nc.length + 1;
+        for (int pos = cursor; pos < scanEnd; pos++) {
+          final String candidate = big.substring(pos, pos + nc.length);
+          final double sim = _diceSimilarity(nc, candidate);
+          if (sim > bestSim) {
+            bestSim = sim;
+            bestPos = pos;
+            bestLen = nc.length;
           }
         }
-
-        // 模糊扫描：固定长度滑窗
-        if (bestSim < 1.0) {
-          final int scanEnd = tryWindowEnd - nc.length + 1;
-          for (int pos = tryCursor; pos < scanEnd; pos++) {
-            final String candidate = big.substring(pos, pos + nc.length);
+        for (final int delta in const <int>[-1, 1]) {
+          final int tryLen = nc.length + delta;
+          if (tryLen <= 0) continue;
+          final int varScanEnd = windowEnd - tryLen + 1;
+          for (int pos = cursor; pos < varScanEnd; pos++) {
+            final String candidate = big.substring(pos, pos + tryLen);
             final double sim = _diceSimilarity(nc, candidate);
             if (sim > bestSim) {
               bestSim = sim;
               bestPos = pos;
-              bestLen = nc.length;
-            }
-          }
-          // 也试 ±1~2 字符的长度变化，应对 SRT/EPUB 文本增减字
-          for (final int delta in const <int>[-2, -1, 1, 2]) {
-            final int tryLen = nc.length + delta;
-            if (tryLen <= 0) continue;
-            final int varScanEnd = tryWindowEnd - tryLen + 1;
-            for (int pos = tryCursor; pos < varScanEnd; pos++) {
-              final String candidate = big.substring(pos, pos + tryLen);
-              final double sim = _diceSimilarity(nc, candidate);
-              if (sim > bestSim) {
-                bestSim = sim;
-                bestPos = pos;
-                bestLen = tryLen;
-              }
+              bestLen = tryLen;
             }
           }
         }
-
-        if (bestSim >= similarityThreshold && bestPos >= 0) {
-          final int matchEnd = bestPos + bestLen;
-          final int secIdx =
-              _sectionForOffset(idx.sectionNormStarts, bestPos);
-          results.add(CueMatch(
-            cueSentenceIndex: cue.sentenceIndex,
-            sectionIndex: secIdx,
-            normCharStart: bestPos - idx.sectionNormStarts[secIdx],
-            normCharEnd: matchEnd - idx.sectionNormStarts[secIdx],
-            score: bestSim,
-          ));
-          _logHit(matched, cue, nc, big, bestPos, matchEnd, secIdx,
-              idx.sectionNormStarts[secIdx], bestSim,
-              ci == cues.length - 1);
-          cursor = matchEnd;
-          cursorAfterLastMatch = matchEnd;
-          matched++;
-          didMatch = true;
-          break;
-        }
-
-        attempt++;
       }
 
-      if (!didMatch) {
+      if (bestSim >= similarityThreshold && bestPos >= 0) {
+        final int matchEnd = bestPos + bestLen;
+        final int secIdx =
+            _sectionForOffset(idx.sectionNormStarts, bestPos);
+        results.add(CueMatch(
+          cueSentenceIndex: cue.sentenceIndex,
+          sectionIndex: secIdx,
+          normCharStart: bestPos - idx.sectionNormStarts[secIdx],
+          normCharEnd: matchEnd - idx.sectionNormStarts[secIdx],
+          score: bestSim,
+        ));
+        _logHit(matched, cue, nc, big, bestPos, matchEnd, secIdx,
+            idx.sectionNormStarts[secIdx], bestSim,
+            ci == cues.length - 1);
+        cursor = matchEnd;
+        matched++;
+        consecutiveMisses = 0;
+      } else {
         results.add(CueMatch.unmatched);
+        consecutiveMisses++;
         debugPrint('[sasayaki] matcher.miss sid=${cue.sentenceIndex} '
-            'cue="${_clip(cue.text, 24)}" attempts=$attempt');
+            'cue="${_clip(cue.text, 24)}" consecutive=$consecutiveMisses');
       }
     }
 
@@ -502,7 +486,7 @@ class _MatchRequest {
     required this.cueIndexes,
     required this.searchWindow,
     required this.similarityThreshold,
-    required this.maxMatchAttempts,
+    required this.maxConsecutiveMisses,
   });
 
   final List<EpubSection> sections;
@@ -510,7 +494,7 @@ class _MatchRequest {
   final List<int> cueIndexes;
   final int searchWindow;
   final double similarityThreshold;
-  final int maxMatchAttempts;
+  final int maxConsecutiveMisses;
 }
 
 MatchResult _matchEntrypoint(_MatchRequest req) {
@@ -520,7 +504,7 @@ MatchResult _matchEntrypoint(_MatchRequest req) {
     cues: cues,
     searchWindow: req.searchWindow,
     similarityThreshold: req.similarityThreshold,
-    maxMatchAttempts: req.maxMatchAttempts,
+    maxConsecutiveMisses: req.maxConsecutiveMisses,
   );
 }
 
@@ -553,7 +537,7 @@ class _ProbeRequest {
     required this.cueIndexes,
     required this.windows,
     required this.similarityThreshold,
-    required this.maxMatchAttempts,
+    required this.maxConsecutiveMisses,
   });
 
   final List<EpubSection> sections;
@@ -561,7 +545,7 @@ class _ProbeRequest {
   final List<int> cueIndexes;
   final List<int> windows;
   final double similarityThreshold;
-  final int maxMatchAttempts;
+  final int maxConsecutiveMisses;
 }
 
 ProbeResult _probeEntrypoint(_ProbeRequest req) {
@@ -573,7 +557,7 @@ ProbeResult _probeEntrypoint(_ProbeRequest req) {
       cues: cues,
       searchWindow: w,
       similarityThreshold: req.similarityThreshold,
-      maxMatchAttempts: req.maxMatchAttempts,
+      maxConsecutiveMisses: req.maxConsecutiveMisses,
     );
     map[w] = r.matchRate;
   }
