@@ -1722,12 +1722,23 @@ class AppModel with ChangeNotifier {
                     .reduce((a, b) => a > b ? a : b) +
                 1;
 
+        final innerDataDir =
+            Directory(path.join(tempOutputDir.path, name));
         final finalResourceDirectory =
             Directory(path.join(dictionaryResourceDirectory.path, name));
         if (finalResourceDirectory.existsSync()) {
           finalResourceDirectory.deleteSync(recursive: true);
         }
-        tempOutputDir.renameSync(finalResourceDirectory.path);
+
+        if (innerDataDir.existsSync()) {
+          innerDataDir.renameSync(finalResourceDirectory.path);
+        } else {
+          tempOutputDir.renameSync(finalResourceDirectory.path);
+        }
+
+        if (tempOutputDir.existsSync()) {
+          tempOutputDir.deleteSync(recursive: true);
+        }
 
         Dictionary dictionary = Dictionary(
           order: order,
@@ -1812,12 +1823,26 @@ class AppModel with ChangeNotifier {
           ? 1
           : currentDictionaries.map((d) => d.order).reduce((a, b) => a > b ? a : b) + 1;
 
+      // hoshidicts writes data into outputDir/title/, so the actual data
+      // directory is the inner subdirectory named after the title.
+      final innerDataDir =
+          Directory(path.join(tempOutputDir.path, name));
       final finalResourceDirectory =
           Directory(path.join(dictionaryResourceDirectory.path, name));
       if (finalResourceDirectory.existsSync()) {
         finalResourceDirectory.deleteSync(recursive: true);
       }
-      tempOutputDir.renameSync(finalResourceDirectory.path);
+
+      if (innerDataDir.existsSync()) {
+        innerDataDir.renameSync(finalResourceDirectory.path);
+      } else {
+        tempOutputDir.renameSync(finalResourceDirectory.path);
+      }
+
+      // Clean up the now-empty temp dir if it still exists
+      if (tempOutputDir.existsSync()) {
+        tempOutputDir.deleteSync(recursive: true);
+      }
 
       for (final css in cssFiles) {
         if (css.existsSync()) {
