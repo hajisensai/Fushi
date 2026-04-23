@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki/utils.dart';
 
 /// The page shown to view a result in dictionary history.
@@ -28,12 +29,11 @@ class _RecursiveDictionaryHistoryPageState
       backgroundColor: Theme.of(context).colorScheme.background,
       appBar: buildAppBar(),
       body: SafeArea(
-        child: DictionaryResultPage(
+        child: DictionaryPopupWebView(
           result: widget.result,
-          onSearch: onSearch,
-          onStash: onStash,
-          onShare: onShare,
-          updateHistory: false,
+          onTextSelected: (text) {
+            onSearch(text);
+          },
         ),
       ),
     );

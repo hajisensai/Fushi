@@ -74,19 +74,25 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
   }
 
   Widget buildDictionaryHistory() {
-    return RawScrollbar(
-      thumbVisibility: true,
-      thickness: 3,
-      controller: DictionaryMediaType.instance.scrollController,
-      child: Padding(
-        padding: EdgeInsets.symmetric(
-          horizontal: Spacing.of(context).spaces.normal,
-        ),
-        child: DictionaryHistoryPage(
-          onSearch: onSearch,
-          onStash: onStash,
-          onShare: onShare,
-        ),
+    final historyResults = appModel.dictionaryHistory.reversed.toList();
+    final allEntries = historyResults.expand((r) => r.entries).toList();
+    if (allEntries.isEmpty) {
+      return buildPlaceholder();
+    }
+    final mergedResult = DictionarySearchResult(
+      entries: allEntries,
+      searchTerm: '',
+    );
+    return Padding(
+      padding: const EdgeInsets.only(top: 60),
+      child: DictionaryPopupWebView(
+        key: ValueKey(allEntries.length),
+        result: mergedResult,
+        onTextSelected: (text) {
+          mediaType.floatingSearchBarController.query = text;
+          mediaType.floatingSearchBarController.open();
+          search(text);
+        },
       ),
     );
   }
