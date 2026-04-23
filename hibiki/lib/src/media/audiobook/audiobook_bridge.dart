@@ -40,8 +40,6 @@ window.__hoshiAutoScrollInFlight = false;
 window.__hoshiAutoScrollTimer = null;
 window.__hoshiAlignToRect = function(rect) {
   if (!rect) return;
-  // Sasayaki reveal 滚动：标记 flag，让 ttu scroll observer 知道这次
-  // 滚动是程序自动对齐，而非用户手动——后者应关 Follow audio。
   window.__hoshiAutoScrollInFlight = true;
   if (window.__hoshiAutoScrollTimer) clearTimeout(window.__hoshiAutoScrollTimer);
   window.__hoshiAutoScrollTimer = setTimeout(function() {
@@ -54,54 +52,61 @@ window.__hoshiAlignToRect = function(rect) {
   var content = document.querySelector('.book-content') ||
                 document.querySelector('[class*="book-content"]') ||
                 document.scrollingElement || document.documentElement;
-  var pageH = content.clientHeight;
-  if (!pageH || pageH < 10) return;
+  var wm = getComputedStyle(document.documentElement).writingMode || 'horizontal-tb';
+  var isVertical = wm.indexOf('vertical') === 0;
+  var pageDim = isVertical ? content.clientHeight : content.clientWidth;
+  if (!pageDim || pageDim < 10) return;
   var container = content.querySelector('.book-content-container');
   var gap = 40;
   if (container) {
     var gapNum = parseFloat(getComputedStyle(container).columnGap);
     if (!isNaN(gapNum) && gapNum > 0) gap = gapNum;
   }
-  var effectivePageH = pageH;
+  var effectiveDim = pageDim;
   if (container) {
     try {
       var cw = parseFloat(getComputedStyle(container).columnWidth);
-      if (cw > 0 && Math.abs(cw - pageH) < 2) effectivePageH = cw;
+      if (cw > 0 && Math.abs(cw - pageDim) < 2) effectiveDim = cw;
     } catch (e) {}
   }
-  var stride = effectivePageH + gap;
+  var stride = effectiveDim + gap;
   var cRect = content.getBoundingClientRect();
-  var elTop = rect.top - cRect.top + content.scrollTop;
-  var elBot = rect.bottom - cRect.top + content.scrollTop;
-  var anchor = (elTop + elBot) / 2;
+  var curScroll = isVertical ? content.scrollTop : content.scrollLeft;
+  var elStart, elEnd;
+  if (isVertical) {
+    elStart = rect.top - cRect.top + content.scrollTop;
+    elEnd = rect.bottom - cRect.top + content.scrollTop;
+  } else {
+    elStart = rect.left - cRect.left + content.scrollLeft;
+    elEnd = rect.right - cRect.left + content.scrollLeft;
+  }
+  var anchor = (elStart + elEnd) / 2;
   var rawPageIndex = Math.floor(anchor / stride);
-  // pageIndex 先 clamp 到 [0, maxPageIndex]，再乘 stride 得 targetScrollTop。
-  // 旧写法 Math.min(pageIndex * stride, maxScroll) 在 maxScroll 不是 stride
-  // 整数倍时（columns 最后一页不满 / avoidPageBreak 塞不进 / fractional DPI
-  // 让 stride 有小数）会把 target 夹到"半页"像素，书停在两页中间。按页数
-  // 归一之后保证 targetScrollTop 永远是 stride 整数倍。
-  var maxScroll = Math.max(0, content.scrollHeight - pageH);
+  var totalScroll = isVertical
+    ? content.scrollHeight - content.clientHeight
+    : content.scrollWidth - content.clientWidth;
+  var maxScroll = Math.max(0, totalScroll);
   var maxPageIndex = Math.max(0, Math.floor(maxScroll / stride));
   var pageIndex = Math.max(0, Math.min(rawPageIndex, maxPageIndex));
-  var targetScrollTop = pageIndex * stride;
-  // 走 ttu 的 pageManager.scrollTo 同步更新 virtualScrollPos，避免
-  // 直接写 content.scrollTop 导致脱节——flipPage 从旧值算位置，
-  // 翻页再翻回来就不是同一页。
+  var targetPos = pageIndex * stride;
   var hasTtuApi = typeof window.__ttuScrollToPos === 'function';
   var scrollTo = hasTtuApi
     ? function(v) { window.__ttuScrollToPos(v); }
-    : function(v) { content.scrollTop = v; };
-  var skip = Math.abs(content.scrollTop - targetScrollTop) < 1;
+    : function(v) {
+        if (isVertical) content.scrollTop = v;
+        else content.scrollLeft = v;
+      };
+  var skip = Math.abs(curScroll - targetPos) < 1;
   if (!skip) {
-    scrollTo(targetScrollTop);
+    scrollTo(targetPos);
   }
-  var readback = content.scrollTop;
+  var readback = isVertical ? content.scrollTop : content.scrollLeft;
   var snappedPage = Math.max(0, Math.min(
       Math.round(readback / stride), maxPageIndex));
-  var snappedTop = snappedPage * stride;
-  var needSnap = Math.abs(readback - snappedTop) >= 1;
+  var snappedPos = snappedPage * stride;
+  var needSnap = Math.abs(readback - snappedPos) >= 1;
   if (needSnap) {
-    scrollTo(snappedTop);
+    scrollTo(snappedPos);
   }
 };
 
