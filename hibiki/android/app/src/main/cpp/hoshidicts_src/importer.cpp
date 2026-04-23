@@ -41,6 +41,11 @@ struct ProcessedFile {
 
 void setup_stream_exceptions(std::ofstream& stream) { stream.exceptions(std::ios::failbit | std::ios::badbit); }
 
+std::string_view basename(std::string_view path) {
+  auto pos = path.rfind('/');
+  return pos == std::string_view::npos ? path : path.substr(pos + 1);
+}
+
 Files get_files(const Zip& zip) {
   Files files;
   for (int i = 0; i < static_cast<int>(zip.entries.size()); i++) {
@@ -49,13 +54,14 @@ Files get_files(const Zip& zip) {
       continue;
     }
 
-    if (name.starts_with("term_bank_")) {
+    auto base = basename(name);
+    if (base.starts_with("term_bank_")) {
       files.term_banks.push_back(i);
-    } else if (name.starts_with("term_meta_bank_")) {
+    } else if (base.starts_with("term_meta_bank_")) {
       files.meta_banks.push_back(i);
-    } else if (name.starts_with("tag_bank_")) {
+    } else if (base.starts_with("tag_bank_")) {
       files.tag_banks.push_back(i);
-    } else if (!(name == "styles.css" || name == "index.json")) {
+    } else if (!(base == "styles.css" || base == "index.json")) {
       files.media_files.push_back(i);
     }
   }
@@ -438,6 +444,14 @@ ImportResult dictionary_importer::import(const std::string& zip_path, const std:
 
     int index_idx = zip.find("index.json");
     if (index_idx < 0) {
+      for (int i = 0; i < static_cast<int>(zip.entries.size()); i++) {
+        if (basename(zip.entries[i].name) == "index.json") {
+          index_idx = i;
+          break;
+        }
+      }
+    }
+    if (index_idx < 0) {
       throw std::runtime_error("could not find index.json");
     }
     std::string index_content = zip.read(index_idx);
@@ -461,6 +475,14 @@ ImportResult dictionary_importer::import(const std::string& zip_path, const std:
     }
 
     int styles_idx = zip.find("styles.css");
+    if (styles_idx < 0) {
+      for (int i = 0; i < static_cast<int>(zip.entries.size()); i++) {
+        if (basename(zip.entries[i].name) == "styles.css") {
+          styles_idx = i;
+          break;
+        }
+      }
+    }
     if (styles_idx >= 0) {
       std::string styles = zip.read(styles_idx);
       if (!styles.empty()) {
