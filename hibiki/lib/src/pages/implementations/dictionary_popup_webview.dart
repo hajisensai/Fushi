@@ -178,9 +178,16 @@ class DictionaryPopupWebViewState extends State<DictionaryPopupWebView> {
         }
       }
 
+      dynamic contentValue;
+      try {
+        contentValue = jsonDecode(entry.meaning);
+      } catch (_) {
+        contentValue = entry.meaning;
+      }
+
       grouped[key]!['glossaries'].add({
         'dictionary': entry.dictionaryName,
-        'content': entry.meaning,
+        'content': contentValue,
         'definitionTags': _getExtraField(entry, 'definitionTags'),
         'termTags': _getExtraField(entry, 'termTags'),
       });

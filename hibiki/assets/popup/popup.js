@@ -413,12 +413,16 @@ function constructSingleGlossaryHtml(entryIndex) {
         }
         
         const tempDiv = document.createElement('div');
-        try {
-            renderStructuredContent(tempDiv, JSON.parse(g.content), null, dictName, true);
-        } catch {
+        if (typeof g.content === 'string') {
+            try {
+                renderStructuredContent(tempDiv, JSON.parse(g.content), null, dictName, true);
+            } catch {
+                renderStructuredContent(tempDiv, g.content, null, dictName, true);
+            }
+        } else {
             renderStructuredContent(tempDiv, g.content, null, dictName, true);
         }
-        
+
         const parsedTags = parseTags(g.definitionTags).filter(tag => !NUMERIC_TAG.test(tag));
         const posTags = [...new Set(parsedTags.filter(isPartOfSpeech))].sort();
         const currentTags = JSON.stringify(posTags);
@@ -455,12 +459,16 @@ function constructGlossaryHtml(entryIndex) {
         const dictName = g.dictionary;
         
         const tempDiv = document.createElement('div');
-        try {
-            renderStructuredContent(tempDiv, JSON.parse(g.content), null, dictName, true);
-        } catch {
+        if (typeof g.content === 'string') {
+            try {
+                renderStructuredContent(tempDiv, JSON.parse(g.content), null, dictName, true);
+            } catch {
+                renderStructuredContent(tempDiv, g.content, null, dictName, true);
+            }
+        } else {
             renderStructuredContent(tempDiv, g.content, null, dictName, true);
         }
-        
+
         index++;
         let label = '';
         const parsedTags = parseTags(g.definitionTags).filter(tag => !NUMERIC_TAG.test(tag));
@@ -1324,9 +1332,13 @@ function createGlossarySection(dictName, contents, isFirst) {
     
     const termTags = [...new Set(parseTags(contents[0]?.termTags))];
     const renderContent = (parent, content) => {
-        try {
-            renderStructuredContent(parent, JSON.parse(content), null, dictName);
-        } catch {
+        if (typeof content === 'string') {
+            try {
+                renderStructuredContent(parent, JSON.parse(content), null, dictName);
+            } catch {
+                renderStructuredContent(parent, content, null, dictName);
+            }
+        } else {
             renderStructuredContent(parent, content, null, dictName);
         }
     };
