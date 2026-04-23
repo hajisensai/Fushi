@@ -171,6 +171,7 @@ flutter:
     - assets/ttu-ebook-reader/_app/immutable/entry/
     - assets/ttu-ebook-reader/_app/immutable/nodes/
     - assets/ttu-ebook-reader/icons/
+    - assets/popup/
 
   fonts:
     - family: NotoSansJP
