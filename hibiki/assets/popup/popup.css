@@ -417,6 +417,29 @@ a {
     color: inherit;
 }
 
+::selection {
+    background-color: rgba(100, 140, 230, 0.35);
+    color: inherit;
+}
+
+.copy-toast {
+    position: fixed;
+    background: rgba(0, 0, 0, 0.75);
+    color: #fff;
+    font-size: 13px;
+    padding: 5px 14px;
+    border-radius: 16px;
+    z-index: 9999;
+    pointer-events: auto;
+    -webkit-user-select: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.copy-toast.visible {
+    opacity: 1;
+}
+
 @media (prefers-color-scheme: light) {
     
     html,

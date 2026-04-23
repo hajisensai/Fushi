@@ -1447,11 +1447,128 @@ window.renderPopup = function() {
     }
 };
 
+// --- Long-press selection ---
+(() => {
+    let longPressTimer = null;
+    let startX = 0, startY = 0;
+    let moved = false;
+    const LONG_PRESS_MS = 400;
+    const MOVE_THRESHOLD = 10;
+    let copyToast = null;
+
+    function getCopyToast() {
+        if (!copyToast) {
+            copyToast = document.createElement('div');
+            copyToast.className = 'copy-toast';
+            copyToast.textContent = 'Copy';
+            document.body.appendChild(copyToast);
+            copyToast.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const sel = window.getSelection();
+                const text = sel ? sel.toString() : '';
+                if (text) {
+                    const ta = document.createElement('textarea');
+                    ta.value = text;
+                    ta.style.cssText = 'position:fixed;left:-9999px';
+                    document.body.appendChild(ta);
+                    ta.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(ta);
+                    copyToast.textContent = 'Copied!';
+                    setTimeout(() => { hideCopyToast(); }, 600);
+                }
+            });
+        }
+        return copyToast;
+    }
+
+    function showCopyToast(x, y) {
+        const toast = getCopyToast();
+        toast.textContent = 'Copy';
+        toast.style.left = `${Math.min(x, window.innerWidth - 70)}px`;
+        toast.style.top = `${Math.max(y - 36, 4)}px`;
+        toast.classList.add('visible');
+    }
+
+    function hideCopyToast() {
+        if (copyToast) copyToast.classList.remove('visible');
+    }
+
+    function selectWordAt(x, y) {
+        const range = document.caretRangeFromPoint(x, y);
+        if (!range || range.startContainer.nodeType !== Node.TEXT_NODE) return false;
+        const text = range.startContainer.textContent;
+        const offset = range.startOffset;
+        if (!text || offset >= text.length) return false;
+
+        const CJK = /[　-鿿豈-﫿＀-￯]/;
+        let start = offset, end = offset;
+        if (CJK.test(text[offset])) {
+            while (start > 0 && CJK.test(text[start - 1])) start--;
+            while (end < text.length && CJK.test(text[end])) end++;
+            end = Math.min(end, start + 20);
+        } else {
+            const WORD = /[\wÀ-ɏ'-]/;
+            while (start > 0 && WORD.test(text[start - 1])) start--;
+            while (end < text.length && WORD.test(text[end])) end++;
+        }
+        if (start === end) return false;
+
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        const r = document.createRange();
+        r.setStart(range.startContainer, start);
+        r.setEnd(range.startContainer, end);
+        sel.addRange(r);
+        return true;
+    }
+
+    document.addEventListener('touchstart', (e) => {
+        if (e.touches.length !== 1) return;
+        const t = e.touches[0];
+        startX = t.clientX;
+        startY = t.clientY;
+        moved = false;
+        hideCopyToast();
+
+        const target = (e.target?.nodeType === Node.TEXT_NODE ? e.target.parentElement : e.target);
+        if (target?.closest('.mine-button') || target?.closest('.audio-button')) return;
+
+        longPressTimer = setTimeout(() => {
+            longPressTimer = null;
+            if (!moved && selectWordAt(startX, startY)) {
+                showCopyToast(startX, startY);
+            }
+        }, LONG_PRESS_MS);
+    }, { passive: true });
+
+    document.addEventListener('touchmove', (e) => {
+        if (longPressTimer == null) return;
+        const t = e.touches[0];
+        if (Math.abs(t.clientX - startX) > MOVE_THRESHOLD || Math.abs(t.clientY - startY) > MOVE_THRESHOLD) {
+            moved = true;
+            clearTimeout(longPressTimer);
+            longPressTimer = null;
+        }
+    }, { passive: true });
+
+    document.addEventListener('touchend', () => {
+        if (longPressTimer != null) {
+            clearTimeout(longPressTimer);
+            longPressTimer = null;
+        }
+    }, { passive: true });
+})();
+
 document.addEventListener('click', (e) => {
     const sel = window.getSelection();
-    if (sel && sel.toString().length > 0) return;
+    if (sel && sel.toString().length > 0) {
+        sel.removeAllRanges();
+        return;
+    }
 
     const target = e.target?.nodeType === Node.TEXT_NODE ? e.target.parentElement : e.target;
+    if (target?.closest('.copy-toast')) return;
     if (target?.closest('.mine-button') || target?.closest('.audio-button')) return;
     if (!target?.closest('.glossary-content') && !target?.closest('.entry-header') && !target?.closest('.entry-tags')) {
         window.flutter_inappwebview.callHandler('tapOutside');
