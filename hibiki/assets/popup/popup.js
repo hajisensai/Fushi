@@ -1336,7 +1336,13 @@ function createGlossarySection(dictName, contents, isFirst) {
             try {
                 renderStructuredContent(parent, JSON.parse(content), null, dictName);
             } catch {
-                renderStructuredContent(parent, content, null, dictName);
+                if (/<[a-z][\s\S]*>/i.test(content)) {
+                    const wrapper = el('div');
+                    wrapper.innerHTML = content.replace(/<link[^>]*>/gi, '');
+                    parent.appendChild(wrapper);
+                } else {
+                    renderStructuredContent(parent, content, null, dictName);
+                }
             }
         } else {
             renderStructuredContent(parent, content, null, dictName);
