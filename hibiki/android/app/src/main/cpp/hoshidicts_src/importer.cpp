@@ -21,6 +21,8 @@
 
 #include "hash/hash.hpp"
 #include "json/yomitan_parser.hpp"
+#include "mdx/mdx_reader.hpp"
+#include "memory/memory.hpp"
 #include "zip/zip.hpp"
 
 namespace {
@@ -440,14 +442,371 @@ size_t write_media(const std::string& path, const Zip& zip, const std::vector<in
   media_idx.write(index_buf.data(), static_cast<std::streamsize>(index_buf.size()));
   return media_count;
 }
+
+int find_mdx_in_zip(const Zip& zip) {
+  for (int i = 0; i < static_cast<int>(zip.entries.size()); i++) {
+    const auto& name = zip.entries[i].name;
+    if (name.size() >= 4) {
+      auto ext = name.substr(name.size() - 4);
+      if (ext == ".mdx" || ext == ".MDX") return i;
+    }
+  }
+  return -1;
+}
+
+void extract_css_from_zip(const Zip& zip, const std::string& output_path) {
+  std::string combined_css;
+  for (int i = 0; i < static_cast<int>(zip.entries.size()); i++) {
+    auto base = basename(zip.entries[i].name);
+    if (base.size() >= 4 && base.substr(base.size() - 4) == ".css") {
+      auto css = zip.read(i);
+      if (!css.empty()) {
+        combined_css += "/* " + std::string(base) + " */\n";
+        combined_css += css;
+        combined_css += "\n";
+      }
+    }
+  }
+  if (!combined_css.empty()) {
+    std::ofstream f(output_path, std::ios::binary);
+    setup_stream_exceptions(f);
+    f.write(combined_css.data(), static_cast<std::streamsize>(combined_css.size()));
+  }
+}
+
+ImportResult import_mdx(const Zip& zip, int mdx_idx, const std::string& output_dir, bool low_ram) {
+  ImportResult result;
+
+  std::string mdx_data = zip.read(mdx_idx);
+  if (mdx_data.empty()) throw std::runtime_error("failed to read .mdx from zip");
+
+  auto mdx = mdx_reader::parse(reinterpret_cast<const uint8_t*>(mdx_data.data()), mdx_data.size());
+  if (mdx.entries.empty()) throw std::runtime_error("mdx: no entries found");
+
+  result.title = mdx.title;
+  if (result.title.empty()) {
+    auto base = basename(zip.entries[mdx_idx].name);
+    if (base.size() > 4) result.title = std::string(base.substr(0, base.size() - 4));
+    else result.title = "MDict Dictionary";
+  }
+
+  std::filesystem::path dict_path = std::filesystem::path(output_dir) / result.title;
+  std::string path = dict_path.string();
+  std::filesystem::create_directories(dict_path);
+
+  // Write synthetic index.json
+  Index index;
+  index.title = result.title;
+  index.format = 3;
+  if (glz::write_file_json(index, path + "/index.json", std::string{})) {
+    throw std::runtime_error("failed to write index.json");
+  }
+
+  // Extract CSS
+  extract_css_from_zip(zip, path + "/styles.css");
+
+  // Build blobs.bin from MDict entries
+  std::ofstream blobs(path + "/blobs.bin", std::ios::binary);
+  setup_stream_exceptions(blobs);
+  std::vector<std::pair<uint64_t, uint64_t>> offsets;
+  uint64_t write_offset = 0;
+
+  ZSTD_CCtx* cctx = ZSTD_createCCtx();
+  if (!cctx) throw std::runtime_error("failed to create zstd context");
+
+  ankerl::unordered_dense::map<uint64_t, uint64_t> glossary_positions;
+  ankerl::unordered_dense::map<uint64_t, std::vector<char>> glossary_blobs;
+  std::vector<char> compressed;
+
+  size_t batch_size = low_ram ? 5000 : 20000;
+  std::vector<char> data_buf;
+  std::vector<std::pair<uint64_t, uint64_t>> glossary_fixups;
+
+  auto flush_batch = [&]() {
+    if (data_buf.empty()) return;
+
+    // Write pending glossaries
+    std::vector<char> glossary_buf;
+    for (auto& [hash, blob] : glossary_blobs) {
+      auto [it, inserted] = glossary_positions.try_emplace(hash, write_offset);
+      if (inserted) {
+        glossary_buf.insert(glossary_buf.end(), blob.begin(), blob.end());
+        write_offset += blob.size();
+      }
+    }
+    if (!glossary_buf.empty()) {
+      blobs.write(glossary_buf.data(), static_cast<std::streamsize>(glossary_buf.size()));
+    }
+    glossary_blobs.clear();
+
+    // Fix up glossary offsets in data
+    for (auto& [hash, pos] : glossary_fixups) {
+      uint64_t real_offset = glossary_positions[hash];
+      std::memcpy(data_buf.data() + pos, &real_offset, sizeof(uint64_t));
+    }
+    glossary_fixups.clear();
+
+    blobs.write(data_buf.data(), static_cast<std::streamsize>(data_buf.size()));
+
+    write_offset += data_buf.size();
+    data_buf.clear();
+  };
+
+  for (size_t i = 0; i < mdx.entries.size(); i++) {
+    auto& entry = mdx.entries[i];
+    if (entry.key.empty() || entry.definition.empty()) continue;
+    if (entry.definition.starts_with("@@@LINK=")) continue;
+
+    // Compress glossary (the HTML definition)
+    std::string_view def_view = entry.definition;
+    uint64_t glossary_hash = XXH3_64bits(def_view.data(), def_view.size());
+
+    if (glossary_blobs.find(glossary_hash) == glossary_blobs.end() &&
+        glossary_positions.find(glossary_hash) == glossary_positions.end()) {
+      size_t bound = ZSTD_compressBound(def_view.size());
+      compressed.resize(bound);
+      size_t compressed_size = ZSTD_compressCCtx(cctx, compressed.data(), bound, def_view.data(), def_view.size(), 0);
+      if (ZSTD_isError(compressed_size)) continue;
+      compressed.resize(compressed_size);
+      glossary_blobs.emplace(glossary_hash, compressed);
+    }
+
+    uint32_t blob_size = 0;
+    if (auto it = glossary_blobs.find(glossary_hash); it != glossary_blobs.end()) {
+      blob_size = it->second.size();
+    } else if (auto it2 = glossary_positions.find(glossary_hash); it2 != glossary_positions.end()) {
+      // Already written, need to find compressed size — store in data with size 0 placeholder
+      // Actually we need the size. Let's re-compress briefly or just store the size.
+      // For simplicity, just re-compress.
+      size_t bound = ZSTD_compressBound(def_view.size());
+      compressed.resize(bound);
+      size_t cs = ZSTD_compressCCtx(cctx, compressed.data(), bound, def_view.data(), def_view.size(), 0);
+      blob_size = ZSTD_isError(cs) ? 0 : static_cast<uint32_t>(cs);
+    }
+
+    std::string_view expr = entry.key;
+    std::string_view reading;  // MDict doesn't have separate reading
+
+    uint64_t offset = data_buf.size();
+    write_val<uint8_t>(data_buf, 0);  // type: term
+    write_val<uint16_t>(data_buf, expr.size());
+    write_str(data_buf, expr);
+    write_val<uint16_t>(data_buf, 0);  // no reading
+
+    uint64_t glossary_offset_pos = data_buf.size();
+    write_val<uint64_t>(data_buf, 0);  // placeholder, will be fixed up
+    write_val<uint32_t>(data_buf, blob_size);
+    glossary_fixups.emplace_back(glossary_hash, glossary_offset_pos);
+
+    write_val<uint8_t>(data_buf, 0);  // no definition_tags
+    write_val<uint8_t>(data_buf, 0);  // no rules
+    write_val<uint8_t>(data_buf, 0);  // no term_tags
+
+    offsets.emplace_back(XXH3_64bits(expr.data(), expr.size()), offset);
+    result.term_count++;
+
+    if (result.term_count % batch_size == 0) {
+      // Adjust offsets to account for write_offset
+      for (size_t j = offsets.size() - batch_size; j < offsets.size(); j++) {
+        offsets[j].second += write_offset;
+      }
+      flush_batch();
+    }
+  }
+
+  // Flush remaining
+  size_t remaining = result.term_count % batch_size;
+  if (remaining == 0 && result.term_count > 0) remaining = batch_size;
+  for (size_t j = offsets.size() - remaining; j < offsets.size(); j++) {
+    offsets[j].second += write_offset;
+  }
+  flush_batch();
+
+  ZSTD_freeCCtx(cctx);
+
+  if (offsets.empty()) throw std::runtime_error("empty dictionary");
+
+  std::vector<std::pair<uint64_t, uint64_t>> hash_entries;
+  auto offset_buf = build_offset_index(offsets, write_offset, hash_entries);
+  std::vector<std::pair<uint64_t, uint64_t>>().swap(offsets);
+
+  auto hash_thread = std::async(std::launch::async, [&hash_entries, &path]() {
+    hash::linear table;
+    table.build_to_file(hash_entries, path + "/hash.table");
+  });
+
+  blobs.write(offset_buf.data(), static_cast<std::streamsize>(offset_buf.size()));
+  hash_thread.get();
+
+  std::ofstream sui(path + "/.hoshidicts_1", std::ios::binary);
+  result.success = true;
+  return result;
+}
+}
+
+ImportResult import_standalone_mdx(const std::string& mdx_path, const std::string& output_dir, bool low_ram) {
+  ImportResult result;
+
+  auto file = memory::map_rd(mdx_path);
+  if (!file) throw std::runtime_error("failed to open .mdx file");
+
+  try {
+    auto mdx = mdx_reader::parse(file.data, file.size);
+    memory::unmap(file);
+    file = {};
+
+    if (mdx.entries.empty()) throw std::runtime_error("mdx: no entries found");
+
+    result.title = mdx.title;
+    if (result.title.empty()) {
+      auto base = basename(mdx_path);
+      if (base.size() > 4)
+        result.title = std::string(base.substr(0, base.size() - 4));
+      else
+        result.title = "MDict Dictionary";
+    }
+
+    std::filesystem::path dict_path = std::filesystem::path(output_dir) / result.title;
+    std::string path = dict_path.string();
+    std::filesystem::create_directories(dict_path);
+
+    Index index;
+    index.title = result.title;
+    index.format = 3;
+    if (glz::write_file_json(index, path + "/index.json", std::string{})) {
+      throw std::runtime_error("failed to write index.json");
+    }
+
+    // Reuse the same blobs-writing logic via a temporary Zip-less helper
+    // For standalone .mdx, we construct a minimal MdxResult and pass to the
+    // same writing code. We'll inline the blob writing here.
+    std::ofstream blobs(path + "/blobs.bin", std::ios::binary);
+    setup_stream_exceptions(blobs);
+    std::vector<std::pair<uint64_t, uint64_t>> offsets;
+    uint64_t write_offset = 0;
+
+    ZSTD_CCtx* cctx = ZSTD_createCCtx();
+    if (!cctx) throw std::runtime_error("failed to create zstd context");
+
+    ankerl::unordered_dense::map<uint64_t, uint64_t> glossary_positions;
+    ankerl::unordered_dense::map<uint64_t, std::vector<char>> glossary_blobs;
+    std::vector<char> compressed;
+    size_t batch_size = low_ram ? 5000 : 20000;
+    std::vector<char> data_buf;
+    std::vector<std::pair<uint64_t, uint64_t>> glossary_fixups;
+
+    auto flush_batch = [&]() {
+      if (data_buf.empty()) return;
+      std::vector<char> glossary_buf;
+      for (auto& [hash, blob] : glossary_blobs) {
+        auto [it, inserted] = glossary_positions.try_emplace(hash, write_offset);
+        if (inserted) {
+          glossary_buf.insert(glossary_buf.end(), blob.begin(), blob.end());
+          write_offset += blob.size();
+        }
+      }
+      if (!glossary_buf.empty())
+        blobs.write(glossary_buf.data(), static_cast<std::streamsize>(glossary_buf.size()));
+      glossary_blobs.clear();
+      for (auto& [hash, pos] : glossary_fixups) {
+        uint64_t real_offset = glossary_positions[hash];
+        std::memcpy(data_buf.data() + pos, &real_offset, sizeof(uint64_t));
+      }
+      glossary_fixups.clear();
+      blobs.write(data_buf.data(), static_cast<std::streamsize>(data_buf.size()));
+      write_offset += data_buf.size();
+      data_buf.clear();
+    };
+
+    for (auto& entry : mdx.entries) {
+      if (entry.key.empty() || entry.definition.empty()) continue;
+      if (entry.definition.starts_with("@@@LINK=")) continue;
+
+      std::string_view def_view = entry.definition;
+      uint64_t glossary_hash = XXH3_64bits(def_view.data(), def_view.size());
+      if (glossary_blobs.find(glossary_hash) == glossary_blobs.end() &&
+          glossary_positions.find(glossary_hash) == glossary_positions.end()) {
+        size_t bound = ZSTD_compressBound(def_view.size());
+        compressed.resize(bound);
+        size_t cs = ZSTD_compressCCtx(cctx, compressed.data(), bound, def_view.data(), def_view.size(), 0);
+        if (ZSTD_isError(cs)) continue;
+        compressed.resize(cs);
+        glossary_blobs.emplace(glossary_hash, compressed);
+      }
+
+      uint32_t blob_size = 0;
+      if (auto it = glossary_blobs.find(glossary_hash); it != glossary_blobs.end())
+        blob_size = it->second.size();
+
+      std::string_view expr = entry.key;
+      uint64_t offset = data_buf.size();
+      write_val<uint8_t>(data_buf, 0);
+      write_val<uint16_t>(data_buf, expr.size());
+      write_str(data_buf, expr);
+      write_val<uint16_t>(data_buf, 0);
+      uint64_t glossary_offset_pos = data_buf.size();
+      write_val<uint64_t>(data_buf, 0);
+      write_val<uint32_t>(data_buf, blob_size);
+      glossary_fixups.emplace_back(glossary_hash, glossary_offset_pos);
+      write_val<uint8_t>(data_buf, 0);
+      write_val<uint8_t>(data_buf, 0);
+      write_val<uint8_t>(data_buf, 0);
+      offsets.emplace_back(XXH3_64bits(expr.data(), expr.size()), offset);
+      result.term_count++;
+
+      if (result.term_count % batch_size == 0) {
+        for (size_t j = offsets.size() - batch_size; j < offsets.size(); j++)
+          offsets[j].second += write_offset;
+        flush_batch();
+      }
+    }
+
+    size_t remaining = result.term_count % batch_size;
+    if (remaining == 0 && result.term_count > 0) remaining = batch_size;
+    for (size_t j = offsets.size() - remaining; j < offsets.size(); j++)
+      offsets[j].second += write_offset;
+    flush_batch();
+    ZSTD_freeCCtx(cctx);
+
+    if (offsets.empty()) throw std::runtime_error("empty dictionary");
+
+    std::vector<std::pair<uint64_t, uint64_t>> hash_entries;
+    auto offset_buf = build_offset_index(offsets, write_offset, hash_entries);
+    std::vector<std::pair<uint64_t, uint64_t>>().swap(offsets);
+    auto hash_thread = std::async(std::launch::async, [&hash_entries, &path]() {
+      hash::linear table;
+      table.build_to_file(hash_entries, path + "/hash.table");
+    });
+    blobs.write(offset_buf.data(), static_cast<std::streamsize>(offset_buf.size()));
+    hash_thread.get();
+
+    std::ofstream sui(path + "/.hoshidicts_1", std::ios::binary);
+    result.success = true;
+  } catch (...) {
+    memory::unmap(file);
+    throw;
+  }
+  return result;
 }
 
 ImportResult dictionary_importer::import(const std::string& zip_path, const std::string& output_dir, bool low_ram) {
   ImportResult result;
   try {
+    // Check if it's a standalone .mdx file
+    if (zip_path.size() >= 4) {
+      auto ext = zip_path.substr(zip_path.size() - 4);
+      if (ext == ".mdx" || ext == ".MDX") {
+        result = import_standalone_mdx(zip_path, output_dir, low_ram);
+        if (!result.success && !result.title.empty()) {
+          std::filesystem::remove_all(std::filesystem::path(output_dir) / result.title);
+        }
+        return result;
+      }
+    }
+
     Zip zip;
     if (!zip.open(zip_path)) {
-      throw std::runtime_error("failed to open zip");
+      throw std::runtime_error("failed to open file");
     }
 
     int index_idx = zip.find("index.json");
@@ -460,12 +819,19 @@ ImportResult dictionary_importer::import(const std::string& zip_path, const std:
       }
     }
     if (index_idx < 0) {
-      std::string msg = "could not find index.json in zip (" +
-                        std::to_string(zip.entries.size()) + " entries";
-      if (!zip.entries.empty()) {
-        msg += ", first: " + zip.entries[0].name;
+      // Try MDict format
+      int mdx_idx = find_mdx_in_zip(zip);
+      if (mdx_idx >= 0) {
+        result = import_mdx(zip, mdx_idx, output_dir, low_ram);
+        return result;
       }
-      msg += ")";
+      std::string msg = "unsupported dictionary format (" +
+                        std::to_string(zip.entries.size()) + " entries: [";
+      for (size_t i = 0; i < zip.entries.size() && i < 20; i++) {
+        if (i > 0) msg += ", ";
+        msg += zip.entries[i].name;
+      }
+      msg += "])";
       throw std::runtime_error(msg);
     }
     std::string index_content = zip.read(index_idx);
