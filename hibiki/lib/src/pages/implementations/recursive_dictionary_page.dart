@@ -6,6 +6,7 @@ import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/media/types/dictionary_media_type.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki/utils.dart';
 
 /// The page shown after performing a recursive dictionary lookup.
@@ -440,18 +441,21 @@ class _RecursiveDictionaryPageState
   }
 
   Widget buildSearchResult() {
-    Color? cardColor;
-    if (!_isCreatorOpen) {
-      cardColor = appModel.overrideDictionaryColor?.withOpacity(1);
-    }
-
-    return DictionaryResultPage(
-      cardColor: cardColor,
-      onSearch: onSearch,
-      onStash: onStash,
-      onShare: onShare,
-      result: _result!,
-      footerWidget: footerWidget,
+    return Column(
+      children: [
+        Expanded(
+          child: DictionaryPopupWebView(
+            key: ValueKey(_result),
+            result: _result!,
+            onTextSelected: (text) {
+              _controller.query = text;
+              search(text);
+            },
+          ),
+        ),
+        if (footerWidget != null)
+          footerWidget!,
+      ],
     );
   }
 
@@ -460,36 +464,34 @@ class _RecursiveDictionaryPageState
       return null;
     }
 
-    return SliverToBoxAdapter(
-      child: Padding(
-        padding: Spacing.of(context).insets.all.small,
-        child: Semantics(
-          label: t.show_more,
-          button: true,
-          child: InkWell(
-            onTap: _isSearching
-                ? null
-                : () async {
-                    search(
-                      _controller.query,
-                      overrideMaximumTerms:
-                          _result!.entries.length + appModel.maximumTerms,
-                    );
-                  },
-            child: Container(
-              color: Theme.of(context).brightness == Brightness.dark
-                  ? Colors.white.withOpacity(0.05)
-                  : Colors.black.withOpacity(0.05),
-              width: double.maxFinite,
-              child: Padding(
-                padding: Spacing.of(context).insets.all.normal,
-                child: Text(
-                  t.show_more,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: (textTheme.labelMedium?.fontSize)! * 0.9,
-                  ),
+    return Padding(
+      padding: Spacing.of(context).insets.all.small,
+      child: Semantics(
+        label: t.show_more,
+        button: true,
+        child: InkWell(
+          onTap: _isSearching
+              ? null
+              : () async {
+                  search(
+                    _controller.query,
+                    overrideMaximumTerms:
+                        _result!.entries.length + appModel.maximumTerms,
+                  );
+                },
+          child: Container(
+            color: Theme.of(context).brightness == Brightness.dark
+                ? Colors.white.withValues(alpha: 0.05)
+                : Colors.black.withValues(alpha: 0.05),
+            width: double.maxFinite,
+            child: Padding(
+              padding: Spacing.of(context).insets.all.normal,
+              child: Text(
+                t.show_more,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: (textTheme.labelMedium?.fontSize)! * 0.9,
                 ),
               ),
             ),

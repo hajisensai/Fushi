@@ -1,16 +1,14 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:multi_value_listenable_builder/multi_value_listenable_builder.dart';
 import 'package:spaces/spaces.dart';
 import 'package:hibiki/dictionary.dart';
-import 'package:hibiki/src/dictionary/hoshidicts.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki/utils.dart';
 
 /// A page template which assumes use of [BaseSourcePageState] by which all
@@ -83,10 +81,9 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
   final _popupPositionNotifier =
       ValueNotifier<JidoujishoPopupPosition?>(JidoujishoPopupPosition.topHalf);
 
-  /// Persistent popup WebView controller.
-  InAppWebViewController? _popupWebViewController;
-  bool _popupWebViewReady = false;
-  final ValueNotifier<double> _popupContentHeight = ValueNotifier<double>(1);
+  /// Key for the popup WebView to keep it persistent across rebuilds.
+  final GlobalKey<DictionaryPopupWebViewState> _popupWebViewKey =
+      GlobalKey<DictionaryPopupWebViewState>();
 
   /// Standard warning dialog for leaving a source page. All sources should
   /// use this and wrap their [build] function with a [WillPopScope].
@@ -177,116 +174,13 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
       appModel.addToDictionaryHistory(result: dictionaryResult);
       _showMore = dictionaryResult.entries.length < overrideMaximumTerms;
       _dictionaryResultNotifier.value = dictionaryResult;
-      _pushResultsToPopupWebView(dictionaryResult);
     } finally {
       _isSearchingNotifier.value = false;
     }
   }
 
   /// Push lookup results to the popup WebView for JS rendering.
-  void _pushResultsToPopupWebView(DictionarySearchResult result) {
-    if (_popupWebViewController == null || !_popupWebViewReady) return;
-    if (result.entries.isEmpty) return;
-
-    final entriesJson = _buildLookupEntriesJson(result);
-    final stylesJson = jsonEncode(HoshiDicts.dictionaryStyles);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    _popupWebViewController!.evaluateJavascript(source: '''
-      document.documentElement.style.colorScheme = '${isDark ? 'dark' : 'light'}';
-      window.lookupEntries = $entriesJson;
-      window.dictionaryStyles = $stylesJson;
-      window.renderPopup();
-    ''');
-  }
-
-  /// Build the JSON array of lookup entries for popup.js.
-  String _buildLookupEntriesJson(DictionarySearchResult result) {
-    final Map<String, Map<String, dynamic>> grouped = {};
-
-    for (final entry in result.entries) {
-      final key = '${entry.word}\n${entry.reading}';
-      if (!grouped.containsKey(key)) {
-        Map<String, dynamic>? extraData;
-        if (entry.extra != null && entry.extra!.isNotEmpty) {
-          try {
-            extraData = jsonDecode(entry.extra!) as Map<String, dynamic>;
-          } catch (_) {}
-        }
-
-        grouped[key] = {
-          'expression': entry.word,
-          'reading': entry.reading,
-          'matched': extraData?['matched'] ?? entry.word,
-          'rules': [],
-          'deinflectionTrace': [],
-          'glossaries': [],
-          'frequencies': _convertFrequencies(extraData),
-          'pitches': _convertPitches(extraData),
-        };
-
-        if (extraData != null && extraData.containsKey('deinflected')) {
-          final matched = extraData['matched'] as String? ?? '';
-          final deinflected = extraData['deinflected'] as String? ?? '';
-          if (matched != deinflected && deinflected.isNotEmpty) {
-            grouped[key]!['deinflectionTrace'] = [
-              {'name': '$matched → $deinflected', 'description': ''}
-            ];
-          }
-        }
-      }
-
-      grouped[key]!['glossaries'].add({
-        'dictionary': entry.dictionaryName,
-        'content': entry.meaning,
-        'definitionTags':
-            _getExtraField(entry, 'definitionTags'),
-        'termTags': _getExtraField(entry, 'termTags'),
-      });
-    }
-
-    return jsonEncode(grouped.values.toList());
-  }
-
-  String _getExtraField(DictionaryEntry entry, String field) {
-    if (entry.extra == null || entry.extra!.isEmpty) return '';
-    try {
-      final data = jsonDecode(entry.extra!) as Map<String, dynamic>;
-      return data[field]?.toString() ?? '';
-    } catch (_) {
-      return '';
-    }
-  }
-
-  List<Map<String, dynamic>> _convertFrequencies(
-      Map<String, dynamic>? extraData) {
-    if (extraData == null || !extraData.containsKey('frequencies')) return [];
-    final freqs = extraData['frequencies'] as List<dynamic>? ?? [];
-    return freqs.map((f) {
-      final values = (f['values'] as List<dynamic>? ?? []);
-      return {
-        'dictionary': f['dictName'] ?? '',
-        'frequencies': values
-            .map((v) => {
-                  'value': v['value'] ?? 0,
-                  'displayValue': v['display']?.toString() ?? '',
-                })
-            .toList(),
-      };
-    }).toList();
-  }
-
-  List<Map<String, dynamic>> _convertPitches(
-      Map<String, dynamic>? extraData) {
-    if (extraData == null || !extraData.containsKey('pitches')) return [];
-    final pitches = extraData['pitches'] as List<dynamic>? ?? [];
-    return pitches.map((p) {
-      return {
-        'dictionary': p['dictName'] ?? '',
-        'pitchPositions': p['positions'] ?? [],
-      };
-    }).toList();
-  }
+  /// Now handled by DictionaryPopupWebView via didUpdateWidget.
 
   /// Hide the dictionary and dispose of the current result.
   void clearDictionaryResult() async {
@@ -538,141 +432,27 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
 
         return child!;
       },
-      child: _buildPopupWebView(),
-    );
-  }
-
-  /// Build the persistent popup WebView widget.
-  Widget _buildPopupWebView() {
-    return InAppWebView(
-      initialUrlRequest: URLRequest(
-        url: WebUri('file:///android_asset/flutter_assets/assets/popup/popup.html'),
+      child: DictionaryPopupWebView(
+        key: _popupWebViewKey,
+        result: _dictionaryResultNotifier.value ?? DictionarySearchResult(
+          entries: [],
+          searchTerm: '',
+        ),
+        onTextSelected: (text) {
+          searchDictionaryResult(
+            searchTerm: text,
+            position: _popupPositionNotifier.value ??
+                JidoujishoPopupPosition.topHalf,
+          );
+        },
+        onMineEntry: onMineFromPopup,
       ),
-      initialSettings: InAppWebViewSettings(
-        transparentBackground: true,
-        supportZoom: false,
-        verticalScrollBarEnabled: true,
-        horizontalScrollBarEnabled: false,
-        allowFileAccessFromFileURLs: true,
-        allowUniversalAccessFromFileURLs: true,
-      ),
-      shouldInterceptRequest: (controller, request) async {
-        final url = request.url;
-        if (url.scheme == 'image' && HoshiDicts.isInitialized) {
-          final dictName =
-              url.queryParameters['dictionary'] ?? '';
-          final mediaPath = url.queryParameters['path'] ?? '';
-          if (dictName.isNotEmpty && mediaPath.isNotEmpty) {
-            final data =
-                HoshiDicts.instance.getMediaFile(dictName, mediaPath);
-            if (data != null) {
-              return WebResourceResponse(
-                contentType: _mimeTypeForPath(mediaPath),
-                data: data,
-              );
-            }
-          }
-        }
-        return null;
-      },
-      onWebViewCreated: (controller) {
-        _popupWebViewController = controller;
-
-        controller.addJavaScriptHandler(
-          handlerName: 'tapOutside',
-          callback: (_) {
-            clearDictionaryResult();
-          },
-        );
-
-        controller.addJavaScriptHandler(
-          handlerName: 'popupRendered',
-          callback: (args) {
-            if (args.isNotEmpty && args[0] is num) {
-              _popupContentHeight.value = (args[0] as num).toDouble();
-            }
-          },
-        );
-
-        controller.addJavaScriptHandler(
-          handlerName: 'mineEntry',
-          callback: (args) async {
-            if (args.isNotEmpty && args[0] is Map) {
-              final fields = Map<String, String>.from(
-                (args[0] as Map).map(
-                    (k, v) => MapEntry(k.toString(), v.toString())),
-              );
-              onMineFromPopup(fields);
-            }
-            return false;
-          },
-        );
-
-        controller.addJavaScriptHandler(
-          handlerName: 'duplicateCheck',
-          callback: (args) async {
-            return false;
-          },
-        );
-
-        controller.addJavaScriptHandler(
-          handlerName: 'textSelected',
-          callback: (args) {
-            if (args.isNotEmpty && args[0] is String) {
-              final text = args[0] as String;
-              if (text.isNotEmpty) {
-                searchDictionaryResult(
-                  searchTerm: text,
-                  position: _popupPositionNotifier.value ??
-                      JidoujishoPopupPosition.topHalf,
-                );
-              }
-            }
-          },
-        );
-
-        controller.addJavaScriptHandler(
-          handlerName: 'openLink',
-          callback: (args) {},
-        );
-
-        controller.addJavaScriptHandler(
-          handlerName: 'playWordAudio',
-          callback: (args) {},
-        );
-      },
-      onLoadStop: (controller, url) {
-        _popupWebViewReady = true;
-        final result = _dictionaryResultNotifier.value;
-        if (result != null && result.entries.isNotEmpty) {
-          _pushResultsToPopupWebView(result);
-        }
-      },
     );
   }
 
   /// Called when the user taps mine in the popup WebView.
   void onMineFromPopup(Map<String, String> fields) {
     // Subclasses can override to handle Anki export
-  }
-
-  String _mimeTypeForPath(String path) {
-    final ext = path.split('.').last.toLowerCase();
-    switch (ext) {
-      case 'png':
-        return 'image/png';
-      case 'jpg':
-      case 'jpeg':
-        return 'image/jpeg';
-      case 'gif':
-        return 'image/gif';
-      case 'webp':
-        return 'image/webp';
-      case 'svg':
-        return 'image/svg+xml';
-      default:
-        return 'application/octet-stream';
-    }
   }
 
   /// Show more widget.

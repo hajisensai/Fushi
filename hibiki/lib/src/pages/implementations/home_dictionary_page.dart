@@ -6,6 +6,7 @@ import 'package:spaces/spaces.dart';
 import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki/utils.dart';
 
 /// The body content for the Dictionary tab in the main menu.
@@ -416,12 +417,21 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
   }
 
   Widget buildSearchResult() {
-    return DictionaryResultPage(
-      onSearch: onSearch,
-      onStash: onStash,
-      onShare: onShare,
-      result: _result!,
-      footerWidget: footerWidget,
+    return Column(
+      children: [
+        Expanded(
+          child: DictionaryPopupWebView(
+            key: ValueKey(_result),
+            result: _result!,
+            onTextSelected: (text) {
+              mediaType.floatingSearchBarController.query = text;
+              search(text);
+            },
+          ),
+        ),
+        if (footerWidget != null)
+          footerWidget!,
+      ],
     );
   }
 
@@ -430,37 +440,31 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
       return null;
     }
 
-    return SliverToBoxAdapter(
-      child: Padding(
-        padding: Spacing.of(context).insets.all.small,
-        child: Semantics(
-          label: t.show_more,
-          button: true,
-          child: InkWell(
-            onTap: _isSearching
-                ? null
-                : () async {
-                    search(
-                      mediaType.floatingSearchBarController.query,
-                      overrideMaximumTerms:
-                          _result!.entries.length + appModel.maximumTerms,
-                    );
-                  },
-            child: Container(
-              color: Theme.of(context).brightness == Brightness.dark
-                  ? Colors.white.withOpacity(0.05)
-                  : Colors.black.withOpacity(0.05),
-              width: double.maxFinite,
-              child: Padding(
-                padding: Spacing.of(context).insets.all.normal,
-                child: Text(
-                  t.show_more,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: (textTheme.labelMedium?.fontSize)! * 0.9,
-                  ),
-                ),
+    return Padding(
+      padding: Spacing.of(context).insets.all.small,
+      child: InkWell(
+        onTap: _isSearching
+            ? null
+            : () async {
+                search(
+                  mediaType.floatingSearchBarController.query,
+                  overrideMaximumTerms:
+                      _result!.entries.length + appModel.maximumTerms,
+                );
+              },
+        child: Container(
+          color: Theme.of(context).brightness == Brightness.dark
+              ? Colors.white.withValues(alpha: 0.05)
+              : Colors.black.withValues(alpha: 0.05),
+          width: double.maxFinite,
+          child: Padding(
+            padding: Spacing.of(context).insets.all.normal,
+            child: Text(
+              t.show_more,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: (textTheme.labelMedium?.fontSize)! * 0.9,
               ),
             ),
           ),
