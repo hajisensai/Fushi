@@ -765,7 +765,8 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
     InAppWebViewController controller,
   ) async {
     final Object? raw = await controller.evaluateJavascript(
-      source: '__hoshiTtuProbe();',
+      source:
+          'if(typeof __hoshiTtuProbe!=="undefined")__hoshiTtuProbe();',
     );
     if (raw is! String) {
       return const TtuApiProbe.missing();
@@ -794,7 +795,9 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
     required int sectionIndex,
   }) async {
     await controller.evaluateJavascript(
-      source: '__sasayakiRequestNav($sectionIndex);',
+      source:
+          'if(typeof __sasayakiRequestNav!=="undefined")'
+          '__sasayakiRequestNav($sectionIndex);',
     );
   }
 
@@ -909,7 +912,9 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
     required int offset,
   }) async {
     await controller.evaluateJavascript(
-      source: '__hibikiScrollToNormOffset($section, $offset);',
+      source:
+          'if(typeof __hibikiScrollToNormOffset!=="undefined")'
+          '__hibikiScrollToNormOffset($section, $offset);',
     );
   }
 
@@ -922,7 +927,9 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
     required int ttuBookId,
   }) async {
     await controller.evaluateJavascript(
-      source: '__hoshiLoadSasayakiRefs($ttuBookId);',
+      source:
+          'if(typeof __hoshiLoadSasayakiRefs!=="undefined")'
+          '__hoshiLoadSasayakiRefs($ttuBookId);',
     );
   }
 
@@ -953,7 +960,9 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
     }
     if (payload.isEmpty) return;
     await controller.evaluateJavascript(
-      source: '__hoshiApplySasayakiCues($sectionIndex, '
+      source:
+          'if(typeof __hoshiApplySasayakiCues!=="undefined")'
+          '__hoshiApplySasayakiCues($sectionIndex, '
           '${jsonEncode(payload)});',
     );
   }
@@ -966,7 +975,9 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
     required String chapterHref,
   }) async {
     await controller.evaluateJavascript(
-      source: '__hoshiAnnotate(${jsonEncode(chapterHref)});',
+      source:
+          'if(typeof __hoshiAnnotate!=="undefined")'
+          '__hoshiAnnotate(${jsonEncode(chapterHref)});',
     );
   }
 
@@ -986,22 +997,27 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
     bool reveal = true,
   }) async {
     if (cue == null || cue.textFragmentId.isEmpty) {
-      await controller.evaluateJavascript(source: '__hoshiHighlight("");');
+      await controller.evaluateJavascript(
+        source:
+            'if(typeof __hoshiHighlight!=="undefined")__hoshiHighlight("");',
+      );
       return;
     }
     final String raw = cue.textFragmentId;
     final SasayakiFragment? frag = SasayakiMatchCodec.tryDecode(raw);
     if (frag != null) {
-      // 对齐 iOS Hoshi Reader：cueMap 命中 → 加 class + 对齐翻页；
-      // cueMap miss → 清高亮，不做 TreeWalker 回退，等下一条命中的 cue。
       await controller.evaluateJavascript(
-        source: 'window.__hoshiHighlightSasayakiCueById('
+        source:
+            'if(typeof __hoshiHighlightSasayakiCueById!=="undefined")'
+            'window.__hoshiHighlightSasayakiCueById('
             '${jsonEncode(raw)}, $reveal);',
       );
       return;
     }
     await controller.evaluateJavascript(
-      source: '__hoshiHighlight(${jsonEncode(raw)}, $reveal);',
+      source:
+          'if(typeof __hoshiHighlight!=="undefined")'
+          '__hoshiHighlight(${jsonEncode(raw)}, $reveal);',
     );
   }
 
@@ -1011,7 +1027,9 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
     required String selector,
   }) async {
     await controller.evaluateJavascript(
-      source: '__hoshiHighlight(${jsonEncode(selector)});',
+      source:
+          'if(typeof __hoshiHighlight!=="undefined")'
+          '__hoshiHighlight(${jsonEncode(selector)});',
     );
   }
 
