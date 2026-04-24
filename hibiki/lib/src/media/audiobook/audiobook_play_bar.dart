@@ -228,7 +228,10 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         ),
         child: SingleChildScrollView(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+            padding: EdgeInsets.fromLTRB(
+              20, 4, 20,
+              24 + MediaQuery.of(context).viewInsets.bottom,
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
