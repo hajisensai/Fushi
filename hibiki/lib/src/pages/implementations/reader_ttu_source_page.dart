@@ -1941,27 +1941,12 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
               debugPrint('[hibiki-reader] bookmark error: $e');
             }
           },
-          onToggleFullscreen: _toggleReaderFullscreen,
           onExitReader: () {
             if (mounted) Navigator.of(context).pop();
           },
           webViewController: _controller,
         );
       },
-    );
-  }
-
-  /// 当前 reader 是否处于 `immersiveSticky`（默认 true：reader 开场就入）。
-  /// 给"全屏切换"按钮做 toggle 状态用。不追求和外部状态精确同步 ——
-  /// 字典搜索等路径会临时切 edgeToEdge，那些是短时切换、用户合上后我们
-  /// 再回 immersive，标志位不受影响。
-  bool _readerFullscreen = true;
-
-  Future<void> _toggleReaderFullscreen() async {
-    final bool next = !_readerFullscreen;
-    _readerFullscreen = next;
-    await SystemChrome.setEnabledSystemUIMode(
-      next ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge,
     );
   }
 

@@ -132,7 +132,6 @@ class AudiobookSettingsSheet extends StatefulWidget {
     this.pageProgress,
     required this.onJumpSection,
     required this.onBookmark,
-    required this.onToggleFullscreen,
     required this.onExitReader,
     required this.webViewController,
     super.key,
@@ -144,7 +143,6 @@ class AudiobookSettingsSheet extends StatefulWidget {
   final (int current, int total)? pageProgress;
   final Future<void> Function(int sectionIndex) onJumpSection;
   final Future<void> Function() onBookmark;
-  final VoidCallback onToggleFullscreen;
   final VoidCallback onExitReader;
   final InAppWebViewController webViewController;
 
@@ -259,21 +257,6 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
   }
 
   Widget _buildProgressSection(ThemeData theme) {
-    final (int section, int total)? prog = widget.readerProgress;
-    final String chapterLabel;
-    if (prog == null || prog.$2 <= 0) {
-      chapterLabel = '—';
-    } else {
-      final int idx1 = prog.$1 + 1;
-      final int total = prog.$2;
-      final int pct = (idx1 / total * 100).clamp(0, 100).round();
-      final String? title = widget.toc
-          .where((TtuTocEntry e) => e.index == prog.$1)
-          .map((TtuTocEntry e) => e.label)
-          .firstOrNull;
-      final String suffix = title != null && title.isNotEmpty ? '（$title）' : '';
-      chapterLabel = t.chapter_progress(idx: idx1, total: total, suffix: suffix, pct: pct);
-    }
     final String pageLabel;
     final (int current, int total)? pp = widget.pageProgress;
     if (pp != null && pp.$2 > 0) {
@@ -281,10 +264,20 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
     } else {
       pageLabel = '';
     }
-    // 字幕句子进度
+    if (pageLabel.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(t.reading_progress, style: theme.textTheme.titleMedium),
+        const SizedBox(height: 8),
+        Text(pageLabel, style: theme.textTheme.bodyMedium),
+      ],
+    );
+  }
+
+  Widget _buildCueNavSection(ThemeData theme, AudiobookPlayerController ctrl) {
     final String cueLabel;
-    final AudiobookPlayerController? ctrl = widget.controller;
-    if (ctrl != null && ctrl.chapterCueCount > 0) {
+    if (ctrl.chapterCueCount > 0) {
       final int idx1 = ctrl.currentCueIdx >= 0 ? ctrl.currentCueIdx + 1 : 0;
       cueLabel = t.cue_progress(current: idx1, total: ctrl.chapterCueCount);
     } else {
@@ -293,26 +286,15 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(t.reading_progress, style: theme.textTheme.titleMedium),
-        const SizedBox(height: 8),
-        Text(chapterLabel, style: theme.textTheme.bodyLarge),
-        if (pageLabel.isNotEmpty) ...[
-          const SizedBox(height: 4),
-          Text(pageLabel, style: theme.textTheme.bodyMedium),
-        ],
-        if (cueLabel.isNotEmpty) ...[
-          const SizedBox(height: 4),
-          Text(cueLabel, style: theme.textTheme.bodyMedium),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildCueNavSection(ThemeData theme, AudiobookPlayerController ctrl) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(t.cue_navigation, style: theme.textTheme.titleMedium),
+        Row(
+          children: [
+            Text(t.cue_navigation, style: theme.textTheme.titleMedium),
+            if (cueLabel.isNotEmpty) ...[
+              const SizedBox(width: 8),
+              Text(cueLabel, style: theme.textTheme.bodyMedium),
+            ],
+          ],
+        ),
         const SizedBox(height: 8),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -737,15 +719,6 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           onTap: () async {
             Navigator.of(context).pop();
             await widget.onBookmark();
-          },
-        ),
-        _actionBtn(
-          context,
-          icon: Icons.fullscreen,
-          label: t.action_fullscreen_toggle,
-          onTap: () {
-            Navigator.of(context).pop();
-            widget.onToggleFullscreen();
           },
         ),
         _actionBtn(
