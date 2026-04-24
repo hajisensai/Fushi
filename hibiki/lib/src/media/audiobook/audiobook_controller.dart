@@ -381,6 +381,31 @@ class AudiobookPlayerController extends ChangeNotifier {
     await skipToCue(_chapterCues[idx + 1]);
   }
 
+  /// 前跳或后跳 [delta] 句（正数前跳，负数后跳）。
+  ///
+  /// 超出章节边界时 clamp 到首句 / 末句。
+  Future<void> skipByCues(int delta) async {
+    if (_chapterCues.isEmpty || delta == 0) return;
+    int idx = _currentCueIndex;
+    if (idx < 0) {
+      idx = JsonAlignmentParser.findCueIndex(
+        cues: _chapterCues,
+        positionMs: position.inMilliseconds,
+      );
+      if (idx < 0) idx = 0;
+    }
+    final int target = (idx + delta).clamp(0, _chapterCues.length - 1);
+    if (target == idx) return;
+    await skipToCue(_chapterCues[target]);
+  }
+
+  /// 跳转到指定 0-based cue 索引。
+  Future<void> skipToCueIndex(int index) async {
+    if (_chapterCues.isEmpty) return;
+    final int clamped = index.clamp(0, _chapterCues.length - 1);
+    await skipToCue(_chapterCues[clamped]);
+  }
+
   /// 设置播放速度（例如 0.75 / 1.0 / 1.25 / 1.5）。
   /// 新值落 [onSpeedPersist]；相同值（容差 0.001）跳过写库但仍 setSpeed
   /// 一次以处理 just_audio 内部偶发丢速场景。

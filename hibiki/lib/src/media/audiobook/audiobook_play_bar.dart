@@ -220,6 +220,11 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _buildProgressSection(theme),
+                if (widget.controller != null &&
+                    widget.controller!.chapterCueCount > 0) ...[
+                  const SizedBox(height: 16),
+                  _buildCueNavSection(theme, widget.controller!),
+                ],
                 if (widget.toc.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   _buildTocSection(context, theme),
@@ -291,6 +296,75 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           Text(cueLabel, style: theme.textTheme.bodyMedium),
         ],
       ],
+    );
+  }
+
+  Widget _buildCueNavSection(ThemeData theme, AudiobookPlayerController ctrl) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(t.cue_navigation, style: theme.textTheme.titleMedium),
+        const SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            _cueSkipBtn(ctrl, '-30', -30),
+            _cueSkipBtn(ctrl, '-5', -5),
+            _cueSkipBtn(ctrl, '+5', 5),
+            _cueSkipBtn(ctrl, '+30', 30),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Text(t.jump_to_cue, style: theme.textTheme.bodyMedium),
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 72,
+              height: 36,
+              child: TextField(
+                keyboardType: TextInputType.number,
+                textAlign: TextAlign.center,
+                decoration: InputDecoration(
+                  hintText: '1-${ctrl.chapterCueCount}',
+                  isDense: true,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                  border: const OutlineInputBorder(),
+                ),
+                style: theme.textTheme.bodyMedium,
+                onSubmitted: (String value) {
+                  final int? n = int.tryParse(value);
+                  if (n != null && n >= 1 && n <= ctrl.chapterCueCount) {
+                    ctrl.skipToCueIndex(n - 1);
+                    setState(() {});
+                  }
+                },
+              ),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              '/ ${ctrl.chapterCueCount}',
+              style: theme.textTheme.bodyMedium,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _cueSkipBtn(AudiobookPlayerController ctrl, String label, int delta) {
+    return FilledButton.tonal(
+      onPressed: () {
+        ctrl.skipByCues(delta);
+        setState(() {});
+      },
+      style: FilledButton.styleFrom(
+        minimumSize: const Size(64, 40),
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        visualDensity: VisualDensity.compact,
+      ),
+      child: Text('${delta > 0 ? '+' : ''}$delta${t.cue_unit}'),
     );
   }
 
