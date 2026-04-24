@@ -1368,8 +1368,6 @@ if (!window.__hibikiClickListenerRegistered) {
     document.body.dispatchEvent(evt);
   };
 
-  var __jidoTapTimer = null;
-
   document.addEventListener('touchstart', function(e) {
     if (e.touches.length === 1) {
       __jidoTapStartX = e.touches[0].clientX;
@@ -1389,15 +1387,11 @@ if (!window.__hibikiClickListenerRegistered) {
     // Tap → existing select-word behavior.
     if (!e.target.closest('.book-content')) return;
     __jidoLastTouchEnd = Date.now();
-
-    // 延迟 tapToSelect，双击时取消查词、只跳转音频
-    var evt = {
+    tapToSelect({
       clientX: touch.clientX, clientY: touch.clientY,
       x: touch.clientX, y: touch.clientY,
       target: e.target,
-    };
-    if (__jidoTapTimer) { clearTimeout(__jidoTapTimer); __jidoTapTimer = null; return; }
-    __jidoTapTimer = setTimeout(function() { __jidoTapTimer = null; tapToSelect(evt); }, 300);
+    });
   }, true);
 
   document.addEventListener('click', function(e) {
