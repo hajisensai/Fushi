@@ -46,6 +46,7 @@ dependencies:
   flutter_cache_manager: ^3.3.0
   flutter_charset_detector: ^1.0.2
   flutter_colorpicker: ^1.1.0
+  flutter_markdown: ^0.6.18
   flutter_exit_app: ^1.0.5
   flutter_html: ^3.0.0-beta.2
   flutter_html_table: ^3.0.0-beta.2

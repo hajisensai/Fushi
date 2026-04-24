@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:hibiki/utils.dart';
@@ -125,9 +126,21 @@ class UpdateChecker {
               Text(t.update_message(version: version)),
               if (releaseNotes.isNotEmpty) ...[
                 const SizedBox(height: 12),
-                Text(
-                  releaseNotes,
-                  style: Theme.of(ctx).textTheme.bodySmall,
+                MarkdownBody(
+                  data: releaseNotes,
+                  selectable: true,
+                  onTapLink: (_, href, __) {
+                    if (href != null) {
+                      launchUrl(
+                        Uri.parse(href),
+                        mode: LaunchMode.externalApplication,
+                      );
+                    }
+                  },
+                  styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(ctx))
+                      .copyWith(
+                    p: Theme.of(ctx).textTheme.bodySmall,
+                  ),
                 ),
               ],
             ],
