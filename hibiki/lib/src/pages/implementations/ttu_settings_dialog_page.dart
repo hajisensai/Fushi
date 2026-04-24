@@ -267,8 +267,8 @@ Widget _buildPageTurningSpeed({
   );
 }
 
-/// Theme selector (6 presets) — calls [AppModel.setAppThemeKey] which restarts.
-Widget _buildThemeSelector(AppModel appModel) {
+/// Theme selector (6 presets + custom) — calls [AppModel.setAppThemeKey].
+Widget _buildThemeSelector(AppModel appModel, {BuildContext? navContext}) {
   return Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
@@ -277,16 +277,43 @@ Widget _buildThemeSelector(AppModel appModel) {
       Wrap(
         spacing: 6,
         runSpacing: 6,
-        children: AppModel.themePresets.entries.map((e) {
-          return ChoiceChip(
-            label: Text(e.value.label),
-            selected: appModel.appThemeKey == e.key,
-            onSelected: (on) {
-              if (!on) return;
-              appModel.setAppThemeKey(e.key);
-            },
-          );
-        }).toList(),
+        children: [
+          ...AppModel.themePresets.entries.map((e) {
+            return ChoiceChip(
+              label: Text(e.value.label),
+              selected: appModel.appThemeKey == e.key,
+              onSelected: (on) {
+                if (!on) return;
+                appModel.setAppThemeKey(e.key);
+              },
+            );
+          }),
+          if (navContext != null)
+            ActionChip(
+              avatar: Icon(
+                Icons.palette,
+                size: 18,
+                color: appModel.appThemeKey == 'custom-theme'
+                    ? Theme.of(navContext).colorScheme.primary
+                    : null,
+              ),
+              label: Text(
+                t.custom_theme,
+                style: appModel.appThemeKey == 'custom-theme'
+                    ? TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(navContext).colorScheme.primary,
+                      )
+                    : null,
+              ),
+              onPressed: () {
+                Navigator.push(
+                  navContext,
+                  MaterialPageRoute(builder: (_) => const CustomThemePage()),
+                );
+              },
+            ),
+        ],
       ),
     ],
   );
@@ -349,7 +376,7 @@ class _TtuSettingsDialogPageState extends BasePageState {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _buildThemeSelector(appModel),
+              _buildThemeSelector(appModel, navContext: context),
               const Space.small(),
               const JidoujishoDivider(),
               const Space.small(),
@@ -396,7 +423,7 @@ class _TtuSettingsDialogContentState extends BasePageState {
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       children: [
-        _buildThemeSelector(appModel),
+        _buildThemeSelector(appModel, navContext: context),
         const Space.small(),
         const JidoujishoDivider(),
         const Space.small(),
