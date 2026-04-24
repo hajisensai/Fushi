@@ -292,6 +292,22 @@ window.__hoshiIsSkippable = function(c) {
 // 把该章所有 cue 包进 <span class="hoshi-sasayaki-cue">，存入 cueMap。
 // 运行期 __hoshiHighlightSasayakiCueById 做 O(1) Map 查表 + class toggle。
 // cueMap miss → 清高亮，不做回退（对齐 iOS Hoshi Reader）。
+// Sasayaki cue span 的点击：回传 textFragmentId 供 Dart 定位 cue。
+// 使用 document 级事件委托，section 切换后新 DOM 上的 span 自动命中。
+if (!document.__hoshiSasayakiClickRegistered) {
+  document.__hoshiSasayakiClickRegistered = true;
+  document.addEventListener('click', function(e) {
+    var span = e.target.closest('[data-sasayaki-key]');
+    if (!span) return;
+    var key = span.getAttribute('data-sasayaki-key');
+    if (!key) return;
+    console.log(JSON.stringify({
+      'hibiki-message-type': 'seekToSentence',
+      'sasayakiKey': key
+    }));
+  }, true);
+}
+
 window.__hoshiSasayakiCueMap = window.__hoshiSasayakiCueMap || null;
 window.__hoshiSasayakiAppliedForSection =
   (typeof window.__hoshiSasayakiAppliedForSection === 'number')
@@ -1259,6 +1275,10 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
     if (json['hibiki-message-type'] != 'seekToSentence') {
       return null;
     }
+    final String? sasayakiKey = json['sasayakiKey'] as String?;
+    if (sasayakiKey != null && sasayakiKey.isNotEmpty) {
+      return AudiobookClickEvent(sasayakiKey: sasayakiKey);
+    }
     final String chapter = json['chapter'] as String? ?? '';
     final int sid = (json['sid'] as num?)?.toInt() ?? -1;
     if (sid < 0) {
@@ -1405,13 +1425,17 @@ class TtuReaderSettings {
 /// 用户在 WebView 中点击有声书句子所产生的事件。
 class AudiobookClickEvent {
   const AudiobookClickEvent({
-    required this.chapterHref,
-    required this.sentenceIndex,
+    this.chapterHref = '',
+    this.sentenceIndex = -1,
+    this.sasayakiKey,
   });
 
   /// 来源章节（EPUB spine href）。
   final String chapterHref;
 
-  /// 点击的句子在章节内的序号（data-hoshi-sid）。
+  /// 点击的句子在章节内的序号（data-hoshi-sid / data-cue-id）。
   final int sentenceIndex;
+
+  /// Sasayaki cue 的 textFragmentId（data-sasayaki-key），非空时优先使用。
+  final String? sasayakiKey;
 }
