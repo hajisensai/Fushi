@@ -306,13 +306,10 @@ class HoshiReaderLocalizationsDelegate
   /// Initialise this delegate.
   const HoshiReaderLocalizationsDelegate();
   @override
-  bool isSupported(Locale locale) {
-    return locale == const Locale('en', 'US');
-  }
+  bool isSupported(Locale locale) => true;
 
   @override
   Future<HoshiReaderLocalizations> load(Locale locale) {
-    assert(locale == const Locale('en', 'US'), 'Locale must be supported.');
     return SynchronousFuture<HoshiReaderLocalizations>(
         HoshiReaderLocalizations());
   }
