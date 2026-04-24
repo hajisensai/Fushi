@@ -1006,8 +1006,6 @@ class AppModel with ChangeNotifier {
   Future<void> injectAssetLicenses() async {
     final packageNames = [
       'ebook-reader',
-      'ipadic',
-      've',
     ];
 
     for (String packageName in packageNames) {
@@ -1114,7 +1112,7 @@ class AppModel with ChangeNotifier {
       populateEnhancements();
       populateQuickActions();
 
-      debugPrint('[Hibiki] init: targetLanguage (MeCab)');
+      debugPrint('[Hibiki] init: targetLanguage');
       /// Get the current target language and prepare its resources for use. This
       /// will not re-run if the target language is already initialised, as
       /// a [Language] should always have a singleton instance and will not
