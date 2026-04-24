@@ -34,6 +34,9 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 当前章节所有 cue（已按 startMs 排序）。
   List<AudioCue> _chapterCues = [];
 
+  /// 外部只读快照，供 _seekToSentence 按 textFragmentId 查找 cue。
+  List<AudioCue> get chapterCuesSnapshot => _chapterCues;
+
   /// 多文件时每个文件的全局起始毫秒偏移量（index → offsetMs）。
   List<int> _fileOffsets = [];
 
@@ -611,6 +614,11 @@ class AudiobookPlayerController extends ChangeNotifier {
   }) {
     _chapterTransition = false;
     _updateCurrentCue(_player.position.inMilliseconds);
+  }
+
+  /// 用户手动翻章时清 `_chapterTransition` 守卫，防止旧跨章逻辑卡死。
+  void cancelChapterTransition() {
+    _chapterTransition = false;
   }
 
   /// 翻转 Follow audio 开关并经 [onFollowAudioPersist] 落 Hive。相同值调用

@@ -2170,6 +2170,16 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       'hasPlayed=${controller?.hasPlayedOnce} '
       'suppress=$_suppressRevealScroll',
     );
+    // cue 属于不同章节时不高亮——防止异步跨章 nav 完成后、用户已手动翻走的
+    // 场景下，旧章 cue 被错误地高亮到新章 DOM 上。
+    if (cue != null && _currentTtuSection >= 0) {
+      final SasayakiFragment? frag =
+          SasayakiMatchCodec.tryDecode(cue.textFragmentId);
+      if (frag != null && frag.sectionIndex != _currentTtuSection) {
+        AudiobookBridge.highlight(_controller, cue: null);
+        return;
+      }
+    }
     final bool forceReveal = controller?.consumeForceReveal() ?? false;
     final bool reveal = !_suppressRevealScroll &&
         (forceReveal || (controller?.shouldRevealCurrentCue ?? true));
@@ -2381,9 +2391,16 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         sectionIndex: sectionIndex,
         cues: cues,
       );
-      // JS 侧 sasayakiApplied / sasayakiApplySkip 都不抛异常，
-      // 但只有真正 applied 才算成功。这里乐观置位，收到
-      // sasayakiApplySkip 时由 _handleSasayakiApplySkip 重置。
+      // 异步完成后 reader 可能已翻到别章——丢弃过时结果，防止旧章 cueMap
+      // 覆盖当前章 DOM。
+      if (_currentTtuSection != sectionIndex) {
+        debugPrint(
+          '[hibiki-audiobook] applySasayakiCues stale: applied=$sectionIndex '
+          'but reader now at $_currentTtuSection, discarding',
+        );
+        _lastSasayakiAppliedSection = -1;
+        return;
+      }
       _lastSasayakiAppliedSection = sectionIndex;
     } catch (e) {
       debugPrint('[hibiki-audiobook] applySasayakiCues failed: $e');
@@ -2528,6 +2545,18 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       return;
     }
     _currentTtuSection = idx;
+    // 用户手动翻章时，废弃正在进行的程序化跳章——否则旧的
+    // _applyThenCompleteNav 异步完成后会用错误章节的 cueMap 覆盖当前章。
+    if (_inFlightNavSection != null) {
+      debugPrint(
+        '[hibiki-audiobook] manual turn cancels in-flight nav '
+        'to section $_inFlightNavSection',
+      );
+      _navRestoreTimeout?.cancel();
+      _navRestoreTimeout = null;
+      _inFlightNavSection = null;
+      _audiobookController?.cancelChapterTransition();
+    }
     // 程序化跳章完成后 ttu 有时紧接推一个 auto=false 的 settle 事件。
     // 如果在 500ms 窗口内，跳过 auto-off 防止误关 follow audio。
     final DateTime? lastNav = _lastNavRestoreTime;
@@ -2546,32 +2575,60 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
   }
 
   /// 用户点击句子，跳转播放器到该 cue。
+  ///
+  /// Sasayaki 路径通过 [AudiobookClickEvent.sasayakiKey] 传递 textFragmentId，
+  /// 直接在内存 `_chapterCues` 里匹配；非 Sasayaki 路径按 bookUid + chapterHref
+  /// + sentenceIndex 从数据库查。找到 cue 后，若该 cue 所在章节与当前 reader
+  /// 章节不同，先跳章再 seek，确保用户看到正确页面。
   Future<void> _seekToSentence(AudiobookClickEvent event) async {
-    if (_audiobookController == null) {
+    final AudiobookPlayerController? controller = _audiobookController;
+    if (controller == null) {
       return;
     }
-    final AudiobookRepository repo = AudiobookRepository(appModel.database);
 
-    // SrtBook 的 cue 全部存在 srt://default，bookUid = SrtBook.uid；
-    // 常规有声书使用事件携带的 chapterHref 和 widget uniqueKey。
-    final String bookUid;
-    final String chapterHref;
-    if (_srtBookUid != null) {
-      bookUid = _srtBookUid!;
-      chapterHref = SrtParser.defaultChapter;
+    AudioCue? cue;
+
+    if (event.sasayakiKey != null) {
+      // Sasayaki 路径：在 _chapterCues（全书 cue）中按 textFragmentId 匹配。
+      final String key = event.sasayakiKey!;
+      final List<AudioCue> allCues = controller.chapterCuesSnapshot;
+      for (final AudioCue c in allCues) {
+        if (c.textFragmentId == key) {
+          cue = c;
+          break;
+        }
+      }
     } else {
-      bookUid = widget.item?.uniqueKey ?? '';
-      chapterHref = event.chapterHref;
+      // SrtBook / 常规路径：数据库查询。
+      final AudiobookRepository repo = AudiobookRepository(appModel.database);
+      final String bookUid;
+      final String chapterHref;
+      if (_srtBookUid != null) {
+        bookUid = _srtBookUid!;
+        chapterHref = SrtParser.defaultChapter;
+      } else {
+        bookUid = widget.item?.uniqueKey ?? '';
+        chapterHref = event.chapterHref;
+      }
+      cue = await repo.findCue(
+        bookUid: bookUid,
+        chapterHref: chapterHref,
+        sentenceIndex: event.sentenceIndex,
+      );
     }
 
-    final AudioCue? cue = await repo.findCue(
-      bookUid: bookUid,
-      chapterHref: chapterHref,
-      sentenceIndex: event.sentenceIndex,
-    );
-    if (cue != null) {
-      await _audiobookController?.skipToCue(cue);
+    if (cue == null) return;
+
+    // 检查是否需要跨章跳转。
+    final SasayakiFragment? frag =
+        SasayakiMatchCodec.tryDecode(cue.textFragmentId);
+    if (frag != null && frag.sectionIndex != _currentTtuSection) {
+      // 用户主动点击不同章节的 cue：重新开启 follow audio 并跳章。
+      controller.setFollowAudio(true);
+      await _handleCueCrossChapter(frag.sectionIndex);
     }
+
+    await controller.skipToCue(cue);
   }
 
   // ── 有声书导入按钮 ──────────────────────────────────────────────────────────
