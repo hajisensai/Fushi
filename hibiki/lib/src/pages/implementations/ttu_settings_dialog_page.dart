@@ -105,6 +105,34 @@ Widget _buildDisplaySettings(VoidCallback rebuild) {
             onChanged: (v) => update(
                 () => _source.setTtuLineHeight((v * 100).roundToDouble() / 100)),
           ),
+          _buildNumberRow(
+            label: t.ttu_text_indentation,
+            value: _source.ttuTextIndentation,
+            step: 1, min: 0, max: 10,
+            format: (v) => '${v.round()}',
+            onChanged: (v) => update(() => _source.setTtuTextIndentation(v)),
+          ),
+          _buildNumberRow(
+            label: t.ttu_first_dimension_margin,
+            value: _source.ttuFirstDimensionMargin,
+            step: 5, min: 0, max: 100,
+            format: (v) => '${v.round()}',
+            onChanged: (v) => update(() => _source.setTtuFirstDimensionMargin(v)),
+          ),
+          _buildNumberRow(
+            label: t.ttu_second_dimension_max,
+            value: _source.ttuSecondDimensionMaxValue,
+            step: 50, min: 0, max: 2000,
+            format: (v) => v.round() == 0 ? t.ttu_page_columns_auto : '${v.round()}',
+            onChanged: (v) => update(() => _source.setTtuSecondDimensionMaxValue(v)),
+          ),
+          _buildNumberRow(
+            label: t.ttu_page_columns,
+            value: _source.ttuPageColumns.toDouble(),
+            step: 1, min: 0, max: 4,
+            format: (v) => v.round() == 0 ? t.ttu_page_columns_auto : '${v.round()}',
+            onChanged: (v) => update(() => _source.setTtuPageColumns(v.round())),
+          ),
           Row(
             children: [
               Expanded(child: Text(t.ttu_writing_direction)),
@@ -142,15 +170,70 @@ Widget _buildDisplaySettings(VoidCallback rebuild) {
               ),
             ],
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 8),
           Row(
             children: [
-              Expanded(child: Text(t.ttu_hide_furigana)),
-              Switch(
-                value: _source.ttuHideFurigana,
-                onChanged: (v) => update(() => _source.setTtuHideFurigana(v)),
+              Expanded(child: Text(t.ttu_vert_text_orient)),
+              SegmentedButton<String>(
+                segments: [
+                  ButtonSegment(value: 'mixed', label: Text(t.ttu_orient_mixed)),
+                  ButtonSegment(value: 'upright', label: Text(t.ttu_orient_upright)),
+                ],
+                selected: {_source.ttuVerticalTextOrientation},
+                onSelectionChanged: (sel) =>
+                    update(() => _source.setTtuVerticalTextOrientation(sel.first)),
+                style: const ButtonStyle(
+                  visualDensity: VisualDensity.compact,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
               ),
             ],
+          ),
+          const SizedBox(height: 4),
+          _buildSwitch(
+            label: t.ttu_hide_furigana,
+            value: _source.ttuHideFurigana,
+            onChanged: (v) => update(() => _source.setTtuHideFurigana(v)),
+          ),
+          Row(
+            children: [
+              Expanded(child: Text(t.ttu_furigana_style)),
+              SegmentedButton<String>(
+                segments: [
+                  ButtonSegment(value: 'Partial', label: Text(t.ttu_furigana_partial)),
+                  ButtonSegment(value: 'Full', label: Text(t.ttu_furigana_full)),
+                  ButtonSegment(value: 'Toggle', label: Text(t.ttu_furigana_toggle)),
+                ],
+                selected: {_source.ttuFuriganaStyle},
+                onSelectionChanged: (sel) =>
+                    update(() => _source.setTtuFuriganaStyle(sel.first)),
+                style: const ButtonStyle(
+                  visualDensity: VisualDensity.compact,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          _buildSwitch(
+            label: t.ttu_text_justify,
+            value: _source.ttuEnableTextJustification,
+            onChanged: (v) => update(() => _source.setTtuEnableTextJustification(v)),
+          ),
+          _buildSwitch(
+            label: t.ttu_vert_kerning,
+            value: _source.ttuEnableVerticalFontKerning,
+            onChanged: (v) => update(() => _source.setTtuEnableVerticalFontKerning(v)),
+          ),
+          _buildSwitch(
+            label: t.ttu_font_vpal,
+            value: _source.ttuEnableFontVPAL,
+            onChanged: (v) => update(() => _source.setTtuEnableFontVPAL(v)),
+          ),
+          _buildSwitch(
+            label: t.ttu_reader_styles,
+            value: _source.ttuPrioritizeReaderStyles,
+            onChanged: (v) => update(() => _source.setTtuPrioritizeReaderStyles(v)),
           ),
         ],
       );

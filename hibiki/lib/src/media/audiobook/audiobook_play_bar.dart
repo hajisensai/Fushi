@@ -189,6 +189,26 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         await src.setTtuTheme(value as String);
       case 'hideFurigana':
         await src.setTtuHideFurigana(value as bool);
+      case 'textIndentation':
+        await src.setTtuTextIndentation((value as num).toDouble());
+      case 'firstDimensionMargin':
+        await src.setTtuFirstDimensionMargin((value as num).toDouble());
+      case 'secondDimensionMaxValue':
+        await src.setTtuSecondDimensionMaxValue((value as num).toDouble());
+      case 'pageColumns':
+        await src.setTtuPageColumns((value as num).toInt());
+      case 'enableVerticalFontKerning':
+        await src.setTtuEnableVerticalFontKerning(value as bool);
+      case 'enableFontVPAL':
+        await src.setTtuEnableFontVPAL(value as bool);
+      case 'verticalTextOrientation':
+        await src.setTtuVerticalTextOrientation(value as String);
+      case 'enableTextJustification':
+        await src.setTtuEnableTextJustification(value as bool);
+      case 'prioritizeReaderStyles':
+        await src.setTtuPrioritizeReaderStyles(value as bool);
+      case 'furiganaStyle':
+        await src.setTtuFuriganaStyle(value as String);
     }
   }
 

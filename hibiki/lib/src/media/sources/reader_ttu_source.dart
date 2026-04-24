@@ -654,6 +654,56 @@ new Promise(function(resolve) {
   Future<void> setTtuHideFurigana(bool v) =>
       setPreference<bool>(key: 'ttu_hide_furigana', value: v);
 
+  double get ttuTextIndentation =>
+      getPreference<double>(key: 'ttu_text_indentation', defaultValue: 0);
+  Future<void> setTtuTextIndentation(double v) =>
+      setPreference<double>(key: 'ttu_text_indentation', value: v);
+
+  double get ttuFirstDimensionMargin =>
+      getPreference<double>(key: 'ttu_first_dimension_margin', defaultValue: 0);
+  Future<void> setTtuFirstDimensionMargin(double v) =>
+      setPreference<double>(key: 'ttu_first_dimension_margin', value: v);
+
+  double get ttuSecondDimensionMaxValue =>
+      getPreference<double>(key: 'ttu_second_dimension_max', defaultValue: 0);
+  Future<void> setTtuSecondDimensionMaxValue(double v) =>
+      setPreference<double>(key: 'ttu_second_dimension_max', value: v);
+
+  int get ttuPageColumns =>
+      getPreference<int>(key: 'ttu_page_columns', defaultValue: 0);
+  Future<void> setTtuPageColumns(int v) =>
+      setPreference<int>(key: 'ttu_page_columns', value: v);
+
+  bool get ttuEnableVerticalFontKerning =>
+      getPreference<bool>(key: 'ttu_vert_kerning', defaultValue: false);
+  Future<void> setTtuEnableVerticalFontKerning(bool v) =>
+      setPreference<bool>(key: 'ttu_vert_kerning', value: v);
+
+  bool get ttuEnableFontVPAL =>
+      getPreference<bool>(key: 'ttu_font_vpal', defaultValue: false);
+  Future<void> setTtuEnableFontVPAL(bool v) =>
+      setPreference<bool>(key: 'ttu_font_vpal', value: v);
+
+  String get ttuVerticalTextOrientation =>
+      getPreference<String>(key: 'ttu_vert_text_orient', defaultValue: 'mixed');
+  Future<void> setTtuVerticalTextOrientation(String v) =>
+      setPreference<String>(key: 'ttu_vert_text_orient', value: v);
+
+  bool get ttuEnableTextJustification =>
+      getPreference<bool>(key: 'ttu_text_justify', defaultValue: false);
+  Future<void> setTtuEnableTextJustification(bool v) =>
+      setPreference<bool>(key: 'ttu_text_justify', value: v);
+
+  bool get ttuPrioritizeReaderStyles =>
+      getPreference<bool>(key: 'ttu_reader_styles', defaultValue: false);
+  Future<void> setTtuPrioritizeReaderStyles(bool v) =>
+      setPreference<bool>(key: 'ttu_reader_styles', value: v);
+
+  String get ttuFuriganaStyle =>
+      getPreference<String>(key: 'ttu_furigana_style', defaultValue: 'Partial');
+  Future<void> setTtuFuriganaStyle(String v) =>
+      setPreference<String>(key: 'ttu_furigana_style', value: v);
+
   /// 在 WebView 加载后将 Hive 偏好写入 ttu localStorage。
   Future<void> applyReaderSettings(
     InAppWebViewController controller, {
@@ -666,6 +716,16 @@ new Promise(function(resolve) {
       'window.localStorage.setItem("viewMode","$ttuViewMode")',
       'window.localStorage.setItem("theme","$appThemeKey")',
       'window.localStorage.setItem("hideFurigana","$ttuHideFurigana")',
+      'window.localStorage.setItem("textIndentation",${ttuTextIndentation})',
+      'window.localStorage.setItem("firstDimensionMargin",${ttuFirstDimensionMargin})',
+      'window.localStorage.setItem("secondDimensionMaxValue",${ttuSecondDimensionMaxValue})',
+      'window.localStorage.setItem("pageColumns",${ttuPageColumns})',
+      'window.localStorage.setItem("enableVerticalFontKerning","$ttuEnableVerticalFontKerning")',
+      'window.localStorage.setItem("enableFontVPAL","$ttuEnableFontVPAL")',
+      'window.localStorage.setItem("verticalTextOrientation","$ttuVerticalTextOrientation")',
+      'window.localStorage.setItem("enableTextJustification","$ttuEnableTextJustification")',
+      'window.localStorage.setItem("prioritizeReaderStyles","$ttuPrioritizeReaderStyles")',
+      'window.localStorage.setItem("furiganaStyle","$ttuFuriganaStyle")',
     ];
     await controller.evaluateJavascript(source: cmds.join(';'));
   }
