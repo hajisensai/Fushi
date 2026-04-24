@@ -364,8 +364,8 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
   Widget buildSearchResult() {
     return ValueListenableBuilder(
       valueListenable: _dictionaryResultNotifier,
-      builder: (_, __, child) {
-        if (_dictionaryResultNotifier.value == null) {
+      builder: (_, result, __) {
+        if (result == null) {
           return SizedBox(
             height: double.infinity,
             width: double.infinity,
@@ -384,27 +384,23 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
           );
         }
 
-        if (_dictionaryResultNotifier.value!.entries.isEmpty) {
+        if (result.entries.isEmpty) {
           return buildNoSearchResultsPlaceholderMessage();
         }
 
-        return child!;
+        return DictionaryPopupWebView(
+          key: _popupWebViewKey,
+          result: result,
+          onTextSelected: (text) {
+            searchDictionaryResult(
+              searchTerm: text,
+              selectionRect: _selectionRectNotifier.value ??
+                  Rect.fromLTWH(0, 0, 1, 1),
+            );
+          },
+          onMineEntry: onMineFromPopup,
+        );
       },
-      child: DictionaryPopupWebView(
-        key: _popupWebViewKey,
-        result: _dictionaryResultNotifier.value ?? DictionarySearchResult(
-          entries: [],
-          searchTerm: '',
-        ),
-        onTextSelected: (text) {
-          searchDictionaryResult(
-            searchTerm: text,
-            selectionRect: _selectionRectNotifier.value ??
-                Rect.fromLTWH(0, 0, 1, 1),
-          );
-        },
-        onMineEntry: onMineFromPopup,
-      ),
     );
   }
 
