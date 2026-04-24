@@ -2,55 +2,27 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 import 'package:path/path.dart' as p;
 
-// ── 系统字体扫描 ──────────────────────────────────────────────────────────────
+// ── 系统字体扫描（通过 platform channel） ─────────────────────────────────────
 
+const _fontsChannel = MethodChannel('app.hibiki.reader/fonts');
 List<String>? _cachedSystemFonts;
 
 Future<List<String>> _getSystemFonts() async {
   if (_cachedSystemFonts != null) return _cachedSystemFonts!;
-
-  final families = <String>{};
-
-  // 1) 尝试解析 /system/etc/fonts.xml（Android 5+）
   try {
-    final xml = File('/system/etc/fonts.xml');
-    if (await xml.exists()) {
-      final content = await xml.readAsString();
-      final re = RegExp(r'<family\s+name="([^"]+)"');
-      for (final m in re.allMatches(content)) {
-        families.add(m.group(1)!);
-      }
-    }
-  } catch (_) {}
-
-  // 2) 回退：扫描 /system/fonts/ 目录文件名
-  if (families.isEmpty) {
-    try {
-      final dir = Directory('/system/fonts');
-      if (await dir.exists()) {
-        await for (final entity in dir.list()) {
-          if (entity is File) {
-            final base = p.basenameWithoutExtension(entity.path);
-            // 去掉 -Regular, -Bold, -Italic 等后缀
-            final clean = base.replaceAll(
-                RegExp(r'-(Regular|Bold|Italic|BoldItalic|Light|Medium|Thin|Black|SemiBold|ExtraBold|ExtraLight)$', caseSensitive: false),
-                '');
-            families.add(clean);
-          }
-        }
-      }
-    } catch (_) {}
+    final result = await _fontsChannel.invokeMethod<List<dynamic>>('listSystemFonts');
+    _cachedSystemFonts = result?.cast<String>() ?? [];
+  } catch (_) {
+    _cachedSystemFonts = [];
   }
-
-  final sorted = families.toList()..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-  _cachedSystemFonts = sorted;
-  return sorted;
+  return _cachedSystemFonts!;
 }
 
 // ── 系统字体选择页 ────────────────────────────────────────────────────────────

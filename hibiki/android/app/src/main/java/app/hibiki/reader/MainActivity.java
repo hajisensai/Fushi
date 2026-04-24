@@ -29,12 +29,18 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.InputStreamReader;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.TreeSet;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import android.provider.DocumentsContract;
 import android.database.Cursor;
@@ -50,6 +56,7 @@ public class MainActivity extends AudioServiceActivity {
     private static final String SAF_CHANNEL = "app.hibiki.reader/saf";
     private static final String TTS_CHANNEL = "app.hibiki.reader/tts";
     private static final String UPDATE_CHANNEL = "app.hibiki.reader/update";
+    private static final String FONTS_CHANNEL = "app.hibiki.reader/fonts";
     private static final int AD_PERM_REQUEST = 0;
     private static final int SAF_PICK_DIR_REQUEST = 1001;
 
@@ -423,6 +430,55 @@ public class MainActivity extends AudioServiceActivity {
                     } catch (Exception e) {
                         result.error("INSTALL_ERROR", e.getMessage(), null);
                     }
+                } else {
+                    result.notImplemented();
+                }
+            });
+
+        new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), FONTS_CHANNEL)
+            .setMethodCallHandler((call, result) -> {
+                if ("listSystemFonts".equals(call.method)) {
+                    new Thread(() -> {
+                        TreeSet<String> families = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+                        // 1) 解析 /system/etc/fonts.xml
+                        try {
+                            File xml = new File("/system/etc/fonts.xml");
+                            if (xml.exists()) {
+                                BufferedReader reader = new BufferedReader(
+                                        new InputStreamReader(new FileInputStream(xml)));
+                                StringBuilder sb = new StringBuilder();
+                                String line;
+                                while ((line = reader.readLine()) != null) {
+                                    sb.append(line);
+                                }
+                                reader.close();
+                                Pattern p = Pattern.compile("<family\\s+name=\"([^\"]+)\"");
+                                Matcher m = p.matcher(sb.toString());
+                                while (m.find()) {
+                                    families.add(m.group(1));
+                                }
+                            }
+                        } catch (Exception ignored) {}
+                        // 2) 扫描 /system/fonts/ 目录
+                        try {
+                            File dir = new File("/system/fonts");
+                            if (dir.exists() && dir.isDirectory()) {
+                                File[] files = dir.listFiles();
+                                if (files != null) {
+                                    for (File f : files) {
+                                        String name = f.getName();
+                                        if (name.endsWith(".ttf") || name.endsWith(".otf") || name.endsWith(".ttc")) {
+                                            String base = name.replaceAll("\\.(ttf|otf|ttc)$", "");
+                                            base = base.replaceAll("-(Regular|Bold|Italic|BoldItalic|Light|Medium|Thin|Black|SemiBold|ExtraBold|ExtraLight)$", "");
+                                            families.add(base);
+                                        }
+                                    }
+                                }
+                            }
+                        } catch (Exception ignored) {}
+                        List<String> sorted = new ArrayList<>(families);
+                        new Handler(Looper.getMainLooper()).post(() -> result.success(sorted));
+                    }).start();
                 } else {
                     result.notImplemented();
                 }
