@@ -529,10 +529,12 @@ window.__hoshiAnnotate = function(chapterHref) {
   while (walker.nextNode()) nodes.push(walker.currentNode);
   nodes.forEach(wrapText);
 
-  // 点击事件：回传 {type, chapter, sid}
-  document.addEventListener('click', function(e) {
+  // 双击跳转音频，单击保留给查词
+  document.addEventListener('dblclick', function(e) {
     var span = e.target.closest('[data-hoshi-sid]');
     if (!span) return;
+    e.stopPropagation();
+    e.preventDefault();
     console.log(JSON.stringify({
       'hibiki-message-type': 'seekToSentence',
       'chapter': span.dataset.hoshiChapter || '',
@@ -1038,9 +1040,11 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
     console.log('[hibiki] warn: no [data-cue-id] spans found in this page');
   }
 
-  document.addEventListener('click', function(e) {
+  document.addEventListener('dblclick', function(e) {
     var span = e.target.closest('[data-cue-id]');
     if (!span) return;
+    e.stopPropagation();
+    e.preventDefault();
     var sid = parseInt(span.getAttribute('data-cue-id'), 10);
     if (isNaN(sid)) return;
     console.log(JSON.stringify({
