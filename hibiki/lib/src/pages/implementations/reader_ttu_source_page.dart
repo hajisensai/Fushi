@@ -138,6 +138,15 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   /// 覆盖用户上次阅读的书签。
   bool _suppressRevealScroll = false;
 
+  // ── 窗口尺寸变化时保持阅读位置 ──────────────────────────────────────
+  Timer? _metricsDebounce;
+
+  /// 最近一次 _completeNavRestore 的时间戳。用于在 sectionChanged(auto=false)
+  /// 中过滤紧接程序化跳章后 ttu 推出的 settle 事件，避免误触 follow auto-off。
+  DateTime? _lastNavRestoreTime;
+
+  String? _lastAppThemeKey;
+
 
   @override
   void initState() {
@@ -195,6 +204,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     VolumeKeyChannel.instance.setHandlers();
     VolumeKeyChannel.instance.setInterceptEnabled(false);
     _navRestoreTimeout?.cancel();
+    _metricsDebounce?.cancel();
     // 在 WebView 销毁前同步读一次当前视口位置（fire-and-forget 写 Isar），
     // 兜住 JS 侧 1s scroll-debounce 窗内关书导致的保存丢失。
     // unawaited 是有意的：dispose 不能 async，Isar 写不依赖 UI 线程，
@@ -326,6 +336,29 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   }
 
   @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    if (!_controllerInitialised) return;
+    _metricsDebounce?.cancel();
+    _metricsDebounce = Timer(const Duration(milliseconds: 500), () async {
+      final pos = _lastSavedPos;
+      if (pos == null || pos.section < 0 || pos.offset < 0) return;
+      try {
+        await AudiobookBridge.scrollToNormOffset(
+          _controller,
+          section: pos.section,
+          offset: pos.offset,
+        );
+        debugPrint(
+          '[hibiki-reader-pos] metrics restore s=${pos.section} o=${pos.offset}',
+        );
+      } catch (e) {
+        debugPrint('[hibiki-reader-pos] metrics restore err: $e');
+      }
+    });
+  }
+
+  @override
   void onSearch(String searchTerm, {String? sentence = ''}) async {
     _isRecursiveSearching = true;
     if (appModel.isMediaOpen) {
@@ -367,6 +400,17 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       }
       lastOrientation = orientation;
     }
+
+    final currentThemeKey = appModel.appThemeKey;
+    if (_lastAppThemeKey != null &&
+        _lastAppThemeKey != currentThemeKey &&
+        _controllerInitialised &&
+        mediaSource.adaptTtuTheme) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setDictionaryColors();
+      });
+    }
+    _lastAppThemeKey = currentThemeKey;
 
     return Focus(
       autofocus: true,
@@ -2176,6 +2220,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     _navRestoreTimeout?.cancel();
     _navRestoreTimeout = null;
     _inFlightNavSection = null;
+    _lastNavRestoreTime = DateTime.now();
     controller.notifySectionRestoreCompleted(
       currentReaderSection: currentReaderSection,
       success: success,
@@ -2373,7 +2418,14 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       return;
     }
     _currentTtuSection = idx;
-    _autoOffFollowOnManualTurn();
+    // 程序化跳章完成后 ttu 有时紧接推一个 auto=false 的 settle 事件。
+    // 如果在 500ms 窗口内，跳过 auto-off 防止误关 follow audio。
+    final DateTime? lastNav = _lastNavRestoreTime;
+    final bool recentNav = lastNav != null &&
+        DateTime.now().difference(lastNav).inMilliseconds < 500;
+    if (!recentNav) {
+      _autoOffFollowOnManualTurn();
+    }
     unawaited(_persistReaderPos(
       section: idx,
       offset: 0,

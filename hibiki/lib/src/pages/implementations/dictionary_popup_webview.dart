@@ -64,6 +64,7 @@ class DictionaryPopupWebViewState extends State<DictionaryPopupWebView> {
         allowFileAccessFromFileURLs: true,
         allowUniversalAccessFromFileURLs: true,
         useHybridComposition: true,
+        useShouldInterceptRequest: true,
       ),
       shouldInterceptRequest: (controller, request) async {
         final url = request.url;

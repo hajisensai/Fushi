@@ -39,6 +39,11 @@ class _HomePageState extends BasePageState<HomePage>
             appModel.targetLanguage.standardFormat);
         appModel.setFirstTimeSetupFlag();
       }
+
+      // Fire-and-forget update check after startup completes.
+      if (mounted) {
+        UpdateChecker.scheduleCheck(context, appVersion);
+      }
     });
   }
 

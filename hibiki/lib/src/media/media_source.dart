@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:network_to_file_image/network_to_file_image.dart';
@@ -9,6 +10,7 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
+import 'package:hibiki/src/database/database.dart';
 import 'package:path/path.dart' as path;
 
 /// A source for a [MediaType] that will appear on the list of sources when
@@ -78,6 +80,13 @@ abstract class MediaSource {
   /// See [generateAudio].
   final bool overridesAutoAudio;
 
+  /// Shared database reference, set once by [AppModel.initialise] before
+  /// any source is initialised.
+  static HibikiDatabase? _sharedDb;
+
+  /// Call from [AppModel.initialise] before initialising media sources.
+  static void setDatabase(HibikiDatabase db) => _sharedDb = db;
+
   /// In-memory preference cache for this source. Loaded from the Drift
   /// database on [initialise] and written through on [setPreference].
   final Map<String, dynamic> _preferences = {};
@@ -85,13 +94,46 @@ abstract class MediaSource {
   /// Whether or not [initialise] has been called for this source.
   bool _initialised = false;
 
+  String _dbPrefKey(String key) => 'src:$uniqueKey:$key';
+
   /// This function is run at startup. It is not called again if already run.
   Future<void> initialise() async {
     if (_initialised) {
       return;
     } else {
+      await _loadPreferencesFromDb();
       await prepareResources();
       _initialised = true;
+    }
+  }
+
+  Future<void> _loadPreferencesFromDb() async {
+    final db = _sharedDb;
+    if (db == null) return;
+    final prefix = 'src:$uniqueKey:';
+    final all = await db.getAllPrefs();
+    for (final entry in all.entries) {
+      if (entry.key.startsWith(prefix)) {
+        final shortKey = entry.key.substring(prefix.length);
+        final raw = entry.value;
+        if (raw == 'true') {
+          _preferences[shortKey] = true;
+        } else if (raw == 'false') {
+          _preferences[shortKey] = false;
+        } else {
+          final asInt = int.tryParse(raw);
+          if (asInt != null) {
+            _preferences[shortKey] = asInt;
+          } else {
+            final asDouble = double.tryParse(raw);
+            if (asDouble != null) {
+              _preferences[shortKey] = asDouble;
+            } else {
+              _preferences[shortKey] = raw;
+            }
+          }
+        }
+      }
     }
   }
 
@@ -99,12 +141,21 @@ abstract class MediaSource {
   T getPreference<T>({required String key, required T defaultValue}) {
     final value = _preferences[key];
     if (value is T) return value;
+    if (T == double && value is int) return value.toDouble() as T;
     return defaultValue;
   }
 
   /// Set the preference [value] for a certain parameter [key] for this source.
   Future<void> setPreference<T>({required String key, required T value}) async {
     _preferences[key] = value;
+    final db = _sharedDb;
+    if (db != null) {
+      try {
+        await db.setPref(_dbPrefKey(key), value.toString());
+      } catch (e) {
+        debugPrint('[MediaSource] setPref write-through err: $e');
+      }
+    }
   }
 
   /// Delete the preference for a certain parameter [key] for this source.
