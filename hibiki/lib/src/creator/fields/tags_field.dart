@@ -32,6 +32,27 @@ class TagsField extends Field {
     required bool creatorJustLaunched,
     required String? dictionaryName,
   }) {
-    return appModel.savedTags;
+    String base = appModel.savedTags;
+
+    // Auto-add the current book title as a tag if enabled and a book is open.
+    if (appModel.autoAddBookNameToTags && appModel.isMediaOpen) {
+      final item = appModel.getCurrentMediaItem();
+      if (item != null) {
+        // Sanitise: Anki tags are space-delimited, so replace spaces with
+        // underscores to keep the title as a single tag.
+        final bookTag = item.title
+            .replaceAll(' ', '_')
+            .replaceAll('\t', '_');
+        if (bookTag.isNotEmpty) {
+          if (base.isEmpty) {
+            base = bookTag;
+          } else if (!base.split(' ').contains(bookTag)) {
+            base = '$base $bookTag';
+          }
+        }
+      }
+    }
+
+    return base;
   }
 }

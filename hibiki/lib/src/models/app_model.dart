@@ -1125,6 +1125,7 @@ class AppModel with ChangeNotifier {
       }
 
       debugPrint('[Hibiki] init: media sources');
+      MediaSource.setDatabase(_database);
       /// Ready all media sources for use.
       for (MediaType type in mediaTypes.values) {
         for (MediaSource source in mediaSources[type]!.values) {
@@ -1346,7 +1347,7 @@ class AppModel with ChangeNotifier {
 
   Future<void> setAppThemeKey(String key) async {
     await _setPref('app_theme_key', key);
-    Restart.restartApp();
+    notifyListeners();
   }
 
   Color get customThemeSeed {
@@ -1373,7 +1374,7 @@ class AppModel with ChangeNotifier {
     await setCustomThemeSeed(seed);
     await setCustomThemeDark(dark);
     await _setPref('app_theme_key', 'custom-theme');
-    Restart.restartApp();
+    notifyListeners();
   }
 
   bool get isDarkMode {
@@ -3680,6 +3681,17 @@ class AppModel with ChangeNotifier {
   /// Set the saved value that the user has set for the [TagsField].
   void setSavedTags(String value) async {
     await _setPref('saved_tags', value);
+  }
+
+  /// Whether to automatically add the current book name to the Tags field
+  /// when creating cards.
+  bool get autoAddBookNameToTags {
+    return _getPref('auto_add_book_name_to_tags', defaultValue: true);
+  }
+
+  /// Toggle auto-adding of book name to tags.
+  void toggleAutoAddBookNameToTags() async {
+    await _setPref('auto_add_book_name_to_tags', !autoAddBookNameToTags);
   }
 
   /// Get the list of model names that will be checked for duplicates.

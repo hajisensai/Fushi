@@ -287,6 +287,8 @@
     "volume_button_turning_speed": "连续滚动速度",
     "extend_page_beyond_navbar": "页面延伸至导航栏之外",
     "keep_screen_awake": "阅读时防止息屏",
+    "auto_read_on_lookup": "查词时自动朗读",
+    "dismiss_swipe_sensitivity": "滑动关闭灵敏度",
     "tweaks": "调整",
     "increase": "增加",
     "decrease": "减少",
@@ -475,6 +477,7 @@
     "reading_progress": "阅读进度",
     "chapter_progress": "第 $idx / $total 章$suffix · $pct%",
     "page_progress": "第 $current / $total 页",
+    "cue_progress": "第 $current / $total 句",
     "toc_section": "章节列表（$n）",
     "untitled_chapter": "（无标题）",
     "playback_speed": "倍速",
@@ -512,5 +515,11 @@
     "dark_mode": "深色模式",
     "seed_color": "种子色",
     "apply_theme": "应用主题",
-    "preview": "预览"
+    "preview": "预览",
+    "auto_add_book_name_to_tags": "自动添加书名到标签",
+    "use_recommended_template": "推荐模板",
+    "recommended_template_exists": "标准配置已存在。",
+    "recommended_template_created": "已创建推荐配置。",
+    "auto_read_on_lookup": "查词时自动朗读",
+    "dismiss_swipe_sensitivity": "滑动灵敏度"
 }

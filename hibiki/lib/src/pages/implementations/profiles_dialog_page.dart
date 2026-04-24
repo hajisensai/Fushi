@@ -1,5 +1,6 @@
 import 'package:change_notifier_builder/change_notifier_builder.dart';
 import 'package:flutter/material.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:reorderables/reorderables.dart';
 import 'package:spaces/spaces.dart';
 import 'package:hibiki/creator.dart';
@@ -67,8 +68,53 @@ class _ProfilesDialogPageState extends BasePageState<ProfilesDialogPage>
 
   List<Widget> get actions => [
         buildCloseButton(),
+        buildUseRecommendedButton(),
         buildAddNewButton(),
       ];
+
+  Widget buildUseRecommendedButton() {
+    return TextButton.icon(
+      icon: const Icon(Icons.auto_awesome, size: 18),
+      label: Text(t.use_recommended_template),
+      onPressed: () async {
+        try {
+          // Ensure the standard model exists in AnkiDroid.
+          await appModel.addDefaultModelIfMissing();
+
+          // Check if the standard profile already exists.
+          if (appModel.getMappingFromLabel(AnkiMapping.standardProfileName) !=
+              null) {
+            Fluttertoast.showToast(
+              msg: t.recommended_template_exists,
+              toastLength: Toast.LENGTH_SHORT,
+              gravity: ToastGravity.BOTTOM,
+            );
+            return;
+          }
+
+          // Create the standard mapping with default fields.
+          AnkiMapping defaultMapping = AnkiMapping.defaultMapping(
+            language: appModel.targetLanguage,
+            order: appModel.nextMappingOrder,
+          );
+
+          appModel.addMapping(defaultMapping);
+          await appModel.setLastSelectedMapping(defaultMapping);
+
+          Fluttertoast.showToast(
+            msg: t.recommended_template_created,
+            toastLength: Toast.LENGTH_SHORT,
+            gravity: ToastGravity.BOTTOM,
+          );
+
+          setState(() {});
+        } catch (e) {
+          // AnkiDroid communication error is already shown by showAnkidroidApiMessage.
+          debugPrint('Failed to create recommended template: $e');
+        }
+      },
+    );
+  }
 
   Widget buildAddNewButton() {
     return FilledButton(

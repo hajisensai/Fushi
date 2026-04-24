@@ -69,6 +69,8 @@ class _DictionaryDialogPageState extends BasePageState {
             children: [
               buildAutoSearchSwitch(),
               const Space.small(),
+              buildAutoAddBookNameToTagsSwitch(),
+              const Space.small(),
               const JidoujishoDivider(),
               buildDebounceDelayField(),
               buildDictionaryFontSizeField(),
@@ -99,6 +101,31 @@ class _DictionaryDialogPageState extends BasePageState {
               onChanged: (value) {
                 appModel.toggleAutoSearchEnabled();
                 notifier.value = appModel.autoSearchEnabled;
+              },
+            );
+          },
+        )
+      ],
+    );
+  }
+
+  Widget buildAutoAddBookNameToTagsSwitch() {
+    ValueNotifier<bool> notifier =
+        ValueNotifier<bool>(appModel.autoAddBookNameToTags);
+
+    return Row(
+      children: [
+        Expanded(
+          child: Text(t.auto_add_book_name_to_tags),
+        ),
+        ValueListenableBuilder<bool>(
+          valueListenable: notifier,
+          builder: (_, value, __) {
+            return Switch(
+              value: value,
+              onChanged: (value) {
+                appModel.toggleAutoAddBookNameToTags();
+                notifier.value = appModel.autoAddBookNameToTags;
               },
             );
           },

@@ -308,6 +308,8 @@
     "volume_button_turning_speed": "Continuous scrolling speed",
     "extend_page_beyond_navbar": "Extend page beyond navigation bar",
     "keep_screen_awake": "Keep screen awake",
+    "auto_read_on_lookup": "Auto read word on lookup",
+    "dismiss_swipe_sensitivity": "Swipe dismiss sensitivity",
     "tweaks": "Tweaks",
     "increase": "Increase",
     "decrease": "Decrease",
@@ -501,6 +503,7 @@
     "reading_progress": "Reading Progress",
     "chapter_progress": "Chapter $idx / $total$suffix · $pct%",
     "page_progress": "Page $current / $total",
+    "cue_progress": "Sentence $current / $total",
     "toc_section": "Table of Contents ($n)",
     "untitled_chapter": "(Untitled)",
     "playback_speed": "Speed",
@@ -538,5 +541,11 @@
     "dark_mode": "Dark Mode",
     "seed_color": "Seed Color",
     "apply_theme": "Apply Theme",
-    "preview": "Preview"
+    "preview": "Preview",
+    "auto_add_book_name_to_tags": "Auto-add book title to tags",
+    "use_recommended_template": "Recommended",
+    "recommended_template_exists": "The standard profile already exists.",
+    "recommended_template_created": "Recommended profile has been created.",
+    "auto_read_on_lookup": "Auto-read on lookup",
+    "dismiss_swipe_sensitivity": "Swipe sensitivity"
   }
