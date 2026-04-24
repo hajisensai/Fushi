@@ -39,7 +39,7 @@ abstract class BaseMediaSearchBarState<T extends BaseMediaSearchBar>
       backgroundColor: appModel.isDarkMode
           ? const Color.fromARGB(255, 30, 30, 30)
           : const Color.fromARGB(255, 229, 229, 229),
-      backdropColor: appModel.isDarkMode ? Colors.black : Colors.white,
+      backdropColor: Colors.transparent,
       accentColor: theme.colorScheme.primary,
       scrollPadding: const EdgeInsets.only(top: 6, bottom: 56),
       transitionDuration: Duration.zero,
