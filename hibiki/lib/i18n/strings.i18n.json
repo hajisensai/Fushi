@@ -545,7 +545,5 @@
     "auto_add_book_name_to_tags": "Auto-add book title to tags",
     "use_recommended_template": "Recommended",
     "recommended_template_exists": "The standard profile already exists.",
-    "recommended_template_created": "Recommended profile has been created.",
-    "auto_read_on_lookup": "Auto-read on lookup",
-    "dismiss_swipe_sensitivity": "Swipe sensitivity"
+    "recommended_template_created": "Recommended profile has been created."
   }

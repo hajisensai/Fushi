@@ -519,7 +519,5 @@
     "auto_add_book_name_to_tags": "自动添加书名到标签",
     "use_recommended_template": "推荐模板",
     "recommended_template_exists": "标准配置已存在。",
-    "recommended_template_created": "已创建推荐配置。",
-    "auto_read_on_lookup": "查词时自动朗读",
-    "dismiss_swipe_sensitivity": "滑动灵敏度"
+    "recommended_template_created": "已创建推荐配置。"
 }
