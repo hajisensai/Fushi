@@ -55,7 +55,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
   @override
   Widget build(BuildContext context) {
     return Stack(children: [
-      if (shouldPlaceholderBeShown)
+      if (shouldPlaceholderBeShown && !_lastOpenedState)
         buildPlaceholder()
       else if (!_lastOpenedState)
         buildDictionaryHistory(),
