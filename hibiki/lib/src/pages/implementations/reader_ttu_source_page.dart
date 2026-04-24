@@ -583,6 +583,8 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       'window.localStorage.setItem("viewMode","${src.ttuViewMode}")',
       'window.localStorage.setItem("theme","${appModel.appThemeKey}")',
       'window.localStorage.setItem("hideFurigana","${src.ttuHideFurigana}")',
+      'window.localStorage.setItem("statisticsEnabled","true")',
+      'window.localStorage.setItem("trackerAutoStartTime","5")',
     ].join(';');
   }
 

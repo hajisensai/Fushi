@@ -78,7 +78,7 @@ class ReadingStatisticIdbReader {
                 ..title = m['title'] as String? ?? ''
                 ..dateKey = m['dateKey'] as String? ?? ''
                 ..charactersRead = (m['charactersRead'] as num?)?.toInt() ?? 0
-                ..readingTimeMs = (m['readingTime'] as num?)?.toInt() ?? 0
+                ..readingTimeMs = ((m['readingTime'] as num?)?.toInt() ?? 0) * 1000
                 ..lastStatisticModified =
                     (m['lastStatisticModified'] as num?)?.toInt() ?? 0;
               return stat;

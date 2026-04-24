@@ -11,7 +11,7 @@ class ReadingStatistic {
 
   late int charactersRead;
 
-  /// 阅读时长，单位毫秒（与 ttu IDB 一致）。
+  /// 阅读时长，单位毫秒（ttu IDB 存秒，读取时 ×1000 转换）。
   late int readingTimeMs;
 
   late int lastStatisticModified;
