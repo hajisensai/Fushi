@@ -266,17 +266,13 @@ class UpdateChecker {
       final apkFile = File('${cacheDir.path}/hibiki-$version.apk');
 
       final client = HttpClient();
-      client.connectionTimeout = const Duration(seconds: 15);
+      client.connectionTimeout = const Duration(seconds: 30);
+      client.idleTimeout = const Duration(seconds: 60);
       final request = await client.getUrl(Uri.parse(url));
+      request.headers.set('User-Agent', 'Hibiki/$version');
       final response = await request.close();
 
-      if (response.statusCode == 302 || response.statusCode == 301) {
-        await response.drain<void>();
-        final redirectRequest =
-            await client.getUrl(Uri.parse(response.headers.value('location')!));
-        final redirectResponse = await redirectRequest.close();
-        await _writeResponse(redirectResponse, apkFile, progress);
-      } else if (response.statusCode == 200) {
+      if (response.statusCode == 200) {
         await _writeResponse(response, apkFile, progress);
       } else {
         await response.drain<void>();
