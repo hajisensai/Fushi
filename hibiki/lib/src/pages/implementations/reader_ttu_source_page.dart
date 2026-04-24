@@ -1674,6 +1674,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         initialDelayMs: await repo.readDelayMs(bookUid),
         initialSpeed: await repo.readSpeed(bookUid),
         initialPositionMs: await repo.readPositionMs(bookUid),
+        initialImagePauseSec: await repo.readImagePauseSec(bookUid),
       );
       controller.onPositionWrite = (String uid, int posMs) {
         repo.updatePositionMs(bookUid: uid, positionMs: posMs);
@@ -1761,6 +1762,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         // srtBook.uid 做 key 不碰 Isar，SRT-book 路径安全使用。
         initialDelayMs: await abRepo.readDelayMs(srtBookUid),
         initialSpeed: await abRepo.readSpeed(srtBookUid),
+        initialImagePauseSec: await abRepo.readImagePauseSec(srtBookUid),
       );
     } catch (e) {
       debugPrint('[hibiki-audiobook] srt init: controller.load failed: $e');
@@ -1779,6 +1781,9 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     };
     controller.onSpeedPersist = (double speed) async {
       await abRepo.updateSpeed(bookUid: srtBookUid, speed: speed);
+    };
+    controller.onImagePausePersist = (int sec) async {
+      await abRepo.updateImagePauseSec(bookUid: srtBookUid, sec: sec);
     };
     controller.onCrossChapter = _handleCueCrossChapter;
     controller.getCurrentReaderSection = () => _currentTtuSection;
@@ -2086,6 +2091,19 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     final bool reveal = !_suppressRevealScroll &&
         (forceReveal || (controller?.shouldRevealCurrentCue ?? true));
     AudiobookBridge.highlight(_controller, cue: cue, reveal: reveal);
+    _maybeImagePause(controller);
+  }
+
+  /// 高亮后检查视口中是否出现新图片，触发图片暂停。
+  Future<void> _maybeImagePause(AudiobookPlayerController? controller) async {
+    if (controller == null) return;
+    if (controller.imagePauseSec.value <= 0) return;
+    if (!controller.isPlaying) return;
+    if (controller.isImagePaused) return;
+    final bool hasNew = await AudiobookBridge.checkNewImage(_controller);
+    if (hasNew && controller.isPlaying) {
+      controller.triggerImagePause();
+    }
   }
 
   // ── PR8b Follow audio wiring ────────────────────────────────────────────
@@ -2105,6 +2123,9 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     };
     controller.onSpeedPersist = (double speed) async {
       await repo.updateSpeed(bookUid: bookUid, speed: speed);
+    };
+    controller.onImagePausePersist = (int sec) async {
+      await repo.updateImagePauseSec(bookUid: bookUid, sec: sec);
     };
     controller.onCrossChapter = _handleCueCrossChapter;
     controller.getCurrentReaderSection = () => _currentTtuSection;
@@ -2394,6 +2415,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       '[hibiki-audiobook-diag] {"hibiki-message-type":"ttuSectionChanged","idx":$idx,"auto":$auto,"inFlight":$_inFlightNavSection,"restoreInFlight":$_restoreInFlight,"pendingRestoreSec":${_pendingRestorePos?.section}}',
     );
     if (idx == null) return;
+    unawaited(AudiobookBridge.clearSeenImages(_controller));
     // auto=true 只来自我们自己的 __sasayakiRequestNav，只认匹配
     // _inFlightNavSection 的那条（导航到达目标段），其余（中间段 /
     // 导航完成后的 stale 延迟事件）全部丢弃，不更新 _currentTtuSection。

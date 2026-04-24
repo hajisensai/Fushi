@@ -120,6 +120,44 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 播放速度变化时的持久化回调。内部在 [setSpeed] 调用。
   Future<void> Function(double speed)? onSpeedPersist;
 
+  // ── 图片暂停 ───────────────────────────────────────────────────────────────
+  // 遇到图片时自动暂停播放，停留指定秒数后恢复。0 = 不暂停。
+
+  final ValueNotifier<int> imagePauseSec = ValueNotifier<int>(0);
+
+  Future<void> Function(int sec)? onImagePausePersist;
+
+  Timer? _imagePauseTimer;
+
+  /// 当前是否处于图片暂停等待中。
+  bool get isImagePaused => _imagePauseTimer?.isActive ?? false;
+
+  void setImagePauseSec(int sec) {
+    final int clamped = sec.clamp(0, 15);
+    if (imagePauseSec.value == clamped) return;
+    imagePauseSec.value = clamped;
+    final Future<void> Function(int)? persist = onImagePausePersist;
+    if (persist != null) {
+      unawaited(persist(clamped));
+    }
+  }
+
+  /// 由 reader 页面在检测到图片后调用。暂停播放并在 [imagePauseSec] 秒后恢复。
+  void triggerImagePause() {
+    final int sec = imagePauseSec.value;
+    if (sec <= 0 || !_player.playing) return;
+    _imagePauseTimer?.cancel();
+    _player.pause();
+    _imagePauseTimer = Timer(Duration(seconds: sec), () {
+      _imagePauseTimer = null;
+      if (!_player.playing) {
+        unawaited(_player.play());
+        notifyListeners();
+      }
+    });
+    notifyListeners();
+  }
+
 
   /// 是否正在播放。
   bool get isPlaying => _player.playing;
@@ -151,12 +189,16 @@ class AudiobookPlayerController extends ChangeNotifier {
     int initialDelayMs = 0,
     double initialSpeed = 1.0,
     int initialPositionMs = 0,
+    int initialImagePauseSec = 0,
   }) async {
     _audiobook = audiobook;
     // Follow audio / delay / speed 状态由调用方从持久层读出传入；不触发
     // persist 回调 —— 载入不是用户操作，又把同值写回 Hive 就是循环。
     followAudio.value = initialFollowAudio;
     delayMs.value = initialDelayMs;
+    imagePauseSec.value = initialImagePauseSec;
+    _imagePauseTimer?.cancel();
+    _imagePauseTimer = null;
     _hasPlayedOnce = false;
     _forceNextReveal = false;
     _chapterTransition = false;
@@ -281,6 +323,8 @@ class AudiobookPlayerController extends ChangeNotifier {
   }
 
   Future<void> pause() async {
+    _imagePauseTimer?.cancel();
+    _imagePauseTimer = null;
     await _player.pause();
     _maybeSavePosition(force: true);
   }
@@ -686,10 +730,12 @@ class AudiobookPlayerController extends ChangeNotifier {
   @override
   void dispose() {
     _maybeSavePosition(force: true);
+    _imagePauseTimer?.cancel();
     _positionSub?.cancel();
     _playingSub?.cancel();
     followAudio.dispose();
     delayMs.dispose();
+    imagePauseSec.dispose();
     _player.dispose();
     super.dispose();
   }

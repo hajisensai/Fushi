@@ -248,6 +248,8 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                   _buildSpeedSection(theme, widget.controller!),
                   const SizedBox(height: 20),
                   _buildDelaySection(theme, widget.controller!),
+                  const SizedBox(height: 20),
+                  _buildImagePauseSection(theme, widget.controller!),
                 ],
                 const SizedBox(height: 20),
                 _buildReaderSettingsSection(theme),
@@ -550,6 +552,44 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         visualDensity: VisualDensity.compact,
       ),
       child: Text(label),
+    );
+  }
+
+  static const List<int> _imagePauseOptions = [0, 5, 10, 15];
+
+  Widget _buildImagePauseSection(
+      ThemeData theme, AudiobookPlayerController ctrl) {
+    return ValueListenableBuilder<int>(
+      valueListenable: ctrl.imagePauseSec,
+      builder: (BuildContext ctx, int sec, _) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(t.image_pause, style: theme.textTheme.titleMedium),
+            const SizedBox(height: 4),
+            Text(
+              t.image_pause_hint,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: _imagePauseOptions.map((int s) {
+                final bool selected = s == sec;
+                return ChoiceChip(
+                  label: Text(s == 0 ? t.image_pause_off : '${s}s'),
+                  selected: selected,
+                  onSelected: (bool on) {
+                    if (on) ctrl.setImagePauseSec(s);
+                  },
+                );
+              }).toList(),
+            ),
+          ],
+        );
+      },
     );
   }
 
