@@ -542,12 +542,28 @@ window.__hoshiAnnotate = function(chapterHref) {
 };
 ''';
 
-  /// 图片检测 JS：检查当前视口/页面中是否出现了新的 `<img>` 元素。
+  /// 图片检测 JS。
   ///
-  /// `__hoshiSeenImages` 记录已暂停过的 img 元素（WeakSet），避免同一张图
-  /// 重复触发暂停。`__hoshiCheckNewImage()` 返回 true 表示发现新图片。
+  /// 核心思路：highlight 滚动前先调 `__hoshiSaveScrollPos()` 快照当前位置，
+  /// 滚动后调 `__hoshiCheckNewImage()` 比较新旧位置之间是否有被跳过的
+  /// `<img>`。分页模式下 cue 跳页可能直接越过图片页，viewport 检测抓不到；
+  /// 基于滚动距离的检测能覆盖这种场景。
+  ///
+  /// 同时也检查当前视口（同页图片的情况）。`__hoshiSeenImages` WeakSet 避免
+  /// 同一张图重复触发暂停。发现图片后自动把视口滚到图片所在页。
   static const String _imagePauseFn = '''
 window.__hoshiSeenImages = window.__hoshiSeenImages || new WeakSet();
+window.__hoshiPreScrollPos = -1;
+
+window.__hoshiSaveScrollPos = function() {
+  var content = document.querySelector('.book-content') ||
+                document.querySelector('[class*="book-content"]') ||
+                document.scrollingElement || document.documentElement;
+  if (!content) { window.__hoshiPreScrollPos = -1; return; }
+  var wm = getComputedStyle(document.documentElement).writingMode || 'horizontal-tb';
+  var isVertical = wm.indexOf('vertical') === 0;
+  window.__hoshiPreScrollPos = isVertical ? content.scrollTop : Math.abs(content.scrollLeft);
+};
 
 window.__hoshiCheckNewImage = function() {
   var content = document.querySelector('.book-content') ||
@@ -556,8 +572,31 @@ window.__hoshiCheckNewImage = function() {
   if (!content) return false;
   var imgs = content.querySelectorAll('img');
   if (!imgs || imgs.length === 0) return false;
+
+  var wm = getComputedStyle(document.documentElement).writingMode || 'horizontal-tb';
+  var isVertical = wm.indexOf('vertical') === 0;
+  var curScroll = isVertical ? content.scrollTop : Math.abs(content.scrollLeft);
+  var prevScroll = window.__hoshiPreScrollPos;
+
+  var container = content.querySelector('.book-content-container');
+  var gap = 40;
+  if (container) {
+    var g = parseFloat(getComputedStyle(container).columnGap);
+    if (!isNaN(g) && g > 0) gap = g;
+  }
+  var pageDim = isVertical ? content.clientHeight : content.clientWidth;
+  if (!pageDim || pageDim < 10) pageDim = 360;
+  var stride = pageDim + gap;
+
   var vw = window.innerWidth || 360;
   var vh = window.innerHeight || 640;
+
+  var minPos = (prevScroll >= 0) ? Math.min(prevScroll, curScroll) : curScroll;
+  var maxPos = (prevScroll >= 0) ? Math.max(prevScroll, curScroll) : curScroll;
+
+  var bestImg = null;
+  var bestImgPos = -1;
+
   for (var i = 0; i < imgs.length; i++) {
     var img = imgs[i];
     if (window.__hoshiSeenImages.has(img)) continue;
@@ -567,19 +606,52 @@ window.__hoshiCheckNewImage = function() {
     try {
       var rect = img.getBoundingClientRect();
       if (rect.width < 10 || rect.height < 10) continue;
+      var cRect = content.getBoundingClientRect();
+      var imgAbsPos = isVertical
+        ? (rect.top - cRect.top + content.scrollTop)
+        : (rect.left - cRect.left + content.scrollLeft);
+
+      if (prevScroll >= 0 && Math.abs(maxPos - minPos) > stride * 0.5) {
+        if (imgAbsPos >= minPos && imgAbsPos <= maxPos) {
+          if (!bestImg || imgAbsPos < bestImgPos) {
+            bestImg = img;
+            bestImgPos = imgAbsPos;
+          }
+          continue;
+        }
+      }
+
       var inViewport = rect.bottom > 0 && rect.top < vh &&
                        rect.right > 0 && rect.left < vw;
       if (inViewport) {
-        window.__hoshiSeenImages.add(img);
-        return true;
+        if (!bestImg) {
+          bestImg = img;
+          bestImgPos = imgAbsPos;
+        }
       }
     } catch (e) {}
   }
-  return false;
+
+  if (!bestImg) return false;
+  window.__hoshiSeenImages.add(bestImg);
+
+  var imgPage = Math.floor(bestImgPos / stride);
+  var curPage = Math.floor(curScroll / stride);
+  if (imgPage !== curPage) {
+    var targetPos = imgPage * stride;
+    if (typeof window.__ttuScrollToPos === 'function') {
+      window.__ttuScrollToPos(targetPos);
+    } else {
+      if (isVertical) content.scrollTop = targetPos;
+      else content.scrollLeft = targetPos;
+    }
+  }
+  return true;
 };
 
 window.__hoshiClearSeenImages = function() {
   window.__hoshiSeenImages = new WeakSet();
+  window.__hoshiPreScrollPos = -1;
 };
 ''';
 
@@ -794,7 +866,18 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
     await controller.evaluateJavascript(source: _imagePauseFn);
   }
 
-  /// 检查当前视口中是否出现了新的图片（未暂停过的）。
+  /// highlight 前快照当前滚动位置，供 [checkNewImage] 比较。
+  static Future<void> saveScrollPos(
+    InAppWebViewController controller,
+  ) async {
+    await controller.evaluateJavascript(
+      source:
+          'if(typeof __hoshiSaveScrollPos!=="undefined")__hoshiSaveScrollPos();',
+    );
+  }
+
+  /// 检查新旧滚动位置之间或当前视口中是否出现了新图片。
+  /// 发现时自动滚到图片页。调用前需先 [saveScrollPos]。
   static Future<bool> checkNewImage(
     InAppWebViewController controller,
   ) async {

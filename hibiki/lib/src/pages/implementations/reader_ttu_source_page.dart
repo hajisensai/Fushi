@@ -2090,6 +2090,9 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     final bool forceReveal = controller?.consumeForceReveal() ?? false;
     final bool reveal = !_suppressRevealScroll &&
         (forceReveal || (controller?.shouldRevealCurrentCue ?? true));
+    if (reveal && (controller?.imagePauseSec.value ?? 0) > 0) {
+      AudiobookBridge.saveScrollPos(_controller);
+    }
     AudiobookBridge.highlight(_controller, cue: cue, reveal: reveal);
     _maybeImagePause(controller);
   }
