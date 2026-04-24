@@ -653,6 +653,18 @@ class AppModel with ChangeNotifier {
       [
         const Locale('en', 'US'),
         const Locale('zh', 'CN'),
+        const Locale('zh', 'HK'),
+        const Locale('ja'),
+        const Locale('ko'),
+        const Locale('es'),
+        const Locale('fr'),
+        const Locale('de'),
+        const Locale('pt', 'BR'),
+        const Locale('ru'),
+        const Locale('vi'),
+        const Locale('th'),
+        const Locale('id'),
+        const Locale('ar'),
       ],
     );
 

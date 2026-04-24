@@ -13,30 +13,30 @@ class ErrorLogPage extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('错误日志 ($count)'),
+        title: Text(t.error_log_label(n: count)),
         actions: [
           IconButton(
             icon: const Icon(Icons.copy),
-            tooltip: '复制',
+            tooltip: t.copy,
             onPressed: () async {
               await Clipboard.setData(ClipboardData(text: log));
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('已复制到剪贴板')),
+                  SnackBar(content: Text(t.copied_to_clipboard)),
                 );
               }
             },
           ),
           IconButton(
             icon: const Icon(Icons.share),
-            tooltip: '分享',
+            tooltip: t.share,
             onPressed: () {
-              Share.share(log, subject: 'Hoshi Reader 错误日志');
+              Share.share(log, subject: t.error_log_share_subject);
             },
           ),
           IconButton(
             icon: const Icon(Icons.delete_outline),
-            tooltip: '清空',
+            tooltip: t.clear,
             onPressed: () {
               ErrorLogService.instance.clear();
               Navigator.pop(context);

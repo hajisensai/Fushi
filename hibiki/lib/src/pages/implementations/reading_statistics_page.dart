@@ -150,28 +150,28 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
 
   static String _formatTime(int ms) {
     final totalMin = ms ~/ 60000;
-    if (totalMin < 60) return '$totalMin 分钟';
+    if (totalMin < 60) return t.stat_format_minutes(n: totalMin);
     final h = totalMin ~/ 60;
     final m = totalMin % 60;
-    return '$h 小时 $m 分钟';
+    return t.stat_format_hours_minutes(h: h, m: m);
   }
 
   static String _formatChars(int chars) {
     if (chars >= 10000) {
-      return '${(chars / 10000).toStringAsFixed(1)} 万字';
+      return t.stat_format_chars_wan(n: (chars / 10000).toStringAsFixed(1));
     }
-    return '$chars 字';
+    return t.stat_format_chars(n: chars);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('阅读统计'),
+        title: Text(t.reading_statistics),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: '刷新',
+            tooltip: t.stat_refresh,
             onPressed: _loading ? null : _syncAndLoad,
           ),
         ],
@@ -181,10 +181,10 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
           : _error != null
               ? buildError(error: _error)
               : _allStats.isEmpty
-                  ? const Center(
+                  ? Center(
                       child: JidoujishoPlaceholderMessage(
                         icon: Icons.bar_chart,
-                        message: '暂无阅读数据',
+                        message: t.stat_no_data,
                       ),
                     )
                   : _buildContent(),
@@ -199,7 +199,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
-            child: Text('按书统计',
+            child: Text(t.stat_by_book,
                 style: Theme.of(context).textTheme.titleMedium),
           ),
         ),
@@ -222,20 +222,20 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
           Row(
             children: [
               Expanded(
-                  child: _summaryCard('今日', _todayChars, _todayMs)),
+                  child: _summaryCard(t.stat_today, _todayChars, _todayMs)),
               const SizedBox(width: 12),
               Expanded(
-                  child: _summaryCard('本周', _weekChars, _weekMs)),
+                  child: _summaryCard(t.stat_this_week, _weekChars, _weekMs)),
             ],
           ),
           const SizedBox(height: 12),
           Row(
             children: [
               Expanded(
-                  child: _summaryCard('本月', _monthChars, _monthMs)),
+                  child: _summaryCard(t.stat_this_month, _monthChars, _monthMs)),
               const SizedBox(width: 12),
               Expanded(
-                  child: _summaryCard('全部', _allChars, _allMs)),
+                  child: _summaryCard(t.stat_all_time, _allChars, _allMs)),
             ],
           ),
         ],
@@ -281,7 +281,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('近 30 天', style: Theme.of(context).textTheme.titleMedium),
+          Text(t.stat_last_30_days, style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 12),
           SizedBox(
             height: 160,
