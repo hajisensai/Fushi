@@ -310,6 +310,16 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           children: [
             _cueSkipBtn(ctrl, '-30', -30),
             _cueSkipBtn(ctrl, '-5', -5),
+            IconButton.filledTonal(
+              icon: Icon(
+                ctrl.isPlaying ? Icons.pause : Icons.play_arrow,
+              ),
+              iconSize: 24,
+              onPressed: () {
+                ctrl.togglePlayPause();
+                setState(() {});
+              },
+            ),
             _cueSkipBtn(ctrl, '+5', 5),
             _cueSkipBtn(ctrl, '+30', 30),
           ],
@@ -364,7 +374,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         padding: const EdgeInsets.symmetric(horizontal: 10),
         visualDensity: VisualDensity.compact,
       ),
-      child: Text('${delta > 0 ? '+' : ''}$delta${t.cue_unit}'),
+      child: Text('${delta > 0 ? '+' : ''}$delta'),
     );
   }
 
