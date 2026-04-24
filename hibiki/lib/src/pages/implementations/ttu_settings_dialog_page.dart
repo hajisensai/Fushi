@@ -91,14 +91,14 @@ Widget _buildDisplaySettings(VoidCallback rebuild) {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildNumberRow(
-            label: '字体大小',
+            label: t.ttu_font_size,
             value: _source.ttuFontSize,
             step: 1, min: 8, max: 64,
             format: (v) => '${v.round()}',
             onChanged: (v) => update(() => _source.setTtuFontSize(v)),
           ),
           _buildNumberRow(
-            label: '行高',
+            label: t.ttu_line_height,
             value: _source.ttuLineHeight,
             step: 0.1, min: 1.0, max: 3.0,
             format: (v) => v.toStringAsFixed(2),
@@ -107,11 +107,11 @@ Widget _buildDisplaySettings(VoidCallback rebuild) {
           ),
           Row(
             children: [
-              const Expanded(child: Text('排版方向')),
+              Expanded(child: Text(t.ttu_writing_direction)),
               SegmentedButton<String>(
-                segments: const [
-                  ButtonSegment(value: 'horizontal-tb', label: Text('横排')),
-                  ButtonSegment(value: 'vertical-rl', label: Text('竖排')),
+                segments: [
+                  ButtonSegment(value: 'horizontal-tb', label: Text(t.ttu_horizontal)),
+                  ButtonSegment(value: 'vertical-rl', label: Text(t.ttu_vertical)),
                 ],
                 selected: {_source.ttuWritingMode},
                 onSelectionChanged: (sel) =>
@@ -126,11 +126,11 @@ Widget _buildDisplaySettings(VoidCallback rebuild) {
           const SizedBox(height: 8),
           Row(
             children: [
-              const Expanded(child: Text('视图模式')),
+              Expanded(child: Text(t.ttu_view_mode_label)),
               SegmentedButton<String>(
-                segments: const [
-                  ButtonSegment(value: 'paginated', label: Text('翻页')),
-                  ButtonSegment(value: 'continuous', label: Text('滚动')),
+                segments: [
+                  ButtonSegment(value: 'paginated', label: Text(t.ttu_paginated)),
+                  ButtonSegment(value: 'continuous', label: Text(t.ttu_scroll)),
                 ],
                 selected: {_source.ttuViewMode},
                 onSelectionChanged: (sel) =>
@@ -145,7 +145,7 @@ Widget _buildDisplaySettings(VoidCallback rebuild) {
           const SizedBox(height: 4),
           Row(
             children: [
-              const Expanded(child: Text('隐藏振假名')),
+              Expanded(child: Text(t.ttu_hide_furigana)),
               Switch(
                 value: _source.ttuHideFurigana,
                 onChanged: (v) => update(() => _source.setTtuHideFurigana(v)),
@@ -245,7 +245,7 @@ Widget _buildThemeSelector(AppModel appModel) {
   return Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      const Text('主题'),
+      Text(t.ttu_theme),
       const SizedBox(height: 6),
       Wrap(
         spacing: 6,
@@ -322,6 +322,10 @@ class _TtuSettingsDialogPageState extends BasePageState {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              _buildThemeSelector(appModel),
+              const Space.small(),
+              const JidoujishoDivider(),
+              const Space.small(),
               _buildDisplaySettings(() => setState(() {})),
               const Space.small(),
               const JidoujishoDivider(),
@@ -393,7 +397,7 @@ class _TtuSettingsDialogContentState extends BasePageState {
         _buildTapRow(
           context: context,
           icon: Icons.bug_report,
-          label: '错误日志 (${ErrorLogService.instance.entries.length})',
+          label: t.error_log_label(n: ErrorLogService.instance.entries.length),
           onTap: () {
             Navigator.push(
               context,

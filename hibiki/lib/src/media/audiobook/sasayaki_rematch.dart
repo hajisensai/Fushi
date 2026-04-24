@@ -8,6 +8,7 @@ import 'package:hibiki/src/media/audiobook/epub_cue_matcher.dart';
 import 'package:hibiki/src/media/audiobook/epub_srt_matcher.dart';
 import 'package:hibiki/src/media/audiobook/sasayaki_match_codec.dart';
 import 'package:hibiki/src/media/audiobook/ttu_idb_reader.dart';
+import 'package:hibiki/utils.dart';
 
 /// Sasayaki 重匹配入口，被 [AudiobookImportDialog]（已附加视图）和书架
 /// 长按菜单复用。把"弹 searchWindow slider" 和"跑 matcher + 落库 + toast"
@@ -50,7 +51,7 @@ class SasayakiRematch {
     void Function(bool running)? onRunningChanged,
   }) async {
     if (ttuBookId <= 0) {
-      Fluttertoast.showToast(msg: '本书未绑定 ttu，无法重跑匹配');
+      Fluttertoast.showToast(msg: t.ttu_not_bound_cannot_rematch);
       return null;
     }
     final AudiobookHealth? overlay = await repo.readHealthOverlay(ab.bookUid);
@@ -170,12 +171,12 @@ class SasayakiRematch {
                           onPressed: autoBusy
                               ? null
                               : () => Navigator.pop(sheetCtx),
-                          child: const Text('取消'),
+                          child: Text(t.cancel),
                         ),
                         const SizedBox(width: 8),
                         FilledButton.icon(
                           icon: const Icon(Icons.play_arrow, size: 18),
-                          label: const Text('重跑匹配'),
+                          label: Text(t.rematch_run),
                           onPressed: autoBusy
                               ? null
                               : () => Navigator.pop(
@@ -201,11 +202,11 @@ class SasayakiRematch {
     List<int> windows = EpubCueMatcher.defaultProbeWindows,
   }) async {
     if (sections.isEmpty) {
-      Fluttertoast.showToast(msg: '未读到 ttu 章节文本，无法自动匹配');
+      Fluttertoast.showToast(msg: t.sasayaki_no_sections);
       return null;
     }
     if (cues.isEmpty) {
-      Fluttertoast.showToast(msg: '没有 cue 可供匹配');
+      Fluttertoast.showToast(msg: t.sasayaki_no_cues_to_match);
       return null;
     }
     try {
@@ -216,15 +217,15 @@ class SasayakiRematch {
       );
       final MapEntry<int, double>? best = r.best;
       if (best == null || best.value <= 0) {
-        Fluttertoast.showToast(msg: '所有窗口命中率都是 0，请人工调整');
+        Fluttertoast.showToast(msg: t.sasayaki_all_zero);
         return null;
       }
       final int pct = (best.value * 100).round();
-      Fluttertoast.showToast(msg: '自动选定 ${best.key}（命中 $pct%）');
+      Fluttertoast.showToast(msg: t.sasayaki_auto_picked(window: best.key, pct: pct));
       return best.key;
     } catch (e, st) {
       debugPrint('[hibiki-audiobook] autoProbe failed: $e\n$st');
-      Fluttertoast.showToast(msg: '自动匹配失败：$e');
+      Fluttertoast.showToast(msg: t.sasayaki_auto_failed(error: e));
       return null;
     }
   }
@@ -256,7 +257,7 @@ class SasayakiRematch {
     try {
       final List<AudioCue> cues = await repo.cuesForBook(ab.bookUid);
       if (cues.isEmpty) {
-        Fluttertoast.showToast(msg: '没有已存 cue，无法重跑');
+        Fluttertoast.showToast(msg: t.sasayaki_no_stored_cues);
         return;
       }
       final TtuBookRecord rec = await TtuIdbReader.readBookRecord(
@@ -264,7 +265,7 @@ class SasayakiRematch {
         serverPort: serverPort,
       );
       if (rec.sections.isEmpty) {
-        Fluttertoast.showToast(msg: 'ttu IDB 没有章节文本');
+        Fluttertoast.showToast(msg: t.sasayaki_no_idb_sections);
         return;
       }
       final MatchResult result = await EpubCueMatcher.matchInIsolate(
@@ -297,7 +298,7 @@ class SasayakiRematch {
       );
     } catch (e, st) {
       debugPrint('[hibiki-audiobook] SasayakiRematch failed: $e\n$st');
-      Fluttertoast.showToast(msg: '重跑失败：$e');
+      Fluttertoast.showToast(msg: t.sasayaki_rematch_failed(error: e));
     }
   }
 }
@@ -335,11 +336,10 @@ class SasayakiWindowSlider extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('搜索窗口', style: theme.textTheme.titleMedium),
+        Text(t.sasayaki_search_window, style: theme.textTheme.titleMedium),
         const SizedBox(height: 4),
         Text(
-          '每条 cue 在正文里向前找的字符数。命中率低时可左右调整，'
-          '过大容易被短噪声 cue 拉偏 cursor。',
+          t.sasayaki_window_hint,
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
@@ -373,7 +373,7 @@ class SasayakiWindowSlider extends StatelessWidget {
           children: [
             Expanded(
               child: Text(
-                '默认 ${EpubSrtMatcher.defaultSearchWindow}',
+                t.sasayaki_default_value(n: EpubSrtMatcher.defaultSearchWindow),
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
@@ -389,7 +389,7 @@ class SasayakiWindowSlider extends StatelessWidget {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.auto_awesome, size: 16),
-                label: Text(autoBusy ? '匹配中…' : '自动匹配'),
+                label: Text(autoBusy ? t.sasayaki_matching : t.sasayaki_auto_match),
               ),
           ],
         ),
@@ -416,11 +416,10 @@ class SasayakiThresholdSlider extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('相似度阈值', style: theme.textTheme.titleMedium),
+        Text(t.sasayaki_similarity_threshold, style: theme.textTheme.titleMedium),
         const SizedBox(height: 4),
         Text(
-          '模糊匹配的最低相似度（Dice 系数）。降低可容忍更多文本差异，'
-          '但太低会误匹配。',
+          t.sasayaki_threshold_hint,
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
@@ -450,7 +449,7 @@ class SasayakiThresholdSlider extends StatelessWidget {
           ],
         ),
         Text(
-          '默认 ${EpubSrtMatcher.defaultSimilarityThreshold}',
+          t.sasayaki_default_value(n: EpubSrtMatcher.defaultSimilarityThreshold),
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),

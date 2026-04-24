@@ -311,7 +311,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     if (!controller.followAudio.value) return;
     controller.setFollowAudio(false);
     if (mounted) {
-      Fluttertoast.showToast(msg: 'Follow audio 已暂停（用户手动翻页）');
+      Fluttertoast.showToast(msg: t.follow_audio_paused);
     }
   }
 
@@ -707,6 +707,10 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         );
         _currentChapterHref = uri?.toString() ?? _currentChapterHref;
         await _maybeInjectAudiobookBridge(controller, trigger: 'onLoadStop');
+        if (_audiobookController == null && !_didRestorePos) {
+          await _bootstrapCurrentTtuSection(controller);
+          await _bootstrapRestoreReaderPos();
+        }
       },
       onTitleChanged: (controller, title) async {
         await controller.evaluateJavascript(source: javascriptToExecute);
@@ -1887,7 +1891,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
             try {
               await AudiobookBridge.bookmarkCurrentPage(_controller);
               if (mounted) {
-                Fluttertoast.showToast(msg: '已添加书签');
+                Fluttertoast.showToast(msg: t.bookmark_added);
               }
             } catch (e) {
               debugPrint('[hibiki-reader] bookmark error: $e');
@@ -2194,7 +2198,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       if (mounted) setState(() => _pendingNavSection = null);
     } catch (e) {
       debugPrint('[hibiki-audiobook] pill tap requestSectionNav failed: $e');
-      Fluttertoast.showToast(msg: 'Follow audio: 跳章失败');
+      Fluttertoast.showToast(msg: t.follow_audio_jump_failed);
     }
   }
 
@@ -2450,7 +2454,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         opacity: 0.6,
         child: FloatingActionButton.small(
           heroTag: 'reader_settings_fab',
-          tooltip: '阅读设置',
+          tooltip: t.reader_settings_label,
           onPressed: () => _showReaderSettingsSheet(null),
           child: const Icon(Icons.tune, size: 20),
         ),
@@ -2641,7 +2645,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         child: FilledButton.icon(
           onPressed: _followPillTap,
           icon: const Icon(Icons.arrow_forward, size: 16),
-          label: Text('第 ${target + 1} 章'),
+          label: Text(t.go_to_chapter(n: target + 1)),
           style: FilledButton.styleFrom(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
             minimumSize: const Size(0, 32),

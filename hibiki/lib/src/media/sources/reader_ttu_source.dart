@@ -39,8 +39,8 @@ class ReaderTtuSource extends ReaderMediaSource {
   ReaderTtuSource._privateConstructor()
       : super(
           uniqueKey: 'reader_ttu',
-          sourceName: '书架',
-          description: 'EPUB 阅读与词典查询',
+          sourceName: t.source_name_bookshelf,
+          description: t.source_description_epub,
           icon: Icons.auto_stories_outlined,
           implementsSearch: false,
           implementsHistory: false,

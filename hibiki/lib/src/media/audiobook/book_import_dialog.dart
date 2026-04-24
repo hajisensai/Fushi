@@ -165,9 +165,9 @@ class _BookImportDialogState extends State<BookImportDialog> {
           SwitchListTile(
             dense: true,
             contentPadding: EdgeInsets.zero,
-            title: const Text('自动选择搜索窗口'),
-            subtitle: const Text(
-              '导入时探测多档 window，取命中率最高的那档',
+            title: Text(t.auto_select_search_window),
+            subtitle: Text(
+              t.auto_select_search_window_hint,
               style: TextStyle(fontSize: 11),
             ),
             value: _autoWindow,

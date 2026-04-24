@@ -3,6 +3,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_controller.dart';
 import 'package:hibiki/src/media/sources/reader_ttu_source.dart';
+import 'package:hibiki/utils.dart';
 
 /// 有声书播放控制条（紧凑型，固定于阅读器底部）。
 ///
@@ -36,7 +37,7 @@ class AudiobookPlayBar extends StatelessWidget {
               icon: const Icon(Icons.skip_previous),
               iconSize: 22,
               onPressed: controller.skipToPrevCue,
-              tooltip: '上一句',
+              tooltip: t.prev_sentence,
             ),
             IconButton.filledTonal(
               icon: Icon(
@@ -44,13 +45,13 @@ class AudiobookPlayBar extends StatelessWidget {
               ),
               iconSize: 24,
               onPressed: controller.togglePlayPause,
-              tooltip: controller.isPlaying ? '暂停' : '播放',
+              tooltip: controller.isPlaying ? t.pause : t.play,
             ),
             IconButton(
               icon: const Icon(Icons.skip_next),
               iconSize: 22,
               onPressed: controller.skipToNextCue,
-              tooltip: '下一句',
+              tooltip: t.next_sentence,
             ),
             const SizedBox(width: 4),
             Expanded(
@@ -66,7 +67,7 @@ class AudiobookPlayBar extends StatelessWidget {
               icon: const Icon(Icons.tune),
               iconSize: 20,
               onPressed: onOpenSettings,
-              tooltip: '有声书设置',
+              tooltip: t.audiobook_settings,
             ),
           ],
         ),
@@ -96,7 +97,7 @@ class AudiobookFollowAudioButton extends StatelessWidget {
           icon: Icon(on ? Icons.link : Icons.link_off),
           iconSize: 20,
           color: on ? colors.primary : colors.onSurfaceVariant,
-          tooltip: on ? 'Follow audio: ON（跨章自动跳转）' : 'Follow audio: OFF',
+          tooltip: on ? t.follow_audio_on_tooltip : t.follow_audio_off_tooltip,
           onPressed: () {
             // persist 回调在 reader 页面把 controller 和 repo 绑上；这里
             // 只翻内存状态，controller.setFollowAudio 内部会用绑好的回调
@@ -246,19 +247,19 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           .map((TtuTocEntry e) => e.label)
           .firstOrNull;
       final String suffix = title != null && title.isNotEmpty ? '（$title）' : '';
-      chapterLabel = '第 $idx1 / $total 章$suffix · $pct%';
+      chapterLabel = t.chapter_progress(idx: idx1, total: total, suffix: suffix, pct: pct);
     }
     final String pageLabel;
     final (int current, int total)? pp = widget.pageProgress;
     if (pp != null && pp.$2 > 0) {
-      pageLabel = '第 ${pp.$1} / ${pp.$2} 页';
+      pageLabel = t.page_progress(current: pp.$1, total: pp.$2);
     } else {
       pageLabel = '';
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('阅读进度', style: theme.textTheme.titleMedium),
+        Text(t.reading_progress, style: theme.textTheme.titleMedium),
         const SizedBox(height: 8),
         Text(chapterLabel, style: theme.textTheme.bodyLarge),
         if (pageLabel.isNotEmpty) ...[
@@ -277,7 +278,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         tilePadding: EdgeInsets.zero,
         childrenPadding: EdgeInsets.zero,
         title: Text(
-          '章节列表（${widget.toc.length}）',
+          t.toc_section(n: widget.toc.length),
           style: theme.textTheme.titleMedium,
         ),
         children: [
@@ -297,7 +298,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                     right: 8,
                   ),
                   title: Text(
-                    e.label.isEmpty ? '（无标题）' : e.label,
+                    e.label.isEmpty ? t.untitled_chapter : e.label,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: isCurrent
@@ -329,7 +330,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('倍速', style: theme.textTheme.titleMedium),
+        Text(t.playback_speed, style: theme.textTheme.titleMedium),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
@@ -357,12 +358,12 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           children: [
             Row(
               children: [
-                Text('音画同步', style: theme.textTheme.titleMedium),
+                Text(t.av_sync, style: theme.textTheme.titleMedium),
                 const SizedBox(width: 4),
                 TextButton.icon(
                   onPressed: ms == 0 ? null : () => ctrl.setDelayMs(0),
                   icon: const Icon(Icons.restart_alt, size: 18),
-                  label: const Text('归零'),
+                  label: Text(t.av_sync_reset),
                   style: TextButton.styleFrom(
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     minimumSize: Size.zero,
@@ -373,7 +374,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
             ),
             const SizedBox(height: 4),
             Text(
-              '正数 = 音频先于文字，向回拨 cue；负数 = 音频滞后。',
+              t.av_sync_hint,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -433,12 +434,12 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('阅读设置', style: theme.textTheme.titleMedium),
+        Text(t.reader_settings_section, style: theme.textTheme.titleMedium),
         const SizedBox(height: 12),
         // 字体大小
         _settingRow(
           theme,
-          label: '字体大小',
+          label: t.ttu_font_size,
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -476,7 +477,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         // 行高
         _settingRow(
           theme,
-          label: '行高',
+          label: t.ttu_line_height,
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -516,11 +517,11 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         // 排版方向
         _settingRow(
           theme,
-          label: '排版方向',
+          label: t.ttu_writing_direction,
           child: SegmentedButton<String>(
-            segments: const <ButtonSegment<String>>[
-              ButtonSegment<String>(value: 'horizontal-tb', label: Text('横排')),
-              ButtonSegment<String>(value: 'vertical-rl', label: Text('竖排')),
+            segments: <ButtonSegment<String>>[
+              ButtonSegment<String>(value: 'horizontal-tb', label: Text(t.ttu_horizontal)),
+              ButtonSegment<String>(value: 'vertical-rl', label: Text(t.ttu_vertical)),
             ],
             selected: <String>{s.writingMode},
             onSelectionChanged: (Set<String> sel) {
@@ -537,11 +538,11 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         // 视图模式
         _settingRow(
           theme,
-          label: '视图模式',
+          label: t.ttu_view_mode_label,
           child: SegmentedButton<String>(
-            segments: const <ButtonSegment<String>>[
-              ButtonSegment<String>(value: 'paginated', label: Text('翻页')),
-              ButtonSegment<String>(value: 'continuous', label: Text('滚动')),
+            segments: <ButtonSegment<String>>[
+              ButtonSegment<String>(value: 'paginated', label: Text(t.ttu_paginated)),
+              ButtonSegment<String>(value: 'continuous', label: Text(t.ttu_scroll)),
             ],
             selected: <String>{s.viewMode},
             onSelectionChanged: (Set<String> sel) {
@@ -557,7 +558,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         ),
         // 主题
         const SizedBox(height: 8),
-        Text('主题', style: theme.textTheme.bodyMedium),
+        Text(t.ttu_theme, style: theme.textTheme.bodyMedium),
         const SizedBox(height: 8),
         Wrap(
           spacing: 6,
@@ -580,7 +581,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         const SizedBox(height: 8),
         _settingRow(
           theme,
-          label: '隐藏振假名',
+          label: t.ttu_hide_furigana,
           child: Switch(
             value: s.hideFurigana,
             onChanged: (bool v) {
@@ -615,7 +616,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         _actionBtn(
           context,
           icon: Icons.bookmark_add_outlined,
-          label: '书签',
+          label: t.action_bookmark,
           onTap: () async {
             Navigator.of(context).pop();
             await widget.onBookmark();
@@ -624,7 +625,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         _actionBtn(
           context,
           icon: Icons.fullscreen,
-          label: '全屏切换',
+          label: t.action_fullscreen_toggle,
           onTap: () {
             Navigator.of(context).pop();
             widget.onToggleFullscreen();
@@ -633,7 +634,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         _actionBtn(
           context,
           icon: Icons.exit_to_app,
-          label: '退出',
+          label: t.action_exit,
           onTap: () {
             Navigator.of(context).pop();
             widget.onExitReader();

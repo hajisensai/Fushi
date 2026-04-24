@@ -198,7 +198,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
                 child: TextButton.icon(
                   onPressed: _importing ? null : () => _openReMatchSheet(ab),
                   icon: const Icon(Icons.tune, size: 18),
-                  label: const Text('调整搜索窗口重新匹配'),
+                  label: Text(t.rematch_adjust_window),
                 ),
               ),
             ],
@@ -599,7 +599,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     final int? ttuId = widget.ttuBookId;
     final int? port = widget.serverPort;
     if (ttuId == null || ttuId <= 0 || port == null) {
-      Fluttertoast.showToast(msg: '本书未绑定 ttu，无法重跑匹配');
+      Fluttertoast.showToast(msg: t.ttu_not_bound_cannot_rematch);
       return;
     }
     await SasayakiRematch.promptAndRun(
