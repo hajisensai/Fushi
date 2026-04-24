@@ -2108,6 +2108,12 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     };
     controller.onCrossChapter = _handleCueCrossChapter;
     controller.getCurrentReaderSection = () => _currentTtuSection;
+    controller.getReaderViewportPos = () async {
+      final ReaderViewportPos? vp =
+          await AudiobookBridge.getViewportNormOffset(_controller);
+      if (vp == null) return null;
+      return (section: vp.section, offset: vp.offset);
+    };
   }
 
   /// cue 跨章时由控制器触发。

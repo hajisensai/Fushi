@@ -225,6 +225,10 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 一般实现为写 Drift database preferences。
   void Function(String bookUid, int positionMs)? onPositionWrite;
 
+  /// 由 reader 页面提供：异步返回当前视口的 section + 归一化字符偏移。
+  /// [snapAudioToReader] 用它定位视口对应的 cue 并 seek 过去。
+  Future<({int section, int offset})?> Function()? getReaderViewportPos;
+
   /// 把当前播放位置写入持久化存储。对齐上游：**每整秒变化一次**就写。
   /// 125ms tick 触发 8 次里只有 1 次真的落库，IO 成本和上游等价。
   ///
@@ -603,6 +607,41 @@ class AudiobookPlayerController extends ChangeNotifier {
     _maybeEmitCrossChapter(cue, bypassPlayGuard: true);
     if (_chapterTransition) return;
     notifyListeners();
+  }
+
+  /// 把音频跳转到当前阅读页面对应的 cue（[snapReaderToAudio] 的反向操作）。
+  ///
+  /// 流程：通过 [getReaderViewportPos] 拿到视口的 section + normChar 偏移，
+  /// 在 _chapterCues 中找 normCharStart <= offset 的最后一条 cue，seek 过去。
+  /// 若视口所在 section 与当前 cue 列表不同章，先切章再 seek。
+  Future<void> snapAudioToReader() async {
+    final Future<({int section, int offset})?> Function()? getter =
+        getReaderViewportPos;
+    if (getter == null) return;
+    final ({int section, int offset})? pos = await getter();
+    if (pos == null) return;
+    final int viewSection = pos.section;
+    final int viewOffset = pos.offset;
+
+    AudioCue? best;
+    int bestDist = 1 << 30;
+    for (final AudioCue cue in _chapterCues) {
+      final SasayakiFragment? frag =
+          SasayakiMatchCodec.tryDecode(cue.textFragmentId);
+      if (frag == null) continue;
+      if (frag.sectionIndex != viewSection) continue;
+      final int dist = (frag.normCharStart - viewOffset).abs();
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = cue;
+      }
+      if (frag.normCharStart <= viewOffset && frag.normCharEnd > viewOffset) {
+        best = cue;
+        break;
+      }
+    }
+    if (best == null) return;
+    await skipToCue(best);
   }
 
   /// 设置音画延迟（毫秒），带边界夹取。对齐上游 Sasayaki sheet 的 ±2s

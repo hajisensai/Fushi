@@ -373,8 +373,9 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
             SizedBox(
               height: 36,
               child: FilledButton.tonal(
-                onPressed: () {
-                  ctrl.snapReaderToAudio();
+                onPressed: () async {
+                  await ctrl.snapAudioToReader();
+                  setState(() {});
                 },
                 style: FilledButton.styleFrom(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
