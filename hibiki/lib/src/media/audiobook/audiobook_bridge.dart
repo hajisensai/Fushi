@@ -542,6 +542,47 @@ window.__hoshiAnnotate = function(chapterHref) {
 };
 ''';
 
+  /// 图片检测 JS：检查当前视口/页面中是否出现了新的 `<img>` 元素。
+  ///
+  /// `__hoshiSeenImages` 记录已暂停过的 img 元素（WeakSet），避免同一张图
+  /// 重复触发暂停。`__hoshiCheckNewImage()` 返回 true 表示发现新图片。
+  static const String _imagePauseFn = '''
+window.__hoshiSeenImages = window.__hoshiSeenImages || new WeakSet();
+
+window.__hoshiCheckNewImage = function() {
+  var content = document.querySelector('.book-content') ||
+                document.querySelector('[class*="book-content"]') ||
+                document.scrollingElement || document.documentElement;
+  if (!content) return false;
+  var imgs = content.querySelectorAll('img');
+  if (!imgs || imgs.length === 0) return false;
+  var vw = window.innerWidth || 360;
+  var vh = window.innerHeight || 640;
+  for (var i = 0; i < imgs.length; i++) {
+    var img = imgs[i];
+    if (window.__hoshiSeenImages.has(img)) continue;
+    var w = img.naturalWidth || img.width;
+    var h = img.naturalHeight || img.height;
+    if (w < 20 && h < 20) continue;
+    try {
+      var rect = img.getBoundingClientRect();
+      if (rect.width < 10 || rect.height < 10) continue;
+      var inViewport = rect.bottom > 0 && rect.top < vh &&
+                       rect.right > 0 && rect.left < vw;
+      if (inViewport) {
+        window.__hoshiSeenImages.add(img);
+        return true;
+      }
+    } catch (e) {}
+  }
+  return false;
+};
+
+window.__hoshiClearSeenImages = function() {
+  window.__hoshiSeenImages = new WeakSet();
+};
+''';
+
   /// Reader 位置持久化的 JS 反查 + 跳转 API。
   ///
   /// - `__hibikiGetViewportNormOffset()`：从视口左上探针点反查当前挂载段和
@@ -750,6 +791,28 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
     await controller.evaluateJavascript(source: _annotateFn);
     // _readerPosFn 依赖 __hoshiIsSkippable，必须在 _sasayakiFn 之后 evaluate
     await controller.evaluateJavascript(source: _readerPosFn);
+    await controller.evaluateJavascript(source: _imagePauseFn);
+  }
+
+  /// 检查当前视口中是否出现了新的图片（未暂停过的）。
+  static Future<bool> checkNewImage(
+    InAppWebViewController controller,
+  ) async {
+    final Object? raw = await controller.evaluateJavascript(
+      source:
+          '(function(){try{return window.__hoshiCheckNewImage ? window.__hoshiCheckNewImage() : false;}catch(e){return false;}})()',
+    );
+    return raw == true || raw == 'true';
+  }
+
+  /// 切章时清空已见图片记录。
+  static Future<void> clearSeenImages(
+    InAppWebViewController controller,
+  ) async {
+    await controller.evaluateJavascript(
+      source:
+          'if(typeof __hoshiClearSeenImages!=="undefined")__hoshiClearSeenImages();',
+    );
   }
 
   /// 探测 ttu 侧是否已挂出 PR8a 的 section 导航 API。
@@ -788,16 +851,27 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
     }
   }
 
-  /// 请求跳转到指定 section。fork 未落地时此调用会在 JS 侧打
-  /// `ttuForkMissing` 日志后直接 resolve，外层据此降级为 pill 提示。
+  /// 请求跳转到指定 section。桥未注入时最多等 2 秒（20×100ms）重试，
+  /// 覆盖页面加载/重载后桥还没注入就触发跳章的竞态。fork 未落地时此调用
+  /// 会在 JS 侧打 `ttuForkMissing` 日志后直接 resolve，外层据此降级为 pill。
   static Future<void> requestSectionNav(
     InAppWebViewController controller, {
     required int sectionIndex,
   }) async {
     await controller.evaluateJavascript(
-      source:
-          'if(typeof __sasayakiRequestNav!=="undefined")'
-          '__sasayakiRequestNav($sectionIndex);',
+      source: '''
+(async function(){
+  for(var i=0;i<20;i++){
+    if(typeof __sasayakiRequestNav!=="undefined"){
+      await __sasayakiRequestNav($sectionIndex);
+      return;
+    }
+    await new Promise(function(r){setTimeout(r,100)});
+  }
+  console.log(JSON.stringify({"hibiki-message-type":"sasayakiNavErr",
+    "section":$sectionIndex,"error":"bridge not injected after 2s"}));
+})();
+''',
     );
   }
 
@@ -905,16 +979,24 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
     }
   }
 
-  /// 跳到给定 section + 章内归一化偏移。
+  /// 跳到给定 section + 章内归一化偏移。桥未注入时重试最多 2 秒。
   static Future<void> scrollToNormOffset(
     InAppWebViewController controller, {
     required int section,
     required int offset,
   }) async {
     await controller.evaluateJavascript(
-      source:
-          'if(typeof __hibikiScrollToNormOffset!=="undefined")'
-          '__hibikiScrollToNormOffset($section, $offset);',
+      source: '''
+(async function(){
+  for(var i=0;i<20;i++){
+    if(typeof __hibikiScrollToNormOffset!=="undefined"){
+      __hibikiScrollToNormOffset($section, $offset);
+      return;
+    }
+    await new Promise(function(r){setTimeout(r,100)});
+  }
+})();
+''',
     );
   }
 
@@ -927,9 +1009,17 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
     required int ttuBookId,
   }) async {
     await controller.evaluateJavascript(
-      source:
-          'if(typeof __hoshiLoadSasayakiRefs!=="undefined")'
-          '__hoshiLoadSasayakiRefs($ttuBookId);',
+      source: '''
+(async function(){
+  for(var i=0;i<20;i++){
+    if(typeof __hoshiLoadSasayakiRefs!=="undefined"){
+      __hoshiLoadSasayakiRefs($ttuBookId);
+      return;
+    }
+    await new Promise(function(r){setTimeout(r,100)});
+  }
+})();
+''',
     );
   }
 
@@ -959,11 +1049,19 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
       });
     }
     if (payload.isEmpty) return;
+    final String json = jsonEncode(payload);
     await controller.evaluateJavascript(
-      source:
-          'if(typeof __hoshiApplySasayakiCues!=="undefined")'
-          '__hoshiApplySasayakiCues($sectionIndex, '
-          '${jsonEncode(payload)});',
+      source: '''
+(async function(){
+  for(var i=0;i<20;i++){
+    if(typeof __hoshiApplySasayakiCues!=="undefined"){
+      __hoshiApplySasayakiCues($sectionIndex, $json);
+      return;
+    }
+    await new Promise(function(r){setTimeout(r,100)});
+  }
+})();
+''',
     );
   }
 
