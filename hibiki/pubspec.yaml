@@ -174,9 +174,3 @@ flutter:
     - assets/ttu-ebook-reader/icons/
     - assets/popup/
 
-  fonts:
-    - family: NotoSansJP
-      fonts:
-        - asset: assets/fonts/NotoSansJP-Regular.otf
-        - asset: assets/fonts/NotoSansJP-Bold.otf
-          weight: 700
