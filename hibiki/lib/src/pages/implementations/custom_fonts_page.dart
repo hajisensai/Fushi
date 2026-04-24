@@ -8,6 +8,155 @@ import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 import 'package:path/path.dart' as p;
 
+// ── 系统字体扫描 ──────────────────────────────────────────────────────────────
+
+List<String>? _cachedSystemFonts;
+
+Future<List<String>> _getSystemFonts() async {
+  if (_cachedSystemFonts != null) return _cachedSystemFonts!;
+
+  final families = <String>{};
+
+  // 1) 尝试解析 /system/etc/fonts.xml（Android 5+）
+  try {
+    final xml = File('/system/etc/fonts.xml');
+    if (await xml.exists()) {
+      final content = await xml.readAsString();
+      final re = RegExp(r'<family\s+name="([^"]+)"');
+      for (final m in re.allMatches(content)) {
+        families.add(m.group(1)!);
+      }
+    }
+  } catch (_) {}
+
+  // 2) 回退：扫描 /system/fonts/ 目录文件名
+  if (families.isEmpty) {
+    try {
+      final dir = Directory('/system/fonts');
+      if (await dir.exists()) {
+        await for (final entity in dir.list()) {
+          if (entity is File) {
+            final base = p.basenameWithoutExtension(entity.path);
+            // 去掉 -Regular, -Bold, -Italic 等后缀
+            final clean = base.replaceAll(
+                RegExp(r'-(Regular|Bold|Italic|BoldItalic|Light|Medium|Thin|Black|SemiBold|ExtraBold|ExtraLight)$', caseSensitive: false),
+                '');
+            families.add(clean);
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  final sorted = families.toList()..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+  _cachedSystemFonts = sorted;
+  return sorted;
+}
+
+// ── 系统字体选择页 ────────────────────────────────────────────────────────────
+
+class _SystemFontPickerPage extends StatefulWidget {
+  final Set<String> alreadyAdded;
+  const _SystemFontPickerPage({required this.alreadyAdded});
+
+  @override
+  State<_SystemFontPickerPage> createState() => _SystemFontPickerPageState();
+}
+
+class _SystemFontPickerPageState extends State<_SystemFontPickerPage> {
+  List<String> _allFonts = [];
+  List<String> _filtered = [];
+  bool _loading = true;
+  final _searchController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFonts();
+  }
+
+  Future<void> _loadFonts() async {
+    final fonts = await _getSystemFonts();
+    if (!mounted) return;
+    setState(() {
+      _allFonts = fonts;
+      _filtered = fonts;
+      _loading = false;
+    });
+  }
+
+  void _onSearch(String query) {
+    final q = query.toLowerCase();
+    setState(() {
+      _filtered = q.isEmpty
+          ? _allFonts
+          : _allFonts.where((f) => f.toLowerCase().contains(q)).toList();
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Translations.of(context);
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(t.custom_fonts_add_system),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(56),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: t.custom_fonts_search_hint,
+                prefixIcon: const Icon(Icons.search),
+                isDense: true,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(28),
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+              ),
+              onChanged: _onSearch,
+            ),
+          ),
+        ),
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _filtered.isEmpty
+              ? Center(child: Text(t.custom_fonts_empty))
+              : ListView.builder(
+                  itemCount: _filtered.length,
+                  itemBuilder: (context, index) {
+                    final name = _filtered[index];
+                    final added = widget.alreadyAdded.contains(name);
+                    return ListTile(
+                      leading: Icon(
+                        Icons.font_download,
+                        color: added
+                            ? Theme.of(context).colorScheme.outline
+                            : Theme.of(context).colorScheme.primary,
+                      ),
+                      title: Text(name),
+                      trailing: added
+                          ? Icon(Icons.check, color: Theme.of(context).colorScheme.outline)
+                          : null,
+                      enabled: !added,
+                      onTap: () => Navigator.pop(context, name),
+                    );
+                  },
+                ),
+    );
+  }
+}
+
+// ── 主页面 ────────────────────────────────────────────────────────────────────
+
 class CustomFontsPage extends BasePage {
   const CustomFontsPage({super.key});
 
@@ -58,40 +207,22 @@ class _CustomFontsPageState extends BasePageState {
     Fluttertoast.showToast(msg: t.custom_fonts_imported(name: name));
   }
 
-  void _addSystemFont() {
-    final controller = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(t.custom_fonts_add_system),
-        content: TextField(
-          controller: controller,
-          decoration: InputDecoration(hintText: t.custom_fonts_system_hint),
-          autofocus: true,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(t.dialog_close),
-          ),
-          FilledButton(
-            onPressed: () {
-              final name = controller.text.trim();
-              if (name.isEmpty) {
-                Fluttertoast.showToast(msg: t.custom_fonts_name_empty);
-                return;
-              }
-              Navigator.pop(ctx);
-              setState(() {
-                _fonts.add({'name': name, 'path': null, 'enabled': true});
-              });
-              _save();
-            },
-            child: Text(t.dialog_add),
-          ),
-        ],
+  Future<void> _addSystemFont() async {
+    final alreadyAdded = _fonts
+        .where((e) => e['path'] == null)
+        .map((e) => e['name'] as String)
+        .toSet();
+    final selected = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _SystemFontPickerPage(alreadyAdded: alreadyAdded),
       ),
     );
+    if (selected == null || !mounted) return;
+    setState(() {
+      _fonts.add({'name': selected, 'path': null, 'enabled': true});
+    });
+    _save();
   }
 
   Future<void> _removeFont(int index) async {

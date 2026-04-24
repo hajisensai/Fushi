@@ -9,6 +9,7 @@ import 'package:ruby_text/ruby_text.dart';
 import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/language.dart';
 import 'package:hibiki/models.dart';
+import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/dictionary/hoshidicts.dart';
 
 /// Language implementation of the Japanese language.
@@ -35,25 +36,20 @@ class JapaneseLanguage extends Language {
   static final JapaneseLanguage _instance =
       JapaneseLanguage._privateConstructor();
 
-  static final RegExp _segmentRe = RegExp(
-    r'[一-鿿㐀-䶿豈-﫿]+'
-    r'|[぀-ゟᬀ1-ᬑF]+'
-    r'|[゠-ヿㇰ-ㇿ･-ﾟ]+'
-    r'|[！-｠　-〿 -⁯\p{P}]+'
-    r'|[a-zA-Z0-9０-９Ａ-Ｚａ-ｚ]+'
-    r'|[^一-鿿㐀-䶿豈-﫿'
-    r'぀-ゟ゠-ヿㇰ-ㇿ'
-    r'！-ﾟ　-〿 -⁯'
-    r'a-zA-Z0-9]+',
-    unicode: true,
-  );
-
   /// Used for processing Japanese characters from Kana to Romaji and so on.
   static KanaKit kanaKit = const KanaKit();
 
   /// Used to cache furigana segments for already generated [DictionaryEntry]
   /// items.
   final Map<DictionaryEntry, List<RubyTextData>?> segmentsCache = {};
+
+  static int _lookupMatchedLength(String text) {
+    if (!HoshiDicts.isInitialized) return 0;
+    final results =
+        HoshiDicts.instance.lookup(text, maxResults: 1, scanLength: 1);
+    if (results.isEmpty) return 0;
+    return results.first.matched.length;
+  }
 
   @override
   DictionarySearchResult? prepareSearchResultsDirect({
@@ -124,15 +120,58 @@ class JapaneseLanguage extends Language {
 
   @override
   List<String> textToWords(String text) {
-    return _segmentRe
-        .allMatches(text)
-        .map((m) => m.group(0)!)
-        .toList();
+    if (!HoshiDicts.isInitialized || text.isEmpty) {
+      return text.split('').where((c) => c.isNotEmpty).toList();
+    }
+    final words = <String>[];
+    int pos = 0;
+    while (pos < text.length) {
+      final sub = text.substring(pos);
+      final len = _lookupMatchedLength(sub);
+      if (len > 0) {
+        words.add(text.substring(pos, pos + len));
+        pos += len;
+      } else {
+        words.add(text[pos]);
+        pos++;
+      }
+    }
+    return words;
   }
 
-  /// Some languages may want to display custom widgets rather than the built
-  /// in term and reading text that is there by default. For example, Japanese
-  /// may want to display a furigana widget instead.
+  @override
+  String wordFromIndex({
+    required String text,
+    required int index,
+  }) {
+    if (index < 0 || index >= text.length) return '';
+    final sub = text.substring(index);
+    final len = _lookupMatchedLength(sub);
+    return len > 0 ? sub.substring(0, len) : text[index];
+  }
+
+  @override
+  TextRange getWordRange({
+    required JidoujishoTextSelection selection,
+  }) {
+    final index = selection.range.start;
+    if (index < 0 || index >= selection.text.length) {
+      return TextRange(start: index, end: index + 1);
+    }
+    final sub = selection.text.substring(index);
+    final len = _lookupMatchedLength(sub);
+    final end = len > 0 ? index + len : index + 1;
+    return TextRange(start: index, end: end);
+  }
+
+  @override
+  int getGuessHighlightLength({
+    required String searchTerm,
+  }) {
+    final len = _lookupMatchedLength(searchTerm);
+    return len > 0 ? len : 1;
+  }
+
   @override
   Widget getTermReadingOverrideWidget({
     required BuildContext context,
@@ -140,7 +179,6 @@ class JapaneseLanguage extends Language {
     required DictionaryEntry entry,
     required Function(String) onSearch,
   }) {
-    /// Responsible for the underline on the entry word.
     TextStyle indexStyle(int index, String character) {
       if (kanaKit.isKanji(character)) {
         return const TextStyle(
@@ -152,8 +190,6 @@ class JapaneseLanguage extends Language {
       }
     }
 
-    /// Responsible for the action performed on tapping a certain character
-    /// on the entry word.
     void indexAction(int index, String character) {
       if (kanaKit.isKanji(character)) {
         onSearch(character);
@@ -189,8 +225,6 @@ class JapaneseLanguage extends Language {
     );
   }
 
-  /// Fetch furigana for a certain term and reading. If already obtained,
-  /// use the cache.
   List<RubyTextData>? fetchFurigana({required DictionaryEntry entry}) {
     if (segmentsCache.containsKey(entry)) {
       return segmentsCache[entry];
