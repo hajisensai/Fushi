@@ -21,8 +21,16 @@ abstract class BaseTabPageState<T extends BaseTabPage> extends BasePageState {
     mediaType.tabRefreshNotifier.addListener(refresh);
   }
 
+  @override
+  void dispose() {
+    mediaType.tabRefreshNotifier.removeListener(refresh);
+    super.dispose();
+  }
+
   void refresh() {
-    setState(() {});
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   @override
