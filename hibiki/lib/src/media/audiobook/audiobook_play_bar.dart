@@ -54,17 +54,6 @@ class AudiobookPlayBar extends StatelessWidget {
               tooltip: t.next_sentence,
             ),
             const SizedBox(width: 4),
-            // 字幕句号进度指示器（当前句 / 总句数）
-            if (controller.chapterCueCount > 0)
-              Padding(
-                padding: const EdgeInsets.only(right: 4),
-                child: Text(
-                  '${controller.currentCueIdx >= 0 ? controller.currentCueIdx + 1 : '-'}/${controller.chapterCueCount}',
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
             Expanded(
               child: Text(
                 controller.currentCue?.text ?? '',
