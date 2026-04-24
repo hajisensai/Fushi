@@ -11,14 +11,6 @@
 
 ## 当前状态
 
-**Phase 1 已完成**：剥离 YouTube / VLC / 浏览器 / ChatGPT / 歌词 / Mokuro，保留 Reader + Dictionary + Anki。debug APK 可编译。
-
-**Phase 2 已完成**：HomePage 去 BottomNavigationBar；有声书同步全链路（SMIL + JSON + SRT/LRC/VTT/ASS → ttu IDB 匹配 → WebView 桥 → 播放/制卡）；字幕统一走 EPUB 渲染，无字幕列表 UI。
-
-**Phase 3 已完成**：Material 3 UI 打磨 7 PR 全部落地（主题基座 / 词典弹窗 / 书架卡片 / 搜索栏 / 对话框 / 播放条 / FollowPill）。
-
-**Phase 4 对齐 iOS Sasayaki**：PR1（多格式 matcher）/ PR2（health UI）/ PR8a（ttu fork section API）/ PR8b（Follow audio）已落地，剩 **PR6 `{sasayaki-audio}` Anki handlebar** 未做（见 `SASAYAKI_PARITY_PLAN.md`）。
-
 界面的中文和英文混用，未完全遵守语言设置
 
 ## 核心技术栈
@@ -55,7 +47,7 @@
 - 不从零重写，在现有代码上删减 / 重构
 - 遇到问题先定位，不回退到简化版
 - 每个 PR 聚焦单一模块，commit 信息说明"为什么"
-- 修改流程三步缺一不可：**analyze → 编译 APK → commit**（见 feedback 记忆）
+- 修改流程三步缺一不可：**analyze → 编译 APK → commit → 改版本号**（见 feedback 记忆）
 - 字幕格式（SRT/LRC/VTT/ASS）统一走 EPUB 渲染，不做字幕列表 UI
 - **ttu WebView 的 DOM / 原生 UI / JS API 在 `/d/ttu-fork/` 改源码 + 重 build，不在 hibiki 侧注 CSS/JS 强改**（见上节）
 
