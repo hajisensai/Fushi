@@ -454,6 +454,7 @@
     "update_downloading": "업데이트 다운로드 중…",
     "update_installing": "설치 중…",
     "update_download_failed": "다운로드 실패",
+    "update_hide": "숨기기",
     "ttu_font_size": "글꼴 크기",
     "ttu_line_height": "줄 높이",
     "ttu_writing_direction": "글쓰기 방향",

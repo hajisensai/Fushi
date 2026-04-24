@@ -454,6 +454,7 @@
     "update_downloading": "Загрузка обновления…",
     "update_installing": "Установка…",
     "update_download_failed": "Ошибка загрузки",
+    "update_hide": "Скрыть",
     "ttu_font_size": "Размер шрифта",
     "ttu_line_height": "Высота строки",
     "ttu_writing_direction": "Направление письма",

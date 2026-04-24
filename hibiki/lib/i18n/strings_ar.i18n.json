@@ -454,6 +454,7 @@
     "update_downloading": "جارٍ تنزيل التحديث…",
     "update_installing": "جارٍ التثبيت…",
     "update_download_failed": "فشل التنزيل",
+    "update_hide": "إخفاء",
     "ttu_font_size": "حجم الخط",
     "ttu_line_height": "ارتفاع السطر",
     "ttu_writing_direction": "اتجاه الكتابة",

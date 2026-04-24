@@ -480,6 +480,7 @@
     "update_downloading": "Downloading update…",
     "update_installing": "Installing…",
     "update_download_failed": "Download failed",
+    "update_hide": "Hide",
     "ttu_font_size": "Font Size",
     "ttu_line_height": "Line Height",
     "ttu_writing_direction": "Writing Direction",

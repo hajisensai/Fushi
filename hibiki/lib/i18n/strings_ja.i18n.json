@@ -454,6 +454,7 @@
     "update_downloading": "アップデートをダウンロード中…",
     "update_installing": "インストール中…",
     "update_download_failed": "ダウンロードに失敗しました",
+    "update_hide": "非表示",
     "ttu_font_size": "フォントサイズ",
     "ttu_line_height": "行の高さ",
     "ttu_writing_direction": "組方向",

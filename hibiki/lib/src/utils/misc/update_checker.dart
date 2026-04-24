@@ -241,11 +241,20 @@ class UpdateChecker {
   ) async {
     final progress = ValueNotifier<double>(0);
     final status = ValueNotifier<String>(t.update_downloading);
+    final overlayVisible = ValueNotifier<bool>(true);
 
-    final overlay = OverlayEntry(
-      builder: (ctx) => _DownloadOverlay(
-        progress: progress,
-        status: status,
+    late final OverlayEntry overlay;
+    overlay = OverlayEntry(
+      builder: (ctx) => ValueListenableBuilder<bool>(
+        valueListenable: overlayVisible,
+        builder: (_, visible, __) {
+          if (!visible) return const SizedBox.shrink();
+          return _DownloadOverlay(
+            progress: progress,
+            status: status,
+            onHide: () => overlayVisible.value = false,
+          );
+        },
       ),
     );
 
@@ -289,6 +298,7 @@ class UpdateChecker {
       overlay.remove();
       progress.dispose();
       status.dispose();
+      overlayVisible.dispose();
     }
   }
 
@@ -317,10 +327,12 @@ class UpdateChecker {
 class _DownloadOverlay extends StatelessWidget {
   final ValueNotifier<double> progress;
   final ValueNotifier<String> status;
+  final VoidCallback onHide;
 
   const _DownloadOverlay({
     required this.progress,
     required this.status,
+    required this.onHide,
   });
 
   @override
@@ -354,6 +366,11 @@ class _DownloadOverlay extends StatelessWidget {
                         Text('${(p * 100).toStringAsFixed(0)}%'),
                       ],
                     ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextButton(
+                    onPressed: onHide,
+                    child: Text(t.update_hide),
                   ),
                 ],
               ),

@@ -454,6 +454,7 @@
     "update_downloading": "กำลังดาวน์โหลดอัปเดต…",
     "update_installing": "กำลังติดตั้ง…",
     "update_download_failed": "ดาวน์โหลดล้มเหลว",
+    "update_hide": "ซ่อน",
     "ttu_font_size": "ขนาดฟอนต์",
     "ttu_line_height": "ความสูงบรรทัด",
     "ttu_writing_direction": "ทิศทางการเขียน",

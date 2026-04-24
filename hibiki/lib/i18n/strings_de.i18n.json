@@ -454,6 +454,7 @@
     "update_downloading": "Update wird heruntergeladen…",
     "update_installing": "Wird installiert…",
     "update_download_failed": "Download fehlgeschlagen",
+    "update_hide": "Ausblenden",
     "ttu_font_size": "Schriftgröße",
     "ttu_line_height": "Zeilenhöhe",
     "ttu_writing_direction": "Schreibrichtung",

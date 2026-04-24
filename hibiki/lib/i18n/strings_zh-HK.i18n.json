@@ -454,6 +454,7 @@
     "update_downloading": "正在下載更新…",
     "update_installing": "正在安裝…",
     "update_download_failed": "下載失敗",
+    "update_hide": "隱藏",
     "ttu_font_size": "字型大小",
     "ttu_line_height": "行高",
     "ttu_writing_direction": "排版方向",
