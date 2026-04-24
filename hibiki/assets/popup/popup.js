@@ -741,7 +741,7 @@ function renderDefinitionImageToCanvas(canvas, image, usedWidth, invAspectRatio,
     
     if (appearance === 'monochrome') {
         context.globalCompositeOperation = 'source-in';
-        context.fillStyle = window.matchMedia?.('(prefers-color-scheme: dark)')?.matches ? '#ffffff' : '#000000';
+        context.fillStyle = document.documentElement.getAttribute('data-theme') === 'dark' ? '#ffffff' : '#000000';
         context.fillRect(0, 0, canvas.width, canvas.height);
         context.globalCompositeOperation = 'source-over';
     }
@@ -1319,11 +1319,12 @@ function createGlossarySection(dictName, contents, isFirst) {
     ` : '';
     
     const dictStyle = window.dictionaryStyles?.[dictName] ?? '';
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const baseColor = isDark ? '#fff' : '#000';
     dictWrapper.appendChild(el('style', {
         textContent: `
             [data-dictionary="${dictName}"] {
-                @media (prefers-color-scheme: light) { color: #000; }
-                @media (prefers-color-scheme: dark) { color: #fff; }
+                color: ${baseColor};
                 ${dictStyle}
                 ${compactCss}
             }
