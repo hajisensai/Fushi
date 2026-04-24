@@ -556,6 +556,7 @@
     "custom_theme": "Tema Personalizado",
     "dark_mode": "Modo Escuro",
     "seed_color": "Cor Base",
+    "font_color": "Cor da Fonte",
     "apply_theme": "Aplicar Tema",
     "preview": "Pré-visualização",
     "share_theme": "Compartilhar tema",

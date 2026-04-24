@@ -530,6 +530,19 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
           Color.fromRGBO(16, 16, 16, dictionaryEntryOpacity),
         );
         break;
+      case 'custom-theme':
+        if (appModel.customThemeDark) {
+          appModel.setOverrideDictionaryTheme(appModel.darkTheme);
+          appModel.setOverrideDictionaryColor(
+            Color.fromRGBO(35, 39, 42, dictionaryEntryOpacity),
+          );
+        } else {
+          appModel.setOverrideDictionaryTheme(appModel.theme);
+          appModel.setOverrideDictionaryColor(
+            Color.fromRGBO(249, 249, 249, dictionaryEntryOpacity),
+          );
+        }
+        break;
     }
 
     if (mounted) {
@@ -591,6 +604,8 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       'window.localStorage.setItem("writingMode","${src.ttuWritingMode}")',
       'window.localStorage.setItem("viewMode","${src.ttuViewMode}")',
       'window.localStorage.setItem("theme","${appModel.appThemeKey}")',
+      if (appModel.appThemeKey == 'custom-theme' && appModel.customThemeFontColor != null)
+        _buildCustomThemeJs(),
       'window.localStorage.setItem("hideFurigana","${src.ttuHideFurigana}")',
       'window.localStorage.setItem("statisticsEnabled","true")',
       'window.localStorage.setItem("trackerAutoStartTime","5")',
@@ -598,6 +613,35 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       'window.localStorage.setItem("fontFamilyGroupTwo","$fontFamilyTwo")',
     ];
     return cmds.join(';');
+  }
+
+  String _buildCustomThemeJs() {
+    final fc = appModel.customThemeFontColor!;
+    final r = fc.red, g = fc.green, b = fc.blue;
+    final a = (fc.alpha / 255.0).toStringAsFixed(2);
+    final bgColor = appModel.customThemeDark
+        ? 'rgba(35,39,42,1)'
+        : 'rgba(255,255,255,1)';
+    final selFc = appModel.customThemeDark
+        ? 'rgba(85,90,92,0.6)'
+        : 'rgba(245,245,245,1)';
+    final selBg = appModel.customThemeDark
+        ? 'rgba(212,217,220,0.8)'
+        : 'rgba(151,151,151,1)';
+    final tooltip = 'rgba($r,$g,$b,0.6)';
+    final hint = 'rgba($r,$g,$b,0.38)';
+    final shadow = appModel.customThemeDark
+        ? 'rgba(240,240,241,0.3)'
+        : 'rgba(34,34,49,0.3)';
+    final themeObj = '{"fontColor":"rgba($r,$g,$b,$a)",'
+        '"backgroundColor":"$bgColor",'
+        '"selectionFontColor":"$selFc",'
+        '"selectionBackgroundColor":"$selBg",'
+        '"hintFuriganaFontColor":"$hint",'
+        '"hintFuriganaShadowColor":"$shadow",'
+        '"tooltipTextFontColor":"$tooltip"}';
+    return 'window.localStorage.setItem("customThemes",'
+        'JSON.stringify({"custom-theme":$themeObj}))';
   }
 
   String _buildCustomFontFaceCss() {

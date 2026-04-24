@@ -556,6 +556,7 @@
     "custom_theme": "ธีมกำหนดเอง",
     "dark_mode": "โหมดมืด",
     "seed_color": "สีหลัก",
+    "font_color": "สีตัวอักษร",
     "apply_theme": "ใช้ธีม",
     "preview": "ดูตัวอย่าง",
     "share_theme": "แชร์ธีม",

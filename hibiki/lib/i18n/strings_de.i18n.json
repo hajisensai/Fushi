@@ -556,6 +556,7 @@
     "custom_theme": "Benutzerdefiniertes Design",
     "dark_mode": "Dunkler Modus",
     "seed_color": "Grundfarbe",
+    "font_color": "Schriftfarbe",
     "apply_theme": "Design anwenden",
     "preview": "Vorschau",
     "share_theme": "Theme teilen",

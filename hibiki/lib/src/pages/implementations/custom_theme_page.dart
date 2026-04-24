@@ -16,12 +16,17 @@ class CustomThemePage extends BasePage {
 class _CustomThemePageState extends BasePageState {
   late Color _seed;
   late bool _dark;
+  Color? _fontColor;
+  bool _useFontColor = false;
 
   @override
   void initState() {
     super.initState();
     _seed = appModelNoUpdate.customThemeSeed;
     _dark = appModelNoUpdate.customThemeDark;
+    _fontColor = appModelNoUpdate.customThemeFontColor;
+    _useFontColor = _fontColor != null;
+    _fontColor ??= Colors.black;
   }
 
   ColorScheme get _preview =>
@@ -29,17 +34,27 @@ class _CustomThemePageState extends BasePageState {
 
   String _encodeTheme() {
     final hex = _seed.toARGB32().toRadixString(16).padLeft(8, '0');
-    return 'hibiki-theme:$hex:${_dark ? "dark" : "light"}';
+    var code = 'hibiki-theme:$hex:${_dark ? "dark" : "light"}';
+    if (_useFontColor && _fontColor != null) {
+      final fontHex = _fontColor!.toARGB32().toRadixString(16).padLeft(8, '0');
+      code += ':fc$fontHex';
+    }
+    return code;
   }
 
-  static ({Color seed, bool dark})? _decodeTheme(String code) {
+  static ({Color seed, bool dark, Color? fontColor})? _decodeTheme(String code) {
     final parts = code.trim().split(':');
-    if (parts.length != 3 || parts[0] != 'hibiki-theme') return null;
+    if (parts.length < 3 || parts[0] != 'hibiki-theme') return null;
     final colorVal = int.tryParse(parts[1], radix: 16);
     if (colorVal == null) return null;
     final dark = parts[2] == 'dark';
     if (parts[2] != 'dark' && parts[2] != 'light') return null;
-    return (seed: Color(colorVal), dark: dark);
+    Color? fontColor;
+    if (parts.length >= 4 && parts[3].startsWith('fc')) {
+      final fcVal = int.tryParse(parts[3].substring(2), radix: 16);
+      if (fcVal != null) fontColor = Color(fcVal);
+    }
+    return (seed: Color(colorVal), dark: dark, fontColor: fontColor);
   }
 
   void _shareTheme() {
@@ -75,6 +90,8 @@ class _CustomThemePageState extends BasePageState {
               setState(() {
                 _seed = result.seed;
                 _dark = result.dark;
+                _fontColor = result.fontColor ?? Colors.black;
+                _useFontColor = result.fontColor != null;
               });
               Fluttertoast.showToast(msg: t.import_theme_success);
             },
@@ -131,9 +148,36 @@ class _CustomThemePageState extends BasePageState {
             labelTypes: const [],
           ),
           const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(child: Text(t.font_color)),
+              Switch(
+                value: _useFontColor,
+                onChanged: (v) => setState(() => _useFontColor = v),
+              ),
+            ],
+          ),
+          if (_useFontColor) ...[
+            const SizedBox(height: 8),
+            ColorPicker(
+              pickerColor: _fontColor!,
+              onColorChanged: (c) => setState(() => _fontColor = c),
+              colorPickerWidth: MediaQuery.of(context).size.width - 64,
+              pickerAreaHeightPercent: 0.5,
+              enableAlpha: true,
+              displayThumbColor: true,
+              hexInputBar: true,
+              labelTypes: const [],
+            ),
+          ],
+          const SizedBox(height: 16),
           FilledButton.icon(
             onPressed: () {
-              appModel.applyCustomTheme(seed: _seed, dark: _dark);
+              appModel.applyCustomTheme(
+                seed: _seed,
+                dark: _dark,
+                fontColor: _useFontColor ? _fontColor : null,
+              );
               Navigator.pop(context);
             },
             icon: const Icon(Icons.check),
@@ -176,7 +220,7 @@ class _CustomThemePageState extends BasePageState {
               ),
               child: Text(
                 '日本語のテキストプレビュー\nSample text preview',
-                style: TextStyle(color: cs.onSurface),
+                style: TextStyle(color: _useFontColor ? _fontColor : cs.onSurface),
               ),
             ),
           ],

@@ -1377,12 +1377,24 @@ class AppModel with ChangeNotifier {
     await _setPref('custom_theme_dark', dark);
   }
 
+  Color? get customThemeFontColor {
+    final int v = _getPref('custom_theme_font_color', defaultValue: 0);
+    if (v == 0) return null;
+    return Color(v);
+  }
+
+  Future<void> setCustomThemeFontColor(Color? color) async {
+    await _setPref('custom_theme_font_color', color?.toARGB32() ?? 0);
+  }
+
   Future<void> applyCustomTheme({
     required Color seed,
     required bool dark,
+    Color? fontColor,
   }) async {
     await setCustomThemeSeed(seed);
     await setCustomThemeDark(dark);
+    await setCustomThemeFontColor(fontColor);
     await _setPref('app_theme_key', 'custom-theme');
     notifyListeners();
   }

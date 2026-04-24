@@ -585,6 +585,7 @@
     "custom_theme": "Custom Theme",
     "dark_mode": "Dark Mode",
     "seed_color": "Seed Color",
+    "font_color": "Font Color",
     "apply_theme": "Apply Theme",
     "preview": "Preview",
     "share_theme": "Share Theme",

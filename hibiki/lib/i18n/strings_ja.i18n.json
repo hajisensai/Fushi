@@ -556,6 +556,7 @@
     "custom_theme": "カスタムテーマ",
     "dark_mode": "ダークモード",
     "seed_color": "シードカラー",
+    "font_color": "文字色",
     "apply_theme": "テーマを適用",
     "preview": "プレビュー",
     "share_theme": "テーマを共有",
