@@ -5,9 +5,7 @@ import 'dart:math';
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:kana_kit/kana_kit.dart';
-import 'package:mecab_dart/mecab_dart.dart';
 import 'package:ruby_text/ruby_text.dart';
-import 'package:ve_dart/ve_dart.dart';
 import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/language.dart';
 import 'package:hibiki/models.dart';
@@ -37,8 +35,18 @@ class JapaneseLanguage extends Language {
   static final JapaneseLanguage _instance =
       JapaneseLanguage._privateConstructor();
 
-  /// Used for text segmentation and deinflection.
-  static Mecab mecab = Mecab();
+  static final RegExp _segmentRe = RegExp(
+    r'[一-鿿㐀-䶿豈-﫿]+'
+    r'|[぀-ゟᬀ1-ᬑF]+'
+    r'|[゠-ヿㇰ-ㇿ･-ﾟ]+'
+    r'|[！-｠　-〿 -⁯\p{P}]+'
+    r'|[a-zA-Z0-9０-９Ａ-Ｚａ-ｚ]+'
+    r'|[^一-鿿㐀-䶿豈-﫿'
+    r'぀-ゟ゠-ヿㇰ-ㇿ'
+    r'！-ﾟ　-〿 -⁯'
+    r'a-zA-Z0-9]+',
+    unicode: true,
+  );
 
   /// Used for processing Japanese characters from Kana to Romaji and so on.
   static KanaKit kanaKit = const KanaKit();
@@ -112,34 +120,14 @@ class JapaneseLanguage extends Language {
   }
 
   @override
-  Future<void> prepareResources() async {
-    await mecab.init('assets/language/japanese/ipadic', true);
-  }
+  Future<void> prepareResources() async {}
 
   @override
   List<String> textToWords(String text) {
-    String delimiterSanitisedText = text
-        .replaceAll('﻿', '␝')
-        .replaceAll('　', '␝')
-        .replaceAll('\n', '␜')
-        .replaceAll(' ', '␝');
-
-    List<Word> tokens = parseVe(mecab, delimiterSanitisedText);
-
-    List<String> terms = [];
-
-    for (Word token in tokens) {
-      final buffer = StringBuffer();
-      for (TokenNode token in token.tokens) {
-        buffer.write(token.surface);
-      }
-
-      String term = buffer.toString();
-      term = term.replaceAll('␜', '\n').replaceAll('␝', ' ');
-      terms.add(term);
-    }
-
-    return terms;
+    return _segmentRe
+        .allMatches(text)
+        .map((m) => m.group(0)!)
+        .toList();
   }
 
   /// Some languages may want to display custom widgets rather than the built
