@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
@@ -58,17 +59,38 @@ class UpdateChecker {
 
       final releaseBody = json['body'] as String? ?? '';
 
-      // Find the first APK asset download URL.
+      // Find the APK asset that matches the device's ABI.
       String? apkUrl;
+      String? fallbackApkUrl;
       final assets = json['assets'] as List<dynamic>? ?? [];
+
+      List<String> supportedAbis = [];
+      try {
+        final androidInfo = await DeviceInfoPlugin().androidInfo;
+        supportedAbis = androidInfo.supportedAbis;
+      } catch (_) {}
+
+      // ABI tag as it appears in split APK filenames (e.g. arm64-v8a).
+      final abiTags = supportedAbis
+          .map((abi) => abi.replaceAll('_', '-'))
+          .toList();
+
       for (final asset in assets) {
         final assetMap = asset as Map<String, dynamic>;
         final name = assetMap['name'] as String? ?? '';
-        if (name.endsWith('.apk')) {
-          apkUrl = assetMap['browser_download_url'] as String?;
+        if (!name.endsWith('.apk')) continue;
+        final url = assetMap['browser_download_url'] as String?;
+        if (url == null) continue;
+
+        // Prefer ABI-specific APK matching this device.
+        if (abiTags.any((abi) => name.contains(abi))) {
+          apkUrl = url;
           break;
         }
+        // Keep first APK as fallback (could be a universal/fat build).
+        fallbackApkUrl ??= url;
       }
+      apkUrl ??= fallbackApkUrl;
       // Fallback to the release HTML page if no APK asset found.
       apkUrl ??= json['html_url'] as String?;
       if (apkUrl == null) {
