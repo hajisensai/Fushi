@@ -2214,6 +2214,23 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     );
   }
 
+  /// 跳章成功后：先建 cueMap，再通知 controller 跳章完成。
+  /// 拆出来是因为 _handleTtuSectionChanged 是 void，这里需要 await。
+  Future<void> _applyThenCompleteNav(int idx) async {
+    await _applySasayakiCuesForSection(idx);
+    final AudiobookPlayerController? controller = _audiobookController;
+    if (controller != null) {
+      _completeNavRestore(
+        controller: controller,
+        currentReaderSection: idx,
+        success: true,
+      );
+    } else {
+      _navRestoreTimeout = null;
+      _inFlightNavSection = null;
+    }
+  }
+
   /// pill 被点击时的跳章入口；成功后清空 pill。
   Future<void> _followPillTap() async {
     final int? target = _pendingNavSection;
@@ -2377,20 +2394,12 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     if (auto) {
       if (_inFlightNavSection == idx) {
         _currentTtuSection = idx;
-        final AudiobookPlayerController? controller = _audiobookController;
-        if (controller != null) {
-          _completeNavRestore(
-            controller: controller,
-            currentReaderSection: idx,
-            success: true,
-          );
-        } else {
-          _navRestoreTimeout?.cancel();
-          _navRestoreTimeout = null;
-          _inFlightNavSection = null;
-        }
-        // Follow audio / requestSectionNav 跳完，重建目标章 cueMap。
-        unawaited(_applySasayakiCuesForSection(idx));
+        // 先取消兜底 timer，防止 cueMap 构建期间超时。
+        _navRestoreTimeout?.cancel();
+        // 先重建 cueMap，再 _completeNavRestore（后者触发 notifyListeners
+        // → _onCueChanged → highlight）。否则 highlight 时 cueMap 为空，
+        // 用户必须等下一条 cue 或再点 Follow 才能跳到正确位置。
+        unawaited(_applyThenCompleteNav(idx));
         if (_restoreInFlight && _pendingRestorePos?.section == idx) {
           unawaited(_finishRestore());
         }
