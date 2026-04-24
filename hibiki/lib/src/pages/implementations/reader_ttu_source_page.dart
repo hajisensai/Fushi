@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:document_file_save_plus/document_file_save_plus.dart';
 import 'package:file_picker/file_picker.dart';
@@ -1952,7 +1953,17 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       showDragHandle: true,
       isScrollControlled: true,
       builder: (BuildContext ctx) {
-        return AudiobookSettingsSheet(
+        // 阅读器 Scaffold 设了 resizeToAvoidBottomInset: false（WebView 需要），
+        // 导致子树 MediaQuery.viewInsets 被清零；手动从 View 恢复真实键盘高度，
+        // 否则底部面板内 TextField 弹出键盘后立刻丢焦点。
+        final ui.FlutterView view = View.of(ctx);
+        final EdgeInsets realInsets = EdgeInsets.fromViewPadding(
+          view.viewInsets,
+          view.devicePixelRatio,
+        );
+        return MediaQuery(
+          data: MediaQuery.of(ctx).copyWith(viewInsets: realInsets),
+          child: AudiobookSettingsSheet(
           controller: ctrl,
           toc: toc,
           readerProgress: progress,
@@ -1979,6 +1990,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
             if (mounted) Navigator.of(context).pop();
           },
           webViewController: _controller,
+        ),
         );
       },
     );
