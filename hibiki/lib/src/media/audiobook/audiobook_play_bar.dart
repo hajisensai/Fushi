@@ -154,11 +154,18 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
   static const List<double> _speeds = [0.75, 1.0, 1.25, 1.5];
 
   TtuReaderSettings? _settings;
+  final TextEditingController _cueJumpController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _loadSettings();
+  }
+
+  @override
+  void dispose() {
+    _cueJumpController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadSettings() async {
@@ -241,6 +248,8 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                   _buildSpeedSection(theme, widget.controller!),
                   const SizedBox(height: 20),
                   _buildDelaySection(theme, widget.controller!),
+                  const SizedBox(height: 20),
+                  _buildImagePauseSection(theme, widget.controller!),
                 ],
                 const SizedBox(height: 20),
                 _buildReaderSettingsSection(theme),
@@ -324,6 +333,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               width: 72,
               height: 36,
               child: TextField(
+                controller: _cueJumpController,
                 keyboardType: TextInputType.number,
                 textAlign: TextAlign.center,
                 decoration: InputDecoration(
@@ -344,9 +354,37 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               ),
             ),
             const SizedBox(width: 4),
-            Text(
-              '/ ${ctrl.chapterCueCount}',
-              style: theme.textTheme.bodyMedium,
+            SizedBox(
+              height: 36,
+              child: FilledButton.tonal(
+                onPressed: () {
+                  final int? n = int.tryParse(_cueJumpController.text);
+                  if (n != null && n >= 1 && n <= ctrl.chapterCueCount) {
+                    ctrl.skipToCueIndex(n - 1);
+                    setState(() {});
+                  }
+                },
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  visualDensity: VisualDensity.compact,
+                ),
+                child: const Icon(Icons.arrow_forward, size: 18),
+              ),
+            ),
+            const SizedBox(width: 8),
+            SizedBox(
+              height: 36,
+              child: FilledButton.tonal(
+                onPressed: () async {
+                  await ctrl.snapAudioToReader();
+                  setState(() {});
+                },
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  visualDensity: VisualDensity.compact,
+                ),
+                child: Text(t.jump_to_current_page),
+              ),
             ),
           ],
         ),
@@ -514,6 +552,44 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         visualDensity: VisualDensity.compact,
       ),
       child: Text(label),
+    );
+  }
+
+  static const List<int> _imagePauseOptions = [0, 5, 10, 15];
+
+  Widget _buildImagePauseSection(
+      ThemeData theme, AudiobookPlayerController ctrl) {
+    return ValueListenableBuilder<int>(
+      valueListenable: ctrl.imagePauseSec,
+      builder: (BuildContext ctx, int sec, _) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(t.image_pause, style: theme.textTheme.titleMedium),
+            const SizedBox(height: 4),
+            Text(
+              t.image_pause_hint,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: _imagePauseOptions.map((int s) {
+                final bool selected = s == sec;
+                return ChoiceChip(
+                  label: Text(s == 0 ? t.image_pause_off : '${s}s'),
+                  selected: selected,
+                  onSelected: (bool on) {
+                    if (on) ctrl.setImagePauseSec(s);
+                  },
+                );
+              }).toList(),
+            ),
+          ],
+        );
+      },
     );
   }
 

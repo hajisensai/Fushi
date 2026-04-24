@@ -55,9 +55,9 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
   @override
   Widget build(BuildContext context) {
     return Stack(children: [
-      if (shouldPlaceholderBeShown)
+      if (shouldPlaceholderBeShown && !_lastOpenedState)
         buildPlaceholder()
-      else
+      else if (!_lastOpenedState)
         buildDictionaryHistory(),
       buildFloatingSearchBar(),
     ]);
@@ -140,11 +140,10 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
 
   @override
   void onFocusChanged({required bool focused}) async {
-    if (mediaType.floatingSearchBarController.isOpen != _lastOpenedState) {
-      _lastOpenedState = mediaType.floatingSearchBarController.isOpen;
-      if (!_lastOpenedState) {
-        setState(() {});
-      }
+    final isOpen = mediaType.floatingSearchBarController.isOpen;
+    if (isOpen != _lastOpenedState) {
+      _lastOpenedState = isOpen;
+      setState(() {});
     }
   }
 

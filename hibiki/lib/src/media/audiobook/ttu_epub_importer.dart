@@ -142,6 +142,8 @@ class TtuEpubImporter {
       initialSettings: InAppWebViewSettings(
         allowFileAccessFromFileURLs: true,
         allowUniversalAccessFromFileURLs: true,
+        databaseEnabled: true,
+        domStorageEnabled: true,
       ),
       initialUserScripts: UnmodifiableListView<UserScript>([
         UserScript(

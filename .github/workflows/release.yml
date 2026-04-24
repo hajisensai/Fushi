@@ -51,9 +51,19 @@ jobs:
       working-directory: hibiki
       run: flutter build apk --split-per-abi --release
 
+    - name: Rename APKs
+      working-directory: hibiki
+      run: |
+        VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: *//;s/+.*//')
+        APK_DIR=build/app/outputs/flutter-apk
+        for f in "$APK_DIR"/app-*-release.apk; do
+          ABI=$(basename "$f" | sed 's/^app-//;s/-release\.apk$//')
+          mv "$f" "$APK_DIR/hibiki-${VERSION}-${ABI}.apk"
+        done
+
     - name: Upload APKs to release
       if: github.event_name == 'release'
       uses: softprops/action-gh-release@v2
       with:
         files: |
-          hibiki/build/app/outputs/flutter-apk/*-release.apk
+          hibiki/build/app/outputs/flutter-apk/hibiki-*.apk

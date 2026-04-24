@@ -741,7 +741,7 @@ function renderDefinitionImageToCanvas(canvas, image, usedWidth, invAspectRatio,
     
     if (appearance === 'monochrome') {
         context.globalCompositeOperation = 'source-in';
-        context.fillStyle = window.matchMedia?.('(prefers-color-scheme: dark)')?.matches ? '#ffffff' : '#000000';
+        context.fillStyle = document.documentElement.getAttribute('data-theme') === 'dark' ? '#ffffff' : '#000000';
         context.fillRect(0, 0, canvas.width, canvas.height);
         context.globalCompositeOperation = 'source-over';
     }
@@ -1094,67 +1094,89 @@ function createPitchGroup(pitchData, reading) {
     return container;
 }
 
-function createTags(entry) {
-    const { deinflectionTrace, frequencies, pitches, reading } = entry;
-    const hasDeinflection = deinflectionTrace?.length;
-    const hasFrequencies = frequencies?.length;
-    const hasPitches = pitches?.length;
-    
-    if (!hasDeinflection && !hasFrequencies && !hasPitches) {
-        return null;
-    }
-    
+function createDeinflectionSection(entry) {
+    const { deinflectionTrace } = entry;
+    if (!deinflectionTrace?.length) return null;
     const container = el('div', { className: 'entry-tags' });
-    
-    if (hasDeinflection) {
-        const deinflectionDiv = el('div', { className: 'tag-row' });
-        deinflectionTrace.forEach(tag => deinflectionDiv.appendChild(createDeinflectionTag(tag)));
-        container.appendChild(deinflectionDiv);
-    }
-    
-    if (hasFrequencies) {
-        if (window.harmonicFrequency) {
-            const normalRow = el('div', { className: 'tag-row', style: 'display:none' });
-            frequencies.forEach(freq => normalRow.appendChild(createFrequencyGroup(freq)));
-            
-            const harmonicRow = el('div', { className: 'tag-row' });
-            harmonicRow.appendChild(createHarmonicFrequencyTag(frequencies));
-            
-            const toggle = () => {
-                const swap = harmonicRow.style.display !== 'none';
-                harmonicRow.style.display = swap ? 'none' : '';
-                normalRow.style.display = swap ? '' : 'none';
-            };
-            
-            normalRow.addEventListener('click', toggle);
-            harmonicRow.addEventListener('click', toggle);
-            container.appendChild(harmonicRow);
-            container.appendChild(normalRow);
-        } else {
-            const freqContainer = el('div', { className: 'tag-row' });
-            frequencies.forEach(freq => freqContainer.appendChild(createFrequencyGroup(freq)));
-            container.appendChild(freqContainer);
-        }
-    }
-    
-    if (hasPitches) {
-        const pitchContainer = el('div', { className: 'pitch-list' });
-        if (window.deduplicatePitchAccents) {
-            const seen = new Set();
-            pitches.forEach(pitch => {
-                const unique = pitch.pitchPositions.filter(pos => !seen.has(pos));
-                if (unique.length > 0) {
-                    unique.forEach(pos => seen.add(pos));
-                    pitchContainer.appendChild(createPitchGroup({ dictionary: pitch.dictionary, pitchPositions: unique }, reading));
-                }
-            });
-        } else {
-            pitches.forEach(pitch => pitchContainer.appendChild(createPitchGroup(pitch, reading)));
-        }
-        container.appendChild(pitchContainer);
-    }
-    
+    const row = el('div', { className: 'tag-row' });
+    deinflectionTrace.forEach(tag => row.appendChild(createDeinflectionTag(tag)));
+    container.appendChild(row);
     return container;
+}
+
+function createFrequencySection(frequencies) {
+    if (!frequencies?.length) return null;
+    const details = el('details', { className: 'category-section frequency-section', open: true });
+    const summary = el('summary', { className: 'category-label' });
+    summary.appendChild(el('span', { className: 'category-name', textContent: '词频' }));
+    details.appendChild(summary);
+    const body = el('div', { className: 'category-body' });
+    if (window.harmonicFrequency) {
+        const normalRow = el('div', { className: 'tag-row', style: 'display:none' });
+        frequencies.forEach(freq => normalRow.appendChild(createFrequencyGroup(freq)));
+        const harmonicRow = el('div', { className: 'tag-row' });
+        harmonicRow.appendChild(createHarmonicFrequencyTag(frequencies));
+        const toggle = () => {
+            const swap = harmonicRow.style.display !== 'none';
+            harmonicRow.style.display = swap ? 'none' : '';
+            normalRow.style.display = swap ? '' : 'none';
+        };
+        normalRow.addEventListener('click', toggle);
+        harmonicRow.addEventListener('click', toggle);
+        body.appendChild(harmonicRow);
+        body.appendChild(normalRow);
+    } else {
+        const row = el('div', { className: 'tag-row' });
+        frequencies.forEach(freq => row.appendChild(createFrequencyGroup(freq)));
+        body.appendChild(row);
+    }
+    details.appendChild(body);
+    return details;
+}
+
+function createPitchSection(pitches, reading) {
+    if (!pitches?.length) return null;
+    const details = el('details', { className: 'category-section pitch-section', open: true });
+    const summary = el('summary', { className: 'category-label' });
+    summary.appendChild(el('span', { className: 'category-name', textContent: '声调' }));
+    details.appendChild(summary);
+    const body = el('div', { className: 'category-body' });
+    const pitchContainer = el('div', { className: 'pitch-list' });
+    if (window.deduplicatePitchAccents) {
+        const seen = new Set();
+        pitches.forEach(pitch => {
+            const unique = pitch.pitchPositions.filter(pos => !seen.has(pos));
+            if (unique.length > 0) {
+                unique.forEach(pos => seen.add(pos));
+                pitchContainer.appendChild(createPitchGroup({ dictionary: pitch.dictionary, pitchPositions: unique }, reading));
+            }
+        });
+    } else {
+        pitches.forEach(pitch => pitchContainer.appendChild(createPitchGroup(pitch, reading)));
+    }
+    body.appendChild(pitchContainer);
+    details.appendChild(body);
+    return details;
+}
+
+function createGlossarySectionWrapper(entry) {
+    const grouped = {};
+    entry.glossaries.forEach(g => {
+        (grouped[g.dictionary] ??= []).push({
+            content: g.content,
+            definitionTags: g.definitionTags,
+            termTags: g.termTags
+        });
+    });
+    const dictNames = Object.keys(grouped);
+    if (!dictNames.length) return null;
+    const details = el('details', { className: 'category-section glossary-section', open: true });
+    const summary = el('summary', { className: 'category-label' });
+    summary.appendChild(el('span', { className: 'category-name', textContent: '辞典' }));
+    details.appendChild(summary);
+    const body = el('div', { className: 'category-body' });
+    details.appendChild(body);
+    return { details, body, grouped, dictNames };
 }
 
 async function fetchAudioUrl(expression, reading) {
@@ -1319,11 +1341,12 @@ function createGlossarySection(dictName, contents, isFirst) {
     ` : '';
     
     const dictStyle = window.dictionaryStyles?.[dictName] ?? '';
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const baseColor = isDark ? '#fff' : '#000';
     dictWrapper.appendChild(el('style', {
         textContent: `
             [data-dictionary="${dictName}"] {
-                @media (prefers-color-scheme: light) { color: #000; }
-                @media (prefers-color-scheme: dark) { color: #fff; }
+                color: ${baseColor};
                 ${dictStyle}
                 ${compactCss}
             }
@@ -1412,27 +1435,32 @@ window.renderPopup = function() {
             const entryDiv = el('div', { className: 'entry' });
             entryDiv.appendChild(createEntryHeader(entry, idx));
 
-            const tags = createTags(entry);
-            if (tags) {
-                entryDiv.appendChild(tags);
+            const deinflection = createDeinflectionSection(entry);
+            if (deinflection) {
+                entryDiv.appendChild(deinflection);
+            }
+
+            const freqSection = createFrequencySection(entry.frequencies);
+            if (freqSection) {
+                entryDiv.appendChild(freqSection);
+            }
+
+            const pitchSection = createPitchSection(entry.pitches, entry.reading);
+            if (pitchSection) {
+                entryDiv.appendChild(pitchSection);
             }
 
             container.appendChild(entryDiv);
             await new Promise(r => requestAnimationFrame(r));
 
-            const grouped = {};
-            entry.glossaries.forEach(g => {
-                (grouped[g.dictionary] ??= []).push({
-                    content: g.content,
-                    definitionTags: g.definitionTags,
-                    termTags: g.termTags
-                });
-            });
-
-            const dictNames = Object.keys(grouped);
-            for (let dictIdx = 0; dictIdx < dictNames.length; dictIdx++) {
-                entryDiv.appendChild(createGlossarySection(dictNames[dictIdx], grouped[dictNames[dictIdx]], dictIdx === 0));
-                await new Promise(r => requestAnimationFrame(r));
+            const glossaryWrapper = createGlossarySectionWrapper(entry);
+            if (glossaryWrapper) {
+                const { details, body, grouped, dictNames } = glossaryWrapper;
+                entryDiv.appendChild(details);
+                for (let dictIdx = 0; dictIdx < dictNames.length; dictIdx++) {
+                    body.appendChild(createGlossarySection(dictNames[dictIdx], grouped[dictNames[dictIdx]], dictIdx === 0));
+                    await new Promise(r => requestAnimationFrame(r));
+                }
             }
         }
 

@@ -49,6 +49,7 @@ public class MainActivity extends AudioServiceActivity {
     private static final String VOLUME_KEY_CHANNEL = "app.hibiki.reader/volume_keys";
     private static final String SAF_CHANNEL = "app.hibiki.reader/saf";
     private static final String TTS_CHANNEL = "app.hibiki.reader/tts";
+    private static final String UPDATE_CHANNEL = "app.hibiki.reader/update";
     private static final int AD_PERM_REQUEST = 0;
     private static final int SAF_PICK_DIR_REQUEST = 1001;
 
@@ -396,6 +397,34 @@ public class MainActivity extends AudioServiceActivity {
                     }
                     default:
                         result.notImplemented();
+                }
+            });
+
+        new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), UPDATE_CHANNEL)
+            .setMethodCallHandler((call, result) -> {
+                if ("installApk".equals(call.method)) {
+                    String path = call.argument("path");
+                    if (path == null || path.isEmpty()) {
+                        result.error("INVALID_PATH", "APK path is null", null);
+                        return;
+                    }
+                    try {
+                        File apkFile = new File(path);
+                        Uri apkUri = FileProvider.getUriForFile(
+                                context,
+                                BuildConfig.APPLICATION_ID + ".provider",
+                                apkFile);
+                        Intent intent = new Intent(Intent.ACTION_VIEW);
+                        intent.setDataAndType(apkUri, "application/vnd.android.package-archive");
+                        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        context.startActivity(intent);
+                        result.success(true);
+                    } catch (Exception e) {
+                        result.error("INSTALL_ERROR", e.getMessage(), null);
+                    }
+                } else {
+                    result.notImplemented();
                 }
             });
     }

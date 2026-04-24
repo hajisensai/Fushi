@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
@@ -31,7 +33,13 @@ class ErrorLogPage extends StatelessWidget {
             icon: const Icon(Icons.share),
             tooltip: t.share,
             onPressed: () {
-              Share.share(log, subject: t.error_log_share_subject);
+              final bytes = Uint8List.fromList(utf8.encode(log));
+              final xFile = XFile.fromData(
+                bytes,
+                name: 'hibiki_error_log.txt',
+                mimeType: 'text/plain',
+              );
+              Share.shareXFiles([xFile], subject: t.error_log_share_subject);
             },
           ),
           IconButton(

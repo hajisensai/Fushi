@@ -42,7 +42,7 @@ class DictionaryPopupWebViewState extends State<DictionaryPopupWebView> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     _controller!.evaluateJavascript(source: '''
-      document.documentElement.style.colorScheme = '${isDark ? 'dark' : 'light'}';
+      document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
       window.lookupEntries = $entriesJson;
       window.dictionaryStyles = $stylesJson;
       window.renderPopup();

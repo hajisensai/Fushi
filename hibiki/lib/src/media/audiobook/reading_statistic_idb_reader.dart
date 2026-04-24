@@ -58,6 +58,8 @@ class ReadingStatisticIdbReader {
       initialSettings: InAppWebViewSettings(
         allowFileAccessFromFileURLs: true,
         allowUniversalAccessFromFileURLs: true,
+        databaseEnabled: true,
+        domStorageEnabled: true,
       ),
       onLoadStop: (controller, url) async {
         if (jsDispatched) return;

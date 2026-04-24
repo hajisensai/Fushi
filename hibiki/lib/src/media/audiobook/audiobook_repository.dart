@@ -84,6 +84,7 @@ class AudiobookRepository {
   static const String _kFollowAudioKeyPrefix = 'audiobook_follow_';
   static const String _kDelayMsKeyPrefix = 'audiobook_delay_';
   static const String _kSpeedKeyPrefix = 'audiobook_speed_';
+  static const String _kImagePauseSecKeyPrefix = 'audiobook_image_pause_';
   static const String _kHealthOverlayKeyPrefix = 'audiobook_health_overlay_';
 
   Future<bool> readFollowAudio(String bookUid) async {
@@ -118,6 +119,19 @@ class AudiobookRepository {
     required double speed,
   }) =>
       _db.setPref('$_kSpeedKeyPrefix$bookUid', speed.toString());
+
+  // ── image pause ─────────────────────────────────────────────────
+
+  Future<int> readImagePauseSec(String bookUid) async {
+    return await _db.getPrefTyped(
+        '$_kImagePauseSecKeyPrefix$bookUid', 0);
+  }
+
+  Future<void> updateImagePauseSec({
+    required String bookUid,
+    required int sec,
+  }) =>
+      _db.setPrefTyped('$_kImagePauseSecKeyPrefix$bookUid', sec);
 
   // ── health overlay ──────────────────────────────────────────────
 

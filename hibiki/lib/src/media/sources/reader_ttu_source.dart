@@ -241,6 +241,10 @@ class ReaderTtuSource extends ReaderMediaSource {
 
     bool jsInjected = false;
     HeadlessInAppWebView webView = HeadlessInAppWebView(
+      initialSettings: InAppWebViewSettings(
+        databaseEnabled: true,
+        domStorageEnabled: true,
+      ),
       initialUrlRequest: URLRequest(
         url: WebUri('http://localhost:$port/_hibiki_idb.html'),
       ),
@@ -346,6 +350,10 @@ class ReaderTtuSource extends ReaderMediaSource {
 
     bool jsInjected = false;
     final HeadlessInAppWebView webView = HeadlessInAppWebView(
+      initialSettings: InAppWebViewSettings(
+        databaseEnabled: true,
+        domStorageEnabled: true,
+      ),
       initialUrlRequest: URLRequest(
         url: WebUri('http://localhost:$port/_hibiki_idb.html'),
       ),
@@ -766,7 +774,7 @@ indexedDB.databases().then(async (databases) => {
             var database = event.target.result;
 
             try {
-              var transaction = database.transaction([storeName], 'readwrite');
+              var transaction = database.transaction([storeName], 'readonly');
               var objectStore;
               try {
                 objectStore = transaction.objectStore(storeName);
@@ -862,7 +870,7 @@ indexedDB.databases().then(async (databases) => {
             var database = event.target.result;
 
             try {
-              var transaction = database.transaction([storeName], 'readwrite');
+              var transaction = database.transaction([storeName], 'readonly');
               var objectStore;
               try {
                 objectStore = transaction.objectStore(storeName);

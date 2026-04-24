@@ -1776,7 +1776,6 @@ class AppModel with ChangeNotifier {
 
         progressNotifier.value = t.import_complete;
         onImportSuccess();
-        await Future.delayed(const Duration(seconds: 1), () {});
       } finally {
         if (tempZip.existsSync()) tempZip.deleteSync();
       }
@@ -1895,7 +1894,6 @@ class AppModel with ChangeNotifier {
 
       progressNotifier.value = t.import_complete;
       onImportSuccess();
-      await Future.delayed(const Duration(seconds: 1), () {});
     } catch (e, stack) {
       ErrorLogService.instance.log('DictionaryImport(file)', e, stack);
       progressNotifier.value = '$e';

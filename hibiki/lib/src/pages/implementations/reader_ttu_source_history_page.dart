@@ -14,6 +14,7 @@ import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_model.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
+import 'package:hibiki/src/pages/implementations/illustrations_viewer_page.dart';
 import 'package:hibiki/utils.dart';
 
 /// A page for [ReaderTtuSource]'s tab body content when selected as a source
@@ -549,6 +550,10 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
         onPressed: () => _confirmDeleteEpub(item, ttuBookId),
       ),
       TextButton(
+        onPressed: () => _openIllustrations(item, ttuBookId),
+        child: Text(t.view_illustrations),
+      ),
+      TextButton(
         onPressed: () => _openAudiobookImport(item, ttuBookId),
         child: Text(t.audiobook_import),
       ),
@@ -616,6 +621,22 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
       return null;
     }
     return int.tryParse(m.group(1)!);
+  }
+
+  void _openIllustrations(MediaItem item, int ttuBookId) {
+    final int port = ReaderTtuSource.instance
+        .getPortForLanguage(appModel.targetLanguage);
+    Navigator.pop(context);
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => IllustrationsViewerPage(
+          bookTitle: item.title,
+          ttuBookId: ttuBookId,
+          port: port,
+        ),
+      ),
+    );
   }
 
   Future<void> _openAudiobookImport(MediaItem item, int ttuBookId) async {
