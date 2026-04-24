@@ -4,20 +4,19 @@ import 'dart:io';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:hibiki/utils.dart';
 
-/// GitHub repository owner/name used for update checks.
-/// Change this if the repository is moved.
 const String _kGitHubRepo = 'hdjsadgfwtg/hibiki';
+const _kUpdateChannel = MethodChannel('app.hibiki.reader/update');
 
-/// Checks for new releases on GitHub and prompts the user to download.
 class UpdateChecker {
   UpdateChecker._();
 
-  /// Fire-and-forget: schedule an update check after the first frame.
   static void scheduleCheck(BuildContext context, String currentVersion) {
     SchedulerBinding.instance.addPostFrameCallback((_) {
       _check(context, currentVersion);
@@ -59,7 +58,6 @@ class UpdateChecker {
 
       final releaseBody = json['body'] as String? ?? '';
 
-      // Find the APK asset that matches the device's ABI.
       String? apkUrl;
       String? fallbackApkUrl;
       final assets = json['assets'] as List<dynamic>? ?? [];
@@ -70,7 +68,6 @@ class UpdateChecker {
         supportedAbis = androidInfo.supportedAbis;
       } catch (_) {}
 
-      // ABI tag as it appears in split APK filenames (e.g. arm64-v8a).
       final abiTags = supportedAbis
           .map((abi) => abi.replaceAll('_', '-'))
           .toList();
@@ -82,18 +79,20 @@ class UpdateChecker {
         final url = assetMap['browser_download_url'] as String?;
         if (url == null) continue;
 
-        // Prefer ABI-specific APK matching this device.
         if (abiTags.any((abi) => name.contains(abi))) {
           apkUrl = url;
           break;
         }
-        // Keep first APK as fallback (could be a universal/fat build).
         fallbackApkUrl ??= url;
       }
       apkUrl ??= fallbackApkUrl;
-      // Fallback to the release HTML page if no APK asset found.
-      apkUrl ??= json['html_url'] as String?;
+
+      // No APK asset — fall back to opening release page in browser.
       if (apkUrl == null) {
+        final htmlUrl = json['html_url'] as String?;
+        if (htmlUrl != null && context.mounted) {
+          _showFallbackDialog(context, tagName, releaseBody, htmlUrl);
+        }
         return;
       }
 
@@ -102,15 +101,10 @@ class UpdateChecker {
       }
 
       _showUpdateDialog(context, tagName, releaseBody, apkUrl);
-    } catch (_) {
-      // Network / parse errors — silently ignore.
-    }
+    } catch (_) {}
   }
 
-  /// Compare two semver-ish version strings.
-  /// Returns true when [remote] is strictly newer than [local].
   static bool _isNewer(String remote, String local) {
-    // Strip everything after '+' (build metadata).
     final r = remote.split('+').first.split('.').map(_parseInt).toList();
     final l = local.split('+').first.split('.').map(_parseInt).toList();
 
@@ -118,12 +112,8 @@ class UpdateChecker {
     for (int i = 0; i < len; i++) {
       final rv = i < r.length ? r[i] : 0;
       final lv = i < l.length ? l[i] : 0;
-      if (rv > lv) {
-        return true;
-      }
-      if (rv < lv) {
-        return false;
-      }
+      if (rv > lv) return true;
+      if (rv < lv) return false;
     }
     return false;
   }
@@ -176,14 +166,200 @@ class UpdateChecker {
           TextButton(
             onPressed: () {
               Navigator.of(ctx).pop();
+              _downloadAndInstall(context, downloadUrl, version);
+            },
+            child: Text(t.update_download),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Fallback dialog for when no APK asset exists — opens browser.
+  static void _showFallbackDialog(
+    BuildContext context,
+    String version,
+    String releaseNotes,
+    String htmlUrl,
+  ) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(t.update_available),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(t.update_message(version: version)),
+              if (releaseNotes.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                MarkdownBody(
+                  data: releaseNotes,
+                  selectable: true,
+                  onTapLink: (_, href, __) {
+                    if (href != null) {
+                      launchUrl(
+                        Uri.parse(href),
+                        mode: LaunchMode.externalApplication,
+                      );
+                    }
+                  },
+                  styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(ctx))
+                      .copyWith(
+                    p: Theme.of(ctx).textTheme.bodySmall,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(t.update_skip),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
               launchUrl(
-                Uri.parse(downloadUrl),
+                Uri.parse(htmlUrl),
                 mode: LaunchMode.externalApplication,
               );
             },
             child: Text(t.update_download),
           ),
         ],
+      ),
+    );
+  }
+
+  static Future<void> _downloadAndInstall(
+    BuildContext context,
+    String url,
+    String version,
+  ) async {
+    final progress = ValueNotifier<double>(0);
+    final status = ValueNotifier<String>(t.update_downloading);
+
+    final overlay = OverlayEntry(
+      builder: (ctx) => _DownloadOverlay(
+        progress: progress,
+        status: status,
+      ),
+    );
+
+    final overlayState = Overlay.of(context);
+    overlayState.insert(overlay);
+
+    try {
+      final cacheDir = await getTemporaryDirectory();
+      final apkFile = File('${cacheDir.path}/hibiki-$version.apk');
+
+      final client = HttpClient();
+      client.connectionTimeout = const Duration(seconds: 15);
+      final request = await client.getUrl(Uri.parse(url));
+      final response = await request.close();
+
+      if (response.statusCode == 302 || response.statusCode == 301) {
+        await response.drain<void>();
+        final redirectRequest =
+            await client.getUrl(Uri.parse(response.headers.value('location')!));
+        final redirectResponse = await redirectRequest.close();
+        await _writeResponse(redirectResponse, apkFile, progress);
+      } else if (response.statusCode == 200) {
+        await _writeResponse(response, apkFile, progress);
+      } else {
+        await response.drain<void>();
+        throw Exception('HTTP ${response.statusCode}');
+      }
+
+      status.value = t.update_installing;
+
+      await _kUpdateChannel.invokeMethod('installApk', {
+        'path': apkFile.path,
+      });
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${t.update_download_failed}: $e')),
+        );
+      }
+    } finally {
+      overlay.remove();
+      progress.dispose();
+      status.dispose();
+    }
+  }
+
+  static Future<void> _writeResponse(
+    HttpClientResponse response,
+    File file,
+    ValueNotifier<double> progress,
+  ) async {
+    final contentLength = response.contentLength;
+    int received = 0;
+    final sink = file.openWrite();
+
+    await for (final chunk in response) {
+      sink.add(chunk);
+      received += chunk.length;
+      if (contentLength > 0) {
+        progress.value = received / contentLength;
+      }
+    }
+
+    await sink.flush();
+    await sink.close();
+  }
+}
+
+class _DownloadOverlay extends StatelessWidget {
+  final ValueNotifier<double> progress;
+  final ValueNotifier<String> status;
+
+  const _DownloadOverlay({
+    required this.progress,
+    required this.status,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned.fill(
+      child: Material(
+        color: Colors.black54,
+        child: Center(
+          child: Card(
+            margin: const EdgeInsets.symmetric(horizontal: 48),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ValueListenableBuilder<String>(
+                    valueListenable: status,
+                    builder: (_, s, __) => Text(
+                      s,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  ValueListenableBuilder<double>(
+                    valueListenable: progress,
+                    builder: (_, p, __) => Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        LinearProgressIndicator(value: p > 0 ? p : null),
+                        const SizedBox(height: 8),
+                        Text('${(p * 100).toStringAsFixed(0)}%'),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
