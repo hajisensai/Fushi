@@ -577,6 +577,7 @@
     "custom_fonts_add_system": "Add System Font",
     "custom_fonts_import_file": "Import Font File",
     "custom_fonts_system_hint": "Enter system font name",
+    "custom_fonts_search_hint": "Search fonts",
     "custom_fonts_name_empty": "Font name cannot be empty",
     "custom_fonts_imported": "Font imported: $name",
     "custom_fonts_removed": "Font removed",

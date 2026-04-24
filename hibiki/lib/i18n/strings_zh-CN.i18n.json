@@ -551,6 +551,7 @@
     "custom_fonts_add_system": "添加系统字体",
     "custom_fonts_import_file": "导入字体文件",
     "custom_fonts_system_hint": "输入系统字体名称",
+    "custom_fonts_search_hint": "搜索字体",
     "custom_fonts_name_empty": "字体名称不能为空",
     "custom_fonts_imported": "已导入字体：$name",
     "custom_fonts_removed": "已移除字体",
