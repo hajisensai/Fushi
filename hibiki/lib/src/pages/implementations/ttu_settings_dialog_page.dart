@@ -203,6 +203,33 @@ List<Widget> _buildReaderOnlySwitches(VoidCallback rebuild) {
         rebuild();
       },
     ),
+    _buildSwitch(
+      label: t.auto_read_on_lookup,
+      value: _source.autoReadOnLookup,
+      onChanged: (_) { _source.toggleAutoReadOnLookup(); rebuild(); },
+    ),
+    Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(child: Text(t.dismiss_swipe_sensitivity)),
+          SizedBox(
+            width: 140,
+            child: Slider(
+              value: _source.dismissSwipeSensitivity,
+              min: 0.1,
+              max: 1.0,
+              divisions: 9,
+              label: _source.dismissSwipeSensitivity.toStringAsFixed(1),
+              onChanged: (v) {
+                _source.setDismissSwipeSensitivity(v);
+                rebuild();
+              },
+            ),
+          ),
+        ],
+      ),
+    ),
   ];
 }
 

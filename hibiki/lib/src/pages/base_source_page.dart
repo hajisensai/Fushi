@@ -173,6 +173,16 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
       appModel.addToDictionaryHistory(result: dictionaryResult);
       _showMore = dictionaryResult.entries.length < overrideMaximumTerms;
       _dictionaryResultNotifier.value = dictionaryResult;
+
+      // Auto-read the looked-up word via TTS if enabled.
+      if (ReaderTtuSource.instance.autoReadOnLookup &&
+          dictionaryResult.entries.isNotEmpty) {
+        final entry = dictionaryResult.entries.first;
+        final word = entry.reading.isNotEmpty ? entry.reading : entry.word;
+        if (word.isNotEmpty) {
+          TtsChannel.instance.speak(word);
+        }
+      }
     } finally {
       _isSearchingNotifier.value = false;
     }
@@ -288,6 +298,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
 
     return _SwipeDismissWrapper(
       onDismiss: clearDictionaryResult,
+      sensitivity: ReaderTtuSource.instance.dismissSwipeSensitivity,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(8),
         child: BackdropFilter(
@@ -494,9 +505,15 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
 }
 
 class _SwipeDismissWrapper extends StatefulWidget {
-  const _SwipeDismissWrapper({required this.child, required this.onDismiss});
+  const _SwipeDismissWrapper({
+    required this.child,
+    required this.onDismiss,
+    this.sensitivity = 0.3,
+  });
   final Widget child;
   final VoidCallback onDismiss;
+  /// 0.1 (hard to dismiss) ~ 1.0 (easy). Maps to threshold & decision distance.
+  final double sensitivity;
 
   @override
   State<_SwipeDismissWrapper> createState() => _SwipeDismissWrapperState();
@@ -507,8 +524,11 @@ class _SwipeDismissWrapperState extends State<_SwipeDismissWrapper> {
   double _dragY = 0;
   bool _decided = false;
   bool _isHorizontal = false;
-  static const double _threshold = 90;
-  static const double _decisionDistance = 18;
+
+  /// Threshold scales inversely with sensitivity: low sensitivity = high threshold.
+  double get _threshold => 30 + (1.0 - widget.sensitivity) * 160;
+  /// Decision distance also scales inversely.
+  double get _decisionDistance => 10 + (1.0 - widget.sensitivity) * 20;
 
   void _reset() {
     setState(() {

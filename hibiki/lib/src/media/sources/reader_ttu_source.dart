@@ -557,6 +557,39 @@ new Promise(function(resolve) {
     );
   }
 
+  /// Whether to auto-read the looked-up word via TTS.
+  bool get autoReadOnLookup {
+    return getPreference<bool>(
+      key: 'auto_read_on_lookup',
+      defaultValue: true,
+    );
+  }
+
+  /// Toggles the auto-read on lookup preference.
+  void toggleAutoReadOnLookup() async {
+    await setPreference<bool>(
+      key: 'auto_read_on_lookup',
+      value: !autoReadOnLookup,
+    );
+  }
+
+  /// Swipe dismiss sensitivity for the dictionary popup (0.1 ~ 1.0).
+  /// Higher = easier to dismiss, lower = harder.
+  double get dismissSwipeSensitivity {
+    return getPreference<double>(
+      key: 'dismiss_swipe_sensitivity',
+      defaultValue: 0.3,
+    );
+  }
+
+  /// Sets the swipe dismiss sensitivity.
+  Future<void> setDismissSwipeSensitivity(double value) async {
+    await setPreference<double>(
+      key: 'dismiss_swipe_sensitivity',
+      value: value,
+    );
+  }
+
   /// Whether the reader will highlight words on tap.
   bool get highlightOnTap {
     return getPreference<bool>(

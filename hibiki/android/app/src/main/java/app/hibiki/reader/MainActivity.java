@@ -14,6 +14,9 @@ import android.net.Uri;
 import io.flutter.embedding.engine.FlutterEngine;
 import io.flutter.plugin.common.MethodChannel;
 
+import android.speech.tts.TextToSpeech;
+import java.util.Locale;
+
 import com.ichi2.anki.FlashCardsContract;
 import com.ichi2.anki.api.AddContentApi;
 import android.content.ContentValues;
@@ -45,6 +48,7 @@ public class MainActivity extends AudioServiceActivity {
     private static final String ANKIDROID_CHANNEL = "app.hibiki.reader/anki";
     private static final String VOLUME_KEY_CHANNEL = "app.hibiki.reader/volume_keys";
     private static final String SAF_CHANNEL = "app.hibiki.reader/saf";
+    private static final String TTS_CHANNEL = "app.hibiki.reader/tts";
     private static final int AD_PERM_REQUEST = 0;
     private static final int SAF_PICK_DIR_REQUEST = 1001;
 
@@ -52,6 +56,8 @@ public class MainActivity extends AudioServiceActivity {
     private AnkiDroidHelper mAnkiDroid;
     private MethodChannel.Result pendingSafResult;
     private String pendingSafDestPath;
+    private TextToSpeech tts;
+    private boolean ttsReady = false;
 
     // Reader opens this gate when volume-key page turning is enabled so
     // dispatchKeyEvent swallows VOLUME_UP/DOWN and forwards them to Dart.
@@ -66,6 +72,14 @@ public class MainActivity extends AudioServiceActivity {
         context = MainActivity.this;
         // Create the example data
         mAnkiDroid = new AnkiDroidHelper(context);
+
+        tts = new TextToSpeech(context, status -> {
+            if (status == TextToSpeech.SUCCESS) {
+                int langResult = tts.setLanguage(Locale.JAPAN);
+                ttsReady = (langResult != TextToSpeech.LANG_MISSING_DATA
+                        && langResult != TextToSpeech.LANG_NOT_SUPPORTED);
+            }
+        });
     }
     
 
@@ -343,6 +357,41 @@ public class MainActivity extends AudioServiceActivity {
                         pendingSafDestPath = destPath;
                         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
                         startActivityForResult(intent, SAF_PICK_DIR_REQUEST);
+                        break;
+                    }
+                    default:
+                        result.notImplemented();
+                }
+            });
+
+        new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), TTS_CHANNEL)
+            .setMethodCallHandler((call, result) -> {
+                switch (call.method) {
+                    case "speak": {
+                        String text = call.argument("text");
+                        String locale = call.argument("locale");
+                        if (text == null || text.isEmpty()) {
+                            result.success(false);
+                            return;
+                        }
+                        if (!ttsReady) {
+                            result.success(false);
+                            return;
+                        }
+                        if (locale != null && !locale.isEmpty()) {
+                            String[] parts = locale.split("-");
+                            Locale loc = parts.length >= 2
+                                    ? new Locale(parts[0], parts[1])
+                                    : new Locale(parts[0]);
+                            tts.setLanguage(loc);
+                        }
+                        tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "hibiki_lookup");
+                        result.success(true);
+                        break;
+                    }
+                    case "stop": {
+                        if (ttsReady) tts.stop();
+                        result.success(true);
                         break;
                     }
                     default:
