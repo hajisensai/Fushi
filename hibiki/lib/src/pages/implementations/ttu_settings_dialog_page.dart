@@ -350,6 +350,25 @@ Widget _buildPageTurningSpeed({
   );
 }
 
+/// Font management entry — opens the [CustomFontsPage].
+Widget _buildFontEntry(BuildContext context) {
+  final fonts = _source.customFonts;
+  final enabledCount = fonts.where((e) => e['enabled'] as bool? ?? true).length;
+  return _buildTapRow(
+    context: context,
+    icon: Icons.font_download,
+    label: enabledCount > 0
+        ? '${t.custom_fonts} ($enabledCount)'
+        : t.custom_fonts,
+    onTap: () {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const CustomFontsPage()),
+      );
+    },
+  );
+}
+
 /// Theme selector (6 presets + custom) — calls [AppModel.setAppThemeKey].
 Widget _buildThemeSelector(AppModel appModel, {BuildContext? navContext}) {
   return Column(
@@ -461,6 +480,8 @@ class _TtuSettingsDialogPageState extends BasePageState {
             children: [
               _buildThemeSelector(appModel, navContext: context),
               const Space.small(),
+              _buildFontEntry(context),
+              const Space.small(),
               const JidoujishoDivider(),
               const Space.small(),
               _buildDisplaySettings(() => setState(() {})),
@@ -507,6 +528,8 @@ class _TtuSettingsDialogContentState extends BasePageState {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       children: [
         _buildThemeSelector(appModel, navContext: context),
+        const Space.small(),
+        _buildFontEntry(context),
         const Space.small(),
         const JidoujishoDivider(),
         const Space.small(),

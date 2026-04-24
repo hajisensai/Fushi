@@ -712,11 +712,98 @@ new Promise(function(resolve) {
   Future<void> setTtuFuriganaStyle(String v) =>
       setPreference<String>(key: 'ttu_furigana_style', value: v);
 
+  // ── 自定义字体列表 ────────────────────────────────────────────────────
+  // 每条记录: { "name": "...", "path": "..." (null=系统字体), "enabled": true }
+  // path 为 null 表示系统字体（仅凭名称加入 font-family）。
+  // 列表顺序即 font-family fallback 优先级。
+
+  List<Map<String, dynamic>> get customFonts {
+    final raw = getPreference<String>(key: 'custom_fonts', defaultValue: '[]');
+    try {
+      return (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<void> setCustomFonts(List<Map<String, dynamic>> fonts) =>
+      setPreference<String>(key: 'custom_fonts', value: jsonEncode(fonts));
+
+  Future<void> addCustomFont({
+    required String name,
+    String? path,
+  }) async {
+    final list = customFonts;
+    list.add({'name': name, 'path': path, 'enabled': true});
+    await setCustomFonts(list);
+  }
+
+  Future<void> removeCustomFont(int index) async {
+    final list = customFonts;
+    if (index < 0 || index >= list.length) return;
+    final entry = list.removeAt(index);
+    final filePath = entry['path'] as String?;
+    if (filePath != null) {
+      try {
+        final f = File(filePath);
+        if (await f.exists()) await f.delete();
+      } catch (_) {}
+    }
+    await setCustomFonts(list);
+  }
+
+  Future<void> toggleCustomFont(int index) async {
+    final list = customFonts;
+    if (index < 0 || index >= list.length) return;
+    list[index]['enabled'] = !(list[index]['enabled'] as bool? ?? true);
+    await setCustomFonts(list);
+  }
+
+  Future<void> reorderCustomFonts(int oldIndex, int newIndex) async {
+    final list = customFonts;
+    if (newIndex > oldIndex) newIndex--;
+    final item = list.removeAt(oldIndex);
+    list.insert(newIndex, item);
+    await setCustomFonts(list);
+  }
+
+  /// 生成自定义字体的 CSS font-family 值（仅启用的）和 @font-face 声明。
+  ({String fontFamily, String fontFaces}) buildCustomFontCss() {
+    final enabled = customFonts.where(
+        (e) => e['enabled'] as bool? ?? true);
+    final families = <String>[];
+    final faces = <String>[];
+    for (final e in enabled) {
+      final name = e['name'] as String;
+      families.add(name);
+      final path = e['path'] as String?;
+      if (path != null) {
+        final uri = Uri.file(path).toString();
+        faces.add(
+          '@font-face { font-family: "$name"; src: url("$uri"); '
+          'font-display: swap; }',
+        );
+      }
+    }
+    return (
+      fontFamily: families.join(', '),
+      fontFaces: faces.join('\n'),
+    );
+  }
+
   /// 在 WebView 加载后将 Hive 偏好写入 ttu localStorage。
   Future<void> applyReaderSettings(
     InAppWebViewController controller, {
     required String appThemeKey,
   }) async {
+    final fontCss = buildCustomFontCss();
+    final hasCustomFonts = fontCss.fontFamily.isNotEmpty;
+    final fontFamilyOne = hasCustomFonts
+        ? '${fontCss.fontFamily}, Noto Serif JP'
+        : 'Noto Serif JP';
+    final fontFamilyTwo = hasCustomFonts
+        ? '${fontCss.fontFamily}, Noto Sans JP'
+        : 'Noto Sans JP';
     final List<String> cmds = [
       'window.localStorage.setItem("fontSize",${ttuFontSize})',
       'window.localStorage.setItem("lineHeight",${ttuLineHeight})',
@@ -734,7 +821,23 @@ new Promise(function(resolve) {
       'window.localStorage.setItem("enableTextJustification","$ttuEnableTextJustification")',
       'window.localStorage.setItem("prioritizeReaderStyles","$ttuPrioritizeReaderStyles")',
       'window.localStorage.setItem("furiganaStyle","$ttuFuriganaStyle")',
+      'window.localStorage.setItem("fontFamilyGroupOne","$fontFamilyOne")',
+      'window.localStorage.setItem("fontFamilyGroupTwo","$fontFamilyTwo")',
     ];
+    if (hasCustomFonts) {
+      final escapedFaces = fontCss.fontFaces
+          .replaceAll('\\', '\\\\')
+          .replaceAll("'", "\\'")
+          .replaceAll('\n', ' ');
+      cmds.add(
+        '(function(){'
+        'var s=document.getElementById("hibiki-custom-fonts");'
+        'if(!s){s=document.createElement("style");s.id="hibiki-custom-fonts";'
+        'document.head.appendChild(s)}'
+        "s.textContent='$escapedFaces'"
+        '})()',
+      );
+    }
     await controller.evaluateJavascript(source: cmds.join(';'));
   }
 

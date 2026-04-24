@@ -576,7 +576,15 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
 
   String _buildApplySettingsJs() {
     final ReaderTtuSource src = ReaderTtuSource.instance;
-    return [
+    final fontCss = src.buildCustomFontCss();
+    final hasCustomFonts = fontCss.fontFamily.isNotEmpty;
+    final fontFamilyOne = hasCustomFonts
+        ? '${fontCss.fontFamily}, Noto Serif JP'
+        : 'Noto Serif JP';
+    final fontFamilyTwo = hasCustomFonts
+        ? '${fontCss.fontFamily}, Noto Sans JP'
+        : 'Noto Sans JP';
+    final cmds = [
       'window.localStorage.setItem("fontSize",${src.ttuFontSize})',
       'window.localStorage.setItem("lineHeight",${src.ttuLineHeight})',
       'window.localStorage.setItem("writingMode","${src.ttuWritingMode}")',
@@ -585,7 +593,16 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       'window.localStorage.setItem("hideFurigana","${src.ttuHideFurigana}")',
       'window.localStorage.setItem("statisticsEnabled","true")',
       'window.localStorage.setItem("trackerAutoStartTime","5")',
-    ].join(';');
+      'window.localStorage.setItem("fontFamilyGroupOne","$fontFamilyOne")',
+      'window.localStorage.setItem("fontFamilyGroupTwo","$fontFamilyTwo")',
+    ];
+    return cmds.join(';');
+  }
+
+  String _buildCustomFontFaceCss() {
+    final fontCss = ReaderTtuSource.instance.buildCustomFontCss();
+    if (fontCss.fontFaces.isEmpty) return '';
+    return fontCss.fontFaces;
   }
 
   Widget buildReaderArea(LocalAssetsServer server) {
@@ -606,6 +623,16 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
           source: _buildApplySettingsJs(),
           injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
         ),
+        if (_buildCustomFontFaceCss().isNotEmpty)
+          UserScript(
+            source: '(function(){'
+                'var s=document.createElement("style");'
+                's.id="hibiki-custom-fonts";'
+                "s.textContent='${_buildCustomFontFaceCss().replaceAll('\\', '\\\\').replaceAll("'", "\\'").replaceAll('\n', ' ')}';"
+                'document.addEventListener("DOMContentLoaded",function(){'
+                'document.head.appendChild(s)});})()',
+            injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+          ),
       ]),
       onPermissionRequest: (controller, origin) async {
         return PermissionResponse(
