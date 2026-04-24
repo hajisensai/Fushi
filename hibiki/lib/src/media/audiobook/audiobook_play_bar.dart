@@ -54,6 +54,17 @@ class AudiobookPlayBar extends StatelessWidget {
               tooltip: t.next_sentence,
             ),
             const SizedBox(width: 4),
+            // 字幕句号进度指示器（当前句 / 总句数）
+            if (controller.chapterCueCount > 0)
+              Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: Text(
+                  '${controller.currentCueIdx >= 0 ? controller.currentCueIdx + 1 : '-'}/${controller.chapterCueCount}',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
             Expanded(
               child: Text(
                 controller.currentCue?.text ?? '',
@@ -256,6 +267,15 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
     } else {
       pageLabel = '';
     }
+    // 字幕句子进度
+    final String cueLabel;
+    final AudiobookPlayerController? ctrl = widget.controller;
+    if (ctrl != null && ctrl.chapterCueCount > 0) {
+      final int idx1 = ctrl.currentCueIdx >= 0 ? ctrl.currentCueIdx + 1 : 0;
+      cueLabel = t.cue_progress(current: idx1, total: ctrl.chapterCueCount);
+    } else {
+      cueLabel = '';
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -265,6 +285,10 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         if (pageLabel.isNotEmpty) ...[
           const SizedBox(height: 4),
           Text(pageLabel, style: theme.textTheme.bodyMedium),
+        ],
+        if (cueLabel.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(cueLabel, style: theme.textTheme.bodyMedium),
         ],
       ],
     );

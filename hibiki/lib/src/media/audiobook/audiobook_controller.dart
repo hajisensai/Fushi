@@ -44,6 +44,12 @@ class AudiobookPlayerController extends ChangeNotifier {
   AudioCue? _currentCue;
   int _currentCueIndex = -1;
 
+  /// 当前章节 cue 列表长度（UI 用于 "第 x / n 句" 进度显示）。
+  int get chapterCueCount => _chapterCues.length;
+
+  /// 当前 cue 在章节 cue 列表中的 0-based 索引（-1 = 未定位）。
+  int get currentCueIdx => _currentCueIndex;
+
   // ── PR8b: Follow audio ────────────────────────────────────────────────────
 
   /// 持久化后的 Follow audio 开关。UI 监听这个 ValueNotifier 切换磁铁图标。
