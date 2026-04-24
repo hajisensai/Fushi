@@ -83,23 +83,31 @@ class _HomePageState extends BasePageState<HomePage>
         resizeToAvoidBottomInset: false,
         appBar: buildAppBar(),
         body: SafeArea(child: buildBody()),
-        bottomNavigationBar: NavigationBar(
-          selectedIndex: _currentTab,
-          onDestinationSelected: (i) => setState(() => _currentTab = i),
-          destinations: [
-            NavigationDestination(
-              icon: const Icon(Icons.menu_book),
-              label: t.books,
-            ),
-            NavigationDestination(
-              icon: const Icon(Icons.search),
-              label: t.dictionaries,
-            ),
-            NavigationDestination(
-              icon: const Icon(Icons.tune),
-              label: t.settings,
-            ),
-          ],
+        bottomNavigationBar: Builder(
+          builder: (context) {
+            debugPrint('[hibiki-nav] building NavigationBar, _currentTab=$_currentTab');
+            return NavigationBar(
+              selectedIndex: _currentTab,
+              onDestinationSelected: (i) {
+                debugPrint('[hibiki-nav] tab tapped: $i');
+                setState(() => _currentTab = i);
+              },
+              destinations: [
+                NavigationDestination(
+                  icon: const Icon(Icons.menu_book),
+                  label: t.books,
+                ),
+                NavigationDestination(
+                  icon: const Icon(Icons.search),
+                  label: t.dictionaries,
+                ),
+                NavigationDestination(
+                  icon: const Icon(Icons.tune),
+                  label: t.settings,
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -187,7 +195,10 @@ class _HomePageState extends BasePageState<HomePage>
       tooltip: t.reading_statistics,
       icon: Icons.bar_chart,
       onTap: () {
-        // TODO: implement reading statistics page
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const ReadingStatisticsPage()),
+        );
       },
     );
   }
