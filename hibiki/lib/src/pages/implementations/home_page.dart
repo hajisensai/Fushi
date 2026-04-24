@@ -40,7 +40,6 @@ class _HomePageState extends BasePageState<HomePage>
         appModel.setFirstTimeSetupFlag();
       }
 
-      // Fire-and-forget update check after startup completes.
       if (mounted) {
         UpdateChecker.scheduleCheck(context, appVersion);
       }
@@ -83,31 +82,20 @@ class _HomePageState extends BasePageState<HomePage>
         resizeToAvoidBottomInset: false,
         appBar: buildAppBar(),
         body: SafeArea(child: buildBody()),
-        bottomNavigationBar: Builder(
-          builder: (context) {
-            debugPrint('[hibiki-nav] building NavigationBar, _currentTab=$_currentTab');
-            return NavigationBar(
-              selectedIndex: _currentTab,
-              onDestinationSelected: (i) {
-                debugPrint('[hibiki-nav] tab tapped: $i');
-                setState(() => _currentTab = i);
-              },
-              destinations: [
-                NavigationDestination(
-                  icon: const Icon(Icons.menu_book),
-                  label: t.books,
-                ),
-                NavigationDestination(
-                  icon: const Icon(Icons.search),
-                  label: t.dictionaries,
-                ),
-                NavigationDestination(
-                  icon: const Icon(Icons.tune),
-                  label: t.settings,
-                ),
-              ],
-            );
-          },
+        bottomNavigationBar: Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            border: Border(top: BorderSide(color: Theme.of(context).dividerColor, width: 0.5)),
+          ),
+          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewPadding.bottom),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildNavItem(0, Icons.menu_book, t.books),
+              _buildNavItem(1, Icons.search, t.dictionaries),
+              _buildNavItem(2, Icons.tune, t.settings),
+            ],
+          ),
         ),
       ),
     );
@@ -167,6 +155,29 @@ class _HomePageState extends BasePageState<HomePage>
       buildImportButton(),
       buildStatisticsButton(),
     ];
+  }
+
+  Widget _buildNavItem(int index, IconData icon, String label) {
+    final selected = _currentTab == index;
+    final color = selected
+        ? Theme.of(context).colorScheme.primary
+        : Theme.of(context).colorScheme.onSurfaceVariant;
+    return Expanded(
+      child: InkWell(
+        onTap: () => setState(() => _currentTab = index),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: color, size: 24),
+              const SizedBox(height: 4),
+              Text(label, style: textTheme.labelSmall?.copyWith(color: color)),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget buildImportButton() {
