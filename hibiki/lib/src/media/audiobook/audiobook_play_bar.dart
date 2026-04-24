@@ -154,11 +154,18 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
   static const List<double> _speeds = [0.75, 1.0, 1.25, 1.5];
 
   TtuReaderSettings? _settings;
+  final TextEditingController _cueJumpController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _loadSettings();
+  }
+
+  @override
+  void dispose() {
+    _cueJumpController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadSettings() async {
@@ -324,6 +331,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               width: 72,
               height: 36,
               child: TextField(
+                controller: _cueJumpController,
                 keyboardType: TextInputType.number,
                 textAlign: TextAlign.center,
                 decoration: InputDecoration(
@@ -344,9 +352,36 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               ),
             ),
             const SizedBox(width: 4),
-            Text(
-              '/ ${ctrl.chapterCueCount}',
-              style: theme.textTheme.bodyMedium,
+            SizedBox(
+              height: 36,
+              child: FilledButton.tonal(
+                onPressed: () {
+                  final int? n = int.tryParse(_cueJumpController.text);
+                  if (n != null && n >= 1 && n <= ctrl.chapterCueCount) {
+                    ctrl.skipToCueIndex(n - 1);
+                    setState(() {});
+                  }
+                },
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  visualDensity: VisualDensity.compact,
+                ),
+                child: const Icon(Icons.arrow_forward, size: 18),
+              ),
+            ),
+            const SizedBox(width: 8),
+            SizedBox(
+              height: 36,
+              child: FilledButton.tonal(
+                onPressed: () {
+                  ctrl.snapReaderToAudio();
+                },
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  visualDensity: VisualDensity.compact,
+                ),
+                child: Text(t.jump_to_current_page),
+              ),
             ),
           ],
         ),

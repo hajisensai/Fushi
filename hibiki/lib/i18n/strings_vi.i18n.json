@@ -499,6 +499,7 @@
     "cue_progress": "Câu $current / $total",
     "cue_navigation": "Điều hướng câu",
     "jump_to_cue": "Nhảy đến",
+    "jump_to_current_page": "Trang hiện tại",
     "cue_unit": " câu",
     "toc_section": "Mục lục ($n)",
     "untitled_chapter": "(Không có tiêu đề)",

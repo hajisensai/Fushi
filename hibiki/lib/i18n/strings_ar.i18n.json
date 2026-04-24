@@ -499,6 +499,7 @@
     "cue_progress": "جملة $current / $total",
     "cue_navigation": "التنقل بين الجمل",
     "jump_to_cue": "انتقل إلى",
+    "jump_to_current_page": "الصفحة الحالية",
     "cue_unit": " جملة",
     "toc_section": "جدول المحتويات ($n)",
     "untitled_chapter": "(بدون عنوان)",

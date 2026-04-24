@@ -499,6 +499,7 @@
     "cue_progress": "ประโยค $current / $total",
     "cue_navigation": "นำทางประโยค",
     "jump_to_cue": "ข้ามไปที่",
+    "jump_to_current_page": "หน้าปัจจุบัน",
     "cue_unit": " ประโยค",
     "toc_section": "สารบัญ ($n)",
     "untitled_chapter": "(ไม่มีชื่อ)",

@@ -499,6 +499,7 @@
     "cue_progress": "Oración $current / $total",
     "cue_navigation": "Navegación de oraciones",
     "jump_to_cue": "Ir a",
+    "jump_to_current_page": "Página actual",
     "cue_unit": " frase",
     "toc_section": "Índice ($n)",
     "untitled_chapter": "(Sin título)",

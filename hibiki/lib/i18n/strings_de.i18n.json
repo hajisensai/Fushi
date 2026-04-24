@@ -499,6 +499,7 @@
     "cue_progress": "Satz $current / $total",
     "cue_navigation": "Satznavigation",
     "jump_to_cue": "Springe zu",
+    "jump_to_current_page": "Aktuelle Seite",
     "cue_unit": " Satz",
     "toc_section": "Inhaltsverzeichnis ($n)",
     "untitled_chapter": "(Ohne Titel)",

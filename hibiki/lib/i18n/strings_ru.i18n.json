@@ -499,6 +499,7 @@
     "cue_progress": "Предложение $current / $total",
     "cue_navigation": "Навигация по предложениям",
     "jump_to_cue": "Перейти к",
+    "jump_to_current_page": "Текущая страница",
     "cue_unit": " предл.",
     "toc_section": "Оглавление ($n)",
     "untitled_chapter": "(Без названия)",

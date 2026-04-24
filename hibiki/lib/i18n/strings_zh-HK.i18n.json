@@ -499,6 +499,7 @@
     "cue_progress": "第 $current / $total 句",
     "cue_navigation": "字幕跳轉",
     "jump_to_cue": "跳轉到第",
+    "jump_to_current_page": "當前頁",
     "cue_unit": "句",
     "toc_section": "章節列表（$n）",
     "untitled_chapter": "（無標題）",

@@ -499,6 +499,7 @@
     "cue_progress": "Phrase $current / $total",
     "cue_navigation": "Navigation par phrase",
     "jump_to_cue": "Aller à",
+    "jump_to_current_page": "Page actuelle",
     "cue_unit": " phrase",
     "toc_section": "Table des matières ($n)",
     "untitled_chapter": "(Sans titre)",

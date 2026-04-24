@@ -499,6 +499,7 @@
     "cue_progress": "Kalimat $current / $total",
     "cue_navigation": "Navigasi Kalimat",
     "jump_to_cue": "Lompat ke",
+    "jump_to_current_page": "Halaman saat ini",
     "cue_unit": " kalimat",
     "toc_section": "Daftar Isi ($n)",
     "untitled_chapter": "(Tanpa Judul)",

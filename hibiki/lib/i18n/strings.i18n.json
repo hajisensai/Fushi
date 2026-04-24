@@ -525,6 +525,7 @@
     "cue_progress": "Sentence $current / $total",
     "cue_navigation": "Sentence Navigation",
     "jump_to_cue": "Jump to",
+    "jump_to_current_page": "Current page",
     "cue_unit": " sent.",
     "toc_section": "Table of Contents ($n)",
     "untitled_chapter": "(Untitled)",
