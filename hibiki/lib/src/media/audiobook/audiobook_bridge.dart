@@ -50,6 +50,7 @@ window.__hoshiAlignToRect = function(rect) {
                      rect.left === 0 && rect.top === 0;
   if (isDegenerate) return;
 
+  if (typeof window.__ttuGetPageInfo !== 'function') return;
   var info = window.__ttuGetPageInfo();
   if (!info || !info.stride || info.stride < 10) return;
   var content = document.querySelector('.book-content') ||
@@ -534,6 +535,7 @@ window.__hoshiSeenImages = window.__hoshiSeenImages || new WeakSet();
 window.__hoshiPreScrollPos = -1;
 
 window.__hoshiSaveScrollPos = function() {
+  if (typeof window.__ttuGetPageInfo !== 'function') { window.__hoshiPreScrollPos = -1; return; }
   var info = window.__ttuGetPageInfo();
   window.__hoshiPreScrollPos = info ? info.virtualScrollPos : -1;
 };
@@ -546,6 +548,7 @@ window.__hoshiCheckNewImage = function() {
   var imgs = content.querySelectorAll('img');
   if (!imgs || imgs.length === 0) return false;
 
+  if (typeof window.__ttuGetPageInfo !== 'function') return false;
   var info = window.__ttuGetPageInfo();
   if (!info || !info.stride || info.stride < 10) return false;
   var isVertical = info.verticalMode;
