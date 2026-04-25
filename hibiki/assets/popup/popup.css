@@ -369,26 +369,8 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
 }
 
 .category-section {
-    margin-top: 5px;
+    margin-top: 4px;
     -webkit-user-select: none;
-}
-
-.category-section > summary {
-    list-style: none;
-}
-
-.category-section > summary::-webkit-details-marker {
-    display: none;
-}
-
-.category-section > summary::before {
-    content: '▶ ';
-    font-size: 8px;
-    opacity: 0.5;
-}
-
-.category-section[open] > summary::before {
-    content: '▼ ';
 }
 
 .category-label {
@@ -418,8 +400,15 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
 }
 
 .pitch-list {
-    margin: 3px 0 0 0;
+    margin: 0;
     font-size: 13px;
+}
+
+.pitch-group {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    margin-top: 2px;
 }
 
 .pitch-dict-label {
@@ -427,11 +416,12 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
     color: #fff;
     padding: 2px 4px;
     border-radius: 4px;
+    flex-shrink: 0;
 }
 
 .pitch-entries {
     list-style: circle inside;
-    margin: 2px 0 0 0;
+    margin: 0;
     padding: 0;
 }
 

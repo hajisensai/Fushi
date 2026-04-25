@@ -1106,10 +1106,10 @@ function createDeinflectionSection(entry) {
 
 function createFrequencySection(frequencies) {
     if (!frequencies?.length) return null;
-    const details = el('details', { className: 'category-section frequency-section', open: true });
-    const summary = el('summary', { className: 'category-label' });
-    summary.appendChild(el('span', { className: 'category-name', textContent: '词频' }));
-    details.appendChild(summary);
+    const section = el('div', { className: 'category-section frequency-section' });
+    const label = el('div', { className: 'category-label' });
+    label.appendChild(el('span', { className: 'category-name', textContent: '词频' }));
+    section.appendChild(label);
     const body = el('div', { className: 'category-body' });
     if (window.harmonicFrequency) {
         const normalRow = el('div', { className: 'tag-row', style: 'display:none' });
@@ -1130,16 +1130,16 @@ function createFrequencySection(frequencies) {
         frequencies.forEach(freq => row.appendChild(createFrequencyGroup(freq)));
         body.appendChild(row);
     }
-    details.appendChild(body);
-    return details;
+    section.appendChild(body);
+    return section;
 }
 
 function createPitchSection(pitches, reading) {
     if (!pitches?.length) return null;
-    const details = el('details', { className: 'category-section pitch-section', open: true });
-    const summary = el('summary', { className: 'category-label' });
-    summary.appendChild(el('span', { className: 'category-name', textContent: '声调' }));
-    details.appendChild(summary);
+    const section = el('div', { className: 'category-section pitch-section' });
+    const label = el('div', { className: 'category-label' });
+    label.appendChild(el('span', { className: 'category-name', textContent: '声调' }));
+    section.appendChild(label);
     const body = el('div', { className: 'category-body' });
     const pitchContainer = el('div', { className: 'pitch-list' });
     if (window.deduplicatePitchAccents) {
@@ -1155,8 +1155,8 @@ function createPitchSection(pitches, reading) {
         pitches.forEach(pitch => pitchContainer.appendChild(createPitchGroup(pitch, reading)));
     }
     body.appendChild(pitchContainer);
-    details.appendChild(body);
-    return details;
+    section.appendChild(body);
+    return section;
 }
 
 function createGlossarySectionWrapper(entry) {
@@ -1170,13 +1170,13 @@ function createGlossarySectionWrapper(entry) {
     });
     const dictNames = Object.keys(grouped);
     if (!dictNames.length) return null;
-    const details = el('details', { className: 'category-section glossary-section', open: true });
-    const summary = el('summary', { className: 'category-label' });
-    summary.appendChild(el('span', { className: 'category-name', textContent: '辞典' }));
-    details.appendChild(summary);
+    const section = el('div', { className: 'category-section glossary-section' });
+    const label = el('div', { className: 'category-label' });
+    label.appendChild(el('span', { className: 'category-name', textContent: '辞典' }));
+    section.appendChild(label);
     const body = el('div', { className: 'category-body' });
-    details.appendChild(body);
-    return { details, body, grouped, dictNames };
+    section.appendChild(body);
+    return { details: section, body, grouped, dictNames };
 }
 
 async function fetchAudioUrl(expression, reading) {
