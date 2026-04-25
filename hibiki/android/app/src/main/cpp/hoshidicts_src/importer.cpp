@@ -399,7 +399,7 @@ std::vector<char> build_offset_index(std::vector<std::pair<uint64_t, uint64_t>>&
   return offset_buf;
 }
 
-size_t write_media(const std::string& path, const Zip& zip, const std::vector<int>& files) {
+size_t write_media(const std::string& path, const Zip& zip, const std::vector<int>& files, std::string_view zip_prefix = {}) {
   if (files.empty()) {
     return 0;
   }
@@ -417,6 +417,12 @@ size_t write_media(const std::string& path, const Zip& zip, const std::vector<in
     auto media_file = zip.read_media(file_index);
     if (!media_file.has_value()) {
       continue;
+    }
+
+    auto& mp = media_file->path;
+    if (!zip_prefix.empty() && mp.size() > zip_prefix.size() &&
+        std::string_view(mp).substr(0, zip_prefix.size()) == zip_prefix) {
+      mp.erase(0, zip_prefix.size());
     }
 
     uint32_t record_start = write_pos;
@@ -846,6 +852,16 @@ ImportResult dictionary_importer::import(const std::string& zip_path, const std:
 
     result.title = index.title;
 
+    std::string zip_prefix;
+    {
+      const auto& index_name = zip.entries[index_idx].name;
+      auto slash = index_name.rfind('/');
+      if (slash == std::string::npos) slash = index_name.rfind('\\');
+      if (slash != std::string::npos) {
+        zip_prefix = index_name.substr(0, slash + 1);
+      }
+    }
+
     std::filesystem::path dict_path = std::filesystem::path(output_dir) / result.title;
     std::string path = dict_path.string();
     std::filesystem::create_directories(dict_path);
@@ -874,7 +890,7 @@ ImportResult dictionary_importer::import(const std::string& zip_path, const std:
 
     const Files files = get_files(zip);
     std::future<size_t> media_thread =
-        std::async(std::launch::async, [&path, &zip, &files]() { return write_media(path, zip, files.media_files); });
+        std::async(std::launch::async, [&path, &zip, &files, &zip_prefix]() { return write_media(path, zip, files.media_files, zip_prefix); });
 
     std::ofstream blobs(path + "/blobs.bin", std::ios::binary);
     setup_stream_exceptions(blobs);
