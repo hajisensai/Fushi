@@ -816,6 +816,13 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
             _showZoomableImage(src);
           },
         );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'userSwipe',
+          callback: (data) async {
+            _autoOffFollowOnManualTurn();
+          },
+        );
       },
       onCreateWindow: (controller, createWindowRequest) async {
         showDialog(
@@ -1559,8 +1566,13 @@ if (!window.__hibikiClickListenerRegistered) {
     var dx = Math.abs(touch.clientX - __jidoTapStartX);
     var dy = Math.abs(touch.clientY - __jidoTapStartY);
 
-    // Tap (small movement). Swipe page-turn is handled by ttu natively.
-    if (dx > 15 || dy > 15) return;
+    // Swipe (large movement) → notify Flutter for follow-audio auto-off.
+    if (dx > 15 || dy > 15) {
+      if (window.flutter_inappwebview) {
+        window.flutter_inappwebview.callHandler('userSwipe');
+      }
+      return;
+    }
 
     // Tap → existing select-word behavior.
     if (!e.target.closest('.book-content')) return;
@@ -2287,6 +2299,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         return;
       }
     }
+    if (controller?.isImagePaused ?? false) return;
     final bool forceReveal = controller?.consumeForceReveal() ?? false;
     final bool reveal = !_suppressRevealScroll &&
         (forceReveal || (controller?.shouldRevealCurrentCue ?? true));

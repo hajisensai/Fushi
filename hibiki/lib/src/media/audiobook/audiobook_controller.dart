@@ -123,6 +123,14 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 播放速度变化时的持久化回调。内部在 [setSpeed] 调用。
   Future<void> Function(double speed)? onSpeedPersist;
 
+  // ── 音量 ─────────────────────────────────────────────────────────────────
+  double get volume => _player.volume;
+
+  Future<void> setVolume(double v) async {
+    await _player.setVolume(v.clamp(0.0, 1.0));
+    notifyListeners();
+  }
+
   // ── 图片暂停 ───────────────────────────────────────────────────────────────
   // 遇到图片时自动暂停播放，停留指定秒数后恢复。0 = 不暂停。
 

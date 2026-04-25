@@ -152,6 +152,7 @@ class AudiobookSettingsSheet extends StatefulWidget {
 
 class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
   static const List<double> _speeds = [0.75, 1.0, 1.25, 1.5];
+  ReaderTtuSource get _src => ReaderTtuSource.instance;
 
   TtuReaderSettings? _settings;
   final TextEditingController _cueJumpController = TextEditingController();
@@ -247,6 +248,8 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                   _buildTocSection(context, theme),
                 ],
                 if (widget.controller != null) ...[
+                  const SizedBox(height: 20),
+                  _buildVolumeSection(theme, widget.controller!),
                   const SizedBox(height: 20),
                   _buildSpeedSection(theme, widget.controller!),
                   const SizedBox(height: 20),
@@ -462,6 +465,33 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildVolumeSection(ThemeData theme, AudiobookPlayerController ctrl) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(t.audio_volume, style: theme.textTheme.titleMedium),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            const Icon(Icons.volume_down, size: 20),
+            Expanded(
+              child: Slider(
+                value: ctrl.volume,
+                min: 0.0,
+                max: 1.0,
+                onChanged: (double v) {
+                  ctrl.setVolume(v);
+                  setState(() {});
+                },
+              ),
+            ),
+            const Icon(Icons.volume_up, size: 20),
+          ],
+        ),
+      ],
     );
   }
 
@@ -755,6 +785,79 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
             );
           }).toList(),
         ),
+        // 段落缩进
+        _numberStepper(
+          theme,
+          label: t.ttu_text_indentation,
+          value: _src.ttuTextIndentation,
+          step: 1, min: 0, max: 10,
+          format: (v) => '${v.round()}',
+          onChanged: (v) {
+            _src.setTtuTextIndentation(v);
+            setState(() {});
+            _updateSetting('textIndentation', v);
+          },
+        ),
+        // 边距
+        _numberStepper(
+          theme,
+          label: t.ttu_first_dimension_margin,
+          value: _src.ttuFirstDimensionMargin,
+          step: 5, min: 0, max: 100,
+          format: (v) => '${v.round()}',
+          onChanged: (v) {
+            _src.setTtuFirstDimensionMargin(v);
+            setState(() {});
+            _updateSetting('firstDimensionMargin', v);
+          },
+        ),
+        // 最大宽/高
+        _numberStepper(
+          theme,
+          label: t.ttu_second_dimension_max,
+          value: _src.ttuSecondDimensionMaxValue,
+          step: 50, min: 0, max: 2000,
+          format: (v) => v.round() == 0 ? t.ttu_page_columns_auto : '${v.round()}',
+          onChanged: (v) {
+            _src.setTtuSecondDimensionMaxValue(v);
+            setState(() {});
+            _updateSetting('secondDimensionMaxValue', v);
+          },
+        ),
+        // 分栏
+        _numberStepper(
+          theme,
+          label: t.ttu_page_columns,
+          value: _src.ttuPageColumns.toDouble(),
+          step: 1, min: 0, max: 4,
+          format: (v) => v.round() == 0 ? t.ttu_page_columns_auto : '${v.round()}',
+          onChanged: (v) {
+            _src.setTtuPageColumns(v.round());
+            setState(() {});
+            _updateSetting('pageColumns', v.round());
+          },
+        ),
+        // 文字方向
+        _settingRow(
+          theme,
+          label: t.ttu_vert_text_orient,
+          child: SegmentedButton<String>(
+            segments: <ButtonSegment<String>>[
+              ButtonSegment<String>(value: 'mixed', label: Text(t.ttu_orient_mixed)),
+              ButtonSegment<String>(value: 'upright', label: Text(t.ttu_orient_upright)),
+            ],
+            selected: <String>{_src.ttuVerticalTextOrientation},
+            onSelectionChanged: (Set<String> sel) {
+              _src.setTtuVerticalTextOrientation(sel.first);
+              setState(() {});
+              _updateSetting('verticalTextOrientation', sel.first);
+            },
+            style: const ButtonStyle(
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ),
+        ),
         // 隐藏假名
         const SizedBox(height: 8),
         _settingRow(
@@ -769,6 +872,81 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
             },
           ),
         ),
+        // 假名样式
+        _settingRow(
+          theme,
+          label: t.ttu_furigana_style,
+          child: SegmentedButton<String>(
+            segments: <ButtonSegment<String>>[
+              ButtonSegment<String>(value: 'Partial', label: Text(t.ttu_furigana_partial)),
+              ButtonSegment<String>(value: 'Full', label: Text(t.ttu_furigana_full)),
+              ButtonSegment<String>(value: 'Toggle', label: Text(t.ttu_furigana_toggle)),
+            ],
+            selected: <String>{_src.ttuFuriganaStyle},
+            onSelectionChanged: (Set<String> sel) {
+              _src.setTtuFuriganaStyle(sel.first);
+              setState(() {});
+              _updateSetting('furiganaStyle', sel.first);
+            },
+            style: const ButtonStyle(
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        // 两端对齐
+        _settingRow(
+          theme,
+          label: t.ttu_text_justify,
+          child: Switch(
+            value: _src.ttuEnableTextJustification,
+            onChanged: (bool v) {
+              _src.setTtuEnableTextJustification(v);
+              setState(() {});
+              _updateSetting('enableTextJustification', v);
+            },
+          ),
+        ),
+        // 字偶间距
+        _settingRow(
+          theme,
+          label: t.ttu_vert_kerning,
+          child: Switch(
+            value: _src.ttuEnableVerticalFontKerning,
+            onChanged: (bool v) {
+              _src.setTtuEnableVerticalFontKerning(v);
+              setState(() {});
+              _updateSetting('enableVerticalFontKerning', v);
+            },
+          ),
+        ),
+        // VPAL
+        _settingRow(
+          theme,
+          label: t.ttu_font_vpal,
+          child: Switch(
+            value: _src.ttuEnableFontVPAL,
+            onChanged: (bool v) {
+              _src.setTtuEnableFontVPAL(v);
+              setState(() {});
+              _updateSetting('enableFontVPAL', v);
+            },
+          ),
+        ),
+        // 优先书籍样式
+        _settingRow(
+          theme,
+          label: t.ttu_reader_styles,
+          child: Switch(
+            value: _src.ttuPrioritizeReaderStyles,
+            onChanged: (bool v) {
+              _src.setTtuPrioritizeReaderStyles(v);
+              setState(() {});
+              _updateSetting('prioritizeReaderStyles', v);
+            },
+          ),
+        ),
       ],
     );
   }
@@ -780,8 +958,53 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: theme.textTheme.bodyMedium),
+          Flexible(child: Text(label, style: theme.textTheme.bodyMedium)),
           child,
+        ],
+      ),
+    );
+  }
+
+  Widget _numberStepper(
+    ThemeData theme, {
+    required String label,
+    required double value,
+    required double step,
+    required double min,
+    required double max,
+    required String Function(double) format,
+    required ValueChanged<double> onChanged,
+  }) {
+    return _settingRow(
+      theme,
+      label: label,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.remove, size: 18),
+            visualDensity: VisualDensity.compact,
+            onPressed: () {
+              final double v = (value - step).clamp(min, max);
+              onChanged(v);
+            },
+          ),
+          SizedBox(
+            width: 42,
+            child: Text(
+              format(value),
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyLarge,
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.add, size: 18),
+            visualDensity: VisualDensity.compact,
+            onPressed: () {
+              final double v = (value + step).clamp(min, max);
+              onChanged(v);
+            },
+          ),
         ],
       ),
     );

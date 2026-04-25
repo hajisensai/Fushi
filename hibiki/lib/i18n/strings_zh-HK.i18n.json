@@ -515,6 +515,7 @@
     "image_pause": "Pause on Image",
     "image_pause_hint": "Auto-pause when an image appears during playback.",
     "image_pause_off": "Off",
+    "audio_volume": "音量",
     "reader_settings_section": "閱讀設定",
     "action_bookmark": "書籤",
     "action_fullscreen_toggle": "全螢幕切換",

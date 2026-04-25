@@ -515,6 +515,7 @@
     "image_pause": "Pause on Image",
     "image_pause_hint": "Auto-pause when an image appears during playback.",
     "image_pause_off": "Off",
+    "audio_volume": "Volume",
     "reader_settings_section": "Pengaturan Pembaca",
     "action_bookmark": "Bookmark",
     "action_fullscreen_toggle": "Alihkan Layar Penuh",

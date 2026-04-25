@@ -515,6 +515,7 @@
     "image_pause": "画像で一時停止",
     "image_pause_hint": "再生中に画像が表示されたら自動で一時停止します。",
     "image_pause_off": "オフ",
+    "audio_volume": "音量",
     "reader_settings_section": "リーダー設定",
     "action_bookmark": "ブックマーク",
     "action_fullscreen_toggle": "全画面表示の切替",

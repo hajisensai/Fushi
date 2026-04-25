@@ -518,6 +518,7 @@
     "image_pause": "图片暂停",
     "image_pause_hint": "播放时遇到图片自动暂停。",
     "image_pause_off": "关闭",
+    "audio_volume": "音量",
     "reader_settings_section": "阅读设置",
     "action_bookmark": "书签",
     "action_fullscreen_toggle": "全屏切换",

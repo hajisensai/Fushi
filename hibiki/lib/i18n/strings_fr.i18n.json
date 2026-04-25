@@ -515,6 +515,7 @@
     "image_pause": "Pause on Image",
     "image_pause_hint": "Auto-pause when an image appears during playback.",
     "image_pause_off": "Off",
+    "audio_volume": "Volume",
     "reader_settings_section": "Paramètres du lecteur",
     "action_bookmark": "Signet",
     "action_fullscreen_toggle": "Plein écran",
