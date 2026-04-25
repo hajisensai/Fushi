@@ -585,5 +585,8 @@
     "update_never_remind": "Don't remind again",
     "update_auto_install": "Auto-install updates",
     "update_settings": "Update Settings",
-    "anki_settings_label": "Anki Settings"
+    "anki_settings_label": "Anki Settings",
+    "anki_default_deck": "Default Deck",
+    "anki_default_profile": "Export Profile",
+    "anki_retry": "Retry"
 }

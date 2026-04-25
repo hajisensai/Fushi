@@ -39,6 +39,7 @@ export 'src/pages/implementations/switch_settings_page.dart';
 export 'src/pages/implementations/media_item_edit_dialog_page.dart';
 export 'src/pages/implementations/error_log_page.dart';
 export 'src/pages/implementations/reading_statistics_page.dart';
+export 'src/pages/implementations/anki_settings_page.dart';
 
 export 'src/pages/base_page.dart';
 export 'src/pages/base_history_page.dart';

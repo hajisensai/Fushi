@@ -588,5 +588,8 @@
     "update_never_remind": "不再提醒自动更新",
     "update_auto_install": "自动安装更新",
     "update_settings": "更新设置",
-    "anki_settings_label": "Anki 设置"
+    "anki_settings_label": "Anki 设置",
+    "anki_default_deck": "默认牌组",
+    "anki_default_profile": "导出配置",
+    "anki_retry": "重试"
 }

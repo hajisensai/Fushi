@@ -559,9 +559,9 @@ class _TtuSettingsDialogContentState extends BasePageState {
           icon: Icons.style,
           label: t.anki_settings_label,
           onTap: () {
-            showDialog(
-              context: context,
-              builder: (_) => const DictionarySettingsDialogPage(),
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AnkiSettingsPage()),
             );
           },
         ),
