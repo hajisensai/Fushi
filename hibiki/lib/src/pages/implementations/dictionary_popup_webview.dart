@@ -2,11 +2,13 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/src/dictionary/hoshidicts.dart';
+import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/utils.dart';
 
-class DictionaryPopupWebView extends StatefulWidget {
+class DictionaryPopupWebView extends ConsumerStatefulWidget {
   const DictionaryPopupWebView({
     super.key,
     required this.result,
@@ -19,10 +21,10 @@ class DictionaryPopupWebView extends StatefulWidget {
   final void Function(Map<String, String> fields)? onMineEntry;
 
   @override
-  State<DictionaryPopupWebView> createState() => DictionaryPopupWebViewState();
+  ConsumerState<DictionaryPopupWebView> createState() => DictionaryPopupWebViewState();
 }
 
-class DictionaryPopupWebViewState extends State<DictionaryPopupWebView> {
+class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView> {
   InAppWebViewController? _controller;
   bool _ready = false;
 
@@ -42,9 +44,16 @@ class DictionaryPopupWebViewState extends State<DictionaryPopupWebView> {
     final stylesJson = jsonEncode(HoshiDicts.dictionaryStyles);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
+    final appModel = ref.read(appProvider);
+    final deduplicatePitch = appModel.deduplicatePitchAccents;
+    final harmonicFreq = appModel.harmonicFrequency;
+    final audioSourcesJson = jsonEncode(appModel.audioSources);
+
     _controller!.evaluateJavascript(source: '''
       document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
-      window.audioSources = ['tts'];
+      window.audioSources = $audioSourcesJson;
+      window.deduplicatePitchAccents = $deduplicatePitch;
+      window.harmonicFrequency = $harmonicFreq;
       window.lookupEntries = $entriesJson;
       window.dictionaryStyles = $stylesJson;
       window.renderPopup();
@@ -138,13 +147,14 @@ class DictionaryPopupWebViewState extends State<DictionaryPopupWebView> {
         controller.addJavaScriptHandler(
           handlerName: 'playWordAudio',
           callback: (args) {
+            String url = '';
             if (args.isNotEmpty && args[0] is Map) {
               final data = args[0] as Map;
-              final url = data['url']?.toString() ?? '';
-              if (url.isNotEmpty) {
-                TtsChannel.instance.speak(url);
-                return;
-              }
+              url = data['url']?.toString() ?? '';
+            }
+            if (url.isNotEmpty && url.startsWith('http')) {
+              TtsChannel.instance.playUrl(url);
+              return;
             }
             final result = widget.result;
             if (result.entries.isNotEmpty) {

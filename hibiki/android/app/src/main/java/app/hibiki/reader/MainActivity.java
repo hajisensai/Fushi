@@ -14,6 +14,8 @@ import android.net.Uri;
 import io.flutter.embedding.engine.FlutterEngine;
 import io.flutter.plugin.common.MethodChannel;
 
+import android.media.AudioAttributes;
+import android.media.MediaPlayer;
 import android.speech.tts.TextToSpeech;
 import java.util.Locale;
 
@@ -66,6 +68,7 @@ public class MainActivity extends AudioServiceActivity {
     private String pendingSafDestPath;
     private TextToSpeech tts;
     private boolean ttsReady = false;
+    private MediaPlayer mediaPlayer;
 
     // Reader opens this gate when volume-key page turning is enabled so
     // dispatchKeyEvent swallows VOLUME_UP/DOWN and forwards them to Dart.
@@ -399,7 +402,49 @@ public class MainActivity extends AudioServiceActivity {
                     }
                     case "stop": {
                         if (ttsReady) tts.stop();
+                        if (mediaPlayer != null) {
+                            mediaPlayer.stop();
+                            mediaPlayer.release();
+                            mediaPlayer = null;
+                        }
                         result.success(true);
+                        break;
+                    }
+                    case "playUrl": {
+                        String url = call.argument("url");
+                        if (url == null || url.isEmpty()) {
+                            result.success(false);
+                            return;
+                        }
+                        if (mediaPlayer != null) {
+                            mediaPlayer.stop();
+                            mediaPlayer.release();
+                            mediaPlayer = null;
+                        }
+                        try {
+                            mediaPlayer = new MediaPlayer();
+                            mediaPlayer.setAudioAttributes(
+                                new AudioAttributes.Builder()
+                                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                                    .build()
+                            );
+                            mediaPlayer.setDataSource(url);
+                            mediaPlayer.setOnPreparedListener(mp -> mp.start());
+                            mediaPlayer.setOnCompletionListener(mp -> {
+                                mp.release();
+                                mediaPlayer = null;
+                            });
+                            mediaPlayer.setOnErrorListener((mp, what, extra) -> {
+                                mp.release();
+                                mediaPlayer = null;
+                                return true;
+                            });
+                            mediaPlayer.prepareAsync();
+                            result.success(true);
+                        } catch (Exception e) {
+                            result.success(false);
+                        }
                         break;
                     }
                     default:

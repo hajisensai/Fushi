@@ -1182,11 +1182,19 @@ function createGlossarySectionWrapper(entry) {
 async function fetchAudioUrl(expression, reading) {
     const templates = window.audioSources;
     if (!templates?.length) return null;
-    
+
     for (const template of templates) {
+        if (template === 'tts') continue;
         const url = template
         .replace('{term}', encodeURIComponent(expression))
         .replace('{reading}', encodeURIComponent(reading));
+        if (/^https?:\/\//.test(url)) {
+            try {
+                const response = await fetch(url, { method: 'HEAD' });
+                if (response.ok) return url;
+            } catch {}
+            return url;
+        }
         try {
             const response = await fetch(`audio://?url=${encodeURIComponent(url)}`);
             const data = await response.json();

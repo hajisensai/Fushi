@@ -570,6 +570,9 @@
     "import_theme_invalid": "无效的主题代码",
     "import_theme_success": "主题已导入",
     "auto_add_book_name_to_tags": "自动添加书名到标签",
+    "deduplicate_pitch_accents": "音调去重",
+    "harmonic_frequency": "词频聚合",
+    "manage_audio_sources": "管理音频源",
     "use_recommended_template": "推荐模板",
     "recommended_template_exists": "标准配置已存在。",
     "recommended_template_created": "已创建推荐配置。",
@@ -611,4 +614,6 @@
 
     "anki_manage_profiles": "管理导出配置",
     "anki_manage_profiles_hint": "配置导出到 AnkiDroid 时各字段的映射方式。每个配置绑定一个 Anki 笔记类型，定义 hibiki 的哪个字段填充 Anki 的哪个字段。"
+,
+  "manage_audio_sources": "Manage audio sources"
 }

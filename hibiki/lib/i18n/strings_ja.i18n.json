@@ -567,6 +567,9 @@
     "import_theme_invalid": "無効なテーマコード",
     "import_theme_success": "テーマをインポートしました",
     "auto_add_book_name_to_tags": "タグに本のタイトルを自動追加",
+    "deduplicate_pitch_accents": "アクセント重複除外",
+    "harmonic_frequency": "語彙頻度集約",
+    "manage_audio_sources": "音声ソースの管理",
     "use_recommended_template": "推奨",
     "recommended_template_exists": "標準プロファイルは既に存在します。",
     "recommended_template_created": "推奨プロファイルを作成しました。",
@@ -608,4 +611,6 @@
 
     "anki_manage_profiles": "エクスポートプロファイル管理",
     "anki_manage_profiles_hint": "AnkiDroidへのエクスポート時のフィールドマッピングを設定します。各プロファイルはAnkiのノートタイプに紐づき、hibikiのフィールドがAnkiのどのフィールドに入るかを定義します。"
+,
+  "manage_audio_sources": "Manage audio sources"
 }

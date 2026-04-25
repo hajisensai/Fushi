@@ -1,6 +1,7 @@
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:spaces/spaces.dart';
+import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 
@@ -71,10 +72,16 @@ class _DictionaryDialogPageState extends BasePageState {
               const Space.small(),
               buildAutoAddBookNameToTagsSwitch(),
               const Space.small(),
+              buildDeduplicatePitchAccentsSwitch(),
+              const Space.small(),
+              buildHarmonicFrequencySwitch(),
+              const Space.small(),
               const JidoujishoDivider(),
               buildDebounceDelayField(),
               buildDictionaryFontSizeField(),
               buildMaximumTermsField(),
+              const Space.normal(),
+              buildManageAudioSources(),
               const Space.normal(),
               buildManageDuplicateChecks(),
             ],
@@ -126,6 +133,56 @@ class _DictionaryDialogPageState extends BasePageState {
               onChanged: (value) {
                 appModel.toggleAutoAddBookNameToTags();
                 notifier.value = appModel.autoAddBookNameToTags;
+              },
+            );
+          },
+        )
+      ],
+    );
+  }
+
+  Widget buildDeduplicatePitchAccentsSwitch() {
+    ValueNotifier<bool> notifier =
+        ValueNotifier<bool>(appModel.deduplicatePitchAccents);
+
+    return Row(
+      children: [
+        Expanded(
+          child: Text(t.deduplicate_pitch_accents),
+        ),
+        ValueListenableBuilder<bool>(
+          valueListenable: notifier,
+          builder: (_, value, __) {
+            return Switch(
+              value: value,
+              onChanged: (value) {
+                appModel.toggleDeduplicatePitchAccents();
+                notifier.value = appModel.deduplicatePitchAccents;
+              },
+            );
+          },
+        )
+      ],
+    );
+  }
+
+  Widget buildHarmonicFrequencySwitch() {
+    ValueNotifier<bool> notifier =
+        ValueNotifier<bool>(appModel.harmonicFrequency);
+
+    return Row(
+      children: [
+        Expanded(
+          child: Text(t.harmonic_frequency),
+        ),
+        ValueListenableBuilder<bool>(
+          valueListenable: notifier,
+          builder: (_, value, __) {
+            return Switch(
+              value: value,
+              onChanged: (value) {
+                appModel.toggleHarmonicFrequency();
+                notifier.value = appModel.harmonicFrequency;
               },
             );
           },
@@ -242,6 +299,48 @@ class _DictionaryDialogPageState extends BasePageState {
   Color get activeTextColor => Theme.of(context).colorScheme.onSurface;
   Color get inactiveTextColor => Theme.of(context).unselectedWidgetColor;
 
+  Widget buildManageAudioSources() {
+    return InkWell(
+      onTap: showAudioSourcesPage,
+      child: Container(
+        padding: Spacing.of(context).insets.vertical.normal,
+        alignment: Alignment.center,
+        width: double.infinity,
+        color: activeButtonColor,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.volume_up,
+              size: textTheme.titleSmall?.fontSize,
+              color: activeTextColor,
+            ),
+            const Space.small(),
+            Text(
+              t.manage_audio_sources,
+              style: textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: activeTextColor,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void showAudioSourcesPage() {
+    showDialog(
+      context: context,
+      builder: (context) => _AudioSourcesDialog(
+        sources: List<String>.from(appModel.audioSources),
+        onSave: (sources) {
+          appModel.setAudioSources(sources);
+        },
+      ),
+    );
+  }
+
   Widget buildManageDuplicateChecks() {
     return InkWell(
       onTap: showDuplicateChecksPage,
@@ -298,6 +397,117 @@ class _DictionaryDialogPageState extends BasePageState {
           ),
         );
       }
+    }
+  }
+}
+
+class _AudioSourcesDialog extends StatefulWidget {
+  const _AudioSourcesDialog({
+    required this.sources,
+    required this.onSave,
+  });
+
+  final List<String> sources;
+  final void Function(List<String>) onSave;
+
+  @override
+  State<_AudioSourcesDialog> createState() => _AudioSourcesDialogState();
+}
+
+class _AudioSourcesDialogState extends State<_AudioSourcesDialog> {
+  late List<String> _sources;
+  final _controller = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _sources = List<String>.from(widget.sources);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(t.manage_audio_sources),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: _sources.length,
+                itemBuilder: (context, index) {
+                  return ListTile(
+                    dense: true,
+                    title: Text(
+                      _sources[index],
+                      style: Theme.of(context).textTheme.bodySmall,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.delete, size: 18),
+                      onPressed: () {
+                        setState(() {
+                          _sources.removeAt(index);
+                        });
+                      },
+                    ),
+                  );
+                },
+              ),
+            ),
+            const Space.normal(),
+            TextField(
+              controller: _controller,
+              decoration: InputDecoration(
+                hintText: 'https://...{term}...{reading}',
+                hintStyle: Theme.of(context).textTheme.bodySmall,
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.add),
+                  onPressed: _addSource,
+                ),
+              ),
+              style: Theme.of(context).textTheme.bodySmall,
+              onSubmitted: (_) => _addSource(),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () {
+            setState(() {
+              _sources = List<String>.from(AppModel.defaultAudioSources);
+            });
+          },
+          child: Text(t.reset),
+        ),
+        TextButton(
+          onPressed: () {
+            widget.onSave(_sources);
+            Navigator.pop(context);
+          },
+          child: Text(t.dialog_close),
+        ),
+      ],
+    );
+  }
+
+  void _addSource() {
+    final text = _controller.text.trim();
+    if (text.isNotEmpty) {
+      setState(() {
+        _sources.add(text);
+        _controller.clear();
+      });
     }
   }
 }

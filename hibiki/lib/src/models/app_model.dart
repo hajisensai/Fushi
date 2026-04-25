@@ -3714,6 +3714,41 @@ class AppModel with ChangeNotifier {
     await _setPref('auto_add_book_name_to_tags', !autoAddBookNameToTags);
   }
 
+  /// Whether to deduplicate pitch accent values across dictionaries.
+  bool get deduplicatePitchAccents {
+    return _getPref('deduplicate_pitch_accents', defaultValue: true);
+  }
+
+  /// Toggle pitch accent deduplication.
+  void toggleDeduplicatePitchAccents() async {
+    await _setPref('deduplicate_pitch_accents', !deduplicatePitchAccents);
+  }
+
+  /// Whether to show harmonic mean frequency aggregation.
+  bool get harmonicFrequency {
+    return _getPref('harmonic_frequency', defaultValue: true);
+  }
+
+  /// Toggle harmonic frequency aggregation.
+  void toggleHarmonicFrequency() async {
+    await _setPref('harmonic_frequency', !harmonicFrequency);
+  }
+
+  /// Default audio source templates for word pronunciation.
+  static const List<String> defaultAudioSources = [
+    'https://assets.languagepod101.com/dictionary/japanese/audiomp3.php?kanji={term}&kana={reading}',
+  ];
+
+  /// Get the list of audio source URL templates.
+  List<String> get audioSources {
+    return _getPref('audio_sources', defaultValue: defaultAudioSources);
+  }
+
+  /// Set the list of audio source URL templates.
+  void setAudioSources(List<String> sources) async {
+    await _setPref('audio_sources', sources);
+  }
+
   /// Get the list of model names that will be checked for duplicates.
   List<String> get duplicateCheckModels {
     return _getPref('duplicate_check_models', defaultValue: [

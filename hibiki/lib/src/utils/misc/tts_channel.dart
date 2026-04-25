@@ -21,7 +21,17 @@ class TtsChannel {
     }
   }
 
-  /// Stop any ongoing TTS playback.
+  /// Play audio from a URL (e.g. mp3 from jpod101/forvo).
+  Future<bool> playUrl(String url) async {
+    try {
+      final result = await _channel.invokeMethod('playUrl', {'url': url});
+      return result == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Stop any ongoing TTS or URL audio playback.
   Future<void> stop() async {
     try {
       await _channel.invokeMethod('stop');
