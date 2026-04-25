@@ -338,21 +338,26 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   }
 
   @override
+  ReaderViewportPos? _preMetricsPos;
+
   void didChangeMetrics() {
     super.didChangeMetrics();
     if (!_controllerInitialised) return;
+    if (_metricsDebounce == null || !_metricsDebounce!.isActive) {
+      AudiobookBridge.getViewportNormOffset(_controller).then((pos) {
+        if (pos != null) _preMetricsPos = pos;
+      });
+    }
     _metricsDebounce?.cancel();
-    _metricsDebounce = Timer(const Duration(milliseconds: 500), () async {
-      final pos = _lastSavedPos;
+    _metricsDebounce = Timer(const Duration(milliseconds: 600), () async {
+      final pos = _preMetricsPos ?? _lastSavedPos;
+      _preMetricsPos = null;
       if (pos == null || pos.section < 0 || pos.offset < 0) return;
       try {
         await AudiobookBridge.scrollToNormOffset(
           _controller,
           section: pos.section,
           offset: pos.offset,
-        );
-        debugPrint(
-          '[hibiki-reader-pos] metrics restore s=${pos.section} o=${pos.offset}',
         );
       } catch (e) {
         debugPrint('[hibiki-reader-pos] metrics restore err: $e');
@@ -459,7 +464,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       focusNode: _focusNode,
       onFocusChange: (value) {
         if (mediaSource.volumePageTurningEnabled &&
-            !(ModalRoute.of(context)?.isCurrent ?? false) &&
+            (ModalRoute.of(context)?.isCurrent ?? false) &&
             !appModel.isCreatorOpen &&
             !_isRecursiveSearching) {
           _focusNode.requestFocus();
@@ -801,6 +806,16 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
             }
           },
         );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'imageClicked',
+          callback: (data) async {
+            if (data.isEmpty) return;
+            final String src = data[0] as String;
+            if (src.isEmpty || !mounted) return;
+            _showZoomableImage(src);
+          },
+        );
       },
       onCreateWindow: (controller, createWindowRequest) async {
         showDialog(
@@ -1100,6 +1115,44 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     }
   }
 
+  void _showZoomableImage(String src) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog.fullscreen(
+        backgroundColor: Colors.black,
+        child: Stack(
+          children: [
+            InteractiveViewer(
+              minScale: 0.5,
+              maxScale: 5.0,
+              child: Center(
+                child: Image.network(
+                  src,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => const Icon(
+                    Icons.broken_image_outlined,
+                    color: Colors.white54,
+                    size: 64,
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              top: 8,
+              right: 8,
+              child: SafeArea(
+                child: IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white, size: 28),
+                  onPressed: () => Navigator.pop(ctx),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> unselectWebViewTextSelection(
       InAppWebViewController webViewController) async {
     String source = '''
@@ -1275,6 +1328,16 @@ xhr.send();
 
 function tapToSelect(e) {
   console.log('[hibiki] tapToSelect x=' + e.clientX + ' y=' + e.clientY + ' target=' + (e.target ? e.target.nodeName : 'null'));
+
+  if (e.target && e.target.nodeName === 'IMG') {
+    var imgEl = e.target;
+    var src = imgEl.currentSrc || imgEl.src || '';
+    if (src && window.flutter_inappwebview) {
+      window.flutter_inappwebview.callHandler('imageClicked', src);
+    }
+    return;
+  }
+
   var result = document.caretRangeFromPoint(e.clientX, e.clientY);
   console.log('[hibiki] caretRangeFromPoint result=' + (result ? result.startContainer.nodeName + ' offset=' + result.startOffset : 'null'));
 
@@ -1547,12 +1610,7 @@ rp {
 button.fixed.h-8.w-full,
 button.fixed.inset-x-0,
 button.fixed.top-0 {
-  -webkit-appearance: none !important;
-  appearance: none !important;
-  background: transparent !important;
-  border: 0 !important;
-  box-shadow: none !important;
-  outline: none !important;
+  display: none !important;
 }
 
 /* ttu 书签指示图标（faBookmark，opacity 0.25）——滚动位置命中 bookmark
@@ -2205,7 +2263,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
   }
 
   /// currentCue 变化时高亮对应 DOM 元素。
-  void _onCueChanged() {
+  void _onCueChanged() async {
     if (!_controllerInitialised) {
       return;
     }
@@ -2235,7 +2293,8 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     if (reveal && (controller?.imagePauseSec.value ?? 0) > 0) {
       AudiobookBridge.saveScrollPos(_controller);
     }
-    AudiobookBridge.highlight(_controller, cue: cue, reveal: reveal);
+    await AudiobookBridge.highlight(_controller, cue: cue, reveal: reveal);
+    await Future.delayed(const Duration(milliseconds: 50));
     _maybeImagePause(controller);
   }
 

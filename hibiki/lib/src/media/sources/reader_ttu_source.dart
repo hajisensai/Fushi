@@ -821,6 +821,7 @@ new Promise(function(resolve) {
       'window.localStorage.setItem("enableTextJustification","$ttuEnableTextJustification")',
       'window.localStorage.setItem("prioritizeReaderStyles","$ttuPrioritizeReaderStyles")',
       'window.localStorage.setItem("furiganaStyle","$ttuFuriganaStyle")',
+      'window.localStorage.setItem("statisticsEnabled","true")',
       'window.localStorage.setItem("fontFamilyGroupOne","$fontFamilyOne")',
       'window.localStorage.setItem("fontFamilyGroupTwo","$fontFamilyTwo")',
     ];
