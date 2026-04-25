@@ -2468,32 +2468,32 @@ class AppModel with ChangeNotifier {
       throw Exception('Invalid mime type, must be image or audio');
     }
 
-    if (destinationFile.existsSync()) {
-      destinationFile.deleteSync();
-    }
-
-    String destinationPath = destinationFile.path;
-    if (mimeType == 'image') {
-      File compressedFile = getImageCompressedFile(fallback: fallback);
-      if (compressedFile.existsSync()) {
-        compressedFile.deleteSync();
-      }
-      await FlutterImageCompress.compressAndGetFile(
-        exportFile.path,
-        compressedFile.path,
-        quality: 70,
-        keepExif: true,
-      );
-
-      debugPrint('Original image size: ${exportFile.lengthSync()} bytes');
-      debugPrint('Compressed image size: ${compressedFile.lengthSync()} bytes');
-
-      compressedFile.copySync(destinationPath);
-    } else {
-      exportFile.copySync(destinationPath);
-    }
-
     try {
+      if (destinationFile.existsSync()) {
+        destinationFile.deleteSync();
+      }
+
+      String destinationPath = destinationFile.path;
+      if (mimeType == 'image') {
+        File compressedFile = getImageCompressedFile(fallback: fallback);
+        if (compressedFile.existsSync()) {
+          compressedFile.deleteSync();
+        }
+        await FlutterImageCompress.compressAndGetFile(
+          exportFile.path,
+          compressedFile.path,
+          quality: 70,
+          keepExif: true,
+        );
+
+        debugPrint('Original image size: ${exportFile.lengthSync()} bytes');
+        debugPrint('Compressed image size: ${compressedFile.lengthSync()} bytes');
+
+        compressedFile.copySync(destinationPath);
+      } else {
+        exportFile.copySync(destinationPath);
+      }
+
       String response = await methodChannel.invokeMethod(
         'addFileToMedia',
         <String, String>{
@@ -2508,7 +2508,7 @@ class AppModel with ChangeNotifier {
       }
 
       return response;
-    } on PlatformException {
+    } catch (e) {
       if (fallback) {
         Fluttertoast.showToast(
           msg: t.error_export_media_ankidroid,
