@@ -87,6 +87,7 @@ class HoshiImportResult {
   final int metaCount;
   final int tagCount;
   final int mediaCount;
+  final String detectedType;
   final String error;
 
   const HoshiImportResult({
@@ -96,6 +97,7 @@ class HoshiImportResult {
     required this.metaCount,
     required this.tagCount,
     required this.mediaCount,
+    required this.detectedType,
     required this.error,
   });
 }
@@ -278,6 +280,7 @@ class HoshiDicts {
           metaCount: r.metaCount,
           tagCount: r.tagCount,
           mediaCount: r.mediaCount,
+          detectedType: r.detectedType.toDartString(),
           error: r.error.toDartString(),
         );
         final rPtr = calloc<FfiImportResult>();

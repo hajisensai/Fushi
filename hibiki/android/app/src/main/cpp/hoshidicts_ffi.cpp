@@ -82,6 +82,7 @@ struct FfiImportResult {
   int32_t meta_count;
   int32_t tag_count;
   int32_t media_count;
+  char* detected_type;
   char* error;
 };
 
@@ -184,6 +185,7 @@ static void* import_thread_fn(void* arg) {
     a->result.meta_count = static_cast<int32_t>(result.meta_count);
     a->result.tag_count = static_cast<int32_t>(result.tag_count);
     a->result.media_count = static_cast<int32_t>(result.media_count);
+    a->result.detected_type = dup(result.detected_type);
     std::string err;
     for (auto& e : result.errors) {
       if (!err.empty()) err += "\n";
@@ -193,6 +195,7 @@ static void* import_thread_fn(void* arg) {
   } catch (const std::exception& e) {
     a->result.success = 0;
     a->result.title = dup("");
+    a->result.detected_type = dup("term");
     a->result.error = dup(e.what());
   }
   return nullptr;
@@ -228,6 +231,7 @@ __attribute__((visibility("default")))
 void hoshidicts_free_import_result(FfiImportResult* r) {
   if (!r) return;
   free(r->title);
+  free(r->detected_type);
   free(r->error);
 }
 

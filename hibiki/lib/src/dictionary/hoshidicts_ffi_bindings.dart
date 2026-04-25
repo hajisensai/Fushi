@@ -82,6 +82,7 @@ final class FfiImportResult extends Struct {
   external int tagCount;
   @Int32()
   external int mediaCount;
+  external Pointer<Utf8> detectedType;
   external Pointer<Utf8> error;
 }
 

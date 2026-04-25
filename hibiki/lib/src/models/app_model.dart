@@ -1683,7 +1683,6 @@ class AppModel with ChangeNotifier {
     required ValueNotifier<int?> countNotifier,
     required ValueNotifier<int?> totalNotifier,
     required Function() onImportSuccess,
-    DictionaryType type = DictionaryType.term,
   }) async {
     final entities = directory.listSync();
     final zipFiles = entities
@@ -1808,11 +1807,13 @@ class AppModel with ChangeNotifier {
           tempOutputDir.deleteSync(recursive: true);
         }
 
+        final detectedType = _parseDictionaryType(result.detectedType);
+
         Dictionary dictionary = Dictionary(
           order: order,
           name: name,
           formatKey: 'yomichan',
-          type: type,
+          type: detectedType,
         );
 
         _persistDictionary(dictionary);
@@ -1844,13 +1845,23 @@ class AppModel with ChangeNotifier {
     }
   }
 
+  static DictionaryType _parseDictionaryType(String type) {
+    switch (type) {
+      case 'frequency':
+        return DictionaryType.frequency;
+      case 'pitch':
+        return DictionaryType.pitch;
+      default:
+        return DictionaryType.term;
+    }
+  }
+
   Future<void> importDictionary({
     required File file,
     required ValueNotifier<String> progressNotifier,
     required Function() onImportSuccess,
     List<File> cssFiles = const [],
     List<Directory> fontDirs = const [],
-    DictionaryType type = DictionaryType.term,
   }) async {
     clearDictionaryResultsCache();
 
@@ -1928,11 +1939,13 @@ class AppModel with ChangeNotifier {
         }
       }
 
+      final detectedType = _parseDictionaryType(result.detectedType);
+
       Dictionary dictionary = Dictionary(
         order: order,
         name: name,
         formatKey: 'yomichan',
-        type: type,
+        type: detectedType,
       );
 
       _persistDictionary(dictionary);

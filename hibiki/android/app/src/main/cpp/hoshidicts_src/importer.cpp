@@ -882,6 +882,22 @@ ImportResult dictionary_importer::import(const std::string& zip_path, const std:
     uint64_t write_offset = 0;
     write_terms(blobs, offsets, zip, files.term_banks, write_offset, result, low_ram);
     write_meta(blobs, offsets, zip, files.meta_banks, write_offset, result, low_ram);
+
+    if (!files.term_banks.empty()) {
+      result.detected_type = "term";
+    } else if (!files.meta_banks.empty()) {
+      std::string first_meta = zip.read(files.meta_banks[0]);
+      std::vector<Meta> metas;
+      if (yomitan_parser::parse_meta_bank(first_meta, metas) && !metas.empty()) {
+        std::string_view mode = metas[0].mode;
+        if (mode == "freq") {
+          result.detected_type = "frequency";
+        } else if (mode == "pitch") {
+          result.detected_type = "pitch";
+        }
+      }
+    }
+
     if (offsets.empty()) {
       throw std::runtime_error("empty dictionary");
     }

@@ -164,36 +164,10 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
     );
   }
 
-  Future<DictionaryType?> _pickDictionaryType() async {
-    return showDialog<DictionaryType>(
-      context: context,
-      builder: (context) => SimpleDialog(
-        title: Text(t.dialog_select_dictionary_type),
-        children: [
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(context, DictionaryType.term),
-            child: Text(t.dictionary_type_term),
-          ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(context, DictionaryType.frequency),
-            child: Text(t.dictionary_type_frequency),
-          ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(context, DictionaryType.pitch),
-            child: Text(t.dictionary_type_pitch),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget buildImportButton() {
     return TextButton(
       child: Text(t.dialog_import_dictionary),
       onPressed: () async {
-        final selectedType = await _pickDictionaryType();
-        if (selectedType == null) return;
-
         ValueNotifier<String> progressNotifier =
             ValueNotifier<String>(t.import_start);
         ValueNotifier<int?> countNotifier = ValueNotifier<int?>(null);
@@ -243,7 +217,6 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
             progressNotifier: progressNotifier,
             file: file,
             cssFiles: cssFiles,
-            type: selectedType,
             onImportSuccess: () {
               _selectedOrder = appModel.dictionaries.last.order;
               setState(() {});
@@ -266,9 +239,6 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
     return TextButton(
       child: Text(t.dialog_import_folder),
       onPressed: () async {
-        final selectedType = await _pickDictionaryType();
-        if (selectedType == null) return;
-
         ValueNotifier<String> progressNotifier =
             ValueNotifier<String>(t.import_start);
         ValueNotifier<int?> countNotifier = ValueNotifier<int?>(null);
@@ -305,7 +275,6 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
             progressNotifier: progressNotifier,
             countNotifier: countNotifier,
             totalNotifier: totalNotifier,
-            type: selectedType,
             onImportSuccess: () {
               _selectedOrder = appModel.dictionaries.last.order;
               setState(() {});
