@@ -11,6 +11,7 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:hibiki/src/utils/misc/tts_channel.dart';
 import 'package:hibiki/utils.dart';
 
 /// The body content for the Dictionary tab in the main menu.
@@ -480,6 +481,16 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
                       : '.mp3';
               audioFile = File('${Directory.systemTemp.path}/mine_word_audio$ext');
               await audioFile.writeAsBytes(bytes);
+            }
+          }
+          if (audioFile == null || !audioFile.existsSync()) {
+            final expression = fields['expression'] ?? '';
+            if (expression.isNotEmpty) {
+              final ttsPath = '${Directory.systemTemp.path}/mine_word_tts.wav';
+              final ttsResult = await TtsChannel.instance.ttsToFile(expression, ttsPath);
+              if (ttsResult != null) {
+                audioFile = File(ttsResult);
+              }
             }
           }
           if (audioFile != null && audioFile.existsSync()) {

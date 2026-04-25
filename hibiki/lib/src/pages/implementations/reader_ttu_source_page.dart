@@ -436,11 +436,11 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   ) async {
     final cacheDir = Directory.systemTemp;
 
-    // Word audio: download URL or use local file
-    final String wordAudioUrl = fields['audio'] ?? '';
-    if (wordAudioUrl.isNotEmpty) {
-      try {
-        File? audioFile;
+    // Word audio: download URL, use local file, or fall back to TTS
+    try {
+      File? audioFile;
+      final String wordAudioUrl = fields['audio'] ?? '';
+      if (wordAudioUrl.isNotEmpty) {
         if (wordAudioUrl.startsWith('file://')) {
           audioFile = File(wordAudioUrl.replaceFirst('file://', ''));
         } else if (wordAudioUrl.startsWith('/')) {
@@ -461,16 +461,26 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
             await audioFile.writeAsBytes(bytes);
           }
         }
-        if (audioFile != null && audioFile.existsSync()) {
-          AudioField.instance.setAudioFile(
-            appModel: appModel,
-            creatorModel: creatorModel,
-            file: audioFile,
-          );
-        }
-      } catch (e) {
-        debugPrint('[hibiki-mine] word audio failed: $e');
       }
+      if (audioFile == null || !audioFile.existsSync()) {
+        final expression = fields['expression'] ?? '';
+        if (expression.isNotEmpty) {
+          final ttsPath = '${cacheDir.path}/mine_word_tts.wav';
+          final ttsResult = await TtsChannel.instance.ttsToFile(expression, ttsPath);
+          if (ttsResult != null) {
+            audioFile = File(ttsResult);
+          }
+        }
+      }
+      if (audioFile != null && audioFile.existsSync()) {
+        AudioField.instance.setAudioFile(
+          appModel: appModel,
+          creatorModel: creatorModel,
+          file: audioFile,
+        );
+      }
+    } catch (e) {
+      debugPrint('[hibiki-mine] word audio failed: $e');
     }
 
     // Sentence audio: extract from audiobook cue

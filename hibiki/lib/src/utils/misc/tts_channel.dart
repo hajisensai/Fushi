@@ -86,6 +86,21 @@ class TtsChannel {
     }
   }
 
+  /// Synthesize [text] to a WAV file at [outputPath] using Android TTS.
+  /// Returns the output path on success, null on failure.
+  Future<String?> ttsToFile(String text, String outputPath, {String locale = 'ja-JP'}) async {
+    try {
+      final result = await _channel.invokeMethod('ttsToFile', {
+        'text': text,
+        'locale': locale,
+        'outputPath': outputPath,
+      });
+      return result as String?;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Stop any ongoing TTS or URL audio playback.
   Future<void> stop() async {
     try {

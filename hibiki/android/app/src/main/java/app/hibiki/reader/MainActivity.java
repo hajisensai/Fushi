@@ -403,6 +403,44 @@ public class MainActivity extends AudioServiceActivity {
                         result.success(true);
                         break;
                     }
+                    case "ttsToFile": {
+                        String text = call.argument("text");
+                        String locale = call.argument("locale");
+                        String outputPath = call.argument("outputPath");
+                        if (text == null || text.isEmpty() || outputPath == null) {
+                            result.success(null);
+                            return;
+                        }
+                        if (!ttsReady) {
+                            result.success(null);
+                            return;
+                        }
+                        if (locale != null && !locale.isEmpty()) {
+                            String[] parts = locale.split("-");
+                            Locale loc = parts.length >= 2
+                                    ? new Locale(parts[0], parts[1])
+                                    : new Locale(parts[0]);
+                            tts.setLanguage(loc);
+                        }
+                        tts.setOnUtteranceProgressListener(new android.speech.tts.UtteranceProgressListener() {
+                            @Override public void onStart(String utteranceId) {}
+                            @Override public void onDone(String utteranceId) {
+                                tts.setOnUtteranceProgressListener(null);
+                                new Handler(Looper.getMainLooper()).post(() -> result.success(outputPath));
+                            }
+                            @Override public void onError(String utteranceId) {
+                                tts.setOnUtteranceProgressListener(null);
+                                new Handler(Looper.getMainLooper()).post(() -> result.success(null));
+                            }
+                        });
+                        File outFile = new File(outputPath);
+                        int r = tts.synthesizeToFile(text, null, outFile, "hibiki_tts_file");
+                        if (r != TextToSpeech.SUCCESS) {
+                            tts.setOnUtteranceProgressListener(null);
+                            result.success(null);
+                        }
+                        break;
+                    }
                     case "stop": {
                         if (ttsReady) tts.stop();
                         if (mediaPlayer != null) {
