@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:html/dom.dart' as dom;
 import 'package:path/path.dart' as path;
 import 'package:hibiki/dictionary.dart';
+import 'package:hibiki/src/dictionary/hoshidicts.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/utils.dart';
 
@@ -119,7 +120,7 @@ class _DictionaryHtmlWidgetState extends ConsumerState<DictionaryHtmlWidget> {
     final directory = ref.read(
         dictionaryResourceDirectoryProvider(widget.entry.dictionaryName));
     final baseUrl = 'file:///${directory.path.replaceAll('\\', '/')}/';
-    final processedHtml = html.replaceAll('hibiki://', baseUrl);
+    final processedHtml = html;
 
     final fullHtml = '<!DOCTYPE html>'
         '<html><head>'
@@ -171,7 +172,25 @@ class _DictionaryHtmlWidgetState extends ConsumerState<DictionaryHtmlWidget> {
           horizontalScrollBarEnabled: false,
           disableVerticalScroll: true,
           disableHorizontalScroll: true,
+          useShouldInterceptRequest: true,
         ),
+        shouldInterceptRequest: (controller, request) async {
+          final url = request.url;
+          if (url.scheme == 'hibiki' && HoshiDicts.isInitialized) {
+            final mediaPath = url.toString().substring('hibiki://'.length);
+            if (mediaPath.isNotEmpty) {
+              final data = HoshiDicts.instance
+                  .getMediaFile(widget.entry.dictionaryName, mediaPath);
+              if (data != null) {
+                return WebResourceResponse(
+                  contentType: _mimeTypeForPath(mediaPath),
+                  data: data,
+                );
+              }
+            }
+          }
+          return null;
+        },
         contextMenu: ContextMenu(
           settings: ContextMenuSettings(
             hideDefaultSystemContextMenuItems: false,
@@ -240,6 +259,25 @@ class _DictionaryHtmlWidgetState extends ConsumerState<DictionaryHtmlWidget> {
         },
       ),
     );
+  }
+
+  static String _mimeTypeForPath(String path) {
+    final ext = path.split('.').last.toLowerCase();
+    switch (ext) {
+      case 'png':
+        return 'image/png';
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'gif':
+        return 'image/gif';
+      case 'webp':
+        return 'image/webp';
+      case 'svg':
+        return 'image/svg+xml';
+      default:
+        return 'application/octet-stream';
+    }
   }
 
   String _colorToHex(Color color) {
