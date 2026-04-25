@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/src/dictionary/hoshidicts.dart';
+import 'package:hibiki/utils.dart';
 
 class DictionaryPopupWebView extends StatefulWidget {
   const DictionaryPopupWebView({
@@ -43,6 +44,7 @@ class DictionaryPopupWebViewState extends State<DictionaryPopupWebView> {
 
     _controller!.evaluateJavascript(source: '''
       document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
+      window.audioSources = ['tts'];
       window.lookupEntries = $entriesJson;
       window.dictionaryStyles = $stylesJson;
       window.renderPopup();
@@ -135,7 +137,24 @@ class DictionaryPopupWebViewState extends State<DictionaryPopupWebView> {
 
         controller.addJavaScriptHandler(
           handlerName: 'playWordAudio',
-          callback: (args) {},
+          callback: (args) {
+            if (args.isNotEmpty && args[0] is Map) {
+              final data = args[0] as Map;
+              final url = data['url']?.toString() ?? '';
+              if (url.isNotEmpty) {
+                TtsChannel.instance.speak(url);
+                return;
+              }
+            }
+            final result = widget.result;
+            if (result.entries.isNotEmpty) {
+              final entry = result.entries.first;
+              final word = entry.reading.isNotEmpty ? entry.reading : entry.word;
+              if (word.isNotEmpty) {
+                TtsChannel.instance.speak(word);
+              }
+            }
+          },
         );
       },
       onLoadStop: (controller, url) {

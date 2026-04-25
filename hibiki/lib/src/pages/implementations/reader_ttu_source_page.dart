@@ -400,6 +400,22 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     );
   }
 
+  @override
+  void onMineFromPopup(Map<String, String> fields) {
+    appModel.openCreator(
+      ref: ref,
+      killOnPop: false,
+      creatorFieldValues: CreatorFieldValues(
+        textValues: {
+          TermField.instance: fields['expression'] ?? '',
+          ReadingField.instance: fields['reading'] ?? '',
+          MeaningField.instance: fields['glossary'] ?? '',
+          SentenceField.instance: fields['popupSelectionText'] ?? '',
+        },
+      ),
+    );
+  }
+
   /// Hide the dictionary and dispose of the current result.
   @override
   void clearDictionaryResult() async {

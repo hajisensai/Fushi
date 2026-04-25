@@ -593,5 +593,15 @@
     "anki_close_on_export_hint": "카드 내보내기 성공 후 카드 생성기를 자동으로 닫습니다.",
     "anki_auto_tag_hint": "카드 생성 시 현재 책 제목을 태그로 자동 추가합니다.",
     "anki_duplicate_check_hint": "새 카드를 추가하기 전에 어떤 카드 유형에서 중복을 확인할지 선택합니다.",
-    "anki_retry": "다시 시도"
+    "anki_retry": "다시 시도",
+
+    "hint_font_size": "Adjust the font size of the book text (in pixels).",
+    "hint_line_height": "Adjust the spacing between lines of text. Larger values increase readability.",
+    "hint_text_indentation": "Number of characters to indent the first line of each paragraph.",
+    "hint_margin": "Outer margin around the reading area (in pixels).",
+    "hint_max_width_height": "Maximum width (horizontal) or height (vertical) of the reading area. Set to Auto for full screen.",
+    "hint_page_columns": "Number of columns per page. Set to Auto to let the reader decide based on screen size.",
+    "hint_writing_direction": "Horizontal: left-to-right text flow. Vertical: traditional top-to-bottom, right-to-left Japanese text.",
+    "hint_view_mode": "Paginated: flip pages like a book. Continuous scroll: scroll through text without page breaks.",
+    "hint_vert_text_orient": "Mixed: numbers and Latin letters are rotated sideways. Upright: all characters stay upright."
 }

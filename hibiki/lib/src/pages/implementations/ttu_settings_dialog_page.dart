@@ -53,12 +53,24 @@ Widget _buildNumberRow({
   required double max,
   required String Function(double) format,
   required ValueChanged<double> onChanged,
+  String? hint,
 }) {
   return Padding(
     padding: const EdgeInsets.symmetric(vertical: 2),
     child: Row(
       children: [
-        Expanded(child: Text(label)),
+        Expanded(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(child: Text(label)),
+              if (hint != null) ...[
+                const SizedBox(width: 4),
+                _HintIcon(hint: hint),
+              ],
+            ],
+          ),
+        ),
         IconButton(
           icon: const Icon(Icons.remove, size: 18),
           visualDensity: VisualDensity.compact,
@@ -76,6 +88,34 @@ Widget _buildNumberRow({
       ],
     ),
   );
+}
+
+class _HintIcon extends StatelessWidget {
+  const _HintIcon({required this.hint});
+  final String hint;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          content: Text(hint),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(t.dialog_close),
+            ),
+          ],
+        ),
+      ),
+      child: Icon(
+        Icons.info_outline,
+        size: 16,
+        color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.6),
+      ),
+    );
+  }
 }
 
 Widget _buildDisplaySettings(VoidCallback rebuild) {
@@ -96,6 +136,7 @@ Widget _buildDisplaySettings(VoidCallback rebuild) {
             step: 1, min: 8, max: 64,
             format: (v) => '${v.round()}',
             onChanged: (v) => update(() => _source.setTtuFontSize(v)),
+            hint: t.hint_font_size,
           ),
           _buildNumberRow(
             label: t.ttu_line_height,
@@ -104,6 +145,7 @@ Widget _buildDisplaySettings(VoidCallback rebuild) {
             format: (v) => v.toStringAsFixed(2),
             onChanged: (v) => update(
                 () => _source.setTtuLineHeight((v * 100).roundToDouble() / 100)),
+            hint: t.hint_line_height,
           ),
           _buildNumberRow(
             label: t.ttu_text_indentation,
@@ -111,6 +153,7 @@ Widget _buildDisplaySettings(VoidCallback rebuild) {
             step: 1, min: 0, max: 10,
             format: (v) => '${v.round()}',
             onChanged: (v) => update(() => _source.setTtuTextIndentation(v)),
+            hint: t.hint_text_indentation,
           ),
           _buildNumberRow(
             label: t.ttu_first_dimension_margin,
@@ -118,6 +161,7 @@ Widget _buildDisplaySettings(VoidCallback rebuild) {
             step: 5, min: 0, max: 100,
             format: (v) => '${v.round()}',
             onChanged: (v) => update(() => _source.setTtuFirstDimensionMargin(v)),
+            hint: t.hint_margin,
           ),
           _buildNumberRow(
             label: t.ttu_second_dimension_max,
@@ -125,6 +169,7 @@ Widget _buildDisplaySettings(VoidCallback rebuild) {
             step: 50, min: 0, max: 2000,
             format: (v) => v.round() == 0 ? t.ttu_page_columns_auto : '${v.round()}',
             onChanged: (v) => update(() => _source.setTtuSecondDimensionMaxValue(v)),
+            hint: t.hint_max_width_height,
           ),
           _buildNumberRow(
             label: t.ttu_page_columns,
@@ -132,10 +177,20 @@ Widget _buildDisplaySettings(VoidCallback rebuild) {
             step: 1, min: 0, max: 4,
             format: (v) => v.round() == 0 ? t.ttu_page_columns_auto : '${v.round()}',
             onChanged: (v) => update(() => _source.setTtuPageColumns(v.round())),
+            hint: t.hint_page_columns,
           ),
           Row(
             children: [
-              Expanded(child: Text(t.ttu_writing_direction)),
+              Expanded(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(t.ttu_writing_direction),
+                    const SizedBox(width: 4),
+                    _HintIcon(hint: t.hint_writing_direction),
+                  ],
+                ),
+              ),
               SegmentedButton<String>(
                 segments: [
                   ButtonSegment(value: 'horizontal-tb', label: Text(t.ttu_horizontal)),
@@ -154,7 +209,16 @@ Widget _buildDisplaySettings(VoidCallback rebuild) {
           const SizedBox(height: 8),
           Row(
             children: [
-              Expanded(child: Text(t.ttu_view_mode_label)),
+              Expanded(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(t.ttu_view_mode_label),
+                    const SizedBox(width: 4),
+                    _HintIcon(hint: t.hint_view_mode),
+                  ],
+                ),
+              ),
               SegmentedButton<String>(
                 segments: [
                   ButtonSegment(value: 'paginated', label: Text(t.ttu_paginated)),
@@ -173,7 +237,16 @@ Widget _buildDisplaySettings(VoidCallback rebuild) {
           const SizedBox(height: 8),
           Row(
             children: [
-              Expanded(child: Text(t.ttu_vert_text_orient)),
+              Expanded(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(t.ttu_vert_text_orient),
+                    const SizedBox(width: 4),
+                    _HintIcon(hint: t.hint_vert_text_orient),
+                  ],
+                ),
+              ),
               SegmentedButton<String>(
                 segments: [
                   ButtonSegment(value: 'mixed', label: Text(t.ttu_orient_mixed)),
@@ -529,6 +602,18 @@ class _TtuSettingsDialogContentState extends BasePageState {
       children: [
         _buildThemeSelector(appModel, navContext: context),
         const Space.small(),
+        _buildTapRow(
+          context: context,
+          icon: Icons.style,
+          label: t.anki_settings_label,
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AnkiSettingsPage()),
+            );
+          },
+        ),
+        const Space.small(),
         _buildFontEntry(context),
         const Space.small(),
         const JidoujishoDivider(),
@@ -552,18 +637,6 @@ class _TtuSettingsDialogContentState extends BasePageState {
           icon: Icons.translate,
           label: t.options_language,
           onTap: appModel.showLanguageMenu,
-        ),
-        const Space.small(),
-        _buildTapRow(
-          context: context,
-          icon: Icons.style,
-          label: t.anki_settings_label,
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const AnkiSettingsPage()),
-            );
-          },
         ),
         const Space.small(),
         const JidoujishoDivider(),

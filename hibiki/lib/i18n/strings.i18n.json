@@ -622,5 +622,15 @@
     "anki_close_on_export_hint": "Automatically close the card creator after successfully exporting a card.",
     "anki_auto_tag_hint": "Automatically add the current book title as a tag when creating cards.",
     "anki_duplicate_check_hint": "Select which Anki card types to check for duplicates before adding a new card.",
-    "anki_retry": "Retry"
+    "anki_retry": "Retry",
+
+    "hint_font_size": "Adjust the font size of the book text (in pixels).",
+    "hint_line_height": "Adjust the spacing between lines of text. Larger values increase readability.",
+    "hint_text_indentation": "Number of characters to indent the first line of each paragraph.",
+    "hint_margin": "Outer margin around the reading area (in pixels).",
+    "hint_max_width_height": "Maximum width (horizontal) or height (vertical) of the reading area. Set to Auto for full screen.",
+    "hint_page_columns": "Number of columns per page. Set to Auto to let the reader decide based on screen size.",
+    "hint_writing_direction": "Horizontal: left-to-right text flow. Vertical: traditional top-to-bottom, right-to-left Japanese text.",
+    "hint_view_mode": "Paginated: flip pages like a book. Continuous scroll: scroll through text without page breaks.",
+    "hint_vert_text_orient": "Mixed: numbers and Latin letters are rotated sideways. Upright: all characters stay upright."
   }
