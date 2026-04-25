@@ -59,6 +59,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
 
   final FocusNode _focusNode = FocusNode();
   bool _isRecursiveSearching = false;
+  bool _wasPlayingBeforeLookup = false;
 
   // ── 有声书播放器 ────────────────────────────────────────────────────────────
   AudiobookPlayerController? _audiobookController;
@@ -379,11 +380,35 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     _focusNode.requestFocus();
   }
 
+  @override
+  Future<void> searchDictionaryResult({
+    required String searchTerm,
+    required Rect selectionRect,
+    int? overrideMaximumTerms,
+  }) async {
+    if (!dictionaryPopupShown) {
+      final ctrl = _audiobookController;
+      if (ctrl != null && ctrl.isPlaying) {
+        _wasPlayingBeforeLookup = true;
+        await ctrl.pause();
+      }
+    }
+    return super.searchDictionaryResult(
+      searchTerm: searchTerm,
+      selectionRect: selectionRect,
+      overrideMaximumTerms: overrideMaximumTerms,
+    );
+  }
+
   /// Hide the dictionary and dispose of the current result.
   @override
   void clearDictionaryResult() async {
     super.clearDictionaryResult();
     unselectWebViewTextSelection(_controller);
+    if (_wasPlayingBeforeLookup) {
+      _wasPlayingBeforeLookup = false;
+      _audiobookController?.play();
+    }
   }
 
   @override

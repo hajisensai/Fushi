@@ -17,16 +17,25 @@ const _kUpdateChannel = MethodChannel('app.hibiki.reader/update');
 class UpdateChecker {
   UpdateChecker._();
 
-  static void scheduleCheck(BuildContext context, String currentVersion) {
+  static void scheduleCheck(
+    BuildContext context,
+    String currentVersion, {
+    bool neverRemind = false,
+    bool autoInstall = false,
+  }) {
     SchedulerBinding.instance.addPostFrameCallback((_) {
-      _check(context, currentVersion);
+      _check(context, currentVersion,
+          neverRemind: neverRemind, autoInstall: autoInstall);
     });
   }
 
   static Future<void> _check(
     BuildContext context,
-    String currentVersion,
-  ) async {
+    String currentVersion, {
+    bool neverRemind = false,
+    bool autoInstall = false,
+  }) async {
+    if (neverRemind && !autoInstall) return;
     try {
       final client = HttpClient();
       client.connectionTimeout = const Duration(seconds: 10);
@@ -100,7 +109,11 @@ class UpdateChecker {
         return;
       }
 
-      _showUpdateDialog(context, tagName, releaseBody, apkUrl);
+      if (autoInstall) {
+        _downloadAndInstall(context, apkUrl, tagName);
+      } else {
+        _showUpdateDialog(context, tagName, releaseBody, apkUrl);
+      }
     } catch (_) {}
   }
 

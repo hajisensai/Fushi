@@ -581,5 +581,9 @@
     "stat_format_hours_minutes": "$h 時間 $m 分",
     "stat_format_chars": "$n 文字",
     "stat_format_chars_wan": "$n 万字",
-    "error_log_share_subject": "hibiki エラーログ"
+    "error_log_share_subject": "hibiki エラーログ",
+    "update_never_remind": "今後通知しない",
+    "update_auto_install": "自動インストール",
+    "update_settings": "アップデート設定",
+    "anki_settings_label": "Anki 設定"
 }

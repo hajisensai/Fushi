@@ -556,6 +556,39 @@ class _TtuSettingsDialogContentState extends BasePageState {
         const Space.small(),
         _buildTapRow(
           context: context,
+          icon: Icons.style,
+          label: t.anki_settings_label,
+          onTap: () {
+            showDialog(
+              context: context,
+              builder: (_) => const DictionarySettingsDialogPage(),
+            );
+          },
+        ),
+        const Space.small(),
+        const JidoujishoDivider(),
+        const Space.small(),
+        _buildSwitch(
+          label: t.update_never_remind,
+          value: appModel.updateNeverRemind,
+          onChanged: (v) {
+            appModel.setUpdateNeverRemind(v);
+            setState(() {});
+          },
+        ),
+        _buildSwitch(
+          label: t.update_auto_install,
+          value: appModel.updateAutoInstall,
+          onChanged: (v) {
+            appModel.setUpdateAutoInstall(v);
+            setState(() {});
+          },
+        ),
+        const Space.small(),
+        const JidoujishoDivider(),
+        const Space.small(),
+        _buildTapRow(
+          context: context,
           icon: Icons.bug_report,
           label: t.error_log_label(n: ErrorLogService.instance.entries.length),
           onTap: () {

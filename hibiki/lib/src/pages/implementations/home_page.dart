@@ -41,7 +41,12 @@ class _HomePageState extends BasePageState<HomePage>
       }
 
       if (mounted) {
-        UpdateChecker.scheduleCheck(context, appVersion);
+        UpdateChecker.scheduleCheck(
+          context,
+          appVersion,
+          neverRemind: appModel.updateNeverRemind,
+          autoInstall: appModel.updateAutoInstall,
+        );
       }
     });
   }

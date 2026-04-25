@@ -136,6 +136,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
     with WidgetsBindingObserver {
   final navigatorKey = GlobalKey<NavigatorState>();
   bool _isMainIntent = true;
+  String? _pendingLookupText;
 
   late final StreamSubscription _intentsSubscription;
 
@@ -202,13 +203,15 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
   }
 
   void textContextMenuAction(String data) {
-    if (!appModel.isInitialised) return;
-    if (data.trim().isNotEmpty) {
-      appModel.openRecursiveDictionarySearch(
-        searchTerm: data,
-        killOnPop: true,
-      );
+    if (data.trim().isEmpty) return;
+    if (!appModel.isInitialised) {
+      _pendingLookupText = data;
+      return;
     }
+    appModel.openRecursiveDictionarySearch(
+      searchTerm: data,
+      killOnPop: true,
+    );
   }
 
   @override
@@ -254,6 +257,14 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
           body: Center(child: CircularProgressIndicator()),
         ),
       );
+    }
+
+    if (_pendingLookupText != null) {
+      final text = _pendingLookupText!;
+      _pendingLookupText = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        textContextMenuAction(text);
+      });
     }
 
     return MaterialApp(

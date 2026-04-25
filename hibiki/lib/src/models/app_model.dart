@@ -3726,6 +3726,24 @@ class AppModel with ChangeNotifier {
     await _setPref('duplicate_check_models', value);
   }
 
+  bool get updateNeverRemind {
+    return _getPref('update_never_remind', defaultValue: false);
+  }
+
+  Future<void> setUpdateNeverRemind(bool value) async {
+    await _setPref('update_never_remind', value);
+    notifyListeners();
+  }
+
+  bool get updateAutoInstall {
+    return _getPref('update_auto_install', defaultValue: false);
+  }
+
+  Future<void> setUpdateAutoInstall(bool value) async {
+    await _setPref('update_auto_install', value);
+    notifyListeners();
+  }
+
   /// Get whether or not bookmarks have been populated.
   bool get populateBookmarksFlag {
     return _getPref('populate_bookmarks', defaultValue: false);

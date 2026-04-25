@@ -581,5 +581,9 @@
     "stat_format_hours_minutes": "$h ч $m мин.",
     "stat_format_chars": "$n символов",
     "stat_format_chars_wan": "$n символов",
-    "error_log_share_subject": "Журнал ошибок hibiki"
+    "error_log_share_subject": "Журнал ошибок hibiki",
+    "update_never_remind": "Don't remind again",
+    "update_auto_install": "Auto-install updates",
+    "update_settings": "Update Settings",
+    "anki_settings_label": "Anki Settings"
 }
