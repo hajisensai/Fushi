@@ -611,10 +611,11 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
             : Icons.close_fullscreen,
         action: () {
           appModel.toggleDictionaryCollapsed(dictionary);
-          _notifiersByDictionary[dictionary]!.value =
-              !_notifiersByDictionary[dictionary]!.value;
-          _notifiersByDictionary[dictionary]!.value =
-              !_notifiersByDictionary[dictionary]!.value;
+          final notifier = _notifiersByDictionary[dictionary];
+          if (notifier != null) {
+            notifier.value = !notifier.value;
+            notifier.value = !notifier.value;
+          }
         },
       ),
       buildPopupItem(
@@ -626,10 +627,11 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
             : Icons.visibility_off,
         action: () {
           appModel.toggleDictionaryHidden(dictionary);
-          _notifiersByDictionary[dictionary]!.value =
-              !_notifiersByDictionary[dictionary]!.value;
-          _notifiersByDictionary[dictionary]!.value =
-              !_notifiersByDictionary[dictionary]!.value;
+          final notifier = _notifiersByDictionary[dictionary];
+          if (notifier != null) {
+            notifier.value = !notifier.value;
+            notifier.value = !notifier.value;
+          }
         },
       ),
       buildPopupItem(
