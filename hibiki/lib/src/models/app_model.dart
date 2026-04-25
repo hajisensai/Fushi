@@ -2453,47 +2453,46 @@ class AppModel with ChangeNotifier {
     required File exportFile,
     required String preferredName,
     required String mimeType,
-    bool fallback = false,
   }) async {
     late File destinationFile;
     if (mimeType == 'image') {
-      destinationFile = getImageExportFile(fallback: fallback);
+      destinationFile = getImageExportFile(fallback: true);
     } else if (mimeType == 'audio') {
       final srcPath = exportFile.path;
       final ext = srcPath.contains('.')
           ? srcPath.split('.').last.toLowerCase()
           : 'mp3';
-      destinationFile = getAudioExportFile(fallback: fallback, ext: ext);
+      destinationFile = getAudioExportFile(fallback: true, ext: ext);
     } else {
       throw Exception('Invalid mime type, must be image or audio');
     }
 
+    if (destinationFile.existsSync()) {
+      destinationFile.deleteSync();
+    }
+
+    String destinationPath = destinationFile.path;
+    if (mimeType == 'image') {
+      File compressedFile = getImageCompressedFile(fallback: true);
+      if (compressedFile.existsSync()) {
+        compressedFile.deleteSync();
+      }
+      await FlutterImageCompress.compressAndGetFile(
+        exportFile.path,
+        compressedFile.path,
+        quality: 70,
+        keepExif: true,
+      );
+
+      debugPrint('Original image size: ${exportFile.lengthSync()} bytes');
+      debugPrint('Compressed image size: ${compressedFile.lengthSync()} bytes');
+
+      compressedFile.copySync(destinationPath);
+    } else {
+      exportFile.copySync(destinationPath);
+    }
+
     try {
-      if (destinationFile.existsSync()) {
-        destinationFile.deleteSync();
-      }
-
-      String destinationPath = destinationFile.path;
-      if (mimeType == 'image') {
-        File compressedFile = getImageCompressedFile(fallback: fallback);
-        if (compressedFile.existsSync()) {
-          compressedFile.deleteSync();
-        }
-        await FlutterImageCompress.compressAndGetFile(
-          exportFile.path,
-          compressedFile.path,
-          quality: 70,
-          keepExif: true,
-        );
-
-        debugPrint('Original image size: ${exportFile.lengthSync()} bytes');
-        debugPrint('Compressed image size: ${compressedFile.lengthSync()} bytes');
-
-        compressedFile.copySync(destinationPath);
-      } else {
-        exportFile.copySync(destinationPath);
-      }
-
       String response = await methodChannel.invokeMethod(
         'addFileToMedia',
         <String, String>{
@@ -2508,23 +2507,14 @@ class AppModel with ChangeNotifier {
       }
 
       return response;
-    } catch (e) {
-      if (fallback) {
-        Fluttertoast.showToast(
-          msg: t.error_export_media_ankidroid,
-          toastLength: Toast.LENGTH_SHORT,
-          gravity: ToastGravity.BOTTOM,
-        );
+    } on PlatformException {
+      Fluttertoast.showToast(
+        msg: t.error_export_media_ankidroid,
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+      );
 
-        rethrow;
-      } else {
-        return addFileToMedia(
-          exportFile: exportFile,
-          preferredName: preferredName,
-          mimeType: mimeType,
-          fallback: true,
-        );
-      }
+      rethrow;
     }
   }
 
