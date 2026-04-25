@@ -1133,6 +1133,39 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   }
 
   void _showZoomableImage(String src) {
+    Widget imageWidget;
+    if (src.startsWith('data:')) {
+      final commaIdx = src.indexOf(',');
+      if (commaIdx != -1) {
+        final bytes = base64Decode(src.substring(commaIdx + 1));
+        imageWidget = Image.memory(
+          bytes,
+          fit: BoxFit.contain,
+          errorBuilder: (_, __, ___) => const Icon(
+            Icons.broken_image_outlined,
+            color: Colors.white54,
+            size: 64,
+          ),
+        );
+      } else {
+        imageWidget = const Icon(
+          Icons.broken_image_outlined,
+          color: Colors.white54,
+          size: 64,
+        );
+      }
+    } else {
+      imageWidget = Image.network(
+        src,
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) => const Icon(
+          Icons.broken_image_outlined,
+          color: Colors.white54,
+          size: 64,
+        ),
+      );
+    }
+
     showDialog(
       context: context,
       builder: (ctx) => Dialog.fullscreen(
@@ -1142,17 +1175,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
             InteractiveViewer(
               minScale: 0.5,
               maxScale: 5.0,
-              child: Center(
-                child: Image.network(
-                  src,
-                  fit: BoxFit.contain,
-                  errorBuilder: (_, __, ___) => const Icon(
-                    Icons.broken_image_outlined,
-                    color: Colors.white54,
-                    size: 64,
-                  ),
-                ),
-              ),
+              child: Center(child: imageWidget),
             ),
             Positioned(
               top: 8,
@@ -1350,7 +1373,17 @@ function tapToSelect(e) {
     var imgEl = e.target;
     var src = imgEl.currentSrc || imgEl.src || '';
     if (src && window.flutter_inappwebview) {
-      window.flutter_inappwebview.callHandler('imageClicked', src);
+      try {
+        var canvas = document.createElement('canvas');
+        canvas.width = imgEl.naturalWidth;
+        canvas.height = imgEl.naturalHeight;
+        var ctx2d = canvas.getContext('2d');
+        ctx2d.drawImage(imgEl, 0, 0);
+        var dataUrl = canvas.toDataURL('image/png');
+        window.flutter_inappwebview.callHandler('imageClicked', dataUrl);
+      } catch(err) {
+        window.flutter_inappwebview.callHandler('imageClicked', src);
+      }
     }
     return;
   }
