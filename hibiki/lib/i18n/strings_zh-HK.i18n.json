@@ -614,17 +614,17 @@
   "local_audio": "本地音頻",
   "local_audio_not_set": "未選擇數據庫"
 ,
-  "dialog_select_dictionary_type": "Select dictionary type"
+  "dialog_select_dictionary_type": "選擇詞典類型"
 ,
-  "dictionary_section_frequency": "Frequency Dictionaries"
+  "dictionary_section_frequency": "詞頻詞典"
 ,
-  "dictionary_section_pitch": "Pitch Dictionaries"
+  "dictionary_section_pitch": "音調詞典"
 ,
-  "dictionary_section_term": "Term Dictionaries"
+  "dictionary_section_term": "釋義詞典"
 ,
-  "dictionary_type_frequency": "Frequency"
+  "dictionary_type_frequency": "詞頻"
 ,
-  "dictionary_type_pitch": "Pitch"
+  "dictionary_type_pitch": "音調"
 ,
-  "dictionary_type_term": "Term"
+  "dictionary_type_term": "釋義"
 }

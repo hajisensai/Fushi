@@ -614,17 +614,17 @@
   "local_audio": "로컬 오디오",
   "local_audio_not_set": "데이터베이스가 선택되지 않았습니다"
 ,
-  "dialog_select_dictionary_type": "Select dictionary type"
+  "dialog_select_dictionary_type": "사전 유형 선택"
 ,
-  "dictionary_section_frequency": "Frequency Dictionaries"
+  "dictionary_section_frequency": "빈도 사전"
 ,
-  "dictionary_section_pitch": "Pitch Dictionaries"
+  "dictionary_section_pitch": "피치 사전"
 ,
-  "dictionary_section_term": "Term Dictionaries"
+  "dictionary_section_term": "용어 사전"
 ,
-  "dictionary_type_frequency": "Frequency"
+  "dictionary_type_frequency": "빈도"
 ,
-  "dictionary_type_pitch": "Pitch"
+  "dictionary_type_pitch": "피치"
 ,
-  "dictionary_type_term": "Term"
+  "dictionary_type_term": "용어"
 }

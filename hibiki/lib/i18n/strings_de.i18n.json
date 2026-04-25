@@ -614,17 +614,17 @@
   "local_audio": "Lokales Audio",
   "local_audio_not_set": "Keine Datenbank ausgewählt"
 ,
-  "dialog_select_dictionary_type": "Select dictionary type"
+  "dialog_select_dictionary_type": "Wörterbuchtyp auswählen"
 ,
-  "dictionary_section_frequency": "Frequency Dictionaries"
+  "dictionary_section_frequency": "Häufigkeitswörterbücher"
 ,
-  "dictionary_section_pitch": "Pitch Dictionaries"
+  "dictionary_section_pitch": "Tonhöhenwörterbücher"
 ,
-  "dictionary_section_term": "Term Dictionaries"
+  "dictionary_section_term": "Begriffswörterbücher"
 ,
-  "dictionary_type_frequency": "Frequency"
+  "dictionary_type_frequency": "Häufigkeit"
 ,
-  "dictionary_type_pitch": "Pitch"
+  "dictionary_type_pitch": "Tonhöhe"
 ,
-  "dictionary_type_term": "Term"
+  "dictionary_type_term": "Begriff"
 }

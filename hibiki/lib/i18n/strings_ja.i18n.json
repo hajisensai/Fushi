@@ -615,17 +615,17 @@
     "anki_manage_profiles_hint": "AnkiDroidへのエクスポート時のフィールドマッピングを設定します。各プロファイルはAnkiのノートタイプに紐づき、hibikiのフィールドがAnkiのどのフィールドに入るかを定義します。",
   "manage_audio_sources": "Manage audio sources"
 ,
-  "dialog_select_dictionary_type": "Select dictionary type"
+  "dialog_select_dictionary_type": "辞書タイプを選択"
 ,
-  "dictionary_section_frequency": "Frequency Dictionaries"
+  "dictionary_section_frequency": "頻度辞書"
 ,
-  "dictionary_section_pitch": "Pitch Dictionaries"
+  "dictionary_section_pitch": "ピッチ辞書"
 ,
-  "dictionary_section_term": "Term Dictionaries"
+  "dictionary_section_term": "用語辞書"
 ,
-  "dictionary_type_frequency": "Frequency"
+  "dictionary_type_frequency": "頻度"
 ,
-  "dictionary_type_pitch": "Pitch"
+  "dictionary_type_pitch": "ピッチ"
 ,
-  "dictionary_type_term": "Term"
+  "dictionary_type_term": "用語"
 }

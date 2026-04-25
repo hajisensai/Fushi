@@ -615,17 +615,17 @@
   "local_audio": "الصوت المحلي",
   "local_audio_not_set": "لم يتم تحديد قاعدة بيانات"
 ,
-  "dialog_select_dictionary_type": "Select dictionary type"
+  "dialog_select_dictionary_type": "اختر نوع القاموس"
 ,
-  "dictionary_section_frequency": "Frequency Dictionaries"
+  "dictionary_section_frequency": "قواميس التردد"
 ,
-  "dictionary_section_pitch": "Pitch Dictionaries"
+  "dictionary_section_pitch": "قواميس النبرة"
 ,
-  "dictionary_section_term": "Term Dictionaries"
+  "dictionary_section_term": "قواميس المصطلحات"
 ,
-  "dictionary_type_frequency": "Frequency"
+  "dictionary_type_frequency": "تردد"
 ,
-  "dictionary_type_pitch": "Pitch"
+  "dictionary_type_pitch": "نبرة"
 ,
-  "dictionary_type_term": "Term"
+  "dictionary_type_term": "مصطلح"
 }

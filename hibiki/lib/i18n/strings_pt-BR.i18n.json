@@ -614,17 +614,17 @@
   "local_audio": "Áudio local",
   "local_audio_not_set": "Nenhum banco de dados selecionado"
 ,
-  "dialog_select_dictionary_type": "Select dictionary type"
+  "dialog_select_dictionary_type": "Selecionar tipo de dicionário"
 ,
-  "dictionary_section_frequency": "Frequency Dictionaries"
+  "dictionary_section_frequency": "Dicionários de frequência"
 ,
-  "dictionary_section_pitch": "Pitch Dictionaries"
+  "dictionary_section_pitch": "Dicionários de tom"
 ,
-  "dictionary_section_term": "Term Dictionaries"
+  "dictionary_section_term": "Dicionários de termos"
 ,
-  "dictionary_type_frequency": "Frequency"
+  "dictionary_type_frequency": "Frequência"
 ,
-  "dictionary_type_pitch": "Pitch"
+  "dictionary_type_pitch": "Tom"
 ,
-  "dictionary_type_term": "Term"
+  "dictionary_type_term": "Termo"
 }
