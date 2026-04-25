@@ -291,10 +291,10 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
             Brightness.dark;
     final fillColor = isDark
         ? Colors.black.withValues(alpha: 0.75)
-        : Colors.white.withValues(alpha: 0.82);
+        : Colors.white.withValues(alpha: 0.93);
     final borderColor = isDark
         ? Colors.white.withValues(alpha: 0.15)
-        : Colors.black.withValues(alpha: 0.12);
+        : Colors.black.withValues(alpha: 0.18);
 
     return _SwipeDismissWrapper(
       onDismiss: clearDictionaryResult,
