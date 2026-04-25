@@ -122,6 +122,8 @@ class _AnkiSettingsPageState extends BasePageState {
         const Space.small(),
         const JidoujishoDivider(),
         const Space.small(),
+        _buildManageProfiles(),
+        const Space.normal(),
         _buildManageDuplicateChecks(),
       ],
     );
@@ -235,6 +237,58 @@ class _AnkiSettingsPageState extends BasePageState {
         ),
         Switch(value: value, onChanged: onChanged),
       ],
+    );
+  }
+
+  Widget _buildManageProfiles() {
+    return InkWell(
+      onTap: () {
+        final models = _models ?? [];
+        if (models.isEmpty) return;
+        showDialog(
+          context: context,
+          builder: (_) => ProfilesDialogPage(
+            models: models,
+            initialModel: appModel.lastSelectedMapping.model,
+          ),
+        ).then((_) {
+          if (mounted) setState(() {});
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        alignment: Alignment.center,
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: Theme.of(context).unselectedWidgetColor.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.tune,
+              size: textTheme.titleSmall?.fontSize,
+            ),
+            const Space.small(),
+            Text(
+              t.anki_manage_profiles,
+              style: textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(width: 4),
+            GestureDetector(
+              onTap: () => _showHint(t.anki_manage_profiles_hint),
+              child: Icon(
+                Icons.info_outline,
+                size: 16,
+                color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.6),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

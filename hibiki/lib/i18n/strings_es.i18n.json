@@ -603,5 +603,8 @@
     "hint_page_columns": "Number of columns per page. Set to Auto to let the reader decide based on screen size.",
     "hint_writing_direction": "Horizontal: left-to-right text flow. Vertical: traditional top-to-bottom, right-to-left Japanese text.",
     "hint_view_mode": "Paginated: flip pages like a book. Continuous scroll: scroll through text without page breaks.",
-    "hint_vert_text_orient": "Mixed: numbers and Latin letters are rotated sideways. Upright: all characters stay upright."
+    "hint_vert_text_orient": "Mixed: numbers and Latin letters are rotated sideways. Upright: all characters stay upright.",
+
+    "anki_manage_profiles": "Manage Export Profiles",
+    "anki_manage_profiles_hint": "Configure how card fields are mapped when exporting to AnkiDroid. Each profile binds to an Anki note type and defines which hibiki field fills each Anki field."
 }

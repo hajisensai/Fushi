@@ -603,5 +603,8 @@
     "hint_page_columns": "每页显示的列数。设为自动时根据屏幕尺寸自行决定。",
     "hint_writing_direction": "横排：从左到右。竖排：传统日文从上到下、从右到左排列。",
     "hint_view_mode": "翻页模式：像书一样翻页。连续滚动：无分页，自由滚动阅读。",
-    "hint_vert_text_orient": "混合：数字和西文字母旋转为横向。直立：所有字符保持直立。"
+    "hint_vert_text_orient": "混合：数字和西文字母旋转为横向。直立：所有字符保持直立。",
+
+    "anki_manage_profiles": "管理导出配置",
+    "anki_manage_profiles_hint": "配置导出到 AnkiDroid 时各字段的映射方式。每个配置绑定一个 Anki 笔记类型，定义 hibiki 的哪个字段填充 Anki 的哪个字段。"
 }

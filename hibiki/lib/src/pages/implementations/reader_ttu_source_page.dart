@@ -1566,6 +1566,17 @@ div.pointer-events-none.absolute.opacity-25 {
 `);
 
 
+function _applySelection(range) {
+  var scrollEl = document.querySelector('.book-content') || document.scrollingElement || document.documentElement;
+  var savedTop = scrollEl.scrollTop;
+  var savedLeft = scrollEl.scrollLeft;
+  var selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(range);
+  scrollEl.scrollTop = savedTop;
+  scrollEl.scrollLeft = savedLeft;
+}
+
 function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceDelimited) {
   var result = document.caretRangeFromPoint(x, y);
 
@@ -1589,9 +1600,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
             range.setStart(offsetNode, result.startOffset - 1);
             range.setEnd(offsetNode, result.startOffset);
 
-            var selection = window.getSelection();
-            selection.removeAllRanges();
-            selection.addRange(range);
+            _applySelection(range);
             return;
           }
 
@@ -1605,9 +1614,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     range.setStart(offsetNode, result.startOffset);
     range.setEnd(offsetNode, result.startOffset + 1);
 
-    var selection = window.getSelection();
-    selection.removeAllRanges();
-    selection.addRange(range);
+    _applySelection(range);
     return;
   }
 
@@ -1682,9 +1689,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     range.setEnd(lastNode, endOffset);
   }
 
-  var selection = window.getSelection();
-  selection.removeAllRanges();
-  selection.addRange(range);
+  _applySelection(range);
 }
 
 // ReaderPosition 保存触发：监听 `.book-content` / `.book-content-container`
@@ -2033,6 +2038,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       debugPrint('[hibiki-reader] settings probe error: $e');
     }
     if (!mounted) return;
+    final ThemeData? sheetTheme = appModel.overrideDictionaryTheme;
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -2046,16 +2052,12 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           view.viewInsets,
           view.devicePixelRatio,
         );
-        return MediaQuery(
-          data: MediaQuery.of(ctx).copyWith(viewInsets: realInsets),
-          child: AudiobookSettingsSheet(
+        Widget sheet = AudiobookSettingsSheet(
           controller: ctrl,
           toc: toc,
           readerProgress: progress,
           pageProgress: pageProgress,
           onJumpSection: (int idx) async {
-            // 复用 sasayakiRequestNav：会在 follow audio 视角下打 auto 标记，
-            // 避免用户主动跳章被 sectionChanged 误判成外部触发。
             await AudiobookBridge.requestSectionNav(
               _controller,
               sectionIndex: idx,
@@ -2075,7 +2077,13 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
             if (mounted) Navigator.of(context).pop();
           },
           webViewController: _controller,
-        ),
+        );
+        if (sheetTheme != null) {
+          sheet = Theme(data: sheetTheme, child: sheet);
+        }
+        return MediaQuery(
+          data: MediaQuery.of(ctx).copyWith(viewInsets: realInsets),
+          child: sheet,
         );
       },
     );
@@ -2874,7 +2882,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     return ListenableBuilder(
       listenable: ctrl,
       builder: (context, _) {
-        return Positioned(
+        final barWidget = Positioned(
           left: 0,
           right: 0,
           bottom: 0,
@@ -2889,6 +2897,11 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
             ],
           ),
         );
+        final ThemeData? overrideTheme = appModel.overrideDictionaryTheme;
+        if (overrideTheme != null) {
+          return Theme(data: overrideTheme, child: barWidget);
+        }
+        return barWidget;
       },
     );
   }
