@@ -438,8 +438,7 @@ class _CreatorPageState extends BasePageState<CreatorPage> {
         !appModel.activeFields.contains(ImageField.instance);
 
     return Scaffold(
-      backgroundColor:
-          theme.colorScheme.background.withOpacity(isCardEditing ? 0.96 : 1),
+      backgroundColor: theme.colorScheme.background,
       key: _scaffoldKey,
       resizeToAvoidBottomInset: true,
       appBar: showPortrait ? buildAppBar() : null,

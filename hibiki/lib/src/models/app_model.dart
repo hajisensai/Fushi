@@ -2709,7 +2709,7 @@ class AppModel with ChangeNotifier {
     await Navigator.push(
       _navigatorKey.currentContext!,
       PageRouteBuilder(
-        opaque: false,
+        opaque: true,
         pageBuilder: (context, animation1, animation2) => CreatorPage(
           decks: decks,
           editEnhancements: false,
