@@ -50,68 +50,24 @@ window.__hoshiAlignToRect = function(rect) {
                      rect.left === 0 && rect.top === 0;
   if (isDegenerate) return;
 
-  var hasTtuPageApi = typeof window.__ttuGetPageInfo === 'function' &&
-                      typeof window.__ttuGoToPage === 'function';
-  if (hasTtuPageApi) {
-    var info = window.__ttuGetPageInfo();
-    if (!info || !info.stride || info.stride < 10) return;
-    var content = document.querySelector('.book-content') ||
-                  document.scrollingElement || document.documentElement;
-    var cRect = content.getBoundingClientRect();
-    var elStart, elEnd;
-    if (info.verticalMode) {
-      elStart = rect.top - cRect.top + info.virtualScrollPos;
-      elEnd = rect.bottom - cRect.top + info.virtualScrollPos;
-    } else {
-      elStart = rect.left - cRect.left + info.virtualScrollPos;
-      elEnd = rect.right - cRect.left + info.virtualScrollPos;
-    }
-    var anchor = (elStart + elEnd) / 2;
-    var targetPage = Math.floor(anchor / info.stride);
-    targetPage = Math.max(0, Math.min(targetPage, info.totalPages - 1));
-    if (targetPage !== info.currentPage) {
-      window.__ttuGoToPage(targetPage);
-    }
-    return;
-  }
-
+  var info = window.__ttuGetPageInfo();
+  if (!info || !info.stride || info.stride < 10) return;
   var content = document.querySelector('.book-content') ||
-                document.querySelector('[class*="book-content"]') ||
                 document.scrollingElement || document.documentElement;
-  var wm = getComputedStyle(document.documentElement).writingMode || 'horizontal-tb';
-  var isVertical = wm.indexOf('vertical') === 0;
-  var pageDim = isVertical ? content.clientHeight : content.clientWidth;
-  if (!pageDim || pageDim < 10) return;
-  var gap = 40;
-  var stride = pageDim + gap;
   var cRect = content.getBoundingClientRect();
-  var curScroll = isVertical ? content.scrollTop : content.scrollLeft;
   var elStart, elEnd;
-  if (isVertical) {
-    elStart = rect.top - cRect.top + content.scrollTop;
-    elEnd = rect.bottom - cRect.top + content.scrollTop;
+  if (info.verticalMode) {
+    elStart = rect.top - cRect.top + info.virtualScrollPos;
+    elEnd = rect.bottom - cRect.top + info.virtualScrollPos;
   } else {
-    elStart = rect.left - cRect.left + content.scrollLeft;
-    elEnd = rect.right - cRect.left + content.scrollLeft;
+    elStart = rect.left - cRect.left + info.virtualScrollPos;
+    elEnd = rect.right - cRect.left + info.virtualScrollPos;
   }
   var anchor = (elStart + elEnd) / 2;
-  var rawPageIndex = Math.floor(anchor / stride);
-  var totalScroll = isVertical
-    ? content.scrollHeight - content.clientHeight
-    : content.scrollWidth - content.clientWidth;
-  var maxScroll = Math.max(0, totalScroll);
-  var maxPageIndex = Math.max(0, Math.floor(maxScroll / stride));
-  var pageIndex = Math.max(0, Math.min(rawPageIndex, maxPageIndex));
-  var targetPos = pageIndex * stride;
-  var hasTtuApi = typeof window.__ttuScrollToPos === 'function';
-  var scrollTo = hasTtuApi
-    ? function(v) { window.__ttuScrollToPos(v); }
-    : function(v) {
-        if (isVertical) content.scrollTop = v;
-        else content.scrollLeft = v;
-      };
-  if (Math.abs(curScroll - targetPos) >= 1) {
-    scrollTo(targetPos);
+  var targetPage = Math.floor(anchor / info.stride);
+  targetPage = Math.max(0, Math.min(targetPage, info.totalPages - 1));
+  if (targetPage !== info.currentPage) {
+    window.__ttuGoToPage(targetPage);
   }
 };
 
@@ -577,18 +533,8 @@ window.__hoshiSeenImages = window.__hoshiSeenImages || new WeakSet();
 window.__hoshiPreScrollPos = -1;
 
 window.__hoshiSaveScrollPos = function() {
-  if (typeof window.__ttuGetPageInfo === 'function') {
-    var info = window.__ttuGetPageInfo();
-    window.__hoshiPreScrollPos = info ? info.virtualScrollPos : -1;
-    return;
-  }
-  var content = document.querySelector('.book-content') ||
-                document.querySelector('[class*="book-content"]') ||
-                document.scrollingElement || document.documentElement;
-  if (!content) { window.__hoshiPreScrollPos = -1; return; }
-  var wm = getComputedStyle(document.documentElement).writingMode || 'horizontal-tb';
-  var isVertical = wm.indexOf('vertical') === 0;
-  window.__hoshiPreScrollPos = isVertical ? content.scrollTop : Math.abs(content.scrollLeft);
+  var info = window.__ttuGetPageInfo();
+  window.__hoshiPreScrollPos = info ? info.virtualScrollPos : -1;
 };
 
 window.__hoshiCheckNewImage = function() {
@@ -599,23 +545,11 @@ window.__hoshiCheckNewImage = function() {
   var imgs = content.querySelectorAll('img');
   if (!imgs || imgs.length === 0) return false;
 
-  var hasTtuPageApi = typeof window.__ttuGetPageInfo === 'function' &&
-                      typeof window.__ttuGoToPage === 'function';
-  var info = hasTtuPageApi ? window.__ttuGetPageInfo() : null;
-
-  var isVertical, curScroll, stride;
-  if (info && info.stride > 0) {
-    isVertical = info.verticalMode;
-    curScroll = info.virtualScrollPos;
-    stride = info.stride;
-  } else {
-    var wm = getComputedStyle(document.documentElement).writingMode || 'horizontal-tb';
-    isVertical = wm.indexOf('vertical') === 0;
-    curScroll = isVertical ? content.scrollTop : Math.abs(content.scrollLeft);
-    var pageDim = isVertical ? content.clientHeight : content.clientWidth;
-    if (!pageDim || pageDim < 10) pageDim = 360;
-    stride = pageDim + 40;
-  }
+  var info = window.__ttuGetPageInfo();
+  if (!info || !info.stride || info.stride < 10) return false;
+  var isVertical = info.verticalMode;
+  var curScroll = info.virtualScrollPos;
+  var stride = info.stride;
 
   var prevScroll = window.__hoshiPreScrollPos;
   var vw = window.innerWidth || 360;
@@ -638,8 +572,8 @@ window.__hoshiCheckNewImage = function() {
       if (rect.width < 10 || rect.height < 10) continue;
       var cRect = content.getBoundingClientRect();
       var imgAbsPos = isVertical
-        ? (rect.top - cRect.top + (info ? info.virtualScrollPos : content.scrollTop))
-        : (rect.left - cRect.left + (info ? info.virtualScrollPos : content.scrollLeft));
+        ? (rect.top - cRect.top + info.virtualScrollPos)
+        : (rect.left - cRect.left + info.virtualScrollPos);
 
       if (prevScroll >= 0 && Math.abs(maxPos - minPos) > stride * 0.5) {
         if (imgAbsPos >= minPos && imgAbsPos <= maxPos) {
@@ -666,19 +600,8 @@ window.__hoshiCheckNewImage = function() {
   window.__hoshiSeenImages.add(bestImg);
 
   var imgPage = Math.floor(bestImgPos / stride);
-  var curPage = info ? info.currentPage : Math.floor(curScroll / stride);
-  if (imgPage !== curPage) {
-    if (info) {
-      window.__ttuGoToPage(imgPage);
-    } else {
-      var targetPos = imgPage * stride;
-      if (typeof window.__ttuScrollToPos === 'function') {
-        window.__ttuScrollToPos(targetPos);
-      } else {
-        if (isVertical) content.scrollTop = targetPos;
-        else content.scrollLeft = targetPos;
-      }
-    }
+  if (imgPage !== info.currentPage) {
+    window.__ttuGoToPage(imgPage);
   }
   return true;
 };
@@ -791,7 +714,6 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
     'hibiki-message-type': 'scrollToNormOffset-enter',
     'section': section, 'offset': offset, 'retry': retry,
     'hasAlignToRect': typeof window.__hoshiAlignToRect === 'function',
-    'hasTtuScrollToPos': typeof window.__ttuScrollToPos === 'function',
     'hasTtuPageApi': typeof window.__ttuGetPageInfo === 'function'
   }));
   try {
