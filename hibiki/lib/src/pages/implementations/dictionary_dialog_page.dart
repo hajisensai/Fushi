@@ -407,7 +407,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
     return ReorderableListView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      buildDefaultDragHandles: false,
+      buildDefaultDragHandles: true,
       itemCount: dictionaries.length,
       itemBuilder: (context, index) {
         Dictionary dictionary = dictionaries[index];
@@ -418,7 +418,6 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
         return buildDictionaryTile(
           dictionary,
           _notifiersByDictionary[dictionary.name]!,
-          index,
         );
       },
       onReorder: (oldIndex, newIndex) {
@@ -467,7 +466,6 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
   Widget buildDictionaryTile(
     Dictionary dictionary,
     ValueNotifier<bool> notifier,
-    int index,
   ) {
     DictionaryFormat dictionaryFormat =
         appModel.dictionaryFormats[dictionary.formatKey]!;
@@ -480,23 +478,9 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
           type: MaterialType.transparency,
           child: ListTile(
             selected: _selectedOrder == dictionary.order,
-            leading: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ReorderableDragStartListener(
-                  index: index,
-                  child: Icon(
-                    Icons.drag_handle,
-                    size: textTheme.titleLarge?.fontSize,
-                    color: theme.unselectedWidgetColor,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                getIcon(
-                  dictionary: dictionary,
-                  dictionaryFormat: dictionaryFormat,
-                ),
-              ],
+            leading: getIcon(
+              dictionary: dictionary,
+              dictionaryFormat: dictionaryFormat,
             ),
             title: Row(
               children: [
