@@ -15,11 +15,15 @@ const _fontsChannel = MethodChannel('app.hibiki.reader/fonts');
 List<String>? _cachedSystemFonts;
 
 Future<List<String>> _getSystemFonts() async {
-  if (_cachedSystemFonts != null) return _cachedSystemFonts!;
+  if (_cachedSystemFonts != null && _cachedSystemFonts!.isNotEmpty) {
+    return _cachedSystemFonts!;
+  }
   try {
     final result = await _fontsChannel.invokeMethod<List<dynamic>>('listSystemFonts');
+    debugPrint('[hibiki-fonts] channel returned ${result?.length} fonts');
     _cachedSystemFonts = result?.cast<String>() ?? [];
-  } catch (_) {
+  } catch (e) {
+    debugPrint('[hibiki-fonts] channel error: $e');
     _cachedSystemFonts = [];
   }
   return _cachedSystemFonts!;
@@ -74,7 +78,6 @@ class _SystemFontPickerPageState extends State<_SystemFontPickerPage> {
 
   @override
   Widget build(BuildContext context) {
-    final t = Translations.of(context);
     return Scaffold(
       appBar: AppBar(
         title: Text(t.custom_fonts_add_system),
@@ -267,10 +270,16 @@ class _CustomFontsPageState extends BasePageState {
                         label: Text(t.custom_fonts_add_system),
                       ),
                       const SizedBox(width: 12),
-                      FilledButton.tonalIcon(
+                      FilledButton.tonal(
                         onPressed: _importFontFile,
-                        icon: const Icon(Icons.file_open),
-                        label: Text(t.custom_fonts_import_file),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.file_open),
+                            const SizedBox(width: 8),
+                            Text(t.custom_fonts_import_file),
+                          ],
+                        ),
                       ),
                     ],
                   ),

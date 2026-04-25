@@ -477,6 +477,7 @@ public class MainActivity extends AudioServiceActivity {
                             }
                         } catch (Exception ignored) {}
                         List<String> sorted = new ArrayList<>(families);
+                        android.util.Log.d("hibiki-fonts", "Found " + sorted.size() + " fonts: " + sorted.subList(0, Math.min(5, sorted.size())));
                         new Handler(Looper.getMainLooper()).post(() -> result.success(sorted));
                     }).start();
                 } else {
