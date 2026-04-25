@@ -78,9 +78,13 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
 
   // ── PR8b: Follow audio pill + auto-off 状态 ─────────────────────────────
 
-  /// Follow=OFF 时 cue 跨章触发：悬浮 pill "→ 第 N 章"，点击跳转后清空。
+  /// Follow=OFF 时 cue 跨章触发：悬浮 pill，点击跳转后清空。
   /// null 表示无 pending；setState 驱动重绘。
   int? _pendingNavSection;
+
+  /// ttu TOC 缓存（section index → label），用于 pill 显示章节名。
+  Map<int, String> _tocLabels = const {};
+
 
   /// 已被请求跳章（`requestSectionNav` 调用后），用来过滤掉那条由自己
   /// 触发的 sectionChanged 回报事件——否则 ON 模式下系统自己跳的章会
@@ -407,6 +411,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
 
   @override
   void onMineFromPopup(Map<String, String> fields) {
+    clearDictionaryResult();
     appModel.openCreator(
       ref: ref,
       killOnPop: false,
@@ -1005,6 +1010,10 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       case 'sasayakiApplySkip':
         _lastSasayakiAppliedSection = -1;
         break;
+      case 'alignToRectDiag':
+        // ignore: avoid_print
+        print('[hibiki-align] ${message.message}');
+        break;
       default:
         if (msgType != null && msgType.toLowerCase().contains('err')) {
           ErrorLogService.instance.log(
@@ -1012,7 +1021,8 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
             messageJson['error'] ?? message.message,
           );
         }
-        debugPrint('[hibiki-audiobook-diag] ${message.message}');
+        // ignore: avoid_print
+        print('[hibiki-audiobook-diag] ${message.message}');
         break;
     }
   }
@@ -2178,6 +2188,12 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           '$_currentTtuSection (prev=$prev) via ttu probe',
         );
       }
+      // 缓存 TOC labels 供 pill 显示章节名
+      final List<TtuTocEntry> toc =
+          await AudiobookBridge.fetchToc(controller);
+      if (toc.isNotEmpty) {
+        _tocLabels = {for (final e in toc) e.index: e.label};
+      }
     } catch (e) {
       debugPrint('[hibiki-audiobook] probeTtuApi failed: $e');
     }
@@ -2294,9 +2310,15 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     if (cue != null && _currentTtuSection >= 0) {
       final SasayakiFragment? frag =
           SasayakiMatchCodec.tryDecode(cue.textFragmentId);
-      if (frag != null && frag.sectionIndex != _currentTtuSection) {
-        AudiobookBridge.highlight(_controller, cue: null);
-        return;
+      if (frag != null) {
+        if (frag.sectionIndex != _currentTtuSection) {
+          AudiobookBridge.highlight(_controller, cue: null);
+          return;
+        }
+        if (_pendingNavSection != null &&
+            frag.sectionIndex == _currentTtuSection) {
+          setState(() => _pendingNavSection = null);
+        }
       }
     }
     if (controller?.isImagePaused ?? false) return;
@@ -2346,6 +2368,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     };
     controller.onCrossChapter = _handleCueCrossChapter;
     controller.getCurrentReaderSection = () => _currentTtuSection;
+    controller.onBoundarySkip = _handleBoundarySkip;
     controller.getReaderViewportPos = () async {
       final ReaderViewportPos? vp =
           await AudiobookBridge.getViewportNormOffset(_controller);
@@ -2495,14 +2518,33 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     }
   }
 
+  /// 句子跳转到章节边界时（整本书首句/末句），跳到相邻章节第一句。
+  Future<void> _handleBoundarySkip(int delta) async {
+    final AudiobookPlayerController? controller = _audiobookController;
+    if (controller == null) return;
+    final int targetSec = _currentTtuSection + delta;
+    if (targetSec < 0) return;
+    final List<AudioCue> allCues = controller.chapterCuesSnapshot;
+    final List<AudioCue> targetCues = allCues.where((c) {
+      final frag = SasayakiMatchCodec.tryDecode(c.textFragmentId);
+      return frag != null && frag.sectionIndex == targetSec;
+    }).toList();
+    if (targetCues.isEmpty) return;
+    await controller.skipToCue(targetCues.first);
+  }
+
   /// 为指定章节预建 Sasayaki cueMap。由 sectionChanged 和 bootstrap 触发。
   Future<void> _applySasayakiCuesForSection(int sectionIndex) async {
     if (sectionIndex < 0) return;
     final AudiobookPlayerController? controller = _audiobookController;
     if (controller == null || !_controllerInitialised) return;
     if (_lastSasayakiAppliedSection == sectionIndex) return;
+    _lastSasayakiAppliedSection = sectionIndex;
     final List<AudioCue> cues = controller.sasayakiCuesForSection(sectionIndex);
-    if (cues.isEmpty) return;
+    if (cues.isEmpty) {
+      _lastSasayakiAppliedSection = -1;
+      return;
+    }
     debugPrint(
       '[hibiki-audiobook] applySasayakiCues section=$sectionIndex cues=${cues.length}',
     );
@@ -2512,8 +2554,6 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         sectionIndex: sectionIndex,
         cues: cues,
       );
-      // 异步完成后 reader 可能已翻到别章——丢弃过时结果，防止旧章 cueMap
-      // 覆盖当前章 DOM。
       if (_currentTtuSection != sectionIndex) {
         debugPrint(
           '[hibiki-audiobook] applySasayakiCues stale: applied=$sectionIndex '
@@ -2522,7 +2562,8 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         _lastSasayakiAppliedSection = -1;
         return;
       }
-      _lastSasayakiAppliedSection = sectionIndex;
+      // cue map 就绪后重新高亮当前 cue 并对齐页面
+      _onCueChanged();
     } catch (e) {
       debugPrint('[hibiki-audiobook] applySasayakiCues failed: $e');
       _lastSasayakiAppliedSection = -1;
@@ -2646,15 +2687,17 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     if (auto) {
       if (_inFlightNavSection == idx) {
         _currentTtuSection = idx;
-        // 先取消兜底 timer，防止 cueMap 构建期间超时。
         _navRestoreTimeout?.cancel();
-        // 先重建 cueMap，再 _completeNavRestore（后者触发 notifyListeners
-        // → _onCueChanged → highlight）。否则 highlight 时 cueMap 为空，
-        // 用户必须等下一条 cue 或再点 Follow 才能跳到正确位置。
         unawaited(_applyThenCompleteNav(idx));
         if (_restoreInFlight && _pendingRestorePos?.section == idx) {
           unawaited(_finishRestore());
         }
+      } else if (_inFlightNavSection == null) {
+        // timeout 已清 inFlight，但 ttu 的 sectionChanged 迟到了——
+        // 仍接受并更新 _currentTtuSection，否则后续跨章判定全错。
+        _currentTtuSection = idx;
+        _lastSasayakiAppliedSection = -1;
+        unawaited(_applySasayakiCuesForSection(idx));
       }
       return;
     }
@@ -2990,7 +3033,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         child: FilledButton.icon(
           onPressed: _followPillTap,
           icon: const Icon(Icons.arrow_forward, size: 16),
-          label: Text(t.go_to_chapter(n: target + 1)),
+          label: Text(_tocLabels[target] ?? t.go_to_chapter(n: target + 1)),
           style: FilledButton.styleFrom(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
             minimumSize: const Size(0, 32),

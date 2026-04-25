@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:material_floating_search_bar/material_floating_search_bar.dart';
 import 'package:spaces/spaces.dart';
+import 'package:hibiki/creator.dart';
 import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
@@ -93,6 +94,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
           mediaType.floatingSearchBarController.open();
           search(text);
         },
+        onMineEntry: _onMineEntry,
       ),
     );
   }
@@ -432,11 +434,26 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
               mediaType.floatingSearchBarController.query = text;
               search(text);
             },
+            onMineEntry: _onMineEntry,
           ),
         ),
         if (footerWidget != null)
           footerWidget!,
       ],
+    );
+  }
+
+  void _onMineEntry(Map<String, String> fields) {
+    appModel.openCreator(
+      ref: ref,
+      killOnPop: false,
+      creatorFieldValues: CreatorFieldValues(
+        textValues: {
+          TermField.instance: fields['expression'] ?? '',
+          ReadingField.instance: fields['reading'] ?? '',
+          MeaningField.instance: fields['glossary'] ?? '',
+        },
+      ),
     );
   }
 
