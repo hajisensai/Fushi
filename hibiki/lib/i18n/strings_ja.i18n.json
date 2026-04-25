@@ -587,6 +587,11 @@
     "update_settings": "アップデート設定",
     "anki_settings_label": "Anki 設定",
     "anki_default_deck": "デフォルトデッキ",
+    "anki_default_deck_hint": "カード作成時、デフォルトでこのデッキに追加されます。",
     "anki_default_profile": "エクスポートプロファイル",
+    "anki_default_profile_hint": "カードをエクスポートする際に使用するカードタイプとフィールドマッピングを決定します。",
+    "anki_close_on_export_hint": "カードのエクスポート成功後、カード作成画面を自動的に閉じます。",
+    "anki_auto_tag_hint": "カード作成時、現在の書籍タイトルをタグとして自動追加します。",
+    "anki_duplicate_check_hint": "新しいカードを追加する前に、どのカードタイプで重複をチェックするか選択します。",
     "anki_retry": "再試行"
 }

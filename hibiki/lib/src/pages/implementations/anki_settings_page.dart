@@ -86,11 +86,11 @@ class _AnkiSettingsPageState extends BasePageState {
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       children: [
-        _buildSectionHeader(t.anki_default_deck),
+        _buildSectionHeader(t.anki_default_deck, hint: t.anki_default_deck_hint),
         const SizedBox(height: 4),
         _buildDeckSelector(),
         const Space.normal(),
-        _buildSectionHeader(t.anki_default_profile),
+        _buildSectionHeader(t.anki_default_profile, hint: t.anki_default_profile_hint),
         const SizedBox(height: 4),
         _buildProfileSelector(),
         const Space.normal(),
@@ -98,6 +98,7 @@ class _AnkiSettingsPageState extends BasePageState {
         const Space.small(),
         _buildSwitchRow(
           label: t.close_on_export,
+          hint: t.anki_close_on_export_hint,
           value: appModel.closeCreatorOnExport,
           onChanged: (_) {
             appModel.toggleCloseCreatorOnExport();
@@ -111,6 +112,7 @@ class _AnkiSettingsPageState extends BasePageState {
         ),
         _buildSwitchRow(
           label: t.auto_add_book_name_to_tags,
+          hint: t.anki_auto_tag_hint,
           value: appModel.autoAddBookNameToTags,
           onChanged: (_) {
             appModel.toggleAutoAddBookNameToTags();
@@ -125,11 +127,41 @@ class _AnkiSettingsPageState extends BasePageState {
     );
   }
 
-  Widget _buildSectionHeader(String label) {
-    return Text(
-      label,
-      style: textTheme.labelMedium?.copyWith(
-        color: Theme.of(context).colorScheme.primary,
+  Widget _buildSectionHeader(String label, {String? hint}) {
+    return Row(
+      children: [
+        Text(
+          label,
+          style: textTheme.labelMedium?.copyWith(
+            color: Theme.of(context).colorScheme.primary,
+          ),
+        ),
+        if (hint != null) ...[
+          const SizedBox(width: 4),
+          GestureDetector(
+            onTap: () => _showHint(hint),
+            child: Icon(
+              Icons.info_outline,
+              size: 16,
+              color: Theme.of(context).colorScheme.primary.withOpacity(0.7),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  void _showHint(String hint) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        content: Text(hint),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(t.dialog_close),
+          ),
+        ],
       ),
     );
   }
@@ -178,10 +210,29 @@ class _AnkiSettingsPageState extends BasePageState {
     required String label,
     required bool value,
     required ValueChanged<bool> onChanged,
+    String? hint,
   }) {
     return Row(
       children: [
-        Expanded(child: Text(label)),
+        Expanded(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(child: Text(label)),
+              if (hint != null) ...[
+                const SizedBox(width: 4),
+                GestureDetector(
+                  onTap: () => _showHint(hint),
+                  child: Icon(
+                    Icons.info_outline,
+                    size: 16,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.6),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
         Switch(value: value, onChanged: onChanged),
       ],
     );
@@ -210,6 +261,15 @@ class _AnkiSettingsPageState extends BasePageState {
               t.manage_duplicate_checks,
               style: textTheme.titleSmall?.copyWith(
                 fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(width: 4),
+            GestureDetector(
+              onTap: () => _showHint(t.anki_duplicate_check_hint),
+              child: Icon(
+                Icons.info_outline,
+                size: 16,
+                color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.6),
               ),
             ),
           ],

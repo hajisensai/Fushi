@@ -587,6 +587,11 @@
     "update_settings": "업데이트 설정",
     "anki_settings_label": "Anki 설정",
     "anki_default_deck": "기본 덱",
+    "anki_default_deck_hint": "카드 생성 시 기본적으로 이 덱에 추가됩니다.",
     "anki_default_profile": "내보내기 프로필",
+    "anki_default_profile_hint": "카드를 내보낼 때 사용할 카드 유형과 필드 매핑을 결정합니다.",
+    "anki_close_on_export_hint": "카드 내보내기 성공 후 카드 생성기를 자동으로 닫습니다.",
+    "anki_auto_tag_hint": "카드 생성 시 현재 책 제목을 태그로 자동 추가합니다.",
+    "anki_duplicate_check_hint": "새 카드를 추가하기 전에 어떤 카드 유형에서 중복을 확인할지 선택합니다.",
     "anki_retry": "다시 시도"
 }

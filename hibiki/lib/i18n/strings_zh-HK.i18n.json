@@ -587,6 +587,11 @@
     "update_settings": "更新設定",
     "anki_settings_label": "Anki 設定",
     "anki_default_deck": "預設牌組",
+    "anki_default_deck_hint": "製卡時預設將卡片加入此牌組。",
     "anki_default_profile": "匯出設定",
+    "anki_default_profile_hint": "決定匯出卡片時使用的卡片類型和欄位對應。",
+    "anki_close_on_export_hint": "成功匯出卡片後自動關閉製卡工具。",
+    "anki_auto_tag_hint": "製卡時自動將目前書名加入為標籤。",
+    "anki_duplicate_check_hint": "選擇匯出前檢查哪些卡片類型中是否已有重複。",
     "anki_retry": "重試"
 }
