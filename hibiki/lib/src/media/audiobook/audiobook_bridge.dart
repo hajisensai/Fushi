@@ -56,20 +56,8 @@ window.__hoshiAlignToRect = function(rect) {
   var isVertical = wm.indexOf('vertical') === 0;
   var pageDim = isVertical ? content.clientHeight : content.clientWidth;
   if (!pageDim || pageDim < 10) return;
-  var container = content.querySelector('.book-content-container');
   var gap = 40;
-  if (container) {
-    var gapNum = parseFloat(getComputedStyle(container).columnGap);
-    if (!isNaN(gapNum) && gapNum > 0) gap = gapNum;
-  }
-  var effectiveDim = pageDim;
-  if (container) {
-    try {
-      var cw = parseFloat(getComputedStyle(container).columnWidth);
-      if (cw > 0 && Math.abs(cw - pageDim) < 2) effectiveDim = cw;
-    } catch (e) {}
-  }
-  var stride = effectiveDim + gap;
+  var stride = pageDim + gap;
   var cRect = content.getBoundingClientRect();
   var curScroll = isVertical ? content.scrollTop : content.scrollLeft;
   var elStart, elEnd;
@@ -96,17 +84,8 @@ window.__hoshiAlignToRect = function(rect) {
         if (isVertical) content.scrollTop = v;
         else content.scrollLeft = v;
       };
-  var skip = Math.abs(curScroll - targetPos) < 1;
-  if (!skip) {
+  if (Math.abs(curScroll - targetPos) >= 1) {
     scrollTo(targetPos);
-  }
-  var readback = isVertical ? content.scrollTop : content.scrollLeft;
-  var snappedPage = Math.max(0, Math.min(
-      Math.round(readback / stride), maxPageIndex));
-  var snappedPos = snappedPage * stride;
-  var needSnap = Math.abs(readback - snappedPos) >= 1;
-  if (needSnap) {
-    scrollTo(snappedPos);
   }
 };
 
@@ -594,12 +573,7 @@ window.__hoshiCheckNewImage = function() {
   var curScroll = isVertical ? content.scrollTop : Math.abs(content.scrollLeft);
   var prevScroll = window.__hoshiPreScrollPos;
 
-  var container = content.querySelector('.book-content-container');
   var gap = 40;
-  if (container) {
-    var g = parseFloat(getComputedStyle(container).columnGap);
-    if (!isNaN(g) && g > 0) gap = g;
-  }
   var pageDim = isVertical ? content.clientHeight : content.clientWidth;
   if (!pageDim || pageDim < 10) pageDim = 360;
   var stride = pageDim + gap;
