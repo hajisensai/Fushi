@@ -4,7 +4,6 @@ import 'package:change_notifier_builder/change_notifier_builder.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:reorderables/reorderables.dart';
 import 'package:spaces/spaces.dart';
 import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/media.dart';
@@ -22,7 +21,6 @@ class DictionaryDialogPage extends BasePage {
 }
 
 class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
-  final ScrollController _scrollController = ScrollController();
   int? _selectedOrder;
 
   @override
@@ -401,48 +399,44 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
     );
   }
 
-  Map<Dictionary, ValueNotifier<bool>> _notifiersByDictionary = {};
+  final Map<String, ValueNotifier<bool>> _notifiersByDictionary = {};
 
   Widget buildDictionaryList(List<Dictionary> dictionaries) {
-    _notifiersByDictionary = {};
     _selectedOrder ??= dictionaries.firstOrNull?.order;
 
-    return RawScrollbar(
-      thickness: 3,
-      thumbVisibility: true,
-      controller: _scrollController,
-      child: ReorderableColumn(
-        scrollController: _scrollController,
-        children: List.generate(dictionaries.length, (index) {
-          Dictionary dictionary = dictionaries[index];
+    return ReorderableListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      buildDefaultDragHandles: false,
+      itemCount: dictionaries.length,
+      itemBuilder: (context, index) {
+        Dictionary dictionary = dictionaries[index];
+        _notifiersByDictionary.putIfAbsent(
+          dictionary.name,
+          () => ValueNotifier<bool>(dictionary.order == _selectedOrder),
+        );
+        return buildDictionaryTile(
+          dictionary,
+          _notifiersByDictionary[dictionary.name]!,
+          index,
+        );
+      },
+      onReorder: (oldIndex, newIndex) {
+        if (newIndex > oldIndex) newIndex--;
+        List<Dictionary> cloneDictionaries = List.from(dictionaries);
 
-          _notifiersByDictionary.putIfAbsent(
-            dictionaries[index],
-            () => ValueNotifier<bool>(dictionary.order == _selectedOrder),
-          );
-          return buildDictionaryTile(
-            dictionaries[index],
-            _notifiersByDictionary[dictionary]!,
-          );
-        }),
-        onReorder: (oldIndex, newIndex) {
-          List<Dictionary> cloneDictionaries = [];
-          cloneDictionaries.addAll(dictionaries);
+        Dictionary item = cloneDictionaries.removeAt(oldIndex);
+        cloneDictionaries.insert(newIndex, item);
 
-          Dictionary item = cloneDictionaries[oldIndex];
-          cloneDictionaries.remove(item);
-          cloneDictionaries.insert(newIndex, item);
+        cloneDictionaries.forEachIndexed((index, dictionary) {
+          dictionary.order = index;
+        });
 
-          cloneDictionaries.forEachIndexed((index, dictionary) {
-            dictionary.order = index;
-          });
+        _selectedOrder = newIndex;
 
-          _selectedOrder = newIndex;
-
-          appModel.updateDictionaryOrder(cloneDictionaries);
-          setState(() {});
-        },
-      ),
+        appModel.updateDictionaryOrder(cloneDictionaries);
+        setState(() {});
+      },
     );
   }
 
@@ -473,6 +467,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
   Widget buildDictionaryTile(
     Dictionary dictionary,
     ValueNotifier<bool> notifier,
+    int index,
   ) {
     DictionaryFormat dictionaryFormat =
         appModel.dictionaryFormats[dictionary.formatKey]!;
@@ -485,9 +480,23 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
           type: MaterialType.transparency,
           child: ListTile(
             selected: _selectedOrder == dictionary.order,
-            leading: getIcon(
-              dictionary: dictionary,
-              dictionaryFormat: dictionaryFormat,
+            leading: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ReorderableDragStartListener(
+                  index: index,
+                  child: Icon(
+                    Icons.drag_handle,
+                    size: textTheme.titleLarge?.fontSize,
+                    color: theme.unselectedWidgetColor,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                getIcon(
+                  dictionary: dictionary,
+                  dictionaryFormat: dictionaryFormat,
+                ),
+              ],
             ),
             title: Row(
               children: [
