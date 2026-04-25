@@ -623,7 +623,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     );
   }
 
-  void setDictionaryColors() async {
+  Future<void> setDictionaryColors() async {
     String currentTheme = (await _controller.evaluateJavascript(
             source: 'window.localStorage.getItem("theme")'))
         .toString();
@@ -969,7 +969,9 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
               for (var i = 0; i < regs.length; i++) { regs[i].unregister(); }
             });
             caches.keys().then(function(keys) {
-              keys.forEach(function(k) { caches.delete(k); });
+              keys.forEach(function(k) {
+                if (k.indexOf('build:') === 0 || k.indexOf('other:') === 0) caches.delete(k);
+              });
             });
           }
         ''');
@@ -2245,7 +2247,9 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       debugPrint('[hibiki-reader] settings probe error: $e');
     }
     if (!mounted) return;
-    final ThemeData? sheetTheme = appModel.overrideDictionaryTheme;
+    final sheetThemeNotifier = ValueNotifier<ThemeData?>(
+      appModel.overrideDictionaryTheme,
+    );
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -2284,16 +2288,28 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
             if (mounted) Navigator.of(context).pop();
           },
           webViewController: _controller,
+          onThemeChanged: () async {
+            await setDictionaryColors();
+            sheetThemeNotifier.value = appModel.overrideDictionaryTheme;
+          },
         );
-        if (sheetTheme != null) {
-          sheet = Theme(data: sheetTheme, child: sheet);
-        }
-        return MediaQuery(
-          data: MediaQuery.of(ctx).copyWith(viewInsets: realInsets),
+        return ValueListenableBuilder<ThemeData?>(
+          valueListenable: sheetThemeNotifier,
+          builder: (_, ThemeData? themeOverride, Widget? child) {
+            Widget wrapped = child!;
+            if (themeOverride != null) {
+              wrapped = Theme(data: themeOverride, child: wrapped);
+            }
+            return MediaQuery(
+              data: MediaQuery.of(ctx).copyWith(viewInsets: realInsets),
+              child: wrapped,
+            );
+          },
           child: sheet,
         );
       },
     );
+    sheetThemeNotifier.dispose();
   }
 
   /// 从 ttu fork 的 `__ttuCurrentSection()` 读一次当前段，用来兜住

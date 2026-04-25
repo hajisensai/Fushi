@@ -134,6 +134,7 @@ class AudiobookSettingsSheet extends StatefulWidget {
     required this.onBookmark,
     required this.onExitReader,
     required this.webViewController,
+    this.onThemeChanged,
     super.key,
   });
 
@@ -145,6 +146,7 @@ class AudiobookSettingsSheet extends StatefulWidget {
   final Future<void> Function() onBookmark;
   final VoidCallback onExitReader;
   final InAppWebViewController webViewController;
+  final VoidCallback? onThemeChanged;
 
   @override
   State<AudiobookSettingsSheet> createState() => _AudiobookSettingsSheetState();
@@ -776,11 +778,12 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
             return ChoiceChip(
               label: Text(TtuReaderSettings.themeLabels[t] ?? t),
               selected: selected,
-              onSelected: (bool on) {
+              onSelected: (bool on) async {
                 if (!on) return;
                 s.theme = t;
                 setState(() {});
-                _updateSetting('theme', t);
+                await _updateSetting('theme', t);
+                widget.onThemeChanged?.call();
               },
             );
           }).toList(),
