@@ -2689,6 +2689,7 @@ class AppModel with ChangeNotifier {
     required WidgetRef ref,
     required bool killOnPop,
     CreatorFieldValues? creatorFieldValues,
+    Future<void> Function(CreatorModel creatorModel)? onCreatorReady,
   }) async {
     _currentMediaPauseController.add(null);
 
@@ -2701,6 +2702,10 @@ class AppModel with ChangeNotifier {
     );
     if (creatorFieldValues != null) {
       creatorModel.copyContext(creatorFieldValues);
+    }
+
+    if (onCreatorReady != null) {
+      await onCreatorReady(creatorModel);
     }
 
     _isCreatorOpen = true;

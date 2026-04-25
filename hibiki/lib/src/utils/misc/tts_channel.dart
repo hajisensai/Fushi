@@ -65,6 +65,27 @@ class TtsChannel {
     }
   }
 
+  /// Extract a segment from an audio file using Android MediaExtractor/MediaMuxer.
+  /// Returns the output file path on success, null on failure.
+  Future<String?> extractAudioSegment({
+    required String inputPath,
+    required int startMs,
+    required int endMs,
+    required String outputPath,
+  }) async {
+    try {
+      final result = await _channel.invokeMethod('extractAudioSegment', {
+        'inputPath': inputPath,
+        'startMs': startMs,
+        'endMs': endMs,
+        'outputPath': outputPath,
+      });
+      return result as String?;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Stop any ongoing TTS or URL audio playback.
   Future<void> stop() async {
     try {

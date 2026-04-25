@@ -16,6 +16,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:spaces/spaces.dart';
 import 'package:hibiki/creator.dart';
 import 'package:hibiki/media.dart';
+import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_controller.dart';
@@ -423,7 +424,89 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
           SentenceField.instance: fields['popupSelectionText'] ?? '',
         },
       ),
+      onCreatorReady: (creatorModel) async {
+        await _attachMineAudio(fields, creatorModel);
+      },
     );
+  }
+
+  Future<void> _attachMineAudio(
+    Map<String, String> fields,
+    CreatorModel creatorModel,
+  ) async {
+    final cacheDir = Directory.systemTemp;
+
+    // Word audio: download URL or use local file
+    final String wordAudioUrl = fields['audio'] ?? '';
+    if (wordAudioUrl.isNotEmpty) {
+      try {
+        File? audioFile;
+        if (wordAudioUrl.startsWith('file://')) {
+          audioFile = File(wordAudioUrl.replaceFirst('file://', ''));
+        } else if (wordAudioUrl.startsWith('/')) {
+          audioFile = File(wordAudioUrl);
+        } else if (wordAudioUrl.startsWith('http')) {
+          final response = await HttpClient()
+              .getUrl(Uri.parse(wordAudioUrl))
+              .then((req) => req.close());
+          final bytes = await response.fold<List<int>>(
+              [], (prev, chunk) => prev..addAll(chunk));
+          if (bytes.isNotEmpty) {
+            final ext = wordAudioUrl.contains('.opus')
+                ? '.opus'
+                : wordAudioUrl.contains('.ogg')
+                    ? '.ogg'
+                    : '.mp3';
+            audioFile = File('${cacheDir.path}/mine_word_audio$ext');
+            await audioFile.writeAsBytes(bytes);
+          }
+        }
+        if (audioFile != null && audioFile.existsSync()) {
+          AudioField.instance.setAudioFile(
+            appModel: appModel,
+            creatorModel: creatorModel,
+            file: audioFile,
+          );
+        }
+      } catch (e) {
+        debugPrint('[hibiki-mine] word audio failed: $e');
+      }
+    }
+
+    // Sentence audio: extract from audiobook cue
+    final controller = _audiobookController;
+    if (controller != null) {
+      final AudioCue? cue = controller.currentCue;
+      final Audiobook? ab = controller.audiobook;
+      if (cue != null && ab != null) {
+        try {
+          final audioFiles = _resolveAudioFiles(
+            audioPaths: ab.audioPaths,
+            audioRoot: ab.audioRoot,
+          );
+          if (cue.audioFileIndex < audioFiles.length) {
+            final inputFile = audioFiles[cue.audioFileIndex];
+            final outputPath =
+                '${cacheDir.path}/mine_sentence_audio.m4a';
+            final result = await TtsChannel.instance.extractAudioSegment(
+              inputPath: inputFile.path,
+              startMs: cue.startMs,
+              endMs: cue.endMs,
+              outputPath: outputPath,
+            );
+            if (result != null) {
+              AudioSentenceField.instance.setAudioFile(
+                appModel: appModel,
+                creatorModel: creatorModel,
+                file: File(result),
+              );
+            }
+          }
+        } catch (e) {
+          debugPrint('[hibiki-mine] sentence audio failed: $e');
+        }
+      }
+    }
   }
 
   /// Hide the dictionary and dispose of the current result.
@@ -880,6 +963,17 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         );
       },
       onLoadStop: (controller, uri) async {
+        await controller.evaluateJavascript(source: '''
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function(regs) {
+              for (var i = 0; i < regs.length; i++) { regs[i].unregister(); }
+            });
+            caches.keys().then(function(keys) {
+              keys.forEach(function(k) { caches.delete(k); });
+            });
+          }
+        ''');
+
         if (mediaSource.adaptTtuTheme) {
           setDictionaryColors();
         }

@@ -525,6 +525,72 @@ public class MainActivity extends AudioServiceActivity {
                         }
                         break;
                     }
+                    case "extractAudioSegment": {
+                        String inputPath = call.argument("inputPath");
+                        Number startMsN = call.argument("startMs");
+                        Number endMsN = call.argument("endMs");
+                        String outputPath = call.argument("outputPath");
+                        if (inputPath == null || outputPath == null || startMsN == null || endMsN == null) {
+                            result.error("INVALID_ARGS", "Missing required arguments", null);
+                            return;
+                        }
+                        long startUs = startMsN.longValue() * 1000L;
+                        long endUs = endMsN.longValue() * 1000L;
+                        new Thread(() -> {
+                            try {
+                                android.media.MediaExtractor extractor = new android.media.MediaExtractor();
+                                extractor.setDataSource(inputPath);
+                                int audioTrack = -1;
+                                String mime = null;
+                                for (int i = 0; i < extractor.getTrackCount(); i++) {
+                                    android.media.MediaFormat fmt = extractor.getTrackFormat(i);
+                                    String m = fmt.getString(android.media.MediaFormat.KEY_MIME);
+                                    if (m != null && m.startsWith("audio/")) {
+                                        audioTrack = i;
+                                        mime = m;
+                                        break;
+                                    }
+                                }
+                                if (audioTrack < 0) {
+                                    extractor.release();
+                                    new Handler(Looper.getMainLooper()).post(() ->
+                                        result.error("NO_AUDIO", "No audio track found", null));
+                                    return;
+                                }
+                                extractor.selectTrack(audioTrack);
+                                android.media.MediaFormat trackFormat = extractor.getTrackFormat(audioTrack);
+                                android.media.MediaMuxer muxer = new android.media.MediaMuxer(
+                                    outputPath, android.media.MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
+                                int outTrack = muxer.addTrack(trackFormat);
+                                muxer.start();
+                                extractor.seekTo(startUs, android.media.MediaExtractor.SEEK_TO_CLOSEST_SYNC);
+                                java.nio.ByteBuffer buffer = java.nio.ByteBuffer.allocate(1024 * 1024);
+                                android.media.MediaCodec.BufferInfo info = new android.media.MediaCodec.BufferInfo();
+                                while (true) {
+                                    int sampleSize = extractor.readSampleData(buffer, 0);
+                                    if (sampleSize < 0) break;
+                                    long sampleTime = extractor.getSampleTime();
+                                    if (sampleTime > endUs) break;
+                                    if (sampleTime >= startUs) {
+                                        info.offset = 0;
+                                        info.size = sampleSize;
+                                        info.presentationTimeUs = sampleTime - startUs;
+                                        info.flags = extractor.getSampleFlags();
+                                        muxer.writeSampleData(outTrack, buffer, info);
+                                    }
+                                    extractor.advance();
+                                }
+                                muxer.stop();
+                                muxer.release();
+                                extractor.release();
+                                new Handler(Looper.getMainLooper()).post(() -> result.success(outputPath));
+                            } catch (Exception e) {
+                                new Handler(Looper.getMainLooper()).post(() ->
+                                    result.error("EXTRACT_ERROR", e.getMessage(), null));
+                            }
+                        }).start();
+                        break;
+                    }
                     case "playFile": {
                         String filePath = call.argument("path");
                         if (filePath == null || filePath.isEmpty()) {

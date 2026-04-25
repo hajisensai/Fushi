@@ -3,8 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:material_floating_search_bar/material_floating_search_bar.dart';
 import 'package:spaces/spaces.dart';
+import 'dart:io';
+
 import 'package:hibiki/creator.dart';
 import 'package:hibiki/dictionary.dart';
+import 'package:hibiki/models.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
@@ -454,6 +457,42 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
           MeaningField.instance: fields['glossary'] ?? '',
         },
       ),
+      onCreatorReady: (creatorModel) async {
+        final String wordAudioUrl = fields['audio'] ?? '';
+        if (wordAudioUrl.isEmpty) return;
+        try {
+          File? audioFile;
+          if (wordAudioUrl.startsWith('file://')) {
+            audioFile = File(wordAudioUrl.replaceFirst('file://', ''));
+          } else if (wordAudioUrl.startsWith('/')) {
+            audioFile = File(wordAudioUrl);
+          } else if (wordAudioUrl.startsWith('http')) {
+            final response = await HttpClient()
+                .getUrl(Uri.parse(wordAudioUrl))
+                .then((req) => req.close());
+            final bytes = await response.fold<List<int>>(
+                [], (prev, chunk) => prev..addAll(chunk));
+            if (bytes.isNotEmpty) {
+              final ext = wordAudioUrl.contains('.opus')
+                  ? '.opus'
+                  : wordAudioUrl.contains('.ogg')
+                      ? '.ogg'
+                      : '.mp3';
+              audioFile = File('${Directory.systemTemp.path}/mine_word_audio$ext');
+              await audioFile.writeAsBytes(bytes);
+            }
+          }
+          if (audioFile != null && audioFile.existsSync()) {
+            AudioField.instance.setAudioFile(
+              appModel: appModel,
+              creatorModel: creatorModel,
+              file: audioFile,
+            );
+          }
+        } catch (e) {
+          debugPrint('[hibiki-mine] word audio failed: $e');
+        }
+      },
     );
   }
 
