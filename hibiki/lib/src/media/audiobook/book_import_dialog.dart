@@ -126,7 +126,23 @@ class _BookImportDialogState extends State<BookImportDialog> {
         ),
         FilledButton(
           onPressed: _importing ? null : _doImport,
-          child: Text(t.dialog_import),
+          child: _importing
+              ? Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white70,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(t.dialog_importing),
+                  ],
+                )
+              : Text(t.dialog_import),
         ),
       ],
     );
@@ -440,6 +456,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
     }
 
     setState(() => _importing = true);
+    Fluttertoast.showToast(msg: t.dialog_importing);
 
     try {
       final String? authorText = _authorCtrl.text.trim().isEmpty
