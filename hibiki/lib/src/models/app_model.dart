@@ -3606,7 +3606,7 @@ class AppModel with ChangeNotifier {
 
   /// The search debounce delay in milliseconds for searching in the app..
   bool get closeCreatorOnExport {
-    return _getPref('close_on_export', defaultValue: false);
+    return _getPref('close_on_export', defaultValue: true);
   }
 
   /// Sets the debounce delay in milliseconds for searching in the app..
