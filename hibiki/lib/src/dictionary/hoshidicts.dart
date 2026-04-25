@@ -188,6 +188,20 @@ class HoshiDicts {
     _rebuildStylesCache();
   }
 
+  static void initializeTyped({
+    List<String> termPaths = const [],
+    List<String> freqPaths = const [],
+    List<String> pitchPaths = const [],
+  }) {
+    _instance?.dispose();
+    final h = HoshiDicts();
+    for (final p in termPaths) h.addTermDict(p);
+    for (final p in freqPaths) h.addFreqDict(p);
+    for (final p in pitchPaths) h.addPitchDict(p);
+    _instance = h;
+    _rebuildStylesCache();
+  }
+
   static void rebuild(List<String> paths) {
     initialize(paths);
   }

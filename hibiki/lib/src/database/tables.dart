@@ -138,6 +138,7 @@ class DictionaryMetadata extends Table {
   TextColumn get name => text()();
   TextColumn get formatKey => text()();
   IntColumn get order => integer()();
+  TextColumn get type => text().withDefault(const Constant('term'))();
   TextColumn get metadataJson => text().withDefault(const Constant('{}'))();
   TextColumn get hiddenLanguagesJson => text().withDefault(const Constant('[]'))();
   TextColumn get collapsedLanguagesJson => text().withDefault(const Constant('[]'))();

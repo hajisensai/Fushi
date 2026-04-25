@@ -164,10 +164,36 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
     );
   }
 
+  Future<DictionaryType?> _pickDictionaryType() async {
+    return showDialog<DictionaryType>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: Text(t.dialog_select_dictionary_type),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, DictionaryType.term),
+            child: Text(t.dictionary_type_term),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, DictionaryType.frequency),
+            child: Text(t.dictionary_type_frequency),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, DictionaryType.pitch),
+            child: Text(t.dictionary_type_pitch),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget buildImportButton() {
     return TextButton(
       child: Text(t.dialog_import_dictionary),
       onPressed: () async {
+        final selectedType = await _pickDictionaryType();
+        if (selectedType == null) return;
+
         ValueNotifier<String> progressNotifier =
             ValueNotifier<String>(t.import_start);
         ValueNotifier<int?> countNotifier = ValueNotifier<int?>(null);
@@ -217,6 +243,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
             progressNotifier: progressNotifier,
             file: file,
             cssFiles: cssFiles,
+            type: selectedType,
             onImportSuccess: () {
               _selectedOrder = appModel.dictionaries.last.order;
               setState(() {});
@@ -239,6 +266,9 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
     return TextButton(
       child: Text(t.dialog_import_folder),
       onPressed: () async {
+        final selectedType = await _pickDictionaryType();
+        if (selectedType == null) return;
+
         ValueNotifier<String> progressNotifier =
             ValueNotifier<String>(t.import_start);
         ValueNotifier<int?> countNotifier = ValueNotifier<int?>(null);
@@ -275,6 +305,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
             progressNotifier: progressNotifier,
             countNotifier: countNotifier,
             totalNotifier: totalNotifier,
+            type: selectedType,
             onImportSuccess: () {
               _selectedOrder = appModel.dictionaries.last.order;
               setState(() {});
@@ -317,7 +348,11 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
   }
 
   Widget buildContent() {
-    List<Dictionary> dictionaries = appModel.dictionaries;
+    final termDicts = appModel.termDictionaries;
+    final freqDicts = appModel.freqDictionaries;
+    final pitchDicts = appModel.pitchDictionaries;
+    final allEmpty =
+        termDicts.isEmpty && freqDicts.isEmpty && pitchDicts.isEmpty;
     ScrollController contentController = ScrollController();
 
     return SizedBox(
@@ -335,18 +370,53 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (dictionaries.isEmpty)
+                if (allEmpty)
                   buildEmptyMessage()
-                else
-                  Flexible(
-                    child: buildDictionaryList(dictionaries),
+                else ...[
+                  _buildSection(
+                    title: t.dictionary_section_term,
+                    dictionaries: termDicts,
                   ),
+                  _buildSection(
+                    title: t.dictionary_section_frequency,
+                    dictionaries: freqDicts,
+                  ),
+                  _buildSection(
+                    title: t.dictionary_section_pitch,
+                    dictionaries: pitchDicts,
+                  ),
+                ],
                 const JidoujishoDivider(),
               ],
             ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildSection({
+    required String title,
+    required List<Dictionary> dictionaries,
+  }) {
+    if (dictionaries.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Text(
+            title,
+            style: TextStyle(
+              fontSize: textTheme.titleSmall?.fontSize,
+              fontWeight: FontWeight.bold,
+              color: theme.colorScheme.primary,
+            ),
+          ),
+        ),
+        Flexible(child: buildDictionaryList(dictionaries)),
+      ],
     );
   }
 

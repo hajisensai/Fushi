@@ -607,12 +607,24 @@
     "hint_vert_text_orient": "混合：数字和西文字母旋转为横向。直立：所有字符保持直立。",
 
     "anki_manage_profiles": "管理导出配置",
-    "anki_manage_profiles_hint": "配置导出到 AnkiDroid 时各字段的映射方式。每个配置绑定一个 Anki 笔记类型，定义 hibiki 的哪个字段填充 Anki 的哪个字段。"
-,
+    "anki_manage_profiles_hint": "配置导出到 AnkiDroid 时各字段的映射方式。每个配置绑定一个 Anki 笔记类型，定义 hibiki 的哪个字段填充 Anki 的哪个字段。",
   "deduplicate_pitch_accents": "Deduplicate pitch accents",
-  "harmonic_frequency": "Aggregate word frequencies"
-,
-  "manage_audio_sources": "Manage audio sources"
+  "harmonic_frequency": "Aggregate word frequencies",
+  "manage_audio_sources": "Manage audio sources",
   "local_audio": "本地音頻",
-  "local_audio_not_set": "未選擇數據庫",
+  "local_audio_not_set": "未選擇數據庫"
+,
+  "dialog_select_dictionary_type": "Select dictionary type"
+,
+  "dictionary_section_frequency": "Frequency Dictionaries"
+,
+  "dictionary_section_pitch": "Pitch Dictionaries"
+,
+  "dictionary_section_term": "Term Dictionaries"
+,
+  "dictionary_type_frequency": "Frequency"
+,
+  "dictionary_type_pitch": "Pitch"
+,
+  "dictionary_type_term": "Term"
 }

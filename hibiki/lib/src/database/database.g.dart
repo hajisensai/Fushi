@@ -4318,6 +4318,13 @@ class $DictionaryMetadataTable extends DictionaryMetadata
   late final GeneratedColumn<int> order = GeneratedColumn<int>(
       'order', aliasedName, false,
       type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _typeMeta = const VerificationMeta('type');
+  @override
+  late final GeneratedColumn<String> type = GeneratedColumn<String>(
+      'type', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant('term'));
   static const VerificationMeta _metadataJsonMeta =
       const VerificationMeta('metadataJson');
   @override
@@ -4347,6 +4354,7 @@ class $DictionaryMetadataTable extends DictionaryMetadata
         name,
         formatKey,
         order,
+        type,
         metadataJson,
         hiddenLanguagesJson,
         collapsedLanguagesJson
@@ -4378,6 +4386,10 @@ class $DictionaryMetadataTable extends DictionaryMetadata
           _orderMeta, order.isAcceptableOrUnknown(data['order']!, _orderMeta));
     } else if (isInserting) {
       context.missing(_orderMeta);
+    }
+    if (data.containsKey('type')) {
+      context.handle(
+          _typeMeta, type.isAcceptableOrUnknown(data['type']!, _typeMeta));
     }
     if (data.containsKey('metadata_json')) {
       context.handle(
@@ -4412,6 +4424,8 @@ class $DictionaryMetadataTable extends DictionaryMetadata
           .read(DriftSqlType.string, data['${effectivePrefix}format_key'])!,
       order: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}order'])!,
+      type: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}type'])!,
       metadataJson: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}metadata_json'])!,
       hiddenLanguagesJson: attachedDatabase.typeMapping.read(
@@ -4434,6 +4448,7 @@ class DictionaryMetaRow extends DataClass
   final String name;
   final String formatKey;
   final int order;
+  final String type;
   final String metadataJson;
   final String hiddenLanguagesJson;
   final String collapsedLanguagesJson;
@@ -4441,6 +4456,7 @@ class DictionaryMetaRow extends DataClass
       {required this.name,
       required this.formatKey,
       required this.order,
+      required this.type,
       required this.metadataJson,
       required this.hiddenLanguagesJson,
       required this.collapsedLanguagesJson});
@@ -4450,6 +4466,7 @@ class DictionaryMetaRow extends DataClass
     map['name'] = Variable<String>(name);
     map['format_key'] = Variable<String>(formatKey);
     map['order'] = Variable<int>(order);
+    map['type'] = Variable<String>(type);
     map['metadata_json'] = Variable<String>(metadataJson);
     map['hidden_languages_json'] = Variable<String>(hiddenLanguagesJson);
     map['collapsed_languages_json'] = Variable<String>(collapsedLanguagesJson);
@@ -4461,6 +4478,7 @@ class DictionaryMetaRow extends DataClass
       name: Value(name),
       formatKey: Value(formatKey),
       order: Value(order),
+      type: Value(type),
       metadataJson: Value(metadataJson),
       hiddenLanguagesJson: Value(hiddenLanguagesJson),
       collapsedLanguagesJson: Value(collapsedLanguagesJson),
@@ -4474,6 +4492,7 @@ class DictionaryMetaRow extends DataClass
       name: serializer.fromJson<String>(json['name']),
       formatKey: serializer.fromJson<String>(json['formatKey']),
       order: serializer.fromJson<int>(json['order']),
+      type: serializer.fromJson<String>(json['type']),
       metadataJson: serializer.fromJson<String>(json['metadataJson']),
       hiddenLanguagesJson:
           serializer.fromJson<String>(json['hiddenLanguagesJson']),
@@ -4488,6 +4507,7 @@ class DictionaryMetaRow extends DataClass
       'name': serializer.toJson<String>(name),
       'formatKey': serializer.toJson<String>(formatKey),
       'order': serializer.toJson<int>(order),
+      'type': serializer.toJson<String>(type),
       'metadataJson': serializer.toJson<String>(metadataJson),
       'hiddenLanguagesJson': serializer.toJson<String>(hiddenLanguagesJson),
       'collapsedLanguagesJson':
@@ -4499,6 +4519,7 @@ class DictionaryMetaRow extends DataClass
           {String? name,
           String? formatKey,
           int? order,
+          String? type,
           String? metadataJson,
           String? hiddenLanguagesJson,
           String? collapsedLanguagesJson}) =>
@@ -4506,6 +4527,7 @@ class DictionaryMetaRow extends DataClass
         name: name ?? this.name,
         formatKey: formatKey ?? this.formatKey,
         order: order ?? this.order,
+        type: type ?? this.type,
         metadataJson: metadataJson ?? this.metadataJson,
         hiddenLanguagesJson: hiddenLanguagesJson ?? this.hiddenLanguagesJson,
         collapsedLanguagesJson:
@@ -4516,6 +4538,7 @@ class DictionaryMetaRow extends DataClass
       name: data.name.present ? data.name.value : this.name,
       formatKey: data.formatKey.present ? data.formatKey.value : this.formatKey,
       order: data.order.present ? data.order.value : this.order,
+      type: data.type.present ? data.type.value : this.type,
       metadataJson: data.metadataJson.present
           ? data.metadataJson.value
           : this.metadataJson,
@@ -4534,6 +4557,7 @@ class DictionaryMetaRow extends DataClass
           ..write('name: $name, ')
           ..write('formatKey: $formatKey, ')
           ..write('order: $order, ')
+          ..write('type: $type, ')
           ..write('metadataJson: $metadataJson, ')
           ..write('hiddenLanguagesJson: $hiddenLanguagesJson, ')
           ..write('collapsedLanguagesJson: $collapsedLanguagesJson')
@@ -4542,7 +4566,7 @@ class DictionaryMetaRow extends DataClass
   }
 
   @override
-  int get hashCode => Object.hash(name, formatKey, order, metadataJson,
+  int get hashCode => Object.hash(name, formatKey, order, type, metadataJson,
       hiddenLanguagesJson, collapsedLanguagesJson);
   @override
   bool operator ==(Object other) =>
@@ -4551,6 +4575,7 @@ class DictionaryMetaRow extends DataClass
           other.name == this.name &&
           other.formatKey == this.formatKey &&
           other.order == this.order &&
+          other.type == this.type &&
           other.metadataJson == this.metadataJson &&
           other.hiddenLanguagesJson == this.hiddenLanguagesJson &&
           other.collapsedLanguagesJson == this.collapsedLanguagesJson);
@@ -4560,6 +4585,7 @@ class DictionaryMetadataCompanion extends UpdateCompanion<DictionaryMetaRow> {
   final Value<String> name;
   final Value<String> formatKey;
   final Value<int> order;
+  final Value<String> type;
   final Value<String> metadataJson;
   final Value<String> hiddenLanguagesJson;
   final Value<String> collapsedLanguagesJson;
@@ -4568,6 +4594,7 @@ class DictionaryMetadataCompanion extends UpdateCompanion<DictionaryMetaRow> {
     this.name = const Value.absent(),
     this.formatKey = const Value.absent(),
     this.order = const Value.absent(),
+    this.type = const Value.absent(),
     this.metadataJson = const Value.absent(),
     this.hiddenLanguagesJson = const Value.absent(),
     this.collapsedLanguagesJson = const Value.absent(),
@@ -4577,6 +4604,7 @@ class DictionaryMetadataCompanion extends UpdateCompanion<DictionaryMetaRow> {
     required String name,
     required String formatKey,
     required int order,
+    this.type = const Value.absent(),
     this.metadataJson = const Value.absent(),
     this.hiddenLanguagesJson = const Value.absent(),
     this.collapsedLanguagesJson = const Value.absent(),
@@ -4588,6 +4616,7 @@ class DictionaryMetadataCompanion extends UpdateCompanion<DictionaryMetaRow> {
     Expression<String>? name,
     Expression<String>? formatKey,
     Expression<int>? order,
+    Expression<String>? type,
     Expression<String>? metadataJson,
     Expression<String>? hiddenLanguagesJson,
     Expression<String>? collapsedLanguagesJson,
@@ -4597,6 +4626,7 @@ class DictionaryMetadataCompanion extends UpdateCompanion<DictionaryMetaRow> {
       if (name != null) 'name': name,
       if (formatKey != null) 'format_key': formatKey,
       if (order != null) 'order': order,
+      if (type != null) 'type': type,
       if (metadataJson != null) 'metadata_json': metadataJson,
       if (hiddenLanguagesJson != null)
         'hidden_languages_json': hiddenLanguagesJson,
@@ -4610,6 +4640,7 @@ class DictionaryMetadataCompanion extends UpdateCompanion<DictionaryMetaRow> {
       {Value<String>? name,
       Value<String>? formatKey,
       Value<int>? order,
+      Value<String>? type,
       Value<String>? metadataJson,
       Value<String>? hiddenLanguagesJson,
       Value<String>? collapsedLanguagesJson,
@@ -4618,6 +4649,7 @@ class DictionaryMetadataCompanion extends UpdateCompanion<DictionaryMetaRow> {
       name: name ?? this.name,
       formatKey: formatKey ?? this.formatKey,
       order: order ?? this.order,
+      type: type ?? this.type,
       metadataJson: metadataJson ?? this.metadataJson,
       hiddenLanguagesJson: hiddenLanguagesJson ?? this.hiddenLanguagesJson,
       collapsedLanguagesJson:
@@ -4637,6 +4669,9 @@ class DictionaryMetadataCompanion extends UpdateCompanion<DictionaryMetaRow> {
     }
     if (order.present) {
       map['order'] = Variable<int>(order.value);
+    }
+    if (type.present) {
+      map['type'] = Variable<String>(type.value);
     }
     if (metadataJson.present) {
       map['metadata_json'] = Variable<String>(metadataJson.value);
@@ -4661,6 +4696,7 @@ class DictionaryMetadataCompanion extends UpdateCompanion<DictionaryMetaRow> {
           ..write('name: $name, ')
           ..write('formatKey: $formatKey, ')
           ..write('order: $order, ')
+          ..write('type: $type, ')
           ..write('metadataJson: $metadataJson, ')
           ..write('hiddenLanguagesJson: $hiddenLanguagesJson, ')
           ..write('collapsedLanguagesJson: $collapsedLanguagesJson, ')

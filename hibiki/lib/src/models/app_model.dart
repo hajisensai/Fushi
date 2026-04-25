@@ -1932,6 +1932,7 @@ class AppModel with ChangeNotifier {
         order: order,
         name: name,
         formatKey: 'yomichan',
+        type: type,
       );
 
       _persistDictionary(dictionary);
