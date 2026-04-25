@@ -509,8 +509,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
                   ),
                 ),
                 const Space.normal(),
-                if (_selectedOrder == dictionary.order)
-                  buildDictionaryTileTrailing(dictionary)
+                buildDictionaryTileTrailing(dictionary)
               ],
             ),
             onTap: () {
