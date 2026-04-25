@@ -40,19 +40,14 @@ window.__hoshiAutoScrollInFlight = false;
 window.__hoshiAutoScrollTimer = null;
 window.__hoshiAlignToRect = function(rect) {
   if (!rect) return;
-  window.__hoshiAutoScrollInFlight = true;
-  if (window.__hoshiAutoScrollTimer) clearTimeout(window.__hoshiAutoScrollTimer);
-  window.__hoshiAutoScrollTimer = setTimeout(function() {
-    window.__hoshiAutoScrollInFlight = false;
-    window.__hoshiAutoScrollTimer = null;
-  }, 800);
+  if (window.__hoshiAutoScrollInFlight) return;
   var isDegenerate = rect.width === 0 && rect.height === 0 &&
                      rect.left === 0 && rect.top === 0;
   if (isDegenerate) return;
 
-  if (typeof window.__ttuGetPageInfo !== 'function') return;
+  if (typeof window.__ttuGetPageInfo !== 'function') { console.error('alignToRect:noApi'); return; }
   var info = window.__ttuGetPageInfo();
-  if (!info || !info.stride || info.stride < 10) return;
+  if (!info || !info.stride || info.stride < 10) { console.error('alignToRect:noInfo ' + JSON.stringify(info)); return; }
   var content = document.querySelector('.book-content') ||
                 document.scrollingElement || document.documentElement;
   var cRect = content.getBoundingClientRect();
@@ -68,7 +63,18 @@ window.__hoshiAlignToRect = function(rect) {
   var anchor = (elStart + elEnd) / 2;
   var targetPage = Math.floor(anchor / info.stride);
   targetPage = Math.max(0, Math.min(targetPage, info.totalPages - 1));
+  console.log(JSON.stringify({
+    'hibiki-message-type': 'alignToRectDiag',
+    'target': targetPage, 'cur': info.currentPage,
+    'anchor': Math.round(anchor), 'stride': info.stride, 'scroll': scrollPos
+  }));
   if (targetPage !== info.currentPage) {
+    window.__hoshiAutoScrollInFlight = true;
+    if (window.__hoshiAutoScrollTimer) clearTimeout(window.__hoshiAutoScrollTimer);
+    window.__hoshiAutoScrollTimer = setTimeout(function() {
+      window.__hoshiAutoScrollInFlight = false;
+      window.__hoshiAutoScrollTimer = null;
+    }, 800);
     window.__ttuGoToPage(targetPage);
   }
 };

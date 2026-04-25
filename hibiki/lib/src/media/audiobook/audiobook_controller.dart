@@ -74,10 +74,12 @@ class AudiobookPlayerController extends ChangeNotifier {
   void Function(int sectionIndex)? onCrossChapter;
 
   /// 由 reader 页面提供：返回 ttu 当前挂载的 section index（开书前 -1）。
-  /// 对齐 Sasayaki SasayakiPlayer 构造时注入的 `getCurrentIndex` 闭包，
-  /// 跨章判定的"参照系"必须是 reader 真实挂载的章节，而非"上一条 cue 的章"。
-  /// 否则用户手动翻到错误章节后，cue 一直在原章，永远不会自动拉回。
   int Function()? getCurrentReaderSection;
+
+  /// 边界跳句回调：skipToPrevCue 到章首 / skipToNextCue 到章尾时触发。
+  /// delta = -1 (上一章末尾) 或 +1 (下一章开头)。
+  /// reader 负责加载目标章 cues 并 seek。
+  Future<void> Function(int delta)? onBoundarySkip;
 
   /// 对齐 Sasayaki `hasPlayedOnce`：true 之前不允许跨章自动翻页，避免
   /// 打开书 / 恢复位置瞬间 cue 与 reader 当前章不一致就立刻跳章，
@@ -400,7 +402,10 @@ class AudiobookPlayerController extends ChangeNotifier {
         await skipToCue(_chapterCues[curIdx - 1]);
         return;
       }
-      if (curIdx == 0) return;
+      if (curIdx == 0) {
+        unawaited(onBoundarySkip?.call(-1));
+        return;
+      }
     }
     // currentCue 为空（gap / 开头 / 未定位）：按位置找最近 startMs <= pos 的 cue
     // 作为"上一条"。早于所有 cue 则跳第一句。
@@ -436,7 +441,10 @@ class AudiobookPlayerController extends ChangeNotifier {
       await skipToCue(_chapterCues.first);
       return;
     }
-    if (idx + 1 >= _chapterCues.length) return;
+    if (idx + 1 >= _chapterCues.length) {
+      unawaited(onBoundarySkip?.call(1));
+      return;
+    }
     await skipToCue(_chapterCues[idx + 1]);
   }
 
@@ -592,19 +600,20 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// SMIL/JSON 等非 sasayaki 路径 cue 的 textFragmentId 解码返回 null，
   /// 自然跳过这套逻辑（它们没有跨章同步概念）。
   void _maybeEmitCrossChapter(AudioCue? cue, {bool bypassPlayGuard = false}) {
-    // 已在跨章 await 中直接忽略，否则重复触发 onCrossChapter。
-    if (_chapterTransition) return;
+    if (_chapterTransition) {
+      // ignore: avoid_print
+      print('[hibiki-crossChapter] blocked: _chapterTransition=true');
+      return;
+    }
     if (cue == null) return;
     final SasayakiFragment? frag =
         SasayakiMatchCodec.tryDecode(cue.textFragmentId);
     if (frag == null) return;
     final int cueSec = frag.sectionIndex;
     final int currentSec = getCurrentReaderSection?.call() ?? -1;
-    if (currentSec < 0) {
-      // reader 还没汇报过当前章（一般是开书前），先等等 —— 别按 0 假设
-      // 否则 cue 在第 5 章会立刻请求跳章。
-      return;
-    }
+    // ignore: avoid_print
+    print('[hibiki-crossChapter] cueSec=$cueSec currentSec=$currentSec follow=${followAudio.value} played=$_hasPlayedOnce');
+    if (currentSec < 0) return;
     if (cueSec == currentSec) return;
     if (!followAudio.value) return;
     if (!bypassPlayGuard && !_hasPlayedOnce) return;
