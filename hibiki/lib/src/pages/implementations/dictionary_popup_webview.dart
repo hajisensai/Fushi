@@ -48,12 +48,14 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView> 
     final deduplicatePitch = appModel.deduplicatePitchAccents;
     final harmonicFreq = appModel.harmonicFrequency;
     final audioSourcesJson = jsonEncode(appModel.audioSources);
+    final localAudioEnabled = appModel.localAudioEnabled;
 
     _controller!.evaluateJavascript(source: '''
       document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
       window.audioSources = $audioSourcesJson;
       window.deduplicatePitchAccents = $deduplicatePitch;
       window.harmonicFrequency = $harmonicFreq;
+      window.localAudioEnabled = $localAudioEnabled;
       window.lookupEntries = $entriesJson;
       window.dictionaryStyles = $stylesJson;
       window.renderPopup();
@@ -145,12 +147,36 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView> 
         );
 
         controller.addJavaScriptHandler(
+          handlerName: 'queryLocalAudio',
+          callback: (args) async {
+            if (args.isEmpty || args[0] is! Map) return null;
+            final data = args[0] as Map;
+            final expression = data['expression']?.toString() ?? '';
+            final reading = data['reading']?.toString() ?? '';
+            if (expression.isEmpty) return null;
+            final appModel = ref.read(appProvider);
+            if (!appModel.localAudioEnabled) return null;
+            final path = await TtsChannel.instance.queryLocalAudio(expression, reading);
+            return path;
+          },
+        );
+
+        controller.addJavaScriptHandler(
           handlerName: 'playWordAudio',
-          callback: (args) {
+          callback: (args) async {
             String url = '';
             if (args.isNotEmpty && args[0] is Map) {
               final data = args[0] as Map;
               url = data['url']?.toString() ?? '';
+            }
+            if (url.isNotEmpty && url.startsWith('file://')) {
+              final filePath = url.replaceFirst('file://', '');
+              TtsChannel.instance.playFile(filePath);
+              return;
+            }
+            if (url.isNotEmpty && url.startsWith('/')) {
+              TtsChannel.instance.playFile(url);
+              return;
             }
             if (url.isNotEmpty && url.startsWith('http')) {
               TtsChannel.instance.playUrl(url);

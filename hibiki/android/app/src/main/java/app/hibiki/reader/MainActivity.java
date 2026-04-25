@@ -51,6 +51,7 @@ import androidx.documentfile.provider.DocumentFile;
 import com.ichi2.anki.api.NoteInfo;
 import com.ryanheise.audioservice.AudioServiceActivity;
 import android.content.res.Configuration;
+import android.database.sqlite.SQLiteDatabase;
 
 public class MainActivity extends AudioServiceActivity {
     private static final String ANKIDROID_CHANNEL = "app.hibiki.reader/anki";
@@ -69,6 +70,8 @@ public class MainActivity extends AudioServiceActivity {
     private TextToSpeech tts;
     private boolean ttsReady = false;
     private MediaPlayer mediaPlayer;
+    private SQLiteDatabase localAudioDb;
+    private String localAudioDbPath;
 
     // Reader opens this gate when volume-key page turning is enabled so
     // dispatchKeyEvent swallows VOLUME_UP/DOWN and forwards them to Dart.
@@ -441,6 +444,118 @@ public class MainActivity extends AudioServiceActivity {
                                 return true;
                             });
                             mediaPlayer.prepareAsync();
+                            result.success(true);
+                        } catch (Exception e) {
+                            result.success(false);
+                        }
+                        break;
+                    }
+                    case "setLocalAudioDb": {
+                        String dbPath = call.argument("path");
+                        if (localAudioDb != null) {
+                            localAudioDb.close();
+                            localAudioDb = null;
+                        }
+                        localAudioDbPath = dbPath;
+                        if (dbPath != null && !dbPath.isEmpty()) {
+                            try {
+                                File dbFile = new File(dbPath);
+                                if (dbFile.exists()) {
+                                    localAudioDb = SQLiteDatabase.openDatabase(
+                                        dbPath, null, SQLiteDatabase.OPEN_READONLY);
+                                    result.success(true);
+                                } else {
+                                    result.success(false);
+                                }
+                            } catch (Exception e) {
+                                result.success(false);
+                            }
+                        } else {
+                            result.success(true);
+                        }
+                        break;
+                    }
+                    case "queryLocalAudio": {
+                        String expression = call.argument("expression");
+                        String reading = call.argument("reading");
+                        if (localAudioDb == null || expression == null) {
+                            result.success(null);
+                            return;
+                        }
+                        try {
+                            // Query entries table for file+source
+                            Cursor entryCursor = localAudioDb.rawQuery(
+                                "SELECT file, source FROM entries WHERE expression = ? AND reading = ? LIMIT 1",
+                                new String[]{expression, reading != null ? reading : ""});
+                            if (entryCursor == null || !entryCursor.moveToFirst()) {
+                                if (entryCursor != null) entryCursor.close();
+                                // Try expression only
+                                entryCursor = localAudioDb.rawQuery(
+                                    "SELECT file, source FROM entries WHERE expression = ? LIMIT 1",
+                                    new String[]{expression});
+                            }
+                            if (entryCursor != null && entryCursor.moveToFirst()) {
+                                String file = entryCursor.getString(0);
+                                String source = entryCursor.getString(1);
+                                entryCursor.close();
+
+                                // Query android table for audio blob
+                                Cursor audioCursor = localAudioDb.rawQuery(
+                                    "SELECT data FROM android WHERE file = ? AND source = ? LIMIT 1",
+                                    new String[]{file, source});
+                                if (audioCursor != null && audioCursor.moveToFirst()) {
+                                    byte[] audioData = audioCursor.getBlob(0);
+                                    audioCursor.close();
+                                    // Write to temp file and play
+                                    String ext = file.endsWith(".opus") ? ".opus" : ".mp3";
+                                    File tempFile = new File(getCacheDir(), "local_audio" + ext);
+                                    FileOutputStream fos = new FileOutputStream(tempFile);
+                                    fos.write(audioData);
+                                    fos.close();
+                                    result.success(tempFile.getAbsolutePath());
+                                    return;
+                                }
+                                if (audioCursor != null) audioCursor.close();
+                            } else {
+                                if (entryCursor != null) entryCursor.close();
+                            }
+                            result.success(null);
+                        } catch (Exception e) {
+                            result.success(null);
+                        }
+                        break;
+                    }
+                    case "playFile": {
+                        String filePath = call.argument("path");
+                        if (filePath == null || filePath.isEmpty()) {
+                            result.success(false);
+                            return;
+                        }
+                        if (mediaPlayer != null) {
+                            mediaPlayer.stop();
+                            mediaPlayer.release();
+                            mediaPlayer = null;
+                        }
+                        try {
+                            mediaPlayer = new MediaPlayer();
+                            mediaPlayer.setAudioAttributes(
+                                new AudioAttributes.Builder()
+                                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                                    .build()
+                            );
+                            mediaPlayer.setDataSource(filePath);
+                            mediaPlayer.setOnPreparedListener(mp -> mp.start());
+                            mediaPlayer.setOnCompletionListener(mp -> {
+                                mp.release();
+                                mediaPlayer = null;
+                            });
+                            mediaPlayer.setOnErrorListener((mp, what, extra) -> {
+                                mp.release();
+                                mediaPlayer = null;
+                                return true;
+                            });
+                            mediaPlayer.prepare();
                             result.success(true);
                         } catch (Exception e) {
                             result.success(false);

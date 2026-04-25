@@ -608,4 +608,11 @@
 
     "anki_manage_profiles": "管理导出配置",
     "anki_manage_profiles_hint": "配置导出到 AnkiDroid 时各字段的映射方式。每个配置绑定一个 Anki 笔记类型，定义 hibiki 的哪个字段填充 Anki 的哪个字段。"
+,
+  "deduplicate_pitch_accents": "Deduplicate pitch accents",
+  "harmonic_frequency": "Aggregate word frequencies"
+,
+  "manage_audio_sources": "Manage audio sources"
+  "local_audio": "本地音頻",
+  "local_audio_not_set": "未選擇數據庫",
 }

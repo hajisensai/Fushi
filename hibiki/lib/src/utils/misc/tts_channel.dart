@@ -31,6 +31,40 @@ class TtsChannel {
     }
   }
 
+  /// Set the path to a local audio SQLite database (android.db from Yomitan).
+  Future<bool> setLocalAudioDb(String path) async {
+    try {
+      final result = await _channel.invokeMethod('setLocalAudioDb', {'path': path});
+      return result == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Query the local audio database for a word's pronunciation.
+  /// Returns the path to a temp audio file, or null if not found.
+  Future<String?> queryLocalAudio(String expression, String reading) async {
+    try {
+      final result = await _channel.invokeMethod('queryLocalAudio', {
+        'expression': expression,
+        'reading': reading,
+      });
+      return result as String?;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Play a local file path via MediaPlayer.
+  Future<bool> playFile(String filePath) async {
+    try {
+      final result = await _channel.invokeMethod('playFile', {'path': filePath});
+      return result == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Stop any ongoing TTS or URL audio playback.
   Future<void> stop() async {
     try {

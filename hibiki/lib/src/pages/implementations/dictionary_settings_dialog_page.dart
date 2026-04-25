@@ -1,4 +1,5 @@
 import 'package:collection/collection.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:spaces/spaces.dart';
 import 'package:hibiki/models.dart';
@@ -82,6 +83,9 @@ class _DictionaryDialogPageState extends BasePageState {
               buildMaximumTermsField(),
               const Space.normal(),
               buildManageAudioSources(),
+              const Space.normal(),
+              buildLocalAudioSwitch(),
+              buildLocalAudioDbPath(),
               const Space.normal(),
               buildManageDuplicateChecks(),
             ],
@@ -298,6 +302,76 @@ class _DictionaryDialogPageState extends BasePageState {
       Theme.of(context).unselectedWidgetColor.withOpacity(0.05);
   Color get activeTextColor => Theme.of(context).colorScheme.onSurface;
   Color get inactiveTextColor => Theme.of(context).unselectedWidgetColor;
+
+  Widget buildLocalAudioSwitch() {
+    ValueNotifier<bool> notifier =
+        ValueNotifier<bool>(appModel.localAudioEnabled);
+
+    return Row(
+      children: [
+        Expanded(
+          child: Text(t.local_audio),
+        ),
+        ValueListenableBuilder<bool>(
+          valueListenable: notifier,
+          builder: (_, value, __) {
+            return Switch(
+              value: value,
+              onChanged: (value) {
+                appModel.toggleLocalAudio();
+                notifier.value = appModel.localAudioEnabled;
+              },
+            );
+          },
+        )
+      ],
+    );
+  }
+
+  Widget buildLocalAudioDbPath() {
+    final currentPath = appModel.localAudioDbPath;
+    final displayPath = currentPath.isEmpty
+        ? t.local_audio_not_set
+        : currentPath.split('/').last;
+
+    return InkWell(
+      onTap: () async {
+        final result = await FilePicker.platform.pickFiles(
+          type: FileType.any,
+        );
+        if (result != null && result.files.single.path != null) {
+          appModel.setLocalAudioDbPath(result.files.single.path!);
+          setState(() {});
+        }
+      },
+      child: Container(
+        padding: Spacing.of(context).insets.vertical.small,
+        width: double.infinity,
+        child: Row(
+          children: [
+            Icon(
+              Icons.storage,
+              size: textTheme.bodyMedium?.fontSize,
+              color: activeTextColor,
+            ),
+            const Space.small(),
+            Expanded(
+              child: Text(
+                displayPath,
+                style: textTheme.bodySmall?.copyWith(
+                  color: currentPath.isEmpty
+                      ? inactiveTextColor
+                      : activeTextColor,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget buildManageAudioSources() {
     return InkWell(

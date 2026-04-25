@@ -608,4 +608,11 @@
 
     "anki_manage_profiles": "Manage Export Profiles",
     "anki_manage_profiles_hint": "Configure how card fields are mapped when exporting to AnkiDroid. Each profile binds to an Anki note type and defines which hibiki field fills each Anki field."
+,
+  "deduplicate_pitch_accents": "Deduplicate pitch accents",
+  "harmonic_frequency": "Aggregate word frequencies"
+,
+  "manage_audio_sources": "Manage audio sources"
+  "local_audio": "เสียงในเครื่อง",
+  "local_audio_not_set": "ยังไม่ได้เลือกฐานข้อมูล",
 }

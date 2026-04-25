@@ -39,6 +39,7 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
+import 'package:hibiki/src/utils/misc/tts_channel.dart';
 import 'package:hibiki/src/dictionary/dictionary_utils.dart' show importDictionaryViaHoshidicts;
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/reader_position_model.dart';
@@ -294,19 +295,40 @@ class AppModel with ChangeNotifier {
 
   /// In-memory cache of dictionaries, kept in sync with the database.
   List<Dictionary> _dictionariesCache = [];
-  List<String> _dictPathsCache = [];
 
   /// Returns all dictionaries imported into the database. Sorted by the
   /// user-defined order in the dictionary menu.
   List<Dictionary> get dictionaries => List.unmodifiable(_dictionariesCache);
 
+  List<Dictionary> get termDictionaries =>
+      _dictionariesCache.where((d) => d.type == DictionaryType.term).toList();
+  List<Dictionary> get freqDictionaries =>
+      _dictionariesCache.where((d) => d.type == DictionaryType.frequency).toList();
+  List<Dictionary> get pitchDictionaries =>
+      _dictionariesCache.where((d) => d.type == DictionaryType.pitch).toList();
+
   void _rebuildDictPathsCache() {
-    _dictPathsCache = _dictionariesCache
-        .map((d) => path.join(dictionaryResourceDirectory.path, d.name))
-        .where((p) => Directory(p).existsSync())
-        .toList();
-    if (_dictPathsCache.isNotEmpty) {
-      HoshiDicts.initialize(_dictPathsCache);
+    final termPaths = <String>[];
+    final freqPaths = <String>[];
+    final pitchPaths = <String>[];
+    for (final d in _dictionariesCache) {
+      final p = path.join(dictionaryResourceDirectory.path, d.name);
+      if (!Directory(p).existsSync()) continue;
+      switch (d.type) {
+        case DictionaryType.term:
+          termPaths.add(p);
+        case DictionaryType.frequency:
+          freqPaths.add(p);
+        case DictionaryType.pitch:
+          pitchPaths.add(p);
+      }
+    }
+    if (termPaths.isNotEmpty || freqPaths.isNotEmpty || pitchPaths.isNotEmpty) {
+      HoshiDicts.initializeTyped(
+        termPaths: termPaths,
+        freqPaths: freqPaths,
+        pitchPaths: pitchPaths,
+      );
     }
   }
 
@@ -1095,6 +1117,10 @@ class AppModel with ChangeNotifier {
       dictionaryResourceDirectory.createSync();
       _rebuildDictPathsCache();
 
+      if (localAudioEnabled && localAudioDbPath.isNotEmpty) {
+        TtsChannel.instance.setLocalAudioDb(localAudioDbPath);
+      }
+
       debugPrint('[Hibiki] init: licenses');
       /// Inject open source licenses for non-Flutter dependencies that are
       /// included as assets.
@@ -1250,6 +1276,10 @@ class AppModel with ChangeNotifier {
       name: r.name,
       formatKey: r.formatKey,
       order: r.order,
+      type: DictionaryType.values.firstWhere(
+        (e) => e.name == r.type,
+        orElse: () => DictionaryType.term,
+      ),
       metadata: Map<String, String>.from(jsonDecode(r.metadataJson)),
       hiddenLanguages: List<String>.from(jsonDecode(r.hiddenLanguagesJson)),
       collapsedLanguages:
@@ -1262,6 +1292,7 @@ class AppModel with ChangeNotifier {
       name: Value(d.name),
       formatKey: Value(d.formatKey),
       order: Value(d.order),
+      type: Value(d.type.name),
       metadataJson: Value(jsonEncode(d.metadata)),
       hiddenLanguagesJson: Value(jsonEncode(d.hiddenLanguages)),
       collapsedLanguagesJson: Value(jsonEncode(d.collapsedLanguages)),
@@ -1652,6 +1683,7 @@ class AppModel with ChangeNotifier {
     required ValueNotifier<int?> countNotifier,
     required ValueNotifier<int?> totalNotifier,
     required Function() onImportSuccess,
+    DictionaryType type = DictionaryType.term,
   }) async {
     final entities = directory.listSync();
     final zipFiles = entities
@@ -1780,6 +1812,7 @@ class AppModel with ChangeNotifier {
           order: order,
           name: name,
           formatKey: 'yomichan',
+          type: type,
         );
 
         _persistDictionary(dictionary);
@@ -1817,6 +1850,7 @@ class AppModel with ChangeNotifier {
     required Function() onImportSuccess,
     List<File> cssFiles = const [],
     List<Directory> fontDirs = const [],
+    DictionaryType type = DictionaryType.term,
   }) async {
     clearDictionaryResultsCache();
 
@@ -1948,7 +1982,6 @@ class AppModel with ChangeNotifier {
 
     await clearDictionaryHistory();
     _dictionariesCache.clear();
-    _dictPathsCache.clear();
     await _database.clearAllDictionaryMeta();
 
     if (dictionaryResourceDirectory.existsSync()) {
@@ -3747,6 +3780,27 @@ class AppModel with ChangeNotifier {
   /// Set the list of audio source URL templates.
   void setAudioSources(List<String> sources) async {
     await _setPref('audio_sources', sources);
+  }
+
+  /// Path to local audio SQLite database (android.db from Yomitan Local Audio).
+  String get localAudioDbPath {
+    return _getPref('local_audio_db_path', defaultValue: '');
+  }
+
+  void setLocalAudioDbPath(String path) async {
+    await _setPref('local_audio_db_path', path);
+    TtsChannel.instance.setLocalAudioDb(path);
+  }
+
+  bool get localAudioEnabled {
+    return _getPref('local_audio_enabled', defaultValue: false);
+  }
+
+  void toggleLocalAudio() async {
+    await _setPref('local_audio_enabled', !localAudioEnabled);
+    if (localAudioEnabled && localAudioDbPath.isNotEmpty) {
+      TtsChannel.instance.setLocalAudioDb(localAudioDbPath);
+    }
   }
 
   /// Get the list of model names that will be checked for duplicates.

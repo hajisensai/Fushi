@@ -1180,6 +1180,15 @@ function createGlossarySectionWrapper(entry) {
 }
 
 async function fetchAudioUrl(expression, reading) {
+    // Try local audio database first
+    if (window.localAudioEnabled) {
+        try {
+            const localPath = await window.flutter_inappwebview.callHandler(
+                'queryLocalAudio', { expression, reading });
+            if (localPath) return localPath;
+        } catch {}
+    }
+
     const templates = window.audioSources;
     if (!templates?.length) return null;
 
