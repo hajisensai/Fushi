@@ -55,13 +55,14 @@ window.__hoshiAlignToRect = function(rect) {
   var content = document.querySelector('.book-content') ||
                 document.scrollingElement || document.documentElement;
   var cRect = content.getBoundingClientRect();
+  var scrollPos = info.verticalMode ? content.scrollTop : content.scrollLeft;
   var elStart, elEnd;
   if (info.verticalMode) {
-    elStart = rect.top - cRect.top + info.virtualScrollPos;
-    elEnd = rect.bottom - cRect.top + info.virtualScrollPos;
+    elStart = rect.top - cRect.top + scrollPos;
+    elEnd = rect.bottom - cRect.top + scrollPos;
   } else {
-    elStart = rect.left - cRect.left + info.virtualScrollPos;
-    elEnd = rect.right - cRect.left + info.virtualScrollPos;
+    elStart = rect.left - cRect.left + scrollPos;
+    elEnd = rect.right - cRect.left + scrollPos;
   }
   var anchor = (elStart + elEnd) / 2;
   var targetPage = Math.floor(anchor / info.stride);
@@ -550,6 +551,7 @@ window.__hoshiCheckNewImage = function() {
   var isVertical = info.verticalMode;
   var curScroll = info.virtualScrollPos;
   var stride = info.stride;
+  var actualScroll = isVertical ? content.scrollTop : content.scrollLeft;
 
   var prevScroll = window.__hoshiPreScrollPos;
   var vw = window.innerWidth || 360;
@@ -572,8 +574,8 @@ window.__hoshiCheckNewImage = function() {
       if (rect.width < 10 || rect.height < 10) continue;
       var cRect = content.getBoundingClientRect();
       var imgAbsPos = isVertical
-        ? (rect.top - cRect.top + info.virtualScrollPos)
-        : (rect.left - cRect.left + info.virtualScrollPos);
+        ? (rect.top - cRect.top + actualScroll)
+        : (rect.left - cRect.left + actualScroll);
 
       if (prevScroll >= 0 && Math.abs(maxPos - minPos) > stride * 0.5) {
         if (imgAbsPos >= minPos && imgAbsPos <= maxPos) {
