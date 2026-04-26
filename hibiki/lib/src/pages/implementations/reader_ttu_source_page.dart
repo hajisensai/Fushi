@@ -12,6 +12,8 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:local_assets_server/local_assets_server.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:spaces/spaces.dart';
 import 'package:hibiki/creator.dart';
@@ -3132,6 +3134,30 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           .toList()
         ..sort();
       if (newPaths.isEmpty) return;
+    }
+
+    // file_picker 返回的路径在 cache/ 下，Android 随时会清理。
+    // 把音���文件复制到持久目录再存路径。
+    if (newPaths != null && newPaths.isNotEmpty) {
+      final Directory docs = await getApplicationDocumentsDirectory();
+      final String hash = book.uid.hashCode.toRadixString(16);
+      final Directory persistDir =
+          Directory(p.join(docs.path, 'audiobooks', hash));
+      if (!persistDir.existsSync()) {
+        persistDir.createSync(recursive: true);
+      }
+      final List<String> persisted = [];
+      for (final String src in newPaths) {
+        final File srcFile = File(src);
+        if (srcFile.path.startsWith(persistDir.path)) {
+          persisted.add(src);
+        } else {
+          final String dest = p.join(persistDir.path, p.basename(src));
+          await srcFile.copy(dest);
+          persisted.add(dest);
+        }
+      }
+      newPaths = persisted;
     }
 
     book.audioRoot = newDir;
