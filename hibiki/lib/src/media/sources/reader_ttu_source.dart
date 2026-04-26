@@ -778,8 +778,7 @@ new Promise(function(resolve) {
       families.add(name);
       final path = e['path'] as String?;
       if (path != null) {
-        final uri =
-          'https://hibiki-font.local/${Uri.encodeComponent(path)}';
+        final uri = 'hibiki-font://${Uri.encodeComponent(path)}';
         faces.add(
           '@font-face { font-family: "$name"; src: url("$uri"); '
           'font-display: swap; }',

@@ -828,10 +828,10 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
           action: PermissionResponseAction.GRANT,
         );
       },
-      shouldInterceptRequest: (controller, request) async {
+      onLoadResourceWithCustomScheme: (controller, request) async {
         final url = request.url;
-        if (url.host == 'hibiki-font.local' && url.pathSegments.isNotEmpty) {
-          final fontPath = Uri.decodeComponent(url.pathSegments.first);
+        if (url.scheme == 'hibiki-font') {
+          final fontPath = Uri.decodeComponent(url.host);
           final file = File(fontPath);
           if (await file.exists()) {
             final bytes = await file.readAsBytes();
@@ -842,16 +842,16 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
               'otf' => 'font/otf',
               _ => 'font/ttf',
             };
-            return WebResourceResponse(
-              contentType: mime,
+            return CustomSchemeResponse(
               data: bytes,
+              contentType: mime,
             );
           }
         }
         return null;
       },
       initialSettings: InAppWebViewSettings(
-        useShouldInterceptRequest: true,
+        resourceCustomSchemes: ['hibiki-font'],
         allowFileAccessFromFileURLs: true,
         allowUniversalAccessFromFileURLs: true,
         mediaPlaybackRequiresUserGesture: false,
