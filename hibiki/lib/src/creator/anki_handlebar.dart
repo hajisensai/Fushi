@@ -1,4 +1,5 @@
 import 'package:hibiki/creator.dart';
+import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 
 class AnkiHandlebar {
@@ -102,55 +103,55 @@ class AnkiHandlebar {
   static String displayName(String handlebar) {
     switch (handlebar) {
       case expression:
-        return 'Expression';
+        return t.handlebar_expression;
       case reading:
-        return 'Reading';
+        return t.handlebar_reading;
       case furiganaPlain:
-        return 'Furigana';
+        return t.handlebar_furigana_plain;
       case sentence:
-        return 'Sentence';
+        return t.handlebar_sentence;
       case glossary:
-        return 'Glossary';
+        return t.handlebar_glossary;
       case glossaryFirst:
-        return 'Glossary (First)';
+        return t.handlebar_glossary_first;
       case selectedGlossary:
-        return 'Selected Glossary';
+        return t.handlebar_selected_glossary;
       case documentTitle:
-        return 'Document Title';
+        return t.handlebar_document_title;
       case frequencies:
-        return 'Frequencies (HTML)';
+        return t.handlebar_frequencies;
       case frequencyHarmonicRank:
-        return 'Frequency (Rank)';
+        return t.handlebar_frequency_harmonic_rank;
       case pitchAccentPositions:
-        return 'Pitch Positions';
+        return t.handlebar_pitch_accent_positions;
       case pitchAccentCategories:
-        return 'Pitch Categories';
+        return t.handlebar_pitch_accent_categories;
       case bookCover:
-        return 'Book Cover';
+        return t.handlebar_book_cover;
       case audio:
-        return 'Audio';
+        return t.handlebar_audio;
       case sasayakiAudio:
-        return 'Sasayaki Audio';
+        return t.handlebar_sasayaki_audio;
       case clozeBefore:
-        return 'Cloze Before';
+        return t.handlebar_cloze_before;
       case clozeInside:
-        return 'Cloze Inside';
+        return t.handlebar_cloze_inside;
       case clozeAfter:
-        return 'Cloze After';
+        return t.handlebar_cloze_after;
       case expandedGlossary:
-        return 'Expanded Glossary';
+        return t.handlebar_expanded_glossary;
       case collapsedGlossary:
-        return 'Collapsed Glossary';
+        return t.handlebar_collapsed_glossary;
       case hiddenGlossary:
-        return 'Hidden Glossary';
+        return t.handlebar_hidden_glossary;
       case notes:
-        return 'Notes';
+        return t.handlebar_notes;
       case image:
-        return 'Image';
+        return t.handlebar_image;
       case audioSentence:
-        return 'Audio (Sentence)';
+        return t.handlebar_audio_sentence;
       case tags:
-        return 'Tags';
+        return t.handlebar_tags;
       default:
         return handlebar;
     }
