@@ -381,17 +381,34 @@ class _CustomFontsPageState extends BasePageState {
     }
 
     try {
-      final dio = Dio();
-      await dio.download(
-        url,
-        tempPath,
-        cancelToken: cancelToken,
-        onReceiveProgress: (received, total) {
-          if (total > 0) {
-            progressNotifier.value = received / total;
-          }
-        },
-      );
+      final dio = Dio(BaseOptions(
+        connectTimeout: const Duration(seconds: 30),
+        receiveTimeout: const Duration(minutes: 10),
+        followRedirects: true,
+        maxRedirects: 5,
+      ));
+      const maxRetries = 3;
+      for (int attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          await dio.download(
+            url,
+            tempPath,
+            cancelToken: cancelToken,
+            onReceiveProgress: (received, total) {
+              if (total > 0) {
+                progressNotifier.value = received / total;
+              }
+            },
+          );
+          break;
+        } on DioError catch (e) {
+          if (e.type == DioErrorType.cancel) rethrow;
+          if (attempt == maxRetries) rethrow;
+          debugPrint('[hibiki-fonts] attempt $attempt failed, retrying: $e');
+          progressNotifier.value = null;
+          await Future.delayed(Duration(seconds: attempt * 2));
+        }
+      }
 
       if (mounted) Navigator.pop(context);
 
