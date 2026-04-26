@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:archive/archive_io.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,7 +8,14 @@ import 'package:fluttertoast/fluttertoast.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
+import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
+
+const _fontExtensions = {'.ttf', '.otf', '.ttc', '.woff', '.woff2'};
+
+bool _isFontFile(String path) {
+  return _fontExtensions.contains(p.extension(path).toLowerCase());
+}
 
 // ── 系统字体扫描（通过 platform channel） ─────────────────────────────────────
 
@@ -163,23 +171,132 @@ class _CustomFontsPageState extends BasePageState {
   Future<void> _importFontFile() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['ttf', 'otf', 'ttc', 'woff', 'woff2'],
+      allowedExtensions: ['ttf', 'otf', 'ttc', 'woff', 'woff2', 'zip', '7z', 'rar', 'tar', 'gz'],
+      allowMultiple: true,
     );
     if (result == null || result.files.isEmpty) return;
-    final picked = result.files.first;
-    if (picked.path == null) return;
 
-    final srcFile = File(picked.path!);
-    final name = p.basenameWithoutExtension(picked.name);
-    final ext = p.extension(picked.name);
-    final destPath = p.join(_fontsDir.path, '${name}_${DateTime.now().millisecondsSinceEpoch}$ext');
+    int count = 0;
+    for (final picked in result.files) {
+      if (picked.path == null) continue;
+      final ext = p.extension(picked.name).toLowerCase();
+
+      if (_fontExtensions.contains(ext)) {
+        count += await _addSingleFont(File(picked.path!), picked.name);
+      } else {
+        count += await _extractFontsFromArchive(File(picked.path!));
+      }
+    }
+
+    if (count > 0) {
+      await _save();
+      Fluttertoast.showToast(msg: t.custom_fonts_imported_count(count: count));
+    }
+  }
+
+  Future<int> _addSingleFont(File srcFile, String fileName) async {
+    final name = p.basenameWithoutExtension(fileName);
+    final ext = p.extension(fileName);
+    final destPath = p.join(
+        _fontsDir.path, '${name}_${DateTime.now().millisecondsSinceEpoch}$ext');
     await srcFile.copy(destPath);
-
     setState(() {
       _fonts.add({'name': name, 'path': destPath, 'enabled': true});
     });
-    await _save();
-    Fluttertoast.showToast(msg: t.custom_fonts_imported(name: name));
+    return 1;
+  }
+
+  Future<int> _extractFontsFromArchive(File archiveFile) async {
+    try {
+      final bytes = await archiveFile.readAsBytes();
+      final archive = ZipDecoder().decodeBytes(bytes);
+      int count = 0;
+      final ts = DateTime.now().millisecondsSinceEpoch;
+      for (final entry in archive.files) {
+        if (entry.isFile && _isFontFile(entry.name)) {
+          final baseName = p.basenameWithoutExtension(entry.name);
+          final ext = p.extension(entry.name);
+          final destPath = p.join(_fontsDir.path, '${baseName}_$ts$ext');
+          File(destPath).writeAsBytesSync(entry.content as List<int>);
+          setState(() {
+            _fonts.add({'name': baseName, 'path': destPath, 'enabled': true});
+          });
+          count++;
+        }
+      }
+      return count;
+    } catch (e) {
+      debugPrint('[hibiki-fonts] archive extract failed: $e');
+      Fluttertoast.showToast(msg: t.custom_fonts_archive_error);
+      return 0;
+    }
+  }
+
+  Future<void> _importFromUrl() async {
+    final urlController = TextEditingController();
+    final url = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(t.custom_fonts_import_url),
+        content: TextField(
+          controller: urlController,
+          decoration: InputDecoration(
+            hintText: 'https://example.com/font.ttf',
+            border: const OutlineInputBorder(),
+          ),
+          keyboardType: TextInputType.url,
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(t.dialog_cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, urlController.text.trim()),
+            child: Text(t.dialog_import),
+          ),
+        ],
+      ),
+    );
+    urlController.dispose();
+    if (url == null || url.isEmpty) return;
+
+    Fluttertoast.showToast(msg: t.custom_fonts_downloading);
+    try {
+      final uri = Uri.parse(url);
+      final response = await http.get(uri);
+      if (response.statusCode != 200) {
+        Fluttertoast.showToast(msg: t.custom_fonts_download_failed);
+        return;
+      }
+
+      final fileName = uri.pathSegments.isNotEmpty
+          ? Uri.decodeComponent(uri.pathSegments.last)
+          : 'font_${DateTime.now().millisecondsSinceEpoch}';
+      final ext = p.extension(fileName).toLowerCase();
+      final tempFile = File(p.join(_fontsDir.path, '_tmp_$fileName'));
+      await tempFile.writeAsBytes(response.bodyBytes);
+
+      int count = 0;
+      if (_fontExtensions.contains(ext)) {
+        count = await _addSingleFont(tempFile, fileName);
+        await tempFile.delete();
+      } else {
+        count = await _extractFontsFromArchive(tempFile);
+        await tempFile.delete();
+      }
+
+      if (count > 0) {
+        await _save();
+        Fluttertoast.showToast(msg: t.custom_fonts_imported_count(count: count));
+      } else if (count == 0 && _fontExtensions.contains(ext) == false) {
+        Fluttertoast.showToast(msg: t.custom_fonts_no_fonts_in_archive);
+      }
+    } catch (e) {
+      debugPrint('[hibiki-fonts] URL import failed: $e');
+      Fluttertoast.showToast(msg: t.custom_fonts_download_failed);
+    }
   }
 
   Future<void> _addSystemFont() async {
@@ -247,6 +364,11 @@ class _CustomFontsPageState extends BasePageState {
             tooltip: t.custom_fonts_import_file,
             onPressed: _importFontFile,
           ),
+          IconButton(
+            icon: const Icon(Icons.link),
+            tooltip: t.custom_fonts_import_url,
+            onPressed: _importFromUrl,
+          ),
         ],
       ),
       body: _fonts.isEmpty
@@ -261,15 +383,16 @@ class _CustomFontsPageState extends BasePageState {
                   Text(t.custom_fonts_empty,
                       style: Theme.of(context).textTheme.bodyLarge),
                   const SizedBox(height: 24),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 12,
+                    runSpacing: 8,
                     children: [
                       FilledButton.icon(
                         onPressed: _addSystemFont,
                         icon: const Icon(Icons.text_fields),
                         label: Text(t.custom_fonts_add_system),
                       ),
-                      const SizedBox(width: 12),
                       FilledButton.tonal(
                         onPressed: _importFontFile,
                         child: Row(
@@ -278,6 +401,17 @@ class _CustomFontsPageState extends BasePageState {
                             const Icon(Icons.file_open),
                             const SizedBox(width: 8),
                             Text(t.custom_fonts_import_file),
+                          ],
+                        ),
+                      ),
+                      FilledButton.tonal(
+                        onPressed: _importFromUrl,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.link),
+                            const SizedBox(width: 8),
+                            Text(t.custom_fonts_import_url),
                           ],
                         ),
                       ),

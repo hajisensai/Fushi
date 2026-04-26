@@ -339,8 +339,8 @@ class _DictionaryDialogPageState extends BasePageState {
         final result = await FilePicker.platform.pickFiles(
           type: FileType.any,
         );
-        if (result != null && result.files.single.path != null) {
-          appModel.setLocalAudioDbPath(result.files.single.path!);
+        if (result != null && result.files.single.path != null && mounted) {
+          appModelNoUpdate.setLocalAudioDbPath(result.files.single.path!);
           setState(() {});
         }
       },

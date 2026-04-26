@@ -631,7 +631,10 @@ class AppModel with ChangeNotifier {
   /// Update the user-defined order of a given dictionary in the database.
   /// See the dictionary dialog's [ReorderableListView] for usage.
   void updateDictionaryOrder(List<Dictionary> newDictionaries) async {
-    _dictionariesCache = [...newDictionaries]
+    final updatedNames = newDictionaries.map((d) => d.name).toSet();
+    final others =
+        _dictionariesCache.where((d) => !updatedNames.contains(d.name));
+    _dictionariesCache = [...others, ...newDictionaries]
       ..sort((a, b) => a.order.compareTo(b.order));
     _rebuildDictPathsCache();
     for (final dictionary in newDictionaries) {
@@ -990,9 +993,8 @@ class AppModel with ChangeNotifier {
       }
 
       return hibikiDirectory;
-    } catch (e, stack) {
-      ErrorLogService.instance.log('prepareDCIMDirectory', e, stack);
-      debugPrint('Failed to create directory in DCIM.');
+    } catch (e) {
+      debugPrint('DCIM unavailable, using fallback directory.');
       return prepareFallbackHibikiDirectory();
     }
   }

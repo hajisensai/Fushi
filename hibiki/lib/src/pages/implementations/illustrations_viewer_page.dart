@@ -169,34 +169,45 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
       }
     }
 
-    // Also check if the book has a blobs/images map
-    var blobMap = bookData.styleSheet ? null : null; // placeholder
     if (bookData.blobs) {
-      // blobs is typically { "path": Blob }
-      var blobKeys = Object.keys(bookData.blobs);
       var imgExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg'];
-      var imgBlobs = blobKeys.filter(function(k) {
-        var lower = k.toLowerCase();
-        return imgExtensions.some(function(ext) { return lower.endsWith(ext); });
-      });
 
-      // Filter to only blobs that are referenced in sections (actual illustrations)
-      // but also include any large image blobs as they're likely illustrations
-      var referencedBlobs = [];
-      for (var bi = 0; bi < imgBlobs.length; bi++) {
-        var blobKey = imgBlobs[bi];
-        var isReferenced = images.some(function(src) {
-          return src.indexOf(blobKey) >= 0 || blobKey.indexOf(src) >= 0 ||
-                 src.endsWith(blobKey.split('/').pop()) || blobKey.endsWith(src.split('/').pop());
-        });
-        referencedBlobs.push(blobKey);
+      // Build ordered list: match each src from sections to a blob key
+      var orderedBlobs = [];
+      var usedKeys = {};
+      for (var si = 0; si < images.length; si++) {
+        var src = images[si];
+        var srcFile = src.split('/').pop().split('?')[0].split('#')[0];
+        var blobKeys = Object.keys(bookData.blobs);
+        for (var ki = 0; ki < blobKeys.length; ki++) {
+          var bk = blobKeys[ki];
+          if (usedKeys[bk]) continue;
+          var bkFile = bk.split('/').pop();
+          if (src.indexOf(bk) >= 0 || bk.indexOf(src) >= 0 ||
+              srcFile === bkFile || bk.endsWith(srcFile)) {
+            orderedBlobs.push(bk);
+            usedKeys[bk] = true;
+            break;
+          }
+        }
       }
 
-      console.log(JSON.stringify({messageType: 'illustrations_count', count: referencedBlobs.length}));
+      // Append any remaining image blobs not referenced in sections
+      var allBlobKeys = Object.keys(bookData.blobs);
+      for (var ai = 0; ai < allBlobKeys.length; ai++) {
+        var key = allBlobKeys[ai];
+        if (usedKeys[key]) continue;
+        var lower = key.toLowerCase();
+        if (imgExtensions.some(function(ext) { return lower.endsWith(ext); })) {
+          orderedBlobs.push(key);
+        }
+      }
 
-      for (var ri = 0; ri < referencedBlobs.length; ri++) {
+      console.log(JSON.stringify({messageType: 'illustrations_count', count: orderedBlobs.length}));
+
+      for (var ri = 0; ri < orderedBlobs.length; ri++) {
         try {
-          var blob = bookData.blobs[referencedBlobs[ri]];
+          var blob = bookData.blobs[orderedBlobs[ri]];
           if (blob instanceof Blob) {
             var b64 = await blobToBase64(blob);
             console.log(JSON.stringify({messageType: 'illustration', data: b64}));
@@ -204,7 +215,6 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
         } catch(e) {}
       }
     } else {
-      // No blobs map, try to resolve images via fetch from the local server
       console.log(JSON.stringify({messageType: 'illustrations_count', count: 0}));
     }
 
