@@ -4,50 +4,63 @@ import 'package:hibiki/models.dart';
 class AnkiHandlebar {
   AnkiHandlebar._();
 
+  // ── Hoshi Reader 标准 Handlebar ──────────────────────────────────
   static const String expression = '{expression}';
   static const String reading = '{reading}';
   static const String furiganaPlain = '{furigana-plain}';
   static const String sentence = '{sentence}';
+  static const String glossary = '{glossary}';
+  static const String glossaryFirst = '{glossary-first}';
+  static const String selectedGlossary = '{selected-glossary}';
+  static const String documentTitle = '{document-title}';
+  static const String frequencies = '{frequencies}';
+  static const String frequencyHarmonicRank = '{frequency-harmonic-rank}';
+  static const String pitchAccentPositions = '{pitch-accent-positions}';
+  static const String pitchAccentCategories = '{pitch-accent-categories}';
+  static const String bookCover = '{book-cover}';
+  static const String audio = '{audio}';
+  static const String sasayakiAudio = '{sasayaki-audio}';
+
+  // ── hibiki 独有 Handlebar ────────────────────────────────────────
   static const String clozeBefore = '{cloze-before}';
   static const String clozeInside = '{cloze-inside}';
   static const String clozeAfter = '{cloze-after}';
-  static const String glossary = '{glossary}';
-  static const String glossaryFirst = '{glossary-first}';
   static const String expandedGlossary = '{expanded-glossary}';
   static const String collapsedGlossary = '{collapsed-glossary}';
   static const String hiddenGlossary = '{hidden-glossary}';
   static const String notes = '{notes}';
-  static const String documentTitle = '{document-title}';
-  static const String frequencyHarmonicRank = '{frequency-harmonic-rank}';
-  static const String pitchAccent = '{pitch-accent}';
   static const String image = '{image}';
-  static const String audio = '{audio}';
   static const String audioSentence = '{audio-sentence}';
   static const String tags = '{tags}';
-  static const String popupSelectionText = '{popup-selection-text}';
 
   static const List<String> all = [
+    // Hoshi 标准
     expression,
     reading,
     furiganaPlain,
     sentence,
+    glossary,
+    glossaryFirst,
+    selectedGlossary,
+    documentTitle,
+    frequencies,
+    frequencyHarmonicRank,
+    pitchAccentPositions,
+    pitchAccentCategories,
+    bookCover,
+    audio,
+    sasayakiAudio,
+    // hibiki 独有
     clozeBefore,
     clozeInside,
     clozeAfter,
-    glossary,
-    glossaryFirst,
     expandedGlossary,
     collapsedGlossary,
     hiddenGlossary,
     notes,
-    documentTitle,
-    frequencyHarmonicRank,
-    pitchAccent,
     image,
-    audio,
     audioSentence,
     tags,
-    popupSelectionText,
   ];
 
   static const Map<String, String> _handlebarToFieldKey = {
@@ -55,26 +68,36 @@ class AnkiHandlebar {
     reading: ReadingField.key,
     furiganaPlain: FuriganaField.key,
     sentence: SentenceField.key,
+    glossary: MeaningField.key,
+    glossaryFirst: MeaningField.key,
+    selectedGlossary: MeaningField.key,
+    documentTitle: ContextField.key,
+    frequencies: FrequencyField.key,
+    frequencyHarmonicRank: FrequencyField.key,
+    pitchAccentPositions: PitchAccentField.key,
+    pitchAccentCategories: PitchAccentField.key,
+    bookCover: ImageField.key,
+    audio: AudioField.key,
+    sasayakiAudio: AudioSentenceField.key,
     clozeBefore: ClozeBeforeField.key,
     clozeInside: ClozeInsideField.key,
     clozeAfter: ClozeAfterField.key,
-    glossary: MeaningField.key,
-    glossaryFirst: MeaningField.key,
     expandedGlossary: ExpandedMeaningField.key,
     collapsedGlossary: CollapsedMeaningField.key,
     hiddenGlossary: HiddenMeaningField.key,
     notes: NotesField.key,
-    documentTitle: ContextField.key,
-    frequencyHarmonicRank: FrequencyField.key,
-    pitchAccent: PitchAccentField.key,
     image: ImageField.key,
-    audio: AudioField.key,
     audioSentence: AudioSentenceField.key,
     tags: TagsField.key,
-    popupSelectionText: ClozeInsideField.key,
   };
 
-  static const Set<String> mediaHandlebars = {image, audio, audioSentence};
+  static const Set<String> mediaHandlebars = {
+    image,
+    audio,
+    audioSentence,
+    bookCover,
+    sasayakiAudio,
+  };
 
   static String displayName(String handlebar) {
     switch (handlebar) {
@@ -86,16 +109,34 @@ class AnkiHandlebar {
         return 'Furigana';
       case sentence:
         return 'Sentence';
+      case glossary:
+        return 'Glossary';
+      case glossaryFirst:
+        return 'Glossary (First)';
+      case selectedGlossary:
+        return 'Selected Glossary';
+      case documentTitle:
+        return 'Document Title';
+      case frequencies:
+        return 'Frequencies (HTML)';
+      case frequencyHarmonicRank:
+        return 'Frequency (Rank)';
+      case pitchAccentPositions:
+        return 'Pitch Positions';
+      case pitchAccentCategories:
+        return 'Pitch Categories';
+      case bookCover:
+        return 'Book Cover';
+      case audio:
+        return 'Audio';
+      case sasayakiAudio:
+        return 'Sasayaki Audio';
       case clozeBefore:
         return 'Cloze Before';
       case clozeInside:
         return 'Cloze Inside';
       case clozeAfter:
         return 'Cloze After';
-      case glossary:
-        return 'Glossary';
-      case glossaryFirst:
-        return 'Glossary (First)';
       case expandedGlossary:
         return 'Expanded Glossary';
       case collapsedGlossary:
@@ -104,22 +145,12 @@ class AnkiHandlebar {
         return 'Hidden Glossary';
       case notes:
         return 'Notes';
-      case documentTitle:
-        return 'Document Title';
-      case frequencyHarmonicRank:
-        return 'Frequency';
-      case pitchAccent:
-        return 'Pitch Accent';
       case image:
         return 'Image';
-      case audio:
-        return 'Audio';
       case audioSentence:
         return 'Audio (Sentence)';
       case tags:
         return 'Tags';
-      case popupSelectionText:
-        return 'Selection Text';
       default:
         return handlebar;
     }
@@ -186,6 +217,9 @@ class AnkiHandlebar {
       text = text.split('\n').first;
     }
 
+    // TODO: selectedGlossary, frequencies, pitchAccentCategories
+    // 需要更丰富的数据源，目前 fallback 到同字段
+
     if (mapping.useBrTags ?? false) {
       text = text.replaceAll('\n', '<br>');
     }
@@ -203,6 +237,7 @@ class AnkiHandlebar {
 
     switch (handlebar) {
       case image:
+      case bookCover:
         filename = exportedImages[ImageField.instance] ?? '';
         isImage = true;
         break;
@@ -210,6 +245,7 @@ class AnkiHandlebar {
         filename = exportedAudio[AudioField.instance] ?? '';
         break;
       case audioSentence:
+      case sasayakiAudio:
         filename = exportedAudio[AudioSentenceField.instance] ?? '';
         break;
     }
@@ -236,7 +272,7 @@ class AnkiHandlebar {
     'Notes': notes,
     'Context': documentTitle,
     'Frequency': frequencyHarmonicRank,
-    'Pitch Accent': pitchAccent,
+    'Pitch Accent': pitchAccentPositions,
     'Image': image,
     'Term Audio': audio,
     'Sentence Audio': audioSentence,

@@ -1249,7 +1249,7 @@ class AppModel with ChangeNotifier {
     'notes': AnkiHandlebar.notes,
     'context': AnkiHandlebar.documentTitle,
     'frequency': AnkiHandlebar.frequencyHarmonicRank,
-    'pitch_accent': AnkiHandlebar.pitchAccent,
+    'pitch_accent': AnkiHandlebar.pitchAccentPositions,
     'image': AnkiHandlebar.image,
     'audio': AnkiHandlebar.audio,
     'audio_sentence': AnkiHandlebar.audioSentence,
