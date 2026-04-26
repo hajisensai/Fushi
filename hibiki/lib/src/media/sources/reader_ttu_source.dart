@@ -586,7 +586,7 @@ new Promise(function(resolve) {
   double get dismissSwipeSensitivity {
     return getPreference<double>(
       key: 'dismiss_swipe_sensitivity',
-      defaultValue: 0.3,
+      defaultValue: 0.6,
     );
   }
 
