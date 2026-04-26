@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:archive/archive_io.dart';
+import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,7 +9,6 @@ import 'package:fluttertoast/fluttertoast.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
-import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
 const _fontExtensions = {'.ttf', '.otf', '.ttc', '.woff', '.woff2'};
@@ -336,6 +336,101 @@ class _CustomFontsPageState extends BasePageState {
     }
   }
 
+  Future<void> _downloadUrl(String url, {String? displayName}) async {
+    final uri = Uri.parse(url);
+    final fileName = uri.pathSegments.isNotEmpty
+        ? Uri.decodeComponent(uri.pathSegments.last)
+        : 'font_${DateTime.now().millisecondsSinceEpoch}';
+    final tempPath = p.join(_fontsDir.path, '_tmp_$fileName');
+    final progressNotifier = ValueNotifier<double?>(null);
+    final cancelToken = CancelToken();
+
+    if (mounted) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => PopScope(
+          canPop: false,
+          child: AlertDialog(
+            title: Text(displayName ?? t.custom_fonts_downloading),
+            content: ValueListenableBuilder<double?>(
+              valueListenable: progressNotifier,
+              builder: (_, progress, __) => Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  LinearProgressIndicator(value: progress),
+                  const SizedBox(height: 8),
+                  Text(progress != null
+                      ? '${(progress * 100).toStringAsFixed(0)}%'
+                      : t.custom_fonts_downloading),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  cancelToken.cancel();
+                  Navigator.pop(ctx);
+                },
+                child: Text(t.dialog_cancel),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    try {
+      final dio = Dio();
+      await dio.download(
+        url,
+        tempPath,
+        cancelToken: cancelToken,
+        onReceiveProgress: (received, total) {
+          if (total > 0) {
+            progressNotifier.value = received / total;
+          }
+        },
+      );
+
+      if (mounted) Navigator.pop(context);
+
+      final tempFile = File(tempPath);
+      final ext = p.extension(fileName).toLowerCase();
+      int count = 0;
+      if (_fontExtensions.contains(ext)) {
+        count = await _addSingleFont(tempFile, fileName);
+        await tempFile.delete();
+      } else {
+        count = await _extractFontsFromArchive(tempFile);
+        if (await tempFile.exists()) await tempFile.delete();
+      }
+
+      if (count > 0) {
+        await _save();
+        Fluttertoast.showToast(msg: t.custom_fonts_imported_count(count: count));
+      } else {
+        Fluttertoast.showToast(msg: t.custom_fonts_no_fonts_in_archive);
+      }
+    } on DioError catch (e) {
+      if (mounted) Navigator.pop(context);
+      if (e.type != DioErrorType.cancel) {
+        debugPrint('[hibiki-fonts] download failed: $e');
+        Fluttertoast.showToast(msg: t.custom_fonts_download_failed);
+      }
+      final f = File(tempPath);
+      if (await f.exists()) await f.delete();
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+      debugPrint('[hibiki-fonts] download failed: $e');
+      Fluttertoast.showToast(msg: t.custom_fonts_download_failed);
+      final f = File(tempPath);
+      if (await f.exists()) await f.delete();
+    } finally {
+      progressNotifier.dispose();
+    }
+  }
+
   Future<void> _importFromUrl() async {
     final urlController = TextEditingController();
     final url = await showDialog<String>(
@@ -365,78 +460,11 @@ class _CustomFontsPageState extends BasePageState {
     );
     urlController.dispose();
     if (url == null || url.isEmpty) return;
-
-    Fluttertoast.showToast(msg: t.custom_fonts_downloading);
-    try {
-      final uri = Uri.parse(url);
-      final response = await http.get(uri);
-      if (response.statusCode != 200) {
-        Fluttertoast.showToast(msg: t.custom_fonts_download_failed);
-        return;
-      }
-
-      final fileName = uri.pathSegments.isNotEmpty
-          ? Uri.decodeComponent(uri.pathSegments.last)
-          : 'font_${DateTime.now().millisecondsSinceEpoch}';
-      final ext = p.extension(fileName).toLowerCase();
-      final tempFile = File(p.join(_fontsDir.path, '_tmp_$fileName'));
-      await tempFile.writeAsBytes(response.bodyBytes);
-
-      int count = 0;
-      if (_fontExtensions.contains(ext)) {
-        count = await _addSingleFont(tempFile, fileName);
-        await tempFile.delete();
-      } else {
-        count = await _extractFontsFromArchive(tempFile);
-        await tempFile.delete();
-      }
-
-      if (count > 0) {
-        await _save();
-        Fluttertoast.showToast(msg: t.custom_fonts_imported_count(count: count));
-      } else if (count == 0 && _fontExtensions.contains(ext) == false) {
-        Fluttertoast.showToast(msg: t.custom_fonts_no_fonts_in_archive);
-      }
-    } catch (e) {
-      debugPrint('[hibiki-fonts] URL import failed: $e');
-      Fluttertoast.showToast(msg: t.custom_fonts_download_failed);
-    }
+    await _downloadUrl(url);
   }
 
   Future<void> _downloadRecommendedFont(_RecommendedFont font) async {
-    Fluttertoast.showToast(msg: '${t.custom_fonts_downloading} ${font.name}');
-    try {
-      final uri = Uri.parse(font.url);
-      final response = await http.get(uri);
-      if (response.statusCode != 200) {
-        Fluttertoast.showToast(msg: t.custom_fonts_download_failed);
-        return;
-      }
-
-      final fileName = uri.pathSegments.isNotEmpty
-          ? Uri.decodeComponent(uri.pathSegments.last)
-          : '${font.name}.ttf';
-      final ext = p.extension(fileName).toLowerCase();
-      final tempFile = File(p.join(_fontsDir.path, '_tmp_$fileName'));
-      await tempFile.writeAsBytes(response.bodyBytes);
-
-      int count = 0;
-      if (_fontExtensions.contains(ext)) {
-        count = await _addSingleFont(tempFile, fileName);
-        await tempFile.delete();
-      } else {
-        count = await _extractFontsFromArchive(tempFile);
-        if (await tempFile.exists()) await tempFile.delete();
-      }
-
-      if (count > 0) {
-        await _save();
-        Fluttertoast.showToast(msg: t.custom_fonts_imported_count(count: count));
-      }
-    } catch (e) {
-      debugPrint('[hibiki-fonts] recommended font download failed: $e');
-      Fluttertoast.showToast(msg: t.custom_fonts_download_failed);
-    }
+    await _downloadUrl(font.url, displayName: font.name);
   }
 
   Future<void> _openRecommended() async {
