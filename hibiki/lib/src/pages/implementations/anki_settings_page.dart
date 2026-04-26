@@ -97,16 +97,16 @@ class _AnkiSettingsPageState extends BasePageState {
         const JidoujishoDivider(),
         const Space.small(),
         _buildSwitchRow(
-          label: t.close_on_export,
-          hint: t.anki_close_on_export_hint,
-          value: appModel.closeCreatorOnExport,
+          label: t.silent_export,
+          hint: t.anki_silent_export_hint,
+          value: appModel.silentExport,
           onChanged: (_) {
-            appModel.toggleCloseCreatorOnExport();
+            appModel.toggleSilentExport();
             setState(() {});
             Fluttertoast.showToast(
-              msg: appModel.closeCreatorOnExport
-                  ? t.close_on_export_on
-                  : t.close_on_export_off,
+              msg: appModel.silentExport
+                  ? t.silent_export_on
+                  : t.silent_export_off,
             );
           },
         ),

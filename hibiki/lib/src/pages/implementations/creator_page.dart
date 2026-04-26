@@ -302,14 +302,6 @@ class _CreatorPageState extends BasePageState<CreatorPage> {
         );
         creatorModel.getFieldController(TagsField.instance).text =
             appModel.savedTags;
-
-        if (appModel.closeCreatorOnExport) {
-          if (widget.killOnPop) {
-            appModel.shutdown();
-          } else {
-            Navigator.pop(context);
-          }
-        }
       },
     );
   }
@@ -1100,7 +1092,7 @@ class _CreatorPageState extends BasePageState<CreatorPage> {
       return [];
     } else {
       return [
-        buildCloseOnExportButton(),
+        buildSilentExportButton(),
         const Space.small(),
         buildSearchClearButton(),
         const Space.small(),
@@ -1138,28 +1130,26 @@ class _CreatorPageState extends BasePageState<CreatorPage> {
     );
   }
 
-  /// Allows user to toggle whether or not to filter for videos with
-  /// closed captions.
-  Widget buildCloseOnExportButton() {
+  Widget buildSilentExportButton() {
     ValueNotifier<bool> notifier =
-        ValueNotifier<bool>(appModel.closeCreatorOnExport);
+        ValueNotifier<bool>(appModel.silentExport);
 
     return ValueListenableBuilder<bool>(
       valueListenable: notifier,
       builder: (context, value, child) {
         return JidoujishoIconButton(
           size: Theme.of(context).textTheme.titleLarge?.fontSize,
-          tooltip: t.close_on_export,
+          tooltip: t.silent_export,
           enabledColor: value ? Colors.red : null,
-          icon: Icons.exit_to_app,
+          icon: Icons.notifications_off,
           onTap: () {
-            appModel.toggleCloseCreatorOnExport();
-            notifier.value = appModel.closeCreatorOnExport;
+            appModel.toggleSilentExport();
+            notifier.value = appModel.silentExport;
 
             Fluttertoast.showToast(
-              msg: appModel.closeCreatorOnExport
-                  ? t.close_on_export_on
-                  : t.close_on_export_off,
+              msg: appModel.silentExport
+                  ? t.silent_export_on
+                  : t.silent_export_off,
               toastLength: Toast.LENGTH_SHORT,
               gravity: ToastGravity.BOTTOM,
             );

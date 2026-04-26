@@ -2425,11 +2425,13 @@ class AppModel with ChangeNotifier {
         },
       );
 
-      Fluttertoast.showToast(
-        msg: t.card_exported(deck: deck),
-        toastLength: Toast.LENGTH_SHORT,
-        gravity: ToastGravity.BOTTOM,
-      );
+      if (!silentExport) {
+        Fluttertoast.showToast(
+          msg: t.card_exported(deck: deck),
+          toastLength: Toast.LENGTH_SHORT,
+          gravity: ToastGravity.BOTTOM,
+        );
+      }
 
       onSuccess.call();
     } on PlatformException {
@@ -3606,14 +3608,12 @@ class AppModel with ChangeNotifier {
     await _setPref('dictionary_entry_font_size', fontSize);
   }
 
-  /// The search debounce delay in milliseconds for searching in the app..
-  bool get closeCreatorOnExport {
-    return _getPref('close_on_export', defaultValue: true);
+  bool get silentExport {
+    return _getPref('silent_export', defaultValue: false);
   }
 
-  /// Sets the debounce delay in milliseconds for searching in the app..
-  void toggleCloseCreatorOnExport() async {
-    await _setPref('close_on_export', !closeCreatorOnExport);
+  void toggleSilentExport() async {
+    await _setPref('silent_export', !silentExport);
   }
 
   /// Default value of [doubleTapSeekDuration].
