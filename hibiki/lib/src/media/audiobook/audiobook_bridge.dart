@@ -51,31 +51,46 @@ window.__hoshiAlignToRect = function(rect) {
   var content = document.querySelector('.book-content') ||
                 document.scrollingElement || document.documentElement;
   var cRect = content.getBoundingClientRect();
-  var scrollPos = info.verticalMode ? content.scrollTop : content.scrollLeft;
-  var elStart, elEnd;
+  var virtualPos = info.virtualScrollPos;
+  var actualPos = info.verticalMode ? content.scrollTop : content.scrollLeft;
+  var anchor;
   if (info.verticalMode) {
-    elStart = rect.top - cRect.top + scrollPos;
-    elEnd = rect.bottom - cRect.top + scrollPos;
+    anchor = (rect.top + rect.bottom) / 2 - cRect.top + virtualPos;
   } else {
-    elStart = rect.left - cRect.left + scrollPos;
-    elEnd = rect.right - cRect.left + scrollPos;
+    anchor = (rect.left + rect.right) / 2 - cRect.left + virtualPos;
   }
-  var anchor = (elStart + elEnd) / 2;
-  var targetPage = Math.floor(anchor / info.stride);
+  var s = info.stride;
+  var vp = info.viewportSize;
+  var rawPage = anchor / s;
+  var floorPage = Math.floor(rawPage);
+  var pageContentEnd = floorPage * s + vp;
+  var targetPage = (anchor >= pageContentEnd) ? floorPage + 1 : floorPage;
   targetPage = Math.max(0, Math.min(targetPage, info.totalPages - 1));
+  var prevPage = info.currentPage;
   console.log(JSON.stringify({
-    'hibiki-message-type': 'alignToRectDiag',
-    'target': targetPage, 'cur': info.currentPage,
-    'anchor': Math.round(anchor), 'stride': info.stride, 'scroll': scrollPos
+    'hibiki-message-type': 'alignDiag',
+    'rectT': Math.round(rect.top), 'rectB': Math.round(rect.bottom),
+    'rectL': Math.round(rect.left), 'rectR': Math.round(rect.right),
+    'cRectT': Math.round(cRect.top), 'cRectL': Math.round(cRect.left),
+    'virtual': virtualPos, 'actual': actualPos,
+    'anchor': Math.round(anchor), 'rawPage': rawPage.toFixed(3),
+    'floorPage': floorPage, 'target': targetPage, 'cur': prevPage,
+    'stride': s, 'vp': vp, 'gap': info.pageGap,
+    'scrollH': content.scrollHeight, 'scrollW': content.scrollWidth,
+    'clientH': content.clientHeight, 'clientW': content.clientWidth
   }));
-  if (targetPage !== info.currentPage) {
+  if (targetPage !== prevPage) {
+    if (typeof window.__ttuScrollToAnchor === 'function') {
+      window.__ttuScrollToAnchor(anchor);
+    } else if (typeof window.__ttuGoToPage === 'function') {
+      window.__ttuGoToPage(targetPage);
+    }
     window.__hoshiAutoScrollInFlight = true;
     if (window.__hoshiAutoScrollTimer) clearTimeout(window.__hoshiAutoScrollTimer);
     window.__hoshiAutoScrollTimer = setTimeout(function() {
       window.__hoshiAutoScrollInFlight = false;
       window.__hoshiAutoScrollTimer = null;
     }, 800);
-    window.__ttuGoToPage(targetPage);
   }
 };
 

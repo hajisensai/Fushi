@@ -846,6 +846,36 @@ new Promise(function(resolve) {
   static const String getHistoryJs = '''
 indexedDB.databases().then(async (databases) => {
   if (databases.length > 0) {
+    // Schema health check: if the database exists but is missing required
+    // object stores (e.g. after WebStorage.deleteAllData corrupted it),
+    // delete it so the ttu app can recreate it from scratch.
+    var schemaOk = await new Promise(function(resolve) {
+      var chk = indexedDB.open("books");
+      chk.onupgradeneeded = function(e) {
+        // Database didn't exist or version changed — close and delete.
+        e.target.transaction.abort();
+        resolve(false);
+      };
+      chk.onsuccess = function(e) {
+        var db = e.target.result;
+        var names = db.objectStoreNames;
+        var ok = names.contains("data") && names.contains("bookmark") && names.contains("lastItem");
+        db.close();
+        resolve(ok);
+      };
+      chk.onerror = function() { resolve(false); };
+    });
+    if (!schemaOk) {
+      await new Promise(function(resolve) {
+        var del = indexedDB.deleteDatabase("books");
+        del.onsuccess = function() { resolve(); };
+        del.onerror = function() { resolve(); };
+        del.onblocked = function() { resolve(); };
+      });
+      console.log(JSON.stringify({messageType: "empty"}));
+      return;
+    }
+
     var bookmarkJson = JSON.stringify([]);
     var dataJson = JSON.stringify([]);
     var lastItemJson = JSON.stringify([]);

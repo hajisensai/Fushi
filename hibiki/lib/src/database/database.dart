@@ -205,7 +205,8 @@ class HibikiDatabase extends _$HibikiDatabase {
   Future<List<AudiobookRow>> getAllAudiobooks() => select(audiobooks).get();
 
   Future<void> upsertAudiobook(AudiobooksCompanion ab) =>
-      into(audiobooks).insertOnConflictUpdate(ab);
+      into(audiobooks).insert(ab,
+          onConflict: DoUpdate((_) => ab, target: [audiobooks.bookUid]));
 
   Future<int> deleteAudiobookByBookUid(String bookUid) =>
       (delete(audiobooks)..where((t) => t.bookUid.equals(bookUid))).go();

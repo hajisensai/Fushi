@@ -375,13 +375,16 @@ class AudiobookPlayerController extends ChangeNotifier {
   Future<void> skipToCue(AudioCue cue) async {
     final int globalMs = _toGlobalMs(cue);
     await _player.seek(Duration(milliseconds: globalMs));
-    // 用户显式跳句是明确意图：先清掉上一次跨章 await 的守卫再更新 cue。
-    // 否则 ttu 没回 sectionChanged（或回了被 intermediateAuto 丢弃）时
-    // `_chapterTransition` 一直为 true，_updateCurrentCue 进来就 return，
-    // _currentCue 停在旧 cue 上 —— 表现为"上一句/下一句按钮没反应，字幕
-    // 和高亮卡死"。目标 cue 若仍跨章，_maybeEmitCrossChapter 会重新 arm。
     _chapterTransition = false;
-    _updateCurrentCue(_player.position.inMilliseconds);
+    final int idx = _chapterCues.indexOf(cue);
+    if (idx >= 0) {
+      _currentCueIndex = idx;
+      _currentCue = cue;
+      _maybeEmitCrossChapter(cue);
+      notifyListeners();
+    } else {
+      _updateCurrentCue(_player.position.inMilliseconds);
+    }
   }
 
   /// 跳到上一句（当前章节 cue 列表内）。
@@ -391,13 +394,13 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 当前位置"的前一条。始终跳立即邻居，不做 "1.5s 内 restart" 的语义扩展。
   Future<void> skipToPrevCue() async {
     if (_chapterCues.isEmpty) return;
-    // 优先用 currentCue 作参照。Gap 时 _currentCue 保持上一条 cue（sustain），
-    // 所以 cur 通常非空；只有开书前 / 位置早于第一条 cue 时才 fallback。
     final AudioCue? cur = _currentCue;
     if (cur != null) {
-      final int curIdx = _chapterCues.indexWhere(
-        (c) => c.textFragmentId == cur.textFragmentId,
-      );
+      final int curIdx = _currentCueIndex >= 0
+          ? _currentCueIndex
+          : _chapterCues.indexWhere(
+              (c) => c.textFragmentId == cur.textFragmentId,
+            );
       if (curIdx > 0) {
         await skipToCue(_chapterCues[curIdx - 1]);
         return;
