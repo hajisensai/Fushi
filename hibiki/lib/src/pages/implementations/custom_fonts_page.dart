@@ -13,6 +13,87 @@ import 'package:path/path.dart' as p;
 
 const _fontExtensions = {'.ttf', '.otf', '.ttc', '.woff', '.woff2'};
 
+class _RecommendedFont {
+  final String name;
+  final String nameJa;
+  final String url;
+  final String license;
+  final String description;
+  const _RecommendedFont({
+    required this.name,
+    required this.nameJa,
+    required this.url,
+    required this.license,
+    required this.description,
+  });
+}
+
+const _recommendedFonts = [
+  _RecommendedFont(
+    name: 'Noto Sans JP',
+    nameJa: 'Noto Sans 日本語',
+    url: 'https://github.com/googlefonts/noto-cjk/releases/download/Sans2.004/08_NotoSansJP.zip',
+    license: 'OFL 1.1',
+    description: 'Google/Adobe 黑体，覆盖全部 JIS 汉字',
+  ),
+  _RecommendedFont(
+    name: 'Noto Serif JP',
+    nameJa: 'Noto Serif 日本語',
+    url: 'https://github.com/googlefonts/noto-cjk/releases/download/Serif2.003/09_NotoSerifJP.zip',
+    license: 'OFL 1.1',
+    description: 'Google/Adobe 宋体，适合竖排阅读',
+  ),
+  _RecommendedFont(
+    name: 'M PLUS Rounded 1c',
+    nameJa: 'M PLUS Rounded 1c',
+    url: 'https://github.com/googlefonts/mplus-fonts/raw/main/fonts/ttf/MPLUSRounded1c-Regular.ttf',
+    license: 'OFL 1.1',
+    description: '圆角可爱风格，适合轻小说',
+  ),
+  _RecommendedFont(
+    name: 'Zen Maru Gothic',
+    nameJa: '禅丸ゴシック',
+    url: 'https://github.com/googlefonts/zen-marugothic/raw/main/fonts/ttf/ZenMaruGothic-Regular.ttf',
+    license: 'OFL 1.1',
+    description: '柔和圆润黑体',
+  ),
+  _RecommendedFont(
+    name: 'Zen Old Mincho',
+    nameJa: '禅オールド明朝',
+    url: 'https://github.com/googlefonts/zen-oldmincho/raw/main/fonts/ttf/ZenOldMincho-Regular.ttf',
+    license: 'OFL 1.1',
+    description: '复古明朝体，古典文学风格',
+  ),
+  _RecommendedFont(
+    name: 'Klee One',
+    nameJa: 'クレー One',
+    url: 'https://github.com/googlefonts/klee-one/raw/main/fonts/ttf/KleeOne-Regular.ttf',
+    license: 'OFL 1.1',
+    description: '手写教科书体，清晰易读',
+  ),
+  _RecommendedFont(
+    name: 'Zen Kaku Gothic New',
+    nameJa: '禅角ゴシック New',
+    url: 'https://github.com/googlefonts/zen-kakugothic/raw/main/fonts/ttf/ZenKakuGothicNew-Regular.ttf',
+    license: 'OFL 1.1',
+    description: '现代角黑体，通用阅读',
+  ),
+  _RecommendedFont(
+    name: 'Shippori Mincho',
+    nameJa: 'しっぽり明朝',
+    url: 'https://github.com/googlefonts/shippori-mincho/raw/main/fonts/ttf/ShipporiMincho-Regular.ttf',
+    license: 'OFL 1.1',
+    description: '优雅明朝体，文学作品推荐',
+  ),
+  _RecommendedFont(
+    name: 'Hina Mincho',
+    nameJa: 'ひな明朝',
+    url: 'https://github.com/googlefonts/hina-mincho/raw/main/fonts/ttf/HinaMincho-Regular.ttf',
+    license: 'OFL 1.1',
+    description: '柔和装饰性明朝体',
+  ),
+];
+
 bool _isFontFile(String path) {
   return _fontExtensions.contains(p.extension(path).toLowerCase());
 }
@@ -241,7 +322,7 @@ class _CustomFontsPageState extends BasePageState {
         content: TextField(
           controller: urlController,
           decoration: InputDecoration(
-            hintText: 'https://example.com/font.ttf',
+            hintText: 'https://example.com/fonts.zip',
             border: const OutlineInputBorder(),
           ),
           keyboardType: TextInputType.url,
@@ -297,6 +378,55 @@ class _CustomFontsPageState extends BasePageState {
       debugPrint('[hibiki-fonts] URL import failed: $e');
       Fluttertoast.showToast(msg: t.custom_fonts_download_failed);
     }
+  }
+
+  Future<void> _downloadRecommendedFont(_RecommendedFont font) async {
+    Fluttertoast.showToast(msg: '${t.custom_fonts_downloading} ${font.name}');
+    try {
+      final uri = Uri.parse(font.url);
+      final response = await http.get(uri);
+      if (response.statusCode != 200) {
+        Fluttertoast.showToast(msg: t.custom_fonts_download_failed);
+        return;
+      }
+
+      final fileName = uri.pathSegments.isNotEmpty
+          ? Uri.decodeComponent(uri.pathSegments.last)
+          : '${font.name}.ttf';
+      final ext = p.extension(fileName).toLowerCase();
+      final tempFile = File(p.join(_fontsDir.path, '_tmp_$fileName'));
+      await tempFile.writeAsBytes(response.bodyBytes);
+
+      int count = 0;
+      if (_fontExtensions.contains(ext)) {
+        count = await _addSingleFont(tempFile, fileName);
+        await tempFile.delete();
+      } else {
+        count = await _extractFontsFromArchive(tempFile);
+        if (await tempFile.exists()) await tempFile.delete();
+      }
+
+      if (count > 0) {
+        await _save();
+        Fluttertoast.showToast(msg: t.custom_fonts_imported_count(count: count));
+      }
+    } catch (e) {
+      debugPrint('[hibiki-fonts] recommended font download failed: $e');
+      Fluttertoast.showToast(msg: t.custom_fonts_download_failed);
+    }
+  }
+
+  Future<void> _openRecommended() async {
+    final font = await Navigator.push<_RecommendedFont>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _RecommendedFontsPage(
+          alreadyAdded: _fonts.map((e) => e['name'] as String).toSet(),
+        ),
+      ),
+    );
+    if (font == null || !mounted) return;
+    await _downloadRecommendedFont(font);
   }
 
   Future<void> _addSystemFont() async {
@@ -355,19 +485,42 @@ class _CustomFontsPageState extends BasePageState {
         title: Text(t.custom_fonts),
         actions: [
           IconButton(
-            icon: const Icon(Icons.text_fields),
-            tooltip: t.custom_fonts_add_system,
-            onPressed: _addSystemFont,
+            icon: const Icon(Icons.star_outline),
+            tooltip: t.custom_fonts_recommended,
+            onPressed: _openRecommended,
           ),
-          IconButton(
-            icon: const Icon(Icons.file_open),
-            tooltip: t.custom_fonts_import_file,
-            onPressed: _importFontFile,
-          ),
-          IconButton(
-            icon: const Icon(Icons.link),
-            tooltip: t.custom_fonts_import_url,
-            onPressed: _importFromUrl,
+          PopupMenuButton<VoidCallback>(
+            icon: const Icon(Icons.add),
+            onSelected: (fn) => fn(),
+            itemBuilder: (_) => [
+              PopupMenuItem(
+                value: _addSystemFont,
+                child: ListTile(
+                  leading: const Icon(Icons.text_fields),
+                  title: Text(t.custom_fonts_add_system),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              PopupMenuItem(
+                value: _importFontFile,
+                child: ListTile(
+                  leading: const Icon(Icons.file_open),
+                  title: Text(t.custom_fonts_import_file),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              PopupMenuItem(
+                value: _importFromUrl,
+                child: ListTile(
+                  leading: const Icon(Icons.link),
+                  title: Text(t.custom_fonts_import_url),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -383,39 +536,10 @@ class _CustomFontsPageState extends BasePageState {
                   Text(t.custom_fonts_empty,
                       style: Theme.of(context).textTheme.bodyLarge),
                   const SizedBox(height: 24),
-                  Wrap(
-                    alignment: WrapAlignment.center,
-                    spacing: 12,
-                    runSpacing: 8,
-                    children: [
-                      FilledButton.icon(
-                        onPressed: _addSystemFont,
-                        icon: const Icon(Icons.text_fields),
-                        label: Text(t.custom_fonts_add_system),
-                      ),
-                      FilledButton.tonal(
-                        onPressed: _importFontFile,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.file_open),
-                            const SizedBox(width: 8),
-                            Text(t.custom_fonts_import_file),
-                          ],
-                        ),
-                      ),
-                      FilledButton.tonal(
-                        onPressed: _importFromUrl,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.link),
-                            const SizedBox(width: 8),
-                            Text(t.custom_fonts_import_url),
-                          ],
-                        ),
-                      ),
-                    ],
+                  FilledButton.icon(
+                    onPressed: _openRecommended,
+                    icon: const Icon(Icons.star_outline),
+                    label: Text(t.custom_fonts_recommended),
                   ),
                 ],
               ),
@@ -464,6 +588,58 @@ class _CustomFontsPageState extends BasePageState {
                 ),
               ],
             ),
+    );
+  }
+}
+
+class _RecommendedFontsPage extends StatelessWidget {
+  final Set<String> alreadyAdded;
+  const _RecommendedFontsPage({required this.alreadyAdded});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: AppBar(title: Text(t.custom_fonts_recommended)),
+      body: ListView.builder(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        itemCount: _recommendedFonts.length,
+        itemBuilder: (context, index) {
+          final font = _recommendedFonts[index];
+          final added = alreadyAdded.any(
+            (n) => n.toLowerCase().contains(font.name.toLowerCase().split(' ').first),
+          );
+          return Card(
+            margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: ListTile(
+              leading: Icon(
+                Icons.font_download,
+                color: added ? cs.outline : cs.primary,
+              ),
+              title: Text(font.name),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(font.nameJa,
+                      style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
+                  const SizedBox(height: 2),
+                  Text(font.description,
+                      style: Theme.of(context).textTheme.bodySmall),
+                  Text(font.license,
+                      style: TextStyle(fontSize: 10, color: cs.outline)),
+                ],
+              ),
+              trailing: added
+                  ? Icon(Icons.check, color: cs.outline)
+                  : FilledButton.tonal(
+                      onPressed: () => Navigator.pop(context, font),
+                      child: const Icon(Icons.download, size: 20),
+                    ),
+              isThreeLine: true,
+            ),
+          );
+        },
+      ),
     );
   }
 }

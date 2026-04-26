@@ -571,6 +571,7 @@
     "custom_fonts_imported_count": "已导入 $count 个字体",
     "custom_fonts_archive_error": "解压失败",
     "custom_fonts_no_fonts_in_archive": "压缩包中未找到字体文件",
+    "custom_fonts_recommended": "推荐字体",
     "custom_theme": "自定义主题",
     "dark_mode": "深色模式",
     "seed_color": "种子色",

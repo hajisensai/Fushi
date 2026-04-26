@@ -597,6 +597,7 @@
     "custom_fonts_imported_count": "$count font(s) imported",
     "custom_fonts_archive_error": "Failed to extract archive",
     "custom_fonts_no_fonts_in_archive": "No font files found in archive",
+    "custom_fonts_recommended": "Recommended Fonts",
     "custom_theme": "Custom Theme",
     "dark_mode": "Dark Mode",
     "seed_color": "Seed Color",
