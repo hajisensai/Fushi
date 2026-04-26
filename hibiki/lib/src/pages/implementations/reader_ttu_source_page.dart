@@ -828,7 +828,30 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
           action: PermissionResponseAction.GRANT,
         );
       },
+      shouldInterceptRequest: (controller, request) async {
+        final url = request.url;
+        if (url.host == 'hibiki-font.local' && url.pathSegments.isNotEmpty) {
+          final fontPath = Uri.decodeComponent(url.pathSegments.first);
+          final file = File(fontPath);
+          if (await file.exists()) {
+            final bytes = await file.readAsBytes();
+            final ext = fontPath.split('.').last.toLowerCase();
+            final mime = switch (ext) {
+              'woff2' => 'font/woff2',
+              'woff' => 'font/woff',
+              'otf' => 'font/otf',
+              _ => 'font/ttf',
+            };
+            return WebResourceResponse(
+              contentType: mime,
+              data: bytes,
+            );
+          }
+        }
+        return null;
+      },
       initialSettings: InAppWebViewSettings(
+        useShouldInterceptRequest: true,
         allowFileAccessFromFileURLs: true,
         allowUniversalAccessFromFileURLs: true,
         mediaPlaybackRequiresUserGesture: false,
