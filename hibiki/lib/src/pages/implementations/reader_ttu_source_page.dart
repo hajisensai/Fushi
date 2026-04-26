@@ -788,10 +788,16 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         'JSON.stringify({"custom-theme":$themeObj}))';
   }
 
-  String _buildCustomFontFaceCss() {
-    final fontCss = ReaderTtuSource.instance.buildCustomFontCss();
-    if (fontCss.fontFaces.isEmpty) return '';
-    return fontCss.fontFaces;
+  String _buildFontFaceCss() {
+    const defaultFaces =
+        '@font-face { font-family: "Noto Serif JP"; '
+        'src: local("Noto Serif CJK JP"), local("NotoSerifCJKjp-Regular"), local("serif"); '
+        'font-display: swap; } '
+        '@font-face { font-family: "Noto Sans JP"; '
+        'src: local("Noto Sans CJK JP"), local("NotoSansCJKjp-Regular"), local("sans-serif"); '
+        'font-display: swap; }';
+    final custom = ReaderTtuSource.instance.buildCustomFontCss().fontFaces;
+    return custom.isEmpty ? defaultFaces : '$custom\n$defaultFaces';
   }
 
   Widget buildReaderArea(LocalAssetsServer server) {
@@ -812,12 +818,11 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
           source: _buildApplySettingsJs(),
           injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
         ),
-        if (_buildCustomFontFaceCss().isNotEmpty)
-          UserScript(
+        UserScript(
             source: '(function(){'
                 'var s=document.createElement("style");'
                 's.id="hibiki-custom-fonts";'
-                "s.textContent='${_buildCustomFontFaceCss().replaceAll('\\', '\\\\').replaceAll("'", "\\'").replaceAll('\n', ' ')}';"
+                "s.textContent='${_buildFontFaceCss().replaceAll('\\', '\\\\').replaceAll("'", "\\'").replaceAll('\n', ' ')}';"
                 'document.addEventListener("DOMContentLoaded",function(){'
                 'document.head.appendChild(s)});})()',
             injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
