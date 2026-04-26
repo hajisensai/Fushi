@@ -4,16 +4,12 @@ import 'package:hibiki/language.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/utils.dart';
 
-/// A user-generated mapping to allow customisation of the fields exported from
-/// the application. A mapping is bound to a [model], which must have a length
-/// of fields equal or more than the length of [getExportFields].
 @JsonSerializable()
 class AnkiMapping {
-  /// Initialise a model mapping with the given parameters.
   AnkiMapping({
     required this.label,
     required this.model,
-    required this.exportFieldKeys,
+    required this.fieldMappings,
     required this.creatorFieldKeys,
     required this.creatorCollapsedFieldKeys,
     required this.order,
@@ -26,9 +22,6 @@ class AnkiMapping {
     this.id,
   });
 
-  /// Get the default mapping that is included with the application at first
-  /// startup. Requires a language so that the appropriate default enhancements
-  /// are suggested.
   factory AnkiMapping.defaultMapping({
     required Language language,
     required int order,
@@ -36,25 +29,8 @@ class AnkiMapping {
     return AnkiMapping(
       label: standardProfileName,
       model: standardModelName,
-      exportFieldKeys: [
-        TermField.key,
-        ReadingField.key,
-        FuriganaField.key,
-        SentenceField.key,
-        ClozeBeforeField.key,
-        ClozeInsideField.key,
-        ClozeAfterField.key,
-        MeaningField.key,
-        ExpandedMeaningField.key,
-        CollapsedMeaningField.key,
-        NotesField.key,
-        ContextField.key,
-        FrequencyField.key,
-        PitchAccentField.key,
-        ImageField.key,
-        AudioField.key,
-        AudioSentenceField.key,
-      ],
+      fieldMappings: Map<String, String>.from(
+          AnkiHandlebar.defaultFieldMappingsForStandardModel),
       creatorFieldKeys: defaultCreatorFieldKeys,
       creatorCollapsedFieldKeys: defaultCreatorCollapsedFieldKeys,
       order: order,
@@ -67,7 +43,6 @@ class AnkiMapping {
     );
   }
 
-  /// A default map of enhancements to use for new mappings.
   static const Map<String, Map<String, Map<int, String>>>
       defaultEnhancementsByLanguage = {
     'ja-JP': {
@@ -163,7 +138,6 @@ class AnkiMapping {
     },
   };
 
-  /// Default fields to show upon opening the Card Creator.
   static const List<String> defaultCreatorFieldKeys = [
     SentenceField.key,
     TermField.key,
@@ -175,7 +149,6 @@ class AnkiMapping {
     AudioSentenceField.key,
   ];
 
-  /// Default fields to show upon opening the Card Creator.
   static const List<String> defaultCreatorCollapsedFieldKeys = [
     TagsField.key,
     ContextField.key,
@@ -187,7 +160,6 @@ class AnkiMapping {
     PitchAccentField.key,
   ];
 
-  /// A default map of enhancements to use for new mappings.
   static const Map<String, Map<int, String>> defaultActionsByLanguage = {
     'ja-JP': {
       0: CardCreatorAction.key,
@@ -207,120 +179,60 @@ class AnkiMapping {
     }
   };
 
-  /// The default mapping name which cannot be deleted or reused.
   static String standardModelName = 'hibiki Kinomoto';
-
-  /// The default mapping name which cannot be deleted or reused.
   static String standardProfileName = 'Standard';
 
-  /// A unique identifier for the purposes of database storage.
   int? id;
-
-  /// The name of this mapping.
   final String label;
-
-  /// The name of the model to use when exporting with this mapping.
   final String model;
 
-  /// Returns the unique key equivalents of the field in [getExportFields] that
-  /// can be stored in a database.
-  List<String?> exportFieldKeys;
+  /// Handlebar-based field mappings: Anki field name → handlebar pattern.
+  Map<String, String> fieldMappings;
 
-  /// Returns the unique key equivalents of the field in [getCreatorFields]
-  /// that can be stored in a database.
   List<String> creatorFieldKeys;
-
-  /// Returns the unique key equivalents of the field in
-  /// [getCreatorCollapsedFields] that can be stored in a database.
   List<String> creatorCollapsedFieldKeys;
-
-  /// A collection of tags to always include when exporting with this mapping.
   final List<String> tags;
 
-  /// Whether or not this mapping has any non-empty fields set.
   bool get isExportFieldsEmpty =>
-      exportFieldKeys.where((e) => e != null).isEmpty;
+      fieldMappings.values.where((v) => v.isNotEmpty).isEmpty;
 
-  /// Used to keep track of actions used in dictionary results.
   Map<int, String>? actions;
 
-  /// Serializes [actions] to JSON string for database storage.
   String get actionsJson => QuickActionsConverter.toIsar(actions!);
   set actionsJson(String object) =>
       actions = QuickActionsConverter.fromIsar(object);
 
-  /// Used to keep track of enhancements used in the creator per field.
   late Map<String, Map<int, String>>? enhancements;
 
-  /// Serializes [enhancements] to JSON string for database storage.
   String get enhancementsJson => EnhancementsConverter.toIsar(enhancements!);
   set enhancementsJson(String object) =>
       enhancements = EnhancementsConverter.fromIsar(object);
 
-  /// Reserved index for the auto mode field in the map of enhancement names
-  /// for a field.
   static int autoModeSlotNumber = -1;
 
-  /// Whether or not this mapping exports image and audio HTML/Anki syntax
-  /// or only shows the filename. If null, will be considered false.
   bool? exportMediaTags;
-
-  /// Whether or not this mapping exports <br> tags instead of \n.
   bool? useBrTags;
-
-  /// Whether or not to add the dictionary name before the meaning.
   bool? prependDictionaryNames;
-
-  /// The order of this dictionary in terms of user sorting, relative to other
-  /// dictionaries.
   int order;
 
-  /// Convert unique keys to fields.
-  List<Field?> keysToFieldsNullable(List<String?> keys) {
-    List<Field?> fields = [];
-
-    for (String? key in keys) {
-      if (key == null) {
-        fields.add(null);
-      } else {
-        Field field = fieldsByKey[key]!;
-        fields.add(field);
-      }
-    }
-
-    return fields;
-  }
-
-  /// Convert unique keys to fields.
   List<Field> keysToFields(List<String> keys) {
     List<Field> fields = [];
-
     for (String key in keys) {
-      Field field = fieldsByKey[key]!;
-      fields.add(field);
+      final field = fieldsByKey[key];
+      if (field != null) fields.add(field);
     }
-
     return fields;
   }
 
-  /// The ordering of the fields to use when exporting with this mapping. The
-  /// length of this must be less or equal the length of the model being used
-  /// for export to work correctly.
-  List<Field?> getExportFields() => keysToFieldsNullable(exportFieldKeys);
-
-  /// The ordering of the fields to show in the Creator.
   List<Field> getCreatorFields() => keysToFields(creatorFieldKeys);
 
-  /// The ordering of the fields to hide in the Creator.
   List<Field> getCreatorCollapsedFields() =>
       keysToFields(creatorCollapsedFieldKeys);
 
-  /// Creates a deep copy of this mapping but with the given variables replaced
-  /// with the new values.
   AnkiMapping copyWith({
     String? label,
     String? model,
-    List<String?>? exportFieldKeys,
+    Map<String, String>? fieldMappings,
     List<String>? creatorFieldKeys,
     List<String>? creatorCollapsedFieldKeys,
     List<String>? tags,
@@ -335,10 +247,11 @@ class AnkiMapping {
     return AnkiMapping(
       label: label ?? this.label,
       model: model ?? this.model,
-      exportFieldKeys: exportFieldKeys ?? this.exportFieldKeys,
-      creatorFieldKeys: creatorFieldKeys ?? this.creatorFieldKeys,
+      fieldMappings:
+          fieldMappings ?? Map<String, String>.from(this.fieldMappings),
+      creatorFieldKeys: creatorFieldKeys ?? List.from(this.creatorFieldKeys),
       creatorCollapsedFieldKeys:
-          creatorCollapsedFieldKeys ?? this.creatorCollapsedFieldKeys,
+          creatorCollapsedFieldKeys ?? List.from(this.creatorCollapsedFieldKeys),
       tags: tags ?? this.tags,
       order: order ?? this.order,
       id: id ?? this.id,
@@ -351,8 +264,6 @@ class AnkiMapping {
     );
   }
 
-  /// Returns a list of enhancement names active for a certain field in the
-  /// persisted enhancements map.
   List<String> getManualFieldEnhancementNames({required Field field}) {
     return (enhancements![field.uniqueKey] ?? {})
         .entries
@@ -361,19 +272,14 @@ class AnkiMapping {
         .toList();
   }
 
-  /// Returns the enhancement names active for a certain field in the persisted
-  /// enhancements map.
   String? getAutoFieldEnhancementName({required Field field}) {
     return (enhancements![field.uniqueKey] ?? {})[autoModeSlotNumber];
   }
 
-  /// Returns a list of action names active in the persisted actions map.
   List<String> getActionNames() {
     return actions!.values.toList();
   }
 
-  /// Returns a list of enhancements active for a certain field in the
-  /// persisted enhancements map.
   List<Enhancement> getManualFieldEnhancement(
       {required AppModel appModel, required Field field}) {
     List<String> enhancementNames =
@@ -386,8 +292,6 @@ class AnkiMapping {
     return enhancements;
   }
 
-  /// Returns the enhancement active for a certain field in the persisted
-  /// enhancements map.
   Enhancement? getAutoFieldEnhancement(
       {required AppModel appModel, required Field field}) {
     String? enhancementName = getAutoFieldEnhancementName(field: field);
@@ -399,7 +303,6 @@ class AnkiMapping {
     return enhancement;
   }
 
-  /// Returns a list of actions active for the persisted actions map.
   List<QuickAction> getActions({required AppModel appModel}) {
     List<String> actionNames = getActionNames();
     List<QuickAction> actions = actionNames

@@ -1234,12 +1234,70 @@ class AppModel with ChangeNotifier {
 
   // ── model / Drift row conversion helpers ──────────────────────────
 
+  static const Map<String, String> _fieldKeyToHandlebar = {
+    'term': AnkiHandlebar.expression,
+    'reading': AnkiHandlebar.reading,
+    'furigana': AnkiHandlebar.furiganaPlain,
+    'sentence': AnkiHandlebar.sentence,
+    'cloze_before': AnkiHandlebar.clozeBefore,
+    'cloze_inside': AnkiHandlebar.clozeInside,
+    'cloze_after': AnkiHandlebar.clozeAfter,
+    'meaning': AnkiHandlebar.glossary,
+    'expanded_meaning': AnkiHandlebar.expandedGlossary,
+    'collapsed_meaning': AnkiHandlebar.collapsedGlossary,
+    'hidden_meaning': AnkiHandlebar.hiddenGlossary,
+    'notes': AnkiHandlebar.notes,
+    'context': AnkiHandlebar.documentTitle,
+    'frequency': AnkiHandlebar.frequencyHarmonicRank,
+    'pitch_accent': AnkiHandlebar.pitchAccent,
+    'image': AnkiHandlebar.image,
+    'audio': AnkiHandlebar.audio,
+    'audio_sentence': AnkiHandlebar.audioSentence,
+    'tags': AnkiHandlebar.tags,
+  };
+
+  static const List<String> _standardModelFields = [
+    'Term', 'Reading', 'Furigana', 'Sentence', 'Cloze Before',
+    'Cloze Inside', 'Cloze After', 'Meaning', 'Expanded Meaning',
+    'Collapsed Meaning', 'Notes', 'Context', 'Frequency',
+    'Pitch Accent', 'Image', 'Term Audio', 'Sentence Audio',
+  ];
+
+  static Map<String, String> _migrateOldExportFieldKeys(
+      List<String?> keys, String model) {
+    Map<String, String> result = {};
+    if (model == AnkiMapping.standardModelName) {
+      for (int i = 0; i < keys.length && i < _standardModelFields.length; i++) {
+        if (keys[i] != null) {
+          result[_standardModelFields[i]] = _fieldKeyToHandlebar[keys[i]] ?? '';
+        }
+      }
+    } else {
+      for (int i = 0; i < keys.length; i++) {
+        if (keys[i] != null) {
+          result['Field ${i + 1}'] = _fieldKeyToHandlebar[keys[i]] ?? '';
+        }
+      }
+    }
+    return result;
+  }
+
   static AnkiMapping _rowToMapping(AnkiMappingRow r) {
+    Map<String, String> fieldMappings;
+    final decoded = jsonDecode(r.exportFieldKeysJson);
+    if (decoded is Map) {
+      fieldMappings = Map<String, String>.from(decoded);
+    } else if (decoded is List) {
+      fieldMappings =
+          _migrateOldExportFieldKeys(decoded.cast<String?>(), r.model);
+    } else {
+      fieldMappings = {};
+    }
+
     final m = AnkiMapping(
       label: r.label,
       model: r.model,
-      exportFieldKeys:
-          (jsonDecode(r.exportFieldKeysJson) as List).cast<String?>(),
+      fieldMappings: fieldMappings,
       creatorFieldKeys: List<String>.from(jsonDecode(r.creatorFieldKeysJson)),
       creatorCollapsedFieldKeys:
           List<String>.from(jsonDecode(r.creatorCollapsedFieldKeysJson)),
@@ -1259,7 +1317,7 @@ class AppModel with ChangeNotifier {
     return AnkiMappingsCompanion(
       label: Value(m.label),
       model: Value(m.model),
-      exportFieldKeysJson: Value(jsonEncode(m.exportFieldKeys)),
+      exportFieldKeysJson: Value(jsonEncode(m.fieldMappings)),
       creatorFieldKeysJson: Value(jsonEncode(m.creatorFieldKeys)),
       creatorCollapsedFieldKeysJson:
           Value(jsonEncode(m.creatorCollapsedFieldKeys)),
@@ -2404,11 +2462,14 @@ class AppModel with ChangeNotifier {
     }
 
     String model = mapping.model;
-    List<String> fields = getCardFields(
+    List<String> ankiFieldNames = await getFieldList(model);
+    List<String> fields = AnkiHandlebar.resolveFieldMappings(
+      ankiFieldNames: ankiFieldNames,
+      fieldMappings: mapping.fieldMappings,
       creatorFieldValues: creatorFieldValues,
-      mapping: mapping,
       exportedImages: exportedImages,
       exportedAudio: exportedAudio,
+      mapping: mapping,
     );
 
     List<String> tags =
@@ -2522,64 +2583,6 @@ class AppModel with ChangeNotifier {
     }
   }
 
-  /// Returns the list that will be passed to the Anki card creation API to
-  /// fill a card's fields. The contents of the list will correspond to the
-  /// order of the [mapping] provided, with each field in the list replaced
-  /// with the corresponding [creatorFieldValues] or in the case of the image
-  /// and audio fields, the file names.
-  static List<String> getCardFields({
-    required CreatorFieldValues creatorFieldValues,
-    required AnkiMapping mapping,
-    required Map<Field, String> exportedImages,
-    required Map<Field, String> exportedAudio,
-  }) {
-    List<String> fields = mapping.getExportFields().map<String>((field) {
-      if (field == null) {
-        return '';
-      } else {
-        if (field is ImageExportField) {
-          if (exportedImages[field] == null) {
-            return '';
-          } else {
-            String text = exportedImages[field]!;
-            if (mapping.exportMediaTags ?? false) {
-              return '<img src="$text">';
-            } else {
-              return text;
-            }
-          }
-        } else if (field is AudioExportField) {
-          if (exportedAudio[field] == null) {
-            return '';
-          } else {
-            String text = exportedAudio[field]!;
-            if (mapping.exportMediaTags ?? false) {
-              return '[sound:$text]';
-            } else {
-              return text;
-            }
-          }
-        } else {
-          String text = creatorFieldValues.textValues[field] ?? '';
-          if (mapping.useBrTags ?? false) {
-            text = text.replaceAll('\n', '<br>');
-          }
-
-          return text;
-        }
-      }
-    }).toList();
-
-    return fields;
-  }
-
-  /// Returns whether or not a given [AnkiMapping] has the same amount of
-  /// fields as the model it uses.
-  Future<bool> profileFieldMatchesCardTypeCount(AnkiMapping mapping) async {
-    List<String> fields = await getFieldList(mapping.model);
-    return mapping.exportFieldKeys.length == fields.length;
-  }
-
   /// Returns whether or not a given [AnkiMapping]'s model exists in Anki.
   Future<bool> profileModelExists(AnkiMapping mapping) async {
     List<String> models = await getModelList();
@@ -2598,15 +2601,12 @@ class AppModel with ChangeNotifier {
     notifyListeners();
   }
 
-  /// Resets a profile's fields such that it will have the model's number of
-  /// fields, all empty.
+  /// Resets a profile's field mappings to empty for the given model.
   Future<void> resetProfileFields(AnkiMapping mapping) async {
     List<String> fields = await getFieldList(mapping.model);
-    List<String?> exportFieldKeys =
-        List.generate(fields.length, (index) => null);
-
+    Map<String, String> emptyMappings = {for (var f in fields) f: ''};
     AnkiMapping resetMapping =
-        mapping.copyWith(exportFieldKeys: exportFieldKeys);
+        mapping.copyWith(fieldMappings: emptyMappings);
     _persistMapping(resetMapping);
   }
 
@@ -2617,7 +2617,6 @@ class AppModel with ChangeNotifier {
   }) async {
     final navigator = Navigator.of(context);
 
-    /// Ensure that the following case never happens to the default profile.
     await addDefaultModelIfMissing();
 
     bool newMappingModelExists = await profileModelExists(mapping);
@@ -2645,32 +2644,6 @@ class AppModel with ChangeNotifier {
       await selectStandardProfile();
       deleteMapping(mapping);
       return;
-    }
-
-    bool newMappingModelLengthMatches =
-        await profileFieldMatchesCardTypeCount(mapping);
-
-    if (!newMappingModelLengthMatches) {
-      if (context.mounted) {
-        await showDialog(
-          barrierDismissible: true,
-          context: context,
-          builder: (_) => AlertDialog(
-            title: Text(t.error_model_changed),
-            content: Text(
-              t.error_model_changed_content,
-            ),
-            actions: [
-              TextButton(
-                onPressed: navigator.pop,
-                child: Text(t.dialog_close),
-              ),
-            ],
-          ),
-        );
-      }
-
-      await resetProfileFields(mapping);
     }
   }
 

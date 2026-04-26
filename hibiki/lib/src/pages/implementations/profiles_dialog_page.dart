@@ -4,7 +4,6 @@ import 'package:fluttertoast/fluttertoast.dart';
 import 'package:reorderables/reorderables.dart';
 import 'package:spaces/spaces.dart';
 import 'package:hibiki/creator.dart';
-import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 import 'package:collection/collection.dart';
@@ -122,13 +121,12 @@ class _ProfilesDialogPageState extends BasePageState<ProfilesDialogPage>
       onPressed: () async {
         String model = appModel.lastSelectedModel ?? widget.initialModel;
         List<String> modelFields = await appModel.getFieldList(model);
-        List<String?> exportFieldKeys =
-            List.generate(modelFields.length, (index) => null);
+        Map<String, String> fieldMappings = {for (var f in modelFields) f: ''};
 
         AnkiMapping newMapping = AnkiMapping(
           label: '',
           model: model,
-          exportFieldKeys: exportFieldKeys,
+          fieldMappings: fieldMappings,
           creatorFieldKeys: AnkiMapping.defaultCreatorFieldKeys,
           creatorCollapsedFieldKeys:
               AnkiMapping.defaultCreatorCollapsedFieldKeys,
@@ -589,7 +587,6 @@ class _ProfilesDialogPageState extends BasePageState<ProfilesDialogPage>
     required AnkiMapping mappingClone,
     required List<String> modelFields,
   }) {
-    List<Field?> fields = mappingClone.getExportFields();
     ScrollController scrollController = ScrollController();
 
     return SingleChildScrollView(
@@ -599,13 +596,17 @@ class _ProfilesDialogPageState extends BasePageState<ProfilesDialogPage>
         shrinkWrap: true,
         itemCount: modelFields.length,
         itemBuilder: (context, index) {
+          final ankiFieldName = modelFields.elementAt(index);
+          final currentHandlebar =
+              mappingClone.fieldMappings[ankiFieldName] ?? '';
+
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Padding(
                 padding: Spacing.of(context).insets.onlyLeft.small,
                 child: Text(
-                  modelFields.elementAt(index),
+                  ankiFieldName,
                   style: TextStyle(
                     fontSize: 10,
                     color: theme.unselectedWidgetColor,
@@ -615,22 +616,20 @@ class _ProfilesDialogPageState extends BasePageState<ProfilesDialogPage>
               Stack(
                 alignment: Alignment.bottomCenter,
                 children: [
-                  JidoujishoDropdown<Field?>(
-                    options: [null, ...globalFields],
-                    initialOption: fields.elementAt(index),
-                    generateLabel: (field) {
-                      if (field == null) {
+                  JidoujishoDropdown<String>(
+                    options: ['', ...AnkiHandlebar.all],
+                    initialOption: AnkiHandlebar.all.contains(currentHandlebar)
+                        ? currentHandlebar
+                        : '',
+                    generateLabel: (handlebar) {
+                      if (handlebar.isEmpty) {
                         return t.field_label_empty;
-                      } else {
-                        return field.label;
                       }
+                      return AnkiHandlebar.displayName(handlebar);
                     },
-                    onChanged: (field) {
-                      if (field == null) {
-                        mappingClone.exportFieldKeys[index] = null;
-                      } else {
-                        mappingClone.exportFieldKeys[index] = field.uniqueKey;
-                      }
+                    onChanged: (handlebar) {
+                      mappingClone.fieldMappings[ankiFieldName] =
+                          handlebar ?? '';
                       setState(() {});
                     },
                   ),
