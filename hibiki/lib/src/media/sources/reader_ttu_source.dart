@@ -799,11 +799,11 @@ new Promise(function(resolve) {
     final fontCss = buildCustomFontCss();
     final hasCustomFonts = fontCss.fontFamily.isNotEmpty;
     final fontFamilyOne = hasCustomFonts
-        ? '${fontCss.fontFamily}, Noto Serif JP'
-        : 'Noto Serif JP';
+        ? '${fontCss.fontFamily}, Noto Serif JP, Noto Serif CJK JP, serif'
+        : 'Noto Serif JP, Noto Serif CJK JP, serif';
     final fontFamilyTwo = hasCustomFonts
-        ? '${fontCss.fontFamily}, Noto Sans JP'
-        : 'Noto Sans JP';
+        ? '${fontCss.fontFamily}, Noto Sans JP, Noto Sans CJK JP, sans-serif'
+        : 'Noto Sans JP, Noto Sans CJK JP, sans-serif';
     final List<String> cmds = [
       'window.localStorage.setItem("fontSize",${ttuFontSize})',
       'window.localStorage.setItem("lineHeight",${ttuLineHeight})',
