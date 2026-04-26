@@ -129,7 +129,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   double get volume => _player.volume;
 
   Future<void> setVolume(double v) async {
-    await _player.setVolume(v.clamp(0.0, 1.0));
+    await _player.setVolume(v.clamp(0.0, 2.0));
     notifyListeners();
   }
 
@@ -716,10 +716,11 @@ class AudiobookPlayerController extends ChangeNotifier {
     await skipToCue(best);
   }
 
-  /// 设置音画延迟（毫秒），带边界夹取。±4s slider 范围。
+  /// 设置音画延迟（毫秒），带边界夹取。对齐上游 Sasayaki sheet 的 ±2s
+  /// slider 范围；超出这个范围几乎不可能是有意义的对齐偏移。
   /// 写库走 [onDelayPersist]。相同值跳过 notify/写库。
   void setDelayMs(int ms) {
-    final int clamped = ms.clamp(-4000, 4000);
+    final int clamped = ms.clamp(-2000, 2000);
     if (delayMs.value == clamped) return;
     delayMs.value = clamped;
     // 立刻在当前位置重查 cue，让高亮即时反映新偏移，不用等

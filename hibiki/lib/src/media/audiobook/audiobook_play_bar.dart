@@ -483,7 +483,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               child: Slider(
                 value: ctrl.volume,
                 min: 0.0,
-                max: 1.0,
+                max: 2.0,
                 onChanged: (double v) {
                   ctrl.setVolume(v);
                   setState(() {});
