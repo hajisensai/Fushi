@@ -385,7 +385,11 @@ class _CustomFontsPageState extends BasePageState {
         connectTimeout: const Duration(seconds: 30),
         receiveTimeout: const Duration(minutes: 10),
         followRedirects: true,
-        maxRedirects: 5,
+        maxRedirects: 10,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Linux; Android) Hibiki/1.0',
+          'Accept': '*/*',
+        },
       ));
       const maxRetries = 3;
       for (int attempt = 1; attempt <= maxRetries; attempt++) {
@@ -429,18 +433,27 @@ class _CustomFontsPageState extends BasePageState {
       } else {
         Fluttertoast.showToast(msg: t.custom_fonts_no_fonts_in_archive);
       }
-    } on DioError catch (e) {
+    } on DioError catch (e, stack) {
       if (mounted) Navigator.pop(context);
       if (e.type != DioErrorType.cancel) {
-        debugPrint('[hibiki-fonts] download failed: $e');
-        Fluttertoast.showToast(msg: t.custom_fonts_download_failed);
+        debugPrint('[hibiki-fonts] DioError: type=${e.type} '
+            'status=${e.response?.statusCode} msg=${e.message}');
+        debugPrint('[hibiki-fonts] stack: $stack');
+        Fluttertoast.showToast(
+          msg: '${t.custom_fonts_download_failed}: ${e.type.name}',
+          toastLength: Toast.LENGTH_LONG,
+        );
       }
       final f = File(tempPath);
       if (await f.exists()) await f.delete();
-    } catch (e) {
+    } catch (e, stack) {
       if (mounted) Navigator.pop(context);
       debugPrint('[hibiki-fonts] download failed: $e');
-      Fluttertoast.showToast(msg: t.custom_fonts_download_failed);
+      debugPrint('[hibiki-fonts] stack: $stack');
+      Fluttertoast.showToast(
+        msg: '${t.custom_fonts_download_failed}: $e',
+        toastLength: Toast.LENGTH_LONG,
+      );
       final f = File(tempPath);
       if (await f.exists()) await f.delete();
     } finally {
