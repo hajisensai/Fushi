@@ -100,61 +100,70 @@ class AnkiHandlebar {
     sasayakiAudio,
   };
 
-  static String displayName(String handlebar) {
+  static const Map<String, String> _englishNames = {
+    expression: 'Expression',
+    reading: 'Reading',
+    furiganaPlain: 'Furigana',
+    sentence: 'Sentence',
+    glossary: 'Glossary',
+    glossaryFirst: 'Glossary (First)',
+    selectedGlossary: 'Selected Glossary',
+    documentTitle: 'Document Title',
+    frequencies: 'Frequencies (HTML)',
+    frequencyHarmonicRank: 'Frequency (Rank)',
+    pitchAccentPositions: 'Pitch Positions',
+    pitchAccentCategories: 'Pitch Categories',
+    bookCover: 'Book Cover',
+    audio: 'Audio',
+    sasayakiAudio: 'Sasayaki Audio',
+    clozeBefore: 'Cloze Before',
+    clozeInside: 'Cloze Inside',
+    clozeAfter: 'Cloze After',
+    expandedGlossary: 'Expanded Glossary',
+    collapsedGlossary: 'Collapsed Glossary',
+    hiddenGlossary: 'Hidden Glossary',
+    notes: 'Notes',
+    image: 'Image',
+    audioSentence: 'Audio (Sentence)',
+    tags: 'Tags',
+  };
+
+  static String _translated(String handlebar) {
     switch (handlebar) {
-      case expression:
-        return t.handlebar_expression;
-      case reading:
-        return t.handlebar_reading;
-      case furiganaPlain:
-        return t.handlebar_furigana_plain;
-      case sentence:
-        return t.handlebar_sentence;
-      case glossary:
-        return t.handlebar_glossary;
-      case glossaryFirst:
-        return t.handlebar_glossary_first;
-      case selectedGlossary:
-        return t.handlebar_selected_glossary;
-      case documentTitle:
-        return t.handlebar_document_title;
-      case frequencies:
-        return t.handlebar_frequencies;
-      case frequencyHarmonicRank:
-        return t.handlebar_frequency_harmonic_rank;
-      case pitchAccentPositions:
-        return t.handlebar_pitch_accent_positions;
-      case pitchAccentCategories:
-        return t.handlebar_pitch_accent_categories;
-      case bookCover:
-        return t.handlebar_book_cover;
-      case audio:
-        return t.handlebar_audio;
-      case sasayakiAudio:
-        return t.handlebar_sasayaki_audio;
-      case clozeBefore:
-        return t.handlebar_cloze_before;
-      case clozeInside:
-        return t.handlebar_cloze_inside;
-      case clozeAfter:
-        return t.handlebar_cloze_after;
-      case expandedGlossary:
-        return t.handlebar_expanded_glossary;
-      case collapsedGlossary:
-        return t.handlebar_collapsed_glossary;
-      case hiddenGlossary:
-        return t.handlebar_hidden_glossary;
-      case notes:
-        return t.handlebar_notes;
-      case image:
-        return t.handlebar_image;
-      case audioSentence:
-        return t.handlebar_audio_sentence;
-      case tags:
-        return t.handlebar_tags;
-      default:
-        return handlebar;
+      case expression: return t.handlebar_expression;
+      case reading: return t.handlebar_reading;
+      case furiganaPlain: return t.handlebar_furigana_plain;
+      case sentence: return t.handlebar_sentence;
+      case glossary: return t.handlebar_glossary;
+      case glossaryFirst: return t.handlebar_glossary_first;
+      case selectedGlossary: return t.handlebar_selected_glossary;
+      case documentTitle: return t.handlebar_document_title;
+      case frequencies: return t.handlebar_frequencies;
+      case frequencyHarmonicRank: return t.handlebar_frequency_harmonic_rank;
+      case pitchAccentPositions: return t.handlebar_pitch_accent_positions;
+      case pitchAccentCategories: return t.handlebar_pitch_accent_categories;
+      case bookCover: return t.handlebar_book_cover;
+      case audio: return t.handlebar_audio;
+      case sasayakiAudio: return t.handlebar_sasayaki_audio;
+      case clozeBefore: return t.handlebar_cloze_before;
+      case clozeInside: return t.handlebar_cloze_inside;
+      case clozeAfter: return t.handlebar_cloze_after;
+      case expandedGlossary: return t.handlebar_expanded_glossary;
+      case collapsedGlossary: return t.handlebar_collapsed_glossary;
+      case hiddenGlossary: return t.handlebar_hidden_glossary;
+      case notes: return t.handlebar_notes;
+      case image: return t.handlebar_image;
+      case audioSentence: return t.handlebar_audio_sentence;
+      case tags: return t.handlebar_tags;
+      default: return handlebar;
     }
+  }
+
+  static String displayName(String handlebar) {
+    final en = _englishNames[handlebar] ?? handlebar;
+    final localized = _translated(handlebar);
+    if (en == localized) return en;
+    return '$en $localized';
   }
 
   static List<String> resolveFieldMappings({
