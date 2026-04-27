@@ -9,6 +9,7 @@ class CreatorFieldValues {
   /// Initialise an immutable collection of the final parameters.
   CreatorFieldValues({
     this.textValues = const {},
+    this.extraValues = const {},
   });
 
   // factory CreatorFieldValues.fromDictionary({
@@ -22,6 +23,7 @@ class CreatorFieldValues {
   /// with the new values.
   CreatorFieldValues copyWith({
     Map<Field, String>? textValues,
+    Map<String, String>? extraValues,
   }) {
     Map<Field, String>? newTextValues;
     if (textValues != null) {
@@ -29,11 +31,17 @@ class CreatorFieldValues {
       newTextValues.addAll(textValues);
     }
 
-    return CreatorFieldValues(textValues: newTextValues ?? this.textValues);
+    return CreatorFieldValues(
+      textValues: newTextValues ?? this.textValues,
+      extraValues: extraValues ?? this.extraValues,
+    );
   }
 
   /// A map of text values to override for certain supplied key fields.
   final Map<Field, String> textValues;
+
+  /// Raw key-value pairs from the popup (e.g. singleGlossaries, selectedDictionary).
+  final Map<String, String> extraValues;
 
   /// List of images to export to Anki.
   Map<Field, File> get imagesToExport {

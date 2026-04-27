@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:hibiki/creator.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
@@ -21,6 +23,7 @@ class AnkiHandlebar {
   static const String bookCover = '{book-cover}';
   static const String audio = '{audio}';
   static const String sasayakiAudio = '{sasayaki-audio}';
+  static const String popupSelectionText = '{popup-selection-text}';
 
   // ── hibiki 独有 Handlebar ────────────────────────────────────────
   static const String clozeBefore = '{cloze-before}';
@@ -51,6 +54,7 @@ class AnkiHandlebar {
     bookCover,
     audio,
     sasayakiAudio,
+    popupSelectionText,
     // hibiki 独有
     clozeBefore,
     clozeInside,
@@ -80,6 +84,7 @@ class AnkiHandlebar {
     bookCover: ImageField.key,
     audio: AudioField.key,
     sasayakiAudio: AudioSentenceField.key,
+    popupSelectionText: ClozeInsideField.key,
     clozeBefore: ClozeBeforeField.key,
     clozeInside: ClozeInsideField.key,
     clozeAfter: ClozeAfterField.key,
@@ -116,6 +121,7 @@ class AnkiHandlebar {
     bookCover: 'Book Cover',
     audio: 'Audio',
     sasayakiAudio: 'Sasayaki Audio',
+    popupSelectionText: 'Popup Selection Text',
     clozeBefore: 'Cloze Before',
     clozeInside: 'Cloze Inside',
     clozeAfter: 'Cloze After',
@@ -145,6 +151,7 @@ class AnkiHandlebar {
       case bookCover: return t.handlebar_book_cover;
       case audio: return t.handlebar_audio;
       case sasayakiAudio: return t.handlebar_sasayaki_audio;
+      case popupSelectionText: return t.handlebar_popup_selection_text;
       case clozeBefore: return t.handlebar_cloze_before;
       case clozeInside: return t.handlebar_cloze_inside;
       case clozeAfter: return t.handlebar_cloze_after;
@@ -227,8 +234,28 @@ class AnkiHandlebar {
       text = text.split('\n').first;
     }
 
-    // TODO: selectedGlossary, frequencies, pitchAccentCategories
-    // 需要更丰富的数据源，目前 fallback 到同字段
+    if (handlebar == selectedGlossary) {
+      final selectedDict = values.extraValues['selectedDictionary'] ?? '';
+      final singleJson = values.extraValues['singleGlossaries'] ?? '';
+      if (selectedDict.isNotEmpty && singleJson.isNotEmpty) {
+        try {
+          final map = Map<String, String>.from(jsonDecode(singleJson) as Map);
+          text = map[selectedDict] ?? '';
+        } catch (_) {
+          text = '';
+        }
+      } else {
+        text = '';
+      }
+    }
+
+    if (handlebar == sentence && text.isNotEmpty) {
+      final matched =
+          values.textValues[ClozeInsideField.instance] ?? '';
+      if (matched.isNotEmpty) {
+        text = text.replaceAll(matched, '<b>$matched</b>');
+      }
+    }
 
     if (mapping.useBrTags ?? false) {
       text = text.replaceAll('\n', '<br>');
@@ -268,6 +295,114 @@ class AnkiHandlebar {
     return filename;
   }
 
+  static Map<String, String> autoMapFields(List<String> ankiFields, {String? modelName}) {
+    if (modelName == 'Lapis') {
+      final result = <String, String>{};
+      for (final field in ankiFields) {
+        result[field] = defaultFieldMappingsForLapis[field] ?? '';
+      }
+      return result;
+    }
+    final result = <String, String>{};
+    for (final field in ankiFields) {
+      result[field] = _autoMatch(field);
+    }
+    return result;
+  }
+
+  static String _normalizeFieldName(String name) {
+    // CamelCase → space-separated, then lowercase
+    final spaced = name.replaceAllMapped(
+      RegExp(r'(?<=[a-z])(?=[A-Z])'),
+      (_) => ' ',
+    );
+    return spaced.toLowerCase().replaceAll(RegExp(r'[_\-]+'), ' ').trim();
+  }
+
+  // Ordered: more specific patterns first to avoid false matches.
+  // Each entry is (pattern-keywords, handlebar).
+  static final List<(Set<String>, String)> _matchRules = [
+    ({'expression', 'furigana'}, furiganaPlain),
+    ({'expression', 'reading'}, reading),
+    ({'expression', 'audio'}, audio),
+    ({'sentence', 'furigana'}, sentence),
+    ({'sentence', 'audio'}, audioSentence),
+    ({'term', 'audio'}, audio),
+    ({'word', 'audio'}, audio),
+    ({'cloze', 'before'}, clozeBefore),
+    ({'cloze', 'inside'}, clozeInside),
+    ({'cloze', 'after'}, clozeAfter),
+    ({'selection', 'text'}, clozeInside),
+    ({'popup', 'selection'}, clozeInside),
+    ({'main', 'definition'}, glossaryFirst),
+    ({'glossary', 'first'}, glossaryFirst),
+    ({'definition', 'picture'}, image),
+    ({'pitch', 'position'}, pitchAccentPositions),
+    ({'pitch', 'categor'}, pitchAccentCategories),
+    ({'pitch', 'accent'}, pitchAccentPositions),
+    ({'document', 'title'}, documentTitle),
+    ({'context', 'sentence'}, sentence),
+    ({'book', 'cover'}, bookCover),
+    ({'freq', 'sort'}, frequencyHarmonicRank),
+    ({'expanded', 'meaning'}, expandedGlossary),
+    ({'expanded', 'glossary'}, expandedGlossary),
+    ({'collapsed', 'meaning'}, collapsedGlossary),
+    ({'collapsed', 'glossary'}, collapsedGlossary),
+    ({'hidden', 'meaning'}, hiddenGlossary),
+    ({'hidden', 'glossary'}, hiddenGlossary),
+    ({'selected', 'glossary'}, selectedGlossary),
+    ({'sasayaki'}, sasayakiAudio),
+  ];
+
+  static final Map<String, String> _exactMap = {
+    'expression': expression,
+    'term': expression,
+    'word': expression,
+    'vocabulary': expression,
+    'vocab': expression,
+    '単語': expression,
+    '言葉': expression,
+    'reading': reading,
+    '読み': reading,
+    'furigana': furiganaPlain,
+    'sentence': sentence,
+    '例文': sentence,
+    '文': sentence,
+    'meaning': glossary,
+    'definition': glossary,
+    'glossary': glossary,
+    '意味': glossary,
+    'notes': notes,
+    'note': notes,
+    'hint': notes,
+    'context': documentTitle,
+    'source': documentTitle,
+    'frequency': frequencyHarmonicRank,
+    'freq': frequencyHarmonicRank,
+    'frequencies': frequencies,
+    'image': image,
+    'picture': image,
+    'screenshot': image,
+    'audio': audio,
+    'cover': bookCover,
+    'tags': tags,
+    'misc info': notes,
+  };
+
+  static String _autoMatch(String fieldName) {
+    final normalized = _normalizeFieldName(fieldName);
+
+    // Try multi-keyword rules first (more specific)
+    for (final (keywords, hb) in _matchRules) {
+      if (keywords.every((kw) => normalized.contains(kw))) {
+        return hb;
+      }
+    }
+
+    // Exact match on normalized name
+    return _exactMap[normalized] ?? '';
+  }
+
   static const Map<String, String> defaultFieldMappingsForStandardModel = {
     'Term': expression,
     'Reading': reading,
@@ -286,5 +421,30 @@ class AnkiHandlebar {
     'Image': image,
     'Term Audio': audio,
     'Sentence Audio': audioSentence,
+  };
+
+  static const Map<String, String> defaultFieldMappingsForLapis = {
+    'Expression': expression,
+    'ExpressionFurigana': furiganaPlain,
+    'ExpressionReading': reading,
+    'ExpressionAudio': audio,
+    'SelectionText': popupSelectionText,
+    'MainDefinition': glossaryFirst,
+    'DefinitionPicture': '',
+    'Sentence': sentence,
+    'SentenceFurigana': '',
+    'SentenceAudio': sasayakiAudio,
+    'Picture': '',
+    'Glossary': glossary,
+    'Hint': '',
+    'IsWordAndSentenceCard': '1',
+    'IsClickCard': '',
+    'IsSentenceCard': '',
+    'IsAudioCard': '',
+    'PitchPosition': pitchAccentPositions,
+    'PitchCategories': pitchAccentCategories,
+    'Frequency': frequencies,
+    'FreqSort': frequencyHarmonicRank,
+    'MiscInfo': documentTitle,
   };
 }

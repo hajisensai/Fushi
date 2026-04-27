@@ -457,6 +457,10 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
           ReadingField.instance: fields['reading'] ?? '',
           MeaningField.instance: fields['glossary'] ?? '',
         },
+        extraValues: {
+          'singleGlossaries': fields['singleGlossaries'] ?? '',
+          'selectedDictionary': fields['selectedDictionary'] ?? '',
+        },
       ),
       onCreatorReady: (creatorModel) async {
         final String wordAudioUrl = fields['audio'] ?? '';

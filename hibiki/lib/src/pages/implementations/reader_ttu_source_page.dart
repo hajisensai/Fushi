@@ -415,6 +415,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
 
   @override
   void onMineFromPopup(Map<String, String> fields) {
+    final currentSentence = appModel.getCurrentSentence();
     clearDictionaryResult();
     appModel.openCreator(
       ref: ref,
@@ -424,7 +425,14 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
           TermField.instance: fields['expression'] ?? '',
           ReadingField.instance: fields['reading'] ?? '',
           MeaningField.instance: fields['glossary'] ?? '',
-          SentenceField.instance: fields['popupSelectionText'] ?? '',
+          SentenceField.instance: currentSentence.text.trim(),
+          ClozeBeforeField.instance: currentSentence.textBefore,
+          ClozeInsideField.instance: currentSentence.textInside,
+          ClozeAfterField.instance: currentSentence.textAfter,
+        },
+        extraValues: {
+          'singleGlossaries': fields['singleGlossaries'] ?? '',
+          'selectedDictionary': fields['selectedDictionary'] ?? '',
         },
       ),
       onCreatorReady: (creatorModel) async {
@@ -636,58 +644,63 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     );
   }
 
+  ThemeData _themedWithSurface(ThemeData base, Color surface) {
+    return base.copyWith(
+      colorScheme: base.colorScheme.copyWith(
+        surface: surface,
+        surfaceContainerLow: surface,
+        surfaceContainer: surface,
+        surfaceContainerHigh: surface,
+      ),
+      bottomAppBarTheme: base.bottomAppBarTheme.copyWith(color: surface),
+      bottomSheetTheme: base.bottomSheetTheme.copyWith(backgroundColor: surface),
+    );
+  }
+
   Future<void> setDictionaryColors() async {
     String currentTheme = (await _controller.evaluateJavascript(
             source: 'window.localStorage.getItem("theme")'))
         .toString();
     switch (currentTheme) {
       case 'light-theme':
-        appModel.setOverrideDictionaryTheme(appModel.theme);
-        appModel.setOverrideDictionaryColor(
-          Color.fromRGBO(249, 249, 249, dictionaryEntryOpacity),
-        );
+        final c = Color.fromRGBO(249, 249, 249, 1);
+        appModel.setOverrideDictionaryTheme(_themedWithSurface(appModel.theme, c));
+        appModel.setOverrideDictionaryColor(c.withValues(alpha: dictionaryEntryOpacity));
         break;
       case 'ecru-theme':
-        appModel.setOverrideDictionaryTheme(appModel.theme);
-        appModel.setOverrideDictionaryColor(
-          Color.fromRGBO(247, 246, 235, dictionaryEntryOpacity),
-        );
+        final c = Color.fromRGBO(247, 246, 235, 1);
+        appModel.setOverrideDictionaryTheme(_themedWithSurface(appModel.theme, c));
+        appModel.setOverrideDictionaryColor(c.withValues(alpha: dictionaryEntryOpacity));
         break;
       case 'water-theme':
-        appModel.setOverrideDictionaryTheme(appModel.theme);
-        appModel.setOverrideDictionaryColor(
-          Color.fromRGBO(223, 236, 244, dictionaryEntryOpacity),
-        );
+        final c = Color.fromRGBO(223, 236, 244, 1);
+        appModel.setOverrideDictionaryTheme(_themedWithSurface(appModel.theme, c));
+        appModel.setOverrideDictionaryColor(c.withValues(alpha: dictionaryEntryOpacity));
         break;
       case 'gray-theme':
-        appModel.setOverrideDictionaryTheme(appModel.darkTheme);
-        appModel.setOverrideDictionaryColor(
-          Color.fromRGBO(35, 39, 42, dictionaryEntryOpacity),
-        );
+        final c = Color.fromRGBO(35, 39, 42, 1);
+        appModel.setOverrideDictionaryTheme(_themedWithSurface(appModel.darkTheme, c));
+        appModel.setOverrideDictionaryColor(c.withValues(alpha: dictionaryEntryOpacity));
         break;
       case 'dark-theme':
-        appModel.setOverrideDictionaryTheme(appModel.darkTheme);
-        appModel.setOverrideDictionaryColor(
-          Color.fromRGBO(18, 18, 18, dictionaryEntryOpacity),
-        );
+        final c = Color.fromRGBO(18, 18, 18, 1);
+        appModel.setOverrideDictionaryTheme(_themedWithSurface(appModel.darkTheme, c));
+        appModel.setOverrideDictionaryColor(c.withValues(alpha: dictionaryEntryOpacity));
         break;
       case 'black-theme':
-        appModel.setOverrideDictionaryTheme(appModel.darkTheme);
-        appModel.setOverrideDictionaryColor(
-          Color.fromRGBO(16, 16, 16, dictionaryEntryOpacity),
-        );
+        final c = Color.fromRGBO(16, 16, 16, 1);
+        appModel.setOverrideDictionaryTheme(_themedWithSurface(appModel.darkTheme, c));
+        appModel.setOverrideDictionaryColor(c.withValues(alpha: dictionaryEntryOpacity));
         break;
       case 'custom-theme':
         if (appModel.customThemeDark) {
-          appModel.setOverrideDictionaryTheme(appModel.darkTheme);
-          appModel.setOverrideDictionaryColor(
-            Color.fromRGBO(35, 39, 42, dictionaryEntryOpacity),
-          );
+          final c = Color.fromRGBO(35, 39, 42, 1);
+          appModel.setOverrideDictionaryTheme(_themedWithSurface(appModel.darkTheme, c));
+          appModel.setOverrideDictionaryColor(c.withValues(alpha: dictionaryEntryOpacity));
         } else {
-          appModel.setOverrideDictionaryTheme(appModel.theme);
-          appModel.setOverrideDictionaryColor(
-            Color.fromRGBO(249, 249, 249, dictionaryEntryOpacity),
-          );
+          final c = Color.fromRGBO(249, 249, 249, 1);
+          appModel.setOverrideDictionaryTheme(_themedWithSurface(appModel.theme, c));
+          appModel.setOverrideDictionaryColor(c.withValues(alpha: dictionaryEntryOpacity));
         }
         break;
     }
@@ -2318,12 +2331,10 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     );
     await showModalBottomSheet<void>(
       context: context,
-      showDragHandle: true,
+      showDragHandle: false,
       isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       builder: (BuildContext ctx) {
-        // 阅读器 Scaffold 设了 resizeToAvoidBottomInset: false（WebView 需要），
-        // 导致子树 MediaQuery.viewInsets 被清零；手动从 View 恢复真实键盘高度，
-        // 否则底部面板内 TextField 弹出键盘后立刻丢焦点。
         final ui.FlutterView view = View.of(ctx);
         final EdgeInsets realInsets = EdgeInsets.fromViewPadding(
           view.viewInsets,
@@ -2363,10 +2374,39 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         return ValueListenableBuilder<ThemeData?>(
           valueListenable: sheetThemeNotifier,
           builder: (_, ThemeData? themeOverride, Widget? child) {
-            Widget wrapped = child!;
-            if (themeOverride != null) {
-              wrapped = Theme(data: themeOverride, child: wrapped);
-            }
+            final ThemeData effectiveTheme =
+                themeOverride ?? Theme.of(ctx);
+            final Color bg = effectiveTheme.colorScheme.surface;
+            Widget wrapped = Theme(
+              data: effectiveTheme,
+              child: child!,
+            );
+            wrapped = Container(
+              decoration: BoxDecoration(
+                color: bg,
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(28)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(height: 8),
+                  Center(
+                    child: Container(
+                      width: 32,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: effectiveTheme.colorScheme.onSurfaceVariant
+                            .withValues(alpha: 0.4),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Flexible(child: wrapped),
+                ],
+              ),
+            );
             return MediaQuery(
               data: MediaQuery.of(ctx).copyWith(viewInsets: realInsets),
               child: wrapped,

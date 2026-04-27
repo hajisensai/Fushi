@@ -22,6 +22,7 @@ const audioUrls = {};
 let currentAudio = null;
 let lastSelection = '';
 let currentDictionaryMedia = null;
+const selectedDictionaries = {};
 
 function el(tag, props = {}, children = []) {
     const element = document.createElement(tag);
@@ -829,6 +830,7 @@ async function mineEntry(expression, reading, frequencies, pitches, rules, match
         pitchCategories,
         popupSelectionText,
         audio,
+        selectedDictionary: selectedDictionaries[idx]?.name || '',
         dictionaryMedia: JSON.stringify([...dictionaryMedia.values()])
     });
 }
@@ -1320,15 +1322,44 @@ function createEntryHeader(entry, idx) {
     return header;
 }
 
-function createGlossarySection(dictName, contents, isFirst) {
+function createGlossarySection(dictName, contents, isFirst, entryIdx) {
     const details = el('details', { className: 'glossary-group' });
     if (!window.collapseDictionaries || isFirst) {
         details.open = true;
     }
-    
+
     const summary = el('summary', { className: 'dict-label' });
     summary.appendChild(el('span', { className: 'dict-name', textContent: dictName }));
     details.appendChild(summary);
+
+    let longPressTimer = null;
+    let longPressed = false;
+    const toggleSelection = () => {
+        longPressed = true;
+        const selected = selectedDictionaries[entryIdx];
+        selected?.label.classList.remove('selected');
+        if (selected?.name === dictName) {
+            delete selectedDictionaries[entryIdx];
+        } else {
+            selectedDictionaries[entryIdx] = { name: dictName, label: summary };
+            summary.classList.add('selected');
+        }
+    };
+    summary.addEventListener('touchstart', (e) => {
+        longPressed = false;
+        longPressTimer = setTimeout(toggleSelection, 500);
+    }, { passive: true });
+    summary.addEventListener('touchend', () => {
+        clearTimeout(longPressTimer);
+        if (longPressed) event?.preventDefault?.();
+    });
+    summary.addEventListener('touchmove', () => clearTimeout(longPressTimer));
+    summary.addEventListener('mousedown', () => {
+        longPressed = false;
+        longPressTimer = setTimeout(toggleSelection, 500);
+    });
+    summary.addEventListener('mouseup', () => clearTimeout(longPressTimer));
+    summary.addEventListener('mouseleave', () => clearTimeout(longPressTimer));
     
     const dictWrapper = document.createElement('div');
     dictWrapper.setAttribute('data-dictionary', dictName);
@@ -1476,7 +1507,7 @@ window.renderPopup = function() {
                 const { details, body, grouped, dictNames } = glossaryWrapper;
                 entryDiv.appendChild(details);
                 for (let dictIdx = 0; dictIdx < dictNames.length; dictIdx++) {
-                    body.appendChild(createGlossarySection(dictNames[dictIdx], grouped[dictNames[dictIdx]], dictIdx === 0));
+                    body.appendChild(createGlossarySection(dictNames[dictIdx], grouped[dictNames[dictIdx]], dictIdx === 0, idx));
                     await new Promise(r => requestAnimationFrame(r));
                 }
             }

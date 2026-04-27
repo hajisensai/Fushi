@@ -341,6 +341,12 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
     display: block;
 }
 
+.dict-label.selected {
+    opacity: 1;
+    color: #2196F3;
+    font-weight: bold;
+}
+
 .overlay {
     display: none;
     position: fixed;
