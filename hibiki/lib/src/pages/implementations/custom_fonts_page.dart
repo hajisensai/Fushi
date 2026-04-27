@@ -28,15 +28,15 @@ class _RecommendedFont {
   });
 }
 
-// jsDelivr CDN（中国可访问）为主，Google Fonts API 为备选。
+// Google Fonts API 为主，jsDelivr CDN（中国可访问）为备选。
 const _recommendedFonts = [
   // ── CJK 覆盖（日中韩通用，不会缺字） ──
   _RecommendedFont(
     name: 'Noto Sans JP',
     nameJa: 'Noto Sans 日本語',
     urls: [
-      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosansjp/NotoSansJP%5Bwght%5D.ttf',
       'https://fonts.google.com/download?family=Noto+Sans+JP',
+      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosansjp/NotoSansJP%5Bwght%5D.ttf',
     ],
     license: 'OFL 1.1',
     description: 'Google/Adobe 黑体 · 日语字形优先 · 可变字重',
@@ -45,8 +45,8 @@ const _recommendedFonts = [
     name: 'Noto Serif JP',
     nameJa: 'Noto Serif 日本語',
     urls: [
-      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notoserifjp/NotoSerifJP%5Bwght%5D.ttf',
       'https://fonts.google.com/download?family=Noto+Serif+JP',
+      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notoserifjp/NotoSerifJP%5Bwght%5D.ttf',
     ],
     license: 'OFL 1.1',
     description: 'Google/Adobe 宋体 · 日语字形优先 · 适合竖排阅读',
@@ -55,8 +55,8 @@ const _recommendedFonts = [
     name: 'Noto Sans SC',
     nameJa: 'Noto Sans 简体中文',
     urls: [
-      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf',
       'https://fonts.google.com/download?family=Noto+Sans+SC',
+      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf',
     ],
     license: 'OFL 1.1',
     description: 'Google/Adobe 黑体 · 简中字形优先 · 搭配日文字体做回退',
@@ -74,8 +74,8 @@ const _recommendedFonts = [
     name: 'Noto Sans TC',
     nameJa: 'Noto Sans 繁體中文',
     urls: [
-      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanstc/NotoSansTC%5Bwght%5D.ttf',
       'https://fonts.google.com/download?family=Noto+Sans+TC',
+      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanstc/NotoSansTC%5Bwght%5D.ttf',
     ],
     license: 'OFL 1.1',
     description: 'Google/Adobe 黑体 · 繁中字形优先',
@@ -85,8 +85,8 @@ const _recommendedFonts = [
     name: 'Klee One',
     nameJa: 'クレー One',
     urls: [
-      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/kleeone/KleeOne-Regular.ttf',
       'https://fonts.google.com/download?family=Klee+One',
+      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/kleeone/KleeOne-Regular.ttf',
     ],
     license: 'OFL 1.1',
     description: '手写教科书体 · 清晰易读 · 建议搭配 Noto CJK 回退',
@@ -95,8 +95,8 @@ const _recommendedFonts = [
     name: 'Shippori Mincho',
     nameJa: 'しっぽり明朝',
     urls: [
-      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/shipporimincho/ShipporiMincho-Regular.ttf',
       'https://fonts.google.com/download?family=Shippori+Mincho',
+      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/shipporimincho/ShipporiMincho-Regular.ttf',
     ],
     license: 'OFL 1.1',
     description: '优雅明朝体 · 文学作品推荐 · 建议搭配 Noto CJK 回退',
@@ -105,8 +105,8 @@ const _recommendedFonts = [
     name: 'Zen Old Mincho',
     nameJa: '禅オールド明朝',
     urls: [
-      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zenoldmincho/ZenOldMincho-Regular.ttf',
       'https://fonts.google.com/download?family=Zen+Old+Mincho',
+      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zenoldmincho/ZenOldMincho-Regular.ttf',
     ],
     license: 'OFL 1.1',
     description: '复古明朝体 · 古典文学风格 · 建议搭配 Noto CJK 回退',
@@ -115,8 +115,8 @@ const _recommendedFonts = [
     name: 'Zen Maru Gothic',
     nameJa: '禅丸ゴシック',
     urls: [
-      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zenmarugothic/ZenMaruGothic-Regular.ttf',
       'https://fonts.google.com/download?family=Zen+Maru+Gothic',
+      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zenmarugothic/ZenMaruGothic-Regular.ttf',
     ],
     license: 'OFL 1.1',
     description: '柔和圆润黑体 · 建议搭配 Noto CJK 回退',
@@ -125,8 +125,8 @@ const _recommendedFonts = [
     name: 'M PLUS Rounded 1c',
     nameJa: 'M PLUS Rounded 1c',
     urls: [
-      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/mplusrounded1c/MPLUSRounded1c-Regular.ttf',
       'https://fonts.google.com/download?family=M+PLUS+Rounded+1c',
+      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/mplusrounded1c/MPLUSRounded1c-Regular.ttf',
     ],
     license: 'OFL 1.1',
     description: '圆角可爱风格 · 适合轻小说 · 建议搭配 Noto CJK 回退',
@@ -135,8 +135,8 @@ const _recommendedFonts = [
     name: 'Hina Mincho',
     nameJa: 'ひな明朝',
     urls: [
-      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/hinamincho/HinaMincho-Regular.ttf',
       'https://fonts.google.com/download?family=Hina+Mincho',
+      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/hinamincho/HinaMincho-Regular.ttf',
     ],
     license: 'OFL 1.1',
     description: '柔和装饰性明朝体 · 建议搭配 Noto CJK 回退',
@@ -145,8 +145,8 @@ const _recommendedFonts = [
     name: 'Zen Kaku Gothic New',
     nameJa: '禅角ゴシック New',
     urls: [
-      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zenkakugothicnew/ZenKakuGothicNew-Regular.ttf',
       'https://fonts.google.com/download?family=Zen+Kaku+Gothic+New',
+      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zenkakugothicnew/ZenKakuGothicNew-Regular.ttf',
     ],
     license: 'OFL 1.1',
     description: '现代角黑体 · 通用阅读 · 建议搭配 Noto CJK 回退',
