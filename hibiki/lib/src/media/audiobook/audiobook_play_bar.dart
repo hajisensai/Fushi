@@ -276,20 +276,32 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
   }
 
   Widget _buildProgressSection(ThemeData theme) {
-    final String pageLabel;
-    final (int current, int total)? pp = widget.pageProgress;
-    if (pp != null && pp.$2 > 0) {
-      pageLabel = t.page_progress(current: pp.$1, total: pp.$2);
-    } else {
-      pageLabel = '';
+    final List<String> lines = [];
+
+    final (int, int)? rp = widget.readerProgress;
+    if (rp != null && rp.$2 > 0) {
+      final double pct = (rp.$1 / rp.$2) * 100;
+      lines.add(t.chapter_progress(
+        idx: rp.$1,
+        total: rp.$2,
+        suffix: '',
+        pct: pct.toStringAsFixed(1),
+      ));
     }
-    if (pageLabel.isEmpty) return const SizedBox.shrink();
+
+    final (int, int)? pp = widget.pageProgress;
+    if (pp != null && pp.$2 > 0) {
+      lines.add(t.page_progress(current: pp.$1, total: pp.$2));
+    }
+
+    if (lines.isEmpty) return const SizedBox.shrink();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(t.reading_progress, style: theme.textTheme.titleMedium),
         const SizedBox(height: 8),
-        Text(pageLabel, style: theme.textTheme.bodyMedium),
+        for (final String line in lines)
+          Text(line, style: theme.textTheme.bodyMedium),
       ],
     );
   }
