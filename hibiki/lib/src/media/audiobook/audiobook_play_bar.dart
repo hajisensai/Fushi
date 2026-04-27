@@ -890,6 +890,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         _settingRow(
           theme,
           label: t.ttu_vert_text_orient,
+          hint: t.ttu_vert_text_orient_hint,
           child: SegmentedButton<String>(
             segments: <ButtonSegment<String>>[
               ButtonSegment<String>(value: 'mixed', label: Text(t.ttu_orient_mixed)),
@@ -912,6 +913,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         _settingRow(
           theme,
           label: t.ttu_hide_furigana,
+          hint: t.ttu_hide_furigana_hint,
           child: Switch(
             value: s.hideFurigana,
             onChanged: (bool v) {
@@ -925,6 +927,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         _settingRow(
           theme,
           label: t.ttu_furigana_style,
+          hint: t.ttu_furigana_style_hint,
           child: SegmentedButton<String>(
             segments: <ButtonSegment<String>>[
               ButtonSegment<String>(value: 'Partial', label: Text(t.ttu_furigana_partial)),
@@ -948,6 +951,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         _settingRow(
           theme,
           label: t.ttu_text_justify,
+          hint: t.ttu_text_justify_hint,
           child: Switch(
             value: _src.ttuEnableTextJustification,
             onChanged: (bool v) {
@@ -961,6 +965,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         _settingRow(
           theme,
           label: t.ttu_vert_kerning,
+          hint: t.ttu_vert_kerning_hint,
           child: Switch(
             value: _src.ttuEnableVerticalFontKerning,
             onChanged: (bool v) {
@@ -974,6 +979,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         _settingRow(
           theme,
           label: t.ttu_font_vpal,
+          hint: t.ttu_font_vpal_hint,
           child: Switch(
             value: _src.ttuEnableFontVPAL,
             onChanged: (bool v) {
@@ -987,6 +993,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         _settingRow(
           theme,
           label: t.ttu_reader_styles,
+          hint: t.ttu_reader_styles_hint,
           child: Switch(
             value: _src.ttuPrioritizeReaderStyles,
             onChanged: (bool v) {
@@ -1001,13 +1008,27 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
   }
 
   Widget _settingRow(ThemeData theme,
-      {required String label, required Widget child}) {
+      {required String label, String? hint, required Widget child}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Flexible(child: Text(label, style: theme.textTheme.bodyMedium)),
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: theme.textTheme.bodyMedium),
+                if (hint != null)
+                  Text(
+                    hint,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+              ],
+            ),
+          ),
           child,
         ],
       ),
