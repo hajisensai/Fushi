@@ -30,6 +30,17 @@ class _RecommendedFont {
 
 // Google Fonts API 为主，jsDelivr CDN（中国可访问）为备选。
 const _recommendedFonts = [
+  // ── 推荐首选 ──
+  _RecommendedFont(
+    name: 'Klee One',
+    nameJa: 'クレー One',
+    urls: [
+      'https://fonts.google.com/download?family=Klee+One',
+      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/kleeone/KleeOne-Regular.ttf',
+    ],
+    license: 'OFL 1.1',
+    description: '手写教科书体 · 清晰易读 · 建议搭配 Noto Sans JP 回退',
+  ),
   // ── CJK 覆盖（日中韩通用，不会缺字） ──
   _RecommendedFont(
     name: 'Noto Sans JP',
@@ -80,17 +91,7 @@ const _recommendedFonts = [
     license: 'OFL 1.1',
     description: 'Google/Adobe 黑体 · 繁中字形优先',
   ),
-  // ── 日语特色字体（风格独特，建议搭配 Noto CJK 做回退） ──
-  _RecommendedFont(
-    name: 'Klee One',
-    nameJa: 'クレー One',
-    urls: [
-      'https://fonts.google.com/download?family=Klee+One',
-      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/kleeone/KleeOne-Regular.ttf',
-    ],
-    license: 'OFL 1.1',
-    description: '手写教科书体 · 清晰易读 · 建议搭配 Noto CJK 回退',
-  ),
+  // ── 日语特色字体（风格独特，建议搭配 Noto Sans JP 做回退） ──
   _RecommendedFont(
     name: 'Shippori Mincho',
     nameJa: 'しっぽり明朝',
@@ -99,7 +100,7 @@ const _recommendedFonts = [
       'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/shipporimincho/ShipporiMincho-Regular.ttf',
     ],
     license: 'OFL 1.1',
-    description: '优雅明朝体 · 文学作品推荐 · 建议搭配 Noto CJK 回退',
+    description: '优雅明朝体 · 文学作品推荐 · 建议搭配 Noto Sans JP 回退',
   ),
   _RecommendedFont(
     name: 'Zen Old Mincho',
@@ -109,7 +110,7 @@ const _recommendedFonts = [
       'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zenoldmincho/ZenOldMincho-Regular.ttf',
     ],
     license: 'OFL 1.1',
-    description: '复古明朝体 · 古典文学风格 · 建议搭配 Noto CJK 回退',
+    description: '复古明朝体 · 古典文学风格 · 建议搭配 Noto Sans JP 回退',
   ),
   _RecommendedFont(
     name: 'Zen Maru Gothic',
@@ -119,7 +120,7 @@ const _recommendedFonts = [
       'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zenmarugothic/ZenMaruGothic-Regular.ttf',
     ],
     license: 'OFL 1.1',
-    description: '柔和圆润黑体 · 建议搭配 Noto CJK 回退',
+    description: '柔和圆润黑体 · 建议搭配 Noto Sans JP 回退',
   ),
   _RecommendedFont(
     name: 'M PLUS Rounded 1c',
@@ -129,7 +130,7 @@ const _recommendedFonts = [
       'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/mplusrounded1c/MPLUSRounded1c-Regular.ttf',
     ],
     license: 'OFL 1.1',
-    description: '圆角可爱风格 · 适合轻小说 · 建议搭配 Noto CJK 回退',
+    description: '圆角可爱风格 · 适合轻小说 · 建议搭配 Noto Sans JP 回退',
   ),
   _RecommendedFont(
     name: 'Hina Mincho',
@@ -139,7 +140,7 @@ const _recommendedFonts = [
       'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/hinamincho/HinaMincho-Regular.ttf',
     ],
     license: 'OFL 1.1',
-    description: '柔和装饰性明朝体 · 建议搭配 Noto CJK 回退',
+    description: '柔和装饰性明朝体 · 建议搭配 Noto Sans JP 回退',
   ),
   _RecommendedFont(
     name: 'Zen Kaku Gothic New',
@@ -149,7 +150,7 @@ const _recommendedFonts = [
       'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zenkakugothicnew/ZenKakuGothicNew-Regular.ttf',
     ],
     license: 'OFL 1.1',
-    description: '现代角黑体 · 通用阅读 · 建议搭配 Noto CJK 回退',
+    description: '现代角黑体 · 通用阅读 · 建议搭配 Noto Sans JP 回退',
   ),
 ];
 
