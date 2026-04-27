@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -21,6 +22,7 @@ import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
 import 'package:hibiki/src/media/audiobook/ass_parser.dart';
 import 'package:hibiki/src/media/audiobook/lrc_parser.dart';
 import 'package:hibiki/src/media/audiobook/srt_parser.dart';
+import 'package:hibiki/src/media/audiobook/text_to_epub.dart';
 import 'package:hibiki/src/media/audiobook/ttu_epub_importer.dart';
 import 'package:hibiki/src/media/audiobook/ttu_idb_reader.dart';
 import 'package:hibiki/src/media/audiobook/vtt_parser.dart';
@@ -313,18 +315,25 @@ class _BookImportDialogState extends State<BookImportDialog> {
 
   // ── 文件/目录选择 ────────────────────────────────────────────────────────
 
+  static const List<String> _bookExtensions = [
+    'epub', 'txt', 'html', 'htm', 'xhtml', 'md', 'markdown',
+    'rst', 'org', 'csv', 'tsv', 'log', 'json', 'xml',
+  ];
+
   Future<void> _pickEpub() async {
     final FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['epub'],
+      allowedExtensions: _bookExtensions,
     );
     final String? path = result?.files.single.path;
     if (path != null && mounted) {
       setState(() {
         _epubPath = path;
         if (_titleCtrl.text.isEmpty) {
-          _titleCtrl.text = _basename(path)
-              .replaceAll(RegExp(r'\.epub$', caseSensitive: false), '');
+          _titleCtrl.text = _basename(path).replaceAll(
+              RegExp(r'\.(epub|txt|html?|xhtml|md|markdown|rst|org|csv|tsv|log|json|xml)$',
+                  caseSensitive: false),
+              '');
         }
       });
     }
@@ -547,13 +556,25 @@ class _BookImportDialogState extends State<BookImportDialog> {
   }
 
   /// EPUB-only flow: read the file bytes and drive ttu's own file-input
-  /// importer. We don't build a [SrtBook] — the book just shows up in the
+  /// importer. For non-EPUB text formats, converts to EPUB first.
+  /// We don't build a [SrtBook] — the book just shows up in the
   /// regular EPUB section of the bookshelf.
   Future<void> _importEpubOnly({required String title}) async {
     final File file = File(_epubPath!);
+    final Uint8List bytes;
+    final String filename;
+
+    if (TextToEpub.isSupported(_epubPath!)) {
+      bytes = await TextToEpub.convert(file: file, title: title);
+      filename = '${title.replaceAll(RegExp(r'[^\w\s\-]'), '')}.epub';
+    } else {
+      bytes = await file.readAsBytes();
+      filename = _basename(_epubPath!);
+    }
+
     final int ttuBookId = await TtuEpubImporter.import(
-      bytes: await file.readAsBytes(),
-      filename: _basename(_epubPath!),
+      bytes: bytes,
+      filename: filename,
       serverPort: widget.serverPort,
     );
     debugPrint('[hibiki-import] EPUB save: title="$title" '
