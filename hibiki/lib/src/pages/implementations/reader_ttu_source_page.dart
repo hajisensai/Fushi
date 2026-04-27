@@ -751,8 +751,8 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       'window.localStorage.setItem("theme","${appModel.appThemeKey}")',
       if (appModel.appThemeKey == 'custom-theme' && appModel.customThemeFontColor != null)
         _buildCustomThemeJs(),
-      'window.localStorage.setItem("hideFurigana","${src.ttuHideFurigana}")',
-      'window.localStorage.setItem("statisticsEnabled","true")',
+      'window.localStorage.setItem("hideFurigana","${src.ttuHideFurigana ? 1 : 0}")',
+      'window.localStorage.setItem("statisticsEnabled","1")',
       'window.localStorage.setItem("trackerAutoStartTime","5")',
       'window.localStorage.setItem("fontFamilyGroupOne","$fontFamilyOne")',
       'window.localStorage.setItem("fontFamilyGroupTwo","$fontFamilyTwo")',
