@@ -799,7 +799,7 @@ class _RecommendedFontsPage extends StatelessWidget {
         itemBuilder: (context, index) {
           final font = _recommendedFonts[index];
           final added = alreadyAdded.any(
-            (n) => n.toLowerCase().contains(font.name.toLowerCase().split(' ').first),
+            (n) => n.toLowerCase() == font.name.toLowerCase(),
           );
           return Card(
             margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
