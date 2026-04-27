@@ -136,7 +136,13 @@ class HibikiDatabase extends _$HibikiDatabase {
           .getSingleOrNull();
 
   Future<void> upsertMapping(AnkiMappingsCompanion m) =>
-      into(ankiMappings).insertOnConflictUpdate(m);
+      into(ankiMappings).insert(
+        m,
+        onConflict: DoUpdate(
+          (old) => m,
+          target: [ankiMappings.label],
+        ),
+      );
 
   Future<int> deleteMappingById(int id) =>
       (delete(ankiMappings)..where((t) => t.id.equals(id))).go();
