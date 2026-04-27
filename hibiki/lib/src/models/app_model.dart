@@ -1523,12 +1523,27 @@ class AppModel with ChangeNotifier {
   }
 
   /// Get the current app locale from persisted preferences.
+  /// Defaults to system locale if supported, otherwise en-US.
   Locale get appLocale {
-    String defaultLocaleTag = locales.values.first.toLanguageTag();
-    String localeTag =
-        _getPref('app_locale', defaultValue: defaultLocaleTag);
+    String? saved = _getPref('app_locale');
+    if (saved != null && saved.isNotEmpty && locales.containsKey(saved)) {
+      return locales[saved]!;
+    }
 
-    return locales[localeTag]!;
+    // Match system locale to available locales.
+    final systemLocale = PlatformDispatcher.instance.locale;
+    final systemTag = systemLocale.toLanguageTag();
+    if (locales.containsKey(systemTag)) {
+      return locales[systemTag]!;
+    }
+    // Try language-only match (e.g. "zh" matches "zh-CN").
+    for (final entry in locales.entries) {
+      if (entry.value.languageCode == systemLocale.languageCode) {
+        return entry.value;
+      }
+    }
+
+    return locales.values.first;
   }
 
   /// Get the last selected model from persisted preferences.

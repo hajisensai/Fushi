@@ -174,13 +174,14 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
       _showMore = dictionaryResult.entries.length < overrideMaximumTerms;
       _dictionaryResultNotifier.value = dictionaryResult;
 
-      // Auto-read the looked-up word via TTS if enabled.
       if (ReaderTtuSource.instance.autoReadOnLookup &&
           dictionaryResult.entries.isNotEmpty) {
         final entry = dictionaryResult.entries.first;
-        final word = entry.reading.isNotEmpty ? entry.reading : entry.word;
+        final expression = entry.word;
+        final reading = entry.reading;
+        final word = reading.isNotEmpty ? reading : expression;
         if (word.isNotEmpty) {
-          TtsChannel.instance.speak(word);
+          _autoReadWord(expression, reading, word);
         }
       }
     } finally {
@@ -188,8 +189,34 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
     }
   }
 
-  /// Push lookup results to the popup WebView for JS rendering.
-  /// Now handled by DictionaryPopupWebView via didUpdateWidget.
+  /// Try local audio DB → first online audio source → TTS fallback.
+  Future<void> _autoReadWord(
+      String expression, String reading, String word) async {
+    // 1. Local audio database
+    if (appModel.localAudioEnabled) {
+      final path =
+          await TtsChannel.instance.queryLocalAudio(expression, reading);
+      if (path != null && path.isNotEmpty) {
+        TtsChannel.instance.playFile(path);
+        return;
+      }
+    }
+
+    // 2. First configured online audio source
+    final sources = appModel.audioSources;
+    if (sources.isNotEmpty) {
+      final url = sources.first
+          .replaceAll('{term}', Uri.encodeComponent(expression))
+          .replaceAll('{reading}', Uri.encodeComponent(reading));
+      if (url.startsWith('http')) {
+        TtsChannel.instance.playUrl(url);
+        return;
+      }
+    }
+
+    // 3. System TTS fallback
+    TtsChannel.instance.speak(word);
+  }
 
   /// Hide the dictionary and dispose of the current result.
   void clearDictionaryResult() async {
