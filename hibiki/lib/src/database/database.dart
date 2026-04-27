@@ -254,6 +254,10 @@ class HibikiDatabase extends _$HibikiDatabase {
   Future<SrtBookRow?> getSrtBookByUid(String uid) =>
       (select(srtBooks)..where((t) => t.uid.equals(uid))).getSingleOrNull();
 
+  Future<SrtBookRow?> getSrtBookByTtuBookId(int ttuBookId) =>
+      (select(srtBooks)..where((t) => t.ttuBookId.equals(ttuBookId)))
+          .getSingleOrNull();
+
   Future<void> upsertSrtBook(SrtBooksCompanion book) =>
       into(srtBooks).insertOnConflictUpdate(book);
 

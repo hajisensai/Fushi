@@ -197,12 +197,11 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     if (ttuId == null || ttuId <= 0) {
       return false;
     }
-    for (final SrtBook b
-        in await SrtBookRepository(database).listAll()) {
-      if (b.ttuBookId == ttuId) {
-        return (b.audioPaths?.isNotEmpty ?? false) ||
-            (b.audioRoot != null && b.audioRoot!.isNotEmpty);
-      }
+    final SrtBook? b =
+        await SrtBookRepository(database).findByTtuBookId(ttuId);
+    if (b != null) {
+      return (b.audioPaths?.isNotEmpty ?? false) ||
+          (b.audioRoot != null && b.audioRoot!.isNotEmpty);
     }
     return false;
   }
@@ -835,30 +834,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
           action: PermissionResponseAction.GRANT,
         );
       },
-      onLoadResourceWithCustomScheme: (controller, request) async {
-        final url = request.url;
-        if (url.scheme == 'hibiki-font') {
-          final fontPath = Uri.decodeComponent(url.host);
-          final file = File(fontPath);
-          if (await file.exists()) {
-            final bytes = await file.readAsBytes();
-            final ext = fontPath.split('.').last.toLowerCase();
-            final mime = switch (ext) {
-              'woff2' => 'font/woff2',
-              'woff' => 'font/woff',
-              'otf' => 'font/otf',
-              _ => 'font/ttf',
-            };
-            return CustomSchemeResponse(
-              data: bytes,
-              contentType: mime,
-            );
-          }
-        }
-        return null;
-      },
       initialSettings: InAppWebViewSettings(
-        resourceCustomSchemes: ['hibiki-font'],
         allowFileAccessFromFileURLs: true,
         allowUniversalAccessFromFileURLs: true,
         mediaPlaybackRequiresUserGesture: false,

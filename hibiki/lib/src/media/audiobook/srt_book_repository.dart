@@ -22,6 +22,12 @@ class SrtBookRepository {
     return _rowToModel(row);
   }
 
+  Future<SrtBook?> findByTtuBookId(int ttuBookId) async {
+    final row = await _db.getSrtBookByTtuBookId(ttuBookId);
+    if (row == null) return null;
+    return _rowToModel(row);
+  }
+
   Future<void> save(SrtBook book) async {
     await _db.upsertSrtBook(SrtBooksCompanion(
       uid: Value(book.uid),

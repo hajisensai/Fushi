@@ -106,6 +106,51 @@ class ReaderTtuSource extends ReaderMediaSource {
   /// retry look better for port conflicts.
   bool _lastServeFailed = false;
 
+  HttpServer? _fontServer;
+
+  int get fontServerPort => 52061;
+
+  Future<void> _ensureFontServer() async {
+    if (_fontServer != null) return;
+    try {
+      _fontServer = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        fontServerPort,
+      );
+      _fontServer!.listen((request) async {
+        final fontPath = Uri.decodeComponent(
+            request.requestedUri.path.replaceFirst('/', ''));
+        final file = File(fontPath);
+        request.response.headers
+          ..set('Access-Control-Allow-Origin', '*')
+          ..set('Access-Control-Allow-Methods', 'GET')
+          ..set('Cache-Control', 'max-age=604800');
+        if (request.method == 'OPTIONS') {
+          request.response.statusCode = 204;
+          await request.response.close();
+          return;
+        }
+        if (await file.exists()) {
+          final ext = fontPath.split('.').last.toLowerCase();
+          final mime = switch (ext) {
+            'woff2' => 'font/woff2',
+            'woff' => 'font/woff',
+            'otf' => 'font/otf',
+            _ => 'font/ttf',
+          };
+          request.response.headers.set('Content-Type', mime);
+          await file.openRead().pipe(request.response);
+        } else {
+          request.response.statusCode = 404;
+          await request.response.close();
+        }
+      });
+      debugPrint('[hibiki] Font server started on port $fontServerPort');
+    } catch (e) {
+      debugPrint('[hibiki] Font server failed: $e');
+    }
+  }
+
   /// For serving the reader assets locally.
   Future<LocalAssetsServer> serveLocalAssets(Language language) async {
     int port = getPortForLanguage(language);
@@ -113,6 +158,8 @@ class ReaderTtuSource extends ReaderMediaSource {
     if (_lastServeFailed) {
       await Future.delayed(const Duration(seconds: 1));
     }
+
+    unawaited(_ensureFontServer());
 
     try {
       _lastServeFailed = false;
@@ -778,7 +825,8 @@ new Promise(function(resolve) {
       families.add(name);
       final path = e['path'] as String?;
       if (path != null) {
-        final uri = 'hibiki-font://${Uri.encodeComponent(path)}';
+        final uri =
+            'http://localhost:$fontServerPort/${Uri.encodeComponent(path)}';
         faces.add(
           '@font-face { font-family: "$name"; src: url("$uri"); '
           'font-display: swap; }',
