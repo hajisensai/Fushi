@@ -302,6 +302,9 @@ class _CreatorPageState extends BasePageState<CreatorPage> {
         );
         creatorModel.getFieldController(TagsField.instance).text =
             appModel.savedTags;
+        if (mounted) {
+          Navigator.of(context).pop();
+        }
       },
     );
   }
@@ -416,7 +419,7 @@ class _CreatorPageState extends BasePageState<CreatorPage> {
   }
 
   void showQuickActionsPage() {
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (context) => const CreatorQuickActionsPage(),
     );
@@ -697,7 +700,7 @@ class _CreatorPageState extends BasePageState<CreatorPage> {
       ],
     );
 
-    await showDialog(
+    await showAppDialog(
       context: context,
       builder: (context) => alertDialog,
     );
@@ -766,7 +769,7 @@ class _CreatorPageState extends BasePageState<CreatorPage> {
       tooltip: t.add_field,
       icon: Icons.add_circle,
       onTap: () async {
-        await showDialog(
+        await showAppDialog(
           barrierDismissible: true,
           context: context,
           builder: (context) => FieldPickerDialogPage(
@@ -793,7 +796,7 @@ class _CreatorPageState extends BasePageState<CreatorPage> {
         tooltip: t.assign_auto_enhancement,
         icon: Icons.add_circle,
         onTap: () async {
-          await showDialog(
+          await showAppDialog(
             barrierDismissible: true,
             context: context,
             builder: (context) => EnhancementsPickerDialogPage(
@@ -909,7 +912,7 @@ class _CreatorPageState extends BasePageState<CreatorPage> {
         tooltip: t.assign_manual_enhancement,
         icon: Icons.add_circle,
         onTap: () async {
-          await showDialog(
+          await showAppDialog(
             barrierDismissible: true,
             context: context,
             builder: (context) => EnhancementsPickerDialogPage(

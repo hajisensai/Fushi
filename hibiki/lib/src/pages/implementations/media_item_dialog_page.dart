@@ -148,7 +148,7 @@ class _MediaItemDialogPageState extends BasePageState<MediaItemDialogPage> {
   }
 
   void executeEdit() async {
-    await showDialog(
+    await showAppDialog(
       barrierDismissible: true,
       context: context,
       builder: (context) => MediaItemEditDialogPage(item: widget.item),

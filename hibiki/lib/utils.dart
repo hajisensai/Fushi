@@ -31,4 +31,5 @@ export 'src/utils/misc/dialog_content.dart';
 export 'src/utils/misc/volume_key_channel.dart';
 export 'src/utils/misc/tts_channel.dart';
 export 'src/utils/misc/error_log_service.dart';
+export 'src/utils/misc/show_app_dialog.dart';
 export 'src/utils/misc/update_checker.dart';

@@ -97,7 +97,7 @@ class _HintIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => showDialog(
+      onTap: () => showAppDialog(
         context: context,
         builder: (ctx) => AlertDialog(
           content: Text(hint),
@@ -654,6 +654,14 @@ class _TtuSettingsDialogContentState extends BasePageState {
           value: appModel.updateAutoInstall,
           onChanged: (v) {
             appModel.setUpdateAutoInstall(v);
+            setState(() {});
+          },
+        ),
+        _buildSwitch(
+          label: t.disable_dialog_scrim,
+          value: appModel.disableDialogScrim,
+          onChanged: (v) {
+            appModel.setDisableDialogScrim(v);
             setState(() {});
           },
         ),

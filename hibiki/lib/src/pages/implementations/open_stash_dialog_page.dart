@@ -180,7 +180,7 @@ class _OpenStashDialogPage extends BasePageState<OpenStashDialogPage> {
   }
 
   void executeClear() async {
-    await showDialog(
+    await showAppDialog(
       barrierDismissible: true,
       context: context,
       builder: (context) => AlertDialog(

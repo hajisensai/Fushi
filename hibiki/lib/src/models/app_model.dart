@@ -947,7 +947,7 @@ class AppModel with ChangeNotifier {
         ]);
         _mappingsCache = [..._mappingsCache, legacyProfile, newDefault];
 
-        await showDialog(
+        await showAppDialog(
           barrierDismissible: true,
           context: _navigatorKey.currentContext!,
           builder: (context) => AlertDialog(
@@ -1640,7 +1640,7 @@ class AppModel with ChangeNotifier {
   /// Show the dictionary menu. This should be callable from many parts of the
   /// app, so it is appropriately handled by the model.
   Future<void> showDictionaryMenu() async {
-    await showDialog(
+    await showAppDialog(
       barrierDismissible: true,
       context: navigatorKey.currentContext!,
       builder: (context) => const DictionaryDialogPage(),
@@ -1653,7 +1653,7 @@ class AppModel with ChangeNotifier {
   /// Show the language menu. This should be callable from many parts of the
   /// app, so it is appropriately handled by the model.
   Future<void> showLanguageMenu() async {
-    await showDialog(
+    await showAppDialog(
       barrierDismissible: true,
       context: navigatorKey.currentContext!,
       builder: (context) => LanguageDialogPage(
@@ -1668,12 +1668,13 @@ class AppModel with ChangeNotifier {
     List<String> models = await getModelList();
     String initialModel = lastSelectedModel ?? models.first;
 
-    await showDialog(
-      barrierDismissible: true,
-      context: navigatorKey.currentContext!,
-      builder: (context) => ProfilesDialogPage(
-        models: models,
-        initialModel: initialModel,
+    await Navigator.push(
+      navigatorKey.currentContext!,
+      MaterialPageRoute(
+        builder: (context) => ProfilesDialogPage(
+          models: models,
+          initialModel: initialModel,
+        ),
       ),
     );
 
@@ -2238,7 +2239,7 @@ class AppModel with ChangeNotifier {
   Future<void> showAnkidroidApiMessage() async {
     await requestAnkidroidPermissions();
 
-    await showDialog(
+    await showAppDialog(
       barrierDismissible: true,
       context: _navigatorKey.currentContext!,
       builder: (context) => AlertDialog(
@@ -2279,7 +2280,7 @@ class AppModel with ChangeNotifier {
     if (!models.contains(AnkiMapping.standardModelName)) {
       methodChannel.invokeMethod('addDefaultModel');
 
-      await showDialog(
+      await showAppDialog(
         barrierDismissible: true,
         context: _navigatorKey.currentContext!,
         builder: (context) => AlertDialog(
@@ -2638,7 +2639,7 @@ class AppModel with ChangeNotifier {
 
     if (!newMappingModelExists) {
       if (context.mounted) {
-        await showDialog(
+        await showAppDialog(
           barrierDismissible: true,
           context: context,
           builder: (_) => AlertDialog(
@@ -2849,7 +2850,7 @@ class AppModel with ChangeNotifier {
     required Function(String) onSelect,
     required Function(String) onSearch,
   }) async {
-    await showDialog(
+    await showAppDialog(
       context: _navigatorKey.currentContext!,
       builder: (context) => OpenStashDialogPage(
         onSelect: onSelect,
@@ -2913,7 +2914,7 @@ class AppModel with ChangeNotifier {
 
     segmentedText ??= targetLanguage.textToWords(sourceText);
 
-    await showDialog(
+    await showAppDialog(
       context: _navigatorKey.currentContext!,
       builder: (context) => TextSegmentationDialogPage(
         sourceText: sourceText,
@@ -2930,7 +2931,7 @@ class AppModel with ChangeNotifier {
     required Function(List<String>) onSelect,
     Function(List<String>)? onAppend,
   }) async {
-    await showDialog(
+    await showAppDialog(
       context: _navigatorKey.currentContext!,
       builder: (context) => ExampleSentencesDialogPage(
         exampleSentences: exampleSentences,
@@ -3829,6 +3830,15 @@ class AppModel with ChangeNotifier {
 
   Future<void> setUpdateAutoInstall(bool value) async {
     await _setPref('update_auto_install', value);
+    notifyListeners();
+  }
+
+  bool get disableDialogScrim {
+    return _getPref('disable_dialog_scrim', defaultValue: false);
+  }
+
+  Future<void> setDisableDialogScrim(bool value) async {
+    await _setPref('disable_dialog_scrim', value);
     notifyListeners();
   }
 

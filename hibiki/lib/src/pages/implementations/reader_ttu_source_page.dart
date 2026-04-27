@@ -946,7 +946,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         );
       },
       onCreateWindow: (controller, createWindowRequest) async {
-        showDialog(
+        showAppDialog(
           context: context,
           builder: (context) {
             return AlertDialog(
@@ -1295,7 +1295,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       );
     }
 
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (ctx) => Dialog.fullscreen(
         backgroundColor: Colors.black,

@@ -478,7 +478,7 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
         );
       },
       onLongPress: () async {
-        await showDialog(
+        await showAppDialog(
           context: context,
           builder: (_) => MediaItemDialogPage(
             item: item,

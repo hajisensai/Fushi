@@ -404,7 +404,7 @@ class _DictionaryDialogPageState extends BasePageState {
   }
 
   void showAudioSourcesPage() {
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (context) => _AudioSourcesDialog(
         sources: List<String>.from(appModel.audioSources),
@@ -452,7 +452,7 @@ class _DictionaryDialogPageState extends BasePageState {
       Map<String, bool> items = Map<String, bool>.fromEntries(
           models.map((e) => MapEntry(e, duplicateCheckModels.contains(e))));
       if (context.mounted) {
-        showDialog(
+        showAppDialog(
           context: context,
           builder: (context) => SwitchSettingsPage<String>(
             items: items,

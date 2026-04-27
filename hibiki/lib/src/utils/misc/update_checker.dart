@@ -9,6 +9,8 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/utils.dart';
 
 const String _kGitHubRepo = 'hdjsadgfwtg/hibiki';
@@ -255,6 +257,9 @@ class UpdateChecker {
     final progress = ValueNotifier<double>(0);
     final status = ValueNotifier<String>(t.update_downloading);
     final overlayVisible = ValueNotifier<bool>(true);
+    final noScrim = ProviderScope.containerOf(context)
+        .read(appProvider)
+        .disableDialogScrim;
 
     late final OverlayEntry overlay;
     overlay = OverlayEntry(
@@ -266,6 +271,7 @@ class UpdateChecker {
             progress: progress,
             status: status,
             onHide: () => overlayVisible.value = false,
+            disableScrim: noScrim,
           );
         },
       ),
@@ -337,18 +343,20 @@ class _DownloadOverlay extends StatelessWidget {
   final ValueNotifier<double> progress;
   final ValueNotifier<String> status;
   final VoidCallback onHide;
+  final bool disableScrim;
 
   const _DownloadOverlay({
     required this.progress,
     required this.status,
     required this.onHide,
+    this.disableScrim = false,
   });
 
   @override
   Widget build(BuildContext context) {
     return Positioned.fill(
       child: Material(
-        color: Colors.black54,
+        color: disableScrim ? Colors.transparent : Colors.black54,
         child: Center(
           child: Card(
             margin: const EdgeInsets.symmetric(horizontal: 48),

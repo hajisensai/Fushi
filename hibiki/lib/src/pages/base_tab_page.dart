@@ -74,7 +74,7 @@ abstract class BaseTabPageState<T extends BaseTabPage> extends BasePageState {
         tooltip: t.change_source,
         icon: mediaSource.icon,
         onTap: () async {
-          await showDialog(
+          await showAppDialog(
             barrierDismissible: true,
             context: context,
             builder: (context) => MediaSourcePickerDialogPage(

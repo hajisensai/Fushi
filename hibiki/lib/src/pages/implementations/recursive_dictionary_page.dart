@@ -388,7 +388,7 @@ class _RecursiveDictionaryPageState
       ],
     );
 
-    await showDialog(
+    await showAppDialog(
       context: context,
       builder: (context) => alertDialog,
     );

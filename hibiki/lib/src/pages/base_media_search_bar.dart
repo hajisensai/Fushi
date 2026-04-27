@@ -186,7 +186,7 @@ abstract class BaseMediaSearchBarState<T extends BaseMediaSearchBar>
       ],
     );
 
-    await showDialog(
+    await showAppDialog(
       context: context,
       builder: (context) => alertDialog,
     );

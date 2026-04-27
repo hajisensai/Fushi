@@ -73,7 +73,7 @@ abstract class BaseHistoryPageState<T extends BaseHistoryPage>
           );
         },
         onLongPress: () async {
-          await showDialog(
+          await showAppDialog(
             context: context,
             builder: (context) => MediaItemDialogPage(
               item: item,

@@ -303,7 +303,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
         onTap: () async {
           double oldFontSize = appModel.dictionaryFontSize;
 
-          await showDialog(
+          await showAppDialog(
             context: context,
             builder: (context) => const DictionarySettingsDialogPage(),
           );
@@ -346,7 +346,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
       ],
     );
 
-    await showDialog(
+    await showAppDialog(
       context: context,
       builder: (context) => alertDialog,
     );
@@ -380,7 +380,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
       ],
     );
 
-    await showDialog(
+    await showAppDialog(
       context: context,
       builder: (context) => alertDialog,
     );

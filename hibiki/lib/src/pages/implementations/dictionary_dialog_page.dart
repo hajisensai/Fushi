@@ -81,7 +81,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
             style: TextStyle(color: theme.colorScheme.primary),
           ),
           onPressed: () async {
-            showDialog(
+            showAppDialog(
               barrierDismissible: false,
               context: context,
               builder: (context) => const DictionaryDialogDeletePage(),
@@ -108,7 +108,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
       ],
     );
 
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (context) => alertDialog,
     );
@@ -128,7 +128,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
             style: TextStyle(color: theme.colorScheme.primary),
           ),
           onPressed: () async {
-            showDialog(
+            showAppDialog(
               barrierDismissible: false,
               context: context,
               builder: (context) =>
@@ -156,7 +156,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
       ],
     );
 
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (context) => alertDialog,
     );
@@ -186,7 +186,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
         }
 
         if (!mounted) return;
-        showDialog(
+        showAppDialog(
           context: context,
           barrierDismissible: false,
           builder: (context) => DictionaryDialogImportPage(
@@ -256,7 +256,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
         if (result == null) return;
 
         if (mounted) {
-          showDialog(
+          showAppDialog(
             context: context,
             barrierDismissible: false,
             builder: (context) => DictionaryDialogImportPage(

@@ -120,7 +120,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
       ],
     );
 
-    return await showDialog(
+    return await showAppDialog(
           context: context,
           builder: (context) => alertDialog,
         ) ??

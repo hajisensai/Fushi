@@ -256,7 +256,7 @@ class ReaderTtuSource extends ReaderMediaSource {
         tooltip: t.tweaks,
         icon: Icons.tune,
         onTap: () {
-          showDialog(
+          showAppDialog(
             context: context,
             builder: (context) => const TtuSettingsDialogPage(),
           );

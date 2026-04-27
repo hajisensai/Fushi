@@ -192,7 +192,7 @@ class _HomePageState extends BasePageState<HomePage>
       onTap: () async {
         final src = ReaderTtuSource.instance;
         final int port = src.getPortForLanguage(appModel.targetLanguage);
-        await showDialog(
+        await showAppDialog(
           context: context,
           builder: (_) => BookImportDialog(
             repo: SrtBookRepository(appModel.database),

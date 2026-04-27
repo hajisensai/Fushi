@@ -431,7 +431,7 @@ class _CustomFontsPageState extends BasePageState {
     final cancelToken = CancelToken();
 
     if (mounted) {
-      showDialog(
+      showAppDialog(
         context: context,
         barrierDismissible: false,
         builder: (ctx) => PopScope(

@@ -632,6 +632,7 @@
     "error_log_share_subject": "hibiki エラーログ",
     "update_never_remind": "今後通知しない",
     "update_auto_install": "自動インストール",
+    "disable_dialog_scrim": "ポップアップの背景オーバーレイを無効にする（E Ink）",
     "update_settings": "アップデート設定",
     "anki_settings_label": "Anki 設定",
     "anki_default_deck": "デフォルトデッキ",

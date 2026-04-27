@@ -65,7 +65,7 @@ class _CustomThemePageState extends BasePageState {
 
   void _importTheme() {
     final controller = TextEditingController();
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(t.import_theme),
