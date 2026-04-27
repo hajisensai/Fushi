@@ -336,7 +336,10 @@ class _CustomFontsPageState extends BasePageState {
 
   Future<int> _addSingleFont(File srcFile, String fileName) async {
     final name = p.basenameWithoutExtension(fileName);
-    final ext = p.extension(fileName);
+    var ext = p.extension(fileName).toLowerCase();
+    if (!_fontExtensions.contains(ext)) {
+      ext = await _detectFontExtension(srcFile) ?? '.ttf';
+    }
     final destPath = p.join(
         _fontsDir.path, '${name}_${DateTime.now().millisecondsSinceEpoch}$ext');
     await srcFile.copy(destPath);
@@ -344,6 +347,52 @@ class _CustomFontsPageState extends BasePageState {
       _fonts.add({'name': name, 'path': destPath, 'enabled': true});
     });
     return 1;
+  }
+
+  Future<String?> _detectFontExtension(File file) async {
+    try {
+      final raf = await file.open();
+      try {
+        final header = await raf.read(8);
+        if (header.length < 4) return null;
+        // wOFF
+        if (header[0] == 0x77 && header[1] == 0x4F &&
+            header[2] == 0x46 && header[3] == 0x46) {
+          return header.length >= 8 && header[4] == 0x00 &&
+              header[5] == 0x01 && header[6] == 0x00 && header[7] == 0x00
+              ? '.woff' : '.woff2';
+        }
+        // TrueType / OpenType
+        if (header[0] == 0x00 && header[1] == 0x01 &&
+            header[2] == 0x00 && header[3] == 0x00) return '.ttf';
+        if (header[0] == 0x4F && header[1] == 0x54 &&
+            header[2] == 0x54 && header[3] == 0x4F) return '.otf';
+        // TTC
+        if (header[0] == 0x74 && header[1] == 0x74 &&
+            header[2] == 0x63 && header[3] == 0x66) return '.ttc';
+        return null;
+      } finally {
+        await raf.close();
+      }
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<bool> _isZipFile(File file) async {
+    try {
+      final raf = await file.open();
+      try {
+        final header = await raf.read(4);
+        return header.length >= 4 &&
+            header[0] == 0x50 && header[1] == 0x4B &&
+            header[2] == 0x03 && header[3] == 0x04;
+      } finally {
+        await raf.close();
+      }
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<int> _extractFontsFromArchive(File archiveFile) async {
@@ -463,15 +512,17 @@ class _CustomFontsPageState extends BasePageState {
 
       final tempFile = File(tempPath);
       final fileName = _fileNameFromUrl(downloadedUrl);
-      final ext = p.extension(fileName).toLowerCase();
       int count = 0;
-      if (_fontExtensions.contains(ext)) {
-        count = await _addSingleFont(tempFile, fileName);
-        await tempFile.delete();
-      } else {
+      final isZip = await _isZipFile(tempFile);
+      if (isZip) {
         count = await _extractFontsFromArchive(tempFile);
-        if (await tempFile.exists()) await tempFile.delete();
+        if (count == 0) {
+          count = await _addSingleFont(tempFile, fileName);
+        }
+      } else {
+        count = await _addSingleFont(tempFile, fileName);
       }
+      if (await tempFile.exists()) await tempFile.delete();
 
       if (count > 0) {
         await _save();
