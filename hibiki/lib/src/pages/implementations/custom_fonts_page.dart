@@ -16,52 +16,67 @@ const _fontExtensions = {'.ttf', '.otf', '.ttc', '.woff', '.woff2'};
 class _RecommendedFont {
   final String name;
   final String nameJa;
-  final String url;
+  final List<String> urls;
   final String license;
   final String description;
   const _RecommendedFont({
     required this.name,
     required this.nameJa,
-    required this.url,
+    required this.urls,
     required this.license,
     required this.description,
   });
 }
 
+// jsDelivr CDN（中国可访问）为主，Google Fonts API 为备选。
 const _recommendedFonts = [
-  // ── 全 CJK 覆盖（日中韩通用，不会缺字） ──
+  // ── CJK 覆盖（日中韩通用，不会缺字） ──
   _RecommendedFont(
-    name: 'Noto Sans CJK JP',
-    nameJa: 'Noto Sans CJK 日本語',
-    url: 'https://github.com/googlefonts/noto-cjk/releases/download/Sans2.004/08_NotoSansJP.zip',
+    name: 'Noto Sans JP',
+    nameJa: 'Noto Sans 日本語',
+    urls: [
+      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosansjp/NotoSansJP%5Bwght%5D.ttf',
+      'https://fonts.google.com/download?family=Noto+Sans+JP',
+    ],
     license: 'OFL 1.1',
-    description: 'Google/Adobe 黑体 · 日语字形优先 · 覆盖全 CJK 统一汉字',
+    description: 'Google/Adobe 黑体 · 日语字形优先 · 可变字重',
   ),
   _RecommendedFont(
-    name: 'Noto Serif CJK JP',
-    nameJa: 'Noto Serif CJK 日本語',
-    url: 'https://github.com/googlefonts/noto-cjk/releases/download/Serif2.003/09_NotoSerifJP.zip',
+    name: 'Noto Serif JP',
+    nameJa: 'Noto Serif 日本語',
+    urls: [
+      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notoserifjp/NotoSerifJP%5Bwght%5D.ttf',
+      'https://fonts.google.com/download?family=Noto+Serif+JP',
+    ],
     license: 'OFL 1.1',
     description: 'Google/Adobe 宋体 · 日语字形优先 · 适合竖排阅读',
   ),
   _RecommendedFont(
-    name: 'Noto Sans CJK SC',
-    nameJa: 'Noto Sans CJK 简体中文',
-    url: 'https://github.com/googlefonts/noto-cjk/releases/download/Sans2.004/11_NotoSansSC.zip',
+    name: 'Noto Sans SC',
+    nameJa: 'Noto Sans 简体中文',
+    urls: [
+      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf',
+      'https://fonts.google.com/download?family=Noto+Sans+SC',
+    ],
     license: 'OFL 1.1',
     description: 'Google/Adobe 黑体 · 简中字形优先 · 搭配日文字体做回退',
   ),
   _RecommendedFont(
-    name: 'Noto Serif CJK SC',
-    nameJa: 'Noto Serif CJK 简体中文',
-    url: 'https://github.com/googlefonts/noto-cjk/releases/download/Serif2.003/12_NotoSerifSC.zip',
+    name: 'Noto Serif SC',
+    nameJa: 'Noto Serif 简体中文',
+    urls: [
+      'https://fonts.google.com/download?family=Noto+Serif+SC',
+    ],
     license: 'OFL 1.1',
     description: 'Google/Adobe 宋体 · 简中字形优先 · 搭配日文字体做回退',
   ),
   _RecommendedFont(
-    name: 'Noto Sans CJK TC',
-    nameJa: 'Noto Sans CJK 繁體中文',
-    url: 'https://github.com/googlefonts/noto-cjk/releases/download/Sans2.004/14_NotoSansTC.zip',
+    name: 'Noto Sans TC',
+    nameJa: 'Noto Sans 繁體中文',
+    urls: [
+      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanstc/NotoSansTC%5Bwght%5D.ttf',
+      'https://fonts.google.com/download?family=Noto+Sans+TC',
+    ],
     license: 'OFL 1.1',
     description: 'Google/Adobe 黑体 · 繁中字形优先',
   ),
@@ -69,49 +84,70 @@ const _recommendedFonts = [
   _RecommendedFont(
     name: 'Klee One',
     nameJa: 'クレー One',
-    url: 'https://github.com/googlefonts/klee-one/raw/main/fonts/ttf/KleeOne-Regular.ttf',
+    urls: [
+      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/kleeone/KleeOne-Regular.ttf',
+      'https://fonts.google.com/download?family=Klee+One',
+    ],
     license: 'OFL 1.1',
     description: '手写教科书体 · 清晰易读 · 建议搭配 Noto CJK 回退',
   ),
   _RecommendedFont(
     name: 'Shippori Mincho',
     nameJa: 'しっぽり明朝',
-    url: 'https://github.com/googlefonts/shippori-mincho/raw/main/fonts/ttf/ShipporiMincho-Regular.ttf',
+    urls: [
+      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/shipporimincho/ShipporiMincho-Regular.ttf',
+      'https://fonts.google.com/download?family=Shippori+Mincho',
+    ],
     license: 'OFL 1.1',
     description: '优雅明朝体 · 文学作品推荐 · 建议搭配 Noto CJK 回退',
   ),
   _RecommendedFont(
     name: 'Zen Old Mincho',
     nameJa: '禅オールド明朝',
-    url: 'https://github.com/googlefonts/zen-oldmincho/raw/main/fonts/ttf/ZenOldMincho-Regular.ttf',
+    urls: [
+      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zenoldmincho/ZenOldMincho-Regular.ttf',
+      'https://fonts.google.com/download?family=Zen+Old+Mincho',
+    ],
     license: 'OFL 1.1',
     description: '复古明朝体 · 古典文学风格 · 建议搭配 Noto CJK 回退',
   ),
   _RecommendedFont(
     name: 'Zen Maru Gothic',
     nameJa: '禅丸ゴシック',
-    url: 'https://github.com/googlefonts/zen-marugothic/raw/main/fonts/ttf/ZenMaruGothic-Regular.ttf',
+    urls: [
+      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zenmarugothic/ZenMaruGothic-Regular.ttf',
+      'https://fonts.google.com/download?family=Zen+Maru+Gothic',
+    ],
     license: 'OFL 1.1',
     description: '柔和圆润黑体 · 建议搭配 Noto CJK 回退',
   ),
   _RecommendedFont(
     name: 'M PLUS Rounded 1c',
     nameJa: 'M PLUS Rounded 1c',
-    url: 'https://github.com/googlefonts/mplus-fonts/raw/main/fonts/ttf/MPLUSRounded1c-Regular.ttf',
+    urls: [
+      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/mplusrounded1c/MPLUSRounded1c-Regular.ttf',
+      'https://fonts.google.com/download?family=M+PLUS+Rounded+1c',
+    ],
     license: 'OFL 1.1',
     description: '圆角可爱风格 · 适合轻小说 · 建议搭配 Noto CJK 回退',
   ),
   _RecommendedFont(
     name: 'Hina Mincho',
     nameJa: 'ひな明朝',
-    url: 'https://github.com/googlefonts/hina-mincho/raw/main/fonts/ttf/HinaMincho-Regular.ttf',
+    urls: [
+      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/hinamincho/HinaMincho-Regular.ttf',
+      'https://fonts.google.com/download?family=Hina+Mincho',
+    ],
     license: 'OFL 1.1',
     description: '柔和装饰性明朝体 · 建议搭配 Noto CJK 回退',
   ),
   _RecommendedFont(
     name: 'Zen Kaku Gothic New',
     nameJa: '禅角ゴシック New',
-    url: 'https://github.com/googlefonts/zen-kakugothic/raw/main/fonts/ttf/ZenKakuGothicNew-Regular.ttf',
+    urls: [
+      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zenkakugothicnew/ZenKakuGothicNew-Regular.ttf',
+      'https://fonts.google.com/download?family=Zen+Kaku+Gothic+New',
+    ],
     license: 'OFL 1.1',
     description: '现代角黑体 · 通用阅读 · 建议搭配 Noto CJK 回退',
   ),
@@ -336,12 +372,11 @@ class _CustomFontsPageState extends BasePageState {
     }
   }
 
-  Future<void> _downloadUrl(String url, {String? displayName}) async {
-    final uri = Uri.parse(url);
-    final fileName = uri.pathSegments.isNotEmpty
-        ? Uri.decodeComponent(uri.pathSegments.last)
-        : 'font_${DateTime.now().millisecondsSinceEpoch}';
-    final tempPath = p.join(_fontsDir.path, '_tmp_$fileName');
+  Future<void> _downloadUrl(String url,
+      {String? displayName, List<String> mirrorUrls = const []}) async {
+    final allUrls = [url, ...mirrorUrls];
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final tempPath = p.join(_fontsDir.path, '_tmp_$ts');
     final progressNotifier = ValueNotifier<double?>(null);
     final cancelToken = CancelToken();
 
@@ -382,7 +417,7 @@ class _CustomFontsPageState extends BasePageState {
 
     try {
       final dio = Dio(BaseOptions(
-        connectTimeout: const Duration(seconds: 30),
+        connectTimeout: const Duration(seconds: 15),
         receiveTimeout: const Duration(minutes: 10),
         followRedirects: true,
         maxRedirects: 10,
@@ -391,11 +426,16 @@ class _CustomFontsPageState extends BasePageState {
           'Accept': '*/*',
         },
       ));
-      const maxRetries = 3;
-      for (int attempt = 1; attempt <= maxRetries; attempt++) {
+
+      String? downloadedUrl;
+      Object? lastError;
+      for (int i = 0; i < allUrls.length; i++) {
+        final currentUrl = allUrls[i];
+        debugPrint('[hibiki-fonts] trying source ${i + 1}/${allUrls.length}: $currentUrl');
+        progressNotifier.value = null;
         try {
           await dio.download(
-            url,
+            currentUrl,
             tempPath,
             cancelToken: cancelToken,
             onReceiveProgress: (received, total) {
@@ -404,19 +444,25 @@ class _CustomFontsPageState extends BasePageState {
               }
             },
           );
+          downloadedUrl = currentUrl;
           break;
         } on DioError catch (e) {
           if (e.type == DioErrorType.cancel) rethrow;
-          if (attempt == maxRetries) rethrow;
-          debugPrint('[hibiki-fonts] attempt $attempt failed, retrying: $e');
-          progressNotifier.value = null;
-          await Future.delayed(Duration(seconds: attempt * 2));
+          lastError = e;
+          debugPrint('[hibiki-fonts] source ${i + 1} failed: ${e.type.name}');
+          final f = File(tempPath);
+          if (await f.exists()) await f.delete();
         }
+      }
+
+      if (downloadedUrl == null) {
+        throw lastError ?? Exception('All sources failed');
       }
 
       if (mounted) Navigator.pop(context);
 
       final tempFile = File(tempPath);
+      final fileName = _fileNameFromUrl(downloadedUrl);
       final ext = p.extension(fileName).toLowerCase();
       int count = 0;
       if (_fontExtensions.contains(ext)) {
@@ -461,6 +507,19 @@ class _CustomFontsPageState extends BasePageState {
     }
   }
 
+  String _fileNameFromUrl(String url) {
+    final uri = Uri.parse(url);
+    // Google Fonts download API: ?family=Font+Name → derive filename from query
+    if (uri.queryParameters.containsKey('family')) {
+      final family = uri.queryParameters['family']!.replaceAll(' ', '_');
+      return '$family.zip';
+    }
+    if (uri.pathSegments.isNotEmpty) {
+      return Uri.decodeComponent(uri.pathSegments.last);
+    }
+    return 'font_${DateTime.now().millisecondsSinceEpoch}';
+  }
+
   Future<void> _importFromUrl() async {
     final urlController = TextEditingController();
     final url = await showDialog<String>(
@@ -494,7 +553,8 @@ class _CustomFontsPageState extends BasePageState {
   }
 
   Future<void> _downloadRecommendedFont(_RecommendedFont font) async {
-    await _downloadUrl(font.url, displayName: font.name);
+    await _downloadUrl(font.urls.first,
+        displayName: font.name, mirrorUrls: font.urls.skip(1).toList());
   }
 
   Future<void> _openRecommended() async {
