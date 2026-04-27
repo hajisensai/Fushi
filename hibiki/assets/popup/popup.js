@@ -914,6 +914,7 @@ function renderStructuredContent(parent, node, language = null, dictName = null,
         const isExternal = /^https?:\/\//i.test(node.href);
         element.onclick = (e) => {
             e.preventDefault();
+            e.stopPropagation();
             if (isExternal) {
                 openExternalLink(node.href);
             } else {
@@ -1620,15 +1621,9 @@ document.addEventListener('click', (e) => {
         return;
     }
     if (target?.closest('.glossary-content')) {
-        const range = document.caretRangeFromPoint(e.clientX, e.clientY);
-        if (range && range.startContainer.nodeType === Node.TEXT_NODE) {
-            const text = range.startContainer.textContent;
-            const offset = range.startOffset;
-            const extractLen = 20;
-            const extracted = text.substring(offset, offset + extractLen).trim();
-            if (extracted.length > 0) {
-                window.flutter_inappwebview.callHandler('textSelected', extracted);
-            }
+        const selected = window.hoshiSelection?.selectText(e.clientX, e.clientY, 20);
+        if (!selected) {
+            return;
         }
     }
 });
