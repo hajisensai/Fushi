@@ -258,6 +258,8 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                   _buildDelaySection(theme, widget.controller!),
                   const SizedBox(height: 20),
                   _buildImagePauseSection(theme, widget.controller!),
+                  const SizedBox(height: 20),
+                  _buildTapSeekSection(theme, widget.controller!),
                 ],
                 const SizedBox(height: 20),
                 _buildReaderSettingsSection(theme),
@@ -621,6 +623,38 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                   },
                 );
               }).toList(),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildTapSeekSection(ThemeData theme, AudiobookPlayerController ctrl) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: ctrl.tapSeekEnabled,
+      builder: (BuildContext ctx, bool enabled, _) {
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(t.tap_seek, style: theme.textTheme.titleMedium),
+                  const SizedBox(height: 4),
+                  Text(
+                    t.tap_seek_hint,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Switch(
+              value: enabled,
+              onChanged: (bool v) => ctrl.setTapSeek(v),
             ),
           ],
         );

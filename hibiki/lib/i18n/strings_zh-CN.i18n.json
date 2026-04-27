@@ -551,6 +551,8 @@
     "image_pause": "图片暂停",
     "image_pause_hint": "播放时遇到图片自动暂停。",
     "image_pause_off": "关闭",
+    "tap_seek": "点击跳转",
+    "tap_seek_hint": "点击句子跳转音频到对应位置。",
     "audio_volume": "音量",
     "reader_settings_section": "阅读设置",
     "action_bookmark": "书签",

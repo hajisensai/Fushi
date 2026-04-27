@@ -2018,10 +2018,13 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         initialSpeed: await repo.readSpeed(bookUid),
         initialPositionMs: await repo.readPositionMs(bookUid),
         initialImagePauseSec: await repo.readImagePauseSec(bookUid),
+        initialTapSeek: await repo.readTapSeek(bookUid),
       );
       controller.onPositionWrite = (String uid, int posMs) {
         repo.updatePositionMs(bookUid: uid, positionMs: posMs);
       };
+      controller.onTapSeekPersist = (bool v) =>
+          repo.updateTapSeek(bookUid: bookUid, value: v);
       controller.addListener(_onCueChanged);
       _wireFollowAudio(controller, bookUid: bookUid, repo: repo);
 
@@ -2106,6 +2109,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         initialDelayMs: await abRepo.readDelayMs(srtBookUid),
         initialSpeed: await abRepo.readSpeed(srtBookUid),
         initialImagePauseSec: await abRepo.readImagePauseSec(srtBookUid),
+        initialTapSeek: await abRepo.readTapSeek(srtBookUid),
       );
     } catch (e) {
       debugPrint('[hibiki-audiobook] srt init: controller.load failed: $e');
@@ -2122,6 +2126,8 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     controller.onDelayPersist = (int ms) async {
       await abRepo.updateDelayMs(bookUid: srtBookUid, ms: ms);
     };
+    controller.onTapSeekPersist = (bool v) =>
+        abRepo.updateTapSeek(bookUid: srtBookUid, value: v);
     controller.onSpeedPersist = (double speed) async {
       await abRepo.updateSpeed(bookUid: srtBookUid, speed: speed);
     };
@@ -2906,6 +2912,9 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
   Future<void> _seekToSentence(AudiobookClickEvent event) async {
     final AudiobookPlayerController? controller = _audiobookController;
     if (controller == null) {
+      return;
+    }
+    if (!controller.tapSeekEnabled.value) {
       return;
     }
 

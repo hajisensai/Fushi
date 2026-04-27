@@ -133,6 +133,22 @@ class AudiobookPlayerController extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ── 点击跳转 ───────────────────────────────────────────────────────────────
+  // 点击文本 cue 时是否跳转音频到对应句子。
+
+  final ValueNotifier<bool> tapSeekEnabled = ValueNotifier<bool>(true);
+
+  Future<void> Function(bool value)? onTapSeekPersist;
+
+  void setTapSeek(bool value) {
+    if (tapSeekEnabled.value == value) return;
+    tapSeekEnabled.value = value;
+    final Future<void> Function(bool)? persist = onTapSeekPersist;
+    if (persist != null) {
+      unawaited(persist(value));
+    }
+  }
+
   // ── 图片暂停 ───────────────────────────────────────────────────────────────
   // 遇到图片时自动暂停播放，停留指定秒数后恢复。0 = 不暂停。
 
@@ -203,6 +219,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     double initialSpeed = 1.0,
     int initialPositionMs = 0,
     int initialImagePauseSec = 0,
+    bool initialTapSeek = true,
   }) async {
     _audiobook = audiobook;
     // Follow audio / delay / speed 状态由调用方从持久层读出传入；不触发
@@ -210,6 +227,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     followAudio.value = initialFollowAudio;
     delayMs.value = initialDelayMs;
     imagePauseSec.value = initialImagePauseSec;
+    tapSeekEnabled.value = initialTapSeek;
     _imagePauseTimer?.cancel();
     _imagePauseTimer = null;
     _hasPlayedOnce = false;
@@ -764,6 +782,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     followAudio.dispose();
     delayMs.dispose();
     imagePauseSec.dispose();
+    tapSeekEnabled.dispose();
     _player.dispose();
     super.dispose();
   }

@@ -577,6 +577,8 @@
     "image_pause": "Pause on Image",
     "image_pause_hint": "Auto-pause when an image appears during playback.",
     "image_pause_off": "Off",
+    "tap_seek": "Tap to Seek",
+    "tap_seek_hint": "Tap a sentence to jump audio to that position.",
     "audio_volume": "Volume",
     "reader_settings_section": "Reader Settings",
     "action_bookmark": "Bookmark",
