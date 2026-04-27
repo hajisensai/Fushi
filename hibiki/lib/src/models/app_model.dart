@@ -1109,8 +1109,8 @@ class AppModel with ChangeNotifier {
 
       _dictionaryImportWorkingDirectory = Directory(
           path.join(appDirectory.path, 'dictionaryImportWorkingDirectory'));
-      _exportDirectory = await prepareHibikiDirectory();
-      _alternateExportDirectory = await prepareFallbackHibikiDirectory();
+      _exportDirectory = await prepareFallbackHibikiDirectory();
+      _alternateExportDirectory = _exportDirectory;
       _webArchiveDirectory =
           Directory(path.join(appDirectory.path, 'webArchive'));
 
