@@ -25,6 +25,10 @@ class AudiobookPlayerController extends ChangeNotifier {
   StreamSubscription<Duration>? _positionSub;
   StreamSubscription<bool>? _playingSub;
 
+  /// load() 完成前为未完成状态；seek 方法先 await 此 Completer 以避免
+  /// 在音频源尚未就绪时 seek 导致位置归零。
+  Completer<void> _loadReady = Completer<void>()..complete();
+
   /// 当前书的元数据（null = 未加载）。PR4 中用于更新锁屏媒体卡片。
   Audiobook? _audiobook;
 
@@ -221,6 +225,11 @@ class AudiobookPlayerController extends ChangeNotifier {
     int initialImagePauseSec = 0,
     bool initialTapSeek = true,
   }) async {
+    // 新一轮加载：旧 Completer 若未完成则补完（防上次 load 异常中断），
+    // 再建新的未完成 Completer 阻塞后续 seek 直到本次 load 结束。
+    if (!_loadReady.isCompleted) _loadReady.complete();
+    _loadReady = Completer<void>();
+
     _audiobook = audiobook;
     // Follow audio / delay / speed 状态由调用方从持久层读出传入；不触发
     // persist 回调 —— 载入不是用户操作，又把同值写回 Hive 就是循环。
@@ -280,6 +289,7 @@ class AudiobookPlayerController extends ChangeNotifier {
       }
     }
 
+    _loadReady.complete();
     _startPositionTracking();
     notifyListeners();
   }
@@ -370,6 +380,7 @@ class AudiobookPlayerController extends ChangeNotifier {
 
   /// 跳转到全局毫秒位置。
   Future<void> seekMs(int positionMs) async {
+    await _loadReady.future;
     await _player.seek(Duration(milliseconds: positionMs));
     notifyListeners();
   }
@@ -391,6 +402,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 播放态下 positionStream 稍后 tick 到新位置，_updateCurrentCue 判断
   /// cue 已变化就不再 notify，天然幂等。
   Future<void> skipToCue(AudioCue cue) async {
+    await _loadReady.future;
     final int globalMs = _toGlobalMs(cue);
     await _player.seek(Duration(milliseconds: globalMs));
     _chapterTransition = false;
