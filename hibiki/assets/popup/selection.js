@@ -14,6 +14,16 @@ window.hoshiSelection = {
         return !!el?.closest('rt, rp');
     },
 
+    resolveRubyBase(node) {
+        const rubyEl = node.parentElement?.closest('ruby');
+        if (!rubyEl) return null;
+        const walker = document.createTreeWalker(rubyEl, NodeFilter.SHOW_TEXT, {
+            acceptNode: (n) => this.isFurigana(n) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
+        });
+        const base = walker.nextNode();
+        return base ? { node: base, offset: 0 } : null;
+    },
+
     findParagraph(node) {
         let el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
         return el?.closest('p, .glossary-content') || null;
@@ -74,9 +84,20 @@ window.hoshiSelection = {
         const range = this.getCaretRange(x, y);
         if (!range) return null;
 
-        const node = range.startContainer;
+        let node = range.startContainer;
         if (node.nodeType !== Node.TEXT_NODE) return null;
-        if (this.isFurigana(node)) return null;
+        if (this.isFurigana(node)) {
+            const resolved = this.resolveRubyBase(node);
+            if (!resolved) return null;
+            node = resolved.node;
+            const text = node.textContent;
+            for (const offset of [resolved.offset, 0]) {
+                if (offset >= 0 && offset < text.length && !this.isScanBoundary(text[offset])) {
+                    return { node, offset };
+                }
+            }
+            return null;
+        }
 
         const text = node.textContent;
         const caret = range.startOffset;

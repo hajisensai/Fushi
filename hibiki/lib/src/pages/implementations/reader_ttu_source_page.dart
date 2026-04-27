@@ -66,6 +66,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
 
   // ── 有声书播放器 ────────────────────────────────────────────────────────────
   AudiobookPlayerController? _audiobookController;
+  final ValueNotifier<ThemeData?> _barThemeNotifier = ValueNotifier<ThemeData?>(null);
 
   /// 首帧前同步判定：这本书是否有 Audiobook/SrtBook 记录且配置了音频。
   /// 目的是让 WebView 从第一次 layout 就用"预留 56+bottomPadding"的视口，
@@ -220,6 +221,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     _flushReaderPosOnDispose();
     _audiobookController?.removeListener(_onCueChanged);
     _audiobookController?.dispose();
+    _barThemeNotifier.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -689,6 +691,8 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         }
         break;
     }
+
+    _barThemeNotifier.value = appModel.overrideDictionaryTheme;
 
     if (mounted) {
       clearDictionaryResult();
@@ -1516,6 +1520,26 @@ function tapToSelect(e) {
     return;
   }
 
+  // Resolve furigana hit → base text in parent <ruby>
+  if (result.startContainer && result.startContainer.nodeType === Node.TEXT_NODE) {
+    var _el = result.startContainer.parentElement;
+    if (_el && _el.closest('rt, rp')) {
+      var _ruby = _el.closest('ruby');
+      if (_ruby) {
+        var _w = document.createTreeWalker(_ruby, NodeFilter.SHOW_TEXT, {
+          acceptNode: function(n) {
+            var p = n.parentElement;
+            return (p && p.closest('rt, rp')) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+          }
+        });
+        var _base = _w.nextNode();
+        if (_base) {
+          result = { startContainer: _base, startOffset: 0 };
+        }
+      }
+    }
+  }
+
   var selectedElement = result.startContainer;
   var paragraph = result.startContainer;
   var offsetNode = result.startContainer;
@@ -1804,6 +1828,26 @@ function _applySelection(range) {
 
 function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceDelimited) {
   var result = document.caretRangeFromPoint(x, y);
+
+  // Resolve furigana hit → base text in parent <ruby>
+  if (result && result.startContainer && result.startContainer.nodeType === Node.TEXT_NODE) {
+    var _el = result.startContainer.parentElement;
+    if (_el && _el.closest('rt, rp')) {
+      var _ruby = _el.closest('ruby');
+      if (_ruby) {
+        var _w = document.createTreeWalker(_ruby, NodeFilter.SHOW_TEXT, {
+          acceptNode: function(n) {
+            var p = n.parentElement;
+            return (p && p.closest('rt, rp')) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+          }
+        });
+        var _base = _w.nextNode();
+        if (_base) {
+          result = { startContainer: _base, startOffset: 0 };
+        }
+      }
+    }
+  }
 
   var selectedElement = result.startContainer;
   var paragraph = result.startContainer;
@@ -2313,6 +2357,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           onThemeChanged: () async {
             await setDictionaryColors();
             sheetThemeNotifier.value = appModel.overrideDictionaryTheme;
+            _barThemeNotifier.value = appModel.overrideDictionaryTheme;
           },
         );
         return ValueListenableBuilder<ThemeData?>(
@@ -3187,7 +3232,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       return const SizedBox.shrink();
     }
     return ListenableBuilder(
-      listenable: ctrl,
+      listenable: Listenable.merge([ctrl, _barThemeNotifier]),
       builder: (context, _) {
         final barWidget = Positioned(
           left: 0,
