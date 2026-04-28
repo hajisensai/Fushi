@@ -5,31 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:html/dom.dart' as dom;
 import 'package:path/path.dart' as path;
 import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/src/dictionary/hoshidicts.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/utils.dart';
-
-/// Provides and caches the processed HTML of a [DictionaryEntry] to improve
-/// performance.
-final dictionaryEntryHtmlProvider =
-    Provider.family<String, DictionaryEntry>((ref, entry) {
-  final meaning = entry.meaning;
-  try {
-    final decoded = jsonDecode(meaning);
-    final node = StructuredContent.processContent(decoded)?.toNode();
-    if (node == null) {
-      return meaning.replaceAll('\n', '<br>');
-    }
-    final document = dom.Document.html('');
-    document.body?.append(node);
-    return document.body?.innerHtml ?? '';
-  } catch (_) {
-    return meaning.replaceAll('\n', '<br>');
-  }
-});
 
 final dictionaryCssProvider =
     Provider.family<String, String>((ref, dictionaryName) {
@@ -83,7 +63,7 @@ final dictionaryResourceDirectoryProvider =
 });
 
 /// WebView-based HTML renderer for dictionary definitions.
-/// Uses InAppWebView for full CSS support (including pseudo-classes).
+/// Uses the same rendering engine (definition.js + popup.css) as the popup.
 class DictionaryHtmlWidget extends ConsumerStatefulWidget {
   const DictionaryHtmlWidget({
     required this.entry,
@@ -106,62 +86,47 @@ class DictionaryHtmlWidget extends ConsumerStatefulWidget {
 class _DictionaryHtmlWidgetState extends ConsumerState<DictionaryHtmlWidget> {
   InAppWebViewController? _controller;
   double _contentHeight = 1;
+  bool _ready = false;
+
+  void _pushContent() {
+    if (_controller == null || !_ready) return;
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final dictionaryFontSize = ref.read(appProvider).dictionaryFontSize;
+    final dictCss = ref.read(dictionaryCssProvider(widget.entry.dictionaryName));
+    final dictName = widget.entry.dictionaryName;
+
+    final contentJson = jsonEncode(widget.entry.meaning);
+    final dictCssJson = jsonEncode(dictCss);
+    final dictNameJson = jsonEncode(dictName);
+
+    _controller!.evaluateJavascript(source: '''
+      window.renderDefinition(
+        $contentJson,
+        $dictNameJson,
+        $dictCssJson,
+        $dictionaryFontSize,
+        $isDark
+      );
+    ''');
+  }
+
+  @override
+  void didUpdateWidget(DictionaryHtmlWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.entry != widget.entry) {
+      _pushContent();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final textColorHex = isDark ? '#ffffff' : '#000000';
-    final linkColorHex = _colorToHex(Theme.of(context).colorScheme.error);
-    final dictionaryFontSize = ref.read(appProvider).dictionaryFontSize;
-
-    final css = ref.watch(dictionaryCssProvider(widget.entry.dictionaryName));
-    final html = ref.watch(dictionaryEntryHtmlProvider(widget.entry));
-
-    final directory = ref.read(
-        dictionaryResourceDirectoryProvider(widget.entry.dictionaryName));
-    final baseUrl = 'file:///${directory.path.replaceAll('\\', '/')}/';
-    final processedHtml = html;
-
-    final fullHtml = '<!DOCTYPE html>'
-        '<html><head>'
-        '<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">'
-        '<style>'
-        '* { color: $textColorHex; font-size: ${dictionaryFontSize}px; }'
-        'body { margin: 0; padding: 4px; background: transparent; word-wrap: break-word; }'
-        'a { color: $linkColorHex; }'
-        'table { border-collapse: collapse; }'
-        'td, th { border: 0.3px solid $textColorHex; padding: 0.25em; vertical-align: top; }'
-        'ul, li { padding: 0; }'
-        'img { max-width: 100%; }'
-        '$css'
-        '</style></head>'
-        '<body>$processedHtml</body>'
-        '<script>'
-        'document.addEventListener("click", function(e) {'
-        '  var a = e.target.closest("a");'
-        '  if (a) {'
-        '    e.preventDefault();'
-        '    var href = a.getAttribute("href") || "";'
-        '    var query = "";'
-        '    if (href.indexOf("?") >= 0) {'
-        '      var params = new URLSearchParams(href.substring(href.indexOf("?")));'
-        '      query = params.get("query") || a.textContent || "";'
-        '    } else {'
-        '      query = a.textContent || "";'
-        '    }'
-        '    window.flutter_inappwebview.callHandler("onLinkClick", query);'
-        '  }'
-        '});'
-        '</script></html>';
-
     return SizedBox(
       height: _contentHeight,
       child: InAppWebView(
-        initialData: InAppWebViewInitialData(
-          data: fullHtml,
-          baseUrl: WebUri(baseUrl),
-          encoding: 'utf-8',
-          mimeType: 'text/html',
+        initialUrlRequest: URLRequest(
+          url: WebUri(
+              'file:///android_asset/flutter_assets/assets/popup/definition.html'),
         ),
         initialSettings: InAppWebViewSettings(
           transparentBackground: true,
@@ -173,14 +138,16 @@ class _DictionaryHtmlWidgetState extends ConsumerState<DictionaryHtmlWidget> {
           disableVerticalScroll: true,
           disableHorizontalScroll: true,
           useShouldInterceptRequest: true,
+          useHybridComposition: true,
         ),
         shouldInterceptRequest: (controller, request) async {
           final url = request.url;
-          if (url.scheme == 'hibiki' && HoshiDicts.isInitialized) {
-            final mediaPath = url.toString().substring('hibiki://'.length);
-            if (mediaPath.isNotEmpty) {
-              final data = HoshiDicts.instance
-                  .getMediaFile(widget.entry.dictionaryName, mediaPath);
+          if (url.scheme == 'image' && HoshiDicts.isInitialized) {
+            final dictName = url.queryParameters['dictionary'] ?? '';
+            final mediaPath = url.queryParameters['path'] ?? '';
+            if (dictName.isNotEmpty && mediaPath.isNotEmpty) {
+              final data =
+                  HoshiDicts.instance.getMediaFile(dictName, mediaPath);
               if (data != null) {
                 return WebResourceResponse(
                   contentType: _mimeTypeForPath(mediaPath),
@@ -240,22 +207,29 @@ class _DictionaryHtmlWidgetState extends ConsumerState<DictionaryHtmlWidget> {
               }
             },
           );
-        },
-        onLoadStop: (controller, url) async {
-          await Future.delayed(const Duration(milliseconds: 100));
-          final height = await controller.evaluateJavascript(
-            source: 'document.body.scrollHeight',
+          controller.addJavaScriptHandler(
+            handlerName: 'openLink',
+            callback: (args) {},
           );
-          if (height != null && mounted) {
-            final h = (height is num)
-                ? height.toDouble()
-                : double.tryParse(height.toString()) ?? _contentHeight;
-            if (h > 0 && h != _contentHeight) {
-              setState(() {
-                _contentHeight = h;
-              });
-            }
-          }
+          controller.addJavaScriptHandler(
+            handlerName: 'contentHeight',
+            callback: (args) {
+              if (args.isNotEmpty && mounted) {
+                final h = (args[0] is num)
+                    ? (args[0] as num).toDouble()
+                    : double.tryParse(args[0].toString()) ?? _contentHeight;
+                if (h > 0 && h != _contentHeight) {
+                  setState(() {
+                    _contentHeight = h;
+                  });
+                }
+              }
+            },
+          );
+        },
+        onLoadStop: (controller, url) {
+          _ready = true;
+          _pushContent();
         },
       ),
     );
@@ -278,12 +252,6 @@ class _DictionaryHtmlWidgetState extends ConsumerState<DictionaryHtmlWidget> {
       default:
         return 'application/octet-stream';
     }
-  }
-
-  String _colorToHex(Color color) {
-    final r = color.r, g = color.g, b = color.b;
-    String c(double v) => (v * 255).round().toRadixString(16).padLeft(2, '0');
-    return '#${c(r)}${c(g)}${c(b)}';
   }
 }
 
