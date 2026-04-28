@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -260,7 +259,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
                       behavior: HitTestBehavior.translucent,
                       onTap: clearDictionaryResult,
                       child: Container(
-                        color: Colors.black.withValues(alpha: 0.6),
+                        color: Colors.transparent,
                       ),
                     ),
                   ),
@@ -314,8 +313,8 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
         (appModel.overrideDictionaryTheme ?? theme).brightness ==
             Brightness.dark;
     final fillColor = isDark
-        ? Colors.black.withValues(alpha: 0.75)
-        : Colors.white.withValues(alpha: 0.93);
+        ? Colors.black
+        : Colors.white;
     final borderColor = isDark
         ? Colors.white.withValues(alpha: 0.15)
         : Colors.black.withValues(alpha: 0.18);
@@ -323,23 +322,17 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
     return _SwipeDismissWrapper(
       onDismiss: clearDictionaryResult,
       sensitivity: ReaderTtuSource.instance.dismissSwipeSensitivity,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-          child: Container(
-            decoration: BoxDecoration(
-              color: fillColor,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: borderColor, width: 1),
-            ),
-            child: Stack(
-              children: [
-                buildSearchResult(),
-                buildDictionaryLoading(),
-              ],
-            ),
-          ),
+      child: Container(
+        decoration: BoxDecoration(
+          color: fillColor,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: borderColor, width: 1),
+        ),
+        child: Stack(
+          children: [
+            buildSearchResult(),
+            buildDictionaryLoading(),
+          ],
         ),
       ),
     );
