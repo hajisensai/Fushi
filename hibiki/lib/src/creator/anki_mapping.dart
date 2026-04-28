@@ -179,7 +179,7 @@ class AnkiMapping {
     }
   };
 
-  static String standardModelName = 'hibiki Kinomoto';
+  static String standardModelName = 'Lapis';
   static String standardProfileName = 'Standard';
 
   int? id;

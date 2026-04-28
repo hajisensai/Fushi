@@ -315,6 +315,7 @@
     "handlebar_book_cover": "책 표지",
     "handlebar_audio": "오디오",
     "handlebar_sasayaki_audio": "Sasayaki 오디오",
+    "handlebar_popup_selection_text": "Popup Selection Text",
     "handlebar_cloze_before": "빈칸 앞",
     "handlebar_cloze_inside": "빈칸 내용",
     "handlebar_cloze_after": "빈칸 뒤",
@@ -627,6 +628,7 @@
     "error_log_share_subject": "hibiki 오류 로그",
     "update_never_remind": "다시 알리지 않기",
     "update_auto_install": "자동 설치",
+    "disable_dialog_scrim": "Disable popup overlay (e-ink)",
     "update_settings": "업데이트 설정",
     "anki_settings_label": "Anki 설정",
     "anki_default_deck": "기본 덱",
@@ -650,6 +652,7 @@
 
     "anki_manage_profiles": "내보내기 프로필 관리",
     "anki_manage_profiles_hint": "AnkiDroid로 내보낼 때 카드 필드 매핑을 설정합니다. 각 프로필은 Anki 노트 유형에 연결되며, hibiki의 어떤 필드가 Anki의 어떤 필드에 들어갈지 정의합니다.",
+  "collapse_dictionaries": "Collapse dictionaries",
   "deduplicate_pitch_accents": "피치 악센트 중복 제거",
   "harmonic_frequency": "단어 빈도 집계",
   "manage_audio_sources": "오디오 소스 관리",
@@ -669,4 +672,14 @@
   "dictionary_type_pitch": "피치"
 ,
   "dictionary_type_term": "용어"
+,
+  "action_favorite": "Favorite"
+,
+  "favorite_added": "Sentence saved to favorites"
+,
+  "favorites": "Favorites ($n)"
+,
+  "no_favorites": "No saved sentences"
+,
+  "favorites_title": "Favorite Sentences"
 }

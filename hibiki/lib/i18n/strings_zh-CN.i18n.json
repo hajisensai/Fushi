@@ -322,6 +322,7 @@
     "handlebar_book_cover": "书籍封面",
     "handlebar_audio": "音频",
     "handlebar_sasayaki_audio": "Sasayaki 音频",
+    "handlebar_popup_selection_text": "弹窗选中文本",
     "handlebar_cloze_before": "完形填空前文",
     "handlebar_cloze_inside": "完形填空内容",
     "handlebar_cloze_after": "完形填空后文",
@@ -619,6 +620,7 @@
     "import_theme_invalid": "无效的主题代码",
     "import_theme_success": "主题已导入",
     "auto_add_book_name_to_tags": "自动添加书名到标签",
+    "collapse_dictionaries": "折叠词典",
     "deduplicate_pitch_accents": "音调去重",
     "harmonic_frequency": "词频聚合",
     "manage_audio_sources": "管理音频源",
@@ -667,5 +669,10 @@
     "anki_manage_profiles": "管理导出配置",
     "anki_manage_profiles_hint": "配置导出到 AnkiDroid 时各字段的映射方式。每个配置绑定一个 Anki 笔记类型，定义 hibiki 的哪个字段填充 Anki 的哪个字段。"
 ,
-  "manage_audio_sources": "管理音频来源"
+  "manage_audio_sources": "管理音频来源",
+  "action_favorite": "收藏",
+  "favorite_added": "句子已收藏",
+  "favorites": "收藏 ($n)",
+  "no_favorites": "暂无收藏句子",
+  "favorites_title": "收藏的句子"
 }

@@ -1,0 +1,73 @@
+import 'dart:convert';
+
+import 'package:hibiki/src/database/database.dart';
+
+class FavoriteSentence {
+  FavoriteSentence({
+    required this.text,
+    required this.bookTitle,
+    this.chapterLabel,
+    required this.createdAt,
+  });
+
+  final String text;
+  final String bookTitle;
+  final String? chapterLabel;
+  final DateTime createdAt;
+
+  Map<String, dynamic> toJson() => {
+        'text': text,
+        'bookTitle': bookTitle,
+        if (chapterLabel != null) 'chapterLabel': chapterLabel,
+        'createdAt': createdAt.toIso8601String(),
+      };
+
+  factory FavoriteSentence.fromJson(Map<String, dynamic> json) =>
+      FavoriteSentence(
+        text: json['text'] as String,
+        bookTitle: json['bookTitle'] as String,
+        chapterLabel: json['chapterLabel'] as String?,
+        createdAt: DateTime.parse(json['createdAt'] as String),
+      );
+}
+
+class FavoriteSentenceRepository {
+  FavoriteSentenceRepository(this._db);
+
+  final HibikiDatabase _db;
+
+  static const String _key = 'favorite_sentences';
+
+  Future<List<FavoriteSentence>> getAll() async {
+    final raw = await _db.getPref(_key);
+    if (raw == null || raw.isEmpty) return [];
+    final List<dynamic> list = jsonDecode(raw) as List<dynamic>;
+    return list
+        .map((e) => FavoriteSentence.fromJson(e as Map<String, dynamic>))
+        .toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  }
+
+  Future<void> add(FavoriteSentence sentence) async {
+    final sentences = await getAll();
+    // 去重
+    if (sentences.any((s) => s.text == sentence.text && s.bookTitle == sentence.bookTitle)) {
+      return;
+    }
+    sentences.insert(0, sentence);
+    await _db.setPref(
+      _key,
+      jsonEncode(sentences.map((s) => s.toJson()).toList()),
+    );
+  }
+
+  Future<void> removeAt(int index) async {
+    final sentences = await getAll();
+    if (index < 0 || index >= sentences.length) return;
+    sentences.removeAt(index);
+    await _db.setPref(
+      _key,
+      jsonEncode(sentences.map((s) => s.toJson()).toList()),
+    );
+  }
+}

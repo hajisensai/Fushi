@@ -73,6 +73,8 @@ class _DictionaryDialogPageState extends BasePageState {
               const Space.small(),
               buildAutoAddBookNameToTagsSwitch(),
               const Space.small(),
+              buildCollapseDictionariesSwitch(),
+              const Space.small(),
               buildDeduplicatePitchAccentsSwitch(),
               const Space.small(),
               buildHarmonicFrequencySwitch(),
@@ -137,6 +139,31 @@ class _DictionaryDialogPageState extends BasePageState {
               onChanged: (value) {
                 appModel.toggleAutoAddBookNameToTags();
                 notifier.value = appModel.autoAddBookNameToTags;
+              },
+            );
+          },
+        )
+      ],
+    );
+  }
+
+  Widget buildCollapseDictionariesSwitch() {
+    ValueNotifier<bool> notifier =
+        ValueNotifier<bool>(appModel.collapseDictionaries);
+
+    return Row(
+      children: [
+        Expanded(
+          child: Text(t.collapse_dictionaries),
+        ),
+        ValueListenableBuilder<bool>(
+          valueListenable: notifier,
+          builder: (_, value, __) {
+            return Switch(
+              value: value,
+              onChanged: (value) {
+                appModel.toggleCollapseDictionaries();
+                notifier.value = appModel.collapseDictionaries;
               },
             );
           },

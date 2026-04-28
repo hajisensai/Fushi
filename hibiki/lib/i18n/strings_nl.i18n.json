@@ -322,6 +322,7 @@
     "handlebar_book_cover": "Boekomslag",
     "handlebar_audio": "Audio",
     "handlebar_sasayaki_audio": "Sasayaki Audio",
+    "handlebar_popup_selection_text": "Popup Selection Text",
     "handlebar_cloze_before": "Invuloefening voor",
     "handlebar_cloze_inside": "Invuloefening inhoud",
     "handlebar_cloze_after": "Invuloefening na",
@@ -616,6 +617,7 @@
     "import_theme_invalid": "Ongeldige themacode",
     "import_theme_success": "Thema geïmporteerd",
     "auto_add_book_name_to_tags": "Boektitel automatisch aan labels toevoegen",
+    "collapse_dictionaries": "Collapse dictionaries",
     "deduplicate_pitch_accents": "Toonhoogteaccenten dedupliceren",
     "harmonic_frequency": "Woordfrequenties aggregeren",
     "manage_audio_sources": "Audiobronnen beheren",
@@ -639,6 +641,7 @@
     "error_log_share_subject": "hibiki foutenlogboek",
     "update_never_remind": "Niet meer herinneren",
     "update_auto_install": "Updates automatisch installeren",
+    "disable_dialog_scrim": "Disable popup overlay (e-ink)",
     "update_settings": "Update-instellingen",
     "anki_settings_label": "Anki-instellingen",
     "anki_default_deck": "Standaardstapel",
@@ -659,5 +662,10 @@
     "hint_view_mode": "Gepagineerd: blader als een boek. Continu scrollen: scroll door tekst zonder pagina-einden.",
     "hint_vert_text_orient": "Gemengd: cijfers en Latijnse letters worden zijwaarts gedraaid. Rechtop: alle tekens blijven rechtop staan.",
     "anki_manage_profiles": "Exportprofielen beheren",
-    "anki_manage_profiles_hint": "Configureer de veldmapping bij het exporteren naar AnkiDroid. Elk profiel is gekoppeld aan een Anki-notitietype en bepaalt welk hibiki-veld welk Anki-veld vult."
+    "anki_manage_profiles_hint": "Configureer de veldmapping bij het exporteren naar AnkiDroid. Elk profiel is gekoppeld aan een Anki-notitietype en bepaalt welk hibiki-veld welk Anki-veld vult.",
+    "action_favorite": "Favorite",
+    "favorite_added": "Sentence saved to favorites",
+    "favorites": "Favorites ($n)",
+    "no_favorites": "No saved sentences",
+    "favorites_title": "Favorite Sentences"
 }

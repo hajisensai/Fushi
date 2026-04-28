@@ -315,6 +315,7 @@
     "handlebar_book_cover": "غلاف الكتاب",
     "handlebar_audio": "صوت",
     "handlebar_sasayaki_audio": "صوت Sasayaki",
+    "handlebar_popup_selection_text": "Popup Selection Text",
     "handlebar_cloze_before": "ملء الفراغ قبل",
     "handlebar_cloze_inside": "ملء الفراغ محتوى",
     "handlebar_cloze_after": "ملء الفراغ بعد",
@@ -627,6 +628,7 @@
     "error_log_share_subject": "سجل أخطاء hibiki",
     "update_never_remind": "عدم التذكير مجددًا",
     "update_auto_install": "تثبيت التحديثات تلقائيًا",
+    "disable_dialog_scrim": "Disable popup overlay (e-ink)",
     "update_settings": "إعدادات التحديث",
     "anki_settings_label": "إعدادات Anki",
     "anki_default_deck": "المجموعة الافتراضية",
@@ -651,6 +653,7 @@
     "anki_manage_profiles": "إدارة ملفات التصدير",
     "anki_manage_profiles_hint": "تكوين كيفية تعيين حقول البطاقات عند التصدير إلى AnkiDroid. كل ملف يرتبط بنوع ملاحظة Anki ويحدد أي حقل hibiki يملأ أي حقل Anki."
 ,
+  "collapse_dictionaries": "Collapse dictionaries",
   "deduplicate_pitch_accents": "إزالة تكرار علامات النبر",
   "harmonic_frequency": "تجميع ترددات الكلمات",
   "manage_audio_sources": "إدارة مصادر الصوت",
@@ -670,4 +673,14 @@
   "dictionary_type_pitch": "نبرة"
 ,
   "dictionary_type_term": "مصطلح"
+,
+  "action_favorite": "Favorite"
+,
+  "favorite_added": "Sentence saved to favorites"
+,
+  "favorites": "Favorites ($n)"
+,
+  "no_favorites": "No saved sentences"
+,
+  "favorites_title": "Favorite Sentences"
 }

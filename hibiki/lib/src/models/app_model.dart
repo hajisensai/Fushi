@@ -3522,6 +3522,14 @@ class AppModel with ChangeNotifier {
   final StreamController<void> _fastForwardStreamController =
       StreamController.broadcast();
 
+  Stream<void> get skipNextStream => _skipNextStreamController.stream;
+  final StreamController<void> _skipNextStreamController =
+      StreamController.broadcast();
+
+  Stream<void> get skipPreviousStream => _skipPreviousStreamController.stream;
+  final StreamController<void> _skipPreviousStreamController =
+      StreamController.broadcast();
+
   /// For managing audio session events.
   JidoujishoAudioHandler? get audioHandler => _audioHandler;
   JidoujishoAudioHandler? _audioHandler;
@@ -3545,6 +3553,12 @@ class AppModel with ChangeNotifier {
         },
         onFastForward: () {
           _fastForwardStreamController.add(null);
+        },
+        onSkipToNext: () {
+          _skipNextStreamController.add(null);
+        },
+        onSkipToPrevious: () {
+          _skipPreviousStreamController.add(null);
         },
       ),
       config: const ag.AudioServiceConfig(
@@ -3765,6 +3779,16 @@ class AppModel with ChangeNotifier {
   /// Toggle harmonic frequency aggregation.
   void toggleHarmonicFrequency() async {
     await _setPref('harmonic_frequency', !harmonicFrequency);
+  }
+
+  /// Whether to auto-collapse dictionaries (only expand the first one).
+  bool get collapseDictionaries {
+    return _getPref('collapse_dictionaries', defaultValue: false);
+  }
+
+  /// Toggle dictionary auto-collapse.
+  void toggleCollapseDictionaries() async {
+    await _setPref('collapse_dictionaries', !collapseDictionaries);
   }
 
   /// Default audio source templates for word pronunciation.

@@ -315,6 +315,7 @@
     "handlebar_book_cover": "Обложка книги",
     "handlebar_audio": "Аудио",
     "handlebar_sasayaki_audio": "Sasayaki аудио",
+    "handlebar_popup_selection_text": "Popup Selection Text",
     "handlebar_cloze_before": "Клоуз до",
     "handlebar_cloze_inside": "Клоуз содержимое",
     "handlebar_cloze_after": "Клоуз после",
@@ -627,6 +628,7 @@
     "error_log_share_subject": "Журнал ошибок hibiki",
     "update_never_remind": "Больше не напоминать",
     "update_auto_install": "Автоустановка обновлений",
+    "disable_dialog_scrim": "Disable popup overlay (e-ink)",
     "update_settings": "Настройки обновлений",
     "anki_settings_label": "Настройки Anki",
     "anki_default_deck": "Колода по умолчанию",
@@ -650,6 +652,7 @@
 
     "anki_manage_profiles": "Управление профилями экспорта",
     "anki_manage_profiles_hint": "Настройте сопоставление полей карточек при экспорте в AnkiDroid. Каждый профиль привязан к типу заметки Anki и определяет, какое поле hibiki заполняет какое поле Anki.",
+  "collapse_dictionaries": "Collapse dictionaries",
   "deduplicate_pitch_accents": "Удалить дубликаты тональных ударений",
   "harmonic_frequency": "Агрегация частот слов",
   "manage_audio_sources": "Управление аудиоисточниками",
@@ -669,4 +672,14 @@
   "dictionary_type_pitch": "Высота тона"
 ,
   "dictionary_type_term": "Термин"
+,
+  "action_favorite": "Favorite"
+,
+  "favorite_added": "Sentence saved to favorites"
+,
+  "favorites": "Favorites ($n)"
+,
+  "no_favorites": "No saved sentences"
+,
+  "favorites_title": "Favorite Sentences"
 }

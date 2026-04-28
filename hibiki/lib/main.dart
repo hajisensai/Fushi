@@ -35,6 +35,23 @@ void main() {
     /// is disabled if not reverted from entering a media source.
     Wakelock.disable();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+
+    // Match system bar overlays to the platform brightness immediately so the
+    // status bar and navigation bar don't flash white on dark-mode devices.
+    final platformBrightness =
+        WidgetsBinding.instance.platformDispatcher.platformBrightness;
+    SystemChrome.setSystemUIOverlayStyle(
+      platformBrightness == Brightness.dark
+          ? SystemUiOverlayStyle.light.copyWith(
+              statusBarColor: Colors.transparent,
+              systemNavigationBarColor: Colors.transparent,
+            )
+          : SystemUiOverlayStyle.dark.copyWith(
+              statusBarColor: Colors.transparent,
+              systemNavigationBarColor: Colors.transparent,
+            ),
+    );
+
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
       DeviceOrientation.landscapeLeft,
@@ -220,9 +237,16 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
     // after initialise() completes. Return a minimal app while loading.
     // LoadingPage calls Spacing.of(context) via buildLoading(), so we must
     // not use it here — render the spinner directly instead.
+    //
+    // Use system brightness to match the native splash and avoid a white
+    // flash when the user has dark mode enabled.
     if (appModel.initError != null) {
+      final brightness =
+          WidgetsBinding.instance.platformDispatcher.platformBrightness;
+      final isDark = brightness == Brightness.dark;
       return MaterialApp(
         debugShowCheckedModeBanner: false,
+        theme: isDark ? ThemeData.dark() : null,
         home: Scaffold(
           body: Center(
             child: Padding(
@@ -232,15 +256,21 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
                 children: [
                   const Icon(Icons.error_outline, size: 48, color: Colors.red),
                   const SizedBox(height: 16),
-                  const Text(
+                  Text(
                     'Initialisation failed',
                     style: TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.bold),
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : Colors.black,
+                    ),
                   ),
                   const SizedBox(height: 12),
                   SelectableText(
                     appModel.initError!,
-                    style: const TextStyle(fontSize: 12),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isDark ? Colors.white70 : Colors.black87,
+                    ),
                     textAlign: TextAlign.center,
                   ),
                 ],
@@ -251,10 +281,18 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
       );
     }
     if (!appModel.isInitialised) {
-      return const MaterialApp(
+      final brightness =
+          WidgetsBinding.instance.platformDispatcher.platformBrightness;
+      final isDark = brightness == Brightness.dark;
+      return MaterialApp(
         debugShowCheckedModeBanner: false,
+        theme: isDark ? ThemeData.dark() : null,
         home: Scaffold(
-          body: Center(child: CircularProgressIndicator()),
+          body: Center(
+            child: CircularProgressIndicator(
+              color: isDark ? Colors.white70 : null,
+            ),
+          ),
         ),
       );
     }

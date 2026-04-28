@@ -47,6 +47,7 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView> 
     final appModel = ref.read(appProvider);
     final deduplicatePitch = appModel.deduplicatePitchAccents;
     final harmonicFreq = appModel.harmonicFrequency;
+    final collapseDict = appModel.collapseDictionaries;
     final audioSourcesJson = jsonEncode(appModel.audioSources);
     final localAudioEnabled = appModel.localAudioEnabled;
 
@@ -55,6 +56,7 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView> 
       window.audioSources = $audioSourcesJson;
       window.deduplicatePitchAccents = $deduplicatePitch;
       window.harmonicFrequency = $harmonicFreq;
+      window.collapseDictionaries = $collapseDict;
       window.localAudioEnabled = $localAudioEnabled;
       window.lookupEntries = $entriesJson;
       window.dictionaryStyles = $stylesJson;

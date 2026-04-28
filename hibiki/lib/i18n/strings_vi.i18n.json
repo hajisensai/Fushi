@@ -315,6 +315,7 @@
     "handlebar_book_cover": "Bìa sách",
     "handlebar_audio": "Âm thanh",
     "handlebar_sasayaki_audio": "Âm thanh Sasayaki",
+    "handlebar_popup_selection_text": "Popup Selection Text",
     "handlebar_cloze_before": "Điền khuyết trước",
     "handlebar_cloze_inside": "Điền khuyết nội dung",
     "handlebar_cloze_after": "Điền khuyết sau",
@@ -627,6 +628,7 @@
     "error_log_share_subject": "Nhật ký lỗi hibiki",
     "update_never_remind": "Không nhắc lại",
     "update_auto_install": "Tự động cài đặt bản cập nhật",
+    "disable_dialog_scrim": "Disable popup overlay (e-ink)",
     "update_settings": "Cài đặt cập nhật",
     "anki_settings_label": "Cài đặt Anki",
     "anki_default_deck": "Bộ thẻ mặc định",
@@ -650,6 +652,7 @@
 
     "anki_manage_profiles": "Quản lý hồ sơ xuất",
     "anki_manage_profiles_hint": "Cấu hình ánh xạ trường thẻ khi xuất sang AnkiDroid. Mỗi hồ sơ liên kết với một loại ghi chú Anki và xác định trường hibiki nào điền vào trường Anki nào.",
+  "collapse_dictionaries": "Collapse dictionaries",
   "deduplicate_pitch_accents": "Loại bỏ trùng lặp thanh điệu",
   "harmonic_frequency": "Tổng hợp tần suất từ",
   "manage_audio_sources": "Quản lý nguồn âm thanh",
@@ -669,4 +672,14 @@
   "dictionary_type_pitch": "Thanh điệu"
 ,
   "dictionary_type_term": "Thuật ngữ"
+,
+  "action_favorite": "Favorite"
+,
+  "favorite_added": "Sentence saved to favorites"
+,
+  "favorites": "Favorites ($n)"
+,
+  "no_favorites": "No saved sentences"
+,
+  "favorites_title": "Favorite Sentences"
 }

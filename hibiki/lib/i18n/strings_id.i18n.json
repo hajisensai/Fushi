@@ -315,6 +315,7 @@
     "handlebar_book_cover": "Sampul buku",
     "handlebar_audio": "Audio",
     "handlebar_sasayaki_audio": "Audio Sasayaki",
+    "handlebar_popup_selection_text": "Popup Selection Text",
     "handlebar_cloze_before": "Cloze sebelum",
     "handlebar_cloze_inside": "Cloze isi",
     "handlebar_cloze_after": "Cloze sesudah",
@@ -627,6 +628,7 @@
     "error_log_share_subject": "Log Error hibiki",
     "update_never_remind": "Jangan ingatkan lagi",
     "update_auto_install": "Pasang pembaruan otomatis",
+    "disable_dialog_scrim": "Disable popup overlay (e-ink)",
     "update_settings": "Pengaturan Pembaruan",
     "anki_settings_label": "Pengaturan Anki",
     "anki_default_deck": "Dek Default",
@@ -650,6 +652,7 @@
 
     "anki_manage_profiles": "Kelola Profil Ekspor",
     "anki_manage_profiles_hint": "Konfigurasi pemetaan bidang kartu saat mengekspor ke AnkiDroid. Setiap profil terikat ke tipe catatan Anki dan menentukan bidang hibiki mana yang mengisi bidang Anki mana.",
+  "collapse_dictionaries": "Collapse dictionaries",
   "deduplicate_pitch_accents": "Hapus duplikat aksen nada",
   "harmonic_frequency": "Gabungkan frekuensi kata",
   "manage_audio_sources": "Kelola sumber audio",
@@ -669,4 +672,14 @@
   "dictionary_type_pitch": "Nada"
 ,
   "dictionary_type_term": "Istilah"
+,
+  "action_favorite": "Favorite"
+,
+  "favorite_added": "Sentence saved to favorites"
+,
+  "favorites": "Favorites ($n)"
+,
+  "no_favorites": "No saved sentences"
+,
+  "favorites_title": "Favorite Sentences"
 }

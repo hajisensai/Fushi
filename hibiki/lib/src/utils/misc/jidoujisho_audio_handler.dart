@@ -1,54 +1,108 @@
 import 'package:audio_service/audio_service.dart' as ag;
 
-/// Enables play/pause button to be used with the app.
 class JidoujishoAudioHandler extends ag.BaseAudioHandler {
-  /// Define this handler.
   JidoujishoAudioHandler({
     required this.onPlayPause,
     required this.onSeek,
     required this.onRewind,
     required this.onFastForward,
+    this.onSkipToNext,
+    this.onSkipToPrevious,
   });
 
-  /// Called during play/pause.
   final Function() onPlayPause;
-
-  /// Called during seek.
   final Function(Duration) onSeek;
-
-  /// Called during seek.
   final Function() onRewind;
-
-  /// Called during seek.
   final Function() onFastForward;
+  final Function()? onSkipToNext;
+  final Function()? onSkipToPrevious;
 
-  /// Handles play request.
   @override
   Future<void> play() async {
     onPlayPause();
   }
 
-  /// Handles pause request.
   @override
   Future<void> pause() async {
     onPlayPause();
   }
 
-  /// Handles seek request.
   @override
   Future<void> seek(Duration position) async {
     onSeek(position);
   }
 
-  /// Handles seek request.
   @override
   Future<void> fastForward() async {
     onFastForward();
   }
 
-  /// Handles seek request.
   @override
   Future<void> rewind() async {
     onRewind();
+  }
+
+  @override
+  Future<void> skipToNext() async {
+    onSkipToNext?.call();
+  }
+
+  @override
+  Future<void> skipToPrevious() async {
+    onSkipToPrevious?.call();
+  }
+
+  void updatePlaybackState({
+    required bool playing,
+    required Duration position,
+    required double speed,
+    required Duration duration,
+  }) {
+    playbackState.add(ag.PlaybackState(
+      controls: [
+        ag.MediaControl.skipToPrevious,
+        if (playing) ag.MediaControl.pause else ag.MediaControl.play,
+        ag.MediaControl.skipToNext,
+      ],
+      systemActions: const {
+        ag.MediaAction.seek,
+        ag.MediaAction.seekForward,
+        ag.MediaAction.seekBackward,
+      },
+      androidCompactActionIndices: const [0, 1, 2],
+      processingState: ag.AudioProcessingState.ready,
+      playing: playing,
+      updatePosition: position,
+      speed: speed,
+    ));
+  }
+
+  void setMediaItemInfo({
+    required String title,
+    String? artist,
+    Duration? duration,
+    Uri? artUri,
+  }) {
+    mediaItem.add(ag.MediaItem(
+      id: 'hibiki_audiobook',
+      title: title,
+      artist: artist,
+      duration: duration,
+      artUri: artUri,
+    ));
+  }
+
+  void updateDisplayTitle(String title, {String? displaySubtitle}) {
+    final ag.MediaItem? current = mediaItem.value;
+    if (current == null) return;
+    mediaItem.add(current.copyWith(
+      title: title,
+      displaySubtitle: displaySubtitle,
+    ));
+  }
+
+  void clearNotification() {
+    playbackState.add(ag.PlaybackState());
+    mediaItem.add(null);
   }
 }

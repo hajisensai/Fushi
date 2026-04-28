@@ -22,6 +22,8 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_controller.dart';
+import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
+import 'package:hibiki/src/media/audiobook/favorite_sentence_repository.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_play_bar.dart';
@@ -157,6 +159,10 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
 
   String? _lastAppThemeKey;
 
+  // ── 媒体通知栏（状态栏播放控制） ───────────────────────────────────────────
+  StreamSubscription<void>? _notifPlaySub;
+  StreamSubscription<void>? _notifSkipNextSub;
+  StreamSubscription<void>? _notifSkipPrevSub;
 
   @override
   void initState() {
@@ -219,6 +225,10 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     // unawaited 是有意的：dispose 不能 async，Isar 写不依赖 UI 线程，
     // Future 在 widget 销毁后仍能跑完。
     _flushReaderPosOnDispose();
+    _notifPlaySub?.cancel();
+    _notifSkipNextSub?.cancel();
+    _notifSkipPrevSub?.cancel();
+    appModelNoUpdate.audioHandler?.clearNotification();
     _audiobookController?.removeListener(_onCueChanged);
     _audiobookController?.dispose();
     _barThemeNotifier.dispose();
@@ -1341,6 +1351,7 @@ if (!window.getSelection().isCollapsed) {
         menuItems: [
           searchMenuItem(),
           stashMenuItem(),
+          favoriteMenuItem(),
           copyMenuItem(),
           shareMenuItem(),
           creatorMenuItem(),
@@ -1394,6 +1405,32 @@ if (!window.getSelection().isCollapsed) {
       title: t.creator,
       action: creatorMenuAction,
     );
+  }
+
+  ContextMenuItem favoriteMenuItem() {
+    return ContextMenuItem(
+      id: 6,
+      title: t.action_favorite,
+      action: favoriteMenuAction,
+    );
+  }
+
+  void favoriteMenuAction() async {
+    String text = (await getSelectedText()).replaceAll('\\n', '\n').trim();
+    if (text.isEmpty) return;
+    await unselectWebViewTextSelection(_controller);
+    final String bookTitle = widget.item?.title ?? '';
+    final String? chapterLabel = _tocLabels[_currentTtuSection];
+    final sentence = FavoriteSentence(
+      text: text,
+      bookTitle: bookTitle,
+      chapterLabel: chapterLabel,
+      createdAt: DateTime.now(),
+    );
+    await FavoriteSentenceRepository(appModel.database).add(sentence);
+    if (mounted) {
+      Fluttertoast.showToast(msg: t.favorite_added);
+    }
   }
 
   void searchMenuAction() async {
@@ -2089,6 +2126,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           repo.updateTapSeek(bookUid: bookUid, value: v);
       controller.addListener(_onCueChanged);
       _wireFollowAudio(controller, bookUid: bookUid, repo: repo);
+      unawaited(_wireMediaNotification(controller));
 
       if (mounted) {
         setState(() {
@@ -2198,6 +2236,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     };
     controller.onCrossChapter = _handleCueCrossChapter;
     controller.getCurrentReaderSection = () => _currentTtuSection;
+    unawaited(_wireMediaNotification(controller));
 
     if (mounted) {
       setState(() {
@@ -2331,6 +2370,17 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       debugPrint('[hibiki-reader] settings probe error: $e');
     }
     if (!mounted) return;
+
+    final int? ttuId = _extractTtuBookId();
+    List<Bookmark> bookmarks = const [];
+    if (ttuId != null) {
+      bookmarks = await BookmarkRepository(appModel.database)
+          .getBookmarks(ttuId);
+    }
+    final List<FavoriteSentence> favorites =
+        await FavoriteSentenceRepository(appModel.database).getAll();
+    if (!mounted) return;
+
     final sheetThemeNotifier = ValueNotifier<ThemeData?>(
       appModel.overrideDictionaryTheme,
     );
@@ -2350,6 +2400,29 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           toc: toc,
           readerProgress: progress,
           pageProgress: pageProgress,
+          bookmarks: bookmarks,
+          onJumpToBookmark: (Bookmark bm) async {
+            await AudiobookBridge.requestSectionNav(
+              _controller,
+              sectionIndex: bm.sectionIndex,
+            );
+            await Future.delayed(const Duration(milliseconds: 500));
+            await AudiobookBridge.scrollToNormOffset(
+              _controller,
+              section: bm.sectionIndex,
+              offset: bm.normCharOffset,
+            );
+          },
+          onDeleteBookmark: (int index) async {
+            if (ttuId == null) return;
+            await BookmarkRepository(appModel.database)
+                .removeBookmark(ttuId, index);
+          },
+          favoriteSentences: favorites,
+          onDeleteFavorite: (int index) async {
+            await FavoriteSentenceRepository(appModel.database)
+                .removeAt(index);
+          },
           onJumpSection: (int idx) async {
             await AudiobookBridge.requestSectionNav(
               _controller,
@@ -2358,7 +2431,20 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           },
           onBookmark: () async {
             try {
-              await AudiobookBridge.bookmarkCurrentPage(_controller);
+              final int? ttuId = _extractTtuBookId();
+              if (ttuId == null) return;
+              final vp = await AudiobookBridge.getViewportNormOffset(_controller);
+              if (vp == null) return;
+              final String chapterLabel =
+                  _tocLabels[vp.section] ?? t.go_to_chapter(n: vp.section + 1);
+              final bookmark = Bookmark(
+                sectionIndex: vp.section,
+                normCharOffset: vp.offset,
+                label: chapterLabel,
+                createdAt: DateTime.now(),
+              );
+              await BookmarkRepository(appModel.database)
+                  .addBookmark(ttuId, bookmark);
               if (mounted) {
                 Fluttertoast.showToast(msg: t.bookmark_added);
               }
@@ -2630,6 +2716,68 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       if (vp == null) return null;
       return (section: vp.section, offset: vp.offset);
     };
+  }
+
+  Future<void> _wireMediaNotification(AudiobookPlayerController controller) async {
+    final handler = appModelNoUpdate.audioHandler;
+    if (handler == null) return;
+
+    final String bookTitle =
+        widget.item?.title ?? 'Audiobook';
+
+    Uri? artUri;
+    final String? base64Img = widget.item?.base64Image;
+    if (base64Img != null) {
+      try {
+        final UriData? data = Uri.parse(base64Img).data;
+        if (data != null) {
+          final dir = await getTemporaryDirectory();
+          final coverFile = File(p.join(dir.path, 'hibiki_cover.png'));
+          await coverFile.writeAsBytes(data.contentAsBytes());
+          artUri = coverFile.uri;
+        }
+      } catch (e) {
+        debugPrint('[hibiki-notif] cover write failed: $e');
+      }
+    }
+
+    handler.setMediaItemInfo(
+      title: bookTitle,
+      duration: controller.duration,
+      artUri: artUri,
+    );
+    handler.updatePlaybackState(
+      playing: controller.isPlaying,
+      position: controller.position,
+      speed: controller.speed,
+      duration: controller.duration,
+    );
+
+    controller.addListener(() {
+      handler.updatePlaybackState(
+        playing: controller.isPlaying,
+        position: controller.position,
+        speed: controller.speed,
+        duration: controller.duration,
+      );
+      final String? cueText = controller.currentCue?.text;
+      if (cueText != null && cueText.isNotEmpty) {
+        handler.updateDisplayTitle(bookTitle, displaySubtitle: cueText);
+      }
+    });
+
+    _notifPlaySub?.cancel();
+    _notifPlaySub = appModelNoUpdate.playStream.listen((_) {
+      controller.togglePlayPause();
+    });
+    _notifSkipNextSub?.cancel();
+    _notifSkipNextSub = appModelNoUpdate.skipNextStream.listen((_) {
+      controller.skipToNextCue();
+    });
+    _notifSkipPrevSub?.cancel();
+    _notifSkipPrevSub = appModelNoUpdate.skipPreviousStream.listen((_) {
+      controller.skipToPrevCue();
+    });
   }
 
   /// cue 跨章时由控制器触发。
@@ -3154,6 +3302,10 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
   /// SrtBook 关联状态，并 setState 让播放条消失、耳机 FAB 重新出现。
   /// Isar 那边 deleteAudiobook 已经由对话框负责；这里只管内存状态。
   void _tearDownAudiobook() {
+    _notifPlaySub?.cancel();
+    _notifSkipNextSub?.cancel();
+    _notifSkipPrevSub?.cancel();
+    appModelNoUpdate.audioHandler?.clearNotification();
     final AudiobookPlayerController? ctrl = _audiobookController;
     ctrl?.removeListener(_onCueChanged);
     ctrl?.dispose();

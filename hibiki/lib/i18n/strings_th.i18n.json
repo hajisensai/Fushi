@@ -315,6 +315,7 @@
     "handlebar_book_cover": "ปกหนังสือ",
     "handlebar_audio": "เสียง",
     "handlebar_sasayaki_audio": "เสียง Sasayaki",
+    "handlebar_popup_selection_text": "Popup Selection Text",
     "handlebar_cloze_before": "เติมคำก่อน",
     "handlebar_cloze_inside": "เติมคำเนื้อหา",
     "handlebar_cloze_after": "เติมคำหลัง",
@@ -627,6 +628,7 @@
     "error_log_share_subject": "บันทึกข้อผิดพลาด hibiki",
     "update_never_remind": "ไม่ต้องเตือนอีก",
     "update_auto_install": "ติดตั้งอัปเดตอัตโนมัติ",
+    "disable_dialog_scrim": "Disable popup overlay (e-ink)",
     "update_settings": "ตั้งค่าอัปเดต",
     "anki_settings_label": "ตั้งค่า Anki",
     "anki_default_deck": "สำรับเริ่มต้น",
@@ -650,6 +652,7 @@
 
     "anki_manage_profiles": "จัดการโปรไฟล์ส่งออก",
     "anki_manage_profiles_hint": "กำหนดค่าการแมปฟิลด์การ์ดเมื่อส่งออกไปยัง AnkiDroid แต่ละโปรไฟล์ผูกกับประเภทโน้ต Anki และกำหนดว่าฟิลด์ hibiki ใดเติมในฟิลด์ Anki ใด",
+  "collapse_dictionaries": "Collapse dictionaries",
   "deduplicate_pitch_accents": "ลบการเน้นเสียงซ้ำ",
   "harmonic_frequency": "รวมความถี่คำ",
   "manage_audio_sources": "จัดการแหล่งเสียง",
@@ -669,4 +672,14 @@
   "dictionary_type_pitch": "ระดับเสียง"
 ,
   "dictionary_type_term": "คำศัพท์"
+,
+  "action_favorite": "Favorite"
+,
+  "favorite_added": "Sentence saved to favorites"
+,
+  "favorites": "Favorites ($n)"
+,
+  "no_favorites": "No saved sentences"
+,
+  "favorites_title": "Favorite Sentences"
 }

@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:fluttertoast/fluttertoast.dart';
+import 'package:intl/intl.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_controller.dart';
+import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
+import 'package:hibiki/src/media/audiobook/favorite_sentence_repository.dart';
 import 'package:hibiki/src/media/sources/reader_ttu_source.dart';
 import 'package:hibiki/utils.dart';
 
@@ -135,6 +140,11 @@ class AudiobookSettingsSheet extends StatefulWidget {
     required this.onExitReader,
     required this.webViewController,
     this.onThemeChanged,
+    this.bookmarks = const [],
+    this.onJumpToBookmark,
+    this.onDeleteBookmark,
+    this.favoriteSentences = const [],
+    this.onDeleteFavorite,
     super.key,
   });
 
@@ -147,6 +157,11 @@ class AudiobookSettingsSheet extends StatefulWidget {
   final VoidCallback onExitReader;
   final InAppWebViewController webViewController;
   final VoidCallback? onThemeChanged;
+  final List<Bookmark> bookmarks;
+  final Future<void> Function(Bookmark bookmark)? onJumpToBookmark;
+  final Future<void> Function(int index)? onDeleteBookmark;
+  final List<FavoriteSentence> favoriteSentences;
+  final Future<void> Function(int index)? onDeleteFavorite;
 
   @override
   State<AudiobookSettingsSheet> createState() => _AudiobookSettingsSheetState();
@@ -249,6 +264,10 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                   const SizedBox(height: 12),
                   _buildTocSection(context, theme),
                 ],
+                if (widget.bookmarks.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  _buildBookmarkSection(context, theme),
+                ],
                 if (widget.controller != null) ...[
                   const SizedBox(height: 20),
                   _buildVolumeSection(theme, widget.controller!),
@@ -263,6 +282,10 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                 ],
                 const SizedBox(height: 20),
                 _buildReaderSettingsSection(theme),
+                if (widget.favoriteSentences.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  _buildFavoritesSection(context, theme),
+                ],
                 const SizedBox(height: 16),
                 const Divider(height: 1),
                 const SizedBox(height: 12),
@@ -474,6 +497,62 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                   onTap: () async {
                     Navigator.of(ctx).pop();
                     await widget.onJumpSection(e.index);
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBookmarkSection(BuildContext context, ThemeData theme) {
+    final DateFormat fmt = DateFormat('MM/dd HH:mm');
+    return Theme(
+      data: theme.copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: EdgeInsets.zero,
+        title: Text(
+          '${t.action_bookmark} (${widget.bookmarks.length})',
+          style: theme.textTheme.titleMedium,
+        ),
+        children: [
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 240),
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: widget.bookmarks.length,
+              itemBuilder: (BuildContext ctx, int i) {
+                final Bookmark bm = widget.bookmarks[i];
+                return ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(
+                    bm.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                  subtitle: Text(
+                    fmt.format(bm.createdAt),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.delete_outline, size: 18),
+                    onPressed: () async {
+                      await widget.onDeleteBookmark?.call(i);
+                      if (ctx.mounted) {
+                        Navigator.of(ctx).pop();
+                      }
+                    },
+                  ),
+                  onTap: () async {
+                    Navigator.of(ctx).pop();
+                    await widget.onJumpToBookmark?.call(bm);
                   },
                 );
               },
@@ -1074,6 +1153,72 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               final double v = (value + step).clamp(min, max);
               onChanged(v);
             },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFavoritesSection(BuildContext context, ThemeData theme) {
+    final DateFormat fmt = DateFormat('MM/dd HH:mm');
+    return Theme(
+      data: theme.copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: EdgeInsets.zero,
+        title: Text(
+          t.favorites(n: widget.favoriteSentences.length),
+          style: theme.textTheme.titleMedium,
+        ),
+        children: [
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 300),
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: widget.favoriteSentences.length,
+              itemBuilder: (BuildContext ctx, int i) {
+                final FavoriteSentence fav = widget.favoriteSentences[i];
+                return ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(
+                    fav.text,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                  subtitle: Text(
+                    '${fav.bookTitle}${fav.chapterLabel != null ? ' · ${fav.chapterLabel}' : ''} · ${fmt.format(fav.createdAt)}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.copy, size: 16),
+                        onPressed: () {
+                          Clipboard.setData(ClipboardData(text: fav.text));
+                          Fluttertoast.showToast(msg: t.copy);
+                        },
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline, size: 16),
+                        onPressed: () async {
+                          await widget.onDeleteFavorite?.call(i);
+                          if (ctx.mounted) {
+                            Navigator.of(ctx).pop();
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
           ),
         ],
       ),

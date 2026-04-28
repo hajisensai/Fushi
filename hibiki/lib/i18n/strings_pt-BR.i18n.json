@@ -315,6 +315,7 @@
     "handlebar_book_cover": "Capa do livro",
     "handlebar_audio": "Áudio",
     "handlebar_sasayaki_audio": "Áudio Sasayaki",
+    "handlebar_popup_selection_text": "Popup Selection Text",
     "handlebar_cloze_before": "Cloze antes",
     "handlebar_cloze_inside": "Cloze conteúdo",
     "handlebar_cloze_after": "Cloze depois",
@@ -627,6 +628,7 @@
     "error_log_share_subject": "Log de Erros do hibiki",
     "update_never_remind": "Não lembrar novamente",
     "update_auto_install": "Instalar atualizações automaticamente",
+    "disable_dialog_scrim": "Disable popup overlay (e-ink)",
     "update_settings": "Configurações de Atualização",
     "anki_settings_label": "Configurações do Anki",
     "anki_default_deck": "Baralho Padrão",
@@ -650,6 +652,7 @@
 
     "anki_manage_profiles": "Gerenciar Perfis de Exportação",
     "anki_manage_profiles_hint": "Configurar como os campos dos cartões são mapeados ao exportar para o AnkiDroid. Cada perfil se vincula a um tipo de nota Anki e define qual campo do hibiki preenche cada campo do Anki.",
+  "collapse_dictionaries": "Collapse dictionaries",
   "deduplicate_pitch_accents": "Deduplicar acentos tonais",
   "harmonic_frequency": "Agregar frequências de palavras",
   "manage_audio_sources": "Gerenciar fontes de áudio",
@@ -669,4 +672,14 @@
   "dictionary_type_pitch": "Tom"
 ,
   "dictionary_type_term": "Termo"
+,
+  "action_favorite": "Favorite"
+,
+  "favorite_added": "Sentence saved to favorites"
+,
+  "favorites": "Favorites ($n)"
+,
+  "no_favorites": "No saved sentences"
+,
+  "favorites_title": "Favorite Sentences"
 }

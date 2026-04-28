@@ -315,6 +315,7 @@
     "handlebar_book_cover": "書籍カバー",
     "handlebar_audio": "音声",
     "handlebar_sasayaki_audio": "Sasayaki 音声",
+    "handlebar_popup_selection_text": "Popup Selection Text",
     "handlebar_cloze_before": "穴埋め前文",
     "handlebar_cloze_inside": "穴埋め内容",
     "handlebar_cloze_after": "穴埋め後文",
@@ -609,6 +610,7 @@
     "import_theme_invalid": "無効なテーマコード",
     "import_theme_success": "テーマをインポートしました",
     "auto_add_book_name_to_tags": "タグに本のタイトルを自動追加",
+    "collapse_dictionaries": "Collapse dictionaries",
     "deduplicate_pitch_accents": "アクセント重複除外",
     "harmonic_frequency": "語彙頻度集約",
     "manage_audio_sources": "音声ソースの管理",
@@ -670,5 +672,10 @@
 ,
   "dictionary_type_pitch": "ピッチ"
 ,
-  "dictionary_type_term": "用語"
+  "dictionary_type_term": "用語",
+  "action_favorite": "お気に入り",
+  "favorite_added": "お気に入りに追加しました",
+  "favorites": "お気に入り ($n)",
+  "no_favorites": "お気に入りはありません",
+  "favorites_title": "お気に入りの文"
 }

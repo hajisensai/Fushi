@@ -646,6 +646,7 @@
     "import_theme_invalid": "Invalid theme code",
     "import_theme_success": "Theme imported",
     "auto_add_book_name_to_tags": "Auto-add book title to tags",
+    "collapse_dictionaries": "Collapse dictionaries",
     "deduplicate_pitch_accents": "Deduplicate pitch accents",
     "harmonic_frequency": "Aggregate word frequencies",
     "manage_audio_sources": "Manage audio sources",
@@ -694,5 +695,10 @@
     "anki_manage_profiles": "Manage Export Profiles",
     "anki_manage_profiles_hint": "Configure how card fields are mapped when exporting to AnkiDroid. Each profile binds to an Anki note type and defines which hibiki field fills each Anki field."
   ,
-  "manage_audio_sources": "Manage audio sources"
+  "manage_audio_sources": "Manage audio sources",
+  "action_favorite": "Favorite",
+  "favorite_added": "Sentence saved to favorites",
+  "favorites": "Favorites ($n)",
+  "no_favorites": "No saved sentences",
+  "favorites_title": "Favorite Sentences"
 }

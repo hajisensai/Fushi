@@ -315,6 +315,7 @@
     "handlebar_book_cover": "Couverture du livre",
     "handlebar_audio": "Audio",
     "handlebar_sasayaki_audio": "Audio Sasayaki",
+    "handlebar_popup_selection_text": "Popup Selection Text",
     "handlebar_cloze_before": "Texte à trous avant",
     "handlebar_cloze_inside": "Texte à trous contenu",
     "handlebar_cloze_after": "Texte à trous après",
@@ -627,6 +628,7 @@
     "error_log_share_subject": "Journal d'erreurs hibiki",
     "update_never_remind": "Ne plus rappeler",
     "update_auto_install": "Installer automatiquement les mises à jour",
+    "disable_dialog_scrim": "Disable popup overlay (e-ink)",
     "update_settings": "Paramètres de mise à jour",
     "anki_settings_label": "Paramètres Anki",
     "anki_default_deck": "Paquet par défaut",
@@ -650,6 +652,7 @@
 
     "anki_manage_profiles": "Gérer les profils d'exportation",
     "anki_manage_profiles_hint": "Configurer le mappage des champs lors de l'exportation vers AnkiDroid. Chaque profil est lié à un type de note Anki et définit quel champ hibiki remplit quel champ Anki.",
+  "collapse_dictionaries": "Collapse dictionaries",
   "deduplicate_pitch_accents": "Dédupliquer les accents tonaux",
   "harmonic_frequency": "Agréger les fréquences de mots",
   "manage_audio_sources": "Gérer les sources audio",
@@ -669,4 +672,14 @@
   "dictionary_type_pitch": "Accent tonal"
 ,
   "dictionary_type_term": "Terme"
+,
+  "action_favorite": "Favorite"
+,
+  "favorite_added": "Sentence saved to favorites"
+,
+  "favorites": "Favorites ($n)"
+,
+  "no_favorites": "No saved sentences"
+,
+  "favorites_title": "Favorite Sentences"
 }

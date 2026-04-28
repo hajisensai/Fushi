@@ -315,6 +315,7 @@
     "handlebar_book_cover": "Buchcover",
     "handlebar_audio": "Audio",
     "handlebar_sasayaki_audio": "Sasayaki Audio",
+    "handlebar_popup_selection_text": "Popup Selection Text",
     "handlebar_cloze_before": "Lückentext davor",
     "handlebar_cloze_inside": "Lückentext Inhalt",
     "handlebar_cloze_after": "Lückentext danach",
@@ -627,6 +628,7 @@
     "error_log_share_subject": "hibiki Fehlerprotokoll",
     "update_never_remind": "Nicht mehr erinnern",
     "update_auto_install": "Updates automatisch installieren",
+    "disable_dialog_scrim": "Disable popup overlay (e-ink)",
     "update_settings": "Update-Einstellungen",
     "anki_settings_label": "Anki-Einstellungen",
     "anki_default_deck": "Standard-Stapel",
@@ -650,6 +652,7 @@
 
     "anki_manage_profiles": "Exportprofile verwalten",
     "anki_manage_profiles_hint": "Feldzuordnung beim Export nach AnkiDroid konfigurieren. Jedes Profil ist an einen Anki-Notiztyp gebunden und definiert, welches hibiki-Feld in welches Anki-Feld eingetragen wird.",
+  "collapse_dictionaries": "Collapse dictionaries",
   "deduplicate_pitch_accents": "Tonhöhenakzente deduplizieren",
   "harmonic_frequency": "Worthäufigkeiten aggregieren",
   "manage_audio_sources": "Audioquellen verwalten",
@@ -669,4 +672,14 @@
   "dictionary_type_pitch": "Tonhöhe"
 ,
   "dictionary_type_term": "Begriff"
+,
+  "action_favorite": "Favorite"
+,
+  "favorite_added": "Sentence saved to favorites"
+,
+  "favorites": "Favorites ($n)"
+,
+  "no_favorites": "No saved sentences"
+,
+  "favorites_title": "Favorite Sentences"
 }

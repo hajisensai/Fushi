@@ -322,6 +322,7 @@
     "handlebar_book_cover": "Kitap kapağı",
     "handlebar_audio": "Ses",
     "handlebar_sasayaki_audio": "Sasayaki Ses",
+    "handlebar_popup_selection_text": "Popup Selection Text",
     "handlebar_cloze_before": "Boşluk doldurma önce",
     "handlebar_cloze_inside": "Boşluk doldurma içerik",
     "handlebar_cloze_after": "Boşluk doldurma sonra",
@@ -616,6 +617,7 @@
     "import_theme_invalid": "Geçersiz tema kodu",
     "import_theme_success": "Tema içe aktarıldı",
     "auto_add_book_name_to_tags": "Kitap başlığını otomatik olarak etiketlere ekle",
+    "collapse_dictionaries": "Collapse dictionaries",
     "deduplicate_pitch_accents": "Ton vurgularını tekrarsızlaştır",
     "harmonic_frequency": "Kelime sıklıklarını birleştir",
     "manage_audio_sources": "Ses kaynaklarını yönet",
@@ -639,6 +641,7 @@
     "error_log_share_subject": "hibiki Hata Günlüğü",
     "update_never_remind": "Güncellemeleri hatırlatma",
     "update_auto_install": "Güncellemeleri otomatik yükle",
+    "disable_dialog_scrim": "Disable popup overlay (e-ink)",
     "update_settings": "Güncelleme ayarları",
     "anki_settings_label": "Anki ayarları",
     "anki_default_deck": "Varsayılan deste",
@@ -659,5 +662,10 @@
     "hint_view_mode": "Sayfalı: kitap gibi sayfa çevir. Sürekli kaydırma: sayfa kesintisi olmadan metinde kaydır.",
     "hint_vert_text_orient": "Karışık: sayılar ve Latin harfleri yana döndürülür. Dik: tüm karakterler dik kalır.",
     "anki_manage_profiles": "Dışa aktarma profillerini yönet",
-    "anki_manage_profiles_hint": "AnkiDroid'a dışa aktarırken alan eşlemesini yapılandırın. Her profil bir Anki not türüne bağlıdır ve hangi hibiki alanının hangi Anki alanını dolduracağını tanımlar."
+    "anki_manage_profiles_hint": "AnkiDroid'a dışa aktarırken alan eşlemesini yapılandırın. Her profil bir Anki not türüne bağlıdır ve hangi hibiki alanının hangi Anki alanını dolduracağını tanımlar.",
+    "action_favorite": "Favorite",
+    "favorite_added": "Sentence saved to favorites",
+    "favorites": "Favorites ($n)",
+    "no_favorites": "No saved sentences",
+    "favorites_title": "Favorite Sentences"
 }

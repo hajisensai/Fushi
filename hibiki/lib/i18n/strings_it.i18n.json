@@ -322,6 +322,7 @@
     "handlebar_book_cover": "Copertina del libro",
     "handlebar_audio": "Audio",
     "handlebar_sasayaki_audio": "Audio Sasayaki",
+    "handlebar_popup_selection_text": "Popup Selection Text",
     "handlebar_cloze_before": "Cloze prima",
     "handlebar_cloze_inside": "Cloze contenuto",
     "handlebar_cloze_after": "Cloze dopo",
@@ -616,6 +617,7 @@
     "import_theme_invalid": "Codice tema non valido",
     "import_theme_success": "Tema importato",
     "auto_add_book_name_to_tags": "Aggiungi automaticamente il titolo del libro alle etichette",
+    "collapse_dictionaries": "Collapse dictionaries",
     "deduplicate_pitch_accents": "Deduplica accenti tonali",
     "harmonic_frequency": "Aggrega frequenze delle parole",
     "manage_audio_sources": "Gestisci sorgenti audio",
@@ -639,6 +641,7 @@
     "error_log_share_subject": "Registro errori hibiki",
     "update_never_remind": "Non ricordarmelo più",
     "update_auto_install": "Installa automaticamente gli aggiornamenti",
+    "disable_dialog_scrim": "Disable popup overlay (e-ink)",
     "update_settings": "Impostazioni aggiornamento",
     "anki_settings_label": "Impostazioni Anki",
     "anki_default_deck": "Mazzo predefinito",
@@ -659,5 +662,10 @@
     "hint_view_mode": "Paginato: sfoglia le pagine come un libro. Scorrimento continuo: scorri il testo senza interruzioni di pagina.",
     "hint_vert_text_orient": "Misto: numeri e lettere latine sono ruotati di lato. Diritto: tutti i caratteri rimangono diritti.",
     "anki_manage_profiles": "Gestisci profili di esportazione",
-    "anki_manage_profiles_hint": "Configura la mappatura dei campi durante l'esportazione verso AnkiDroid. Ogni profilo è collegato a un tipo di nota Anki e definisce quale campo hibiki riempie quale campo Anki."
+    "anki_manage_profiles_hint": "Configura la mappatura dei campi durante l'esportazione verso AnkiDroid. Ogni profilo è collegato a un tipo di nota Anki e definisce quale campo hibiki riempie quale campo Anki.",
+    "action_favorite": "Favorite",
+    "favorite_added": "Sentence saved to favorites",
+    "favorites": "Favorites ($n)",
+    "no_favorites": "No saved sentences",
+    "favorites_title": "Favorite Sentences"
 }
