@@ -550,6 +550,7 @@
     "next_sentence": "Sonraki cümle",
     "audiobook_settings": "Sesli kitap ayarları",
     "show_play_bar": "Show playback bar",
+    "show_media_notification": "Show media notification",
     "follow_audio_on_tooltip": "Ses takibi: AÇIK (bölümler arası otomatik atlama)",
     "follow_audio_off_tooltip": "Ses takibi: KAPALI",
     "reading_progress": "Okuma ilerlemesi",

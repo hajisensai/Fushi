@@ -550,6 +550,7 @@
     "next_sentence": "Frase successiva",
     "audiobook_settings": "Impostazioni audiolibro",
     "show_play_bar": "Show playback bar",
+    "show_media_notification": "Show media notification",
     "follow_audio_on_tooltip": "Segui audio: ATTIVO (salto automatico tra capitoli)",
     "follow_audio_off_tooltip": "Segui audio: DISATTIVO",
     "reading_progress": "Progresso di lettura",

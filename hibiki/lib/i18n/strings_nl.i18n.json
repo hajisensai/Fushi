@@ -550,6 +550,7 @@
     "next_sentence": "Volgende zin",
     "audiobook_settings": "Audioboekinstellingen",
     "show_play_bar": "Show playback bar",
+    "show_media_notification": "Show media notification",
     "follow_audio_on_tooltip": "Audio volgen: AAN (automatisch springen tussen hoofdstukken)",
     "follow_audio_off_tooltip": "Audio volgen: UIT",
     "reading_progress": "Leesvoortgang",

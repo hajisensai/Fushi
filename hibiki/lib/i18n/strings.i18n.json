@@ -560,6 +560,7 @@
     "next_sentence": "Next sentence",
     "audiobook_settings": "Audiobook Settings",
     "show_play_bar": "Show playback bar",
+    "show_media_notification": "Show media notification",
     "follow_audio_on_tooltip": "Follow audio: ON (auto-jump across chapters)",
     "follow_audio_off_tooltip": "Follow audio: OFF",
     "reading_progress": "Reading Progress",

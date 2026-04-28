@@ -524,6 +524,7 @@
     "next_sentence": "Próxima frase",
     "audiobook_settings": "Configurações do Audiolivro",
     "show_play_bar": "Show playback bar",
+    "show_media_notification": "Show media notification",
     "follow_audio_on_tooltip": "Acompanhar áudio: LIGADO (pular entre capítulos automaticamente)",
     "follow_audio_off_tooltip": "Acompanhar áudio: DESLIGADO",
     "reading_progress": "Progresso da Leitura",

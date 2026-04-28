@@ -789,6 +789,7 @@ class AppModel with ChangeNotifier {
     final Map<Field, List<Enhancement>> availableEnhancements = {
       AudioField.instance: [
         ClearFieldEnhancement(field: AudioField.instance),
+        LocalAudioEnhancement(field: AudioField.instance),
         PickAudioEnhancement(field: AudioField.instance),
         AudioRecorderEnhancement(field: AudioField.instance),
       ],
@@ -3833,6 +3834,15 @@ class AppModel with ChangeNotifier {
 
   void toggleShowPlayBar() async {
     await _setPref('show_play_bar', !showPlayBar);
+    notifyListeners();
+  }
+
+  bool get showMediaNotification {
+    return _getPref('show_media_notification', defaultValue: true);
+  }
+
+  void toggleShowMediaNotification() async {
+    await _setPref('show_media_notification', !showMediaNotification);
     notifyListeners();
   }
 

@@ -524,6 +524,7 @@
     "next_sentence": "Kalimat berikutnya",
     "audiobook_settings": "Pengaturan Buku Audio",
     "show_play_bar": "Show playback bar",
+    "show_media_notification": "Show media notification",
     "follow_audio_on_tooltip": "Ikuti audio: AKTIF (lompat bab otomatis)",
     "follow_audio_off_tooltip": "Ikuti audio: NONAKTIF",
     "reading_progress": "Progres Membaca",

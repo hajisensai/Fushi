@@ -524,6 +524,7 @@
     "next_sentence": "次の文",
     "audiobook_settings": "オーディオブック設定",
     "show_play_bar": "再生バーを表示",
+    "show_media_notification": "メディア通知を表示",
     "follow_audio_on_tooltip": "音声追従：ON（チャプター間を自動ジャンプ）",
     "follow_audio_off_tooltip": "音声追従：OFF",
     "reading_progress": "読書進捗",

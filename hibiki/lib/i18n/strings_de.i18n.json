@@ -524,6 +524,7 @@
     "next_sentence": "Nächster Satz",
     "audiobook_settings": "Hörbuch-Einstellungen",
     "show_play_bar": "Show playback bar",
+    "show_media_notification": "Show media notification",
     "follow_audio_on_tooltip": "Audio-Verfolgung: AN (automatischer Kapitelsprung)",
     "follow_audio_off_tooltip": "Audio-Verfolgung: AUS",
     "reading_progress": "Lesefortschritt",

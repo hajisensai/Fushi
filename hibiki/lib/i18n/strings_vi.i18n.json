@@ -524,6 +524,7 @@
     "next_sentence": "Câu sau",
     "audiobook_settings": "Cài đặt sách nói",
     "show_play_bar": "Show playback bar",
+    "show_media_notification": "Show media notification",
     "follow_audio_on_tooltip": "Theo dõi âm thanh: BẬT (tự chuyển chương)",
     "follow_audio_off_tooltip": "Theo dõi âm thanh: TẮT",
     "reading_progress": "Tiến độ đọc",

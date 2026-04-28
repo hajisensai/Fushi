@@ -147,6 +147,8 @@ class AudiobookSettingsSheet extends StatefulWidget {
     this.onDeleteFavorite,
     this.showPlayBar = true,
     this.onTogglePlayBar,
+    this.showMediaNotification = true,
+    this.onToggleMediaNotification,
     super.key,
   });
 
@@ -166,6 +168,8 @@ class AudiobookSettingsSheet extends StatefulWidget {
   final Future<void> Function(int index)? onDeleteFavorite;
   final bool showPlayBar;
   final VoidCallback? onTogglePlayBar;
+  final bool showMediaNotification;
+  final VoidCallback? onToggleMediaNotification;
 
   @override
   State<AudiobookSettingsSheet> createState() => _AudiobookSettingsSheetState();
@@ -762,12 +766,26 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
   }
 
   Widget _buildPlayBarToggle(ThemeData theme) {
-    return Row(
+    return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Expanded(child: Text(t.show_play_bar, style: theme.textTheme.bodyMedium)),
-        Switch(
-          value: widget.showPlayBar,
-          onChanged: (_) => widget.onTogglePlayBar?.call(),
+        Row(
+          children: [
+            Expanded(child: Text(t.show_play_bar, style: theme.textTheme.bodyMedium)),
+            Switch(
+              value: widget.showPlayBar,
+              onChanged: (_) => widget.onTogglePlayBar?.call(),
+            ),
+          ],
+        ),
+        Row(
+          children: [
+            Expanded(child: Text(t.show_media_notification, style: theme.textTheme.bodyMedium)),
+            Switch(
+              value: widget.showMediaNotification,
+              onChanged: (_) => widget.onToggleMediaNotification?.call(),
+            ),
+          ],
         ),
       ],
     );

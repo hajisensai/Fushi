@@ -2466,6 +2466,21 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
             appModel.toggleShowPlayBar();
             setState(() {});
           },
+          showMediaNotification: appModel.showMediaNotification,
+          onToggleMediaNotification: () {
+            appModel.toggleShowMediaNotification();
+            final ctrl = _audiobookController;
+            if (ctrl != null) {
+              if (appModel.showMediaNotification) {
+                unawaited(_wireMediaNotification(ctrl));
+              } else {
+                _notifPlaySub?.cancel();
+                _notifSkipNextSub?.cancel();
+                _notifSkipPrevSub?.cancel();
+                appModelNoUpdate.audioHandler?.clearNotification();
+              }
+            }
+          },
         );
         return ValueListenableBuilder<ThemeData?>(
           valueListenable: sheetThemeNotifier,
@@ -2726,6 +2741,10 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
   Future<void> _wireMediaNotification(AudiobookPlayerController controller) async {
     final handler = appModelNoUpdate.audioHandler;
     if (handler == null) return;
+    if (!appModelNoUpdate.showMediaNotification) {
+      handler.clearNotification();
+      return;
+    }
 
     final String bookTitle =
         widget.item?.title ?? 'Audiobook';

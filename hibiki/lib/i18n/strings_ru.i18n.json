@@ -524,6 +524,7 @@
     "next_sentence": "Следующее предложение",
     "audiobook_settings": "Настройки аудиокниги",
     "show_play_bar": "Show playback bar",
+    "show_media_notification": "Show media notification",
     "follow_audio_on_tooltip": "Следование за аудио: ВКЛ (автопереход между главами)",
     "follow_audio_off_tooltip": "Следование за аудио: ВЫКЛ",
     "reading_progress": "Прогресс чтения",

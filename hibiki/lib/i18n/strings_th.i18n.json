@@ -524,6 +524,7 @@
     "next_sentence": "ประโยคถัดไป",
     "audiobook_settings": "ตั้งค่าหนังสือเสียง",
     "show_play_bar": "Show playback bar",
+    "show_media_notification": "Show media notification",
     "follow_audio_on_tooltip": "ติดตามเสียง: เปิด (ข้ามบทอัตโนมัติ)",
     "follow_audio_off_tooltip": "ติดตามเสียง: ปิด",
     "reading_progress": "ความคืบหน้าการอ่าน",
