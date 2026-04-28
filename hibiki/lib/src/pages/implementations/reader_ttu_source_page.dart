@@ -620,7 +620,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
                 // scrollHeight 变而 clientHeight 没变。外壳缩是两者同
                 // 步收缩，ttu 原生的 paginated 分页仍然对齐。）
                 Positioned.fill(
-                  bottom: (_audiobookController != null || _hasAudioSlot)
+                  bottom: ((_audiobookController != null || _hasAudioSlot) && appModel.showPlayBar)
                       ? 56 + MediaQuery.of(context).padding.bottom
                       : 0,
                   child: buildBody(),
@@ -2461,6 +2461,11 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
             sheetThemeNotifier.value = appModel.overrideDictionaryTheme;
             _barThemeNotifier.value = appModel.overrideDictionaryTheme;
           },
+          showPlayBar: appModel.showPlayBar,
+          onTogglePlayBar: () {
+            appModel.toggleShowPlayBar();
+            setState(() {});
+          },
         );
         return ValueListenableBuilder<ThemeData?>(
           valueListenable: sheetThemeNotifier,
@@ -3422,10 +3427,10 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
 
   // ── 有声书底部播放条 ────────────────────────────────────────────────────────
 
-  /// 底部播放控制条。仅在 [_audiobookController] 非 null 时显示。
+  /// 底部播放控制条。仅在 [_audiobookController] 非 null 且用户未关闭时显示。
   Widget buildAudiobookBar() {
     final AudiobookPlayerController? ctrl = _audiobookController;
-    if (ctrl == null) {
+    if (ctrl == null || !appModel.showPlayBar) {
       return const SizedBox.shrink();
     }
     return ListenableBuilder(

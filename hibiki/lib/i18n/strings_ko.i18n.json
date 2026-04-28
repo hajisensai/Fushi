@@ -523,6 +523,7 @@
     "prev_sentence": "이전 문장",
     "next_sentence": "다음 문장",
     "audiobook_settings": "오디오북 설정",
+    "show_play_bar": "Show playback bar",
     "follow_audio_on_tooltip": "오디오 따라가기: 켜짐 (챕터 자동 이동)",
     "follow_audio_off_tooltip": "오디오 따라가기: 꺼짐",
     "reading_progress": "읽기 진행률",

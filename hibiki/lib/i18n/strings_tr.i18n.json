@@ -549,6 +549,7 @@
     "prev_sentence": "Önceki cümle",
     "next_sentence": "Sonraki cümle",
     "audiobook_settings": "Sesli kitap ayarları",
+    "show_play_bar": "Show playback bar",
     "follow_audio_on_tooltip": "Ses takibi: AÇIK (bölümler arası otomatik atlama)",
     "follow_audio_off_tooltip": "Ses takibi: KAPALI",
     "reading_progress": "Okuma ilerlemesi",

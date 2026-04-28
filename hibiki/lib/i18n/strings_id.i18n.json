@@ -523,6 +523,7 @@
     "prev_sentence": "Kalimat sebelumnya",
     "next_sentence": "Kalimat berikutnya",
     "audiobook_settings": "Pengaturan Buku Audio",
+    "show_play_bar": "Show playback bar",
     "follow_audio_on_tooltip": "Ikuti audio: AKTIF (lompat bab otomatis)",
     "follow_audio_off_tooltip": "Ikuti audio: NONAKTIF",
     "reading_progress": "Progres Membaca",

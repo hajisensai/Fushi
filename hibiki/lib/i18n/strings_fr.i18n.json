@@ -523,6 +523,7 @@
     "prev_sentence": "Phrase précédente",
     "next_sentence": "Phrase suivante",
     "audiobook_settings": "Paramètres du livre audio",
+    "show_play_bar": "Show playback bar",
     "follow_audio_on_tooltip": "Suivi audio : ACTIVÉ (saut automatique entre chapitres)",
     "follow_audio_off_tooltip": "Suivi audio : DÉSACTIVÉ",
     "reading_progress": "Progression de lecture",

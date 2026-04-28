@@ -145,6 +145,8 @@ class AudiobookSettingsSheet extends StatefulWidget {
     this.onDeleteBookmark,
     this.favoriteSentences = const [],
     this.onDeleteFavorite,
+    this.showPlayBar = true,
+    this.onTogglePlayBar,
     super.key,
   });
 
@@ -162,6 +164,8 @@ class AudiobookSettingsSheet extends StatefulWidget {
   final Future<void> Function(int index)? onDeleteBookmark;
   final List<FavoriteSentence> favoriteSentences;
   final Future<void> Function(int index)? onDeleteFavorite;
+  final bool showPlayBar;
+  final VoidCallback? onTogglePlayBar;
 
   @override
   State<AudiobookSettingsSheet> createState() => _AudiobookSettingsSheetState();
@@ -282,6 +286,10 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                 ],
                 const SizedBox(height: 20),
                 _buildReaderSettingsSection(theme),
+                if (widget.controller != null) ...[
+                  const SizedBox(height: 16),
+                  _buildPlayBarToggle(theme),
+                ],
                 if (widget.favoriteSentences.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   _buildFavoritesSection(context, theme),
@@ -750,6 +758,18 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           ],
         );
       },
+    );
+  }
+
+  Widget _buildPlayBarToggle(ThemeData theme) {
+    return Row(
+      children: [
+        Expanded(child: Text(t.show_play_bar, style: theme.textTheme.bodyMedium)),
+        Switch(
+          value: widget.showPlayBar,
+          onChanged: (_) => widget.onTogglePlayBar?.call(),
+        ),
+      ],
     );
   }
 

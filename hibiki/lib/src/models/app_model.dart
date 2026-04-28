@@ -3827,6 +3827,15 @@ class AppModel with ChangeNotifier {
     }
   }
 
+  bool get showPlayBar {
+    return _getPref('show_play_bar', defaultValue: true);
+  }
+
+  void toggleShowPlayBar() async {
+    await _setPref('show_play_bar', !showPlayBar);
+    notifyListeners();
+  }
+
   /// Get the list of model names that will be checked for duplicates.
   List<String> get duplicateCheckModels {
     return _getPref('duplicate_check_models', defaultValue: [

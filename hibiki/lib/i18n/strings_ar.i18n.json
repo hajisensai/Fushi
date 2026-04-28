@@ -523,6 +523,7 @@
     "prev_sentence": "الجملة السابقة",
     "next_sentence": "الجملة التالية",
     "audiobook_settings": "إعدادات الكتاب الصوتي",
+    "show_play_bar": "Show playback bar",
     "follow_audio_on_tooltip": "تتبع الصوت: مفعّل (انتقال تلقائي بين الفصول)",
     "follow_audio_off_tooltip": "تتبع الصوت: معطّل",
     "reading_progress": "تقدم القراءة",

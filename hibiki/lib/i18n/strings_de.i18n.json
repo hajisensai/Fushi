@@ -523,6 +523,7 @@
     "prev_sentence": "Vorheriger Satz",
     "next_sentence": "Nächster Satz",
     "audiobook_settings": "Hörbuch-Einstellungen",
+    "show_play_bar": "Show playback bar",
     "follow_audio_on_tooltip": "Audio-Verfolgung: AN (automatischer Kapitelsprung)",
     "follow_audio_off_tooltip": "Audio-Verfolgung: AUS",
     "reading_progress": "Lesefortschritt",
