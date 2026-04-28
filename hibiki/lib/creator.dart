@@ -28,6 +28,7 @@ export 'src/creator/enhancements/crop_image_enhancement.dart';
 export 'src/creator/enhancements/pick_image_enhancement.dart';
 export 'src/creator/enhancements/camera_enhancement.dart';
 export 'src/creator/enhancements/pick_audio_enhancement.dart';
+export 'src/creator/enhancements/local_audio_enhancement.dart';
 export 'src/creator/enhancements/audio_recorder_enhancement.dart';
 export 'src/creator/enhancements/text_segmentation_enhancement.dart';
 export 'src/creator/enhancements/save_tags_enhancement.dart';

@@ -500,7 +500,13 @@ public class MainActivity extends AudioServiceActivity {
                                 File dbFile = new File(dbPath);
                                 if (dbFile.exists()) {
                                     localAudioDb = SQLiteDatabase.openDatabase(
-                                        dbPath, null, SQLiteDatabase.OPEN_READONLY);
+                                        dbPath, null, SQLiteDatabase.OPEN_READWRITE | SQLiteDatabase.NO_LOCALIZED_COLLATORS);
+                                    try {
+                                        localAudioDb.execSQL(
+                                            "CREATE INDEX IF NOT EXISTS idx_entries_expr_read ON entries(expression, reading)");
+                                        localAudioDb.execSQL(
+                                            "CREATE INDEX IF NOT EXISTS idx_android_file_source ON android(file, source)");
+                                    } catch (Exception ignored) {}
                                     result.success(true);
                                 } else {
                                     result.success(false);
@@ -520,47 +526,48 @@ public class MainActivity extends AudioServiceActivity {
                             result.success(null);
                             return;
                         }
-                        try {
-                            // Query entries table for file+source
-                            Cursor entryCursor = localAudioDb.rawQuery(
-                                "SELECT file, source FROM entries WHERE expression = ? AND reading = ? LIMIT 1",
-                                new String[]{expression, reading != null ? reading : ""});
-                            if (entryCursor == null || !entryCursor.moveToFirst()) {
-                                if (entryCursor != null) entryCursor.close();
-                                // Try expression only
-                                entryCursor = localAudioDb.rawQuery(
-                                    "SELECT file, source FROM entries WHERE expression = ? LIMIT 1",
-                                    new String[]{expression});
-                            }
-                            if (entryCursor != null && entryCursor.moveToFirst()) {
-                                String file = entryCursor.getString(0);
-                                String source = entryCursor.getString(1);
-                                entryCursor.close();
-
-                                // Query android table for audio blob
-                                Cursor audioCursor = localAudioDb.rawQuery(
-                                    "SELECT data FROM android WHERE file = ? AND source = ? LIMIT 1",
-                                    new String[]{file, source});
-                                if (audioCursor != null && audioCursor.moveToFirst()) {
-                                    byte[] audioData = audioCursor.getBlob(0);
-                                    audioCursor.close();
-                                    // Write to temp file and play
-                                    String ext = file.endsWith(".opus") ? ".opus" : ".mp3";
-                                    File tempFile = new File(getCacheDir(), "local_audio" + ext);
-                                    FileOutputStream fos = new FileOutputStream(tempFile);
-                                    fos.write(audioData);
-                                    fos.close();
-                                    result.success(tempFile.getAbsolutePath());
-                                    return;
+                        final SQLiteDatabase db = localAudioDb;
+                        final File cacheDir = getCacheDir();
+                        new Thread(() -> {
+                            try {
+                                Cursor entryCursor = db.rawQuery(
+                                    "SELECT file, source FROM entries WHERE expression = ? AND reading = ? LIMIT 1",
+                                    new String[]{expression, reading != null ? reading : ""});
+                                if (entryCursor == null || !entryCursor.moveToFirst()) {
+                                    if (entryCursor != null) entryCursor.close();
+                                    entryCursor = db.rawQuery(
+                                        "SELECT file, source FROM entries WHERE expression = ? LIMIT 1",
+                                        new String[]{expression});
                                 }
-                                if (audioCursor != null) audioCursor.close();
-                            } else {
-                                if (entryCursor != null) entryCursor.close();
+                                if (entryCursor != null && entryCursor.moveToFirst()) {
+                                    String file = entryCursor.getString(0);
+                                    String source = entryCursor.getString(1);
+                                    entryCursor.close();
+
+                                    Cursor audioCursor = db.rawQuery(
+                                        "SELECT data FROM android WHERE file = ? AND source = ? LIMIT 1",
+                                        new String[]{file, source});
+                                    if (audioCursor != null && audioCursor.moveToFirst()) {
+                                        byte[] audioData = audioCursor.getBlob(0);
+                                        audioCursor.close();
+                                        String ext = file.endsWith(".opus") ? ".opus" : ".mp3";
+                                        File tempFile = new File(cacheDir, "local_audio" + ext);
+                                        FileOutputStream fos = new FileOutputStream(tempFile);
+                                        fos.write(audioData);
+                                        fos.close();
+                                        new Handler(Looper.getMainLooper()).post(() ->
+                                            result.success(tempFile.getAbsolutePath()));
+                                        return;
+                                    }
+                                    if (audioCursor != null) audioCursor.close();
+                                } else {
+                                    if (entryCursor != null) entryCursor.close();
+                                }
+                                new Handler(Looper.getMainLooper()).post(() -> result.success(null));
+                            } catch (Exception e) {
+                                new Handler(Looper.getMainLooper()).post(() -> result.success(null));
                             }
-                            result.success(null);
-                        } catch (Exception e) {
-                            result.success(null);
-                        }
+                        }).start();
                         break;
                     }
                     case "extractAudioSegment": {

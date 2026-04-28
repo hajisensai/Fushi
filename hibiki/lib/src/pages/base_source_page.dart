@@ -191,13 +191,18 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
   /// Try local audio DB → first online audio source → TTS fallback.
   Future<void> _autoReadWord(
       String expression, String reading, String word) async {
-    // 1. Local audio database
+    // 1. Local audio database (with 500ms timeout to avoid blocking)
     if (appModel.localAudioEnabled) {
-      final path =
-          await TtsChannel.instance.queryLocalAudio(expression, reading);
-      if (path != null && path.isNotEmpty) {
-        TtsChannel.instance.playFile(path);
-        return;
+      try {
+        final path = await TtsChannel.instance
+            .queryLocalAudio(expression, reading)
+            .timeout(const Duration(milliseconds: 500));
+        if (path != null && path.isNotEmpty) {
+          TtsChannel.instance.playFile(path);
+          return;
+        }
+      } on TimeoutException {
+        // Local DB too slow, fall through
       }
     }
 
