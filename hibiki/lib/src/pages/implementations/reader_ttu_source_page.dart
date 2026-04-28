@@ -517,7 +517,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       final Audiobook? ab = controller.audiobook;
       if (cue != null && ab != null) {
         try {
-          final audioFiles = _resolveAudioFiles(
+          final audioFiles = await _resolveAudioFiles(
             audioPaths: ab.audioPaths,
             audioRoot: ab.audioRoot,
           );
@@ -1012,7 +1012,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         );
       },
       onLoadStop: (controller, uri) async {
-        await controller.evaluateJavascript(source: '''
+        unawaited(controller.evaluateJavascript(source: '''
           if ('serviceWorker' in navigator) {
             navigator.serviceWorker.getRegistrations().then(function(regs) {
               for (var i = 0; i < regs.length; i++) { regs[i].unregister(); }
@@ -1023,14 +1023,14 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
               });
             });
           }
-        ''');
+        '''));
 
         if (mediaSource.adaptTtuTheme) {
           setDictionaryColors();
         }
 
         await controller.evaluateJavascript(source: javascriptToExecute);
-        Future.delayed(const Duration(seconds: 1), _focusNode.requestFocus);
+        Future.delayed(const Duration(milliseconds: 300), _focusNode.requestFocus);
 
         debugPrint(
           '[hibiki-audiobook] onLoadStop uri=$uri '
@@ -2106,7 +2106,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
 
     if (audiobook != null) {
       // ── 常规 EPUB 有声书路径 ─────────────────────────────────────────────
-      final List<File> audioFiles = _resolveAudioFiles(
+      final List<File> audioFiles = await _resolveAudioFiles(
         audioPaths: audiobook.audioPaths,
         audioRoot: audiobook.audioRoot,
       );
@@ -2120,15 +2120,23 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       }
 
       final AudiobookPlayerController controller = AudiobookPlayerController();
+      final prefs = await Future.wait([
+        repo.readFollowAudio(bookUid),
+        repo.readDelayMs(bookUid),
+        repo.readSpeed(bookUid),
+        repo.readPositionMs(bookUid),
+        repo.readImagePauseSec(bookUid),
+        repo.readTapSeek(bookUid),
+      ]);
       await controller.load(
         audiobook: audiobook,
         audioFiles: audioFiles,
-        initialFollowAudio: await repo.readFollowAudio(bookUid),
-        initialDelayMs: await repo.readDelayMs(bookUid),
-        initialSpeed: await repo.readSpeed(bookUid),
-        initialPositionMs: await repo.readPositionMs(bookUid),
-        initialImagePauseSec: await repo.readImagePauseSec(bookUid),
-        initialTapSeek: await repo.readTapSeek(bookUid),
+        initialFollowAudio: prefs[0] as bool,
+        initialDelayMs: prefs[1] as int,
+        initialSpeed: prefs[2] as double,
+        initialPositionMs: prefs[3] as int,
+        initialImagePauseSec: prefs[4] as int,
+        initialTapSeek: prefs[5] as bool,
       );
       controller.onPositionWrite = (String uid, int posMs) {
         repo.updatePositionMs(bookUid: uid, positionMs: posMs);
@@ -2165,14 +2173,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     }
 
     final SrtBookRepository srtRepo = SrtBookRepository(appModel.database);
-    final List<SrtBook> allBooks = await srtRepo.listAll();
-    SrtBook? srtBook;
-    for (final SrtBook b in allBooks) {
-      if (b.ttuBookId == ttuId) {
-        srtBook = b;
-        break;
-      }
-    }
+    final SrtBook? srtBook = await srtRepo.findByTtuBookId(ttuId);
     if (srtBook == null) {
       debugPrint('[hibiki-audiobook] srt init skip: no SrtBook for ttuId=$ttuId');
       return;
@@ -2181,7 +2182,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     final bool hasAudioConfig = (srtBook.audioPaths != null &&
             srtBook.audioPaths!.isNotEmpty) ||
         (srtBook.audioRoot != null && srtBook.audioRoot!.isNotEmpty);
-    final List<File> audioFiles = _audioFilesForSrtBook(srtBook);
+    final List<File> audioFiles = await _audioFilesForSrtBook(srtBook);
     if (audioFiles.isEmpty) {
       if (hasAudioConfig) {
         // 配置了音频但解析为空 — 文件丢失/路径失效，告知用户
@@ -2212,15 +2213,19 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     final AudiobookRepository abRepo = AudiobookRepository(appModel.database);
     final AudiobookPlayerController controller = AudiobookPlayerController();
     try {
+      final srtPrefs = await Future.wait([
+        abRepo.readDelayMs(srtBookUid),
+        abRepo.readSpeed(srtBookUid),
+        abRepo.readImagePauseSec(srtBookUid),
+        abRepo.readTapSeek(srtBookUid),
+      ]);
       await controller.load(
         audiobook: syntheticAudiobook,
         audioFiles: audioFiles,
-        // Follow audio 仍不落库（见下注释），但延迟/速度是纯 Hive KV，按
-        // srtBook.uid 做 key 不碰 Isar，SRT-book 路径安全使用。
-        initialDelayMs: await abRepo.readDelayMs(srtBookUid),
-        initialSpeed: await abRepo.readSpeed(srtBookUid),
-        initialImagePauseSec: await abRepo.readImagePauseSec(srtBookUid),
-        initialTapSeek: await abRepo.readTapSeek(srtBookUid),
+        initialDelayMs: srtPrefs[0] as int,
+        initialSpeed: srtPrefs[1] as double,
+        initialImagePauseSec: srtPrefs[2] as int,
+        initialTapSeek: srtPrefs[3] as bool,
       );
     } catch (e) {
       debugPrint('[hibiki-audiobook] srt init: controller.load failed: $e');
@@ -2274,28 +2279,26 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
   }
 
   /// 根据 [SrtBook] 的音频来源构建有序文件列表。
-  List<File> _audioFilesForSrtBook(SrtBook book) =>
+  Future<List<File>> _audioFilesForSrtBook(SrtBook book) =>
       _resolveAudioFiles(audioPaths: book.audioPaths, audioRoot: book.audioRoot);
 
-  /// 通用音频文件解析：files 模式优先于 folder 模式。
-  /// folder 模式下递归扫描音频扩展名并按路径排序。
-  List<File> _resolveAudioFiles({
+  Future<List<File>> _resolveAudioFiles({
     required List<String>? audioPaths,
     required String? audioRoot,
-  }) {
+  }) async {
     if (audioPaths != null && audioPaths.isNotEmpty) {
-      return audioPaths
-          .map((p) => File(p))
-          .where((f) => f.existsSync())
-          .toList();
+      final files = <File>[];
+      for (final p in audioPaths) {
+        final f = File(p);
+        if (await f.exists()) files.add(f);
+      }
+      return files;
     }
     if (audioRoot != null) {
       final Directory dir = Directory(audioRoot);
-      if (!dir.existsSync()) {
-        return [];
-      }
-      return dir
-          .listSync()
+      if (!await dir.exists()) return [];
+      final entries = await dir.list().toList();
+      final files = entries
           .whereType<File>()
           .where((f) {
             final String ext = f.path.toLowerCase();
@@ -2308,6 +2311,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           })
           .toList()
         ..sort((a, b) => a.path.compareTo(b.path));
+      return files;
     }
     return [];
   }
@@ -2550,7 +2554,12 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     InAppWebViewController controller,
   ) async {
     try {
-      final TtuApiProbe probe = await AudiobookBridge.probeTtuApi(controller);
+      final results = await Future.wait([
+        AudiobookBridge.probeTtuApi(controller),
+        AudiobookBridge.fetchToc(controller),
+      ]);
+      final TtuApiProbe probe = results[0] as TtuApiProbe;
+      final List<TtuTocEntry> toc = results[1] as List<TtuTocEntry>;
       if (!probe.hasCurrentSection || probe.currentSection == null) {
         return;
       }
@@ -2562,9 +2571,6 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           '$_currentTtuSection (prev=$prev) via ttu probe',
         );
       }
-      // 缓存 TOC labels 供 pill 显示章节名
-      final List<TtuTocEntry> toc =
-          await AudiobookBridge.fetchToc(controller);
       if (toc.isNotEmpty) {
         _tocLabels = {for (final e in toc) e.index: e.label};
       }
