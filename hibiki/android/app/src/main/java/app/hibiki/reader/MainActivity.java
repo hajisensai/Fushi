@@ -501,13 +501,16 @@ public class MainActivity extends AudioServiceActivity {
                                 if (dbFile.exists()) {
                                     localAudioDb = SQLiteDatabase.openDatabase(
                                         dbPath, null, SQLiteDatabase.OPEN_READWRITE | SQLiteDatabase.NO_LOCALIZED_COLLATORS);
-                                    try {
-                                        localAudioDb.execSQL(
-                                            "CREATE INDEX IF NOT EXISTS idx_entries_expr_read ON entries(expression, reading)");
-                                        localAudioDb.execSQL(
-                                            "CREATE INDEX IF NOT EXISTS idx_android_file_source ON android(file, source)");
-                                    } catch (Exception ignored) {}
                                     result.success(true);
+                                    final SQLiteDatabase db = localAudioDb;
+                                    new Thread(() -> {
+                                        try {
+                                            db.execSQL(
+                                                "CREATE INDEX IF NOT EXISTS idx_entries_expr_read ON entries(expression, reading)");
+                                            db.execSQL(
+                                                "CREATE INDEX IF NOT EXISTS idx_android_file_source ON android(file, source)");
+                                        } catch (Exception ignored) {}
+                                    }).start();
                                 } else {
                                     result.success(false);
                                 }
