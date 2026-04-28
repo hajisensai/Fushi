@@ -1768,6 +1768,9 @@ if (!window.__hibikiClickListenerRegistered) {
 
     // Tap → existing select-word behavior.
     if (!e.target.closest('.book-content')) return;
+    // Skip dictionary lookup for hyperlinks — let the browser navigate.
+    var _a = (e.target.nodeName === 'A') ? e.target : e.target.closest('a');
+    if (_a && _a.getAttribute('href')) return;
     __jidoLastTouchEnd = Date.now();
     tapToSelect({
       clientX: touch.clientX, clientY: touch.clientY,
@@ -1779,6 +1782,8 @@ if (!window.__hibikiClickListenerRegistered) {
   document.addEventListener('click', function(e) {
     if (Date.now() - __jidoLastTouchEnd < 600) return;
     if (!e.target.closest('.book-content')) return;
+    var _a2 = (e.target.nodeName === 'A') ? e.target : e.target.closest('a');
+    if (_a2 && _a2.getAttribute('href')) return;
     tapToSelect(e);
   }, true);
 }
