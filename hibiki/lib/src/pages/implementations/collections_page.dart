@@ -44,6 +44,8 @@ class CollectionsPage extends BasePage {
 class _CollectionsPageState extends BasePageState<CollectionsPage> {
   bool _loading = true;
   List<_CollectionItem> _items = [];
+  Map<int, String> _bookTitleMap = {};
+  Map<int, MediaItem> _mediaItemMap = {};
   final _dateFmt = DateFormat('MM/dd HH:mm');
 
   @override
@@ -68,6 +70,26 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     for (final b in srtBooks) {
       if (b.ttuBookId > 0) {
         bookTitleMap[b.ttuBookId] = b.title;
+      }
+    }
+
+    final mediaItemMap = <int, MediaItem>{};
+    final sourceId = ReaderTtuSource.instance.uniqueKey;
+    final rows = await db.getMediaItemsBySource(sourceId);
+    for (final row in rows) {
+      final uri = Uri.tryParse(row.mediaIdentifier);
+      final ttuId = int.tryParse(uri?.queryParameters['id'] ?? '');
+      if (ttuId != null && ttuId > 0) {
+        mediaItemMap.putIfAbsent(ttuId, () => MediaItem(
+          mediaIdentifier: row.mediaIdentifier,
+          title: row.title,
+          mediaTypeIdentifier: row.mediaTypeIdentifier,
+          mediaSourceIdentifier: row.mediaSourceIdentifier,
+          position: row.position,
+          duration: row.duration,
+          canDelete: row.canDelete,
+          canEdit: row.canEdit,
+        ));
       }
     }
 
@@ -103,6 +125,8 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     if (mounted) {
       setState(() {
         _items = items;
+        _bookTitleMap = bookTitleMap;
+        _mediaItemMap = mediaItemMap;
         _loading = false;
       });
     }
@@ -112,27 +136,34 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     final int? ttuId = item.ttuBookId;
     if (ttuId == null || ttuId <= 0) return;
 
-    final int port = ReaderTtuSource.instance
-        .getPortForLanguage(appModel.targetLanguage);
-    final String title = item.bookTitle ?? '';
-    final String url =
-        'http://localhost:$port/b.html?id=$ttuId&title=${Uri.encodeComponent(title)}';
+    final MediaItem? original = _mediaItemMap[ttuId];
+
+    final MediaItem mediaItem;
+    if (original != null) {
+      mediaItem = original;
+    } else {
+      final int port = ReaderTtuSource.instance
+          .getPortForLanguage(appModel.targetLanguage);
+      final String title = _bookTitleMap[ttuId] ?? item.bookTitle ?? '';
+      final String url =
+          'http://localhost:$port/b.html?id=$ttuId&title=${Uri.encodeComponent(title)}';
+      mediaItem = MediaItem(
+        mediaIdentifier: url,
+        title: title,
+        mediaTypeIdentifier: ReaderTtuSource.instance.mediaType.uniqueKey,
+        mediaSourceIdentifier: ReaderTtuSource.instance.uniqueKey,
+        position: 0,
+        duration: 1,
+        canDelete: false,
+        canEdit: true,
+      );
+    }
 
     Navigator.push(
       context,
       MaterialPageRoute<void>(
         builder: (_) => ReaderTtuSourcePage(
-          item: MediaItem(
-            mediaIdentifier: url,
-            title: title,
-            mediaTypeIdentifier:
-                ReaderTtuSource.instance.mediaType.uniqueKey,
-            mediaSourceIdentifier: ReaderTtuSource.instance.uniqueKey,
-            position: 0,
-            duration: 1,
-            canDelete: false,
-            canEdit: true,
-          ),
+          item: mediaItem,
           initialBookmarkJump: item.sectionIndex != null
               ? Bookmark(
                   sectionIndex: item.sectionIndex!,
