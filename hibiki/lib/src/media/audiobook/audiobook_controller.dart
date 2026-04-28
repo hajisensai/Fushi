@@ -379,9 +379,15 @@ class AudiobookPlayerController extends ChangeNotifier {
   }
 
   /// 跳转到全局毫秒位置。
+  ///
+  /// 如果音频 duration 尚未就绪（null / 0）或目标超出范围，直接忽略，
+  /// 避免 just_audio 将位置重置到 0。
   Future<void> seekMs(int positionMs) async {
     await _loadReady.future;
-    await _player.seek(Duration(milliseconds: positionMs));
+    final Duration? dur = _player.duration;
+    if (dur == null || dur.inMilliseconds <= 0) return;
+    final int clampedMs = positionMs.clamp(0, dur.inMilliseconds);
+    await _player.seek(Duration(milliseconds: clampedMs));
     notifyListeners();
   }
 
@@ -403,7 +409,9 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// cue 已变化就不再 notify，天然幂等。
   Future<void> skipToCue(AudioCue cue) async {
     await _loadReady.future;
-    final int globalMs = _toGlobalMs(cue);
+    final Duration? dur = _player.duration;
+    if (dur == null || dur.inMilliseconds <= 0) return;
+    final int globalMs = _toGlobalMs(cue).clamp(0, dur.inMilliseconds);
     await _player.seek(Duration(milliseconds: globalMs));
     _chapterTransition = false;
     final int idx = _chapterCues.indexOf(cue);
