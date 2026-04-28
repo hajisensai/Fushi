@@ -49,15 +49,19 @@ class LocalAudioEnhancement extends AudioEnhancement {
 
   Future<File?> _generateAudio(
       AppModel appModel, String term, String reading) async {
-    // 1. Local audio database
+    // 1. Local audio database: query metadata, then extract blob
     if (appModel.localAudioEnabled) {
       try {
-        final path = await TtsChannel.instance
+        final info = await TtsChannel.instance
             .queryLocalAudio(term, reading)
-            .timeout(const Duration(milliseconds: 1000));
-        if (path != null && path.isNotEmpty) {
-          final file = File(path);
-          if (file.existsSync()) return file;
+            .timeout(const Duration(milliseconds: 500));
+        if (info != null) {
+          final path = await TtsChannel.instance
+              .extractLocalAudio(info['file']!, info['source']!);
+          if (path != null && path.isNotEmpty) {
+            final file = File(path);
+            if (file.existsSync()) return file;
+          }
         }
       } on TimeoutException {
         // Fall through

@@ -527,7 +527,6 @@ public class MainActivity extends AudioServiceActivity {
                             return;
                         }
                         final SQLiteDatabase db = localAudioDb;
-                        final File cacheDir = getCacheDir();
                         new Thread(() -> {
                             try {
                                 Cursor entryCursor = db.rawQuery(
@@ -543,27 +542,48 @@ public class MainActivity extends AudioServiceActivity {
                                     String file = entryCursor.getString(0);
                                     String source = entryCursor.getString(1);
                                     entryCursor.close();
-
-                                    Cursor audioCursor = db.rawQuery(
-                                        "SELECT data FROM android WHERE file = ? AND source = ? LIMIT 1",
-                                        new String[]{file, source});
-                                    if (audioCursor != null && audioCursor.moveToFirst()) {
-                                        byte[] audioData = audioCursor.getBlob(0);
-                                        audioCursor.close();
-                                        String ext = file.endsWith(".opus") ? ".opus" : ".mp3";
-                                        File tempFile = new File(cacheDir, "local_audio" + ext);
-                                        FileOutputStream fos = new FileOutputStream(tempFile);
-                                        fos.write(audioData);
-                                        fos.close();
-                                        new Handler(Looper.getMainLooper()).post(() ->
-                                            result.success(tempFile.getAbsolutePath()));
-                                        return;
-                                    }
-                                    if (audioCursor != null) audioCursor.close();
+                                    Map<String, String> info = new HashMap<>();
+                                    info.put("file", file);
+                                    info.put("source", source);
+                                    new Handler(Looper.getMainLooper()).post(() -> result.success(info));
                                 } else {
                                     if (entryCursor != null) entryCursor.close();
+                                    new Handler(Looper.getMainLooper()).post(() -> result.success(null));
                                 }
+                            } catch (Exception e) {
                                 new Handler(Looper.getMainLooper()).post(() -> result.success(null));
+                            }
+                        }).start();
+                        break;
+                    }
+                    case "extractLocalAudio": {
+                        String fileArg = call.argument("file");
+                        String sourceArg = call.argument("source");
+                        if (localAudioDb == null || fileArg == null || sourceArg == null) {
+                            result.success(null);
+                            return;
+                        }
+                        final SQLiteDatabase db = localAudioDb;
+                        final File cacheDir = getCacheDir();
+                        new Thread(() -> {
+                            try {
+                                Cursor audioCursor = db.rawQuery(
+                                    "SELECT data FROM android WHERE file = ? AND source = ? LIMIT 1",
+                                    new String[]{fileArg, sourceArg});
+                                if (audioCursor != null && audioCursor.moveToFirst()) {
+                                    byte[] audioData = audioCursor.getBlob(0);
+                                    audioCursor.close();
+                                    String ext = fileArg.endsWith(".opus") ? ".opus" : ".mp3";
+                                    File tempFile = new File(cacheDir, "local_audio" + ext);
+                                    FileOutputStream fos = new FileOutputStream(tempFile);
+                                    fos.write(audioData);
+                                    fos.close();
+                                    new Handler(Looper.getMainLooper()).post(() ->
+                                        result.success(tempFile.getAbsolutePath()));
+                                } else {
+                                    if (audioCursor != null) audioCursor.close();
+                                    new Handler(Looper.getMainLooper()).post(() -> result.success(null));
+                                }
                             } catch (Exception e) {
                                 new Handler(Looper.getMainLooper()).post(() -> result.success(null));
                             }

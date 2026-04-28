@@ -158,7 +158,10 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView> 
             if (expression.isEmpty) return null;
             final appModel = ref.read(appProvider);
             if (!appModel.localAudioEnabled) return null;
-            final path = await TtsChannel.instance.queryLocalAudio(expression, reading);
+            final info = await TtsChannel.instance.queryLocalAudio(expression, reading);
+            if (info == null) return null;
+            final path = await TtsChannel.instance
+                .extractLocalAudio(info['file']!, info['source']!);
             return path;
           },
         );

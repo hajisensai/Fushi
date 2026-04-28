@@ -42,12 +42,27 @@ class TtsChannel {
   }
 
   /// Query the local audio database for a word's pronunciation.
-  /// Returns the path to a temp audio file, or null if not found.
-  Future<String?> queryLocalAudio(String expression, String reading) async {
+  /// Returns {file, source} metadata if found, or null.
+  Future<Map<String, String>?> queryLocalAudio(String expression, String reading) async {
     try {
       final result = await _channel.invokeMethod('queryLocalAudio', {
         'expression': expression,
         'reading': reading,
+      });
+      if (result == null) return null;
+      return Map<String, String>.from(result as Map);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Extract audio blob from local DB and write to temp file.
+  /// Returns the temp file path, or null on failure.
+  Future<String?> extractLocalAudio(String file, String source) async {
+    try {
+      final result = await _channel.invokeMethod('extractLocalAudio', {
+        'file': file,
+        'source': source,
       });
       return result as String?;
     } catch (_) {
