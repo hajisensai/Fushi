@@ -702,5 +702,9 @@
   "favorite_added": "Sentence saved to favorites",
   "favorites": "Favorites ($n)",
   "no_favorites": "No saved sentences",
-  "favorites_title": "Favorite Sentences"
+  "favorites_title": "Favorite Sentences",
+  "collections": "Collections",
+  "no_collections": "No bookmarks or saved sentences",
+  "collection_bookmark": "Bookmark",
+  "collection_sentence": "Sentence"
 }

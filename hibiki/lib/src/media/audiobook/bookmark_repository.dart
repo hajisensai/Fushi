@@ -8,18 +8,24 @@ class Bookmark {
     required this.normCharOffset,
     required this.label,
     required this.createdAt,
+    this.ttuBookId,
+    this.bookTitle,
   });
 
   final int sectionIndex;
   final int normCharOffset;
   final String label;
   final DateTime createdAt;
+  final int? ttuBookId;
+  final String? bookTitle;
 
   Map<String, dynamic> toJson() => {
         'sectionIndex': sectionIndex,
         'normCharOffset': normCharOffset,
         'label': label,
         'createdAt': createdAt.toIso8601String(),
+        if (ttuBookId != null) 'ttuBookId': ttuBookId,
+        if (bookTitle != null) 'bookTitle': bookTitle,
       };
 
   factory Bookmark.fromJson(Map<String, dynamic> json) => Bookmark(
@@ -27,6 +33,8 @@ class Bookmark {
         normCharOffset: json['normCharOffset'] as int,
         label: json['label'] as String,
         createdAt: DateTime.parse(json['createdAt'] as String),
+        ttuBookId: json['ttuBookId'] as int?,
+        bookTitle: json['bookTitle'] as String?,
       );
 }
 
@@ -64,5 +72,29 @@ class BookmarkRepository {
       _key(ttuBookId),
       jsonEncode(bookmarks.map((b) => b.toJson()).toList()),
     );
+  }
+
+  Future<List<Bookmark>> getAllBookmarks() async {
+    final allPrefs = await _db.getAllPrefs();
+    final List<Bookmark> result = [];
+    for (final entry in allPrefs.entries) {
+      if (!entry.key.startsWith('bookmarks_')) continue;
+      final ttuId = int.tryParse(entry.key.substring('bookmarks_'.length));
+      if (ttuId == null) continue;
+      final List<dynamic> list = jsonDecode(entry.value) as List<dynamic>;
+      for (final e in list) {
+        final bm = Bookmark.fromJson(e as Map<String, dynamic>);
+        result.add(Bookmark(
+          sectionIndex: bm.sectionIndex,
+          normCharOffset: bm.normCharOffset,
+          label: bm.label,
+          createdAt: bm.createdAt,
+          ttuBookId: bm.ttuBookId ?? ttuId,
+          bookTitle: bm.bookTitle,
+        ));
+      }
+    }
+    result.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return result;
   }
 }

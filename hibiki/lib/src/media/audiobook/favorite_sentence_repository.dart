@@ -8,18 +8,27 @@ class FavoriteSentence {
     required this.bookTitle,
     this.chapterLabel,
     required this.createdAt,
+    this.ttuBookId,
+    this.sectionIndex,
+    this.normCharOffset,
   });
 
   final String text;
   final String bookTitle;
   final String? chapterLabel;
   final DateTime createdAt;
+  final int? ttuBookId;
+  final int? sectionIndex;
+  final int? normCharOffset;
 
   Map<String, dynamic> toJson() => {
         'text': text,
         'bookTitle': bookTitle,
         if (chapterLabel != null) 'chapterLabel': chapterLabel,
         'createdAt': createdAt.toIso8601String(),
+        if (ttuBookId != null) 'ttuBookId': ttuBookId,
+        if (sectionIndex != null) 'sectionIndex': sectionIndex,
+        if (normCharOffset != null) 'normCharOffset': normCharOffset,
       };
 
   factory FavoriteSentence.fromJson(Map<String, dynamic> json) =>
@@ -28,6 +37,9 @@ class FavoriteSentence {
         bookTitle: json['bookTitle'] as String,
         chapterLabel: json['chapterLabel'] as String?,
         createdAt: DateTime.parse(json['createdAt'] as String),
+        ttuBookId: json['ttuBookId'] as int?,
+        sectionIndex: json['sectionIndex'] as int?,
+        normCharOffset: json['normCharOffset'] as int?,
       );
 }
 

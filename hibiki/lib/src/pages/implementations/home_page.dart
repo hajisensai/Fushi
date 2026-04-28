@@ -158,6 +158,7 @@ class _HomePageState extends BasePageState<HomePage>
   List<Widget> buildActions() {
     return [
       buildImportButton(),
+      buildCollectionsButton(),
       buildStatisticsButton(),
     ];
   }
@@ -202,6 +203,19 @@ class _HomePageState extends BasePageState<HomePage>
           ),
         );
         ref.invalidate(ttuBooksProvider(appModel.targetLanguage));
+      },
+    );
+  }
+
+  Widget buildCollectionsButton() {
+    return JidoujishoIconButton(
+      tooltip: t.collections,
+      icon: Icons.collections_bookmark,
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const CollectionsPage()),
+        );
       },
     );
   }

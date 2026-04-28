@@ -679,5 +679,9 @@
   "favorite_added": "お気に入りに追加しました",
   "favorites": "お気に入り ($n)",
   "no_favorites": "お気に入りはありません",
-  "favorites_title": "お気に入りの文"
+  "favorites_title": "お気に入りの文",
+  "collections": "コレクション",
+  "no_collections": "ブックマークやお気に入りはありません",
+  "collection_bookmark": "ブックマーク",
+  "collection_sentence": "文"
 }

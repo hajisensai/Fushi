@@ -41,8 +41,11 @@ class ReaderTtuSourcePage extends BaseSourcePage {
   /// Create an instance of this page.
   const ReaderTtuSourcePage({
     super.item,
+    this.initialBookmarkJump,
     super.key,
   });
+
+  final Bookmark? initialBookmarkJump;
 
   @override
   BaseSourcePageState createState() => _ReaderTtuSourcePageState();
@@ -164,9 +167,12 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   StreamSubscription<void>? _notifSkipNextSub;
   StreamSubscription<void>? _notifSkipPrevSub;
 
+  late final AppModel _cachedAppModel;
+
   @override
   void initState() {
     super.initState();
+    _cachedAppModel = ref.read(appProvider);
     debugPrint('[hibiki-reader-lifecycle] initState ${identityHashCode(this)}');
     WidgetsBinding.instance.addObserver(this);
     _applyVolumeKeyIntercept();
@@ -228,7 +234,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     _notifPlaySub?.cancel();
     _notifSkipNextSub?.cancel();
     _notifSkipPrevSub?.cancel();
-    appModelNoUpdate.audioHandler?.clearNotification();
+    _cachedAppModel.audioHandler?.clearNotification();
     _audiobookController?.removeListener(_onCueChanged);
     _audiobookController?.dispose();
     _barThemeNotifier.dispose();
@@ -1421,11 +1427,16 @@ if (!window.getSelection().isCollapsed) {
     await unselectWebViewTextSelection(_controller);
     final String bookTitle = widget.item?.title ?? '';
     final String? chapterLabel = _tocLabels[_currentTtuSection];
+    final int? ttuId = _extractTtuBookId();
+    final vp = await AudiobookBridge.getViewportNormOffset(_controller);
     final sentence = FavoriteSentence(
       text: text,
       bookTitle: bookTitle,
       chapterLabel: chapterLabel,
       createdAt: DateTime.now(),
+      ttuBookId: ttuId,
+      sectionIndex: vp?.section,
+      normCharOffset: vp?.offset,
     );
     await FavoriteSentenceRepository(appModel.database).add(sentence);
     if (mounted) {
@@ -2442,6 +2453,8 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
                 normCharOffset: vp.offset,
                 label: chapterLabel,
                 createdAt: DateTime.now(),
+                ttuBookId: ttuId,
+                bookTitle: widget.item?.title,
               );
               await BookmarkRepository(appModel.database)
                   .addBookmark(ttuId, bookmark);
@@ -3029,19 +3042,38 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       debugPrint('[hibiki-reader-pos] restore query err: $e');
       return;
     }
-    if (saved == null) {
+    final Bookmark? jumpBm = widget.initialBookmarkJump;
+    if (jumpBm != null) {
+      debugPrint(
+        '[hibiki-reader-pos] bookmark jump override: '
+        's${jumpBm.sectionIndex}/o${jumpBm.normCharOffset}',
+      );
+      _pendingRestorePos = ReaderViewportPos(
+        section: jumpBm.sectionIndex,
+        offset: jumpBm.normCharOffset,
+      );
+    } else if (saved == null) {
       debugPrint('[hibiki-reader-pos] no saved pos for ttuId=$ttuId');
       return;
+    } else {
+      debugPrint(
+        '[hibiki-reader-pos] bootstrap restore ttuId=$ttuId '
+        'saved=s${saved.sectionIndex}/o${saved.normCharOffset} '
+        'currentTtuSection=$_currentTtuSection',
+      );
+      _pendingRestorePos = ReaderViewportPos(
+        section: saved.sectionIndex,
+        offset: saved.normCharOffset,
+      );
     }
-    debugPrint(
-      '[hibiki-reader-pos] bootstrap restore ttuId=$ttuId '
-      'saved=s${saved.sectionIndex}/o${saved.normCharOffset} '
-      'currentTtuSection=$_currentTtuSection',
-    );
-    _pendingRestorePos = ReaderViewportPos(
-      section: saved.sectionIndex,
-      offset: saved.normCharOffset,
-    );
+    if (_pendingRestorePos == null) return;
+    if (saved == null) {
+      saved = ReaderPosition()
+        ..ttuBookId = ttuId
+        ..sectionIndex = _pendingRestorePos!.section
+        ..normCharOffset = _pendingRestorePos!.offset
+        ..updatedAt = DateTime.now().millisecondsSinceEpoch;
+    }
     _restoreInFlight = true;
     if (_currentTtuSection == saved.sectionIndex) {
       // 已在目标段：ttu fork 的 scrollToBookmark 已被

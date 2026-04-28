@@ -676,5 +676,9 @@
   "favorite_added": "句子已收藏",
   "favorites": "收藏 ($n)",
   "no_favorites": "暂无收藏句子",
-  "favorites_title": "收藏的句子"
+  "favorites_title": "收藏的句子",
+  "collections": "收藏夹",
+  "no_collections": "暂无书签或收藏句子",
+  "collection_bookmark": "书签",
+  "collection_sentence": "句子"
 }
