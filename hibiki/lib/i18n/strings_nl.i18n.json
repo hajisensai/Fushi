@@ -1,4 +1,4 @@
-{
+﻿{
     "dictionary_media_type": "Woordenboek",
     "dialog_importing": "IMPORTING…",
     "player_media_type": "Speler",
@@ -486,8 +486,7 @@
     "image_pause_off": "Uit",
     "tap_seek": "Tap to Seek",
     "tap_seek_hint": "Tap a sentence to jump audio to that position.",
-    "ttu_hide_furigana_hint": "Hide ruby annotations (furigana) above kanji.",
-    "ttu_furigana_style_hint": "Partial: publisher's defaults; Full: add to all kanji; Toggle: tap to show/hide.",
+    "ttu_furigana_mode_hint": "Show: normal; Hide: remove; Partial: color hint; Toggle: tap to show/hide.",
     "ttu_text_justify_hint": "Stretch lines to fill the full width of the column.",
     "ttu_vert_kerning_hint": "Adjust spacing between CJK characters for vertical text.",
     "ttu_font_vpal_hint": "Use proportional alternates for punctuation in vertical layout.",
@@ -520,11 +519,11 @@
     "ttu_view_mode_label": "Weergavemodus",
     "ttu_paginated": "Gepagineerd",
     "ttu_scroll": "Scrollen",
-    "ttu_hide_furigana": "Furigana verbergen",
-    "ttu_furigana_style": "Furiganastijl",
-    "ttu_furigana_partial": "Gedeeltelijk",
-    "ttu_furigana_full": "Volledig",
-    "ttu_furigana_toggle": "Wisselen",
+    "ttu_furigana_mode": "Furigana",
+    "ttu_furigana_show": "Show",
+    "ttu_furigana_hide": "Hide",
+    "ttu_furigana_partial": "Partial",
+    "ttu_furigana_toggle": "Toggle",
     "ttu_text_indentation": "Alinea-inspringing",
     "ttu_first_dimension_margin": "Marge",
     "ttu_second_dimension_max": "Max breedte/hoogte",
@@ -644,6 +643,7 @@
     "update_never_remind": "Niet meer herinneren",
     "update_auto_install": "Updates automatisch installeren",
     "disable_dialog_scrim": "Disable popup overlay (e-ink)",
+    "native_dictionary_popup": "Native dictionary popup (e-ink)",
     "update_settings": "Update-instellingen",
     "anki_settings_label": "Anki-instellingen",
     "anki_default_deck": "Standaardstapel",
@@ -669,5 +669,9 @@
     "favorite_added": "Sentence saved to favorites",
     "favorites": "Favorites ($n)",
     "no_favorites": "No saved sentences",
-    "favorites_title": "Favorite Sentences"
+    "favorites_title": "Favorite Sentences",
+    "collections": "Collections",
+    "no_collections": "No bookmarks or saved sentences",
+    "collection_bookmark": "Bookmark",
+    "collection_sentence": "Sentence"
 }

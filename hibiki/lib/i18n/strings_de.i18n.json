@@ -1,4 +1,4 @@
-{
+﻿{
     "dictionary_media_type": "Wörterbuch",
     "dialog_importing": "IMPORTING…",
     "player_media_type": "Player",
@@ -494,11 +494,11 @@
     "ttu_view_mode_label": "Ansichtsmodus",
     "ttu_paginated": "Seitenweise",
     "ttu_scroll": "Scrollen",
-    "ttu_hide_furigana": "Furigana ausblenden",
-    "ttu_furigana_style": "Furigana-Stil",
-    "ttu_furigana_partial": "Teilweise",
-    "ttu_furigana_full": "Vollständig",
-    "ttu_furigana_toggle": "Umschalten",
+    "ttu_furigana_mode": "Furigana",
+    "ttu_furigana_show": "Show",
+    "ttu_furigana_hide": "Hide",
+    "ttu_furigana_partial": "Partial",
+    "ttu_furigana_toggle": "Toggle",
     "ttu_text_indentation": "Absatzeinzug",
     "ttu_first_dimension_margin": "Rand",
     "ttu_second_dimension_max": "Max. Breite/Höhe",
@@ -546,8 +546,7 @@
     "image_pause_off": "Aus",
     "tap_seek": "Tap to Seek",
     "tap_seek_hint": "Tap a sentence to jump audio to that position.",
-    "ttu_hide_furigana_hint": "Hide ruby annotations (furigana) above kanji.",
-    "ttu_furigana_style_hint": "Partial: publisher's defaults; Full: add to all kanji; Toggle: tap to show/hide.",
+    "ttu_furigana_mode_hint": "Show: normal; Hide: remove; Partial: color hint; Toggle: tap to show/hide.",
     "ttu_text_justify_hint": "Stretch lines to fill the full width of the column.",
     "ttu_vert_kerning_hint": "Adjust spacing between CJK characters for vertical text.",
     "ttu_font_vpal_hint": "Use proportional alternates for punctuation in vertical layout.",
@@ -631,6 +630,7 @@
     "update_never_remind": "Nicht mehr erinnern",
     "update_auto_install": "Updates automatisch installieren",
     "disable_dialog_scrim": "Disable popup overlay (e-ink)",
+    "native_dictionary_popup": "Native dictionary popup (e-ink)",
     "update_settings": "Update-Einstellungen",
     "anki_settings_label": "Anki-Einstellungen",
     "anki_default_deck": "Standard-Stapel",
@@ -683,5 +683,9 @@
 ,
   "no_favorites": "No saved sentences"
 ,
-  "favorites_title": "Favorite Sentences"
+  "favorites_title": "Favorite Sentences",
+  "collections": "Collections",
+  "no_collections": "No bookmarks or saved sentences",
+  "collection_bookmark": "Bookmark",
+  "collection_sentence": "Sentence"
 }

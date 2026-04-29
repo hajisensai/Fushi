@@ -1,4 +1,4 @@
-{
+﻿{
     "dictionary_media_type": "Kamus",
     "dialog_importing": "IMPORTING…",
     "player_media_type": "Pemutar",
@@ -494,11 +494,11 @@
     "ttu_view_mode_label": "Mode Tampilan",
     "ttu_paginated": "Paginasi",
     "ttu_scroll": "Gulir",
-    "ttu_hide_furigana": "Sembunyikan Furigana",
-    "ttu_furigana_style": "Gaya Furigana",
-    "ttu_furigana_partial": "Sebagian",
-    "ttu_furigana_full": "Penuh",
-    "ttu_furigana_toggle": "Alih",
+    "ttu_furigana_mode": "Furigana",
+    "ttu_furigana_show": "Show",
+    "ttu_furigana_hide": "Hide",
+    "ttu_furigana_partial": "Partial",
+    "ttu_furigana_toggle": "Toggle",
     "ttu_text_indentation": "Indentasi Paragraf",
     "ttu_first_dimension_margin": "Margin",
     "ttu_second_dimension_max": "Lebar/Tinggi Maks",
@@ -546,8 +546,7 @@
     "image_pause_off": "Mati",
     "tap_seek": "Tap to Seek",
     "tap_seek_hint": "Tap a sentence to jump audio to that position.",
-    "ttu_hide_furigana_hint": "Hide ruby annotations (furigana) above kanji.",
-    "ttu_furigana_style_hint": "Partial: publisher's defaults; Full: add to all kanji; Toggle: tap to show/hide.",
+    "ttu_furigana_mode_hint": "Show: normal; Hide: remove; Partial: color hint; Toggle: tap to show/hide.",
     "ttu_text_justify_hint": "Stretch lines to fill the full width of the column.",
     "ttu_vert_kerning_hint": "Adjust spacing between CJK characters for vertical text.",
     "ttu_font_vpal_hint": "Use proportional alternates for punctuation in vertical layout.",
@@ -631,6 +630,7 @@
     "update_never_remind": "Jangan ingatkan lagi",
     "update_auto_install": "Pasang pembaruan otomatis",
     "disable_dialog_scrim": "Disable popup overlay (e-ink)",
+    "native_dictionary_popup": "Native dictionary popup (e-ink)",
     "update_settings": "Pengaturan Pembaruan",
     "anki_settings_label": "Pengaturan Anki",
     "anki_default_deck": "Dek Default",
@@ -683,5 +683,9 @@
 ,
   "no_favorites": "No saved sentences"
 ,
-  "favorites_title": "Favorite Sentences"
+  "favorites_title": "Favorite Sentences",
+  "collections": "Collections",
+  "no_collections": "No bookmarks or saved sentences",
+  "collection_bookmark": "Bookmark",
+  "collection_sentence": "Sentence"
 }

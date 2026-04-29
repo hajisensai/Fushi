@@ -1,4 +1,4 @@
-{
+﻿{
     "dictionary_media_type": "辭典",
     "dialog_importing": "IMPORTING…",
     "player_media_type": "播放器",
@@ -494,11 +494,11 @@
     "ttu_view_mode_label": "檢視模式",
     "ttu_paginated": "翻頁",
     "ttu_scroll": "捲動",
-    "ttu_hide_furigana": "隱藏振假名",
-    "ttu_furigana_style": "振假名樣式",
-    "ttu_furigana_partial": "部分",
-    "ttu_furigana_full": "全部",
-    "ttu_furigana_toggle": "切換",
+    "ttu_furigana_mode": "Furigana",
+    "ttu_furigana_show": "Show",
+    "ttu_furigana_hide": "Hide",
+    "ttu_furigana_partial": "Partial",
+    "ttu_furigana_toggle": "Toggle",
     "ttu_text_indentation": "段落縮排",
     "ttu_first_dimension_margin": "邊距",
     "ttu_second_dimension_max": "最大寬/高",
@@ -546,8 +546,7 @@
     "image_pause_off": "關閉",
     "tap_seek": "Tap to Seek",
     "tap_seek_hint": "Tap a sentence to jump audio to that position.",
-    "ttu_hide_furigana_hint": "Hide ruby annotations (furigana) above kanji.",
-    "ttu_furigana_style_hint": "Partial: publisher's defaults; Full: add to all kanji; Toggle: tap to show/hide.",
+    "ttu_furigana_mode_hint": "Show: normal; Hide: remove; Partial: color hint; Toggle: tap to show/hide.",
     "ttu_text_justify_hint": "Stretch lines to fill the full width of the column.",
     "ttu_vert_kerning_hint": "Adjust spacing between CJK characters for vertical text.",
     "ttu_font_vpal_hint": "Use proportional alternates for punctuation in vertical layout.",
@@ -631,6 +630,7 @@
     "update_never_remind": "不再提醒",
     "update_auto_install": "自動安裝更新",
     "disable_dialog_scrim": "Disable popup overlay (e-ink)",
+    "native_dictionary_popup": "Native dictionary popup (e-ink)",
     "update_settings": "更新設定",
     "anki_settings_label": "Anki 設定",
     "anki_default_deck": "預設牌組",
@@ -678,5 +678,9 @@
   "favorite_added": "句子已收藏",
   "favorites": "收藏 ($n)",
   "no_favorites": "暫無收藏句子",
-  "favorites_title": "收藏的句子"
+  "favorites_title": "收藏的句子",
+  "collections": "收藏",
+  "no_collections": "沒有書籤或保存的句子",
+  "collection_bookmark": "書籤",
+  "collection_sentence": "句子"
 }

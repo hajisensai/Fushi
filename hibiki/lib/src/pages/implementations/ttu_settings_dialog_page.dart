@@ -263,23 +263,19 @@ Widget _buildDisplaySettings(VoidCallback rebuild) {
             ],
           ),
           const SizedBox(height: 4),
-          _buildSwitch(
-            label: t.ttu_hide_furigana,
-            value: _source.ttuHideFurigana,
-            onChanged: (v) => update(() => _source.setTtuHideFurigana(v)),
-          ),
           Row(
             children: [
-              Expanded(child: Text(t.ttu_furigana_style)),
+              Expanded(child: Text(t.ttu_furigana_mode)),
               SegmentedButton<String>(
                 segments: [
-                  ButtonSegment(value: 'Partial', label: Text(t.ttu_furigana_partial)),
-                  ButtonSegment(value: 'Full', label: Text(t.ttu_furigana_full)),
-                  ButtonSegment(value: 'Toggle', label: Text(t.ttu_furigana_toggle)),
+                  ButtonSegment(value: 'show', label: Text(t.ttu_furigana_show)),
+                  ButtonSegment(value: 'hide', label: Text(t.ttu_furigana_hide)),
+                  ButtonSegment(value: 'partial', label: Text(t.ttu_furigana_partial)),
+                  ButtonSegment(value: 'toggle', label: Text(t.ttu_furigana_toggle)),
                 ],
-                selected: {_source.ttuFuriganaStyle},
+                selected: {_source.ttuFuriganaMode},
                 onSelectionChanged: (sel) =>
-                    update(() => _source.setTtuFuriganaStyle(sel.first)),
+                    update(() => _source.setTtuFuriganaMode(sel.first)),
                 style: const ButtonStyle(
                   visualDensity: VisualDensity.compact,
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -662,6 +658,14 @@ class _TtuSettingsDialogContentState extends BasePageState {
           value: appModel.disableDialogScrim,
           onChanged: (v) {
             appModel.setDisableDialogScrim(v);
+            setState(() {});
+          },
+        ),
+        _buildSwitch(
+          label: t.native_dictionary_popup,
+          value: appModel.nativeDictionaryPopup,
+          onChanged: (v) {
+            appModel.setNativeDictionaryPopup(v);
             setState(() {});
           },
         ),

@@ -1,4 +1,4 @@
-{
+﻿{
     "dictionary_media_type": "พจนานุกรม",
     "dialog_importing": "IMPORTING…",
     "player_media_type": "เครื่องเล่น",
@@ -494,11 +494,11 @@
     "ttu_view_mode_label": "โหมดดู",
     "ttu_paginated": "แบ่งหน้า",
     "ttu_scroll": "เลื่อน",
-    "ttu_hide_furigana": "ซ่อนฟุริงานะ",
-    "ttu_furigana_style": "รูปแบบฟุริงานะ",
-    "ttu_furigana_partial": "บางส่วน",
-    "ttu_furigana_full": "ทั้งหมด",
-    "ttu_furigana_toggle": "สลับ",
+    "ttu_furigana_mode": "Furigana",
+    "ttu_furigana_show": "Show",
+    "ttu_furigana_hide": "Hide",
+    "ttu_furigana_partial": "Partial",
+    "ttu_furigana_toggle": "Toggle",
     "ttu_text_indentation": "ย่อหน้า",
     "ttu_first_dimension_margin": "ระยะขอบ",
     "ttu_second_dimension_max": "ความกว้าง/สูงสูงสุด",
@@ -546,8 +546,7 @@
     "image_pause_off": "ปิด",
     "tap_seek": "Tap to Seek",
     "tap_seek_hint": "Tap a sentence to jump audio to that position.",
-    "ttu_hide_furigana_hint": "Hide ruby annotations (furigana) above kanji.",
-    "ttu_furigana_style_hint": "Partial: publisher's defaults; Full: add to all kanji; Toggle: tap to show/hide.",
+    "ttu_furigana_mode_hint": "Show: normal; Hide: remove; Partial: color hint; Toggle: tap to show/hide.",
     "ttu_text_justify_hint": "Stretch lines to fill the full width of the column.",
     "ttu_vert_kerning_hint": "Adjust spacing between CJK characters for vertical text.",
     "ttu_font_vpal_hint": "Use proportional alternates for punctuation in vertical layout.",
@@ -631,6 +630,7 @@
     "update_never_remind": "ไม่ต้องเตือนอีก",
     "update_auto_install": "ติดตั้งอัปเดตอัตโนมัติ",
     "disable_dialog_scrim": "Disable popup overlay (e-ink)",
+    "native_dictionary_popup": "Native dictionary popup (e-ink)",
     "update_settings": "ตั้งค่าอัปเดต",
     "anki_settings_label": "ตั้งค่า Anki",
     "anki_default_deck": "สำรับเริ่มต้น",
@@ -683,5 +683,9 @@
 ,
   "no_favorites": "No saved sentences"
 ,
-  "favorites_title": "Favorite Sentences"
+  "favorites_title": "Favorite Sentences",
+  "collections": "Collections",
+  "no_collections": "No bookmarks or saved sentences",
+  "collection_bookmark": "Bookmark",
+  "collection_sentence": "Sentence"
 }

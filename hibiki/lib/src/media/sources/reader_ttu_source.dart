@@ -704,10 +704,25 @@ new Promise(function(resolve) {
   Future<void> setTtuTheme(String v) =>
       setPreference<String>(key: 'ttu_theme', value: v);
 
-  bool get ttuHideFurigana =>
-      getPreference<bool>(key: 'ttu_hide_furigana', defaultValue: false);
-  Future<void> setTtuHideFurigana(bool v) =>
-      setPreference<bool>(key: 'ttu_hide_furigana', value: v);
+  /// Unified furigana mode: 'show' | 'hide' | 'partial' | 'toggle'.
+  /// Migrates legacy ttu_hide_furigana + ttu_furigana_style on first read.
+  String get ttuFuriganaMode {
+    final legacy = getPreference<bool?>(key: 'ttu_hide_furigana', defaultValue: null);
+    if (legacy != null) {
+      final oldStyle = _legacyFuriganaStyle;
+      final mode = legacy ? 'hide' : 'show';
+      final merged = (legacy && (oldStyle == 'partial' || oldStyle == 'toggle'))
+          ? oldStyle
+          : mode;
+      setPreference<String>(key: 'ttu_furigana_mode', value: merged);
+      setPreference<bool?>(key: 'ttu_hide_furigana', value: null);
+      return merged;
+    }
+    return getPreference<String>(key: 'ttu_furigana_mode', defaultValue: 'show');
+  }
+
+  Future<void> setTtuFuriganaMode(String v) =>
+      setPreference<String>(key: 'ttu_furigana_mode', value: v);
 
   double get ttuTextIndentation =>
       getPreference<double>(key: 'ttu_text_indentation', defaultValue: 0);
@@ -754,10 +769,8 @@ new Promise(function(resolve) {
   Future<void> setTtuPrioritizeReaderStyles(bool v) =>
       setPreference<bool>(key: 'ttu_reader_styles', value: v);
 
-  String get ttuFuriganaStyle =>
-      getPreference<String>(key: 'ttu_furigana_style', defaultValue: 'Partial');
-  Future<void> setTtuFuriganaStyle(String v) =>
-      setPreference<String>(key: 'ttu_furigana_style', value: v);
+  String get _legacyFuriganaStyle =>
+      getPreference<String>(key: 'ttu_furigana_style', defaultValue: 'partial').toLowerCase();
 
   // ── 自定义字体列表 ────────────────────────────────────────────────────
   // 每条记录: { "name": "...", "path": "..." (null=系统字体), "enabled": true }
@@ -822,13 +835,14 @@ new Promise(function(resolve) {
     final faces = <String>[];
     for (final e in enabled) {
       final name = e['name'] as String;
-      families.add(name);
+      final normalizedName = normalizedFontFamilyName(name);
+      families.add(cssFontFamilyName(normalizedName));
       final path = e['path'] as String?;
       if (path != null) {
         final uri =
             'http://localhost:$fontServerPort/${Uri.encodeComponent(path)}';
         faces.add(
-          '@font-face { font-family: "$name"; src: url("$uri"); '
+          '@font-face { font-family: ${cssFontFamilyName(normalizedName)}; src: url("$uri"); '
           'font-display: swap; }',
         );
       }
@@ -839,6 +853,22 @@ new Promise(function(resolve) {
     );
   }
 
+  static String normalizedFontFamilyName(String name) {
+    return name.replaceAll('_', ' ').trim();
+  }
+
+  static String cssFontFamilyName(String name) {
+    final normalized = normalizedFontFamilyName(name);
+    final escaped = normalized
+        .replaceAll('\\', r'\\')
+        .replaceAll('"', r'\"');
+    return '"$escaped"';
+  }
+
+  static String cssFontFamilyList(Iterable<String> names) {
+    return names.map(cssFontFamilyName).join(', ');
+  }
+
   /// 在 WebView 加载后将 Hive 偏好写入 ttu localStorage。
   Future<void> applyReaderSettings(
     InAppWebViewController controller, {
@@ -846,19 +876,24 @@ new Promise(function(resolve) {
   }) async {
     final fontCss = buildCustomFontCss();
     final hasCustomFonts = fontCss.fontFamily.isNotEmpty;
+    final serifFallback = 'serif';
+    final sansFallback = 'sans-serif';
     final fontFamilyOne = hasCustomFonts
-        ? '${fontCss.fontFamily}, Noto Serif JP, Noto Serif CJK JP, serif'
-        : 'Noto Serif JP, Noto Serif CJK JP, serif';
+        ? '${fontCss.fontFamily}, $serifFallback'
+        : serifFallback;
     final fontFamilyTwo = hasCustomFonts
-        ? '${fontCss.fontFamily}, Noto Sans JP, Noto Sans CJK JP, sans-serif'
-        : 'Noto Sans JP, Noto Sans CJK JP, sans-serif';
+        ? '${fontCss.fontFamily}, $sansFallback'
+        : sansFallback;
+    final hideFuriganaValue = ttuFuriganaMode == 'show' ? 0 : 1;
+    final furiganaStyle = furiganaModeToStyle(ttuFuriganaMode);
     final List<String> cmds = [
       'window.localStorage.setItem("fontSize",${ttuFontSize})',
       'window.localStorage.setItem("lineHeight",${ttuLineHeight})',
       'window.localStorage.setItem("writingMode","$ttuWritingMode")',
       'window.localStorage.setItem("viewMode","$ttuViewMode")',
       'window.localStorage.setItem("theme","$appThemeKey")',
-      'window.localStorage.setItem("hideFurigana","${ttuHideFurigana ? 1 : 0}")',
+      'window.localStorage.setItem("hideFurigana","$hideFuriganaValue")',
+      'window.localStorage.setItem("furiganaStyle","$furiganaStyle")',
       'window.localStorage.setItem("textIndentation",${ttuTextIndentation})',
       'window.localStorage.setItem("firstDimensionMargin",${ttuFirstDimensionMargin})',
       'window.localStorage.setItem("secondDimensionMaxValue",${ttuSecondDimensionMaxValue})',
@@ -868,10 +903,9 @@ new Promise(function(resolve) {
       'window.localStorage.setItem("verticalTextOrientation","$ttuVerticalTextOrientation")',
       'window.localStorage.setItem("enableTextJustification","${ttuEnableTextJustification ? 1 : 0}")',
       'window.localStorage.setItem("prioritizeReaderStyles","${ttuPrioritizeReaderStyles ? 1 : 0}")',
-      'window.localStorage.setItem("furiganaStyle","$ttuFuriganaStyle")',
-      'window.localStorage.setItem("statisticsEnabled","1")',
-      'window.localStorage.setItem("fontFamilyGroupOne","$fontFamilyOne")',
-      'window.localStorage.setItem("fontFamilyGroupTwo","$fontFamilyTwo")',
+      'window.localStorage.setItem("statisticsEnabled","0")',
+      'window.localStorage.setItem("fontFamilyGroupOne",${jsonEncode(fontFamilyOne)})',
+      'window.localStorage.setItem("fontFamilyGroupTwo",${jsonEncode(fontFamilyTwo)})',
     ];
     if (hasCustomFonts) {
       final escapedFaces = fontCss.fontFaces
@@ -888,6 +922,19 @@ new Promise(function(resolve) {
       );
     }
     await controller.evaluateJavascript(source: cmds.join(';'));
+  }
+
+  static String furiganaModeToStyle(String mode) {
+    switch (mode) {
+      case 'hide':
+        return 'Hide';
+      case 'partial':
+        return 'partial';
+      case 'toggle':
+        return 'toggle';
+      default:
+        return 'partial';
+    }
   }
 
   /// Used to fetch JSON for all books in IndexedDB.

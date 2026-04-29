@@ -219,7 +219,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
       case 'theme':
         await src.setTtuTheme(value as String);
       case 'hideFurigana':
-        await src.setTtuHideFurigana(value as bool);
+        break;
       case 'textIndentation':
         await src.setTtuTextIndentation((value as num).toDouble());
       case 'firstDimensionMargin':
@@ -238,9 +238,19 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         await src.setTtuEnableTextJustification(value as bool);
       case 'prioritizeReaderStyles':
         await src.setTtuPrioritizeReaderStyles(value as bool);
-      case 'furiganaStyle':
-        await src.setTtuFuriganaStyle(value as String);
     }
+  }
+
+  Future<void> _applyFuriganaMode(String mode) async {
+    final hide = mode != 'show';
+    final style = switch (mode) {
+      'hide' => 'Hide',
+      'partial' => 'partial',
+      'toggle' => 'toggle',
+      _ => 'partial',
+    };
+    await _updateSetting('hideFurigana', hide);
+    await _updateSetting('furiganaStyle', style);
   }
 
   @override
@@ -1025,37 +1035,24 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
             ),
           ),
         ),
-        // 隐藏假名
+        // 振假名模式
         const SizedBox(height: 8),
         _settingRow(
           theme,
-          label: t.ttu_hide_furigana,
-          hint: t.ttu_hide_furigana_hint,
-          child: Switch(
-            value: s.hideFurigana,
-            onChanged: (bool v) {
-              s.hideFurigana = v;
-              setState(() {});
-              _updateSetting('hideFurigana', v);
-            },
-          ),
-        ),
-        // 假名样式
-        _settingRow(
-          theme,
-          label: t.ttu_furigana_style,
-          hint: t.ttu_furigana_style_hint,
+          label: t.ttu_furigana_mode,
+          hint: t.ttu_furigana_mode_hint,
           child: SegmentedButton<String>(
             segments: <ButtonSegment<String>>[
-              ButtonSegment<String>(value: 'Partial', label: Text(t.ttu_furigana_partial)),
-              ButtonSegment<String>(value: 'Full', label: Text(t.ttu_furigana_full)),
-              ButtonSegment<String>(value: 'Toggle', label: Text(t.ttu_furigana_toggle)),
+              ButtonSegment<String>(value: 'show', label: Text(t.ttu_furigana_show)),
+              ButtonSegment<String>(value: 'hide', label: Text(t.ttu_furigana_hide)),
+              ButtonSegment<String>(value: 'partial', label: Text(t.ttu_furigana_partial)),
+              ButtonSegment<String>(value: 'toggle', label: Text(t.ttu_furigana_toggle)),
             ],
-            selected: <String>{_src.ttuFuriganaStyle},
+            selected: <String>{_src.ttuFuriganaMode},
             onSelectionChanged: (Set<String> sel) {
-              _src.setTtuFuriganaStyle(sel.first);
+              _src.setTtuFuriganaMode(sel.first);
               setState(() {});
-              _updateSetting('furiganaStyle', sel.first);
+              _applyFuriganaMode(sel.first);
             },
             style: const ButtonStyle(
               visualDensity: VisualDensity.compact,
