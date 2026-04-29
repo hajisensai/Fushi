@@ -1,9 +1,14 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
 import 'package:hibiki/src/media/audiobook/favorite_sentence_repository.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
@@ -46,6 +51,9 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   List<_CollectionItem> _items = [];
   Map<int, String> _bookTitleMap = {};
   Map<int, MediaItem> _mediaItemMap = {};
+  Map<int, List<AudioCue>> _cueMap = {};
+  Map<int, List<File>> _audioFileMap = {};
+  bool _playingAudio = false;
   final _dateFmt = DateFormat('MM/dd HH:mm');
 
   @override
@@ -122,11 +130,38 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
     items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
+    final sentenceTtuIds = allFavorites
+        .where((f) => f.ttuBookId != null && f.ttuBookId! > 0)
+        .map((f) => f.ttuBookId!)
+        .toSet();
+
+    final cueMap = <int, List<AudioCue>>{};
+    final audioFileMap = <int, List<File>>{};
+
+    for (final ttuId in sentenceTtuIds) {
+      final srtBook = await srtBookRepo.findByTtuBookId(ttuId);
+      if (srtBook == null) continue;
+
+      final cues = await srtBookRepo.cuesFor(srtBook.uid);
+      if (cues.isEmpty) continue;
+
+      final audioFiles = await _resolveAudioFiles(
+        audioPaths: srtBook.audioPaths,
+        audioRoot: srtBook.audioRoot,
+      );
+      if (audioFiles.isEmpty) continue;
+
+      cueMap[ttuId] = cues;
+      audioFileMap[ttuId] = audioFiles;
+    }
+
     if (mounted) {
       setState(() {
         _items = items;
         _bookTitleMap = bookTitleMap;
         _mediaItemMap = mediaItemMap;
+        _cueMap = cueMap;
+        _audioFileMap = audioFileMap;
         _loading = false;
       });
     }
@@ -175,6 +210,86 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         ),
       ),
     );
+  }
+
+  Future<List<File>> _resolveAudioFiles({
+    required List<String>? audioPaths,
+    required String? audioRoot,
+  }) async {
+    if (audioPaths != null && audioPaths.isNotEmpty) {
+      final files = <File>[];
+      for (final p in audioPaths) {
+        final f = File(p);
+        if (await f.exists()) files.add(f);
+      }
+      return files;
+    }
+    if (audioRoot != null) {
+      final dir = Directory(audioRoot);
+      if (!await dir.exists()) return [];
+      final entries = await dir.list().toList();
+      final files = entries
+          .whereType<File>()
+          .where((f) {
+            final ext = f.path.toLowerCase();
+            return ext.endsWith('.mp3') ||
+                ext.endsWith('.m4a') ||
+                ext.endsWith('.ogg') ||
+                ext.endsWith('.aac') ||
+                ext.endsWith('.wav') ||
+                ext.endsWith('.mp4');
+          })
+          .toList()
+        ..sort((a, b) => a.path.compareTo(b.path));
+      return files;
+    }
+    return [];
+  }
+
+  Future<void> _playSentenceAudio(_CollectionItem item) async {
+    final ttuId = item.ttuBookId;
+    if (ttuId == null || ttuId <= 0) return;
+
+    final cues = _cueMap[ttuId];
+    final audioFiles = _audioFileMap[ttuId];
+    if (cues == null || cues.isEmpty || audioFiles == null || audioFiles.isEmpty) return;
+
+    final text = item.text ?? '';
+    if (text.isEmpty) return;
+
+    AudioCue? match;
+    for (final cue in cues) {
+      if (cue.text == text) {
+        match = cue;
+        break;
+      }
+    }
+    match ??= cues.cast<AudioCue?>().firstWhere(
+      (c) => c!.text.contains(text) || text.contains(c.text),
+      orElse: () => null,
+    );
+    if (match == null) return;
+
+    if (match.audioFileIndex < 0 || match.audioFileIndex >= audioFiles.length) return;
+
+    setState(() => _playingAudio = true);
+    try {
+      final inputPath = audioFiles[match.audioFileIndex].path;
+      final tmpDir = await getTemporaryDirectory();
+      final outputPath = p.join(tmpDir.path, 'collections_audio_segment.m4a');
+
+      final result = await TtsChannel.instance.extractAudioSegment(
+        inputPath: inputPath,
+        startMs: match.startMs,
+        endMs: match.endMs,
+        outputPath: outputPath,
+      );
+      if (result != null) {
+        await TtsChannel.instance.playFile(result);
+      }
+    } finally {
+      if (mounted) setState(() => _playingAudio = false);
+    }
   }
 
   @override
@@ -256,6 +371,16 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (!isBookmark && item.text != null && item.text!.isNotEmpty &&
+              _cueMap.containsKey(item.ttuBookId))
+            IconButton(
+              icon: Icon(
+                _playingAudio ? Icons.hourglass_top : Icons.volume_up,
+                size: 18,
+              ),
+              onPressed: _playingAudio ? null : () => _playSentenceAudio(item),
+              visualDensity: VisualDensity.compact,
+            ),
           if (!isBookmark && item.text != null)
             IconButton(
               icon: const Icon(Icons.copy, size: 18),
