@@ -1047,10 +1047,25 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
           'ctrl=${_audiobookController != null} srtUid=$_srtBookUid',
         );
         _currentChapterHref = uri?.toString() ?? _currentChapterHref;
-        await _maybeInjectAudiobookBridge(controller, trigger: 'onLoadStop');
+        try {
+          await _maybeInjectAudiobookBridge(controller, trigger: 'onLoadStop')
+              .timeout(const Duration(seconds: 10));
+        } catch (e) {
+          debugPrint('[hibiki-audiobook] onLoadStop bridge timeout: $e');
+        }
         if (_audiobookController == null && !_didRestorePos) {
-          await _bootstrapCurrentTtuSection(controller);
-          await _bootstrapRestoreReaderPos();
+          try {
+            await _bootstrapCurrentTtuSection(controller)
+                .timeout(const Duration(seconds: 5));
+          } catch (e) {
+            debugPrint('[hibiki-audiobook] onLoadStop ttuSection timeout: $e');
+          }
+          try {
+            await _bootstrapRestoreReaderPos()
+                .timeout(const Duration(seconds: 5));
+          } catch (e) {
+            debugPrint('[hibiki-audiobook] onLoadStop restorePos timeout: $e');
+          }
         }
       },
       onTitleChanged: (controller, title) async {
@@ -1064,7 +1079,12 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
           '[hibiki-audiobook] onTitleChanged title=$title '
           'ctrl=${_audiobookController != null} srtUid=$_srtBookUid',
         );
-        await _maybeInjectAudiobookBridge(controller, trigger: 'onTitleChanged');
+        try {
+          await _maybeInjectAudiobookBridge(controller, trigger: 'onTitleChanged')
+              .timeout(const Duration(seconds: 10));
+        } catch (e) {
+          debugPrint('[hibiki-audiobook] onTitleChanged bridge timeout: $e');
+        }
       },
       onDownloadStartRequest: onDownloadStartRequest,
     );
@@ -2567,7 +2587,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       final results = await Future.wait([
         AudiobookBridge.probeTtuApi(controller),
         AudiobookBridge.fetchToc(controller),
-      ]);
+      ]).timeout(const Duration(seconds: 5));
       final TtuApiProbe probe = results[0] as TtuApiProbe;
       final List<TtuTocEntry> toc = results[1] as List<TtuTocEntry>;
       if (!probe.hasCurrentSection || probe.currentSection == null) {
@@ -3110,6 +3130,14 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         _controller,
         sectionIndex: saved.sectionIndex,
       );
+      Future.delayed(const Duration(seconds: 5), () {
+        if (_restoreInFlight && mounted) {
+          debugPrint('[hibiki-reader-pos] restore timeout, clearing flags');
+          _restoreInFlight = false;
+          _pendingRestorePos = null;
+          _inFlightNavSection = null;
+        }
+      });
     } catch (e) {
       debugPrint('[hibiki-reader-pos] restore requestSectionNav err: $e');
       _restoreInFlight = false;
