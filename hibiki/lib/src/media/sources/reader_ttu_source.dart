@@ -894,36 +894,6 @@ new Promise(function(resolve) {
   static const String getHistoryJs = '''
 indexedDB.databases().then(async (databases) => {
   if (databases.length > 0) {
-    // Schema health check: if the database exists but is missing required
-    // object stores (e.g. after WebStorage.deleteAllData corrupted it),
-    // delete it so the ttu app can recreate it from scratch.
-    var schemaOk = await new Promise(function(resolve) {
-      var chk = indexedDB.open("books");
-      chk.onupgradeneeded = function(e) {
-        // Database didn't exist or version changed — close and delete.
-        e.target.transaction.abort();
-        resolve(false);
-      };
-      chk.onsuccess = function(e) {
-        var db = e.target.result;
-        var names = db.objectStoreNames;
-        var ok = names.contains("data") && names.contains("bookmark") && names.contains("lastItem");
-        db.close();
-        resolve(ok);
-      };
-      chk.onerror = function() { resolve(false); };
-    });
-    if (!schemaOk) {
-      await new Promise(function(resolve) {
-        var del = indexedDB.deleteDatabase("books");
-        del.onsuccess = function() { resolve(); };
-        del.onerror = function() { resolve(); };
-        del.onblocked = function() { resolve(); };
-      });
-      console.log(JSON.stringify({messageType: "empty"}));
-      return;
-    }
-
     var bookmarkJson = JSON.stringify([]);
     var dataJson = JSON.stringify([]);
     var lastItemJson = JSON.stringify([]);
@@ -939,52 +909,40 @@ indexedDB.databases().then(async (databases) => {
       });
     }
 
-    function getAllFromIDBStore(storeName) {
-      return new Promise(
-        function(resolve, reject) {
-          var dbRequest = indexedDB.open("books");
-
-          dbRequest.onerror = function(event) {
-            reject(Error("Error opening DB"));
-          };
-
-          dbRequest.onupgradeneeded = function(event) {
-            reject(Error('Not found'));
-          };
-
-          dbRequest.onsuccess = function(event) {
-            var database = event.target.result;
-
-            try {
-              var transaction = database.transaction([storeName], 'readonly');
-              var objectStore;
-              try {
-                objectStore = transaction.objectStore(storeName);
-              } catch (e) {
-                reject(Error('Error getting objects'));
-              }
-
-              var objectRequest = objectStore.getAll();
-
-              objectRequest.onerror = function(event) {
-                reject(Error('Error getting objects'));
-              };
-
-              objectRequest.onsuccess = function(event) {
-                if (objectRequest.result) resolve(objectRequest.result);
-                else reject(Error('Objects not found'));
-              };
-            } catch (e) {
-              console.log(JSON.stringify({messageType: "error", error: e.name}));
-              reject(Error('Error getting objects'));
+    function tryReadStore(storeName) {
+      return new Promise(function(resolve) {
+        var dbRequest = indexedDB.open("books");
+        dbRequest.onerror = function() { resolve([]); };
+        dbRequest.onupgradeneeded = function(e) {
+          e.target.transaction.abort();
+          resolve([]);
+        };
+        dbRequest.onsuccess = function(event) {
+          var db = event.target.result;
+          try {
+            if (!db.objectStoreNames.contains(storeName)) {
+              db.close();
+              resolve([]);
+              return;
             }
-          };
-        }
-      );
+            var tx = db.transaction([storeName], 'readonly');
+            var store = tx.objectStore(storeName);
+            var req = store.getAll();
+            req.onerror = function() { db.close(); resolve([]); };
+            req.onsuccess = function() {
+              db.close();
+              resolve(req.result || []);
+            };
+          } catch (e) {
+            db.close();
+            resolve([]);
+          }
+        };
+      });
     }
 
     try {
-      var items = await getAllFromIDBStore("data");
+      var items = await tryReadStore("data");
       await Promise.all(items.map(async (item) => {
         try {
           item["coverImage"] = await blobToBase64(item["coverImage"]);
@@ -996,13 +954,13 @@ indexedDB.databases().then(async (databases) => {
     }
 
     try {
-      bookmarkJson = JSON.stringify(await getAllFromIDBStore("bookmark"));
+      bookmarkJson = JSON.stringify(await tryReadStore("bookmark"));
     } catch (e) {
       bookmarkJson = JSON.stringify([]);
     }
 
     try {
-      lastItemJson = JSON.stringify(await getAllFromIDBStore("lastItem"));
+      lastItemJson = JSON.stringify(await tryReadStore("lastItem"));
     } catch (e) {
       lastItemJson = JSON.stringify([]);
     }
