@@ -917,9 +917,11 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
     }
   }
 
-  /// 请求跳转到指定 section。桥未注入时最多等 2 秒（20×100ms）重试，
-  /// 覆盖页面加载/重载后桥还没注入就触发跳章的竞态。fork 未落地时此调用
-  /// 会在 JS 侧打 `ttuForkMissing` 日志后直接 resolve，外层据此降级为 pill。
+  /// 请求跳转到指定 section。
+  ///
+  /// 优先使用 `__sasayakiRequestNav`（有声书桥），它会同步清理 cueMap
+  /// 并发 sasayakiNavOk 日志。桥未注入时回退到 ttu fork 的
+  /// `__ttuGoToSection`（纯 EPUB 场景）。两者都不存在时最多等 2 秒后报错。
   static Future<void> requestSectionNav(
     InAppWebViewController controller, {
     required int sectionIndex,
@@ -930,6 +932,12 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
   for(var i=0;i<20;i++){
     if(typeof __sasayakiRequestNav!=="undefined"){
       await __sasayakiRequestNav($sectionIndex);
+      return;
+    }
+    if(typeof __ttuGoToSection==="function"){
+      await __ttuGoToSection($sectionIndex);
+      console.log(JSON.stringify({"hibiki-message-type":"sasayakiNavOk",
+        "section":$sectionIndex}));
       return;
     }
     await new Promise(function(r){setTimeout(r,100)});
