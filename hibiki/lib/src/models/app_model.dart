@@ -40,7 +40,8 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/utils/misc/tts_channel.dart';
-import 'package:hibiki/src/dictionary/dictionary_utils.dart' show importDictionaryViaHoshidicts;
+import 'package:hibiki/src/dictionary/dictionary_utils.dart'
+    show importDictionaryViaHoshidicts;
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/reader_position_model.dart';
 import 'package:hibiki/src/media/audiobook/reading_statistic_model.dart';
@@ -212,7 +213,6 @@ class AppModel with ChangeNotifier {
   Directory get thumbnailsDirectory => _thumbnailsDirectory;
   late final Directory _thumbnailsDirectory;
 
-
   /// Directory where media for export is stored for communication with
   /// third-party APIs.
   Directory get exportDirectory => _exportDirectory;
@@ -302,8 +302,9 @@ class AppModel with ChangeNotifier {
 
   List<Dictionary> get termDictionaries =>
       _dictionariesCache.where((d) => d.type == DictionaryType.term).toList();
-  List<Dictionary> get freqDictionaries =>
-      _dictionariesCache.where((d) => d.type == DictionaryType.frequency).toList();
+  List<Dictionary> get freqDictionaries => _dictionariesCache
+      .where((d) => d.type == DictionaryType.frequency)
+      .toList();
   List<Dictionary> get pitchDictionaries =>
       _dictionariesCache.where((d) => d.type == DictionaryType.pitch).toList();
 
@@ -337,7 +338,6 @@ class AppModel with ChangeNotifier {
 
   /// Returns all export profiles.
   List<AnkiMapping> get mappings => List.unmodifiable(_mappingsCache);
-
 
   /// Returns all dictionary history results. Oldest is first.
   List<DictionarySearchResult> get dictionaryHistory =>
@@ -646,10 +646,9 @@ class AppModel with ChangeNotifier {
   /// See the dictionary dialog's [ReorderableListView] for usage.
   void updateMappingsOrder(List<AnkiMapping> newMappings) async {
     _mappingsCache = [...newMappings];
-    await _database.replaceAllMappings(
-        newMappings.map(_mappingToCompanion).toList());
+    await _database
+        .replaceAllMappings(newMappings.map(_mappingToCompanion).toList());
   }
-
 
   /// Populate maps for languages at startup to optimise performance.
   void populateLanguages() async {
@@ -966,6 +965,43 @@ class AppModel with ChangeNotifier {
         );
       }
     }
+
+    await _ensureStandardTermAudioAutoEnhancement();
+  }
+
+  Future<void> _ensureStandardTermAudioAutoEnhancement() async {
+    final int index = _mappingsCache.indexWhere(
+      (m) => m.label == AnkiMapping.standardProfileName,
+    );
+    if (index < 0) {
+      return;
+    }
+
+    final AnkiMapping mapping = _mappingsCache[index];
+    final Map<String, Map<int, String>> enhancements =
+        mapping.enhancements?.map(
+              (fieldKey, fieldEnhancements) =>
+                  MapEntry(fieldKey, Map<int, String>.from(fieldEnhancements)),
+            ) ??
+            {};
+
+    final Map<int, String> audioEnhancements =
+        enhancements[AudioField.key] ?? <int, String>{};
+    if (audioEnhancements.containsKey(AnkiMapping.autoModeSlotNumber)) {
+      return;
+    }
+
+    audioEnhancements[AnkiMapping.autoModeSlotNumber] =
+        LocalAudioEnhancement.key;
+    enhancements[AudioField.key] = audioEnhancements;
+
+    final AnkiMapping updated = mapping.copyWith(enhancements: enhancements);
+    await _database.upsertMapping(_mappingToCompanion(updated));
+    _mappingsCache = [
+      ..._mappingsCache.sublist(0, index),
+      updated,
+      ..._mappingsCache.sublist(index + 1),
+    ];
   }
 
   /// Stub kept for call-site compatibility.
@@ -980,8 +1016,7 @@ class AppModel with ChangeNotifier {
             ExternalPath.DIRECTORY_DCIM);
     try {
       String directoryPath = path.join(publicDirectory, 'hibiki');
-      String noMediaFilePath =
-          path.join(publicDirectory, 'hibiki', '.nomedia');
+      String noMediaFilePath = path.join(publicDirectory, 'hibiki', '.nomedia');
 
       Directory hibikiDirectory = Directory(directoryPath);
       File noMediaFile = File(noMediaFilePath);
@@ -1050,6 +1085,7 @@ class AppModel with ChangeNotifier {
   Future<void> initialise() async {
     try {
       debugPrint('[Hibiki] init: PackageInfo + DeviceInfo');
+
       /// Prepare entities that may be repeatedly used at runtime.
       _packageInfo = await PackageInfo.fromPlatform();
       _androidDeviceInfo = await DeviceInfoPlugin().androidInfo;
@@ -1125,11 +1161,13 @@ class AppModel with ChangeNotifier {
       }
 
       debugPrint('[Hibiki] init: licenses');
+
       /// Inject open source licenses for non-Flutter dependencies that are
       /// included as assets.
       await injectAssetLicenses();
 
       debugPrint('[Hibiki] init: populate maps');
+
       /// Populate entities with key-value maps for constant time performance.
       /// This is not the initialisation step, which occurs below.
       populateLanguages();
@@ -1142,6 +1180,7 @@ class AppModel with ChangeNotifier {
       populateQuickActions();
 
       debugPrint('[Hibiki] init: targetLanguage');
+
       /// Get the current target language and prepare its resources for use. This
       /// will not re-run if the target language is already initialised, as
       /// a [Language] should always have a singleton instance and will not
@@ -1150,6 +1189,7 @@ class AppModel with ChangeNotifier {
       await targetLanguage.initialise();
 
       debugPrint('[Hibiki] init: enhancements');
+
       /// Ready all enhancements sources for use.
       for (Field field in globalFields) {
         for (Enhancement enhancement in enhancements[field]!.values) {
@@ -1158,6 +1198,7 @@ class AppModel with ChangeNotifier {
       }
 
       debugPrint('[Hibiki] init: quick actions');
+
       /// Ready all quick actions for use.
       for (QuickAction action in quickActions.values) {
         await action.initialise();
@@ -1165,6 +1206,7 @@ class AppModel with ChangeNotifier {
 
       debugPrint('[Hibiki] init: media sources');
       MediaSource.setDatabase(_database);
+
       /// Ready all media sources for use.
       for (MediaType type in mediaTypes.values) {
         for (MediaSource source in mediaSources[type]!.values) {
@@ -1173,6 +1215,7 @@ class AppModel with ChangeNotifier {
       }
 
       debugPrint('[Hibiki] init: search preload');
+
       /// Preloads the search database in memory.
       searchDictionary(
         searchTerm: targetLanguage.helloWorld,
@@ -1195,6 +1238,7 @@ class AppModel with ChangeNotifier {
 
       debugPrint('[Hibiki] init: DONE');
       _isInitialised = true;
+      _persistSplashColor();
       notifyListeners();
     } catch (e, stack) {
       debugPrint('[Hibiki] init FAILED: $e\n$stack');
@@ -1258,10 +1302,23 @@ class AppModel with ChangeNotifier {
   };
 
   static const List<String> _standardModelFields = [
-    'Term', 'Reading', 'Furigana', 'Sentence', 'Cloze Before',
-    'Cloze Inside', 'Cloze After', 'Meaning', 'Expanded Meaning',
-    'Collapsed Meaning', 'Notes', 'Context', 'Frequency',
-    'Pitch Accent', 'Image', 'Term Audio', 'Sentence Audio',
+    'Term',
+    'Reading',
+    'Furigana',
+    'Sentence',
+    'Cloze Before',
+    'Cloze Inside',
+    'Cloze After',
+    'Meaning',
+    'Expanded Meaning',
+    'Collapsed Meaning',
+    'Notes',
+    'Context',
+    'Frequency',
+    'Pitch Accent',
+    'Image',
+    'Term Audio',
+    'Sentence Audio',
   ];
 
   static Map<String, String> _migrateOldExportFieldKeys(
@@ -1427,12 +1484,36 @@ class AppModel with ChangeNotifier {
 
   static const Map<String, ({Color seed, Brightness brightness, String label})>
       themePresets = {
-    'light-theme': (seed: Color(0xFF1F4959), brightness: Brightness.light, label: '白色'),
-    'ecru-theme': (seed: Color(0xFF8B7355), brightness: Brightness.light, label: '米黄'),
-    'water-theme': (seed: Color(0xFF4A7C8F), brightness: Brightness.light, label: '水蓝'),
-    'gray-theme': (seed: Color(0xFF5C6B73), brightness: Brightness.dark, label: '灰暗'),
-    'dark-theme': (seed: Color(0xFF1F4959), brightness: Brightness.dark, label: '深暗'),
-    'black-theme': (seed: Color(0xFF263238), brightness: Brightness.dark, label: '纯黑'),
+    'light-theme': (
+      seed: Color(0xFF1F4959),
+      brightness: Brightness.light,
+      label: '白色'
+    ),
+    'ecru-theme': (
+      seed: Color(0xFF8B7355),
+      brightness: Brightness.light,
+      label: '米黄'
+    ),
+    'water-theme': (
+      seed: Color(0xFF4A7C8F),
+      brightness: Brightness.light,
+      label: '水蓝'
+    ),
+    'gray-theme': (
+      seed: Color(0xFF5C6B73),
+      brightness: Brightness.dark,
+      label: '灰暗'
+    ),
+    'dark-theme': (
+      seed: Color(0xFF1F4959),
+      brightness: Brightness.dark,
+      label: '深暗'
+    ),
+    'black-theme': (
+      seed: Color(0xFF263238),
+      brightness: Brightness.dark,
+      label: '纯黑'
+    ),
   };
 
   String get appThemeKey {
@@ -1450,6 +1531,7 @@ class AppModel with ChangeNotifier {
   Future<void> setAppThemeKey(String key) async {
     await _setPref('app_theme_key', key);
     notifyListeners();
+    _persistSplashColor();
   }
 
   Color get customThemeSeed {
@@ -1489,11 +1571,25 @@ class AppModel with ChangeNotifier {
     await setCustomThemeFontColor(fontColor);
     await _setPref('app_theme_key', 'custom-theme');
     notifyListeners();
+    _persistSplashColor();
   }
 
   bool get isDarkMode {
     if (appThemeKey == 'custom-theme') return customThemeDark;
     return themePresets[appThemeKey]?.brightness == Brightness.dark;
+  }
+
+  static const _splashChannel = MethodChannel('app.hibiki.reader/splash');
+
+  void _persistSplashColor() {
+    final brightness = isDarkMode ? Brightness.dark : Brightness.light;
+    final surface =
+        ColorScheme.fromSeed(seedColor: _seedColor, brightness: brightness)
+            .surface;
+    _splashChannel.invokeMethod('setSplashColor', {
+      'color': surface.toARGB32(),
+      'isDark': isDarkMode,
+    }).catchError((_) {});
   }
 
   /// Get the target language from persisted preferences.
@@ -1507,8 +1603,7 @@ class AppModel with ChangeNotifier {
 
   /// Get the last selected deck from persisted preferences.
   String get lastSelectedDeckName {
-    String deckName =
-        _getPref('last_selected_deck', defaultValue: 'Default');
+    String deckName = _getPref('last_selected_deck', defaultValue: 'Default');
     return deckName;
   }
 
@@ -1572,8 +1667,8 @@ class AppModel with ChangeNotifier {
   /// Get the last selected mapping's name from persisted preferences. This is
   /// faster than getting the mapping specifically from the database.
   String get lastSelectedMappingName {
-    String mappingName = _getPref('last_selected_mapping',
-        defaultValue: mappings.first.label);
+    String mappingName =
+        _getPref('last_selected_mapping', defaultValue: mappings.first.label);
     return mappingName;
   }
 
@@ -1601,8 +1696,7 @@ class AppModel with ChangeNotifier {
   Future<void> setLastSelectedDictionaryFormat(
       DictionaryFormat dictionaryFormat) async {
     String lastDictionaryFormatName = dictionaryFormat.uniqueKey;
-    await _setPref(
-        'last_selected_dictionary_format', lastDictionaryFormatName);
+    await _setPref('last_selected_dictionary_format', lastDictionaryFormatName);
   }
 
   /// Persist a new last selected model name. This is called when the user
@@ -1698,11 +1792,13 @@ class AppModel with ChangeNotifier {
         return dictionaryFormats['yomichan']!;
       }
 
-      if (fileNames.any((f) => f == 'index.json' || f.endsWith('/index.json'))) {
+      if (fileNames
+          .any((f) => f == 'index.json' || f.endsWith('/index.json'))) {
         return dictionaryFormats['yomichan']!;
       }
 
-      final hasMdx = fileNames.any((f) => f.endsWith('.mdx') || f.endsWith('.mdd'));
+      final hasMdx =
+          fileNames.any((f) => f.endsWith('.mdx') || f.endsWith('.mdd'));
       if (hasMdx) {
         return dictionaryFormats['mdict']!;
       }
@@ -1762,13 +1858,10 @@ class AppModel with ChangeNotifier {
     required Function() onImportSuccess,
   }) async {
     final entities = directory.listSync();
-    final zipFiles = entities
-        .whereType<File>()
-        .where((f) {
-          final ext = path.extension(f.path).toLowerCase();
-          return ext == '.zip' || ext == '.dsl' || ext == '.mdx';
-        })
-        .toList();
+    final zipFiles = entities.whereType<File>().where((f) {
+      final ext = path.extension(f.path).toLowerCase();
+      return ext == '.zip' || ext == '.dsl' || ext == '.mdx';
+    }).toList();
 
     if (zipFiles.isNotEmpty) {
       final cssFiles = entities
@@ -1780,11 +1873,13 @@ class AppModel with ChangeNotifier {
         try {
           final hasFont = d.listSync().whereType<File>().any((f) {
             final ext = path.extension(f.path).toLowerCase();
-            return ext == '.otf' || ext == '.ttf' || ext == '.woff' || ext == '.woff2';
+            return ext == '.otf' ||
+                ext == '.ttf' ||
+                ext == '.woff' ||
+                ext == '.woff2';
           });
           if (hasFont) fontDirs.add(d);
-        } catch (e) {
-        }
+        } catch (e) {}
       }
 
       totalNotifier.value = zipFiles.length;
@@ -1813,15 +1908,14 @@ class AppModel with ChangeNotifier {
     try {
       progressNotifier.value = t.import_extract;
 
-      final tempZipPath = path.join(
-          dictionaryResourceDirectory.path, 'import_temp_dir.zip');
+      final tempZipPath =
+          path.join(dictionaryResourceDirectory.path, 'import_temp_dir.zip');
       final tempZip = File(tempZipPath);
 
       final archive = Archive();
       for (final entity in directory.listSync(recursive: true)) {
         if (entity is File) {
-          final relativePath =
-              path.relative(entity.path, from: directory.path);
+          final relativePath = path.relative(entity.path, from: directory.path);
           archive.addFile(ArchiveFile(
               relativePath, entity.lengthSync(), entity.readAsBytesSync()));
         }
@@ -1842,9 +1936,8 @@ class AppModel with ChangeNotifier {
         );
 
         if (!result.success) {
-          throw Exception(result.error.isNotEmpty
-              ? result.error
-              : t.import_failed);
+          throw Exception(
+              result.error.isNotEmpty ? result.error : t.import_failed);
         }
 
         final name = result.title.trim();
@@ -1866,8 +1959,7 @@ class AppModel with ChangeNotifier {
                     .reduce((a, b) => a > b ? a : b) +
                 1;
 
-        final innerDataDir =
-            Directory(path.join(tempOutputDir.path, name));
+        final innerDataDir = Directory(path.join(tempOutputDir.path, name));
         final finalResourceDirectory =
             Directory(path.join(dictionaryResourceDirectory.path, name));
         if (finalResourceDirectory.existsSync()) {
@@ -1912,8 +2004,7 @@ class AppModel with ChangeNotifier {
   void _copyDirectory(Directory source, Directory destination) {
     destination.createSync(recursive: true);
     for (final entity in source.listSync()) {
-      final newPath =
-          path.join(destination.path, path.basename(entity.path));
+      final newPath = path.join(destination.path, path.basename(entity.path));
       if (entity is File) {
         entity.copySync(newPath);
       } else if (entity is Directory) {
@@ -1959,9 +2050,8 @@ class AppModel with ChangeNotifier {
       );
 
       if (!result.success) {
-        throw Exception(result.error.isNotEmpty
-            ? result.error
-            : t.import_failed);
+        throw Exception(
+            result.error.isNotEmpty ? result.error : t.import_failed);
       }
 
       final name = result.title.trim();
@@ -1978,12 +2068,14 @@ class AppModel with ChangeNotifier {
       final currentDictionaries = dictionaries;
       int order = currentDictionaries.isEmpty
           ? 1
-          : currentDictionaries.map((d) => d.order).reduce((a, b) => a > b ? a : b) + 1;
+          : currentDictionaries
+                  .map((d) => d.order)
+                  .reduce((a, b) => a > b ? a : b) +
+              1;
 
       // hoshidicts writes data into outputDir/title/, so the actual data
       // directory is the inner subdirectory named after the title.
-      final innerDataDir =
-          Directory(path.join(tempOutputDir.path, name));
+      final innerDataDir = Directory(path.join(tempOutputDir.path, name));
       final finalResourceDirectory =
           Directory(path.join(dictionaryResourceDirectory.path, name));
       if (finalResourceDirectory.existsSync()) {
@@ -2092,8 +2184,8 @@ class AppModel with ChangeNotifier {
     _rebuildDictPathsCache();
     await _database.deleteDictionaryMeta(dictionary.name);
 
-    final directory = Directory(
-        path.join(dictionaryResourceDirectory.path, dictionary.name));
+    final directory =
+        Directory(path.join(dictionaryResourceDirectory.path, dictionary.name));
 
     if (directory.existsSync()) {
       directory.deleteSync(recursive: true);
@@ -2116,7 +2208,6 @@ class AppModel with ChangeNotifier {
   void addMapping(AnkiMapping mapping) async {
     _persistMapping(mapping);
   }
-
 
   /// Used for caching search results. Cleared when a dictionary is added or
   /// deleted.
@@ -2541,9 +2632,8 @@ class AppModel with ChangeNotifier {
       destinationFile = getImageExportFile(fallback: true);
     } else if (mimeType == 'audio') {
       final srcPath = exportFile.path;
-      final ext = srcPath.contains('.')
-          ? srcPath.split('.').last.toLowerCase()
-          : 'mp3';
+      final ext =
+          srcPath.contains('.') ? srcPath.split('.').last.toLowerCase() : 'mp3';
       destinationFile = getAudioExportFile(fallback: true, ext: ext);
     } else {
       throw Exception('Invalid mime type, must be image or audio');
@@ -2608,8 +2698,7 @@ class AppModel with ChangeNotifier {
 
   /// Persist the standard profile as the last selected mapping.
   Future<void> selectStandardProfile() async {
-    await _setPref(
-        'last_selected_mapping', AnkiMapping.standardProfileName);
+    await _setPref('last_selected_mapping', AnkiMapping.standardProfileName);
     notifyListeners();
   }
 
@@ -2622,8 +2711,7 @@ class AppModel with ChangeNotifier {
   Future<void> resetProfileFields(AnkiMapping mapping) async {
     List<String> fields = await getFieldList(mapping.model);
     Map<String, String> emptyMappings = {for (var f in fields) f: ''};
-    AnkiMapping resetMapping =
-        mapping.copyWith(fieldMappings: emptyMappings);
+    AnkiMapping resetMapping = mapping.copyWith(fieldMappings: emptyMappings);
     _persistMapping(resetMapping);
   }
 
@@ -3254,15 +3342,15 @@ class AppModel with ChangeNotifier {
   /// operations. This is useful when updating constantly, for example,
   /// with the player where the position needs to be constantly updated.
   void updateMediaItem(MediaItem item) async {
-    final idx = _mediaItemsCache.indexWhere((m) => m.uniqueKey == item.uniqueKey);
+    final idx =
+        _mediaItemsCache.indexWhere((m) => m.uniqueKey == item.uniqueKey);
     if (idx >= 0) _mediaItemsCache[idx] = item;
     await _database.upsertMediaItem(_mediaItemToCompanion(item));
   }
 
   /// Deletes a [MediaItem] from the reading list by media identifier.
   void removeFromReadingList(String mediaIdentifier) async {
-    _mediaItemsCache
-        .removeWhere((m) => m.mediaIdentifier == mediaIdentifier);
+    _mediaItemsCache.removeWhere((m) => m.mediaIdentifier == mediaIdentifier);
     await _database.deleteMediaItemsByIdentifier(mediaIdentifier);
   }
 
@@ -3307,8 +3395,7 @@ class AppModel with ChangeNotifier {
     required MediaType mediaType,
     required MediaSource mediaSource,
   }) {
-    _setPref(
-        'current_source/${mediaType.uniqueKey}', mediaSource.uniqueKey);
+    _setPref('current_source/${mediaType.uniqueKey}', mediaSource.uniqueKey);
   }
 
   /// Get the history of [MediaItem] for a particular [MediaType].
@@ -3328,8 +3415,8 @@ class AppModel with ChangeNotifier {
   /// Returns the last navigated directory the user used for picking a file for a
   /// certain media type.
   Directory? getLastPickedDirectory(MediaType type) {
-    String path = _getPref('${type.uniqueKey}/last_picked_file',
-        defaultValue: '');
+    String path =
+        _getPref('${type.uniqueKey}/last_picked_file', defaultValue: '');
     if (path.isEmpty) {
       return null;
     }
@@ -3361,7 +3448,8 @@ class AppModel with ChangeNotifier {
       directories.add(lastPickedDirectory);
     }
 
-    List<String> paths = (await ExternalPath.getExternalStorageDirectories()) ?? [];
+    List<String> paths =
+        (await ExternalPath.getExternalStorageDirectories()) ?? [];
     for (String path in paths) {
       Directory directory = Directory(path);
       if (!directories.contains(directory)) {
@@ -3379,12 +3467,12 @@ class AppModel with ChangeNotifier {
     double left = _getPref('blur_left', defaultValue: -1.0);
     double top = _getPref('blur_top', defaultValue: -1.0);
 
-    int red = _getPref('blur_red',
-        defaultValue: Colors.black.withOpacity(0).red);
-    int green = _getPref('blur_green',
-        defaultValue: Colors.black.withOpacity(0).green);
-    int blue = _getPref('blur_blue',
-        defaultValue: Colors.black.withOpacity(0).blue);
+    int red =
+        _getPref('blur_red', defaultValue: Colors.black.withOpacity(0).red);
+    int green =
+        _getPref('blur_green', defaultValue: Colors.black.withOpacity(0).green);
+    int blue =
+        _getPref('blur_blue', defaultValue: Colors.black.withOpacity(0).blue);
     double opacity = _getPref('blur_opacity',
         defaultValue: Colors.black.withOpacity(0).opacity);
 
@@ -3432,8 +3520,7 @@ class AppModel with ChangeNotifier {
 
   /// Get definition focus mode for player.
   bool get isPlayerListeningComprehensionMode {
-    return _getPref('player_listening_comprehension_mode',
-        defaultValue: false);
+    return _getPref('player_listening_comprehension_mode', defaultValue: false);
   }
 
   /// Toggle definition focus mode for player.
@@ -3449,8 +3536,7 @@ class AppModel with ChangeNotifier {
 
   /// Toggle orientation for player.
   void togglePlayerOrientationPortrait() async {
-    await _setPref(
-        'player_orientation_portrait', !isPlayerOrientationPortrait);
+    await _setPref('player_orientation_portrait', !isPlayerOrientationPortrait);
   }
 
   /// Get whether or not to stretch to fill screen.
@@ -3565,7 +3651,7 @@ class AppModel with ChangeNotifier {
       config: const ag.AudioServiceConfig(
         androidNotificationChannelId: 'app.hibiki.reader.channel.audio',
         androidNotificationChannelName: 'hibiki',
-        androidNotificationIcon: 'drawable/splash',
+        androidNotificationIcon: 'drawable/ic_stat_hibiki',
         notificationColor: Colors.black,
         fastForwardInterval: Duration(seconds: 5),
         rewindInterval: Duration(seconds: 5),
@@ -3676,8 +3762,8 @@ class AppModel with ChangeNotifier {
     }
 
     /// Remove any existing entry with the same search term.
-    _dictionaryHistoryResults.removeWhere(
-        (r) => r.searchTerm == result.searchTerm);
+    _dictionaryHistoryResults
+        .removeWhere((r) => r.searchTerm == result.searchTerm);
 
     _dictionaryHistoryResults.add(result);
 
@@ -3846,6 +3932,15 @@ class AppModel with ChangeNotifier {
     notifyListeners();
   }
 
+  bool get showFloatingLyric {
+    return _getPref('show_floating_lyric', defaultValue: false);
+  }
+
+  Future<void> setShowFloatingLyric(bool value) async {
+    await _setPref('show_floating_lyric', value);
+    notifyListeners();
+  }
+
   /// Get the list of model names that will be checked for duplicates.
   List<String> get duplicateCheckModels {
     return _getPref('duplicate_check_models', defaultValue: [
@@ -3882,6 +3977,15 @@ class AppModel with ChangeNotifier {
 
   Future<void> setDisableDialogScrim(bool value) async {
     await _setPref('disable_dialog_scrim', value);
+    notifyListeners();
+  }
+
+  bool get nativeDictionaryPopup {
+    return _getPref('native_dictionary_popup', defaultValue: false);
+  }
+
+  Future<void> setNativeDictionaryPopup(bool value) async {
+    await _setPref('native_dictionary_popup', value);
     notifyListeners();
   }
 

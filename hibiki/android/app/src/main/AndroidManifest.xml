@@ -7,7 +7,9 @@
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
     <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="Hibiki"
@@ -87,6 +89,9 @@
             <action android:name="android.media.browse.MediaBrowserService" />
         </intent-filter>
         </service>
+        <service android:name=".FloatingLyricService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
         <receiver android:name="com.ryanheise.audioservice.MediaButtonReceiver"
             android:exported="true" tools:ignore="Instantiatable">
         <intent-filter>

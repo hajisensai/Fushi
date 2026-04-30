@@ -149,6 +149,8 @@ class AudiobookSettingsSheet extends StatefulWidget {
     this.onTogglePlayBar,
     this.showMediaNotification = true,
     this.onToggleMediaNotification,
+    this.showFloatingLyric = false,
+    this.onToggleFloatingLyric,
     super.key,
   });
 
@@ -170,6 +172,8 @@ class AudiobookSettingsSheet extends StatefulWidget {
   final VoidCallback? onTogglePlayBar;
   final bool showMediaNotification;
   final VoidCallback? onToggleMediaNotification;
+  final bool showFloatingLyric;
+  final VoidCallback? onToggleFloatingLyric;
 
   @override
   State<AudiobookSettingsSheet> createState() => _AudiobookSettingsSheetState();
@@ -794,6 +798,28 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
             Switch(
               value: widget.showMediaNotification,
               onChanged: (_) => widget.onToggleMediaNotification?.call(),
+            ),
+          ],
+        ),
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(t.show_floating_lyric, style: theme.textTheme.bodyMedium),
+                  Text(
+                    t.floating_lyric_hint,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Switch(
+              value: widget.showFloatingLyric,
+              onChanged: (_) => widget.onToggleFloatingLyric?.call(),
             ),
           ],
         ),

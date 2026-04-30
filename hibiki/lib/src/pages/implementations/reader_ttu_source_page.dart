@@ -27,6 +27,7 @@ import 'package:hibiki/src/media/audiobook/favorite_sentence_repository.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_play_bar.dart';
+import 'package:hibiki/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
 import 'package:hibiki/src/media/audiobook/reader_position_model.dart';
 import 'package:hibiki/src/media/audiobook/reader_position_repository.dart';
@@ -71,7 +72,8 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
 
   // ── 有声书播放器 ────────────────────────────────────────────────────────────
   AudiobookPlayerController? _audiobookController;
-  final ValueNotifier<ThemeData?> _barThemeNotifier = ValueNotifier<ThemeData?>(null);
+  final ValueNotifier<ThemeData?> _barThemeNotifier =
+      ValueNotifier<ThemeData?>(null);
 
   /// 首帧前同步判定：这本书是否有 Audiobook/SrtBook 记录且配置了音频。
   /// 目的是让 WebView 从第一次 layout 就用"预留 56+bottomPadding"的视口，
@@ -94,6 +96,9 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   /// ttu TOC 缓存（section index → label），用于 pill 显示章节名。
   Map<int, String> _tocLabels = const {};
 
+  /// ttu 当前书籍的 section 总数。用于在 Dart 侧过滤旧书签、旧恢复位置、
+  /// 旧 Sasayaki 匹配结果里的越界 section，避免把无效导航发给 WebView。
+  int? _ttuSectionCount;
 
   /// 已被请求跳章（`requestSectionNav` 调用后），用来过滤掉那条由自己
   /// 触发的 sectionChanged 回报事件——否则 ON 模式下系统自己跳的章会
@@ -210,8 +215,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     if (ttuId == null || ttuId <= 0) {
       return false;
     }
-    final SrtBook? b =
-        await SrtBookRepository(database).findByTtuBookId(ttuId);
+    final SrtBook? b = await SrtBookRepository(database).findByTtuBookId(ttuId);
     if (b != null) {
       return (b.audioPaths?.isNotEmpty ?? false) ||
           (b.audioRoot != null && b.audioRoot!.isNotEmpty);
@@ -235,6 +239,9 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     _notifSkipNextSub?.cancel();
     _notifSkipPrevSub?.cancel();
     _cachedAppModel.audioHandler?.clearNotification();
+    if (appModel.showFloatingLyric) {
+      FloatingLyricChannel.hide();
+    }
     _audiobookController?.removeListener(_onCueChanged);
     _audiobookController?.dispose();
     _barThemeNotifier.dispose();
@@ -349,6 +356,55 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     if (mounted) {
       Fluttertoast.showToast(msg: t.follow_audio_paused);
     }
+  }
+
+  int? _knownTtuSectionCount() {
+    final int? probedCount = _ttuSectionCount;
+    if (probedCount != null && probedCount > 0) {
+      return probedCount;
+    }
+    if (_tocLabels.isEmpty) {
+      return null;
+    }
+    int highest = -1;
+    for (final int index in _tocLabels.keys) {
+      if (index > highest) highest = index;
+    }
+    return highest >= 0 ? highest + 1 : null;
+  }
+
+  bool _canNavigateToTtuSection(int sectionIndex) {
+    if (sectionIndex < 0) {
+      return false;
+    }
+    final int? count = _knownTtuSectionCount();
+    return count == null || sectionIndex < count;
+  }
+
+  bool _dropStaleSectionNavigation(int sectionIndex, String from) {
+    if (_canNavigateToTtuSection(sectionIndex)) {
+      return false;
+    }
+    debugPrint(
+      '[hibiki-audiobook] stale section navigation dropped: '
+      'from=$from section=$sectionIndex count=${_knownTtuSectionCount()}',
+    );
+    if (_pendingNavSection == sectionIndex && mounted) {
+      setState(() => _pendingNavSection = null);
+    } else if (_pendingNavSection == sectionIndex) {
+      _pendingNavSection = null;
+    }
+    if (_inFlightNavSection == sectionIndex) {
+      _navRestoreTimeout?.cancel();
+      _navRestoreTimeout = null;
+      _inFlightNavSection = null;
+    }
+    if (_pendingRestorePos?.section == sectionIndex) {
+      _pendingRestorePos = null;
+      _restoreInFlight = false;
+    }
+    _audiobookController?.cancelChapterTransition();
+    return true;
   }
 
   @override
@@ -476,8 +532,8 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
           final response = await HttpClient()
               .getUrl(Uri.parse(wordAudioUrl))
               .then((req) => req.close());
-          final bytes = await response.fold<List<int>>(
-              [], (prev, chunk) => prev..addAll(chunk));
+          final bytes = await response
+              .fold<List<int>>([], (prev, chunk) => prev..addAll(chunk));
           if (bytes.isNotEmpty) {
             final ext = wordAudioUrl.contains('.opus')
                 ? '.opus'
@@ -493,7 +549,8 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         final expression = fields['expression'] ?? '';
         if (expression.isNotEmpty) {
           final ttsPath = '${cacheDir.path}/mine_word_tts.wav';
-          final ttsResult = await TtsChannel.instance.ttsToFile(expression, ttsPath);
+          final ttsResult =
+              await TtsChannel.instance.ttsToFile(expression, ttsPath);
           if (ttsResult != null) {
             audioFile = File(ttsResult);
           }
@@ -523,8 +580,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
           );
           if (cue.audioFileIndex < audioFiles.length) {
             final inputFile = audioFiles[cue.audioFileIndex];
-            final outputPath =
-                '${cacheDir.path}/mine_sentence_audio.m4a';
+            final outputPath = '${cacheDir.path}/mine_sentence_audio.m4a';
             final result = await TtsChannel.instance.extractAudioSegment(
               inputPath: inputFile.path,
               startMs: cue.startMs,
@@ -626,7 +682,8 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
                 // scrollHeight 变而 clientHeight 没变。外壳缩是两者同
                 // 步收缩，ttu 原生的 paginated 分页仍然对齐。）
                 Positioned.fill(
-                  bottom: ((_audiobookController != null || _hasAudioSlot) && appModel.showPlayBar)
+                  bottom: ((_audiobookController != null || _hasAudioSlot) &&
+                          appModel.showPlayBar)
                       ? 56 + MediaQuery.of(context).padding.bottom
                       : 0,
                   child: buildBody(),
@@ -669,7 +726,8 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         surfaceContainerHigh: surface,
       ),
       bottomAppBarTheme: base.bottomAppBarTheme.copyWith(color: surface),
-      bottomSheetTheme: base.bottomSheetTheme.copyWith(backgroundColor: surface),
+      bottomSheetTheme:
+          base.bottomSheetTheme.copyWith(backgroundColor: surface),
     );
   }
 
@@ -680,43 +738,59 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     switch (currentTheme) {
       case 'light-theme':
         final c = Color.fromRGBO(249, 249, 249, 1);
-        appModel.setOverrideDictionaryTheme(_themedWithSurface(appModel.theme, c));
-        appModel.setOverrideDictionaryColor(c.withValues(alpha: dictionaryEntryOpacity));
+        appModel
+            .setOverrideDictionaryTheme(_themedWithSurface(appModel.theme, c));
+        appModel.setOverrideDictionaryColor(
+            c.withValues(alpha: dictionaryEntryOpacity));
         break;
       case 'ecru-theme':
         final c = Color.fromRGBO(247, 246, 235, 1);
-        appModel.setOverrideDictionaryTheme(_themedWithSurface(appModel.theme, c));
-        appModel.setOverrideDictionaryColor(c.withValues(alpha: dictionaryEntryOpacity));
+        appModel
+            .setOverrideDictionaryTheme(_themedWithSurface(appModel.theme, c));
+        appModel.setOverrideDictionaryColor(
+            c.withValues(alpha: dictionaryEntryOpacity));
         break;
       case 'water-theme':
         final c = Color.fromRGBO(223, 236, 244, 1);
-        appModel.setOverrideDictionaryTheme(_themedWithSurface(appModel.theme, c));
-        appModel.setOverrideDictionaryColor(c.withValues(alpha: dictionaryEntryOpacity));
+        appModel
+            .setOverrideDictionaryTheme(_themedWithSurface(appModel.theme, c));
+        appModel.setOverrideDictionaryColor(
+            c.withValues(alpha: dictionaryEntryOpacity));
         break;
       case 'gray-theme':
         final c = Color.fromRGBO(35, 39, 42, 1);
-        appModel.setOverrideDictionaryTheme(_themedWithSurface(appModel.darkTheme, c));
-        appModel.setOverrideDictionaryColor(c.withValues(alpha: dictionaryEntryOpacity));
+        appModel.setOverrideDictionaryTheme(
+            _themedWithSurface(appModel.darkTheme, c));
+        appModel.setOverrideDictionaryColor(
+            c.withValues(alpha: dictionaryEntryOpacity));
         break;
       case 'dark-theme':
         final c = Color.fromRGBO(18, 18, 18, 1);
-        appModel.setOverrideDictionaryTheme(_themedWithSurface(appModel.darkTheme, c));
-        appModel.setOverrideDictionaryColor(c.withValues(alpha: dictionaryEntryOpacity));
+        appModel.setOverrideDictionaryTheme(
+            _themedWithSurface(appModel.darkTheme, c));
+        appModel.setOverrideDictionaryColor(
+            c.withValues(alpha: dictionaryEntryOpacity));
         break;
       case 'black-theme':
         final c = Color.fromRGBO(16, 16, 16, 1);
-        appModel.setOverrideDictionaryTheme(_themedWithSurface(appModel.darkTheme, c));
-        appModel.setOverrideDictionaryColor(c.withValues(alpha: dictionaryEntryOpacity));
+        appModel.setOverrideDictionaryTheme(
+            _themedWithSurface(appModel.darkTheme, c));
+        appModel.setOverrideDictionaryColor(
+            c.withValues(alpha: dictionaryEntryOpacity));
         break;
       case 'custom-theme':
         if (appModel.customThemeDark) {
           final c = Color.fromRGBO(35, 39, 42, 1);
-          appModel.setOverrideDictionaryTheme(_themedWithSurface(appModel.darkTheme, c));
-          appModel.setOverrideDictionaryColor(c.withValues(alpha: dictionaryEntryOpacity));
+          appModel.setOverrideDictionaryTheme(
+              _themedWithSurface(appModel.darkTheme, c));
+          appModel.setOverrideDictionaryColor(
+              c.withValues(alpha: dictionaryEntryOpacity));
         } else {
           final c = Color.fromRGBO(249, 249, 249, 1);
-          appModel.setOverrideDictionaryTheme(_themedWithSurface(appModel.theme, c));
-          appModel.setOverrideDictionaryColor(c.withValues(alpha: dictionaryEntryOpacity));
+          appModel.setOverrideDictionaryTheme(
+              _themedWithSurface(appModel.theme, c));
+          appModel.setOverrideDictionaryColor(
+              c.withValues(alpha: dictionaryEntryOpacity));
         }
         break;
     }
@@ -770,12 +844,10 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     final ReaderTtuSource src = ReaderTtuSource.instance;
     final fontCss = src.buildCustomFontCss();
     final hasCustomFonts = fontCss.fontFamily.isNotEmpty;
-    final fontFamilyOne = hasCustomFonts
-        ? '${fontCss.fontFamily}, serif'
-        : 'serif';
-    final fontFamilyTwo = hasCustomFonts
-        ? '${fontCss.fontFamily}, sans-serif'
-        : 'sans-serif';
+    final fontFamilyOne =
+        hasCustomFonts ? '${fontCss.fontFamily}, serif' : 'serif';
+    final fontFamilyTwo =
+        hasCustomFonts ? '${fontCss.fontFamily}, sans-serif' : 'sans-serif';
     final hideFuriganaValue = src.ttuFuriganaMode == 'show' ? 0 : 1;
     final furiganaStyle =
         ReaderTtuSource.furiganaModeToStyle(src.ttuFuriganaMode);
@@ -785,7 +857,8 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       'window.localStorage.setItem("writingMode","${src.ttuWritingMode}")',
       'window.localStorage.setItem("viewMode","${src.ttuViewMode}")',
       'window.localStorage.setItem("theme","${appModel.appThemeKey}")',
-      if (appModel.appThemeKey == 'custom-theme' && appModel.customThemeFontColor != null)
+      if (appModel.appThemeKey == 'custom-theme' &&
+          appModel.customThemeFontColor != null)
         _buildCustomThemeJs(),
       'window.localStorage.setItem("hideFurigana","$hideFuriganaValue")',
       'window.localStorage.setItem("furiganaStyle","$furiganaStyle")',
@@ -810,12 +883,10 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     final fc = appModel.customThemeFontColor!;
     final r = fc.red, g = fc.green, b = fc.blue;
     final a = (fc.alpha / 255.0).toStringAsFixed(2);
-    final bgColor = appModel.customThemeDark
-        ? 'rgba(35,39,42,1)'
-        : 'rgba(255,255,255,1)';
-    final selFc = appModel.customThemeDark
-        ? 'rgba(85,90,92,0.6)'
-        : 'rgba(245,245,245,1)';
+    final bgColor =
+        appModel.customThemeDark ? 'rgba(35,39,42,1)' : 'rgba(255,255,255,1)';
+    final selFc =
+        appModel.customThemeDark ? 'rgba(85,90,92,0.6)' : 'rgba(245,245,245,1)';
     final selBg = appModel.customThemeDark
         ? 'rgba(212,217,220,0.8)'
         : 'rgba(151,151,151,1)';
@@ -836,8 +907,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   }
 
   String _buildFontFaceCss() {
-    const defaultFaces =
-        '@font-face { font-family: "Noto Serif JP"; '
+    const defaultFaces = '@font-face { font-family: "Noto Serif JP"; '
         'src: local("Noto Serif CJK JP"), local("NotoSerifCJKjp-Regular"), local("serif"); '
         'font-display: swap; } '
         '@font-face { font-family: "Noto Sans JP"; '
@@ -866,14 +936,14 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
           injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
         ),
         UserScript(
-            source: '(function(){'
-                'var s=document.createElement("style");'
-                's.id="hibiki-custom-fonts";'
-                "s.textContent='${_buildFontFaceCss().replaceAll('\\', '\\\\').replaceAll("'", "\\'").replaceAll('\n', ' ')}';"
-                'document.addEventListener("DOMContentLoaded",function(){'
-                'document.head.appendChild(s)});})()',
-            injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
-          ),
+          source: '(function(){'
+              'var s=document.createElement("style");'
+              's.id="hibiki-custom-fonts";'
+              "s.textContent='${_buildFontFaceCss().replaceAll('\\', '\\\\').replaceAll("'", "\\'").replaceAll('\n', ' ')}';"
+              'document.addEventListener("DOMContentLoaded",function(){'
+              'document.head.appendChild(s)});})()',
+          injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+        ),
       ]),
       onPermissionRequest: (controller, origin) async {
         return PermissionResponse(
@@ -1043,7 +1113,8 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         }
 
         await controller.evaluateJavascript(source: javascriptToExecute);
-        Future.delayed(const Duration(milliseconds: 300), _focusNode.requestFocus);
+        Future.delayed(
+            const Duration(milliseconds: 300), _focusNode.requestFocus);
 
         debugPrint(
           '[hibiki-audiobook] onLoadStop uri=$uri '
@@ -1083,7 +1154,8 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
           'ctrl=${_audiobookController != null} srtUid=$_srtBookUid',
         );
         try {
-          await _maybeInjectAudiobookBridge(controller, trigger: 'onTitleChanged')
+          await _maybeInjectAudiobookBridge(controller,
+                  trigger: 'onTitleChanged')
               .timeout(const Duration(seconds: 10));
         } catch (e) {
           debugPrint('[hibiki-audiobook] onTitleChanged bridge timeout: $e');
@@ -1135,9 +1207,8 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       isJson = false;
     }
 
-    final String? msgType = isJson
-        ? messageJson['hibiki-message-type'] as String?
-        : null;
+    final String? msgType =
+        isJson ? messageJson['hibiki-message-type'] as String? : null;
 
     // 带 hibiki-message-type 的都是我们自己的协议消息，一律不防抖；
     // 防抖只过滤 ttu 原生 console 噪声。
@@ -1178,8 +1249,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         break;
       case 'sasayakiNavOk':
         // DOM 渲染完成，重试 cueMap 构建（sectionChanged 时可能太早）。
-        final int? navSection =
-            (messageJson['section'] as num?)?.toInt();
+        final int? navSection = (messageJson['section'] as num?)?.toInt();
         if (navSection != null) {
           _lastSasayakiAppliedSection = -1;
           unawaited(_applySasayakiCuesForSection(navSection));
@@ -1187,6 +1257,18 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         break;
       case 'sasayakiApplySkip':
         _lastSasayakiAppliedSection = -1;
+        break;
+      case 'sasayakiNavErr':
+        final int? navSection = (messageJson['section'] as num?)?.toInt();
+        final Object? error = messageJson['error'];
+        if (navSection != null && error == 'section out of range') {
+          _dropStaleSectionNavigation(navSection, 'webview-nav-err');
+          break;
+        }
+        ErrorLogService.instance.log(
+          'WebView.$msgType',
+          error ?? message.message,
+        );
         break;
       case 'alignToRectDiag':
         // ignore: avoid_print
@@ -1242,12 +1324,11 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         text: text,
         index: index,
       );
-      int whitespaceOffset =
-          searchTerm.length - searchTerm.trimLeft().length;
+      int whitespaceOffset = searchTerm.length - searchTerm.trimLeft().length;
 
-      int offsetIndex = appModel.targetLanguage
-              .getStartingIndex(text: text, index: index) +
-          whitespaceOffset;
+      int offsetIndex =
+          appModel.targetLanguage.getStartingIndex(text: text, index: index) +
+              whitespaceOffset;
 
       int length = appModel.targetLanguage.getGuessHighlightLength(
         searchTerm: searchTerm,
@@ -2174,8 +2255,8 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       controller.onPositionWrite = (String uid, int posMs) {
         repo.updatePositionMs(bookUid: uid, positionMs: posMs);
       };
-      controller.onTapSeekPersist = (bool v) =>
-          repo.updateTapSeek(bookUid: bookUid, value: v);
+      controller.onTapSeekPersist =
+          (bool v) => repo.updateTapSeek(bookUid: bookUid, value: v);
       controller.addListener(_onCueChanged);
       _wireFollowAudio(controller, bookUid: bookUid, repo: repo);
       unawaited(_wireMediaNotification(controller));
@@ -2208,13 +2289,14 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     final SrtBookRepository srtRepo = SrtBookRepository(appModel.database);
     final SrtBook? srtBook = await srtRepo.findByTtuBookId(ttuId);
     if (srtBook == null) {
-      debugPrint('[hibiki-audiobook] srt init skip: no SrtBook for ttuId=$ttuId');
+      debugPrint(
+          '[hibiki-audiobook] srt init skip: no SrtBook for ttuId=$ttuId');
       return;
     }
 
-    final bool hasAudioConfig = (srtBook.audioPaths != null &&
-            srtBook.audioPaths!.isNotEmpty) ||
-        (srtBook.audioRoot != null && srtBook.audioRoot!.isNotEmpty);
+    final bool hasAudioConfig =
+        (srtBook.audioPaths != null && srtBook.audioPaths!.isNotEmpty) ||
+            (srtBook.audioRoot != null && srtBook.audioRoot!.isNotEmpty);
     final List<File> audioFiles = await _audioFilesForSrtBook(srtBook);
     if (audioFiles.isEmpty) {
       if (hasAudioConfig) {
@@ -2275,8 +2357,8 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     controller.onDelayPersist = (int ms) async {
       await abRepo.updateDelayMs(bookUid: srtBookUid, ms: ms);
     };
-    controller.onTapSeekPersist = (bool v) =>
-        abRepo.updateTapSeek(bookUid: srtBookUid, value: v);
+    controller.onTapSeekPersist =
+        (bool v) => abRepo.updateTapSeek(bookUid: srtBookUid, value: v);
     controller.onSpeedPersist = (double speed) async {
       await abRepo.updateSpeed(bookUid: srtBookUid, speed: speed);
     };
@@ -2312,8 +2394,8 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
   }
 
   /// 根据 [SrtBook] 的音频来源构建有序文件列表。
-  Future<List<File>> _audioFilesForSrtBook(SrtBook book) =>
-      _resolveAudioFiles(audioPaths: book.audioPaths, audioRoot: book.audioRoot);
+  Future<List<File>> _audioFilesForSrtBook(SrtBook book) => _resolveAudioFiles(
+      audioPaths: book.audioPaths, audioRoot: book.audioRoot);
 
   Future<List<File>> _resolveAudioFiles({
     required List<String>? audioPaths,
@@ -2331,18 +2413,15 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       final Directory dir = Directory(audioRoot);
       if (!await dir.exists()) return [];
       final entries = await dir.list().toList();
-      final files = entries
-          .whereType<File>()
-          .where((f) {
-            final String ext = f.path.toLowerCase();
-            return ext.endsWith('.mp3') ||
-                ext.endsWith('.m4a') ||
-                ext.endsWith('.ogg') ||
-                ext.endsWith('.aac') ||
-                ext.endsWith('.wav') ||
-                ext.endsWith('.mp4');
-          })
-          .toList()
+      final files = entries.whereType<File>().where((f) {
+        final String ext = f.path.toLowerCase();
+        return ext.endsWith('.mp3') ||
+            ext.endsWith('.m4a') ||
+            ext.endsWith('.ogg') ||
+            ext.endsWith('.aac') ||
+            ext.endsWith('.wav') ||
+            ext.endsWith('.mp4');
+      }).toList()
         ..sort((a, b) => a.path.compareTo(b.path));
       return files;
     }
@@ -2422,8 +2501,8 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     final int? ttuId = _extractTtuBookId();
     List<Bookmark> bookmarks = const [];
     if (ttuId != null) {
-      bookmarks = await BookmarkRepository(appModel.database)
-          .getBookmarks(ttuId);
+      bookmarks =
+          await BookmarkRepository(appModel.database).getBookmarks(ttuId);
     }
     final List<FavoriteSentence> favorites =
         await FavoriteSentenceRepository(appModel.database).getAll();
@@ -2450,6 +2529,12 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           pageProgress: pageProgress,
           bookmarks: bookmarks,
           onJumpToBookmark: (Bookmark bm) async {
+            if (_dropStaleSectionNavigation(
+              bm.sectionIndex,
+              'bookmark-jump',
+            )) {
+              return;
+            }
             await AudiobookBridge.requestSectionNav(
               _controller,
               sectionIndex: bm.sectionIndex,
@@ -2468,10 +2553,12 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           },
           favoriteSentences: favorites,
           onDeleteFavorite: (int index) async {
-            await FavoriteSentenceRepository(appModel.database)
-                .removeAt(index);
+            await FavoriteSentenceRepository(appModel.database).removeAt(index);
           },
           onJumpSection: (int idx) async {
+            if (_dropStaleSectionNavigation(idx, 'toc-jump')) {
+              return;
+            }
             await AudiobookBridge.requestSectionNav(
               _controller,
               sectionIndex: idx,
@@ -2481,7 +2568,8 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
             try {
               final int? ttuId = _extractTtuBookId();
               if (ttuId == null) return;
-              final vp = await AudiobookBridge.getViewportNormOffset(_controller);
+              final vp =
+                  await AudiobookBridge.getViewportNormOffset(_controller);
               if (vp == null) return;
               final String chapterLabel =
                   _tocLabels[vp.section] ?? t.go_to_chapter(n: vp.section + 1);
@@ -2531,12 +2619,26 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
               }
             }
           },
+          showFloatingLyric: appModel.showFloatingLyric,
+          onToggleFloatingLyric: () async {
+            final bool newValue = !appModel.showFloatingLyric;
+            await appModel.setShowFloatingLyric(newValue);
+            if (newValue) {
+              await FloatingLyricChannel.show();
+              final AudioCue? cue = _audiobookController?.currentCue;
+              if (cue != null) {
+                FloatingLyricChannel.updateText(cue.text);
+              }
+            } else {
+              await FloatingLyricChannel.hide();
+            }
+            setState(() {});
+          },
         );
         return ValueListenableBuilder<ThemeData?>(
           valueListenable: sheetThemeNotifier,
           builder: (_, ThemeData? themeOverride, Widget? child) {
-            final ThemeData effectiveTheme =
-                themeOverride ?? Theme.of(ctx);
+            final ThemeData effectiveTheme = themeOverride ?? Theme.of(ctx);
             final Color bg = effectiveTheme.colorScheme.surface;
             Widget wrapped = Theme(
               data: effectiveTheme,
@@ -2593,6 +2695,15 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       ]).timeout(const Duration(seconds: 5));
       final TtuApiProbe probe = results[0] as TtuApiProbe;
       final List<TtuTocEntry> toc = results[1] as List<TtuTocEntry>;
+      if (probe.sectionCount != null && probe.sectionCount! > 0) {
+        _ttuSectionCount = probe.sectionCount;
+      } else if (toc.isNotEmpty) {
+        int highest = -1;
+        for (final TtuTocEntry entry in toc) {
+          if (entry.index > highest) highest = entry.index;
+        }
+        _ttuSectionCount = highest >= 0 ? highest + 1 : toc.length;
+      }
       if (!probe.hasCurrentSection || probe.currentSection == null) {
         return;
       }
@@ -2617,8 +2728,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
   /// - **SrtBook 路径**：EPUB 已预置 `data-cue-id` span，直接注册点击处理器，
   ///   加载全部 cue 供音频轨道追踪，不调用 [AudiobookBridge.annotate]。
   /// - **常规有声书路径**：按章节 href 查询 cue；若为空则自动标注句子。
-  Future<void> _injectAudiobookBridge(
-      InAppWebViewController controller) async {
+  Future<void> _injectAudiobookBridge(InAppWebViewController controller) async {
     await AudiobookBridge.inject(controller);
 
     if (_srtBookUid != null) {
@@ -2742,6 +2852,9 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       AudiobookBridge.saveScrollPos(_controller);
     }
     await AudiobookBridge.highlight(_controller, cue: cue, reveal: reveal);
+    if (appModel.showFloatingLyric && cue != null) {
+      FloatingLyricChannel.updateText(cue.text);
+    }
     await Future.delayed(const Duration(milliseconds: 50));
     _maybeImagePause(controller);
   }
@@ -2790,7 +2903,8 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     };
   }
 
-  Future<void> _wireMediaNotification(AudiobookPlayerController controller) async {
+  Future<void> _wireMediaNotification(
+      AudiobookPlayerController controller) async {
     final handler = appModelNoUpdate.audioHandler;
     if (handler == null) return;
     if (!appModelNoUpdate.showMediaNotification) {
@@ -2798,8 +2912,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       return;
     }
 
-    final String bookTitle =
-        widget.item?.title ?? 'Audiobook';
+    final String bookTitle = widget.item?.title ?? 'Audiobook';
 
     Uri? artUri;
     final String? base64Img = widget.item?.base64Image;
@@ -2836,10 +2949,12 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         speed: controller.speed,
         duration: controller.duration,
       );
-      final String? cueText = controller.currentCue?.text;
-      if (cueText != null && cueText.isNotEmpty) {
-        handler.updateDisplayTitle(bookTitle, displaySubtitle: cueText);
-      }
+      handler.updateNotificationSubtitle(
+        title: bookTitle,
+        subtitle: appModelNoUpdate.showSubtitlesInNotification
+            ? controller.currentCue?.text
+            : null,
+      );
     });
 
     _notifPlaySub?.cancel();
@@ -2872,6 +2987,9 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         '[hibiki-reader-pos] cross-chapter suppressed during restore '
         '(newSection=$newSection)',
       );
+      return;
+    }
+    if (_dropStaleSectionNavigation(newSection, 'cue-cross-chapter')) {
       return;
     }
 
@@ -2981,6 +3099,9 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
   Future<void> _followPillTap() async {
     final int? target = _pendingNavSection;
     if (target == null) return;
+    if (_dropStaleSectionNavigation(target, 'follow-pill')) {
+      return;
+    }
     _inFlightNavSection = target;
     try {
       await AudiobookBridge.requestSectionNav(
@@ -3003,6 +3124,9 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     if (controller == null) return;
     final int targetSec = _currentTtuSection + delta;
     if (targetSec < 0) return;
+    if (_dropStaleSectionNavigation(targetSec, 'boundary-skip')) {
+      return;
+    }
     final List<AudioCue> allCues = controller.chapterCuesSnapshot;
     final List<AudioCue> targetCues = allCues.where((c) {
       final frag = SasayakiMatchCodec.tryDecode(c.textFragmentId);
@@ -3015,6 +3139,9 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
   /// 为指定章节预建 Sasayaki cueMap。由 sectionChanged 和 bootstrap 触发。
   Future<void> _applySasayakiCuesForSection(int sectionIndex) async {
     if (sectionIndex < 0) return;
+    if (_dropStaleSectionNavigation(sectionIndex, 'apply-cues')) {
+      return;
+    }
     final AudiobookPlayerController? controller = _audiobookController;
     if (controller == null || !_controllerInitialised) return;
     if (_lastSasayakiAppliedSection == sectionIndex) return;
@@ -3106,6 +3233,12 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       );
     }
     if (_pendingRestorePos == null) return;
+    if (_dropStaleSectionNavigation(
+      _pendingRestorePos!.section,
+      jumpBm != null ? 'bookmark-restore' : 'saved-restore',
+    )) {
+      return;
+    }
     if (saved == null) {
       saved = ReaderPosition()
         ..ttuBookId = ttuId
@@ -3296,6 +3429,9 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     final SasayakiFragment? frag =
         SasayakiMatchCodec.tryDecode(cue.textFragmentId);
     if (frag != null && frag.sectionIndex != _currentTtuSection) {
+      if (_dropStaleSectionNavigation(frag.sectionIndex, 'sentence-tap')) {
+        return;
+      }
       // 用户主动点击不同章节的 cue：重新开启 follow audio 并跳章。
       controller.setFollowAudio(true);
       await _handleCueCrossChapter(frag.sectionIndex);
@@ -3458,10 +3594,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         allowMultiple: true,
       );
       if (result == null) return;
-      newPaths = result.files
-          .map((f) => f.path)
-          .whereType<String>()
-          .toList()
+      newPaths = result.files.map((f) => f.path).whereType<String>().toList()
         ..sort();
       if (newPaths.isEmpty) return;
     }

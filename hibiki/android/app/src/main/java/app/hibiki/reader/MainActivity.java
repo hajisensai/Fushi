@@ -4,6 +4,7 @@ package app.hibiki.reader;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -14,6 +15,7 @@ import android.net.Uri;
 import io.flutter.embedding.engine.FlutterEngine;
 import io.flutter.plugin.common.MethodChannel;
 
+import android.provider.Settings;
 import android.media.AudioAttributes;
 import android.media.MediaPlayer;
 import android.speech.tts.TextToSpeech;
@@ -22,6 +24,8 @@ import java.util.Locale;
 import com.ichi2.anki.FlashCardsContract;
 import com.ichi2.anki.api.AddContentApi;
 import android.content.ContentValues;
+import android.content.SharedPreferences;
+import android.graphics.drawable.ColorDrawable;
 import androidx.core.content.FileProvider;
 import android.content.ContentResolver;
 
@@ -50,6 +54,7 @@ import androidx.documentfile.provider.DocumentFile;
 
 import com.ichi2.anki.api.NoteInfo;
 import com.ryanheise.audioservice.AudioServiceActivity;
+import android.content.Context;
 import android.content.res.Configuration;
 import android.database.sqlite.SQLiteDatabase;
 
@@ -60,6 +65,9 @@ public class MainActivity extends AudioServiceActivity {
     private static final String TTS_CHANNEL = "app.hibiki.reader/tts";
     private static final String UPDATE_CHANNEL = "app.hibiki.reader/update";
     private static final String FONTS_CHANNEL = "app.hibiki.reader/fonts";
+    private static final String FLOATING_LYRIC_CHANNEL = "app.hibiki.reader/floating_lyric";
+    private static final String SPLASH_CHANNEL = "app.hibiki.reader/splash";
+    private static final String SPLASH_PREFS = "hibiki_splash";
     private static final int AD_PERM_REQUEST = 0;
     private static final int SAF_PICK_DIR_REQUEST = 1001;
 
@@ -79,7 +87,33 @@ public class MainActivity extends AudioServiceActivity {
     private MethodChannel volumeKeyChannel;
 
     @Override
+    protected void attachBaseContext(Context newBase) {
+        SharedPreferences prefs = newBase.getSharedPreferences(SPLASH_PREFS, MODE_PRIVATE);
+        if (prefs.contains("is_dark")) {
+            boolean isDark = prefs.getBoolean("is_dark", false);
+            int currentNight = newBase.getResources().getConfiguration().uiMode
+                    & Configuration.UI_MODE_NIGHT_MASK;
+            boolean systemDark = currentNight == Configuration.UI_MODE_NIGHT_YES;
+            if (isDark != systemDark) {
+                Configuration config = new Configuration(
+                        newBase.getResources().getConfiguration());
+                config.uiMode = (config.uiMode & ~Configuration.UI_MODE_NIGHT_MASK)
+                        | (isDark ? Configuration.UI_MODE_NIGHT_YES
+                                  : Configuration.UI_MODE_NIGHT_NO);
+                super.attachBaseContext(newBase.createConfigurationContext(config));
+                return;
+            }
+        }
+        super.attachBaseContext(newBase);
+    }
+
+    @Override
     protected void onCreate(Bundle savedInstanceState) {
+        SharedPreferences splashPrefs = getSharedPreferences(SPLASH_PREFS, MODE_PRIVATE);
+        int bgColor = splashPrefs.getInt("bg_color", 0);
+        if (bgColor != 0) {
+            getWindow().setBackgroundDrawable(new ColorDrawable(bgColor));
+        }
         super.onCreate(savedInstanceState);
         isAppRunning = false;
         
@@ -726,6 +760,104 @@ public class MainActivity extends AudioServiceActivity {
                     }
                 } else {
                     result.notImplemented();
+                }
+            });
+
+        new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), SPLASH_CHANNEL)
+            .setMethodCallHandler((call, result) -> {
+                SharedPreferences prefs = getSharedPreferences(SPLASH_PREFS, MODE_PRIVATE);
+                switch (call.method) {
+                    case "setSplashColor": {
+                        Map<String, Object> args = (Map<String, Object>) call.arguments;
+                        Number colorNumber = (Number) args.get("color");
+                        int color = colorNumber.intValue();
+                        boolean isDark = (boolean) args.get("isDark");
+                        prefs.edit()
+                             .putInt("bg_color", color)
+                             .putBoolean("is_dark", isDark)
+                             .apply();
+                        getWindow().setBackgroundDrawable(new ColorDrawable(color));
+                        result.success(null);
+                        break;
+                    }
+                    case "getSplashColor": {
+                        int color = prefs.getInt("bg_color", 0);
+                        result.success(color);
+                        break;
+                    }
+                    default:
+                        result.notImplemented();
+                }
+            });
+
+        new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), FLOATING_LYRIC_CHANNEL)
+            .setMethodCallHandler((call, result) -> {
+                switch (call.method) {
+                    case "show": {
+                        if (!Settings.canDrawOverlays(context)) {
+                            Intent intent = new Intent(
+                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                    Uri.parse("package:" + getPackageName()));
+                            startActivity(intent);
+                            result.success(false);
+                            return;
+                        }
+                        Intent svc = new Intent(context, FloatingLyricService.class);
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            startForegroundService(svc);
+                        } else {
+                            startService(svc);
+                        }
+                        result.success(true);
+                        break;
+                    }
+                    case "hide": {
+                        stopService(new Intent(context, FloatingLyricService.class));
+                        result.success(true);
+                        break;
+                    }
+                    case "updateText": {
+                        String text = call.argument("text");
+                        FloatingLyricService svc = FloatingLyricService.getInstance();
+                        if (svc != null && text != null) {
+                            svc.updateLyricText(text);
+                        }
+                        result.success(null);
+                        break;
+                    }
+                    case "updateStyle": {
+                        Number size = call.argument("fontSize");
+                        Number color = call.argument("textColor");
+                        Number bg = call.argument("bgColor");
+                        FloatingLyricService svc = FloatingLyricService.getInstance();
+                        if (svc != null) {
+                            svc.updateStyle(
+                                    size != null ? size.floatValue() : 16f,
+                                    color != null ? color.intValue() : 0xFFFFFFFF,
+                                    bg != null ? bg.intValue() : 0xCC000000);
+                        }
+                        result.success(null);
+                        break;
+                    }
+                    case "setLocked": {
+                        Boolean locked = call.argument("locked");
+                        FloatingLyricService svc = FloatingLyricService.getInstance();
+                        if (svc != null) {
+                            svc.setLocked(locked != null && locked);
+                        }
+                        result.success(null);
+                        break;
+                    }
+                    case "isShowing": {
+                        result.success(FloatingLyricService.getInstance() != null);
+                        break;
+                    }
+                    case "canDrawOverlays": {
+                        result.success(Settings.canDrawOverlays(context));
+                        break;
+                    }
+                    default:
+                        result.notImplemented();
                 }
             });
 
