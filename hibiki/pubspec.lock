@@ -202,22 +202,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.3.1"
-  cached_network_svg_image:
-    dependency: "direct main"
-    description:
-      name: cached_network_svg_image
-      sha256: "4c549b8d1d3faa999d886c79874528e16a394ed72d5e68bee49cd352a08c436a"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.0.5"
-  cancelable_compute:
-    dependency: "direct main"
-    description:
-      name: cancelable_compute
-      sha256: da30800482576756dd5c7106fb445e4fbad112cc2c24f72d31ec42f886c1a1cb
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.3.0"
   carousel_slider:
     dependency: "direct main"
     description:
@@ -482,14 +466,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.3.3"
-  favicon:
-    dependency: "direct main"
-    description:
-      name: favicon
-      sha256: "627fa31a9de0e791501a214a4418cd03681e1a259e159a75c8a6c28b83817b02"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.1.1"
   ffi:
     dependency: "direct main"
     description:
@@ -514,15 +490,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "5.3.0"
-  filesystem_picker:
-    dependency: "direct main"
-    description:
-      path: package
-      ref: jidoujisho
-      resolved-ref: aedba6189cd6e995c1ff0f8451d1d5e31c2ce7c1
-      url: "https://github.com/arianneorpilla/filesystem_picker"
-    source: git
-    version: "2.0.0-nullsafety.0"
   fixnum:
     dependency: transitive
     description:
@@ -729,14 +696,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.7.0"
-  flutter_svg:
-    dependency: transitive
-    description:
-      name: flutter_svg
-      sha256: f991fdb1533c3caeee0cdc14b04f50f0c3916f0dbcbc05237ccbe4e3c6b93f3f
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.0.5"
   flutter_test:
     dependency: "direct dev"
     description: flutter
@@ -791,10 +750,10 @@ packages:
     dependency: "direct main"
     description:
       name: google_fonts
-      sha256: "6b6f10f0ce3c42f6552d1c70d2c28d764cf22bb487f50f66cca31dcd5194f4d6"
+      sha256: "2776c66b3e97c6cdd58d1bd3281548b074b64f1fd5c8f82391f7456e38849567"
       url: "https://pub.dev"
     source: hosted
-    version: "4.0.4"
+    version: "4.0.5"
   graphs:
     dependency: transitive
     description:
@@ -812,13 +771,13 @@ packages:
     source: hosted
     version: "0.15.3"
   http:
-    dependency: "direct main"
+    dependency: transitive
     description:
       name: http
-      sha256: "759d1a329847dd0f39226c688d3e06a6b8679668e350e2891a6474f8b4bb8525"
+      sha256: "87721a4a50b19c7f1d49001e51409bddc46303966ce89a65af4f4e6004896412"
       url: "https://pub.dev"
     source: hosted
-    version: "1.1.0"
+    version: "1.6.0"
   http_multi_server:
     dependency: transitive
     description:
@@ -879,10 +838,10 @@ packages:
     dependency: transitive
     description:
       name: image_picker_platform_interface
-      sha256: "1991219d9dbc42a99aff77e663af8ca51ced592cd6685c9485e3458302d3d4f8"
+      sha256: "0e827c156e3a90edd3bbe7f6de048b39247b16e58173b08a835b7eb00aba239e"
       url: "https://pub.dev"
     source: hosted
-    version: "2.6.3"
+    version: "2.9.2"
   infinite_scroll_pagination:
     dependency: "direct main"
     description:
@@ -995,14 +954,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.0.2"
-  lemmatizerx:
-    dependency: "direct main"
-    description:
-      name: lemmatizerx
-      sha256: "96fa82dec6eb8198515f87603f49c974346b2eabb3b1e21db52c16821a9162fd"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.0.0"
   lints:
     dependency: transitive
     description:
@@ -1148,14 +1099,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.9.1"
-  path_parsing:
-    dependency: transitive
-    description:
-      name: path_parsing
-      sha256: e3e67b1629e6f7e8100b367d3db6ba6af4b1f0bb80f64db18ef1fbabd2fa9ccf
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.0.1"
   path_provider:
     dependency: "direct main"
     description:
@@ -1204,14 +1147,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.3.0"
-  pedantic:
-    dependency: transitive
-    description:
-      name: pedantic
-      sha256: "67fc27ed9639506c856c840ccce7594d0bdcd91bc8d53d6e52359449a1d50602"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.11.1"
   permission_handler:
     dependency: "direct main"
     description:
@@ -1309,7 +1244,7 @@ packages:
     source: hosted
     version: "1.2.3"
   quiver:
-    dependency: "direct main"
+    dependency: transitive
     description:
       name: quiver
       sha256: b1c1ac5ce6688d77f65f3375a9abb9319b3cb32486bdc7a1e0fdf004d7ba4e47
@@ -1349,14 +1284,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.0.9"
-  reorderables:
-    dependency: "direct main"
-    description:
-      name: reorderables
-      sha256: "004a886e4878df1ee27321831c838bc1c976311f4ca6a74ce7d561e506540a77"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.6.0"
   restart_app:
     dependency: "direct main"
     description:
@@ -1390,14 +1317,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.27.7"
-  scrollable_positioned_list:
-    dependency: "direct main"
-    description:
-      name: scrollable_positioned_list
-      sha256: "1b54d5f1329a1e263269abc9e2543d90806131aa14fe7c6062a8054d57249287"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.3.8"
   share_plus:
     dependency: "direct main"
     description:
@@ -1644,14 +1563,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.0.5"
-  uri_to_file:
-    dependency: "direct main"
-    description:
-      name: uri_to_file
-      sha256: "84afd633b1492fc465c768141e1a29edd519061bf99935b6b4d0d5de8ec7c108"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.2.0"
   url_launcher:
     dependency: "direct main"
     description:
@@ -1724,30 +1635,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.5.3"
-  vector_graphics:
-    dependency: transitive
-    description:
-      name: vector_graphics
-      sha256: ea8d3fc7b2e0f35de38a7465063ecfcf03d8217f7962aa2a6717132cb5d43a79
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.1.5"
-  vector_graphics_codec:
-    dependency: transitive
-    description:
-      name: vector_graphics_codec
-      sha256: a5eaa5d19e123ad4f61c3718ca1ed921c4e6254238d9145f82aa214955d9aced
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.1.5"
-  vector_graphics_compiler:
-    dependency: transitive
-    description:
-      name: vector_graphics_compiler
-      sha256: "15edc42f7eaa478ce854eaf1fbb9062a899c0e4e56e775dd73b7f4709c97c4ca"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.1.5"
   vector_math:
     dependency: transitive
     description:
