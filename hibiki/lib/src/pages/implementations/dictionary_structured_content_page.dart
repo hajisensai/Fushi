@@ -10,6 +10,7 @@ import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/src/dictionary/hoshidicts.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/utils.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 final dictionaryCssProvider =
     Provider.family<String, String>((ref, dictionaryName) {
@@ -30,7 +31,10 @@ final dictionaryCssProvider =
     if (entity is Directory) {
       for (final f in entity.listSync().whereType<File>()) {
         final ext = path.extension(f.path).toLowerCase();
-        if (ext == '.otf' || ext == '.ttf' || ext == '.woff' || ext == '.woff2') {
+        if (ext == '.otf' ||
+            ext == '.ttf' ||
+            ext == '.woff' ||
+            ext == '.woff2') {
           final fontName = path.basenameWithoutExtension(f.path);
           final format = ext == '.otf'
               ? 'opentype'
@@ -93,7 +97,8 @@ class _DictionaryHtmlWidgetState extends ConsumerState<DictionaryHtmlWidget> {
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final dictionaryFontSize = ref.read(appProvider).dictionaryFontSize;
-    final dictCss = ref.read(dictionaryCssProvider(widget.entry.dictionaryName));
+    final dictCss =
+        ref.read(dictionaryCssProvider(widget.entry.dictionaryName));
     final dictName = widget.entry.dictionaryName;
 
     final contentJson = jsonEncode(widget.entry.meaning);
@@ -209,7 +214,11 @@ class _DictionaryHtmlWidgetState extends ConsumerState<DictionaryHtmlWidget> {
           );
           controller.addJavaScriptHandler(
             handlerName: 'openLink',
-            callback: (args) {},
+            callback: (args) async {
+              if (args.isNotEmpty) {
+                await _openExternalLink(args[0].toString());
+              }
+            },
           );
           controller.addJavaScriptHandler(
             handlerName: 'contentHeight',
@@ -252,6 +261,14 @@ class _DictionaryHtmlWidgetState extends ConsumerState<DictionaryHtmlWidget> {
       default:
         return 'application/octet-stream';
     }
+  }
+
+  static Future<void> _openExternalLink(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null || !uri.hasScheme) {
+      return;
+    }
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 }
 

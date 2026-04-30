@@ -901,7 +901,7 @@ function renderStructuredContent(parent, node, language = null, dictName = null,
         return;
     }
     
-    if (node.tag === 'img') {
+    if (node.tag === 'img' || node.type === 'image') {
         parent.appendChild(createDefinitionImage(node, dictName, exporting));
         return;
     }
@@ -920,7 +920,10 @@ function renderStructuredContent(parent, node, language = null, dictName = null,
             if (isExternal) {
                 openExternalLink(node.href);
             } else {
-                // TODO: handle redirect to other entry
+                const query = node.href.indexOf('?') >= 0
+                    ? new URLSearchParams(node.href.substring(node.href.indexOf('?'))).get('query') || element.textContent || ''
+                    : element.textContent || '';
+                window.flutter_inappwebview.callHandler('onLinkClick', query);
             }
         };
     }
@@ -1544,15 +1547,11 @@ window.renderPopup = function() {
                 const sel = window.getSelection();
                 const text = sel ? sel.toString() : '';
                 if (text) {
-                    const ta = document.createElement('textarea');
-                    ta.value = text;
-                    ta.style.cssText = 'position:fixed;left:-9999px';
-                    document.body.appendChild(ta);
-                    ta.select();
-                    document.execCommand('copy');
-                    document.body.removeChild(ta);
-                    copyToast.textContent = 'Copied!';
-                    setTimeout(() => { hideCopyToast(); }, 600);
+                    window.flutter_inappwebview.callHandler('copyText', text)
+                        .then((copied) => {
+                            copyToast.textContent = copied ? 'Copied!' : 'Copy failed';
+                            setTimeout(() => { hideCopyToast(); }, 600);
+                        });
                 }
             });
         }

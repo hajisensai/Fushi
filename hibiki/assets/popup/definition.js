@@ -294,7 +294,7 @@ function renderStructuredContent(parent, node, language, dictName, exporting) {
         return;
     }
 
-    if (node.tag === 'img') {
+    if (node.tag === 'img' || node.type === 'image') {
         parent.appendChild(createDefinitionImage(node, dictName, exporting));
         return;
     }

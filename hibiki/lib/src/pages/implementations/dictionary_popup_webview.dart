@@ -1,12 +1,14 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/src/dictionary/hoshidicts.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/utils.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class DictionaryPopupWebView extends ConsumerStatefulWidget {
   const DictionaryPopupWebView({
@@ -21,10 +23,12 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   final void Function(Map<String, String> fields)? onMineEntry;
 
   @override
-  ConsumerState<DictionaryPopupWebView> createState() => DictionaryPopupWebViewState();
+  ConsumerState<DictionaryPopupWebView> createState() =>
+      DictionaryPopupWebViewState();
 }
 
-class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView> {
+class DictionaryPopupWebViewState
+    extends ConsumerState<DictionaryPopupWebView> {
   InAppWebViewController? _controller;
   bool _ready = false;
 
@@ -87,8 +91,7 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView> 
           final dictName = url.queryParameters['dictionary'] ?? '';
           final mediaPath = url.queryParameters['path'] ?? '';
           if (dictName.isNotEmpty && mediaPath.isNotEmpty) {
-            final data =
-                HoshiDicts.instance.getMediaFile(dictName, mediaPath);
+            final data = HoshiDicts.instance.getMediaFile(dictName, mediaPath);
             if (data != null) {
               return WebResourceResponse(
                 contentType: _mimeTypeForPath(mediaPath),
@@ -115,7 +118,9 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView> 
         controller.addJavaScriptHandler(
           handlerName: 'mineEntry',
           callback: (args) async {
-            if (args.isNotEmpty && args[0] is Map && widget.onMineEntry != null) {
+            if (args.isNotEmpty &&
+                args[0] is Map &&
+                widget.onMineEntry != null) {
               final fields = Map<String, String>.from(
                 (args[0] as Map)
                     .map((k, v) => MapEntry(k.toString(), v.toString())),
@@ -145,7 +150,38 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView> 
 
         controller.addJavaScriptHandler(
           handlerName: 'openLink',
-          callback: (args) {},
+          callback: (args) async {
+            if (args.isNotEmpty) {
+              await _openExternalLink(args[0].toString());
+            }
+          },
+        );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'copyText',
+          callback: (args) async {
+            if (args.isEmpty) {
+              return false;
+            }
+            final text = args[0].toString();
+            if (text.isEmpty) {
+              return false;
+            }
+            await Clipboard.setData(ClipboardData(text: text));
+            return true;
+          },
+        );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'onLinkClick',
+          callback: (args) {
+            if (args.isNotEmpty) {
+              final text = args[0].toString();
+              if (text.isNotEmpty) {
+                widget.onTextSelected?.call(text);
+              }
+            }
+          },
         );
 
         controller.addJavaScriptHandler(
@@ -158,7 +194,8 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView> 
             if (expression.isEmpty) return null;
             final appModel = ref.read(appProvider);
             if (!appModel.localAudioEnabled) return null;
-            final info = await TtsChannel.instance.queryLocalAudio(expression, reading);
+            final info =
+                await TtsChannel.instance.queryLocalAudio(expression, reading);
             if (info == null) return null;
             final path = await TtsChannel.instance
                 .extractLocalAudio(info['file']!, info['source']!);
@@ -190,7 +227,8 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView> 
             final result = widget.result;
             if (result.entries.isNotEmpty) {
               final entry = result.entries.first;
-              final word = entry.reading.isNotEmpty ? entry.reading : entry.word;
+              final word =
+                  entry.reading.isNotEmpty ? entry.reading : entry.word;
               if (word.isNotEmpty) {
                 TtsChannel.instance.speak(word);
               }
@@ -315,5 +353,13 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView> 
       default:
         return 'application/octet-stream';
     }
+  }
+
+  static Future<void> _openExternalLink(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null || !uri.hasScheme) {
+      return;
+    }
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 }
