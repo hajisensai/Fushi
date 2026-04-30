@@ -99,14 +99,18 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
               ),
             ),
             onPressed: () async {
+              final mediaSource = appModel.currentMediaSource;
               await onSourcePagePop();
 
               if (mounted) {
                 Navigator.pop(context, true);
               }
+              if (mediaSource == null) {
+                return;
+              }
               await appModel.closeMedia(
                 ref: ref,
-                mediaSource: appModel.currentMediaSource!,
+                mediaSource: mediaSource,
                 item: widget.item,
               );
             }),
@@ -294,8 +298,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
   Rect _calculatePopupPosition(Rect sel, Size screen) {
     final double width =
         (screen.width - popupPadding * 2).clamp(0, popupMaxWidth);
-    final double height =
-        (screen.height * 0.5).clamp(0, popupMaxHeight);
+    final double height = (screen.height * 0.5).clamp(0, popupMaxHeight);
 
     final double spaceBelow = screen.height - sel.bottom - popupPadding;
     final double spaceAbove = sel.top - popupPadding;
@@ -321,12 +324,9 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
   /// The dictionary result unpositioned. See [buildDictionary] for the
   /// positioned version.
   Widget buildDictionaryResult() {
-    final isDark =
-        (appModel.overrideDictionaryTheme ?? theme).brightness ==
-            Brightness.dark;
-    final fillColor = isDark
-        ? Colors.black
-        : Colors.white;
+    final isDark = (appModel.overrideDictionaryTheme ?? theme).brightness ==
+        Brightness.dark;
+    final fillColor = isDark ? Colors.black : Colors.white;
     final borderColor = isDark
         ? Colors.white.withValues(alpha: 0.15)
         : Colors.black.withValues(alpha: 0.18);
@@ -423,8 +423,8 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
           onTextSelected: (text) {
             searchDictionaryResult(
               searchTerm: text,
-              selectionRect: _selectionRectNotifier.value ??
-                  Rect.fromLTWH(0, 0, 1, 1),
+              selectionRect:
+                  _selectionRectNotifier.value ?? Rect.fromLTWH(0, 0, 1, 1),
             );
           },
           onMineEntry: onMineFromPopup,
@@ -537,6 +537,7 @@ class _SwipeDismissWrapper extends StatefulWidget {
   });
   final Widget child;
   final VoidCallback onDismiss;
+
   /// 0.1 (hard to dismiss) ~ 1.0 (easy). Maps to threshold & decision distance.
   final double sensitivity;
 
@@ -552,6 +553,7 @@ class _SwipeDismissWrapperState extends State<_SwipeDismissWrapper> {
 
   /// Threshold scales inversely with sensitivity: low sensitivity = high threshold.
   double get _threshold => 30 + (1.0 - widget.sensitivity) * 160;
+
   /// Decision distance also scales inversely.
   double get _decisionDistance => 10 + (1.0 - widget.sensitivity) * 20;
 

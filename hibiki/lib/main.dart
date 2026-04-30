@@ -13,6 +13,8 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 
+Color? _savedSplashColor;
+
 /// Application execution starts here.
 void main() {
   /// Run and handle an error zone to customise the action performed upon
@@ -51,6 +53,12 @@ void main() {
               systemNavigationBarColor: Colors.transparent,
             ),
     );
+
+    try {
+      final raw = await const MethodChannel('app.hibiki.reader/splash')
+          .invokeMethod<int>('getSplashColor');
+      if (raw != null && raw != 0) _savedSplashColor = Color(raw);
+    } catch (_) {}
 
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
@@ -248,6 +256,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
         debugShowCheckedModeBanner: false,
         theme: isDark ? ThemeData.dark() : null,
         home: Scaffold(
+          backgroundColor: _savedSplashColor,
           body: Center(
             child: Padding(
               padding: const EdgeInsets.all(24),
@@ -288,6 +297,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
         debugShowCheckedModeBanner: false,
         theme: isDark ? ThemeData.dark() : null,
         home: Scaffold(
+          backgroundColor: _savedSplashColor,
           body: Center(
             child: CircularProgressIndicator(
               color: isDark ? Colors.white70 : null,

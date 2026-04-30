@@ -69,9 +69,11 @@ class AnkiMapping {
         3: CropImageEnhancement.key,
       },
       AudioField.key: {
+        autoModeSlotNumber: LocalAudioEnhancement.key,
         0: ClearFieldEnhancement.key,
-        1: PickAudioEnhancement.key,
-        2: AudioRecorderEnhancement.key,
+        1: LocalAudioEnhancement.key,
+        2: PickAudioEnhancement.key,
+        3: AudioRecorderEnhancement.key,
       },
       AudioSentenceField.key: {
         0: ClearFieldEnhancement.key,
@@ -114,9 +116,11 @@ class AnkiMapping {
         3: CropImageEnhancement.key,
       },
       AudioField.key: {
+        autoModeSlotNumber: LocalAudioEnhancement.key,
         0: ClearFieldEnhancement.key,
-        1: PickAudioEnhancement.key,
-        2: AudioRecorderEnhancement.key,
+        1: LocalAudioEnhancement.key,
+        2: PickAudioEnhancement.key,
+        3: AudioRecorderEnhancement.key,
       },
       AudioSentenceField.key: {
         0: ClearFieldEnhancement.key,
@@ -208,7 +212,7 @@ class AnkiMapping {
   set enhancementsJson(String object) =>
       enhancements = EnhancementsConverter.fromIsar(object);
 
-  static int autoModeSlotNumber = -1;
+  static const int autoModeSlotNumber = -1;
 
   bool? exportMediaTags;
   bool? useBrTags;
@@ -250,8 +254,8 @@ class AnkiMapping {
       fieldMappings:
           fieldMappings ?? Map<String, String>.from(this.fieldMappings),
       creatorFieldKeys: creatorFieldKeys ?? List.from(this.creatorFieldKeys),
-      creatorCollapsedFieldKeys:
-          creatorCollapsedFieldKeys ?? List.from(this.creatorCollapsedFieldKeys),
+      creatorCollapsedFieldKeys: creatorCollapsedFieldKeys ??
+          List.from(this.creatorCollapsedFieldKeys),
       tags: tags ?? this.tags,
       order: order ?? this.order,
       id: id ?? this.id,

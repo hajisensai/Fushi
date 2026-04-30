@@ -3980,15 +3980,6 @@ class AppModel with ChangeNotifier {
     notifyListeners();
   }
 
-  bool get nativeDictionaryPopup {
-    return _getPref('native_dictionary_popup', defaultValue: false);
-  }
-
-  Future<void> setNativeDictionaryPopup(bool value) async {
-    await _setPref('native_dictionary_popup', value);
-    notifyListeners();
-  }
-
   /// Get whether or not bookmarks have been populated.
   bool get populateBookmarksFlag {
     return _getPref('populate_bookmarks', defaultValue: false);
