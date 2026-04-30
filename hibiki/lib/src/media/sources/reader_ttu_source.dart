@@ -171,11 +171,11 @@ class ReaderTtuSource extends ReaderMediaSource {
       );
 
       await server.serve().timeout(
-        const Duration(seconds: 15),
-        onTimeout: () => throw TimeoutException(
-          'Local assets server failed to start within 15 seconds',
-        ),
-      );
+            const Duration(seconds: 15),
+            onTimeout: () => throw TimeoutException(
+              'Local assets server failed to start within 15 seconds',
+            ),
+          );
 
       return server;
     } catch (e, stack) {
@@ -233,8 +233,7 @@ class ReaderTtuSource extends ReaderMediaSource {
               audiobookRepo: AudiobookRepository(appModel.database),
               serverPort: ReaderTtuSource.instance
                   .getPortForLanguage(appModel.targetLanguage),
-              ttuMediaSourceIdentifier:
-                  ReaderTtuSource.instance.uniqueKey,
+              ttuMediaSourceIdentifier: ReaderTtuSource.instance.uniqueKey,
             ),
           );
           if (imported == true) {
@@ -321,7 +320,8 @@ class ReaderTtuSource extends ReaderMediaSource {
                   items = getItemsFromJson(messageJson, port);
                 } catch (error, stack) {
                   items = [];
-                  ErrorLogService.instance.log('ReaderTtuSource.parseHistory', error, stack);
+                  ErrorLogService.instance
+                      .log('ReaderTtuSource.parseHistory', error, stack);
                   debugPrint('$error');
                   debugPrint('$stack');
                 }
@@ -348,7 +348,8 @@ class ReaderTtuSource extends ReaderMediaSource {
             }
           }
         } on FormatException catch (e) {
-          debugPrint('[hibiki-books] non-JSON console: ${message.message.length > 200 ? message.message.substring(0, 200) : message.message}');
+          debugPrint(
+              '[hibiki-books] non-JSON console: ${message.message.length > 200 ? message.message.substring(0, 200) : message.message}');
         }
       },
     );
@@ -407,7 +408,8 @@ class ReaderTtuSource extends ReaderMediaSource {
       onLoadStop: (controller, url) async {
         if (!jsInjected) {
           jsInjected = true;
-          await controller.evaluateJavascript(source: _buildDeleteBookJs(bookId));
+          await controller.evaluateJavascript(
+              source: _buildDeleteBookJs(bookId));
         }
       },
       onConsoleMessage: (controller, message) async {
@@ -689,8 +691,8 @@ new Promise(function(resolve) {
   Future<void> setTtuLineHeight(double v) =>
       setPreference<double>(key: 'ttu_line_height', value: v);
 
-  String get ttuWritingMode =>
-      getPreference<String>(key: 'ttu_writing_mode', defaultValue: 'vertical-rl');
+  String get ttuWritingMode => getPreference<String>(
+      key: 'ttu_writing_mode', defaultValue: 'vertical-rl');
   Future<void> setTtuWritingMode(String v) =>
       setPreference<String>(key: 'ttu_writing_mode', value: v);
 
@@ -707,22 +709,27 @@ new Promise(function(resolve) {
   /// Unified furigana mode: 'show' | 'hide' | 'partial' | 'toggle'.
   /// Migrates legacy ttu_hide_furigana + ttu_furigana_style on first read.
   String get ttuFuriganaMode {
-    final legacy = getPreference<bool?>(key: 'ttu_hide_furigana', defaultValue: null);
+    final legacy =
+        getPreference<bool?>(key: 'ttu_hide_furigana', defaultValue: null);
     if (legacy != null) {
       final oldStyle = _legacyFuriganaStyle;
       final mode = legacy ? 'hide' : 'show';
-      final merged = (legacy && (oldStyle == 'partial' || oldStyle == 'toggle'))
-          ? oldStyle
-          : mode;
+      final merged = normalizeFuriganaMode(
+        (legacy && (oldStyle == 'partial' || oldStyle == 'toggle'))
+            ? oldStyle
+            : mode,
+      );
       setPreference<String>(key: 'ttu_furigana_mode', value: merged);
       setPreference<bool?>(key: 'ttu_hide_furigana', value: null);
       return merged;
     }
-    return getPreference<String>(key: 'ttu_furigana_mode', defaultValue: 'show');
+    return normalizeFuriganaMode(
+      getPreference<String>(key: 'ttu_furigana_mode', defaultValue: 'show'),
+    );
   }
 
-  Future<void> setTtuFuriganaMode(String v) =>
-      setPreference<String>(key: 'ttu_furigana_mode', value: v);
+  Future<void> setTtuFuriganaMode(String v) => setPreference<String>(
+      key: 'ttu_furigana_mode', value: normalizeFuriganaMode(v));
 
   double get ttuTextIndentation =>
       getPreference<double>(key: 'ttu_text_indentation', defaultValue: 0);
@@ -770,7 +777,8 @@ new Promise(function(resolve) {
       setPreference<bool>(key: 'ttu_reader_styles', value: v);
 
   String get _legacyFuriganaStyle =>
-      getPreference<String>(key: 'ttu_furigana_style', defaultValue: 'partial').toLowerCase();
+      getPreference<String>(key: 'ttu_furigana_style', defaultValue: 'partial')
+          .toLowerCase();
 
   // ── 自定义字体列表 ────────────────────────────────────────────────────
   // 每条记录: { "name": "...", "path": "..." (null=系统字体), "enabled": true }
@@ -829,8 +837,7 @@ new Promise(function(resolve) {
 
   /// 生成自定义字体的 CSS font-family 值（仅启用的）和 @font-face 声明。
   ({String fontFamily, String fontFaces}) buildCustomFontCss() {
-    final enabled = customFonts.where(
-        (e) => e['enabled'] as bool? ?? true);
+    final enabled = customFonts.where((e) => e['enabled'] as bool? ?? true);
     final families = <String>[];
     final faces = <String>[];
     for (final e in enabled) {
@@ -859,9 +866,7 @@ new Promise(function(resolve) {
 
   static String cssFontFamilyName(String name) {
     final normalized = normalizedFontFamilyName(name);
-    final escaped = normalized
-        .replaceAll('\\', r'\\')
-        .replaceAll('"', r'\"');
+    final escaped = normalized.replaceAll('\\', r'\\').replaceAll('"', r'\"');
     return '"$escaped"';
   }
 
@@ -881,9 +886,8 @@ new Promise(function(resolve) {
     final fontFamilyOne = hasCustomFonts
         ? '${fontCss.fontFamily}, $serifFallback'
         : serifFallback;
-    final fontFamilyTwo = hasCustomFonts
-        ? '${fontCss.fontFamily}, $sansFallback'
-        : sansFallback;
+    final fontFamilyTwo =
+        hasCustomFonts ? '${fontCss.fontFamily}, $sansFallback' : sansFallback;
     final hideFuriganaValue = ttuFuriganaMode == 'show' ? 0 : 1;
     final furiganaStyle = furiganaModeToStyle(ttuFuriganaMode);
     final List<String> cmds = [
@@ -925,7 +929,7 @@ new Promise(function(resolve) {
   }
 
   static String furiganaModeToStyle(String mode) {
-    switch (mode) {
+    switch (normalizeFuriganaMode(mode)) {
       case 'hide':
         return 'Hide';
       case 'partial':
@@ -934,6 +938,18 @@ new Promise(function(resolve) {
         return 'toggle';
       default:
         return 'partial';
+    }
+  }
+
+  static String normalizeFuriganaMode(String mode) {
+    switch (mode) {
+      case 'show':
+      case 'hide':
+      case 'partial':
+      case 'toggle':
+        return mode;
+      default:
+        return 'show';
     }
   }
 

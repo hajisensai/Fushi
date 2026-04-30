@@ -133,7 +133,9 @@ Widget _buildDisplaySettings(VoidCallback rebuild) {
           _buildNumberRow(
             label: t.ttu_font_size,
             value: _source.ttuFontSize,
-            step: 1, min: 8, max: 64,
+            step: 1,
+            min: 8,
+            max: 64,
             format: (v) => '${v.round()}',
             onChanged: (v) => update(() => _source.setTtuFontSize(v)),
             hint: t.hint_font_size,
@@ -141,16 +143,20 @@ Widget _buildDisplaySettings(VoidCallback rebuild) {
           _buildNumberRow(
             label: t.ttu_line_height,
             value: _source.ttuLineHeight,
-            step: 0.1, min: 1.0, max: 3.0,
+            step: 0.1,
+            min: 1.0,
+            max: 3.0,
             format: (v) => v.toStringAsFixed(2),
-            onChanged: (v) => update(
-                () => _source.setTtuLineHeight((v * 100).roundToDouble() / 100)),
+            onChanged: (v) => update(() =>
+                _source.setTtuLineHeight((v * 100).roundToDouble() / 100)),
             hint: t.hint_line_height,
           ),
           _buildNumberRow(
             label: t.ttu_text_indentation,
             value: _source.ttuTextIndentation,
-            step: 1, min: 0, max: 10,
+            step: 1,
+            min: 0,
+            max: 10,
             format: (v) => '${v.round()}',
             onChanged: (v) => update(() => _source.setTtuTextIndentation(v)),
             hint: t.hint_text_indentation,
@@ -158,25 +164,36 @@ Widget _buildDisplaySettings(VoidCallback rebuild) {
           _buildNumberRow(
             label: t.ttu_first_dimension_margin,
             value: _source.ttuFirstDimensionMargin,
-            step: 5, min: 0, max: 100,
+            step: 5,
+            min: 0,
+            max: 100,
             format: (v) => '${v.round()}',
-            onChanged: (v) => update(() => _source.setTtuFirstDimensionMargin(v)),
+            onChanged: (v) =>
+                update(() => _source.setTtuFirstDimensionMargin(v)),
             hint: t.hint_margin,
           ),
           _buildNumberRow(
             label: t.ttu_second_dimension_max,
             value: _source.ttuSecondDimensionMaxValue,
-            step: 50, min: 0, max: 2000,
-            format: (v) => v.round() == 0 ? t.ttu_page_columns_auto : '${v.round()}',
-            onChanged: (v) => update(() => _source.setTtuSecondDimensionMaxValue(v)),
+            step: 50,
+            min: 0,
+            max: 2000,
+            format: (v) =>
+                v.round() == 0 ? t.ttu_page_columns_auto : '${v.round()}',
+            onChanged: (v) =>
+                update(() => _source.setTtuSecondDimensionMaxValue(v)),
             hint: t.hint_max_width_height,
           ),
           _buildNumberRow(
             label: t.ttu_page_columns,
             value: _source.ttuPageColumns.toDouble(),
-            step: 1, min: 0, max: 4,
-            format: (v) => v.round() == 0 ? t.ttu_page_columns_auto : '${v.round()}',
-            onChanged: (v) => update(() => _source.setTtuPageColumns(v.round())),
+            step: 1,
+            min: 0,
+            max: 4,
+            format: (v) =>
+                v.round() == 0 ? t.ttu_page_columns_auto : '${v.round()}',
+            onChanged: (v) =>
+                update(() => _source.setTtuPageColumns(v.round())),
             hint: t.hint_page_columns,
           ),
           Row(
@@ -193,8 +210,10 @@ Widget _buildDisplaySettings(VoidCallback rebuild) {
               ),
               SegmentedButton<String>(
                 segments: [
-                  ButtonSegment(value: 'horizontal-tb', label: Text(t.ttu_horizontal)),
-                  ButtonSegment(value: 'vertical-rl', label: Text(t.ttu_vertical)),
+                  ButtonSegment(
+                      value: 'horizontal-tb', label: Text(t.ttu_horizontal)),
+                  ButtonSegment(
+                      value: 'vertical-rl', label: Text(t.ttu_vertical)),
                 ],
                 selected: {_source.ttuWritingMode},
                 onSelectionChanged: (sel) =>
@@ -221,7 +240,8 @@ Widget _buildDisplaySettings(VoidCallback rebuild) {
               ),
               SegmentedButton<String>(
                 segments: [
-                  ButtonSegment(value: 'paginated', label: Text(t.ttu_paginated)),
+                  ButtonSegment(
+                      value: 'paginated', label: Text(t.ttu_paginated)),
                   ButtonSegment(value: 'continuous', label: Text(t.ttu_scroll)),
                 ],
                 selected: {_source.ttuViewMode},
@@ -249,12 +269,14 @@ Widget _buildDisplaySettings(VoidCallback rebuild) {
               ),
               SegmentedButton<String>(
                 segments: [
-                  ButtonSegment(value: 'mixed', label: Text(t.ttu_orient_mixed)),
-                  ButtonSegment(value: 'upright', label: Text(t.ttu_orient_upright)),
+                  ButtonSegment(
+                      value: 'mixed', label: Text(t.ttu_orient_mixed)),
+                  ButtonSegment(
+                      value: 'upright', label: Text(t.ttu_orient_upright)),
                 ],
                 selected: {_source.ttuVerticalTextOrientation},
-                onSelectionChanged: (sel) =>
-                    update(() => _source.setTtuVerticalTextOrientation(sel.first)),
+                onSelectionChanged: (sel) => update(
+                    () => _source.setTtuVerticalTextOrientation(sel.first)),
                 style: const ButtonStyle(
                   visualDensity: VisualDensity.compact,
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -263,22 +285,35 @@ Widget _buildDisplaySettings(VoidCallback rebuild) {
             ],
           ),
           const SizedBox(height: 4),
-          Row(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(child: Text(t.ttu_furigana_mode)),
-              SegmentedButton<String>(
-                segments: [
-                  ButtonSegment(value: 'show', label: Text(t.ttu_furigana_show)),
-                  ButtonSegment(value: 'hide', label: Text(t.ttu_furigana_hide)),
-                  ButtonSegment(value: 'partial', label: Text(t.ttu_furigana_partial)),
-                  ButtonSegment(value: 'toggle', label: Text(t.ttu_furigana_toggle)),
-                ],
-                selected: {_source.ttuFuriganaMode},
-                onSelectionChanged: (sel) =>
-                    update(() => _source.setTtuFuriganaMode(sel.first)),
-                style: const ButtonStyle(
-                  visualDensity: VisualDensity.compact,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              Text(t.ttu_furigana_mode),
+              const SizedBox(height: 6),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: SegmentedButton<String>(
+                  segments: [
+                    ButtonSegment(
+                        value: 'show', label: Text(t.ttu_furigana_show)),
+                    ButtonSegment(
+                        value: 'hide', label: Text(t.ttu_furigana_hide)),
+                    ButtonSegment(
+                        value: 'partial', label: Text(t.ttu_furigana_partial)),
+                    ButtonSegment(
+                        value: 'toggle', label: Text(t.ttu_furigana_toggle)),
+                  ],
+                  selected: {_source.ttuFuriganaMode},
+                  onSelectionChanged: (sel) {
+                    if (sel.isEmpty) {
+                      return;
+                    }
+                    update(() => _source.setTtuFuriganaMode(sel.first));
+                  },
+                  style: const ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
                 ),
               ),
             ],
@@ -287,12 +322,14 @@ Widget _buildDisplaySettings(VoidCallback rebuild) {
           _buildSwitch(
             label: t.ttu_text_justify,
             value: _source.ttuEnableTextJustification,
-            onChanged: (v) => update(() => _source.setTtuEnableTextJustification(v)),
+            onChanged: (v) =>
+                update(() => _source.setTtuEnableTextJustification(v)),
           ),
           _buildSwitch(
             label: t.ttu_vert_kerning,
             value: _source.ttuEnableVerticalFontKerning,
-            onChanged: (v) => update(() => _source.setTtuEnableVerticalFontKerning(v)),
+            onChanged: (v) =>
+                update(() => _source.setTtuEnableVerticalFontKerning(v)),
           ),
           _buildSwitch(
             label: t.ttu_font_vpal,
@@ -302,7 +339,8 @@ Widget _buildDisplaySettings(VoidCallback rebuild) {
           _buildSwitch(
             label: t.ttu_reader_styles,
             value: _source.ttuPrioritizeReaderStyles,
-            onChanged: (v) => update(() => _source.setTtuPrioritizeReaderStyles(v)),
+            onChanged: (v) =>
+                update(() => _source.setTtuPrioritizeReaderStyles(v)),
           ),
         ],
       );
@@ -315,7 +353,10 @@ List<Widget> _buildReaderOnlySwitches(VoidCallback rebuild) {
     _buildSwitch(
       label: t.highlight_on_tap,
       value: _source.highlightOnTap,
-      onChanged: (_) { _source.toggleHighlightOnTap(); rebuild(); },
+      onChanged: (_) {
+        _source.toggleHighlightOnTap();
+        rebuild();
+      },
     ),
     _buildSwitch(
       label: t.volume_button_page_turning,
@@ -330,17 +371,26 @@ List<Widget> _buildReaderOnlySwitches(VoidCallback rebuild) {
     _buildSwitch(
       label: t.invert_volume_buttons,
       value: _source.volumePageTurningInverted,
-      onChanged: (_) { _source.toggleVolumePageTurningInverted(); rebuild(); },
+      onChanged: (_) {
+        _source.toggleVolumePageTurningInverted();
+        rebuild();
+      },
     ),
     _buildSwitch(
       label: t.extend_page_beyond_navbar,
       value: _source.extendPageBeyondNavigationBar,
-      onChanged: (_) { _source.toggleExtendPageBeyondNavigationBar(); rebuild(); },
+      onChanged: (_) {
+        _source.toggleExtendPageBeyondNavigationBar();
+        rebuild();
+      },
     ),
     _buildSwitch(
       label: t.adapt_ttu_theme,
       value: _source.adaptTtuTheme,
-      onChanged: (_) { _source.toggleAdaptTtuTheme(); rebuild(); },
+      onChanged: (_) {
+        _source.toggleAdaptTtuTheme();
+        rebuild();
+      },
     ),
     _buildSwitch(
       label: t.keep_screen_awake,
@@ -358,7 +408,10 @@ List<Widget> _buildReaderOnlySwitches(VoidCallback rebuild) {
     _buildSwitch(
       label: t.auto_read_on_lookup,
       value: _source.autoReadOnLookup,
-      onChanged: (_) { _source.toggleAutoReadOnLookup(); rebuild(); },
+      onChanged: (_) {
+        _source.toggleAutoReadOnLookup();
+        rebuild();
+      },
     ),
     Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -408,8 +461,8 @@ Widget _buildPageTurningSpeed({
         size: 18,
         onTap: () async {
           controller.text = ReaderTtuSource.defaultScrollingSpeed.toString();
-          _source.setVolumePageTurningSpeed(
-              ReaderTtuSource.defaultScrollingSpeed);
+          _source
+              .setVolumePageTurningSpeed(ReaderTtuSource.defaultScrollingSpeed);
           FocusScope.of(context).unfocus();
         },
         icon: Icons.undo,
@@ -426,9 +479,8 @@ Widget _buildFontEntry(BuildContext context) {
   return _buildTapRow(
     context: context,
     icon: Icons.font_download,
-    label: enabledCount > 0
-        ? '${t.custom_fonts} ($enabledCount)'
-        : t.custom_fonts,
+    label:
+        enabledCount > 0 ? '${t.custom_fonts} ($enabledCount)' : t.custom_fonts,
     onTap: () {
       Navigator.push(
         context,
@@ -505,8 +557,8 @@ class _TtuSettingsDialogPageState extends BasePageState {
   @override
   void initState() {
     super.initState();
-    _speedController = TextEditingController(
-        text: _source.volumePageTurningSpeed.toString());
+    _speedController =
+        TextEditingController(text: _source.volumePageTurningSpeed.toString());
   }
 
   @override
@@ -587,8 +639,8 @@ class _TtuSettingsDialogContentState extends BasePageState {
   @override
   void initState() {
     super.initState();
-    _speedController = TextEditingController(
-        text: _source.volumePageTurningSpeed.toString());
+    _speedController =
+        TextEditingController(text: _source.volumePageTurningSpeed.toString());
   }
 
   @override
@@ -658,14 +710,6 @@ class _TtuSettingsDialogContentState extends BasePageState {
           value: appModel.disableDialogScrim,
           onChanged: (v) {
             appModel.setDisableDialogScrim(v);
-            setState(() {});
-          },
-        ),
-        _buildSwitch(
-          label: t.native_dictionary_popup,
-          value: appModel.nativeDictionaryPopup,
-          onChanged: (v) {
-            appModel.setNativeDictionaryPopup(v);
             setState(() {});
           },
         ),

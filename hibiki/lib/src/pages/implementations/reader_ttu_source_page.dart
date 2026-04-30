@@ -181,6 +181,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     debugPrint('[hibiki-reader-lifecycle] initState ${identityHashCode(this)}');
     WidgetsBinding.instance.addObserver(this);
     _applyVolumeKeyIntercept();
+    _registerFloatingLyricHandlers();
     // 同步预判：Isar 查 Audiobook / SrtBook 记录。命中就让 WebView 首帧
     // 起就带底部 56+padding 槽位，避免异步 load 完再翻转 bottom 触发 ttu
     // reflow 把首页文字往上抬。
@@ -228,6 +229,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     debugPrint('[hibiki-reader-lifecycle] dispose ${identityHashCode(this)}');
     VolumeKeyChannel.instance.setHandlers();
     VolumeKeyChannel.instance.setInterceptEnabled(false);
+    FloatingLyricChannel.clearEventHandlers();
     _navRestoreTimeout?.cancel();
     _metricsDebounce?.cancel();
     // 在 WebView 销毁前同步读一次当前视口位置（fire-and-forget 写 Isar），
@@ -247,6 +249,51 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     _barThemeNotifier.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  void _registerFloatingLyricHandlers() {
+    FloatingLyricChannel.setEventHandlers(
+      onLookupText: _onFloatingLyricLookup,
+      onPreviousCue: () {
+        final AudiobookPlayerController? controller = _audiobookController;
+        if (controller != null) {
+          unawaited(controller.skipToPrevCue());
+        }
+      },
+      onPlayPause: () {
+        final AudiobookPlayerController? controller = _audiobookController;
+        if (controller != null) {
+          unawaited(controller.togglePlayPause());
+        }
+      },
+      onNextCue: () {
+        final AudiobookPlayerController? controller = _audiobookController;
+        if (controller != null) {
+          unawaited(controller.skipToNextCue());
+        }
+      },
+      onClose: () {
+        unawaited(appModel.setShowFloatingLyric(false));
+        if (mounted) {
+          setState(() {});
+        }
+      },
+    );
+  }
+
+  void _onFloatingLyricLookup(String text) {
+    final String searchTerm = text.trim();
+    if (!mounted || searchTerm.isEmpty) return;
+    final Size size = MediaQuery.sizeOf(context);
+    final Rect selectionRect = Rect.fromCenter(
+      center: Offset(size.width / 2, size.height * 0.35),
+      width: 1,
+      height: 1,
+    );
+    unawaited(searchDictionaryResult(
+      searchTerm: searchTerm,
+      selectionRect: selectionRect,
+    ));
   }
 
   /// Fire-and-forget：读一次视口位置并写库。WebView 可能已开始销毁，

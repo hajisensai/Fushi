@@ -168,7 +168,8 @@ Future<List<String>> _getSystemFonts() async {
     return _cachedSystemFonts!;
   }
   try {
-    final result = await _fontsChannel.invokeMethod<List<dynamic>>('listSystemFonts');
+    final result =
+        await _fontsChannel.invokeMethod<List<dynamic>>('listSystemFonts');
     debugPrint('[hibiki-fonts] channel returned ${result?.length} fonts');
     _cachedSystemFonts = result?.cast<String>() ?? [];
   } catch (e) {
@@ -268,7 +269,8 @@ class _SystemFontPickerPageState extends State<_SystemFontPickerPage> {
                       ),
                       title: Text(name),
                       trailing: added
-                          ? Icon(Icons.check, color: Theme.of(context).colorScheme.outline)
+                          ? Icon(Icons.check,
+                              color: Theme.of(context).colorScheme.outline)
                           : null,
                       enabled: !added,
                       onTap: () => Navigator.pop(context, name),
@@ -312,7 +314,18 @@ class _CustomFontsPageState extends BasePageState {
   Future<void> _importFontFile() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['ttf', 'otf', 'ttc', 'woff', 'woff2', 'zip', '7z', 'rar', 'tar', 'gz'],
+      allowedExtensions: [
+        'ttf',
+        'otf',
+        'ttc',
+        'woff',
+        'woff2',
+        'zip',
+        '7z',
+        'rar',
+        'tar',
+        'gz'
+      ],
       allowMultiple: true,
     );
     if (result == null || result.files.isEmpty) return;
@@ -335,8 +348,12 @@ class _CustomFontsPageState extends BasePageState {
     }
   }
 
-  Future<int> _addSingleFont(File srcFile, String fileName) async {
-    final name = p.basenameWithoutExtension(fileName);
+  Future<int> _addSingleFont(
+    File srcFile,
+    String fileName, {
+    String? overrideName,
+  }) async {
+    final name = overrideName ?? p.basenameWithoutExtension(fileName);
     var ext = p.extension(fileName).toLowerCase();
     if (!_fontExtensions.contains(ext)) {
       ext = await _detectFontExtension(srcFile) ?? '.ttf';
@@ -357,20 +374,32 @@ class _CustomFontsPageState extends BasePageState {
         final header = await raf.read(8);
         if (header.length < 4) return null;
         // wOFF
-        if (header[0] == 0x77 && header[1] == 0x4F &&
-            header[2] == 0x46 && header[3] == 0x46) {
-          return header.length >= 8 && header[4] == 0x00 &&
-              header[5] == 0x01 && header[6] == 0x00 && header[7] == 0x00
-              ? '.woff' : '.woff2';
+        if (header[0] == 0x77 &&
+            header[1] == 0x4F &&
+            header[2] == 0x46 &&
+            header[3] == 0x46) {
+          return header.length >= 8 &&
+                  header[4] == 0x00 &&
+                  header[5] == 0x01 &&
+                  header[6] == 0x00 &&
+                  header[7] == 0x00
+              ? '.woff'
+              : '.woff2';
         }
         // TrueType / OpenType
-        if (header[0] == 0x00 && header[1] == 0x01 &&
-            header[2] == 0x00 && header[3] == 0x00) return '.ttf';
-        if (header[0] == 0x4F && header[1] == 0x54 &&
-            header[2] == 0x54 && header[3] == 0x4F) return '.otf';
+        if (header[0] == 0x00 &&
+            header[1] == 0x01 &&
+            header[2] == 0x00 &&
+            header[3] == 0x00) return '.ttf';
+        if (header[0] == 0x4F &&
+            header[1] == 0x54 &&
+            header[2] == 0x54 &&
+            header[3] == 0x4F) return '.otf';
         // TTC
-        if (header[0] == 0x74 && header[1] == 0x74 &&
-            header[2] == 0x63 && header[3] == 0x66) return '.ttc';
+        if (header[0] == 0x74 &&
+            header[1] == 0x74 &&
+            header[2] == 0x63 &&
+            header[3] == 0x66) return '.ttc';
         return null;
       } finally {
         await raf.close();
@@ -386,8 +415,10 @@ class _CustomFontsPageState extends BasePageState {
       try {
         final header = await raf.read(4);
         return header.length >= 4 &&
-            header[0] == 0x50 && header[1] == 0x4B &&
-            header[2] == 0x03 && header[3] == 0x04;
+            header[0] == 0x50 &&
+            header[1] == 0x4B &&
+            header[2] == 0x03 &&
+            header[3] == 0x04;
       } finally {
         await raf.close();
       }
@@ -396,23 +427,47 @@ class _CustomFontsPageState extends BasePageState {
     }
   }
 
-  Future<int> _extractFontsFromArchive(File archiveFile) async {
+  Future<int> _extractFontsFromArchive(
+    File archiveFile, {
+    String? overrideName,
+  }) async {
     try {
       final bytes = await archiveFile.readAsBytes();
       final archive = ZipDecoder().decodeBytes(bytes);
+      final fontEntries = archive.files
+          .where((entry) => entry.isFile && _isFontFile(entry.name))
+          .toList();
+      if (overrideName != null && fontEntries.isNotEmpty) {
+        final entry = fontEntries.firstWhere(
+          (entry) {
+            final base = p.basenameWithoutExtension(entry.name).toLowerCase();
+            return base.contains('regular') || base.contains('[wght]');
+          },
+          orElse: () => fontEntries.first,
+        );
+        final ext = p.extension(entry.name);
+        final destPath = p.join(
+          _fontsDir.path,
+          '${overrideName.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')}_${DateTime.now().millisecondsSinceEpoch}$ext',
+        );
+        File(destPath).writeAsBytesSync(entry.content as List<int>);
+        setState(() {
+          _fonts.add({'name': overrideName, 'path': destPath, 'enabled': true});
+        });
+        return 1;
+      }
+
       int count = 0;
       final ts = DateTime.now().millisecondsSinceEpoch;
-      for (final entry in archive.files) {
-        if (entry.isFile && _isFontFile(entry.name)) {
-          final baseName = p.basenameWithoutExtension(entry.name);
-          final ext = p.extension(entry.name);
-          final destPath = p.join(_fontsDir.path, '${baseName}_$ts$ext');
-          File(destPath).writeAsBytesSync(entry.content as List<int>);
-          setState(() {
-            _fonts.add({'name': baseName, 'path': destPath, 'enabled': true});
-          });
-          count++;
-        }
+      for (final entry in fontEntries) {
+        final baseName = p.basenameWithoutExtension(entry.name);
+        final ext = p.extension(entry.name);
+        final destPath = p.join(_fontsDir.path, '${baseName}_$ts$ext');
+        File(destPath).writeAsBytesSync(entry.content as List<int>);
+        setState(() {
+          _fonts.add({'name': baseName, 'path': destPath, 'enabled': true});
+        });
+        count++;
       }
       return count;
     } catch (e) {
@@ -423,7 +478,9 @@ class _CustomFontsPageState extends BasePageState {
   }
 
   Future<void> _downloadUrl(String url,
-      {String? displayName, List<String> mirrorUrls = const []}) async {
+      {String? displayName,
+      List<String> mirrorUrls = const [],
+      String? overrideName}) async {
     final allUrls = [url, ...mirrorUrls];
     final ts = DateTime.now().millisecondsSinceEpoch;
     final tempPath = p.join(_fontsDir.path, '_tmp_$ts');
@@ -481,7 +538,8 @@ class _CustomFontsPageState extends BasePageState {
       Object? lastError;
       for (int i = 0; i < allUrls.length; i++) {
         final currentUrl = allUrls[i];
-        debugPrint('[hibiki-fonts] trying source ${i + 1}/${allUrls.length}: $currentUrl');
+        debugPrint(
+            '[hibiki-fonts] trying source ${i + 1}/${allUrls.length}: $currentUrl');
         progressNotifier.value = null;
         try {
           await dio.download(
@@ -516,18 +574,30 @@ class _CustomFontsPageState extends BasePageState {
       int count = 0;
       final isZip = await _isZipFile(tempFile);
       if (isZip) {
-        count = await _extractFontsFromArchive(tempFile);
+        count = await _extractFontsFromArchive(
+          tempFile,
+          overrideName: overrideName,
+        );
         if (count == 0) {
-          count = await _addSingleFont(tempFile, fileName);
+          count = await _addSingleFont(
+            tempFile,
+            fileName,
+            overrideName: overrideName,
+          );
         }
       } else {
-        count = await _addSingleFont(tempFile, fileName);
+        count = await _addSingleFont(
+          tempFile,
+          fileName,
+          overrideName: overrideName,
+        );
       }
       if (await tempFile.exists()) await tempFile.delete();
 
       if (count > 0) {
         await _save();
-        Fluttertoast.showToast(msg: t.custom_fonts_imported_count(count: count));
+        Fluttertoast.showToast(
+            msg: t.custom_fonts_imported_count(count: count));
       } else {
         Fluttertoast.showToast(msg: t.custom_fonts_no_fonts_in_archive);
       }
@@ -605,8 +675,12 @@ class _CustomFontsPageState extends BasePageState {
   }
 
   Future<void> _downloadRecommendedFont(_RecommendedFont font) async {
-    await _downloadUrl(font.urls.first,
-        displayName: font.name, mirrorUrls: font.urls.skip(1).toList());
+    await _downloadUrl(
+      font.urls.first,
+      displayName: font.name,
+      mirrorUrls: font.urls.skip(1).toList(),
+      overrideName: font.name,
+    );
   }
 
   Future<void> _openRecommended() async {
@@ -665,8 +739,7 @@ class _CustomFontsPageState extends BasePageState {
 
   void _toggleFont(int index) {
     setState(() {
-      _fonts[index]['enabled'] =
-          !(_fonts[index]['enabled'] as bool? ?? true);
+      _fonts[index]['enabled'] = !(_fonts[index]['enabled'] as bool? ?? true);
     });
     _save();
   }
@@ -723,8 +796,7 @@ class _CustomFontsPageState extends BasePageState {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(Icons.font_download_outlined,
-                      size: 64,
-                      color: Theme.of(context).colorScheme.outline),
+                      size: 64, color: Theme.of(context).colorScheme.outline),
                   const SizedBox(height: 16),
                   Text(t.custom_fonts_empty,
                       style: Theme.of(context).textTheme.bodyLarge),
@@ -814,7 +886,8 @@ class _RecommendedFontsPage extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(font.nameJa,
-                      style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
+                      style:
+                          TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
                   const SizedBox(height: 2),
                   Text(font.description,
                       style: Theme.of(context).textTheme.bodySmall),
