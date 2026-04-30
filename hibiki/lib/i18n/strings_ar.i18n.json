@@ -1,6 +1,6 @@
 ﻿{
     "dictionary_media_type": "القاموس",
-    "dialog_importing": "IMPORTING…",
+    "dialog_importing": "جاري الاستيراد…",
     "player_media_type": "المشغّل",
     "reader_media_type": "القارئ",
     "viewer_media_type": "العارض",
@@ -58,7 +58,7 @@
     "dialog_manage": "إدارة",
     "dialog_stop": "إيقاف",
     "dialog_done": "تم",
-    "dialog_add": "ADD",
+    "dialog_add": "إضافة",
     "reset": "إعادة تعيين",
     "dialog_launch_ankidroid": "فتح ANKIDROID",
     "media_item_delete_confirmation": "سيتم حذف هذا العنصر من السجل. هل أنت متأكد؟",
@@ -641,7 +641,6 @@
     "anki_auto_tag_hint": "إضافة عنوان الكتاب الحالي كوسم تلقائيًا عند إنشاء البطاقات.",
     "anki_duplicate_check_hint": "اختر أنواع بطاقات Anki للتحقق من التكرارات قبل إضافة بطاقة جديدة.",
     "anki_retry": "إعادة المحاولة",
-
     "hint_font_size": "ضبط حجم خط نص الكتاب (بالبكسل).",
     "hint_line_height": "ضبط المسافة بين سطور النص. القيم الأكبر تحسّن القراءة.",
     "hint_text_indentation": "عدد الأحرف لمسافة بادئة السطر الأول من كل فقرة.",
@@ -651,42 +650,37 @@
     "hint_writing_direction": "أفقي: تدفق النص من اليسار لليمين. عمودي: النص الياباني التقليدي من أعلى لأسفل، من اليمين لليسار.",
     "hint_view_mode": "مقسّم لصفحات: قلب الصفحات كالكتاب. تمرير مستمر: تمرير النص بدون فواصل صفحات.",
     "hint_vert_text_orient": "مختلط: الأرقام والحروف اللاتينية تُدار جانبيًا. منتصب: جميع الأحرف تبقى منتصبة.",
-
     "anki_manage_profiles": "إدارة ملفات التصدير",
-    "anki_manage_profiles_hint": "تكوين كيفية تعيين حقول البطاقات عند التصدير إلى AnkiDroid. كل ملف يرتبط بنوع ملاحظة Anki ويحدد أي حقل hibiki يملأ أي حقل Anki."
-,
-  "collapse_dictionaries": "Collapse dictionaries",
-  "deduplicate_pitch_accents": "إزالة تكرار علامات النبر",
-  "harmonic_frequency": "تجميع ترددات الكلمات",
-  "manage_audio_sources": "إدارة مصادر الصوت",
-  "local_audio": "الصوت المحلي",
-  "local_audio_not_set": "لم يتم تحديد قاعدة بيانات"
-,
-  "dialog_select_dictionary_type": "اختر نوع القاموس"
-,
-  "dictionary_section_frequency": "قواميس التردد"
-,
-  "dictionary_section_pitch": "قواميس النبرة"
-,
-  "dictionary_section_term": "قواميس المصطلحات"
-,
-  "dictionary_type_frequency": "تردد"
-,
-  "dictionary_type_pitch": "نبرة"
-,
-  "dictionary_type_term": "مصطلح"
-,
-  "action_favorite": "Favorite"
-,
-  "favorite_added": "Sentence saved to favorites"
-,
-  "favorites": "Favorites ($n)"
-,
-  "no_favorites": "No saved sentences"
-,
-  "favorites_title": "Favorite Sentences",
-  "collections": "Collections",
-  "no_collections": "No bookmarks or saved sentences",
-  "collection_bookmark": "Bookmark",
-  "collection_sentence": "Sentence"
+    "anki_manage_profiles_hint": "تكوين كيفية تعيين حقول البطاقات عند التصدير إلى AnkiDroid. كل ملف يرتبط بنوع ملاحظة Anki ويحدد أي حقل hibiki يملأ أي حقل Anki.",
+    "collapse_dictionaries": "Collapse dictionaries",
+    "deduplicate_pitch_accents": "إزالة تكرار علامات النبر",
+    "harmonic_frequency": "تجميع ترددات الكلمات",
+    "manage_audio_sources": "إدارة مصادر الصوت",
+    "local_audio": "الصوت المحلي",
+    "local_audio_not_set": "لم يتم تحديد قاعدة بيانات",
+    "dialog_select_dictionary_type": "اختر نوع القاموس",
+    "dictionary_section_frequency": "قواميس التردد",
+    "dictionary_section_pitch": "قواميس النبرة",
+    "dictionary_section_term": "قواميس المصطلحات",
+    "dictionary_type_frequency": "تردد",
+    "dictionary_type_pitch": "نبرة",
+    "dictionary_type_term": "مصطلح",
+    "action_favorite": "Favorite",
+    "favorite_added": "Sentence saved to favorites",
+    "favorites": "Favorites ($n)",
+    "no_favorites": "No saved sentences",
+    "favorites_title": "Favorite Sentences",
+    "collections": "Collections",
+    "no_collections": "No bookmarks or saved sentences",
+    "collection_bookmark": "Bookmark",
+    "collection_sentence": "Sentence",
+    "show_floating_lyric": "Floating lyric overlay",
+    "floating_lyric_hint": "Show current sentence over other apps.",
+    "floating_lyric_previous": "Previous",
+    "floating_lyric_play_pause": "Play",
+    "floating_lyric_next": "Next",
+    "floating_lyric_lock": "Lock",
+    "floating_lyric_unlock": "Unlock",
+    "floating_lyric_close": "Close",
+    "initialization_failed": "فشل التهيئة"
 }

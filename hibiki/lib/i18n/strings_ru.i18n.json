@@ -1,6 +1,6 @@
 ﻿{
     "dictionary_media_type": "Словарь",
-    "dialog_importing": "IMPORTING…",
+    "dialog_importing": "ИМПОРТ…",
     "player_media_type": "Плеер",
     "reader_media_type": "Читалка",
     "viewer_media_type": "Просмотр",
@@ -58,7 +58,7 @@
     "dialog_manage": "УПРАВЛЕНИЕ",
     "dialog_stop": "СТОП",
     "dialog_done": "ГОТОВО",
-    "dialog_add": "ADD",
+    "dialog_add": "ДОБАВИТЬ",
     "reset": "Сбросить",
     "dialog_launch_ankidroid": "ОТКРЫТЬ ANKIDROID",
     "media_item_delete_confirmation": "Этот элемент будет удалён из истории. Вы уверены?",
@@ -641,7 +641,6 @@
     "anki_auto_tag_hint": "Автоматически добавлять название текущей книги как тег при создании карточек.",
     "anki_duplicate_check_hint": "Выберите, какие типы карточек Anki проверять на дубликаты перед добавлением новой карточки.",
     "anki_retry": "Повторить",
-
     "hint_font_size": "Настроить размер шрифта текста книги (в пикселях).",
     "hint_line_height": "Настроить межстрочный интервал. Большие значения улучшают читаемость.",
     "hint_text_indentation": "Количество символов для отступа первой строки каждого абзаца.",
@@ -651,41 +650,37 @@
     "hint_writing_direction": "Горизонтальное: текст слева направо. Вертикальное: традиционный японский текст сверху вниз, справа налево.",
     "hint_view_mode": "Постраничный: листание страниц как в книге. Непрерывная прокрутка: прокрутка текста без разрывов страниц.",
     "hint_vert_text_orient": "Смешанный: цифры и латинские буквы поворачиваются набок. Прямой: все символы остаются прямыми.",
-
     "anki_manage_profiles": "Управление профилями экспорта",
     "anki_manage_profiles_hint": "Настройте сопоставление полей карточек при экспорте в AnkiDroid. Каждый профиль привязан к типу заметки Anki и определяет, какое поле hibiki заполняет какое поле Anki.",
-  "collapse_dictionaries": "Collapse dictionaries",
-  "deduplicate_pitch_accents": "Удалить дубликаты тональных ударений",
-  "harmonic_frequency": "Агрегация частот слов",
-  "manage_audio_sources": "Управление аудиоисточниками",
-  "local_audio": "Локальное аудио",
-  "local_audio_not_set": "База данных не выбрана"
-,
-  "dialog_select_dictionary_type": "Выберите тип словаря"
-,
-  "dictionary_section_frequency": "Словари частотности"
-,
-  "dictionary_section_pitch": "Словари высоты тона"
-,
-  "dictionary_section_term": "Словари терминов"
-,
-  "dictionary_type_frequency": "Частотность"
-,
-  "dictionary_type_pitch": "Высота тона"
-,
-  "dictionary_type_term": "Термин"
-,
-  "action_favorite": "Favorite"
-,
-  "favorite_added": "Sentence saved to favorites"
-,
-  "favorites": "Favorites ($n)"
-,
-  "no_favorites": "No saved sentences"
-,
-  "favorites_title": "Favorite Sentences",
-  "collections": "Collections",
-  "no_collections": "No bookmarks or saved sentences",
-  "collection_bookmark": "Bookmark",
-  "collection_sentence": "Sentence"
+    "collapse_dictionaries": "Collapse dictionaries",
+    "deduplicate_pitch_accents": "Удалить дубликаты тональных ударений",
+    "harmonic_frequency": "Агрегация частот слов",
+    "manage_audio_sources": "Управление аудиоисточниками",
+    "local_audio": "Локальное аудио",
+    "local_audio_not_set": "База данных не выбрана",
+    "dialog_select_dictionary_type": "Выберите тип словаря",
+    "dictionary_section_frequency": "Словари частотности",
+    "dictionary_section_pitch": "Словари высоты тона",
+    "dictionary_section_term": "Словари терминов",
+    "dictionary_type_frequency": "Частотность",
+    "dictionary_type_pitch": "Высота тона",
+    "dictionary_type_term": "Термин",
+    "action_favorite": "Favorite",
+    "favorite_added": "Sentence saved to favorites",
+    "favorites": "Favorites ($n)",
+    "no_favorites": "No saved sentences",
+    "favorites_title": "Favorite Sentences",
+    "collections": "Collections",
+    "no_collections": "No bookmarks or saved sentences",
+    "collection_bookmark": "Bookmark",
+    "collection_sentence": "Sentence",
+    "show_floating_lyric": "Floating lyric overlay",
+    "floating_lyric_hint": "Show current sentence over other apps.",
+    "floating_lyric_previous": "Previous",
+    "floating_lyric_play_pause": "Play",
+    "floating_lyric_next": "Next",
+    "floating_lyric_lock": "Lock",
+    "floating_lyric_unlock": "Unlock",
+    "floating_lyric_close": "Close",
+    "initialization_failed": "Ошибка инициализации"
 }

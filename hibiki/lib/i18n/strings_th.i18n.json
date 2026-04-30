@@ -1,6 +1,6 @@
 ﻿{
     "dictionary_media_type": "พจนานุกรม",
-    "dialog_importing": "IMPORTING…",
+    "dialog_importing": "กำลังนำเข้า…",
     "player_media_type": "เครื่องเล่น",
     "reader_media_type": "ตัวอ่าน",
     "viewer_media_type": "ตัวดู",
@@ -58,7 +58,7 @@
     "dialog_manage": "จัดการ",
     "dialog_stop": "หยุด",
     "dialog_done": "เสร็จสิ้น",
-    "dialog_add": "ADD",
+    "dialog_add": "เพิ่ม",
     "reset": "รีเซ็ต",
     "dialog_launch_ankidroid": "เปิด ANKIDROID",
     "media_item_delete_confirmation": "รายการนี้จะถูกลบออกจากประวัติ คุณแน่ใจหรือไม่?",
@@ -641,7 +641,6 @@
     "anki_auto_tag_hint": "เพิ่มชื่อหนังสือปัจจุบันเป็นแท็กอัตโนมัติเมื่อสร้างการ์ด",
     "anki_duplicate_check_hint": "เลือกประเภทการ์ด Anki ที่จะตรวจสอบความซ้ำซ้อนก่อนเพิ่มการ์ดใหม่",
     "anki_retry": "ลองอีกครั้ง",
-
     "hint_font_size": "ปรับขนาดฟอนต์ของข้อความหนังสือ (พิกเซล)",
     "hint_line_height": "ปรับระยะห่างระหว่างบรรทัด ค่ามากขึ้นจะอ่านง่ายขึ้น",
     "hint_text_indentation": "จำนวนตัวอักษรสำหรับเยื้องบรรทัดแรกของแต่ละย่อหน้า",
@@ -651,41 +650,37 @@
     "hint_writing_direction": "แนวนอน: ข้อความจากซ้ายไปขวา แนวตั้ง: ข้อความญี่ปุ่นแบบดั้งเดิมจากบนลงล่าง ขวาไปซ้าย",
     "hint_view_mode": "แบ่งหน้า: พลิกหน้าเหมือนหนังสือ เลื่อนต่อเนื่อง: เลื่อนข้อความโดยไม่มีการแบ่งหน้า",
     "hint_vert_text_orient": "ผสม: ตัวเลขและอักษรละตินหมุนตะแคง ตั้งตรง: ตัวอักษรทั้งหมดตั้งตรง",
-
     "anki_manage_profiles": "จัดการโปรไฟล์ส่งออก",
     "anki_manage_profiles_hint": "กำหนดค่าการแมปฟิลด์การ์ดเมื่อส่งออกไปยัง AnkiDroid แต่ละโปรไฟล์ผูกกับประเภทโน้ต Anki และกำหนดว่าฟิลด์ hibiki ใดเติมในฟิลด์ Anki ใด",
-  "collapse_dictionaries": "Collapse dictionaries",
-  "deduplicate_pitch_accents": "ลบการเน้นเสียงซ้ำ",
-  "harmonic_frequency": "รวมความถี่คำ",
-  "manage_audio_sources": "จัดการแหล่งเสียง",
-  "local_audio": "เสียงในเครื่อง",
-  "local_audio_not_set": "ยังไม่ได้เลือกฐานข้อมูล"
-,
-  "dialog_select_dictionary_type": "เลือกประเภทพจนานุกรม"
-,
-  "dictionary_section_frequency": "พจนานุกรมความถี่"
-,
-  "dictionary_section_pitch": "พจนานุกรมระดับเสียง"
-,
-  "dictionary_section_term": "พจนานุกรมคำศัพท์"
-,
-  "dictionary_type_frequency": "ความถี่"
-,
-  "dictionary_type_pitch": "ระดับเสียง"
-,
-  "dictionary_type_term": "คำศัพท์"
-,
-  "action_favorite": "Favorite"
-,
-  "favorite_added": "Sentence saved to favorites"
-,
-  "favorites": "Favorites ($n)"
-,
-  "no_favorites": "No saved sentences"
-,
-  "favorites_title": "Favorite Sentences",
-  "collections": "Collections",
-  "no_collections": "No bookmarks or saved sentences",
-  "collection_bookmark": "Bookmark",
-  "collection_sentence": "Sentence"
+    "collapse_dictionaries": "Collapse dictionaries",
+    "deduplicate_pitch_accents": "ลบการเน้นเสียงซ้ำ",
+    "harmonic_frequency": "รวมความถี่คำ",
+    "manage_audio_sources": "จัดการแหล่งเสียง",
+    "local_audio": "เสียงในเครื่อง",
+    "local_audio_not_set": "ยังไม่ได้เลือกฐานข้อมูล",
+    "dialog_select_dictionary_type": "เลือกประเภทพจนานุกรม",
+    "dictionary_section_frequency": "พจนานุกรมความถี่",
+    "dictionary_section_pitch": "พจนานุกรมระดับเสียง",
+    "dictionary_section_term": "พจนานุกรมคำศัพท์",
+    "dictionary_type_frequency": "ความถี่",
+    "dictionary_type_pitch": "ระดับเสียง",
+    "dictionary_type_term": "คำศัพท์",
+    "action_favorite": "Favorite",
+    "favorite_added": "Sentence saved to favorites",
+    "favorites": "Favorites ($n)",
+    "no_favorites": "No saved sentences",
+    "favorites_title": "Favorite Sentences",
+    "collections": "Collections",
+    "no_collections": "No bookmarks or saved sentences",
+    "collection_bookmark": "Bookmark",
+    "collection_sentence": "Sentence",
+    "show_floating_lyric": "Floating lyric overlay",
+    "floating_lyric_hint": "Show current sentence over other apps.",
+    "floating_lyric_previous": "Previous",
+    "floating_lyric_play_pause": "Play",
+    "floating_lyric_next": "Next",
+    "floating_lyric_lock": "Lock",
+    "floating_lyric_unlock": "Unlock",
+    "floating_lyric_close": "Close",
+    "initialization_failed": "การเริ่มต้นล้มเหลว"
 }

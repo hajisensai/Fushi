@@ -266,7 +266,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
                   const Icon(Icons.error_outline, size: 48, color: Colors.red),
                   const SizedBox(height: 16),
                   Text(
-                    'Initialisation failed',
+                    t.initialization_failed,
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,

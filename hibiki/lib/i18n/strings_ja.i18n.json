@@ -1,6 +1,6 @@
-{
+﻿{
     "dictionary_media_type": "辞書",
-    "dialog_importing": "IMPORTING…",
+    "dialog_importing": "インポート中…",
     "player_media_type": "プレイヤー",
     "reader_media_type": "リーダー",
     "viewer_media_type": "ビューアー",
@@ -58,7 +58,7 @@
     "dialog_manage": "管理",
     "dialog_stop": "停止",
     "dialog_done": "完了",
-    "dialog_add": "ADD",
+    "dialog_add": "追加",
     "reset": "リセット",
     "dialog_launch_ankidroid": "ANKIDROIDを起動",
     "media_item_delete_confirmation": "この項目を履歴から削除します。よろしいですか？",
@@ -647,7 +647,6 @@
     "anki_auto_tag_hint": "カード作成時、現在の書籍タイトルをタグとして自動追加します。",
     "anki_duplicate_check_hint": "新しいカードを追加する前に、どのカードタイプで重複をチェックするか選択します。",
     "anki_retry": "再試行",
-
     "hint_font_size": "本文のフォントサイズを調整します（ピクセル）。",
     "hint_line_height": "行間を調整します。値が大きいほど読みやすくなります。",
     "hint_text_indentation": "各段落の最初の行の字下げ文字数。",
@@ -657,31 +656,31 @@
     "hint_writing_direction": "横書き：左から右へ。縦書き：伝統的な日本語の上から下、右から左への配置。",
     "hint_view_mode": "ページめくり：本のようにページをめくります。連続スクロール：ページ区切りなしでスクロールして読みます。",
     "hint_vert_text_orient": "混合：数字とラテン文字は横向きに回転。正立：すべての文字が直立のまま。",
-
     "anki_manage_profiles": "エクスポートプロファイル管理",
     "anki_manage_profiles_hint": "AnkiDroidへのエクスポート時のフィールドマッピングを設定します。各プロファイルはAnkiのノートタイプに紐づき、hibikiのフィールドがAnkiのどのフィールドに入るかを定義します。",
-  "manage_audio_sources": "音声ソースの管理"
-,
-  "dialog_select_dictionary_type": "辞書タイプを選択"
-,
-  "dictionary_section_frequency": "頻度辞書"
-,
-  "dictionary_section_pitch": "ピッチ辞書"
-,
-  "dictionary_section_term": "用語辞書"
-,
-  "dictionary_type_frequency": "頻度"
-,
-  "dictionary_type_pitch": "ピッチ"
-,
-  "dictionary_type_term": "用語",
-  "action_favorite": "お気に入り",
-  "favorite_added": "お気に入りに追加しました",
-  "favorites": "お気に入り ($n)",
-  "no_favorites": "お気に入りはありません",
-  "favorites_title": "お気に入りの文",
-  "collections": "コレクション",
-  "no_collections": "ブックマークや保存した文がありません",
-  "collection_bookmark": "ブックマーク",
-  "collection_sentence": "文"
+    "dialog_select_dictionary_type": "辞書タイプを選択",
+    "dictionary_section_frequency": "頻度辞書",
+    "dictionary_section_pitch": "ピッチ辞書",
+    "dictionary_section_term": "用語辞書",
+    "dictionary_type_frequency": "頻度",
+    "dictionary_type_pitch": "ピッチ",
+    "dictionary_type_term": "用語",
+    "action_favorite": "お気に入り",
+    "favorite_added": "お気に入りに追加しました",
+    "favorites": "お気に入り ($n)",
+    "no_favorites": "お気に入りはありません",
+    "favorites_title": "お気に入りの文",
+    "collections": "コレクション",
+    "no_collections": "ブックマークや保存した文がありません",
+    "collection_bookmark": "ブックマーク",
+    "collection_sentence": "文",
+    "show_floating_lyric": "Floating lyric overlay",
+    "floating_lyric_hint": "Show current sentence over other apps.",
+    "floating_lyric_previous": "Previous",
+    "floating_lyric_play_pause": "Play",
+    "floating_lyric_next": "Next",
+    "floating_lyric_lock": "Lock",
+    "floating_lyric_unlock": "Unlock",
+    "floating_lyric_close": "Close",
+    "initialization_failed": "初期化に失敗しました"
 }

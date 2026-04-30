@@ -1,6 +1,6 @@
 ﻿{
     "dictionary_media_type": "사전",
-    "dialog_importing": "IMPORTING…",
+    "dialog_importing": "가져오는 중…",
     "player_media_type": "플레이어",
     "reader_media_type": "리더",
     "viewer_media_type": "뷰어",
@@ -58,7 +58,7 @@
     "dialog_manage": "관리",
     "dialog_stop": "중지",
     "dialog_done": "완료",
-    "dialog_add": "ADD",
+    "dialog_add": "추가",
     "reset": "초기화",
     "dialog_launch_ankidroid": "ANKIDROID 실행",
     "media_item_delete_confirmation": "이 항목이 기록에서 삭제됩니다. 계속하시겠습니까?",
@@ -641,7 +641,6 @@
     "anki_auto_tag_hint": "카드 생성 시 현재 책 제목을 태그로 자동 추가합니다.",
     "anki_duplicate_check_hint": "새 카드를 추가하기 전에 어떤 카드 유형에서 중복을 확인할지 선택합니다.",
     "anki_retry": "다시 시도",
-
     "hint_font_size": "본문의 글꼴 크기를 조정합니다 (픽셀).",
     "hint_line_height": "줄 간격을 조정합니다. 값이 클수록 가독성이 높아집니다.",
     "hint_text_indentation": "각 단락 첫 줄의 들여쓰기 글자 수.",
@@ -651,41 +650,37 @@
     "hint_writing_direction": "가로: 왼쪽에서 오른쪽으로. 세로: 전통적인 위에서 아래, 오른쪽에서 왼쪽 일본어 배치.",
     "hint_view_mode": "페이지 넘김: 책처럼 페이지를 넘깁니다. 연속 스크롤: 페이지 구분 없이 스크롤하며 읽습니다.",
     "hint_vert_text_orient": "혼합: 숫자와 라틴 문자가 옆으로 회전합니다. 직립: 모든 문자가 똑바로 유지됩니다.",
-
     "anki_manage_profiles": "내보내기 프로필 관리",
     "anki_manage_profiles_hint": "AnkiDroid로 내보낼 때 카드 필드 매핑을 설정합니다. 각 프로필은 Anki 노트 유형에 연결되며, hibiki의 어떤 필드가 Anki의 어떤 필드에 들어갈지 정의합니다.",
-  "collapse_dictionaries": "Collapse dictionaries",
-  "deduplicate_pitch_accents": "피치 악센트 중복 제거",
-  "harmonic_frequency": "단어 빈도 집계",
-  "manage_audio_sources": "오디오 소스 관리",
-  "local_audio": "로컬 오디오",
-  "local_audio_not_set": "데이터베이스가 선택되지 않았습니다"
-,
-  "dialog_select_dictionary_type": "사전 유형 선택"
-,
-  "dictionary_section_frequency": "빈도 사전"
-,
-  "dictionary_section_pitch": "피치 사전"
-,
-  "dictionary_section_term": "용어 사전"
-,
-  "dictionary_type_frequency": "빈도"
-,
-  "dictionary_type_pitch": "피치"
-,
-  "dictionary_type_term": "용어"
-,
-  "action_favorite": "Favorite"
-,
-  "favorite_added": "Sentence saved to favorites"
-,
-  "favorites": "Favorites ($n)"
-,
-  "no_favorites": "No saved sentences"
-,
-  "favorites_title": "Favorite Sentences",
-  "collections": "Collections",
-  "no_collections": "No bookmarks or saved sentences",
-  "collection_bookmark": "Bookmark",
-  "collection_sentence": "Sentence"
+    "collapse_dictionaries": "Collapse dictionaries",
+    "deduplicate_pitch_accents": "피치 악센트 중복 제거",
+    "harmonic_frequency": "단어 빈도 집계",
+    "manage_audio_sources": "오디오 소스 관리",
+    "local_audio": "로컬 오디오",
+    "local_audio_not_set": "데이터베이스가 선택되지 않았습니다",
+    "dialog_select_dictionary_type": "사전 유형 선택",
+    "dictionary_section_frequency": "빈도 사전",
+    "dictionary_section_pitch": "피치 사전",
+    "dictionary_section_term": "용어 사전",
+    "dictionary_type_frequency": "빈도",
+    "dictionary_type_pitch": "피치",
+    "dictionary_type_term": "용어",
+    "action_favorite": "Favorite",
+    "favorite_added": "Sentence saved to favorites",
+    "favorites": "Favorites ($n)",
+    "no_favorites": "No saved sentences",
+    "favorites_title": "Favorite Sentences",
+    "collections": "Collections",
+    "no_collections": "No bookmarks or saved sentences",
+    "collection_bookmark": "Bookmark",
+    "collection_sentence": "Sentence",
+    "show_floating_lyric": "Floating lyric overlay",
+    "floating_lyric_hint": "Show current sentence over other apps.",
+    "floating_lyric_previous": "Previous",
+    "floating_lyric_play_pause": "Play",
+    "floating_lyric_next": "Next",
+    "floating_lyric_lock": "Lock",
+    "floating_lyric_unlock": "Unlock",
+    "floating_lyric_close": "Close",
+    "initialization_failed": "초기화 실패"
 }

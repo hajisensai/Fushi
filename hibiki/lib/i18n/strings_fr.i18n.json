@@ -1,6 +1,6 @@
 ﻿{
     "dictionary_media_type": "Dictionnaire",
-    "dialog_importing": "IMPORTING…",
+    "dialog_importing": "IMPORTATION…",
     "player_media_type": "Lecteur",
     "reader_media_type": "Liseuse",
     "viewer_media_type": "Visionneuse",
@@ -58,7 +58,7 @@
     "dialog_manage": "GÉRER",
     "dialog_stop": "ARRÊTER",
     "dialog_done": "TERMINÉ",
-    "dialog_add": "ADD",
+    "dialog_add": "AJOUTER",
     "reset": "Réinitialiser",
     "dialog_launch_ankidroid": "OUVRIR ANKIDROID",
     "media_item_delete_confirmation": "Cet élément sera supprimé de l'historique. Êtes-vous sûr de vouloir continuer ?",
@@ -641,7 +641,6 @@
     "anki_auto_tag_hint": "Ajouter automatiquement le titre du livre comme étiquette lors de la création de cartes.",
     "anki_duplicate_check_hint": "Sélectionner les types de cartes Anki à vérifier pour les doublons avant d'ajouter une nouvelle carte.",
     "anki_retry": "Réessayer",
-
     "hint_font_size": "Ajuster la taille de police du texte du livre (en pixels).",
     "hint_line_height": "Ajuster l'espacement entre les lignes de texte. Des valeurs plus grandes améliorent la lisibilité.",
     "hint_text_indentation": "Nombre de caractères pour l'indentation de la première ligne de chaque paragraphe.",
@@ -651,41 +650,37 @@
     "hint_writing_direction": "Horizontal : texte de gauche à droite. Vertical : texte japonais traditionnel de haut en bas, de droite à gauche.",
     "hint_view_mode": "Paginé : tourner les pages comme un livre. Défilement continu : faire défiler le texte sans saut de page.",
     "hint_vert_text_orient": "Mixte : les chiffres et lettres latines sont tournés sur le côté. Droit : tous les caractères restent droits.",
-
     "anki_manage_profiles": "Gérer les profils d'exportation",
     "anki_manage_profiles_hint": "Configurer le mappage des champs lors de l'exportation vers AnkiDroid. Chaque profil est lié à un type de note Anki et définit quel champ hibiki remplit quel champ Anki.",
-  "collapse_dictionaries": "Collapse dictionaries",
-  "deduplicate_pitch_accents": "Dédupliquer les accents tonaux",
-  "harmonic_frequency": "Agréger les fréquences de mots",
-  "manage_audio_sources": "Gérer les sources audio",
-  "local_audio": "Audio local",
-  "local_audio_not_set": "Aucune base de données sélectionnée"
-,
-  "dialog_select_dictionary_type": "Sélectionner le type de dictionnaire"
-,
-  "dictionary_section_frequency": "Dictionnaires de fréquence"
-,
-  "dictionary_section_pitch": "Dictionnaires d'accent tonal"
-,
-  "dictionary_section_term": "Dictionnaires de termes"
-,
-  "dictionary_type_frequency": "Fréquence"
-,
-  "dictionary_type_pitch": "Accent tonal"
-,
-  "dictionary_type_term": "Terme"
-,
-  "action_favorite": "Favorite"
-,
-  "favorite_added": "Sentence saved to favorites"
-,
-  "favorites": "Favorites ($n)"
-,
-  "no_favorites": "No saved sentences"
-,
-  "favorites_title": "Favorite Sentences",
-  "collections": "Collections",
-  "no_collections": "No bookmarks or saved sentences",
-  "collection_bookmark": "Bookmark",
-  "collection_sentence": "Sentence"
+    "collapse_dictionaries": "Collapse dictionaries",
+    "deduplicate_pitch_accents": "Dédupliquer les accents tonaux",
+    "harmonic_frequency": "Agréger les fréquences de mots",
+    "manage_audio_sources": "Gérer les sources audio",
+    "local_audio": "Audio local",
+    "local_audio_not_set": "Aucune base de données sélectionnée",
+    "dialog_select_dictionary_type": "Sélectionner le type de dictionnaire",
+    "dictionary_section_frequency": "Dictionnaires de fréquence",
+    "dictionary_section_pitch": "Dictionnaires d'accent tonal",
+    "dictionary_section_term": "Dictionnaires de termes",
+    "dictionary_type_frequency": "Fréquence",
+    "dictionary_type_pitch": "Accent tonal",
+    "dictionary_type_term": "Terme",
+    "action_favorite": "Favorite",
+    "favorite_added": "Sentence saved to favorites",
+    "favorites": "Favorites ($n)",
+    "no_favorites": "No saved sentences",
+    "favorites_title": "Favorite Sentences",
+    "collections": "Collections",
+    "no_collections": "No bookmarks or saved sentences",
+    "collection_bookmark": "Bookmark",
+    "collection_sentence": "Sentence",
+    "show_floating_lyric": "Floating lyric overlay",
+    "floating_lyric_hint": "Show current sentence over other apps.",
+    "floating_lyric_previous": "Previous",
+    "floating_lyric_play_pause": "Play",
+    "floating_lyric_next": "Next",
+    "floating_lyric_lock": "Lock",
+    "floating_lyric_unlock": "Unlock",
+    "floating_lyric_close": "Close",
+    "initialization_failed": "Échec de l'initialisation"
 }

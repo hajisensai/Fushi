@@ -1,6 +1,6 @@
 ﻿{
     "dictionary_media_type": "Woordenboek",
-    "dialog_importing": "IMPORTING…",
+    "dialog_importing": "IMPORTEREN…",
     "player_media_type": "Speler",
     "reader_media_type": "Lezer",
     "viewer_media_type": "Viewer",
@@ -673,5 +673,14 @@
     "collections": "Collections",
     "no_collections": "No bookmarks or saved sentences",
     "collection_bookmark": "Bookmark",
-    "collection_sentence": "Sentence"
+    "collection_sentence": "Sentence",
+    "show_floating_lyric": "Floating lyric overlay",
+    "floating_lyric_hint": "Show current sentence over other apps.",
+    "floating_lyric_previous": "Previous",
+    "floating_lyric_play_pause": "Play",
+    "floating_lyric_next": "Next",
+    "floating_lyric_lock": "Lock",
+    "floating_lyric_unlock": "Unlock",
+    "floating_lyric_close": "Close",
+    "initialization_failed": "Initialisatie mislukt"
 }

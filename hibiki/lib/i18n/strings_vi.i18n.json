@@ -1,6 +1,6 @@
 ﻿{
     "dictionary_media_type": "Từ điển",
-    "dialog_importing": "IMPORTING…",
+    "dialog_importing": "ĐANG NHẬP…",
     "player_media_type": "Trình phát",
     "reader_media_type": "Trình đọc",
     "viewer_media_type": "Trình xem",
@@ -58,7 +58,7 @@
     "dialog_manage": "QUẢN LÝ",
     "dialog_stop": "DỪNG",
     "dialog_done": "XONG",
-    "dialog_add": "ADD",
+    "dialog_add": "THÊM",
     "reset": "Đặt lại",
     "dialog_launch_ankidroid": "MỞ ANKIDROID",
     "media_item_delete_confirmation": "Thao tác này sẽ xóa mục này khỏi lịch sử. Bạn có chắc chắn muốn thực hiện?",
@@ -641,7 +641,6 @@
     "anki_auto_tag_hint": "Tự động thêm tên sách hiện tại làm tag khi tạo thẻ.",
     "anki_duplicate_check_hint": "Chọn loại thẻ Anki nào để kiểm tra trùng lặp trước khi thêm thẻ mới.",
     "anki_retry": "Thử lại",
-
     "hint_font_size": "Điều chỉnh cỡ chữ của văn bản sách (tính bằng pixel).",
     "hint_line_height": "Điều chỉnh khoảng cách giữa các dòng văn bản. Giá trị lớn hơn tăng khả năng đọc.",
     "hint_text_indentation": "Số ký tự thụt lề dòng đầu tiên của mỗi đoạn.",
@@ -651,41 +650,37 @@
     "hint_writing_direction": "Ngang: văn bản từ trái sang phải. Dọc: văn bản Nhật truyền thống từ trên xuống dưới, phải sang trái.",
     "hint_view_mode": "Phân trang: lật trang như sách. Cuộn liên tục: cuộn văn bản không ngắt trang.",
     "hint_vert_text_orient": "Hỗn hợp: số và chữ Latin được xoay ngang. Thẳng đứng: tất cả ký tự giữ thẳng đứng.",
-
     "anki_manage_profiles": "Quản lý hồ sơ xuất",
     "anki_manage_profiles_hint": "Cấu hình ánh xạ trường thẻ khi xuất sang AnkiDroid. Mỗi hồ sơ liên kết với một loại ghi chú Anki và xác định trường hibiki nào điền vào trường Anki nào.",
-  "collapse_dictionaries": "Collapse dictionaries",
-  "deduplicate_pitch_accents": "Loại bỏ trùng lặp thanh điệu",
-  "harmonic_frequency": "Tổng hợp tần suất từ",
-  "manage_audio_sources": "Quản lý nguồn âm thanh",
-  "local_audio": "Âm thanh cục bộ",
-  "local_audio_not_set": "Chưa chọn cơ sở dữ liệu"
-,
-  "dialog_select_dictionary_type": "Chọn loại từ điển"
-,
-  "dictionary_section_frequency": "Từ điển tần suất"
-,
-  "dictionary_section_pitch": "Từ điển thanh điệu"
-,
-  "dictionary_section_term": "Từ điển thuật ngữ"
-,
-  "dictionary_type_frequency": "Tần suất"
-,
-  "dictionary_type_pitch": "Thanh điệu"
-,
-  "dictionary_type_term": "Thuật ngữ"
-,
-  "action_favorite": "Favorite"
-,
-  "favorite_added": "Sentence saved to favorites"
-,
-  "favorites": "Favorites ($n)"
-,
-  "no_favorites": "No saved sentences"
-,
-  "favorites_title": "Favorite Sentences",
-  "collections": "Collections",
-  "no_collections": "No bookmarks or saved sentences",
-  "collection_bookmark": "Bookmark",
-  "collection_sentence": "Sentence"
+    "collapse_dictionaries": "Collapse dictionaries",
+    "deduplicate_pitch_accents": "Loại bỏ trùng lặp thanh điệu",
+    "harmonic_frequency": "Tổng hợp tần suất từ",
+    "manage_audio_sources": "Quản lý nguồn âm thanh",
+    "local_audio": "Âm thanh cục bộ",
+    "local_audio_not_set": "Chưa chọn cơ sở dữ liệu",
+    "dialog_select_dictionary_type": "Chọn loại từ điển",
+    "dictionary_section_frequency": "Từ điển tần suất",
+    "dictionary_section_pitch": "Từ điển thanh điệu",
+    "dictionary_section_term": "Từ điển thuật ngữ",
+    "dictionary_type_frequency": "Tần suất",
+    "dictionary_type_pitch": "Thanh điệu",
+    "dictionary_type_term": "Thuật ngữ",
+    "action_favorite": "Favorite",
+    "favorite_added": "Sentence saved to favorites",
+    "favorites": "Favorites ($n)",
+    "no_favorites": "No saved sentences",
+    "favorites_title": "Favorite Sentences",
+    "collections": "Collections",
+    "no_collections": "No bookmarks or saved sentences",
+    "collection_bookmark": "Bookmark",
+    "collection_sentence": "Sentence",
+    "show_floating_lyric": "Floating lyric overlay",
+    "floating_lyric_hint": "Show current sentence over other apps.",
+    "floating_lyric_previous": "Previous",
+    "floating_lyric_play_pause": "Play",
+    "floating_lyric_next": "Next",
+    "floating_lyric_lock": "Lock",
+    "floating_lyric_unlock": "Unlock",
+    "floating_lyric_close": "Close",
+    "initialization_failed": "Khởi tạo thất bại"
 }

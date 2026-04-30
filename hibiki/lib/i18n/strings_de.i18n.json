@@ -1,6 +1,6 @@
 ﻿{
     "dictionary_media_type": "Wörterbuch",
-    "dialog_importing": "IMPORTING…",
+    "dialog_importing": "IMPORTIEREN…",
     "player_media_type": "Player",
     "reader_media_type": "Reader",
     "viewer_media_type": "Betrachter",
@@ -58,7 +58,7 @@
     "dialog_manage": "VERWALTEN",
     "dialog_stop": "STOPPEN",
     "dialog_done": "FERTIG",
-    "dialog_add": "ADD",
+    "dialog_add": "HINZUFÜGEN",
     "reset": "Zurücksetzen",
     "dialog_launch_ankidroid": "ANKIDROID STARTEN",
     "media_item_delete_confirmation": "Dieses Element wird aus dem Verlauf gelöscht. Sind Sie sicher?",
@@ -641,7 +641,6 @@
     "anki_auto_tag_hint": "Aktuellen Buchtitel beim Erstellen automatisch als Tag hinzufügen.",
     "anki_duplicate_check_hint": "Auswählen, welche Anki-Kartentypen vor dem Hinzufügen auf Duplikate geprüft werden.",
     "anki_retry": "Erneut versuchen",
-
     "hint_font_size": "Schriftgröße des Buchtextes anpassen (in Pixel).",
     "hint_line_height": "Zeilenabstand anpassen. Größere Werte erhöhen die Lesbarkeit.",
     "hint_text_indentation": "Anzahl der Zeichen für den Einzug der ersten Zeile jedes Absatzes.",
@@ -651,41 +650,37 @@
     "hint_writing_direction": "Horizontal: Textfluss von links nach rechts. Vertikal: traditioneller japanischer Text von oben nach unten, rechts nach links.",
     "hint_view_mode": "Seitenweise: Seiten umblättern wie ein Buch. Endlos scrollen: Text ohne Seitenumbrüche durchscrollen.",
     "hint_vert_text_orient": "Gemischt: Zahlen und lateinische Buchstaben werden seitwärts gedreht. Aufrecht: alle Zeichen bleiben aufrecht.",
-
     "anki_manage_profiles": "Exportprofile verwalten",
     "anki_manage_profiles_hint": "Feldzuordnung beim Export nach AnkiDroid konfigurieren. Jedes Profil ist an einen Anki-Notiztyp gebunden und definiert, welches hibiki-Feld in welches Anki-Feld eingetragen wird.",
-  "collapse_dictionaries": "Collapse dictionaries",
-  "deduplicate_pitch_accents": "Tonhöhenakzente deduplizieren",
-  "harmonic_frequency": "Worthäufigkeiten aggregieren",
-  "manage_audio_sources": "Audioquellen verwalten",
-  "local_audio": "Lokales Audio",
-  "local_audio_not_set": "Keine Datenbank ausgewählt"
-,
-  "dialog_select_dictionary_type": "Wörterbuchtyp auswählen"
-,
-  "dictionary_section_frequency": "Häufigkeitswörterbücher"
-,
-  "dictionary_section_pitch": "Tonhöhenwörterbücher"
-,
-  "dictionary_section_term": "Begriffswörterbücher"
-,
-  "dictionary_type_frequency": "Häufigkeit"
-,
-  "dictionary_type_pitch": "Tonhöhe"
-,
-  "dictionary_type_term": "Begriff"
-,
-  "action_favorite": "Favorite"
-,
-  "favorite_added": "Sentence saved to favorites"
-,
-  "favorites": "Favorites ($n)"
-,
-  "no_favorites": "No saved sentences"
-,
-  "favorites_title": "Favorite Sentences",
-  "collections": "Collections",
-  "no_collections": "No bookmarks or saved sentences",
-  "collection_bookmark": "Bookmark",
-  "collection_sentence": "Sentence"
+    "collapse_dictionaries": "Collapse dictionaries",
+    "deduplicate_pitch_accents": "Tonhöhenakzente deduplizieren",
+    "harmonic_frequency": "Worthäufigkeiten aggregieren",
+    "manage_audio_sources": "Audioquellen verwalten",
+    "local_audio": "Lokales Audio",
+    "local_audio_not_set": "Keine Datenbank ausgewählt",
+    "dialog_select_dictionary_type": "Wörterbuchtyp auswählen",
+    "dictionary_section_frequency": "Häufigkeitswörterbücher",
+    "dictionary_section_pitch": "Tonhöhenwörterbücher",
+    "dictionary_section_term": "Begriffswörterbücher",
+    "dictionary_type_frequency": "Häufigkeit",
+    "dictionary_type_pitch": "Tonhöhe",
+    "dictionary_type_term": "Begriff",
+    "action_favorite": "Favorite",
+    "favorite_added": "Sentence saved to favorites",
+    "favorites": "Favorites ($n)",
+    "no_favorites": "No saved sentences",
+    "favorites_title": "Favorite Sentences",
+    "collections": "Collections",
+    "no_collections": "No bookmarks or saved sentences",
+    "collection_bookmark": "Bookmark",
+    "collection_sentence": "Sentence",
+    "show_floating_lyric": "Floating lyric overlay",
+    "floating_lyric_hint": "Show current sentence over other apps.",
+    "floating_lyric_previous": "Previous",
+    "floating_lyric_play_pause": "Play",
+    "floating_lyric_next": "Next",
+    "floating_lyric_lock": "Lock",
+    "floating_lyric_unlock": "Unlock",
+    "floating_lyric_close": "Close",
+    "initialization_failed": "Initialisierung fehlgeschlagen"
 }

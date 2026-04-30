@@ -1,6 +1,6 @@
 ﻿{
     "dictionary_media_type": "Kamus",
-    "dialog_importing": "IMPORTING…",
+    "dialog_importing": "MENGIMPOR…",
     "player_media_type": "Pemutar",
     "reader_media_type": "Pembaca",
     "viewer_media_type": "Penampil",
@@ -58,7 +58,7 @@
     "dialog_manage": "KELOLA",
     "dialog_stop": "BERHENTI",
     "dialog_done": "SELESAI",
-    "dialog_add": "ADD",
+    "dialog_add": "TAMBAH",
     "reset": "Reset",
     "dialog_launch_ankidroid": "BUKA ANKIDROID",
     "media_item_delete_confirmation": "Item ini akan dihapus dari riwayat. Apakah Anda yakin?",
@@ -641,7 +641,6 @@
     "anki_auto_tag_hint": "Tambahkan judul buku saat ini sebagai tag secara otomatis saat membuat kartu.",
     "anki_duplicate_check_hint": "Pilih tipe kartu Anki mana yang diperiksa duplikatnya sebelum menambahkan kartu baru.",
     "anki_retry": "Coba Lagi",
-
     "hint_font_size": "Sesuaikan ukuran font teks buku (dalam piksel).",
     "hint_line_height": "Sesuaikan jarak antar baris teks. Nilai lebih besar meningkatkan keterbacaan.",
     "hint_text_indentation": "Jumlah karakter untuk mengindentasi baris pertama setiap paragraf.",
@@ -651,41 +650,37 @@
     "hint_writing_direction": "Horizontal: aliran teks kiri ke kanan. Vertikal: teks Jepang tradisional atas ke bawah, kanan ke kiri.",
     "hint_view_mode": "Paginasi: balik halaman seperti buku. Gulir kontinu: gulir teks tanpa pemisah halaman.",
     "hint_vert_text_orient": "Campuran: angka dan huruf Latin diputar ke samping. Tegak: semua karakter tetap tegak.",
-
     "anki_manage_profiles": "Kelola Profil Ekspor",
     "anki_manage_profiles_hint": "Konfigurasi pemetaan bidang kartu saat mengekspor ke AnkiDroid. Setiap profil terikat ke tipe catatan Anki dan menentukan bidang hibiki mana yang mengisi bidang Anki mana.",
-  "collapse_dictionaries": "Collapse dictionaries",
-  "deduplicate_pitch_accents": "Hapus duplikat aksen nada",
-  "harmonic_frequency": "Gabungkan frekuensi kata",
-  "manage_audio_sources": "Kelola sumber audio",
-  "local_audio": "Audio lokal",
-  "local_audio_not_set": "Tidak ada database yang dipilih"
-,
-  "dialog_select_dictionary_type": "Pilih jenis kamus"
-,
-  "dictionary_section_frequency": "Kamus Frekuensi"
-,
-  "dictionary_section_pitch": "Kamus Nada"
-,
-  "dictionary_section_term": "Kamus Istilah"
-,
-  "dictionary_type_frequency": "Frekuensi"
-,
-  "dictionary_type_pitch": "Nada"
-,
-  "dictionary_type_term": "Istilah"
-,
-  "action_favorite": "Favorite"
-,
-  "favorite_added": "Sentence saved to favorites"
-,
-  "favorites": "Favorites ($n)"
-,
-  "no_favorites": "No saved sentences"
-,
-  "favorites_title": "Favorite Sentences",
-  "collections": "Collections",
-  "no_collections": "No bookmarks or saved sentences",
-  "collection_bookmark": "Bookmark",
-  "collection_sentence": "Sentence"
+    "collapse_dictionaries": "Collapse dictionaries",
+    "deduplicate_pitch_accents": "Hapus duplikat aksen nada",
+    "harmonic_frequency": "Gabungkan frekuensi kata",
+    "manage_audio_sources": "Kelola sumber audio",
+    "local_audio": "Audio lokal",
+    "local_audio_not_set": "Tidak ada database yang dipilih",
+    "dialog_select_dictionary_type": "Pilih jenis kamus",
+    "dictionary_section_frequency": "Kamus Frekuensi",
+    "dictionary_section_pitch": "Kamus Nada",
+    "dictionary_section_term": "Kamus Istilah",
+    "dictionary_type_frequency": "Frekuensi",
+    "dictionary_type_pitch": "Nada",
+    "dictionary_type_term": "Istilah",
+    "action_favorite": "Favorite",
+    "favorite_added": "Sentence saved to favorites",
+    "favorites": "Favorites ($n)",
+    "no_favorites": "No saved sentences",
+    "favorites_title": "Favorite Sentences",
+    "collections": "Collections",
+    "no_collections": "No bookmarks or saved sentences",
+    "collection_bookmark": "Bookmark",
+    "collection_sentence": "Sentence",
+    "show_floating_lyric": "Floating lyric overlay",
+    "floating_lyric_hint": "Show current sentence over other apps.",
+    "floating_lyric_previous": "Previous",
+    "floating_lyric_play_pause": "Play",
+    "floating_lyric_next": "Next",
+    "floating_lyric_lock": "Lock",
+    "floating_lyric_unlock": "Unlock",
+    "floating_lyric_close": "Close",
+    "initialization_failed": "Inisialisasi gagal"
 }

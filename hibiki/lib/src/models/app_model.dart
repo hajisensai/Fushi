@@ -689,6 +689,9 @@ class AppModel with ChangeNotifier {
         const Locale('th'),
         const Locale('id'),
         const Locale('ar'),
+        const Locale('nl'),
+        const Locale('it'),
+        const Locale('tr'),
       ],
     );
 
@@ -3938,6 +3941,15 @@ class AppModel with ChangeNotifier {
 
   Future<void> setShowFloatingLyric(bool value) async {
     await _setPref('show_floating_lyric', value);
+    notifyListeners();
+  }
+
+  double get floatingLyricFontSize {
+    return _getPref('floating_lyric_font_size', defaultValue: 20.0);
+  }
+
+  Future<void> setFloatingLyricFontSize(double value) async {
+    await _setPref('floating_lyric_font_size', value.clamp(8, 64).toDouble());
     notifyListeners();
   }
 

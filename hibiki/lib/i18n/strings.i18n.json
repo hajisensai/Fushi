@@ -708,5 +708,12 @@
   "collections": "Collections",
   "no_collections": "No bookmarks or saved sentences",
   "collection_bookmark": "Bookmark",
-  "collection_sentence": "Sentence"
+  "collection_sentence": "Sentence",
+  "floating_lyric_previous": "Previous",
+  "floating_lyric_play_pause": "Play",
+  "floating_lyric_next": "Next",
+  "floating_lyric_lock": "Lock",
+  "floating_lyric_unlock": "Unlock",
+  "floating_lyric_close": "Close",
+  "initialization_failed": "Initialisation failed"
 }

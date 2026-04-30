@@ -1,6 +1,6 @@
 ﻿{
     "dictionary_media_type": "Dicionário",
-    "dialog_importing": "IMPORTING…",
+    "dialog_importing": "IMPORTANDO…",
     "player_media_type": "Reprodutor",
     "reader_media_type": "Leitor",
     "viewer_media_type": "Visualizador",
@@ -58,7 +58,7 @@
     "dialog_manage": "GERENCIAR",
     "dialog_stop": "PARAR",
     "dialog_done": "CONCLUÍDO",
-    "dialog_add": "ADD",
+    "dialog_add": "ADICIONAR",
     "reset": "Redefinir",
     "dialog_launch_ankidroid": "ABRIR ANKIDROID",
     "media_item_delete_confirmation": "Isso removerá este item do histórico. Tem certeza de que deseja fazer isso?",
@@ -641,7 +641,6 @@
     "anki_auto_tag_hint": "Adicionar automaticamente o título do livro como tag ao criar cartões.",
     "anki_duplicate_check_hint": "Selecionar quais tipos de cartões Anki verificar para duplicatas antes de adicionar um novo cartão.",
     "anki_retry": "Tentar Novamente",
-
     "hint_font_size": "Ajustar o tamanho da fonte do texto do livro (em pixels).",
     "hint_line_height": "Ajustar o espaçamento entre linhas de texto. Valores maiores melhoram a legibilidade.",
     "hint_text_indentation": "Número de caracteres para recuar a primeira linha de cada parágrafo.",
@@ -651,41 +650,37 @@
     "hint_writing_direction": "Horizontal: texto da esquerda para a direita. Vertical: texto japonês tradicional de cima para baixo, da direita para a esquerda.",
     "hint_view_mode": "Paginado: virar páginas como um livro. Rolagem contínua: rolar pelo texto sem quebras de página.",
     "hint_vert_text_orient": "Misto: números e letras latinas são girados de lado. Vertical: todos os caracteres permanecem verticais.",
-
     "anki_manage_profiles": "Gerenciar Perfis de Exportação",
     "anki_manage_profiles_hint": "Configurar como os campos dos cartões são mapeados ao exportar para o AnkiDroid. Cada perfil se vincula a um tipo de nota Anki e define qual campo do hibiki preenche cada campo do Anki.",
-  "collapse_dictionaries": "Collapse dictionaries",
-  "deduplicate_pitch_accents": "Deduplicar acentos tonais",
-  "harmonic_frequency": "Agregar frequências de palavras",
-  "manage_audio_sources": "Gerenciar fontes de áudio",
-  "local_audio": "Áudio local",
-  "local_audio_not_set": "Nenhum banco de dados selecionado"
-,
-  "dialog_select_dictionary_type": "Selecionar tipo de dicionário"
-,
-  "dictionary_section_frequency": "Dicionários de frequência"
-,
-  "dictionary_section_pitch": "Dicionários de tom"
-,
-  "dictionary_section_term": "Dicionários de termos"
-,
-  "dictionary_type_frequency": "Frequência"
-,
-  "dictionary_type_pitch": "Tom"
-,
-  "dictionary_type_term": "Termo"
-,
-  "action_favorite": "Favorite"
-,
-  "favorite_added": "Sentence saved to favorites"
-,
-  "favorites": "Favorites ($n)"
-,
-  "no_favorites": "No saved sentences"
-,
-  "favorites_title": "Favorite Sentences",
-  "collections": "Collections",
-  "no_collections": "No bookmarks or saved sentences",
-  "collection_bookmark": "Bookmark",
-  "collection_sentence": "Sentence"
+    "collapse_dictionaries": "Collapse dictionaries",
+    "deduplicate_pitch_accents": "Deduplicar acentos tonais",
+    "harmonic_frequency": "Agregar frequências de palavras",
+    "manage_audio_sources": "Gerenciar fontes de áudio",
+    "local_audio": "Áudio local",
+    "local_audio_not_set": "Nenhum banco de dados selecionado",
+    "dialog_select_dictionary_type": "Selecionar tipo de dicionário",
+    "dictionary_section_frequency": "Dicionários de frequência",
+    "dictionary_section_pitch": "Dicionários de tom",
+    "dictionary_section_term": "Dicionários de termos",
+    "dictionary_type_frequency": "Frequência",
+    "dictionary_type_pitch": "Tom",
+    "dictionary_type_term": "Termo",
+    "action_favorite": "Favorite",
+    "favorite_added": "Sentence saved to favorites",
+    "favorites": "Favorites ($n)",
+    "no_favorites": "No saved sentences",
+    "favorites_title": "Favorite Sentences",
+    "collections": "Collections",
+    "no_collections": "No bookmarks or saved sentences",
+    "collection_bookmark": "Bookmark",
+    "collection_sentence": "Sentence",
+    "show_floating_lyric": "Floating lyric overlay",
+    "floating_lyric_hint": "Show current sentence over other apps.",
+    "floating_lyric_previous": "Previous",
+    "floating_lyric_play_pause": "Play",
+    "floating_lyric_next": "Next",
+    "floating_lyric_lock": "Lock",
+    "floating_lyric_unlock": "Unlock",
+    "floating_lyric_close": "Close",
+    "initialization_failed": "Falha na inicialização"
 }

@@ -18,5 +18,8 @@ class JidoujishoLocalisations {
     'th': 'ไทย',
     'id': 'Bahasa Indonesia',
     'ar': 'العربية',
+    'nl': 'Nederlands',
+    'it': 'Italiano',
+    'tr': 'Türkçe',
   };
 }
