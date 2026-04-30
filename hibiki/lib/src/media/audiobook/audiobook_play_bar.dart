@@ -269,7 +269,9 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         child: SingleChildScrollView(
           child: Padding(
             padding: EdgeInsets.fromLTRB(
-              20, 4, 20,
+              20,
+              4,
+              20,
               24 + MediaQuery.of(context).viewInsets.bottom,
             ),
             child: Column(
@@ -785,7 +787,9 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
       children: [
         Row(
           children: [
-            Expanded(child: Text(t.show_play_bar, style: theme.textTheme.bodyMedium)),
+            Expanded(
+                child:
+                    Text(t.show_play_bar, style: theme.textTheme.bodyMedium)),
             Switch(
               value: widget.showPlayBar,
               onChanged: (_) => widget.onTogglePlayBar?.call(),
@@ -794,7 +798,9 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         ),
         Row(
           children: [
-            Expanded(child: Text(t.show_media_notification, style: theme.textTheme.bodyMedium)),
+            Expanded(
+                child: Text(t.show_media_notification,
+                    style: theme.textTheme.bodyMedium)),
             Switch(
               value: widget.showMediaNotification,
               onChanged: (_) => widget.onToggleMediaNotification?.call(),
@@ -807,7 +813,8 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(t.show_floating_lyric, style: theme.textTheme.bodyMedium),
+                  Text(t.show_floating_lyric,
+                      style: theme.textTheme.bodyMedium),
                   Text(
                     t.floating_lyric_hint,
                     style: theme.textTheme.bodySmall?.copyWith(
@@ -834,7 +841,8 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         child: Padding(
           padding: EdgeInsets.symmetric(vertical: 12),
           child: SizedBox(
-            width: 20, height: 20,
+            width: 20,
+            height: 20,
             child: CircularProgressIndicator(strokeWidth: 2),
           ),
         ),
@@ -929,8 +937,10 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           label: t.ttu_writing_direction,
           child: SegmentedButton<String>(
             segments: <ButtonSegment<String>>[
-              ButtonSegment<String>(value: 'horizontal-tb', label: Text(t.ttu_horizontal)),
-              ButtonSegment<String>(value: 'vertical-rl', label: Text(t.ttu_vertical)),
+              ButtonSegment<String>(
+                  value: 'horizontal-tb', label: Text(t.ttu_horizontal)),
+              ButtonSegment<String>(
+                  value: 'vertical-rl', label: Text(t.ttu_vertical)),
             ],
             selected: <String>{s.writingMode},
             onSelectionChanged: (Set<String> sel) {
@@ -950,8 +960,10 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           label: t.ttu_view_mode_label,
           child: SegmentedButton<String>(
             segments: <ButtonSegment<String>>[
-              ButtonSegment<String>(value: 'paginated', label: Text(t.ttu_paginated)),
-              ButtonSegment<String>(value: 'continuous', label: Text(t.ttu_scroll)),
+              ButtonSegment<String>(
+                  value: 'paginated', label: Text(t.ttu_paginated)),
+              ButtonSegment<String>(
+                  value: 'continuous', label: Text(t.ttu_scroll)),
             ],
             selected: <String>{s.viewMode},
             onSelectionChanged: (Set<String> sel) {
@@ -992,7 +1004,9 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           theme,
           label: t.ttu_text_indentation,
           value: _src.ttuTextIndentation,
-          step: 1, min: 0, max: 10,
+          step: 1,
+          min: 0,
+          max: 10,
           format: (v) => '${v.round()}',
           onChanged: (v) {
             _src.setTtuTextIndentation(v);
@@ -1005,7 +1019,9 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           theme,
           label: t.ttu_first_dimension_margin,
           value: _src.ttuFirstDimensionMargin,
-          step: 5, min: 0, max: 100,
+          step: 5,
+          min: 0,
+          max: 100,
           format: (v) => '${v.round()}',
           onChanged: (v) {
             _src.setTtuFirstDimensionMargin(v);
@@ -1018,8 +1034,11 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           theme,
           label: t.ttu_second_dimension_max,
           value: _src.ttuSecondDimensionMaxValue,
-          step: 50, min: 0, max: 2000,
-          format: (v) => v.round() == 0 ? t.ttu_page_columns_auto : '${v.round()}',
+          step: 50,
+          min: 0,
+          max: 2000,
+          format: (v) =>
+              v.round() == 0 ? t.ttu_page_columns_auto : '${v.round()}',
           onChanged: (v) {
             _src.setTtuSecondDimensionMaxValue(v);
             setState(() {});
@@ -1031,8 +1050,11 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           theme,
           label: t.ttu_page_columns,
           value: _src.ttuPageColumns.toDouble(),
-          step: 1, min: 0, max: 4,
-          format: (v) => v.round() == 0 ? t.ttu_page_columns_auto : '${v.round()}',
+          step: 1,
+          min: 0,
+          max: 4,
+          format: (v) =>
+              v.round() == 0 ? t.ttu_page_columns_auto : '${v.round()}',
           onChanged: (v) {
             _src.setTtuPageColumns(v.round());
             setState(() {});
@@ -1046,8 +1068,10 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           hint: t.ttu_vert_text_orient_hint,
           child: SegmentedButton<String>(
             segments: <ButtonSegment<String>>[
-              ButtonSegment<String>(value: 'mixed', label: Text(t.ttu_orient_mixed)),
-              ButtonSegment<String>(value: 'upright', label: Text(t.ttu_orient_upright)),
+              ButtonSegment<String>(
+                  value: 'mixed', label: Text(t.ttu_orient_mixed)),
+              ButtonSegment<String>(
+                  value: 'upright', label: Text(t.ttu_orient_upright)),
             ],
             selected: <String>{_src.ttuVerticalTextOrientation},
             onSelectionChanged: (Set<String> sel) {
@@ -1069,16 +1093,24 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           hint: t.ttu_furigana_mode_hint,
           child: SegmentedButton<String>(
             segments: <ButtonSegment<String>>[
-              ButtonSegment<String>(value: 'show', label: Text(t.ttu_furigana_show)),
-              ButtonSegment<String>(value: 'hide', label: Text(t.ttu_furigana_hide)),
-              ButtonSegment<String>(value: 'partial', label: Text(t.ttu_furigana_partial)),
-              ButtonSegment<String>(value: 'toggle', label: Text(t.ttu_furigana_toggle)),
+              ButtonSegment<String>(
+                  value: 'show', label: Text(t.ttu_furigana_show)),
+              ButtonSegment<String>(
+                  value: 'hide', label: Text(t.ttu_furigana_hide)),
+              ButtonSegment<String>(
+                  value: 'partial', label: Text(t.ttu_furigana_partial)),
+              ButtonSegment<String>(
+                  value: 'toggle', label: Text(t.ttu_furigana_toggle)),
             ],
             selected: <String>{_src.ttuFuriganaMode},
             onSelectionChanged: (Set<String> sel) {
-              _src.setTtuFuriganaMode(sel.first);
+              if (sel.isEmpty) {
+                return;
+              }
+              final String mode = sel.first;
+              _src.setTtuFuriganaMode(mode);
               setState(() {});
-              _applyFuriganaMode(sel.first);
+              _applyFuriganaMode(mode);
             },
             style: const ButtonStyle(
               visualDensity: VisualDensity.compact,

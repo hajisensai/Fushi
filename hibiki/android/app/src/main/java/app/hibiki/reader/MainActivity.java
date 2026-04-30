@@ -70,6 +70,7 @@ public class MainActivity extends AudioServiceActivity {
     private static final String SPLASH_PREFS = "hibiki_splash";
     private static final int AD_PERM_REQUEST = 0;
     private static final int SAF_PICK_DIR_REQUEST = 1001;
+    private static MethodChannel floatingLyricChannel;
 
     private Activity context;
     private AnkiDroidHelper mAnkiDroid;
@@ -145,6 +146,13 @@ public class MainActivity extends AudioServiceActivity {
 
     public static boolean getIsAppRunning() {
         return isAppRunning;
+    }
+
+    public static void notifyFloatingLyricEvent(String method, Map<String, Object> arguments) {
+        if (floatingLyricChannel == null) return;
+        new Handler(Looper.getMainLooper()).post(() -> {
+            floatingLyricChannel.invokeMethod(method, arguments);
+        });
     }
 
     public void addDefaultModel() {
@@ -790,8 +798,9 @@ public class MainActivity extends AudioServiceActivity {
                 }
             });
 
-        new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), FLOATING_LYRIC_CHANNEL)
-            .setMethodCallHandler((call, result) -> {
+        floatingLyricChannel = new MethodChannel(
+                flutterEngine.getDartExecutor().getBinaryMessenger(), FLOATING_LYRIC_CHANNEL);
+        floatingLyricChannel.setMethodCallHandler((call, result) -> {
                 switch (call.method) {
                     case "show": {
                         if (!Settings.canDrawOverlays(context)) {

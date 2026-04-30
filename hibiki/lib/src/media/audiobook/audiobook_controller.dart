@@ -411,7 +411,13 @@ class AudiobookPlayerController extends ChangeNotifier {
     await _loadReady.future;
     final Duration? dur = _player.duration;
     if (dur == null || dur.inMilliseconds <= 0) return;
-    final int globalMs = _toGlobalMs(cue).clamp(0, dur.inMilliseconds);
+    final int? mappedMs = _toGlobalMs(cue);
+    if (mappedMs == null) {
+      // Invalid alignment data should fail closed; falling back to 0 makes
+      // tap-to-seek look like it jumped to the start of the audiobook.
+      return;
+    }
+    final int globalMs = mappedMs.clamp(0, dur.inMilliseconds);
     await _player.seek(Duration(milliseconds: globalMs));
     _chapterTransition = false;
     final int idx = _chapterCues.indexOf(cue);
@@ -771,11 +777,36 @@ class AudiobookPlayerController extends ChangeNotifier {
   }
 
   /// 将 cue 的 per-file 毫秒转换为全局毫秒（多文件场景）。
-  int _toGlobalMs(AudioCue cue) {
-    final int offset = cue.audioFileIndex < _fileOffsets.length
-        ? _fileOffsets[cue.audioFileIndex]
-        : 0;
-    return offset + cue.startMs;
+  int? _toGlobalMs(AudioCue cue) {
+    return _globalMsForCue(
+      audioFileIndex: cue.audioFileIndex,
+      startMs: cue.startMs,
+      fileOffsets: _fileOffsets,
+    );
+  }
+
+  static int? _globalMsForCue({
+    required int audioFileIndex,
+    required int startMs,
+    required List<int> fileOffsets,
+  }) {
+    if (audioFileIndex < 0 || audioFileIndex >= fileOffsets.length) {
+      return null;
+    }
+    return fileOffsets[audioFileIndex] + startMs;
+  }
+
+  @visibleForTesting
+  static int? globalMsForCueForTesting({
+    required int audioFileIndex,
+    required int startMs,
+    required List<int> fileOffsets,
+  }) {
+    return _globalMsForCue(
+      audioFileIndex: audioFileIndex,
+      startMs: startMs,
+      fileOffsets: fileOffsets,
+    );
   }
 
   /// 读取音频文件时长（用于多文件累计偏移计算）。

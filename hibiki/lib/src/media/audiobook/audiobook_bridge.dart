@@ -45,9 +45,9 @@ window.__hoshiAlignToRect = function(rect) {
                      rect.left === 0 && rect.top === 0;
   if (isDegenerate) return;
 
-  if (typeof window.__ttuGetPageInfo !== 'function') { console.error('alignToRect:noApi'); return; }
+  if (typeof window.__ttuGetPageInfo !== 'function') { console.log('alignToRect:noApi'); return; }
   var info = window.__ttuGetPageInfo();
-  if (!info || !info.stride || info.stride < 10) { console.error('alignToRect:noInfo ' + JSON.stringify(info)); return; }
+  if (!info || !info.stride || info.stride < 10) { console.log('alignToRect:noInfo ' + JSON.stringify(info)); return; }
   var content = document.querySelector('.book-content') ||
                 document.scrollingElement || document.documentElement;
   var cRect = content.getBoundingClientRect();
@@ -146,6 +146,13 @@ window.__hoshiLoadSasayakiRefs = function(ttuBookId) {
     'hibiki-message-type': 'sasayakiRefsLoading',
     'ttuBookId': ttuBookId
   }));
+  if (ttuBookId === undefined || ttuBookId === null) {
+    console.log(JSON.stringify({
+      'hibiki-message-type': 'sasayakiRefsErr',
+      'error': 'missing_ttu_book_id'
+    }));
+    return;
+  }
   try {
     var req = indexedDB.open('books');
     req.onsuccess = function(ev) {
@@ -382,6 +389,18 @@ window.__sasayakiAutoNav = window.__sasayakiAutoNav || false;
 window.__sasayakiRequestNav = async function(n) {
   window.__sasayakiAutoNav = true;
   try {
+    if (typeof window.__ttuSectionCount === 'function') {
+      var sectionCount = window.__ttuSectionCount();
+      if (!sectionCount || n < 0 || n >= sectionCount) {
+        console.log(JSON.stringify({
+          'hibiki-message-type': 'sasayakiNavErr',
+          'section': n,
+          'error': 'section out of range',
+          'sectionCount': sectionCount
+        }));
+        return;
+      }
+    }
     if (typeof window.__ttuGoToSection === 'function') {
       await window.__ttuGoToSection(n);
       // ttu 跳章（哪怕目标段等于当前段）会整体替换 .book-content-container
@@ -929,21 +948,46 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
     await controller.evaluateJavascript(
       source: '''
 (async function(){
-  for(var i=0;i<20;i++){
-    if(typeof __sasayakiRequestNav!=="undefined"){
-      await __sasayakiRequestNav($sectionIndex);
-      return;
-    }
-    if(typeof __ttuGoToSection==="function"){
-      await __ttuGoToSection($sectionIndex);
-      console.log(JSON.stringify({"hibiki-message-type":"sasayakiNavOk",
-        "section":$sectionIndex}));
-      return;
-    }
-    await new Promise(function(r){setTimeout(r,100)});
+  var target = $sectionIndex;
+  function sectionCount() {
+    try {
+      if (typeof __ttuSectionCount === "function") return __ttuSectionCount();
+    } catch(e) {}
+    try {
+      if (typeof __ttuGetToc === "function") return (__ttuGetToc() || []).length;
+    } catch(e) {}
+    return null;
   }
-  console.log(JSON.stringify({"hibiki-message-type":"sasayakiNavErr",
-    "section":$sectionIndex,"error":"bridge not injected after 2s"}));
+  function validTarget() {
+    var count = sectionCount();
+    if (count === null) return true;
+    return count > 0 && target >= 0 && target < count;
+  }
+  try {
+    for(var i=0;i<20;i++){
+      if(!validTarget()){
+        console.log(JSON.stringify({"hibiki-message-type":"sasayakiNavErr",
+          "section":target,"error":"section out of range","sectionCount":sectionCount()}));
+        return;
+      }
+      if(typeof __sasayakiRequestNav!=="undefined"){
+        await __sasayakiRequestNav(target);
+        return;
+      }
+      if(typeof __ttuGoToSection==="function"){
+        await __ttuGoToSection(target);
+        console.log(JSON.stringify({"hibiki-message-type":"sasayakiNavOk",
+          "section":target}));
+        return;
+      }
+      await new Promise(function(r){setTimeout(r,100)});
+    }
+    console.log(JSON.stringify({"hibiki-message-type":"sasayakiNavErr",
+      "section":target,"error":"bridge not injected after 2s"}));
+  } catch(e) {
+    console.log(JSON.stringify({"hibiki-message-type":"sasayakiNavErr",
+      "section":target,"error":String(e),"sectionCount":sectionCount()}));
+  }
 })();
 ''',
     );

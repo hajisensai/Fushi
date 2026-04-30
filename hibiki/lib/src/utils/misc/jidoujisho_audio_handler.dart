@@ -92,13 +92,26 @@ class JidoujishoAudioHandler extends ag.BaseAudioHandler {
     ));
   }
 
-  void updateDisplayTitle(String title, {String? displaySubtitle}) {
+  void updateNotificationSubtitle({
+    required String title,
+    required String? subtitle,
+    String? fallbackArtist,
+  }) {
     final ag.MediaItem? current = mediaItem.value;
     if (current == null) return;
+    final String? cleanedSubtitle = _cleanNotificationSubtitle(subtitle);
     mediaItem.add(current.copyWith(
       title: title,
-      displaySubtitle: displaySubtitle,
+      artist: cleanedSubtitle ?? fallbackArtist,
+      displaySubtitle: cleanedSubtitle,
+      displayDescription: cleanedSubtitle,
     ));
+  }
+
+  String? _cleanNotificationSubtitle(String? subtitle) {
+    final String? cleaned = subtitle?.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (cleaned == null || cleaned.isEmpty) return null;
+    return cleaned;
   }
 
   void clearNotification() {
