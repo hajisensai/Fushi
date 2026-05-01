@@ -172,27 +172,24 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     if (ttuId == null || ttuId <= 0) return;
 
     final MediaItem? original = _mediaItemMap[ttuId];
+    final int port = ReaderTtuSource.instance
+        .getPortForLanguage(appModel.targetLanguage);
+    final String title = original?.title ?? _bookTitleMap[ttuId] ?? item.bookTitle ?? '';
+    final String url =
+        'http://localhost:$port/b.html?id=$ttuId&title=${Uri.encodeComponent(title)}';
 
-    final MediaItem mediaItem;
-    if (original != null) {
-      mediaItem = original;
-    } else {
-      final int port = ReaderTtuSource.instance
-          .getPortForLanguage(appModel.targetLanguage);
-      final String title = _bookTitleMap[ttuId] ?? item.bookTitle ?? '';
-      final String url =
-          'http://localhost:$port/b.html?id=$ttuId&title=${Uri.encodeComponent(title)}';
-      mediaItem = MediaItem(
-        mediaIdentifier: url,
-        title: title,
-        mediaTypeIdentifier: ReaderTtuSource.instance.mediaType.uniqueKey,
-        mediaSourceIdentifier: ReaderTtuSource.instance.uniqueKey,
-        position: 0,
-        duration: 1,
-        canDelete: false,
-        canEdit: true,
-      );
-    }
+    final MediaItem mediaItem = original != null
+        ? original.copyWith(mediaIdentifier: url, title: title)
+        : MediaItem(
+            mediaIdentifier: url,
+            title: title,
+            mediaTypeIdentifier: ReaderTtuSource.instance.mediaType.uniqueKey,
+            mediaSourceIdentifier: ReaderTtuSource.instance.uniqueKey,
+            position: 0,
+            duration: 1,
+            canDelete: false,
+            canEdit: true,
+          );
 
     Navigator.push(
       context,

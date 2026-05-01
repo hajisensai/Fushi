@@ -3460,32 +3460,24 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     )) {
       return;
     }
-    if (saved == null) {
-      saved = ReaderPosition()
-        ..ttuBookId = ttuId
-        ..sectionIndex = _pendingRestorePos!.section
-        ..normCharOffset = _pendingRestorePos!.offset
-        ..updatedAt = DateTime.now().millisecondsSinceEpoch;
-    }
+    final int targetSection = _pendingRestorePos!.section;
+    final int targetOffset = _pendingRestorePos!.offset;
     _restoreInFlight = true;
-    if (_currentTtuSection == saved.sectionIndex) {
-      // 已在目标段：ttu fork 的 scrollToBookmark 已被
-      // __hoshiManagesPosition 跳过，直接由 hibiki 滚到保存的偏移。
-      // 不需要 suppress reveal：打开时 hasPlayedOnce=false，cue 不会抢位置。
+    if (_currentTtuSection == targetSection) {
       debugPrint(
-        '[hibiki-reader-pos] same section, scrolling to o=${saved.normCharOffset}',
+        '[hibiki-reader-pos] same section, scrolling to o=$targetOffset',
       );
       unawaited(_finishRestore());
       return;
     }
     // 跨段：发 requestSectionNav，`_handleTtuSectionChanged` 的
     // `_inFlightNavSection` 分支会处理回报。
-    _inFlightNavSection = saved.sectionIndex;
+    _inFlightNavSection = targetSection;
     _lastSasayakiAppliedSection = -1;
     try {
       await AudiobookBridge.requestSectionNav(
         _controller,
-        sectionIndex: saved.sectionIndex,
+        sectionIndex: targetSection,
       );
       Future.delayed(const Duration(seconds: 5), () {
         if (_restoreInFlight && mounted) {
