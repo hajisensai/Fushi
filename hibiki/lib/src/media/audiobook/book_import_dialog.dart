@@ -283,6 +283,11 @@ class _BookImportDialogState extends State<BookImportDialog> {
           ),
         ),
         IconButton(
+          icon: const Icon(Icons.folder_open, size: 20),
+          tooltip: t.srt_import_pick_subtitle_dir,
+          onPressed: _pickSubtitleDir,
+        ),
+        IconButton(
           icon: const Icon(Icons.subtitles, size: 20),
           tooltip: t.srt_import_pick_subtitle_files,
           onPressed: _pickSubtitleFiles,
@@ -352,6 +357,43 @@ class _BookImportDialogState extends State<BookImportDialog> {
         }
       });
     }
+  }
+
+  Future<void> _pickSubtitleDir() async {
+    final String? dir = await FilePicker.platform.getDirectoryPath();
+    if (dir == null || !mounted) return;
+
+    final Directory directory = Directory(dir);
+    if (!directory.existsSync()) return;
+
+    const List<String> subtitleExts = ['.srt', '.lrc', '.vtt', '.ass', '.ssa'];
+    final List<String> paths = directory
+        .listSync(recursive: true)
+        .whereType<File>()
+        .where((f) {
+          final String lower = f.path.toLowerCase();
+          return subtitleExts.any(lower.endsWith);
+        })
+        .map((f) => f.path)
+        .toList()
+      ..sort(naturalCompare);
+
+    if (paths.isEmpty) {
+      Fluttertoast.showToast(msg: t.srt_no_subtitle_files);
+      return;
+    }
+
+    setState(() {
+      final List<String> leftover = autoMatchSubtitles(
+        entries: _audioEntries,
+        subtitlePaths: paths,
+      );
+      _unmatchedSubtitles.addAll(leftover);
+
+      if (_titleCtrl.text.isEmpty && paths.isNotEmpty) {
+        _titleCtrl.text = p.basenameWithoutExtension(paths.first);
+      }
+    });
   }
 
   Future<void> _pickSubtitleFiles() async {
