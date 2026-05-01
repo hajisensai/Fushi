@@ -480,19 +480,16 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 已在最后一句则不动作。未定位到 cue 时跳到第一句。
   Future<void> skipToNextCue() async {
     if (_chapterCues.isEmpty) return;
-    final int idx = JsonAlignmentParser.findCueIndex(
+    final int? target = _nextCueIndex(
       cues: _chapterCues,
+      currentCueIndex: _currentCueIndex,
       positionMs: position.inMilliseconds,
     );
-    if (idx < 0) {
-      await skipToCue(_chapterCues.first);
-      return;
-    }
-    if (idx + 1 >= _chapterCues.length) {
+    if (target == null) {
       unawaited(onBoundarySkip?.call(1));
       return;
     }
-    await skipToCue(_chapterCues[idx + 1]);
+    await skipToCue(_chapterCues[target]);
   }
 
   /// 前跳或后跳 [delta] 句（正数前跳，负数后跳）。
@@ -796,6 +793,24 @@ class AudiobookPlayerController extends ChangeNotifier {
     return fileOffsets[audioFileIndex] + startMs;
   }
 
+  static int? _nextCueIndex({
+    required List<AudioCue> cues,
+    required int currentCueIndex,
+    required int positionMs,
+  }) {
+    if (cues.isEmpty) return null;
+    int idx = currentCueIndex;
+    if (idx < 0 || idx >= cues.length) {
+      idx = JsonAlignmentParser.findCueIndex(
+        cues: cues,
+        positionMs: positionMs,
+      );
+      if (idx < 0) return 0;
+    }
+    if (idx + 1 >= cues.length) return null;
+    return idx + 1;
+  }
+
   @visibleForTesting
   static int? globalMsForCueForTesting({
     required int audioFileIndex,
@@ -806,6 +821,19 @@ class AudiobookPlayerController extends ChangeNotifier {
       audioFileIndex: audioFileIndex,
       startMs: startMs,
       fileOffsets: fileOffsets,
+    );
+  }
+
+  @visibleForTesting
+  static int? nextCueIndexForTesting({
+    required List<AudioCue> cues,
+    required int currentCueIndex,
+    required int positionMs,
+  }) {
+    return _nextCueIndex(
+      cues: cues,
+      currentCueIndex: currentCueIndex,
+      positionMs: positionMs,
     );
   }
 

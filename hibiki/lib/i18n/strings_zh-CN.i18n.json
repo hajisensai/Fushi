@@ -618,7 +618,7 @@
     "import_theme_invalid": "无效的主题代码",
     "import_theme_success": "主题已导入",
     "auto_add_book_name_to_tags": "自动添加书名到标签",
-    "collapse_dictionaries": "折叠词典",
+    "collapse_dictionaries": "折叠词典显示",
     "deduplicate_pitch_accents": "音调去重",
     "harmonic_frequency": "词频聚合",
     "manage_audio_sources": "管理音频来源",

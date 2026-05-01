@@ -16,20 +16,11 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     required this.result,
     this.onTextSelected,
     this.onMineEntry,
-    this.forceCollapseDictionaries = false,
   });
 
   final DictionarySearchResult result;
   final void Function(String text)? onTextSelected;
   final void Function(Map<String, String> fields)? onMineEntry;
-  final bool forceCollapseDictionaries;
-
-  static bool shouldCollapseDictionaries({
-    required bool appPreference,
-    required bool forceCollapse,
-  }) {
-    return appPreference || forceCollapse;
-  }
 
   @override
   ConsumerState<DictionaryPopupWebView> createState() =>
@@ -60,12 +51,8 @@ class DictionaryPopupWebViewState
     final appModel = ref.read(appProvider);
     final deduplicatePitch = appModel.deduplicatePitchAccents;
     final harmonicFreq = appModel.harmonicFrequency;
-    final collapseDict = DictionaryPopupWebView.shouldCollapseDictionaries(
-      appPreference: appModel.collapseDictionaries,
-      forceCollapse: widget.forceCollapseDictionaries,
-    );
-    final audioSourcesJson = jsonEncode(appModel.audioSources);
-    final localAudioEnabled = appModel.localAudioEnabled;
+    final collapseDict = appModel.collapseDictionaries;
+    final audioSourcesJson = jsonEncode(appModel.enabledAudioSources);
 
     _controller!.evaluateJavascript(source: '''
       document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
@@ -73,7 +60,6 @@ class DictionaryPopupWebViewState
       window.deduplicatePitchAccents = $deduplicatePitch;
       window.harmonicFrequency = $harmonicFreq;
       window.collapseDictionaries = $collapseDict;
-      window.localAudioEnabled = $localAudioEnabled;
       window.lookupEntries = $entriesJson;
       window.dictionaryStyles = $stylesJson;
       window.renderPopup();
@@ -226,25 +212,17 @@ class DictionaryPopupWebViewState
             if (url.isNotEmpty && url.startsWith('file://')) {
               final filePath = url.replaceFirst('file://', '');
               TtsChannel.instance.playFile(filePath);
-              return;
+              return true;
             }
             if (url.isNotEmpty && url.startsWith('/')) {
               TtsChannel.instance.playFile(url);
-              return;
+              return true;
             }
             if (url.isNotEmpty && url.startsWith('http')) {
               TtsChannel.instance.playUrl(url);
-              return;
+              return true;
             }
-            final result = widget.result;
-            if (result.entries.isNotEmpty) {
-              final entry = result.entries.first;
-              final word =
-                  entry.reading.isNotEmpty ? entry.reading : entry.word;
-              if (word.isNotEmpty) {
-                TtsChannel.instance.speak(word);
-              }
-            }
+            return false;
           },
         );
       },

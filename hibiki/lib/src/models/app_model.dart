@@ -3909,12 +3909,26 @@ class AppModel with ChangeNotifier {
 
   /// Default audio source templates for word pronunciation.
   static const List<String> defaultAudioSources = [
-    'https://assets.languagepod101.com/dictionary/japanese/audiomp3.php?kanji={term}&kana={reading}',
+    'https://hoshi-reader.manhhaoo-do.workers.dev/?term={term}&reading={reading}',
   ];
 
   /// Get the list of audio source URL templates.
   List<String> get audioSources {
     return _getPref('audio_sources', defaultValue: defaultAudioSources);
+  }
+
+  /// Hoshi-compatible enabled audio sources. Local audio is represented as the
+  /// first source instead of a separate fallback path.
+  List<String> get enabledAudioSources {
+    final List<String> sources = audioSources
+        .where((String source) => source != WordAudioResolver.localAudioUrl)
+        .toList(growable: false);
+    if (!localAudioEnabled) return sources;
+
+    return <String>[
+      WordAudioResolver.localAudioUrl,
+      ...sources,
+    ];
   }
 
   /// Set the list of audio source URL templates.

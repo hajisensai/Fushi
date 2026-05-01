@@ -41,6 +41,7 @@ class _RecursiveDictionaryPageState
 
   bool _isSearching = false;
   late bool _isCreatorOpen;
+  bool _isEditingQuery = false;
 
   @override
   void initState() {
@@ -51,12 +52,6 @@ class _RecursiveDictionaryPageState
     _controller.query = widget.searchTerm;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _controller.open();
-
-      Future.delayed(const Duration(milliseconds: 50), () {
-        FocusScope.of(context).unfocus();
-      });
-
       appModel.addToSearchHistory(
         historyKey: DictionaryMediaType.instance.uniqueKey,
         searchTerm: widget.searchTerm,
@@ -98,7 +93,9 @@ class _RecursiveDictionaryPageState
         body: SafeArea(
           child: Padding(
             padding: Spacing.of(context).insets.onlyTop.semiSmall,
-            child: buildFloatingSearchBar(),
+            child: _isEditingQuery
+                ? buildFloatingSearchBar()
+                : buildDictionaryResultView(),
           ),
         ),
       ),
@@ -142,11 +139,12 @@ class _RecursiveDictionaryPageState
       debounceDelay: Duration(milliseconds: appModel.searchDebounceDelay),
       onFocusChanged: (focused) {
         if (!focused) {
-          if (widget.killOnPop) {
-            appModel.shutdown();
-          } else {
-            Navigator.pop(context);
+          if (!mounted) {
+            return;
           }
+          setState(() {
+            _isEditingQuery = false;
+          });
         }
       },
       progress: _isSearching,
@@ -161,6 +159,109 @@ class _RecursiveDictionaryPageState
       onQueryChanged: onQueryChanged,
       onSubmitted: search,
     );
+  }
+
+  Widget buildDictionaryResultView() {
+    return Column(
+      children: [
+        buildQueryHeader(),
+        Expanded(
+          child: buildFloatingSearchBody(
+            context,
+            const AlwaysStoppedAnimation<double>(1),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget buildQueryHeader() {
+    Color? backgroundColor = appModel.isDarkMode
+        ? const Color.fromARGB(255, 30, 30, 30)
+        : const Color.fromARGB(255, 229, 229, 229);
+    if (appModel.overrideDictionaryColor != null && !_isCreatorOpen) {
+      if ((appModel.overrideDictionaryTheme ?? theme).brightness ==
+          Brightness.dark) {
+        backgroundColor =
+            JidoujishoColor.lighten(appModel.overrideDictionaryColor!, 0.05);
+      } else {
+        backgroundColor =
+            JidoujishoColor.darken(appModel.overrideDictionaryColor!, 0.05);
+      }
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      child: Material(
+        color: backgroundColor,
+        child: SizedBox(
+          height: kToolbarHeight,
+          child: Row(
+            children: [
+              JidoujishoIconButton(
+                tooltip: t.back,
+                icon: Icons.arrow_back,
+                onTap: () async {
+                  if (widget.killOnPop) {
+                    appModel.shutdown();
+                  } else {
+                    Navigator.pop(context);
+                  }
+                },
+              ),
+              Expanded(
+                child: InkWell(
+                  onTap: startEditingQuery,
+                  child: Text(
+                    _controller.query,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: textTheme.titleMedium,
+                  ),
+                ),
+              ),
+              buildInlineSegmentButton(),
+              buildInlineCreatorButton(),
+              JidoujishoIconButton(
+                tooltip: t.search,
+                icon: Icons.search,
+                onTap: startEditingQuery,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget buildInlineSegmentButton() {
+    return JidoujishoIconButton(
+      size: Theme.of(context).textTheme.titleLarge?.fontSize,
+      tooltip: t.text_segmentation,
+      icon: Icons.account_tree,
+      onTap: openTextSegmentationForQuery,
+    );
+  }
+
+  Widget buildInlineCreatorButton() {
+    return JidoujishoIconButton(
+      size: Theme.of(context).textTheme.titleLarge?.fontSize,
+      tooltip: t.card_creator,
+      icon: Icons.note_add,
+      onTap: openCreatorForQuery,
+    );
+  }
+
+  void startEditingQuery() {
+    setState(() {
+      _isEditingQuery = true;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _controller.open();
+    });
   }
 
   void searchAgain() {
@@ -301,22 +402,24 @@ class _RecursiveDictionaryPageState
         size: Theme.of(context).textTheme.titleLarge?.fontSize,
         tooltip: t.text_segmentation,
         icon: Icons.account_tree,
-        onTap: () async {
-          await appModel.openTextSegmentationDialog(
-            sourceText: _controller.query,
-            onSearch: (selection) async {
-              await appModel.openRecursiveDictionarySearch(
-                searchTerm: selection.textInside,
-                killOnPop: false,
-                onUpdateQuery: widget.onUpdateQuery,
-              );
-            },
-          );
-
-          widget.onUpdateQuery?.call(_controller.query);
-        },
+        onTap: openTextSegmentationForQuery,
       ),
     );
+  }
+
+  Future<void> openTextSegmentationForQuery() async {
+    await appModel.openTextSegmentationDialog(
+      sourceText: _controller.query,
+      onSearch: (selection) async {
+        await appModel.openRecursiveDictionarySearch(
+          searchTerm: selection.textInside,
+          killOnPop: false,
+          onUpdateQuery: widget.onUpdateQuery,
+        );
+      },
+    );
+
+    widget.onUpdateQuery?.call(_controller.query);
   }
 
   Widget buildCreatorButton() {
@@ -326,20 +429,22 @@ class _RecursiveDictionaryPageState
         size: Theme.of(context).textTheme.titleLarge?.fontSize,
         tooltip: t.card_creator,
         icon: Icons.note_add,
-        onTap: () {
-          appModel.openCreator(
-            killOnPop: false,
-            ref: ref,
-            creatorFieldValues: CreatorFieldValues(
-              textValues: {
-                SentenceField.instance: _controller.query,
-                TermField.instance: '',
-                ClozeBeforeField.instance: '',
-                ClozeInsideField.instance: '',
-                ClozeAfterField.instance: '',
-              },
-            ),
-          );
+        onTap: openCreatorForQuery,
+      ),
+    );
+  }
+
+  void openCreatorForQuery() {
+    appModel.openCreator(
+      killOnPop: false,
+      ref: ref,
+      creatorFieldValues: CreatorFieldValues(
+        textValues: {
+          SentenceField.instance: _controller.query,
+          TermField.instance: '',
+          ClozeBeforeField.instance: '',
+          ClozeInsideField.instance: '',
+          ClozeAfterField.instance: '',
         },
       ),
     );
@@ -447,15 +552,13 @@ class _RecursiveDictionaryPageState
           child: DictionaryPopupWebView(
             key: ValueKey(_result),
             result: _result!,
-            forceCollapseDictionaries: _isCreatorOpen,
             onTextSelected: (text) {
               _controller.query = text;
               search(text);
             },
           ),
         ),
-        if (footerWidget != null)
-          footerWidget!,
+        if (footerWidget != null) footerWidget!,
       ],
     );
   }

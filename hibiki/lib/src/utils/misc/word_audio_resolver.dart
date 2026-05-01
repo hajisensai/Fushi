@@ -1,0 +1,94 @@
+import 'dart:convert';
+
+import 'package:dio/dio.dart';
+
+typedef LocalAudioQuery = Future<Map<String, String>?> Function(
+    String expression, String reading);
+typedef LocalAudioExtractor = Future<String?> Function(
+    String file, String source);
+typedef AudioSourceListFetcher = Future<List<String>> Function(String url);
+
+class WordAudioResolver {
+  WordAudioResolver({
+    required this.queryLocalAudio,
+    required this.extractLocalAudio,
+    AudioSourceListFetcher? fetchAudioSourceList,
+  }) : fetchAudioSourceList = fetchAudioSourceList ??
+            WordAudioResolver.defaultFetchAudioSourceList;
+
+  static const String localAudioUrl =
+      'http://localhost:8765/localaudio/get/?term={term}&reading={reading}';
+
+  final LocalAudioQuery queryLocalAudio;
+  final LocalAudioExtractor extractLocalAudio;
+  final AudioSourceListFetcher fetchAudioSourceList;
+
+  Future<String?> resolve({
+    required String expression,
+    required String reading,
+    required List<String> sources,
+  }) async {
+    for (final String template in sources) {
+      if (template == localAudioUrl) {
+        final String? path = await _resolveLocal(expression, reading);
+        if (path != null && path.isNotEmpty) return path;
+        continue;
+      }
+
+      final String url = expandTemplate(
+        template: template,
+        expression: expression,
+        reading: reading,
+      );
+      final List<String> urls = await fetchAudioSourceList(url);
+      if (urls.isNotEmpty) return urls.first;
+    }
+
+    return null;
+  }
+
+  Future<String?> _resolveLocal(String expression, String reading) async {
+    final Map<String, String>? info =
+        await queryLocalAudio(expression, reading);
+    if (info == null) return null;
+
+    final String? file = info['file'];
+    final String? source = info['source'];
+    if (file == null || source == null) return null;
+
+    return extractLocalAudio(file, source);
+  }
+
+  static String expandTemplate({
+    required String template,
+    required String expression,
+    required String reading,
+  }) {
+    return template
+        .replaceAll('{term}', Uri.encodeComponent(expression))
+        .replaceAll('{reading}', Uri.encodeComponent(reading));
+  }
+
+  static Future<List<String>> defaultFetchAudioSourceList(String url) async {
+    try {
+      final Response<dynamic> response = await Dio().get<dynamic>(url);
+      final dynamic body = response.data is String
+          ? jsonDecode(response.data as String)
+          : response.data;
+      if (body is! Map) return const <String>[];
+
+      final dynamic sources = body['audioSources'];
+      if (body['type'] != 'audioSourceList' || sources is! List) {
+        return const <String>[];
+      }
+
+      return sources
+          .whereType<Map>()
+          .map((Map source) => source['url']?.toString() ?? '')
+          .where((String value) => value.isNotEmpty)
+          .toList(growable: false);
+    } catch (_) {
+      return const <String>[];
+    }
+  }
+}

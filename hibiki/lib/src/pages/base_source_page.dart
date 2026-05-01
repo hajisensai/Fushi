@@ -182,9 +182,8 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
         final entry = dictionaryResult.entries.first;
         final expression = entry.word;
         final reading = entry.reading;
-        final word = reading.isNotEmpty ? reading : expression;
-        if (word.isNotEmpty) {
-          _autoReadWord(expression, reading, word);
+        if (expression.isNotEmpty) {
+          _autoReadWord(expression, reading);
         }
       }
     } finally {
@@ -192,45 +191,30 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
     }
   }
 
-  /// Try local audio DB → first online audio source → TTS fallback.
-  Future<void> _autoReadWord(
-      String expression, String reading, String word) async {
-    // 1. Local audio database — fast metadata check, extract only if found
-    if (appModel.localAudioEnabled) {
-      try {
-        final info = await TtsChannel.instance
+  /// Resolve audio exactly like Hoshi: enabled sources only, no TTS fallback.
+  Future<void> _autoReadWord(String expression, String reading) async {
+    final WordAudioResolver resolver = WordAudioResolver(
+      queryLocalAudio: (String expression, String reading) {
+        return TtsChannel.instance
             .queryLocalAudio(expression, reading)
-            .timeout(const Duration(milliseconds: 300));
-        if (info != null) {
-          // Found entry — extract blob and play in background
-          TtsChannel.instance
-              .extractLocalAudio(info['file']!, info['source']!)
-              .then((path) {
-            if (path != null && path.isNotEmpty) {
-              TtsChannel.instance.playFile(path);
-            }
-          });
-          return;
-        }
-      } on TimeoutException {
-        // Fall through
-      }
-    }
+            .timeout(const Duration(milliseconds: 500));
+      },
+      extractLocalAudio: TtsChannel.instance.extractLocalAudio,
+    );
+    final String? url = await resolver.resolve(
+      expression: expression,
+      reading: reading,
+      sources: appModel.enabledAudioSources,
+    );
+    if (url == null || url.isEmpty) return;
 
-    // 2. First configured online audio source
-    final sources = appModel.audioSources;
-    if (sources.isNotEmpty) {
-      final url = sources.first
-          .replaceAll('{term}', Uri.encodeComponent(expression))
-          .replaceAll('{reading}', Uri.encodeComponent(reading));
-      if (url.startsWith('http')) {
-        TtsChannel.instance.playUrl(url);
-        return;
-      }
+    if (url.startsWith('file://')) {
+      TtsChannel.instance.playFile(url.replaceFirst('file://', ''));
+    } else if (url.startsWith('/')) {
+      TtsChannel.instance.playFile(url);
+    } else if (url.startsWith('http')) {
+      TtsChannel.instance.playUrl(url);
     }
-
-    // 3. System TTS fallback
-    TtsChannel.instance.speak(word);
   }
 
   /// Hide the dictionary and dispose of the current result.

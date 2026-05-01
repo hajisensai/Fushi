@@ -38,6 +38,45 @@ import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
 import 'package:hibiki/src/media/audiobook/srt_parser.dart';
 import 'package:hibiki/utils.dart';
 
+/// Builds the TTU custom theme object stored in localStorage.
+Map<String, String> buildTtuCustomThemeDefinition({
+  required bool dark,
+  Color? fontColor,
+}) {
+  final Color resolvedFontColor =
+      fontColor ?? (dark ? const Color(0xDEFFFFFF) : const Color(0xDE000000));
+  final int r = resolvedFontColor.red;
+  final int g = resolvedFontColor.green;
+  final int b = resolvedFontColor.blue;
+  final String a = (resolvedFontColor.alpha / 255.0).toStringAsFixed(2);
+  return {
+    'fontColor': 'rgba($r,$g,$b,$a)',
+    'backgroundColor': dark ? 'rgba(35,39,42,1)' : 'rgba(255,255,255,1)',
+    'selectionFontColor': dark ? 'rgba(85,90,92,0.6)' : 'rgba(245,245,245,1)',
+    'selectionBackgroundColor':
+        dark ? 'rgba(212,217,220,0.8)' : 'rgba(151,151,151,1)',
+    'hintFuriganaFontColor': 'rgba($r,$g,$b,0.38)',
+    'hintFuriganaShadowColor':
+        dark ? 'rgba(240,240,241,0.3)' : 'rgba(34,34,49,0.3)',
+    'tooltipTextFontColor': 'rgba($r,$g,$b,0.6)',
+  };
+}
+
+/// Builds JavaScript that writes Hibiki's custom theme into TTU.
+String buildTtuCustomThemeJs({
+  required bool dark,
+  Color? fontColor,
+}) {
+  final String themesJson = jsonEncode({
+    'custom-theme': buildTtuCustomThemeDefinition(
+      dark: dark,
+      fontColor: fontColor,
+    ),
+  });
+  return 'window.localStorage.setItem("customThemes",'
+      '${jsonEncode(themesJson)})';
+}
+
 /// The media page used for the [ReaderTtuSource].
 class ReaderTtuSourcePage extends BaseSourcePage {
   /// Create an instance of this page.
@@ -166,7 +205,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   /// 中过滤紧接程序化跳章后 ttu 推出的 settle 事件，避免误触 follow auto-off。
   DateTime? _lastNavRestoreTime;
 
-  String? _lastAppThemeKey;
+  String? _lastAppThemeSignature;
   String? _lastFloatingLyricStyleKey;
   bool _floatingLyricStyleSyncScheduled = false;
 
@@ -789,16 +828,17 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       lastOrientation = orientation;
     }
 
-    final currentThemeKey = appModel.appThemeKey;
-    if (_lastAppThemeKey != null &&
-        _lastAppThemeKey != currentThemeKey &&
-        _controllerInitialised &&
-        mediaSource.adaptTtuTheme) {
+    final currentThemeSignature = _appThemeSignature();
+    if (_lastAppThemeSignature != null &&
+        _lastAppThemeSignature != currentThemeSignature &&
+        _controllerInitialised) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) setDictionaryColors();
+        if (mounted) {
+          unawaited(_applyAppThemeToTtuReader());
+        }
       });
     }
-    _lastAppThemeKey = currentThemeKey;
+    _lastAppThemeSignature = currentThemeSignature;
     _scheduleFloatingLyricStyleSync();
 
     return Focus(
@@ -890,6 +930,34 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       bottomSheetTheme:
           base.bottomSheetTheme.copyWith(backgroundColor: surface),
     );
+  }
+
+  String _appThemeSignature() {
+    if (appModel.appThemeKey != 'custom-theme') {
+      return appModel.appThemeKey;
+    }
+    return [
+      appModel.appThemeKey,
+      appModel.customThemeDark ? 'dark' : 'light',
+      appModel.customThemeFontColor?.toARGB32().toRadixString(16) ?? 'default',
+    ].join(':');
+  }
+
+  Future<void> _applyAppThemeToTtuReader() async {
+    final String themeKey = appModel.appThemeKey;
+    final List<String> cmds = [
+      if (themeKey == 'custom-theme') _buildCustomThemeJs(),
+      'window.localStorage.setItem("theme",${jsonEncode(themeKey)})',
+      '(function(){try{'
+          'if(window.__ttuReaderSettings){'
+          'window.__ttuReaderSettings.set("theme",${jsonEncode(themeKey)});'
+          '}'
+          '}catch(e){}})()',
+    ];
+    await _controller.evaluateJavascript(source: cmds.join(';'));
+    if (mediaSource.adaptTtuTheme) {
+      await setDictionaryColors();
+    }
   }
 
   Future<void> setDictionaryColors() async {
@@ -1019,9 +1087,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       'window.localStorage.setItem("writingMode","${src.ttuWritingMode}")',
       'window.localStorage.setItem("viewMode","${src.ttuViewMode}")',
       'window.localStorage.setItem("theme","${appModel.appThemeKey}")',
-      if (appModel.appThemeKey == 'custom-theme' &&
-          appModel.customThemeFontColor != null)
-        _buildCustomThemeJs(),
+      if (appModel.appThemeKey == 'custom-theme') _buildCustomThemeJs(),
       'window.localStorage.setItem("hideFurigana","$hideFuriganaValue")',
       'window.localStorage.setItem("furiganaStyle","$furiganaStyle")',
       'window.localStorage.setItem("textIndentation",${src.ttuTextIndentation})',
@@ -1041,30 +1107,10 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   }
 
   String _buildCustomThemeJs() {
-    final fc = appModel.customThemeFontColor!;
-    final r = fc.red, g = fc.green, b = fc.blue;
-    final a = (fc.alpha / 255.0).toStringAsFixed(2);
-    final bgColor =
-        appModel.customThemeDark ? 'rgba(35,39,42,1)' : 'rgba(255,255,255,1)';
-    final selFc =
-        appModel.customThemeDark ? 'rgba(85,90,92,0.6)' : 'rgba(245,245,245,1)';
-    final selBg = appModel.customThemeDark
-        ? 'rgba(212,217,220,0.8)'
-        : 'rgba(151,151,151,1)';
-    final tooltip = 'rgba($r,$g,$b,0.6)';
-    final hint = 'rgba($r,$g,$b,0.38)';
-    final shadow = appModel.customThemeDark
-        ? 'rgba(240,240,241,0.3)'
-        : 'rgba(34,34,49,0.3)';
-    final themeObj = '{"fontColor":"rgba($r,$g,$b,$a)",'
-        '"backgroundColor":"$bgColor",'
-        '"selectionFontColor":"$selFc",'
-        '"selectionBackgroundColor":"$selBg",'
-        '"hintFuriganaFontColor":"$hint",'
-        '"hintFuriganaShadowColor":"$shadow",'
-        '"tooltipTextFontColor":"$tooltip"}';
-    return 'window.localStorage.setItem("customThemes",'
-        'JSON.stringify({"custom-theme":$themeObj}))';
+    return buildTtuCustomThemeJs(
+      dark: appModel.customThemeDark,
+      fontColor: appModel.customThemeFontColor,
+    );
   }
 
   String _buildFontFaceCss() {

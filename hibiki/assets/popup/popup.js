@@ -1186,32 +1186,23 @@ function createGlossarySectionWrapper(entry) {
 }
 
 async function fetchAudioUrl(expression, reading) {
-    // Try local audio database first
-    if (window.localAudioEnabled) {
-        try {
-            const localPath = await window.flutter_inappwebview.callHandler(
-                'queryLocalAudio', { expression, reading });
-            if (localPath) return localPath;
-        } catch {}
-    }
-
     const templates = window.audioSources;
     if (!templates?.length) return null;
 
     for (const template of templates) {
-        if (template === 'tts') continue;
+        if (template === 'http://localhost:8765/localaudio/get/?term={term}&reading={reading}') {
+            try {
+                const localPath = await window.flutter_inappwebview.callHandler(
+                    'queryLocalAudio', { expression, reading });
+                if (localPath) return localPath;
+            } catch {}
+            continue;
+        }
         const url = template
         .replace('{term}', encodeURIComponent(expression))
         .replace('{reading}', encodeURIComponent(reading));
-        if (/^https?:\/\//.test(url)) {
-            try {
-                const response = await fetch(url, { method: 'HEAD' });
-                if (response.ok) return url;
-            } catch {}
-            return url;
-        }
         try {
-            const response = await fetch(`audio://?url=${encodeURIComponent(url)}`);
+            const response = await fetch(url);
             const data = await response.json();
             if (data.type === 'audioSourceList' && data.audioSources?.[0]?.url) {
                 return data.audioSources[0].url;
