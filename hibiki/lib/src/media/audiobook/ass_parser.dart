@@ -41,12 +41,14 @@ class AssParser {
     required File assFile,
     required String bookUid,
     String chapterHref = defaultChapter,
+    int audioFileIndex = 0,
   }) async {
     final String content = await readTextWithEncoding(assFile);
     return parseString(
       content: content,
       bookUid: bookUid,
       chapterHref: chapterHref,
+      audioFileIndex: audioFileIndex,
     );
   }
 
@@ -55,6 +57,7 @@ class AssParser {
     required String content,
     required String bookUid,
     String chapterHref = defaultChapter,
+    int audioFileIndex = 0,
   }) {
     final String stripped =
         content.startsWith('\uFEFF') ? content.substring(1) : content;
@@ -144,7 +147,7 @@ class AssParser {
         ..text = text
         ..startMs = start
         ..endMs = end
-        ..audioFileIndex = 0;
+        ..audioFileIndex = audioFileIndex;
     });
   }
 

@@ -33,12 +33,14 @@ class SrtParser {
     required File srtFile,
     required String bookUid,
     String chapterHref = defaultChapter,
+    int audioFileIndex = 0,
   }) async {
     final String content = await readTextWithEncoding(srtFile);
     return parseString(
       content: content,
       bookUid: bookUid,
       chapterHref: chapterHref,
+      audioFileIndex: audioFileIndex,
     );
   }
 
@@ -47,6 +49,7 @@ class SrtParser {
     required String content,
     required String bookUid,
     String chapterHref = defaultChapter,
+    int audioFileIndex = 0,
   }) {
     // 移除 UTF-8 BOM
     final String stripped =
@@ -101,7 +104,7 @@ class SrtParser {
         ..text = text
         ..startMs = times.$1
         ..endMs = times.$2
-        ..audioFileIndex = 0;
+        ..audioFileIndex = audioFileIndex;
 
       cues.add(cue);
       sentenceIndex++;

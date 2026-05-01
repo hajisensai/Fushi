@@ -52,6 +52,7 @@ class LrcParser {
     required String bookUid,
     String chapterHref = defaultChapter,
     int lastCueDurationMs = 5000,
+    int audioFileIndex = 0,
   }) async {
     final String content = await readTextWithEncoding(lrcFile);
     return parseString(
@@ -59,6 +60,7 @@ class LrcParser {
       bookUid: bookUid,
       chapterHref: chapterHref,
       lastCueDurationMs: lastCueDurationMs,
+      audioFileIndex: audioFileIndex,
     );
   }
 
@@ -68,6 +70,7 @@ class LrcParser {
     required String bookUid,
     String chapterHref = defaultChapter,
     int lastCueDurationMs = 5000,
+    int audioFileIndex = 0,
   }) {
     // 移除 UTF-8 BOM
     final String stripped =
@@ -130,7 +133,7 @@ class LrcParser {
         ..text = rawCues[i].$2
         ..startMs = startMs
         ..endMs = endMs
-        ..audioFileIndex = 0;
+        ..audioFileIndex = audioFileIndex;
 
       cues.add(cue);
     }

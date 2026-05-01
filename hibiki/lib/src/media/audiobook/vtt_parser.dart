@@ -35,12 +35,14 @@ class VttParser {
     required File vttFile,
     required String bookUid,
     String chapterHref = defaultChapter,
+    int audioFileIndex = 0,
   }) async {
     final String content = await readTextWithEncoding(vttFile);
     return parseString(
       content: content,
       bookUid: bookUid,
       chapterHref: chapterHref,
+      audioFileIndex: audioFileIndex,
     );
   }
 
@@ -49,6 +51,7 @@ class VttParser {
     required String content,
     required String bookUid,
     String chapterHref = defaultChapter,
+    int audioFileIndex = 0,
   }) {
     final String stripped =
         content.startsWith('\uFEFF') ? content.substring(1) : content;
@@ -118,7 +121,7 @@ class VttParser {
           ..text = text
           ..startMs = times.$1
           ..endMs = times.$2
-          ..audioFileIndex = 0,
+          ..audioFileIndex = audioFileIndex,
       );
       sentenceIndex++;
     }
