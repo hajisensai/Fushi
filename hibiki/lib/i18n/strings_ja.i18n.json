@@ -1,4 +1,4 @@
-﻿{
+{
     "dictionary_media_type": "辞書",
     "dialog_importing": "インポート中…",
     "player_media_type": "プレイヤー",
@@ -189,8 +189,8 @@
     "audio_unavailable": "音声が見つかりませんでした。",
     "no_audio_enhancements": "音声拡張機能が割り当てられていません。",
     "card_exported": "カードを『$deck』にエクスポートしました。",
-    "info_incognito_on": "シークレットモード オン。辞書・メディア・検索履歴は記録されません。",
-    "info_incognito_off": "シークレットモード オフ。辞書・メディア・検索履歴が記録されます。",
+    "info_incognito_on": "シークレットモード オン。辞書?メディア?検索履歴は記録されません。",
+    "info_incognito_off": "シークレットモード オフ。辞書?メディア?検索履歴が記録されます。",
     "exit_media_title": "メディアを終了",
     "exit_media_description": "メインメニューに戻ります。よろしいですか？",
     "unimplemented_source": "未実装のソース",
@@ -447,11 +447,11 @@
     "audiobook_import_error": "インポートに失敗しました",
     "audiobook_remove_confirm": "紐付けされたオーディオブックを削除しますか？",
     "srt_import": "本をインポート",
-    "srt_import_pick_srt": "字幕ファイルを選択（EPUB・音声と組み合わせ可能）",
+    "srt_import_pick_srt": "字幕ファイルを選択（EPUB?音声と組み合わせ可能）",
     "srt_import_pick_srt_dir": "字幕ディレクトリを選択",
     "srt_no_subtitle_files": "選択したディレクトリに字幕ファイルがありません",
     "srt_pick_subtitle_file": "字幕ファイルを選択",
-    "srt_import_pick_epub": "EPUBを選択（字幕・音声と組み合わせ可能）",
+    "srt_import_pick_epub": "EPUBを選択（字幕?音声と組み合わせ可能）",
     "srt_import_pick_audio_dir": "音声ディレクトリを選択",
     "srt_import_pick_audio_files": "音声ファイルを選択",
     "srt_import_files_selected": "$n 件のファイルを選択済み",
@@ -546,7 +546,7 @@
     "image_pause_off": "オフ",
     "tap_seek": "Tap to Seek",
     "tap_seek_hint": "Tap a sentence to jump audio to that position.",
-    "ttu_furigana_mode_hint": "Show: normal; Hide: remove; Partial: color hint; Toggle: tap to show/hide.",
+    "ttu_furigana_mode_hint": "",
     "ttu_text_justify_hint": "Stretch lines to fill the full width of the column.",
     "ttu_vert_kerning_hint": "Adjust spacing between CJK characters for vertical text.",
     "ttu_font_vpal_hint": "Use proportional alternates for punctuation in vertical layout.",
@@ -682,5 +682,6 @@
     "floating_lyric_lock": "Lock",
     "floating_lyric_unlock": "Unlock",
     "floating_lyric_close": "Close",
+    "floating_lyric_font_size": "Floating subtitle font size",
     "initialization_failed": "初期化に失敗しました"
 }

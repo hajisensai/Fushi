@@ -151,6 +151,8 @@ class AudiobookSettingsSheet extends StatefulWidget {
     this.onToggleMediaNotification,
     this.showFloatingLyric = false,
     this.onToggleFloatingLyric,
+    this.floatingLyricFontSize = 20,
+    this.onFloatingLyricFontSizeChanged,
     super.key,
   });
 
@@ -174,6 +176,8 @@ class AudiobookSettingsSheet extends StatefulWidget {
   final VoidCallback? onToggleMediaNotification;
   final bool showFloatingLyric;
   final VoidCallback? onToggleFloatingLyric;
+  final double floatingLyricFontSize;
+  final ValueChanged<double>? onFloatingLyricFontSizeChanged;
 
   @override
   State<AudiobookSettingsSheet> createState() => _AudiobookSettingsSheetState();
@@ -830,6 +834,41 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
             ),
           ],
         ),
+        _settingRow(
+          theme,
+          label: t.floating_lyric_font_size,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.remove, size: 18),
+                visualDensity: VisualDensity.compact,
+                onPressed: () {
+                  final double value =
+                      (widget.floatingLyricFontSize - 1).clamp(8, 64);
+                  widget.onFloatingLyricFontSizeChanged?.call(value);
+                },
+              ),
+              SizedBox(
+                width: 36,
+                child: Text(
+                  '${widget.floatingLyricFontSize.round()}',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyLarge,
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.add, size: 18),
+                visualDensity: VisualDensity.compact,
+                onPressed: () {
+                  final double value =
+                      (widget.floatingLyricFontSize + 1).clamp(8, 64);
+                  widget.onFloatingLyricFontSizeChanged?.call(value);
+                },
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -1191,7 +1230,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(label, style: theme.textTheme.bodyMedium),
-                if (hint != null)
+                if (hint != null && hint.isNotEmpty)
                   Text(
                     hint,
                     style: theme.textTheme.bodySmall?.copyWith(

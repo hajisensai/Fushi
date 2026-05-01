@@ -1,4 +1,4 @@
-﻿{
+{
     "dictionary_media_type": "词典",
     "player_media_type": "播放器",
     "reader_media_type": "阅读器",
@@ -553,7 +553,7 @@
     "av_sync_hint": "正数 = 音频先于文字，向回拨字幕条目；负数 = 音频滞后。",
     "tap_seek": "点击跳转",
     "tap_seek_hint": "点击句子跳转音频到对应位置。",
-    "ttu_furigana_mode_hint": "显示注音，隐藏注音，淡化部分注音，或点按切换显隐。",
+    "ttu_furigana_mode_hint": "",
     "ttu_text_justify_hint": "拉伸文字填满列宽。",
     "ttu_vert_kerning_hint": "调整竖排 CJK 字符间距。",
     "ttu_font_vpal_hint": "竖排时使用比例标点替代字形。",
@@ -680,6 +680,7 @@
     "floating_lyric_lock": "锁定",
     "floating_lyric_unlock": "解锁",
     "floating_lyric_close": "关闭",
+    "floating_lyric_font_size": "悬浮字幕字号",
     "show_floating_lyric": "悬浮字幕",
     "floating_lyric_hint": "在其他应用上方显示当前句子。",
     "initialization_failed": "初始化失败"

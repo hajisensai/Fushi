@@ -1,4 +1,4 @@
-﻿{
+{
     "dictionary_media_type": "辭典",
     "dialog_importing": "正在匯入…",
     "player_media_type": "播放器",
@@ -546,7 +546,7 @@
     "image_pause_off": "關閉",
     "tap_seek": "Tap to Seek",
     "tap_seek_hint": "Tap a sentence to jump audio to that position.",
-    "ttu_furigana_mode_hint": "Show: normal; Hide: remove; Partial: color hint; Toggle: tap to show/hide.",
+    "ttu_furigana_mode_hint": "",
     "ttu_text_justify_hint": "Stretch lines to fill the full width of the column.",
     "ttu_vert_kerning_hint": "Adjust spacing between CJK characters for vertical text.",
     "ttu_font_vpal_hint": "Use proportional alternates for punctuation in vertical layout.",
@@ -680,6 +680,7 @@
     "floating_lyric_lock": "鎖定",
     "floating_lyric_unlock": "解鎖",
     "floating_lyric_close": "關閉",
+    "floating_lyric_font_size": "懸浮字幕字號",
     "show_floating_lyric": "懸浮字幕",
     "floating_lyric_hint": "在其他應用程式上方顯示目前句子。",
     "initialization_failed": "初始化失敗"

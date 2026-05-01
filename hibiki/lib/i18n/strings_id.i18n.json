@@ -1,4 +1,4 @@
-﻿{
+{
     "dictionary_media_type": "Kamus",
     "dialog_importing": "MENGIMPOR…",
     "player_media_type": "Pemutar",
@@ -546,7 +546,7 @@
     "image_pause_off": "Mati",
     "tap_seek": "Tap to Seek",
     "tap_seek_hint": "Tap a sentence to jump audio to that position.",
-    "ttu_furigana_mode_hint": "Show: normal; Hide: remove; Partial: color hint; Toggle: tap to show/hide.",
+    "ttu_furigana_mode_hint": "",
     "ttu_text_justify_hint": "Stretch lines to fill the full width of the column.",
     "ttu_vert_kerning_hint": "Adjust spacing between CJK characters for vertical text.",
     "ttu_font_vpal_hint": "Use proportional alternates for punctuation in vertical layout.",
@@ -682,5 +682,6 @@
     "floating_lyric_lock": "Lock",
     "floating_lyric_unlock": "Unlock",
     "floating_lyric_close": "Close",
+    "floating_lyric_font_size": "Floating subtitle font size",
     "initialization_failed": "Inisialisasi gagal"
 }

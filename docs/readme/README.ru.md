@@ -1,4 +1,12 @@
 <h3 align="center">hibiki</h3>
+<p align="center">
+  <img src="../static-assets/hibiki-logo.png" alt="hibiki logo" width="160">
+</p>
+
+<p align="center">
+  <a href="https://hdjsadgfwtg.github.io/hibiki/"><b>GitHub Pages</b></a>
+</p>
+
 <p align="center">Иммерсивная читалка японского для Android</p>
 <p align="center">EPUB · Словарь · Anki · Синхронизация аудиокниг</p>
 

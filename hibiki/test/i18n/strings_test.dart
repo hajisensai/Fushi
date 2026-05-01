@@ -10,7 +10,7 @@ void main() {
       expect(strings.ttu_furigana_toggle, '切换');
       expect(
         strings.ttu_furigana_mode_hint,
-        '显示注音，隐藏注音，淡化部分注音，或点按切换显隐。',
+        '',
       );
     });
   });

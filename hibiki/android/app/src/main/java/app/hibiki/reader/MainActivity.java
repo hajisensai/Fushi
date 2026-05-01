@@ -838,12 +838,41 @@ public class MainActivity extends AudioServiceActivity {
                         Number size = call.argument("fontSize");
                         Number color = call.argument("textColor");
                         Number bg = call.argument("bgColor");
+                        Number buttonTextColor = call.argument("buttonTextColor");
+                        Number buttonBgColor = call.argument("buttonBgColor");
+                        Number highlightColor = call.argument("highlightColor");
+                        Number activeColor = call.argument("activeColor");
                         FloatingLyricService svc = FloatingLyricService.getInstance();
                         if (svc != null) {
                             svc.updateStyle(
                                     size != null ? size.floatValue() : 16f,
                                     color != null ? color.intValue() : 0xFFFFFFFF,
-                                    bg != null ? bg.intValue() : 0xCC000000);
+                                    bg != null ? bg.intValue() : 0xCC000000,
+                                    buttonTextColor != null ? buttonTextColor.intValue() : 0xFFFFFFFF,
+                                    buttonBgColor != null ? buttonBgColor.intValue() : 0x33000000,
+                                    highlightColor != null ? highlightColor.intValue() : 0x80FFD54F,
+                                    activeColor != null ? activeColor.intValue() : 0xFFFFD54F);
+                        }
+                        result.success(null);
+                        break;
+                    }
+                    case "highlight": {
+                        Number start = call.argument("start");
+                        Number length = call.argument("length");
+                        FloatingLyricService svc = FloatingLyricService.getInstance();
+                        if (svc != null) {
+                            svc.updateHighlight(
+                                    start != null ? start.intValue() : -1,
+                                    length != null ? length.intValue() : 0);
+                        }
+                        result.success(null);
+                        break;
+                    }
+                    case "updateLabels": {
+                        Object labels = call.arguments;
+                        FloatingLyricService svc = FloatingLyricService.getInstance();
+                        if (svc != null && labels instanceof Map) {
+                            svc.updateLabels((Map<String, Object>) labels);
                         }
                         result.success(null);
                         break;

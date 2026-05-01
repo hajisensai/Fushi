@@ -18,22 +18,33 @@ void main() {
         .handlePlatformMessage(channelName, data, (_) {});
   }
 
-  tearDown(FloatingLyricChannel.clearEventHandlers);
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+      const MethodChannel(channelName),
+      null,
+    );
+    FloatingLyricChannel.clearEventHandlers();
+  });
 
   group('FloatingLyricChannel native events', () {
-    test('forwards lookup text from the overlay', () async {
+    test('forwards lookup text and index from the overlay', () async {
       String? lookupText;
+      int? lookupIndex;
       FloatingLyricChannel.setEventHandlers(
-        onLookupText: (String text) {
+        onLookupText: (String text, int index) {
           lookupText = text;
+          lookupIndex = index;
         },
       );
 
       await invokeFromNative('lookupText', <String, Object?>{
-        'text': '言葉',
+        'text': 'abcdef',
+        'index': 2,
       });
 
-      expect(lookupText, '言葉');
+      expect(lookupText, 'abcdef');
+      expect(lookupIndex, 2);
     });
 
     test('forwards overlay playback controls', () async {
@@ -59,6 +70,90 @@ void main() {
       await invokeFromNative('close');
 
       expect(calls, <String>['previous', 'playPause', 'next', 'close']);
+    });
+
+    test('sends highlight range to the overlay', () async {
+      MethodCall? capturedCall;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+        const MethodChannel(channelName),
+        (MethodCall call) async {
+          capturedCall = call;
+          return null;
+        },
+      );
+
+      await FloatingLyricChannel.highlight(start: 2, length: 3);
+
+      expect(capturedCall?.method, 'highlight');
+      expect(capturedCall?.arguments, <String, Object?>{
+        'start': 2,
+        'length': 3,
+      });
+    });
+
+    test('sends localized labels to the overlay', () async {
+      MethodCall? capturedCall;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+        const MethodChannel(channelName),
+        (MethodCall call) async {
+          capturedCall = call;
+          return null;
+        },
+      );
+
+      await FloatingLyricChannel.updateLabels(
+        previous: 'Previous',
+        playPause: 'Play',
+        next: 'Next',
+        lock: 'Lock',
+        unlock: 'Unlock',
+        close: 'Close',
+      );
+
+      expect(capturedCall?.method, 'updateLabels');
+      expect(capturedCall?.arguments, <String, Object?>{
+        'previous': 'Previous',
+        'playPause': 'Play',
+        'next': 'Next',
+        'lock': 'Lock',
+        'unlock': 'Unlock',
+        'close': 'Close',
+      });
+    });
+
+    test('sends themed style colors to the overlay', () async {
+      MethodCall? capturedCall;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+        const MethodChannel(channelName),
+        (MethodCall call) async {
+          capturedCall = call;
+          return null;
+        },
+      );
+
+      await FloatingLyricChannel.updateStyle(
+        fontSize: 18,
+        textColor: 0xFF112233,
+        bgColor: 0xCC445566,
+        buttonTextColor: 0xFF778899,
+        buttonBgColor: 0x33112233,
+        highlightColor: 0x80445566,
+        activeColor: 0xFFABCDEF,
+      );
+
+      expect(capturedCall?.method, 'updateStyle');
+      expect(capturedCall?.arguments, <String, Object?>{
+        'fontSize': 18.0,
+        'textColor': 0xFF112233,
+        'bgColor': 0xCC445566,
+        'buttonTextColor': 0xFF778899,
+        'buttonBgColor': 0x33112233,
+        'highlightColor': 0x80445566,
+        'activeColor': 0xFFABCDEF,
+      });
     });
   });
 }

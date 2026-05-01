@@ -1,6 +1,6 @@
 import 'package:flutter/services.dart';
 
-typedef FloatingLyricLookupHandler = void Function(String text);
+typedef FloatingLyricLookupHandler = void Function(String text, int index);
 typedef FloatingLyricControlHandler = void Function();
 
 /// Android floating subtitle overlay channel.
@@ -45,12 +45,18 @@ class FloatingLyricChannel {
       case 'lookupText':
         final Object? args = call.arguments;
         String text = '';
+        int index = 0;
         if (args is Map) {
           text = args['text']?.toString() ?? '';
+          final Object? indexValue = args['index'];
+          if (indexValue is int) {
+            index = indexValue;
+          } else if (indexValue is num) {
+            index = indexValue.toInt();
+          }
         }
-        text = text.trim();
-        if (text.isNotEmpty) {
-          _onLookupText?.call(text);
+        if (text.trim().isNotEmpty) {
+          _onLookupText?.call(text, index);
         }
         break;
       case 'previousCue':
@@ -93,15 +99,51 @@ class FloatingLyricChannel {
     await _channel.invokeMethod<void>('updateText', {'text': text});
   }
 
+  static Future<void> highlight({
+    required int start,
+    required int length,
+  }) async {
+    await _channel.invokeMethod<void>('highlight', {
+      'start': start,
+      'length': length,
+    });
+  }
+
+  static Future<void> updateLabels({
+    required String previous,
+    required String playPause,
+    required String next,
+    required String lock,
+    required String unlock,
+    required String close,
+  }) async {
+    await _channel.invokeMethod<void>('updateLabels', {
+      'previous': previous,
+      'playPause': playPause,
+      'next': next,
+      'lock': lock,
+      'unlock': unlock,
+      'close': close,
+    });
+  }
+
   static Future<void> updateStyle({
     double fontSize = 16,
     int textColor = 0xFFFFFFFF,
     int bgColor = 0xCC000000,
+    int buttonTextColor = 0xFFFFFFFF,
+    int buttonBgColor = 0x33000000,
+    int highlightColor = 0x80FFD54F,
+    int activeColor = 0xFFFFD54F,
   }) async {
     await _channel.invokeMethod<void>('updateStyle', {
       'fontSize': fontSize,
       'textColor': textColor,
       'bgColor': bgColor,
+      'buttonTextColor': buttonTextColor,
+      'buttonBgColor': buttonBgColor,
+      'highlightColor': highlightColor,
+      'activeColor': activeColor,
     });
   }
 

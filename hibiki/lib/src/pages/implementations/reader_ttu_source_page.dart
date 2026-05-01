@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:document_file_save_plus/document_file_save_plus.dart';
@@ -166,6 +167,8 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   DateTime? _lastNavRestoreTime;
 
   String? _lastAppThemeKey;
+  String? _lastFloatingLyricStyleKey;
+  bool _floatingLyricStyleSyncScheduled = false;
 
   // ── 媒体通知栏（状态栏播放控制） ───────────────────────────────────────────
   StreamSubscription<void>? _notifPlaySub;
@@ -180,6 +183,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     _cachedAppModel = ref.read(appProvider);
     debugPrint('[hibiki-reader-lifecycle] initState ${identityHashCode(this)}');
     WidgetsBinding.instance.addObserver(this);
+    _cachedAppModel.addListener(_onAppModelChanged);
     _applyVolumeKeyIntercept();
     _registerFloatingLyricHandlers();
     // 同步预判：Isar 查 Audiobook / SrtBook 记录。命中就让 WebView 首帧
@@ -194,6 +198,12 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initAudiobookIfAvailable();
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _scheduleFloatingLyricStyleSync(force: true);
   }
 
   /// 异步判定当前书是否有已配置音频的 Audiobook 或 SrtBook 记录。
@@ -241,6 +251,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     _notifSkipNextSub?.cancel();
     _notifSkipPrevSub?.cancel();
     _cachedAppModel.audioHandler?.clearNotification();
+    _cachedAppModel.removeListener(_onAppModelChanged);
     if (appModel.showFloatingLyric) {
       FloatingLyricChannel.hide();
     }
@@ -281,12 +292,31 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     );
   }
 
-  void _onFloatingLyricLookup(String text) {
-    final String searchTerm = text.trim();
-    if (!mounted || searchTerm.isEmpty) return;
-    final Size size = MediaQuery.sizeOf(context);
+  void _onAppModelChanged() {
+    _scheduleFloatingLyricStyleSync(force: true);
+  }
+
+  void _onFloatingLyricLookup(String text, int index) {
+    if (!mounted || text.trim().isEmpty) return;
+    final int safeIndex = index.clamp(0, text.length - 1).toInt();
+    final String searchTerm = appModel.targetLanguage
+        .getSearchTermFromIndex(text: text, index: safeIndex)
+        .trim();
+    if (searchTerm.isEmpty) return;
+    unawaited(FloatingLyricChannel.highlight(
+      start: safeIndex,
+      length: appModel.targetLanguage.getGuessHighlightLength(
+        searchTerm: searchTerm,
+      ),
+    ));
+    final MediaQueryData mediaQuery = MediaQuery.of(context);
+    final Size size = mediaQuery.size;
+    final double anchorY = math.max(
+      mediaQuery.padding.top + 12,
+      size.height * 0.10,
+    );
     final Rect selectionRect = Rect.fromCenter(
-      center: Offset(size.width / 2, size.height * 0.35),
+      center: Offset(size.width / 2, anchorY),
       width: 1,
       height: 1,
     );
@@ -296,8 +326,95 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     ));
   }
 
+  Future<void> _syncFloatingLyricOverlay() async {
+    final AudiobookPlayerController? controller = _audiobookController;
+    if (!mounted || controller == null || !appModel.showFloatingLyric) return;
+    await _syncFloatingLyricLabels();
+    await _syncFloatingLyricStyle();
+    final bool shown = await FloatingLyricChannel.show();
+    if (!shown) return;
+    final AudioCue? cue = controller.currentCue;
+    if (cue != null) {
+      await FloatingLyricChannel.updateText(cue.text);
+    }
+  }
+
+  Future<void> _syncFloatingLyricLabels() {
+    return FloatingLyricChannel.updateLabels(
+      previous: t.floating_lyric_previous,
+      playPause: t.floating_lyric_play_pause,
+      next: t.floating_lyric_next,
+      lock: t.floating_lyric_lock,
+      unlock: t.floating_lyric_unlock,
+      close: t.floating_lyric_close,
+    );
+  }
+
+  Future<void> _syncFloatingLyricStyle() {
+    if (!mounted || !appModel.showFloatingLyric) {
+      return Future<void>.value();
+    }
+    final ThemeData theme = _effectiveFloatingLyricTheme();
+    final double fontSize = _floatingLyricFontSize();
+    _lastFloatingLyricStyleKey = _floatingLyricStyleKey(theme, fontSize);
+    final ColorScheme colors = theme.colorScheme;
+    final Brightness brightness = colors.brightness;
+    final Color surface = colors.surface;
+    final Color onSurface = colors.onSurface;
+    final Color primary = colors.primary;
+    final Color buttonBg = brightness == Brightness.dark
+        ? Colors.white.withValues(alpha: 0.12)
+        : Colors.black.withValues(alpha: 0.08);
+    return FloatingLyricChannel.updateStyle(
+      fontSize: fontSize,
+      textColor: onSurface.toARGB32(),
+      bgColor: surface.withValues(alpha: 0.92).toARGB32(),
+      buttonTextColor: onSurface.toARGB32(),
+      buttonBgColor: buttonBg.toARGB32(),
+      highlightColor: primary.withValues(alpha: 0.34).toARGB32(),
+      activeColor: primary.toARGB32(),
+    );
+  }
+
   /// Fire-and-forget：读一次视口位置并写库。WebView 可能已开始销毁，
   /// evaluateJavascript 抛异常就吞掉。
+  ThemeData _effectiveFloatingLyricTheme() {
+    return appModel.overrideDictionaryTheme ??
+        (appModel.isDarkMode ? appModel.darkTheme : appModel.theme);
+  }
+
+  double _floatingLyricFontSize() {
+    return appModel.floatingLyricFontSize.clamp(8, 64).toDouble();
+  }
+
+  String _floatingLyricStyleKey(ThemeData theme, double fontSize) {
+    final ColorScheme colors = theme.colorScheme;
+    return <Object>[
+      fontSize.toStringAsFixed(2),
+      colors.brightness.name,
+      colors.surface.toARGB32(),
+      colors.onSurface.toARGB32(),
+      colors.primary.toARGB32(),
+    ].join(':');
+  }
+
+  void _scheduleFloatingLyricStyleSync({bool force = false}) {
+    if (!mounted || !appModel.showFloatingLyric) return;
+    final ThemeData theme = _effectiveFloatingLyricTheme();
+    final String styleKey = _floatingLyricStyleKey(
+      theme,
+      _floatingLyricFontSize(),
+    );
+    if (!force && styleKey == _lastFloatingLyricStyleKey) return;
+    if (_floatingLyricStyleSyncScheduled) return;
+    _floatingLyricStyleSyncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _floatingLyricStyleSyncScheduled = false;
+      if (!mounted) return;
+      unawaited(_syncFloatingLyricStyle());
+    });
+  }
+
   void _flushReaderPosOnDispose() {
     if (!_controllerInitialised) return;
     final InAppWebViewController controller = _controller;
@@ -686,6 +803,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       });
     }
     _lastAppThemeKey = currentThemeKey;
+    _scheduleFloatingLyricStyleSync();
 
     return Focus(
       autofocus: true,
@@ -843,6 +961,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     }
 
     _barThemeNotifier.value = appModel.overrideDictionaryTheme;
+    _scheduleFloatingLyricStyleSync(force: true);
 
     if (mounted) {
       clearDictionaryResult();
@@ -2318,6 +2437,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
             trigger: 'audiobookReady',
           );
         }
+        unawaited(_syncFloatingLyricOverlay());
       }
     } else {
       // ── 字幕 EPUB 路径（SrtBook）──────────────────────────────────────────
@@ -2427,6 +2547,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           trigger: 'srtBookReady',
         );
       }
+      unawaited(_syncFloatingLyricOverlay());
     }
   }
 
@@ -2667,10 +2788,20 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
             }
           },
           showFloatingLyric: appModel.showFloatingLyric,
+          floatingLyricFontSize: appModel.floatingLyricFontSize,
+          onFloatingLyricFontSizeChanged: (double value) async {
+            await appModel.setFloatingLyricFontSize(value);
+            _scheduleFloatingLyricStyleSync(force: true);
+            if (mounted) {
+              setState(() {});
+            }
+          },
           onToggleFloatingLyric: () async {
             final bool newValue = !appModel.showFloatingLyric;
             await appModel.setShowFloatingLyric(newValue);
             if (newValue) {
+              await _syncFloatingLyricLabels();
+              await _syncFloatingLyricStyle();
               await FloatingLyricChannel.show();
               final AudioCue? cue = _audiobookController?.currentCue;
               if (cue != null) {

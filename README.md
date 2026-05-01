@@ -1,4 +1,12 @@
 <h3 align="center">hibiki</h3>
+<p align="center">
+  <img src="docs/static-assets/hibiki-logo.png" alt="hibiki logo" width="160">
+</p>
+
+<p align="center">
+  <a href="https://hdjsadgfwtg.github.io/hibiki/"><b>GitHub Pages</b></a>
+</p>
+
 <p align="center">Android 日语沉浸式阅读器</p>
 <p align="center">EPUB · 词典 · Anki · 有声书同步</p>
 
