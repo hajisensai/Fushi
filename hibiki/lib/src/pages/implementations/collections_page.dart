@@ -9,8 +9,10 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
 import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
 import 'package:hibiki/src/media/audiobook/favorite_sentence_repository.dart';
+import 'package:hibiki/src/media/audiobook/sasayaki_match_codec.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
 
 enum _CollectionType { bookmark, sentence }
@@ -69,6 +71,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     final bookmarkRepo = BookmarkRepository(db);
     final favoriteRepo = FavoriteSentenceRepository(db);
     final srtBookRepo = SrtBookRepository(db);
+    final abRepo = AudiobookRepository(db);
 
     final allBookmarks = await bookmarkRepo.getAllBookmarks();
     final allFavorites = await favoriteRepo.getAll();
@@ -130,24 +133,52 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
     items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-    final sentenceTtuIds = allFavorites
-        .where((f) => f.ttuBookId != null && f.ttuBookId! > 0)
-        .map((f) => f.ttuBookId!)
-        .toSet();
+    final allTtuIds = <int>{};
+    for (final bm in allBookmarks) {
+      if (bm.ttuBookId != null && bm.ttuBookId! > 0) {
+        allTtuIds.add(bm.ttuBookId!);
+      }
+    }
+    for (final fav in allFavorites) {
+      if (fav.ttuBookId != null && fav.ttuBookId! > 0) {
+        allTtuIds.add(fav.ttuBookId!);
+      }
+    }
 
     final cueMap = <int, List<AudioCue>>{};
     final audioFileMap = <int, List<File>>{};
 
-    for (final ttuId in sentenceTtuIds) {
+    for (final ttuId in allTtuIds) {
+      // SrtBook
       final srtBook = await srtBookRepo.findByTtuBookId(ttuId);
-      if (srtBook == null) continue;
+      if (srtBook != null) {
+        final cues = await srtBookRepo.cuesFor(srtBook.uid);
+        if (cues.isNotEmpty) {
+          final audioFiles = await _resolveAudioFiles(
+            audioPaths: srtBook.audioPaths,
+            audioRoot: srtBook.audioRoot,
+          );
+          if (audioFiles.isNotEmpty) {
+            cueMap[ttuId] = cues;
+            audioFileMap[ttuId] = audioFiles;
+            continue;
+          }
+        }
+      }
 
-      final cues = await srtBookRepo.cuesFor(srtBook.uid);
+      // Audiobook (Sasayaki)
+      final original = mediaItemMap[ttuId];
+      if (original == null) continue;
+      final bookUid = original.uniqueKey;
+      final ab = await abRepo.findByBookUid(bookUid);
+      if (ab == null) continue;
+
+      final cues = await abRepo.cuesForBook(bookUid);
       if (cues.isEmpty) continue;
 
       final audioFiles = await _resolveAudioFiles(
-        audioPaths: srtBook.audioPaths,
-        audioRoot: srtBook.audioRoot,
+        audioPaths: ab.audioPaths,
+        audioRoot: ab.audioRoot,
       );
       if (audioFiles.isEmpty) continue;
 
@@ -243,31 +274,65 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     return [];
   }
 
-  Future<void> _playSentenceAudio(_CollectionItem item) async {
+  AudioCue? _findCueForItem(_CollectionItem item) {
+    final ttuId = item.ttuBookId;
+    if (ttuId == null || ttuId <= 0) return null;
+
+    final cues = _cueMap[ttuId];
+    if (cues == null || cues.isEmpty) return null;
+
+    AudioCue? match;
+
+    // 1) 文本匹配（收藏句子）
+    final text = item.text ?? '';
+    if (text.isNotEmpty) {
+      for (final cue in cues) {
+        if (cue.text == text) {
+          match = cue;
+          break;
+        }
+      }
+      match ??= cues.cast<AudioCue?>().firstWhere(
+        (c) => c!.text.contains(text) || text.contains(c.text),
+        orElse: () => null,
+      );
+    }
+
+    // 2) 位置匹配（Sasayaki fragment 编码了 sectionIndex + normCharOffset）
+    if (match == null && item.sectionIndex != null) {
+      final sec = item.sectionIndex!;
+      final offset = item.normCharOffset ?? 0;
+      int bestDist = 1 << 30;
+      for (final cue in cues) {
+        final frag = SasayakiMatchCodec.tryDecode(cue.textFragmentId);
+        if (frag == null || frag.sectionIndex != sec) continue;
+        if (frag.normCharStart <= offset && frag.normCharEnd > offset) {
+          match = cue;
+          break;
+        }
+        final dist = (frag.normCharStart - offset).abs();
+        if (dist < bestDist) {
+          bestDist = dist;
+          match = cue;
+        }
+      }
+    }
+
+    return match;
+  }
+
+  Future<void> _playItemAudio(_CollectionItem item) async {
     final ttuId = item.ttuBookId;
     if (ttuId == null || ttuId <= 0) return;
 
-    final cues = _cueMap[ttuId];
     final audioFiles = _audioFileMap[ttuId];
-    if (cues == null || cues.isEmpty || audioFiles == null || audioFiles.isEmpty) return;
+    if (audioFiles == null || audioFiles.isEmpty) return;
 
-    final text = item.text ?? '';
-    if (text.isEmpty) return;
-
-    AudioCue? match;
-    for (final cue in cues) {
-      if (cue.text == text) {
-        match = cue;
-        break;
-      }
-    }
-    match ??= cues.cast<AudioCue?>().firstWhere(
-      (c) => c!.text.contains(text) || text.contains(c.text),
-      orElse: () => null,
-    );
+    final match = _findCueForItem(item);
     if (match == null) return;
-
-    if (match.audioFileIndex < 0 || match.audioFileIndex >= audioFiles.length) return;
+    if (match.audioFileIndex < 0 || match.audioFileIndex >= audioFiles.length) {
+      return;
+    }
 
     setState(() => _playingAudio = true);
     try {
@@ -287,6 +352,11 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     } finally {
       if (mounted) setState(() => _playingAudio = false);
     }
+  }
+
+  bool _hasAudio(_CollectionItem item) {
+    return _cueMap.containsKey(item.ttuBookId) &&
+        _audioFileMap.containsKey(item.ttuBookId);
   }
 
   @override
@@ -368,14 +438,13 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (!isBookmark && item.text != null && item.text!.isNotEmpty &&
-              _cueMap.containsKey(item.ttuBookId))
+          if (_hasAudio(item))
             IconButton(
               icon: Icon(
                 _playingAudio ? Icons.hourglass_top : Icons.volume_up,
                 size: 18,
               ),
-              onPressed: _playingAudio ? null : () => _playSentenceAudio(item),
+              onPressed: _playingAudio ? null : () => _playItemAudio(item),
               visualDensity: VisualDensity.compact,
             ),
           if (!isBookmark && item.text != null)
