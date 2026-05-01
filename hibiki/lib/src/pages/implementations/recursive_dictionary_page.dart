@@ -447,6 +447,7 @@ class _RecursiveDictionaryPageState
           child: DictionaryPopupWebView(
             key: ValueKey(_result),
             result: _result!,
+            forceCollapseDictionaries: _isCreatorOpen,
             onTextSelected: (text) {
               _controller.query = text;
               search(text);

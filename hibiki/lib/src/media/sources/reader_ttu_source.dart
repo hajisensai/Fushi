@@ -837,7 +837,14 @@ new Promise(function(resolve) {
 
   /// 生成自定义字体的 CSS font-family 值（仅启用的）和 @font-face 声明。
   ({String fontFamily, String fontFaces}) buildCustomFontCss() {
-    final enabled = customFonts.where((e) => e['enabled'] as bool? ?? true);
+    return customFontCssForEntries(customFonts, fontServerPort: fontServerPort);
+  }
+
+  static ({String fontFamily, String fontFaces}) customFontCssForEntries(
+    Iterable<Map<String, dynamic>> fonts, {
+    required int fontServerPort,
+  }) {
+    final enabled = fonts.where((e) => e['enabled'] as bool? ?? true);
     final families = <String>[];
     final faces = <String>[];
     for (final e in enabled) {
@@ -874,6 +881,11 @@ new Promise(function(resolve) {
     return names.map(cssFontFamilyName).join(', ');
   }
 
+  /// TTU settings required for the Hibiki reading statistics sync path.
+  static const String ttuStatisticsSettingsJs =
+      'window.localStorage.setItem("statisticsEnabled","1");'
+      'window.localStorage.setItem("trackerAutoStartTime","5")';
+
   /// 在 WebView 加载后将 Hive 偏好写入 ttu localStorage。
   Future<void> applyReaderSettings(
     InAppWebViewController controller, {
@@ -881,13 +893,10 @@ new Promise(function(resolve) {
   }) async {
     final fontCss = buildCustomFontCss();
     final hasCustomFonts = fontCss.fontFamily.isNotEmpty;
-    final serifFallback = 'serif';
-    final sansFallback = 'sans-serif';
-    final fontFamilyOne = hasCustomFonts
-        ? '${fontCss.fontFamily}, $serifFallback'
-        : serifFallback;
+    final fontFamilyOne =
+        hasCustomFonts ? '${fontCss.fontFamily}, serif' : 'serif';
     final fontFamilyTwo =
-        hasCustomFonts ? '${fontCss.fontFamily}, $sansFallback' : sansFallback;
+        hasCustomFonts ? '${fontCss.fontFamily}, sans-serif' : 'sans-serif';
     final hideFuriganaValue = ttuFuriganaMode == 'show' ? 0 : 1;
     final furiganaStyle = furiganaModeToStyle(ttuFuriganaMode);
     final List<String> cmds = [
@@ -907,7 +916,7 @@ new Promise(function(resolve) {
       'window.localStorage.setItem("verticalTextOrientation","$ttuVerticalTextOrientation")',
       'window.localStorage.setItem("enableTextJustification","${ttuEnableTextJustification ? 1 : 0}")',
       'window.localStorage.setItem("prioritizeReaderStyles","${ttuPrioritizeReaderStyles ? 1 : 0}")',
-      'window.localStorage.setItem("statisticsEnabled","0")',
+      ttuStatisticsSettingsJs,
       'window.localStorage.setItem("fontFamilyGroupOne",${jsonEncode(fontFamilyOne)})',
       'window.localStorage.setItem("fontFamilyGroupTwo",${jsonEncode(fontFamilyTwo)})',
     ];

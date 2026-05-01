@@ -136,33 +136,60 @@ class AnkiHandlebar {
 
   static String _translated(String handlebar) {
     switch (handlebar) {
-      case expression: return t.handlebar_expression;
-      case reading: return t.handlebar_reading;
-      case furiganaPlain: return t.handlebar_furigana_plain;
-      case sentence: return t.handlebar_sentence;
-      case glossary: return t.handlebar_glossary;
-      case glossaryFirst: return t.handlebar_glossary_first;
-      case selectedGlossary: return t.handlebar_selected_glossary;
-      case documentTitle: return t.handlebar_document_title;
-      case frequencies: return t.handlebar_frequencies;
-      case frequencyHarmonicRank: return t.handlebar_frequency_harmonic_rank;
-      case pitchAccentPositions: return t.handlebar_pitch_accent_positions;
-      case pitchAccentCategories: return t.handlebar_pitch_accent_categories;
-      case bookCover: return t.handlebar_book_cover;
-      case audio: return t.handlebar_audio;
-      case sasayakiAudio: return t.handlebar_sasayaki_audio;
-      case popupSelectionText: return t.handlebar_popup_selection_text;
-      case clozeBefore: return t.handlebar_cloze_before;
-      case clozeInside: return t.handlebar_cloze_inside;
-      case clozeAfter: return t.handlebar_cloze_after;
-      case expandedGlossary: return t.handlebar_expanded_glossary;
-      case collapsedGlossary: return t.handlebar_collapsed_glossary;
-      case hiddenGlossary: return t.handlebar_hidden_glossary;
-      case notes: return t.handlebar_notes;
-      case image: return t.handlebar_image;
-      case audioSentence: return t.handlebar_audio_sentence;
-      case tags: return t.handlebar_tags;
-      default: return handlebar;
+      case expression:
+        return t.handlebar_expression;
+      case reading:
+        return t.handlebar_reading;
+      case furiganaPlain:
+        return t.handlebar_furigana_plain;
+      case sentence:
+        return t.handlebar_sentence;
+      case glossary:
+        return t.handlebar_glossary;
+      case glossaryFirst:
+        return t.handlebar_glossary_first;
+      case selectedGlossary:
+        return t.handlebar_selected_glossary;
+      case documentTitle:
+        return t.handlebar_document_title;
+      case frequencies:
+        return t.handlebar_frequencies;
+      case frequencyHarmonicRank:
+        return t.handlebar_frequency_harmonic_rank;
+      case pitchAccentPositions:
+        return t.handlebar_pitch_accent_positions;
+      case pitchAccentCategories:
+        return t.handlebar_pitch_accent_categories;
+      case bookCover:
+        return t.handlebar_book_cover;
+      case audio:
+        return t.handlebar_audio;
+      case sasayakiAudio:
+        return t.handlebar_sasayaki_audio;
+      case popupSelectionText:
+        return t.handlebar_popup_selection_text;
+      case clozeBefore:
+        return t.handlebar_cloze_before;
+      case clozeInside:
+        return t.handlebar_cloze_inside;
+      case clozeAfter:
+        return t.handlebar_cloze_after;
+      case expandedGlossary:
+        return t.handlebar_expanded_glossary;
+      case collapsedGlossary:
+        return t.handlebar_collapsed_glossary;
+      case hiddenGlossary:
+        return t.handlebar_hidden_glossary;
+      case notes:
+        return t.handlebar_notes;
+      case image:
+        return t.handlebar_image;
+      case audioSentence:
+        return t.handlebar_audio_sentence;
+      case tags:
+        return t.handlebar_tags;
+      default:
+        return handlebar;
     }
   }
 
@@ -222,6 +249,9 @@ class AnkiHandlebar {
     CreatorFieldValues values,
     AnkiMapping mapping,
   ) {
+    final extraText = _resolveExtraText(handlebar, values);
+    if (extraText != null) return extraText;
+
     final fieldKey = _handlebarToFieldKey[handlebar];
     if (fieldKey == null) return '';
 
@@ -250,8 +280,7 @@ class AnkiHandlebar {
     }
 
     if (handlebar == sentence && text.isNotEmpty) {
-      final matched =
-          values.textValues[ClozeInsideField.instance] ?? '';
+      final matched = values.textValues[ClozeInsideField.instance] ?? '';
       if (matched.isNotEmpty) {
         text = text.replaceAll(matched, '<b>$matched</b>');
       }
@@ -261,6 +290,34 @@ class AnkiHandlebar {
       text = text.replaceAll('\n', '<br>');
     }
     return text;
+  }
+
+  static String? _resolveExtraText(
+    String handlebar,
+    CreatorFieldValues values,
+  ) {
+    switch (handlebar) {
+      case frequencies:
+        final text = values.extraValues[FrequencyField.frequenciesHtmlExtraKey];
+        return text?.isNotEmpty == true ? text : null;
+      case frequencyHarmonicRank:
+        final text = values.extraValues[FrequencyField.frequencyRankExtraKey];
+        return text?.isNotEmpty == true ? text : null;
+      case pitchAccentPositions:
+        final text =
+            values.extraValues[PitchAccentField.pitchPositionsExtraKey];
+        return text?.isNotEmpty == true ? text : null;
+      case pitchAccentCategories:
+        final text =
+            values.extraValues[PitchAccentField.pitchCategoriesExtraKey];
+        return text?.isNotEmpty == true ? text : null;
+      case popupSelectionText:
+        final text =
+            values.extraValues[CreatorFieldValues.popupSelectionTextExtraKey];
+        return text?.isNotEmpty == true ? text : null;
+      default:
+        return null;
+    }
   }
 
   static String _resolveMedia(
@@ -295,7 +352,8 @@ class AnkiHandlebar {
     return filename;
   }
 
-  static Map<String, String> autoMapFields(List<String> ankiFields, {String? modelName}) {
+  static Map<String, String> autoMapFields(List<String> ankiFields,
+      {String? modelName}) {
     if (modelName == 'Lapis') {
       final result = <String, String>{};
       for (final field in ankiFields) {
@@ -380,6 +438,12 @@ class AnkiHandlebar {
     'frequency': frequencyHarmonicRank,
     'freq': frequencyHarmonicRank,
     'frequencies': frequencies,
+    '词频': frequencyHarmonicRank,
+    '詞頻': frequencyHarmonicRank,
+    '频率': frequencyHarmonicRank,
+    '頻率': frequencyHarmonicRank,
+    '频次': frequencyHarmonicRank,
+    '頻次': frequencyHarmonicRank,
     'image': image,
     'picture': image,
     'screenshot': image,

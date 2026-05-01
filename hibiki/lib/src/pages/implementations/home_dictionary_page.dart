@@ -441,8 +441,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
             onMineEntry: _onMineEntry,
           ),
         ),
-        if (footerWidget != null)
-          footerWidget!,
+        if (footerWidget != null) footerWidget!,
       ],
     );
   }
@@ -451,17 +450,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
     appModel.openCreator(
       ref: ref,
       killOnPop: false,
-      creatorFieldValues: CreatorFieldValues(
-        textValues: {
-          TermField.instance: fields['expression'] ?? '',
-          ReadingField.instance: fields['reading'] ?? '',
-          MeaningField.instance: fields['glossary'] ?? '',
-        },
-        extraValues: {
-          'singleGlossaries': fields['singleGlossaries'] ?? '',
-          'selectedDictionary': fields['selectedDictionary'] ?? '',
-        },
-      ),
+      creatorFieldValues: CreatorFieldValues.fromMineFields(fields: fields),
       onCreatorReady: (creatorModel) async {
         final String wordAudioUrl = fields['audio'] ?? '';
         if (wordAudioUrl.isEmpty) return;
@@ -475,15 +464,16 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
             final response = await HttpClient()
                 .getUrl(Uri.parse(wordAudioUrl))
                 .then((req) => req.close());
-            final bytes = await response.fold<List<int>>(
-                [], (prev, chunk) => prev..addAll(chunk));
+            final bytes = await response
+                .fold<List<int>>([], (prev, chunk) => prev..addAll(chunk));
             if (bytes.isNotEmpty) {
               final ext = wordAudioUrl.contains('.opus')
                   ? '.opus'
                   : wordAudioUrl.contains('.ogg')
                       ? '.ogg'
                       : '.mp3';
-              audioFile = File('${Directory.systemTemp.path}/mine_word_audio$ext');
+              audioFile =
+                  File('${Directory.systemTemp.path}/mine_word_audio$ext');
               await audioFile.writeAsBytes(bytes);
             }
           }
@@ -491,7 +481,8 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
             final expression = fields['expression'] ?? '';
             if (expression.isNotEmpty) {
               final ttsPath = '${Directory.systemTemp.path}/mine_word_tts.wav';
-              final ttsResult = await TtsChannel.instance.ttsToFile(expression, ttsPath);
+              final ttsResult =
+                  await TtsChannel.instance.ttsToFile(expression, ttsPath);
               if (ttsResult != null) {
                 audioFile = File(ttsResult);
               }

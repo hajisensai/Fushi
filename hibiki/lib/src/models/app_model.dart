@@ -2755,6 +2755,13 @@ class AppModel with ChangeNotifier {
     }
   }
 
+  /// Whether the creator route should be shown for the prepared export data.
+  static bool shouldOpenCreatorRoute({
+    required bool silentExport,
+    required bool isExportable,
+  }) =>
+      !silentExport || !isExportable;
+
   /// A helper function for opening the creator from any page in the
   /// application for card export purposes. Normally, the fields are provided
   /// by values in the app state. For example, the sentence field provides its
@@ -2768,8 +2775,6 @@ class AppModel with ChangeNotifier {
   }) async {
     _currentMediaPauseController.add(null);
 
-    List<String> decks = await getDecks();
-
     CreatorModel creatorModel = ref.watch(creatorProvider);
     creatorModel.clearAll(
       overrideLocks: true,
@@ -2782,6 +2787,27 @@ class AppModel with ChangeNotifier {
     if (onCreatorReady != null) {
       await onCreatorReady(creatorModel);
     }
+
+    final CreatorFieldValues exportDetails = creatorModel.getExportDetails(ref);
+    if (!shouldOpenCreatorRoute(
+      silentExport: silentExport,
+      isExportable: exportDetails.isExportable,
+    )) {
+      await addNote(
+        creatorFieldValues: exportDetails,
+        mapping: lastSelectedMapping,
+        deck: lastSelectedDeckName,
+        onSuccess: () {
+          creatorModel.clearAll(
+            overrideLocks: true,
+            savedTags: savedTags,
+          );
+        },
+      );
+      return;
+    }
+
+    List<String> decks = await getDecks();
 
     _isCreatorOpen = true;
     _creatorActiveController.add(true);

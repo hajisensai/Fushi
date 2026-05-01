@@ -24,6 +24,9 @@ class CardCreatorAction extends QuickAction {
   /// default mappings value of [AnkiMapping].
   static const String key = 'card_creator';
 
+  /// Whether this action should open the editor before exporting.
+  static bool shouldOpenCreator({required bool silentExport}) => !silentExport;
+
   @override
   Future<void> executeAction({
     required BuildContext context,
@@ -33,6 +36,18 @@ class CardCreatorAction extends QuickAction {
     required DictionaryEntry entry,
     required String? dictionaryName,
   }) async {
+    if (!shouldOpenCreator(silentExport: appModel.silentExport)) {
+      await InstantExportAction().executeAction(
+        context: context,
+        ref: ref,
+        appModel: appModel,
+        creatorModel: creatorModel,
+        entry: entry,
+        dictionaryName: dictionaryName,
+      );
+      return;
+    }
+
     if (appModel.isCreatorOpen) {
       Map<Field, String> newTextFields = {};
       for (Field field in appModel.activeFields) {
@@ -51,7 +66,16 @@ class CardCreatorAction extends QuickAction {
       }
 
       creatorModel.copyContext(
-        CreatorFieldValues(textValues: newTextFields),
+        CreatorFieldValues(
+          textValues: newTextFields,
+          extraValues: {
+            ...FrequencyField.extraValuesFromEntry(entry),
+            ...PitchAccentField.extraValuesFromEntry(
+              appModel: appModel,
+              entry: entry,
+            ),
+          },
+        ),
       );
 
       for (Field field in appModel.activeFields) {
@@ -99,7 +123,16 @@ class CardCreatorAction extends QuickAction {
       await appModel.openCreator(
         ref: ref,
         killOnPop: false,
-        creatorFieldValues: CreatorFieldValues(textValues: newTextFields),
+        creatorFieldValues: CreatorFieldValues(
+          textValues: newTextFields,
+          extraValues: {
+            ...FrequencyField.extraValuesFromEntry(entry),
+            ...PitchAccentField.extraValuesFromEntry(
+              appModel: appModel,
+              entry: entry,
+            ),
+          },
+        ),
       );
 
       if (appModel.isMediaOpen && appModel.shouldHideStatusBarWhenInMedia) {

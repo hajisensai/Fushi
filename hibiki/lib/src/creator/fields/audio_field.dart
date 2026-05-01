@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:audio_session/audio_session.dart';
@@ -95,7 +96,7 @@ class AudioField extends AudioExportField {
     required File file,
     String? searchTermUsed,
   }) {
-    initialiseAudio(file);
+    unawaited(initialiseAudio(file));
     super.setAudioFile(
       appModel: appModel,
       creatorModel: creatorModel,
@@ -103,28 +104,71 @@ class AudioField extends AudioExportField {
     );
   }
 
-  bool _initialised = false;
+  int _audioLoadGeneration = 0;
+  Future<void> _audioLoadQueue = Future<void>.value();
+  final List<StreamSubscription<dynamic>> _audioSubscriptions = [];
 
   /// Set up audio for new file.
-  Future<void> initialiseAudio(File file) async {
-    _audioPlayer = AudioPlayer();
-    await _audioPlayer.setFilePath(file.path);
-    await _audioPlayer.pause();
-    _positionNotifier.value = _audioPlayer.position;
-    _durationNotifier.value = _audioPlayer.duration ?? Duration.zero;
+  Future<void> initialiseAudio(File file) {
+    final int generation = ++_audioLoadGeneration;
+    _audioLoadQueue = _audioLoadQueue
+        .catchError((Object _) {})
+        .then((_) => _replaceAudioPlayer(file, generation));
+    return _audioLoadQueue;
+  }
 
-    if (!_initialised) {
-      _audioPlayer.durationStream.listen((duration) {
-        _durationNotifier.value = duration;
-      });
-      _audioPlayer.positionStream.listen((position) {
-        _positionNotifier.value = position;
-      });
-      _audioPlayer.playerStateStream.listen((playerState) {
-        _playerStateNotifier.value = playerState;
-      });
-      _initialised = true;
+  Future<void> _replaceAudioPlayer(File file, int generation) async {
+    for (final subscription in _audioSubscriptions) {
+      await subscription.cancel();
     }
+    _audioSubscriptions.clear();
+
+    final AudioPlayer oldPlayer = _audioPlayer;
+    await oldPlayer.stop();
+    await oldPlayer.dispose();
+
+    final AudioPlayer newPlayer = AudioPlayer();
+    if (generation != _audioLoadGeneration) {
+      await newPlayer.dispose();
+      return;
+    }
+
+    _audioPlayer = newPlayer;
+    await newPlayer.setFilePath(file.path);
+    if (generation != _audioLoadGeneration) {
+      if (identical(_audioPlayer, newPlayer)) {
+        _audioPlayer = AudioPlayer();
+      }
+      await newPlayer.dispose();
+      return;
+    }
+
+    await newPlayer.pause();
+    _positionNotifier.value = newPlayer.position;
+    _durationNotifier.value = newPlayer.duration ?? Duration.zero;
+    _audioSubscriptions.addAll([
+      newPlayer.durationStream.listen((duration) {
+        _durationNotifier.value = duration;
+      }),
+      newPlayer.positionStream.listen((position) {
+        _positionNotifier.value = position;
+      }),
+      newPlayer.playerStateStream.listen((playerState) {
+        _playerStateNotifier.value = playerState;
+      }),
+    ]);
+  }
+
+  Future<void> _disposeAudioPlayer() async {
+    for (final subscription in _audioSubscriptions) {
+      await subscription.cancel();
+    }
+    _audioSubscriptions.clear();
+
+    final AudioPlayer oldPlayer = _audioPlayer;
+    _audioPlayer = AudioPlayer();
+    await oldPlayer.stop();
+    await oldPlayer.dispose();
   }
 
   /// Clears this field's data. The state refresh afterwards is not performed
@@ -133,7 +177,7 @@ class AudioField extends AudioExportField {
   void clearFieldState({
     required CreatorModel creatorModel,
   }) {
-    _audioPlayer.stop();
+    unawaited(_audioPlayer.stop());
     super.clearFieldState(creatorModel: creatorModel);
   }
 
@@ -314,9 +358,11 @@ class AudioField extends AudioExportField {
 
   // Executed on close of the creator screen.
   @override
-  void onCreatorClose() async {
-    _initialised = false;
-    await _audioPlayer.stop();
-    await _audioPlayer.dispose();
+  void onCreatorClose() {
+    _audioLoadGeneration++;
+    _audioLoadQueue = _audioLoadQueue
+        .catchError((Object _) {})
+        .then((_) => _disposeAudioPlayer());
+    unawaited(_audioLoadQueue);
   }
 }

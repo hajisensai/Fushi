@@ -127,6 +127,12 @@ class FloatingLyricChannel {
     });
   }
 
+  static Future<void> setPlaybackState({required bool playing}) async {
+    await _channel.invokeMethod<void>('setPlaybackState', {
+      'playing': playing,
+    });
+  }
+
   static Future<void> updateStyle({
     double fontSize = 16,
     int textColor = 0xFFFFFFFF,

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -27,11 +28,93 @@ class PitchAccentField extends Field {
   /// The unique key for this field.
   static const String key = 'pitch_accent';
 
-  /// Returns pitch accent HTML. Pitches are no longer available on
-  /// DictionaryEntry, so this always returns empty.
-  static String getAllHtmlPitch(
-      {required AppModel appModel, required DictionaryEntry entry}) {
-    return '';
+  /// Extra value key for pitch-position HTML.
+  static const String pitchPositionsExtraKey = 'pitchPositions';
+
+  /// Extra value key for pitch-category HTML.
+  static const String pitchCategoriesExtraKey = 'pitchCategories';
+
+  /// Extracts pitch values returned by the popup mining JavaScript.
+  static Map<String, String> extraValuesFromMineFields(
+    Map<String, String> fields,
+  ) {
+    return {
+      pitchPositionsExtraKey: fields[pitchPositionsExtraKey] ?? '',
+      pitchCategoriesExtraKey: fields[pitchCategoriesExtraKey] ?? '',
+    };
+  }
+
+  /// Builds pitch extra values from a dictionary entry.
+  static Map<String, String> extraValuesFromEntry({
+    required AppModel appModel,
+    required DictionaryEntry entry,
+  }) {
+    return {
+      pitchPositionsExtraKey: getAllHtmlPitch(
+        appModel: appModel,
+        entry: entry,
+      ),
+      pitchCategoriesExtraKey: '',
+    };
+  }
+
+  /// Returns pitch-position HTML from hoshidicts data on the entry.
+  static String getAllHtmlPitch({
+    required AppModel appModel,
+    required DictionaryEntry entry,
+  }) {
+    final positions = _readPitchPositions(entry);
+    if (positions.isEmpty) {
+      return '';
+    }
+
+    final buffer = StringBuffer('<ol>');
+    for (final position in positions) {
+      buffer.write(
+        '<li><span style="display:inline;"><span>[</span><span>$position</span><span>]</span></span></li>',
+      );
+    }
+    buffer.write('</ol>');
+    return buffer.toString();
+  }
+
+  static List<int> _readPitchPositions(DictionaryEntry entry) {
+    if (entry.extra.isEmpty) {
+      return [];
+    }
+
+    Object? decoded;
+    try {
+      decoded = jsonDecode(entry.extra);
+    } catch (_) {
+      return [];
+    }
+
+    if (decoded is! Map) {
+      return [];
+    }
+    final rawGroups = decoded['pitches'];
+    if (rawGroups is! List) {
+      return [];
+    }
+
+    final positions = <int>[];
+    for (final rawGroup in rawGroups) {
+      if (rawGroup is! Map) {
+        continue;
+      }
+      final rawPositions = rawGroup['positions'];
+      if (rawPositions is! List) {
+        continue;
+      }
+      for (final rawPosition in rawPositions) {
+        final position = (rawPosition as num?)?.toInt();
+        if (position != null) {
+          positions.add(position);
+        }
+      }
+    }
+    return positions;
   }
 
   @override

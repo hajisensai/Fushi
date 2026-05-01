@@ -123,6 +123,25 @@ void main() {
       });
     });
 
+    test('sends playback state to the overlay', () async {
+      MethodCall? capturedCall;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+        const MethodChannel(channelName),
+        (MethodCall call) async {
+          capturedCall = call;
+          return null;
+        },
+      );
+
+      await FloatingLyricChannel.setPlaybackState(playing: true);
+
+      expect(capturedCall?.method, 'setPlaybackState');
+      expect(capturedCall?.arguments, <String, Object?>{
+        'playing': true,
+      });
+    });
+
     test('sends themed style colors to the overlay', () async {
       MethodCall? capturedCall;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger

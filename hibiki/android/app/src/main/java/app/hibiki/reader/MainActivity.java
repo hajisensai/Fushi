@@ -886,6 +886,15 @@ public class MainActivity extends AudioServiceActivity {
                         result.success(null);
                         break;
                     }
+                    case "setPlaybackState": {
+                        Boolean playing = call.argument("playing");
+                        FloatingLyricService svc = FloatingLyricService.getInstance();
+                        if (svc != null) {
+                            svc.setPlaybackState(playing != null && playing);
+                        }
+                        result.success(null);
+                        break;
+                    }
                     case "isShowing": {
                         result.success(FloatingLyricService.getInstance() != null);
                         break;

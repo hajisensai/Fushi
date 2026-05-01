@@ -12,12 +12,56 @@ class CreatorFieldValues {
     this.extraValues = const {},
   });
 
-  // factory CreatorFieldValues.fromDictionary({
-  //   required String term,
-  //   required String reading,
-  //   required List<DictionaryEntry> entries,
-  //   required List<DictionaryMetaEntry> metaEntries,
-  // }) {}
+  /// Builds creator values from the dictionary popup's mining payload.
+  factory CreatorFieldValues.fromMineFields({
+    required Map<String, String> fields,
+    String? sentence,
+    String? clozeBefore,
+    String? clozeInside,
+    String? clozeAfter,
+    bool usePopupSelectionAsClozeInside = true,
+  }) {
+    final textValues = <Field, String>{
+      TermField.instance: fields['expression'] ?? '',
+      ReadingField.instance: fields['reading'] ?? '',
+      MeaningField.instance: fields['glossary'] ?? '',
+      FuriganaField.instance: fields['furiganaPlain'] ?? '',
+      FrequencyField.instance:
+          fields[FrequencyField.frequencyRankExtraKey] ?? '',
+      PitchAccentField.instance:
+          fields[PitchAccentField.pitchPositionsExtraKey] ?? '',
+    };
+
+    if (sentence != null) {
+      textValues[SentenceField.instance] = sentence;
+    }
+    if (clozeBefore != null) {
+      textValues[ClozeBeforeField.instance] = clozeBefore;
+    }
+    if (clozeInside != null) {
+      textValues[ClozeInsideField.instance] = clozeInside;
+    } else if (usePopupSelectionAsClozeInside) {
+      textValues[ClozeInsideField.instance] =
+          fields[popupSelectionTextExtraKey] ?? '';
+    }
+    if (clozeAfter != null) {
+      textValues[ClozeAfterField.instance] = clozeAfter;
+    }
+
+    return CreatorFieldValues(
+      textValues: textValues,
+      extraValues: {
+        'singleGlossaries': fields['singleGlossaries'] ?? '',
+        'selectedDictionary': fields['selectedDictionary'] ?? '',
+        popupSelectionTextExtraKey: fields[popupSelectionTextExtraKey] ?? '',
+        ...FrequencyField.extraValuesFromMineFields(fields),
+        ...PitchAccentField.extraValuesFromMineFields(fields),
+      },
+    );
+  }
+
+  /// Extra value key for the exact text selected inside the popup.
+  static const String popupSelectionTextExtraKey = 'popupSelectionText';
 
   /// Creates a deep copy of this context but with the given fields replaced
   /// with the new values.

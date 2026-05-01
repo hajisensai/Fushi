@@ -16,6 +16,41 @@ void main() {
         '"Noto Sans JP", "Noto Serif JP"',
       );
     });
+
+    test('builds font faces for downloaded recommended fonts', () {
+      final fontCss = ReaderTtuSource.customFontCssForEntries(
+        [
+          {
+            'name': 'Klee One',
+            'path': r'C:\fonts\KleeOne-Regular.ttf',
+            'enabled': true,
+          },
+          {
+            'name': 'Noto Sans JP',
+            'path': r'C:\fonts\NotoSansJP-Regular.ttf',
+            'enabled': true,
+          },
+        ],
+        fontServerPort: 52061,
+      );
+
+      expect(fontCss.fontFamily, '"Klee One", "Noto Sans JP"');
+      expect(fontCss.fontFaces, contains('@font-face'));
+      expect(fontCss.fontFaces, contains('font-family: "Klee One"'));
+      expect(fontCss.fontFaces, contains('font-family: "Noto Sans JP"'));
+      expect(fontCss.fontFaces, contains('http://localhost:52061/'));
+      expect(fontCss.fontFaces, contains('KleeOne-Regular.ttf'));
+      expect(fontCss.fontFaces, contains('NotoSansJP-Regular.ttf'));
+    });
+  });
+
+  group('ReaderTtuSource TTU settings helpers', () {
+    test('enables TTU reading statistics for Hibiki statistics sync', () {
+      expect(
+        ReaderTtuSource.ttuStatisticsSettingsJs,
+        contains('window.localStorage.setItem("statisticsEnabled","1")'),
+      );
+    });
   });
 
   group('ReaderTtuSource furigana helpers', () {

@@ -16,11 +16,20 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     required this.result,
     this.onTextSelected,
     this.onMineEntry,
+    this.forceCollapseDictionaries = false,
   });
 
   final DictionarySearchResult result;
   final void Function(String text)? onTextSelected;
   final void Function(Map<String, String> fields)? onMineEntry;
+  final bool forceCollapseDictionaries;
+
+  static bool shouldCollapseDictionaries({
+    required bool appPreference,
+    required bool forceCollapse,
+  }) {
+    return appPreference || forceCollapse;
+  }
 
   @override
   ConsumerState<DictionaryPopupWebView> createState() =>
@@ -51,7 +60,10 @@ class DictionaryPopupWebViewState
     final appModel = ref.read(appProvider);
     final deduplicatePitch = appModel.deduplicatePitchAccents;
     final harmonicFreq = appModel.harmonicFrequency;
-    final collapseDict = appModel.collapseDictionaries;
+    final collapseDict = DictionaryPopupWebView.shouldCollapseDictionaries(
+      appPreference: appModel.collapseDictionaries,
+      forceCollapse: widget.forceCollapseDictionaries,
+    );
     final audioSourcesJson = jsonEncode(appModel.audioSources);
     final localAudioEnabled = appModel.localAudioEnabled;
 

@@ -51,7 +51,16 @@ class InstantExportAction extends QuickAction {
     }
 
     creatorModel.copyContext(
-      CreatorFieldValues(textValues: newTextFields),
+      CreatorFieldValues(
+        textValues: newTextFields,
+        extraValues: {
+          ...FrequencyField.extraValuesFromEntry(entry),
+          ...PitchAccentField.extraValuesFromEntry(
+            appModel: appModel,
+            entry: entry,
+          ),
+        },
+      ),
     );
 
     for (Field field in appModel.activeFields) {

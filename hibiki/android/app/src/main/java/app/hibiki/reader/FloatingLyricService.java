@@ -57,6 +57,7 @@ public class FloatingLyricService extends Service {
     private int highlightColor = 0x80FFD54F;
     private int activeColor = 0xFFFFD54F;
     private boolean isLocked = false;
+    private boolean isPlaying = false;
     private String currentText = "";
     private int highlightStart = -1;
     private int highlightLength = 0;
@@ -188,6 +189,11 @@ public class FloatingLyricService extends Service {
         updateTouchability();
     }
 
+    public void setPlaybackState(boolean playing) {
+        isPlaying = playing;
+        updatePlayPauseButton();
+    }
+
     public void updateLabels(Map<String, Object> labels) {
         previousLabel = stringLabel(labels, "previous", previousLabel);
         playPauseLabel = stringLabel(labels, "playPause", playPauseLabel);
@@ -284,9 +290,7 @@ public class FloatingLyricService extends Service {
                         ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
                         : WindowManager.LayoutParams.TYPE_PHONE,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                        | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
-                        | WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
-                        | WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD,
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                 PixelFormat.TRANSLUCENT);
         layoutParams.gravity = Gravity.TOP | Gravity.START;
         layoutParams.x = 0;
@@ -338,6 +342,15 @@ public class FloatingLyricService extends Service {
         lockButton.setContentDescription(isLocked ? unlockLabel : lockLabel);
         applyIconTint(lockButton, isLocked ? activeColor : buttonTextColor);
         lockButton.setBackgroundColor(buttonBgColor);
+    }
+
+    private void updatePlayPauseButton() {
+        if (playPauseButton == null) return;
+        playPauseButton.setImageResource(
+                isPlaying ? R.drawable.ic_floating_pause : R.drawable.ic_floating_play);
+        playPauseButton.setContentDescription(playPauseLabel);
+        applyIconTint(playPauseButton, isPlaying ? activeColor : buttonTextColor);
+        playPauseButton.setBackgroundColor(buttonBgColor);
     }
 
     private void setupTouchListener() {
@@ -439,9 +452,7 @@ public class FloatingLyricService extends Service {
     private void updateTouchability() {
         if (layoutParams == null || rootView == null) return;
         layoutParams.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
-                | WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
-                | WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD;
+                | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS;
         windowManager.updateViewLayout(rootView, layoutParams);
     }
 
@@ -451,9 +462,9 @@ public class FloatingLyricService extends Service {
         lyricText.setTextColor(textColor);
         rootView.setBackgroundColor(bgColor);
         applyButtonStyle(previousButton);
-        applyButtonStyle(playPauseButton);
         applyButtonStyle(nextButton);
         applyButtonStyle(closeButton);
+        updatePlayPauseButton();
         updateLockButton();
         applyLyricText();
     }

@@ -333,6 +333,9 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     await _syncFloatingLyricStyle();
     final bool shown = await FloatingLyricChannel.show();
     if (!shown) return;
+    await FloatingLyricChannel.setPlaybackState(
+      playing: controller.isPlaying,
+    );
     final AudioCue? cue = controller.currentCue;
     if (cue != null) {
       await FloatingLyricChannel.updateText(cue.text);
@@ -656,20 +659,13 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     appModel.openCreator(
       ref: ref,
       killOnPop: false,
-      creatorFieldValues: CreatorFieldValues(
-        textValues: {
-          TermField.instance: fields['expression'] ?? '',
-          ReadingField.instance: fields['reading'] ?? '',
-          MeaningField.instance: fields['glossary'] ?? '',
-          SentenceField.instance: currentSentence.text.trim(),
-          ClozeBeforeField.instance: currentSentence.textBefore,
-          ClozeInsideField.instance: currentSentence.textInside,
-          ClozeAfterField.instance: currentSentence.textAfter,
-        },
-        extraValues: {
-          'singleGlossaries': fields['singleGlossaries'] ?? '',
-          'selectedDictionary': fields['selectedDictionary'] ?? '',
-        },
+      creatorFieldValues: CreatorFieldValues.fromMineFields(
+        fields: fields,
+        sentence: currentSentence.text.trim(),
+        clozeBefore: currentSentence.textBefore,
+        clozeInside: currentSentence.textInside,
+        clozeAfter: currentSentence.textAfter,
+        usePopupSelectionAsClozeInside: false,
       ),
       onCreatorReady: (creatorModel) async {
         await _attachMineAudio(fields, creatorModel);
@@ -1037,8 +1033,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       'window.localStorage.setItem("verticalTextOrientation","${src.ttuVerticalTextOrientation}")',
       'window.localStorage.setItem("enableTextJustification","${src.ttuEnableTextJustification ? 1 : 0}")',
       'window.localStorage.setItem("prioritizeReaderStyles","${src.ttuPrioritizeReaderStyles ? 1 : 0}")',
-      'window.localStorage.setItem("statisticsEnabled","0")',
-      'window.localStorage.setItem("trackerAutoStartTime","5")',
+      ReaderTtuSource.ttuStatisticsSettingsJs,
       'window.localStorage.setItem("fontFamilyGroupOne",${jsonEncode(fontFamilyOne)})',
       'window.localStorage.setItem("fontFamilyGroupTwo",${jsonEncode(fontFamilyTwo)})',
     ];
@@ -1073,17 +1068,11 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   }
 
   String _buildFontFaceCss() {
-    const defaultFaces = '@font-face { font-family: "Noto Serif JP"; '
-        'src: local("Noto Serif CJK JP"), local("NotoSerifCJKjp-Regular"), local("serif"); '
-        'font-display: swap; } '
-        '@font-face { font-family: "Noto Sans JP"; '
-        'src: local("Noto Sans CJK JP"), local("NotoSansCJKjp-Regular"), local("sans-serif"); '
-        'font-display: swap; }';
-    final custom = ReaderTtuSource.instance.buildCustomFontCss().fontFaces;
-    return custom.isEmpty ? defaultFaces : '$custom\n$defaultFaces';
+    return ReaderTtuSource.instance.buildCustomFontCss().fontFaces;
   }
 
   Widget buildReaderArea(LocalAssetsServer server) {
+    final String fontFaceCss = _buildFontFaceCss();
     return InAppWebView(
       initialUrlRequest: URLRequest(
         url: WebUri(
@@ -1101,15 +1090,15 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
           source: _buildApplySettingsJs(),
           injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
         ),
-        UserScript(
-          source: '(function(){'
-              'var s=document.createElement("style");'
-              's.id="hibiki-custom-fonts";'
-              "s.textContent='${_buildFontFaceCss().replaceAll('\\', '\\\\').replaceAll("'", "\\'").replaceAll('\n', ' ')}';"
-              'document.addEventListener("DOMContentLoaded",function(){'
-              'document.head.appendChild(s)});})()',
-          injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
-        ),
+        if (fontFaceCss.isNotEmpty)
+          UserScript(
+            source: '(function(){'
+                'var s=document.createElement("style");'
+                's.id="hibiki-custom-fonts";'
+                "s.textContent='${fontFaceCss.replaceAll('\\', '\\\\').replaceAll("'", "\\'").replaceAll('\n', ' ')}';"
+                '(document.head||document.documentElement).appendChild(s);})()',
+            injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+          ),
       ]),
       onPermissionRequest: (controller, origin) async {
         return PermissionResponse(
@@ -2803,6 +2792,9 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
               await _syncFloatingLyricLabels();
               await _syncFloatingLyricStyle();
               await FloatingLyricChannel.show();
+              await FloatingLyricChannel.setPlaybackState(
+                playing: _audiobookController?.isPlaying ?? false,
+              );
               final AudioCue? cue = _audiobookController?.currentCue;
               if (cue != null) {
                 FloatingLyricChannel.updateText(cue.text);
@@ -3006,6 +2998,11 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       'hasPlayed=${controller?.hasPlayedOnce} '
       'suppress=$_suppressRevealScroll',
     );
+    if (appModel.showFloatingLyric && controller != null) {
+      unawaited(FloatingLyricChannel.setPlaybackState(
+        playing: controller.isPlaying,
+      ));
+    }
     // cue 属于不同章节时不高亮——防止异步跨章 nav 完成后、用户已手动翻走的
     // 场景下，旧章 cue 被错误地高亮到新章 DOM 上。
     if (cue != null && _currentTtuSection >= 0) {
