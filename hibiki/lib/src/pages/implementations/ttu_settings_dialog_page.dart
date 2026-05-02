@@ -173,6 +173,17 @@ Widget _buildDisplaySettings(VoidCallback rebuild) {
             hint: t.hint_margin,
           ),
           _buildNumberRow(
+            label: t.ttu_second_dimension_margin,
+            value: _source.ttuSecondDimensionMargin,
+            step: 5,
+            min: 0,
+            max: 100,
+            format: (v) => '${v.round()}',
+            onChanged: (v) =>
+                update(() => _source.setTtuSecondDimensionMargin(v)),
+            hint: t.hint_cross_margin,
+          ),
+          _buildNumberRow(
             label: t.ttu_second_dimension_max,
             value: _source.ttuSecondDimensionMaxValue,
             step: 50,
