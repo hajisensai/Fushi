@@ -29,6 +29,7 @@ import android.widget.TextView;
 
 import androidx.annotation.Nullable;
 
+import java.lang.ref.WeakReference;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -68,16 +69,16 @@ public class FloatingLyricService extends Service {
     private String unlockLabel = "Unlock";
     private String closeLabel = "Close";
 
-    private static FloatingLyricService instance;
+    private static WeakReference<FloatingLyricService> instanceRef;
 
     public static FloatingLyricService getInstance() {
-        return instance;
+        return instanceRef != null ? instanceRef.get() : null;
     }
 
     @Override
     public void onCreate() {
         super.onCreate();
-        instance = this;
+        instanceRef = new WeakReference<>(this);
         windowManager = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
         createNotificationChannel();
         startForeground(NOTIFICATION_ID, buildNotification());
@@ -117,7 +118,7 @@ public class FloatingLyricService extends Service {
 
     @Override
     public void onDestroy() {
-        instance = null;
+        instanceRef = null;
         savePosition();
         if (rootView != null) {
             windowManager.removeView(rootView);

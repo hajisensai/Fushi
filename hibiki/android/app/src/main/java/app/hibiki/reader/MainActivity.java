@@ -45,6 +45,8 @@ import java.io.OutputStream;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.TreeSet;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -79,8 +81,10 @@ public class MainActivity extends AudioServiceActivity {
     private TextToSpeech tts;
     private boolean ttsReady = false;
     private MediaPlayer mediaPlayer;
-    private SQLiteDatabase localAudioDb;
+    private volatile SQLiteDatabase localAudioDb;
     private String localAudioDbPath;
+    private final Object dbLock = new Object();
+    private final ExecutorService ioExecutor = Executors.newFixedThreadPool(2);
 
     // Reader opens this gate when volume-key page turning is enabled so
     // dispatchKeyEvent swallows VOLUME_UP/DOWN and forwards them to Dart.
@@ -270,7 +274,7 @@ public class MainActivity extends AudioServiceActivity {
                 return;
             }
             Uri treeUri = data.getData();
-            new Thread(() -> {
+            ioExecutor.execute(() -> {
                 try {
                     DocumentFile dir = DocumentFile.fromTreeUri(context, treeUri);
                     if (dir == null || !dir.exists()) {
@@ -288,7 +292,7 @@ public class MainActivity extends AudioServiceActivity {
                     new Handler(Looper.getMainLooper()).post(() ->
                         safResult.error("SAF_ERROR", e.getMessage(), null));
                 }
-            }).start();
+            });
         }
     }
 
@@ -526,41 +530,49 @@ public class MainActivity extends AudioServiceActivity {
                             mediaPlayer.prepareAsync();
                             result.success(true);
                         } catch (Exception e) {
+                            android.util.Log.w("hibiki-audio", "playUrl failed", e);
                             result.success(false);
                         }
                         break;
                     }
                     case "setLocalAudioDb": {
                         String dbPath = call.argument("path");
-                        if (localAudioDb != null) {
-                            localAudioDb.close();
-                            localAudioDb = null;
-                        }
-                        localAudioDbPath = dbPath;
-                        if (dbPath != null && !dbPath.isEmpty()) {
-                            try {
-                                File dbFile = new File(dbPath);
-                                if (dbFile.exists()) {
-                                    localAudioDb = SQLiteDatabase.openDatabase(
-                                        dbPath, null, SQLiteDatabase.OPEN_READWRITE | SQLiteDatabase.NO_LOCALIZED_COLLATORS);
-                                    result.success(true);
-                                    final SQLiteDatabase db = localAudioDb;
-                                    new Thread(() -> {
-                                        try {
-                                            db.execSQL(
-                                                "CREATE INDEX IF NOT EXISTS idx_entries_expr_read ON entries(expression, reading)");
-                                            db.execSQL(
-                                                "CREATE INDEX IF NOT EXISTS idx_android_file_source ON android(file, source)");
-                                        } catch (Exception ignored) {}
-                                    }).start();
-                                } else {
+                        synchronized (dbLock) {
+                            if (localAudioDb != null) {
+                                localAudioDb.close();
+                                localAudioDb = null;
+                            }
+                            localAudioDbPath = dbPath;
+                            if (dbPath != null && !dbPath.isEmpty()) {
+                                try {
+                                    File dbFile = new File(dbPath);
+                                    if (dbFile.exists()) {
+                                        localAudioDb = SQLiteDatabase.openDatabase(
+                                            dbPath, null, SQLiteDatabase.OPEN_READWRITE | SQLiteDatabase.NO_LOCALIZED_COLLATORS);
+                                        result.success(true);
+                                        final SQLiteDatabase db = localAudioDb;
+                                        ioExecutor.execute(() -> {
+                                            synchronized (dbLock) {
+                                                try {
+                                                    db.execSQL(
+                                                        "CREATE INDEX IF NOT EXISTS idx_entries_expr_read ON entries(expression, reading)");
+                                                    db.execSQL(
+                                                        "CREATE INDEX IF NOT EXISTS idx_android_file_source ON android(file, source)");
+                                                } catch (Exception e) {
+                                                    android.util.Log.w("hibiki-audio", "Failed to create index", e);
+                                                }
+                                            }
+                                        });
+                                    } else {
+                                        result.success(false);
+                                    }
+                                } catch (Exception e) {
+                                    android.util.Log.e("hibiki-audio", "Failed to open local audio db", e);
                                     result.success(false);
                                 }
-                            } catch (Exception e) {
-                                result.success(false);
+                            } else {
+                                result.success(true);
                             }
-                        } else {
-                            result.success(true);
                         }
                         break;
                     }
@@ -571,34 +583,42 @@ public class MainActivity extends AudioServiceActivity {
                             result.success(null);
                             return;
                         }
-                        final SQLiteDatabase db = localAudioDb;
-                        new Thread(() -> {
-                            try {
-                                Cursor entryCursor = db.rawQuery(
-                                    "SELECT file, source FROM entries WHERE expression = ? AND reading = ? LIMIT 1",
-                                    new String[]{expression, reading != null ? reading : ""});
-                                if (entryCursor == null || !entryCursor.moveToFirst()) {
-                                    if (entryCursor != null) entryCursor.close();
-                                    entryCursor = db.rawQuery(
-                                        "SELECT file, source FROM entries WHERE expression = ? LIMIT 1",
-                                        new String[]{expression});
-                                }
-                                if (entryCursor != null && entryCursor.moveToFirst()) {
-                                    String file = entryCursor.getString(0);
-                                    String source = entryCursor.getString(1);
-                                    entryCursor.close();
-                                    Map<String, String> info = new HashMap<>();
-                                    info.put("file", file);
-                                    info.put("source", source);
-                                    new Handler(Looper.getMainLooper()).post(() -> result.success(info));
-                                } else {
-                                    if (entryCursor != null) entryCursor.close();
+                        ioExecutor.execute(() -> {
+                            synchronized (dbLock) {
+                                SQLiteDatabase db = localAudioDb;
+                                if (db == null || !db.isOpen()) {
                                     new Handler(Looper.getMainLooper()).post(() -> result.success(null));
+                                    return;
                                 }
-                            } catch (Exception e) {
-                                new Handler(Looper.getMainLooper()).post(() -> result.success(null));
+                                Cursor cursor = null;
+                                try {
+                                    cursor = db.rawQuery(
+                                        "SELECT file, source FROM entries WHERE expression = ? AND reading = ? LIMIT 1",
+                                        new String[]{expression, reading != null ? reading : ""});
+                                    if (cursor == null || !cursor.moveToFirst()) {
+                                        if (cursor != null) cursor.close();
+                                        cursor = db.rawQuery(
+                                            "SELECT file, source FROM entries WHERE expression = ? LIMIT 1",
+                                            new String[]{expression});
+                                    }
+                                    if (cursor != null && cursor.moveToFirst()) {
+                                        String file = cursor.getString(0);
+                                        String source = cursor.getString(1);
+                                        Map<String, String> info = new HashMap<>();
+                                        info.put("file", file);
+                                        info.put("source", source);
+                                        new Handler(Looper.getMainLooper()).post(() -> result.success(info));
+                                    } else {
+                                        new Handler(Looper.getMainLooper()).post(() -> result.success(null));
+                                    }
+                                } catch (Exception e) {
+                                    android.util.Log.w("hibiki-audio", "queryLocalAudio failed", e);
+                                    new Handler(Looper.getMainLooper()).post(() -> result.success(null));
+                                } finally {
+                                    if (cursor != null) cursor.close();
+                                }
                             }
-                        }).start();
+                        });
                         break;
                     }
                     case "extractLocalAudio": {
@@ -608,31 +628,35 @@ public class MainActivity extends AudioServiceActivity {
                             result.success(null);
                             return;
                         }
-                        final SQLiteDatabase db = localAudioDb;
                         final File cacheDir = getCacheDir();
-                        new Thread(() -> {
-                            try {
-                                Cursor audioCursor = db.rawQuery(
-                                    "SELECT data FROM android WHERE file = ? AND source = ? LIMIT 1",
-                                    new String[]{fileArg, sourceArg});
-                                if (audioCursor != null && audioCursor.moveToFirst()) {
-                                    byte[] audioData = audioCursor.getBlob(0);
-                                    audioCursor.close();
-                                    String ext = fileArg.endsWith(".opus") ? ".opus" : ".mp3";
-                                    File tempFile = new File(cacheDir, "local_audio" + ext);
-                                    FileOutputStream fos = new FileOutputStream(tempFile);
-                                    fos.write(audioData);
-                                    fos.close();
-                                    new Handler(Looper.getMainLooper()).post(() ->
-                                        result.success(tempFile.getAbsolutePath()));
-                                } else {
-                                    if (audioCursor != null) audioCursor.close();
+                        ioExecutor.execute(() -> {
+                            synchronized (dbLock) {
+                                SQLiteDatabase db = localAudioDb;
+                                if (db == null || !db.isOpen()) {
+                                    new Handler(Looper.getMainLooper()).post(() -> result.success(null));
+                                    return;
+                                }
+                                try (Cursor audioCursor = db.rawQuery(
+                                        "SELECT data FROM android WHERE file = ? AND source = ? LIMIT 1",
+                                        new String[]{fileArg, sourceArg})) {
+                                    if (audioCursor != null && audioCursor.moveToFirst()) {
+                                        byte[] audioData = audioCursor.getBlob(0);
+                                        String ext = fileArg.endsWith(".opus") ? ".opus" : ".mp3";
+                                        File tempFile = new File(cacheDir, "local_audio" + ext);
+                                        try (FileOutputStream fos = new FileOutputStream(tempFile)) {
+                                            fos.write(audioData);
+                                        }
+                                        new Handler(Looper.getMainLooper()).post(() ->
+                                            result.success(tempFile.getAbsolutePath()));
+                                    } else {
+                                        new Handler(Looper.getMainLooper()).post(() -> result.success(null));
+                                    }
+                                } catch (Exception e) {
+                                    android.util.Log.w("hibiki-audio", "extractLocalAudio failed", e);
                                     new Handler(Looper.getMainLooper()).post(() -> result.success(null));
                                 }
-                            } catch (Exception e) {
-                                new Handler(Looper.getMainLooper()).post(() -> result.success(null));
                             }
-                        }).start();
+                        });
                         break;
                     }
                     case "extractAudioSegment": {
@@ -646,30 +670,29 @@ public class MainActivity extends AudioServiceActivity {
                         }
                         long startUs = startMsN.longValue() * 1000L;
                         long endUs = endMsN.longValue() * 1000L;
-                        new Thread(() -> {
+                        ioExecutor.execute(() -> {
+                            android.media.MediaExtractor extractor = null;
+                            android.media.MediaMuxer muxer = null;
                             try {
-                                android.media.MediaExtractor extractor = new android.media.MediaExtractor();
+                                extractor = new android.media.MediaExtractor();
                                 extractor.setDataSource(inputPath);
                                 int audioTrack = -1;
-                                String mime = null;
                                 for (int i = 0; i < extractor.getTrackCount(); i++) {
                                     android.media.MediaFormat fmt = extractor.getTrackFormat(i);
                                     String m = fmt.getString(android.media.MediaFormat.KEY_MIME);
                                     if (m != null && m.startsWith("audio/")) {
                                         audioTrack = i;
-                                        mime = m;
                                         break;
                                     }
                                 }
                                 if (audioTrack < 0) {
-                                    extractor.release();
                                     new Handler(Looper.getMainLooper()).post(() ->
                                         result.error("NO_AUDIO", "No audio track found", null));
                                     return;
                                 }
                                 extractor.selectTrack(audioTrack);
                                 android.media.MediaFormat trackFormat = extractor.getTrackFormat(audioTrack);
-                                android.media.MediaMuxer muxer = new android.media.MediaMuxer(
+                                muxer = new android.media.MediaMuxer(
                                     outputPath, android.media.MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
                                 int outTrack = muxer.addTrack(trackFormat);
                                 muxer.start();
@@ -691,14 +714,20 @@ public class MainActivity extends AudioServiceActivity {
                                     extractor.advance();
                                 }
                                 muxer.stop();
-                                muxer.release();
-                                extractor.release();
                                 new Handler(Looper.getMainLooper()).post(() -> result.success(outputPath));
                             } catch (Exception e) {
+                                android.util.Log.e("hibiki-audio", "extractAudioSegment failed", e);
                                 new Handler(Looper.getMainLooper()).post(() ->
                                     result.error("EXTRACT_ERROR", e.getMessage(), null));
+                            } finally {
+                                if (muxer != null) {
+                                    try { muxer.release(); } catch (Exception ignored) {}
+                                }
+                                if (extractor != null) {
+                                    extractor.release();
+                                }
                             }
-                        }).start();
+                        });
                         break;
                     }
                     case "playFile": {
@@ -734,6 +763,7 @@ public class MainActivity extends AudioServiceActivity {
                             mediaPlayer.prepare();
                             result.success(true);
                         } catch (Exception e) {
+                            android.util.Log.w("hibiki-audio", "playFile failed", e);
                             result.success(false);
                         }
                         break;
@@ -911,27 +941,29 @@ public class MainActivity extends AudioServiceActivity {
         new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), FONTS_CHANNEL)
             .setMethodCallHandler((call, result) -> {
                 if ("listSystemFonts".equals(call.method)) {
-                    new Thread(() -> {
+                    ioExecutor.execute(() -> {
                         TreeSet<String> families = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
                         // 1) 解析 /system/etc/fonts.xml
                         try {
                             File xml = new File("/system/etc/fonts.xml");
                             if (xml.exists()) {
-                                BufferedReader reader = new BufferedReader(
-                                        new InputStreamReader(new FileInputStream(xml)));
-                                StringBuilder sb = new StringBuilder();
-                                String line;
-                                while ((line = reader.readLine()) != null) {
-                                    sb.append(line);
-                                }
-                                reader.close();
-                                Pattern p = Pattern.compile("<family\\s+name=\"([^\"]+)\"");
-                                Matcher m = p.matcher(sb.toString());
-                                while (m.find()) {
-                                    families.add(m.group(1));
+                                try (BufferedReader reader = new BufferedReader(
+                                        new InputStreamReader(new FileInputStream(xml)))) {
+                                    StringBuilder sb = new StringBuilder();
+                                    String line;
+                                    while ((line = reader.readLine()) != null) {
+                                        sb.append(line);
+                                    }
+                                    Pattern p = Pattern.compile("<family\\s+name=\"([^\"]+)\"");
+                                    Matcher m = p.matcher(sb.toString());
+                                    while (m.find()) {
+                                        families.add(m.group(1));
+                                    }
                                 }
                             }
-                        } catch (Exception ignored) {}
+                        } catch (Exception e) {
+                            android.util.Log.w("hibiki-fonts", "Failed to parse fonts.xml", e);
+                        }
                         // 2) 扫描 /system/fonts/ 目录
                         try {
                             File dir = new File("/system/fonts");
@@ -948,11 +980,13 @@ public class MainActivity extends AudioServiceActivity {
                                     }
                                 }
                             }
-                        } catch (Exception ignored) {}
+                        } catch (Exception e) {
+                            android.util.Log.w("hibiki-fonts", "Failed to scan /system/fonts", e);
+                        }
                         List<String> sorted = new ArrayList<>(families);
                         android.util.Log.d("hibiki-fonts", "Found " + sorted.size() + " fonts: " + sorted.subList(0, Math.min(5, sorted.size())));
                         new Handler(Looper.getMainLooper()).post(() -> result.success(sorted));
-                    }).start();
+                    });
                 } else {
                     result.notImplemented();
                 }
