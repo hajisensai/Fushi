@@ -797,7 +797,11 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
             return ChoiceChip(
               label: Text('${s.toStringAsFixed(2)}x'),
               selected: selected,
+              showCheckmark: false,
               selectedColor: theme.colorScheme.primaryContainer,
+              labelStyle: selected
+                  ? TextStyle(color: theme.colorScheme.onPrimaryContainer)
+                  : null,
               onSelected: (bool on) {
                 if (on) ctrl.setSpeed(s);
               },
@@ -903,7 +907,11 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                 return ChoiceChip(
                   label: Text(s == 0 ? t.image_pause_off : '${s}s'),
                   selected: selected,
+                  showCheckmark: false,
                   selectedColor: theme.colorScheme.primaryContainer,
+                  labelStyle: selected
+                      ? TextStyle(color: theme.colorScheme.onPrimaryContainer)
+                      : null,
                   onSelected: (bool on) {
                     if (on) ctrl.setImagePauseSec(s);
                   },
@@ -1185,7 +1193,11 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
             return ChoiceChip(
               label: Text(TtuReaderSettings.themeLabels[t] ?? t),
               selected: selected,
+              showCheckmark: false,
               selectedColor: theme.colorScheme.primaryContainer,
+              labelStyle: selected
+                  ? TextStyle(color: theme.colorScheme.onPrimaryContainer)
+                  : null,
               onSelected: (bool on) async {
                 if (!on) return;
                 s.theme = t;

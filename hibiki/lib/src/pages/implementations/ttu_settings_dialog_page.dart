@@ -140,51 +140,6 @@ Widget _buildTapRow({
   );
 }
 
-Widget _buildNumberRow({
-  required String label,
-  required double value,
-  required double step,
-  required double min,
-  required double max,
-  required String Function(double) format,
-  required ValueChanged<double> onChanged,
-  String? hint,
-}) {
-  return Padding(
-    padding: const EdgeInsets.symmetric(vertical: 2),
-    child: Row(
-      children: [
-        Expanded(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Flexible(child: Text(label)),
-              if (hint != null) ...[
-                const SizedBox(width: 4),
-                _HintIcon(hint: hint),
-              ],
-            ],
-          ),
-        ),
-        IconButton(
-          icon: const Icon(Icons.remove, size: 18),
-          visualDensity: VisualDensity.compact,
-          onPressed: () => onChanged((value - step).clamp(min, max)),
-        ),
-        SizedBox(
-          width: 42,
-          child: Text(format(value), textAlign: TextAlign.center),
-        ),
-        IconButton(
-          icon: const Icon(Icons.add, size: 18),
-          visualDensity: VisualDensity.compact,
-          onPressed: () => onChanged((value + step).clamp(min, max)),
-        ),
-      ],
-    ),
-  );
-}
-
 class _HintIcon extends StatelessWidget {
   const _HintIcon({required this.hint});
   final String hint;
@@ -211,182 +166,6 @@ class _HintIcon extends StatelessWidget {
       ),
     );
   }
-}
-
-Widget _buildDisplaySettings(VoidCallback rebuild) {
-  return StatefulBuilder(
-    builder: (_, StateSetter setLocal) {
-      void update(VoidCallback fn) {
-        fn();
-        setLocal(() {});
-        rebuild();
-      }
-
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildNumberRow(
-            label: t.ttu_font_size,
-            value: _source.ttuFontSize,
-            step: 1,
-            min: 8,
-            max: 64,
-            format: (v) => '${v.round()}',
-            onChanged: (v) => update(() => _source.setTtuFontSize(v)),
-            hint: t.hint_font_size,
-          ),
-          _buildNumberRow(
-            label: t.ttu_line_height,
-            value: _source.ttuLineHeight,
-            step: 0.1,
-            min: 1.0,
-            max: 3.0,
-            format: (v) => v.toStringAsFixed(2),
-            onChanged: (v) => update(() =>
-                _source.setTtuLineHeight((v * 100).roundToDouble() / 100)),
-            hint: t.hint_line_height,
-          ),
-          _buildNumberRow(
-            label: t.ttu_text_indentation,
-            value: _source.ttuTextIndentation,
-            step: 1,
-            min: 0,
-            max: 10,
-            format: (v) => '${v.round()}',
-            onChanged: (v) => update(() => _source.setTtuTextIndentation(v)),
-            hint: t.hint_text_indentation,
-          ),
-          _buildNumberRow(
-            label: t.ttu_first_dimension_margin,
-            value: _source.ttuFirstDimensionMargin,
-            step: 5,
-            min: 0,
-            max: 100,
-            format: (v) => '${v.round()}',
-            onChanged: (v) =>
-                update(() => _source.setTtuFirstDimensionMargin(v)),
-            hint: t.hint_margin,
-          ),
-          _buildNumberRow(
-            label: t.ttu_second_dimension_margin,
-            value: _source.ttuSecondDimensionMargin,
-            step: 5,
-            min: 0,
-            max: 100,
-            format: (v) => '${v.round()}',
-            onChanged: (v) =>
-                update(() => _source.setTtuSecondDimensionMargin(v)),
-            hint: t.hint_cross_margin,
-          ),
-          _buildNumberRow(
-            label: t.ttu_second_dimension_max,
-            value: _source.ttuSecondDimensionMaxValue,
-            step: 50,
-            min: 0,
-            max: 2000,
-            format: (v) =>
-                v.round() == 0 ? t.ttu_page_columns_auto : '${v.round()}',
-            onChanged: (v) =>
-                update(() => _source.setTtuSecondDimensionMaxValue(v)),
-            hint: t.hint_max_width_height,
-          ),
-          _buildNumberRow(
-            label: t.ttu_page_columns,
-            value: _source.ttuPageColumns.toDouble(),
-            step: 1,
-            min: 0,
-            max: 4,
-            format: (v) =>
-                v.round() == 0 ? t.ttu_page_columns_auto : '${v.round()}',
-            onChanged: (v) =>
-                update(() => _source.setTtuPageColumns(v.round())),
-            hint: t.hint_page_columns,
-          ),
-          _buildSegmentedRow<String>(
-            label: t.ttu_writing_direction,
-            hint: t.hint_writing_direction,
-            segments: [
-              ButtonSegment(
-                  value: 'horizontal-tb', label: Text(t.ttu_horizontal)),
-              ButtonSegment(
-                  value: 'vertical-rl', label: Text(t.ttu_vertical)),
-            ],
-            selected: {_source.ttuWritingMode},
-            onSelectionChanged: (sel) =>
-                update(() => _source.setTtuWritingMode(sel.first)),
-          ),
-          _buildSegmentedRow<String>(
-            label: t.ttu_view_mode_label,
-            hint: t.hint_view_mode,
-            segments: [
-              ButtonSegment(
-                  value: 'paginated', label: Text(t.ttu_paginated)),
-              ButtonSegment(
-                  value: 'continuous', label: Text(t.ttu_scroll)),
-            ],
-            selected: {_source.ttuViewMode},
-            onSelectionChanged: (sel) =>
-                update(() => _source.setTtuViewMode(sel.first)),
-          ),
-          _buildSegmentedRow<String>(
-            label: t.ttu_vert_text_orient,
-            hint: t.hint_vert_text_orient,
-            segments: [
-              ButtonSegment(
-                  value: 'mixed', label: Text(t.ttu_orient_mixed)),
-              ButtonSegment(
-                  value: 'upright', label: Text(t.ttu_orient_upright)),
-            ],
-            selected: {_source.ttuVerticalTextOrientation},
-            onSelectionChanged: (sel) => update(
-                () => _source.setTtuVerticalTextOrientation(sel.first)),
-          ),
-          _buildSegmentedRow<String>(
-            label: t.ttu_furigana_mode,
-            scrollable: true,
-            segments: [
-              ButtonSegment(
-                  value: 'show', label: Text(t.ttu_furigana_show)),
-              ButtonSegment(
-                  value: 'hide', label: Text(t.ttu_furigana_hide)),
-              ButtonSegment(
-                  value: 'partial', label: Text(t.ttu_furigana_partial)),
-              ButtonSegment(
-                  value: 'toggle', label: Text(t.ttu_furigana_toggle)),
-            ],
-            selected: {_source.ttuFuriganaMode},
-            onSelectionChanged: (sel) {
-              if (sel.isEmpty) return;
-              update(() => _source.setTtuFuriganaMode(sel.first));
-            },
-          ),
-          _buildSwitch(
-            label: t.ttu_text_justify,
-            value: _source.ttuEnableTextJustification,
-            onChanged: (v) =>
-                update(() => _source.setTtuEnableTextJustification(v)),
-          ),
-          _buildSwitch(
-            label: t.ttu_vert_kerning,
-            value: _source.ttuEnableVerticalFontKerning,
-            onChanged: (v) =>
-                update(() => _source.setTtuEnableVerticalFontKerning(v)),
-          ),
-          _buildSwitch(
-            label: t.ttu_font_vpal,
-            value: _source.ttuEnableFontVPAL,
-            onChanged: (v) => update(() => _source.setTtuEnableFontVPAL(v)),
-          ),
-          _buildSwitch(
-            label: t.ttu_reader_styles,
-            value: _source.ttuPrioritizeReaderStyles,
-            onChanged: (v) =>
-                update(() => _source.setTtuPrioritizeReaderStyles(v)),
-          ),
-        ],
-      );
-    },
-  );
 }
 
 List<Widget> _buildReaderOnlySwitches(VoidCallback rebuild) {
@@ -544,11 +323,16 @@ Widget _buildThemeSelector(AppModel appModel, {BuildContext? navContext}) {
         children: [
           ...AppModel.themePresets.entries.map((e) {
             final selected = appModel.appThemeKey == e.key;
+            final chipCs = navContext != null
+                ? Theme.of(navContext).colorScheme
+                : null;
             return ChoiceChip(
               label: Text(e.value.label),
               selected: selected,
-              selectedColor: navContext != null
-                  ? Theme.of(navContext).colorScheme.primaryContainer
+              showCheckmark: false,
+              selectedColor: chipCs?.primaryContainer,
+              labelStyle: selected && chipCs != null
+                  ? TextStyle(color: chipCs.onPrimaryContainer)
                   : null,
               onSelected: (on) {
                 if (!on) return;
@@ -650,7 +434,18 @@ class _TtuSettingsDialogPageState extends BasePageState {
               const Space.small(),
               const JidoujishoDivider(),
               const Space.small(),
-              _buildDisplaySettings(() => setState(() {})),
+              _buildTapRow(
+                context: context,
+                icon: Icons.text_fields,
+                label: t.display_settings,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const DisplaySettingsPage()),
+                  ).then((_) => setState(() {}));
+                },
+              ),
               const Space.small(),
               const JidoujishoDivider(),
               const Space.small(),
@@ -711,7 +506,17 @@ class _TtuSettingsDialogContentState extends BasePageState {
         const Space.small(),
         const JidoujishoDivider(),
         const Space.small(),
-        _buildDisplaySettings(() => setState(() {})),
+        _buildTapRow(
+          context: context,
+          icon: Icons.text_fields,
+          label: t.display_settings,
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const DisplaySettingsPage()),
+            ).then((_) => setState(() {}));
+          },
+        ),
         const Space.small(),
         const JidoujishoDivider(),
         const Space.small(),
