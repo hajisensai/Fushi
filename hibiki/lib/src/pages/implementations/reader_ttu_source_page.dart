@@ -2797,6 +2797,37 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     _onCueChanged();
   }
 
+  static List<AudioCue> _findCoveringCues(
+      List<AudioCue> cues, String favText) {
+    if (cues.isEmpty || favText.isEmpty) return const [];
+    int bestStart = -1;
+    int bestEnd = -1;
+    for (int i = 0; i < cues.length; i++) {
+      final String cueText = cues[i].text;
+      if (cueText.contains(favText) || favText.contains(cueText)) {
+        if (bestStart < 0) bestStart = i;
+        bestEnd = i;
+      }
+      if (bestStart >= 0 && bestEnd >= 0) {
+        final StringBuffer concat = StringBuffer();
+        for (int j = bestStart; j <= bestEnd; j++) {
+          concat.write(cues[j].text);
+        }
+        if (concat.toString().contains(favText)) break;
+      }
+    }
+    if (bestStart < 0) {
+      for (int i = 0; i < cues.length - 1; i++) {
+        final String pair = cues[i].text + cues[i + 1].text;
+        if (pair.contains(favText)) {
+          return cues.sublist(i, i + 2);
+        }
+      }
+      return const [];
+    }
+    return cues.sublist(bestStart, bestEnd + 1);
+  }
+
   /// 打开 reader 设置面板。两个入口：
   /// - 有声书模式：播放栏 ⚙，传入 [ctrl] 显示全套（倍速 / 音画同步 等）
   /// - 普通 EPUB：左下角 FAB，传 null 省略音频相关节
@@ -2911,17 +2942,14 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
             }
           },
           onPlayFavorite: _audiobookController != null
-              ? (fav) async {
+              ? (FavoriteSentence fav) async {
                   final ctrl = _audiobookController;
                   if (ctrl == null) return;
-                  final cues = ctrl.chapterCuesSnapshot;
-                  final match = cues.cast<AudioCue?>().firstWhere(
-                        (c) => c!.text.contains(fav.text) || fav.text.contains(c.text),
-                        orElse: () => null,
-                      );
-                  if (match != null) {
-                    await ctrl.skipToCue(match);
-                    if (!ctrl.isPlaying) await ctrl.play();
+                  final List<AudioCue> cues = ctrl.chapterCuesSnapshot;
+                  final List<AudioCue> covering =
+                      _findCoveringCues(cues, fav.text);
+                  if (covering.isNotEmpty) {
+                    await ctrl.playClip(covering);
                   }
                 }
               : null,

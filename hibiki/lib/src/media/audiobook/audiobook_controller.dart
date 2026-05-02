@@ -25,6 +25,9 @@ class AudiobookPlayerController extends ChangeNotifier {
   StreamSubscription<Duration>? _positionSub;
   StreamSubscription<bool>? _playingSub;
 
+  List<File> _audioFiles = [];
+  AudioPlayer? _clipPlayer;
+
   /// load() 完成前为未完成状态；seek 方法先 await 此 Completer 以避免
   /// 在音频源尚未就绪时 seek 导致位置归零。
   Completer<void> _loadReady = Completer<void>()..complete();
@@ -231,6 +234,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     _loadReady = Completer<void>();
 
     _audiobook = audiobook;
+    _audioFiles = audioFiles;
     // Follow audio / delay / speed 状态由调用方从持久层读出传入；不触发
     // persist 回调 —— 载入不是用户操作，又把同值写回 Hive 就是循环。
     followAudio.value = initialFollowAudio;
@@ -862,7 +866,52 @@ class AudiobookPlayerController extends ChangeNotifier {
     delayMs.dispose();
     imagePauseSec.dispose();
     tapSeekEnabled.dispose();
+    _clipPlayer?.dispose();
+    _clipPlayer = null;
     _player.dispose();
     super.dispose();
+  }
+
+  /// 用独立播放器播放 [cues] 覆盖的音频片段，不影响主播放器位置。
+  /// [cues] 必须按 startMs 排序且属于同一 audioFileIndex。
+  Future<void> playClip(List<AudioCue> cues) async {
+    if (cues.isEmpty) return;
+    await stopClip();
+
+    final int fileIdx = cues.first.audioFileIndex;
+    if (fileIdx < 0 || fileIdx >= _audioFiles.length) return;
+
+    final int startMs = cues.first.startMs;
+    final int endMs = cues.last.endMs;
+    if (endMs <= startMs) return;
+
+    final AudioPlayer clip = AudioPlayer();
+    _clipPlayer = clip;
+
+    await clip.setAudioSource(
+      ClippingAudioSource(
+        child: AudioSource.file(_audioFiles[fileIdx].path),
+        start: Duration(milliseconds: startMs),
+        end: Duration(milliseconds: endMs),
+      ),
+    );
+    await clip.setSpeed(_player.speed);
+
+    clip.playerStateStream.listen((PlayerState state) {
+      if (state.processingState == ProcessingState.completed) {
+        stopClip();
+      }
+    });
+
+    await clip.play();
+  }
+
+  Future<void> stopClip() async {
+    final AudioPlayer? old = _clipPlayer;
+    if (old != null) {
+      _clipPlayer = null;
+      await old.stop();
+      old.dispose();
+    }
   }
 }
