@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/sources/reader_ttu_source.dart';
 
@@ -50,6 +52,39 @@ void main() {
         ReaderTtuSource.ttuStatisticsSettingsJs,
         contains('window.localStorage.setItem("statisticsEnabled","1")'),
       );
+    });
+  });
+
+  group('ReaderTtuSource history parsing', () {
+    test('builds shelf items from projected metadata only', () {
+      final items = ReaderTtuSource.instance.getItemsFromJson(
+        {
+          'bookmark': jsonEncode([
+            {'dataId': 7, 'exploredCharCount': 50, 'progress': 0.5},
+          ]),
+          'data': jsonEncode([
+            {
+              'id': 7,
+              'title': 'Fast book',
+              'coverImage': 'data:image/png;base64,abc',
+              'lastBookOpen': 20,
+              'sections': List.filled(1000, 'large body not needed'),
+            },
+            {
+              'id': 8,
+              'title': 'Newer book',
+              'coverImage': null,
+              'lastBookOpen': 30,
+            },
+          ]),
+        },
+        52059,
+      );
+
+      expect(items.map((item) => item.title), ['Newer book', 'Fast book']);
+      expect(items.last.position, 50);
+      expect(items.last.duration, 100);
+      expect(items.last.mediaIdentifier, contains('id=7'));
     });
   });
 
