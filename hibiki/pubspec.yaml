@@ -1,7 +1,7 @@
 name: hibiki
 description: A focused Japanese EPUB reader with popup dictionary and Anki integration.
 publish_to: 'none'
-version: 0.2.4+24
+version: 0.2.5+25
 environment:
   sdk: ">=3.0.0<4.0.0"
   flutter: "^3.13.5"
@@ -133,9 +133,9 @@ flutter_icons:
   android: "launcher_icon"
   ios: true
   remove_alpha_ios: true
-  image_path: "assets/meta/icon.png"
-  adaptive_icon_background: "#FFFFFF" 
-  adaptive_icon_foreground: "assets/meta/icon-android12.png"
+  image_path: "assets/meta/launcher_source.png"
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/meta/launcher_source.png"
 
 flutter:
   uses-material-design: true
