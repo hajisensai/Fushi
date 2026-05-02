@@ -790,23 +790,18 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
       children: [
         Text(t.playback_speed, style: theme.textTheme.titleMedium),
         const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          children: _speeds.map((double s) {
-            final bool selected = (s - current).abs() < 0.01;
-            return ChoiceChip(
-              label: Text('${s.toStringAsFixed(2)}x'),
-              selected: selected,
-              showCheckmark: false,
-              selectedColor: theme.colorScheme.primaryContainer,
-              labelStyle: selected
-                  ? TextStyle(color: theme.colorScheme.onPrimaryContainer)
-                  : null,
-              onSelected: (bool on) {
-                if (on) ctrl.setSpeed(s);
-              },
-            );
-          }).toList(),
+        SegmentedButton<double>(
+          segments: _speeds
+              .map((double s) => ButtonSegment<double>(
+                    value: s,
+                    label: Text('${s.toStringAsFixed(2)}x'),
+                  ))
+              .toList(),
+          selected: <double>{current},
+          onSelectionChanged: (Set<double> sel) {
+            ctrl.setSpeed(sel.first);
+          },
+          style: _segmentedStyle(theme),
         ),
       ],
     );
@@ -900,23 +895,18 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               ),
             ),
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: _imagePauseOptions.map((int s) {
-                final bool selected = s == sec;
-                return ChoiceChip(
-                  label: Text(s == 0 ? t.image_pause_off : '${s}s'),
-                  selected: selected,
-                  showCheckmark: false,
-                  selectedColor: theme.colorScheme.primaryContainer,
-                  labelStyle: selected
-                      ? TextStyle(color: theme.colorScheme.onPrimaryContainer)
-                      : null,
-                  onSelected: (bool on) {
-                    if (on) ctrl.setImagePauseSec(s);
-                  },
-                );
-              }).toList(),
+            SegmentedButton<int>(
+              segments: _imagePauseOptions
+                  .map((int s) => ButtonSegment<int>(
+                        value: s,
+                        label: Text(s == 0 ? t.image_pause_off : '${s}s'),
+                      ))
+                  .toList(),
+              selected: <int>{sec},
+              onSelectionChanged: (Set<int> sel) {
+                ctrl.setImagePauseSec(sel.first);
+              },
+              style: _segmentedStyle(theme),
             ),
           ],
         );
@@ -1198,6 +1188,14 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               labelStyle: selected
                   ? TextStyle(color: theme.colorScheme.onPrimaryContainer)
                   : null,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+                side: BorderSide(
+                  color: selected
+                      ? theme.colorScheme.primaryContainer
+                      : theme.colorScheme.outline,
+                ),
+              ),
               onSelected: (bool on) async {
                 if (!on) return;
                 s.theme = t;

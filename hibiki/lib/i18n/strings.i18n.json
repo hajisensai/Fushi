@@ -314,7 +314,7 @@
     "manager": "Manager",
     "volume_button_page_turning": "Volume button page turning",
     "invert_volume_buttons": "Invert volume buttons",
-    "volume_button_turning_speed": "Continuous scrolling speed",
+    "volume_button_turning_speed": "Volume key page turning speed",
     "extend_page_beyond_navbar": "Extend page beyond navigation bar",
     "keep_screen_awake": "Keep screen awake",
     "auto_read_on_lookup": "Auto read word on lookup",
@@ -428,7 +428,7 @@
     "find_next": "Find Next",
     "find_previous": "Find Previous",
     "shadowing_mode": "Shadowing Mode",
-    "display_settings": "Display Settings",
+    "display_settings": "Typography Settings",
     "cloze": "Cloze",
     "info_standard_update": "New standard profile card type",
     "info_standard_update_content":

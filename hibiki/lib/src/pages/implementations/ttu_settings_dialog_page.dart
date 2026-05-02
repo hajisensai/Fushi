@@ -258,36 +258,27 @@ List<Widget> _buildReaderOnlySwitches(VoidCallback rebuild) {
   ];
 }
 
-Widget _buildPageTurningSpeed({
-  required BuildContext context,
-  required TextEditingController controller,
-}) {
-  return TextField(
-    onChanged: (value) {
-      double newSpeed = double.tryParse(value) ??
-          ReaderTtuSource.defaultScrollingSpeed.toDouble();
-      if (newSpeed.isNegative) {
-        newSpeed = ReaderTtuSource.defaultScrollingSpeed.toDouble();
-        controller.text = newSpeed.toString();
-      }
-      _source.setVolumePageTurningSpeed(newSpeed.toInt());
-    },
-    controller: controller,
-    keyboardType: TextInputType.number,
-    decoration: InputDecoration(
-      floatingLabelBehavior: FloatingLabelBehavior.always,
-      suffixIcon: JidoujishoIconButton(
-        tooltip: t.reset,
-        size: 18,
-        onTap: () async {
-          controller.text = ReaderTtuSource.defaultScrollingSpeed.toString();
-          _source
-              .setVolumePageTurningSpeed(ReaderTtuSource.defaultScrollingSpeed);
-          FocusScope.of(context).unfocus();
-        },
-        icon: Icons.undo,
-      ),
-      labelText: t.volume_button_turning_speed,
+Widget _buildPageTurningSpeed(VoidCallback rebuild) {
+  return Padding(
+    padding: const EdgeInsets.symmetric(vertical: 4),
+    child: Row(
+      children: [
+        Expanded(child: Text(t.volume_button_turning_speed)),
+        SizedBox(
+          width: 140,
+          child: Slider(
+            value: _source.volumePageTurningSpeed.toDouble(),
+            min: 10,
+            max: 500,
+            divisions: 49,
+            label: '${_source.volumePageTurningSpeed}',
+            onChanged: (v) {
+              _source.setVolumePageTurningSpeed(v.round());
+              rebuild();
+            },
+          ),
+        ),
+      ],
     ),
   );
 }
@@ -333,6 +324,16 @@ Widget _buildThemeSelector(AppModel appModel, {BuildContext? navContext}) {
               selectedColor: chipCs?.primaryContainer,
               labelStyle: selected && chipCs != null
                   ? TextStyle(color: chipCs.onPrimaryContainer)
+                  : null,
+              shape: chipCs != null
+                  ? RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      side: BorderSide(
+                        color: selected
+                            ? chipCs.primaryContainer
+                            : chipCs.outline,
+                      ),
+                    )
                   : null,
               onSelected: (on) {
                 if (!on) return;
@@ -381,14 +382,6 @@ class TtuSettingsDialogPage extends BasePage {
 }
 
 class _TtuSettingsDialogPageState extends BasePageState {
-  late TextEditingController _speedController;
-
-  @override
-  void initState() {
-    super.initState();
-    _speedController =
-        TextEditingController(text: _source.volumePageTurningSpeed.toString());
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -452,10 +445,7 @@ class _TtuSettingsDialogPageState extends BasePageState {
               ..._buildReaderOnlySwitches(() => setState(() {})),
               const Space.small(),
               const JidoujishoDivider(),
-              _buildPageTurningSpeed(
-                context: context,
-                controller: _speedController,
-              ),
+              _buildPageTurningSpeed(() => setState(() {})),
             ],
           ),
         ),
@@ -474,14 +464,6 @@ class TtuSettingsDialogContent extends BasePage {
 }
 
 class _TtuSettingsDialogContentState extends BasePageState {
-  late TextEditingController _speedController;
-
-  @override
-  void initState() {
-    super.initState();
-    _speedController =
-        TextEditingController(text: _source.volumePageTurningSpeed.toString());
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -523,10 +505,7 @@ class _TtuSettingsDialogContentState extends BasePageState {
         ..._buildReaderOnlySwitches(() => setState(() {})),
         const Space.small(),
         const JidoujishoDivider(),
-        _buildPageTurningSpeed(
-          context: context,
-          controller: _speedController,
-        ),
+        _buildPageTurningSpeed(() => setState(() {})),
         const Space.small(),
         const JidoujishoDivider(),
         const Space.small(),
