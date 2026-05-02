@@ -3786,7 +3786,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       return const SizedBox.shrink();
     }
     final String? bookUid = widget.item?.uniqueKey;
-    return Positioned(
+    final Widget bar = Positioned(
       left: 0,
       right: 0,
       bottom: 0,
@@ -3816,6 +3816,11 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         ),
       ),
     );
+    final ThemeData? overrideTheme = appModel.overrideDictionaryTheme;
+    if (overrideTheme != null) {
+      return Theme(data: overrideTheme, child: bar);
+    }
+    return bar;
   }
 
   Future<void> _openImportDialog(String bookUid) async {
