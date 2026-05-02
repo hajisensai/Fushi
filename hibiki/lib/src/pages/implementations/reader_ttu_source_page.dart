@@ -2884,6 +2884,42 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           onDeleteFavorite: (int index) async {
             await FavoriteSentenceRepository(appModel.database).removeAt(index);
           },
+          onJumpToFavorite: (fav) async {
+            if (fav.sectionIndex == null) return;
+            if (_dropStaleSectionNavigation(
+              fav.sectionIndex!,
+              'favorite-jump',
+            )) {
+              return;
+            }
+            await AudiobookBridge.requestSectionNav(
+              _controller,
+              sectionIndex: fav.sectionIndex!,
+            );
+            if (fav.normCharOffset != null) {
+              await Future.delayed(const Duration(milliseconds: 500));
+              await AudiobookBridge.scrollToNormOffset(
+                _controller,
+                section: fav.sectionIndex!,
+                offset: fav.normCharOffset!,
+              );
+            }
+          },
+          onPlayFavorite: _audiobookController != null
+              ? (fav) async {
+                  final ctrl = _audiobookController;
+                  if (ctrl == null) return;
+                  final cues = ctrl.chapterCuesSnapshot;
+                  final match = cues.cast<AudioCue?>().firstWhere(
+                        (c) => c!.text.contains(fav.text) || fav.text.contains(c.text),
+                        orElse: () => null,
+                      );
+                  if (match != null) {
+                    await ctrl.skipToCue(match);
+                    if (!ctrl.isPlaying) await ctrl.play();
+                  }
+                }
+              : null,
           onJumpSection: (int idx) async {
             if (_dropStaleSectionNavigation(idx, 'toc-jump')) {
               return;

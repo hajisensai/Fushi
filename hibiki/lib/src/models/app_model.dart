@@ -428,12 +428,14 @@ class AppModel with ChangeNotifier {
     return themePresets[appThemeKey]?.seed ?? const Color(0xFF1F4959);
   }
 
-  ThemeData get theme => ThemeData(
+  ThemeData get theme {
+    final cs = ColorScheme.fromSeed(
+      seedColor: _seedColor,
+      brightness: Brightness.light,
+    );
+    return ThemeData(
         useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: _seedColor,
-          brightness: Brightness.light,
-        ),
+        colorScheme: cs,
         textTheme: textTheme,
         appBarTheme: const AppBarTheme(
           elevation: 0,
@@ -442,12 +444,12 @@ class AppModel with ChangeNotifier {
         switchTheme: SwitchThemeData(
           thumbColor: MaterialStateColor.resolveWith((states) {
             return states.contains(MaterialState.selected)
-                ? Colors.red
+                ? cs.primary
                 : Colors.white;
           }),
           trackColor: MaterialStateColor.resolveWith((states) {
             return states.contains(MaterialState.selected)
-                ? Colors.red.withOpacity(0.5)
+                ? cs.primaryContainer
                 : Colors.grey;
           }),
         ),
@@ -471,36 +473,39 @@ class AppModel with ChangeNotifier {
           dense: true,
           horizontalTitleGap: 0,
         ),
-        inputDecorationTheme: const InputDecorationTheme(
-          enabledBorder: UnderlineInputBorder(
+        inputDecorationTheme: InputDecorationTheme(
+          enabledBorder: const UnderlineInputBorder(
             borderSide: BorderSide(
               color: Colors.black54,
             ),
           ),
           focusedBorder: UnderlineInputBorder(
-            borderSide: BorderSide(color: Colors.red),
+            borderSide: BorderSide(color: cs.primary),
           ),
         ),
         scrollbarTheme: ScrollbarThemeData(
           thickness: MaterialStateProperty.all(3),
           thumbVisibility: MaterialStateProperty.all(true),
         ),
-        sliderTheme: const SliderThemeData(
-          thumbColor: Colors.red,
-          activeTrackColor: Colors.red,
+        sliderTheme: SliderThemeData(
+          thumbColor: cs.primary,
+          activeTrackColor: cs.primary,
           inactiveTrackColor: Colors.grey,
-          trackShape: RectangularSliderTrackShape(),
+          trackShape: const RectangularSliderTrackShape(),
           trackHeight: 2,
-          thumbShape: RoundSliderThumbShape(enabledThumbRadius: 6),
+          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
         ),
       );
+  }
 
-  ThemeData get darkTheme => ThemeData(
+  ThemeData get darkTheme {
+    final cs = ColorScheme.fromSeed(
+      seedColor: _seedColor,
+      brightness: Brightness.dark,
+    );
+    return ThemeData(
         useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: _seedColor,
-          brightness: Brightness.dark,
-        ),
+        colorScheme: cs,
         textTheme: textTheme,
         appBarTheme: const AppBarTheme(
           elevation: 0,
@@ -509,12 +514,12 @@ class AppModel with ChangeNotifier {
         switchTheme: SwitchThemeData(
           thumbColor: MaterialStateColor.resolveWith((states) {
             return states.contains(MaterialState.selected)
-                ? Colors.red
+                ? cs.primary
                 : Colors.grey;
           }),
           trackColor: MaterialStateColor.resolveWith((states) {
             return states.contains(MaterialState.selected)
-                ? Colors.red.withOpacity(0.5)
+                ? cs.primaryContainer
                 : Colors.grey;
           }),
         ),
@@ -538,28 +543,29 @@ class AppModel with ChangeNotifier {
           dense: true,
           horizontalTitleGap: 0,
         ),
-        inputDecorationTheme: const InputDecorationTheme(
-          enabledBorder: UnderlineInputBorder(
+        inputDecorationTheme: InputDecorationTheme(
+          enabledBorder: const UnderlineInputBorder(
             borderSide: BorderSide(
               color: Colors.white70,
             ),
           ),
           focusedBorder: UnderlineInputBorder(
-            borderSide: BorderSide(color: Colors.red),
+            borderSide: BorderSide(color: cs.primary),
           ),
         ),
         scrollbarTheme: ScrollbarThemeData(
           thumbVisibility: MaterialStateProperty.all(true),
         ),
-        sliderTheme: const SliderThemeData(
-          thumbColor: Colors.red,
-          activeTrackColor: Colors.red,
+        sliderTheme: SliderThemeData(
+          thumbColor: cs.primary,
+          activeTrackColor: cs.primary,
           inactiveTrackColor: Colors.grey,
-          trackShape: RectangularSliderTrackShape(),
+          trackShape: const RectangularSliderTrackShape(),
           trackHeight: 2,
-          thumbShape: RoundSliderThumbShape(enabledThumbRadius: 6),
+          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
         ),
       );
+  }
 
   /// Get the sentence to be used by the [SentenceField] upon card creation.
   JidoujishoTextSelection getCurrentSentence() {
