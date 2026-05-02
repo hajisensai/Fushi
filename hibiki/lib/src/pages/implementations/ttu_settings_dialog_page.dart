@@ -464,21 +464,9 @@ class TtuSettingsDialogContent extends BasePage {
 }
 
 class _TtuSettingsDialogContentState extends BasePageState {
-  String? _subPage;
-
   @override
   Widget build(BuildContext context) {
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 200),
-      child: _subPage != null
-          ? _buildSub(context)
-          : _buildMain(context),
-    );
-  }
-
-  Widget _buildMain(BuildContext context) {
     return ListView(
-      key: const ValueKey<String>('main'),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       children: [
         _buildThemeSelector(appModel, navContext: context),
@@ -522,13 +510,25 @@ class _TtuSettingsDialogContentState extends BasePageState {
           context,
           icon: Icons.auto_stories,
           label: t.reader_settings_section,
-          onTap: () => setState(() => _subPage = 'reader'),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => const _ReaderBehaviorSettingsPage()),
+            ).then((_) => setState(() {}));
+          },
         ),
         _categoryTile(
           context,
           icon: Icons.settings,
           label: t.section_interface,
-          onTap: () => setState(() => _subPage = 'app'),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => const _AppInterfaceSettingsPage()),
+            ).then((_) => setState(() {}));
+          },
         ),
         _categoryTile(
           context,
@@ -545,22 +545,69 @@ class _TtuSettingsDialogContentState extends BasePageState {
     );
   }
 
-  Widget _buildSub(BuildContext context) {
-    final String page = _subPage!;
-    String title;
-    List<Widget> children;
-    switch (page) {
-      case 'reader':
-        title = t.reader_settings_section;
-        children = [
+  Widget _categoryTile(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return ListTile(
+      dense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+      leading: Icon(icon, size: 22),
+      title: Text(label),
+      trailing: const Icon(Icons.chevron_right, size: 20),
+      onTap: onTap,
+    );
+  }
+}
+
+// ─── Sub-pages for home settings ────────────────────────────────────────────
+
+class _ReaderBehaviorSettingsPage extends BasePage {
+  const _ReaderBehaviorSettingsPage();
+
+  @override
+  BasePageState createState() => _ReaderBehaviorSettingsPageState();
+}
+
+class _ReaderBehaviorSettingsPageState extends BasePageState {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(t.reader_settings_section)),
+      body: ListView(
+        padding: EdgeInsets.fromLTRB(
+          16, 8, 16, 8 + MediaQuery.of(context).padding.bottom,
+        ),
+        children: [
           ..._buildReaderOnlySwitches(() => setState(() {})),
           const Space.small(),
           const JidoujishoDivider(),
           _buildPageTurningSpeed(() => setState(() {})),
-        ];
-      case 'app':
-        title = t.section_interface;
-        children = [
+        ],
+      ),
+    );
+  }
+}
+
+class _AppInterfaceSettingsPage extends BasePage {
+  const _AppInterfaceSettingsPage();
+
+  @override
+  BasePageState createState() => _AppInterfaceSettingsPageState();
+}
+
+class _AppInterfaceSettingsPageState extends BasePageState {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(t.section_interface)),
+      body: ListView(
+        padding: EdgeInsets.fromLTRB(
+          16, 8, 16, 8 + MediaQuery.of(context).padding.bottom,
+        ),
+        children: [
           _buildSwitch(
             label: t.update_never_remind,
             value: appModel.updateNeverRemind,
@@ -585,44 +632,8 @@ class _TtuSettingsDialogContentState extends BasePageState {
               setState(() {});
             },
           ),
-        ];
-      default:
-        title = '';
-        children = [];
-    }
-    return ListView(
-      key: ValueKey<String>(page),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      children: [
-        Row(
-          children: [
-            IconButton(
-              icon: const Icon(Icons.arrow_back),
-              onPressed: () => setState(() => _subPage = null),
-            ),
-            const SizedBox(width: 4),
-            Text(title, style: Theme.of(context).textTheme.titleMedium),
-          ],
-        ),
-        const SizedBox(height: 8),
-        ...children,
-      ],
-    );
-  }
-
-  Widget _categoryTile(
-    BuildContext context, {
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return ListTile(
-      dense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-      leading: Icon(icon, size: 22),
-      title: Text(label),
-      trailing: const Icon(Icons.chevron_right, size: 20),
-      onTap: onTap,
+        ],
+      ),
     );
   }
 }

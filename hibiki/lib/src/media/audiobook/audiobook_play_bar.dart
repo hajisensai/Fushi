@@ -277,25 +277,33 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
 
-    return SafeArea(
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.80,
-        ),
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              20,
-              4,
-              20,
-              24 + MediaQuery.of(context).viewInsets.bottom,
-            ),
-            child: AnimatedSize(
-              duration: const Duration(milliseconds: 200),
-              alignment: Alignment.topCenter,
-              child: _subPage != null
-                  ? _buildSubPage(context, theme)
-                  : _buildMainPage(context, theme),
+    return PopScope(
+      canPop: _subPage == null,
+      onPopInvokedWithResult: (bool didPop, _) {
+        if (!didPop) {
+          setState(() => _subPage = null);
+        }
+      },
+      child: SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.80,
+          ),
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                20,
+                4,
+                20,
+                24 + MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: AnimatedSize(
+                duration: const Duration(milliseconds: 200),
+                alignment: Alignment.topCenter,
+                child: _subPage != null
+                    ? _buildSubPage(context, theme)
+                    : _buildMainPage(context, theme),
+              ),
             ),
           ),
         ),
