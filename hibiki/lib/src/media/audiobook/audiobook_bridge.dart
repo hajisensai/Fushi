@@ -1069,6 +1069,26 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
     );
   }
 
+  /// Full-text search across all book sections via ttu's `__ttuSearchBook`.
+  static Future<List<BookSearchResult>> searchBook(
+    InAppWebViewController controller,
+    String query,
+  ) async {
+    if (query.trim().isEmpty) return const [];
+    final String escaped = jsonEncode(query);
+    final Object? raw = await controller.evaluateJavascript(
+      source:
+          '(function(){try{return window.__ttuSearchBook($escaped);}catch(e){return "[]";}})()',
+    );
+    if (raw == null) return const [];
+    final String jsonStr = raw.toString();
+    if (jsonStr.isEmpty || jsonStr == 'null') return const [];
+    final List<dynamic> list = jsonDecode(jsonStr) as List<dynamic>;
+    return list
+        .map((e) => BookSearchResult.fromMap(e as Map<String, dynamic>))
+        .toList();
+  }
+
   /// 从视口左上探针反查当前挂载段和章内归一化字符偏移。
   ///
   /// null 代表视口里没命中文本节点 / Sasayaki refs 还没挂上 / ttu 还没就位 ——
@@ -1457,4 +1477,27 @@ class AudiobookClickEvent {
 
   /// Sasayaki cue 的 textFragmentId（data-sasayaki-key），非空时优先使用。
   final String? sasayakiKey;
+}
+
+class BookSearchResult {
+  const BookSearchResult({
+    required this.sectionIndex,
+    required this.charOffset,
+    required this.context,
+    required this.matchStart,
+  });
+
+  final int sectionIndex;
+  final int charOffset;
+  final String context;
+  final int matchStart;
+
+  factory BookSearchResult.fromMap(Map<String, dynamic> m) {
+    return BookSearchResult(
+      sectionIndex: (m['sectionIndex'] as num).toInt(),
+      charOffset: (m['charOffset'] as num).toInt(),
+      context: m['context'] as String? ?? '',
+      matchStart: (m['matchStart'] as num?)?.toInt() ?? 0,
+    );
+  }
 }

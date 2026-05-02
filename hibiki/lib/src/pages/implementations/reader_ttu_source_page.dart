@@ -884,7 +884,8 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
                 // 步收缩，ttu 原生的 paginated 分页仍然对齐。）
                 Positioned.fill(
                   bottom: ((_audiobookController != null || _hasAudioSlot) &&
-                          appModel.showPlayBar)
+                          appModel.showPlayBar) ||
+                          _audiobookController == null
                       ? 56 + MediaQuery.of(context).padding.bottom
                       : 0,
                   child: buildBody(),
@@ -2796,6 +2797,24 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           onExitReader: () {
             if (mounted) Navigator.of(context).pop();
           },
+          onSearchJump: (int sectionIndex, int charOffset) async {
+            if (_dropStaleSectionNavigation(sectionIndex, 'search-jump')) {
+              return;
+            }
+            await AudiobookBridge.requestSectionNav(
+              _controller,
+              sectionIndex: sectionIndex,
+            );
+            await Future.delayed(const Duration(milliseconds: 500));
+            try {
+              await _controller.evaluateJavascript(
+                source:
+                    'window.__ttuScrollToCharOffset($sectionIndex, $charOffset)',
+              );
+            } catch (e) {
+              debugPrint('[hibiki-search] jump error: $e');
+            }
+          },
           webViewController: _controller,
           onThemeChanged: () async {
             await setDictionaryColors();
@@ -3666,9 +3685,10 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     }
     // 右下角并排：⚙（right:12）+ 🎧（right:68）。两者都只在未挂 audio
     // 时显示，挂了之后设置入口挪到播放栏的 ⚙、导入按钮也不再需要。
+    final double fabBottom = MediaQuery.of(context).padding.bottom + 8;
     return Positioned(
       right: 68,
-      bottom: 12,
+      bottom: fabBottom,
       child: Opacity(
         opacity: 0.6,
         child: FloatingActionButton.small(
@@ -3681,16 +3701,14 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     );
   }
 
-  /// 普通 EPUB（没挂 audiobook）的 ⚙ 设置入口。位置和 🎧 导入 FAB 并排，
-  /// 靠最右边 —— 有音频时 AudiobookPlayBar 里的 ⚙ 取代它，位置上也是
-  /// 右侧 Row 的末端几个控件之一，保持"设置永远在右下"的肌肉记忆。
   Widget buildReaderSettingsFab() {
     if (_audiobookController != null) {
       return const SizedBox.shrink();
     }
+    final double fabBottom = MediaQuery.of(context).padding.bottom + 8;
     return Positioned(
       right: 12,
-      bottom: 12,
+      bottom: fabBottom,
       child: Opacity(
         opacity: 0.6,
         child: FloatingActionButton.small(
