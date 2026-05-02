@@ -26,6 +26,7 @@ import 'package:hibiki/src/media/audiobook/lrc_parser.dart';
 import 'package:hibiki/src/media/audiobook/srt_parser.dart';
 import 'package:hibiki/src/media/audiobook/text_to_epub.dart';
 import 'package:hibiki/src/media/audiobook/ttu_epub_importer.dart';
+import 'package:hibiki/src/media/audiobook/ttu_idb_schema.dart';
 import 'package:hibiki/src/media/audiobook/ttu_idb_reader.dart';
 import 'package:hibiki/src/media/audiobook/vtt_parser.dart';
 import 'package:hibiki/utils.dart';
@@ -836,30 +837,18 @@ class _BookImportDialogState extends State<BookImportDialog> {
     final String jsonStr = jsonEncode(payload.toJson());
     final String js = '''
 (async function() {
+  ${TtuIdbSchema.openBooksDbJs}
   const payload = $jsonStr;
+  const db = await hibikiOpenBooksDb();
   const id = await new Promise((resolve, reject) => {
-    const req = indexedDB.open('books');
-    req.onupgradeneeded = (event) => {
-      const db = event.target.result;
-      if (!db.objectStoreNames.contains('data'))
-        db.createObjectStore('data', {autoIncrement: true});
-      if (!db.objectStoreNames.contains('bookmark'))
-        db.createObjectStore('bookmark', {autoIncrement: true});
-      if (!db.objectStoreNames.contains('lastItem'))
-        db.createObjectStore('lastItem');
-    };
-    req.onsuccess = (event) => {
-      const db = event.target.result;
-      if (!db.objectStoreNames.contains('data')) {
-        reject('data_store_missing'); return;
-      }
-      const tx = db.transaction(['data'], 'readwrite');
-      const store = tx.objectStore('data');
-      const put = store.put(payload);
-      put.onsuccess = (e) => resolve(e.target.result);
-      put.onerror = (e) => reject(String(e.target.error));
-    };
-    req.onerror = (e) => reject(String(e.target.error));
+    if (!db.objectStoreNames.contains('data')) {
+      reject('data_store_missing'); return;
+    }
+    const tx = db.transaction(['data'], 'readwrite');
+    const store = tx.objectStore('data');
+    const put = store.put(payload);
+    put.onsuccess = (e) => resolve(e.target.result);
+    put.onerror = (e) => reject(String(e.target.error));
   });
   console.log(JSON.stringify({messageType: 'srt_idb_ok', id: id}));
 })().catch(err => {

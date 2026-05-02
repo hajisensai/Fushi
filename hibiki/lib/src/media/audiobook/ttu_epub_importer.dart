@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'package:archive/archive.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:hibiki/src/media/audiobook/ttu_idb_schema.dart';
 
 /// Drives the ッツ Ebook Reader's own EPUB import pipeline by simulating a
 /// file-select event on its hidden `<input type="file">` on the `/manage`
@@ -147,6 +148,11 @@ class TtuEpubImporter {
       ),
       initialUserScripts: UnmodifiableListView<UserScript>([
         UserScript(
+          source:
+              'if(!String.prototype.replaceAll){String.prototype.replaceAll=function(a,b){if(a instanceof RegExp){if(!a.global)throw new TypeError("replaceAll must be called with a global RegExp");return this.replace(a,b)}return this.split(a).join(b)}}',
+          injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+        ),
+        UserScript(
           source: preloadHook,
           injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
         ),
@@ -222,6 +228,7 @@ class TtuEpubImporter {
         filename.replaceAll('\\', '_').replaceAll('"', '_');
     return '''
 (async function() {
+  ${TtuIdbSchema.openBooksDbJs}
   const post = (obj) => console.log(JSON.stringify(obj));
   const t0 = Date.now();
   const logStage = (stage, extra) => post({
@@ -245,20 +252,9 @@ class TtuEpubImporter {
     logStage('file-built');
 
     // ── 2. Record current max id so we can detect the new entry ──────────
-    const maxBefore = await new Promise((resolve) => {
-      const req = indexedDB.open('books');
-      req.onupgradeneeded = (e) => {
-        const db = e.target.result;
-        if (!db.objectStoreNames.contains('data'))
-          db.createObjectStore('data', {autoIncrement: true});
-        if (!db.objectStoreNames.contains('bookmark'))
-          db.createObjectStore('bookmark', {autoIncrement: true});
-        if (!db.objectStoreNames.contains('lastItem'))
-          db.createObjectStore('lastItem');
-      };
-      req.onsuccess = (e) => {
-        const db = e.target.result;
-        if (!db.objectStoreNames.contains('data')) { resolve(0); return; }
+    const maxBefore = await new Promise(async (resolve) => {
+      try {
+        const db = await hibikiOpenBooksDb();
         const tx = db.transaction(['data'], 'readonly');
         const store = tx.objectStore('data');
         const cur = store.openCursor(null, 'prev');
@@ -267,8 +263,9 @@ class TtuEpubImporter {
           resolve(c ? c.primaryKey : 0);
         };
         cur.onerror = () => resolve(0);
-      };
-      req.onerror = () => resolve(0);
+      } catch (_) {
+        resolve(0);
+      }
     });
     logStage('maxBefore', 'maxBefore=' + maxBefore);
 
@@ -293,11 +290,9 @@ class TtuEpubImporter {
     while (Date.now() < pollDeadline) {
       await new Promise(r => setTimeout(r, 500));
       tick++;
-      const newId = await new Promise((resolve) => {
-        const req = indexedDB.open('books');
-        req.onsuccess = (e) => {
-          const db = e.target.result;
-          if (!db.objectStoreNames.contains('data')) { resolve(0); return; }
+      const newId = await new Promise(async (resolve) => {
+        try {
+          const db = await hibikiOpenBooksDb();
           const tx = db.transaction(['data'], 'readonly');
           const store = tx.objectStore('data');
           const cur = store.openCursor(null, 'prev');
@@ -306,8 +301,9 @@ class TtuEpubImporter {
             resolve(c ? c.primaryKey : 0);
           };
           cur.onerror = () => resolve(0);
-        };
-        req.onerror = () => resolve(0);
+        } catch (_) {
+          resolve(0);
+        }
       });
       // 每 10 次 tick（~5s）汇报一次，避免刷屏。
       if (tick % 10 === 0) {
