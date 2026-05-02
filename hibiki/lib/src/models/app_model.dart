@@ -43,6 +43,7 @@ import 'package:hibiki/src/utils/misc/tts_channel.dart';
 import 'package:hibiki/src/dictionary/dictionary_utils.dart'
     show importDictionaryViaHoshidicts;
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
+import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
 import 'package:hibiki/src/media/audiobook/reader_position_model.dart';
 import 'package:hibiki/src/media/audiobook/reading_statistic_model.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_model.dart';
@@ -2846,6 +2847,7 @@ class AppModel with ChangeNotifier {
     bool killOnPop = false,
     bool pushReplacement = false,
     MediaItem? item,
+    Bookmark? initialBookmarkJump,
   }) async {
     if (killOnPop) {
       _shouldKillMediaOnPop = true;
@@ -2879,14 +2881,16 @@ class AppModel with ChangeNotifier {
       await Navigator.pushReplacement(
         _navigatorKey.currentContext!,
         MaterialPageRoute(
-          builder: (context) => mediaSource.buildLaunchPage(item: item),
+          builder: (context) => mediaSource.buildLaunchPage(
+              item: item, initialBookmarkJump: initialBookmarkJump),
         ),
       );
     } else {
       await Navigator.push(
         _navigatorKey.currentContext!,
         MaterialPageRoute(
-          builder: (context) => mediaSource.buildLaunchPage(item: item),
+          builder: (context) => mediaSource.buildLaunchPage(
+              item: item, initialBookmarkJump: initialBookmarkJump),
         ),
       );
     }

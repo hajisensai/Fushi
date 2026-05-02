@@ -11,6 +11,7 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/database/database.dart';
+import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
 import 'package:path/path.dart' as path;
 
 /// A source for a [MediaType] that will appear on the list of sources when
@@ -201,7 +202,7 @@ abstract class MediaSource {
 
   /// The widget to show when this source is launched. An optional [MediaItem]
   /// can be supplied as a launch parameter.
-  BaseSourcePage buildLaunchPage({MediaItem? item});
+  BaseSourcePage buildLaunchPage({MediaItem? item, Bookmark? initialBookmarkJump});
 
   /// If this is not null, this action is executed when the user taps on the
   /// search bar. Sources that do not have a search action should have this

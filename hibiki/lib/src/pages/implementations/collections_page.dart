@@ -6,7 +6,6 @@ import 'package:intl/intl.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:hibiki/media.dart';
-import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
@@ -14,8 +13,31 @@ import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
 import 'package:hibiki/src/media/audiobook/favorite_sentence_repository.dart';
 import 'package:hibiki/src/media/audiobook/sasayaki_match_codec.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
+import 'package:hibiki/src/pages/base_page.dart';
 
 enum _CollectionType { bookmark, sentence }
+
+MediaItem buildCollectionReaderMediaItem({
+  required int ttuId,
+  required int port,
+  required String title,
+  MediaItem? original,
+}) {
+  if (original != null) {
+    return original.copyWith(title: title);
+  }
+  return MediaItem(
+    mediaIdentifier:
+        'http://localhost:$port/b.html?id=$ttuId&title=${Uri.encodeComponent(title)}',
+    title: title,
+    mediaTypeIdentifier: ReaderTtuSource.instance.mediaType.uniqueKey,
+    mediaSourceIdentifier: ReaderTtuSource.instance.uniqueKey,
+    position: 0,
+    duration: 1,
+    canDelete: false,
+    canEdit: true,
+  );
+}
 
 class _CollectionItem {
   _CollectionItem({
@@ -91,16 +113,18 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       final uri = Uri.tryParse(row.mediaIdentifier);
       final ttuId = int.tryParse(uri?.queryParameters['id'] ?? '');
       if (ttuId != null && ttuId > 0) {
-        mediaItemMap.putIfAbsent(ttuId, () => MediaItem(
-          mediaIdentifier: row.mediaIdentifier,
-          title: row.title,
-          mediaTypeIdentifier: row.mediaTypeIdentifier,
-          mediaSourceIdentifier: row.mediaSourceIdentifier,
-          position: row.position,
-          duration: row.duration,
-          canDelete: row.canDelete,
-          canEdit: row.canEdit,
-        ));
+        mediaItemMap.putIfAbsent(
+            ttuId,
+            () => MediaItem(
+                  mediaIdentifier: row.mediaIdentifier,
+                  title: row.title,
+                  mediaTypeIdentifier: row.mediaTypeIdentifier,
+                  mediaSourceIdentifier: row.mediaSourceIdentifier,
+                  position: row.position,
+                  duration: row.duration,
+                  canDelete: row.canDelete,
+                  canEdit: row.canEdit,
+                ));
       }
     }
 
@@ -203,40 +227,32 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     if (ttuId == null || ttuId <= 0) return;
 
     final MediaItem? original = _mediaItemMap[ttuId];
-    final int port = ReaderTtuSource.instance
-        .getPortForLanguage(appModel.targetLanguage);
-    final String title = original?.title ?? _bookTitleMap[ttuId] ?? item.bookTitle ?? '';
-    final String url =
-        'http://localhost:$port/b.html?id=$ttuId&title=${Uri.encodeComponent(title)}';
+    final int port =
+        ReaderTtuSource.instance.getPortForLanguage(appModel.targetLanguage);
+    final String title =
+        original?.title ?? _bookTitleMap[ttuId] ?? item.bookTitle ?? '';
 
-    final MediaItem mediaItem = original != null
-        ? original.copyWith(mediaIdentifier: url, title: title)
-        : MediaItem(
-            mediaIdentifier: url,
-            title: title,
-            mediaTypeIdentifier: ReaderTtuSource.instance.mediaType.uniqueKey,
-            mediaSourceIdentifier: ReaderTtuSource.instance.uniqueKey,
-            position: 0,
-            duration: 1,
-            canDelete: false,
-            canEdit: true,
-          );
+    final MediaItem mediaItem = buildCollectionReaderMediaItem(
+      ttuId: ttuId,
+      port: port,
+      title: title,
+      original: original,
+    );
 
-    Navigator.push(
-      context,
-      MaterialPageRoute<void>(
-        builder: (_) => ReaderTtuSourcePage(
-          item: mediaItem,
-          initialBookmarkJump: item.sectionIndex != null
-              ? Bookmark(
-                  sectionIndex: item.sectionIndex!,
-                  normCharOffset: item.normCharOffset ?? 0,
-                  label: item.label ?? '',
-                  createdAt: item.createdAt,
-                )
-              : null,
-        ),
-      ),
+    final Bookmark? bookmark = item.sectionIndex != null
+        ? Bookmark(
+            sectionIndex: item.sectionIndex!,
+            normCharOffset: item.normCharOffset ?? 0,
+            label: item.label ?? '',
+            createdAt: item.createdAt,
+          )
+        : null;
+
+    appModel.openMedia(
+      ref: ref,
+      mediaSource: ReaderTtuSource.instance,
+      item: mediaItem,
+      initialBookmarkJump: bookmark,
     );
   }
 
@@ -256,18 +272,15 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       final dir = Directory(audioRoot);
       if (!await dir.exists()) return [];
       final entries = await dir.list().toList();
-      final files = entries
-          .whereType<File>()
-          .where((f) {
-            final ext = f.path.toLowerCase();
-            return ext.endsWith('.mp3') ||
-                ext.endsWith('.m4a') ||
-                ext.endsWith('.ogg') ||
-                ext.endsWith('.aac') ||
-                ext.endsWith('.wav') ||
-                ext.endsWith('.mp4');
-          })
-          .toList()
+      final files = entries.whereType<File>().where((f) {
+        final ext = f.path.toLowerCase();
+        return ext.endsWith('.mp3') ||
+            ext.endsWith('.m4a') ||
+            ext.endsWith('.ogg') ||
+            ext.endsWith('.aac') ||
+            ext.endsWith('.wav') ||
+            ext.endsWith('.mp4');
+      }).toList()
         ..sort((a, b) => a.path.compareTo(b.path));
       return files;
     }
@@ -293,9 +306,9 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         }
       }
       match ??= cues.cast<AudioCue?>().firstWhere(
-        (c) => c!.text.contains(text) || text.contains(c.text),
-        orElse: () => null,
-      );
+            (c) => c!.text.contains(text) || text.contains(c.text),
+            orElse: () => null,
+          );
     }
 
     // 2) 位置匹配（Sasayaki fragment 编码了 sectionIndex + normCharOffset）
@@ -378,8 +391,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
                 )
               : ListView.builder(
                   itemCount: _items.length,
-                  itemBuilder: (context, index) =>
-                      _buildItem(_items[index]),
+                  itemBuilder: (context, index) => _buildItem(_items[index]),
                 ),
     );
   }
@@ -387,7 +399,8 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   Widget _buildItem(_CollectionItem item) {
     final isBookmark = item.type == _CollectionType.bookmark;
     final icon = isBookmark ? Icons.bookmark : Icons.format_quote;
-    final typeLabel = isBookmark ? t.collection_bookmark : t.collection_sentence;
+    final typeLabel =
+        isBookmark ? t.collection_bookmark : t.collection_sentence;
 
     final String title;
     final String? subtitle;
@@ -409,9 +422,11 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       leading: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, size: 20, color: isBookmark
-              ? Theme.of(context).colorScheme.primary
-              : Theme.of(context).colorScheme.tertiary),
+          Icon(icon,
+              size: 20,
+              color: isBookmark
+                  ? Theme.of(context).colorScheme.primary
+                  : Theme.of(context).colorScheme.tertiary),
           Text(
             typeLabel,
             style: textTheme.labelSmall?.copyWith(
