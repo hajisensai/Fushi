@@ -318,7 +318,7 @@ Widget _buildThemeSelector(AppModel appModel, {BuildContext? navContext}) {
                 ? Theme.of(navContext).colorScheme
                 : null;
             return ChoiceChip(
-              label: Text(e.value.label),
+              label: Text(AppModel.themeLabel(e.key)),
               selected: selected,
               showCheckmark: false,
               selectedColor: chipCs?.primaryContainer,

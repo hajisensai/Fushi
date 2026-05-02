@@ -1494,39 +1494,36 @@ class AppModel with ChangeNotifier {
 
   // ── App-wide theme (6 presets matching ttu reader themes) ──────────────
 
-  static const Map<String, ({Color seed, Brightness brightness, String label})>
+  static const Map<String, ({Color seed, Brightness brightness})>
       themePresets = {
-    'light-theme': (
-      seed: Color(0xFF1F4959),
-      brightness: Brightness.light,
-      label: '白色'
-    ),
-    'ecru-theme': (
-      seed: Color(0xFF8B7355),
-      brightness: Brightness.light,
-      label: '米黄'
-    ),
-    'water-theme': (
-      seed: Color(0xFF4A7C8F),
-      brightness: Brightness.light,
-      label: '水蓝'
-    ),
-    'gray-theme': (
-      seed: Color(0xFF5C6B73),
-      brightness: Brightness.dark,
-      label: '灰暗'
-    ),
-    'dark-theme': (
-      seed: Color(0xFF1F4959),
-      brightness: Brightness.dark,
-      label: '深暗'
-    ),
-    'black-theme': (
-      seed: Color(0xFF263238),
-      brightness: Brightness.dark,
-      label: '纯黑'
-    ),
+    'light-theme': (seed: Color(0xFF1F4959), brightness: Brightness.light),
+    'ecru-theme': (seed: Color(0xFF8B7355), brightness: Brightness.light),
+    'water-theme': (seed: Color(0xFF4A7C8F), brightness: Brightness.light),
+    'gray-theme': (seed: Color(0xFF5C6B73), brightness: Brightness.dark),
+    'dark-theme': (seed: Color(0xFF1F4959), brightness: Brightness.dark),
+    'black-theme': (seed: Color(0xFF263238), brightness: Brightness.dark),
   };
+
+  static const _themeLabelKeys = {
+    'light-theme': 'theme_light',
+    'ecru-theme': 'theme_ecru',
+    'water-theme': 'theme_water',
+    'gray-theme': 'theme_gray',
+    'dark-theme': 'theme_dark',
+    'black-theme': 'theme_black',
+  };
+
+  static String themeLabel(String key) {
+    switch (_themeLabelKeys[key]) {
+      case 'theme_light': return t.theme_light;
+      case 'theme_ecru': return t.theme_ecru;
+      case 'theme_water': return t.theme_water;
+      case 'theme_gray': return t.theme_gray;
+      case 'theme_dark': return t.theme_dark;
+      case 'theme_black': return t.theme_black;
+      default: return key;
+    }
+  }
 
   String get appThemeKey {
     final String key = _getPref('app_theme_key', defaultValue: '');
