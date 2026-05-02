@@ -90,6 +90,9 @@ class _AnkiSettingsPageState extends BasePageState {
     final currentProfile = appModel.lastSelectedMappingName;
 
     return ListView(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).padding.bottom,
+      ),
       children: [
         // ── Default Deck ──
         _SectionHeader(t.anki_default_deck),

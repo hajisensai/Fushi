@@ -121,7 +121,9 @@ class _CustomThemePageState extends BasePageState {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: EdgeInsets.fromLTRB(
+          16, 12, 16, 12 + MediaQuery.of(context).padding.bottom,
+        ),
         children: [
           _buildPreviewCard(),
           const SizedBox(height: 16),
