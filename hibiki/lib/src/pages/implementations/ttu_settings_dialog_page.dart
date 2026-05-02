@@ -46,14 +46,31 @@ Widget _buildSegmentedRow<T extends Object>({
   String? hint,
   bool scrollable = false,
 }) {
-  final button = SegmentedButton<T>(
-    segments: segments,
-    selected: selected,
-    onSelectionChanged: onSelectionChanged,
-    style: const ButtonStyle(
-      visualDensity: VisualDensity.compact,
-      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-    ),
+  final button = Builder(
+    builder: (context) {
+      final cs = Theme.of(context).colorScheme;
+      return SegmentedButton<T>(
+        segments: segments,
+        selected: selected,
+        onSelectionChanged: onSelectionChanged,
+        style: ButtonStyle(
+          visualDensity: VisualDensity.compact,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          backgroundColor: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.selected)) {
+              return cs.primaryContainer;
+            }
+            return null;
+          }),
+          foregroundColor: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.selected)) {
+              return cs.onPrimaryContainer;
+            }
+            return null;
+          }),
+        ),
+      );
+    },
   );
   if (scrollable) {
     return Padding(
@@ -526,9 +543,13 @@ Widget _buildThemeSelector(AppModel appModel, {BuildContext? navContext}) {
         runSpacing: 6,
         children: [
           ...AppModel.themePresets.entries.map((e) {
+            final selected = appModel.appThemeKey == e.key;
             return ChoiceChip(
               label: Text(e.value.label),
-              selected: appModel.appThemeKey == e.key,
+              selected: selected,
+              selectedColor: navContext != null
+                  ? Theme.of(navContext).colorScheme.primaryContainer
+                  : null,
               onSelected: (on) {
                 if (!on) return;
                 appModel.setAppThemeKey(e.key);

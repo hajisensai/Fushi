@@ -797,6 +797,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
             return ChoiceChip(
               label: Text('${s.toStringAsFixed(2)}x'),
               selected: selected,
+              selectedColor: theme.colorScheme.primaryContainer,
               onSelected: (bool on) {
                 if (on) ctrl.setSpeed(s);
               },
@@ -902,6 +903,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                 return ChoiceChip(
                   label: Text(s == 0 ? t.image_pause_off : '${s}s'),
                   selected: selected,
+                  selectedColor: theme.colorScheme.primaryContainer,
                   onSelected: (bool on) {
                     if (on) ctrl.setImagePauseSec(s);
                   },
@@ -1148,10 +1150,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               setState(() {});
               _updateSetting('writingMode', sel.first);
             },
-            style: ButtonStyle(
-              visualDensity: VisualDensity.compact,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
+            style: _segmentedStyle(theme),
           ),
         ),
         // 视图模式
@@ -1171,10 +1170,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               setState(() {});
               _updateSetting('viewMode', sel.first);
             },
-            style: ButtonStyle(
-              visualDensity: VisualDensity.compact,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
+            style: _segmentedStyle(theme),
           ),
         ),
         // 主题
@@ -1189,6 +1185,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
             return ChoiceChip(
               label: Text(TtuReaderSettings.themeLabels[t] ?? t),
               selected: selected,
+              selectedColor: theme.colorScheme.primaryContainer,
               onSelected: (bool on) async {
                 if (!on) return;
                 s.theme = t;
@@ -1279,10 +1276,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               setState(() {});
               _updateSetting('verticalTextOrientation', sel.first);
             },
-            style: const ButtonStyle(
-              visualDensity: VisualDensity.compact,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
+            style: _segmentedStyle(theme),
           ),
         ),
         // 振假名模式
@@ -1312,10 +1306,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               setState(() {});
               _applyFuriganaMode(mode);
             },
-            style: const ButtonStyle(
-              visualDensity: VisualDensity.compact,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
+            style: _segmentedStyle(theme),
           ),
         ),
         const SizedBox(height: 4),
@@ -1404,6 +1395,26 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           child,
         ],
       ),
+    );
+  }
+
+  ButtonStyle _segmentedStyle(ThemeData theme) {
+    final cs = theme.colorScheme;
+    return ButtonStyle(
+      visualDensity: VisualDensity.compact,
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      backgroundColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) {
+          return cs.primaryContainer;
+        }
+        return null;
+      }),
+      foregroundColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) {
+          return cs.onPrimaryContainer;
+        }
+        return null;
+      }),
     );
   }
 
