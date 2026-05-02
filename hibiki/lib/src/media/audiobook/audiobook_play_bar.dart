@@ -457,11 +457,14 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                   itemBuilder: (_, int i) {
                     final BookSearchResult r = _searchResults[i];
                     final String query = _searchController.text.trim();
-                    final int tocIdx = r.sectionIndex;
+                    final int rawIdx = r.sectionIndex;
                     final List<TtuTocEntry> toc = widget.toc;
-                    final String chapterLabel = tocIdx < toc.length
-                        ? toc[tocIdx].label
-                        : t.go_to_chapter(n: tocIdx + 1);
+                    final TtuTocEntry? tocEntry = toc.cast<TtuTocEntry?>().firstWhere(
+                      (TtuTocEntry? e) => e!.index == rawIdx,
+                      orElse: () => null,
+                    );
+                    final String chapterLabel = tocEntry?.label
+                        ?? t.go_to_chapter(n: rawIdx + 1);
 
                     final String before =
                         r.context.substring(0, r.matchStart);
@@ -668,7 +671,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               itemCount: widget.toc.length,
               itemBuilder: (BuildContext ctx, int i) {
                 final TtuTocEntry e = widget.toc[i];
-                final bool isCurrent = currentIdx == e.index;
+                final bool isCurrent = currentIdx == i;
                 final bool isChild = e.parent != null;
                 return ListTile(
                   dense: true,

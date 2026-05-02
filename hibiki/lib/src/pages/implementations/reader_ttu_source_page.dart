@@ -2811,17 +2811,22 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     List<TtuTocEntry> toc = const <TtuTocEntry>[];
     try {
       final TtuApiProbe probe = await AudiobookBridge.probeTtuApi(_controller);
-      if (probe.currentSection != null &&
-          probe.sectionCount != null &&
-          probe.sectionCount! > 0) {
-        progress = (probe.currentSection!, probe.sectionCount!);
-      }
       if (probe.currentPage != null &&
           probe.totalPages != null &&
           probe.totalPages! > 0) {
         pageProgress = (probe.currentPage!, probe.totalPages!);
       }
       toc = await AudiobookBridge.fetchToc(_controller);
+      if (probe.currentSection != null && toc.isNotEmpty) {
+        final int curRaw = probe.currentSection!;
+        int tocPos = toc.indexWhere((TtuTocEntry e) => e.index == curRaw);
+        if (tocPos < 0) {
+          tocPos = toc.lastIndexWhere((TtuTocEntry e) => e.index <= curRaw);
+        }
+        if (tocPos >= 0) {
+          progress = (tocPos, toc.length);
+        }
+      }
     } catch (e) {
       debugPrint('[hibiki-reader] settings probe error: $e');
     }
