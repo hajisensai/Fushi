@@ -547,6 +547,7 @@
     "ttu_furigana_toggle": "Toggle",
     "ttu_text_indentation": "Paragraph Indent",
     "ttu_first_dimension_margin": "Margin",
+    "ttu_second_dimension_margin": "Cross-axis Margin",
     "ttu_second_dimension_max": "Max Width/Height",
     "ttu_page_columns": "Page Columns",
     "ttu_page_columns_auto": "Auto",
@@ -602,6 +603,11 @@
     "ttu_reader_styles_hint": "Use the book's built-in CSS instead of reader defaults.",
     "ttu_vert_text_orient_hint": "Mixed: rotate Latin; Upright: keep all characters upright.",
     "reader_settings_section": "Reader Settings",
+    "section_navigation": "Navigation",
+    "section_audiobook": "Audiobook",
+    "section_typography": "Typography",
+    "section_layout": "Layout & Display",
+    "section_interface": "Interface",
     "action_bookmark": "Bookmark",
     "action_fullscreen_toggle": "Toggle Fullscreen",
     "action_exit": "Exit",
@@ -726,5 +732,9 @@
   "floating_lyric_unlock": "Unlock",
   "floating_lyric_close": "Close",
   "floating_lyric_font_size": "Floating subtitle font size",
-  "initialization_failed": "Initialisation failed"
+  "initialization_failed": "Initialisation failed",
+  "book_search": "Search in Book",
+  "book_search_hint": "Enter search text…",
+  "book_search_results": "$n result(s)",
+  "book_search_no_results": "No results found"
 }
