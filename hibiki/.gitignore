@@ -46,3 +46,9 @@ app.*.map.json
 
 # FVM Version Cache
 .fvm/
+
+# ADB test artifacts
+ui-*.xml
+*.ldb
+*.png
+test_screenshots/
