@@ -20,7 +20,9 @@ class _DisplaySettingsPageState extends BasePageState {
     return Scaffold(
       appBar: AppBar(title: Text(t.display_settings)),
       body: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: EdgeInsets.fromLTRB(
+          16, 8, 16, 8 + MediaQuery.of(context).padding.bottom,
+        ),
         children: [
           _numberStepper(
             theme,
