@@ -1133,7 +1133,9 @@ class AppModel with ChangeNotifier {
         try {
           _dictionaryHistoryResults
               .add(DictionarySearchResult.fromJson(row.resultJson));
-        } catch (_) {}
+        } catch (e) {
+          debugPrint('[Hibiki] skipping corrupted dictionary history: $e');
+        }
       }
 
       /// Permission requests are deferred to the point of use (file import,
@@ -1882,7 +1884,9 @@ class AppModel with ChangeNotifier {
                 ext == '.woff2';
           });
           if (hasFont) fontDirs.add(d);
-        } catch (e) {}
+        } catch (e) {
+          debugPrint('[Hibiki] error scanning font dir ${d.path}: $e');
+        }
       }
 
       totalNotifier.value = zipFiles.length;

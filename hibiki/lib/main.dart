@@ -58,7 +58,9 @@ void main() {
       final raw = await const MethodChannel('app.hibiki.reader/splash')
           .invokeMethod<int>('getSplashColor');
       if (raw != null && raw != 0) _savedSplashColor = Color(raw);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[Hibiki] getSplashColor failed: $e');
+    }
 
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,

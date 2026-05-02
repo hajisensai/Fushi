@@ -815,7 +815,9 @@ new Promise(function(resolve) {
       try {
         final f = File(filePath);
         if (await f.exists()) await f.delete();
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('[Hibiki] failed to delete custom font file $filePath: $e');
+      }
     }
     await setCustomFonts(list);
   }
@@ -1015,12 +1017,19 @@ indexedDB.databases().then(async (databases) => {
 
     try {
       var items = await tryReadStore("data");
-      await Promise.all(items.map(async (item) => {
+      var bookSummaries = await Promise.all(items.map(async (item) => {
+        var coverImage = null;
         try {
-          item["coverImage"] = await blobToBase64(item["coverImage"]);
+          coverImage = await blobToBase64(item["coverImage"]);
         } catch (e) {}
+        return {
+          id: item["id"],
+          title: item["title"],
+          coverImage: coverImage,
+          lastBookOpen: item["lastBookOpen"] || 0,
+        };
       }));
-      dataJson = JSON.stringify(items);
+      dataJson = JSON.stringify(bookSummaries);
     } catch (e) {
       dataJson = JSON.stringify([]);
     }
@@ -1111,12 +1120,19 @@ indexedDB.databases().then(async (databases) => {
 
     try {
       var items = await getAllFromIDBStore("data");
-      await Promise.all(items.map(async (item) => {
+      var bookSummaries = await Promise.all(items.map(async (item) => {
+        var coverImage = null;
         try {
-          item["coverImage"] = await blobToBase64(item["coverImage"]);
+          coverImage = await blobToBase64(item["coverImage"]);
         } catch (e) {}
+        return {
+          id: item["id"],
+          title: item["title"],
+          coverImage: coverImage,
+          lastBookOpen: item["lastBookOpen"] || 0,
+        };
       }));
-      dataJson = JSON.stringify(items);
+      dataJson = JSON.stringify(bookSummaries);
     } catch (e) {
       dataJson = JSON.stringify([]);
     }

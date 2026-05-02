@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/sasayaki_match_codec.dart';
@@ -1045,7 +1046,9 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
         final Map<String, dynamic> json =
             jsonDecode(raw) as Map<String, dynamic>;
         return TtuReaderSettings.fromMap(json);
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('[Hibiki] failed to parse ttu reader settings: $e');
+      }
     }
     return TtuReaderSettings.fromMap(const <String, dynamic>{});
   }

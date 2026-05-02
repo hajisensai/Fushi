@@ -82,7 +82,9 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
                   !completer.isCompleted) {
                 completer.complete();
               }
-            } catch (_) {}
+            } catch (e) {
+              debugPrint('[Hibiki] illustration decode failed: $e');
+            }
           } else if (msgType == 'illustrations_error') {
             if (!completer.isCompleted) {
               completer.completeError(

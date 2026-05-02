@@ -77,7 +77,9 @@ class UpdateChecker {
       try {
         final androidInfo = await DeviceInfoPlugin().androidInfo;
         supportedAbis = androidInfo.supportedAbis;
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('[Hibiki] failed to get device ABI info: $e');
+      }
 
       final abiTags = supportedAbis
           .map((abi) => abi.replaceAll('_', '-'))
@@ -116,7 +118,9 @@ class UpdateChecker {
       } else {
         _showUpdateDialog(context, tagName, releaseBody, apkUrl);
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[Hibiki] update check failed: $e');
+    }
   }
 
   static bool _isNewer(String remote, String local) {

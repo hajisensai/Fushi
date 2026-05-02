@@ -723,7 +723,9 @@ class _CustomFontsPageState extends BasePageState {
       try {
         final f = File(filePath);
         if (await f.exists()) await f.delete();
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('[Hibiki] failed to delete font file $filePath: $e');
+      }
     }
     Fluttertoast.showToast(msg: t.custom_fonts_removed);
   }

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 /// Thin wrapper around the native Android TextToSpeech MethodChannel.
@@ -120,6 +121,8 @@ class TtsChannel {
   Future<void> stop() async {
     try {
       await _channel.invokeMethod('stop');
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[Hibiki] TTS stop failed: $e');
+    }
   }
 }
