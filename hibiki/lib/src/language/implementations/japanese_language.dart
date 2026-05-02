@@ -46,7 +46,7 @@ class JapaneseLanguage extends Language {
   static int _lookupMatchedLength(String text) {
     if (!HoshiDicts.isInitialized) return 0;
     final results =
-        HoshiDicts.instance.lookup(text, maxResults: 1, scanLength: 1);
+        HoshiDicts.instance.lookup(text, maxResults: 1);
     if (results.isEmpty) return 0;
     return results.first.matched.length;
   }
