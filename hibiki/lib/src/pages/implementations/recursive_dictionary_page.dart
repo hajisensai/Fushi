@@ -555,6 +555,7 @@ class _RecursiveDictionaryPageState
             onTextSelected: (text) {
               _controller.query = text;
               search(text);
+              FocusManager.instance.primaryFocus?.unfocus();
             },
           ),
         ),

@@ -97,6 +97,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
           mediaType.floatingSearchBarController.query = text;
           mediaType.floatingSearchBarController.open();
           search(text);
+          FocusManager.instance.primaryFocus?.unfocus();
         },
         onMineEntry: _onMineEntry,
       ),
@@ -440,6 +441,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
             onTextSelected: (text) {
               mediaType.floatingSearchBarController.query = text;
               search(text);
+              FocusManager.instance.primaryFocus?.unfocus();
             },
             onMineEntry: _onMineEntry,
           ),
