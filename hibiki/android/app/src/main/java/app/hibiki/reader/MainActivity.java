@@ -134,7 +134,26 @@ public class MainActivity extends AudioServiceActivity {
             }
         });
     }
-    
+
+    @Override
+    protected void onDestroy() {
+        ioExecutor.shutdownNow();
+        synchronized (dbLock) {
+            if (localAudioDb != null) {
+                localAudioDb.close();
+                localAudioDb = null;
+            }
+        }
+        if (mediaPlayer != null) {
+            mediaPlayer.release();
+            mediaPlayer = null;
+        }
+        if (tts != null) {
+            tts.shutdown();
+            tts = null;
+        }
+        super.onDestroy();
+    }
 
     private boolean deckExists(String deck) {
         Long deckId = mAnkiDroid.findDeckIdByName(deck);
