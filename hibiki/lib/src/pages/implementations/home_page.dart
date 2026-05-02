@@ -91,7 +91,7 @@ class _HomePageState extends BasePageState<HomePage>
         bottomNavigationBar: Container(
           decoration: BoxDecoration(
             color: Theme.of(context).colorScheme.surface,
-            border: Border(top: BorderSide(color: Theme.of(context).dividerColor, width: 0.5)),
+            border: const Border(),
           ),
           padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewPadding.bottom),
           child: Row(
