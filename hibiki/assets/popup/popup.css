@@ -456,12 +456,12 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
 }
 
 ::highlight(hoshi-selection) {
-    background-color: rgba(160, 160, 160, 0.4) !important;
+    background-color: var(--hoshi-primary-highlight, rgba(160, 160, 160, 0.4)) !important;
     color: inherit;
 }
 
 ::selection {
-    background-color: rgba(100, 140, 230, 0.35);
+    background-color: var(--hoshi-primary-highlight, rgba(100, 140, 230, 0.35));
     color: inherit;
 }
 

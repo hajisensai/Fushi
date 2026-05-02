@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/sasayaki_match_codec.dart';
@@ -15,13 +15,16 @@ import 'package:hibiki/src/media/audiobook/sasayaki_match_codec.dart';
 class AudiobookBridge {
   AudiobookBridge._();
 
-  // ── JS / CSS 常量 ──────────────────────────────────────────────────────────
+  // ── JS / CSS ────────────────────────────────────────────────────────────────
 
-  /// 注入到 WebView 的 CSS（高亮当前句、打标句子 hover 效果）。
-  /// 同时覆盖 [data-hoshi-sid]（annotate 路径）和 [data-cue-id]（字幕 EPUB 路径）。
-  static const String _css = '''
+  /// 根据主题色生成高亮 CSS。
+  static String _buildCss(Color primaryColor) {
+    final int r = (primaryColor.r * 255.0).round().clamp(0, 255);
+    final int g = (primaryColor.g * 255.0).round().clamp(0, 255);
+    final int b = (primaryColor.b * 255.0).round().clamp(0, 255);
+    return '''
 .hoshi-active {
-  background: rgba(255, 220, 0, 0.42);
+  background: rgba($r, $g, $b, 0.35);
   border-radius: 2px;
   transition: background 0.15s ease;
 }
@@ -29,10 +32,11 @@ class AudiobookBridge {
   cursor: pointer;
 }
 [data-hoshi-sid]:hover, [data-cue-id]:hover {
-  background: rgba(100, 180, 255, 0.18);
+  background: rgba($r, $g, $b, 0.15);
   border-radius: 2px;
 }
 ''';
+  }
 
   /// 对齐到整页：anchor = rect 中心的绝对坐标，pageIndex = floor(anchor / stride)，
   /// 通过 ttu 的 `__ttuScrollToPos` API 同步写 scrollTop 和 virtualScrollPos$。
@@ -847,15 +851,21 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
   // ── 公开 API ───────────────────────────────────────────────────────────────
 
   /// 向 WebView 注入 CSS 样式和 JS 函数（章节加载完成后调用一次）。
-  static Future<void> inject(InAppWebViewController controller) async {
-    // 注入 CSS
+  /// [primaryColor] 用于高亮当前句和 hover 效果，跟随应用主题色。
+  static Future<void> inject(
+    InAppWebViewController controller, {
+    Color primaryColor = const Color(0xFFFFDC00),
+  }) async {
+    final String css = _buildCss(primaryColor);
+    final String cssJsonStr = jsonEncode(css);
+    // 注入 CSS（主题切换时移除旧样式再插入新样式）
     await controller.evaluateJavascript(source: '''
 (function() {
   var existing = document.getElementById('__hoshi_audio_css');
-  if (existing) return;
+  if (existing) existing.remove();
   var s = document.createElement('style');
   s.id = '__hoshi_audio_css';
-  s.textContent = ${jsonEncode(_css)};
+  s.textContent = $cssJsonStr;
   document.head.appendChild(s);
 })();
 ''');

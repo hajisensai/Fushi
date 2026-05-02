@@ -1327,6 +1327,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         final jsFuture = controller.evaluateJavascript(
           source: javascriptToExecute,
         );
+        unawaited(_injectPrimarySelectionColor(controller));
         if (_audiobookController != null) {
           try {
             await Future.wait([
@@ -1363,6 +1364,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       },
       onTitleChanged: (controller, title) async {
         await controller.evaluateJavascript(source: javascriptToExecute);
+        unawaited(_injectPrimarySelectionColor(controller));
         await _injectReaderViewportBridge(controller);
         unawaited(_installTtuBookmarkBridge(controller));
 
@@ -2191,7 +2193,7 @@ rp {
 
 ::selection {
   color: white;
-  background: rgba(255, 0, 0, 0.6);
+  background: var(--hoshi-primary-selection, rgba(255, 0, 0, 0.6));
 }
 
 /* ttu 顶部 32px 隐形热区 <button>（tap 唤出 reader 工具栏）在 Android
@@ -2717,11 +2719,33 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     return ReaderViewportPos(section: safeSection, offset: 0);
   }
 
+  Future<void> _injectPrimarySelectionColor(
+    InAppWebViewController controller,
+  ) async {
+    final Color primary = Theme.of(context).colorScheme.primary;
+    final int pr = (primary.r * 255.0).round().clamp(0, 255);
+    final int pg = (primary.g * 255.0).round().clamp(0, 255);
+    final int pb = (primary.b * 255.0).round().clamp(0, 255);
+    final String rgba = 'rgba($pr, $pg, $pb, 0.5)';
+    await controller.evaluateJavascript(source: '''
+(function() {
+  var id = '__hoshi_selection_css';
+  var existing = document.getElementById(id);
+  if (existing) existing.remove();
+  var s = document.createElement('style');
+  s.id = id;
+  s.textContent = ':root { --hoshi-primary-selection: $rgba; }';
+  document.head.appendChild(s);
+})();
+''');
+  }
+
   Future<void> _injectReaderViewportBridge(
     InAppWebViewController controller,
   ) async {
     try {
-      await AudiobookBridge.inject(controller);
+      final Color primary = Theme.of(context).colorScheme.primary;
+      await AudiobookBridge.inject(controller, primaryColor: primary);
       unawaited(_installTtuBookmarkBridge(controller));
     } catch (e) {
       debugPrint('[hibiki-reader] viewport bridge inject error: $e');
@@ -3141,7 +3165,8 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
   ///   加载全部 cue 供音频轨道追踪，不调用 [AudiobookBridge.annotate]。
   /// - **常规有声书路径**：按章节 href 查询 cue；若为空则自动标注句子。
   Future<void> _injectAudiobookBridge(InAppWebViewController controller) async {
-    await AudiobookBridge.inject(controller);
+    final Color primary = Theme.of(context).colorScheme.primary;
+    await AudiobookBridge.inject(controller, primaryColor: primary);
 
     if (_srtBookUid != null) {
       // ── 字幕 EPUB 路径 ────────────────────────────────────────────────────

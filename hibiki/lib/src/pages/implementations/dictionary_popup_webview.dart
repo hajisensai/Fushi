@@ -46,7 +46,13 @@ class DictionaryPopupWebViewState
 
     final entriesJson = buildLookupEntriesJson(widget.result);
     final stylesJson = jsonEncode(HoshiDicts.dictionaryStyles);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final ThemeData theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final Color primary = theme.colorScheme.primary;
+    final int pr = (primary.r * 255.0).round().clamp(0, 255);
+    final int pg = (primary.g * 255.0).round().clamp(0, 255);
+    final int pb = (primary.b * 255.0).round().clamp(0, 255);
+    final String primaryRgba = 'rgba($pr, $pg, $pb, 0.35)';
 
     final appModel = ref.read(appProvider);
     final deduplicatePitch = appModel.deduplicatePitchAccents;
@@ -56,6 +62,7 @@ class DictionaryPopupWebViewState
 
     _controller!.evaluateJavascript(source: '''
       document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
+      document.documentElement.style.setProperty('--hoshi-primary-highlight', '$primaryRgba');
       window.audioSources = $audioSourcesJson;
       window.deduplicatePitchAccents = $deduplicatePitch;
       window.harmonicFrequency = $harmonicFreq;
