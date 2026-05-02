@@ -338,6 +338,7 @@ class CuesToEpub {
       sections.add(TtuSection(
         reference: chapterRef,
         charactersWeight: chapterChars == 0 ? 1 : chapterChars,
+        characters: chapterChars == 0 ? 1 : chapterChars,
         label: chapterLabel,
         startCharacter: totalChars,
       ));
@@ -520,6 +521,7 @@ class TtuSection {
   const TtuSection({
     required this.reference,
     required this.charactersWeight,
+    required this.characters,
     required this.label,
     required this.startCharacter,
   });
@@ -530,6 +532,9 @@ class TtuSection {
   /// Approximate character count for this section (used for progress math).
   final int charactersWeight;
 
+  /// Character count consumed by ttu's reading-statistics tracker.
+  final int characters;
+
   /// Display label shown in the ttu reader's chapter navigation.
   final String label;
 
@@ -539,6 +544,7 @@ class TtuSection {
   Map<String, dynamic> toJson() => {
         'reference': reference,
         'charactersWeight': charactersWeight,
+        'characters': characters,
         'label': label,
         'startCharacter': startCharacter,
       };
