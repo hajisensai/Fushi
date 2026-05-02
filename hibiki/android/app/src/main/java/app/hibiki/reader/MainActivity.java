@@ -70,15 +70,6 @@ public class MainActivity extends AudioServiceActivity {
     private static final String FLOATING_LYRIC_CHANNEL = "app.hibiki.reader/floating_lyric";
     private static final String SPLASH_CHANNEL = "app.hibiki.reader/splash";
     private static final String SPLASH_PREFS = "hibiki_splash";
-    private static final String ANKI_MODEL_NAME = "hibiki Kinomoto";
-    private static final int ANKI_MODEL_FIELD_COUNT = 17;
-    private static final String[] ANKI_MODEL_FIELDS = {
-        "Term", "Reading", "Furigana", "Sentence",
-        "Cloze Before", "Cloze Inside", "Cloze After",
-        "Meaning", "Expanded Meaning", "Collapsed Meaning",
-        "Notes", "Context", "Frequency", "Pitch Accent",
-        "Image", "Term Audio", "Sentence Audio",
-    };
     private static final int AD_PERM_REQUEST = 0;
     private static final int SAF_PICK_DIR_REQUEST = 1001;
     private static MethodChannel floatingLyricChannel;
@@ -151,7 +142,7 @@ public class MainActivity extends AudioServiceActivity {
     }
 
     private boolean modelExists(String model) {
-        Long deckId = mAnkiDroid.findModelIdByName(model, ANKI_MODEL_FIELD_COUNT);
+        Long deckId = mAnkiDroid.findModelIdByName(model, 17);
         return (deckId != null);
     }
 
@@ -172,13 +163,19 @@ public class MainActivity extends AudioServiceActivity {
         final AddContentApi api = new AddContentApi(context);
 
         long modelId;
-        if (modelExists(ANKI_MODEL_NAME)) {
-            modelId = mAnkiDroid.findModelIdByName(ANKI_MODEL_NAME, ANKI_MODEL_FIELD_COUNT);
+        if (modelExists("Lapis")) {
+            modelId = mAnkiDroid.findModelIdByName("Lapis", 17);
         } else {
-            modelId = api.addNewCustomModel(ANKI_MODEL_NAME,
-                ANKI_MODEL_FIELDS,
+            modelId = api.addNewCustomModel("Lapis",
                 new String[] {
-                    ANKI_MODEL_NAME
+                    "Term", "Reading", "Furigana", "Sentence",
+                    "Cloze Before", "Cloze Inside", "Cloze After",
+                    "Meaning", "Expanded Meaning", "Collapsed Meaning",
+                    "Notes", "Context", "Frequency", "Pitch Accent",
+                    "Image", "Term Audio", "Sentence Audio",
+                },
+                new String[] {
+                    "Lapis"
                 },
                 new String[] {
                     "<div id=\"word\">{{Term}}</div>"
