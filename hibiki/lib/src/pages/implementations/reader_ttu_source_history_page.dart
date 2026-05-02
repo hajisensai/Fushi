@@ -432,12 +432,17 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
               bottom: 0,
               child: _progressBar(item),
             ),
-            if (hasAudiobook)
-              Positioned(
-                top: 6,
-                right: 6,
-                child: _audiobookBadge(healthKind),
-              ),
+            Positioned(
+              top: 6,
+              right: 6,
+              child: hasAudiobook
+                  ? _audiobookBadge(healthKind)
+                  : _cardBadge(
+                      icon: Icons.menu_book_outlined,
+                      background: theme.colorScheme.surfaceContainerHighest,
+                      foreground: theme.colorScheme.onSurfaceVariant,
+                    ),
+            ),
           ],
         );
       },

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:spaces/spaces.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:wakelock/wakelock.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
@@ -15,12 +14,91 @@ Widget _buildSwitch({
   required String label,
   required bool value,
   required ValueChanged<bool> onChanged,
+  String? hint,
 }) {
-  return Row(
-    children: [
-      Expanded(child: Text(label)),
-      Switch(value: value, onChanged: onChanged),
-    ],
+  return Padding(
+    padding: const EdgeInsets.symmetric(vertical: 2),
+    child: Row(
+      children: [
+        Expanded(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(child: Text(label)),
+              if (hint != null) ...[
+                const SizedBox(width: 4),
+                _HintIcon(hint: hint),
+              ],
+            ],
+          ),
+        ),
+        Switch(value: value, onChanged: onChanged),
+      ],
+    ),
+  );
+}
+
+Widget _buildSegmentedRow<T extends Object>({
+  required String label,
+  required List<ButtonSegment<T>> segments,
+  required Set<T> selected,
+  required ValueChanged<Set<T>> onSelectionChanged,
+  String? hint,
+  bool scrollable = false,
+}) {
+  final button = SegmentedButton<T>(
+    segments: segments,
+    selected: selected,
+    onSelectionChanged: onSelectionChanged,
+    style: const ButtonStyle(
+      visualDensity: VisualDensity.compact,
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    ),
+  );
+  if (scrollable) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(label),
+              if (hint != null) ...[
+                const SizedBox(width: 4),
+                _HintIcon(hint: hint),
+              ],
+            ],
+          ),
+          const SizedBox(height: 6),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: button,
+          ),
+        ],
+      ),
+    );
+  }
+  return Padding(
+    padding: const EdgeInsets.symmetric(vertical: 4),
+    child: Row(
+      children: [
+        Expanded(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(child: Text(label)),
+              if (hint != null) ...[
+                const SizedBox(width: 4),
+                _HintIcon(hint: hint),
+              ],
+            ],
+          ),
+        ),
+        button,
+      ],
+    ),
   );
 }
 
@@ -207,129 +285,64 @@ Widget _buildDisplaySettings(VoidCallback rebuild) {
                 update(() => _source.setTtuPageColumns(v.round())),
             hint: t.hint_page_columns,
           ),
-          Row(
-            children: [
-              Expanded(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(t.ttu_writing_direction),
-                    const SizedBox(width: 4),
-                    _HintIcon(hint: t.hint_writing_direction),
-                  ],
-                ),
-              ),
-              SegmentedButton<String>(
-                segments: [
-                  ButtonSegment(
-                      value: 'horizontal-tb', label: Text(t.ttu_horizontal)),
-                  ButtonSegment(
-                      value: 'vertical-rl', label: Text(t.ttu_vertical)),
-                ],
-                selected: {_source.ttuWritingMode},
-                onSelectionChanged: (sel) =>
-                    update(() => _source.setTtuWritingMode(sel.first)),
-                style: const ButtonStyle(
-                  visualDensity: VisualDensity.compact,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-              ),
+          _buildSegmentedRow<String>(
+            label: t.ttu_writing_direction,
+            hint: t.hint_writing_direction,
+            segments: [
+              ButtonSegment(
+                  value: 'horizontal-tb', label: Text(t.ttu_horizontal)),
+              ButtonSegment(
+                  value: 'vertical-rl', label: Text(t.ttu_vertical)),
             ],
+            selected: {_source.ttuWritingMode},
+            onSelectionChanged: (sel) =>
+                update(() => _source.setTtuWritingMode(sel.first)),
           ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(t.ttu_view_mode_label),
-                    const SizedBox(width: 4),
-                    _HintIcon(hint: t.hint_view_mode),
-                  ],
-                ),
-              ),
-              SegmentedButton<String>(
-                segments: [
-                  ButtonSegment(
-                      value: 'paginated', label: Text(t.ttu_paginated)),
-                  ButtonSegment(value: 'continuous', label: Text(t.ttu_scroll)),
-                ],
-                selected: {_source.ttuViewMode},
-                onSelectionChanged: (sel) =>
-                    update(() => _source.setTtuViewMode(sel.first)),
-                style: const ButtonStyle(
-                  visualDensity: VisualDensity.compact,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-              ),
+          _buildSegmentedRow<String>(
+            label: t.ttu_view_mode_label,
+            hint: t.hint_view_mode,
+            segments: [
+              ButtonSegment(
+                  value: 'paginated', label: Text(t.ttu_paginated)),
+              ButtonSegment(
+                  value: 'continuous', label: Text(t.ttu_scroll)),
             ],
+            selected: {_source.ttuViewMode},
+            onSelectionChanged: (sel) =>
+                update(() => _source.setTtuViewMode(sel.first)),
           ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(t.ttu_vert_text_orient),
-                    const SizedBox(width: 4),
-                    _HintIcon(hint: t.hint_vert_text_orient),
-                  ],
-                ),
-              ),
-              SegmentedButton<String>(
-                segments: [
-                  ButtonSegment(
-                      value: 'mixed', label: Text(t.ttu_orient_mixed)),
-                  ButtonSegment(
-                      value: 'upright', label: Text(t.ttu_orient_upright)),
-                ],
-                selected: {_source.ttuVerticalTextOrientation},
-                onSelectionChanged: (sel) => update(
-                    () => _source.setTtuVerticalTextOrientation(sel.first)),
-                style: const ButtonStyle(
-                  visualDensity: VisualDensity.compact,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-              ),
+          _buildSegmentedRow<String>(
+            label: t.ttu_vert_text_orient,
+            hint: t.hint_vert_text_orient,
+            segments: [
+              ButtonSegment(
+                  value: 'mixed', label: Text(t.ttu_orient_mixed)),
+              ButtonSegment(
+                  value: 'upright', label: Text(t.ttu_orient_upright)),
             ],
+            selected: {_source.ttuVerticalTextOrientation},
+            onSelectionChanged: (sel) => update(
+                () => _source.setTtuVerticalTextOrientation(sel.first)),
           ),
-          const SizedBox(height: 4),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(t.ttu_furigana_mode),
-              const SizedBox(height: 6),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: SegmentedButton<String>(
-                  segments: [
-                    ButtonSegment(
-                        value: 'show', label: Text(t.ttu_furigana_show)),
-                    ButtonSegment(
-                        value: 'hide', label: Text(t.ttu_furigana_hide)),
-                    ButtonSegment(
-                        value: 'partial', label: Text(t.ttu_furigana_partial)),
-                    ButtonSegment(
-                        value: 'toggle', label: Text(t.ttu_furigana_toggle)),
-                  ],
-                  selected: {_source.ttuFuriganaMode},
-                  onSelectionChanged: (sel) {
-                    if (sel.isEmpty) {
-                      return;
-                    }
-                    update(() => _source.setTtuFuriganaMode(sel.first));
-                  },
-                  style: const ButtonStyle(
-                    visualDensity: VisualDensity.compact,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                ),
-              ),
+          _buildSegmentedRow<String>(
+            label: t.ttu_furigana_mode,
+            scrollable: true,
+            segments: [
+              ButtonSegment(
+                  value: 'show', label: Text(t.ttu_furigana_show)),
+              ButtonSegment(
+                  value: 'hide', label: Text(t.ttu_furigana_hide)),
+              ButtonSegment(
+                  value: 'partial', label: Text(t.ttu_furigana_partial)),
+              ButtonSegment(
+                  value: 'toggle', label: Text(t.ttu_furigana_toggle)),
             ],
+            selected: {_source.ttuFuriganaMode},
+            onSelectionChanged: (sel) {
+              if (sel.isEmpty) return;
+              update(() => _source.setTtuFuriganaMode(sel.first));
+            },
           ),
-          const SizedBox(height: 4),
           _buildSwitch(
             label: t.ttu_text_justify,
             value: _source.ttuEnableTextJustification,
