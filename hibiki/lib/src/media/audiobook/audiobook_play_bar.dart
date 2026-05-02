@@ -726,11 +726,15 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               itemCount: widget.bookmarks.length,
               itemBuilder: (BuildContext ctx, int i) {
                 final Bookmark bm = widget.bookmarks[i];
+                final String pageInfo =
+                    bm.pageInChapter != null && bm.totalPagesInChapter != null
+                        ? ' · ${bm.pageInChapter}/${bm.totalPagesInChapter}'
+                        : '';
                 return ListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
                   title: Text(
-                    bm.label,
+                    '${bm.label}$pageInfo',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodyMedium,
@@ -801,6 +805,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
             Text(t.playback_speed, style: theme.textTheme.titleMedium),
             const SizedBox(height: 8),
             SegmentedButton<double>(
+              showSelectedIcon: false,
               segments: _speeds
                   .map((double s) => ButtonSegment<double>(
                         value: s,
@@ -908,6 +913,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
             ),
             const SizedBox(height: 8),
             SegmentedButton<int>(
+              showSelectedIcon: false,
               segments: _imagePauseOptions
                   .map((int s) => ButtonSegment<int>(
                         value: s,
@@ -1148,6 +1154,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           theme,
           label: t.ttu_writing_direction,
           child: SegmentedButton<String>(
+            showSelectedIcon: false,
             segments: <ButtonSegment<String>>[
               ButtonSegment<String>(
                   value: 'horizontal-tb', label: Text(t.ttu_horizontal)),
@@ -1168,6 +1175,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           theme,
           label: t.ttu_view_mode_label,
           child: SegmentedButton<String>(
+            showSelectedIcon: false,
             segments: <ButtonSegment<String>>[
               ButtonSegment<String>(
                   value: 'paginated', label: Text(t.ttu_paginated)),
@@ -1286,6 +1294,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           label: t.ttu_vert_text_orient,
           hint: t.ttu_vert_text_orient_hint,
           child: SegmentedButton<String>(
+            showSelectedIcon: false,
             segments: <ButtonSegment<String>>[
               ButtonSegment<String>(
                   value: 'mixed', label: Text(t.ttu_orient_mixed)),
@@ -1308,6 +1317,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           label: t.ttu_furigana_mode,
           hint: t.ttu_furigana_mode_hint,
           child: SegmentedButton<String>(
+            showSelectedIcon: false,
             segments: <ButtonSegment<String>>[
               ButtonSegment<String>(
                   value: 'show', label: Text(t.ttu_furigana_show)),
@@ -1425,6 +1435,9 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
     return ButtonStyle(
       visualDensity: VisualDensity.compact,
       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      padding: const WidgetStatePropertyAll<EdgeInsetsGeometry>(
+        EdgeInsets.symmetric(horizontal: 8),
+      ),
       backgroundColor: WidgetStateProperty.resolveWith((states) {
         if (states.contains(WidgetState.selected)) {
           return cs.primaryContainer;

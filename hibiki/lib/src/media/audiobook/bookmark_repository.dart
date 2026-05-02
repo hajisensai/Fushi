@@ -10,6 +10,8 @@ class Bookmark {
     required this.createdAt,
     this.ttuBookId,
     this.bookTitle,
+    this.pageInChapter,
+    this.totalPagesInChapter,
   });
 
   final int sectionIndex;
@@ -18,6 +20,8 @@ class Bookmark {
   final DateTime createdAt;
   final int? ttuBookId;
   final String? bookTitle;
+  final int? pageInChapter;
+  final int? totalPagesInChapter;
 
   Map<String, dynamic> toJson() => {
         'sectionIndex': sectionIndex,
@@ -26,6 +30,9 @@ class Bookmark {
         'createdAt': createdAt.toIso8601String(),
         if (ttuBookId != null) 'ttuBookId': ttuBookId,
         if (bookTitle != null) 'bookTitle': bookTitle,
+        if (pageInChapter != null) 'pageInChapter': pageInChapter,
+        if (totalPagesInChapter != null)
+          'totalPagesInChapter': totalPagesInChapter,
       };
 
   factory Bookmark.fromJson(Map<String, dynamic> json) => Bookmark(
@@ -35,6 +42,8 @@ class Bookmark {
         createdAt: DateTime.parse(json['createdAt'] as String),
         ttuBookId: json['ttuBookId'] as int?,
         bookTitle: json['bookTitle'] as String?,
+        pageInChapter: json['pageInChapter'] as int?,
+        totalPagesInChapter: json['totalPagesInChapter'] as int?,
       );
 }
 
@@ -90,6 +99,8 @@ class BookmarkRepository {
           label: bm.label,
           createdAt: bm.createdAt,
           ttuBookId: bm.ttuBookId ?? ttuId,
+          pageInChapter: bm.pageInChapter,
+          totalPagesInChapter: bm.totalPagesInChapter,
           bookTitle: bm.bookTitle,
         ));
       }

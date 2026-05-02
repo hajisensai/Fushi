@@ -2671,8 +2671,12 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
             '[hibiki-reader] bookmark skipped: missing ttuId from=$from');
         return;
       }
-      final ReaderViewportPos bookmarkPos =
-          await _resolveBookmarkViewport(from: from);
+      final results = await Future.wait([
+        _resolveBookmarkViewport(from: from),
+        AudiobookBridge.probeTtuApi(_controller),
+      ]);
+      final ReaderViewportPos bookmarkPos = results[0] as ReaderViewportPos;
+      final TtuApiProbe probe = results[1] as TtuApiProbe;
       final String chapterLabel = _tocLabels[bookmarkPos.section] ??
           t.go_to_chapter(n: bookmarkPos.section + 1);
       final bookmark = Bookmark(
@@ -2682,6 +2686,8 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         createdAt: DateTime.now(),
         ttuBookId: ttuId,
         bookTitle: widget.item?.title,
+        pageInChapter: probe.currentPage,
+        totalPagesInChapter: probe.totalPages,
       );
       await BookmarkRepository(appModel.database).addBookmark(ttuId, bookmark);
       if (mounted) {
