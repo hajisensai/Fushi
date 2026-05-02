@@ -486,13 +486,14 @@ class _TtuSettingsDialogContentState extends BasePageState {
         ),
         _categoryTile(
           context,
-          icon: Icons.font_download,
-          label: t.custom_fonts,
+          icon: Icons.auto_stories,
+          label: t.reader_settings_section,
           onTap: () {
             Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const CustomFontsPage()),
-            );
+              MaterialPageRoute(
+                  builder: (_) => const _ReaderBehaviorSettingsPage()),
+            ).then((_) => setState(() {}));
           },
         ),
         _categoryTile(
@@ -508,25 +509,24 @@ class _TtuSettingsDialogContentState extends BasePageState {
         ),
         _categoryTile(
           context,
-          icon: Icons.auto_stories,
-          label: t.reader_settings_section,
+          icon: Icons.font_download,
+          label: t.custom_fonts,
           onTap: () {
             Navigator.push(
               context,
-              MaterialPageRoute(
-                  builder: (_) => const _ReaderBehaviorSettingsPage()),
-            ).then((_) => setState(() {}));
+              MaterialPageRoute(builder: (_) => const CustomFontsPage()),
+            );
           },
         ),
         _categoryTile(
           context,
-          icon: Icons.settings,
-          label: t.section_interface,
+          icon: Icons.system_update,
+          label: t.section_update,
           onTap: () {
             Navigator.push(
               context,
               MaterialPageRoute(
-                  builder: (_) => const _AppInterfaceSettingsPage()),
+                  builder: (_) => const _UpdateSettingsPage()),
             ).then((_) => setState(() {}));
           },
         ),
@@ -582,6 +582,14 @@ class _ReaderBehaviorSettingsPageState extends BasePageState {
         ),
         children: [
           ..._buildReaderOnlySwitches(() => setState(() {})),
+          _buildSwitch(
+            label: t.disable_dialog_scrim,
+            value: appModel.disableDialogScrim,
+            onChanged: (v) {
+              appModel.setDisableDialogScrim(v);
+              setState(() {});
+            },
+          ),
           const Space.small(),
           const JidoujishoDivider(),
           _buildPageTurningSpeed(() => setState(() {})),
@@ -591,18 +599,18 @@ class _ReaderBehaviorSettingsPageState extends BasePageState {
   }
 }
 
-class _AppInterfaceSettingsPage extends BasePage {
-  const _AppInterfaceSettingsPage();
+class _UpdateSettingsPage extends BasePage {
+  const _UpdateSettingsPage();
 
   @override
-  BasePageState createState() => _AppInterfaceSettingsPageState();
+  BasePageState createState() => _UpdateSettingsPageState();
 }
 
-class _AppInterfaceSettingsPageState extends BasePageState {
+class _UpdateSettingsPageState extends BasePageState {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(t.section_interface)),
+      appBar: AppBar(title: Text(t.section_update)),
       body: ListView(
         padding: EdgeInsets.fromLTRB(
           16, 8, 16, 8 + MediaQuery.of(context).padding.bottom,
@@ -621,14 +629,6 @@ class _AppInterfaceSettingsPageState extends BasePageState {
             value: appModel.updateAutoInstall,
             onChanged: (v) {
               appModel.setUpdateAutoInstall(v);
-              setState(() {});
-            },
-          ),
-          _buildSwitch(
-            label: t.disable_dialog_scrim,
-            value: appModel.disableDialogScrim,
-            onChanged: (v) {
-              appModel.setDisableDialogScrim(v);
               setState(() {});
             },
           ),
