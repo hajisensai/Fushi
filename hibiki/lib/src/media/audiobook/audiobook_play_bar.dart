@@ -756,6 +756,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
       child: ExpansionTile(
         tilePadding: EdgeInsets.zero,
         childrenPadding: EdgeInsets.zero,
+        minTileHeight: 36,
         title: Text(
           t.toc_section(n: widget.toc.length),
           style: theme.textTheme.titleMedium,
@@ -812,6 +813,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
       child: ExpansionTile(
         tilePadding: EdgeInsets.zero,
         childrenPadding: EdgeInsets.zero,
+        minTileHeight: 36,
         title: Text(
           '${t.action_bookmark} (${widget.bookmarks.length})',
           style: theme.textTheme.titleMedium,
