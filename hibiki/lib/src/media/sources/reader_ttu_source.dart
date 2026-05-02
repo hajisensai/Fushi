@@ -11,6 +11,7 @@ import 'package:local_assets_server/local_assets_server.dart';
 import 'package:material_floating_search_bar/material_floating_search_bar.dart';
 import 'package:hibiki/language.dart';
 import 'package:hibiki/media.dart';
+import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
@@ -188,8 +189,9 @@ class ReaderTtuSource extends ReaderMediaSource {
   @override
   BaseSourcePage buildLaunchPage({
     MediaItem? item,
+    Bookmark? initialBookmarkJump,
   }) {
-    return ReaderTtuSourcePage(item: item);
+    return ReaderTtuSourcePage(item: item, initialBookmarkJump: initialBookmarkJump);
   }
 
   @override
@@ -741,6 +743,11 @@ new Promise(function(resolve) {
   Future<void> setTtuFirstDimensionMargin(double v) =>
       setPreference<double>(key: 'ttu_first_dimension_margin', value: v);
 
+  double get ttuSecondDimensionMargin =>
+      getPreference<double>(key: 'ttu_second_dimension_margin', defaultValue: 0);
+  Future<void> setTtuSecondDimensionMargin(double v) =>
+      setPreference<double>(key: 'ttu_second_dimension_margin', value: v);
+
   double get ttuSecondDimensionMaxValue =>
       getPreference<double>(key: 'ttu_second_dimension_max', defaultValue: 0);
   Future<void> setTtuSecondDimensionMaxValue(double v) =>
@@ -911,6 +918,7 @@ new Promise(function(resolve) {
       'window.localStorage.setItem("furiganaStyle","$furiganaStyle")',
       'window.localStorage.setItem("textIndentation",${ttuTextIndentation})',
       'window.localStorage.setItem("firstDimensionMargin",${ttuFirstDimensionMargin})',
+      'window.localStorage.setItem("secondDimensionMargin",${ttuSecondDimensionMargin})',
       'window.localStorage.setItem("secondDimensionMaxValue",${ttuSecondDimensionMaxValue})',
       'window.localStorage.setItem("pageColumns",${ttuPageColumns})',
       'window.localStorage.setItem("enableVerticalFontKerning","${ttuEnableVerticalFontKerning ? 1 : 0}")',
@@ -1163,7 +1171,7 @@ indexedDB.databases().then(async (databases) => {
   /// last version mismatches, a load from network is forced. The app will then
   /// update its new last version, and all new loads will be from the cache
   /// unless there is a new app version loaded with a different internal version.
-  static const ttuInternalVersion = 2;
+  static const ttuInternalVersion = 3;
 
   /// Used to check for the current version.
   int? get currentTtuInternalVersion {

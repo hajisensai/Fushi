@@ -3,12 +3,14 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_logs/flutter_logs.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:receive_intent/receive_intent.dart' as intents;
 import 'package:stack_trace/stack_trace.dart';
 import 'package:spaces/spaces.dart';
 import 'package:wakelock/wakelock.dart';
+import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
@@ -119,6 +121,37 @@ void main() {
     /// [HomePage].
     final appModel = container.read(appProvider);
     await appModel.initialise();
+
+    // ── 预热：WebView 引擎 + ttu assets server ─────────────────────────
+    // 两者互不依赖，各自 fire-and-forget。用户还在看主页/书架时就把冷启动
+    // 成本吃掉：WebView 进程 ~500-1500ms，LocalAssetsServer ~200-800ms。
+    unawaited(Future(() async {
+      try {
+        late final HeadlessInAppWebView warmup;
+        warmup = HeadlessInAppWebView(
+          initialUrlRequest: URLRequest(url: WebUri('about:blank')),
+          onLoadStop: (controller, url) async {
+            await Future.delayed(const Duration(milliseconds: 100));
+            await warmup.dispose();
+            debugPrint('[Hibiki] WebView engine pre-warmed');
+          },
+        );
+        await warmup.run();
+      } catch (e) {
+        debugPrint('[Hibiki] WebView warmup failed (non-fatal): $e');
+      }
+    }));
+    // ttuServerProvider 是非 autoDispose 的 FutureProvider.family，
+    // read 触发后缓存在 container 里，用户点书时直接取 data 态。
+    unawaited(Future(() {
+      try {
+        container.read(ttuServerProvider(appModel.targetLanguage));
+        debugPrint('[Hibiki] ttu server provider triggered');
+      } catch (e) {
+        debugPrint('[Hibiki] ttu server warmup failed (non-fatal): $e');
+      }
+    }));
+
     /// Capture Flutter framework errors with full details.
     FlutterError.onError = (details) {
       // Suppress known Flutter framework bug: RawTooltipState creates
