@@ -199,6 +199,8 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
   List<BookSearchResult> _searchResults = const [];
   bool _isSearching = false;
 
+  String? _subPage;
+
   @override
   void initState() {
     super.initState();
@@ -288,57 +290,144 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               20,
               24 + MediaQuery.of(context).viewInsets.bottom,
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildProgressSection(theme),
-                const SizedBox(height: 16),
-                _buildSearchSection(theme),
-                if (widget.controller != null &&
-                    widget.controller!.chapterCueCount > 0) ...[
-                  const SizedBox(height: 16),
-                  _buildCueNavSection(theme, widget.controller!),
-                ],
-                if (widget.toc.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  _buildTocSection(context, theme),
-                ],
-                if (widget.bookmarks.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  _buildBookmarkSection(context, theme),
-                ],
-                if (widget.controller != null) ...[
-                  const SizedBox(height: 20),
-                  _buildVolumeSection(theme, widget.controller!),
-                  const SizedBox(height: 20),
-                  _buildSpeedSection(theme, widget.controller!),
-                  const SizedBox(height: 20),
-                  _buildDelaySection(theme, widget.controller!),
-                  const SizedBox(height: 20),
-                  _buildImagePauseSection(theme, widget.controller!),
-                  const SizedBox(height: 20),
-                  _buildTapSeekSection(theme, widget.controller!),
-                ],
-                const SizedBox(height: 20),
-                _buildReaderSettingsSection(theme),
-                if (widget.controller != null) ...[
-                  const SizedBox(height: 16),
-                  _buildPlayBarToggle(theme),
-                ],
-                if (widget.favoriteSentences.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  _buildFavoritesSection(context, theme),
-                ],
-                const SizedBox(height: 16),
-                const Divider(height: 1),
-                const SizedBox(height: 12),
-                _buildActionRow(context),
-              ],
+            child: AnimatedSize(
+              duration: const Duration(milliseconds: 200),
+              alignment: Alignment.topCenter,
+              child: _subPage != null
+                  ? _buildSubPage(context, theme)
+                  : _buildMainPage(context, theme),
             ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildMainPage(BuildContext context, ThemeData theme) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildProgressSection(theme),
+        const SizedBox(height: 16),
+        _buildSearchSection(theme),
+        if (widget.controller != null &&
+            widget.controller!.chapterCueCount > 0) ...[
+          const SizedBox(height: 16),
+          _buildCueNavSection(theme, widget.controller!),
+        ],
+        if (widget.toc.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _buildTocSection(context, theme),
+        ],
+        if (widget.bookmarks.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _buildBookmarkSection(context, theme),
+        ],
+        const SizedBox(height: 16),
+        const Divider(height: 1),
+        const SizedBox(height: 12),
+        if (widget.controller != null)
+          _categoryTile(
+            theme,
+            icon: Icons.headphones,
+            label: t.section_audiobook,
+            page: 'audiobook',
+          ),
+        _categoryTile(
+          theme,
+          icon: Icons.text_fields,
+          label: t.section_typography,
+          page: 'typography',
+        ),
+        _categoryTile(
+          theme,
+          icon: Icons.view_quilt,
+          label: t.section_layout,
+          page: 'layout',
+        ),
+        if (widget.controller != null)
+          _categoryTile(
+            theme,
+            icon: Icons.tune,
+            label: t.section_interface,
+            page: 'interface',
+          ),
+        const SizedBox(height: 12),
+        const Divider(height: 1),
+        const SizedBox(height: 12),
+        _buildActionRow(context),
+      ],
+    );
+  }
+
+  Widget _buildSubPage(BuildContext context, ThemeData theme) {
+    final String page = _subPage!;
+    String title;
+    Widget content;
+    switch (page) {
+      case 'audiobook':
+        title = t.section_audiobook;
+        content = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildVolumeSection(theme, widget.controller!),
+            const SizedBox(height: 16),
+            _buildSpeedSection(theme, widget.controller!),
+            const SizedBox(height: 16),
+            _buildDelaySection(theme, widget.controller!),
+            const SizedBox(height: 16),
+            _buildImagePauseSection(theme, widget.controller!),
+            const SizedBox(height: 16),
+            _buildTapSeekSection(theme, widget.controller!),
+          ],
+        );
+      case 'typography':
+        title = t.section_typography;
+        content = _buildTypographySection(theme);
+      case 'layout':
+        title = t.section_layout;
+        content = _buildLayoutSection(theme);
+      case 'interface':
+        title = t.section_interface;
+        content = _buildPlayBarToggle(theme);
+      default:
+        title = '';
+        content = const SizedBox.shrink();
+    }
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            IconButton(
+              icon: const Icon(Icons.arrow_back),
+              onPressed: () => setState(() => _subPage = null),
+            ),
+            const SizedBox(width: 4),
+            Text(title, style: theme.textTheme.titleMedium),
+          ],
+        ),
+        const SizedBox(height: 12),
+        content,
+      ],
+    );
+  }
+
+  Widget _categoryTile(
+    ThemeData theme, {
+    required IconData icon,
+    required String label,
+    required String page,
+  }) {
+    return ListTile(
+      dense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+      leading: Icon(icon, size: 22),
+      title: Text(label),
+      trailing: const Icon(Icons.chevron_right, size: 20),
+      onTap: () => setState(() => _subPage = page),
     );
   }
 
@@ -1052,7 +1141,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
     );
   }
 
-  Widget _buildReaderSettingsSection(ThemeData theme) {
+  Widget _buildTypographySection(ThemeData theme) {
     final TtuReaderSettings? s = _settings;
     if (s == null) {
       return const Center(
@@ -1069,9 +1158,6 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(t.reader_settings_section, style: theme.textTheme.titleMedium),
-        const SizedBox(height: 12),
-        // 字体大小
         _settingRow(
           theme,
           label: t.ttu_font_size,
@@ -1109,7 +1195,6 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
             ],
           ),
         ),
-        // 行高
         _settingRow(
           theme,
           label: t.ttu_line_height,
@@ -1149,7 +1234,126 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
             ],
           ),
         ),
-        // 排版方向
+        _numberStepper(
+          theme,
+          label: t.ttu_text_indentation,
+          value: _src.ttuTextIndentation,
+          step: 1,
+          min: 0,
+          max: 10,
+          format: (v) => '${v.round()}',
+          onChanged: (v) {
+            _src.setTtuTextIndentation(v);
+            setState(() {});
+            _updateSetting('textIndentation', v);
+          },
+        ),
+        _numberStepper(
+          theme,
+          label: t.ttu_first_dimension_margin,
+          value: _src.ttuFirstDimensionMargin,
+          step: 5,
+          min: 0,
+          max: 100,
+          format: (v) => '${v.round()}',
+          onChanged: (v) {
+            _src.setTtuFirstDimensionMargin(v);
+            setState(() {});
+            _updateSetting('firstDimensionMargin', v);
+          },
+        ),
+        _numberStepper(
+          theme,
+          label: t.ttu_second_dimension_max,
+          value: _src.ttuSecondDimensionMaxValue,
+          step: 50,
+          min: 0,
+          max: 2000,
+          format: (v) =>
+              v.round() == 0 ? t.ttu_page_columns_auto : '${v.round()}',
+          onChanged: (v) {
+            _src.setTtuSecondDimensionMaxValue(v);
+            setState(() {});
+            _updateSetting('secondDimensionMaxValue', v);
+          },
+        ),
+        _numberStepper(
+          theme,
+          label: t.ttu_page_columns,
+          value: _src.ttuPageColumns.toDouble(),
+          step: 1,
+          min: 0,
+          max: 4,
+          format: (v) =>
+              v.round() == 0 ? t.ttu_page_columns_auto : '${v.round()}',
+          onChanged: (v) {
+            _src.setTtuPageColumns(v.round());
+            setState(() {});
+            _updateSetting('pageColumns', v.round());
+          },
+        ),
+        _settingRow(
+          theme,
+          label: t.ttu_text_justify,
+          hint: t.ttu_text_justify_hint,
+          child: Switch(
+            value: _src.ttuEnableTextJustification,
+            onChanged: (bool v) {
+              _src.setTtuEnableTextJustification(v);
+              setState(() {});
+              _updateSetting('enableTextJustification', v);
+            },
+          ),
+        ),
+        _settingRow(
+          theme,
+          label: t.ttu_vert_kerning,
+          hint: t.ttu_vert_kerning_hint,
+          child: Switch(
+            value: _src.ttuEnableVerticalFontKerning,
+            onChanged: (bool v) {
+              _src.setTtuEnableVerticalFontKerning(v);
+              setState(() {});
+              _updateSetting('enableVerticalFontKerning', v);
+            },
+          ),
+        ),
+        _settingRow(
+          theme,
+          label: t.ttu_font_vpal,
+          hint: t.ttu_font_vpal_hint,
+          child: Switch(
+            value: _src.ttuEnableFontVPAL,
+            onChanged: (bool v) {
+              _src.setTtuEnableFontVPAL(v);
+              setState(() {});
+              _updateSetting('enableFontVPAL', v);
+            },
+          ),
+        ),
+        _settingRow(
+          theme,
+          label: t.ttu_reader_styles,
+          hint: t.ttu_reader_styles_hint,
+          child: Switch(
+            value: _src.ttuPrioritizeReaderStyles,
+            onChanged: (bool v) {
+              _src.setTtuPrioritizeReaderStyles(v);
+              setState(() {});
+              _updateSetting('prioritizeReaderStyles', v);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLayoutSection(ThemeData theme) {
+    final TtuReaderSettings? s = _settings;
+    if (s == null) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
         _settingRow(
           theme,
           label: t.ttu_writing_direction,
@@ -1170,7 +1374,6 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
             style: _segmentedStyle(theme),
           ),
         ),
-        // 视图模式
         _settingRow(
           theme,
           label: t.ttu_view_mode_label,
@@ -1191,7 +1394,57 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
             style: _segmentedStyle(theme),
           ),
         ),
-        // 主题
+        _settingRow(
+          theme,
+          label: t.ttu_vert_text_orient,
+          hint: t.ttu_vert_text_orient_hint,
+          child: SegmentedButton<String>(
+            showSelectedIcon: false,
+            segments: <ButtonSegment<String>>[
+              ButtonSegment<String>(
+                  value: 'mixed', label: Text(t.ttu_orient_mixed)),
+              ButtonSegment<String>(
+                  value: 'upright', label: Text(t.ttu_orient_upright)),
+            ],
+            selected: <String>{_src.ttuVerticalTextOrientation},
+            onSelectionChanged: (Set<String> sel) {
+              _src.setTtuVerticalTextOrientation(sel.first);
+              setState(() {});
+              _updateSetting('verticalTextOrientation', sel.first);
+            },
+            style: _segmentedStyle(theme),
+          ),
+        ),
+        const SizedBox(height: 4),
+        _settingRow(
+          theme,
+          label: t.ttu_furigana_mode,
+          hint: t.ttu_furigana_mode_hint,
+          child: SegmentedButton<String>(
+            showSelectedIcon: false,
+            segments: <ButtonSegment<String>>[
+              ButtonSegment<String>(
+                  value: 'show', label: Text(t.ttu_furigana_show)),
+              ButtonSegment<String>(
+                  value: 'hide', label: Text(t.ttu_furigana_hide)),
+              ButtonSegment<String>(
+                  value: 'partial', label: Text(t.ttu_furigana_partial)),
+              ButtonSegment<String>(
+                  value: 'toggle', label: Text(t.ttu_furigana_toggle)),
+            ],
+            selected: <String>{_src.ttuFuriganaMode},
+            onSelectionChanged: (Set<String> sel) {
+              if (sel.isEmpty) {
+                return;
+              }
+              final String mode = sel.first;
+              _src.setTtuFuriganaMode(mode);
+              setState(() {});
+              _applyFuriganaMode(mode);
+            },
+            style: _segmentedStyle(theme),
+          ),
+        ),
         const SizedBox(height: 8),
         Text(t.ttu_theme, style: theme.textTheme.bodyMedium),
         const SizedBox(height: 8),
@@ -1225,178 +1478,6 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               },
             );
           }).toList(),
-        ),
-        // 段落缩进
-        _numberStepper(
-          theme,
-          label: t.ttu_text_indentation,
-          value: _src.ttuTextIndentation,
-          step: 1,
-          min: 0,
-          max: 10,
-          format: (v) => '${v.round()}',
-          onChanged: (v) {
-            _src.setTtuTextIndentation(v);
-            setState(() {});
-            _updateSetting('textIndentation', v);
-          },
-        ),
-        // 边距
-        _numberStepper(
-          theme,
-          label: t.ttu_first_dimension_margin,
-          value: _src.ttuFirstDimensionMargin,
-          step: 5,
-          min: 0,
-          max: 100,
-          format: (v) => '${v.round()}',
-          onChanged: (v) {
-            _src.setTtuFirstDimensionMargin(v);
-            setState(() {});
-            _updateSetting('firstDimensionMargin', v);
-          },
-        ),
-        // 最大宽/高
-        _numberStepper(
-          theme,
-          label: t.ttu_second_dimension_max,
-          value: _src.ttuSecondDimensionMaxValue,
-          step: 50,
-          min: 0,
-          max: 2000,
-          format: (v) =>
-              v.round() == 0 ? t.ttu_page_columns_auto : '${v.round()}',
-          onChanged: (v) {
-            _src.setTtuSecondDimensionMaxValue(v);
-            setState(() {});
-            _updateSetting('secondDimensionMaxValue', v);
-          },
-        ),
-        // 分栏
-        _numberStepper(
-          theme,
-          label: t.ttu_page_columns,
-          value: _src.ttuPageColumns.toDouble(),
-          step: 1,
-          min: 0,
-          max: 4,
-          format: (v) =>
-              v.round() == 0 ? t.ttu_page_columns_auto : '${v.round()}',
-          onChanged: (v) {
-            _src.setTtuPageColumns(v.round());
-            setState(() {});
-            _updateSetting('pageColumns', v.round());
-          },
-        ),
-        // 文字方向
-        _settingRow(
-          theme,
-          label: t.ttu_vert_text_orient,
-          hint: t.ttu_vert_text_orient_hint,
-          child: SegmentedButton<String>(
-            showSelectedIcon: false,
-            segments: <ButtonSegment<String>>[
-              ButtonSegment<String>(
-                  value: 'mixed', label: Text(t.ttu_orient_mixed)),
-              ButtonSegment<String>(
-                  value: 'upright', label: Text(t.ttu_orient_upright)),
-            ],
-            selected: <String>{_src.ttuVerticalTextOrientation},
-            onSelectionChanged: (Set<String> sel) {
-              _src.setTtuVerticalTextOrientation(sel.first);
-              setState(() {});
-              _updateSetting('verticalTextOrientation', sel.first);
-            },
-            style: _segmentedStyle(theme),
-          ),
-        ),
-        // 振假名模式
-        const SizedBox(height: 8),
-        _settingRow(
-          theme,
-          label: t.ttu_furigana_mode,
-          hint: t.ttu_furigana_mode_hint,
-          child: SegmentedButton<String>(
-            showSelectedIcon: false,
-            segments: <ButtonSegment<String>>[
-              ButtonSegment<String>(
-                  value: 'show', label: Text(t.ttu_furigana_show)),
-              ButtonSegment<String>(
-                  value: 'hide', label: Text(t.ttu_furigana_hide)),
-              ButtonSegment<String>(
-                  value: 'partial', label: Text(t.ttu_furigana_partial)),
-              ButtonSegment<String>(
-                  value: 'toggle', label: Text(t.ttu_furigana_toggle)),
-            ],
-            selected: <String>{_src.ttuFuriganaMode},
-            onSelectionChanged: (Set<String> sel) {
-              if (sel.isEmpty) {
-                return;
-              }
-              final String mode = sel.first;
-              _src.setTtuFuriganaMode(mode);
-              setState(() {});
-              _applyFuriganaMode(mode);
-            },
-            style: _segmentedStyle(theme),
-          ),
-        ),
-        const SizedBox(height: 4),
-        // 两端对齐
-        _settingRow(
-          theme,
-          label: t.ttu_text_justify,
-          hint: t.ttu_text_justify_hint,
-          child: Switch(
-            value: _src.ttuEnableTextJustification,
-            onChanged: (bool v) {
-              _src.setTtuEnableTextJustification(v);
-              setState(() {});
-              _updateSetting('enableTextJustification', v);
-            },
-          ),
-        ),
-        // 字偶间距
-        _settingRow(
-          theme,
-          label: t.ttu_vert_kerning,
-          hint: t.ttu_vert_kerning_hint,
-          child: Switch(
-            value: _src.ttuEnableVerticalFontKerning,
-            onChanged: (bool v) {
-              _src.setTtuEnableVerticalFontKerning(v);
-              setState(() {});
-              _updateSetting('enableVerticalFontKerning', v);
-            },
-          ),
-        ),
-        // VPAL
-        _settingRow(
-          theme,
-          label: t.ttu_font_vpal,
-          hint: t.ttu_font_vpal_hint,
-          child: Switch(
-            value: _src.ttuEnableFontVPAL,
-            onChanged: (bool v) {
-              _src.setTtuEnableFontVPAL(v);
-              setState(() {});
-              _updateSetting('enableFontVPAL', v);
-            },
-          ),
-        ),
-        // 优先书籍样式
-        _settingRow(
-          theme,
-          label: t.ttu_reader_styles,
-          hint: t.ttu_reader_styles_hint,
-          child: Switch(
-            value: _src.ttuPrioritizeReaderStyles,
-            onChanged: (bool v) {
-              _src.setTtuPrioritizeReaderStyles(v);
-              setState(() {});
-              _updateSetting('prioritizeReaderStyles', v);
-            },
-          ),
         ),
       ],
     );
