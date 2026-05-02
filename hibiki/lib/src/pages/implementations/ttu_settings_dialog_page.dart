@@ -680,15 +680,6 @@ class _TtuSettingsDialogContentState extends BasePageState {
         const Space.small(),
         const JidoujishoDivider(),
         const Space.small(),
-        _buildTapRow(
-          context: context,
-          icon: Icons.translate,
-          label: t.options_language,
-          onTap: appModel.showLanguageMenu,
-        ),
-        const Space.small(),
-        const JidoujishoDivider(),
-        const Space.small(),
         _buildSwitch(
           label: t.update_never_remind,
           value: appModel.updateNeverRemind,
@@ -725,18 +716,6 @@ class _TtuSettingsDialogContentState extends BasePageState {
               context,
               MaterialPageRoute(builder: (_) => const ErrorLogPage()),
             ).then((_) => setState(() {}));
-          },
-        ),
-        const Space.small(),
-        _buildTapRow(
-          context: context,
-          icon: Icons.code,
-          label: t.options_github,
-          onTap: () {
-            launchUrl(
-              Uri.parse('https://github.com/hdjsadgfwtg/hibiki'),
-              mode: LaunchMode.externalApplication,
-            );
           },
         ),
       ],

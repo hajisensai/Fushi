@@ -7,6 +7,7 @@ import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
 import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
 import 'package:hibiki/src/media/sources/reader_ttu_source.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:hibiki/utils.dart';
 
 class HomePage extends BasePage {
@@ -107,12 +108,24 @@ class _HomePageState extends BasePageState<HomePage>
   }
 
   PreferredSizeWidget? buildAppBar() {
-    return AppBar(
-      leading: buildLeading(),
-      title: buildTitle(),
-      actions: buildActions(),
-      titleSpacing: 8,
-    );
+    switch (_currentTab) {
+      case 1:
+        return null;
+      case 2:
+        return AppBar(
+          leading: buildLeading(),
+          title: buildTitle(),
+          actions: buildSettingsActions(),
+          titleSpacing: 8,
+        );
+      default:
+        return AppBar(
+          leading: buildLeading(),
+          title: buildTitle(),
+          actions: buildActions(),
+          titleSpacing: 8,
+        );
+    }
   }
 
   Widget buildBody() {
@@ -184,6 +197,26 @@ class _HomePageState extends BasePageState<HomePage>
         ),
       ),
     );
+  }
+
+  List<Widget> buildSettingsActions() {
+    return [
+      JidoujishoIconButton(
+        tooltip: t.options_language,
+        icon: Icons.translate,
+        onTap: appModel.showLanguageMenu,
+      ),
+      JidoujishoIconButton(
+        tooltip: t.options_github,
+        icon: Icons.public,
+        onTap: () {
+          launchUrl(
+            Uri.parse('https://github.com/hdjsadgfwtg/hibiki'),
+            mode: LaunchMode.externalApplication,
+          );
+        },
+      ),
+    ];
   }
 
   Widget buildImportButton() {

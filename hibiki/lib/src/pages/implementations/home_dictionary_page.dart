@@ -115,14 +115,16 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
       builder: buildFloatingSearchBody,
       borderRadius: BorderRadius.zero,
       elevation: 0,
-      backgroundColor: appModel.isDarkMode
-          ? const Color.fromARGB(255, 30, 30, 30)
-          : const Color.fromARGB(255, 229, 229, 229),
+      height: kToolbarHeight,
+      backgroundColor: Theme.of(context).appBarTheme.backgroundColor ??
+          Theme.of(context).colorScheme.surface,
       backdropColor: Colors.transparent,
       accentColor: theme.colorScheme.primary,
       scrollPadding: const EdgeInsets.only(top: 6, bottom: 56),
       transitionDuration: Duration.zero,
-      margins: const EdgeInsets.symmetric(horizontal: 6),
+      margins: EdgeInsets.zero,
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      insets: EdgeInsets.zero,
       width: double.maxFinite,
       transition: SlideFadeFloatingSearchBarTransition(),
       automaticallyImplyBackButton: false,
@@ -132,7 +134,6 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
       onSubmitted: search,
       debounceDelay: Duration(milliseconds: appModel.searchDebounceDelay),
       leadingActions: [
-        buildDictionaryButton(),
         buildBackButton(),
       ],
       actions: [
@@ -235,6 +236,8 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
 
   Widget buildClearButton() {
     return FloatingSearchBarAction(
+      showIfOpened: false,
+      showIfClosed: true,
       child: JidoujishoIconButton(
         size: textTheme.titleLarge?.fontSize,
         tooltip: t.clear_dictionary_title,

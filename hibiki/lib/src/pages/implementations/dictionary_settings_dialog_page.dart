@@ -69,6 +69,10 @@ class _DictionaryDialogPageState extends BasePageState {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              _buildDictionaryManageRow(),
+              const Space.small(),
+              const JidoujishoDivider(),
+              const Space.small(),
               buildAutoSearchSwitch(),
               const Space.small(),
               buildAutoAddBookNameToTagsSwitch(),
@@ -92,6 +96,33 @@ class _DictionaryDialogPageState extends BasePageState {
               buildManageDuplicateChecks(),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDictionaryManageRow() {
+    return InkWell(
+      onTap: () {
+        showAppDialog(
+          context: context,
+          builder: (_) => const DictionaryDialogPage(),
+        ).then((_) {
+          if (mounted) setState(() {});
+        });
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Row(
+          children: [
+            Icon(Icons.auto_stories, size: textTheme.bodyMedium?.fontSize),
+            const SizedBox(width: 8),
+            Text(t.dictionaries),
+            const Spacer(),
+            Icon(Icons.chevron_right,
+                size: 20,
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ],
         ),
       ),
     );
