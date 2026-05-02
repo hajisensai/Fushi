@@ -133,9 +133,9 @@ flutter_icons:
   android: "launcher_icon"
   ios: true
   remove_alpha_ios: true
-  image_path: "assets/meta/launcher_source.png"
+  image_path: "assets/meta/splash_source.png"
   adaptive_icon_background: "#FFFFFF"
-  adaptive_icon_foreground: "assets/meta/launcher_source.png"
+  adaptive_icon_foreground: "assets/meta/splash_source.png"
 
 flutter:
   uses-material-design: true
