@@ -145,6 +145,8 @@ class AudiobookSettingsSheet extends StatefulWidget {
     this.onDeleteBookmark,
     this.favoriteSentences = const [],
     this.onDeleteFavorite,
+    this.onJumpToFavorite,
+    this.onPlayFavorite,
     this.showPlayBar = true,
     this.onTogglePlayBar,
     this.showMediaNotification = true,
@@ -171,6 +173,8 @@ class AudiobookSettingsSheet extends StatefulWidget {
   final Future<void> Function(int index)? onDeleteBookmark;
   final List<FavoriteSentence> favoriteSentences;
   final Future<void> Function(int index)? onDeleteFavorite;
+  final Future<void> Function(FavoriteSentence fav)? onJumpToFavorite;
+  final Future<void> Function(FavoriteSentence fav)? onPlayFavorite;
   final bool showPlayBar;
   final VoidCallback? onTogglePlayBar;
   final bool showMediaNotification;
@@ -784,26 +788,31 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
   }
 
   Widget _buildSpeedSection(ThemeData theme, AudiobookPlayerController ctrl) {
-    final double current = ctrl.speed;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(t.playback_speed, style: theme.textTheme.titleMedium),
-        const SizedBox(height: 8),
-        SegmentedButton<double>(
-          segments: _speeds
-              .map((double s) => ButtonSegment<double>(
-                    value: s,
-                    label: Text('${s.toStringAsFixed(2)}x'),
-                  ))
-              .toList(),
-          selected: <double>{current},
-          onSelectionChanged: (Set<double> sel) {
-            ctrl.setSpeed(sel.first);
-          },
-          style: _segmentedStyle(theme),
-        ),
-      ],
+    return ListenableBuilder(
+      listenable: ctrl,
+      builder: (BuildContext context, _) {
+        final double current = ctrl.speed;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(t.playback_speed, style: theme.textTheme.titleMedium),
+            const SizedBox(height: 8),
+            SegmentedButton<double>(
+              segments: _speeds
+                  .map((double s) => ButtonSegment<double>(
+                        value: s,
+                        label: Text('${s.toStringAsFixed(2)}x'),
+                      ))
+                  .toList(),
+              selected: <double>{current},
+              onSelectionChanged: (Set<double> sel) {
+                ctrl.setSpeed(sel.first);
+              },
+              style: _segmentedStyle(theme),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -1512,6 +1521,23 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      if (widget.onPlayFavorite != null)
+                        IconButton(
+                          icon: const Icon(Icons.volume_up, size: 16),
+                          onPressed: () async {
+                            await widget.onPlayFavorite?.call(fav);
+                          },
+                          tooltip: t.play,
+                        ),
+                      if (fav.sectionIndex != null && widget.onJumpToFavorite != null)
+                        IconButton(
+                          icon: const Icon(Icons.open_in_new, size: 16),
+                          onPressed: () async {
+                            Navigator.of(ctx).pop();
+                            await widget.onJumpToFavorite?.call(fav);
+                          },
+                          tooltip: t.jump_to_cue,
+                        ),
                       IconButton(
                         icon: const Icon(Icons.copy, size: 16),
                         onPressed: () {
