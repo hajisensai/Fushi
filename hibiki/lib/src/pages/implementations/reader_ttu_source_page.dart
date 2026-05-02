@@ -884,7 +884,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
                 // 步收缩，ttu 原生的 paginated 分页仍然对齐。）
                 Positioned.fill(
                   bottom: ((_audiobookController != null || _hasAudioSlot) &&
-                          appModel.showPlayBar) ||
+                              appModel.showPlayBar) ||
                           _audiobookController == null
                       ? 56 + MediaQuery.of(context).padding.bottom
                       : 0,
@@ -1237,6 +1237,13 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         );
 
         controller.addJavaScriptHandler(
+          handlerName: 'hibikiTtuBookmarkAdded',
+          callback: (data) async {
+            await _addCurrentViewportBookmark(from: 'ttu');
+          },
+        );
+
+        controller.addJavaScriptHandler(
           handlerName: 'imageClicked',
           callback: (data) async {
             if (data.isEmpty) return;
@@ -1332,6 +1339,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
           }
         } else {
           await jsFuture;
+          await _injectReaderViewportBridge(controller);
           if (!_didRestorePos) {
             try {
               await _bootstrapCurrentTtuSection(controller)
@@ -1351,9 +1359,12 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         }
         Future.delayed(
             const Duration(milliseconds: 300), _focusNode.requestFocus);
+        unawaited(_installTtuBookmarkBridge(controller));
       },
       onTitleChanged: (controller, title) async {
         await controller.evaluateJavascript(source: javascriptToExecute);
+        await _injectReaderViewportBridge(controller);
+        unawaited(_installTtuBookmarkBridge(controller));
 
         if (mediaSource.adaptTtuTheme) {
           setDictionaryColors();
@@ -2605,6 +2616,112 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     return int.tryParse(uri?.queryParameters['id'] ?? '');
   }
 
+  Future<void> _installTtuBookmarkBridge(
+    InAppWebViewController controller,
+  ) async {
+    try {
+      await controller.evaluateJavascript(source: '''
+(function() {
+  if (window.__hibikiBookmarkBridgeInstalled) return;
+  window.__hibikiBookmarkBridgeInstalled = true;
+
+  function notifyHibikiBookmark() {
+    try {
+      if (window.flutter_inappwebview &&
+          window.flutter_inappwebview.callHandler) {
+        window.flutter_inappwebview.callHandler('hibikiTtuBookmarkAdded');
+      }
+    } catch (e) {
+      console.error('[hibiki] bookmark bridge notify failed', e);
+    }
+  }
+
+  function wrapBookmarkPage() {
+    if (typeof window.__ttuBookmarkPage !== 'function') return false;
+    if (window.__ttuBookmarkPage.__hibikiWrapped) return true;
+    var wrapped = async function() {
+      notifyHibikiBookmark();
+    };
+    wrapped.__hibikiWrapped = true;
+    window.__ttuBookmarkPage = wrapped;
+    return true;
+  }
+
+  if (!wrapBookmarkPage()) {
+    var tries = 0;
+    var timer = setInterval(function() {
+      tries += 1;
+      if (wrapBookmarkPage() || tries >= 100) {
+        clearInterval(timer);
+      }
+    }, 100);
+  }
+})();
+''');
+    } catch (e) {
+      debugPrint('[hibiki-reader] bookmark bridge install error: $e');
+    }
+  }
+
+  Future<void> _addCurrentViewportBookmark({required String from}) async {
+    try {
+      final int? ttuId = _extractTtuBookId();
+      if (ttuId == null) {
+        debugPrint(
+            '[hibiki-reader] bookmark skipped: missing ttuId from=$from');
+        return;
+      }
+      final ReaderViewportPos bookmarkPos =
+          await _resolveBookmarkViewport(from: from);
+      final String chapterLabel = _tocLabels[bookmarkPos.section] ??
+          t.go_to_chapter(n: bookmarkPos.section + 1);
+      final bookmark = Bookmark(
+        sectionIndex: bookmarkPos.section,
+        normCharOffset: bookmarkPos.offset,
+        label: chapterLabel,
+        createdAt: DateTime.now(),
+        ttuBookId: ttuId,
+        bookTitle: widget.item?.title,
+      );
+      await BookmarkRepository(appModel.database).addBookmark(ttuId, bookmark);
+      if (mounted) {
+        Fluttertoast.showToast(msg: t.bookmark_added);
+      }
+    } catch (e) {
+      debugPrint('[hibiki-reader] bookmark error from=$from: $e');
+    }
+  }
+
+  Future<ReaderViewportPos> _resolveBookmarkViewport({
+    required String from,
+  }) async {
+    final ReaderViewportPos? viewport =
+        await AudiobookBridge.getViewportNormOffset(_controller);
+    if (viewport != null) {
+      return viewport;
+    }
+
+    final TtuApiProbe probe = await AudiobookBridge.probeTtuApi(_controller);
+    final int section = probe.currentSection ?? _currentTtuSection;
+    final int safeSection = section >= 0 ? section : 0;
+    debugPrint(
+      '[hibiki-reader] bookmark viewport fallback: '
+      'from=$from section=$safeSection',
+    );
+    return ReaderViewportPos(section: safeSection, offset: 0);
+  }
+
+  Future<void> _injectReaderViewportBridge(
+    InAppWebViewController controller,
+  ) async {
+    try {
+      await AudiobookBridge.inject(controller);
+      unawaited(_installTtuBookmarkBridge(controller));
+    } catch (e) {
+      debugPrint('[hibiki-reader] viewport bridge inject error: $e');
+    }
+  }
+
   /// 根据 [SrtBook] 的音频来源构建有序文件列表。
   Future<List<File>> _audioFilesForSrtBook(SrtBook book) => _resolveAudioFiles(
       audioPaths: book.audioPaths, audioRoot: book.audioRoot);
@@ -2777,30 +2894,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
             );
           },
           onBookmark: () async {
-            try {
-              final int? ttuId = _extractTtuBookId();
-              if (ttuId == null) return;
-              final vp =
-                  await AudiobookBridge.getViewportNormOffset(_controller);
-              if (vp == null) return;
-              final String chapterLabel =
-                  _tocLabels[vp.section] ?? t.go_to_chapter(n: vp.section + 1);
-              final bookmark = Bookmark(
-                sectionIndex: vp.section,
-                normCharOffset: vp.offset,
-                label: chapterLabel,
-                createdAt: DateTime.now(),
-                ttuBookId: ttuId,
-                bookTitle: widget.item?.title,
-              );
-              await BookmarkRepository(appModel.database)
-                  .addBookmark(ttuId, bookmark);
-              if (mounted) {
-                Fluttertoast.showToast(msg: t.bookmark_added);
-              }
-            } catch (e) {
-              debugPrint('[hibiki-reader] bookmark error: $e');
-            }
+            await _addCurrentViewportBookmark(from: 'sheet');
           },
           onExitReader: () {
             if (mounted) Navigator.of(context).pop();
@@ -3684,46 +3778,41 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
 
   /// 右下角耳机图标，仅在无有声书时显示，点击打开导入对话框。
   Widget buildAudiobookImportButton() {
-    if (_audiobookController != null) {
-      return const SizedBox.shrink();
-    }
-    final String? bookUid = widget.item?.uniqueKey;
-    if (bookUid == null) {
-      return const SizedBox.shrink();
-    }
-    // 右下角并排：⚙（right:12）+ 🎧（right:68）。两者都只在未挂 audio
-    // 时显示，挂了之后设置入口挪到播放栏的 ⚙、导入按钮也不再需要。
-    final double fabBottom = MediaQuery.of(context).padding.bottom + 8;
-    return Positioned(
-      right: 68,
-      bottom: fabBottom,
-      child: Opacity(
-        opacity: 0.6,
-        child: FloatingActionButton.small(
-          heroTag: 'audiobook_import_fab',
-          tooltip: t.audiobook_import,
-          onPressed: () => _openImportDialog(bookUid),
-          child: const Icon(Icons.headphones, size: 20),
-        ),
-      ),
-    );
+    return const SizedBox.shrink();
   }
 
   Widget buildReaderSettingsFab() {
     if (_audiobookController != null) {
       return const SizedBox.shrink();
     }
-    final double fabBottom = MediaQuery.of(context).padding.bottom + 8;
+    final String? bookUid = widget.item?.uniqueKey;
     return Positioned(
-      right: 12,
-      bottom: fabBottom,
-      child: Opacity(
-        opacity: 0.6,
-        child: FloatingActionButton.small(
-          heroTag: 'reader_settings_fab',
-          tooltip: t.reader_settings_label,
-          onPressed: () => _showReaderSettingsSheet(null),
-          child: const Icon(Icons.tune, size: 20),
+      left: 0,
+      right: 0,
+      bottom: 0,
+      child: SafeArea(
+        top: false,
+        child: BottomAppBar(
+          height: 56,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: Row(
+            children: [
+              if (bookUid != null)
+                IconButton(
+                  icon: const Icon(Icons.headphones),
+                  iconSize: 22,
+                  onPressed: () => _openImportDialog(bookUid),
+                  tooltip: t.audiobook_import,
+                ),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.tune),
+                iconSize: 20,
+                onPressed: () => _showReaderSettingsSheet(null),
+                tooltip: t.reader_settings_label,
+              ),
+            ],
+          ),
         ),
       ),
     );
