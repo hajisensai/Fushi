@@ -50,6 +50,7 @@ Widget _buildSegmentedRow<T extends Object>({
     builder: (context) {
       final cs = Theme.of(context).colorScheme;
       return SegmentedButton<T>(
+        showSelectedIcon: false,
         segments: segments,
         selected: selected,
         onSelectionChanged: onSelectionChanged,
@@ -423,10 +424,9 @@ class _TtuSettingsDialogPageState extends BasePageState {
             children: [
               _buildThemeSelector(appModel, navContext: context),
               const Space.small(),
-              _buildFontEntry(context),
-              const Space.small(),
               const JidoujishoDivider(),
               const Space.small(),
+              _buildFontEntry(context),
               _buildTapRow(
                 context: context,
                 icon: Icons.text_fields,
@@ -464,16 +464,29 @@ class TtuSettingsDialogContent extends BasePage {
 }
 
 class _TtuSettingsDialogContentState extends BasePageState {
+  String? _subPage;
 
   @override
   Widget build(BuildContext context) {
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 200),
+      child: _subPage != null
+          ? _buildSub(context)
+          : _buildMain(context),
+    );
+  }
+
+  Widget _buildMain(BuildContext context) {
     return ListView(
+      key: const ValueKey<String>('main'),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       children: [
         _buildThemeSelector(appModel, navContext: context),
         const Space.small(),
-        _buildTapRow(
-          context: context,
+        const JidoujishoDivider(),
+        const Space.small(),
+        _categoryTile(
+          context,
           icon: Icons.style,
           label: t.anki_settings_label,
           onTap: () {
@@ -483,13 +496,19 @@ class _TtuSettingsDialogContentState extends BasePageState {
             );
           },
         ),
-        const Space.small(),
-        _buildFontEntry(context),
-        const Space.small(),
-        const JidoujishoDivider(),
-        const Space.small(),
-        _buildTapRow(
-          context: context,
+        _categoryTile(
+          context,
+          icon: Icons.font_download,
+          label: t.custom_fonts,
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const CustomFontsPage()),
+            );
+          },
+        ),
+        _categoryTile(
+          context,
           icon: Icons.text_fields,
           label: t.display_settings,
           onTap: () {
@@ -499,45 +518,20 @@ class _TtuSettingsDialogContentState extends BasePageState {
             ).then((_) => setState(() {}));
           },
         ),
-        const Space.small(),
-        const JidoujishoDivider(),
-        const Space.small(),
-        ..._buildReaderOnlySwitches(() => setState(() {})),
-        const Space.small(),
-        const JidoujishoDivider(),
-        _buildPageTurningSpeed(() => setState(() {})),
-        const Space.small(),
-        const JidoujishoDivider(),
-        const Space.small(),
-        _buildSwitch(
-          label: t.update_never_remind,
-          value: appModel.updateNeverRemind,
-          onChanged: (v) {
-            appModel.setUpdateNeverRemind(v);
-            setState(() {});
-          },
+        _categoryTile(
+          context,
+          icon: Icons.auto_stories,
+          label: t.reader_settings_section,
+          onTap: () => setState(() => _subPage = 'reader'),
         ),
-        _buildSwitch(
-          label: t.update_auto_install,
-          value: appModel.updateAutoInstall,
-          onChanged: (v) {
-            appModel.setUpdateAutoInstall(v);
-            setState(() {});
-          },
+        _categoryTile(
+          context,
+          icon: Icons.settings,
+          label: t.section_interface,
+          onTap: () => setState(() => _subPage = 'app'),
         ),
-        _buildSwitch(
-          label: t.disable_dialog_scrim,
-          value: appModel.disableDialogScrim,
-          onChanged: (v) {
-            appModel.setDisableDialogScrim(v);
-            setState(() {});
-          },
-        ),
-        const Space.small(),
-        const JidoujishoDivider(),
-        const Space.small(),
-        _buildTapRow(
-          context: context,
+        _categoryTile(
+          context,
           icon: Icons.bug_report,
           label: t.error_log_label(n: ErrorLogService.instance.entries.length),
           onTap: () {
@@ -548,6 +542,87 @@ class _TtuSettingsDialogContentState extends BasePageState {
           },
         ),
       ],
+    );
+  }
+
+  Widget _buildSub(BuildContext context) {
+    final String page = _subPage!;
+    String title;
+    List<Widget> children;
+    switch (page) {
+      case 'reader':
+        title = t.reader_settings_section;
+        children = [
+          ..._buildReaderOnlySwitches(() => setState(() {})),
+          const Space.small(),
+          const JidoujishoDivider(),
+          _buildPageTurningSpeed(() => setState(() {})),
+        ];
+      case 'app':
+        title = t.section_interface;
+        children = [
+          _buildSwitch(
+            label: t.update_never_remind,
+            value: appModel.updateNeverRemind,
+            onChanged: (v) {
+              appModel.setUpdateNeverRemind(v);
+              setState(() {});
+            },
+          ),
+          _buildSwitch(
+            label: t.update_auto_install,
+            value: appModel.updateAutoInstall,
+            onChanged: (v) {
+              appModel.setUpdateAutoInstall(v);
+              setState(() {});
+            },
+          ),
+          _buildSwitch(
+            label: t.disable_dialog_scrim,
+            value: appModel.disableDialogScrim,
+            onChanged: (v) {
+              appModel.setDisableDialogScrim(v);
+              setState(() {});
+            },
+          ),
+        ];
+      default:
+        title = '';
+        children = [];
+    }
+    return ListView(
+      key: ValueKey<String>(page),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      children: [
+        Row(
+          children: [
+            IconButton(
+              icon: const Icon(Icons.arrow_back),
+              onPressed: () => setState(() => _subPage = null),
+            ),
+            const SizedBox(width: 4),
+            Text(title, style: Theme.of(context).textTheme.titleMedium),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ...children,
+      ],
+    );
+  }
+
+  Widget _categoryTile(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return ListTile(
+      dense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+      leading: Icon(icon, size: 22),
+      title: Text(label),
+      trailing: const Icon(Icons.chevron_right, size: 20),
+      onTap: onTap,
     );
   }
 }

@@ -108,6 +108,7 @@ class _DisplaySettingsPageState extends BasePageState {
             theme,
             label: t.ttu_writing_direction,
             child: SegmentedButton<String>(
+              showSelectedIcon: false,
               segments: [
                 ButtonSegment(
                     value: 'horizontal-tb', label: Text(t.ttu_horizontal)),
@@ -124,6 +125,7 @@ class _DisplaySettingsPageState extends BasePageState {
             theme,
             label: t.ttu_view_mode_label,
             child: SegmentedButton<String>(
+              showSelectedIcon: false,
               segments: [
                 ButtonSegment(
                     value: 'paginated', label: Text(t.ttu_paginated)),
@@ -140,6 +142,7 @@ class _DisplaySettingsPageState extends BasePageState {
             theme,
             label: t.ttu_vert_text_orient,
             child: SegmentedButton<String>(
+              showSelectedIcon: false,
               segments: [
                 ButtonSegment(
                     value: 'mixed', label: Text(t.ttu_orient_mixed)),
@@ -162,6 +165,7 @@ class _DisplaySettingsPageState extends BasePageState {
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: SegmentedButton<String>(
+                    showSelectedIcon: false,
                     segments: [
                       ButtonSegment(
                           value: 'show', label: Text(t.ttu_furigana_show)),

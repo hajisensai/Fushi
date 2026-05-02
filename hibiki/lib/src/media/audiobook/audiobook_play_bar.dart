@@ -764,6 +764,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                 final bool isChild = e.parent != null;
                 return ListTile(
                   dense: true,
+                  visualDensity: const VisualDensity(vertical: -3),
                   contentPadding: EdgeInsets.only(
                     left: isChild ? 24 : 0,
                     right: 8,
@@ -821,6 +822,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                         : '';
                 return ListTile(
                   dense: true,
+                  visualDensity: const VisualDensity(vertical: -3),
                   contentPadding: EdgeInsets.zero,
                   title: Text(
                     '${bm.label}$pageInfo',
@@ -1697,15 +1699,15 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
     final ThemeData theme = Theme.of(context);
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(8),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 26, color: theme.colorScheme.onSurface),
-            const SizedBox(height: 6),
-            Text(label, style: theme.textTheme.labelMedium),
+            Icon(icon, size: 20, color: theme.colorScheme.onSurface),
+            const SizedBox(height: 4),
+            Text(label, style: theme.textTheme.labelSmall),
           ],
         ),
       ),
