@@ -1460,6 +1460,7 @@ function createGlossarySection(dictName, contents, isFirst, entryIdx) {
 
 window.renderPopup = function() {
     const container = document.getElementById('entries-container');
+    if (!container) return;
     container.innerHTML = '';
 
     if (!window.lookupEntries || !window.lookupEntries.length) {

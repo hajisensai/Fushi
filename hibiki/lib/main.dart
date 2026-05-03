@@ -49,10 +49,12 @@ void main() {
           ? SystemUiOverlayStyle.light.copyWith(
               statusBarColor: Colors.transparent,
               systemNavigationBarColor: Colors.transparent,
+              systemNavigationBarContrastEnforced: false,
             )
           : SystemUiOverlayStyle.dark.copyWith(
               statusBarColor: Colors.transparent,
               systemNavigationBarColor: Colors.transparent,
+              systemNavigationBarContrastEnforced: false,
             ),
     );
 

@@ -1018,9 +1018,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
               alignment: Alignment.center,
               children: <Widget>[
                 Positioned.fill(
-                  bottom: (_audiobookController != null && appModel.showPlayBar)
-                      ? 56 + MediaQuery.of(context).padding.bottom
-                      : 0,
+                  bottom: 56 + MediaQuery.of(context).padding.bottom,
                   child: buildBody(),
                 ),
                 if (!_readerContentReady)

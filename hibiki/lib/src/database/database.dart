@@ -292,7 +292,17 @@ class HibikiDatabase extends _$HibikiDatabase {
 
   // ── reading statistics ──────────────────────────────────────────
   Future<void> upsertReadingStatistic(ReadingStatisticsCompanion stat) =>
-      into(readingStatistics).insertOnConflictUpdate(stat);
+      into(readingStatistics).insert(
+        stat,
+        onConflict: DoUpdate(
+          (old) => ReadingStatisticsCompanion(
+            charactersRead: stat.charactersRead,
+            readingTimeMs: stat.readingTimeMs,
+            lastStatisticModified: stat.lastStatisticModified,
+          ),
+          target: [readingStatistics.title, readingStatistics.dateKey],
+        ),
+      );
 
   Future<List<ReadingStatisticRow>> getAllReadingStatistics() =>
       select(readingStatistics).get();
