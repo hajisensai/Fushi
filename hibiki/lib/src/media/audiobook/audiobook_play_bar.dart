@@ -317,8 +317,6 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildProgressSection(theme),
-        const SizedBox(height: 16),
-        const Divider(height: 1),
         const SizedBox(height: 12),
         _categoryTile(
           theme,
