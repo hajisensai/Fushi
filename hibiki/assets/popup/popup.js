@@ -227,11 +227,11 @@ function constructFuriganaPlain(expression, reading) {
 }
 
 // !AI SLOP! function to preprocess css
-function constructDictCss(css, dictName) {
+function constructDictCss(css, dictName, scopePrefix) {
     if (!css) {
         return '';
     }
-    const prefix = `.yomitan-glossary [data-dictionary="${dictName}"]`;
+    const prefix = scopePrefix || `[data-dictionary="${dictName}"]`;
     const parts = [];
     let i = 0;
     while (i < css.length) {
@@ -297,7 +297,7 @@ function constructDictCss(css, dictName) {
             }
             parts.push(properties);
             if (nestedRules) {
-                parts.push(constructDictCss(nestedRules, dictName));
+                parts.push(constructDictCss(nestedRules, dictName, scopePrefix));
             }
         } else {
             parts.push(blockContent);
@@ -386,7 +386,7 @@ function constructSingleGlossaryHtml(entryIndex) {
         let html = `<div style="text-align: left;" class="yomitan-glossary"><ol>${currentGlossary}</ol>`;
         const css = window.dictionaryStyles?.[lastDict] ?? '';
         if (css) {
-            const scopedCss = constructDictCss(css, lastDict);
+            const scopedCss = constructDictCss(css, lastDict, `.yomitan-glossary [data-dictionary="${lastDict}"]`);
             const formatted = scopedCss
             .replace(/\s+/g, ' ')
             .replace(/\s*\{\s*/g, ' { ')
@@ -418,7 +418,11 @@ function constructSingleGlossaryHtml(entryIndex) {
             try {
                 renderStructuredContent(tempDiv, JSON.parse(g.content), null, dictName, true);
             } catch {
-                renderStructuredContent(tempDiv, g.content, null, dictName, true);
+                if (/<[a-z][\s\S]*>/i.test(g.content)) {
+                    tempDiv.innerHTML = g.content.replace(/<link[^>]*>/gi, '');
+                } else {
+                    renderStructuredContent(tempDiv, g.content, null, dictName, true);
+                }
             }
         } else {
             renderStructuredContent(tempDiv, g.content, null, dictName, true);
@@ -464,7 +468,11 @@ function constructGlossaryHtml(entryIndex) {
             try {
                 renderStructuredContent(tempDiv, JSON.parse(g.content), null, dictName, true);
             } catch {
-                renderStructuredContent(tempDiv, g.content, null, dictName, true);
+                if (/<[a-z][\s\S]*>/i.test(g.content)) {
+                    tempDiv.innerHTML = g.content.replace(/<link[^>]*>/gi, '');
+                } else {
+                    renderStructuredContent(tempDiv, g.content, null, dictName, true);
+                }
             }
         } else {
             renderStructuredContent(tempDiv, g.content, null, dictName, true);
@@ -500,7 +508,7 @@ function constructGlossaryHtml(entryIndex) {
     result += '</ol>';
     
     for (const [dictName, css] of Object.entries(styles)) {
-        const scopedCss = constructDictCss(css, dictName);
+        const scopedCss = constructDictCss(css, dictName, `.yomitan-glossary [data-dictionary="${dictName}"]`);
         const formatted = scopedCss
         .replace(/\s+/g, ' ')
         .replace(/\s*\{\s*/g, ' { ')
@@ -1386,15 +1394,16 @@ function createGlossarySection(dictName, contents, isFirst, entryIdx) {
     const dictStyle = window.dictionaryStyles?.[dictName] ?? '';
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
     const baseColor = isDark ? '#fff' : '#000';
-    dictWrapper.appendChild(el('style', {
-        textContent: `
-            [data-dictionary="${dictName}"] {
-                color: ${baseColor};
-                ${dictStyle}
-                ${compactCss}
-            }
-        `.trim()
-    }));
+    let styleText = `
+        [data-dictionary="${dictName}"] {
+            color: ${baseColor};
+            ${compactCss}
+        }
+    `.trim();
+    if (dictStyle) {
+        styleText += '\n' + constructDictCss(dictStyle, dictName);
+    }
+    dictWrapper.appendChild(el('style', { textContent: styleText }));
     
     const termTags = [...new Set(parseTags(contents[0]?.termTags))];
     const renderContent = (parent, content) => {

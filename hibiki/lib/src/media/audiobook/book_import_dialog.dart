@@ -19,8 +19,6 @@ import 'package:hibiki/src/media/audiobook/sasayaki_match_codec.dart';
 import 'package:hibiki/src/media/audiobook/sasayaki_rematch.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_model.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
-import 'package:hibiki/src/media/audiobook/audio_file_entry.dart';
-import 'package:hibiki/src/media/audiobook/audio_file_panel.dart';
 import 'package:hibiki/src/media/audiobook/ass_parser.dart';
 import 'package:hibiki/src/media/audiobook/lrc_parser.dart';
 import 'package:hibiki/src/media/audiobook/srt_parser.dart';
@@ -75,41 +73,22 @@ class _BookImportDialogState extends State<BookImportDialog> {
   final TextEditingController _authorCtrl = TextEditingController();
 
   String? _epubPath;
-
-  List<AudioFileEntry> _audioEntries = [];
-  List<String> _subtitlePaths = [];
-  String? _audioDir;
-  List<SectionOption> _epubSections = [];
+  String? _subtitlePath;
+  String? _audioPath;
 
   bool _importing = false;
 
-  /// 默认开启：导入时自动探测多档 searchWindow，取命中率最高的那档。
-  /// 关掉后才暴露手动滑杆 —— 大多数书 auto-probe 的结果已经够好，用户
-  /// 没判断依据去手动拖（导入前还没看到匹配结果）。
   bool _autoWindow = true;
   int _searchWindow = EpubSrtMatcher.defaultSearchWindow;
   double _similarityThreshold = EpubSrtMatcher.defaultSimilarityThreshold;
 
-  /// 只有 EPUB + SRT 组合导入会跑 Sasayaki matcher，其他路径（仅 EPUB /
-  /// 字幕自身渲染）不受 window 影响，UI 上对应地隐藏滑杆。
   bool get _willRunMatcher {
-    if (_epubPath == null) return false;
-    if (_subtitlePaths.isEmpty) return false;
-    final String ext = _subtitlePaths.first.split('.').last.toLowerCase();
+    if (_epubPath == null || _subtitlePath == null) return false;
+    final String ext = _subtitlePath!.split('.').last.toLowerCase();
     return SasayakiRematch.supportedFormats.contains(ext);
   }
 
-  bool get _hasAudioSource => _audioDir != null || _audioEntries.isNotEmpty;
-
-  bool get _hasSubtitles => _subtitlePaths.isNotEmpty;
-
-  String get _audioSourceLabel {
-    if (_audioEntries.isNotEmpty) {
-      return t.srt_import_files_selected(n: _audioEntries.length);
-    }
-    if (_audioDir != null) return _basename(_audioDir!);
-    return '';
-  }
+  bool get _hasSubtitles => _subtitlePath != null;
 
   @override
   void dispose() {
@@ -164,15 +143,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
         const SizedBox(height: 8),
         _subtitleRow(),
         const SizedBox(height: 8),
-        _audioSourceRow(),
-        if (_audioEntries.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          AudioFilePanel(
-            entries: _audioEntries,
-            sections: _epubSections,
-            onChanged: () => setState(() {}),
-          ),
-        ],
+        _audioRow(),
         const SizedBox(height: 12),
         TextField(
           controller: _titleCtrl,
@@ -257,70 +228,17 @@ class _BookImportDialogState extends State<BookImportDialog> {
   }
 
   Widget _subtitleRow() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(t.srt_import_pick_subtitle_files,
-                  style: const TextStyle(fontSize: 13)),
-            ),
-            IconButton(
-              icon: const Icon(Icons.folder_open, size: 20),
-              tooltip: t.srt_import_pick_subtitle_dir,
-              onPressed: _pickSubtitleDir,
-            ),
-            IconButton(
-              icon: const Icon(Icons.subtitles, size: 20),
-              tooltip: t.srt_import_pick_subtitle_files,
-              onPressed: _pickSubtitleFiles,
-            ),
-          ],
-        ),
-        for (int i = 0; i < _subtitlePaths.length; i++)
-          Padding(
-            padding: const EdgeInsets.only(left: 4),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    _basename(_subtitlePaths[i]),
-                    style: const TextStyle(fontSize: 11, color: Colors.grey),
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 1,
-                  ),
-                ),
-                InkWell(
-                  onTap: () => setState(() => _subtitlePaths.removeAt(i)),
-                  child: const Padding(
-                    padding: EdgeInsets.all(4),
-                    child: Icon(Icons.close, size: 14, color: Colors.grey),
-                  ),
-                ),
-              ],
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _audioSourceRow() {
     return Row(
       children: [
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                _audioEntries.isNotEmpty
-                    ? t.srt_import_pick_audio_files
-                    : t.srt_import_pick_audio_dir,
-                style: const TextStyle(fontSize: 13),
-              ),
-              if (_hasAudioSource)
+              Text(t.srt_import_pick_subtitle_files,
+                  style: const TextStyle(fontSize: 13)),
+              if (_subtitlePath != null)
                 Text(
-                  _audioSourceLabel,
+                  _basename(_subtitlePath!),
                   style: const TextStyle(fontSize: 11, color: Colors.grey),
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
@@ -328,15 +246,48 @@ class _BookImportDialogState extends State<BookImportDialog> {
             ],
           ),
         ),
+        if (_subtitlePath != null)
+          IconButton(
+            icon: const Icon(Icons.close, size: 18, color: Colors.grey),
+            onPressed: () => setState(() => _subtitlePath = null),
+          ),
         IconButton(
-          icon: const Icon(Icons.folder_open, size: 20),
-          tooltip: t.srt_import_pick_audio_dir,
-          onPressed: _pickAudioDir,
+          icon: const Icon(Icons.subtitles, size: 20),
+          tooltip: t.srt_import_pick_subtitle_files,
+          onPressed: _pickSubtitle,
         ),
+      ],
+    );
+  }
+
+  Widget _audioRow() {
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(t.srt_import_pick_audio_files,
+                  style: const TextStyle(fontSize: 13)),
+              if (_audioPath != null)
+                Text(
+                  _basename(_audioPath!),
+                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+            ],
+          ),
+        ),
+        if (_audioPath != null)
+          IconButton(
+            icon: const Icon(Icons.close, size: 18, color: Colors.grey),
+            onPressed: () => setState(() => _audioPath = null),
+          ),
         IconButton(
           icon: const Icon(Icons.audio_file, size: 20),
           tooltip: t.srt_import_pick_audio_files,
-          onPressed: _pickAudioFiles,
+          onPressed: _pickAudio,
         ),
       ],
     );
@@ -381,119 +332,30 @@ class _BookImportDialogState extends State<BookImportDialog> {
     }
   }
 
-  Future<void> _pickSubtitleDir() async {
-    final String? dir = await FilePicker.platform.getDirectoryPath();
-    if (dir == null || !mounted) return;
-
-    final Directory directory = Directory(dir);
-    if (!directory.existsSync()) return;
-
-    const List<String> subtitleExts = ['.srt', '.lrc', '.vtt', '.ass', '.ssa'];
-    final List<String> paths = directory
-        .listSync(recursive: true)
-        .whereType<File>()
-        .where((f) {
-          final String lower = f.path.toLowerCase();
-          return subtitleExts.any(lower.endsWith);
-        })
-        .map((f) => f.path)
-        .toList()
-      ..sort(naturalCompare);
-
-    if (paths.isEmpty) {
-      Fluttertoast.showToast(msg: t.srt_no_subtitle_files);
-      return;
-    }
-
-    setState(() {
-      _subtitlePaths = paths;
-      if (_titleCtrl.text.isEmpty && paths.isNotEmpty) {
-        _titleCtrl.text = p.basenameWithoutExtension(paths.first);
-      }
-    });
-  }
-
-  Future<void> _pickSubtitleFiles() async {
+  Future<void> _pickSubtitle() async {
     final FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['srt', 'lrc', 'vtt', 'ass', 'ssa'],
-      allowMultiple: true,
     );
-    if (result == null || !mounted) return;
-
-    final List<String> paths =
-        result.files.map((f) => f.path).whereType<String>().toList();
-
-    if (paths.isEmpty) return;
+    final String? path = result?.files.single.path;
+    if (path == null || !mounted) return;
 
     setState(() {
-      _subtitlePaths.addAll(paths);
-      if (_titleCtrl.text.isEmpty && paths.isNotEmpty) {
-        _titleCtrl.text = p.basenameWithoutExtension(paths.first);
+      _subtitlePath = path;
+      if (_titleCtrl.text.isEmpty) {
+        _titleCtrl.text = p.basenameWithoutExtension(path);
       }
     });
   }
 
-  Future<void> _pickAudioDir() async {
-    final String? dir = await FilePicker.platform.getDirectoryPath();
-    if (dir == null || !mounted) return;
-
-    final Directory directory = Directory(dir);
-    if (!directory.existsSync()) return;
-
-    const List<String> audioExts = [
-      '.mp3',
-      '.m4a',
-      '.m4b',
-      '.aac',
-      '.ogg',
-      '.opus',
-      '.flac',
-      '.wav',
-      '.wma',
-    ];
-    final List<File> files =
-        directory.listSync(recursive: true).whereType<File>().where((f) {
-      final String lower = f.path.toLowerCase();
-      return audioExts.any(lower.endsWith);
-    }).toList()
-          ..sort((a, b) => naturalCompare(a.path, b.path));
-
-    if (files.isEmpty) {
-      Fluttertoast.showToast(msg: t.srt_no_audio_files);
-      return;
-    }
-
-    setState(() {
-      _audioEntries = files.map((f) => AudioFileEntry(path: f.path)).toList();
-      _audioDir = dir;
-    });
-  }
-
-  Future<void> _pickAudioFiles() async {
+  Future<void> _pickAudio() async {
     final FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.audio,
-      allowMultiple: true,
     );
-    if (result == null || !mounted) return;
+    final String? path = result?.files.single.path;
+    if (path == null || !mounted) return;
 
-    final List<String> paths = result.files
-        .map((f) => f.path)
-        .whereType<String>()
-        .toList()
-      ..sort(naturalCompare);
-
-    if (paths.isEmpty) return;
-
-    setState(() {
-      final Set<String> existing = _audioEntries.map((e) => e.path).toSet();
-      for (final String path in paths) {
-        if (!existing.contains(path)) {
-          _audioEntries.add(AudioFileEntry(path: path));
-        }
-      }
-      _audioDir = null;
-    });
+    setState(() => _audioPath = path);
   }
 
   // ── 导入 ────────────────────────────────────────────────────────────────
@@ -503,8 +365,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
       Fluttertoast.showToast(msg: t.srt_import_missing_input);
       return;
     }
-    if (_epubPath != null && !_hasSubtitles && _hasAudioSource) {
-      // 音频必须配合字幕使用：EPUB 上没有 cue 时间轴，对不齐。
+    if (_epubPath != null && !_hasSubtitles && _audioPath != null) {
       Fluttertoast.showToast(msg: t.srt_import_audio_needs_subtitle);
       return;
     }
@@ -549,34 +410,24 @@ class _BookImportDialogState extends State<BookImportDialog> {
     }
   }
 
-  /// Subtitle flow: parse cues → build ttu IDB payload with `data-cue-id`
-  /// spans → inject directly, then persist the [SrtBook] + cues for sync.
   Future<void> _importSubtitleBook({
     required String title,
     required String? author,
   }) async {
     final String uid = 'srtbook_${DateTime.now().millisecondsSinceEpoch}';
-    final List<AudioCue> allCues = [];
 
-    final int nSub = _subtitlePaths.length;
-    final int nAudio = _audioEntries.length;
-    for (int i = 0; i < nSub; i++) {
-      final int audioFileIndex =
-          (nSub == nAudio) ? i : (nSub == 1 ? 0 : i.clamp(0, nAudio - 1));
-      final List<AudioCue> cues = await _parseCuesWithIndex(
-        File(_subtitlePaths[i]),
-        uid,
-        audioFileIndex,
-      );
-      allCues.addAll(cues);
-    }
+    final List<AudioCue> cues = await _parseCuesWithIndex(
+      File(_subtitlePath!),
+      uid,
+      0,
+    );
 
     int ttuBookId = 0;
-    if (allCues.isNotEmpty) {
+    if (cues.isNotEmpty) {
       try {
         final TtuIdbPayload payload = CuesToEpub.buildIdbPayload(
           title: title,
-          cues: allCues,
+          cues: cues,
         );
         ttuBookId = await _injectPayloadIntoTtuIdb(payload);
       } catch (e) {
@@ -585,22 +436,13 @@ class _BookImportDialogState extends State<BookImportDialog> {
     }
 
     final Directory persistDir = await _ensurePersistDir(uid);
-    List<String>? persistedAudioPaths;
-    String? persistedAudioRoot;
-    if (_audioEntries.isNotEmpty) {
-      persistedAudioPaths = [];
-      for (final AudioFileEntry entry in _audioEntries) {
-        persistedAudioPaths
-            .add(await _persistFile(File(entry.path), persistDir));
-      }
-    } else if (_audioDir != null) {
-      persistedAudioRoot = _audioDir;
-    }
+    final String persistedSrt =
+        await _persistFile(File(_subtitlePath!), persistDir);
 
-    final String? firstSubPath = _subtitlePaths.firstOrNull;
-    final String persistedSrt = firstSubPath != null
-        ? await _persistFile(File(firstSubPath), persistDir)
-        : '';
+    String? persistedAudioPath;
+    if (_audioPath != null) {
+      persistedAudioPath = await _persistFile(File(_audioPath!), persistDir);
+    }
 
     final SrtBook book = SrtBook()
       ..uid = uid
@@ -608,20 +450,18 @@ class _BookImportDialogState extends State<BookImportDialog> {
       ..srtPath = persistedSrt
       ..importedAt = DateTime.now().millisecondsSinceEpoch
       ..ttuBookId = ttuBookId;
-    if (persistedAudioPaths != null && persistedAudioPaths.isNotEmpty) {
-      book.audioPaths = persistedAudioPaths;
-    } else if (persistedAudioRoot != null) {
-      book.audioRoot = persistedAudioRoot;
+    if (persistedAudioPath != null) {
+      book.audioPaths = [persistedAudioPath];
     }
     if (author != null) {
       book.author = author;
     }
 
     debugPrint('[hibiki-import] SrtBook save: uid=$uid title="$title" '
-        'ttuBookId=$ttuBookId cues=${allCues.length}');
+        'ttuBookId=$ttuBookId cues=${cues.length}');
 
     await widget.repo.save(book);
-    await widget.repo.saveCues(uid: uid, cues: allCues);
+    await widget.repo.saveCues(uid: uid, cues: cues);
   }
 
   /// EPUB-only flow: read the file bytes and drive ttu's own file-input
@@ -691,32 +531,22 @@ class _BookImportDialogState extends State<BookImportDialog> {
     final String bookUid =
         '${widget.ttuMediaSourceIdentifier}/$mediaIdentifier';
 
-    final List<AudioCue> allCues = [];
-    final int nSub = _subtitlePaths.length;
-    final int nAudio = _audioEntries.length;
-    String? firstExt;
-    for (int i = 0; i < nSub; i++) {
-      firstExt ??= _subtitlePaths[i].split('.').last.toLowerCase();
-      final int audioFileIndex =
-          (nSub == nAudio) ? i : (nSub == 1 ? 0 : i.clamp(0, nAudio - 1));
-      final List<AudioCue> cues = await _parseCuesWithIndex(
-        File(_subtitlePaths[i]),
-        bookUid,
-        audioFileIndex,
-      );
-      allCues.addAll(cues);
-    }
-    final String ext = firstExt ?? 'srt';
+    final String ext = _subtitlePath!.split('.').last.toLowerCase();
+    final List<AudioCue> cues = await _parseCuesWithIndex(
+      File(_subtitlePath!),
+      bookUid,
+      0,
+    );
     final String chapterHref = _defaultChapterFor(ext);
 
     AudiobookHealth health;
     final bool runMatcher = SasayakiRematch.supportedFormats.contains(ext);
-    if (runMatcher && sections.isNotEmpty && allCues.isNotEmpty) {
+    if (runMatcher && sections.isNotEmpty && cues.isNotEmpty) {
       int chosenWindow = _searchWindow;
       if (_autoWindow) {
         final int? best = await SasayakiRematch.runAutoProbe(
           sections: sections,
-          cues: allCues,
+          cues: cues,
         );
         if (best != null) {
           chosenWindow = best;
@@ -724,7 +554,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
       }
       health = await _runSasayakiMatch(
         sections: sections,
-        cues: allCues,
+        cues: cues,
         searchWindow: chosenWindow,
         similarityThreshold: _similarityThreshold,
       );
@@ -739,42 +569,31 @@ class _BookImportDialogState extends State<BookImportDialog> {
     }
 
     final Directory persistDir = await _ensurePersistDir(bookUid);
-    final String? firstSubPath = _subtitlePaths.firstOrNull;
-    final String persistedSrt = firstSubPath != null
-        ? await _persistFile(File(firstSubPath), persistDir)
-        : '';
+    final String persistedSrt =
+        await _persistFile(File(_subtitlePath!), persistDir);
 
-    List<String>? persistedAudioPaths;
-    String? persistedAudioRoot;
-    if (_audioEntries.isNotEmpty) {
-      persistedAudioPaths = [];
-      for (final AudioFileEntry entry in _audioEntries) {
-        persistedAudioPaths
-            .add(await _persistFile(File(entry.path), persistDir));
-      }
-    } else if (_audioDir != null) {
-      persistedAudioRoot = _audioDir;
+    String? persistedAudioPath;
+    if (_audioPath != null) {
+      persistedAudioPath = await _persistFile(File(_audioPath!), persistDir);
     }
 
     final Audiobook audiobook = Audiobook()
       ..bookUid = bookUid
       ..alignmentFormat = ext
       ..alignmentPath = persistedSrt;
-    if (persistedAudioPaths != null && persistedAudioPaths.isNotEmpty) {
-      audiobook.audioPaths = persistedAudioPaths;
-    } else if (persistedAudioRoot != null) {
-      audiobook.audioRoot = persistedAudioRoot;
+    if (persistedAudioPath != null) {
+      audiobook.audioPaths = [persistedAudioPath];
     }
     health.packInto(audiobook);
 
     debugPrint('[hibiki-import] EPUB+align save: bookUid="$bookUid" '
-        'ttuBookId=$ttuBookId cues=${allCues.length}');
+        'ttuBookId=$ttuBookId cues=${cues.length}');
 
     await widget.audiobookRepo.saveAudiobook(audiobook);
     await widget.audiobookRepo.saveCues(
       bookUid: bookUid,
       chapterHref: chapterHref,
-      cues: allCues,
+      cues: cues,
     );
     await widget.audiobookRepo.updateHealthOverlay(
       bookUid: bookUid,
