@@ -318,18 +318,14 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
       children: [
         _buildProgressSection(theme),
         const SizedBox(height: 16),
-        _buildSearchSection(theme),
-        if (widget.toc.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          _buildTocSection(context, theme),
-        ],
-        if (widget.bookmarks.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          _buildBookmarkSection(context, theme),
-        ],
-        const SizedBox(height: 16),
         const Divider(height: 1),
         const SizedBox(height: 12),
+        _categoryTile(
+          theme,
+          icon: Icons.menu_book,
+          label: t.section_navigation,
+          page: 'navigation',
+        ),
         if (widget.controller != null)
           _categoryTile(
             theme,
@@ -386,6 +382,22 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
             if (widget.controller!.chapterCueCount > 0) ...[
               const SizedBox(height: 16),
               _buildCueNavSection(theme, widget.controller!),
+            ],
+          ],
+        );
+      case 'navigation':
+        title = t.section_navigation;
+        content = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildSearchSection(theme),
+            if (widget.toc.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              _buildTocSection(context, theme),
+            ],
+            if (widget.bookmarks.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              _buildBookmarkSection(context, theme),
             ],
           ],
         );
