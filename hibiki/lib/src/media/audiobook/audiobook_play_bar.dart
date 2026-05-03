@@ -1022,17 +1022,6 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         Row(
           children: [
             Expanded(
-                child:
-                    Text(t.show_play_bar, style: theme.textTheme.bodyMedium)),
-            Switch(
-              value: widget.showPlayBar,
-              onChanged: (_) => widget.onTogglePlayBar?.call(),
-            ),
-          ],
-        ),
-        Row(
-          children: [
-            Expanded(
                 child: Text(t.show_media_notification,
                     style: theme.textTheme.bodyMedium)),
             Switch(
