@@ -942,9 +942,8 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
                 // scrollHeight 变而 clientHeight 没变。外壳缩是两者同
                 // 步收缩，ttu 原生的 paginated 分页仍然对齐。）
                 Positioned.fill(
-                  bottom: ((_audiobookController != null || _hasAudioSlot) &&
-                              appModel.showPlayBar) ||
-                          _audiobookController == null
+                  bottom: (_audiobookController != null || _hasAudioSlot) &&
+                          appModel.showPlayBar
                       ? 56 + MediaQuery.of(context).padding.bottom
                       : 0,
                   child: buildBody(),
