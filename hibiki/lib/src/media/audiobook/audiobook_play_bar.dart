@@ -793,15 +793,16 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                if ((current - 1.0).abs() >= 0.001)
-                  IconButton(
-                    icon: const Icon(Icons.restart_alt, size: 18),
-                    onPressed: () => ctrl.setSpeed(1.0),
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.only(left: 4),
-                    constraints: const BoxConstraints(),
-                    tooltip: t.av_sync_reset,
-                  ),
+                IconButton(
+                  icon: const Icon(Icons.restart_alt, size: 18),
+                  onPressed: (current - 1.0).abs() < 0.001
+                      ? null
+                      : () => ctrl.setSpeed(1.0),
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.only(left: 4),
+                  constraints: const BoxConstraints(),
+                  tooltip: t.av_sync_reset,
+                ),
               ],
             ),
             Row(

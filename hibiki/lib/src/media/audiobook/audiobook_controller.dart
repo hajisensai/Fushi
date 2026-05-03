@@ -765,7 +765,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// slider 范围；超出这个范围几乎不可能是有意义的对齐偏移。
   /// 写库走 [onDelayPersist]。相同值跳过 notify/写库。
   void setDelayMs(int ms) {
-    final int clamped = ms.clamp(-2000, 2000);
+    final int clamped = ms.clamp(-600000, 600000);
     if (delayMs.value == clamped) return;
     delayMs.value = clamped;
     // 立刻在当前位置重查 cue，让高亮即时反映新偏移，不用等
