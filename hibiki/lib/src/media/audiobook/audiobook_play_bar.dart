@@ -319,11 +319,6 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         _buildProgressSection(theme),
         const SizedBox(height: 16),
         _buildSearchSection(theme),
-        if (widget.controller != null &&
-            widget.controller!.chapterCueCount > 0) ...[
-          const SizedBox(height: 16),
-          _buildCueNavSection(theme, widget.controller!),
-        ],
         if (widget.toc.isNotEmpty) ...[
           const SizedBox(height: 12),
           _buildTocSection(context, theme),
@@ -388,6 +383,10 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
             _buildImagePauseSection(theme, widget.controller!),
             const SizedBox(height: 16),
             _buildTapSeekSection(theme, widget.controller!),
+            if (widget.controller!.chapterCueCount > 0) ...[
+              const SizedBox(height: 16),
+              _buildCueNavSection(theme, widget.controller!),
+            ],
           ],
         );
       case 'typography':
