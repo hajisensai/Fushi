@@ -250,29 +250,7 @@ class TtuEpubImporter {
         { type: 'application/epub+zip' });
     logStage('file-built');
 
-    // ── 2. Record current max id so we can detect the new entry ──────────
-    const maxBefore = await new Promise(async (resolve) => {
-      try {
-        const db = await hibikiOpenBooksDb();
-        const tx = db.transaction(['data'], 'readonly');
-        const store = tx.objectStore('data');
-        const cur = store.openCursor(null, 'prev');
-        cur.onsuccess = (ev) => {
-          const c = ev.target.result;
-          db.close();
-          resolve(c ? c.primaryKey : 0);
-        };
-        cur.onerror = () => {
-          db.close();
-          resolve(0);
-        };
-      } catch (_) {
-        resolve(0);
-      }
-    });
-    logStage('maxBefore', 'maxBefore=' + maxBefore);
-
-    // ── 3. Wait for __hibikiImportFiles to be exposed by manage page ─────
+    // ── 2. Wait for __hibikiImportFiles to be exposed by manage page ─────
     const findApi = () => typeof window.__hibikiImportFiles === 'function';
     const deadline = Date.now() + 15000;
     while (!findApi() && Date.now() < deadline) {
@@ -281,25 +259,60 @@ class TtuEpubImporter {
     if (!findApi()) { post({messageType: 'ttu_import_err', error: 'no_api'}); return; }
     logStage('api-ready');
 
+    // ── 3. Hook IDBObjectStore.add/put to capture the written id ─────────
+    // ttu uses idb library (promise-based). For new books it calls add(),
+    // for re-imports it calls put() with the same id. We intercept both
+    // using addEventListener (non-destructive, won't clobber idb's own
+    // onsuccess handler).
+    let capturedId = 0;
+    const origAdd = IDBObjectStore.prototype.add;
+    const origPut = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.add = function(...args) {
+      const req = origAdd.apply(this, args);
+      if (this.name === 'data') {
+        req.addEventListener('success', () => {
+          capturedId = req.result;
+          logStage('idb-hook:add', 'id=' + capturedId);
+        });
+      }
+      return req;
+    };
+    IDBObjectStore.prototype.put = function(...args) {
+      const req = origPut.apply(this, args);
+      if (this.name === 'data' && args[0] && args[0].id) {
+        capturedId = args[0].id;
+        logStage('idb-hook:put', 'id=' + capturedId);
+      }
+      return req;
+    };
+
     // ── 4. Call ttu's import pipeline directly ───────────────────────────
     try {
       await window.__hibikiImportFiles([file]);
-      logStage('import-called');
+      logStage('import-called', 'capturedId=' + capturedId);
     } catch (importErr) {
       logStage('import-threw', String(importErr));
       post({messageType: 'ttu_import_err', error: 'import_threw: ' + String(importErr)});
       return;
+    } finally {
+      IDBObjectStore.prototype.add = origAdd;
+      IDBObjectStore.prototype.put = origPut;
     }
 
-    // ── 5. Poll IndexedDB for the new row ────────────────────────────────
-    // 大 EPUB（10MB+）在手机上解压 + 解析 + 写入 IDB 常常要一两分钟，
-    // 这里给 4.5 分钟余量，与 Dart 侧 5 分钟总 timeout 对齐。
-    const pollDeadline = Date.now() + 270000;
+    // ── 5. Return the captured id ────────────────────────────────────────
+    if (capturedId > 0) {
+      post({messageType: 'ttu_import_ok', id: capturedId});
+      return;
+    }
+
+    // Fallback: if hook missed, poll by max key (first-import case)
+    logStage('hook-missed', 'falling back to max-key poll');
+    const pollDeadline = Date.now() + 30000;
     let tick = 0;
     while (Date.now() < pollDeadline) {
       await new Promise(r => setTimeout(r, 500));
       tick++;
-      const newId = await new Promise(async (resolve) => {
+      const maxId = await new Promise(async (resolve) => {
         try {
           const db = await hibikiOpenBooksDb();
           const tx = db.transaction(['data'], 'readonly');
@@ -310,25 +323,15 @@ class TtuEpubImporter {
             db.close();
             resolve(c ? c.primaryKey : 0);
           };
-          cur.onerror = () => {
-            db.close();
-            resolve(0);
-          };
-        } catch (_) {
-          resolve(0);
-        }
+          cur.onerror = () => { db.close(); resolve(0); };
+        } catch (_) { resolve(0); }
       });
-      // 每 10 次 tick（~5s）汇报一次，避免刷屏。
-      if (tick % 10 === 0) {
-        logStage('poll', 'tick=' + tick + ' newId=' + newId + ' maxBefore=' + maxBefore);
-      }
-      if (newId > maxBefore) {
-        logStage('poll-hit', 'id=' + newId + ' after_tick=' + tick);
-        post({messageType: 'ttu_import_ok', id: newId});
+      if (maxId > 0) {
+        logStage('fallback-hit', 'id=' + maxId);
+        post({messageType: 'ttu_import_ok', id: maxId});
         return;
       }
     }
-    logStage('poll-exhausted', 'ticks=' + tick);
     post({messageType: 'ttu_import_err', error: 'import_timeout'});
   } catch (err) {
     post({messageType: 'ttu_import_err', error: String(err)});
