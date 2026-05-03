@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:wakelock/wakelock.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fluttertoast/fluttertoast.dart';
@@ -335,6 +336,12 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           ),
         _categoryTile(
           theme,
+          icon: Icons.auto_stories,
+          label: t.reader_settings_section,
+          page: 'reader',
+        ),
+        _categoryTile(
+          theme,
           icon: Icons.text_fields,
           label: t.section_typography,
           page: 'typography',
@@ -394,6 +401,12 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               _buildBookmarkSection(context, theme),
             ],
           ],
+        );
+      case 'reader':
+        title = t.reader_settings_section;
+        content = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: _buildReaderSwitches(theme),
         );
       case 'typography':
         title = t.section_typography;
@@ -921,6 +934,85 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         );
       },
     );
+  }
+
+  List<Widget> _buildReaderSwitches(ThemeData theme) {
+    Widget sw(String label, bool value, VoidCallback toggle) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Row(
+          children: [
+            Expanded(child: Text(label)),
+            Switch(value: value, onChanged: (_) { toggle(); setState(() {}); }),
+          ],
+        ),
+      );
+    }
+    return [
+      sw(t.highlight_on_tap, _src.highlightOnTap, _src.toggleHighlightOnTap),
+      sw(t.volume_button_page_turning, _src.volumePageTurningEnabled, () {
+        _src.toggleVolumePageTurningEnabled();
+        VolumeKeyChannel.instance.setInterceptEnabled(_src.volumePageTurningEnabled);
+      }),
+      sw(t.invert_volume_buttons, _src.volumePageTurningInverted,
+          _src.toggleVolumePageTurningInverted),
+      sw(t.extend_page_beyond_navbar, _src.extendPageBeyondNavigationBar,
+          _src.toggleExtendPageBeyondNavigationBar),
+      sw(t.adapt_ttu_theme, _src.adaptTtuTheme, _src.toggleAdaptTtuTheme),
+      sw(t.keep_screen_awake, _src.keepScreenAwake, () async {
+        _src.toggleKeepScreenAwake();
+        if (_src.keepScreenAwake) {
+          await Wakelock.enable();
+        } else {
+          await Wakelock.disable();
+        }
+      }),
+      sw(t.auto_read_on_lookup, _src.autoReadOnLookup, _src.toggleAutoReadOnLookup),
+      Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          children: [
+            Expanded(child: Text(t.dismiss_swipe_sensitivity)),
+            SizedBox(
+              width: 140,
+              child: Slider(
+                value: _src.dismissSwipeSensitivity,
+                min: 0.1,
+                max: 1.0,
+                divisions: 9,
+                label: _src.dismissSwipeSensitivity.toStringAsFixed(1),
+                onChanged: (v) {
+                  _src.setDismissSwipeSensitivity(v);
+                  setState(() {});
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+      Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          children: [
+            Expanded(child: Text(t.volume_button_turning_speed)),
+            SizedBox(
+              width: 140,
+              child: Slider(
+                value: _src.volumePageTurningSpeed.toDouble(),
+                min: 10,
+                max: 500,
+                divisions: 49,
+                label: '${_src.volumePageTurningSpeed}',
+                onChanged: (v) {
+                  _src.setVolumePageTurningSpeed(v.round());
+                  setState(() {});
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    ];
   }
 
   Widget _buildPlayBarToggle(ThemeData theme) {
