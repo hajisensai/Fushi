@@ -95,9 +95,8 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
         result: mergedResult,
         onTextSelected: (text) {
           mediaType.floatingSearchBarController.query = text;
-          mediaType.floatingSearchBarController.open();
+          mediaType.floatingSearchBarController.openWithoutFocus();
           search(text);
-          FocusManager.instance.primaryFocus?.unfocus();
         },
         onMineEntry: _onMineEntry,
       ),
@@ -407,7 +406,6 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
             setState(() {
               mediaType.floatingSearchBarController.query = searchTerm;
               search(searchTerm);
-              FocusManager.instance.primaryFocus?.unfocus();
             });
           },
           onUpdate: () {
@@ -441,7 +439,6 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
             onTextSelected: (text) {
               mediaType.floatingSearchBarController.query = text;
               search(text);
-              FocusManager.instance.primaryFocus?.unfocus();
             },
             onMineEntry: _onMineEntry,
           ),

@@ -42,12 +42,14 @@ class _RecursiveDictionaryPageState
   bool _isSearching = false;
   late bool _isCreatorOpen;
   bool _isEditingQuery = false;
+  late String _displayQuery;
 
   @override
   void initState() {
     super.initState();
 
     _isCreatorOpen = appModelNoUpdate.isCreatorOpen;
+    _displayQuery = widget.searchTerm;
 
     _controller.query = widget.searchTerm;
 
@@ -87,15 +89,23 @@ class _RecursiveDictionaryPageState
 
     return Theme(
       data: !_isCreatorOpen ? appModel.overrideDictionaryTheme ?? theme : theme,
-      child: Scaffold(
-        resizeToAvoidBottomInset: false,
-        backgroundColor: backgroundColor,
-        body: SafeArea(
-          child: Padding(
-            padding: Spacing.of(context).insets.onlyTop.semiSmall,
-            child: _isEditingQuery
-                ? buildFloatingSearchBar()
-                : buildDictionaryResultView(),
+      child: PopScope(
+        canPop: !widget.killOnPop,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop && widget.killOnPop) {
+            appModel.shutdown();
+          }
+        },
+        child: Scaffold(
+          resizeToAvoidBottomInset: false,
+          backgroundColor: backgroundColor,
+          body: SafeArea(
+            child: Padding(
+              padding: Spacing.of(context).insets.onlyTop.semiSmall,
+              child: _isEditingQuery
+                  ? buildFloatingSearchBar()
+                  : buildDictionaryResultView(),
+            ),
           ),
         ),
       ),
@@ -213,7 +223,7 @@ class _RecursiveDictionaryPageState
                 child: InkWell(
                   onTap: startEditingQuery,
                   child: Text(
-                    _controller.query,
+                    _displayQuery,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: textTheme.titleMedium,
@@ -260,6 +270,7 @@ class _RecursiveDictionaryPageState
       if (!mounted) {
         return;
       }
+      _controller.query = _displayQuery;
       _controller.open();
     });
   }
@@ -299,6 +310,7 @@ class _RecursiveDictionaryPageState
     if (mounted) {
       setState(() {
         _isSearching = true;
+        _displayQuery = query;
       });
     }
 
@@ -409,7 +421,7 @@ class _RecursiveDictionaryPageState
 
   Future<void> openTextSegmentationForQuery() async {
     await appModel.openTextSegmentationDialog(
-      sourceText: _controller.query,
+      sourceText: _displayQuery,
       onSearch: (selection) async {
         await appModel.openRecursiveDictionarySearch(
           searchTerm: selection.textInside,
@@ -419,7 +431,7 @@ class _RecursiveDictionaryPageState
       },
     );
 
-    widget.onUpdateQuery?.call(_controller.query);
+    widget.onUpdateQuery?.call(_displayQuery);
   }
 
   Widget buildCreatorButton() {
@@ -440,7 +452,7 @@ class _RecursiveDictionaryPageState
       ref: ref,
       creatorFieldValues: CreatorFieldValues(
         textValues: {
-          SentenceField.instance: _controller.query,
+          SentenceField.instance: _displayQuery,
           TermField.instance: '',
           ClozeBeforeField.instance: '',
           ClozeInsideField.instance: '',
@@ -506,7 +518,7 @@ class _RecursiveDictionaryPageState
     if (appModel.dictionaries.isEmpty) {
       return buildImportDictionariesPlaceholderMessage();
     }
-    if (_controller.query.isEmpty) {
+    if (_displayQuery.isEmpty) {
       if (appModel
           .getSearchHistory(historyKey: DictionaryMediaType.instance.uniqueKey)
           .isEmpty) {
@@ -515,10 +527,10 @@ class _RecursiveDictionaryPageState
         return JidoujishoSearchHistory(
           uniqueKey: DictionaryMediaType.instance.uniqueKey,
           onSearchTermSelect: (searchTerm) {
+            _controller.query = searchTerm;
+            search(searchTerm);
             setState(() {
-              _controller.query = searchTerm;
-              search(searchTerm);
-              FocusManager.instance.primaryFocus?.unfocus();
+              _isEditingQuery = false;
             });
           },
           onUpdate: () {
@@ -555,7 +567,9 @@ class _RecursiveDictionaryPageState
             onTextSelected: (text) {
               _controller.query = text;
               search(text);
-              FocusManager.instance.primaryFocus?.unfocus();
+              setState(() {
+                _isEditingQuery = false;
+              });
             },
           ),
         ),
