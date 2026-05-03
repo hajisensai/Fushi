@@ -2529,21 +2529,41 @@ class AppModel with ChangeNotifier {
   }
 
   /// Given a value and a model name, checks if there are cards that have a
-  /// first field with a matching value.
+  /// first field with a matching value and (when [reading] is non-empty) the
+  /// same reading in the mapped reading field.
   Future<bool> checkForDuplicates(String key, {String reading = ''}) async {
     try {
+      final List<int> readingFieldIndices = [];
+      for (final modelName in duplicateCheckModels) {
+        readingFieldIndices.add(await _readingFieldIndex(modelName));
+      }
       final result = await methodChannel.invokeMethod(
         'checkForDuplicates',
         <String, dynamic>{
           'models': duplicateCheckModels,
           'key': key,
           'reading': reading,
+          'readingFieldIndices': readingFieldIndices,
         },
       );
       return result;
     } catch (e) {
       return false;
     }
+  }
+
+  Future<int> _readingFieldIndex(String modelName) async {
+    final AnkiMapping? mapping =
+        _mappingsCache.where((m) => m.model == modelName).firstOrNull;
+    if (mapping == null) return -1;
+    try {
+      final List<String> ankiFields = await getFieldList(modelName);
+      for (int i = 0; i < ankiFields.length; i++) {
+        final handlebar = mapping.fieldMappings[ankiFields[i]] ?? '';
+        if (handlebar == AnkiHandlebar.reading) return i;
+      }
+    } catch (_) {}
+    return -1;
   }
 
   /// Add a note with certain [creatorFieldValues] and a [mapping] of fields to

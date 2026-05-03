@@ -209,7 +209,8 @@ public class MainActivity extends AudioServiceActivity {
         }
     }
 
-    private boolean checkForDuplicates(ArrayList<String> models, String key, String reading) {
+    private boolean checkForDuplicates(ArrayList<String> models, String key,
+                                       String reading, ArrayList<Integer> readingFieldIndices) {
         final AddContentApi api = new AddContentApi(context);
         for (int i = 0; i < models.size(); i++) {
             String model = models.get(i);
@@ -224,12 +225,15 @@ public class MainActivity extends AudioServiceActivity {
             if (reading == null || reading.isEmpty()) {
                 return true;
             }
+            int readingIdx = (readingFieldIndices != null && i < readingFieldIndices.size())
+                    ? readingFieldIndices.get(i) : -1;
+            if (readingIdx < 0) {
+                return true;
+            }
             for (NoteInfo note : notes) {
                 String[] fields = note.getFields();
-                for (String field : fields) {
-                    if (reading.equals(field)) {
-                        return true;
-                    }
+                if (readingIdx < fields.length && reading.equals(fields[readingIdx])) {
+                    return true;
                 }
             }
         }
@@ -347,9 +351,10 @@ public class MainActivity extends AudioServiceActivity {
                     final String deck = call.argument("deck");
                     final String key = call.argument("key");
                     final String reading = call.argument("reading");
-                    final ArrayList<String> fields = call.argument("fields"); 
-                    final ArrayList<String> tags = call.argument("tags"); 
-                    final ArrayList<String> models = call.argument("models"); 
+                    final ArrayList<Integer> readingFieldIndices = call.argument("readingFieldIndices");
+                    final ArrayList<String> fields = call.argument("fields");
+                    final ArrayList<String> tags = call.argument("tags");
+                    final ArrayList<String> models = call.argument("models");
 
                     final String filename = call.argument("filename");
                     final String preferredName = call.argument("preferredName");
@@ -370,7 +375,7 @@ public class MainActivity extends AudioServiceActivity {
                                 new Handler(Looper.getMainLooper()).post(new Runnable() {
                                 @Override
                                 public void run() {
-                                    result.success(checkForDuplicates(models, key, reading));
+                                    result.success(checkForDuplicates(models, key, reading, readingFieldIndices));
                                 }
                                 });
                             }
