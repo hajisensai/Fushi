@@ -958,52 +958,63 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
     );
   }
 
+  static String _formatDelayMs(int ms) {
+    final String sign = ms > 0 ? '+' : '';
+    final int abs = ms.abs();
+    if (abs < 1000) return '$sign${ms}ms';
+    final double sec = ms / 1000;
+    return '$sign${sec.toStringAsFixed(1)}s';
+  }
+
   Widget _buildDelaySection(ThemeData theme, AudiobookPlayerController ctrl) {
     return ValueListenableBuilder<int>(
       valueListenable: ctrl.delayMs,
       builder: (BuildContext ctx, int ms, _) {
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        return Row(
           children: [
-            Row(
-              children: [
-                Flexible(
-                  child: Text(t.av_sync, style: theme.textTheme.titleMedium),
-                ),
-                const Spacer(),
-                Text(
-                  '${ms > 0 ? '+' : ''}$ms ms',
+            Expanded(
+              child: Text(t.av_sync, style: theme.textTheme.titleMedium),
+            ),
+            IconButton(
+              icon: const Icon(Icons.keyboard_double_arrow_left, size: 18),
+              onPressed: () => ctrl.setDelayMs(ms - 1000),
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints(),
+              padding: EdgeInsets.zero,
+            ),
+            IconButton(
+              icon: const Icon(Icons.chevron_left, size: 18),
+              onPressed: () => ctrl.setDelayMs(ms - 50),
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints(),
+              padding: EdgeInsets.zero,
+            ),
+            GestureDetector(
+              onTap: ms == 0 ? null : () => ctrl.setDelayMs(0),
+              child: SizedBox(
+                width: 72,
+                child: Text(
+                  _formatDelayMs(ms),
+                  textAlign: TextAlign.center,
                   style: theme.textTheme.bodyLarge?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                if (ms != 0)
-                  IconButton(
-                    icon: const Icon(Icons.restart_alt, size: 18),
-                    onPressed: () => ctrl.setDelayMs(0),
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.only(left: 4),
-                    constraints: const BoxConstraints(),
-                    tooltip: t.av_sync_reset,
-                  ),
-              ],
+              ),
             ),
-            Row(
-              children: [
-                Text('-2s', style: theme.textTheme.bodySmall),
-                Expanded(
-                  child: Slider(
-                    value: ms.toDouble().clamp(-2000, 2000),
-                    min: -2000,
-                    max: 2000,
-                    divisions: 80,
-                    onChanged: (double v) {
-                      ctrl.setDelayMs(v.round());
-                    },
-                  ),
-                ),
-                Text('+2s', style: theme.textTheme.bodySmall),
-              ],
+            IconButton(
+              icon: const Icon(Icons.chevron_right, size: 18),
+              onPressed: () => ctrl.setDelayMs(ms + 50),
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints(),
+              padding: EdgeInsets.zero,
+            ),
+            IconButton(
+              icon: const Icon(Icons.keyboard_double_arrow_right, size: 18),
+              onPressed: () => ctrl.setDelayMs(ms + 1000),
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints(),
+              padding: EdgeInsets.zero,
             ),
           ],
         );
