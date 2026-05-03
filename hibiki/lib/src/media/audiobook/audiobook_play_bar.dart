@@ -190,7 +190,7 @@ class AudiobookSettingsSheet extends StatefulWidget {
 }
 
 class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
-  static const List<double> _speeds = [0.75, 1.0, 1.25, 1.5];
+
   ReaderTtuSource get _src => ReaderTtuSource.instance;
 
   TtuReaderSettings? _settings;
@@ -903,25 +903,63 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(t.playback_speed, style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            SegmentedButton<double>(
-              showSelectedIcon: false,
-              segments: _speeds
-                  .map((double s) => ButtonSegment<double>(
-                        value: s,
-                        label: Text('${s.toStringAsFixed(2)}x'),
-                      ))
-                  .toList(),
-              selected: <double>{current},
-              onSelectionChanged: (Set<double> sel) {
-                ctrl.setSpeed(sel.first);
-              },
-              style: _segmentedStyle(theme),
+            Row(
+              children: [
+                Text(t.playback_speed, style: theme.textTheme.titleMedium),
+                const SizedBox(width: 4),
+                TextButton.icon(
+                  onPressed: (current - 1.0).abs() < 0.001
+                      ? null
+                      : () => ctrl.setSpeed(1.0),
+                  icon: const Icon(Icons.restart_alt, size: 18),
+                  label: Text(t.av_sync_reset),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Center(
+              child: Text(
+                '${current.toStringAsFixed(2)}x',
+                style: theme.textTheme.headlineSmall,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                _speedStepBtn(ctrl, '-0.25', -0.25),
+                _speedStepBtn(ctrl, '-0.10', -0.10),
+                _speedStepBtn(ctrl, '-0.05', -0.05),
+                _speedStepBtn(ctrl, '+0.05', 0.05),
+                _speedStepBtn(ctrl, '+0.10', 0.10),
+                _speedStepBtn(ctrl, '+0.25', 0.25),
+              ],
             ),
           ],
         );
       },
+    );
+  }
+
+  Widget _speedStepBtn(
+      AudiobookPlayerController ctrl, String label, double delta) {
+    return FilledButton.tonal(
+      onPressed: () {
+        final double next =
+            ((ctrl.speed + delta) * 100).roundToDouble() / 100;
+        ctrl.setSpeed(next.clamp(0.25, 4.0));
+      },
+      style: FilledButton.styleFrom(
+        minimumSize: const Size(52, 40),
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        visualDensity: VisualDensity.compact,
+      ),
+      child: Text(label),
     );
   }
 
