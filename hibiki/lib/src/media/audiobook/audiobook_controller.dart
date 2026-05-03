@@ -41,7 +41,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 当前章节所有 cue（已按 startMs 排序）。
   List<AudioCue> _chapterCues = [];
 
-  /// 外部只读快照，供 _seekToSentence 按 textFragmentId 查找 cue。
+  /// 外部只读快照，供按 textFragmentId 查找 cue。
   List<AudioCue> get chapterCuesSnapshot => _chapterCues;
 
   /// 多文件时每个文件的全局起始毫秒偏移量（index → offsetMs）。
@@ -140,22 +140,6 @@ class AudiobookPlayerController extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ── 点击跳转 ───────────────────────────────────────────────────────────────
-  // 点击文本 cue 时是否跳转音频到对应句子。
-
-  final ValueNotifier<bool> tapSeekEnabled = ValueNotifier<bool>(false);
-
-  Future<void> Function(bool value)? onTapSeekPersist;
-
-  void setTapSeek(bool value) {
-    if (tapSeekEnabled.value == value) return;
-    tapSeekEnabled.value = value;
-    final Future<void> Function(bool)? persist = onTapSeekPersist;
-    if (persist != null) {
-      unawaited(persist(value));
-    }
-  }
-
   // ── 图片暂停 ───────────────────────────────────────────────────────────────
   // 遇到图片时自动暂停播放，停留指定秒数后恢复。0 = 不暂停。
 
@@ -226,7 +210,6 @@ class AudiobookPlayerController extends ChangeNotifier {
     double initialSpeed = 1.0,
     int initialPositionMs = 0,
     int initialImagePauseSec = 0,
-    bool initialTapSeek = true,
   }) async {
     // 新一轮加载：旧 Completer 若未完成则补完（防上次 load 异常中断），
     // 再建新的未完成 Completer 阻塞后续 seek 直到本次 load 结束。
@@ -240,7 +223,6 @@ class AudiobookPlayerController extends ChangeNotifier {
     followAudio.value = initialFollowAudio;
     delayMs.value = initialDelayMs;
     imagePauseSec.value = initialImagePauseSec;
-    tapSeekEnabled.value = initialTapSeek;
     _imagePauseTimer?.cancel();
     _imagePauseTimer = null;
     _hasPlayedOnce = false;
@@ -865,7 +847,6 @@ class AudiobookPlayerController extends ChangeNotifier {
     followAudio.dispose();
     delayMs.dispose();
     imagePauseSec.dispose();
-    tapSeekEnabled.dispose();
     _clipPlayer?.dispose();
     _clipPlayer = null;
     _player.dispose();

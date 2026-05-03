@@ -1520,11 +1520,6 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         await _processLookup(messageJson);
         break;
       case 'seekToSentence':
-        final AudiobookClickEvent? event =
-            AudiobookBridge.parseMessage(messageJson);
-        if (event != null) {
-          await _seekToSentence(event);
-        }
         break;
       case 'sectionChanged':
         _handleTtuSectionChanged(messageJson);
@@ -2522,7 +2517,6 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         repo.readSpeed(bookUid),
         repo.readPositionMs(bookUid),
         repo.readImagePauseSec(bookUid),
-        repo.readTapSeek(bookUid),
       ]);
       await controller.load(
         audiobook: audiobook,
@@ -2532,13 +2526,10 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         initialSpeed: prefs[2] as double,
         initialPositionMs: prefs[3] as int,
         initialImagePauseSec: prefs[4] as int,
-        initialTapSeek: prefs[5] as bool,
       );
       controller.onPositionWrite = (String uid, int posMs) {
         repo.updatePositionMs(bookUid: uid, positionMs: posMs);
       };
-      controller.onTapSeekPersist =
-          (bool v) => repo.updateTapSeek(bookUid: bookUid, value: v);
       controller.addListener(_onCueChanged);
       _wireFollowAudio(controller, bookUid: bookUid, repo: repo);
       unawaited(_wireMediaNotification(controller));
@@ -2615,7 +2606,6 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         abRepo.readDelayMs(srtBookUid),
         abRepo.readSpeed(srtBookUid),
         abRepo.readImagePauseSec(srtBookUid),
-        abRepo.readTapSeek(srtBookUid),
       ]);
       await controller.load(
         audiobook: syntheticAudiobook,
@@ -2623,7 +2613,6 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         initialDelayMs: srtPrefs[0] as int,
         initialSpeed: srtPrefs[1] as double,
         initialImagePauseSec: srtPrefs[2] as int,
-        initialTapSeek: srtPrefs[3] as bool,
       );
     } catch (e) {
       debugPrint('[hibiki-audiobook] srt init: controller.load failed: $e');
@@ -2640,8 +2629,6 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     controller.onDelayPersist = (int ms) async {
       await abRepo.updateDelayMs(bookUid: srtBookUid, ms: ms);
     };
-    controller.onTapSeekPersist =
-        (bool v) => abRepo.updateTapSeek(bookUid: srtBookUid, value: v);
     controller.onSpeedPersist = (double speed) async {
       await abRepo.updateSpeed(bookUid: srtBookUid, speed: speed);
     };
@@ -3868,69 +3855,6 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     ));
     // 用户翻到新章节，预建该章 Sasayaki cueMap。
     unawaited(_applySasayakiCuesForSection(idx));
-  }
-
-  /// 用户点击句子，跳转播放器到该 cue。
-  ///
-  /// Sasayaki 路径通过 [AudiobookClickEvent.sasayakiKey] 传递 textFragmentId，
-  /// 直接在内存 `_chapterCues` 里匹配；非 Sasayaki 路径按 bookUid + chapterHref
-  /// + sentenceIndex 从数据库查。找到 cue 后，若该 cue 所在章节与当前 reader
-  /// 章节不同，先跳章再 seek，确保用户看到正确页面。
-  Future<void> _seekToSentence(AudiobookClickEvent event) async {
-    final AudiobookPlayerController? controller = _audiobookController;
-    if (controller == null) {
-      return;
-    }
-    if (!controller.tapSeekEnabled.value) {
-      return;
-    }
-
-    AudioCue? cue;
-
-    if (event.sasayakiKey != null) {
-      // Sasayaki 路径：在 _chapterCues（全书 cue）中按 textFragmentId 匹配。
-      final String key = event.sasayakiKey!;
-      final List<AudioCue> allCues = controller.chapterCuesSnapshot;
-      for (final AudioCue c in allCues) {
-        if (c.textFragmentId == key) {
-          cue = c;
-          break;
-        }
-      }
-    } else {
-      // SrtBook / 常规路径：数据库查询。
-      final AudiobookRepository repo = AudiobookRepository(appModel.database);
-      final String bookUid;
-      final String chapterHref;
-      if (_srtBookUid != null) {
-        bookUid = _srtBookUid!;
-        chapterHref = SrtParser.defaultChapter;
-      } else {
-        bookUid = widget.item?.uniqueKey ?? '';
-        chapterHref = event.chapterHref;
-      }
-      cue = await repo.findCue(
-        bookUid: bookUid,
-        chapterHref: chapterHref,
-        sentenceIndex: event.sentenceIndex,
-      );
-    }
-
-    if (cue == null) return;
-
-    // 检查是否需要跨章跳转。
-    final SasayakiFragment? frag =
-        SasayakiMatchCodec.tryDecode(cue.textFragmentId);
-    if (frag != null && frag.sectionIndex != _currentTtuSection) {
-      if (_dropStaleSectionNavigation(frag.sectionIndex, 'sentence-tap')) {
-        return;
-      }
-      // 用户主动点击不同章节的 cue：重新开启 follow audio 并跳章。
-      controller.setFollowAudio(true);
-      await _handleCueCrossChapter(frag.sectionIndex);
-    }
-
-    await controller.skipToCue(cue);
   }
 
   // ── 有声书导入按钮 ──────────────────────────────────────────────────────────
