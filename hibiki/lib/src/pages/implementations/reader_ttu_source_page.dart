@@ -949,7 +949,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
                   bottom: (_audiobookController != null || _hasAudioSlot) &&
                           appModel.showPlayBar
                       ? 56 + MediaQuery.of(context).padding.bottom
-                      : 0,
+                      : MediaQuery.of(context).padding.bottom,
                   child: buildBody(),
                 ),
                 buildDictionary(),
