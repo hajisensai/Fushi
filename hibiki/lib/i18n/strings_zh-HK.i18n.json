@@ -543,6 +543,8 @@
   "page_progress": "第 $current / $total 頁",
   "cue_progress": "第 $current / $total 句",
   "cue_navigation": "字幕跳轉",
+  "repeat_cue": "重複本句",
+  "play_from_cue": "從本句播放",
   "jump_to_cue": "跳轉到第",
   "jump_to_current_page": "當前頁",
   "cue_unit": "句",

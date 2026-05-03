@@ -533,6 +533,8 @@
   "page_progress": "Страница $current / $total",
   "cue_progress": "Предложение $current / $total",
   "cue_navigation": "Навигация по предложениям",
+  "repeat_cue": "Repeat sentence",
+  "play_from_cue": "Play from sentence",
   "jump_to_cue": "Перейти к",
   "jump_to_current_page": "Текущая страница",
   "cue_unit": " предл.",

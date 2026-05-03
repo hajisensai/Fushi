@@ -194,7 +194,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
   ReaderTtuSource get _src => ReaderTtuSource.instance;
 
   TtuReaderSettings? _settings;
-  final TextEditingController _cueJumpController = TextEditingController();
+
   final TextEditingController _searchController = TextEditingController();
   List<BookSearchResult> _searchResults = const [];
   bool _isSearching = false;
@@ -209,7 +209,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
 
   @override
   void dispose() {
-    _cueJumpController.dispose();
+
     _searchController.dispose();
     super.dispose();
   }
@@ -375,12 +375,6 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
             _buildDelaySection(theme, widget.controller!),
             const SizedBox(height: 16),
             _buildImagePauseSection(theme, widget.controller!),
-            const SizedBox(height: 16),
-            _buildTapSeekSection(theme, widget.controller!),
-            if (widget.controller!.chapterCueCount > 0) ...[
-              const SizedBox(height: 16),
-              _buildCueNavSection(theme, widget.controller!),
-            ],
           ],
         );
       case 'navigation':
@@ -632,129 +626,6 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           ],
         );
       },
-    );
-  }
-
-  Widget _buildCueNavSection(ThemeData theme, AudiobookPlayerController ctrl) {
-    final String cueLabel;
-    if (ctrl.chapterCueCount > 0) {
-      final int idx1 = ctrl.currentCueIdx >= 0 ? ctrl.currentCueIdx + 1 : 0;
-      cueLabel = t.cue_progress(current: idx1, total: ctrl.chapterCueCount);
-    } else {
-      cueLabel = '';
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Text(t.cue_navigation, style: theme.textTheme.titleMedium),
-            if (cueLabel.isNotEmpty) ...[
-              const SizedBox(width: 8),
-              Text(cueLabel, style: theme.textTheme.bodyMedium),
-            ],
-          ],
-        ),
-        const SizedBox(height: 8),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            _cueSkipBtn(ctrl, '-30', -30),
-            _cueSkipBtn(ctrl, '-5', -5),
-            IconButton.filledTonal(
-              icon: Icon(
-                ctrl.isPlaying ? Icons.pause : Icons.play_arrow,
-              ),
-              iconSize: 24,
-              onPressed: () {
-                ctrl.togglePlayPause();
-                setState(() {});
-              },
-            ),
-            _cueSkipBtn(ctrl, '+5', 5),
-            _cueSkipBtn(ctrl, '+30', 30),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            Text(t.jump_to_cue, style: theme.textTheme.bodyMedium),
-            const SizedBox(width: 8),
-            SizedBox(
-              width: 72,
-              height: 36,
-              child: TextField(
-                controller: _cueJumpController,
-                keyboardType: TextInputType.number,
-                textAlign: TextAlign.center,
-                decoration: InputDecoration(
-                  hintText: '1-${ctrl.chapterCueCount}',
-                  isDense: true,
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                  border: const OutlineInputBorder(),
-                ),
-                style: theme.textTheme.bodyMedium,
-                onSubmitted: (String value) {
-                  final int? n = int.tryParse(value);
-                  if (n != null && n >= 1 && n <= ctrl.chapterCueCount) {
-                    ctrl.skipToCueIndex(n - 1);
-                    setState(() {});
-                  }
-                },
-              ),
-            ),
-            const SizedBox(width: 4),
-            SizedBox(
-              height: 36,
-              child: FilledButton.tonal(
-                onPressed: () {
-                  final int? n = int.tryParse(_cueJumpController.text);
-                  if (n != null && n >= 1 && n <= ctrl.chapterCueCount) {
-                    ctrl.skipToCueIndex(n - 1);
-                    setState(() {});
-                  }
-                },
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  visualDensity: VisualDensity.compact,
-                ),
-                child: const Icon(Icons.arrow_forward, size: 18),
-              ),
-            ),
-            const SizedBox(width: 8),
-            SizedBox(
-              height: 36,
-              child: FilledButton.tonal(
-                onPressed: () async {
-                  await ctrl.snapAudioToReader();
-                  setState(() {});
-                },
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  visualDensity: VisualDensity.compact,
-                ),
-                child: Text(t.jump_to_current_page),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _cueSkipBtn(AudiobookPlayerController ctrl, String label, int delta) {
-    return FilledButton.tonal(
-      onPressed: () {
-        ctrl.skipByCues(delta);
-        setState(() {});
-      },
-      style: FilledButton.styleFrom(
-        minimumSize: const Size(64, 40),
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        visualDensity: VisualDensity.compact,
-      ),
-      child: Text('${delta > 0 ? '+' : ''}$delta'),
     );
   }
 
@@ -1054,38 +925,6 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                 ctrl.setImagePauseSec(sel.first);
               },
               style: _segmentedStyle(theme),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildTapSeekSection(ThemeData theme, AudiobookPlayerController ctrl) {
-    return ValueListenableBuilder<bool>(
-      valueListenable: ctrl.tapSeekEnabled,
-      builder: (BuildContext ctx, bool enabled, _) {
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(t.tap_seek, style: theme.textTheme.titleMedium),
-                  const SizedBox(height: 4),
-                  Text(
-                    t.tap_seek_hint,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Switch(
-              value: enabled,
-              onChanged: (bool v) => ctrl.setTapSeek(v),
             ),
           ],
         );

@@ -83,6 +83,8 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
   final GlobalKey<DictionaryPopupWebViewState> _popupWebViewKey =
       GlobalKey<DictionaryPopupWebViewState>();
 
+  Widget? buildPopupAudioControls() => null;
+
   /// Standard warning dialog for leaving a source page. All sources should
   /// use this and wrap their [build] function with a [WillPopScope].
   Future<bool> onWillPop() async {
@@ -324,10 +326,18 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: borderColor, width: 1),
         ),
-        child: Stack(
+        child: Column(
           children: [
-            buildSearchResult(),
-            buildDictionaryLoading(),
+            if (buildPopupAudioControls() case final Widget controls)
+              controls,
+            Expanded(
+              child: Stack(
+                children: [
+                  buildSearchResult(),
+                  buildDictionaryLoading(),
+                ],
+              ),
+            ),
           ],
         ),
       ),

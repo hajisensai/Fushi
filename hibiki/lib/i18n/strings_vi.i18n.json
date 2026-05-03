@@ -533,6 +533,8 @@
   "page_progress": "Trang $current / $total",
   "cue_progress": "Cau $current / $total",
   "cue_navigation": "?i?u h??ng cau",
+  "repeat_cue": "Repeat sentence",
+  "play_from_cue": "Play from sentence",
   "jump_to_cue": "Nh?y ??n",
   "jump_to_current_page": "Trang hi?n t?i",
   "cue_unit": " cau",

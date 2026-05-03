@@ -533,6 +533,8 @@
   "page_progress": "Halaman $current / $total",
   "cue_progress": "Kalimat $current / $total",
   "cue_navigation": "Navigasi Kalimat",
+  "repeat_cue": "Repeat sentence",
+  "play_from_cue": "Play from sentence",
   "jump_to_cue": "Lompat ke",
   "jump_to_current_page": "Halaman saat ini",
   "cue_unit": " kalimat",

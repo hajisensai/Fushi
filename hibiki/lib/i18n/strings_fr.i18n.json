@@ -533,6 +533,8 @@
   "page_progress": "Page $current / $total",
   "cue_progress": "Phrase $current / $total",
   "cue_navigation": "Navigation par phrase",
+  "repeat_cue": "Repeat sentence",
+  "play_from_cue": "Play from sentence",
   "jump_to_cue": "Aller à",
   "jump_to_current_page": "Page actuelle",
   "cue_unit": " phrase",

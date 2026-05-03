@@ -558,6 +558,8 @@
   "page_progress": "Pagina $current / $total",
   "cue_progress": "Frase $current / $total",
   "cue_navigation": "Navigazione per frase",
+  "repeat_cue": "Repeat sentence",
+  "play_from_cue": "Play from sentence",
   "jump_to_cue": "Vai a",
   "jump_to_current_page": "Pagina corrente",
   "cue_unit": " frase",

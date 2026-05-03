@@ -553,6 +553,8 @@
     "page_progress": "第 $current / $total 页",
     "cue_progress": "第 $current / $total 句",
     "cue_navigation": "字幕跳转",
+    "repeat_cue": "重复本句",
+    "play_from_cue": "从本句播放",
     "jump_to_cue": "跳转到第",
     "jump_to_current_page": "当前页",
     "cue_unit": "句",

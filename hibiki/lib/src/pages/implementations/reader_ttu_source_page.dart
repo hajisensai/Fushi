@@ -692,6 +692,65 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   }
 
   @override
+  @override
+  Widget? buildPopupAudioControls() {
+    final AudiobookPlayerController? ctrl = _audiobookController;
+    if (ctrl == null || ctrl.chapterCueCount == 0) return null;
+    return ListenableBuilder(
+      listenable: ctrl,
+      builder: (BuildContext context, _) {
+        final bool hasCue = ctrl.currentCue != null;
+        final ThemeData theme = Theme.of(context);
+        return Container(
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: theme.dividerColor,
+                width: 0.5,
+              ),
+            ),
+          ),
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.replay, size: 20),
+                onPressed: hasCue
+                    ? () => ctrl.skipToCue(ctrl.currentCue!)
+                    : null,
+                tooltip: t.repeat_cue,
+                visualDensity: VisualDensity.compact,
+              ),
+              const SizedBox(width: 12),
+              IconButton(
+                icon: Icon(
+                  ctrl.isPlaying ? Icons.pause : Icons.play_arrow,
+                  size: 24,
+                ),
+                onPressed: () => ctrl.togglePlayPause(),
+                visualDensity: VisualDensity.compact,
+              ),
+              const SizedBox(width: 12),
+              IconButton(
+                icon: const Icon(Icons.play_circle_outline, size: 20),
+                onPressed: hasCue
+                    ? () async {
+                        await ctrl.skipToCue(ctrl.currentCue!);
+                        await ctrl.play();
+                      }
+                    : null,
+                tooltip: t.play_from_cue,
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  @override
   void onMineFromPopup(Map<String, String> fields) {
     final currentSentence = appModel.getCurrentSentence();
     clearDictionaryResult();

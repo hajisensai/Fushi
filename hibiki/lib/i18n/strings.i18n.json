@@ -581,6 +581,8 @@
     "page_progress": "Page $current / $total",
     "cue_progress": "Sentence $current / $total",
     "cue_navigation": "Sentence Navigation",
+    "repeat_cue": "Repeat sentence",
+    "play_from_cue": "Play from sentence",
     "jump_to_cue": "Jump to",
     "jump_to_current_page": "Current page",
     "cue_unit": " sent.",

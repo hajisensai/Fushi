@@ -558,6 +558,8 @@
   "page_progress": "Sayfa $current / $total",
   "cue_progress": "Cümle $current / $total",
   "cue_navigation": "Cümle gezinme",
+  "repeat_cue": "Repeat sentence",
+  "play_from_cue": "Play from sentence",
   "jump_to_cue": "Git",
   "jump_to_current_page": "Ge?erli sayfa",
   "cue_unit": " cümle",

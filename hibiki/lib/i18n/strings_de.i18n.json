@@ -533,6 +533,8 @@
   "page_progress": "Seite $current / $total",
   "cue_progress": "Satz $current / $total",
   "cue_navigation": "Satznavigation",
+  "repeat_cue": "Repeat sentence",
+  "play_from_cue": "Play from sentence",
   "jump_to_cue": "Springe zu",
   "jump_to_current_page": "Aktuelle Seite",
   "cue_unit": " Satz",

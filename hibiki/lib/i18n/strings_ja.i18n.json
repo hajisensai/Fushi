@@ -543,6 +543,8 @@
   "page_progress": "ページ $current / $total",
   "cue_progress": "文 $current / $total",
   "cue_navigation": "文ナビゲーション",
+  "repeat_cue": "この文をリピート",
+  "play_from_cue": "この文から再生",
   "jump_to_cue": "ジャンプ先",
   "jump_to_current_page": "現在のページ",
   "cue_unit": "文目",

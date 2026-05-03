@@ -555,6 +555,8 @@
   "page_progress": "صفحة $current / $total",
   "cue_progress": "جملة $current / $total",
   "cue_navigation": "التنقل بين الجمل",
+  "repeat_cue": "إعادة الجملة",
+  "play_from_cue": "تشغيل من الجملة",
   "jump_to_cue": "انتقل إلى",
   "jump_to_current_page": "الصفحة الحالية",
   "cue_unit": " جملة",

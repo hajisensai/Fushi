@@ -558,6 +558,8 @@
   "page_progress": "Pagina $current / $total",
   "cue_progress": "Zin $current / $total",
   "cue_navigation": "Zinsnavigatie",
+  "repeat_cue": "Repeat sentence",
+  "play_from_cue": "Play from sentence",
   "jump_to_cue": "Ga naar",
   "jump_to_current_page": "Huidige pagina",
   "cue_unit": " zin",
