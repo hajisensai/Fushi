@@ -915,60 +915,46 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
             Row(
               children: [
                 Text(t.playback_speed, style: theme.textTheme.titleMedium),
-                const SizedBox(width: 4),
-                TextButton.icon(
-                  onPressed: (current - 1.0).abs() < 0.001
-                      ? null
-                      : () => ctrl.setSpeed(1.0),
-                  icon: const Icon(Icons.restart_alt, size: 18),
-                  label: Text(t.av_sync_reset),
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                const Spacer(),
+                Text(
+                  '${current.toStringAsFixed(2)}x',
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
+                if ((current - 1.0).abs() >= 0.001)
+                  IconButton(
+                    icon: const Icon(Icons.restart_alt, size: 18),
+                    onPressed: () => ctrl.setSpeed(1.0),
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.only(left: 4),
+                    constraints: const BoxConstraints(),
+                    tooltip: t.av_sync_reset,
+                  ),
               ],
             ),
-            const SizedBox(height: 10),
-            Center(
-              child: Text(
-                '${current.toStringAsFixed(2)}x',
-                style: theme.textTheme.headlineSmall,
-              ),
-            ),
-            const SizedBox(height: 10),
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                _speedStepBtn(ctrl, '-0.25', -0.25),
-                _speedStepBtn(ctrl, '-0.10', -0.10),
-                _speedStepBtn(ctrl, '-0.05', -0.05),
-                _speedStepBtn(ctrl, '+0.05', 0.05),
-                _speedStepBtn(ctrl, '+0.10', 0.10),
-                _speedStepBtn(ctrl, '+0.25', 0.25),
+                Text('0.25', style: theme.textTheme.bodySmall),
+                Expanded(
+                  child: Slider(
+                    value: current.clamp(0.25, 4.0),
+                    min: 0.25,
+                    max: 4.0,
+                    divisions: 75,
+                    onChanged: (double v) {
+                      final double rounded =
+                          (v * 20).roundToDouble() / 20;
+                      ctrl.setSpeed(rounded);
+                    },
+                  ),
+                ),
+                Text('4.0', style: theme.textTheme.bodySmall),
               ],
             ),
           ],
         );
       },
-    );
-  }
-
-  Widget _speedStepBtn(
-      AudiobookPlayerController ctrl, String label, double delta) {
-    return FilledButton.tonal(
-      onPressed: () {
-        final double next =
-            ((ctrl.speed + delta) * 100).roundToDouble() / 100;
-        ctrl.setSpeed(next.clamp(0.25, 4.0));
-      },
-      style: FilledButton.styleFrom(
-        minimumSize: const Size(52, 40),
-        padding: const EdgeInsets.symmetric(horizontal: 6),
-        visualDensity: VisualDensity.compact,
-      ),
-      child: Text(label),
     );
   }
 
@@ -981,63 +967,47 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           children: [
             Row(
               children: [
-                Text(t.av_sync, style: theme.textTheme.titleMedium),
-                const SizedBox(width: 4),
-                TextButton.icon(
-                  onPressed: ms == 0 ? null : () => ctrl.setDelayMs(0),
-                  icon: const Icon(Icons.restart_alt, size: 18),
-                  label: Text(t.av_sync_reset),
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                Flexible(
+                  child: Text(t.av_sync, style: theme.textTheme.titleMedium),
+                ),
+                const Spacer(),
+                Text(
+                  '${ms > 0 ? '+' : ''}$ms ms',
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
+                if (ms != 0)
+                  IconButton(
+                    icon: const Icon(Icons.restart_alt, size: 18),
+                    onPressed: () => ctrl.setDelayMs(0),
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.only(left: 4),
+                    constraints: const BoxConstraints(),
+                    tooltip: t.av_sync_reset,
+                  ),
               ],
             ),
-            const SizedBox(height: 4),
-            Text(
-              t.av_sync_hint,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Center(
-              child: Text(
-                '${ms > 0 ? '+' : ''}$ms ms',
-                style: theme.textTheme.headlineSmall,
-              ),
-            ),
-            const SizedBox(height: 10),
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                _stepBtn(ctrl, '-1s', -1000),
-                _stepBtn(ctrl, '-200', -200),
-                _stepBtn(ctrl, '-50', -50),
-                _stepBtn(ctrl, '+50', 50),
-                _stepBtn(ctrl, '+200', 200),
-                _stepBtn(ctrl, '+1s', 1000),
+                Text('-2s', style: theme.textTheme.bodySmall),
+                Expanded(
+                  child: Slider(
+                    value: ms.toDouble().clamp(-2000, 2000),
+                    min: -2000,
+                    max: 2000,
+                    divisions: 80,
+                    onChanged: (double v) {
+                      ctrl.setDelayMs(v.round());
+                    },
+                  ),
+                ),
+                Text('+2s', style: theme.textTheme.bodySmall),
               ],
             ),
           ],
         );
       },
-    );
-  }
-
-  Widget _stepBtn(AudiobookPlayerController ctrl, String label, int delta) {
-    return FilledButton.tonal(
-      onPressed: () {
-        ctrl.setDelayMs(ctrl.delayMs.value + delta);
-      },
-      style: FilledButton.styleFrom(
-        minimumSize: const Size(52, 40),
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        visualDensity: VisualDensity.compact,
-      ),
-      child: Text(label),
     );
   }
 
