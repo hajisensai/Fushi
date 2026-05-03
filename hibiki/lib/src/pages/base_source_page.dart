@@ -179,8 +179,9 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
       _showMore = dictionaryResult.entries.length < overrideMaximumTerms;
       _dictionaryResultNotifier.value = dictionaryResult;
 
-      if (ReaderTtuSource.instance.autoReadOnLookup &&
-          dictionaryResult.entries.isNotEmpty) {
+      final bool arEnabled = ReaderTtuSource.instance.autoReadOnLookup;
+      debugPrint('[hibiki-autoread] autoReadOnLookup=$arEnabled entries=${dictionaryResult.entries.length}');
+      if (arEnabled && dictionaryResult.entries.isNotEmpty) {
         final entry = dictionaryResult.entries.first;
         final expression = entry.word;
         final reading = entry.reading;
@@ -195,6 +196,8 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
 
   /// Resolve audio exactly like Hoshi: enabled sources only, no TTS fallback.
   Future<void> _autoReadWord(String expression, String reading) async {
+    final sources = appModel.enabledAudioSources;
+    debugPrint('[hibiki-autoread] "$expression" reading="$reading" sources=${sources.length}');
     final WordAudioResolver resolver = WordAudioResolver(
       queryLocalAudio: (String expression, String reading) {
         return TtsChannel.instance
@@ -206,16 +209,20 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
     final String? url = await resolver.resolve(
       expression: expression,
       reading: reading,
-      sources: appModel.enabledAudioSources,
+      sources: sources,
     );
+    debugPrint('[hibiki-autoread] resolved url=$url');
     if (url == null || url.isEmpty) return;
 
     if (url.startsWith('file://')) {
-      TtsChannel.instance.playFile(url.replaceFirst('file://', ''));
+      final ok = await TtsChannel.instance.playFile(url.replaceFirst('file://', ''));
+      debugPrint('[hibiki-autoread] playFile ok=$ok');
     } else if (url.startsWith('/')) {
-      TtsChannel.instance.playFile(url);
+      final ok = await TtsChannel.instance.playFile(url);
+      debugPrint('[hibiki-autoread] playFile ok=$ok');
     } else if (url.startsWith('http')) {
-      TtsChannel.instance.playUrl(url);
+      final ok = await TtsChannel.instance.playUrl(url);
+      debugPrint('[hibiki-autoread] playUrl ok=$ok');
     }
   }
 

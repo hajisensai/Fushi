@@ -115,11 +115,11 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   final ValueNotifier<ThemeData?> _barThemeNotifier =
       ValueNotifier<ThemeData?>(null);
 
-  /// 首帧前同步判定：这本书是否有 Audiobook/SrtBook 记录且配置了音频。
-  /// 目的是让 WebView 从第一次 layout 就用"预留 56+bottomPadding"的视口，
-  /// 避免异步 load 完才 setState 翻转 bottom inset、触发 ttu paginated 模式
-  /// resize 重排（vertical-rl 列高变短 → 首页文字整体上移撞到挖孔遮罩）。
+  /// 异步判定：这本书是否有 Audiobook/SrtBook 记录且配置了音频。
+  /// WebView 在 `_audioSlotResolved` 前不创建，避免视口先大后小触发 ttu
+  /// paginated 模式 resize 重排（vertical-rl 列高变短 → 首页文字整体上移）。
   bool _hasAudioSlot = false;
+  bool _audioSlotResolved = false;
 
   /// 当前章节的 href（用于 cue 查询和 JS 注解）。
   String _currentChapterHref = '';
@@ -229,9 +229,14 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     // 起就带底部 56+padding 槽位，避免异步 load 完再翻转 bottom 触发 ttu
     // reflow 把首页文字往上抬。
     _detectAudioSlotAsync().then((hasSlot) {
-      if (mounted && hasSlot != _hasAudioSlot) {
-        setState(() => _hasAudioSlot = hasSlot);
+      if (mounted) {
+        setState(() {
+          _hasAudioSlot = hasSlot;
+          _audioSlotResolved = true;
+        });
       }
+    }, onError: (_) {
+      if (mounted) setState(() => _audioSlotResolved = true);
     });
     // 异步检查是否有挂载有声书
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -692,7 +697,6 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   }
 
   @override
-  @override
   Widget? buildPopupAudioControls() {
     final AudiobookPlayerController? ctrl = _audiobookController;
     if (ctrl == null || ctrl.chapterCueCount == 0) return null;
@@ -961,6 +965,8 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   }
 
   Widget buildBody() {
+    if (!_audioSlotResolved) return buildLoading();
+
     AsyncValue<LocalAssetsServer> server =
         ref.watch(ttuServerProvider(appModel.targetLanguage));
 
