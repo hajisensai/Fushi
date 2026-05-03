@@ -3,12 +3,12 @@
 class TtuIdbSchema {
   const TtuIdbSchema._();
 
-  static const int booksDbVersion = 6;
+  static const int booksDbVersion = 7;
 
   static const String openBooksDbJs = r'''
 function hibikiOpenBooksDb() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open('books', 6);
+      const req = indexedDB.open('books', 7);
     req.onupgradeneeded = (event) => {
       const db = event.target.result;
       const tx = event.target.transaction;

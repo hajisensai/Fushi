@@ -4,10 +4,10 @@ import 'package:hibiki/src/media/audiobook/ttu_idb_schema.dart';
 void main() {
   group('TtuIdbSchema', () {
     test('opens the books database at the bundled ttu schema version', () {
-      expect(TtuIdbSchema.booksDbVersion, 6);
+      expect(TtuIdbSchema.booksDbVersion, 7);
       expect(
         TtuIdbSchema.openBooksDbJs,
-        contains("indexedDB.open('books', 6)"),
+        contains("indexedDB.open('books', 7)"),
       );
     });
 
@@ -27,8 +27,10 @@ void main() {
 
     test('repairs the legacy simplified data store during upgrade', () {
       expect(TtuIdbSchema.openBooksDbJs, contains('repairLegacyDataStore'));
-      expect(TtuIdbSchema.openBooksDbJs, contains('dataStore.keyPath !== "id"'));
-      expect(TtuIdbSchema.openBooksDbJs, contains('db.deleteObjectStore("data")'));
+      expect(
+          TtuIdbSchema.openBooksDbJs, contains('dataStore.keyPath !== "id"'));
+      expect(
+          TtuIdbSchema.openBooksDbJs, contains('db.deleteObjectStore("data")'));
       expect(TtuIdbSchema.openBooksDbJs, contains('record.id'));
     });
 
