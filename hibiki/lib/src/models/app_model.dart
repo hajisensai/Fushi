@@ -950,12 +950,15 @@ class AppModel with ChangeNotifier {
           order: nextMappingOrder,
         );
 
-        await _database.replaceAllMappings([
-          ..._mappingsCache.map(_mappingToCompanion),
-          _mappingToCompanion(legacyProfile),
-          _mappingToCompanion(newDefault),
-        ]);
-        _mappingsCache = [..._mappingsCache, legacyProfile, newDefault];
+        final List<AnkiMapping> updatedCache = _mappingsCache
+            .map((m) =>
+                m.label == AnkiMapping.standardProfileName ? legacyProfile : m)
+            .toList()
+          ..add(newDefault);
+
+        await _database
+            .replaceAllMappings(updatedCache.map(_mappingToCompanion).toList());
+        _mappingsCache = updatedCache;
 
         await showAppDialog(
           barrierDismissible: true,
@@ -1570,14 +1573,38 @@ class AppModel with ChangeNotifier {
     await _setPref('custom_theme_font_color', color?.toARGB32() ?? 0);
   }
 
+  Color? get customThemeBackgroundColor {
+    final int v = _getPref('custom_theme_bg_color', defaultValue: 0);
+    if (v == 0) return null;
+    return Color(v);
+  }
+
+  Future<void> setCustomThemeBackgroundColor(Color? color) async {
+    await _setPref('custom_theme_bg_color', color?.toARGB32() ?? 0);
+  }
+
+  Color? get customThemeSelectionColor {
+    final int v = _getPref('custom_theme_selection_color', defaultValue: 0);
+    if (v == 0) return null;
+    return Color(v);
+  }
+
+  Future<void> setCustomThemeSelectionColor(Color? color) async {
+    await _setPref('custom_theme_selection_color', color?.toARGB32() ?? 0);
+  }
+
   Future<void> applyCustomTheme({
     required Color seed,
     required bool dark,
     Color? fontColor,
+    Color? backgroundColor,
+    Color? selectionColor,
   }) async {
     await setCustomThemeSeed(seed);
     await setCustomThemeDark(dark);
     await setCustomThemeFontColor(fontColor);
+    await setCustomThemeBackgroundColor(backgroundColor);
+    await setCustomThemeSelectionColor(selectionColor);
     await _setPref('app_theme_key', 'custom-theme');
     notifyListeners();
     _persistSplashColor();

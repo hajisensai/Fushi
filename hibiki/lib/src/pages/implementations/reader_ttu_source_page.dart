@@ -42,6 +42,8 @@ import 'package:hibiki/utils.dart';
 Map<String, String> buildTtuCustomThemeDefinition({
   required bool dark,
   Color? fontColor,
+  Color? backgroundColor,
+  Color? selectionColor,
 }) {
   final Color resolvedFontColor =
       fontColor ?? (dark ? const Color(0xDEFFFFFF) : const Color(0xDE000000));
@@ -49,12 +51,22 @@ Map<String, String> buildTtuCustomThemeDefinition({
   final int g = resolvedFontColor.green;
   final int b = resolvedFontColor.blue;
   final String a = (resolvedFontColor.alpha / 255.0).toStringAsFixed(2);
+
+  final Color resolvedBg = backgroundColor ??
+      (dark ? const Color(0xFF23272A) : const Color(0xFFFFFFFF));
+  final String bgRgba =
+      'rgba(${resolvedBg.red},${resolvedBg.green},${resolvedBg.blue},${(resolvedBg.alpha / 255.0).toStringAsFixed(2)})';
+
+  final Color resolvedSel = selectionColor ??
+      (dark ? const Color(0xCCD4D9DC) : const Color(0xFF979797));
+  final String selRgba =
+      'rgba(${resolvedSel.red},${resolvedSel.green},${resolvedSel.blue},${(resolvedSel.alpha / 255.0).toStringAsFixed(2)})';
+
   return {
     'fontColor': 'rgba($r,$g,$b,$a)',
-    'backgroundColor': dark ? 'rgba(35,39,42,1)' : 'rgba(255,255,255,1)',
+    'backgroundColor': bgRgba,
     'selectionFontColor': dark ? 'rgba(85,90,92,0.6)' : 'rgba(245,245,245,1)',
-    'selectionBackgroundColor':
-        dark ? 'rgba(212,217,220,0.8)' : 'rgba(151,151,151,1)',
+    'selectionBackgroundColor': selRgba,
     'hintFuriganaFontColor': 'rgba($r,$g,$b,0.38)',
     'hintFuriganaShadowColor':
         dark ? 'rgba(240,240,241,0.3)' : 'rgba(34,34,49,0.3)',
@@ -66,11 +78,15 @@ Map<String, String> buildTtuCustomThemeDefinition({
 String buildTtuCustomThemeJs({
   required bool dark,
   Color? fontColor,
+  Color? backgroundColor,
+  Color? selectionColor,
 }) {
   final String themesJson = jsonEncode({
     'custom-theme': buildTtuCustomThemeDefinition(
       dark: dark,
       fontColor: fontColor,
+      backgroundColor: backgroundColor,
+      selectionColor: selectionColor,
     ),
   });
   return 'window.localStorage.setItem("customThemes",'
@@ -208,6 +224,13 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   /// 中过滤紧接程序化跳章后 ttu 推出的 settle 事件，避免误触 follow auto-off。
   DateTime? _lastNavRestoreTime;
 
+  /// WebView 内容就绪（位置恢复完成或确认无需恢复）之前为 false，
+  /// 用主题色遮罩盖住 WebView 避免先显示封面/第一章再跳转。
+  bool _readerContentReady = false;
+
+  /// initState 预读的阅读位置（Isar），onLoadStop 直接消费，省掉异步查询。
+  ReaderPosition? _preloadedPos;
+
   String? _lastAppThemeSignature;
   String? _lastFloatingLyricStyleKey;
   bool _floatingLyricStyleSyncScheduled = false;
@@ -241,6 +264,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     }, onError: (_) {
       if (mounted) setState(() => _audioSlotResolved = true);
     });
+    _preloadReaderPos();
     // 异步检查是否有挂载有声书
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initAudiobookIfAvailable();
@@ -279,6 +303,22 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
           (b.audioRoot != null && b.audioRoot!.isNotEmpty);
     }
     return false;
+  }
+
+  /// initState 预读阅读位置，和 _detectAudioSlotAsync 并行。
+  Future<void> _preloadReaderPos() async {
+    final int? ttuId = _extractTtuBookId();
+    if (ttuId == null || ttuId <= 0) return;
+    try {
+      _preloadedPos = await ReaderPositionRepository(appModelNoUpdate.database)
+          .findByTtuBookId(ttuId);
+      debugPrint(
+        '[hibiki-reader-pos] preloaded ttuId=$ttuId '
+        's=${_preloadedPos?.sectionIndex}/o=${_preloadedPos?.normCharOffset}',
+      );
+    } catch (e) {
+      debugPrint('[hibiki-reader-pos] preload err: $e');
+    }
   }
 
   @override
@@ -963,11 +1003,11 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       child: WillPopScope(
         onWillPop: onWillPop,
         child: Scaffold(
-          backgroundColor: Colors.black,
+          backgroundColor: _ttuThemeFlutterColor(),
           resizeToAvoidBottomInset: false,
           body: SafeArea(
             // top 走 `extendPageBeyondNavigationBar` 偏好：默认 true，
-            // 给刘海 / 摄像头挖孔区留黑色 Scaffold 背景做遮罩，避免
+            // 给刘海 / 摄像头挖孔区留主题色 Scaffold 背景做遮罩，避免
             // WebView 内容被挖孔挡掉。ttu 原生顶部工具栏的"空白横条"
             // 不在这一层 —— 那一条走 javascriptToExecute 里的
             // hibiki-hide-ttu-native-ui-css display:none 解决。
@@ -977,17 +1017,16 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
               fit: StackFit.expand,
               alignment: Alignment.center,
               children: <Widget>[
-                // WebView 在有声书模式下显式留出底部 play bar 的空间，
-                // 而不是让 bar 作为透明 overlay 盖在 WebView 之上。
-                // 这样 ttu 看到的是缩小后的 viewport / clientHeight，
-                // 分页步长和绘制区一起收缩，底部行不会被播放栏挡。
-                // （往 `.book-content` 注 padding-bottom 才会撕裂：那是
-                // scrollHeight 变而 clientHeight 没变。外壳缩是两者同
-                // 步收缩，ttu 原生的 paginated 分页仍然对齐。）
                 Positioned.fill(
-                  bottom: 56 + MediaQuery.of(context).padding.bottom,
+                  bottom: (_audiobookController != null && appModel.showPlayBar)
+                      ? 56 + MediaQuery.of(context).padding.bottom
+                      : 0,
                   child: buildBody(),
                 ),
+                if (!_readerContentReady)
+                  Positioned.fill(
+                    child: ColoredBox(color: _ttuThemeFlutterColor()),
+                  ),
                 buildDictionary(),
                 buildAudiobookBar(),
                 buildAudiobookImportButton(),
@@ -1041,6 +1080,8 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       appModel.appThemeKey,
       appModel.customThemeDark ? 'dark' : 'light',
       appModel.customThemeFontColor?.toARGB32().toRadixString(16) ?? 'default',
+      appModel.customThemeBackgroundColor?.toARGB32().toRadixString(16) ?? 'default',
+      appModel.customThemeSelectionColor?.toARGB32().toRadixString(16) ?? 'default',
     ].join(':');
   }
 
@@ -1260,10 +1301,56 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     return cmds.join(';');
   }
 
+  /// 根据当前 ttu 主题返回 Flutter Color，用于 Scaffold 背景和遮罩。
+  Color _ttuThemeFlutterColor() {
+    switch (appModel.appThemeKey) {
+      case 'light-theme':
+        return const Color(0xFFF9F9F9);
+      case 'ecru-theme':
+        return const Color(0xFFF7F6EB);
+      case 'water-theme':
+        return const Color(0xFFDFECF4);
+      case 'gray-theme':
+        return const Color(0xFF23272A);
+      case 'dark-theme':
+        return const Color(0xFF121212);
+      case 'black-theme':
+        return const Color(0xFF101010);
+      case 'custom-theme':
+        return appModel.customThemeDark
+            ? const Color(0xFF23272A)
+            : const Color(0xFFFFFFFF);
+      default:
+        return const Color(0xFFF9F9F9);
+    }
+  }
+
+  /// 返回注入到 WebView document start 的 CSS，让背景色在任何 JS/CSS 加载前生效，
+  /// 消除白屏闪烁。
+  String _buildInitialBgCssJs() {
+    final Color c = _ttuThemeFlutterColor();
+    final String hex =
+        '#${c.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}';
+    return '(function(){'
+        'var s=document.createElement("style");'
+        's.id="hibiki-initial-bg";'
+        's.textContent=":root,html,body{background-color:$hex!important}";'
+        '(document.head||document.documentElement).appendChild(s);'
+        '})()';
+  }
+
+  void _markReaderContentReady() {
+    if (!_readerContentReady && mounted) {
+      setState(() => _readerContentReady = true);
+    }
+  }
+
   String _buildCustomThemeJs() {
     return buildTtuCustomThemeJs(
       dark: appModel.customThemeDark,
       fontColor: appModel.customThemeFontColor,
+      backgroundColor: appModel.customThemeBackgroundColor,
+      selectionColor: appModel.customThemeSelectionColor,
     );
   }
 
@@ -1302,11 +1389,14 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
               'if(!String.prototype.replaceAll){String.prototype.replaceAll=function(a,b){if(a instanceof RegExp){if(!a.global)throw new TypeError("replaceAll must be called with a global RegExp");return this.replace(a,b)}return this.split(a).join(b)}}',
           injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
         ),
-        if (_hasAudioSlot)
-          UserScript(
-            source: 'window.__hoshiManagesPosition = true;',
-            injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
-          ),
+        UserScript(
+          source: 'window.__hoshiManagesPosition = true;',
+          injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+        ),
+        UserScript(
+          source: _buildInitialBgCssJs(),
+          injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+        ),
         UserScript(
           source: _buildApplySettingsJs(),
           injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
@@ -1504,6 +1594,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
             ]);
           } catch (e) {
             debugPrint('[hibiki-audiobook] onLoadStop parallel timeout: $e');
+            _markReaderContentReady();
           }
         } else {
           await jsFuture;
@@ -1522,7 +1613,10 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
             } catch (e) {
               debugPrint(
                   '[hibiki-audiobook] onLoadStop restorePos timeout: $e');
+              _markReaderContentReady();
             }
+          } else {
+            _markReaderContentReady();
           }
         }
         Future.delayed(
@@ -2963,6 +3057,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     }
     debugPrint('[hibiki-audiobook] injecting via $trigger');
     _didRestorePos = false;
+    _readerContentReady = false;
     await _injectAudiobookBridge(controller);
     // 引导 _currentTtuSection：ttu fork 的 sectionChanged 订阅带 skip(1)，
     // 首次挂载（封面 / 最近阅读章）那次 Wn 发射被吃掉，字段会一直卡在 -1。
@@ -3790,23 +3885,34 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
   ///
   /// 无记录（新书）：置 `_didRestorePos=true` 立即返回。
   Future<void> _bootstrapRestoreReaderPos() async {
-    if (_didRestorePos) return;
-    if (!_controllerInitialised) return;
+    if (_didRestorePos) {
+      _markReaderContentReady();
+      return;
+    }
+    if (!_controllerInitialised) {
+      _markReaderContentReady();
+      return;
+    }
     // 先置 true —— 后面任何失败分支都不再重试（防止同一本书反复调 Isar）。
     // 真正需要重试时用户关书再开就行。
     _didRestorePos = true;
     final int? ttuId = _extractTtuBookId();
     if (ttuId == null || ttuId <= 0) {
       debugPrint('[hibiki-reader-pos] restore skipped: no ttuId');
+      _markReaderContentReady();
       return;
     }
-    ReaderPosition? saved;
-    try {
-      saved = await ReaderPositionRepository(appModel.database)
-          .findByTtuBookId(ttuId);
-    } catch (e) {
-      debugPrint('[hibiki-reader-pos] restore query err: $e');
-      return;
+    // 优先用 initState 预读的位置（省掉 onLoadStop 里的 Isar IO）。
+    ReaderPosition? saved = _preloadedPos;
+    if (saved == null) {
+      try {
+        saved = await ReaderPositionRepository(appModel.database)
+            .findByTtuBookId(ttuId);
+      } catch (e) {
+        debugPrint('[hibiki-reader-pos] restore query err: $e');
+        _markReaderContentReady();
+        return;
+      }
     }
     final Bookmark? jumpBm = widget.initialBookmarkJump;
     if (jumpBm != null) {
@@ -3820,6 +3926,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       );
     } else if (saved == null) {
       debugPrint('[hibiki-reader-pos] no saved pos for ttuId=$ttuId');
+      _markReaderContentReady();
       return;
     } else {
       debugPrint(
@@ -3832,11 +3939,15 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         offset: saved.normCharOffset,
       );
     }
-    if (_pendingRestorePos == null) return;
+    if (_pendingRestorePos == null) {
+      _markReaderContentReady();
+      return;
+    }
     if (_dropStaleSectionNavigation(
       _pendingRestorePos!.section,
       jumpBm != null ? 'bookmark-restore' : 'saved-restore',
     )) {
+      _markReaderContentReady();
       return;
     }
     final int targetSection = _pendingRestorePos!.section;
@@ -3864,6 +3975,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           _restoreInFlight = false;
           _pendingRestorePos = null;
           _inFlightNavSection = null;
+          _markReaderContentReady();
         }
       });
     } catch (e) {
@@ -3871,6 +3983,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       _restoreInFlight = false;
       _pendingRestorePos = null;
       _inFlightNavSection = null;
+      _markReaderContentReady();
     }
   }
 
@@ -3895,6 +4008,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       debugPrint('[hibiki-reader-pos] scrollToNormOffset err: $e');
     } finally {
       _restoreInFlight = false;
+      _markReaderContentReady();
     }
   }
 

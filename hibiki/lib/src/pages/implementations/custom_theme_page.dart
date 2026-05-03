@@ -18,6 +18,10 @@ class _CustomThemePageState extends BasePageState {
   late bool _dark;
   Color? _fontColor;
   bool _useFontColor = false;
+  Color? _bgColor;
+  bool _useBgColor = false;
+  Color? _selectionColor;
+  bool _useSelectionColor = false;
 
   @override
   void initState() {
@@ -27,6 +31,12 @@ class _CustomThemePageState extends BasePageState {
     _fontColor = appModelNoUpdate.customThemeFontColor;
     _useFontColor = _fontColor != null;
     _fontColor ??= Colors.black;
+    _bgColor = appModelNoUpdate.customThemeBackgroundColor;
+    _useBgColor = _bgColor != null;
+    _bgColor ??= Colors.white;
+    _selectionColor = appModelNoUpdate.customThemeSelectionColor;
+    _useSelectionColor = _selectionColor != null;
+    _selectionColor ??= Colors.grey;
   }
 
   ColorScheme get _preview =>
@@ -39,10 +49,18 @@ class _CustomThemePageState extends BasePageState {
       final fontHex = _fontColor!.toARGB32().toRadixString(16).padLeft(8, '0');
       code += ':fc$fontHex';
     }
+    if (_useBgColor && _bgColor != null) {
+      final bgHex = _bgColor!.toARGB32().toRadixString(16).padLeft(8, '0');
+      code += ':bg$bgHex';
+    }
+    if (_useSelectionColor && _selectionColor != null) {
+      final selHex = _selectionColor!.toARGB32().toRadixString(16).padLeft(8, '0');
+      code += ':sc$selHex';
+    }
     return code;
   }
 
-  static ({Color seed, bool dark, Color? fontColor})? _decodeTheme(String code) {
+  static ({Color seed, bool dark, Color? fontColor, Color? bgColor, Color? selectionColor})? _decodeTheme(String code) {
     final parts = code.trim().split(':');
     if (parts.length < 3 || parts[0] != 'hibiki-theme') return null;
     final colorVal = int.tryParse(parts[1], radix: 16);
@@ -50,11 +68,21 @@ class _CustomThemePageState extends BasePageState {
     final dark = parts[2] == 'dark';
     if (parts[2] != 'dark' && parts[2] != 'light') return null;
     Color? fontColor;
-    if (parts.length >= 4 && parts[3].startsWith('fc')) {
-      final fcVal = int.tryParse(parts[3].substring(2), radix: 16);
-      if (fcVal != null) fontColor = Color(fcVal);
+    Color? bgColor;
+    Color? selectionColor;
+    for (int i = 3; i < parts.length; i++) {
+      if (parts[i].startsWith('fc')) {
+        final v = int.tryParse(parts[i].substring(2), radix: 16);
+        if (v != null) fontColor = Color(v);
+      } else if (parts[i].startsWith('bg')) {
+        final v = int.tryParse(parts[i].substring(2), radix: 16);
+        if (v != null) bgColor = Color(v);
+      } else if (parts[i].startsWith('sc')) {
+        final v = int.tryParse(parts[i].substring(2), radix: 16);
+        if (v != null) selectionColor = Color(v);
+      }
     }
-    return (seed: Color(colorVal), dark: dark, fontColor: fontColor);
+    return (seed: Color(colorVal), dark: dark, fontColor: fontColor, bgColor: bgColor, selectionColor: selectionColor);
   }
 
   void _shareTheme() {
@@ -92,6 +120,10 @@ class _CustomThemePageState extends BasePageState {
                 _dark = result.dark;
                 _fontColor = result.fontColor ?? Colors.black;
                 _useFontColor = result.fontColor != null;
+                _bgColor = result.bgColor ?? Colors.white;
+                _useBgColor = result.bgColor != null;
+                _selectionColor = result.selectionColor ?? Colors.grey;
+                _useSelectionColor = result.selectionColor != null;
               });
               Fluttertoast.showToast(msg: t.import_theme_success);
             },
@@ -120,9 +152,10 @@ class _CustomThemePageState extends BasePageState {
           ),
         ],
       ),
+      resizeToAvoidBottomInset: true,
       body: ListView(
         padding: EdgeInsets.fromLTRB(
-          16, 12, 16, 12 + MediaQuery.of(context).padding.bottom,
+          16, 12, 16, 12 + MediaQuery.of(context).padding.bottom + MediaQuery.of(context).viewInsets.bottom,
         ),
         children: [
           _buildPreviewCard(),
@@ -139,15 +172,21 @@ class _CustomThemePageState extends BasePageState {
           const SizedBox(height: 8),
           Text(t.seed_color, style: Theme.of(context).textTheme.titleSmall),
           const SizedBox(height: 8),
-          ColorPicker(
-            pickerColor: _seed,
-            onColorChanged: (c) => setState(() => _seed = c),
-            colorPickerWidth: MediaQuery.of(context).size.width - 64,
-            pickerAreaHeightPercent: 0.6,
-            enableAlpha: false,
-            displayThumbColor: true,
-            hexInputBar: true,
-            labelTypes: const [],
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final pickerWidth = constraints.maxWidth.clamp(0.0, MediaQuery.of(context).size.width - 64);
+              final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+              return ColorPicker(
+                pickerColor: _seed,
+                onColorChanged: (c) => setState(() => _seed = c),
+                colorPickerWidth: pickerWidth,
+                pickerAreaHeightPercent: isLandscape ? 0.4 : 0.6,
+                enableAlpha: false,
+                displayThumbColor: true,
+                hexInputBar: true,
+                labelTypes: const [],
+              );
+            },
           ),
           const SizedBox(height: 16),
           Row(
@@ -161,15 +200,46 @@ class _CustomThemePageState extends BasePageState {
           ),
           if (_useFontColor) ...[
             const SizedBox(height: 8),
-            ColorPicker(
-              pickerColor: _fontColor!,
-              onColorChanged: (c) => setState(() => _fontColor = c),
-              colorPickerWidth: MediaQuery.of(context).size.width - 64,
-              pickerAreaHeightPercent: 0.5,
+            _buildCompactColorPicker(
+              color: _fontColor!,
+              onChanged: (c) => setState(() => _fontColor = c),
               enableAlpha: true,
-              displayThumbColor: true,
-              hexInputBar: true,
-              labelTypes: const [],
+            ),
+          ],
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(child: Text(t.background_color)),
+              Switch(
+                value: _useBgColor,
+                onChanged: (v) => setState(() => _useBgColor = v),
+              ),
+            ],
+          ),
+          if (_useBgColor) ...[
+            const SizedBox(height: 8),
+            _buildCompactColorPicker(
+              color: _bgColor!,
+              onChanged: (c) => setState(() => _bgColor = c),
+              enableAlpha: false,
+            ),
+          ],
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(child: Text(t.selection_color)),
+              Switch(
+                value: _useSelectionColor,
+                onChanged: (v) => setState(() => _useSelectionColor = v),
+              ),
+            ],
+          ),
+          if (_useSelectionColor) ...[
+            const SizedBox(height: 8),
+            _buildCompactColorPicker(
+              color: _selectionColor!,
+              onChanged: (c) => setState(() => _selectionColor = c),
+              enableAlpha: true,
             ),
           ],
           const SizedBox(height: 16),
@@ -179,6 +249,8 @@ class _CustomThemePageState extends BasePageState {
                 seed: _seed,
                 dark: _dark,
                 fontColor: _useFontColor ? _fontColor : null,
+                backgroundColor: _useBgColor ? _bgColor : null,
+                selectionColor: _useSelectionColor ? _selectionColor : null,
               );
               Navigator.pop(context);
             },
@@ -203,13 +275,13 @@ class _CustomThemePageState extends BasePageState {
             const SizedBox(height: 8),
             Row(
               children: [
-                _swatch(cs.primary, 'Primary'),
+                _swatch(cs.primary, t.color_primary, cs.onSurface),
                 const SizedBox(width: 8),
-                _swatch(cs.secondary, 'Secondary'),
+                _swatch(cs.secondary, t.color_secondary, cs.onSurface),
                 const SizedBox(width: 8),
-                _swatch(cs.tertiary, 'Tertiary'),
+                _swatch(cs.tertiary, t.color_tertiary, cs.onSurface),
                 const SizedBox(width: 8),
-                _swatch(cs.primaryContainer, 'Container'),
+                _swatch(cs.primaryContainer, t.color_container, cs.onSurface),
               ],
             ),
             const SizedBox(height: 12),
@@ -217,12 +289,23 @@ class _CustomThemePageState extends BasePageState {
               width: double.infinity,
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: cs.surfaceContainerLow,
+                color: _useBgColor ? _bgColor : cs.surfaceContainerLow,
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Text(
-                '日本語のテキストプレビュー\nSample text preview',
-                style: TextStyle(color: _useFontColor ? _fontColor : cs.onSurface),
+              child: RichText(
+                text: TextSpan(
+                  style: TextStyle(color: _useFontColor ? _fontColor : cs.onSurface),
+                  children: [
+                    const TextSpan(text: '日本語の'),
+                    TextSpan(
+                      text: 'テキスト',
+                      style: TextStyle(
+                        backgroundColor: _useSelectionColor ? _selectionColor : null,
+                      ),
+                    ),
+                    const TextSpan(text: 'プレビュー\nSample text preview'),
+                  ],
+                ),
               ),
             ),
           ],
@@ -231,7 +314,30 @@ class _CustomThemePageState extends BasePageState {
     );
   }
 
-  Widget _swatch(Color color, String label) {
+  Widget _buildCompactColorPicker({
+    required Color color,
+    required ValueChanged<Color> onChanged,
+    required bool enableAlpha,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final pickerWidth = constraints.maxWidth.clamp(0.0, MediaQuery.of(context).size.width - 64);
+        final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+        return ColorPicker(
+          pickerColor: color,
+          onColorChanged: onChanged,
+          colorPickerWidth: pickerWidth,
+          pickerAreaHeightPercent: isLandscape ? 0.35 : 0.5,
+          enableAlpha: enableAlpha,
+          displayThumbColor: true,
+          hexInputBar: true,
+          labelTypes: const [],
+        );
+      },
+    );
+  }
+
+  Widget _swatch(Color color, String label, Color textColor) {
     return Expanded(
       child: Column(
         children: [
@@ -243,7 +349,7 @@ class _CustomThemePageState extends BasePageState {
             ),
           ),
           const SizedBox(height: 4),
-          Text(label, style: const TextStyle(fontSize: 10), overflow: TextOverflow.ellipsis),
+          Text(label, style: TextStyle(fontSize: 10, color: textColor), overflow: TextOverflow.ellipsis),
         ],
       ),
     );
