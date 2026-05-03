@@ -124,7 +124,7 @@ class AudiobookRepository {
   // ── tap seek ─────────────────────────────────────────────────────
 
   Future<bool> readTapSeek(String bookUid) async {
-    return await _db.getPrefTyped('$_kTapSeekKeyPrefix$bookUid', true);
+    return await _db.getPrefTyped('$_kTapSeekKeyPrefix$bookUid', false);
   }
 
   Future<void> updateTapSeek({
