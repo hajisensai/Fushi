@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -847,19 +849,13 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
             Expanded(
               child: Text(t.av_sync, style: theme.textTheme.titleMedium),
             ),
-            IconButton(
+            _RepeatIconButton(
               icon: const Icon(Icons.keyboard_double_arrow_left, size: 18),
-              onPressed: () => ctrl.setDelayMs(ms - 1000),
-              visualDensity: VisualDensity.compact,
-              constraints: const BoxConstraints(),
-              padding: EdgeInsets.zero,
+              onPressed: () => ctrl.setDelayMs(ctrl.delayMs.value - 1000),
             ),
-            IconButton(
+            _RepeatIconButton(
               icon: const Icon(Icons.chevron_left, size: 18),
-              onPressed: () => ctrl.setDelayMs(ms - 50),
-              visualDensity: VisualDensity.compact,
-              constraints: const BoxConstraints(),
-              padding: EdgeInsets.zero,
+              onPressed: () => ctrl.setDelayMs(ctrl.delayMs.value - 50),
             ),
             GestureDetector(
               onTap: ms == 0 ? null : () => ctrl.setDelayMs(0),
@@ -874,19 +870,13 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                 ),
               ),
             ),
-            IconButton(
+            _RepeatIconButton(
               icon: const Icon(Icons.chevron_right, size: 18),
-              onPressed: () => ctrl.setDelayMs(ms + 50),
-              visualDensity: VisualDensity.compact,
-              constraints: const BoxConstraints(),
-              padding: EdgeInsets.zero,
+              onPressed: () => ctrl.setDelayMs(ctrl.delayMs.value + 50),
             ),
-            IconButton(
+            _RepeatIconButton(
               icon: const Icon(Icons.keyboard_double_arrow_right, size: 18),
-              onPressed: () => ctrl.setDelayMs(ms + 1000),
-              visualDensity: VisualDensity.compact,
-              constraints: const BoxConstraints(),
-              padding: EdgeInsets.zero,
+              onPressed: () => ctrl.setDelayMs(ctrl.delayMs.value + 1000),
             ),
           ],
         );
@@ -1588,6 +1578,62 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
             Text(label, style: theme.textTheme.labelSmall),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _RepeatIconButton extends StatefulWidget {
+  const _RepeatIconButton({
+    required this.icon,
+    required this.onPressed,
+    this.initialDelay = const Duration(milliseconds: 400),
+    this.repeatInterval = const Duration(milliseconds: 80),
+  });
+
+  final Widget icon;
+  final VoidCallback onPressed;
+  final Duration initialDelay;
+  final Duration repeatInterval;
+
+  @override
+  State<_RepeatIconButton> createState() => _RepeatIconButtonState();
+}
+
+class _RepeatIconButtonState extends State<_RepeatIconButton> {
+  Timer? _timer;
+
+  void _start() {
+    widget.onPressed();
+    _timer = Timer(widget.initialDelay, () {
+      _timer = Timer.periodic(widget.repeatInterval, (_) {
+        widget.onPressed();
+      });
+    });
+  }
+
+  void _stop() {
+    _timer?.cancel();
+    _timer = null;
+  }
+
+  @override
+  void dispose() {
+    _stop();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onLongPressStart: (_) => _start(),
+      onLongPressEnd: (_) => _stop(),
+      child: IconButton(
+        icon: widget.icon,
+        onPressed: widget.onPressed,
+        visualDensity: VisualDensity.compact,
+        constraints: const BoxConstraints(),
+        padding: EdgeInsets.zero,
       ),
     );
   }
