@@ -28,6 +28,12 @@ class AudiobookPlayerController extends ChangeNotifier {
   List<File> _audioFiles = [];
   AudioPlayer? _clipPlayer;
 
+  /// playCueOnce 用：播放到此全局 ms 后自动暂停；null = 不限制。
+  int? _stopAtGlobalMs;
+
+  /// playCueOnce 完成后恢复到的位置（全局 ms）；null = 不恢复。
+  int? _returnToGlobalMs;
+
   /// load() 完成前为未完成状态；seek 方法先 await 此 Completer 以避免
   /// 在音频源尚未就绪时 seek 导致位置归零。
   Completer<void> _loadReady = Completer<void>()..complete();
@@ -357,6 +363,8 @@ class AudiobookPlayerController extends ChangeNotifier {
   }
 
   Future<void> togglePlayPause() async {
+    _stopAtGlobalMs = null;
+    _returnToGlobalMs = null;
     if (_player.playing) {
       await pause();
     } else {
@@ -394,6 +402,8 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 播放态下 positionStream 稍后 tick 到新位置，_updateCurrentCue 判断
   /// cue 已变化就不再 notify，天然幂等。
   Future<void> skipToCue(AudioCue cue) async {
+    _stopAtGlobalMs = null;
+    _returnToGlobalMs = null;
     await _loadReady.future;
     final Duration? dur = _player.duration;
     if (dur == null || dur.inMilliseconds <= 0) return;
@@ -414,6 +424,53 @@ class AudiobookPlayerController extends ChangeNotifier {
       notifyListeners();
     } else {
       _updateCurrentCue(_player.position.inMilliseconds);
+    }
+  }
+
+  /// 播放指定 cue 单句后暂停，完成后回到之前的播放位置。
+  ///
+  /// 对齐 Hoshi `playCue(cue, stop: true)`：从 cue.startMs 播放到
+  /// cue.endMs 自动暂停，恢复主播放器位置到调用前。
+  Future<void> playCueOnce(AudioCue cue) async {
+    await _loadReady.future;
+    final Duration? dur = _player.duration;
+    if (dur == null || dur.inMilliseconds <= 0) return;
+    final int? startGlobal = _toGlobalMs(cue);
+    if (startGlobal == null) return;
+
+    final int? endGlobal = _globalMsForCue(
+      audioFileIndex: cue.audioFileIndex,
+      startMs: cue.endMs,
+      fileOffsets: _fileOffsets,
+    );
+    if (endGlobal == null) return;
+
+    _returnToGlobalMs = _player.position.inMilliseconds;
+    _stopAtGlobalMs = endGlobal;
+
+    await _player.seek(Duration(milliseconds: startGlobal.clamp(0, dur.inMilliseconds)));
+    _chapterTransition = false;
+    final int idx = _chapterCues.indexOf(cue);
+    if (idx >= 0) {
+      _currentCueIndex = idx;
+      _currentCue = cue;
+      notifyListeners();
+    }
+    _hasPlayedOnce = true;
+    unawaited(_player.play());
+  }
+
+  /// 从指定 cue 开始连续播放（不暂停）。
+  ///
+  /// 对齐 Hoshi `playCue(cue, stop: false)`：seek 到 cue.startMs
+  /// 然后持续播放，不设 endMs 限制。
+  Future<void> playCueAndContinue(AudioCue cue) async {
+    _stopAtGlobalMs = null;
+    _returnToGlobalMs = null;
+    await skipToCue(cue);
+    if (!_player.playing) {
+      _hasPlayedOnce = true;
+      unawaited(_player.play());
     }
   }
 
@@ -562,6 +619,18 @@ class AudiobookPlayerController extends ChangeNotifier {
     // 丢掉这几秒的进度。_maybeSavePosition 自身有 3s 阈值，不会每 tick
     // 写 Hive。
     _maybeSavePosition();
+    // playCueOnce: 到达 endMs 后暂停并恢复位置。
+    if (_stopAtGlobalMs != null && posMs >= _stopAtGlobalMs!) {
+      final int? returnTo = _returnToGlobalMs;
+      _stopAtGlobalMs = null;
+      _returnToGlobalMs = null;
+      _player.pause();
+      if (returnTo != null) {
+        _player.seek(Duration(milliseconds: returnTo));
+      }
+      notifyListeners();
+      return;
+    }
     // 跨章 await 期间不推进 cue，否则 positionStream 连续触发
     // _maybeEmitCrossChapter 重复调 onCrossChapter。
     if (_chapterTransition) return;

@@ -110,6 +110,9 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   bool _isRecursiveSearching = false;
   bool _wasPlayingBeforeLookup = false;
 
+  /// 查词时对应的 cue（"句子 A"），用于 popup 三按钮控制。
+  AudioCue? _lookupCue;
+
   // ── 有声书播放器 ────────────────────────────────────────────────────────────
   AudiobookPlayerController? _audiobookController;
   final ValueNotifier<ThemeData?> _barThemeNotifier =
@@ -347,6 +350,8 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         .getSearchTermFromIndex(text: text, index: safeIndex)
         .trim();
     if (searchTerm.isEmpty) return;
+    // 浮动歌词查词时，cue 就是当前播放 cue
+    _lookupCue = _audiobookController?.currentCue;
     unawaited(FloatingLyricChannel.highlight(
       start: safeIndex,
       length: appModel.targetLanguage.getGuessHighlightLength(
@@ -696,6 +701,38 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     );
   }
 
+  /// 根据段落文本和点击位置，在当前章节 cues 中找到覆盖该位置的 cue。
+  AudioCue? _findCueForParagraphIndex(String paragraph, int index) {
+    final AudiobookPlayerController? ctrl = _audiobookController;
+    if (ctrl == null) return null;
+    final List<AudioCue> cues = ctrl.chapterCuesSnapshot;
+    if (cues.isEmpty) return null;
+
+    // 逐 cue 尝试在 paragraph 中按顺序定位，找到包含 index 的那个
+    int searchFrom = 0;
+    for (final AudioCue cue in cues) {
+      if (cue.text.isEmpty) continue;
+      final int pos = paragraph.indexOf(cue.text, searchFrom);
+      if (pos < 0) continue;
+      final int end = pos + cue.text.length;
+      if (index >= pos && index < end) {
+        return cue;
+      }
+      searchFrom = pos + 1;
+    }
+
+    // 回退：找包含查词文字最近的 cue（如 paragraph 与 cue.text 不完全匹配时）
+    final String needle = index < paragraph.length
+        ? paragraph.substring(index, (index + 4).clamp(0, paragraph.length))
+        : '';
+    if (needle.isNotEmpty) {
+      for (final AudioCue cue in cues) {
+        if (cue.text.contains(needle)) return cue;
+      }
+    }
+    return null;
+  }
+
   @override
   Widget? buildPopupAudioControls() {
     final AudiobookPlayerController? ctrl = _audiobookController;
@@ -703,7 +740,8 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     return ListenableBuilder(
       listenable: ctrl,
       builder: (BuildContext context, _) {
-        final bool hasCue = ctrl.currentCue != null;
+        final AudioCue? cueA = _lookupCue;
+        final bool hasLookupCue = cueA != null;
         final ThemeData theme = Theme.of(context);
         return Container(
           decoration: BoxDecoration(
@@ -718,15 +756,17 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              // 左：复读查词句（A），读完暂停
               IconButton(
                 icon: const Icon(Icons.replay, size: 20),
-                onPressed: hasCue
-                    ? () => ctrl.skipToCue(ctrl.currentCue!)
+                onPressed: hasLookupCue
+                    ? () => ctrl.playCueOnce(cueA)
                     : null,
                 tooltip: t.repeat_cue,
                 visualDensity: VisualDensity.compact,
               ),
               const SizedBox(width: 12),
+              // 中：继续/暂停当前播放位置（B）
               IconButton(
                 icon: Icon(
                   ctrl.isPlaying ? Icons.pause : Icons.play_arrow,
@@ -736,13 +776,11 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
                 visualDensity: VisualDensity.compact,
               ),
               const SizedBox(width: 12),
+              // 右：从查词句（A）开始连续播放
               IconButton(
                 icon: const Icon(Icons.play_circle_outline, size: 20),
-                onPressed: hasCue
-                    ? () async {
-                        await ctrl.skipToCue(ctrl.currentCue!);
-                        await ctrl.play();
-                      }
+                onPressed: hasLookupCue
+                    ? () => ctrl.playCueAndContinue(cueA)
                     : null,
                 tooltip: t.play_from_cue,
                 visualDensity: VisualDensity.compact,
@@ -868,6 +906,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   @override
   void clearDictionaryResult() async {
     super.clearDictionaryResult();
+    _lookupCue = null;
     unselectWebViewTextSelection(_controller);
     if (_wasPlayingBeforeLookup) {
       _wasPlayingBeforeLookup = false;
@@ -1118,10 +1157,61 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   CacheMode get cacheMode {
     if (!_ttuVersionChanged) {
       return CacheMode.LOAD_CACHE_ELSE_NETWORK;
-    } else {
-      mediaSource.setTtuInternalVersion();
-      return CacheMode.LOAD_NO_CACHE;
     }
+
+    mediaSource.setTtuInternalVersion();
+    return CacheMode.LOAD_NO_CACHE;
+  }
+
+  String _buildTtuCacheRefreshJs() {
+    return '''
+(function() {
+  var key = 'hibiki_ttu_cache_refresh_${ReaderTtuSource.ttuInternalVersion}';
+  var session;
+  try {
+    if (window.localStorage.getItem(key) === '1') return;
+  } catch (_) {
+    try {
+      session = window.sessionStorage;
+      if (session.getItem(key) === '1') return;
+      session.setItem(key, '1');
+    } catch (_) {}
+  }
+
+  Promise.all([
+    'serviceWorker' in navigator
+      ? navigator.serviceWorker.getRegistrations()
+          .then(function(registrations) {
+            return Promise.all(registrations.map(function(registration) {
+              return registration.unregister();
+            }));
+          })
+          .catch(function() {})
+      : Promise.resolve(),
+    window.caches
+      ? caches.keys()
+          .then(function(keys) {
+            return Promise.all(keys.map(function(cacheKey) {
+              return caches.delete(cacheKey);
+            }));
+          })
+          .catch(function() {})
+      : Promise.resolve()
+  ]).then(function() {
+    try {
+      window.localStorage.setItem(key, '1');
+    } catch (_) {}
+    window.location.reload();
+  }).catch(function(error) {
+    try {
+      console.error(JSON.stringify({
+        "hibiki-message-type": "ttuCacheRefreshErr",
+        "error": error && error.message ? error.message : String(error)
+      }));
+    } catch (_) {}
+  });
+})();
+''';
   }
 
   createFileFromBase64(String base64Content) async {
@@ -1191,6 +1281,22 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         ),
       ),
       initialUserScripts: UnmodifiableListView<UserScript>(<UserScript>[
+        UserScript(
+          source:
+              'window.onerror=function(m,s,l,c,e){'
+              'console.error("__HIBIKI_JS_ERROR__ "+m+" at "+s+":"+l+":"+c+(e&&e.stack?" stack="+e.stack:""));'
+              'return false;};'
+              'window.addEventListener("unhandledrejection",function(ev){'
+              'var r=ev.reason;'
+              'console.error("__HIBIKI_UNHANDLED_REJECTION__ "+(r&&r.stack?r.stack:String(r)));'
+              '});',
+          injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+        ),
+        if (_ttuVersionChanged)
+          UserScript(
+            source: _buildTtuCacheRefreshJs(),
+            injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+          ),
         UserScript(
           source:
               'if(!String.prototype.replaceAll){String.prototype.replaceAll=function(a,b){if(a instanceof RegExp){if(!a.global)throw new TypeError("replaceAll must be called with a global RegExp");return this.replace(a,b)}return this.split(a).join(b)}}',
@@ -1494,9 +1600,10 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     final String? msgType =
         isJson ? messageJson['hibiki-message-type'] as String? : null;
 
-    // 带 hibiki-message-type 的都是我们自己的协议消息，一律不防抖；
-    // 防抖只过滤 ttu 原生 console 噪声。
-    if (msgType == null) {
+    // ERROR 级别不防抖，确保所有错误都被记录。
+    // 防抖只过滤非错误的 ttu 原生 console 噪声。
+    if (msgType == null &&
+        message.messageLevel != ConsoleMessageLevel.ERROR) {
       DateTime now = DateTime.now();
       if (lastMessageTime != null &&
           now.difference(lastMessageTime!) < consoleMessageDebounce) {
@@ -1511,9 +1618,10 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
           'WebView.console.error',
           message.message,
         );
+        debugPrint('[hibiki-webview-error] ${message.message}');
       }
-      JsonEncoder encoder = const JsonEncoder.withIndent('  ');
-      debugPrint(encoder.convert(message.toJson()));
+      debugPrint('[hibiki-webview] level=${message.messageLevel} '
+          'msg=${message.message}');
       return;
     }
 
@@ -1623,6 +1731,8 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
           isSpaceDelimited: isSpaceDelimited,
         );
       }
+
+      _lookupCue = _findCueForParagraphIndex(text, index);
 
       searchDictionaryResult(
         searchTerm: searchTerm,
