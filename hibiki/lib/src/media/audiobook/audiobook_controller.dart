@@ -143,7 +143,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   // ── 点击跳转 ───────────────────────────────────────────────────────────────
   // 点击文本 cue 时是否跳转音频到对应句子。
 
-  final ValueNotifier<bool> tapSeekEnabled = ValueNotifier<bool>(true);
+  final ValueNotifier<bool> tapSeekEnabled = ValueNotifier<bool>(false);
 
   Future<void> Function(bool value)? onTapSeekPersist;
 

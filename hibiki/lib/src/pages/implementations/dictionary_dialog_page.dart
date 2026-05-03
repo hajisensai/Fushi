@@ -162,72 +162,74 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
     );
   }
 
+  Future<void> _importDictionaryFiles() async {
+    ValueNotifier<String> progressNotifier =
+        ValueNotifier<String>(t.import_start);
+    ValueNotifier<int?> countNotifier = ValueNotifier<int?>(null);
+    ValueNotifier<int?> totalNotifier = ValueNotifier<int?>(null);
+    progressNotifier.addListener(() {
+      debugPrint('[Dictionary Import] ${progressNotifier.value}');
+    });
+
+    await FilePicker.platform.clearTemporaryFiles();
+
+    FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['zip', 'dsl', 'mdx', 'css'],
+      allowMultiple: true,
+    );
+    if (result == null || result.files.isEmpty) {
+      return;
+    }
+
+    if (!mounted) return;
+    showAppDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => DictionaryDialogImportPage(
+        progressNotifier: progressNotifier,
+        countNotifier: countNotifier,
+        totalNotifier: totalNotifier,
+      ),
+    );
+
+    final dictFiles = result.files
+        .where((f) => !f.path!.toLowerCase().endsWith('.css'))
+        .toList();
+    final cssFiles = result.files
+        .where((f) => f.path!.toLowerCase().endsWith('.css'))
+        .map((f) => File(f.path!))
+        .toList();
+
+    totalNotifier.value = dictFiles.length;
+    for (int i = 0; i < dictFiles.length; i++) {
+      countNotifier.value = i + 1;
+
+      PlatformFile platformFile = dictFiles[i];
+      File file = File(platformFile.path!);
+
+      await appModel.importDictionary(
+        progressNotifier: progressNotifier,
+        file: file,
+        cssFiles: cssFiles,
+        onImportSuccess: () {
+          _selectedOrder = appModel.dictionaries.last.order;
+          setState(() {});
+        },
+      );
+    }
+
+    await FilePicker.platform.clearTemporaryFiles();
+
+    if (mounted) {
+      Navigator.pop(context);
+    }
+  }
+
   Widget buildImportButton() {
     return TextButton(
       child: Text(t.dialog_import_dictionary),
-      onPressed: () async {
-        ValueNotifier<String> progressNotifier =
-            ValueNotifier<String>(t.import_start);
-        ValueNotifier<int?> countNotifier = ValueNotifier<int?>(null);
-        ValueNotifier<int?> totalNotifier = ValueNotifier<int?>(null);
-        progressNotifier.addListener(() {
-          debugPrint('[Dictionary Import] ${progressNotifier.value}');
-        });
-
-        await FilePicker.platform.clearTemporaryFiles();
-
-        FilePickerResult? result = await FilePicker.platform.pickFiles(
-          type: FileType.custom,
-          allowedExtensions: const ['zip', 'dsl', 'mdx', 'css'],
-          allowMultiple: true,
-        );
-        if (result == null || result.files.isEmpty) {
-          return;
-        }
-
-        if (!mounted) return;
-        showAppDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) => DictionaryDialogImportPage(
-            progressNotifier: progressNotifier,
-            countNotifier: countNotifier,
-            totalNotifier: totalNotifier,
-          ),
-        );
-
-        final dictFiles = result.files
-            .where((f) => !f.path!.toLowerCase().endsWith('.css'))
-            .toList();
-        final cssFiles = result.files
-            .where((f) => f.path!.toLowerCase().endsWith('.css'))
-            .map((f) => File(f.path!))
-            .toList();
-
-        totalNotifier.value = dictFiles.length;
-        for (int i = 0; i < dictFiles.length; i++) {
-          countNotifier.value = i + 1;
-
-          PlatformFile platformFile = dictFiles[i];
-          File file = File(platformFile.path!);
-
-          await appModel.importDictionary(
-            progressNotifier: progressNotifier,
-            file: file,
-            cssFiles: cssFiles,
-            onImportSuccess: () {
-              _selectedOrder = appModel.dictionaries.last.order;
-              setState(() {});
-            },
-          );
-        }
-
-        await FilePicker.platform.clearTemporaryFiles();
-
-        if (mounted) {
-          Navigator.pop(context);
-        }
-      },
+      onPressed: _importDictionaryFiles,
     );
   }
 
@@ -392,9 +394,20 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
       padding: EdgeInsets.only(
         bottom: Spacing.of(context).spaces.normal,
       ),
-      child: JidoujishoPlaceholderMessage(
-        icon: DictionaryMediaType.instance.outlinedIcon,
-        message: t.dictionaries_menu_empty,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          JidoujishoPlaceholderMessage(
+            icon: DictionaryMediaType.instance.outlinedIcon,
+            message: t.dictionaries_menu_empty,
+          ),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            icon: const Icon(Icons.file_open, size: 18),
+            label: Text(t.dialog_import_dictionary),
+            onPressed: _importDictionaryFiles,
+          ),
+        ],
       ),
     );
   }
