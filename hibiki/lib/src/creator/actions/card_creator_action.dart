@@ -146,7 +146,10 @@ class CardCreatorAction extends QuickAction {
     required AppModel appModel,
     required DictionaryEntry entry,
   }) async {
-    bool hasDuplicates = await appModel.checkForDuplicates(entry.word);
+    bool hasDuplicates = await appModel.checkForDuplicates(
+      entry.word,
+      reading: entry.reading,
+    );
     if (hasDuplicates) {
       return Colors.red;
     } else {

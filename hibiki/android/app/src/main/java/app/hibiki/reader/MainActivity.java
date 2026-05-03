@@ -209,7 +209,7 @@ public class MainActivity extends AudioServiceActivity {
         }
     }
 
-    private boolean checkForDuplicates(ArrayList<String> models, String key) {
+    private boolean checkForDuplicates(ArrayList<String> models, String key, String reading) {
         final AddContentApi api = new AddContentApi(context);
         for (int i = 0; i < models.size(); i++) {
             String model = models.get(i);
@@ -218,8 +218,19 @@ public class MainActivity extends AudioServiceActivity {
                 continue;
             }
             List<NoteInfo> notes = api.findDuplicateNotes(mid, key);
-            if (!notes.isEmpty()) {
+            if (notes.isEmpty()) {
+                continue;
+            }
+            if (reading == null || reading.isEmpty()) {
                 return true;
+            }
+            for (NoteInfo note : notes) {
+                String[] fields = note.getFields();
+                for (String field : fields) {
+                    if (reading.equals(field)) {
+                        return true;
+                    }
+                }
             }
         }
 
@@ -335,6 +346,7 @@ public class MainActivity extends AudioServiceActivity {
                     final String model = call.argument("model");
                     final String deck = call.argument("deck");
                     final String key = call.argument("key");
+                    final String reading = call.argument("reading");
                     final ArrayList<String> fields = call.argument("fields"); 
                     final ArrayList<String> tags = call.argument("tags"); 
                     final ArrayList<String> models = call.argument("models"); 
@@ -358,7 +370,7 @@ public class MainActivity extends AudioServiceActivity {
                                 new Handler(Looper.getMainLooper()).post(new Runnable() {
                                 @Override
                                 public void run() {
-                                    result.success(checkForDuplicates(models, key));
+                                    result.success(checkForDuplicates(models, key, reading));
                                 }
                                 });
                             }
