@@ -101,11 +101,9 @@ class _BookImportDialogState extends State<BookImportDialog> {
     });
   }
 
-  bool get _hasAudioSource =>
-      _audioDir != null || _audioEntries.isNotEmpty;
+  bool get _hasAudioSource => _audioDir != null || _audioEntries.isNotEmpty;
 
-  bool get _hasSubtitles =>
-      _audioEntries.any((e) => e.subtitlePath != null);
+  bool get _hasSubtitles => _audioEntries.any((e) => e.subtitlePath != null);
 
   String get _audioSourceLabel {
     if (_audioEntries.isNotEmpty) {
@@ -207,9 +205,8 @@ class _BookImportDialogState extends State<BookImportDialog> {
               style: TextStyle(fontSize: 11),
             ),
             value: _autoWindow,
-            onChanged: _importing
-                ? null
-                : (bool v) => setState(() => _autoWindow = v),
+            onChanged:
+                _importing ? null : (bool v) => setState(() => _autoWindow = v),
           ),
           if (!_autoWindow)
             SasayakiWindowSlider(
@@ -263,7 +260,8 @@ class _BookImportDialogState extends State<BookImportDialog> {
   }
 
   Widget _subtitleRow() {
-    final int pairedCount = _audioEntries.where((e) => e.subtitlePath != null).length;
+    final int pairedCount =
+        _audioEntries.where((e) => e.subtitlePath != null).length;
     final int totalSubs = pairedCount + _unmatchedSubtitles.length;
     return Row(
       children: [
@@ -337,8 +335,20 @@ class _BookImportDialogState extends State<BookImportDialog> {
   // ── 文件/目录选择 ────────────────────────────────────────────────────────
 
   static const List<String> _bookExtensions = [
-    'epub', 'txt', 'html', 'htm', 'xhtml', 'md', 'markdown',
-    'rst', 'org', 'csv', 'tsv', 'log', 'json', 'xml',
+    'epub',
+    'txt',
+    'html',
+    'htm',
+    'xhtml',
+    'md',
+    'markdown',
+    'rst',
+    'org',
+    'csv',
+    'tsv',
+    'log',
+    'json',
+    'xml',
   ];
 
   Future<void> _pickEpub() async {
@@ -352,7 +362,8 @@ class _BookImportDialogState extends State<BookImportDialog> {
         _epubPath = path;
         if (_titleCtrl.text.isEmpty) {
           _titleCtrl.text = _basename(path).replaceAll(
-              RegExp(r'\.(epub|txt|html?|xhtml|md|markdown|rst|org|csv|tsv|log|json|xml)$',
+              RegExp(
+                  r'\.(epub|txt|html?|xhtml|md|markdown|rst|org|csv|tsv|log|json|xml)$',
                   caseSensitive: false),
               '');
         }
@@ -405,10 +416,8 @@ class _BookImportDialogState extends State<BookImportDialog> {
     );
     if (result == null || !mounted) return;
 
-    final List<String> paths = result.files
-        .map((f) => f.path)
-        .whereType<String>()
-        .toList();
+    final List<String> paths =
+        result.files.map((f) => f.path).whereType<String>().toList();
 
     if (paths.isEmpty) return;
 
@@ -433,17 +442,22 @@ class _BookImportDialogState extends State<BookImportDialog> {
     if (!directory.existsSync()) return;
 
     const List<String> audioExts = [
-      '.mp3', '.m4a', '.m4b', '.aac', '.ogg', '.opus', '.flac', '.wav', '.wma',
+      '.mp3',
+      '.m4a',
+      '.m4b',
+      '.aac',
+      '.ogg',
+      '.opus',
+      '.flac',
+      '.wav',
+      '.wma',
     ];
-    final List<File> files = directory
-        .listSync(recursive: true)
-        .whereType<File>()
-        .where((f) {
-          final String lower = f.path.toLowerCase();
-          return audioExts.any(lower.endsWith);
-        })
-        .toList()
-      ..sort((a, b) => naturalCompare(a.path, b.path));
+    final List<File> files =
+        directory.listSync(recursive: true).whereType<File>().where((f) {
+      final String lower = f.path.toLowerCase();
+      return audioExts.any(lower.endsWith);
+    }).toList()
+          ..sort((a, b) => naturalCompare(a.path, b.path));
 
     if (files.isEmpty) {
       Fluttertoast.showToast(msg: t.srt_no_audio_files);
@@ -520,9 +534,8 @@ class _BookImportDialogState extends State<BookImportDialog> {
     Fluttertoast.showToast(msg: t.dialog_importing);
 
     try {
-      final String? authorText = _authorCtrl.text.trim().isEmpty
-          ? null
-          : _authorCtrl.text.trim();
+      final String? authorText =
+          _authorCtrl.text.trim().isEmpty ? null : _authorCtrl.text.trim();
 
       String? tail;
       if (_epubPath != null && _hasSubtitles) {
@@ -565,7 +578,9 @@ class _BookImportDialogState extends State<BookImportDialog> {
       final AudioFileEntry entry = _audioEntries[i];
       if (entry.subtitlePath == null) continue;
       final List<AudioCue> cues = await _parseCuesWithIndex(
-        File(entry.subtitlePath!), uid, i,
+        File(entry.subtitlePath!),
+        uid,
+        i,
       );
       allCues.addAll(cues);
     }
@@ -589,7 +604,8 @@ class _BookImportDialogState extends State<BookImportDialog> {
     if (_audioEntries.isNotEmpty) {
       persistedAudioPaths = [];
       for (final AudioFileEntry entry in _audioEntries) {
-        persistedAudioPaths.add(await _persistFile(File(entry.path), persistDir));
+        persistedAudioPaths
+            .add(await _persistFile(File(entry.path), persistDir));
       }
     } else if (_audioDir != null) {
       persistedAudioRoot = _audioDir;
@@ -656,9 +672,18 @@ class _BookImportDialogState extends State<BookImportDialog> {
   /// same `bookUid` the bookshelf will compute for this book.
   Future<String?> _importEpubWithAlignment({required String title}) async {
     final File epubFile = File(_epubPath!);
+    final Uint8List importBytes;
+    final String importFilename;
+    if (TextToEpub.isSupported(_epubPath!)) {
+      importBytes = await TextToEpub.convert(file: epubFile, title: title);
+      importFilename = '${title.replaceAll(RegExp(r'[^\w\s\-]'), '')}.epub';
+    } else {
+      importBytes = await epubFile.readAsBytes();
+      importFilename = _basename(_epubPath!);
+    }
     final int ttuBookId = await TtuEpubImporter.import(
-      bytes: await epubFile.readAsBytes(),
-      filename: _basename(_epubPath!),
+      bytes: importBytes,
+      filename: importFilename,
       serverPort: widget.serverPort,
     );
     if (ttuBookId <= 0) {
@@ -690,7 +715,9 @@ class _BookImportDialogState extends State<BookImportDialog> {
       if (entry.subtitlePath == null) continue;
       firstExt ??= entry.subtitlePath!.split('.').last.toLowerCase();
       final List<AudioCue> cues = await _parseCuesWithIndex(
-        File(entry.subtitlePath!), bookUid, i,
+        File(entry.subtitlePath!),
+        bookUid,
+        i,
       );
       allCues.addAll(cues);
     }
@@ -740,7 +767,8 @@ class _BookImportDialogState extends State<BookImportDialog> {
     if (_audioEntries.isNotEmpty) {
       persistedAudioPaths = [];
       for (final AudioFileEntry entry in _audioEntries) {
-        persistedAudioPaths.add(await _persistFile(File(entry.path), persistDir));
+        persistedAudioPaths
+            .add(await _persistFile(File(entry.path), persistDir));
       }
     } else if (_audioDir != null) {
       persistedAudioRoot = _audioDir;
@@ -842,6 +870,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
   const db = await hibikiOpenBooksDb();
   const id = await new Promise((resolve, reject) => {
     if (!db.objectStoreNames.contains('data')) {
+      db.close();
       reject('data_store_missing'); return;
     }
     const tx = db.transaction(['data'], 'readwrite');
@@ -849,6 +878,8 @@ class _BookImportDialogState extends State<BookImportDialog> {
     const put = store.put(payload);
     put.onsuccess = (e) => resolve(e.target.result);
     put.onerror = (e) => reject(String(e.target.error));
+    tx.oncomplete = () => db.close();
+    tx.onabort = () => db.close();
   });
   console.log(JSON.stringify({messageType: 'srt_idb_ok', id: id}));
 })().catch(err => {
@@ -921,8 +952,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
     }
   }
 
-  String _basename(String path) =>
-      path.split(Platform.pathSeparator).last;
+  String _basename(String path) => path.split(Platform.pathSeparator).last;
 
   Future<Directory> _ensurePersistDir(String key) async {
     final Directory docs = await getApplicationDocumentsDirectory();

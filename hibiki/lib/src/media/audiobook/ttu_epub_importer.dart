@@ -224,8 +224,7 @@ class TtuEpubImporter {
     required String b64,
     required String filename,
   }) {
-    final String safeName =
-        filename.replaceAll('\\', '_').replaceAll('"', '_');
+    final String safeName = filename.replaceAll('\\', '_').replaceAll('"', '_');
     return '''
 (async function() {
   ${TtuIdbSchema.openBooksDbJs}
@@ -260,9 +259,13 @@ class TtuEpubImporter {
         const cur = store.openCursor(null, 'prev');
         cur.onsuccess = (ev) => {
           const c = ev.target.result;
+          db.close();
           resolve(c ? c.primaryKey : 0);
         };
-        cur.onerror = () => resolve(0);
+        cur.onerror = () => {
+          db.close();
+          resolve(0);
+        };
       } catch (_) {
         resolve(0);
       }
@@ -279,8 +282,14 @@ class TtuEpubImporter {
     logStage('api-ready');
 
     // ── 4. Call ttu's import pipeline directly ───────────────────────────
-    window.__hibikiImportFiles([file]);
-    logStage('import-called');
+    try {
+      await window.__hibikiImportFiles([file]);
+      logStage('import-called');
+    } catch (importErr) {
+      logStage('import-threw', String(importErr));
+      post({messageType: 'ttu_import_err', error: 'import_threw: ' + String(importErr)});
+      return;
+    }
 
     // ── 5. Poll IndexedDB for the new row ────────────────────────────────
     // 大 EPUB（10MB+）在手机上解压 + 解析 + 写入 IDB 常常要一两分钟，
@@ -298,9 +307,13 @@ class TtuEpubImporter {
           const cur = store.openCursor(null, 'prev');
           cur.onsuccess = (ev) => {
             const c = ev.target.result;
+            db.close();
             resolve(c ? c.primaryKey : 0);
           };
-          cur.onerror = () => resolve(0);
+          cur.onerror = () => {
+            db.close();
+            resolve(0);
+          };
         } catch (_) {
           resolve(0);
         }
@@ -359,8 +372,9 @@ class TtuEpubImporter {
 
       final String opfContent = utf8.decode(opfFile.content as List<int>);
       // 只替换 <manifest>…</manifest> 里的 <item … media-type="text/html" …>。
-      final RegExp manifestRe =
-          RegExp(r'<manifest\b[^>]*>([\s\S]*?)</manifest>', caseSensitive: false);
+      final RegExp manifestRe = RegExp(
+          r'<manifest\b[^>]*>([\s\S]*?)</manifest>',
+          caseSensitive: false);
       final Match? mm = manifestRe.firstMatch(opfContent);
       if (mm == null) {
         log('rewrite:skip', 'no <manifest> in opf');

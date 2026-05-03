@@ -73,5 +73,14 @@ List<String> autoMatchSubtitles({
     }
   }
 
+  // Pass 3: trivial 1:1 — only one unpaired entry and one remaining subtitle.
+  if (remaining.length == 1) {
+    final List<AudioFileEntry> unpaired =
+        entries.where((e) => e.subtitlePath == null).toList();
+    if (unpaired.length == 1) {
+      unpaired.first.subtitlePath = remaining.removeAt(0);
+    }
+  }
+
   return remaining;
 }
