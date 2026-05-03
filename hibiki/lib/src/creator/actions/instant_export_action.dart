@@ -92,7 +92,7 @@ class InstantExportAction extends QuickAction {
             creatorModel: creatorModel,
             searchTerm: '',
             newAutoCannotOverride: true,
-            cause: EnhancementTriggerCause.manual,
+            cause: EnhancementTriggerCause.auto,
             generateAudio: () async {
               return mediaSource.generateAudio(
                 appModel: appModel,

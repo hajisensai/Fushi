@@ -392,6 +392,12 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     if (searchTerm.isEmpty) return;
     // 浮动歌词查词时，cue 就是当前播放 cue
     _lookupCue = _audiobookController?.currentCue;
+    if (_lookupCue != null && _audiobookController != null) {
+      ReaderTtuSource.instance.setPendingSentenceAudio(
+        cue: _lookupCue!,
+        audioFiles: _audiobookController!.audioFiles,
+      );
+    }
     unawaited(FloatingLyricChannel.highlight(
       start: safeIndex,
       length: appModel.targetLanguage.getGuessHighlightLength(
@@ -835,6 +841,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   @override
   void onMineFromPopup(Map<String, String> fields) {
     final currentSentence = appModel.getCurrentSentence();
+    final AudioCue? savedLookupCue = _lookupCue;
     clearDictionaryResult();
     appModel.openCreator(
       ref: ref,
@@ -848,15 +855,16 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         usePopupSelectionAsClozeInside: false,
       ),
       onCreatorReady: (creatorModel) async {
-        await _attachMineAudio(fields, creatorModel);
+        await _attachMineAudio(fields, creatorModel, lookupCue: savedLookupCue);
       },
     );
   }
 
   Future<void> _attachMineAudio(
     Map<String, String> fields,
-    CreatorModel creatorModel,
-  ) async {
+    CreatorModel creatorModel, {
+    AudioCue? lookupCue,
+  }) async {
     final cacheDir = Directory.systemTemp;
 
     // Word audio: download URL, use local file, or fall back to TTS
@@ -907,19 +915,14 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       debugPrint('[hibiki-mine] word audio failed: $e');
     }
 
-    // Sentence audio: extract from audiobook cue
+    // Sentence audio: extract from audiobook cue (prefer lookupCue over currentCue)
     final controller = _audiobookController;
     if (controller != null) {
-      final AudioCue? cue = controller.currentCue;
-      final Audiobook? ab = controller.audiobook;
-      if (cue != null && ab != null) {
+      final AudioCue? cue = lookupCue ?? controller.currentCue;
+      if (cue != null && controller.audioFiles.isNotEmpty) {
         try {
-          final audioFiles = await _resolveAudioFiles(
-            audioPaths: ab.audioPaths,
-            audioRoot: ab.audioRoot,
-          );
-          if (cue.audioFileIndex < audioFiles.length) {
-            final inputFile = audioFiles[cue.audioFileIndex];
+          if (cue.audioFileIndex < controller.audioFiles.length) {
+            final inputFile = controller.audioFiles[cue.audioFileIndex];
             final outputPath = '${cacheDir.path}/mine_sentence_audio.m4a';
             final result = await TtsChannel.instance.extractAudioSegment(
               inputPath: inputFile.path,
@@ -947,6 +950,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   void clearDictionaryResult() async {
     super.clearDictionaryResult();
     _lookupCue = null;
+    ReaderTtuSource.instance.clearPendingSentenceAudio();
     unselectWebViewTextSelection(_controller);
     if (_wasPlayingBeforeLookup) {
       _wasPlayingBeforeLookup = false;
@@ -1825,6 +1829,12 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       }
 
       _lookupCue = _findCueForParagraphIndex(text, index);
+      if (_lookupCue != null && _audiobookController != null) {
+        ReaderTtuSource.instance.setPendingSentenceAudio(
+          cue: _lookupCue!,
+          audioFiles: _audiobookController!.audioFiles,
+        );
+      }
 
       searchDictionaryResult(
         searchTerm: searchTerm,

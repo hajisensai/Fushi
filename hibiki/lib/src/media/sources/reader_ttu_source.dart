@@ -11,6 +11,7 @@ import 'package:local_assets_server/local_assets_server.dart';
 import 'package:material_floating_search_bar/material_floating_search_bar.dart';
 import 'package:hibiki/language.dart';
 import 'package:hibiki/media.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
@@ -18,6 +19,7 @@ import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
 import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
 import 'package:hibiki/utils.dart';
+import 'package:hibiki/src/utils/misc/tts_channel.dart';
 
 /// A global [Provider] for serving a local ッツ Ebook Reader.
 final ttuServerProvider =
@@ -45,6 +47,7 @@ class ReaderTtuSource extends ReaderMediaSource {
           icon: Icons.auto_stories_outlined,
           implementsSearch: false,
           implementsHistory: false,
+          overridesAutoAudio: true,
         );
 
   @override
@@ -62,6 +65,48 @@ class ReaderTtuSource extends ReaderMediaSource {
 
   /// Default scrolling speed when in continuous page turning mode.
   static int get defaultScrollingSpeed => 100;
+
+  // ── Sasayaki sentence audio for quick actions ────────────────────────────
+
+  AudioCue? _pendingCue;
+  List<File>? _pendingAudioFiles;
+
+  void setPendingSentenceAudio({
+    required AudioCue cue,
+    required List<File> audioFiles,
+  }) {
+    _pendingCue = cue;
+    _pendingAudioFiles = audioFiles;
+  }
+
+  void clearPendingSentenceAudio() {
+    _pendingCue = null;
+    _pendingAudioFiles = null;
+  }
+
+  @override
+  Future<File?> generateAudio({
+    required AppModel appModel,
+    required MediaItem item,
+    String? data,
+  }) async {
+    final AudioCue? cue = _pendingCue;
+    final List<File>? audioFiles = _pendingAudioFiles;
+    if (cue == null || audioFiles == null) return null;
+    if (cue.audioFileIndex >= audioFiles.length) return null;
+
+    final File inputFile = audioFiles[cue.audioFileIndex];
+    final String outputPath =
+        '${Directory.systemTemp.path}/mine_sentence_audio.m4a';
+    final String? result = await TtsChannel.instance.extractAudioSegment(
+      inputPath: inputFile.path,
+      startMs: cue.startMs,
+      endMs: cue.endMs,
+      outputPath: outputPath,
+    );
+    if (result != null) return File(result);
+    return null;
+  }
 
   @override
   Future<void> onSourceExit({

@@ -26,6 +26,9 @@ class AudiobookPlayerController extends ChangeNotifier {
   StreamSubscription<bool>? _playingSub;
 
   List<File> _audioFiles = [];
+
+  List<File> get audioFiles => _audioFiles;
+
   AudioPlayer? _clipPlayer;
 
   /// playCueOnce 用：播放到此全局 ms 后自动暂停；null = 不限制。

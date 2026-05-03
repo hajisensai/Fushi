@@ -49,33 +49,55 @@ class PitchAccentField extends Field {
     required AppModel appModel,
     required DictionaryEntry entry,
   }) {
+    final reading = entry.reading.isNotEmpty ? entry.reading : entry.word;
+    final positions = _readPitchPositions(entry);
     return {
       pitchPositionsExtraKey: getAllHtmlPitch(
-        appModel: appModel,
-        entry: entry,
+        reading: reading,
+        positions: positions,
       ),
-      pitchCategoriesExtraKey: '',
+      pitchCategoriesExtraKey: _getAllCategories(reading, positions),
     };
   }
 
-  /// Returns pitch-position HTML from hoshidicts data on the entry.
+  /// Returns pitch-position SVG HTML from positions and reading.
   static String getAllHtmlPitch({
-    required AppModel appModel,
-    required DictionaryEntry entry,
+    required String reading,
+    required List<int> positions,
   }) {
-    final positions = _readPitchPositions(entry);
-    if (positions.isEmpty) {
-      return '';
-    }
-
-    final buffer = StringBuffer('<ol>');
+    if (positions.isEmpty || reading.isEmpty) return '';
+    final buffer = StringBuffer();
+    final seen = <int>{};
     for (final position in positions) {
-      buffer.write(
-        '<li><span style="display:inline;"><span>[</span><span>$position</span><span>]</span></span></li>',
-      );
+      if (!seen.add(position)) continue;
+      final patt = PitchSvg.pitchValueToPatt(reading, position);
+      if (patt.isEmpty) continue;
+      buffer.write(PitchSvg.pitchSvg(reading, patt));
     }
-    buffer.write('</ol>');
     return buffer.toString();
+  }
+
+  static String _getAllCategories(String reading, List<int> positions) {
+    if (positions.isEmpty) return '';
+    final moraCount = PitchSvg.hiraToMora(reading).length;
+    final categories = <String>[];
+    final seen = <int>{};
+    for (final pos in positions) {
+      if (!seen.add(pos)) continue;
+      final cat = _pitchCategory(pos, moraCount);
+      if (cat.isNotEmpty && !categories.contains(cat)) {
+        categories.add(cat);
+      }
+    }
+    return categories.join(',');
+  }
+
+  static String _pitchCategory(int pitchValue, int moraCount) {
+    if (pitchValue == 0) return 'heiban';
+    if (pitchValue == 1) return 'atamadaka';
+    if (pitchValue >= moraCount) return 'odaka';
+    if (pitchValue >= 2) return 'nakadaka';
+    return '';
   }
 
   static List<int> _readPitchPositions(DictionaryEntry entry) {
@@ -130,17 +152,16 @@ class PitchAccentField extends Field {
       return null;
     }
 
-    return getAllHtmlPitch(
-      appModel: appModel,
-      entry: entry,
-    );
+    final reading = entry.reading.isNotEmpty ? entry.reading : entry.word;
+    final positions = _readPitchPositions(entry);
+    return getAllHtmlPitch(reading: reading, positions: positions);
   }
 }
 
 /// Pitch utilities courtesy of Matthew Chan.
 /// https://github.com/mathewthe2/immersion_reader/blob/main/lib/japanese/pitch.dart
 class PitchSvg {
-  static String _pitchSvg(String word, String patt, {bool silent = false}) {
+  static String pitchSvg(String word, String patt, {bool silent = false}) {
     /* Draw pitch accent patterns in SVG
 
     Examples:
@@ -148,7 +169,7 @@ class PitchSvg {
         はし LHL (橋)
         はし LHH (端)
         */
-    List<String> mora = _hiraToMora(word);
+    List<String> mora = hiraToMora(word);
     if ((patt.length - mora.length != 1) && !silent) {
       debugPrint('pattern should be number of morae + 1. got $word, $patt');
     }
@@ -231,8 +252,8 @@ class PitchSvg {
     return '<path d="m $x,$y $delta" style="fill:none;stroke:currentColor;stroke-width:1.5;" />';
   }
 
-  static String _pitchValueToPatt(String word, int pitchValue) {
-    int numberOfMora = _hiraToMora(word).length;
+  static String pitchValueToPatt(String word, int pitchValue) {
+    int numberOfMora = hiraToMora(word).length;
     if (numberOfMora >= 1) {
       if (pitchValue == 0) {
         // heiban
@@ -248,7 +269,7 @@ class PitchSvg {
     return '';
   }
 
-  static List<String> _hiraToMora(String hira) {
+  static List<String> hiraToMora(String hira) {
     /* Example:
           in:  'しゅんかしゅうとう'
          out: ['しゅ', 'ん', 'か', 'しゅ', 'う', 'と', 'う']
