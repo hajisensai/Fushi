@@ -77,7 +77,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
   String? _epubPath;
 
   List<AudioFileEntry> _audioEntries = [];
-  List<String> _unmatchedSubtitles = [];
+  List<String> _subtitlePaths = [];
   String? _audioDir;
   List<SectionOption> _epubSections = [];
 
@@ -94,16 +94,14 @@ class _BookImportDialogState extends State<BookImportDialog> {
   /// 字幕自身渲染）不受 window 影响，UI 上对应地隐藏滑杆。
   bool get _willRunMatcher {
     if (_epubPath == null) return false;
-    return _audioEntries.any((e) {
-      if (e.subtitlePath == null) return false;
-      final String ext = e.subtitlePath!.split('.').last.toLowerCase();
-      return SasayakiRematch.supportedFormats.contains(ext);
-    });
+    if (_subtitlePaths.isEmpty) return false;
+    final String ext = _subtitlePaths.first.split('.').last.toLowerCase();
+    return SasayakiRematch.supportedFormats.contains(ext);
   }
 
   bool get _hasAudioSource => _audioDir != null || _audioEntries.isNotEmpty;
 
-  bool get _hasSubtitles => _audioEntries.any((e) => e.subtitlePath != null);
+  bool get _hasSubtitles => _subtitlePaths.isNotEmpty;
 
   String get _audioSourceLabel {
     if (_audioEntries.isNotEmpty) {
@@ -172,7 +170,6 @@ class _BookImportDialogState extends State<BookImportDialog> {
           AudioFilePanel(
             entries: _audioEntries,
             sections: _epubSections,
-            unmatchedSubtitles: _unmatchedSubtitles,
             onChanged: () => setState(() {}),
           ),
         ],
@@ -260,9 +257,6 @@ class _BookImportDialogState extends State<BookImportDialog> {
   }
 
   Widget _subtitleRow() {
-    final int pairedCount =
-        _audioEntries.where((e) => e.subtitlePath != null).length;
-    final int totalSubs = pairedCount + _unmatchedSubtitles.length;
     return Row(
       children: [
         Expanded(
@@ -271,9 +265,9 @@ class _BookImportDialogState extends State<BookImportDialog> {
             children: [
               Text(t.srt_import_pick_subtitle_files,
                   style: const TextStyle(fontSize: 13)),
-              if (totalSubs > 0)
+              if (_subtitlePaths.isNotEmpty)
                 Text(
-                  t.srt_import_files_selected(n: totalSubs),
+                  t.srt_import_files_selected(n: _subtitlePaths.length),
                   style: const TextStyle(fontSize: 11, color: Colors.grey),
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
@@ -396,12 +390,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
     }
 
     setState(() {
-      final List<String> leftover = autoMatchSubtitles(
-        entries: _audioEntries,
-        subtitlePaths: paths,
-      );
-      _unmatchedSubtitles.addAll(leftover);
-
+      _subtitlePaths = paths;
       if (_titleCtrl.text.isEmpty && paths.isNotEmpty) {
         _titleCtrl.text = p.basenameWithoutExtension(paths.first);
       }
@@ -422,12 +411,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
     if (paths.isEmpty) return;
 
     setState(() {
-      final List<String> leftover = autoMatchSubtitles(
-        entries: _audioEntries,
-        subtitlePaths: paths,
-      );
-      _unmatchedSubtitles.addAll(leftover);
-
+      _subtitlePaths.addAll(paths);
       if (_titleCtrl.text.isEmpty && paths.isNotEmpty) {
         _titleCtrl.text = p.basenameWithoutExtension(paths.first);
       }
@@ -467,14 +451,6 @@ class _BookImportDialogState extends State<BookImportDialog> {
     setState(() {
       _audioEntries = files.map((f) => AudioFileEntry(path: f.path)).toList();
       _audioDir = dir;
-
-      if (_unmatchedSubtitles.isNotEmpty) {
-        final List<String> stillUnmatched = autoMatchSubtitles(
-          entries: _audioEntries,
-          subtitlePaths: _unmatchedSubtitles,
-        );
-        _unmatchedSubtitles = stillUnmatched;
-      }
     });
   }
 
@@ -501,14 +477,6 @@ class _BookImportDialogState extends State<BookImportDialog> {
         }
       }
       _audioDir = null;
-
-      if (_unmatchedSubtitles.isNotEmpty) {
-        final List<String> stillUnmatched = autoMatchSubtitles(
-          entries: _audioEntries,
-          subtitlePaths: _unmatchedSubtitles,
-        );
-        _unmatchedSubtitles = stillUnmatched;
-      }
     });
   }
 
@@ -574,13 +542,15 @@ class _BookImportDialogState extends State<BookImportDialog> {
     final String uid = 'srtbook_${DateTime.now().millisecondsSinceEpoch}';
     final List<AudioCue> allCues = [];
 
-    for (int i = 0; i < _audioEntries.length; i++) {
-      final AudioFileEntry entry = _audioEntries[i];
-      if (entry.subtitlePath == null) continue;
+    final int nSub = _subtitlePaths.length;
+    final int nAudio = _audioEntries.length;
+    for (int i = 0; i < nSub; i++) {
+      final int audioFileIndex =
+          (nSub == nAudio) ? i : (nSub == 1 ? 0 : i.clamp(0, nAudio - 1));
       final List<AudioCue> cues = await _parseCuesWithIndex(
-        File(entry.subtitlePath!),
+        File(_subtitlePaths[i]),
         uid,
-        i,
+        audioFileIndex,
       );
       allCues.addAll(cues);
     }
@@ -611,10 +581,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
       persistedAudioRoot = _audioDir;
     }
 
-    final String? firstSubPath = _audioEntries
-        .map((e) => e.subtitlePath)
-        .whereType<String>()
-        .firstOrNull;
+    final String? firstSubPath = _subtitlePaths.firstOrNull;
     final String persistedSrt = firstSubPath != null
         ? await _persistFile(File(firstSubPath), persistDir)
         : '';
@@ -709,15 +676,17 @@ class _BookImportDialogState extends State<BookImportDialog> {
         '${widget.ttuMediaSourceIdentifier}/$mediaIdentifier';
 
     final List<AudioCue> allCues = [];
+    final int nSub = _subtitlePaths.length;
+    final int nAudio = _audioEntries.length;
     String? firstExt;
-    for (int i = 0; i < _audioEntries.length; i++) {
-      final AudioFileEntry entry = _audioEntries[i];
-      if (entry.subtitlePath == null) continue;
-      firstExt ??= entry.subtitlePath!.split('.').last.toLowerCase();
+    for (int i = 0; i < nSub; i++) {
+      firstExt ??= _subtitlePaths[i].split('.').last.toLowerCase();
+      final int audioFileIndex =
+          (nSub == nAudio) ? i : (nSub == 1 ? 0 : i.clamp(0, nAudio - 1));
       final List<AudioCue> cues = await _parseCuesWithIndex(
-        File(entry.subtitlePath!),
+        File(_subtitlePaths[i]),
         bookUid,
-        i,
+        audioFileIndex,
       );
       allCues.addAll(cues);
     }
@@ -754,10 +723,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
     }
 
     final Directory persistDir = await _ensurePersistDir(bookUid);
-    final String? firstSubPath = _audioEntries
-        .map((e) => e.subtitlePath)
-        .whereType<String>()
-        .firstOrNull;
+    final String? firstSubPath = _subtitlePaths.firstOrNull;
     final String persistedSrt = firstSubPath != null
         ? await _persistFile(File(firstSubPath), persistDir)
         : '';
