@@ -50,3 +50,6 @@ SPEC.md
 
 # ADB test artifacts
 test_screenshots/
+screenshot_*.png
+tmp_screen*.png
+*.xml

@@ -1,10 +1,8 @@
-import 'package:drift/drift.dart' hide Column;
 import 'package:flutter/material.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/database/database.dart';
 import 'package:hibiki/src/media/audiobook/reading_statistic_idb_reader.dart';
-import 'package:hibiki/src/media/audiobook/reading_statistic_model.dart';
 import 'package:hibiki/src/media/sources/reader_ttu_source.dart';
 
 class ReadingStatisticsPage extends BasePage {
@@ -50,11 +48,27 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     });
 
     try {
-      final port = ReaderTtuSource.instance
-          .getPortForLanguage(appModelNoUpdate.targetLanguage);
+      // Ensure the local asset server is running before reading IDB.
+      final server = await ref
+          .read(ttuServerProvider(appModelNoUpdate.targetLanguage).future);
+      final port = server.boundPort!;
 
       final records =
           await ReadingStatisticIdbReader.readAll(serverPort: port);
+      debugPrint('[stat-sync] IDB returned ${records.length} records (port=$port)');
+      int nonZeroChars = 0;
+      int nonZeroTime = 0;
+      for (final stat in records) {
+        debugPrint(
+          '[stat-sync]   "${stat.title}" ${stat.dateKey}: '
+          'chars=${stat.charactersRead} time=${stat.readingTimeMs}ms '
+          'lastMod=${stat.lastStatisticModified}',
+        );
+        if (stat.charactersRead > 0) nonZeroChars++;
+        if (stat.readingTimeMs > 0) nonZeroTime++;
+      }
+      debugPrint('[stat-sync] summary: $nonZeroChars with chars>0, '
+          '$nonZeroTime with time>0');
 
       final db = appModelNoUpdate.database;
       for (final stat in records) {
@@ -66,8 +80,8 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
           lastStatisticModified: stat.lastStatisticModified,
         ));
       }
-    } catch (e) {
-      debugPrint('stat sync failed: $e');
+    } catch (e, st) {
+      debugPrint('stat sync failed: $e\n$st');
     }
 
     await _loadFromDatabase();
