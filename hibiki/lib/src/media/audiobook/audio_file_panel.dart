@@ -32,6 +32,11 @@ class _AudioFilePanelState extends State<AudioFilePanel> {
     widget.onChanged();
   }
 
+  void _removeEntry(int index) {
+    setState(() => widget.entries.removeAt(index));
+    widget.onChanged();
+  }
+
   void _onChapterChanged(int entryIndex, int? sectionIndex) {
     widget.entries[entryIndex].mappedSection = sectionIndex;
     widget.onChanged();
@@ -119,6 +124,20 @@ class _AudioFilePanelState extends State<AudioFilePanel> {
                   onChanged: (int? v) => _onChapterChanged(index, v),
                 ),
               ),
+            PopupMenuButton<String>(
+              padding: EdgeInsets.zero,
+              iconSize: 18,
+              icon: const Icon(Icons.more_vert, size: 18, color: Colors.grey),
+              itemBuilder: (_) => [
+                PopupMenuItem<String>(
+                  value: 'delete',
+                  child: Text(t.dialog_delete),
+                ),
+              ],
+              onSelected: (String action) {
+                if (action == 'delete') _removeEntry(index);
+              },
+            ),
           ],
         ),
       ),

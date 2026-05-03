@@ -257,34 +257,50 @@ class _BookImportDialogState extends State<BookImportDialog> {
   }
 
   Widget _subtitleRow() {
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(t.srt_import_pick_subtitle_files,
+        Row(
+          children: [
+            Expanded(
+              child: Text(t.srt_import_pick_subtitle_files,
                   style: const TextStyle(fontSize: 13)),
-              if (_subtitlePaths.isNotEmpty)
-                Text(
-                  t.srt_import_files_selected(n: _subtitlePaths.length),
-                  style: const TextStyle(fontSize: 11, color: Colors.grey),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
+            ),
+            IconButton(
+              icon: const Icon(Icons.folder_open, size: 20),
+              tooltip: t.srt_import_pick_subtitle_dir,
+              onPressed: _pickSubtitleDir,
+            ),
+            IconButton(
+              icon: const Icon(Icons.subtitles, size: 20),
+              tooltip: t.srt_import_pick_subtitle_files,
+              onPressed: _pickSubtitleFiles,
+            ),
+          ],
+        ),
+        for (int i = 0; i < _subtitlePaths.length; i++)
+          Padding(
+            padding: const EdgeInsets.only(left: 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _basename(_subtitlePaths[i]),
+                    style: const TextStyle(fontSize: 11, color: Colors.grey),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
                 ),
-            ],
+                InkWell(
+                  onTap: () => setState(() => _subtitlePaths.removeAt(i)),
+                  child: const Padding(
+                    padding: EdgeInsets.all(4),
+                    child: Icon(Icons.close, size: 14, color: Colors.grey),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-        IconButton(
-          icon: const Icon(Icons.folder_open, size: 20),
-          tooltip: t.srt_import_pick_subtitle_dir,
-          onPressed: _pickSubtitleDir,
-        ),
-        IconButton(
-          icon: const Icon(Icons.subtitles, size: 20),
-          tooltip: t.srt_import_pick_subtitle_files,
-          onPressed: _pickSubtitleFiles,
-        ),
       ],
     );
   }
