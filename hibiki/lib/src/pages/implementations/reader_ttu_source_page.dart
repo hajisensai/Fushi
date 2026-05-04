@@ -390,14 +390,6 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         .getSearchTermFromIndex(text: text, index: safeIndex)
         .trim();
     if (searchTerm.isEmpty) return;
-    // 浮动歌词查词时，cue 就是当前播放 cue
-    _lookupCue = _audiobookController?.currentCue;
-    if (_lookupCue != null && _audiobookController != null) {
-      ReaderTtuSource.instance.setPendingSentenceAudio(
-        cue: _lookupCue!,
-        audioFiles: _audiobookController!.audioFiles,
-      );
-    }
     unawaited(FloatingLyricChannel.highlight(
       start: safeIndex,
       length: appModel.targetLanguage.getGuessHighlightLength(
