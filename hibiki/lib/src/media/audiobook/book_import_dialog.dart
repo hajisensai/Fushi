@@ -382,12 +382,16 @@ class _BookImportDialogState extends State<BookImportDialog> {
       final String? authorText =
           _authorCtrl.text.trim().isEmpty ? null : _authorCtrl.text.trim();
 
+      debugPrint('[hibiki-import] route: epub=$_epubPath sub=$_subtitlePath audio=$_audioPath');
       String? tail;
       if (_epubPath != null && _hasSubtitles) {
+        debugPrint('[hibiki-import] → _importEpubWithAlignment');
         tail = await _importEpubWithAlignment(title: title);
       } else if (_hasSubtitles) {
+        debugPrint('[hibiki-import] → _importSubtitleBook');
         await _importSubtitleBook(title: title, author: authorText);
       } else {
+        debugPrint('[hibiki-import] → _importEpubOnly');
         await _importEpubOnly(title: title);
       }
 
@@ -415,26 +419,32 @@ class _BookImportDialogState extends State<BookImportDialog> {
     required String? author,
   }) async {
     final String uid = 'srtbook_${DateTime.now().millisecondsSinceEpoch}';
+    debugPrint('[hibiki-import] subtitleBook: parsing cues...');
 
     final List<AudioCue> cues = await _parseCuesWithIndex(
       File(_subtitlePath!),
       uid,
       0,
     );
+    debugPrint('[hibiki-import] subtitleBook: parsed ${cues.length} cues');
 
     int ttuBookId = 0;
     if (cues.isNotEmpty) {
       try {
+        debugPrint('[hibiki-import] subtitleBook: building IDB payload...');
         final TtuIdbPayload payload = CuesToEpub.buildIdbPayload(
           title: title,
           cues: cues,
         );
+        debugPrint('[hibiki-import] subtitleBook: injecting into ttu IDB...');
         ttuBookId = await _injectPayloadIntoTtuIdb(payload);
+        debugPrint('[hibiki-import] subtitleBook: IDB inject done, id=$ttuBookId');
       } catch (e) {
         debugPrint('[hibiki-import] ttu IDB inject failed: $e');
       }
     }
 
+    debugPrint('[hibiki-import] subtitleBook: persisting files...');
     final Directory persistDir = await _ensurePersistDir(uid);
     final String persistedSrt =
         await _persistFile(File(_subtitlePath!), persistDir);
@@ -461,7 +471,9 @@ class _BookImportDialogState extends State<BookImportDialog> {
         'ttuBookId=$ttuBookId cues=${cues.length}');
 
     await widget.repo.save(book);
+    debugPrint('[hibiki-import] subtitleBook: repo.save done');
     await widget.repo.saveCues(uid: uid, cues: cues);
+    debugPrint('[hibiki-import] subtitleBook: saveCues done, COMPLETE');
   }
 
   /// EPUB-only flow: read the file bytes and drive ttu's own file-input
@@ -469,11 +481,13 @@ class _BookImportDialogState extends State<BookImportDialog> {
   /// We don't build a [SrtBook] — the book just shows up in the
   /// regular EPUB section of the bookshelf.
   Future<void> _importEpubOnly({required String title}) async {
+    debugPrint('[hibiki-import] epubOnly: start');
     final File file = File(_epubPath!);
     final Uint8List bytes;
     final String filename;
 
     if (TextToEpub.isSupported(_epubPath!)) {
+      debugPrint('[hibiki-import] epubOnly: converting to EPUB...');
       bytes = await TextToEpub.convert(file: file, title: title);
       filename = '${title.replaceAll(RegExp(r'[^\w\s\-]'), '')}.epub';
     } else {
@@ -481,34 +495,38 @@ class _BookImportDialogState extends State<BookImportDialog> {
       filename = _basename(_epubPath!);
     }
 
+    debugPrint('[hibiki-import] epubOnly: TtuEpubImporter.import (${bytes.length} bytes)...');
     final int ttuBookId = await TtuEpubImporter.import(
       bytes: bytes,
       filename: filename,
       serverPort: widget.serverPort,
     );
-    debugPrint('[hibiki-import] EPUB save: title="$title" '
-        'ttuBookId=$ttuBookId path=$_epubPath');
+    debugPrint('[hibiki-import] epubOnly: COMPLETE ttuBookId=$ttuBookId');
   }
 
   /// EPUB + subtitle (+optional audio) flow: import the real EPUB via ttu,
   /// then attach a Sasayaki-matched [Audiobook] record pointing to the
   /// same `bookUid` the bookshelf will compute for this book.
   Future<String?> _importEpubWithAlignment({required String title}) async {
+    debugPrint('[hibiki-import] epubAlign: start');
     final File epubFile = File(_epubPath!);
     final Uint8List importBytes;
     final String importFilename;
     if (TextToEpub.isSupported(_epubPath!)) {
+      debugPrint('[hibiki-import] epubAlign: converting to EPUB...');
       importBytes = await TextToEpub.convert(file: epubFile, title: title);
       importFilename = '${title.replaceAll(RegExp(r'[^\w\s\-]'), '')}.epub';
     } else {
       importBytes = await epubFile.readAsBytes();
       importFilename = _basename(_epubPath!);
     }
+    debugPrint('[hibiki-import] epubAlign: TtuEpubImporter.import...');
     final int ttuBookId = await TtuEpubImporter.import(
       bytes: importBytes,
       filename: importFilename,
       serverPort: widget.serverPort,
     );
+    debugPrint('[hibiki-import] epubAlign: ttuBookId=$ttuBookId');
     if (ttuBookId <= 0) {
       throw StateError('ttu returned invalid book id');
     }
@@ -516,12 +534,14 @@ class _BookImportDialogState extends State<BookImportDialog> {
     String idbTitle = '';
     List<EpubSection> sections = const <EpubSection>[];
     try {
+      debugPrint('[hibiki-import] epubAlign: readBookRecord...');
       final TtuBookRecord rec = await TtuIdbReader.readBookRecord(
         ttuBookId: ttuBookId,
         serverPort: widget.serverPort,
       );
       idbTitle = rec.title;
       sections = rec.sections;
+      debugPrint('[hibiki-import] epubAlign: got ${sections.length} sections');
     } catch (e) {
       debugPrint('[hibiki-import] readBookRecord failed: $e');
     }
@@ -532,15 +552,18 @@ class _BookImportDialogState extends State<BookImportDialog> {
         '${widget.ttuMediaSourceIdentifier}/$mediaIdentifier';
 
     final String ext = _subtitlePath!.split('.').last.toLowerCase();
+    debugPrint('[hibiki-import] epubAlign: parsing cues (ext=$ext)...');
     final List<AudioCue> cues = await _parseCuesWithIndex(
       File(_subtitlePath!),
       bookUid,
       0,
     );
+    debugPrint('[hibiki-import] epubAlign: parsed ${cues.length} cues');
     final String chapterHref = _defaultChapterFor(ext);
 
     AudiobookHealth health;
     final bool runMatcher = SasayakiRematch.supportedFormats.contains(ext);
+    debugPrint('[hibiki-import] epubAlign: runMatcher=$runMatcher sections=${sections.length} cues=${cues.length}');
     if (runMatcher && sections.isNotEmpty && cues.isNotEmpty) {
       int chosenWindow = _searchWindow;
       if (_autoWindow) {
@@ -552,12 +575,14 @@ class _BookImportDialogState extends State<BookImportDialog> {
           chosenWindow = best;
         }
       }
+      debugPrint('[hibiki-import] epubAlign: running Sasayaki match (window=$chosenWindow)...');
       health = await _runSasayakiMatch(
         sections: sections,
         cues: cues,
         searchWindow: chosenWindow,
         similarityThreshold: _similarityThreshold,
       );
+      debugPrint('[hibiki-import] epubAlign: Sasayaki match done');
     } else if (runMatcher) {
       health = sections.isEmpty
           ? AudiobookHealth.failed(reason: 'ttu IDB record had 0 sections')
@@ -568,6 +593,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
       );
     }
 
+    debugPrint('[hibiki-import] epubAlign: persisting files...');
     final Directory persistDir = await _ensurePersistDir(bookUid);
     final String persistedSrt =
         await _persistFile(File(_subtitlePath!), persistDir);
@@ -590,15 +616,18 @@ class _BookImportDialogState extends State<BookImportDialog> {
         'ttuBookId=$ttuBookId cues=${cues.length}');
 
     await widget.audiobookRepo.saveAudiobook(audiobook);
+    debugPrint('[hibiki-import] epubAlign: saveAudiobook done');
     await widget.audiobookRepo.saveCues(
       bookUid: bookUid,
       chapterHref: chapterHref,
       cues: cues,
     );
+    debugPrint('[hibiki-import] epubAlign: saveCues done');
     await widget.audiobookRepo.updateHealthOverlay(
       bookUid: bookUid,
       health: health,
     );
+    debugPrint('[hibiki-import] epubAlign: COMPLETE');
 
     return _summarizeHealth(health);
   }

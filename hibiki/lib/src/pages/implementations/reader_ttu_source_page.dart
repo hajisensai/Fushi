@@ -228,6 +228,8 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   /// 用主题色遮罩盖住 WebView 避免先显示封面/第一章再跳转。
   bool _readerContentReady = false;
 
+  bool _onLoadStopRunning = false;
+
   /// initState 预读的阅读位置（Isar），onLoadStop 直接消费，省掉异步查询。
   ReaderPosition? _preloadedPos;
 
@@ -1202,14 +1204,11 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     return '''
 (function() {
   var key = 'hibiki_ttu_cache_refresh_${ReaderTtuSource.ttuInternalVersion}';
-  var session;
   try {
     if (window.localStorage.getItem(key) === '1') return;
   } catch (_) {
     try {
-      session = window.sessionStorage;
-      if (session.getItem(key) === '1') return;
-      session.setItem(key, '1');
+      if (window.sessionStorage.getItem(key) === '1') return;
     } catch (_) {}
   }
 
@@ -1233,18 +1232,9 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
           .catch(function() {})
       : Promise.resolve()
   ]).then(function() {
-    try {
-      window.localStorage.setItem(key, '1');
-    } catch (_) {}
-    window.location.reload();
-  }).catch(function(error) {
-    try {
-      console.error(JSON.stringify({
-        "hibiki-message-type": "ttuCacheRefreshErr",
-        "error": error && error.message ? error.message : String(error)
-      }));
-    } catch (_) {}
-  });
+    try { window.localStorage.setItem(key, '1'); } catch (_) {}
+    try { window.sessionStorage.setItem(key, '1'); } catch (_) {}
+  }).catch(function() {});
 })();
 ''';
   }
@@ -1352,13 +1342,22 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     return ReaderTtuSource.instance.buildCustomFontCss().fontFaces;
   }
 
+  static String _normalizeBookUrl(String url) {
+    return url.replaceFirstMapped(
+      RegExp(r'/(b|manage|statistics|auth)\.html'),
+      (m) => '/${m[1]}',
+    );
+  }
+
   Widget buildReaderArea(LocalAssetsServer server) {
     final String fontFaceCss = _buildFontFaceCss();
     return InAppWebView(
       initialUrlRequest: URLRequest(
         url: WebUri(
-          widget.item?.mediaIdentifier ??
-              'http://localhost:${server.boundPort}/manage.html',
+          _normalizeBookUrl(
+            widget.item?.mediaIdentifier ??
+                'http://localhost:${server.boundPort}/manage.html',
+          ),
         ),
       ),
       initialUserScripts: UnmodifiableListView<UserScript>(<UserScript>[
@@ -1562,60 +1561,61 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         );
       },
       onLoadStop: (controller, uri) async {
-        if (mediaSource.adaptTtuTheme) {
-          setDictionaryColors();
-        }
-
-        debugPrint(
-          '[hibiki-audiobook] onLoadStop uri=$uri '
-          'ctrl=${_audiobookController != null} srtUid=$_srtBookUid',
-        );
-        _currentChapterHref = uri?.toString() ?? _currentChapterHref;
-
-        // tap-to-select JS 和 audiobook bridge 注入互不依赖，并行执行。
-        // WebView JS 线程会串行跑两段脚本，但 Dart 侧不需要等第一段
-        // round-trip 回来才发第二段——省掉一次 Dart↔WebView 往返延迟。
-        final jsFuture = controller.evaluateJavascript(
-          source: javascriptToExecute,
-        );
-        unawaited(_injectPrimarySelectionColor(controller));
-        if (_audiobookController != null) {
-          try {
-            await Future.wait([
-              jsFuture,
-              _maybeInjectAudiobookBridge(controller, trigger: 'onLoadStop')
-                  .timeout(const Duration(seconds: 10)),
-            ]);
-          } catch (e) {
-            debugPrint('[hibiki-audiobook] onLoadStop parallel timeout: $e');
-            _markReaderContentReady();
+        if (_onLoadStopRunning) return;
+        _onLoadStopRunning = true;
+        try {
+          if (mediaSource.adaptTtuTheme) {
+            setDictionaryColors();
           }
-        } else {
-          await jsFuture;
-          await _injectReaderViewportBridge(controller);
-          if (!_didRestorePos) {
+
+          debugPrint(
+            '[hibiki-audiobook] onLoadStop uri=$uri '
+            'ctrl=${_audiobookController != null} srtUid=$_srtBookUid',
+          );
+          _currentChapterHref = uri?.toString() ?? _currentChapterHref;
+
+          final jsFuture = controller.evaluateJavascript(
+            source: javascriptToExecute,
+          );
+          unawaited(_injectPrimarySelectionColor(controller));
+          if (_audiobookController != null) {
             try {
-              await _bootstrapCurrentTtuSection(controller)
-                  .timeout(const Duration(seconds: 5));
+              await Future.wait([
+                jsFuture,
+                _maybeInjectAudiobookBridge(controller, trigger: 'onLoadStop')
+                    .timeout(const Duration(seconds: 10)),
+              ]);
             } catch (e) {
               debugPrint(
-                  '[hibiki-audiobook] onLoadStop ttuSection timeout: $e');
-            }
-            try {
-              await _bootstrapRestoreReaderPos()
-                  .timeout(const Duration(seconds: 5));
-            } catch (e) {
-              debugPrint(
-                  '[hibiki-audiobook] onLoadStop restorePos timeout: $e');
-              _markReaderContentReady();
+                  '[hibiki-audiobook] onLoadStop parallel timeout: $e');
             }
           } else {
-            _markReaderContentReady();
+            await jsFuture;
+            await _injectReaderViewportBridge(controller);
+            if (!_didRestorePos) {
+              try {
+                await _bootstrapCurrentTtuSection(controller)
+                    .timeout(const Duration(seconds: 5));
+              } catch (e) {
+                debugPrint(
+                    '[hibiki-audiobook] onLoadStop ttuSection timeout: $e');
+              }
+              try {
+                await _bootstrapRestoreReaderPos()
+                    .timeout(const Duration(seconds: 5));
+              } catch (e) {
+                debugPrint(
+                    '[hibiki-audiobook] onLoadStop restorePos timeout: $e');
+              }
+            }
           }
+          Future.delayed(
+              const Duration(milliseconds: 300), _focusNode.requestFocus);
+          unawaited(_installTtuBookmarkBridge(controller));
+        } finally {
+          _onLoadStopRunning = false;
+          _markReaderContentReady();
         }
-        Future.delayed(
-            const Duration(milliseconds: 300), _focusNode.requestFocus);
-        unawaited(_installTtuBookmarkBridge(controller));
       },
       onTitleChanged: (controller, title) async {
         await controller.evaluateJavascript(source: javascriptToExecute);

@@ -305,7 +305,7 @@ class TtuEpubImporter {
       return;
     }
 
-    // Fallback: if hook missed, poll by max key (first-import case)
+    // Fallback: if hook missed it, poll by max key (handles edge cases)
     logStage('hook-missed', 'falling back to max-key poll');
     const pollDeadline = Date.now() + 30000;
     let tick = 0;

@@ -226,6 +226,12 @@ function constructFuriganaPlain(expression, reading) {
     return result;
 }
 
+function rewriteDictLinks(html, dictName) {
+    return html.replace(/<link[^>]*href=['"]([^'"]+)['"][^>]*>/gi, (match, href) => {
+        return `<link rel="stylesheet" href="dictmedia://${encodeURIComponent(href)}?dictionary=${encodeURIComponent(dictName)}">`;
+    });
+}
+
 // !AI SLOP! function to preprocess css
 function constructDictCss(css, dictName, scopePrefix) {
     if (!css) {
@@ -412,7 +418,7 @@ function constructSingleGlossaryHtml(entryIndex) {
             lastDict = dictName;
             prevTags = null;
         }
-        
+
         const tempDiv = document.createElement('div');
         if (typeof g.content === 'string') {
             try {
@@ -462,7 +468,7 @@ function constructGlossaryHtml(entryIndex) {
     
     entry.glossaries.forEach(g => {
         const dictName = g.dictionary;
-        
+
         const tempDiv = document.createElement('div');
         if (typeof g.content === 'string') {
             try {
@@ -1413,7 +1419,7 @@ function createGlossarySection(dictName, contents, isFirst, entryIdx) {
             } catch {
                 if (/<[a-z][\s\S]*>/i.test(content)) {
                     const wrapper = el('div');
-                    wrapper.innerHTML = content.replace(/<link[^>]*>/gi, '');
+                    wrapper.innerHTML = rewriteDictLinks(content, dictName);
                     parent.appendChild(wrapper);
                 } else {
                     renderStructuredContent(parent, content, null, dictName);

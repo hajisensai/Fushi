@@ -870,23 +870,7 @@ ImportResult dictionary_importer::import(const std::string& zip_path, const std:
       throw std::runtime_error("failed to write index.json");
     }
 
-    int styles_idx = zip.find("styles.css");
-    if (styles_idx < 0) {
-      for (int i = 0; i < static_cast<int>(zip.entries.size()); i++) {
-        if (basename(zip.entries[i].name) == "styles.css") {
-          styles_idx = i;
-          break;
-        }
-      }
-    }
-    if (styles_idx >= 0) {
-      std::string styles = zip.read(styles_idx);
-      if (!styles.empty()) {
-        std::ofstream styles_file(path + "/styles.css", std::ios::binary);
-        setup_stream_exceptions(styles_file);
-        styles_file.write(styles.data(), static_cast<std::streamsize>(styles.size()));
-      }
-    }
+    extract_css_from_zip(zip, path + "/styles.css");
 
     const Files files = get_files(zip);
     std::future<size_t> media_thread =

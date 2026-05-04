@@ -161,6 +161,20 @@ class _DictionaryHtmlWidgetState extends ConsumerState<DictionaryHtmlWidget> {
               }
             }
           }
+          if (url.scheme == 'dictmedia' && HoshiDicts.isInitialized) {
+            final dictName = url.queryParameters['dictionary'] ?? '';
+            final mediaPath = Uri.decodeComponent(url.host);
+            if (dictName.isNotEmpty && mediaPath.isNotEmpty) {
+              final data =
+                  HoshiDicts.instance.getMediaFile(dictName, mediaPath);
+              if (data != null) {
+                return WebResourceResponse(
+                  contentType: 'text/css',
+                  data: data,
+                );
+              }
+            }
+          }
           return null;
         },
         contextMenu: ContextMenu(

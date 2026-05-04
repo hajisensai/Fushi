@@ -1216,7 +1216,7 @@ indexedDB.databases().then(async (databases) => {
   /// last version mismatches, a load from network is forced. The app will then
   /// update its new last version, and all new loads will be from the cache
   /// unless there is a new app version loaded with a different internal version.
-  static const ttuInternalVersion = 9;
+  static const ttuInternalVersion = 11;
 
   /// Used to check for the current version.
   int? get currentTtuInternalVersion {

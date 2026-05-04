@@ -51,6 +51,12 @@ function setStructuredContentElementStyle(element, style) {
     }
 }
 
+function rewriteDictLinks(html, dictName) {
+    return html.replace(/<link[^>]*href=['"]([^'"]+)['"][^>]*>/gi, (match, href) => {
+        return `<link rel="stylesheet" href="dictmedia://${encodeURIComponent(href)}?dictionary=${encodeURIComponent(dictName)}">`;
+    });
+}
+
 function constructDictCss(css, dictName) {
     if (!css) return '';
     const prefix = `[data-dictionary="${dictName}"]`;
@@ -378,7 +384,7 @@ window.renderDefinition = function(contentJson, dictName, dictCss, fontSize, isD
         } catch {
             if (/<[a-z][\s\S]*>/i.test(contentJson)) {
                 const wrapper = document.createElement('div');
-                wrapper.innerHTML = contentJson.replace(/<link[^>]*>/gi, '');
+                wrapper.innerHTML = rewriteDictLinks(contentJson, dictName);
                 container.appendChild(wrapper);
                 reportHeight();
                 return;
