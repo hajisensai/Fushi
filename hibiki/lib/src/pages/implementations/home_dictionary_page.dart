@@ -1,17 +1,16 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:material_floating_search_bar/material_floating_search_bar.dart';
 import 'package:spaces/spaces.dart';
-import 'dart:io';
-
-import 'package:hibiki/creator.dart';
 import 'package:hibiki/dictionary.dart';
-import 'package:hibiki/models.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/src/anki/anki_models.dart';
+import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
-import 'package:hibiki/src/utils/misc/tts_channel.dart';
 import 'package:hibiki/utils.dart';
 
 /// The body content for the Dictionary tab in the main menu.
@@ -465,60 +464,23 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
   }
 
   Future<bool> _onMineEntry(Map<String, String> fields) async {
-    appModel.openCreator(
-      ref: ref,
-      killOnPop: false,
-      creatorFieldValues: CreatorFieldValues.fromMineFields(fields: fields),
-      onCreatorReady: (creatorModel) async {
-        final String wordAudioUrl = fields['audio'] ?? '';
-        if (wordAudioUrl.isEmpty) return;
-        try {
-          File? audioFile;
-          if (wordAudioUrl.startsWith('file://')) {
-            audioFile = File(wordAudioUrl.replaceFirst('file://', ''));
-          } else if (wordAudioUrl.startsWith('/')) {
-            audioFile = File(wordAudioUrl);
-          } else if (wordAudioUrl.startsWith('http')) {
-            final response = await HttpClient()
-                .getUrl(Uri.parse(wordAudioUrl))
-                .then((req) => req.close());
-            final bytes = await response
-                .fold<List<int>>([], (prev, chunk) => prev..addAll(chunk));
-            if (bytes.isNotEmpty) {
-              final ext = wordAudioUrl.contains('.opus')
-                  ? '.opus'
-                  : wordAudioUrl.contains('.ogg')
-                      ? '.ogg'
-                      : '.mp3';
-              audioFile =
-                  File('${Directory.systemTemp.path}/mine_word_audio$ext');
-              await audioFile.writeAsBytes(bytes);
-            }
-          }
-          if (audioFile == null || !audioFile.existsSync()) {
-            final expression = fields['expression'] ?? '';
-            if (expression.isNotEmpty) {
-              final ttsPath = '${Directory.systemTemp.path}/mine_word_tts.wav';
-              final ttsResult =
-                  await TtsChannel.instance.ttsToFile(expression, ttsPath);
-              if (ttsResult != null) {
-                audioFile = File(ttsResult);
-              }
-            }
-          }
-          if (audioFile != null && audioFile.existsSync()) {
-            AudioField.instance.setAudioFile(
-              appModel: appModel,
-              creatorModel: creatorModel,
-              file: audioFile,
-            );
-          }
-        } catch (e) {
-          debugPrint('[hibiki-mine] word audio failed: $e');
-        }
-      },
+    final repo = ref.read(ankiRepositoryProvider);
+    final miningContext = AnkiMiningContext(
+      sentence: fields['sentence'] ?? '',
     );
-    return false;
+    final success = await repo.mineEntry(
+      rawPayloadJson: jsonEncode(fields),
+      context: miningContext,
+    );
+    if (success) {
+      final settings = await repo.loadSettings();
+      Fluttertoast.showToast(
+        msg: t.card_exported(deck: settings.selectedDeckName ?? ''),
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+      );
+    }
+    return success;
   }
 
   Widget? get footerWidget {

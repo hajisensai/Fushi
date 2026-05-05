@@ -40,22 +40,9 @@ class PlayAudioAction extends QuickAction {
   }) async {
     _audioPlayer.stop();
 
-    List<Enhancement> audioEnhancements = [];
-
-    Enhancement? autoEnhancement =
-        appModel.lastSelectedMapping.getAutoFieldEnhancement(
-      appModel: appModel,
-      field: AudioField.instance,
-    );
-    if (autoEnhancement != null) {
-      audioEnhancements.add(autoEnhancement);
-    }
-    audioEnhancements.addAll(
-      appModel.lastSelectedMapping.getManualFieldEnhancement(
-        appModel: appModel,
-        field: AudioField.instance,
-      ),
-    );
+    List<Enhancement> audioEnhancements = [
+      LocalAudioEnhancement(field: AudioField.instance),
+    ];
 
     if (audioEnhancements.isEmpty) {
       Fluttertoast.showToast(

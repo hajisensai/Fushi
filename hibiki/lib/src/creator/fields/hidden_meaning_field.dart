@@ -38,6 +38,6 @@ class HiddenMeaningField extends Field {
         appModel: appModel,
         entries: [entry],
         prependDictionaryNames:
-            appModel.lastSelectedMapping.prependDictionaryNames ?? false);
+            false);
   }
 }

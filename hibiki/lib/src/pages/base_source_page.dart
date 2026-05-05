@@ -200,10 +200,15 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
     final sources = appModel.enabledAudioSources;
     debugPrint('[hibiki-autoread] "$expression" reading="$reading" sources=${sources.length}');
     final WordAudioResolver resolver = WordAudioResolver(
-      queryLocalAudio: (String expression, String reading) {
-        return TtsChannel.instance
-            .queryLocalAudio(expression, reading)
-            .timeout(const Duration(milliseconds: 500));
+      queryLocalAudio: (String expression, String reading) async {
+        try {
+          return await TtsChannel.instance
+              .queryLocalAudio(expression, reading)
+              .timeout(const Duration(milliseconds: 500));
+        } on TimeoutException {
+          debugPrint('[hibiki-autoread] queryLocalAudio timed out for "$expression"');
+          return null;
+        }
       },
       extractLocalAudio: TtsChannel.instance.extractLocalAudio,
     );

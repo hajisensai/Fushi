@@ -40,7 +40,7 @@ class ShareAction extends QuickAction {
         appModel: appModel,
         entries: [entry],
         prependDictionaryNames:
-            appModel.lastSelectedMapping.prependDictionaryNames ?? false,
+            false,
       ),
     );
 

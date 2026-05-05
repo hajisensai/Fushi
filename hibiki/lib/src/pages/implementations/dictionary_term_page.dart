@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sliver_tools/sliver_tools.dart';
 import 'package:spaces/spaces.dart';
 import 'package:visibility_detector/visibility_detector.dart';
-import 'package:hibiki/creator.dart';
 import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/models/app_model.dart';
@@ -24,7 +23,6 @@ class DictionaryTermPage extends ConsumerWidget {
     required this.expandableControllers,
     required this.dictionaryNamesByHidden,
     required this.dictionaryNamesByOrder,
-    required this.lastSelectedMapping,
     this.cardColor,
     this.opacity = 1,
     this.footerWidget,
@@ -60,11 +58,6 @@ class DictionaryTermPage extends ConsumerWidget {
 
   /// Opacity for entries.
   final double opacity;
-
-  /// Last selected mapping for optimisation purposes. Not including this
-  /// before caused rendering jank as database queries were performed multiple
-  /// times for getting this value.
-  final AnkiMapping lastSelectedMapping;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -230,47 +223,36 @@ class _DictionaryTermActionsRowState
     required Map<String, Color?> colors,
   }) {
     List<Widget> buttons = [];
-    for (int i = 0; i < appModel.maximumQuickActions; i++) {
-      String? actionName = appModel.lastSelectedMapping.actions![i];
-      QuickAction? quickAction;
+    final allActions = appModel.quickActions.values.toList();
+    for (final quickAction in allActions) {
+      final ColorScheme scheme = Theme.of(context).colorScheme;
+      final Color enabledColor =
+          colors[quickAction.uniqueKey] ?? scheme.onSurface;
+      final Widget button = Padding(
+        padding: Spacing.of(context).insets.onlyLeft.semiSmall,
+        child: JidoujishoIconButton(
+          busy: true,
+          enabledColor: enabledColor,
+          disabledColor: enabledColor.withOpacity(0.5),
+          shapeBorder: const RoundedRectangleBorder(),
+          backgroundColor: scheme.surfaceContainerHighest,
+          size: Spacing.of(context).spaces.semiBig,
+          tooltip: quickAction.getLocalisedLabel(appModel),
+          icon: quickAction.icon,
+          onTap: () async {
+            await quickAction.executeAction(
+              context: context,
+              ref: ref,
+              appModel: appModel,
+              creatorModel: creatorModel,
+              entry: widget.entry,
+              dictionaryName: null,
+            );
 
-      if (actionName != null) {
-        quickAction = appModel.quickActions[actionName];
-      }
-      late Widget button;
-
-      if (quickAction == null) {
-        button = const SizedBox.shrink();
-      } else {
-        late Color enabledColor;
-        final ColorScheme scheme = Theme.of(context).colorScheme;
-        enabledColor = colors[quickAction.uniqueKey] ?? scheme.onSurface;
-        button = Padding(
-          padding: Spacing.of(context).insets.onlyLeft.semiSmall,
-          child: JidoujishoIconButton(
-            busy: true,
-            enabledColor: enabledColor,
-            disabledColor: enabledColor.withOpacity(0.5),
-            shapeBorder: const RoundedRectangleBorder(),
-            backgroundColor: scheme.surfaceContainerHighest,
-            size: Spacing.of(context).spaces.semiBig,
-            tooltip: quickAction.getLocalisedLabel(appModel),
-            icon: quickAction.icon,
-            onTap: () async {
-              await quickAction!.executeAction(
-                context: context,
-                ref: ref,
-                appModel: appModel,
-                creatorModel: creatorModel,
-                entry: widget.entry,
-                dictionaryName: null,
-              );
-
-              ref.invalidate(quickActionColorProvider(widget.entry));
-            },
-          ),
-        );
-      }
+            ref.invalidate(quickActionColorProvider(widget.entry));
+          },
+        ),
+      );
 
       buttons.add(button);
     }

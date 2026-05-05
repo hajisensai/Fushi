@@ -142,8 +142,7 @@ class _DictionaryEntryHeaderWrap extends ConsumerWidget {
     AppModel appModel = ref.read(appProvider);
     CreatorModel creatorModel = ref.read(creatorProvider);
 
-    List<QuickAction> filteredActions = appModel.lastSelectedMapping
-        .getActions(appModel: appModel)
+    List<QuickAction> filteredActions = appModel.quickActions.values
         .where((e) => e.showInSingleDictionary)
         .toList();
 

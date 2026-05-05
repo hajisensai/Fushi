@@ -1601,15 +1601,6 @@ class AppModel with ChangeNotifier {
     await _setPref('last_selected_deck', deckName);
   }
 
-  /// Persist a new last selected model name. This is called when the user
-  /// changes the selected model to map in the profiles menu.
-  Future<void> setLastSelectedMapping(AnkiMapping mapping,
-      {bool notify = true}) async {
-    await _setPref('last_selected_mapping', mapping.label);
-    if (notify) {
-      notifyListeners();
-    }
-  }
 
   /// Get the current home tab index. The order of the tab indexes are based on
   /// the ordering in [mediaTypes].
@@ -2231,7 +2222,7 @@ class AppModel with ChangeNotifier {
   /// Adds the default 'hibiki Kinomoto' model to the list of Anki card types.
   Future<void> addDefaultModelIfMissing() async {
     List<String> models = await getModelList();
-    if (!models.contains(AnkiMapping.standardModelName)) {
+    if (!models.contains('Lapis')) {
       methodChannel.invokeMethod('addDefaultModel');
 
       await showAppDialog(
@@ -3375,18 +3366,6 @@ class AppModel with ChangeNotifier {
   Future<void> setFloatingLyricFontSize(double value) async {
     await _setPref('floating_lyric_font_size', value.clamp(8, 64).toDouble());
     notifyListeners();
-  }
-
-  /// Get the list of model names that will be checked for duplicates.
-  List<String> get duplicateCheckModels {
-    return _getPref('duplicate_check_models', defaultValue: [
-      'Lapis',
-    ]);
-  }
-
-  /// Set the list of model names that will be checked for duplicates.
-  void setDuplicateCheckModels(List<String> value) async {
-    await _setPref('duplicate_check_models', value);
   }
 
   bool get updateNeverRemind {

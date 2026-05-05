@@ -1,7 +1,6 @@
 import 'package:expandable/expandable.dart';
 import 'package:flutter/material.dart';
 import 'package:spaces/spaces.dart';
-import 'package:hibiki/creator.dart';
 import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/media.dart';
@@ -35,8 +34,6 @@ class DictionaryHistoryPage extends BasePage {
 class _DictionaryHistoryPageState extends BasePageState<DictionaryHistoryPage> {
   @override
   Widget build(BuildContext context) {
-    AnkiMapping lastSelectedMapping = appModel.lastSelectedMapping;
-
     List<DictionarySearchResult> historyResults =
         appModel.dictionaryHistory.reversed.toList();
 
@@ -55,7 +52,6 @@ class _DictionaryHistoryPageState extends BasePageState<DictionaryHistoryPage> {
                 onSearch: widget.onSearch,
                 onStash: widget.onStash,
                 onShare: widget.onShare,
-                lastSelectedMapping: lastSelectedMapping,
               ),
             )
             .toList(),
@@ -70,7 +66,6 @@ class _DictionaryHistoryScrollableItem extends BasePage {
     required this.onStash,
     required this.onSearch,
     required this.onShare,
-    required this.lastSelectedMapping,
   });
 
   /// The result pertaining to this item.
@@ -84,9 +79,6 @@ class _DictionaryHistoryScrollableItem extends BasePage {
 
   /// Action to be done upon selecting the stash option.
   final Function(String) onShare;
-
-  /// The current mapping.
-  final AnkiMapping lastSelectedMapping;
 
   @override
   _DictionaryHistoryScrollableItemState createState() =>
@@ -148,7 +140,6 @@ class _DictionaryHistoryScrollableItemState
     final firstTermKey = termKeys.first;
 
     return DictionaryTermPage(
-      lastSelectedMapping: widget.lastSelectedMapping,
       entries: groupedEntries[firstTermKey]!,
       onSearch: widget.onSearch,
       onStash: widget.onStash,

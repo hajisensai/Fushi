@@ -17,7 +17,6 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:spaces/spaces.dart';
-import 'package:hibiki/creator.dart';
 import 'package:hibiki/src/anki/anki_models.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/media.dart';
@@ -888,91 +887,6 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     return success;
   }
 
-  Future<void> _attachMineAudio(
-    Map<String, String> fields,
-    CreatorModel creatorModel, {
-    AudioCue? lookupCue,
-  }) async {
-    final cacheDir = Directory.systemTemp;
-
-    // Word audio: download URL, use local file, or fall back to TTS
-    try {
-      File? audioFile;
-      final String wordAudioUrl = fields['audio'] ?? '';
-      if (wordAudioUrl.isNotEmpty) {
-        if (wordAudioUrl.startsWith('file://')) {
-          audioFile = File(wordAudioUrl.replaceFirst('file://', ''));
-        } else if (wordAudioUrl.startsWith('/')) {
-          audioFile = File(wordAudioUrl);
-        } else if (wordAudioUrl.startsWith('http')) {
-          final response = await HttpClient()
-              .getUrl(Uri.parse(wordAudioUrl))
-              .then((req) => req.close());
-          final bytes = await response
-              .fold<List<int>>([], (prev, chunk) => prev..addAll(chunk));
-          if (bytes.isNotEmpty) {
-            final ext = wordAudioUrl.contains('.opus')
-                ? '.opus'
-                : wordAudioUrl.contains('.ogg')
-                    ? '.ogg'
-                    : '.mp3';
-            audioFile = File('${cacheDir.path}/mine_word_audio$ext');
-            await audioFile.writeAsBytes(bytes);
-          }
-        }
-      }
-      if (audioFile == null || !audioFile.existsSync()) {
-        final expression = fields['expression'] ?? '';
-        if (expression.isNotEmpty) {
-          final ttsPath = '${cacheDir.path}/mine_word_tts.wav';
-          final ttsResult =
-              await TtsChannel.instance.ttsToFile(expression, ttsPath);
-          if (ttsResult != null) {
-            audioFile = File(ttsResult);
-          }
-        }
-      }
-      if (audioFile != null && audioFile.existsSync()) {
-        AudioField.instance.setAudioFile(
-          appModel: appModel,
-          creatorModel: creatorModel,
-          file: audioFile,
-        );
-      }
-    } catch (e) {
-      debugPrint('[hibiki-mine] word audio failed: $e');
-    }
-
-    // Sentence audio: extract from audiobook cue (prefer lookupCue over currentCue)
-    final controller = _audiobookController;
-    if (controller != null) {
-      final AudioCue? cue = lookupCue ?? controller.currentCue;
-      if (cue != null && controller.audioFiles.isNotEmpty) {
-        try {
-          if (cue.audioFileIndex < controller.audioFiles.length) {
-            final inputFile = controller.audioFiles[cue.audioFileIndex];
-            final outputPath = '${cacheDir.path}/mine_sentence_audio.m4a';
-            final result = await TtsChannel.instance.extractAudioSegment(
-              inputPath: inputFile.path,
-              startMs: cue.startMs,
-              endMs: cue.endMs,
-              outputPath: outputPath,
-            );
-            if (result != null) {
-              AudioSentenceField.instance.setAudioFile(
-                appModel: appModel,
-                creatorModel: creatorModel,
-                file: File(result),
-              );
-            }
-          }
-        } catch (e) {
-          debugPrint('[hibiki-mine] sentence audio failed: $e');
-        }
-      }
-    }
-  }
-
   /// Hide the dictionary and dispose of the current result.
   @override
   void clearDictionaryResult() async {
@@ -1021,7 +935,6 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       onFocusChange: (value) {
         if (mediaSource.volumePageTurningEnabled &&
             (ModalRoute.of(context)?.isCurrent ?? false) &&
-            !appModel.isCreatorOpen &&
             !_isRecursiveSearching) {
           _focusNode.requestFocus();
         }
@@ -1999,7 +1912,6 @@ if (!window.getSelection().isCollapsed) {
           favoriteMenuItem(),
           copyMenuItem(),
           shareMenuItem(),
-          creatorMenuItem(),
         ],
       );
 
@@ -2041,14 +1953,6 @@ if (!window.getSelection().isCollapsed) {
       id: 4,
       title: t.share,
       action: shareMenuAction,
-    );
-  }
-
-  ContextMenuItem creatorMenuItem() {
-    return ContextMenuItem(
-      id: 5,
-      title: t.creator,
-      action: creatorMenuAction,
     );
   }
 
@@ -2130,33 +2034,6 @@ if (!window.getSelection().isCollapsed) {
     String searchTerm = await getSelectedText();
     appModel.addToStash(terms: [searchTerm]);
     await unselectWebViewTextSelection(_controller);
-  }
-
-  void creatorMenuAction() async {
-    String text = (await getSelectedText()).replaceAll('\\n', '\n');
-
-    await unselectWebViewTextSelection(_controller);
-    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    await Future.delayed(const Duration(milliseconds: 5), () {});
-
-    await appModel.openCreator(
-      ref: ref,
-      killOnPop: false,
-      creatorFieldValues: CreatorFieldValues(
-        textValues: {
-          SentenceField.instance: text,
-          TermField.instance: '',
-          ClozeBeforeField.instance: '',
-          ClozeInsideField.instance: '',
-          ClozeAfterField.instance: '',
-        },
-      ),
-    );
-
-    await Future.delayed(const Duration(milliseconds: 5), () {});
-    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-
-    _focusNode.requestFocus();
   }
 
   void copyMenuAction() async {

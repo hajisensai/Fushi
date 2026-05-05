@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:material_floating_search_bar/material_floating_search_bar.dart';
 import 'package:spaces/spaces.dart';
-import 'package:hibiki/creator.dart';
 import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
@@ -40,7 +39,6 @@ class _RecursiveDictionaryPageState
   DictionarySearchResult? _result;
 
   bool _isSearching = false;
-  late bool _isCreatorOpen;
   bool _isEditingQuery = false;
   late String _displayQuery;
 
@@ -48,7 +46,6 @@ class _RecursiveDictionaryPageState
   void initState() {
     super.initState();
 
-    _isCreatorOpen = appModelNoUpdate.isCreatorOpen;
     _displayQuery = widget.searchTerm;
 
     _controller.query = widget.searchTerm;
@@ -76,7 +73,7 @@ class _RecursiveDictionaryPageState
     }
 
     Color? backgroundColor = theme.colorScheme.background;
-    if (appModel.overrideDictionaryColor != null && !_isCreatorOpen) {
+    if (appModel.overrideDictionaryColor != null) {
       if ((appModel.overrideDictionaryTheme ?? theme).brightness ==
           Brightness.dark) {
         backgroundColor =
@@ -88,7 +85,7 @@ class _RecursiveDictionaryPageState
     }
 
     return Theme(
-      data: !_isCreatorOpen ? appModel.overrideDictionaryTheme ?? theme : theme,
+      data: appModel.overrideDictionaryTheme ?? theme,
       child: PopScope(
         canPop: !widget.killOnPop,
         onPopInvokedWithResult: (didPop, _) {
@@ -116,7 +113,7 @@ class _RecursiveDictionaryPageState
     Color? backgroundColor = appModel.isDarkMode
         ? const Color.fromARGB(255, 30, 30, 30)
         : const Color.fromARGB(255, 229, 229, 229);
-    if (appModel.overrideDictionaryColor != null && !_isCreatorOpen) {
+    if (appModel.overrideDictionaryColor != null) {
       if ((appModel.overrideDictionaryTheme ?? theme).brightness ==
           Brightness.dark) {
         backgroundColor =
@@ -163,7 +160,6 @@ class _RecursiveDictionaryPageState
       ],
       actions: [
         buildSegmentButton(),
-        buildCreatorButton(),
         buildSearchButton(),
       ],
       onQueryChanged: onQueryChanged,
@@ -189,7 +185,7 @@ class _RecursiveDictionaryPageState
     Color? backgroundColor = appModel.isDarkMode
         ? const Color.fromARGB(255, 30, 30, 30)
         : const Color.fromARGB(255, 229, 229, 229);
-    if (appModel.overrideDictionaryColor != null && !_isCreatorOpen) {
+    if (appModel.overrideDictionaryColor != null) {
       if ((appModel.overrideDictionaryTheme ?? theme).brightness ==
           Brightness.dark) {
         backgroundColor =
@@ -231,7 +227,6 @@ class _RecursiveDictionaryPageState
                 ),
               ),
               buildInlineSegmentButton(),
-              buildInlineCreatorButton(),
               JidoujishoIconButton(
                 tooltip: t.search,
                 icon: Icons.search,
@@ -250,15 +245,6 @@ class _RecursiveDictionaryPageState
       tooltip: t.text_segmentation,
       icon: Icons.account_tree,
       onTap: openTextSegmentationForQuery,
-    );
-  }
-
-  Widget buildInlineCreatorButton() {
-    return JidoujishoIconButton(
-      size: Theme.of(context).textTheme.titleLarge?.fontSize,
-      tooltip: t.card_creator,
-      icon: Icons.note_add,
-      onTap: openCreatorForQuery,
     );
   }
 
@@ -432,34 +418,6 @@ class _RecursiveDictionaryPageState
     );
 
     widget.onUpdateQuery?.call(_displayQuery);
-  }
-
-  Widget buildCreatorButton() {
-    return FloatingSearchBarAction(
-      showIfOpened: true,
-      child: JidoujishoIconButton(
-        size: Theme.of(context).textTheme.titleLarge?.fontSize,
-        tooltip: t.card_creator,
-        icon: Icons.note_add,
-        onTap: openCreatorForQuery,
-      ),
-    );
-  }
-
-  void openCreatorForQuery() {
-    appModel.openCreator(
-      killOnPop: false,
-      ref: ref,
-      creatorFieldValues: CreatorFieldValues(
-        textValues: {
-          SentenceField.instance: _displayQuery,
-          TermField.instance: '',
-          ClozeBeforeField.instance: '',
-          ClozeInsideField.instance: '',
-          ClozeAfterField.instance: '',
-        },
-      ),
-    );
   }
 
   Widget buildSearchClearButton() {

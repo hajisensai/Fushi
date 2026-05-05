@@ -1,7 +1,6 @@
 import 'package:expandable/expandable.dart';
 import 'package:flutter/material.dart';
 import 'package:spaces/spaces.dart';
-import 'package:hibiki/creator.dart';
 import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/pages.dart';
 
@@ -73,8 +72,6 @@ class _DictionaryResultPageState extends BasePageState<DictionaryResultPage> {
 
   @override
   Widget build(BuildContext context) {
-    AnkiMapping lastSelectedMapping = appModel.lastSelectedMapping;
-
     /// Group entries by (word, reading) to form term groups.
     final Map<String, List<DictionaryEntry>> groupedEntries = {};
     for (final entry in widget.result.entries) {
@@ -133,7 +130,6 @@ class _DictionaryResultPageState extends BasePageState<DictionaryResultPage> {
                       : EdgeInsets.zero),
               ...termKeys
                   .map((termKey) => DictionaryTermPage(
-                        lastSelectedMapping: lastSelectedMapping,
                         opacity: widget.opacity,
                         cardColor: widget.cardColor,
                         entries: groupedEntries[termKey]!,
