@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:spaces/spaces.dart';
 import 'package:transparent_image/transparent_image.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
@@ -59,26 +58,6 @@ class _MediaItemDialogPageState extends BasePageState<MediaItemDialogPage> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            children: [
-              Icon(
-                mediaSource.icon,
-                color: Theme.of(context).unselectedWidgetColor,
-              ),
-              const Space.small(),
-              Text(
-                mediaSource.getLocalisedSourceName(appModel),
-                style: TextStyle(
-                  color: Theme.of(context).unselectedWidgetColor,
-                  fontWeight: FontWeight.w500,
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                softWrap: true,
-              ),
-            ],
-          ),
-          const Space.normal(),
           AspectRatio(
             aspectRatio: mediaSource.aspectRatio,
             child: FadeInImage(
@@ -93,7 +72,7 @@ class _MediaItemDialogPageState extends BasePageState<MediaItemDialogPage> {
                       item: widget.item,
                       fallbackUrl: widget.item.extraUrl,
                     ),
-                    fit: BoxFit.fitWidth,
+                    fit: BoxFit.contain,
                   );
                 } else {
                   return const SizedBox.expand();
@@ -103,7 +82,7 @@ class _MediaItemDialogPageState extends BasePageState<MediaItemDialogPage> {
                 appModel: appModel,
                 item: widget.item,
               ),
-              fit: BoxFit.fitWidth,
+              fit: BoxFit.contain,
               alignment: Alignment.topCenter,
             ),
           ),
