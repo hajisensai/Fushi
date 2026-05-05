@@ -175,14 +175,23 @@ static void html_escape(std::string& out, std::string_view s) {
 }
 
 static void json_escape(std::string& out, std::string_view s) {
-  for (char c : s) {
+  for (unsigned char c : s) {
     switch (c) {
       case '"': out += "\\\""; break;
       case '\\': out += "\\\\"; break;
+      case '\b': out += "\\b"; break;
+      case '\f': out += "\\f"; break;
       case '\n': out += "\\n"; break;
       case '\r': out += "\\r"; break;
       case '\t': out += "\\t"; break;
-      default: out += c;
+      default:
+        if (c < 0x20) {
+          char buf[8];
+          snprintf(buf, sizeof(buf), "\\u%04x", c);
+          out += buf;
+        } else {
+          out += static_cast<char>(c);
+        }
     }
   }
 }
@@ -190,7 +199,7 @@ static void json_escape(std::string& out, std::string_view s) {
 std::vector<Term> yomitan_parser::kanji_to_terms(const std::vector<Kanji>& kanji, std::vector<std::string>& storage) {
   std::vector<Term> terms;
   terms.reserve(kanji.size());
-  storage.reserve(kanji.size());
+  storage.reserve(kanji.size() * 2);
 
   for (const auto& k : kanji) {
     if (k.character.empty()) continue;
@@ -224,10 +233,20 @@ std::vector<Term> yomitan_parser::kanji_to_terms(const std::vector<Kanji>& kanji
 
     storage.push_back(std::move(glossary_json));
 
+    std::string reading;
+    if (!k.onyomi.empty() && !k.kunyomi.empty()) {
+      reading = std::string(k.onyomi) + " " + std::string(k.kunyomi);
+    } else if (!k.onyomi.empty()) {
+      reading = std::string(k.onyomi);
+    } else {
+      reading = std::string(k.kunyomi);
+    }
+    storage.push_back(std::move(reading));
+
     Term t;
     t.expression = k.character;
-    t.reading = k.onyomi;
-    t.glossary = glz::raw_json_view{storage.back()};
+    t.reading = storage[storage.size() - 1];
+    t.glossary = glz::raw_json_view{storage[storage.size() - 2]};
     terms.push_back(t);
   }
 
