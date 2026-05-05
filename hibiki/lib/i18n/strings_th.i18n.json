@@ -718,5 +718,7 @@
   "color_primary": "สีหลัก",
   "color_secondary": "สีรอง",
   "color_tertiary": "สีที่สาม",
-  "color_container": "คอนเทนเนอร์"
+  "color_container": "คอนเทนเนอร์",
+  "popup_max_width": "ความกว้างสูงสุดของป๊อปอัป",
+  "unit_dp": "dp"
 }

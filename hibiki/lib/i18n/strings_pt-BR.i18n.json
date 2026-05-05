@@ -718,5 +718,7 @@
   "color_primary": "Primária",
   "color_secondary": "Secundária",
   "color_tertiary": "Terciária",
-  "color_container": "Contêiner"
+  "color_container": "Contêiner",
+  "popup_max_width": "Largura máxima do popup",
+  "unit_dp": "dp"
 }

@@ -718,5 +718,7 @@
   "color_primary": "Основной",
   "color_secondary": "Вторичный",
   "color_tertiary": "Третичный",
-  "color_container": "Контейнер"
+  "color_container": "Контейнер",
+  "popup_max_width": "Макс. ширина всплывающего окна",
+  "unit_dp": "dp"
 }

@@ -718,5 +718,7 @@
   "color_primary": "Birincil",
   "color_secondary": "İkincil",
   "color_tertiary": "Üçüncül",
-  "color_container": "Kapsayıcı"
+  "color_container": "Kapsayıcı",
+  "popup_max_width": "Açılır pencere maks. genişlik",
+  "unit_dp": "dp"
 }

@@ -718,5 +718,7 @@
   "color_primary": "Chính",
   "color_secondary": "Phụ",
   "color_tertiary": "Cấp ba",
-  "color_container": "Vùng chứa"
+  "color_container": "Vùng chứa",
+  "popup_max_width": "Chiều rộng tối đa popup",
+  "unit_dp": "dp"
 }

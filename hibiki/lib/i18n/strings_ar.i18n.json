@@ -718,5 +718,7 @@
   "color_primary": "أساسي",
   "color_secondary": "ثانوي",
   "color_tertiary": "ثالثي",
-  "color_container": "حاوية"
+  "color_container": "حاوية",
+  "popup_max_width": "أقصى عرض للنافذة المنبثقة",
+  "unit_dp": "dp"
 }
