@@ -223,7 +223,6 @@ class EpubSrtMatcher {
           haystack: big,
           start: cursor,
           end: windowEnd,
-          threshold: similarityThreshold,
         );
         if (r.score > bestSim) {
           bestSim = r.score;
@@ -297,104 +296,125 @@ class EpubSrtMatcher {
   /// [needle.length-1, needle.length, needle.length+1], slides across
   /// [haystack] from [start] to [end], returning the best match.
   ///
-  /// Uses incremental gram-map update: O(window) total work instead of
-  /// O(window × needle_length) from rebuilding per position.
+  /// True O(window) per tryLen: incremental gram-map update AND incremental
+  /// match counting (no full recount per position).
   static _SlidingDiceResult _slidingDice({
     required String needle,
     required String haystack,
     required int start,
     required int end,
-    required double threshold,
   }) {
     double bestSim = 0.0;
     int bestPos = -1;
     int bestLen = needle.length;
 
-    for (final int tryLen in <int>[needle.length, needle.length - 1, needle.length + 1]) {
+    final int nLen = needle.length;
+    final int n = (nLen < 5) ? 1 : 2;
+
+    // Build needle gram map once (shared across all tryLen variants with same n).
+    final Map<int, int> nGrams = <int, int>{};
+    for (int i = 0; i <= nLen - n; i++) {
+      final int key = n == 1
+          ? needle.codeUnitAt(i)
+          : (needle.codeUnitAt(i) << 16) | needle.codeUnitAt(i + 1);
+      nGrams[key] = (nGrams[key] ?? 0) + 1;
+    }
+    for (final int tryLen in <int>[nLen, nLen - 1, nLen + 1]) {
       if (tryLen <= 0) continue;
       final int scanEnd = end - tryLen + 1;
       if (scanEnd <= start) continue;
 
-      final int n = tryLen < 5 ? 1 : 2;
-      final int needleGramCount = needle.length - n + 1;
-      final int candidateGramCount = tryLen - n + 1;
-      if (needleGramCount <= 0 || candidateGramCount <= 0) continue;
-      final double denom = (needleGramCount + candidateGramCount).toDouble();
+      // Use same n decision as original _diceSimilarity: unigram if either < 5.
+      final int tn = (nLen < 5 || tryLen < 5) ? 1 : 2;
+      final int tNeedleGramCount = nLen - tn + 1;
+      final int candidateGramCount = tryLen - tn + 1;
+      if (tNeedleGramCount <= 0 || candidateGramCount <= 0) continue;
+      final double denom = (tNeedleGramCount + candidateGramCount).toDouble();
 
-      // Build needle gram map (keyed by int-encoded gram).
-      final Map<int, int> nGrams = <int, int>{};
-      for (int i = 0; i <= needle.length - n; i++) {
-        final int key = n == 1
-            ? needle.codeUnitAt(i)
-            : (needle.codeUnitAt(i) << 16) | needle.codeUnitAt(i + 1);
-        nGrams[key] = (nGrams[key] ?? 0) + 1;
+      // If tn differs from n (edge case: needle=4, tryLen=5), rebuild needle grams.
+      Map<int, int> effectiveNGrams;
+      if (tn != n) {
+        effectiveNGrams = <int, int>{};
+        for (int i = 0; i <= nLen - tn; i++) {
+          final int key = tn == 1
+              ? needle.codeUnitAt(i)
+              : (needle.codeUnitAt(i) << 16) | needle.codeUnitAt(i + 1);
+          effectiveNGrams[key] = (effectiveNGrams[key] ?? 0) + 1;
+        }
+      } else {
+        effectiveNGrams = nGrams;
       }
 
       // Build initial candidate gram map for position [start].
       final Map<int, int> cGrams = <int, int>{};
-      for (int i = start; i <= start + tryLen - n; i++) {
-        final int key = n == 1
+      for (int i = start; i <= start + tryLen - tn; i++) {
+        final int key = tn == 1
             ? haystack.codeUnitAt(i)
             : (haystack.codeUnitAt(i) << 16) | haystack.codeUnitAt(i + 1);
         cGrams[key] = (cGrams[key] ?? 0) + 1;
       }
 
-      // Score initial position.
-      int matches = _countGramMatches(nGrams, cGrams);
+      // Compute initial match count (full scan, only once).
+      int matches = 0;
+      for (final MapEntry<int, int> e in cGrams.entries) {
+        final int nCount = effectiveNGrams[e.key] ?? 0;
+        if (nCount > 0) {
+          matches += e.value < nCount ? e.value : nCount;
+        }
+      }
+
       double sim = (matches * 2) / denom;
       if (sim > bestSim) {
         bestSim = sim;
         bestPos = start;
         bestLen = tryLen;
       }
+      if (bestSim >= 1.0) break;
 
-      // Slide: remove outgoing gram, add incoming gram, recount.
+      // Slide with incremental match update.
       for (int pos = start + 1; pos < scanEnd; pos++) {
         // Remove gram leaving the window (at pos-1).
         final int outIdx = pos - 1;
-        final int outKey = n == 1
+        final int outKey = tn == 1
             ? haystack.codeUnitAt(outIdx)
             : (haystack.codeUnitAt(outIdx) << 16) | haystack.codeUnitAt(outIdx + 1);
-        final int outCount = cGrams[outKey]!;
-        if (outCount <= 1) {
+        final int outOldCount = cGrams[outKey]!;
+        final int outNCount = effectiveNGrams[outKey] ?? 0;
+        // If this gram was contributing to matches, check if removing reduces it.
+        if (outNCount > 0 && outOldCount <= outNCount) {
+          matches--;
+        }
+        if (outOldCount <= 1) {
           cGrams.remove(outKey);
         } else {
-          cGrams[outKey] = outCount - 1;
+          cGrams[outKey] = outOldCount - 1;
         }
 
-        // Add gram entering the window (at pos + tryLen - n).
-        final int inIdx = pos + tryLen - n;
-        final int inKey = n == 1
+        // Add gram entering the window (at pos + tryLen - tn).
+        final int inIdx = pos + tryLen - tn;
+        final int inKey = tn == 1
             ? haystack.codeUnitAt(inIdx)
             : (haystack.codeUnitAt(inIdx) << 16) | haystack.codeUnitAt(inIdx + 1);
-        cGrams[inKey] = (cGrams[inKey] ?? 0) + 1;
+        final int inOldCount = cGrams[inKey] ?? 0;
+        final int inNCount = effectiveNGrams[inKey] ?? 0;
+        // If adding this gram brings the candidate count to within needle range.
+        if (inNCount > 0 && inOldCount < inNCount) {
+          matches++;
+        }
+        cGrams[inKey] = inOldCount + 1;
 
-        // Recount matches (intersection of nGrams and cGrams).
-        matches = _countGramMatches(nGrams, cGrams);
         sim = (matches * 2) / denom;
         if (sim > bestSim) {
           bestSim = sim;
           bestPos = pos;
           bestLen = tryLen;
         }
+        if (bestSim >= 1.0) break;
       }
+      if (bestSim >= 1.0) break;
     }
 
     return _SlidingDiceResult(bestSim, bestPos, bestLen);
-  }
-
-  static int _countGramMatches(Map<int, int> a, Map<int, int> b) {
-    int matches = 0;
-    // Iterate smaller map for efficiency.
-    final Map<int, int> smaller = a.length <= b.length ? a : b;
-    final Map<int, int> larger = a.length <= b.length ? b : a;
-    for (final MapEntry<int, int> e in smaller.entries) {
-      final int other = larger[e.key] ?? 0;
-      if (other > 0) {
-        matches += e.value < other ? e.value : other;
-      }
-    }
-    return matches;
   }
 
   // ---------- 起点检测 ----------
@@ -429,7 +449,6 @@ class EpubSrtMatcher {
         haystack: big,
         start: 0,
         end: big.length,
-        threshold: similarityThreshold,
       );
       if (r.score >= similarityThreshold && r.pos >= 0) {
         if (minStart == null || r.pos < minStart) {
