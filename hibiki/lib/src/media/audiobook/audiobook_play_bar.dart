@@ -11,6 +11,8 @@ import 'package:hibiki/src/media/audiobook/audiobook_controller.dart';
 import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
 import 'package:hibiki/src/media/audiobook/favorite_sentence_repository.dart';
 import 'package:hibiki/src/media/sources/reader_ttu_source.dart';
+import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/pages/implementations/custom_theme_page.dart';
 import 'package:hibiki/utils.dart';
 
 /// 有声书播放控制条（紧凑型，固定于阅读器底部）。
@@ -142,6 +144,7 @@ class AudiobookSettingsSheet extends StatefulWidget {
     required this.onBookmark,
     required this.onExitReader,
     required this.webViewController,
+    required this.appModel,
     this.onThemeChanged,
     this.bookmarks = const [],
     this.onJumpToBookmark,
@@ -170,6 +173,7 @@ class AudiobookSettingsSheet extends StatefulWidget {
   final Future<void> Function() onBookmark;
   final VoidCallback onExitReader;
   final InAppWebViewController webViewController;
+  final AppModel appModel;
   final VoidCallback? onThemeChanged;
   final List<Bookmark> bookmarks;
   final Future<void> Function(Bookmark bookmark)? onJumpToBookmark;
@@ -1402,33 +1406,60 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         Wrap(
           spacing: 6,
           runSpacing: 6,
-          children: TtuReaderSettings.availableThemes.map((String t) {
-            final bool selected = s.theme == t;
-            return ChoiceChip(
-              label: Text(TtuReaderSettings.themeLabels[t] ?? t),
-              selected: selected,
-              showCheckmark: false,
-              selectedColor: theme.colorScheme.primaryContainer,
-              labelStyle: selected
-                  ? TextStyle(color: theme.colorScheme.onPrimaryContainer)
-                  : null,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-                side: BorderSide(
-                  color: selected
-                      ? theme.colorScheme.primaryContainer
-                      : theme.colorScheme.outline,
+          children: [
+            ...TtuReaderSettings.availableThemes.map((String themeKey) {
+              final bool selected = s.theme == themeKey;
+              return ChoiceChip(
+                label: Text(TtuReaderSettings.themeLabels[themeKey] ?? themeKey),
+                selected: selected,
+                showCheckmark: false,
+                selectedColor: theme.colorScheme.primaryContainer,
+                labelStyle: selected
+                    ? TextStyle(color: theme.colorScheme.onPrimaryContainer)
+                    : null,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  side: BorderSide(
+                    color: selected
+                        ? theme.colorScheme.primaryContainer
+                        : theme.colorScheme.outline,
+                  ),
                 ),
+                onSelected: (bool on) async {
+                  if (!on) return;
+                  s.theme = themeKey;
+                  setState(() {});
+                  await _updateSetting('theme', themeKey);
+                  await widget.appModel.setAppThemeKey(themeKey);
+                  widget.onThemeChanged?.call();
+                },
+              );
+            }),
+            ActionChip(
+              avatar: Icon(
+                Icons.palette,
+                size: 18,
+                color: s.theme == 'custom-theme'
+                    ? theme.colorScheme.primary
+                    : null,
               ),
-              onSelected: (bool on) async {
-                if (!on) return;
-                s.theme = t;
-                setState(() {});
-                await _updateSetting('theme', t);
-                widget.onThemeChanged?.call();
+              label: Text(
+                t.custom_theme,
+                style: s.theme == 'custom-theme'
+                    ? TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.primary,
+                      )
+                    : null,
+              ),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const CustomThemePage()),
+                ).then((_) => setState(() {}));
               },
-            );
-          }).toList(),
+            ),
+          ],
         ),
       ],
     );
