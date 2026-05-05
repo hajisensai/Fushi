@@ -1041,9 +1041,6 @@ class AppModel with ChangeNotifier {
       _dictionariesCache = dictRows.map(_rowToDictionary).toList()
         ..sort((a, b) => a.order.compareTo(b.order));
 
-      /// Load mappings cache.
-      final mapRows = await _database.getAllMappings();
-      _mappingsCache = mapRows.map(_rowToMapping).toList();
 
       /// Load media items cache.
       final miRows = await _database.getAllMediaItems();
@@ -1216,116 +1213,6 @@ class AppModel with ChangeNotifier {
 
   // ── model / Drift row conversion helpers ──────────────────────────
 
-  static const Map<String, String> _fieldKeyToHandlebar = {
-    'term': AnkiHandlebar.expression,
-    'reading': AnkiHandlebar.reading,
-    'furigana': AnkiHandlebar.furiganaPlain,
-    'sentence': AnkiHandlebar.sentence,
-    'cloze_before': AnkiHandlebar.clozeBefore,
-    'cloze_inside': AnkiHandlebar.clozeInside,
-    'cloze_after': AnkiHandlebar.clozeAfter,
-    'meaning': AnkiHandlebar.glossary,
-    'expanded_meaning': AnkiHandlebar.expandedGlossary,
-    'collapsed_meaning': AnkiHandlebar.collapsedGlossary,
-    'hidden_meaning': AnkiHandlebar.hiddenGlossary,
-    'notes': AnkiHandlebar.notes,
-    'context': AnkiHandlebar.documentTitle,
-    'frequency': AnkiHandlebar.frequencyHarmonicRank,
-    'pitch_accent': AnkiHandlebar.pitchAccentPositions,
-    'image': AnkiHandlebar.image,
-    'audio': AnkiHandlebar.audio,
-    'audio_sentence': AnkiHandlebar.audioSentence,
-    'tags': AnkiHandlebar.tags,
-  };
-
-  static const List<String> _standardModelFields = [
-    'Term',
-    'Reading',
-    'Furigana',
-    'Sentence',
-    'Cloze Before',
-    'Cloze Inside',
-    'Cloze After',
-    'Meaning',
-    'Expanded Meaning',
-    'Collapsed Meaning',
-    'Notes',
-    'Context',
-    'Frequency',
-    'Pitch Accent',
-    'Image',
-    'Term Audio',
-    'Sentence Audio',
-  ];
-
-  static Map<String, String> _migrateOldExportFieldKeys(
-      List<String?> keys, String model) {
-    Map<String, String> result = {};
-    if (model == AnkiMapping.standardModelName) {
-      for (int i = 0; i < keys.length && i < _standardModelFields.length; i++) {
-        if (keys[i] != null) {
-          result[_standardModelFields[i]] = _fieldKeyToHandlebar[keys[i]] ?? '';
-        }
-      }
-    } else {
-      for (int i = 0; i < keys.length; i++) {
-        if (keys[i] != null) {
-          result['Field ${i + 1}'] = _fieldKeyToHandlebar[keys[i]] ?? '';
-        }
-      }
-    }
-    return result;
-  }
-
-  static AnkiMapping _rowToMapping(AnkiMappingRow r) {
-    Map<String, String> fieldMappings;
-    final decoded = jsonDecode(r.exportFieldKeysJson);
-    if (decoded is Map) {
-      fieldMappings = Map<String, String>.from(decoded);
-    } else if (decoded is List) {
-      fieldMappings =
-          _migrateOldExportFieldKeys(decoded.cast<String?>(), r.model);
-    } else {
-      fieldMappings = {};
-    }
-
-    final m = AnkiMapping(
-      label: r.label,
-      model: r.model,
-      fieldMappings: fieldMappings,
-      creatorFieldKeys: List<String>.from(jsonDecode(r.creatorFieldKeysJson)),
-      creatorCollapsedFieldKeys:
-          List<String>.from(jsonDecode(r.creatorCollapsedFieldKeysJson)),
-      order: r.order,
-      tags: List<String>.from(jsonDecode(r.tagsJson)),
-      exportMediaTags: r.exportMediaTags,
-      useBrTags: r.useBrTags,
-      prependDictionaryNames: r.prependDictionaryNames,
-    );
-    m.id = r.id;
-    m.enhancementsJson = r.enhancementsJson;
-    m.actionsJson = r.actionsJson;
-    return m;
-  }
-
-  static AnkiMappingsCompanion _mappingToCompanion(AnkiMapping m) {
-    return AnkiMappingsCompanion(
-      label: Value(m.label),
-      model: Value(m.model),
-      exportFieldKeysJson: Value(jsonEncode(m.fieldMappings)),
-      creatorFieldKeysJson: Value(jsonEncode(m.creatorFieldKeys)),
-      creatorCollapsedFieldKeysJson:
-          Value(jsonEncode(m.creatorCollapsedFieldKeys)),
-      order: Value(m.order),
-      tagsJson: Value(jsonEncode(m.tags)),
-      enhancementsJson: Value(m.enhancementsJson),
-      actionsJson: Value(m.actionsJson),
-      exportMediaTags: Value(m.exportMediaTags ?? true),
-      useBrTags: Value(m.useBrTags ?? true),
-      prependDictionaryNames: Value(m.prependDictionaryNames ?? true),
-    );
-  }
-
   static Dictionary _rowToDictionary(DictionaryMetaRow r) {
     return Dictionary(
       name: r.name,
@@ -1397,12 +1284,6 @@ class AppModel with ChangeNotifier {
       sourceMetadata: Value(item.sourceMetadata),
       importedAt: Value(DateTime.now().millisecondsSinceEpoch),
     );
-  }
-
-  void _persistMapping(AnkiMapping mapping) async {
-    await _database.upsertMapping(_mappingToCompanion(mapping));
-    final rows = await _database.getAllMappings();
-    _mappingsCache = rows.map(_rowToMapping).toList();
   }
 
   void _persistDictionary(Dictionary dictionary) async {
@@ -1667,29 +1548,6 @@ class AppModel with ChangeNotifier {
     return modelName;
   }
 
-  /// Get the last selected mapping from persisted preferences. This should
-  /// always be guaranteed to have a result, as it is impossible to delete the
-  /// default mapping.
-  AnkiMapping get lastSelectedMapping {
-    String mappingName = _getPref(
-      'last_selected_mapping',
-      defaultValue: mappings.first.label,
-    );
-
-    AnkiMapping mapping =
-        _mappingsCache.where((m) => m.label == mappingName).firstOrNull ??
-            _mappingsCache.first;
-
-    return mapping;
-  }
-
-  /// Get the last selected mapping's name from persisted preferences. This is
-  /// faster than getting the mapping specifically from the database.
-  String get lastSelectedMappingName {
-    String mappingName =
-        _getPref('last_selected_mapping', defaultValue: mappings.first.label);
-    return mappingName;
-  }
 
   /// Persist a new target language in preferences.
   Future<void> setTargetLanguage(Language language) async {
