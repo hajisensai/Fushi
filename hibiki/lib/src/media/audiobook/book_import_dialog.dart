@@ -565,24 +565,39 @@ class _BookImportDialogState extends State<BookImportDialog> {
     final bool runMatcher = SasayakiRematch.supportedFormats.contains(ext);
     debugPrint('[hibiki-import] epubAlign: runMatcher=$runMatcher sections=${sections.length} cues=${cues.length}');
     if (runMatcher && sections.isNotEmpty && cues.isNotEmpty) {
+      MatchResult? matchResult;
       int chosenWindow = _searchWindow;
       if (_autoWindow) {
-        final int? best = await SasayakiRematch.runAutoProbe(
+        final ProbeResult probe = await EpubCueMatcher.probeInIsolate(
           sections: sections,
           cues: cues,
         );
-        if (best != null) {
-          chosenWindow = best;
+        final MapEntry<int, double>? best = probe.best;
+        if (best != null && best.value > 0) {
+          chosenWindow = best.key;
+          matchResult = probe.bestResult;
+          final int pct = (best.value * 100).round();
+          debugPrint('[hibiki-import] epubAlign: auto-probe picked window=$chosenWindow ($pct%)');
         }
       }
-      debugPrint('[hibiki-import] epubAlign: running Sasayaki match (window=$chosenWindow)...');
-      health = await _runSasayakiMatch(
-        sections: sections,
-        cues: cues,
-        searchWindow: chosenWindow,
-        similarityThreshold: _similarityThreshold,
+      if (matchResult == null) {
+        debugPrint('[hibiki-import] epubAlign: running Sasayaki match (window=$chosenWindow)...');
+        matchResult = await EpubCueMatcher.matchInIsolate(
+          sections: sections,
+          cues: cues,
+          searchWindow: chosenWindow,
+          similarityThreshold: _similarityThreshold,
+        );
+      }
+      SasayakiMatchCodec.applyToCues(cues: cues, result: matchResult);
+      final int pct = (matchResult.matchRate * 100).round();
+      debugPrint('[hibiki-import] epubAlign: Sasayaki match done '
+          '${matchResult.matchedCues}/${matchResult.totalCues} ($pct%)');
+      health = AudiobookHealth.fromRatePct(
+        ratePct: pct,
+        reason: '${matchResult.matchedCues}/${matchResult.totalCues} cues matched '
+            '(window=$chosenWindow)',
       );
-      debugPrint('[hibiki-import] epubAlign: Sasayaki match done');
     } else if (runMatcher) {
       health = sections.isEmpty
           ? AudiobookHealth.failed(reason: 'ttu IDB record had 0 sections')
@@ -632,34 +647,6 @@ class _BookImportDialogState extends State<BookImportDialog> {
     return _summarizeHealth(health);
   }
 
-  Future<AudiobookHealth> _runSasayakiMatch({
-    required List<EpubSection> sections,
-    required List<AudioCue> cues,
-    required int searchWindow,
-    double similarityThreshold = EpubSrtMatcher.defaultSimilarityThreshold,
-  }) async {
-    try {
-      final MatchResult result = await EpubCueMatcher.matchInIsolate(
-        sections: sections,
-        cues: cues,
-        searchWindow: searchWindow,
-        similarityThreshold: similarityThreshold,
-      );
-      SasayakiMatchCodec.applyToCues(cues: cues, result: result);
-      debugPrint('[hibiki-import] Sasayaki match: '
-          '${result.matchedCues}/${result.totalCues} window=$searchWindow '
-          'threshold=$similarityThreshold');
-      final int pct = (result.matchRate * 100).round();
-      return AudiobookHealth.fromRatePct(
-        ratePct: pct,
-        reason: '${result.matchedCues}/${result.totalCues} cues matched '
-            '(window=$searchWindow threshold=$similarityThreshold)',
-      );
-    } catch (e) {
-      debugPrint('[hibiki-import] Sasayaki match failed: $e');
-      return AudiobookHealth.failed(reason: 'matcher threw: $e');
-    }
-  }
 
   String? _summarizeHealth(AudiobookHealth h) {
     switch (h.kind) {

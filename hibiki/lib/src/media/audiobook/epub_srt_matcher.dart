@@ -510,10 +510,13 @@ MatchResult _matchEntrypoint(_MatchRequest req) {
 
 /// [EpubSrtMatcher.probeInIsolate] 的结果。
 class ProbeResult {
-  const ProbeResult({required this.perWindow});
+  const ProbeResult({required this.perWindow, this.bestResult});
 
   /// window（字符数） → matchRate（0..1）。
   final Map<int, double> perWindow;
+
+  /// 最优 window 跑出的完整匹配结果，调用方可直接使用而无需再跑一遍。
+  final MatchResult? bestResult;
 
   /// 取命中率最高者；并列时取窗口较小的一档（更抗短 cue 噪声）。
   /// perWindow 为空返回 null。
@@ -550,6 +553,10 @@ class _ProbeRequest {
 
 ProbeResult _probeEntrypoint(_ProbeRequest req) {
   final Map<int, double> map = <int, double>{};
+  int bestWindow = req.windows.first;
+  double bestRate = -1;
+  MatchResult? bestResult;
+
   for (final int w in req.windows) {
     final List<AudioCue> cues = _rebuildCues(req.cueTexts, req.cueIndexes);
     final MatchResult r = EpubSrtMatcher.match(
@@ -560,8 +567,14 @@ ProbeResult _probeEntrypoint(_ProbeRequest req) {
       maxConsecutiveMisses: req.maxConsecutiveMisses,
     );
     map[w] = r.matchRate;
+    if (r.matchRate > bestRate + 1e-9 ||
+        (r.matchRate > bestRate - 1e-9 && w < bestWindow)) {
+      bestRate = r.matchRate;
+      bestWindow = w;
+      bestResult = r;
+    }
   }
-  return ProbeResult(perWindow: map);
+  return ProbeResult(perWindow: map, bestResult: bestResult);
 }
 
 List<AudioCue> _rebuildCues(List<String> texts, List<int> indexes) {
