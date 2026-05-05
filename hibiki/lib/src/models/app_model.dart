@@ -1091,7 +1091,19 @@ class AppModel with ChangeNotifier {
       _rebuildDictPathsCache();
 
       if (localAudioEnabled && localAudioDbPath.isNotEmpty) {
-        TtsChannel.instance.setLocalAudioDb(localAudioDbPath);
+        final storedPath = localAudioDbPath;
+        final internalPath =
+            path.join(_databaseDirectory.path, 'local_audio.db');
+        final storedExists = await File(storedPath).exists();
+        final internalExists = await File(internalPath).exists();
+        if (storedExists) {
+          TtsChannel.instance.setLocalAudioDb(storedPath);
+        } else if (internalExists) {
+          await _setPref('local_audio_db_path', internalPath);
+          TtsChannel.instance.setLocalAudioDb(internalPath);
+        } else {
+          await _setPref('local_audio_db_path', '');
+        }
       }
 
       debugPrint('[Hibiki] init: licenses');
