@@ -160,6 +160,13 @@ window.__hoshiLoadSasayakiRefs = function(ttuBookId) {
   }
   try {
     var req = indexedDB.open('books');
+    req.onupgradeneeded = function(e) {
+      e.target.transaction.abort();
+      console.log(JSON.stringify({
+        'hibiki-message-type': 'sasayakiRefsErr',
+        'error': 'db_not_initialized'
+      }));
+    };
     req.onsuccess = function(ev) {
       console.log(JSON.stringify({
         'hibiki-message-type': 'sasayakiRefsDbOpen',

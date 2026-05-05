@@ -118,6 +118,10 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
     function getFromIDB(storeName, key) {
       return new Promise(function(resolve, reject) {
         var req = indexedDB.open("books");
+        req.onupgradeneeded = function(e) {
+          e.target.transaction.abort();
+          reject(Error("DB not initialized"));
+        };
         req.onerror = function() { reject(Error("Cannot open IDB")); };
         req.onsuccess = function(e) {
           var db = e.target.result;

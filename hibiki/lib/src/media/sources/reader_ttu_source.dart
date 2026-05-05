@@ -493,6 +493,11 @@ class ReaderTtuSource extends ReaderMediaSource {
     return '''
 new Promise(function(resolve) {
   var dbRequest = indexedDB.open('books');
+  dbRequest.onupgradeneeded = function(e) {
+    e.target.transaction.abort();
+    console.log(JSON.stringify({messageType: 'delete_error'}));
+    resolve(false);
+  };
   dbRequest.onerror = function() {
     console.log(JSON.stringify({messageType: 'delete_error'}));
     resolve(false);
