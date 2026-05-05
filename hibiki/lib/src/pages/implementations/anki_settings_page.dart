@@ -1,238 +1,259 @@
-import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
-import 'package:fluttertoast/fluttertoast.dart';
-import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
+
+import 'package:hibiki/src/anki/anki_models.dart';
+import 'package:hibiki/src/anki/anki_view_model.dart';
 
 class AnkiSettingsPage extends BasePage {
   const AnkiSettingsPage({super.key});
 
   @override
-  BasePageState createState() => _AnkiSettingsPageState();
+  BasePageState<AnkiSettingsPage> createState() => _AnkiSettingsPageState();
 }
 
-class _AnkiSettingsPageState extends BasePageState {
-  List<String>? _decks;
-  List<String>? _models;
-  String? _loadError;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadAnkiData();
-  }
-
-  Future<void> _loadAnkiData() async {
-    try {
-      final decks = await appModel.getDecks();
-      final models = await appModel.getModelList();
-      if (mounted) {
-        setState(() {
-          _decks = decks;
-          _models = models;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _loadError = e.toString();
-        });
-      }
-    }
-  }
-
+class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
   @override
   Widget build(BuildContext context) {
+    final uiState = ref.watch(ankiViewModelProvider);
+    final vm = ref.read(ankiViewModelProvider.notifier);
+    final settings = uiState.settings;
+
     return Scaffold(
-      appBar: AppBar(
-        title: Text(t.anki_settings_label),
-      ),
-      body: _loadError != null
-          ? _buildError()
-          : _decks == null
-              ? const Center(child: CircularProgressIndicator())
-              : _buildContent(),
-    );
-  }
-
-  Widget _buildError() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.error_outline, size: 48),
-            const SizedBox(height: 12),
-            Text(t.error_ankidroid_api, style: textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Text(t.error_ankidroid_api_content,
-                textAlign: TextAlign.center, style: textTheme.bodySmall),
-            const SizedBox(height: 16),
-            FilledButton(
-              onPressed: () {
-                setState(() => _loadError = null);
-                _loadAnkiData();
-              },
-              child: Text(t.anki_retry),
+      appBar: AppBar(title: Text(t.anki_settings_label)),
+      body: ListView(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).padding.bottom + 16,
+        ),
+        children: [
+          _buildFetchTile(uiState, vm),
+          if (uiState.errorMessage != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                uiState.errorMessage!,
+                style: textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.error),
+              ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildContent() {
-    final decks = _decks ?? [];
-    final mappings = appModel.mappings;
-    final currentDeck = appModel.lastSelectedDeckName;
-    final currentProfile = appModel.lastSelectedMappingName;
-
-    return ListView(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).padding.bottom,
-      ),
-      children: [
-        // ── Default Deck ──
-        _SectionHeader(t.anki_default_deck),
-        RadioGroup<String>(
-          groupValue: currentDeck,
-          onChanged: (v) {
-            if (v == null) return;
-            appModel.setLastSelectedDeck(v);
-            setState(() {});
-          },
-          child: Column(
-            children: decks
-                .map((deck) => RadioListTile<String>(
-                      title: Text(deck),
-                      value: deck,
-                    ))
-                .toList(),
-          ),
-        ),
-        const Divider(),
-
-        // ── Default Export Profile ──
-        _SectionHeader(t.anki_default_profile),
-        RadioGroup<String>(
-          groupValue: currentProfile,
-          onChanged: (v) {
-            if (v == null) return;
-            final m = appModel.getMappingFromLabel(v);
-            if (m != null) appModel.setLastSelectedMapping(m);
-            setState(() {});
-          },
-          child: Column(
-            children: mappings
-                .map((mapping) => RadioListTile<String>(
-                      title: Text(mapping.label),
-                      subtitle: Text(mapping.model,
-                          style: textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant)),
-                      value: mapping.label,
-                    ))
-                .toList(),
-          ),
-        ),
-        const Divider(),
-
-        // ── Settings ──
-        _SectionHeader(t.show_options),
-        SwitchListTile(
-          title: Text(t.silent_export),
-          subtitle: Text(t.anki_silent_export_hint,
-              style: textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-          value: appModel.silentExport,
-          onChanged: (_) {
-            appModel.toggleSilentExport();
-            setState(() {});
-            Fluttertoast.showToast(
-              msg: appModel.silentExport
-                  ? t.silent_export_on
-                  : t.silent_export_off,
-            );
-          },
-        ),
-        SwitchListTile(
-          title: Text(t.auto_add_book_name_to_tags),
-          subtitle: Text(t.anki_auto_tag_hint,
-              style: textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-          value: appModel.autoAddBookNameToTags,
-          onChanged: (_) {
-            appModel.toggleAutoAddBookNameToTags();
-            setState(() {});
-          },
-        ),
-        const Divider(),
-
-        // ── Manage Export Profiles ──
-        ListTile(
-          leading: const Icon(Icons.tune),
-          title: Text(t.anki_manage_profiles),
-          subtitle: Text(t.anki_manage_profiles_hint,
-              style: textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () {
-            final models = _models ?? [];
-            if (models.isEmpty) return;
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => ProfilesManagementPage(
-                  models: models,
-                  initialModel: appModel.lastSelectedMapping.model,
+          if (!uiState.isConfigured && uiState.errorMessage == null)
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(
+                t.anki_not_configured,
+                textAlign: TextAlign.center,
+                style: textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
-            ).then((_) {
-              if (mounted) setState(() {});
-            });
-          },
-        ),
-
-        // ── Manage Duplicate Checks ──
-        ListTile(
-          leading: const Icon(Icons.checklist),
-          title: Text(t.manage_duplicate_checks),
-          subtitle: Text(t.anki_duplicate_check_hint,
-              style: textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: _showDuplicateChecksPage,
-        ),
-        const SizedBox(height: 16),
-      ],
+            ),
+          if (uiState.isConfigured) ...[
+            const Divider(),
+            _buildDeckDropdown(settings, vm),
+            const Divider(),
+            _buildNoteTypeDropdown(settings, vm),
+            const Divider(),
+            _SectionHeader(t.anki_field_mappings),
+            _buildFieldMappings(settings, vm),
+            const Divider(),
+            _buildTagsInput(settings, vm),
+            const Divider(),
+            SwitchListTile(
+              title: Text(t.anki_allow_duplicates),
+              subtitle: Text(
+                t.anki_allow_duplicates_hint,
+                style: textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              ),
+              value: settings.allowDupes,
+              onChanged: (v) => vm.updateAllowDupes(v),
+            ),
+            SwitchListTile(
+              title: Text(t.anki_compact_glossaries),
+              subtitle: Text(
+                t.anki_compact_glossaries_hint,
+                style: textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              ),
+              value: settings.compactGlossaries,
+              onChanged: (v) => vm.updateCompactGlossaries(v),
+            ),
+          ],
+        ],
+      ),
     );
   }
 
-  void _showDuplicateChecksPage() async {
-    List<String> duplicateCheckModels = appModel.duplicateCheckModels;
-    List<String> models = _models ?? [];
-    Map<String, bool> items = Map<String, bool>.fromEntries(
-        models.map((e) => MapEntry(e, duplicateCheckModels.contains(e))));
-    if (context.mounted) {
-      showAppDialog(
-        context: context,
-        builder: (context) => SwitchSettingsPage<String>(
-          items: items,
-          generateLabel: (item) => item,
-          onSave: (selection) {
-            List<String> newModels = selection.entries
-                .where((e) => e.value)
-                .map((e) => e.key)
-                .toList();
-            appModel.setDuplicateCheckModels(newModels);
-            if (!duplicateCheckModels.equals(newModels)) {
-              appModel.refresh();
-            }
-          },
+  Widget _buildFetchTile(AnkiUiState uiState, AnkiViewModel vm) {
+    return ListTile(
+      leading: const Icon(Icons.sync),
+      title: Text(
+        uiState.isFetching ? t.anki_fetching : t.anki_fetch,
+      ),
+      trailing: uiState.isFetching
+          ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.chevron_right),
+      onTap: uiState.isFetching ? null : () => vm.fetchConfiguration(),
+    );
+  }
+
+  Widget _buildDeckDropdown(AnkiSettings settings, AnkiViewModel vm) {
+    final decks = settings.availableDecks;
+    final selectedId = settings.selectedDeckId;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: DropdownButtonFormField<int>(
+        decoration: InputDecoration(
+          labelText: t.anki_deck,
+          border: const OutlineInputBorder(),
         ),
-      );
+        value: decks.any((d) => d.id == selectedId) ? selectedId : null,
+        items: decks
+            .map((d) => DropdownMenuItem(value: d.id, child: Text(d.name)))
+            .toList(),
+        onChanged: (id) {
+          if (id == null) return;
+          final deck = decks.firstWhere((d) => d.id == id);
+          vm.selectDeck(deck);
+        },
+      ),
+    );
+  }
+
+  Widget _buildNoteTypeDropdown(AnkiSettings settings, AnkiViewModel vm) {
+    final noteTypes = settings.availableNoteTypes;
+    final selectedId = settings.selectedNoteTypeId;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: DropdownButtonFormField<int>(
+        decoration: InputDecoration(
+          labelText: t.anki_note_type,
+          border: const OutlineInputBorder(),
+        ),
+        value:
+            noteTypes.any((n) => n.id == selectedId) ? selectedId : null,
+        items: noteTypes
+            .map((n) => DropdownMenuItem(value: n.id, child: Text(n.name)))
+            .toList(),
+        onChanged: (id) {
+          if (id == null) return;
+          final noteType = noteTypes.firstWhere((n) => n.id == id);
+          vm.selectNoteType(noteType);
+        },
+      ),
+    );
+  }
+
+  Widget _buildFieldMappings(AnkiSettings settings, AnkiViewModel vm) {
+    final noteType = settings.selectedNoteType;
+    if (noteType == null) return const SizedBox.shrink();
+
+    return Column(
+      children: noteType.fields.map((field) {
+        final value = settings.fieldMappings[field] ?? '';
+        return ListTile(
+          title: Text(field),
+          subtitle: Text(
+            value.isEmpty ? t.anki_field_not_mapped : value,
+            style: textTheme.bodySmall?.copyWith(
+              color: value.isEmpty
+                  ? theme.colorScheme.onSurfaceVariant
+                  : theme.colorScheme.onSurface,
+            ),
+          ),
+          trailing: const Icon(Icons.edit, size: 18),
+          onTap: () => _showHandlebarPicker(field, value, vm),
+        );
+      }).toList(),
+    );
+  }
+
+  Future<void> _showHandlebarPicker(
+    String field,
+    String currentValue,
+    AnkiViewModel vm,
+  ) async {
+    final options = AnkiHandlebarOptions.coreOptions;
+    final controller = TextEditingController(text: currentValue);
+
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(t.anki_select_handlebar(field: field)),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: controller,
+                decoration: InputDecoration(
+                  hintText: t.anki_field_not_mapped,
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: options.length,
+                  itemBuilder: (_, i) {
+                    final opt = options[i];
+                    if (opt == '-') return const Divider(height: 1);
+                    final isSelected = currentValue == opt;
+                    return ListTile(
+                      dense: true,
+                      title: Text(opt),
+                      selected: isSelected,
+                      onTap: () => Navigator.pop(ctx, opt),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, ''),
+            child: Text(MaterialLocalizations.of(ctx).deleteButtonTooltip),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(MaterialLocalizations.of(ctx).cancelButtonLabel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: Text(MaterialLocalizations.of(ctx).okButtonLabel),
+          ),
+        ],
+      ),
+    );
+
+    if (result != null) {
+      vm.updateFieldMapping(field, result);
     }
+  }
+
+  Widget _buildTagsInput(AnkiSettings settings, AnkiViewModel vm) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: TextFormField(
+        initialValue: settings.tags,
+        decoration: InputDecoration(
+          labelText: t.anki_tags,
+          hintText: t.anki_tags_hint,
+          border: const OutlineInputBorder(),
+        ),
+        onChanged: (v) => vm.updateTags(v),
+      ),
+    );
   }
 }
 

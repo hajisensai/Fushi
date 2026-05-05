@@ -464,7 +464,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
     );
   }
 
-  void _onMineEntry(Map<String, String> fields) {
+  Future<bool> _onMineEntry(Map<String, String> fields) async {
     appModel.openCreator(
       ref: ref,
       killOnPop: false,
@@ -518,6 +518,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
         }
       },
     );
+    return false;
   }
 
   Widget? get footerWidget {

@@ -18,6 +18,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:spaces/spaces.dart';
 import 'package:hibiki/creator.dart';
+import 'package:hibiki/src/anki/anki_models.dart';
+import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
@@ -861,25 +863,29 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   }
 
   @override
-  void onMineFromPopup(Map<String, String> fields) {
+  Future<bool> onMineFromPopup(Map<String, String> fields) async {
     final currentSentence = appModel.getCurrentSentence();
-    final AudioCue? savedLookupCue = _lookupCue;
-    clearDictionaryResult();
-    appModel.openCreator(
-      ref: ref,
-      killOnPop: false,
-      creatorFieldValues: CreatorFieldValues.fromMineFields(
-        fields: fields,
-        sentence: currentSentence.text.trim(),
-        clozeBefore: currentSentence.textBefore,
-        clozeInside: currentSentence.textInside,
-        clozeAfter: currentSentence.textAfter,
-        usePopupSelectionAsClozeInside: false,
-      ),
-      onCreatorReady: (creatorModel) async {
-        await _attachMineAudio(fields, creatorModel, lookupCue: savedLookupCue);
-      },
+    final repo = ref.read(ankiRepositoryProvider);
+
+    final miningContext = AnkiMiningContext(
+      sentence: currentSentence.text.trim(),
+      documentTitle: widget.item?.title,
     );
+
+    final success = await repo.mineEntry(
+      rawPayloadJson: jsonEncode(fields),
+      context: miningContext,
+    );
+
+    if (success) {
+      final settings = await repo.loadSettings();
+      Fluttertoast.showToast(
+        msg: t.card_exported(deck: settings.selectedDeckName ?? ''),
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+      );
+    }
+    return success;
   }
 
   Future<void> _attachMineAudio(

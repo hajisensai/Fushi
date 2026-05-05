@@ -16,11 +16,14 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     required this.result,
     this.onTextSelected,
     this.onMineEntry,
+    this.onDuplicateCheck,
   });
 
   final DictionarySearchResult result;
   final void Function(String text)? onTextSelected;
-  final void Function(Map<String, String> fields)? onMineEntry;
+  final Future<bool> Function(Map<String, String> fields)? onMineEntry;
+  final Future<bool> Function(String expression, String reading)?
+      onDuplicateCheck;
 
   @override
   ConsumerState<DictionaryPopupWebView> createState() =>
@@ -149,7 +152,7 @@ class DictionaryPopupWebViewState
                 (args[0] as Map)
                     .map((k, v) => MapEntry(k.toString(), v.toString())),
               );
-              widget.onMineEntry!(fields);
+              return await widget.onMineEntry!(fields);
             }
             return false;
           },
@@ -157,7 +160,18 @@ class DictionaryPopupWebViewState
 
         controller.addJavaScriptHandler(
           handlerName: 'duplicateCheck',
-          callback: (args) async => false,
+          callback: (args) async {
+            if (args.isNotEmpty &&
+                args[0] is Map &&
+                widget.onDuplicateCheck != null) {
+              final data = args[0] as Map;
+              final expression = data['expression']?.toString() ?? '';
+              final reading = data['reading']?.toString() ?? '';
+              if (expression.isEmpty) return false;
+              return await widget.onDuplicateCheck!(expression, reading);
+            }
+            return false;
+          },
         );
 
         controller.addJavaScriptHandler(

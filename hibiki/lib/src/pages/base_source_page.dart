@@ -6,6 +6,7 @@ import 'package:spaces/spaces.dart';
 import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki/utils.dart';
 
@@ -429,14 +430,18 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
             );
           },
           onMineEntry: onMineFromPopup,
+          onDuplicateCheck: (expression, reading) async {
+            final repo = ref.read(ankiRepositoryProvider);
+            return repo.isDuplicate(expression, reading);
+          },
         );
       },
     );
   }
 
   /// Called when the user taps mine in the popup WebView.
-  void onMineFromPopup(Map<String, String> fields) {
-    // Subclasses can override to handle Anki export
+  Future<bool> onMineFromPopup(Map<String, String> fields) async {
+    return false;
   }
 
   /// Show more widget.

@@ -367,11 +367,6 @@ class AppModel with ChangeNotifier {
     }
   }
 
-  /// In-memory cache of anki mappings, kept in sync with the database.
-  List<AnkiMapping> _mappingsCache = [];
-
-  /// Returns all export profiles.
-  List<AnkiMapping> get mappings => List.unmodifiable(_mappingsCache);
 
   /// Returns all dictionary history results. Oldest is first.
   List<DictionarySearchResult> get dictionaryHistory =>
@@ -405,10 +400,6 @@ class AppModel with ChangeNotifier {
   final StreamController<bool> _creatorActiveController =
       StreamController.broadcast();
 
-  /// Used to check whether or not the creator is currently in the navigation
-  /// stack.
-  bool get isCreatorOpen => _isCreatorOpen;
-  bool _isCreatorOpen = false;
 
   /// Used to check whether or not the app is currently using a media source.
   bool get isMediaOpen => _currentMediaSource != null;
@@ -667,16 +658,6 @@ class AppModel with ChangeNotifier {
     _currentMediaSource = mediaItem.getMediaSource(appModel: this);
   }
 
-  /// Get a mapping with a given mapping name.
-  AnkiMapping? getMappingFromLabel(String label) {
-    return _mappingsCache.where((m) => m.label == label).firstOrNull;
-  }
-
-  /// Change this once a field hide/show system is in place.
-  List<Field> get activeFields => [
-        ...lastSelectedMapping.getCreatorFields(),
-        ...lastSelectedMapping.getCreatorCollapsedFields()
-      ];
 
   /// Update the user-defined order of a given dictionary in the database.
   /// See the dictionary dialog's [ReorderableListView] for usage.
@@ -692,13 +673,6 @@ class AppModel with ChangeNotifier {
     }
   }
 
-  /// Update the user-defined order of a given dictionary in the database.
-  /// See the dictionary dialog's [ReorderableListView] for usage.
-  void updateMappingsOrder(List<AnkiMapping> newMappings) async {
-    _mappingsCache = [...newMappings];
-    await _database
-        .replaceAllMappings(newMappings.map(_mappingToCompanion).toList());
-  }
 
   /// Populate maps for languages at startup to optimise performance.
   void populateLanguages() async {
@@ -947,8 +921,6 @@ class AppModel with ChangeNotifier {
   void populateQuickActions() async {
     /// A list of actions that the app will support at runtime.
     final List<QuickAction> availableQuickActions = [
-      CardCreatorAction(),
-      InstantExportAction(),
       AddToStashAction(),
       CopyToClipboardAction(),
       ShareAction(),
@@ -964,101 +936,8 @@ class AppModel with ChangeNotifier {
     );
   }
 
-  /// Populate default mapping if it does not exist in the database.
-  void populateDefaultMapping(Language language) async {
-    if (_mappingsCache.isEmpty) {
-      final defaultMapping = AnkiMapping.defaultMapping(
-        language: language,
-        order: 0,
-      );
-      await _database.upsertMapping(_mappingToCompanion(defaultMapping));
-      _mappingsCache = [defaultMapping];
-    } else {
-      AnkiMapping standardProfile = _mappingsCache
-          .firstWhere((m) => m.label == AnkiMapping.standardProfileName);
-      if (standardProfile.model != AnkiMapping.standardModelName) {
-        String newLabel = 'Legacy Standard';
-        int attempts = 1;
-
-        while (_mappingsCache.any((m) => m.label == newLabel)) {
-          attempts += 1;
-          newLabel = 'Legacy Standard ($attempts)';
-        }
-
-        AnkiMapping legacyProfile = standardProfile.copyWith(
-          label: newLabel,
-        );
-        final newDefault = AnkiMapping.defaultMapping(
-          language: language,
-          order: nextMappingOrder,
-        );
-
-        final List<AnkiMapping> updatedCache = _mappingsCache
-            .map((m) =>
-                m.label == AnkiMapping.standardProfileName ? legacyProfile : m)
-            .toList()
-          ..add(newDefault);
-
-        await _database
-            .replaceAllMappings(updatedCache.map(_mappingToCompanion).toList());
-        _mappingsCache = updatedCache;
-
-        await showAppDialog(
-          barrierDismissible: true,
-          context: _navigatorKey.currentContext!,
-          builder: (context) => AlertDialog(
-            title: Text(t.info_standard_update),
-            content: Text(
-              t.info_standard_update_content,
-            ),
-            actions: [
-              TextButton(
-                child: Text(t.dialog_close),
-                onPressed: () => Navigator.pop(context),
-              ),
-            ],
-          ),
-        );
-      }
-    }
-
-    await _ensureStandardTermAudioAutoEnhancement();
-  }
-
-  Future<void> _ensureStandardTermAudioAutoEnhancement() async {
-    final int index = _mappingsCache.indexWhere(
-      (m) => m.label == AnkiMapping.standardProfileName,
-    );
-    if (index < 0) {
-      return;
-    }
-
-    final AnkiMapping mapping = _mappingsCache[index];
-    final Map<String, Map<int, String>> enhancements =
-        mapping.enhancements?.map(
-              (fieldKey, fieldEnhancements) =>
-                  MapEntry(fieldKey, Map<int, String>.from(fieldEnhancements)),
-            ) ??
-            {};
-
-    final Map<int, String> audioEnhancements =
-        enhancements[AudioField.key] ?? <int, String>{};
-    if (audioEnhancements.containsKey(AnkiMapping.autoModeSlotNumber)) {
-      return;
-    }
-
-    audioEnhancements[AnkiMapping.autoModeSlotNumber] =
-        LocalAudioEnhancement.key;
-    enhancements[AudioField.key] = audioEnhancements;
-
-    final AnkiMapping updated = mapping.copyWith(enhancements: enhancements);
-    await _database.upsertMapping(_mappingToCompanion(updated));
-    _mappingsCache = [
-      ..._mappingsCache.sublist(0, index),
-      updated,
-      ..._mappingsCache.sublist(index + 1),
-    ];
-  }
+  /// Stub — old mapping system removed; new Anki export lives in lib/src/anki/.
+  void populateDefaultMapping(Language language) async {}
 
   /// Stub kept for call-site compatibility.
   void populateBookmarks() {}
@@ -2336,21 +2215,6 @@ class AppModel with ChangeNotifier {
     dictionarySearchAgainNotifier.notifyListeners();
   }
 
-  /// Delete a selected mapping from the database.
-  void deleteMapping(AnkiMapping mapping) async {
-    _mappingsCache.removeWhere((m) => m.label == mapping.label);
-    await _database.deleteMappingById(mapping.id!);
-
-    if (mapping.label == lastSelectedMappingName) {
-      await setLastSelectedMapping(mappings.first);
-    }
-  }
-
-  /// Add a selected mapping to the database.
-  void addMapping(AnkiMapping mapping) async {
-    _persistMapping(mapping);
-  }
-
   /// Used for caching search results. Cleared when a dictionary is added or
   /// deleted.
   final Map<String, DictionarySearchResult> _dictionarySearchCache = {};
@@ -2403,20 +2267,6 @@ class AppModel with ChangeNotifier {
     } else {
       return DictionarySearchResult(searchTerm: searchTerm);
     }
-  }
-
-  /// Check if a mapping with a certain name with a different order already
-  /// exists.
-  bool mappingNameHasDuplicate(AnkiMapping mapping) {
-    return _mappingsCache
-        .any((m) => m.label == mapping.label && m.order != mapping.order);
-  }
-
-  /// Get the newest available order for a new mapping.
-  int get nextMappingOrder {
-    if (_mappingsCache.isEmpty) return 0;
-    return _mappingsCache.map((m) => m.order).reduce((a, b) => a > b ? a : b) +
-        1;
   }
 
   /// Override flag for when [isMediaOpen] is true but the status bar should
@@ -2632,362 +2482,9 @@ class AppModel with ChangeNotifier {
     }
   }
 
-  /// Given a value and a model name, checks if there are cards that have a
-  /// first field with a matching value and (when [reading] is non-empty) the
-  /// same reading in the mapped reading field.
-  Future<bool> checkForDuplicates(String key, {String reading = ''}) async {
-    try {
-      final List<int> readingFieldIndices = [];
-      for (final modelName in duplicateCheckModels) {
-        readingFieldIndices.add(await _readingFieldIndex(modelName));
-      }
-      final result = await methodChannel.invokeMethod(
-        'checkForDuplicates',
-        <String, dynamic>{
-          'models': duplicateCheckModels,
-          'key': key,
-          'reading': reading,
-          'readingFieldIndices': readingFieldIndices,
-        },
-      );
-      return result;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  Future<int> _readingFieldIndex(String modelName) async {
-    final AnkiMapping? mapping =
-        _mappingsCache.where((m) => m.model == modelName).firstOrNull;
-    if (mapping == null) return -1;
-    try {
-      final List<String> ankiFields = await getFieldList(modelName);
-      for (int i = 0; i < ankiFields.length; i++) {
-        final handlebar = mapping.fieldMappings[ankiFields[i]] ?? '';
-        if (handlebar == AnkiHandlebar.reading) return i;
-      }
-    } catch (_) {}
-    return -1;
-  }
-
-  /// Add a note with certain [creatorFieldValues] and a [mapping] of fields to
-  /// a model to a given [deck].
-  Future<void> addNote({
-    required CreatorFieldValues creatorFieldValues,
-    required AnkiMapping mapping,
-    required String deck,
-    required Function() onSuccess,
-  }) async {
-    if (mapping.isExportFieldsEmpty) {
-      Fluttertoast.showToast(
-        msg: t.export_profile_empty,
-        toastLength: Toast.LENGTH_SHORT,
-        gravity: ToastGravity.BOTTOM,
-      );
-      return;
-    }
-
-    Map<Field, String> exportedImages = {};
-    Map<Field, String> exportedAudio = {};
-
-    for (MapEntry<Field, File> entry
-        in creatorFieldValues.imagesToExport.entries) {
-      Field field = entry.key;
-      File exportFile = entry.value;
-
-      String timestamp =
-          intl.DateFormat('yyyyMMddTkkmmss').format(DateTime.now());
-      String preferredName = 'hibiki-$timestamp';
-
-      String? imageFileName;
-      if (exportFile.existsSync()) {
-        imageFileName = await addFileToMedia(
-          exportFile: exportFile,
-          preferredName: preferredName,
-          mimeType: 'image',
-        );
-
-        exportedImages[field] = imageFileName;
-      }
-    }
-
-    for (MapEntry<Field, File> entry
-        in creatorFieldValues.audioToExport.entries) {
-      Field field = entry.key;
-      File exportFile = entry.value;
-
-      String timestamp =
-          intl.DateFormat('yyyyMMddTkkmmss').format(DateTime.now());
-      String preferredName = 'hibiki-$timestamp';
-
-      String? audioFileName;
-      if (exportFile.existsSync()) {
-        audioFileName = await addFileToMedia(
-          exportFile: exportFile,
-          preferredName: preferredName,
-          mimeType: 'audio',
-        );
-
-        exportedAudio[field] = audioFileName;
-      }
-    }
-
-    String model = mapping.model;
-    List<String> ankiFieldNames = await getFieldList(model);
-    List<String> fields = AnkiHandlebar.resolveFieldMappings(
-      ankiFieldNames: ankiFieldNames,
-      fieldMappings: mapping.fieldMappings,
-      creatorFieldValues: creatorFieldValues,
-      exportedImages: exportedImages,
-      exportedAudio: exportedAudio,
-      mapping: mapping,
-    );
-
-    List<String> tags =
-        creatorFieldValues.textValues[TagsField.instance]?.split(' ') ?? [];
-
-    try {
-      await methodChannel.invokeMethod(
-        'addNote',
-        <String, dynamic>{
-          'deck': deck,
-          'model': model,
-          'fields': fields,
-          'tags': tags,
-        },
-      );
-
-      Fluttertoast.showToast(
-        msg: t.card_exported(deck: deck),
-        toastLength: Toast.LENGTH_SHORT,
-        gravity: ToastGravity.BOTTOM,
-      );
-
-      onSuccess.call();
-    } on PlatformException {
-      debugPrint('Failed to add note');
-
-      Fluttertoast.showToast(
-        msg: t.error_add_note,
-        toastLength: Toast.LENGTH_SHORT,
-        gravity: ToastGravity.BOTTOM,
-      );
-
-      rethrow;
-    } finally {
-      debugPrint('Added note to Anki media');
-    }
-  }
-
-  /// Add a file to Anki media. [mimeType] can be 'image' or 'audio'.
-  /// [preferredName] is used as a prefix to the file when exported to the
-  /// media store. Returns the name of the file once successfully added to
-  /// Anki media.
-  Future<String> addFileToMedia({
-    required File exportFile,
-    required String preferredName,
-    required String mimeType,
-  }) async {
-    late File destinationFile;
-    if (mimeType == 'image') {
-      destinationFile = getImageExportFile(fallback: true);
-    } else if (mimeType == 'audio') {
-      final srcPath = exportFile.path;
-      final ext =
-          srcPath.contains('.') ? srcPath.split('.').last.toLowerCase() : 'mp3';
-      destinationFile = getAudioExportFile(fallback: true, ext: ext);
-    } else {
-      throw Exception('Invalid mime type, must be image or audio');
-    }
-
-    if (destinationFile.existsSync()) {
-      destinationFile.deleteSync();
-    }
-
-    String destinationPath = destinationFile.path;
-    if (mimeType == 'image') {
-      File compressedFile = getImageCompressedFile(fallback: true);
-      if (compressedFile.existsSync()) {
-        compressedFile.deleteSync();
-      }
-      await FlutterImageCompress.compressAndGetFile(
-        exportFile.path,
-        compressedFile.path,
-        quality: 70,
-        keepExif: true,
-      );
-
-      debugPrint('Original image size: ${exportFile.lengthSync()} bytes');
-      debugPrint('Compressed image size: ${compressedFile.lengthSync()} bytes');
-
-      compressedFile.copySync(destinationPath);
-    } else {
-      exportFile.copySync(destinationPath);
-    }
-
-    try {
-      String response = await methodChannel.invokeMethod(
-        'addFileToMedia',
-        <String, String>{
-          'filename': destinationPath,
-          'preferredName': preferredName,
-          'mimeType': mimeType,
-        },
-      );
-      debugPrint('Added $mimeType for [$preferredName] to Anki media');
-      if (destinationFile.existsSync()) {
-        destinationFile.deleteSync();
-      }
-
-      return response;
-    } on PlatformException {
-      Fluttertoast.showToast(
-        msg: t.error_export_media_ankidroid,
-        toastLength: Toast.LENGTH_SHORT,
-        gravity: ToastGravity.BOTTOM,
-      );
-
-      rethrow;
-    }
-  }
-
-  /// Returns whether or not a given [AnkiMapping]'s model exists in Anki.
-  Future<bool> profileModelExists(AnkiMapping mapping) async {
-    List<String> models = await getModelList();
-    return models.contains(mapping.model);
-  }
-
-  /// Persist the standard profile as the last selected mapping.
-  Future<void> selectStandardProfile() async {
-    await _setPref('last_selected_mapping', AnkiMapping.standardProfileName);
-    notifyListeners();
-  }
-
   /// Refresh all screens and have them respond to new variables.
   Future<void> refresh() async {
     notifyListeners();
-  }
-
-  /// Resets a profile's field mappings to empty for the given model.
-  Future<void> resetProfileFields(AnkiMapping mapping) async {
-    List<String> fields = await getFieldList(mapping.model);
-    Map<String, String> emptyMappings = {for (var f in fields) f: ''};
-    AnkiMapping resetMapping = mapping.copyWith(fieldMappings: emptyMappings);
-    _persistMapping(resetMapping);
-  }
-
-  /// Check for errors relating to the current selected export profile.
-  Future<void> validateSelectedMapping({
-    required BuildContext context,
-    required AnkiMapping mapping,
-  }) async {
-    final navigator = Navigator.of(context);
-
-    await addDefaultModelIfMissing();
-
-    bool newMappingModelExists = await profileModelExists(mapping);
-
-    if (!newMappingModelExists) {
-      if (context.mounted) {
-        await showAppDialog(
-          barrierDismissible: true,
-          context: context,
-          builder: (_) => AlertDialog(
-            title: Text(t.error_model_missing),
-            content: Text(
-              t.error_model_missing_content,
-            ),
-            actions: [
-              TextButton(
-                onPressed: navigator.pop,
-                child: Text(t.dialog_close),
-              ),
-            ],
-          ),
-        );
-      }
-
-      await selectStandardProfile();
-      deleteMapping(mapping);
-      return;
-    }
-  }
-
-  /// Whether the creator route should be shown for the prepared export data.
-  static bool shouldOpenCreatorRoute({
-    required bool silentExport,
-    required bool isExportable,
-  }) =>
-      !silentExport || !isExportable;
-
-  /// A helper function for opening the creator from any page in the
-  /// application for card export purposes. Normally, the fields are provided
-  /// by values in the app state. For example, the sentence field provides its
-  /// value upon opening the creator from current media, which if null is
-  /// empty.
-  Future<void> openCreator({
-    required WidgetRef ref,
-    required bool killOnPop,
-    CreatorFieldValues? creatorFieldValues,
-    Future<void> Function(CreatorModel creatorModel)? onCreatorReady,
-  }) async {
-    _currentMediaPauseController.add(null);
-
-    CreatorModel creatorModel = ref.watch(creatorProvider);
-    creatorModel.clearAll(
-      overrideLocks: true,
-      savedTags: savedTags,
-    );
-    if (creatorFieldValues != null) {
-      creatorModel.copyContext(creatorFieldValues);
-    }
-
-    if (onCreatorReady != null) {
-      await onCreatorReady(creatorModel);
-    }
-
-    final CreatorFieldValues exportDetails = creatorModel.getExportDetails(ref);
-    if (!shouldOpenCreatorRoute(
-      silentExport: silentExport,
-      isExportable: exportDetails.isExportable,
-    )) {
-      await addNote(
-        creatorFieldValues: exportDetails,
-        mapping: lastSelectedMapping,
-        deck: lastSelectedDeckName,
-        onSuccess: () {
-          creatorModel.clearAll(
-            overrideLocks: true,
-            savedTags: savedTags,
-          );
-        },
-      );
-      return;
-    }
-
-    List<String> decks = await getDecks();
-
-    _isCreatorOpen = true;
-    _creatorActiveController.add(true);
-
-    await Navigator.push(
-      _navigatorKey.currentContext!,
-      PageRouteBuilder(
-        opaque: true,
-        pageBuilder: (context, animation1, animation2) => CreatorPage(
-          decks: decks,
-          editEnhancements: false,
-          editFields: false,
-          killOnPop: killOnPop,
-        ),
-        transitionDuration: Duration.zero,
-        reverseTransitionDuration: Duration.zero,
-        settings: RouteSettings(name: (CreatorPage).toString()),
-      ),
-    );
-
-    _isCreatorOpen = false;
-    _creatorActiveController.add(false);
   }
 
   /// Whether or not the media item should be killed upon exit.
@@ -3081,46 +2578,6 @@ class AppModel with ChangeNotifier {
     if (_shouldKillMediaOnPop) {
       shutdown();
     }
-  }
-
-  /// A helper function for opening the creator from any page in the
-  /// application for editing enhancements.
-  Future<void> openCreatorEnhancementsEditor() async {
-    List<String> decks = await getDecks();
-
-    await Navigator.push(
-      _navigatorKey.currentContext!,
-      PageRouteBuilder(
-        pageBuilder: (context, animation1, animation2) => CreatorPage(
-          decks: decks,
-          editEnhancements: true,
-          editFields: false,
-          killOnPop: false,
-        ),
-        transitionDuration: Duration.zero,
-        reverseTransitionDuration: Duration.zero,
-      ),
-    );
-  }
-
-  // A helper function for opening the creator from any page in the
-  /// application for editing fields.
-  Future<void> openCreatorFieldsEditor() async {
-    List<String> decks = await getDecks();
-
-    await Navigator.push(
-      _navigatorKey.currentContext!,
-      PageRouteBuilder(
-        pageBuilder: (context, animation1, animation2) => CreatorPage(
-          decks: decks,
-          editEnhancements: false,
-          editFields: true,
-          killOnPop: false,
-        ),
-        transitionDuration: Duration.zero,
-        reverseTransitionDuration: Duration.zero,
-      ),
-    );
   }
 
   /// A helper function for opening the creator from any page in the
@@ -3218,122 +2675,6 @@ class AppModel with ChangeNotifier {
         onAppend: onAppend,
       ),
     );
-  }
-
-  /// Updates a given [mapping]'s persisted enhancement for a given [field]
-  /// and [slotNumber].
-  void setFieldEnhancement({
-    required AnkiMapping mapping,
-    required Field field,
-    required int slotNumber,
-    required Enhancement enhancement,
-  }) async {
-    mapping.enhancements![field.uniqueKey] ??= {};
-    mapping.enhancements![field.uniqueKey]![slotNumber] = enhancement.uniqueKey;
-
-    _persistMapping(mapping);
-  }
-
-  /// Updates a given [mapping] to remove a [Field].
-  void removeField({
-    required AnkiMapping mapping,
-    required Field field,
-    required bool isCollapsed,
-  }) async {
-    if (isCollapsed) {
-      mapping.creatorCollapsedFieldKeys = [
-        ...mapping.creatorCollapsedFieldKeys
-            .whereNot((key) => key == field.uniqueKey)
-      ];
-    } else {
-      mapping.creatorFieldKeys = [
-        ...mapping.creatorFieldKeys.whereNot((key) => key == field.uniqueKey)
-      ];
-    }
-
-    _persistMapping(mapping);
-  }
-
-  /// Updates a given [mapping] to include a [Field].
-  void setField({
-    required AnkiMapping mapping,
-    required Field field,
-    required bool isCollapsed,
-  }) async {
-    if (isCollapsed) {
-      mapping.creatorCollapsedFieldKeys = [
-        ...mapping.creatorCollapsedFieldKeys,
-        field.uniqueKey,
-      ];
-    } else {
-      mapping.creatorFieldKeys = [
-        ...mapping.creatorFieldKeys,
-        field.uniqueKey,
-      ];
-    }
-
-    _persistMapping(mapping);
-  }
-
-  /// Removes a given [mapping]'s persisted enhancement for a given [field]
-  /// and [slotNumber].
-  void removeFieldEnhancement({
-    required AnkiMapping mapping,
-    required Field field,
-    required int slotNumber,
-  }) async {
-    mapping.enhancements![field.uniqueKey]!.remove(slotNumber);
-
-    _persistMapping(mapping);
-  }
-
-  /// Updates a given [mapping]'s persisted action for a given [slotNumber].
-  void setQuickAction(
-      {required AnkiMapping mapping,
-      required int slotNumber,
-      required QuickAction quickAction}) async {
-    mapping.actions![slotNumber] = quickAction.uniqueKey;
-
-    _persistMapping(mapping);
-
-    notifyListeners();
-  }
-
-  /// Removes a given [mapping]'s persisted action for a given [slotNumber].
-  void removeQuickAction({
-    required AnkiMapping mapping,
-    required int slotNumber,
-  }) async {
-    mapping.actions!.remove(slotNumber);
-
-    _persistMapping(mapping);
-  }
-
-  /// Updates a given [mapping]'s persisted auto enhancement for a given
-  /// [field].
-  void setAutoFieldEnhancement({
-    required AnkiMapping mapping,
-    required Field field,
-    required Enhancement enhancement,
-  }) async {
-    /// -1 is reserved for the auto enhancement.
-    mapping.enhancements![field.uniqueKey]![AnkiMapping.autoModeSlotNumber] =
-        enhancement.uniqueKey;
-
-    _persistMapping(mapping);
-  }
-
-  /// Removes a given [mapping]'s persisted auto enhancement for a given
-  /// [field].
-  void removeAutoFieldEnhancement({
-    required AnkiMapping mapping,
-    required Field field,
-  }) async {
-    /// -1 is reserved for the auto enhancement.
-    mapping.enhancements![field.uniqueKey]!
-        .remove(AnkiMapping.autoModeSlotNumber);
-
-    _persistMapping(mapping);
   }
 
   /// Add the [searchTerm] to a search history with the given [historyKey]. If
@@ -3902,14 +3243,6 @@ class AppModel with ChangeNotifier {
     notifyListeners();
   }
 
-  bool get silentExport {
-    return _getPref('silent_export', defaultValue: true);
-  }
-
-  void toggleSilentExport() async {
-    await _setPref('silent_export', !silentExport);
-  }
-
   /// Default value of [doubleTapSeekDuration].
   final int defaultDoubleTapSeekDuration = 5000;
 
@@ -4116,9 +3449,15 @@ class AppModel with ChangeNotifier {
     return _getPref('local_audio_db_path', defaultValue: '');
   }
 
-  void setLocalAudioDbPath(String path) async {
-    await _setPref('local_audio_db_path', path);
-    TtsChannel.instance.setLocalAudioDb(path);
+  Future<void> setLocalAudioDbPath(String sourcePath) async {
+    final internalPath =
+        path.join(_databaseDirectory.path, 'local_audio.db');
+    final sourceFile = File(sourcePath);
+    if (sourcePath != internalPath && await sourceFile.exists()) {
+      await sourceFile.copy(internalPath);
+    }
+    await _setPref('local_audio_db_path', internalPath);
+    TtsChannel.instance.setLocalAudioDb(internalPath);
   }
 
   bool get localAudioEnabled {
@@ -4171,7 +3510,7 @@ class AppModel with ChangeNotifier {
   /// Get the list of model names that will be checked for duplicates.
   List<String> get duplicateCheckModels {
     return _getPref('duplicate_check_models', defaultValue: [
-      AnkiMapping.standardModelName,
+      'Lapis',
     ]);
   }
 

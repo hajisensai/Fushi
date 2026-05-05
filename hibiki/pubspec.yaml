@@ -91,6 +91,7 @@ dependencies:
       url: https://github.com/arianneorpilla/RubyText
       ref: cb723f87c9ac575aa735b40016c0ffb3242d921e
   share_plus: ^7.2.2
+  shared_preferences: ^2.2.2
   slang: ^3.13.0
   slang_flutter: ^3.13.0
   sliver_tools: ^0.2.12

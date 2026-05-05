@@ -573,18 +573,21 @@ public class MainActivity extends AudioServiceActivity {
                                     if (dbFile.exists()) {
                                         localAudioDb = SQLiteDatabase.openDatabase(
                                             dbPath, null, SQLiteDatabase.OPEN_READWRITE | SQLiteDatabase.NO_LOCALIZED_COLLATORS);
+                                        if (!localAudioDb.enableWriteAheadLogging()) {
+                                            android.util.Log.w("hibiki-audio", "WAL mode failed, queries may block during index creation");
+                                        }
                                         result.success(true);
                                         final SQLiteDatabase db = localAudioDb;
                                         ioExecutor.execute(() -> {
-                                            synchronized (dbLock) {
-                                                try {
+                                            try {
+                                                if (db.isOpen()) {
                                                     db.execSQL(
                                                         "CREATE INDEX IF NOT EXISTS idx_entries_expr_read ON entries(expression, reading)");
                                                     db.execSQL(
                                                         "CREATE INDEX IF NOT EXISTS idx_android_file_source ON android(file, source)");
-                                                } catch (Exception e) {
-                                                    android.util.Log.w("hibiki-audio", "Failed to create index", e);
                                                 }
+                                            } catch (Exception e) {
+                                                android.util.Log.w("hibiki-audio", "Index creation skipped", e);
                                             }
                                         });
                                     } else {
