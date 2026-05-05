@@ -358,11 +358,10 @@ class _FullScreenGalleryState extends State<_FullScreenGallery> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
         title: Text('${_currentIndex + 1} / ${widget.images.length}'),
       ),
       body: PageView.builder(
@@ -377,9 +376,9 @@ class _FullScreenGalleryState extends State<_FullScreenGallery> {
               child: Image.memory(
                 widget.images[index],
                 fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => const Icon(
+                errorBuilder: (_, __, ___) => Icon(
                   Icons.broken_image_outlined,
-                  color: Colors.white54,
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
                   size: 64,
                 ),
               ),
