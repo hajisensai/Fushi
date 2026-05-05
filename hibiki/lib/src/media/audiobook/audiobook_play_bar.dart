@@ -427,6 +427,10 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               const SizedBox(height: 12),
               _buildBookmarkSection(context, theme),
             ],
+            if (widget.favoriteSentences.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              _buildFavoritesSection(context, theme),
+            ],
           ],
         );
       case 'reader':
@@ -1600,6 +1604,14 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                 return ListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
+                  leading: Container(
+                    width: 4,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: _highlightColor(fav.color),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
                   title: Text(
                     fav.text,
                     maxLines: 2,
@@ -1660,6 +1672,21 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         ],
       ),
     );
+  }
+
+  static Color _highlightColor(String? color) {
+    switch (color) {
+      case 'green':
+        return const Color(0xFF00C853);
+      case 'blue':
+        return const Color(0xFF448AFF);
+      case 'pink':
+        return const Color(0xFFFF4081);
+      case 'purple':
+        return const Color(0xFFAA00FF);
+      default:
+        return const Color(0xFFFFDC00);
+    }
   }
 
   Widget _buildActionRow(BuildContext context) {

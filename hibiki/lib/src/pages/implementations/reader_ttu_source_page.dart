@@ -22,6 +22,7 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart';
+import 'package:hibiki/src/media/audiobook/highlight_bridge.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_controller.dart';
 import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
 import 'package:hibiki/src/media/audiobook/favorite_sentence_repository.dart';
@@ -1654,6 +1655,8 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
           Future.delayed(
               const Duration(milliseconds: 300), _focusNode.requestFocus);
           unawaited(_installTtuBookmarkBridge(controller));
+          await HighlightBridge.inject(controller);
+          unawaited(_applyHighlightsForCurrentSection());
         } finally {
           _onLoadStopRunning = false;
           _markReaderContentReady();
@@ -2061,26 +2064,51 @@ if (!window.getSelection().isCollapsed) {
   }
 
   void favoriteMenuAction() async {
-    String text = (await getSelectedText()).replaceAll('\\n', '\n').trim();
+    final selRange = await HighlightBridge.getSelectionRange(_controller);
+    String text;
+    int? normOffset;
+    int? normLength;
+    if (selRange != null && selRange.text.isNotEmpty) {
+      text = selRange.text;
+      normOffset = selRange.offset;
+      normLength = selRange.length;
+    } else {
+      text = (await getSelectedText()).replaceAll('\\n', '\n').trim();
+    }
     if (text.isEmpty) return;
     await unselectWebViewTextSelection(_controller);
     final String bookTitle = widget.item?.title ?? '';
     final String? chapterLabel = _tocLabels[_currentTtuSection];
     final int? ttuId = _extractTtuBookId();
-    final vp = await AudiobookBridge.getViewportNormOffset(_controller);
     final sentence = FavoriteSentence(
       text: text,
       bookTitle: bookTitle,
       chapterLabel: chapterLabel,
       createdAt: DateTime.now(),
       ttuBookId: ttuId,
-      sectionIndex: vp?.section,
-      normCharOffset: vp?.offset,
+      sectionIndex: _currentTtuSection >= 0 ? _currentTtuSection : null,
+      normCharOffset: normOffset,
+      normCharLength: normLength,
+      color: 'yellow',
     );
     await FavoriteSentenceRepository(appModel.database).add(sentence);
+    await _applyHighlightsForCurrentSection();
     if (mounted) {
       Fluttertoast.showToast(msg: t.favorite_added);
     }
+  }
+
+  Future<void> _applyHighlightsForCurrentSection() async {
+    if (_currentTtuSection < 0) return;
+    final int? ttuId = _extractTtuBookId();
+    if (ttuId == null) return;
+    final List<FavoriteSentence> all =
+        await FavoriteSentenceRepository(appModel.database).getAll();
+    final List<FavoriteSentence> sectionHighlights = all
+        .where((FavoriteSentence f) =>
+            f.ttuBookId == ttuId && f.sectionIndex == _currentTtuSection)
+        .toList();
+    await HighlightBridge.applyHighlights(_controller, sectionHighlights);
   }
 
   void searchMenuAction() async {
@@ -2751,10 +2779,9 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       );
 
       if (audioFiles.isEmpty) {
-        // 记录有、文件解析不到：撤销 initState 预留的 slot，别留空黑条。
-        if (mounted && _hasAudioSlot) {
-          setState(() => _hasAudioSlot = false);
-        }
+        debugPrint('[hibiki-audiobook] audiobook found but files empty, '
+            'trying SrtBook fallback');
+        await _initSrtBookIfAvailable();
         return;
       }
 
@@ -3194,8 +3221,11 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       bookmarks =
           await BookmarkRepository(appModel.database).getBookmarks(ttuId);
     }
-    final List<FavoriteSentence> favorites =
+    final List<FavoriteSentence> allFavorites =
         await FavoriteSentenceRepository(appModel.database).getAll();
+    final List<FavoriteSentence> favorites = ttuId != null
+        ? allFavorites.where((FavoriteSentence f) => f.ttuBookId == ttuId).toList()
+        : allFavorites;
     if (!mounted) return;
 
     final sheetThemeNotifier = ValueNotifier<ThemeData?>(
@@ -3243,7 +3273,11 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           },
           favoriteSentences: favorites,
           onDeleteFavorite: (int index) async {
-            await FavoriteSentenceRepository(appModel.database).removeAt(index);
+            if (index >= 0 && index < favorites.length) {
+              await FavoriteSentenceRepository(appModel.database)
+                  .removeById(favorites[index].id);
+              unawaited(_applyHighlightsForCurrentSection());
+            }
           },
           onJumpToFavorite: (fav) async {
             if (fav.sectionIndex == null) return;
@@ -4086,6 +4120,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         _currentTtuSection = idx;
         _lastSasayakiAppliedSection = -1;
         unawaited(_applySasayakiCuesForSection(idx));
+        unawaited(_applyHighlightsForCurrentSection());
       }
       return;
     }
@@ -4124,6 +4159,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     ));
     // 用户翻到新章节，预建该章 Sasayaki cueMap。
     unawaited(_applySasayakiCuesForSection(idx));
+    unawaited(_applyHighlightsForCurrentSection());
   }
 
   // ── 有声书导入按钮 ──────────────────────────────────────────────────────────
