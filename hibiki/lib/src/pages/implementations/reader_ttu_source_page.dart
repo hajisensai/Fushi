@@ -2832,6 +2832,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     final int? ttuId = _extractTtuBookId();
     if (ttuId == null || ttuId <= 0) {
       debugPrint('[hibiki-audiobook] srt init skip: no ttuId in URL');
+      if (mounted && _hasAudioSlot) setState(() => _hasAudioSlot = false);
       return;
     }
 
@@ -2840,6 +2841,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     if (srtBook == null) {
       debugPrint(
           '[hibiki-audiobook] srt init skip: no SrtBook for ttuId=$ttuId');
+      if (mounted && _hasAudioSlot) setState(() => _hasAudioSlot = false);
       return;
     }
 

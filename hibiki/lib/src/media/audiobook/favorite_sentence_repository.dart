@@ -74,10 +74,7 @@ class FavoriteSentenceRepository {
 
   Future<void> add(FavoriteSentence sentence) async {
     final sentences = await getAll();
-    // 去重
-    if (sentences.any((s) => s.text == sentence.text && s.bookTitle == sentence.bookTitle)) {
-      return;
-    }
+    if (sentences.any((FavoriteSentence s) => s.id == sentence.id)) return;
     sentences.insert(0, sentence);
     await _db.setPref(
       _key,
