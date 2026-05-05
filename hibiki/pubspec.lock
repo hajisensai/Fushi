@@ -1022,7 +1022,7 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: hibiki-patches
+      ref: ec7e87dbb015b7116c303a4b60b90ec07ca4900b
       resolved-ref: ec7e87dbb015b7116c303a4b60b90ec07ca4900b
       url: "https://github.com/hdjsadgfwtg/material_floating_search_bar"
     source: git
@@ -1406,7 +1406,7 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: master
+      ref: b6a1387abaafd36e94e9290806a00a53ca89683f
       resolved-ref: b6a1387abaafd36e94e9290806a00a53ca89683f
       url: "https://github.com/arianneorpilla/spaces"
     source: git

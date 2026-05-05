@@ -71,7 +71,7 @@ dependencies:
   material_floating_search_bar:
     git:
       url: https://github.com/hdjsadgfwtg/material_floating_search_bar
-      ref: hibiki-patches
+      ref: ec7e87dbb015b7116c303a4b60b90ec07ca4900b
   multi_value_listenable_builder: ^0.0.2
   network_to_file_image: ^4.0.1
   package_info_plus: ^4.0.2
@@ -97,7 +97,7 @@ dependencies:
   spaces:
     git:
       url: https://github.com/arianneorpilla/spaces
-      ref: master
+      ref: b6a1387abaafd36e94e9290806a00a53ca89683f
   stack_trace: ^1.11.1
   transparent_image: ^2.0.1
   url_launcher: ^6.0.20
