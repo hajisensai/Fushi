@@ -1076,21 +1076,35 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       appModel.appThemeKey,
       appModel.customThemeDark ? 'dark' : 'light',
       appModel.customThemeFontColor?.toARGB32().toRadixString(16) ?? 'default',
-      appModel.customThemeBackgroundColor?.toARGB32().toRadixString(16) ?? 'default',
-      appModel.customThemeSelectionColor?.toARGB32().toRadixString(16) ?? 'default',
+      appModel.customThemeBackgroundColor?.toARGB32().toRadixString(16) ??
+          'default',
+      appModel.customThemeSelectionColor?.toARGB32().toRadixString(16) ??
+          'default',
     ].join(':');
   }
 
   Future<void> _applyAppThemeToTtuReader() async {
     final String themeKey = appModel.appThemeKey;
+    final Color bgColor = _ttuThemeFlutterColor();
+    final String bgHex =
+        '#${bgColor.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}';
+    final String customThemesJson = jsonEncode({
+      'custom-theme': buildTtuCustomThemeDefinition(
+        dark: appModel.customThemeDark,
+        fontColor: appModel.customThemeFontColor,
+        backgroundColor: appModel.customThemeBackgroundColor,
+        selectionColor: appModel.customThemeSelectionColor,
+      ),
+    });
+    final String customThemesJsLiteral = jsonEncode(customThemesJson);
+    final String themeKeyJsLiteral = jsonEncode(themeKey);
+    final String initialBgCssJsLiteral = jsonEncode(
+      ':root,html,body{background-color:$bgHex!important}',
+    );
     final List<String> cmds = [
-      if (themeKey == 'custom-theme') _buildCustomThemeJs(),
-      'window.localStorage.setItem("theme",${jsonEncode(themeKey)})',
-      '(function(){try{'
-          'if(window.__ttuReaderSettings){'
-          'window.__ttuReaderSettings.set("theme",${jsonEncode(themeKey)});'
-          '}'
-          '}catch(e){}})()',
+      'var s=document.getElementById("hibiki-initial-bg");if(s)s.textContent=$initialBgCssJsLiteral',
+      'window.localStorage.setItem("customThemes",$customThemesJsLiteral)',
+      '(function(){try{if(window.__ttuReaderSettings){window.__ttuReaderSettings.set("customThemes",JSON.parse($customThemesJsLiteral));window.__ttuReaderSettings.set("theme",$themeKeyJsLiteral);}}catch(e){}})()',
     ];
     await _controller.evaluateJavascript(source: cmds.join(';'));
     if (mediaSource.adaptTtuTheme) {
@@ -1301,9 +1315,10 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       case 'black-theme':
         return const Color(0xFF101010);
       case 'custom-theme':
-        return appModel.customThemeDark
-            ? const Color(0xFF23272A)
-            : const Color(0xFFFFFFFF);
+        return appModel.customThemeBackgroundColor ??
+            (appModel.customThemeDark
+                ? const Color(0xFF23272A)
+                : const Color(0xFFFFFFFF));
       default:
         return const Color(0xFFF9F9F9);
     }
@@ -3270,6 +3285,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
             }
           },
           webViewController: _controller,
+          appModel: appModel,
           onThemeChanged: () async {
             await setDictionaryColors();
             sheetThemeNotifier.value = appModel.overrideDictionaryTheme;
