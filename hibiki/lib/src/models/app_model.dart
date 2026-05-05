@@ -3970,7 +3970,7 @@ class AppModel with ChangeNotifier {
 
   /// Whether to auto-collapse dictionaries (only expand the first one).
   bool get collapseDictionaries {
-    return _getPref('collapse_dictionaries', defaultValue: false);
+    return _getPref('collapse_dictionaries', defaultValue: true);
   }
 
   /// Toggle dictionary auto-collapse.

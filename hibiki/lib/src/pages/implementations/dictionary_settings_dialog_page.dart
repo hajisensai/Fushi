@@ -19,7 +19,7 @@ class _DictionaryDialogPageState extends BasePageState {
   late TextEditingController _debounceDelayController;
   late TextEditingController _dictionaryFontSizeController;
   late TextEditingController _maximumTermsController;
-  late ValueNotifier<double> _popupMaxWidthNotifier;
+
 
   @override
   void initState() {
@@ -32,15 +32,8 @@ class _DictionaryDialogPageState extends BasePageState {
 
     _maximumTermsController =
         TextEditingController(text: appModelNoUpdate.maximumTerms.toString());
-    _popupMaxWidthNotifier =
-        ValueNotifier<double>(appModelNoUpdate.popupMaxWidth);
   }
 
-  @override
-  void dispose() {
-    _popupMaxWidthNotifier.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -95,7 +88,6 @@ class _DictionaryDialogPageState extends BasePageState {
               const JidoujishoDivider(),
               buildDebounceDelayField(),
               buildDictionaryFontSizeField(),
-              buildPopupMaxWidthSlider(),
               buildMaximumTermsField(),
               const Space.normal(),
               buildManageAudioSources(),
@@ -330,48 +322,6 @@ class _DictionaryDialogPageState extends BasePageState {
     );
   }
 
-  Widget buildPopupMaxWidthSlider() {
-    return ValueListenableBuilder<double>(
-      valueListenable: _popupMaxWidthNotifier,
-      builder: (_, value, __) {
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Space.small(),
-            Row(
-              children: [
-                Expanded(child: Text(t.popup_max_width)),
-                Text('${value.round()} ${t.unit_dp}',
-                    style: textTheme.bodySmall),
-                const SizedBox(width: 4),
-                JidoujishoIconButton(
-                  tooltip: t.reset,
-                  size: 18,
-                  onTap: () {
-                    _popupMaxWidthNotifier.value = appModel.defaultPopupMaxWidth;
-                    appModel.setPopupMaxWidth(appModel.defaultPopupMaxWidth);
-                  },
-                  icon: Icons.undo,
-                ),
-              ],
-            ),
-            Slider(
-              value: value,
-              min: 250,
-              max: 600,
-              divisions: 35,
-              onChanged: (v) {
-                _popupMaxWidthNotifier.value = v;
-              },
-              onChangeEnd: (v) {
-                appModel.setPopupMaxWidth(v);
-              },
-            ),
-          ],
-        );
-      },
-    );
-  }
 
   Widget buildMaximumTermsField() {
     return TextField(

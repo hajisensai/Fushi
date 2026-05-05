@@ -169,7 +169,7 @@ class _HintIcon extends StatelessWidget {
   }
 }
 
-List<Widget> _buildReaderOnlySwitches(VoidCallback rebuild) {
+List<Widget> _buildReaderOnlySwitches(VoidCallback rebuild, {AppModel? appModel}) {
   return [
     _buildSwitch(
       label: t.highlight_on_tap,
@@ -256,6 +256,8 @@ List<Widget> _buildReaderOnlySwitches(VoidCallback rebuild) {
         ],
       ),
     ),
+    if (appModel != null)
+      _PopupMaxWidthSlider(appModel: appModel, rebuild: rebuild),
   ];
 }
 
@@ -442,7 +444,7 @@ class _TtuSettingsDialogPageState extends BasePageState {
               const Space.small(),
               const JidoujishoDivider(),
               const Space.small(),
-              ..._buildReaderOnlySwitches(() => setState(() {})),
+              ..._buildReaderOnlySwitches(() => setState(() {}), appModel: appModel),
               const Space.small(),
               const JidoujishoDivider(),
               _buildPageTurningSpeed(() => setState(() {})),
@@ -581,7 +583,7 @@ class _ReaderBehaviorSettingsPageState extends BasePageState {
           16, 8, 16, 8 + MediaQuery.of(context).padding.bottom,
         ),
         children: [
-          ..._buildReaderOnlySwitches(() => setState(() {})),
+          ..._buildReaderOnlySwitches(() => setState(() {}), appModel: appModel),
           _buildSwitch(
             label: t.disable_dialog_scrim,
             value: appModel.disableDialogScrim,
@@ -631,6 +633,53 @@ class _UpdateSettingsPageState extends BasePageState {
               appModel.setUpdateAutoInstall(v);
               setState(() {});
             },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PopupMaxWidthSlider extends StatefulWidget {
+  const _PopupMaxWidthSlider({required this.appModel, required this.rebuild});
+  final AppModel appModel;
+  final VoidCallback rebuild;
+
+  @override
+  State<_PopupMaxWidthSlider> createState() => _PopupMaxWidthSliderState();
+}
+
+class _PopupMaxWidthSliderState extends State<_PopupMaxWidthSlider> {
+  late double _value;
+
+  @override
+  void initState() {
+    super.initState();
+    _value = widget.appModel.popupMaxWidth;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(child: Text('${t.popup_max_width} (${_value.round()})')),
+          SizedBox(
+            width: 140,
+            child: Slider(
+              value: _value,
+              min: 250,
+              max: 600,
+              divisions: 35,
+              onChanged: (v) {
+                setState(() => _value = v);
+              },
+              onChangeEnd: (v) {
+                widget.appModel.setPopupMaxWidth(v);
+                widget.rebuild();
+              },
+            ),
           ),
         ],
       ),
