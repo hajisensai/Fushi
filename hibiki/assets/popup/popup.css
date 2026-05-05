@@ -181,10 +181,11 @@ a {
 .gloss-image-link {
     cursor: inherit;
     color: var(--accent-color);
-    display: inline-block;
+    display: block;
     position: relative;
     line-height: 1;
     max-width: 100%;
+    text-align: left;
 }
 
 .gloss-image-container-overlay {
