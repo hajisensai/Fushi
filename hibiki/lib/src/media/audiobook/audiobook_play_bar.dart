@@ -1456,7 +1456,12 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (_) => const CustomThemePage()),
-                ).then((_) => setState(() {}));
+                ).then((_) {
+                  s.theme = widget.appModel.appThemeKey;
+                  setState(() {});
+                  _updateSetting('theme', s.theme);
+                  widget.onThemeChanged?.call();
+                });
               },
             ),
           ],
