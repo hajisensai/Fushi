@@ -2297,7 +2297,7 @@ function tapToSelect(e) {
               selectedFound = true;
             }
           }
-        } else if (node.firstChild.nodeName === "#text" && node.nodeName !== "RT" && node.nodeName !== "RP") {
+        } else if (node.firstChild && node.firstChild.nodeName === "#text" && node.nodeName !== "RT" && node.nodeName !== "RP") {
           noFuriganaText.push(node.firstChild.textContent);
           noFuriganaNodes.push(node.firstChild);
           if (selectedFound === false) {
@@ -2639,7 +2639,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
               break;
             }
           }
-        } else if (node.firstChild.nodeName === "#text" && node.nodeName !== "RT" && node.nodeName !== "RP") {
+        } else if (node.firstChild && node.firstChild.nodeName === "#text" && node.nodeName !== "RT" && node.nodeName !== "RP") {
           endOffset = 0;
           lastNode = node.firstChild;
           for (var i = 0; i < node.firstChild.textContent.length; i++) {
