@@ -212,35 +212,23 @@ class EpubSrtMatcher {
         }
       }
 
-      // --- 模糊通道：单次 Dice 系数滑窗，无重试 ---
+      // --- 模糊通道：滚动窗口 Dice 系数，O(window) 而非 O(window×len) ---
       double bestSim = 0.0;
       int bestPos = -1;
       int bestLen = nc.length;
 
       if (windowEnd - cursor >= nc.length) {
-        final int scanEnd = windowEnd - nc.length + 1;
-        for (int pos = cursor; pos < scanEnd; pos++) {
-          final String candidate = big.substring(pos, pos + nc.length);
-          final double sim = _diceSimilarity(nc, candidate);
-          if (sim > bestSim) {
-            bestSim = sim;
-            bestPos = pos;
-            bestLen = nc.length;
-          }
-        }
-        for (final int delta in const <int>[-1, 1]) {
-          final int tryLen = nc.length + delta;
-          if (tryLen <= 0) continue;
-          final int varScanEnd = windowEnd - tryLen + 1;
-          for (int pos = cursor; pos < varScanEnd; pos++) {
-            final String candidate = big.substring(pos, pos + tryLen);
-            final double sim = _diceSimilarity(nc, candidate);
-            if (sim > bestSim) {
-              bestSim = sim;
-              bestPos = pos;
-              bestLen = tryLen;
-            }
-          }
+        final _SlidingDiceResult r = _slidingDice(
+          needle: nc,
+          haystack: big,
+          start: cursor,
+          end: windowEnd,
+          threshold: similarityThreshold,
+        );
+        if (r.score > bestSim) {
+          bestSim = r.score;
+          bestPos = r.pos;
+          bestLen = r.len;
         }
       }
 
@@ -303,38 +291,110 @@ class EpubSrtMatcher {
     }
   }
 
-  // ---------- Dice 系数（bigram similarity） ----------
+  // ---------- Dice 系数（bigram sliding window） ----------
 
-  /// 移植自 ttu-whispersync `Match.svelte::getSimilarity`。
-  /// 短串（< 5 字符）用 unigram，长串用 bigram，返回 0.0..1.0。
-  static double _diceSimilarity(String a, String b) {
-    if (a == b) return 1.0;
-    final int aLen = a.length;
-    final int bLen = b.length;
-    if (aLen == 0 || bLen == 0) return 0.0;
+  /// Sliding-window Dice coefficient scan. For each candidate length in
+  /// [needle.length-1, needle.length, needle.length+1], slides across
+  /// [haystack] from [start] to [end], returning the best match.
+  ///
+  /// Uses incremental gram-map update: O(window) total work instead of
+  /// O(window × needle_length) from rebuilding per position.
+  static _SlidingDiceResult _slidingDice({
+    required String needle,
+    required String haystack,
+    required int start,
+    required int end,
+    required double threshold,
+  }) {
+    double bestSim = 0.0;
+    int bestPos = -1;
+    int bestLen = needle.length;
 
-    final int n = (aLen < 5 || bLen < 5) ? 1 : 2;
-    if (aLen < n || bLen < n) return 0.0;
+    for (final int tryLen in <int>[needle.length, needle.length - 1, needle.length + 1]) {
+      if (tryLen <= 0) continue;
+      final int scanEnd = end - tryLen + 1;
+      if (scanEnd <= start) continue;
 
-    final Map<String, int> grams = <String, int>{};
-    for (int i = 0; i <= aLen - n; i++) {
-      final String gram = a.substring(i, i + n);
-      grams[gram] = (grams[gram] ?? 0) + 1;
-    }
+      final int n = tryLen < 5 ? 1 : 2;
+      final int needleGramCount = needle.length - n + 1;
+      final int candidateGramCount = tryLen - n + 1;
+      if (needleGramCount <= 0 || candidateGramCount <= 0) continue;
+      final double denom = (needleGramCount + candidateGramCount).toDouble();
 
-    int matches = 0;
-    for (int i = 0; i <= bLen - n; i++) {
-      final String gram = b.substring(i, i + n);
-      final int count = grams[gram] ?? 0;
-      if (count > 0) {
-        grams[gram] = count - 1;
-        matches++;
+      // Build needle gram map (keyed by int-encoded gram).
+      final Map<int, int> nGrams = <int, int>{};
+      for (int i = 0; i <= needle.length - n; i++) {
+        final int key = n == 1
+            ? needle.codeUnitAt(i)
+            : (needle.codeUnitAt(i) << 16) | needle.codeUnitAt(i + 1);
+        nGrams[key] = (nGrams[key] ?? 0) + 1;
+      }
+
+      // Build initial candidate gram map for position [start].
+      final Map<int, int> cGrams = <int, int>{};
+      for (int i = start; i <= start + tryLen - n; i++) {
+        final int key = n == 1
+            ? haystack.codeUnitAt(i)
+            : (haystack.codeUnitAt(i) << 16) | haystack.codeUnitAt(i + 1);
+        cGrams[key] = (cGrams[key] ?? 0) + 1;
+      }
+
+      // Score initial position.
+      int matches = _countGramMatches(nGrams, cGrams);
+      double sim = (matches * 2) / denom;
+      if (sim > bestSim) {
+        bestSim = sim;
+        bestPos = start;
+        bestLen = tryLen;
+      }
+
+      // Slide: remove outgoing gram, add incoming gram, recount.
+      for (int pos = start + 1; pos < scanEnd; pos++) {
+        // Remove gram leaving the window (at pos-1).
+        final int outIdx = pos - 1;
+        final int outKey = n == 1
+            ? haystack.codeUnitAt(outIdx)
+            : (haystack.codeUnitAt(outIdx) << 16) | haystack.codeUnitAt(outIdx + 1);
+        final int outCount = cGrams[outKey]!;
+        if (outCount <= 1) {
+          cGrams.remove(outKey);
+        } else {
+          cGrams[outKey] = outCount - 1;
+        }
+
+        // Add gram entering the window (at pos + tryLen - n).
+        final int inIdx = pos + tryLen - n;
+        final int inKey = n == 1
+            ? haystack.codeUnitAt(inIdx)
+            : (haystack.codeUnitAt(inIdx) << 16) | haystack.codeUnitAt(inIdx + 1);
+        cGrams[inKey] = (cGrams[inKey] ?? 0) + 1;
+
+        // Recount matches (intersection of nGrams and cGrams).
+        matches = _countGramMatches(nGrams, cGrams);
+        sim = (matches * 2) / denom;
+        if (sim > bestSim) {
+          bestSim = sim;
+          bestPos = pos;
+          bestLen = tryLen;
+        }
       }
     }
 
-    final int aGrams = aLen - n + 1;
-    final int bGrams = bLen - n + 1;
-    return (matches * 2) / (aGrams + bGrams);
+    return _SlidingDiceResult(bestSim, bestPos, bestLen);
+  }
+
+  static int _countGramMatches(Map<int, int> a, Map<int, int> b) {
+    int matches = 0;
+    // Iterate smaller map for efficiency.
+    final Map<int, int> smaller = a.length <= b.length ? a : b;
+    final Map<int, int> larger = a.length <= b.length ? b : a;
+    for (final MapEntry<int, int> e in smaller.entries) {
+      final int other = larger[e.key] ?? 0;
+      if (other > 0) {
+        matches += e.value < other ? e.value : other;
+      }
+    }
+    return matches;
   }
 
   // ---------- 起点检测 ----------
@@ -363,21 +423,17 @@ class EpubSrtMatcher {
         }
         continue;
       }
-      // 模糊兜底：在全书扫描找最佳相似位置
-      double bestSim = 0.0;
-      int bestPos = -1;
-      final int scanEnd = big.length - nc.length + 1;
-      for (int pos = 0; pos < scanEnd; pos++) {
-        final String candidate = big.substring(pos, pos + nc.length);
-        final double sim = _diceSimilarity(nc, candidate);
-        if (sim > bestSim) {
-          bestSim = sim;
-          bestPos = pos;
-        }
-      }
-      if (bestSim >= similarityThreshold && bestPos >= 0) {
-        if (minStart == null || bestPos < minStart) {
-          minStart = bestPos;
+      // 模糊兜底：在全书扫描找最佳相似位置（滚动窗口）
+      final _SlidingDiceResult r = _slidingDice(
+        needle: nc,
+        haystack: big,
+        start: 0,
+        end: big.length,
+        threshold: similarityThreshold,
+      );
+      if (r.score >= similarityThreshold && r.pos >= 0) {
+        if (minStart == null || r.pos < minStart) {
+          minStart = r.pos;
         }
       }
     }
@@ -470,6 +526,14 @@ class EpubSrtMatcher {
     }
     return ans;
   }
+}
+
+class _SlidingDiceResult {
+  const _SlidingDiceResult(this.score, this.pos, this.len);
+
+  final double score;
+  final int pos;
+  final int len;
 }
 
 class _Index {
