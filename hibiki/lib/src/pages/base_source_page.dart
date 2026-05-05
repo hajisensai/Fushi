@@ -236,7 +236,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
     appModel.currentMediaSource?.clearExtraData();
   }
 
-  double get popupMaxWidth => 400;
+  double get popupMaxWidth => appModel.popupMaxWidth;
   double get popupMaxHeight => 360;
   double get popupPadding => 6;
 

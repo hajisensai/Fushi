@@ -328,6 +328,8 @@
     "auto_search": "Auto search",
     "auto_search_debounce_delay": "Auto search debounce delay",
     "dictionary_font_size": "Dictionary font size",
+    "popup_max_width": "Popup max width",
+    "unit_dp": "dp",
     "handlebar_expression": "Expression",
     "handlebar_reading": "Reading",
     "handlebar_furigana_plain": "Furigana",

@@ -86,6 +86,7 @@ class _DictionaryDialogPageState extends BasePageState {
               const JidoujishoDivider(),
               buildDebounceDelayField(),
               buildDictionaryFontSizeField(),
+              buildPopupMaxWidthSlider(),
               buildMaximumTermsField(),
               const Space.normal(),
               buildManageAudioSources(),
@@ -317,6 +318,50 @@ class _DictionaryDialogPageState extends BasePageState {
         ),
         labelText: t.dictionary_font_size,
       ),
+    );
+  }
+
+  Widget buildPopupMaxWidthSlider() {
+    final ValueNotifier<double> notifier =
+        ValueNotifier<double>(appModel.popupMaxWidth);
+
+    return ValueListenableBuilder<double>(
+      valueListenable: notifier,
+      builder: (_, value, __) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Space.small(),
+            Row(
+              children: [
+                Expanded(child: Text(t.popup_max_width)),
+                Text('${value.round()} ${t.unit_dp}',
+                    style: textTheme.bodySmall),
+                const SizedBox(width: 4),
+                JidoujishoIconButton(
+                  tooltip: t.reset,
+                  size: 18,
+                  onTap: () {
+                    notifier.value = appModel.defaultPopupMaxWidth;
+                    appModel.setPopupMaxWidth(appModel.defaultPopupMaxWidth);
+                  },
+                  icon: Icons.undo,
+                ),
+              ],
+            ),
+            Slider(
+              value: value,
+              min: 250,
+              max: 600,
+              divisions: 35,
+              onChanged: (v) {
+                notifier.value = v;
+                appModel.setPopupMaxWidth(v);
+              },
+            ),
+          ],
+        );
+      },
     );
   }
 

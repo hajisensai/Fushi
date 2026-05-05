@@ -307,6 +307,8 @@
     "auto_search": "自动搜索",
     "auto_search_debounce_delay": "自动搜索防抖延迟",
     "dictionary_font_size": "词典字号",
+    "popup_max_width": "查词窗口最大宽度",
+    "unit_dp": "dp",
     "handlebar_expression": "词条",
     "handlebar_reading": "读音",
     "handlebar_furigana_plain": "振假名",

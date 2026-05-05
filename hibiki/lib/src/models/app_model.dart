@@ -3784,6 +3784,20 @@ class AppModel with ChangeNotifier {
     await _setPref('dictionary_entry_font_size', fontSize);
   }
 
+  /// Default popup max width in dp.
+  final double defaultPopupMaxWidth = 400;
+
+  /// The popup max width in dp.
+  double get popupMaxWidth {
+    return _getPref('popup_max_width', defaultValue: defaultPopupMaxWidth);
+  }
+
+  /// Sets the popup max width in dp.
+  void setPopupMaxWidth(double width) async {
+    await _setPref('popup_max_width', width);
+    notifyListeners();
+  }
+
   bool get silentExport {
     return _getPref('silent_export', defaultValue: true);
   }
