@@ -38,6 +38,13 @@ import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
 import 'package:hibiki/src/media/audiobook/srt_parser.dart';
 import 'package:hibiki/utils.dart';
 
+String _cssAlpha(int alpha) {
+  if (alpha == 255) {
+    return '1';
+  }
+  return (alpha / 255.0).toStringAsFixed(2);
+}
+
 /// Builds the TTU custom theme object stored in localStorage.
 Map<String, String> buildTtuCustomThemeDefinition({
   required bool dark,
@@ -55,12 +62,12 @@ Map<String, String> buildTtuCustomThemeDefinition({
   final Color resolvedBg = backgroundColor ??
       (dark ? const Color(0xFF23272A) : const Color(0xFFFFFFFF));
   final String bgRgba =
-      'rgba(${resolvedBg.red},${resolvedBg.green},${resolvedBg.blue},${(resolvedBg.alpha / 255.0).toStringAsFixed(2)})';
+      'rgba(${resolvedBg.red},${resolvedBg.green},${resolvedBg.blue},${_cssAlpha(resolvedBg.alpha)})';
 
   final Color resolvedSel = selectionColor ??
       (dark ? const Color(0xCCD4D9DC) : const Color(0xFF979797));
   final String selRgba =
-      'rgba(${resolvedSel.red},${resolvedSel.green},${resolvedSel.blue},${(resolvedSel.alpha / 255.0).toStringAsFixed(2)})';
+      'rgba(${resolvedSel.red},${resolvedSel.green},${resolvedSel.blue},${_cssAlpha(resolvedSel.alpha)})';
 
   return {
     'fontColor': 'rgba($r,$g,$b,$a)',
@@ -91,6 +98,26 @@ String buildTtuCustomThemeJs({
   });
   return 'window.localStorage.setItem("customThemes",'
       '${jsonEncode(themesJson)})';
+}
+
+/// Builds the native reader chrome theme around the TTU page surface.
+ThemeData buildTtuReaderChromeTheme({
+  required ThemeData base,
+  required Color surface,
+}) {
+  return base.copyWith(
+    scaffoldBackgroundColor: surface,
+    canvasColor: surface,
+    cardColor: surface,
+    colorScheme: base.colorScheme.copyWith(
+      surface: surface,
+      surfaceContainerLow: surface,
+      surfaceContainer: surface,
+      surfaceContainerHigh: surface,
+    ),
+    bottomAppBarTheme: base.bottomAppBarTheme.copyWith(color: surface),
+    bottomSheetTheme: base.bottomSheetTheme.copyWith(backgroundColor: surface),
+  );
 }
 
 /// The media page used for the [ReaderTtuSource].
@@ -1055,17 +1082,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   }
 
   ThemeData _themedWithSurface(ThemeData base, Color surface) {
-    return base.copyWith(
-      colorScheme: base.colorScheme.copyWith(
-        surface: surface,
-        surfaceContainerLow: surface,
-        surfaceContainer: surface,
-        surfaceContainerHigh: surface,
-      ),
-      bottomAppBarTheme: base.bottomAppBarTheme.copyWith(color: surface),
-      bottomSheetTheme:
-          base.bottomSheetTheme.copyWith(backgroundColor: surface),
-    );
+    return buildTtuReaderChromeTheme(base: base, surface: surface);
   }
 
   String _appThemeSignature() {
@@ -1079,6 +1096,14 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       appModel.customThemeBackgroundColor?.toARGB32().toRadixString(16) ??
           'default',
       appModel.customThemeSelectionColor?.toARGB32().toRadixString(16) ??
+          'default',
+      appModel.customThemePrimaryColor?.toARGB32().toRadixString(16) ??
+          'default',
+      appModel.customThemeSecondaryColor?.toARGB32().toRadixString(16) ??
+          'default',
+      appModel.customThemeTertiaryColor?.toARGB32().toRadixString(16) ??
+          'default',
+      appModel.customThemeContainerColor?.toARGB32().toRadixString(16) ??
           'default',
     ].join(':');
   }
@@ -1161,13 +1186,15 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         break;
       case 'custom-theme':
         if (appModel.customThemeDark) {
-          final c = Color.fromRGBO(35, 39, 42, 1);
+          final c = appModel.customThemeBackgroundColor ??
+              const Color.fromRGBO(35, 39, 42, 1);
           appModel.setOverrideDictionaryTheme(
               _themedWithSurface(appModel.darkTheme, c));
           appModel.setOverrideDictionaryColor(
               c.withValues(alpha: dictionaryEntryOpacity));
         } else {
-          final c = Color.fromRGBO(249, 249, 249, 1);
+          final c = appModel.customThemeBackgroundColor ??
+              const Color.fromRGBO(249, 249, 249, 1);
           appModel.setOverrideDictionaryTheme(
               _themedWithSurface(appModel.theme, c));
           appModel.setOverrideDictionaryColor(

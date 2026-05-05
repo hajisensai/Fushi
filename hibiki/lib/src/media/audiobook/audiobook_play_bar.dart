@@ -134,6 +134,31 @@ class AudiobookFollowAudioButton extends StatelessWidget {
 /// [toc] / [readerProgress] 是 reader 页面 probe 后一次性传入的快照。
 /// 面板生存期内不自动刷新（TOC 在一次阅读会话里是静态的；当前章节
 /// 会随 follow audio 滚动变，但打开面板的当下已经 probe 了一次）。
+ChoiceChip buildReaderThemeChip({
+  required BuildContext context,
+  required String label,
+  required bool selected,
+  required ValueChanged<bool> onSelected,
+  Widget? avatar,
+}) {
+  final ColorScheme colors = Theme.of(context).colorScheme;
+  return ChoiceChip(
+    avatar: avatar,
+    label: Text(label),
+    selected: selected,
+    showCheckmark: false,
+    selectedColor: colors.primaryContainer,
+    labelStyle: selected ? TextStyle(color: colors.onPrimaryContainer) : null,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(8),
+      side: BorderSide(
+        color: selected ? colors.primaryContainer : colors.outline,
+      ),
+    ),
+    onSelected: onSelected,
+  );
+}
+
 class AudiobookSettingsSheet extends StatefulWidget {
   AudiobookSettingsSheet({
     required this.controller,
@@ -174,7 +199,7 @@ class AudiobookSettingsSheet extends StatefulWidget {
   final VoidCallback onExitReader;
   final InAppWebViewController webViewController;
   final AppModel appModel;
-  final VoidCallback? onThemeChanged;
+  final Future<void> Function()? onThemeChanged;
   final List<Bookmark> bookmarks;
   final Future<void> Function(Bookmark bookmark)? onJumpToBookmark;
   final Future<void> Function(int index)? onDeleteBookmark;
@@ -197,7 +222,6 @@ class AudiobookSettingsSheet extends StatefulWidget {
 }
 
 class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
-
   ReaderTtuSource get _src => ReaderTtuSource.instance;
 
   TtuReaderSettings? _settings;
@@ -216,7 +240,6 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
 
   @override
   void dispose() {
-
     _searchController.dispose();
     super.dispose();
   }
@@ -578,17 +601,17 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                     final String query = _searchController.text.trim();
                     final int rawIdx = r.sectionIndex;
                     final List<TtuTocEntry> toc = widget.toc;
-                    final TtuTocEntry? tocEntry = toc.cast<TtuTocEntry?>().firstWhere(
-                      (TtuTocEntry? e) => e!.index == rawIdx,
-                      orElse: () => null,
-                    );
-                    final String chapterLabel = tocEntry?.label
-                        ?? t.go_to_chapter(n: rawIdx + 1);
+                    final TtuTocEntry? tocEntry =
+                        toc.cast<TtuTocEntry?>().firstWhere(
+                              (TtuTocEntry? e) => e!.index == rawIdx,
+                              orElse: () => null,
+                            );
+                    final String chapterLabel =
+                        tocEntry?.label ?? t.go_to_chapter(n: rawIdx + 1);
 
-                    final String before =
-                        r.context.substring(0, r.matchStart);
-                    final int matchEnd =
-                        (r.matchStart + query.length).clamp(0, r.context.length);
+                    final String before = r.context.substring(0, r.matchStart);
+                    final int matchEnd = (r.matchStart + query.length)
+                        .clamp(0, r.context.length);
                     final String match =
                         r.context.substring(r.matchStart, matchEnd);
                     final String after = r.context.substring(matchEnd);
@@ -834,8 +857,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                     max: 4.0,
                     divisions: 75,
                     onChanged: (double v) {
-                      final double rounded =
-                          (v * 20).roundToDouble() / 20;
+                      final double rounded = (v * 20).roundToDouble() / 20;
                       ctrl.setSpeed(rounded);
                     },
                   ),
@@ -947,16 +969,23 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         child: Row(
           children: [
             Expanded(child: Text(label)),
-            Switch(value: value, onChanged: (_) { toggle(); setState(() {}); }),
+            Switch(
+                value: value,
+                onChanged: (_) {
+                  toggle();
+                  setState(() {});
+                }),
           ],
         ),
       );
     }
+
     return [
       sw(t.highlight_on_tap, _src.highlightOnTap, _src.toggleHighlightOnTap),
       sw(t.volume_button_page_turning, _src.volumePageTurningEnabled, () {
         _src.toggleVolumePageTurningEnabled();
-        VolumeKeyChannel.instance.setInterceptEnabled(_src.volumePageTurningEnabled);
+        VolumeKeyChannel.instance
+            .setInterceptEnabled(_src.volumePageTurningEnabled);
       }),
       sw(t.invert_volume_buttons, _src.volumePageTurningInverted,
           _src.toggleVolumePageTurningInverted),
@@ -971,7 +1000,8 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           await Wakelock.disable();
         }
       }),
-      sw(t.auto_read_on_lookup, _src.autoReadOnLookup, _src.toggleAutoReadOnLookup),
+      sw(t.auto_read_on_lookup, _src.autoReadOnLookup,
+          _src.toggleAutoReadOnLookup),
       Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: Row(
@@ -1409,58 +1439,40 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           children: [
             ...TtuReaderSettings.availableThemes.map((String themeKey) {
               final bool selected = s.theme == themeKey;
-              return ChoiceChip(
-                label: Text(TtuReaderSettings.themeLabels[themeKey] ?? themeKey),
+              return buildReaderThemeChip(
+                context: context,
+                label: TtuReaderSettings.themeLabels[themeKey] ?? themeKey,
                 selected: selected,
-                showCheckmark: false,
-                selectedColor: theme.colorScheme.primaryContainer,
-                labelStyle: selected
-                    ? TextStyle(color: theme.colorScheme.onPrimaryContainer)
-                    : null,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  side: BorderSide(
-                    color: selected
-                        ? theme.colorScheme.primaryContainer
-                        : theme.colorScheme.outline,
-                  ),
-                ),
                 onSelected: (bool on) async {
                   if (!on) return;
                   s.theme = themeKey;
                   setState(() {});
                   await _updateSetting('theme', themeKey);
                   await widget.appModel.setAppThemeKey(themeKey);
-                  widget.onThemeChanged?.call();
+                  await widget.onThemeChanged?.call();
                 },
               );
             }),
-            ActionChip(
+            buildReaderThemeChip(
               avatar: Icon(
                 Icons.palette,
                 size: 18,
                 color: s.theme == 'custom-theme'
-                    ? theme.colorScheme.primary
+                    ? theme.colorScheme.onPrimaryContainer
                     : null,
               ),
-              label: Text(
-                t.custom_theme,
-                style: s.theme == 'custom-theme'
-                    ? TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: theme.colorScheme.primary,
-                      )
-                    : null,
-              ),
-              onPressed: () {
+              context: context,
+              label: t.custom_theme,
+              selected: s.theme == 'custom-theme',
+              onSelected: (bool _) {
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (_) => const CustomThemePage()),
-                ).then((_) {
+                ).then((_) async {
                   s.theme = widget.appModel.appThemeKey;
                   setState(() {});
-                  _updateSetting('theme', s.theme);
-                  widget.onThemeChanged?.call();
+                  await _updateSetting('theme', s.theme);
+                  await widget.onThemeChanged?.call();
                 });
               },
             ),
@@ -1613,7 +1625,8 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                           },
                           tooltip: t.play,
                         ),
-                      if (fav.sectionIndex != null && widget.onJumpToFavorite != null)
+                      if (fav.sectionIndex != null &&
+                          widget.onJumpToFavorite != null)
                         IconButton(
                           icon: const Icon(Icons.open_in_new, size: 16),
                           onPressed: () async {

@@ -169,7 +169,8 @@ class _HintIcon extends StatelessWidget {
   }
 }
 
-List<Widget> _buildReaderOnlySwitches(VoidCallback rebuild, {AppModel? appModel}) {
+List<Widget> _buildReaderOnlySwitches(VoidCallback rebuild,
+    {AppModel? appModel}) {
   return [
     _buildSwitch(
       label: t.highlight_on_tap,
@@ -304,8 +305,34 @@ Widget _buildFontEntry(BuildContext context) {
   );
 }
 
+ChoiceChip _buildThemeChip({
+  required BuildContext context,
+  required String label,
+  required bool selected,
+  required ValueChanged<bool> onSelected,
+  Widget? avatar,
+}) {
+  final ColorScheme chipCs = Theme.of(context).colorScheme;
+  return ChoiceChip(
+    avatar: avatar,
+    label: Text(label),
+    selected: selected,
+    showCheckmark: false,
+    selectedColor: chipCs.primaryContainer,
+    labelStyle: selected ? TextStyle(color: chipCs.onPrimaryContainer) : null,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(8),
+      side: BorderSide(
+        color: selected ? chipCs.primaryContainer : chipCs.outline,
+      ),
+    ),
+    onSelected: onSelected,
+  );
+}
+
 /// Theme selector (6 presets + custom) — calls [AppModel.setAppThemeKey].
-Widget _buildThemeSelector(AppModel appModel, {BuildContext? navContext}) {
+Widget _buildThemeSelector(AppModel appModel,
+    {required BuildContext navContext}) {
   return Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
@@ -316,59 +343,37 @@ Widget _buildThemeSelector(AppModel appModel, {BuildContext? navContext}) {
         runSpacing: 6,
         children: [
           ...AppModel.themePresets.entries.map((e) {
-            final selected = appModel.appThemeKey == e.key;
-            final chipCs = navContext != null
-                ? Theme.of(navContext).colorScheme
-                : null;
-            return ChoiceChip(
-              label: Text(AppModel.themeLabel(e.key)),
+            final bool selected = appModel.appThemeKey == e.key;
+            return _buildThemeChip(
+              context: navContext,
+              label: AppModel.themeLabel(e.key),
               selected: selected,
-              showCheckmark: false,
-              selectedColor: chipCs?.primaryContainer,
-              labelStyle: selected && chipCs != null
-                  ? TextStyle(color: chipCs.onPrimaryContainer)
-                  : null,
-              shape: chipCs != null
-                  ? RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      side: BorderSide(
-                        color: selected
-                            ? chipCs.primaryContainer
-                            : chipCs.outline,
-                      ),
-                    )
-                  : null,
               onSelected: (on) {
-                if (!on) return;
+                if (!on) {
+                  return;
+                }
                 appModel.setAppThemeKey(e.key);
               },
             );
           }),
-          if (navContext != null)
-            ActionChip(
-              avatar: Icon(
-                Icons.palette,
-                size: 18,
-                color: appModel.appThemeKey == 'custom-theme'
-                    ? Theme.of(navContext).colorScheme.primary
-                    : null,
-              ),
-              label: Text(
-                t.custom_theme,
-                style: appModel.appThemeKey == 'custom-theme'
-                    ? TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Theme.of(navContext).colorScheme.primary,
-                      )
-                    : null,
-              ),
-              onPressed: () {
-                Navigator.push(
-                  navContext,
-                  MaterialPageRoute(builder: (_) => const CustomThemePage()),
-                );
-              },
+          _buildThemeChip(
+            context: navContext,
+            selected: appModel.appThemeKey == 'custom-theme',
+            avatar: Icon(
+              Icons.palette,
+              size: 18,
+              color: appModel.appThemeKey == 'custom-theme'
+                  ? Theme.of(navContext).colorScheme.onPrimaryContainer
+                  : null,
             ),
+            label: t.custom_theme,
+            onSelected: (_) {
+              Navigator.push(
+                navContext,
+                MaterialPageRoute(builder: (_) => const CustomThemePage()),
+              );
+            },
+          ),
         ],
       ),
     ],
@@ -385,7 +390,6 @@ class TtuSettingsDialogPage extends BasePage {
 }
 
 class _TtuSettingsDialogPageState extends BasePageState {
-
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
@@ -444,7 +448,8 @@ class _TtuSettingsDialogPageState extends BasePageState {
               const Space.small(),
               const JidoujishoDivider(),
               const Space.small(),
-              ..._buildReaderOnlySwitches(() => setState(() {}), appModel: appModel),
+              ..._buildReaderOnlySwitches(() => setState(() {}),
+                  appModel: appModel),
               const Space.small(),
               const JidoujishoDivider(),
               _buildPageTurningSpeed(() => setState(() {})),
@@ -527,8 +532,7 @@ class _TtuSettingsDialogContentState extends BasePageState {
           onTap: () {
             Navigator.push(
               context,
-              MaterialPageRoute(
-                  builder: (_) => const _UpdateSettingsPage()),
+              MaterialPageRoute(builder: (_) => const _UpdateSettingsPage()),
             ).then((_) => setState(() {}));
           },
         ),
@@ -580,10 +584,14 @@ class _ReaderBehaviorSettingsPageState extends BasePageState {
       appBar: AppBar(title: Text(t.reader_settings_section)),
       body: ListView(
         padding: EdgeInsets.fromLTRB(
-          16, 8, 16, 8 + MediaQuery.of(context).padding.bottom,
+          16,
+          8,
+          16,
+          8 + MediaQuery.of(context).padding.bottom,
         ),
         children: [
-          ..._buildReaderOnlySwitches(() => setState(() {}), appModel: appModel),
+          ..._buildReaderOnlySwitches(() => setState(() {}),
+              appModel: appModel),
           _buildSwitch(
             label: t.disable_dialog_scrim,
             value: appModel.disableDialogScrim,
@@ -615,7 +623,10 @@ class _UpdateSettingsPageState extends BasePageState {
       appBar: AppBar(title: Text(t.section_update)),
       body: ListView(
         padding: EdgeInsets.fromLTRB(
-          16, 8, 16, 8 + MediaQuery.of(context).padding.bottom,
+          16,
+          8,
+          16,
+          8 + MediaQuery.of(context).padding.bottom,
         ),
         children: [
           _buildSwitch(

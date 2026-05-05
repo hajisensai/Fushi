@@ -22,6 +22,14 @@ class _CustomThemePageState extends BasePageState {
   bool _useBgColor = false;
   Color? _selectionColor;
   bool _useSelectionColor = false;
+  Color? _primaryColor;
+  bool _usePrimaryColor = false;
+  Color? _secondaryColor;
+  bool _useSecondaryColor = false;
+  Color? _tertiaryColor;
+  bool _useTertiaryColor = false;
+  Color? _containerColor;
+  bool _useContainerColor = false;
 
   @override
   void initState() {
@@ -37,10 +45,54 @@ class _CustomThemePageState extends BasePageState {
     _selectionColor = appModelNoUpdate.customThemeSelectionColor;
     _useSelectionColor = _selectionColor != null;
     _selectionColor ??= Colors.grey;
+    final ColorScheme generated = _generatedScheme;
+    _primaryColor = appModelNoUpdate.customThemePrimaryColor;
+    _usePrimaryColor = _primaryColor != null;
+    _primaryColor ??= generated.primary;
+    _secondaryColor = appModelNoUpdate.customThemeSecondaryColor;
+    _useSecondaryColor = _secondaryColor != null;
+    _secondaryColor ??= generated.secondary;
+    _tertiaryColor = appModelNoUpdate.customThemeTertiaryColor;
+    _useTertiaryColor = _tertiaryColor != null;
+    _tertiaryColor ??= generated.tertiary;
+    _containerColor = appModelNoUpdate.customThemeContainerColor;
+    _useContainerColor = _containerColor != null;
+    _containerColor ??= generated.primaryContainer;
   }
 
-  ColorScheme get _preview =>
-      ColorScheme.fromSeed(seedColor: _seed, brightness: _dark ? Brightness.dark : Brightness.light);
+  ColorScheme get _generatedScheme => ColorScheme.fromSeed(
+      seedColor: _seed, brightness: _dark ? Brightness.dark : Brightness.light);
+
+  ColorScheme get _preview => buildHibikiColorScheme(
+        seedColor: _seed,
+        brightness: _dark ? Brightness.dark : Brightness.light,
+        primary: _usePrimaryColor ? _primaryColor : null,
+        secondary: _useSecondaryColor ? _secondaryColor : null,
+        tertiary: _useTertiaryColor ? _tertiaryColor : null,
+        primaryContainer: _useContainerColor ? _containerColor : null,
+      );
+
+  void _refreshInactiveRoleColors() {
+    final ColorScheme generated = _generatedScheme;
+    if (!_usePrimaryColor) _primaryColor = generated.primary;
+    if (!_useSecondaryColor) _secondaryColor = generated.secondary;
+    if (!_useTertiaryColor) _tertiaryColor = generated.tertiary;
+    if (!_useContainerColor) _containerColor = generated.primaryContainer;
+  }
+
+  void _setSeed(Color color) {
+    setState(() {
+      _seed = color;
+      _refreshInactiveRoleColors();
+    });
+  }
+
+  void _setDark(bool value) {
+    setState(() {
+      _dark = value;
+      _refreshInactiveRoleColors();
+    });
+  }
 
   String _encodeTheme() {
     final hex = _seed.toARGB32().toRadixString(16).padLeft(8, '0');
@@ -54,13 +106,44 @@ class _CustomThemePageState extends BasePageState {
       code += ':bg$bgHex';
     }
     if (_useSelectionColor && _selectionColor != null) {
-      final selHex = _selectionColor!.toARGB32().toRadixString(16).padLeft(8, '0');
+      final selHex =
+          _selectionColor!.toARGB32().toRadixString(16).padLeft(8, '0');
       code += ':sc$selHex';
+    }
+    if (_usePrimaryColor && _primaryColor != null) {
+      final primaryHex =
+          _primaryColor!.toARGB32().toRadixString(16).padLeft(8, '0');
+      code += ':pr$primaryHex';
+    }
+    if (_useSecondaryColor && _secondaryColor != null) {
+      final secondaryHex =
+          _secondaryColor!.toARGB32().toRadixString(16).padLeft(8, '0');
+      code += ':sr$secondaryHex';
+    }
+    if (_useTertiaryColor && _tertiaryColor != null) {
+      final tertiaryHex =
+          _tertiaryColor!.toARGB32().toRadixString(16).padLeft(8, '0');
+      code += ':tr$tertiaryHex';
+    }
+    if (_useContainerColor && _containerColor != null) {
+      final containerHex =
+          _containerColor!.toARGB32().toRadixString(16).padLeft(8, '0');
+      code += ':cr$containerHex';
     }
     return code;
   }
 
-  static ({Color seed, bool dark, Color? fontColor, Color? bgColor, Color? selectionColor})? _decodeTheme(String code) {
+  static ({
+    Color seed,
+    bool dark,
+    Color? fontColor,
+    Color? bgColor,
+    Color? selectionColor,
+    Color? primaryColor,
+    Color? secondaryColor,
+    Color? tertiaryColor,
+    Color? containerColor
+  })? _decodeTheme(String code) {
     final parts = code.trim().split(':');
     if (parts.length < 3 || parts[0] != 'hibiki-theme') return null;
     final colorVal = int.tryParse(parts[1], radix: 16);
@@ -70,6 +153,10 @@ class _CustomThemePageState extends BasePageState {
     Color? fontColor;
     Color? bgColor;
     Color? selectionColor;
+    Color? primaryColor;
+    Color? secondaryColor;
+    Color? tertiaryColor;
+    Color? containerColor;
     for (int i = 3; i < parts.length; i++) {
       if (parts[i].startsWith('fc')) {
         final v = int.tryParse(parts[i].substring(2), radix: 16);
@@ -80,9 +167,31 @@ class _CustomThemePageState extends BasePageState {
       } else if (parts[i].startsWith('sc')) {
         final v = int.tryParse(parts[i].substring(2), radix: 16);
         if (v != null) selectionColor = Color(v);
+      } else if (parts[i].startsWith('pr')) {
+        final v = int.tryParse(parts[i].substring(2), radix: 16);
+        if (v != null) primaryColor = Color(v);
+      } else if (parts[i].startsWith('sr')) {
+        final v = int.tryParse(parts[i].substring(2), radix: 16);
+        if (v != null) secondaryColor = Color(v);
+      } else if (parts[i].startsWith('tr')) {
+        final v = int.tryParse(parts[i].substring(2), radix: 16);
+        if (v != null) tertiaryColor = Color(v);
+      } else if (parts[i].startsWith('cr')) {
+        final v = int.tryParse(parts[i].substring(2), radix: 16);
+        if (v != null) containerColor = Color(v);
       }
     }
-    return (seed: Color(colorVal), dark: dark, fontColor: fontColor, bgColor: bgColor, selectionColor: selectionColor);
+    return (
+      seed: Color(colorVal),
+      dark: dark,
+      fontColor: fontColor,
+      bgColor: bgColor,
+      selectionColor: selectionColor,
+      primaryColor: primaryColor,
+      secondaryColor: secondaryColor,
+      tertiaryColor: tertiaryColor,
+      containerColor: containerColor
+    );
   }
 
   void _shareTheme() {
@@ -124,6 +233,19 @@ class _CustomThemePageState extends BasePageState {
                 _useBgColor = result.bgColor != null;
                 _selectionColor = result.selectionColor ?? Colors.grey;
                 _useSelectionColor = result.selectionColor != null;
+                final ColorScheme generated = buildHibikiColorScheme(
+                  seedColor: result.seed,
+                  brightness: result.dark ? Brightness.dark : Brightness.light,
+                );
+                _primaryColor = result.primaryColor ?? generated.primary;
+                _usePrimaryColor = result.primaryColor != null;
+                _secondaryColor = result.secondaryColor ?? generated.secondary;
+                _useSecondaryColor = result.secondaryColor != null;
+                _tertiaryColor = result.tertiaryColor ?? generated.tertiary;
+                _useTertiaryColor = result.tertiaryColor != null;
+                _containerColor =
+                    result.containerColor ?? generated.primaryContainer;
+                _useContainerColor = result.containerColor != null;
               });
               Fluttertoast.showToast(msg: t.import_theme_success);
             },
@@ -155,7 +277,12 @@ class _CustomThemePageState extends BasePageState {
       resizeToAvoidBottomInset: true,
       body: ListView(
         padding: EdgeInsets.fromLTRB(
-          16, 12, 16, 12 + MediaQuery.of(context).padding.bottom + MediaQuery.of(context).viewInsets.bottom,
+          16,
+          12,
+          16,
+          12 +
+              MediaQuery.of(context).padding.bottom +
+              MediaQuery.of(context).viewInsets.bottom,
         ),
         children: [
           _buildPreviewCard(),
@@ -165,7 +292,7 @@ class _CustomThemePageState extends BasePageState {
               Expanded(child: Text(t.dark_mode)),
               Switch(
                 value: _dark,
-                onChanged: (v) => setState(() => _dark = v),
+                onChanged: _setDark,
               ),
             ],
           ),
@@ -174,11 +301,13 @@ class _CustomThemePageState extends BasePageState {
           const SizedBox(height: 8),
           LayoutBuilder(
             builder: (context, constraints) {
-              final pickerWidth = constraints.maxWidth.clamp(0.0, MediaQuery.of(context).size.width - 64);
-              final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+              final pickerWidth = constraints.maxWidth
+                  .clamp(0.0, MediaQuery.of(context).size.width - 64);
+              final isLandscape =
+                  MediaQuery.of(context).orientation == Orientation.landscape;
               return ColorPicker(
                 pickerColor: _seed,
-                onColorChanged: (c) => setState(() => _seed = c),
+                onColorChanged: _setSeed,
                 colorPickerWidth: pickerWidth,
                 pickerAreaHeightPercent: isLandscape ? 0.4 : 0.6,
                 enableAlpha: false,
@@ -187,6 +316,78 @@ class _CustomThemePageState extends BasePageState {
                 labelTypes: const [],
               );
             },
+          ),
+          const SizedBox(height: 16),
+          _buildOptionalColorPicker(
+            label: t.color_primary,
+            enabled: _usePrimaryColor,
+            onEnabledChanged: (bool value) {
+              setState(() {
+                _usePrimaryColor = value;
+                if (value) {
+                  _primaryColor ??= _generatedScheme.primary;
+                } else {
+                  _primaryColor = _generatedScheme.primary;
+                }
+              });
+            },
+            color: _primaryColor!,
+            onChanged: (Color color) => setState(() => _primaryColor = color),
+            enableAlpha: false,
+          ),
+          const SizedBox(height: 12),
+          _buildOptionalColorPicker(
+            label: t.color_secondary,
+            enabled: _useSecondaryColor,
+            onEnabledChanged: (bool value) {
+              setState(() {
+                _useSecondaryColor = value;
+                if (value) {
+                  _secondaryColor ??= _generatedScheme.secondary;
+                } else {
+                  _secondaryColor = _generatedScheme.secondary;
+                }
+              });
+            },
+            color: _secondaryColor!,
+            onChanged: (Color color) => setState(() => _secondaryColor = color),
+            enableAlpha: false,
+          ),
+          const SizedBox(height: 12),
+          _buildOptionalColorPicker(
+            label: t.color_tertiary,
+            enabled: _useTertiaryColor,
+            onEnabledChanged: (bool value) {
+              setState(() {
+                _useTertiaryColor = value;
+                if (value) {
+                  _tertiaryColor ??= _generatedScheme.tertiary;
+                } else {
+                  _tertiaryColor = _generatedScheme.tertiary;
+                }
+              });
+            },
+            color: _tertiaryColor!,
+            onChanged: (Color color) => setState(() => _tertiaryColor = color),
+            enableAlpha: false,
+          ),
+          const SizedBox(height: 12),
+          _buildOptionalColorPicker(
+            label: t.color_container,
+            enabled: _useContainerColor,
+            onEnabledChanged: (bool value) {
+              setState(() {
+                _useContainerColor = value;
+                if (value) {
+                  _containerColor ??= _generatedScheme.primaryContainer;
+                } else {
+                  _containerColor = _generatedScheme.primaryContainer;
+                }
+              });
+            },
+            color: _containerColor!,
+            onChanged: (Color color) => setState(() => _containerColor = color),
+            enableAlpha: false,
           ),
           const SizedBox(height: 16),
           Row(
@@ -244,15 +445,23 @@ class _CustomThemePageState extends BasePageState {
           ],
           const SizedBox(height: 16),
           FilledButton.icon(
-            onPressed: () {
-              appModel.applyCustomTheme(
+            onPressed: () async {
+              final NavigatorState navigator = Navigator.of(context);
+              await appModel.applyCustomTheme(
                 seed: _seed,
                 dark: _dark,
                 fontColor: _useFontColor ? _fontColor : null,
                 backgroundColor: _useBgColor ? _bgColor : null,
                 selectionColor: _useSelectionColor ? _selectionColor : null,
+                primaryColor: _usePrimaryColor ? _primaryColor : null,
+                secondaryColor: _useSecondaryColor ? _secondaryColor : null,
+                tertiaryColor: _useTertiaryColor ? _tertiaryColor : null,
+                containerColor: _useContainerColor ? _containerColor : null,
               );
-              Navigator.pop(context);
+              if (!mounted) {
+                return;
+              }
+              navigator.pop();
             },
             icon: const Icon(Icons.check),
             label: Text(t.apply_theme),
@@ -271,7 +480,11 @@ class _CustomThemePageState extends BasePageState {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(t.preview, style: TextStyle(color: cs.onSurface, fontSize: 16, fontWeight: FontWeight.bold)),
+            Text(t.preview,
+                style: TextStyle(
+                    color: cs.onSurface,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             Row(
               children: [
@@ -294,13 +507,15 @@ class _CustomThemePageState extends BasePageState {
               ),
               child: RichText(
                 text: TextSpan(
-                  style: TextStyle(color: _useFontColor ? _fontColor : cs.onSurface),
+                  style: TextStyle(
+                      color: _useFontColor ? _fontColor : cs.onSurface),
                   children: [
                     const TextSpan(text: '日本語の'),
                     TextSpan(
                       text: 'テキスト',
                       style: TextStyle(
-                        backgroundColor: _useSelectionColor ? _selectionColor : null,
+                        backgroundColor:
+                            _useSelectionColor ? _selectionColor : null,
                       ),
                     ),
                     const TextSpan(text: 'プレビュー\nSample text preview'),
@@ -321,8 +536,10 @@ class _CustomThemePageState extends BasePageState {
   }) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final pickerWidth = constraints.maxWidth.clamp(0.0, MediaQuery.of(context).size.width - 64);
-        final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+        final pickerWidth = constraints.maxWidth
+            .clamp(0.0, MediaQuery.of(context).size.width - 64);
+        final isLandscape =
+            MediaQuery.of(context).orientation == Orientation.landscape;
         return ColorPicker(
           pickerColor: color,
           onColorChanged: onChanged,
@@ -334,6 +551,34 @@ class _CustomThemePageState extends BasePageState {
           labelTypes: const [],
         );
       },
+    );
+  }
+
+  Widget _buildOptionalColorPicker({
+    required String label,
+    required bool enabled,
+    required ValueChanged<bool> onEnabledChanged,
+    required Color color,
+    required ValueChanged<Color> onChanged,
+    required bool enableAlpha,
+  }) {
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(child: Text(label)),
+            Switch(value: enabled, onChanged: onEnabledChanged),
+          ],
+        ),
+        if (enabled) ...[
+          const SizedBox(height: 8),
+          _buildCompactColorPicker(
+            color: color,
+            onChanged: onChanged,
+            enableAlpha: enableAlpha,
+          ),
+        ],
+      ],
     );
   }
 
@@ -349,7 +594,9 @@ class _CustomThemePageState extends BasePageState {
             ),
           ),
           const SizedBox(height: 4),
-          Text(label, style: TextStyle(fontSize: 10, color: textColor), overflow: TextOverflow.ellipsis),
+          Text(label,
+              style: TextStyle(fontSize: 10, color: textColor),
+              overflow: TextOverflow.ellipsis),
         ],
       ),
     );

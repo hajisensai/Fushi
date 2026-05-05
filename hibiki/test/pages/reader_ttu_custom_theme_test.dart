@@ -29,5 +29,31 @@ void main() {
       expect(js, contains('custom-theme'));
       expect(js, contains('rgba(35,39,42,1)'));
     });
+
+    test('reader chrome theme uses custom background and keeps seed primary',
+        () {
+      final base = ThemeData(
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF008577),
+        ),
+        sliderTheme: const SliderThemeData(
+          activeTrackColor: Color(0xFF008577),
+          thumbColor: Color(0xFF008577),
+        ),
+      );
+
+      final theme = buildTtuReaderChromeTheme(
+        base: base,
+        surface: const Color(0xFFFFF3E0),
+      );
+
+      expect(theme.colorScheme.surface, const Color(0xFFFFF3E0));
+      expect(theme.scaffoldBackgroundColor, const Color(0xFFFFF3E0));
+      expect(theme.bottomAppBarTheme.color, const Color(0xFFFFF3E0));
+      expect(theme.bottomSheetTheme.backgroundColor, const Color(0xFFFFF3E0));
+      expect(theme.colorScheme.primary, base.colorScheme.primary);
+      expect(theme.sliderTheme.activeTrackColor, const Color(0xFF008577));
+    });
   });
 }

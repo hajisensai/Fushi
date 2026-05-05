@@ -116,6 +116,39 @@ final pipSearchTermProvider = StateProvider<String>((ref) => '');
 /// A global [Provider] for listening to search term position changes in PIP mode.
 final pipSearchPositionProvider = StateProvider<int>((ref) => 0);
 
+Color _readableOnColor(Color color) {
+  return ThemeData.estimateBrightnessForColor(color) == Brightness.dark
+      ? Colors.white
+      : Colors.black;
+}
+
+ColorScheme buildHibikiColorScheme({
+  required Color seedColor,
+  required Brightness brightness,
+  Color? primary,
+  Color? secondary,
+  Color? tertiary,
+  Color? primaryContainer,
+}) {
+  final ColorScheme base = ColorScheme.fromSeed(
+    seedColor: seedColor,
+    brightness: brightness,
+  );
+  return base.copyWith(
+    primary: primary ?? base.primary,
+    onPrimary: primary != null ? _readableOnColor(primary) : base.onPrimary,
+    secondary: secondary ?? base.secondary,
+    onSecondary:
+        secondary != null ? _readableOnColor(secondary) : base.onSecondary,
+    tertiary: tertiary ?? base.tertiary,
+    onTertiary: tertiary != null ? _readableOnColor(tertiary) : base.onTertiary,
+    primaryContainer: primaryContainer ?? base.primaryContainer,
+    onPrimaryContainer: primaryContainer != null
+        ? _readableOnColor(primaryContainer)
+        : base.onPrimaryContainer,
+  );
+}
+
 /// A scoped model for parameters that affect the entire application.
 /// RiverPod is used for global state management across multiple layers,
 /// especially for preferences that persist across application restarts.
@@ -429,142 +462,152 @@ class AppModel with ChangeNotifier {
   }
 
   ThemeData get theme {
-    final cs = ColorScheme.fromSeed(
+    final bool useCustomRoles = appThemeKey == 'custom-theme';
+    final cs = buildHibikiColorScheme(
       seedColor: _seedColor,
       brightness: Brightness.light,
+      primary: useCustomRoles ? customThemePrimaryColor : null,
+      secondary: useCustomRoles ? customThemeSecondaryColor : null,
+      tertiary: useCustomRoles ? customThemeTertiaryColor : null,
+      primaryContainer: useCustomRoles ? customThemeContainerColor : null,
     );
     return ThemeData(
-        useMaterial3: true,
-        colorScheme: cs,
-        textTheme: textTheme,
-        appBarTheme: const AppBarTheme(
-          elevation: 0,
-          centerTitle: false,
+      useMaterial3: true,
+      colorScheme: cs,
+      textTheme: textTheme,
+      appBarTheme: const AppBarTheme(
+        elevation: 0,
+        centerTitle: false,
+      ),
+      switchTheme: SwitchThemeData(
+        thumbColor: MaterialStateColor.resolveWith((states) {
+          return states.contains(MaterialState.selected)
+              ? cs.primary
+              : Colors.white;
+        }),
+        trackColor: MaterialStateColor.resolveWith((states) {
+          return states.contains(MaterialState.selected)
+              ? cs.primaryContainer
+              : Colors.grey;
+        }),
+      ),
+      bottomNavigationBarTheme: BottomNavigationBarThemeData(
+        elevation: 0,
+        type: BottomNavigationBarType.fixed,
+        selectedLabelStyle: textTheme.labelSmall,
+        unselectedLabelStyle: textTheme.labelSmall,
+        showSelectedLabels: true,
+        showUnselectedLabels: true,
+      ),
+      popupMenuTheme: const PopupMenuThemeData(
+        shape: RoundedRectangleBorder(),
+      ),
+      dialogTheme: DialogThemeData(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
         ),
-        switchTheme: SwitchThemeData(
-          thumbColor: MaterialStateColor.resolveWith((states) {
-            return states.contains(MaterialState.selected)
-                ? cs.primary
-                : Colors.white;
-          }),
-          trackColor: MaterialStateColor.resolveWith((states) {
-            return states.contains(MaterialState.selected)
-                ? cs.primaryContainer
-                : Colors.grey;
-          }),
-        ),
-        bottomNavigationBarTheme: BottomNavigationBarThemeData(
-          elevation: 0,
-          type: BottomNavigationBarType.fixed,
-          selectedLabelStyle: textTheme.labelSmall,
-          unselectedLabelStyle: textTheme.labelSmall,
-          showSelectedLabels: true,
-          showUnselectedLabels: true,
-        ),
-        popupMenuTheme: const PopupMenuThemeData(
-          shape: RoundedRectangleBorder(),
-        ),
-        dialogTheme: DialogThemeData(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+      ),
+      listTileTheme: const ListTileThemeData(
+        dense: true,
+        horizontalTitleGap: 0,
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        enabledBorder: const UnderlineInputBorder(
+          borderSide: BorderSide(
+            color: Colors.black54,
           ),
         ),
-        listTileTheme: const ListTileThemeData(
-          dense: true,
-          horizontalTitleGap: 0,
+        focusedBorder: UnderlineInputBorder(
+          borderSide: BorderSide(color: cs.primary),
         ),
-        inputDecorationTheme: InputDecorationTheme(
-          enabledBorder: const UnderlineInputBorder(
-            borderSide: BorderSide(
-              color: Colors.black54,
-            ),
-          ),
-          focusedBorder: UnderlineInputBorder(
-            borderSide: BorderSide(color: cs.primary),
-          ),
-        ),
-        scrollbarTheme: ScrollbarThemeData(
-          thickness: MaterialStateProperty.all(3),
-          thumbVisibility: MaterialStateProperty.all(true),
-        ),
-        sliderTheme: SliderThemeData(
-          thumbColor: cs.primary,
-          activeTrackColor: cs.primary,
-          inactiveTrackColor: Colors.grey,
-          trackShape: const RectangularSliderTrackShape(),
-          trackHeight: 2,
-          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-        ),
-      );
+      ),
+      scrollbarTheme: ScrollbarThemeData(
+        thickness: MaterialStateProperty.all(3),
+        thumbVisibility: MaterialStateProperty.all(true),
+      ),
+      sliderTheme: SliderThemeData(
+        thumbColor: cs.primary,
+        activeTrackColor: cs.primary,
+        inactiveTrackColor: Colors.grey,
+        trackShape: const RectangularSliderTrackShape(),
+        trackHeight: 2,
+        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+      ),
+    );
   }
 
   ThemeData get darkTheme {
-    final cs = ColorScheme.fromSeed(
+    final bool useCustomRoles = appThemeKey == 'custom-theme';
+    final cs = buildHibikiColorScheme(
       seedColor: _seedColor,
       brightness: Brightness.dark,
+      primary: useCustomRoles ? customThemePrimaryColor : null,
+      secondary: useCustomRoles ? customThemeSecondaryColor : null,
+      tertiary: useCustomRoles ? customThemeTertiaryColor : null,
+      primaryContainer: useCustomRoles ? customThemeContainerColor : null,
     );
     return ThemeData(
-        useMaterial3: true,
-        colorScheme: cs,
-        textTheme: textTheme,
-        appBarTheme: const AppBarTheme(
-          elevation: 0,
-          centerTitle: false,
+      useMaterial3: true,
+      colorScheme: cs,
+      textTheme: textTheme,
+      appBarTheme: const AppBarTheme(
+        elevation: 0,
+        centerTitle: false,
+      ),
+      switchTheme: SwitchThemeData(
+        thumbColor: MaterialStateColor.resolveWith((states) {
+          return states.contains(MaterialState.selected)
+              ? cs.primary
+              : Colors.grey;
+        }),
+        trackColor: MaterialStateColor.resolveWith((states) {
+          return states.contains(MaterialState.selected)
+              ? cs.primaryContainer
+              : Colors.grey;
+        }),
+      ),
+      bottomNavigationBarTheme: BottomNavigationBarThemeData(
+        elevation: 0,
+        type: BottomNavigationBarType.fixed,
+        selectedLabelStyle: textTheme.labelSmall,
+        unselectedLabelStyle: textTheme.labelSmall,
+        showSelectedLabels: true,
+        showUnselectedLabels: true,
+      ),
+      popupMenuTheme: const PopupMenuThemeData(
+        shape: RoundedRectangleBorder(),
+      ),
+      dialogTheme: DialogThemeData(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
         ),
-        switchTheme: SwitchThemeData(
-          thumbColor: MaterialStateColor.resolveWith((states) {
-            return states.contains(MaterialState.selected)
-                ? cs.primary
-                : Colors.grey;
-          }),
-          trackColor: MaterialStateColor.resolveWith((states) {
-            return states.contains(MaterialState.selected)
-                ? cs.primaryContainer
-                : Colors.grey;
-          }),
-        ),
-        bottomNavigationBarTheme: BottomNavigationBarThemeData(
-          elevation: 0,
-          type: BottomNavigationBarType.fixed,
-          selectedLabelStyle: textTheme.labelSmall,
-          unselectedLabelStyle: textTheme.labelSmall,
-          showSelectedLabels: true,
-          showUnselectedLabels: true,
-        ),
-        popupMenuTheme: const PopupMenuThemeData(
-          shape: RoundedRectangleBorder(),
-        ),
-        dialogTheme: DialogThemeData(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+      ),
+      listTileTheme: const ListTileThemeData(
+        dense: true,
+        horizontalTitleGap: 0,
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        enabledBorder: const UnderlineInputBorder(
+          borderSide: BorderSide(
+            color: Colors.white70,
           ),
         ),
-        listTileTheme: const ListTileThemeData(
-          dense: true,
-          horizontalTitleGap: 0,
+        focusedBorder: UnderlineInputBorder(
+          borderSide: BorderSide(color: cs.primary),
         ),
-        inputDecorationTheme: InputDecorationTheme(
-          enabledBorder: const UnderlineInputBorder(
-            borderSide: BorderSide(
-              color: Colors.white70,
-            ),
-          ),
-          focusedBorder: UnderlineInputBorder(
-            borderSide: BorderSide(color: cs.primary),
-          ),
-        ),
-        scrollbarTheme: ScrollbarThemeData(
-          thumbVisibility: MaterialStateProperty.all(true),
-        ),
-        sliderTheme: SliderThemeData(
-          thumbColor: cs.primary,
-          activeTrackColor: cs.primary,
-          inactiveTrackColor: Colors.grey,
-          trackShape: const RectangularSliderTrackShape(),
-          trackHeight: 2,
-          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-        ),
-      );
+      ),
+      scrollbarTheme: ScrollbarThemeData(
+        thumbVisibility: MaterialStateProperty.all(true),
+      ),
+      sliderTheme: SliderThemeData(
+        thumbColor: cs.primary,
+        activeTrackColor: cs.primary,
+        inactiveTrackColor: Colors.grey,
+        trackShape: const RectangularSliderTrackShape(),
+        trackHeight: 2,
+        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+      ),
+    );
   }
 
   /// Get the sentence to be used by the [SentenceField] upon card creation.
@@ -1497,8 +1540,8 @@ class AppModel with ChangeNotifier {
 
   // ── App-wide theme (6 presets matching ttu reader themes) ──────────────
 
-  static const Map<String, ({Color seed, Brightness brightness})>
-      themePresets = {
+  static const Map<String, ({Color seed, Brightness brightness})> themePresets =
+      {
     'light-theme': (seed: Color(0xFF1F4959), brightness: Brightness.light),
     'ecru-theme': (seed: Color(0xFF8B7355), brightness: Brightness.light),
     'water-theme': (seed: Color(0xFF4A7C8F), brightness: Brightness.light),
@@ -1518,13 +1561,20 @@ class AppModel with ChangeNotifier {
 
   static String themeLabel(String key) {
     switch (_themeLabelKeys[key]) {
-      case 'theme_light': return t.theme_light;
-      case 'theme_ecru': return t.theme_ecru;
-      case 'theme_water': return t.theme_water;
-      case 'theme_gray': return t.theme_gray;
-      case 'theme_dark': return t.theme_dark;
-      case 'theme_black': return t.theme_black;
-      default: return key;
+      case 'theme_light':
+        return t.theme_light;
+      case 'theme_ecru':
+        return t.theme_ecru;
+      case 'theme_water':
+        return t.theme_water;
+      case 'theme_gray':
+        return t.theme_gray;
+      case 'theme_dark':
+        return t.theme_dark;
+      case 'theme_black':
+        return t.theme_black;
+      default:
+        return key;
     }
   }
 
@@ -1593,18 +1643,66 @@ class AppModel with ChangeNotifier {
     await _setPref('custom_theme_selection_color', color?.toARGB32() ?? 0);
   }
 
+  Color? get customThemePrimaryColor {
+    final int v = _getPref('custom_theme_primary_color', defaultValue: 0);
+    if (v == 0) return null;
+    return Color(v);
+  }
+
+  Future<void> setCustomThemePrimaryColor(Color? color) async {
+    await _setPref('custom_theme_primary_color', color?.toARGB32() ?? 0);
+  }
+
+  Color? get customThemeSecondaryColor {
+    final int v = _getPref('custom_theme_secondary_color', defaultValue: 0);
+    if (v == 0) return null;
+    return Color(v);
+  }
+
+  Future<void> setCustomThemeSecondaryColor(Color? color) async {
+    await _setPref('custom_theme_secondary_color', color?.toARGB32() ?? 0);
+  }
+
+  Color? get customThemeTertiaryColor {
+    final int v = _getPref('custom_theme_tertiary_color', defaultValue: 0);
+    if (v == 0) return null;
+    return Color(v);
+  }
+
+  Future<void> setCustomThemeTertiaryColor(Color? color) async {
+    await _setPref('custom_theme_tertiary_color', color?.toARGB32() ?? 0);
+  }
+
+  Color? get customThemeContainerColor {
+    final int v = _getPref('custom_theme_container_color', defaultValue: 0);
+    if (v == 0) return null;
+    return Color(v);
+  }
+
+  Future<void> setCustomThemeContainerColor(Color? color) async {
+    await _setPref('custom_theme_container_color', color?.toARGB32() ?? 0);
+  }
+
   Future<void> applyCustomTheme({
     required Color seed,
     required bool dark,
     Color? fontColor,
     Color? backgroundColor,
     Color? selectionColor,
+    Color? primaryColor,
+    Color? secondaryColor,
+    Color? tertiaryColor,
+    Color? containerColor,
   }) async {
     await setCustomThemeSeed(seed);
     await setCustomThemeDark(dark);
     await setCustomThemeFontColor(fontColor);
     await setCustomThemeBackgroundColor(backgroundColor);
     await setCustomThemeSelectionColor(selectionColor);
+    await setCustomThemePrimaryColor(primaryColor);
+    await setCustomThemeSecondaryColor(secondaryColor);
+    await setCustomThemeTertiaryColor(tertiaryColor);
+    await setCustomThemeContainerColor(containerColor);
     await _setPref('app_theme_key', 'custom-theme');
     notifyListeners();
     _persistSplashColor();
@@ -1619,9 +1717,15 @@ class AppModel with ChangeNotifier {
 
   void _persistSplashColor() {
     final brightness = isDarkMode ? Brightness.dark : Brightness.light;
-    final surface =
-        ColorScheme.fromSeed(seedColor: _seedColor, brightness: brightness)
-            .surface;
+    final bool useCustomRoles = appThemeKey == 'custom-theme';
+    final surface = buildHibikiColorScheme(
+      seedColor: _seedColor,
+      brightness: brightness,
+      primary: useCustomRoles ? customThemePrimaryColor : null,
+      secondary: useCustomRoles ? customThemeSecondaryColor : null,
+      tertiary: useCustomRoles ? customThemeTertiaryColor : null,
+      primaryContainer: useCustomRoles ? customThemeContainerColor : null,
+    ).surface;
     _splashChannel.invokeMethod('setSplashColor', {
       'color': surface.toARGB32(),
       'isDark': isDarkMode,
