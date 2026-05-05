@@ -58,6 +58,11 @@ class DictionaryPopupWebViewState
     final deduplicatePitch = appModel.deduplicatePitchAccents;
     final harmonicFreq = appModel.harmonicFrequency;
     final collapseDict = appModel.collapseDictionaries;
+    final collapsedNames = appModel.dictionaries
+        .where((d) => d.isCollapsed(appModel.targetLanguage))
+        .map((d) => d.name)
+        .toList();
+    final collapsedNamesJson = jsonEncode(collapsedNames);
     final audioSourcesJson = jsonEncode(appModel.enabledAudioSources);
 
     _controller!.evaluateJavascript(source: '''
@@ -67,6 +72,7 @@ class DictionaryPopupWebViewState
       window.deduplicatePitchAccents = $deduplicatePitch;
       window.harmonicFrequency = $harmonicFreq;
       window.collapseDictionaries = $collapseDict;
+      window.collapsedDictionaryNames = $collapsedNamesJson;
       window.lookupEntries = $entriesJson;
       window.dictionaryStyles = $stylesJson;
       window.renderPopup();

@@ -1332,7 +1332,8 @@ function createEntryHeader(entry, idx) {
 
 function createGlossarySection(dictName, contents, isFirst, entryIdx) {
     const details = el('details', { className: 'glossary-group' });
-    if (!window.collapseDictionaries || isFirst) {
+    const perDictCollapsed = (window.collapsedDictionaryNames || []).includes(dictName);
+    if (isFirst || (!window.collapseDictionaries && !perDictCollapsed)) {
         details.open = true;
     }
 
@@ -1658,6 +1659,8 @@ document.addEventListener('click', (e) => {
         return;
     }
     if (target?.closest('.glossary-content')) {
+        if (target?.closest('summary')) return;
+        if (target?.closest('a[href]')) return;
         const selected = window.hoshiSelection?.selectText(e.clientX, e.clientY, 20);
         if (!selected) {
             return;
