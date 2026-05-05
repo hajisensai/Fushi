@@ -39,9 +39,14 @@ class TtuIdbReader {
   try {
     const record = await new Promise((resolve, reject) => {
       const req = indexedDB.open('books');
+      req.onupgradeneeded = (e) => {
+        e.target.transaction.abort();
+        reject('db_not_initialized');
+      };
       req.onsuccess = (ev) => {
         const db = ev.target.result;
         if (!db.objectStoreNames.contains('data')) {
+          db.close();
           reject('data_store_missing'); return;
         }
         const tx = db.transaction(['data'], 'readonly');

@@ -19,6 +19,10 @@ class ReadingStatisticIdbReader {
   try {
     const db = await new Promise((resolve, reject) => {
       const req = indexedDB.open('books');
+      req.onupgradeneeded = (e) => {
+        e.target.transaction.abort();
+        reject('db_not_initialized');
+      };
       req.onsuccess = (ev) => resolve(ev.target.result);
       req.onerror = (e) => reject(String(e.target.error));
     });

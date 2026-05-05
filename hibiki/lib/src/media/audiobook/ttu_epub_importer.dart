@@ -67,6 +67,64 @@ class TtuEpubImporter {
     } catch (_) {}
   };
 
+  // ── 0. DB schema repair ─────────────────────────────────────────────────
+  //     如果 DB 处于损坏状态（比如之前被无版本 open 创建为 version 1 后
+  //     ttu 的 switch(oldVersion=1) 跳空导致 store 全丢），在 ttu 模块加载
+  //     之前先打开一次确保 schema 完整。如果 DB 已经正常（version 7 且 stores
+  //     齐全），onupgradeneeded 不会触发，onsuccess 直接关闭连接，零副作用。
+  (function repairDb() {
+    try {
+      var req = indexedDB.open('books', 7);
+      req.onupgradeneeded = function(event) {
+        var db = event.target.result;
+        if (!db.objectStoreNames.contains('data'))
+          db.createObjectStore('data', {keyPath: 'id', autoIncrement: true})
+            .createIndex('title', 'title');
+        if (!db.objectStoreNames.contains('bookmark'))
+          db.createObjectStore('bookmark', {keyPath: 'dataId'});
+        if (!db.objectStoreNames.contains('lastItem'))
+          db.createObjectStore('lastItem');
+        if (!db.objectStoreNames.contains('storageSource'))
+          db.createObjectStore('storageSource', {keyPath: 'name'});
+        if (!db.objectStoreNames.contains('statistic')) {
+          var s = db.createObjectStore('statistic', {keyPath: ['title', 'dateKey']});
+          s.createIndex('dateKey', 'dateKey');
+          s.createIndex('completedBook', ['completedBook', 'title']);
+        }
+        if (!db.objectStoreNames.contains('readingGoal'))
+          db.createObjectStore('readingGoal', {keyPath: 'goalStartDate'})
+            .createIndex('goalEndDate', 'goalEndDate');
+        if (!db.objectStoreNames.contains('lastModified'))
+          db.createObjectStore('lastModified', {keyPath: ['title', 'dataType']});
+        if (!db.objectStoreNames.contains('audioBook'))
+          db.createObjectStore('audioBook', {keyPath: 'title'});
+        if (!db.objectStoreNames.contains('subtitle'))
+          db.createObjectStore('subtitle', {keyPath: 'title'});
+        if (!db.objectStoreNames.contains('handle'))
+          db.createObjectStore('handle', {keyPath: ['title', 'dataType']});
+        safeLog('preload:db-repair', 'upgraded from v' + event.oldVersion);
+      };
+      req.onsuccess = function(e) {
+        var db = e.target.result;
+        if (!db.objectStoreNames.contains('data')) {
+          db.close();
+          safeLog('preload:db-corrupt', 'v7 but missing stores, deleting');
+          var del = indexedDB.deleteDatabase('books');
+          del.onsuccess = function() {
+            var req2 = indexedDB.open('books', 7);
+            req2.onupgradeneeded = req.onupgradeneeded;
+            req2.onsuccess = function(ev) { ev.target.result.close(); };
+            req2.onerror = function() {};
+          };
+          del.onerror = function() {};
+        } else {
+          db.close();
+        }
+      };
+      req.onerror = function() {};
+    } catch (_) {}
+  })();
+
   // ── 1. console.error wrapper — 即便只拿到 e.message 也能标注时间。
   const origErr = console.error;
   console.error = function(...args) {
