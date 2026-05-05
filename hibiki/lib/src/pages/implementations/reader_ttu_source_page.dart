@@ -1385,22 +1385,13 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     return ReaderTtuSource.instance.buildCustomFontCss().fontFaces;
   }
 
-  static String _normalizeBookUrl(String url) {
-    return url.replaceFirstMapped(
-      RegExp(r'/(b|manage|statistics|auth)\.html'),
-      (m) => '/${m[1]}',
-    );
-  }
-
   Widget buildReaderArea(LocalAssetsServer server) {
     final String fontFaceCss = _buildFontFaceCss();
     return InAppWebView(
       initialUrlRequest: URLRequest(
         url: WebUri(
-          _normalizeBookUrl(
-            widget.item?.mediaIdentifier ??
-                'http://localhost:${server.boundPort}/manage.html',
-          ),
+          widget.item?.mediaIdentifier ??
+              'http://localhost:${server.boundPort}/manage.html',
         ),
       ),
       initialUserScripts: UnmodifiableListView<UserScript>(<UserScript>[
