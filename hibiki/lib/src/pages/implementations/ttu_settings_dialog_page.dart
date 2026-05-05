@@ -513,28 +513,6 @@ class _TtuSettingsDialogContentState extends BasePageState {
         ),
         _categoryTile(
           context,
-          icon: Icons.text_fields,
-          label: t.display_settings,
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const DisplaySettingsPage()),
-            ).then((_) => setState(() {}));
-          },
-        ),
-        _categoryTile(
-          context,
-          icon: Icons.font_download,
-          label: t.custom_fonts,
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const CustomFontsPage()),
-            );
-          },
-        ),
-        _categoryTile(
-          context,
           icon: Icons.system_update,
           label: t.section_update,
           onTap: () {
@@ -598,6 +576,22 @@ class _ReaderBehaviorSettingsPageState extends BasePageState {
           8 + MediaQuery.of(context).padding.bottom,
         ),
         children: [
+          _buildFontEntry(context),
+          _buildTapRow(
+            context: context,
+            icon: Icons.text_fields,
+            label: t.display_settings,
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const DisplaySettingsPage()),
+              ).then((_) => setState(() {}));
+            },
+          ),
+          const Space.small(),
+          const JidoujishoDivider(),
+          const Space.small(),
           ..._buildReaderOnlySwitches(() => setState(() {}),
               appModel: appModel),
           _buildSwitch(
