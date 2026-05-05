@@ -394,20 +394,9 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
       padding: EdgeInsets.only(
         bottom: Spacing.of(context).spaces.normal,
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          JidoujishoPlaceholderMessage(
-            icon: DictionaryMediaType.instance.outlinedIcon,
-            message: t.dictionaries_menu_empty,
-          ),
-          const SizedBox(height: 12),
-          FilledButton.icon(
-            icon: const Icon(Icons.file_open, size: 18),
-            label: Text(t.dialog_import_dictionary),
-            onPressed: _importDictionaryFiles,
-          ),
-        ],
+      child: JidoujishoPlaceholderMessage(
+        icon: DictionaryMediaType.instance.outlinedIcon,
+        message: t.dictionaries_menu_empty,
       ),
     );
   }

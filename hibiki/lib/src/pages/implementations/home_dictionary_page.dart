@@ -70,10 +70,26 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
 
   /// This is shown as the body when [shouldPlaceholderBeShown] is true.
   Widget buildPlaceholder() {
+    final noDictionaries = appModel.dictionaries.isEmpty;
     return Center(
-      child: JidoujishoPlaceholderMessage(
-        icon: mediaType.outlinedIcon,
-        message: t.info_empty_home_tab,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          JidoujishoPlaceholderMessage(
+            icon: mediaType.outlinedIcon,
+            message: noDictionaries
+                ? t.dictionaries_menu_empty
+                : t.info_empty_home_tab,
+          ),
+          if (noDictionaries) ...[
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              icon: const Icon(Icons.auto_stories, size: 18),
+              label: Text(t.dialog_import_dictionary),
+              onPressed: appModel.showDictionaryMenu,
+            ),
+          ],
+        ],
       ),
     );
   }
