@@ -19,6 +19,7 @@ class _DictionaryDialogPageState extends BasePageState {
   late TextEditingController _debounceDelayController;
   late TextEditingController _dictionaryFontSizeController;
   late TextEditingController _maximumTermsController;
+  late ValueNotifier<double> _popupMaxWidthNotifier;
 
   @override
   void initState() {
@@ -31,6 +32,14 @@ class _DictionaryDialogPageState extends BasePageState {
 
     _maximumTermsController =
         TextEditingController(text: appModelNoUpdate.maximumTerms.toString());
+    _popupMaxWidthNotifier =
+        ValueNotifier<double>(appModelNoUpdate.popupMaxWidth);
+  }
+
+  @override
+  void dispose() {
+    _popupMaxWidthNotifier.dispose();
+    super.dispose();
   }
 
   @override
@@ -322,11 +331,8 @@ class _DictionaryDialogPageState extends BasePageState {
   }
 
   Widget buildPopupMaxWidthSlider() {
-    final ValueNotifier<double> notifier =
-        ValueNotifier<double>(appModel.popupMaxWidth);
-
     return ValueListenableBuilder<double>(
-      valueListenable: notifier,
+      valueListenable: _popupMaxWidthNotifier,
       builder: (_, value, __) {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -342,7 +348,7 @@ class _DictionaryDialogPageState extends BasePageState {
                   tooltip: t.reset,
                   size: 18,
                   onTap: () {
-                    notifier.value = appModel.defaultPopupMaxWidth;
+                    _popupMaxWidthNotifier.value = appModel.defaultPopupMaxWidth;
                     appModel.setPopupMaxWidth(appModel.defaultPopupMaxWidth);
                   },
                   icon: Icons.undo,
@@ -355,7 +361,9 @@ class _DictionaryDialogPageState extends BasePageState {
               max: 600,
               divisions: 35,
               onChanged: (v) {
-                notifier.value = v;
+                _popupMaxWidthNotifier.value = v;
+              },
+              onChangeEnd: (v) {
                 appModel.setPopupMaxWidth(v);
               },
             ),
