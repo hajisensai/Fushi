@@ -30,6 +30,7 @@ struct Files {
   std::vector<int> term_banks;
   std::vector<int> meta_banks;
   std::vector<int> tag_banks;
+  std::vector<int> kanji_banks;
   std::vector<int> media_files;
 };
 
@@ -69,6 +70,8 @@ Files get_files(const Zip& zip) {
       files.term_banks.push_back(i);
     } else if (base.starts_with("term_meta_bank_")) {
       files.meta_banks.push_back(i);
+    } else if (base.starts_with("kanji_bank_")) {
+      files.kanji_banks.push_back(i);
     } else if (base.starts_with("tag_bank_")) {
       files.tag_banks.push_back(i);
     } else if (!(base == "styles.css" || base == "index.json")) {
@@ -277,8 +280,83 @@ ProcessedFile process_meta_bank(const std::string& content) {
   return processed;
 }
 
+ProcessedFile process_kanji_bank(const std::string& content) {
+  ProcessedFile processed;
+  if (content.empty()) {
+    return processed;
+  }
+
+  std::vector<Kanji> kanji;
+  if (!yomitan_parser::parse_kanji_bank(content, kanji)) {
+    return processed;
+  }
+
+  std::vector<std::string> glossary_storage;
+  auto terms = yomitan_parser::kanji_to_terms(kanji, glossary_storage);
+  if (terms.empty()) {
+    return processed;
+  }
+
+  std::vector<char> compressed;
+  ZSTD_CCtx* cctx = ZSTD_createCCtx();
+  if (!cctx) {
+    return processed;
+  }
+
+  for (auto& term : terms) {
+    const std::string_view glossary = term.glossary.str;
+    uint64_t glossary_hash = XXH3_64bits(glossary.data(), glossary.size());
+    auto it = processed.glossaries.find(glossary_hash);
+
+    if (it == processed.glossaries.end()) {
+      const size_t bound = ZSTD_compressBound(glossary.size());
+      compressed.resize(bound);
+      const size_t compressed_size =
+          ZSTD_compressCCtx(cctx, compressed.data(), bound, glossary.data(), glossary.size(), 0);
+      if (ZSTD_isError(compressed_size)) {
+        ZSTD_freeCCtx(cctx);
+        throw std::runtime_error("failed to compress glossary");
+      }
+      compressed.resize(compressed_size);
+      processed.glossaries.emplace(glossary_hash, compressed);
+    }
+
+    uint64_t offset = processed.data.size();
+    uint32_t blob_size = processed.glossaries[glossary_hash].size();
+    std::string_view expr = term.expression;
+    std::string_view reading = term.reading.empty() ? expr : term.reading;
+
+    write_val<uint8_t>(processed.data, 0);
+    write_val<uint16_t>(processed.data, expr.size());
+    write_str(processed.data, expr);
+    write_val<uint16_t>(processed.data, reading.size());
+    write_str(processed.data, reading);
+
+    uint64_t glossary_offset = processed.data.size();
+    write_val<uint64_t>(processed.data, 0);
+    write_val<uint32_t>(processed.data, blob_size);
+    processed.glossary_offsets.emplace_back(glossary_hash, glossary_offset);
+
+    write_val<uint8_t>(processed.data, 0);
+    write_val<uint8_t>(processed.data, 0);
+    write_val<uint8_t>(processed.data, 0);
+
+    processed.offsets.emplace_back(XXH3_64bits(expr.data(), expr.size()), offset);
+    if (reading != expr) {
+      processed.offsets.emplace_back(XXH3_64bits(reading.data(), reading.size()), offset);
+    }
+    processed.count++;
+  }
+  ZSTD_freeCCtx(cctx);
+
+  return processed;
+}
+
+using BankProcessor = ProcessedFile(*)(const std::string&);
+
 void write_terms(std::ofstream& file, std::vector<std::pair<uint64_t, uint64_t>>& offsets, const Zip& zip,
-                 const std::vector<int>& files, uint64_t& write_offset, ImportResult& result, bool low_ram) {
+                 const std::vector<int>& files, uint64_t& write_offset, ImportResult& result, bool low_ram,
+                 BankProcessor processor = process_term_bank) {
   if (files.empty()) {
     return;
   }
@@ -322,7 +400,7 @@ void write_terms(std::ofstream& file, std::vector<std::pair<uint64_t, uint64_t>>
 
   for (int file_index : files) {
     threads.push_back(
-        std::async(std::launch::async, [&zip, file_index]() { return process_term_bank(zip.read(file_index)); }));
+        std::async(std::launch::async, [&zip, file_index, processor]() { return processor(zip.read(file_index)); }));
 
     if (threads.size() == max_threads) {
       write_processed(threads.front().get());
@@ -881,9 +959,10 @@ ImportResult dictionary_importer::import(const std::string& zip_path, const std:
     std::vector<std::pair<uint64_t, uint64_t>> offsets;
     uint64_t write_offset = 0;
     write_terms(blobs, offsets, zip, files.term_banks, write_offset, result, low_ram);
+    write_terms(blobs, offsets, zip, files.kanji_banks, write_offset, result, low_ram, process_kanji_bank);
     write_meta(blobs, offsets, zip, files.meta_banks, write_offset, result, low_ram);
 
-    if (!files.term_banks.empty()) {
+    if (!files.term_banks.empty() || !files.kanji_banks.empty()) {
       result.detected_type = "term";
     } else if (!files.meta_banks.empty()) {
       std::string first_meta = zip.read(files.meta_banks[0]);

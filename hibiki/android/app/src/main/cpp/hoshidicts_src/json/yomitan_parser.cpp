@@ -149,6 +149,91 @@ bool yomitan_parser::parse_frequency(std::string_view content, ParsedFrequency& 
   return true;
 }
 
+template <>
+struct glz::meta<Kanji> {
+  using T = Kanji;
+  static constexpr auto value =
+      array(glz::raw_string<&T::character>, glz::raw_string<&T::onyomi>, glz::raw_string<&T::kunyomi>,
+            glz::raw_string<&T::tags>, &T::meanings, &T::stats);
+};
+
+bool yomitan_parser::parse_kanji_bank(std::string_view content, std::vector<Kanji>& out) {
+  auto error = glz::read<glz::opts{.error_on_unknown_keys = false, .error_on_missing_keys = false}>(out, content);
+  return !error;
+}
+
+static void html_escape(std::string& out, std::string_view s) {
+  for (char c : s) {
+    switch (c) {
+      case '&': out += "&amp;"; break;
+      case '<': out += "&lt;"; break;
+      case '>': out += "&gt;"; break;
+      case '"': out += "&quot;"; break;
+      default: out += c;
+    }
+  }
+}
+
+static void json_escape(std::string& out, std::string_view s) {
+  for (char c : s) {
+    switch (c) {
+      case '"': out += "\\\""; break;
+      case '\\': out += "\\\\"; break;
+      case '\n': out += "\\n"; break;
+      case '\r': out += "\\r"; break;
+      case '\t': out += "\\t"; break;
+      default: out += c;
+    }
+  }
+}
+
+std::vector<Term> yomitan_parser::kanji_to_terms(const std::vector<Kanji>& kanji, std::vector<std::string>& storage) {
+  std::vector<Term> terms;
+  terms.reserve(kanji.size());
+  storage.reserve(kanji.size());
+
+  for (const auto& k : kanji) {
+    if (k.character.empty()) continue;
+
+    std::string html;
+    html += "<div class=\"kanji-entry\">";
+    if (!k.onyomi.empty()) {
+      html += "<div class=\"kanji-readings\"><span class=\"kanji-label\">音</span> ";
+      html_escape(html, k.onyomi);
+      html += "</div>";
+    }
+    if (!k.kunyomi.empty()) {
+      html += "<div class=\"kanji-readings\"><span class=\"kanji-label\">訓</span> ";
+      html_escape(html, k.kunyomi);
+      html += "</div>";
+    }
+    if (!k.meanings.empty()) {
+      html += "<ol class=\"kanji-meanings\">";
+      for (const auto& m : k.meanings) {
+        html += "<li>";
+        html_escape(html, m);
+        html += "</li>";
+      }
+      html += "</ol>";
+    }
+    html += "</div>";
+
+    std::string glossary_json = "[\"";
+    json_escape(glossary_json, html);
+    glossary_json += "\"]";
+
+    storage.push_back(std::move(glossary_json));
+
+    Term t;
+    t.expression = k.character;
+    t.reading = k.onyomi;
+    t.glossary = glz::raw_json_view{storage.back()};
+    terms.push_back(t);
+  }
+
+  return terms;
+}
+
 bool yomitan_parser::parse_pitch(std::string_view content, ParsedPitch& out) {
   internal::RawPitch parsed;
   auto error = glz::read<glz::opts{.error_on_unknown_keys = false, .error_on_missing_keys = false}>(parsed, content);
