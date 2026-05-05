@@ -2653,13 +2653,11 @@ class AppModel with ChangeNotifier {
         },
       );
 
-      if (!silentExport) {
-        Fluttertoast.showToast(
-          msg: t.card_exported(deck: deck),
-          toastLength: Toast.LENGTH_SHORT,
-          gravity: ToastGravity.BOTTOM,
-        );
-      }
+      Fluttertoast.showToast(
+        msg: t.card_exported(deck: deck),
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+      );
 
       onSuccess.call();
     } on PlatformException {
@@ -3787,7 +3785,7 @@ class AppModel with ChangeNotifier {
   }
 
   bool get silentExport {
-    return _getPref('silent_export', defaultValue: false);
+    return _getPref('silent_export', defaultValue: true);
   }
 
   void toggleSilentExport() async {
