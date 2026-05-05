@@ -1022,9 +1022,9 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: jidoujisho
-      resolved-ref: "450750544f09582cf18728f31988e38d2e0716ce"
-      url: "https://github.com/arianneorpilla/material_floating_search_bar"
+      ref: hibiki-patches
+      resolved-ref: ec7e87dbb015b7116c303a4b60b90ec07ca4900b
+      url: "https://github.com/hdjsadgfwtg/material_floating_search_bar"
     source: git
     version: "0.3.7"
   meta:

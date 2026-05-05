@@ -70,8 +70,8 @@ dependencies:
   marquee: ^2.2.3
   material_floating_search_bar:
     git:
-      url: https://github.com/arianneorpilla/material_floating_search_bar
-      ref: jidoujisho
+      url: https://github.com/hdjsadgfwtg/material_floating_search_bar
+      ref: hibiki-patches
   multi_value_listenable_builder: ^0.0.2
   network_to_file_image: ^4.0.1
   package_info_plus: ^4.0.2

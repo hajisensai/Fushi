@@ -111,8 +111,11 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
         result: mergedResult,
         onTextSelected: (text) {
           mediaType.floatingSearchBarController.query = text;
-          mediaType.floatingSearchBarController.openWithoutFocus();
+          mediaType.floatingSearchBarController.open();
           search(text);
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            FocusManager.instance.primaryFocus?.unfocus();
+          });
         },
         onMineEntry: _onMineEntry,
       ),
