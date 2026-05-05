@@ -9,6 +9,7 @@ import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/anki/anki_models.dart';
+import 'package:hibiki/src/anki/anki_repository.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki/utils.dart';
@@ -114,6 +115,10 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
           search(text);
         },
         onMineEntry: _onMineEntry,
+        onDuplicateCheck: (expression, reading) async {
+          final repo = ref.read(ankiRepositoryProvider);
+          return repo.isDuplicate(expression, reading);
+        },
       ),
     );
   }
@@ -456,6 +461,10 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
               search(text);
             },
             onMineEntry: _onMineEntry,
+            onDuplicateCheck: (expression, reading) async {
+              final repo = ref.read(ankiRepositoryProvider);
+              return repo.isDuplicate(expression, reading);
+            },
           ),
         ),
         if (footerWidget != null) footerWidget!,
@@ -468,19 +477,29 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
     final miningContext = AnkiMiningContext(
       sentence: fields['sentence'] ?? '',
     );
-    final success = await repo.mineEntry(
+    final result = await repo.mineEntry(
       rawPayloadJson: jsonEncode(fields),
       context: miningContext,
     );
-    if (success) {
-      final settings = await repo.loadSettings();
-      Fluttertoast.showToast(
-        msg: t.card_exported(deck: settings.selectedDeckName ?? ''),
-        toastLength: Toast.LENGTH_SHORT,
-        gravity: ToastGravity.BOTTOM,
-      );
+    switch (result) {
+      case MineResult.success:
+        final settings = await repo.loadSettings();
+        Fluttertoast.showToast(
+          msg: t.card_exported(deck: settings.selectedDeckName ?? ''),
+          toastLength: Toast.LENGTH_SHORT,
+          gravity: ToastGravity.BOTTOM,
+        );
+        return true;
+      case MineResult.duplicate:
+        Fluttertoast.showToast(msg: t.card_duplicate);
+        return false;
+      case MineResult.notConfigured:
+        Fluttertoast.showToast(msg: t.card_export_not_configured);
+        return false;
+      case MineResult.error:
+        Fluttertoast.showToast(msg: t.card_export_failed);
+        return false;
     }
-    return success;
   }
 
   Widget? get footerWidget {

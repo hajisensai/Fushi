@@ -99,7 +99,7 @@ class AnkiRepository {
     }
   }
 
-  Future<bool> mineEntry({
+  Future<MineResult> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
   }) async {
@@ -111,7 +111,7 @@ class AnkiRepository {
             ? settings.availableDecks
                 .firstWhereOrNull((d) => d.name == settings.selectedDeckName)
             : null);
-    if (deck == null) return false;
+    if (deck == null) return MineResult.notConfigured;
 
     final noteType = settings.availableNoteTypes
             .firstWhereOrNull((t) => t.id == settings.selectedNoteTypeId) ??
@@ -119,7 +119,7 @@ class AnkiRepository {
             ? settings.availableNoteTypes.firstWhereOrNull(
                 (t) => t.name == settings.selectedNoteTypeName)
             : null);
-    if (noteType == null) return false;
+    if (noteType == null) return MineResult.notConfigured;
 
     final AnkiMiningPayload payload;
     try {
@@ -127,7 +127,7 @@ class AnkiRepository {
           Map<String, dynamic>.from(jsonDecode(rawPayloadJson) as Map);
       payload = AnkiMiningPayload.fromJson(json);
     } catch (_) {
-      return false;
+      return MineResult.error;
     }
 
     final mediaContext = AnkiMiningContext(
@@ -206,7 +206,7 @@ class AnkiRepository {
             'reading': payload.reading,
             'readingFieldIndices': [readingIdx],
           });
-          if (isDupe == true) return false;
+          if (isDupe == true) return MineResult.duplicate;
         } catch (_) {}
       }
     }
@@ -224,10 +224,10 @@ class AnkiRepository {
         'fields': fieldArray,
         'tags': tags,
       });
-      return true;
+      return MineResult.success;
     } on PlatformException catch (e) {
       debugPrint('Failed to add note: ${e.message}');
-      return false;
+      return MineResult.error;
     }
   }
 
@@ -393,3 +393,5 @@ class AnkiFetchError extends AnkiFetchResult {
   final String message;
   const AnkiFetchError(this.message);
 }
+
+enum MineResult { success, duplicate, notConfigured, error }

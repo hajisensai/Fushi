@@ -211,6 +211,9 @@
     "audio_unavailable": "No audio could be found.",
     "no_audio_enhancements": "No audio enhancements are assigned.",
     "card_exported": "Card exported to 『$deck』.",
+    "card_duplicate": "Duplicate card — not exported.",
+    "card_export_not_configured": "Anki not configured. Open Anki settings and tap Fetch.",
+    "card_export_failed": "Failed to export card.",
     "info_incognito_on":
         "Incognito mode on. Dictionary, media and search history will not be tracked.",
     "info_incognito_off":

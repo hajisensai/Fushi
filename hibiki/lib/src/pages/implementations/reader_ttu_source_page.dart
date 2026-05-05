@@ -18,6 +18,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:spaces/spaces.dart';
 import 'package:hibiki/src/anki/anki_models.dart';
+import 'package:hibiki/src/anki/anki_repository.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
@@ -866,25 +867,57 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     final currentSentence = appModel.getCurrentSentence();
     final repo = ref.read(ankiRepositoryProvider);
 
+    String? sasayakiAudioPath;
+    final controller = _audiobookController;
+    final AudioCue? cue = _lookupCue ?? controller?.currentCue;
+    if (cue != null && controller != null && controller.audioFiles.isNotEmpty) {
+      try {
+        if (cue.audioFileIndex < controller.audioFiles.length) {
+          final inputFile = controller.audioFiles[cue.audioFileIndex];
+          final outputPath =
+              '${Directory.systemTemp.path}/mine_sentence_audio.m4a';
+          sasayakiAudioPath = await TtsChannel.instance.extractAudioSegment(
+            inputPath: inputFile.path,
+            startMs: cue.startMs,
+            endMs: cue.endMs,
+            outputPath: outputPath,
+          );
+        }
+      } catch (e) {
+        debugPrint('[hibiki-mine] sentence audio extract failed: $e');
+      }
+    }
+
     final miningContext = AnkiMiningContext(
       sentence: currentSentence.text.trim(),
       documentTitle: widget.item?.title,
+      sasayakiAudioPath: sasayakiAudioPath,
     );
 
-    final success = await repo.mineEntry(
+    final result = await repo.mineEntry(
       rawPayloadJson: jsonEncode(fields),
       context: miningContext,
     );
 
-    if (success) {
-      final settings = await repo.loadSettings();
-      Fluttertoast.showToast(
-        msg: t.card_exported(deck: settings.selectedDeckName ?? ''),
-        toastLength: Toast.LENGTH_SHORT,
-        gravity: ToastGravity.BOTTOM,
-      );
+    switch (result) {
+      case MineResult.success:
+        final settings = await repo.loadSettings();
+        Fluttertoast.showToast(
+          msg: t.card_exported(deck: settings.selectedDeckName ?? ''),
+          toastLength: Toast.LENGTH_SHORT,
+          gravity: ToastGravity.BOTTOM,
+        );
+        return true;
+      case MineResult.duplicate:
+        Fluttertoast.showToast(msg: t.card_duplicate);
+        return false;
+      case MineResult.notConfigured:
+        Fluttertoast.showToast(msg: t.card_export_not_configured);
+        return false;
+      case MineResult.error:
+        Fluttertoast.showToast(msg: t.card_export_failed);
+        return false;
     }
-    return success;
   }
 
   /// Hide the dictionary and dispose of the current result.
