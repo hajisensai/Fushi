@@ -197,38 +197,42 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
 
   /// Resolve audio exactly like Hoshi: enabled sources only, no TTS fallback.
   Future<void> _autoReadWord(String expression, String reading) async {
-    final sources = appModel.enabledAudioSources;
-    debugPrint('[hibiki-autoread] "$expression" reading="$reading" sources=${sources.length}');
-    final WordAudioResolver resolver = WordAudioResolver(
-      queryLocalAudio: (String expression, String reading) async {
-        try {
-          return await TtsChannel.instance
-              .queryLocalAudio(expression, reading)
-              .timeout(const Duration(milliseconds: 500));
-        } on TimeoutException {
-          debugPrint('[hibiki-autoread] queryLocalAudio timed out for "$expression"');
-          return null;
-        }
-      },
-      extractLocalAudio: TtsChannel.instance.extractLocalAudio,
-    );
-    final String? url = await resolver.resolve(
-      expression: expression,
-      reading: reading,
-      sources: sources,
-    );
-    debugPrint('[hibiki-autoread] resolved url=$url');
-    if (url == null || url.isEmpty) return;
+    try {
+      final sources = appModel.enabledAudioSources;
+      debugPrint('[hibiki-autoread] "$expression" reading="$reading" sources=${sources.length}');
+      final WordAudioResolver resolver = WordAudioResolver(
+        queryLocalAudio: (String expression, String reading) async {
+          try {
+            return await TtsChannel.instance
+                .queryLocalAudio(expression, reading)
+                .timeout(const Duration(milliseconds: 500));
+          } on TimeoutException {
+            debugPrint('[hibiki-autoread] queryLocalAudio timed out for "$expression"');
+            return null;
+          }
+        },
+        extractLocalAudio: TtsChannel.instance.extractLocalAudio,
+      );
+      final String? url = await resolver.resolve(
+        expression: expression,
+        reading: reading,
+        sources: sources,
+      );
+      debugPrint('[hibiki-autoread] resolved url=$url');
+      if (url == null || url.isEmpty) return;
 
-    if (url.startsWith('file://')) {
-      final ok = await TtsChannel.instance.playFile(url.replaceFirst('file://', ''));
-      debugPrint('[hibiki-autoread] playFile ok=$ok');
-    } else if (url.startsWith('/')) {
-      final ok = await TtsChannel.instance.playFile(url);
-      debugPrint('[hibiki-autoread] playFile ok=$ok');
-    } else if (url.startsWith('http')) {
-      final ok = await TtsChannel.instance.playUrl(url);
-      debugPrint('[hibiki-autoread] playUrl ok=$ok');
+      if (url.startsWith('file://')) {
+        final ok = await TtsChannel.instance.playFile(url.replaceFirst('file://', ''));
+        debugPrint('[hibiki-autoread] playFile ok=$ok');
+      } else if (url.startsWith('/')) {
+        final ok = await TtsChannel.instance.playFile(url);
+        debugPrint('[hibiki-autoread] playFile ok=$ok');
+      } else if (url.startsWith('http')) {
+        final ok = await TtsChannel.instance.playUrl(url);
+        debugPrint('[hibiki-autoread] playUrl ok=$ok');
+      }
+    } catch (e, st) {
+      debugPrint('[hibiki-autoread] error: $e\n$st');
     }
   }
 
