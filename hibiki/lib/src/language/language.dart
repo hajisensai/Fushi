@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:collection/collection.dart';
@@ -433,17 +434,44 @@ Future<DictionarySearchResult?> prepareSearchResultsStandard(
 
   final hoshi = HoshiDicts.withPaths(params.dictionaryPaths);
   try {
-    final results = hoshi.query(params.searchTerm);
+    final results = hoshi.lookup(params.searchTerm);
     if (results.isEmpty) return null;
 
+    int bestLength = 0;
     final entries = <DictionaryEntry>[];
-    for (final t in results) {
-      for (final g in t.glossaries) {
+    for (final r in results) {
+      if (r.matched.length > bestLength) {
+        bestLength = r.matched.length;
+      }
+      for (final g in r.term.glossaries) {
         entries.add(DictionaryEntry(
           dictionaryName: g.dictName,
-          word: t.expression,
-          reading: t.reading,
+          word: r.term.expression,
+          reading: r.term.reading,
           meaning: g.glossary,
+          extra: jsonEncode({
+            'definitionTags': g.definitionTags,
+            'termTags': g.termTags,
+            'matched': r.matched,
+            'deinflected': r.deinflected,
+            'frequencies': r.term.frequencies
+                .map((f) => {
+                      'dictName': f.dictName,
+                      'values': f.frequencies
+                          .map((v) => {
+                                'value': v.value,
+                                'display': v.displayValue,
+                              })
+                          .toList(),
+                    })
+                .toList(),
+            'pitches': r.term.pitches
+                .map((p) => {
+                      'dictName': p.dictName,
+                      'positions': p.pitchPositions,
+                    })
+                .toList(),
+          }),
           popularity: 0,
         ));
       }
@@ -452,7 +480,7 @@ Future<DictionarySearchResult?> prepareSearchResultsStandard(
     return DictionarySearchResult(
       searchTerm: params.searchTerm,
       entries: entries,
-      bestLength: params.searchTerm.length,
+      bestLength: bestLength,
     );
   } finally {
     hoshi.dispose();
@@ -466,17 +494,48 @@ DictionarySearchResult? prepareSearchResultsDirectStandard({
 }) {
   if (!HoshiDicts.isInitialized) return null;
 
-  final results = HoshiDicts.instance.query(searchTerm);
+  final results = HoshiDicts.instance.lookup(
+    searchTerm,
+    maxResults: maximumDictionarySearchResults,
+    scanLength: maximumDictionaryTermsInResult,
+  );
   if (results.isEmpty) return null;
 
+  int bestLength = 0;
   final entries = <DictionaryEntry>[];
-  for (final t in results) {
-    for (final g in t.glossaries) {
+  for (final r in results) {
+    if (r.matched.length > bestLength) {
+      bestLength = r.matched.length;
+    }
+    for (final g in r.term.glossaries) {
       entries.add(DictionaryEntry(
         dictionaryName: g.dictName,
-        word: t.expression,
-        reading: t.reading,
+        word: r.term.expression,
+        reading: r.term.reading,
         meaning: g.glossary,
+        extra: jsonEncode({
+          'definitionTags': g.definitionTags,
+          'termTags': g.termTags,
+          'matched': r.matched,
+          'deinflected': r.deinflected,
+          'frequencies': r.term.frequencies
+              .map((f) => {
+                    'dictName': f.dictName,
+                    'values': f.frequencies
+                        .map((v) => {
+                              'value': v.value,
+                              'display': v.displayValue,
+                            })
+                        .toList(),
+                  })
+              .toList(),
+          'pitches': r.term.pitches
+              .map((p) => {
+                    'dictName': p.dictName,
+                    'positions': p.pitchPositions,
+                  })
+              .toList(),
+        }),
         popularity: 0,
       ));
     }
@@ -485,6 +544,6 @@ DictionarySearchResult? prepareSearchResultsDirectStandard({
   return DictionarySearchResult(
     searchTerm: searchTerm,
     entries: entries,
-    bestLength: searchTerm.length,
+    bestLength: bestLength,
   );
 }
