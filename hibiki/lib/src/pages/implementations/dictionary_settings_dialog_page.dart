@@ -399,8 +399,32 @@ class _DictionaryDialogPageState extends BasePageState {
           type: FileType.any,
         );
         if (result != null && result.files.single.path != null && mounted) {
-          appModelNoUpdate.setLocalAudioDbPath(result.files.single.path!);
-          setState(() {});
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (_) => PopScope(
+              canPop: false,
+              child: AlertDialog(
+                content: Row(
+                  children: [
+                    const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    const SizedBox(width: 16),
+                    Text(t.dialog_importing),
+                  ],
+                ),
+              ),
+            ),
+          );
+          await appModelNoUpdate
+              .setLocalAudioDbPath(result.files.single.path!);
+          if (mounted) {
+            Navigator.of(context).pop();
+            setState(() {});
+          }
         }
       },
       child: Container(
