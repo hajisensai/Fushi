@@ -1232,14 +1232,8 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     return selectedText;
   }
 
-  late final bool _ttuVersionChanged = () {
-    final changed = mediaSource.currentTtuInternalVersion !=
-        ReaderTtuSource.ttuInternalVersion;
-    if (changed) {
-      mediaSource.setTtuInternalVersion();
-    }
-    return changed;
-  }();
+  late final bool _ttuVersionChanged = mediaSource.currentTtuInternalVersion !=
+      ReaderTtuSource.ttuInternalVersion;
 
   CacheMode get cacheMode {
     return _ttuVersionChanged
@@ -1758,6 +1752,11 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
           unawaited(_installTtuBookmarkBridge(controller));
           await HighlightBridge.inject(controller);
           unawaited(_applyHighlightsForCurrentSection());
+          if (_ttuVersionChanged) {
+            unawaited(mediaSource.setTtuInternalVersion().catchError((e) {
+              debugPrint('[hibiki] setTtuInternalVersion failed: $e');
+            }));
+          }
         } finally {
           _onLoadStopRunning = false;
           if (!_restoreInFlight) _markReaderContentReady();

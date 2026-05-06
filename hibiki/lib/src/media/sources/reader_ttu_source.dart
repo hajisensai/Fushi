@@ -1181,8 +1181,8 @@ indexedDB.databases().then(async (databases) => {
     return getPreference<int?>(key: 'ttu_internal_version', defaultValue: null);
   }
 
-  /// Sets the new version.
-  void setTtuInternalVersion() async {
+  /// Persists the new version after cache refresh has run.
+  Future<void> setTtuInternalVersion() async {
     await setPreference<int?>(
       key: 'ttu_internal_version',
       value: ttuInternalVersion,
