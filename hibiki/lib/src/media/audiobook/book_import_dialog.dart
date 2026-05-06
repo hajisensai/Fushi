@@ -76,7 +76,14 @@ class _BookImportDialogState extends State<BookImportDialog> {
   String? _subtitlePath;
   String? _audioPath;
 
+  // 原始文件名（file_picker 在 Android 上返回的 cache 路径文件名可能与原始不同）
+  String? _epubName;
+  String? _subtitleName;
+  String? _audioName;
+
   bool _importing = false;
+  final ValueNotifier<double> _progress = ValueNotifier<double>(0.0);
+  final ValueNotifier<String> _progressMsg = ValueNotifier<String>('');
 
   bool _autoWindow = true;
   int _searchWindow = EpubSrtMatcher.defaultSearchWindow;
@@ -94,6 +101,8 @@ class _BookImportDialogState extends State<BookImportDialog> {
   void dispose() {
     _titleCtrl.dispose();
     _authorCtrl.dispose();
+    _progress.dispose();
+    _progressMsg.dispose();
     super.dispose();
   }
 
@@ -193,7 +202,18 @@ class _BookImportDialogState extends State<BookImportDialog> {
         ],
         if (_importing) ...[
           const SizedBox(height: 16),
-          const LinearProgressIndicator(),
+          ValueListenableBuilder<double>(
+            valueListenable: _progress,
+            builder: (_, value, __) => LinearProgressIndicator(value: value),
+          ),
+          const SizedBox(height: 4),
+          ValueListenableBuilder<String>(
+            valueListenable: _progressMsg,
+            builder: (_, msg, __) => Text(
+              msg,
+              style: const TextStyle(fontSize: 11, color: Colors.grey),
+            ),
+          ),
         ],
       ],
     );
@@ -210,7 +230,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
                   style: const TextStyle(fontSize: 13)),
               if (_epubPath != null)
                 Text(
-                  _basename(_epubPath!),
+                  _epubName ?? _basename(_epubPath!),
                   style: const TextStyle(fontSize: 11, color: Colors.grey),
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
@@ -238,7 +258,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
                   style: const TextStyle(fontSize: 13)),
               if (_subtitlePath != null)
                 Text(
-                  _basename(_subtitlePath!),
+                  _subtitleName ?? _basename(_subtitlePath!),
                   style: const TextStyle(fontSize: 11, color: Colors.grey),
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
@@ -249,7 +269,10 @@ class _BookImportDialogState extends State<BookImportDialog> {
         if (_subtitlePath != null)
           IconButton(
             icon: const Icon(Icons.close, size: 18, color: Colors.grey),
-            onPressed: () => setState(() => _subtitlePath = null),
+            onPressed: () => setState(() {
+              _subtitlePath = null;
+              _subtitleName = null;
+            }),
           ),
         IconButton(
           icon: const Icon(Icons.subtitles, size: 20),
@@ -271,7 +294,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
                   style: const TextStyle(fontSize: 13)),
               if (_audioPath != null)
                 Text(
-                  _basename(_audioPath!),
+                  _audioName ?? _basename(_audioPath!),
                   style: const TextStyle(fontSize: 11, color: Colors.grey),
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
@@ -282,7 +305,10 @@ class _BookImportDialogState extends State<BookImportDialog> {
         if (_audioPath != null)
           IconButton(
             icon: const Icon(Icons.close, size: 18, color: Colors.grey),
-            onPressed: () => setState(() => _audioPath = null),
+            onPressed: () => setState(() {
+              _audioPath = null;
+              _audioName = null;
+            }),
           ),
         IconButton(
           icon: const Icon(Icons.audio_file, size: 20),
@@ -317,12 +343,14 @@ class _BookImportDialogState extends State<BookImportDialog> {
       type: FileType.custom,
       allowedExtensions: _bookExtensions,
     );
-    final String? path = result?.files.single.path;
-    if (path != null && mounted) {
+    final PlatformFile? file = result?.files.single;
+    final String? path = file?.path;
+    if (path != null && file != null && mounted) {
       setState(() {
         _epubPath = path;
+        _epubName = file.name;
         if (_titleCtrl.text.isEmpty) {
-          _titleCtrl.text = _basename(path).replaceAll(
+          _titleCtrl.text = file.name.replaceAll(
               RegExp(
                   r'\.(epub|txt|html?|xhtml|md|markdown|rst|org|csv|tsv|log|json|xml)$',
                   caseSensitive: false),
@@ -337,13 +365,17 @@ class _BookImportDialogState extends State<BookImportDialog> {
       type: FileType.custom,
       allowedExtensions: ['srt', 'lrc', 'vtt', 'ass', 'ssa'],
     );
-    final String? path = result?.files.single.path;
-    if (path == null || !mounted) return;
+    final PlatformFile? file = result?.files.single;
+    final String? path = file?.path;
+    if (path == null || file == null || !mounted) return;
 
     setState(() {
       _subtitlePath = path;
+      _subtitleName = file.name;
       if (_titleCtrl.text.isEmpty) {
-        _titleCtrl.text = p.basenameWithoutExtension(path);
+        final String name = file.name;
+        final int dot = name.lastIndexOf('.');
+        _titleCtrl.text = dot > 0 ? name.substring(0, dot) : name;
       }
     });
   }
@@ -352,13 +384,22 @@ class _BookImportDialogState extends State<BookImportDialog> {
     final FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.audio,
     );
-    final String? path = result?.files.single.path;
-    if (path == null || !mounted) return;
+    final PlatformFile? file = result?.files.single;
+    final String? path = file?.path;
+    if (path == null || file == null || !mounted) return;
 
-    setState(() => _audioPath = path);
+    setState(() {
+      _audioPath = path;
+      _audioName = file.name;
+    });
   }
 
   // ── 导入 ────────────────────────────────────────────────────────────────
+
+  void _reportProgress(double value, String msg) {
+    _progress.value = value;
+    _progressMsg.value = msg;
+  }
 
   Future<void> _doImport() async {
     if (_epubPath == null && !_hasSubtitles) {
@@ -376,7 +417,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
     }
 
     setState(() => _importing = true);
-    Fluttertoast.showToast(msg: t.dialog_importing);
+    _reportProgress(0.0, '');
 
     try {
       final String? authorText =
@@ -419,7 +460,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
     required String? author,
   }) async {
     final String uid = 'srtbook_${DateTime.now().millisecondsSinceEpoch}';
-    debugPrint('[hibiki-import] subtitleBook: parsing cues...');
+    _reportProgress(0.1, '解析字幕...');
 
     final List<AudioCue> cues = await _parseCuesWithIndex(
       File(_subtitlePath!),
@@ -431,12 +472,12 @@ class _BookImportDialogState extends State<BookImportDialog> {
     int ttuBookId = 0;
     if (cues.isNotEmpty) {
       try {
-        debugPrint('[hibiki-import] subtitleBook: building IDB payload...');
+        _reportProgress(0.3, '生成 EPUB...');
         final TtuIdbPayload payload = CuesToEpub.buildIdbPayload(
           title: title,
           cues: cues,
         );
-        debugPrint('[hibiki-import] subtitleBook: injecting into ttu IDB...');
+        _reportProgress(0.5, '写入数据库...');
         ttuBookId = await _injectPayloadIntoTtuIdb(payload);
         debugPrint('[hibiki-import] subtitleBook: IDB inject done, id=$ttuBookId');
       } catch (e) {
@@ -444,7 +485,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
       }
     }
 
-    debugPrint('[hibiki-import] subtitleBook: persisting files...');
+    _reportProgress(0.7, '保存文件...');
     final Directory persistDir = await _ensurePersistDir(uid);
     final String persistedSrt =
         await _persistFile(File(_subtitlePath!), persistDir);
@@ -454,6 +495,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
       persistedAudioPath = await _persistFile(File(_audioPath!), persistDir);
     }
 
+    _reportProgress(0.9, '保存记录...');
     final SrtBook book = SrtBook()
       ..uid = uid
       ..title = title
@@ -471,77 +513,69 @@ class _BookImportDialogState extends State<BookImportDialog> {
         'ttuBookId=$ttuBookId cues=${cues.length}');
 
     await widget.repo.save(book);
-    debugPrint('[hibiki-import] subtitleBook: repo.save done');
     await widget.repo.saveCues(uid: uid, cues: cues);
-    debugPrint('[hibiki-import] subtitleBook: saveCues done, COMPLETE');
+    _reportProgress(1.0, '完成');
   }
 
-  /// EPUB-only flow: read the file bytes and drive ttu's own file-input
-  /// importer. For non-EPUB text formats, converts to EPUB first.
-  /// We don't build a [SrtBook] — the book just shows up in the
-  /// regular EPUB section of the bookshelf.
   Future<void> _importEpubOnly({required String title}) async {
-    debugPrint('[hibiki-import] epubOnly: start');
     final File file = File(_epubPath!);
     final Uint8List bytes;
     final String filename;
 
+    _reportProgress(0.2, '读取文件...');
     if (TextToEpub.isSupported(_epubPath!)) {
-      debugPrint('[hibiki-import] epubOnly: converting to EPUB...');
+      _reportProgress(0.3, '转换为 EPUB...');
       bytes = await TextToEpub.convert(file: file, title: title);
       filename = '${title.replaceAll(RegExp(r'[^\w\s\-]'), '')}.epub';
     } else {
       bytes = await file.readAsBytes();
-      filename = _basename(_epubPath!);
+      filename = _epubName ?? _basename(_epubPath!);
     }
 
-    debugPrint('[hibiki-import] epubOnly: TtuEpubImporter.import (${bytes.length} bytes)...');
-    final int ttuBookId = await TtuEpubImporter.import(
+    _reportProgress(0.5, '导入 EPUB...');
+    await TtuEpubImporter.import(
       bytes: bytes,
       filename: filename,
       serverPort: widget.serverPort,
     );
-    debugPrint('[hibiki-import] epubOnly: COMPLETE ttuBookId=$ttuBookId');
+    _reportProgress(1.0, '完成');
   }
 
-  /// EPUB + subtitle (+optional audio) flow: import the real EPUB via ttu,
-  /// then attach a Sasayaki-matched [Audiobook] record pointing to the
-  /// same `bookUid` the bookshelf will compute for this book.
   Future<String?> _importEpubWithAlignment({required String title}) async {
-    debugPrint('[hibiki-import] epubAlign: start');
     final File epubFile = File(_epubPath!);
     final Uint8List importBytes;
     final String importFilename;
+
+    _reportProgress(0.05, '读取文件...');
     if (TextToEpub.isSupported(_epubPath!)) {
-      debugPrint('[hibiki-import] epubAlign: converting to EPUB...');
+      _reportProgress(0.1, '转换为 EPUB...');
       importBytes = await TextToEpub.convert(file: epubFile, title: title);
       importFilename = '${title.replaceAll(RegExp(r'[^\w\s\-]'), '')}.epub';
     } else {
       importBytes = await epubFile.readAsBytes();
-      importFilename = _basename(_epubPath!);
+      importFilename = _epubName ?? _basename(_epubPath!);
     }
-    debugPrint('[hibiki-import] epubAlign: TtuEpubImporter.import...');
+
+    _reportProgress(0.2, '导入 EPUB...');
     final int ttuBookId = await TtuEpubImporter.import(
       bytes: importBytes,
       filename: importFilename,
       serverPort: widget.serverPort,
     );
-    debugPrint('[hibiki-import] epubAlign: ttuBookId=$ttuBookId');
     if (ttuBookId <= 0) {
       throw StateError('ttu returned invalid book id');
     }
 
+    _reportProgress(0.35, '读取书籍信息...');
     String idbTitle = '';
     List<EpubSection> sections = const <EpubSection>[];
     try {
-      debugPrint('[hibiki-import] epubAlign: readBookRecord...');
       final TtuBookRecord rec = await TtuIdbReader.readBookRecord(
         ttuBookId: ttuBookId,
         serverPort: widget.serverPort,
       );
       idbTitle = rec.title;
       sections = rec.sections;
-      debugPrint('[hibiki-import] epubAlign: got ${sections.length} sections');
     } catch (e) {
       debugPrint('[hibiki-import] readBookRecord failed: $e');
     }
@@ -551,20 +585,19 @@ class _BookImportDialogState extends State<BookImportDialog> {
     final String bookUid =
         '${widget.ttuMediaSourceIdentifier}/$mediaIdentifier';
 
+    _reportProgress(0.45, '解析字幕...');
     final String ext = _subtitlePath!.split('.').last.toLowerCase();
-    debugPrint('[hibiki-import] epubAlign: parsing cues (ext=$ext)...');
     final List<AudioCue> cues = await _parseCuesWithIndex(
       File(_subtitlePath!),
       bookUid,
       0,
     );
-    debugPrint('[hibiki-import] epubAlign: parsed ${cues.length} cues');
     final String chapterHref = _defaultChapterFor(ext);
 
     AudiobookHealth health;
     final bool runMatcher = SasayakiRematch.supportedFormats.contains(ext);
-    debugPrint('[hibiki-import] epubAlign: runMatcher=$runMatcher sections=${sections.length} cues=${cues.length}');
     if (runMatcher && sections.isNotEmpty && cues.isNotEmpty) {
+      _reportProgress(0.55, 'Sasayaki 对齐...');
       MatchResult? matchResult;
       int chosenWindow = _searchWindow;
       if (_autoWindow) {
@@ -576,12 +609,9 @@ class _BookImportDialogState extends State<BookImportDialog> {
         if (best != null && best.value > 0) {
           chosenWindow = best.key;
           matchResult = probe.bestResult;
-          final int pct = (best.value * 100).round();
-          debugPrint('[hibiki-import] epubAlign: auto-probe picked window=$chosenWindow ($pct%)');
         }
       }
       if (matchResult == null) {
-        debugPrint('[hibiki-import] epubAlign: running Sasayaki match (window=$chosenWindow)...');
         matchResult = await EpubCueMatcher.matchInIsolate(
           sections: sections,
           cues: cues,
@@ -591,8 +621,6 @@ class _BookImportDialogState extends State<BookImportDialog> {
       }
       SasayakiMatchCodec.applyToCues(cues: cues, result: matchResult);
       final int pct = (matchResult.matchRate * 100).round();
-      debugPrint('[hibiki-import] epubAlign: Sasayaki match done '
-          '${matchResult.matchedCues}/${matchResult.totalCues} ($pct%)');
       health = AudiobookHealth.fromRatePct(
         ratePct: pct,
         reason: '${matchResult.matchedCues}/${matchResult.totalCues} cues matched '
@@ -608,7 +636,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
       );
     }
 
-    debugPrint('[hibiki-import] epubAlign: persisting files...');
+    _reportProgress(0.8, '保存文件...');
     final Directory persistDir = await _ensurePersistDir(bookUid);
     final String persistedSrt =
         await _persistFile(File(_subtitlePath!), persistDir);
@@ -618,6 +646,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
       persistedAudioPath = await _persistFile(File(_audioPath!), persistDir);
     }
 
+    _reportProgress(0.9, '保存记录...');
     final Audiobook audiobook = Audiobook()
       ..bookUid = bookUid
       ..alignmentFormat = ext
@@ -627,22 +656,17 @@ class _BookImportDialogState extends State<BookImportDialog> {
     }
     health.packInto(audiobook);
 
-    debugPrint('[hibiki-import] EPUB+align save: bookUid="$bookUid" '
-        'ttuBookId=$ttuBookId cues=${cues.length}');
-
     await widget.audiobookRepo.saveAudiobook(audiobook);
-    debugPrint('[hibiki-import] epubAlign: saveAudiobook done');
     await widget.audiobookRepo.saveCues(
       bookUid: bookUid,
       chapterHref: chapterHref,
       cues: cues,
     );
-    debugPrint('[hibiki-import] epubAlign: saveCues done');
     await widget.audiobookRepo.updateHealthOverlay(
       bookUid: bookUid,
       health: health,
     );
-    debugPrint('[hibiki-import] epubAlign: COMPLETE');
+    _reportProgress(1.0, '完成');
 
     return _summarizeHealth(health);
   }
