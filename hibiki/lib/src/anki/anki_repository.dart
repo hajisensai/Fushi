@@ -134,10 +134,7 @@ class AnkiRepository {
       sentence: context.sentence,
       documentTitle: context.documentTitle,
       coverPath: context.coverPath != null
-          ? await _addMediaFile(
-              context.coverPath!,
-              'hibiki_cover_${File(context.coverPath!).uri.pathSegments.last}',
-              mimeTypeForPath(context.coverPath!))
+          ? await _addCoverImage(context.coverPath!)
           : null,
       sasayakiAudioPath: context.sasayakiAudioPath != null
           ? await _addSasayakiAudio(context.sasayakiAudioPath!)
@@ -248,6 +245,14 @@ class AnkiRepository {
     } catch (_) {
       return false;
     }
+  }
+
+  Future<String?> _addCoverImage(String path) async {
+    final raw = await _addMediaFile(
+        path,
+        'hibiki_cover_${File(path).uri.pathSegments.last}',
+        mimeTypeForPath(path));
+    return raw != null ? '<img src="$raw">' : null;
   }
 
   Future<String?> _addSasayakiAudio(String path) async {
