@@ -234,7 +234,11 @@ class HibikiDatabase extends _$HibikiDatabase {
   Future<List<AudioCueRow>> getCuesForBook(String bookUid) =>
       (select(audioCues)
             ..where((t) => t.bookUid.equals(bookUid))
-            ..orderBy([(t) => OrderingTerm.asc(t.sentenceIndex)]))
+            ..orderBy([
+              (t) => OrderingTerm.asc(t.audioFileIndex),
+              (t) => OrderingTerm.asc(t.startMs),
+              (t) => OrderingTerm.asc(t.sentenceIndex),
+            ]))
           .get();
 
   Future<AudioCueRow?> findCue(
