@@ -85,6 +85,8 @@ public class MainActivity extends AudioServiceActivity {
     private String localAudioDbPath;
     private final Object dbLock = new Object();
     private final ExecutorService ioExecutor = Executors.newFixedThreadPool(2);
+    private final ExecutorService dbSetupExecutor = Executors.newSingleThreadExecutor();
+    private volatile java.util.concurrent.Future<?> indexFuture;
 
     // Reader opens this gate when volume-key page turning is enabled so
     // dispatchKeyEvent swallows VOLUME_UP/DOWN and forwards them to Dart.
@@ -137,6 +139,7 @@ public class MainActivity extends AudioServiceActivity {
 
     @Override
     protected void onDestroy() {
+        dbSetupExecutor.shutdownNow();
         ioExecutor.shutdownNow();
         synchronized (dbLock) {
             if (localAudioDb != null) {
@@ -583,46 +586,54 @@ public class MainActivity extends AudioServiceActivity {
                     }
                     case "setLocalAudioDb": {
                         String dbPath = call.argument("path");
-                        synchronized (dbLock) {
-                            if (localAudioDb != null) {
-                                localAudioDb.close();
-                                localAudioDb = null;
-                            }
-                            localAudioDbPath = dbPath;
-                            if (dbPath != null && !dbPath.isEmpty()) {
-                                try {
-                                    File dbFile = new File(dbPath);
-                                    if (dbFile.exists()) {
-                                        localAudioDb = SQLiteDatabase.openDatabase(
-                                            dbPath, null, SQLiteDatabase.OPEN_READWRITE | SQLiteDatabase.NO_LOCALIZED_COLLATORS);
-                                        if (!localAudioDb.enableWriteAheadLogging()) {
-                                            android.util.Log.w("hibiki-audio", "WAL mode failed, queries may block during index creation");
-                                        }
-                                        result.success(true);
-                                        final SQLiteDatabase db = localAudioDb;
-                                        ioExecutor.execute(() -> {
-                                            try {
-                                                if (db.isOpen()) {
-                                                    db.execSQL(
-                                                        "CREATE INDEX IF NOT EXISTS idx_entries_expr_read ON entries(expression, reading)");
-                                                    db.execSQL(
-                                                        "CREATE INDEX IF NOT EXISTS idx_android_file_source ON android(file, source)");
-                                                }
-                                            } catch (Exception e) {
-                                                android.util.Log.w("hibiki-audio", "Index creation skipped", e);
-                                            }
-                                        });
-                                    } else {
-                                        result.success(false);
-                                    }
-                                } catch (Exception e) {
-                                    android.util.Log.e("hibiki-audio", "Failed to open local audio db", e);
-                                    result.success(false);
+                        dbSetupExecutor.execute(() -> {
+                            synchronized (dbLock) {
+                                if (indexFuture != null) {
+                                    try {
+                                        indexFuture.get();
+                                    } catch (Exception ignored) {}
+                                    indexFuture = null;
                                 }
-                            } else {
-                                result.success(true);
+                                if (localAudioDb != null) {
+                                    localAudioDb.close();
+                                    localAudioDb = null;
+                                }
+                                localAudioDbPath = dbPath;
+                                if (dbPath != null && !dbPath.isEmpty()) {
+                                    try {
+                                        File dbFile = new File(dbPath);
+                                        if (dbFile.exists()) {
+                                            localAudioDb = SQLiteDatabase.openDatabase(
+                                                dbPath, null, SQLiteDatabase.OPEN_READWRITE | SQLiteDatabase.NO_LOCALIZED_COLLATORS);
+                                            if (!localAudioDb.enableWriteAheadLogging()) {
+                                                android.util.Log.w("hibiki-audio", "WAL mode failed, queries may block during index creation");
+                                            }
+                                            final SQLiteDatabase db = localAudioDb;
+                                            indexFuture = ioExecutor.submit(() -> {
+                                                try {
+                                                    if (db.isOpen()) {
+                                                        db.execSQL(
+                                                            "CREATE INDEX IF NOT EXISTS idx_entries_expr_read ON entries(expression, reading)");
+                                                        db.execSQL(
+                                                            "CREATE INDEX IF NOT EXISTS idx_android_file_source ON android(file, source)");
+                                                    }
+                                                } catch (Exception e) {
+                                                    android.util.Log.w("hibiki-audio", "Index creation skipped", e);
+                                                }
+                                            });
+                                            runOnUiThread(() -> result.success(true));
+                                        } else {
+                                            runOnUiThread(() -> result.success(false));
+                                        }
+                                    } catch (Exception e) {
+                                        android.util.Log.e("hibiki-audio", "Failed to open local audio db", e);
+                                        runOnUiThread(() -> result.success(false));
+                                    }
+                                } else {
+                                    runOnUiThread(() -> result.success(true));
+                                }
                             }
-                        }
+                        });
                         break;
                     }
                     case "queryLocalAudio": {
