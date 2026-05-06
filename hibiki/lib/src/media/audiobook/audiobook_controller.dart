@@ -926,40 +926,6 @@ class AudiobookPlayerController extends ChangeNotifier {
     super.dispose();
   }
 
-  /// 用独立播放器播放 [cues] 覆盖的音频片段，不影响主播放器位置。
-  /// [cues] 必须按 startMs 排序且属于同一 audioFileIndex。
-  Future<void> playClip(List<AudioCue> cues) async {
-    if (cues.isEmpty) return;
-    await stopClip();
-
-    final int fileIdx = cues.first.audioFileIndex;
-    if (fileIdx < 0 || fileIdx >= _audioFiles.length) return;
-
-    final int startMs = cues.first.startMs;
-    final int endMs = cues.last.endMs;
-    if (endMs <= startMs) return;
-
-    final AudioPlayer clip = AudioPlayer();
-    _clipPlayer = clip;
-
-    await clip.setAudioSource(
-      ClippingAudioSource(
-        child: AudioSource.file(_audioFiles[fileIdx].path),
-        start: Duration(milliseconds: startMs),
-        end: Duration(milliseconds: endMs),
-      ),
-    );
-    await clip.setSpeed(_player.speed);
-
-    clip.playerStateStream.listen((PlayerState state) {
-      if (state.processingState == ProcessingState.completed) {
-        stopClip();
-      }
-    });
-
-    await clip.play();
-  }
-
   Future<void> playRange(AudioPlaybackRange range) async {
     if (range.audioFileIndex < 0 || range.audioFileIndex >= _audioFiles.length) {
       return;
