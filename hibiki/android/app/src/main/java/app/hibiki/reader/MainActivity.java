@@ -392,6 +392,7 @@ public class MainActivity extends AudioServiceActivity {
                             break;
                         case "getModelList":
                             if (mAnkiDroid.shouldRequestPermission()) {
+                                mAnkiDroid.requestPermission(MainActivity.this, AD_PERM_REQUEST);
                                 result.error("PERMISSION_DENIED",
                                     "AnkiDroid permission not granted. Please grant and retry.",
                                     null);
@@ -400,12 +401,19 @@ public class MainActivity extends AudioServiceActivity {
                             }
                             break;
                         case "getFieldList":
-                            Long mid = mAnkiDroid.findModelIdByName(model, 1);
-                            if (mid == null) {
-                                result.error("MODEL_NOT_FOUND",
-                                    "Note type not found: " + model, null);
+                            if (mAnkiDroid.shouldRequestPermission()) {
+                                mAnkiDroid.requestPermission(MainActivity.this, AD_PERM_REQUEST);
+                                result.error("PERMISSION_DENIED",
+                                    "AnkiDroid permission not granted. Please grant and retry.",
+                                    null);
                             } else {
-                                result.success(Arrays.asList(api.getFieldList(mid)));
+                                Long mid = mAnkiDroid.findModelIdByName(model, 1);
+                                if (mid == null) {
+                                    result.error("MODEL_NOT_FOUND",
+                                        "Note type not found: " + model, null);
+                                } else {
+                                    result.success(Arrays.asList(api.getFieldList(mid)));
+                                }
                             }
                             break;
                         case "addDefaultModel":
