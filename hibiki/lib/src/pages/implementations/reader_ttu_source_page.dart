@@ -1616,7 +1616,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
           unawaited(_applyHighlightsForCurrentSection());
         } finally {
           _onLoadStopRunning = false;
-          _markReaderContentReady();
+          if (!_restoreInFlight) _markReaderContentReady();
         }
       },
       onTitleChanged: (controller, title) async {
@@ -3973,7 +3973,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       debugPrint(
         '[hibiki-reader-pos] same section, scrolling to o=$targetOffset',
       );
-      unawaited(_finishRestore());
+      await _finishRestore();
       return;
     }
     // 跨段：发 requestSectionNav，`_handleTtuSectionChanged` 的
