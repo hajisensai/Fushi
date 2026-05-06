@@ -54,6 +54,13 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 外部只读快照，供按 textFragmentId 查找 cue。
   List<AudioCue> get chapterCuesSnapshot => _chapterCues;
 
+  /// 全书 cue（供收藏句子跨章匹配），setAllBookCues 设定。
+  List<AudioCue> _allBookCues = [];
+  List<AudioCue> get allBookCuesSnapshot => _allBookCues;
+
+  /// clip 播放前主播放器是否正在播放，clip 结束后恢复。
+  bool _resumeMainAfterClip = false;
+
   /// 多文件时每个文件的全局起始毫秒偏移量（index → offsetMs）。
   List<int> _fileOffsets = [];
 
@@ -343,6 +350,10 @@ class AudiobookPlayerController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setAllBookCues(List<AudioCue> cues) {
+    _allBookCues = List<AudioCue>.from(cues);
+  }
+
   // ── 播放控制 API ───────────────────────────────────────────────────────────
 
   /// 开始播放。
@@ -362,6 +373,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   Future<void> pause() async {
     _imagePauseTimer?.cancel();
     _imagePauseTimer = null;
+    _resumeMainAfterClip = false;
     await _player.pause();
     _maybeSavePosition(force: true);
   }
@@ -933,7 +945,13 @@ class AudiobookPlayerController extends ChangeNotifier {
     if (range.endMs <= range.startMs) {
       return;
     }
-    await stopClip();
+    final bool shouldResumeMain = _resumeMainAfterClip || _player.playing;
+    await stopClip(resumeMain: false);
+
+    _resumeMainAfterClip = shouldResumeMain;
+    if (_player.playing) {
+      await _player.pause();
+    }
 
     final AudioPlayer clip = AudioPlayer();
     _clipPlayer = clip;
@@ -956,12 +974,16 @@ class AudiobookPlayerController extends ChangeNotifier {
     await clip.play();
   }
 
-  Future<void> stopClip() async {
+  Future<void> stopClip({bool resumeMain = true}) async {
     final AudioPlayer? old = _clipPlayer;
     if (old != null) {
       _clipPlayer = null;
       await old.stop();
       old.dispose();
+    }
+    if (resumeMain && _resumeMainAfterClip) {
+      _resumeMainAfterClip = false;
+      unawaited(_player.play());
     }
   }
 }

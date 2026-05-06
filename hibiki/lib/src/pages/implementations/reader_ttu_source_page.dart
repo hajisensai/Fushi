@@ -3324,7 +3324,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
                   }
                   final AudioPlaybackRange? range =
                       CollectionAudioMatcher.findPlaybackRange(
-                    cues: ctrl.chapterCuesSnapshot,
+                    cues: ctrl.allBookCuesSnapshot,
                     sectionIndex: fav.sectionIndex,
                     normCharOffset: fav.normCharOffset,
                     normCharLength: fav.normCharLength,
@@ -3526,6 +3526,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       final SrtBookRepository srtRepo = SrtBookRepository(appModel.database);
       final List<AudioCue> cues = await srtRepo.cuesFor(_srtBookUid!);
       _audiobookController?.setChapterCues(cues);
+      _audiobookController?.setAllBookCues(cues);
 
       debugPrint(
         '[hibiki-audiobook] inject(srt) cues=${cues.length} '
@@ -3573,6 +3574,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         );
       }
       _audiobookController?.setChapterCues(cues);
+      _audiobookController?.setAllBookCues(allCues);
 
       debugPrint(
         '[hibiki-audiobook] inject(regular) chapter=$_currentChapterHref '
