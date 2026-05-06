@@ -681,6 +681,7 @@ class AppModel with ChangeNotifier {
       [
         JapaneseLanguage.instance,
         EnglishLanguage.instance,
+        ChineseLanguage.instance,
       ],
     );
 
