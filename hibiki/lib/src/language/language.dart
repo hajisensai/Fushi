@@ -454,17 +454,22 @@ String buildLookupEntryExtra(HoshiLookupResult r, HoshiGlossaryEntry g) {
   });
 }
 
-DictionarySearchResult _buildResultFromLookup({
+const int defaultDictionaryLookupScanLength = 16;
+
+DictionarySearchResult buildResultFromLookup({
   required String searchTerm,
   required List<HoshiLookupResult> results,
+  required int maximumTerms,
 }) {
   int bestLength = 0;
   final entries = <DictionaryEntry>[];
+  outer:
   for (final r in results) {
     if (r.matched.length > bestLength) {
       bestLength = r.matched.length;
     }
     for (final g in r.term.glossaries) {
+      if (entries.length >= maximumTerms) break outer;
       entries.add(DictionaryEntry(
         dictionaryName: g.dictName,
         word: r.term.expression,
@@ -491,12 +496,13 @@ Future<DictionarySearchResult?> prepareSearchResultsStandard(
     final results = hoshi.lookup(
       params.searchTerm,
       maxResults: params.maximumDictionarySearchResults,
-      scanLength: params.maximumDictionaryTermsInResult,
+      scanLength: defaultDictionaryLookupScanLength,
     );
     if (results.isEmpty) return null;
-    return _buildResultFromLookup(
+    return buildResultFromLookup(
       searchTerm: params.searchTerm,
       results: results,
+      maximumTerms: params.maximumDictionaryTermsInResult,
     );
   } finally {
     hoshi.dispose();
@@ -513,11 +519,12 @@ DictionarySearchResult? prepareSearchResultsDirectStandard({
   final results = HoshiDicts.instance.lookup(
     searchTerm,
     maxResults: maximumDictionarySearchResults,
-    scanLength: maximumDictionaryTermsInResult,
+    scanLength: defaultDictionaryLookupScanLength,
   );
   if (results.isEmpty) return null;
-  return _buildResultFromLookup(
+  return buildResultFromLookup(
     searchTerm: searchTerm,
     results: results,
+    maximumTerms: maximumDictionaryTermsInResult,
   );
 }

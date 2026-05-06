@@ -61,34 +61,15 @@ class JapaneseLanguage extends Language {
     final results = HoshiDicts.instance.lookup(
       searchTerm,
       maxResults: maximumDictionarySearchResults,
-      scanLength: maximumDictionaryTermsInResult,
+      scanLength: defaultDictionaryLookupScanLength,
     );
 
     if (results.isEmpty) return null;
 
-    int bestLength = 0;
-    final entries = <DictionaryEntry>[];
-
-    for (final r in results) {
-      if (r.matched.length > bestLength) {
-        bestLength = r.matched.length;
-      }
-      for (final g in r.term.glossaries) {
-        entries.add(DictionaryEntry(
-          dictionaryName: g.dictName,
-          word: r.term.expression,
-          reading: r.term.reading,
-          meaning: g.glossary,
-          extra: buildLookupEntryExtra(r, g),
-          popularity: 0,
-        ));
-      }
-    }
-
-    return DictionarySearchResult(
+    return buildResultFromLookup(
       searchTerm: searchTerm,
-      entries: entries,
-      bestLength: bestLength,
+      results: results,
+      maximumTerms: maximumDictionaryTermsInResult,
     );
   }
 
