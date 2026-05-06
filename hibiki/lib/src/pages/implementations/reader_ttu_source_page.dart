@@ -218,8 +218,6 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   int _lastSasayakiAppliedSection = -1;
 
   bool _audiobookBridgeInjecting = false;
-  int _sasayakiRetryCount = 0;
-  static const int _maxSasayakiRetries = 5;
 
   // ── 位置持久化（ReaderPosition Isar 表） ────────────────────────────────
   //
@@ -1722,20 +1720,6 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         break;
       case 'sasayakiApplySkip':
         _lastSasayakiAppliedSection = -1;
-        _sasayakiRetryCount++;
-        if (_currentTtuSection >= 0 &&
-            !_audiobookBridgeInjecting &&
-            _sasayakiRetryCount <= _maxSasayakiRetries) {
-          Future.delayed(const Duration(milliseconds: 500), () {
-            if (!mounted) return;
-            if (_lastSasayakiAppliedSection == _currentTtuSection) return;
-            debugPrint(
-              '[hibiki-audiobook] retrying cueMap build after sasayakiApplySkip '
-              'section=$_currentTtuSection (attempt $_sasayakiRetryCount/$_maxSasayakiRetries)',
-            );
-            unawaited(_applySasayakiCuesForSection(_currentTtuSection));
-          });
-        }
         break;
       case 'sasayakiNavErr':
         final int? navSection = (messageJson['section'] as num?)?.toInt();
@@ -3072,7 +3056,6 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       _didRestorePos = false;
       _readerContentReady = false;
       _lastSasayakiAppliedSection = -1;
-      _sasayakiRetryCount = 0;
       await _injectAudiobookBridge(controller);
       await _bootstrapCurrentTtuSection(controller);
       await _bootstrapRestoreReaderPos();

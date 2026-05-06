@@ -1237,12 +1237,18 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
       source: '''
 (async function(){
   for(var i=0;i<20;i++){
-    if(typeof __hoshiApplySasayakiCues!=="undefined"){
+    if(typeof __hoshiApplySasayakiCues!=="undefined"
+       && typeof __ttuWrapCueSpans==="function"){
       __hoshiApplySasayakiCues($sectionIndex, $json);
       return;
     }
     await new Promise(function(r){setTimeout(r,100)});
   }
+  console.log(JSON.stringify({
+    'hibiki-message-type':'sasayakiApplySkip',
+    'reason':'timeout',
+    'sectionIndex':$sectionIndex
+  }));
 })();
 ''',
     );
