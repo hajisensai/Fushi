@@ -459,6 +459,30 @@ class _DictionaryDialogPageState extends BasePageState {
                 size: 18,
                 icon: Icons.delete_outline,
                 onTap: () async {
+                  final confirmed = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: Text(t.dialog_delete),
+                      content: Text(displayPath),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          child: Text(t.dialog_cancel),
+                        ),
+                        FilledButton(
+                          onPressed: () => Navigator.pop(ctx, true),
+                          style: FilledButton.styleFrom(
+                            backgroundColor:
+                                Theme.of(context).colorScheme.errorContainer,
+                            foregroundColor:
+                                Theme.of(context).colorScheme.onErrorContainer,
+                          ),
+                          child: Text(t.dialog_delete),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (confirmed != true || !mounted) return;
                   await appModelNoUpdate.clearLocalAudioDb();
                   if (mounted) setState(() {});
                 },

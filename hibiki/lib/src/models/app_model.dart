@@ -3343,11 +3343,13 @@ class AppModel with ChangeNotifier {
   Future<void> clearLocalAudioDb() async {
     final internalPath =
         path.join(_databaseDirectory.path, 'local_audio.db');
-    TtsChannel.instance.setLocalAudioDb('');
+    await TtsChannel.instance.setLocalAudioDb('');
     await _setPref('local_audio_db_path', '');
-    final file = File(internalPath);
-    if (await file.exists()) {
-      await file.delete();
+    for (final suffix in ['', '-wal', '-shm']) {
+      final f = File('$internalPath$suffix');
+      if (await f.exists()) {
+        await f.delete();
+      }
     }
   }
 
