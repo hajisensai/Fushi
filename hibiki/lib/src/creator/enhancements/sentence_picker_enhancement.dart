@@ -21,6 +21,9 @@ class SentencePickerEnhancement extends Enhancement {
   static const String key = 'sentence_picker';
 
   @override
+  String getLocalisedLabel(AppModel appModel) => t.creator_enhancement_sentence_picker;
+
+  @override
   Future<void> enhanceCreatorParams({
     required BuildContext context,
     required WidgetRef ref,

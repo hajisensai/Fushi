@@ -30,6 +30,9 @@ class PlayAudioAction extends QuickAction {
   static const String key = 'play_audio';
 
   @override
+  String getLocalisedLabel(AppModel appModel) => t.creator_action_play_audio;
+
+  @override
   Future<void> executeAction({
     required BuildContext context,
     required WidgetRef ref,

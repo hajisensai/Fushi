@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/creator.dart';
 import 'package:hibiki/dictionary.dart';
+import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 
 /// Organise notes in a deck with space-delimited labels.
@@ -22,6 +23,9 @@ class TagsField extends Field {
 
   /// The unique key for this field.
   static const String key = 'tags';
+
+  @override
+  String getLocalisedLabel(AppModel appModel) => t.creator_field_tags;
 
   @override
   String? onCreatorOpenAction({

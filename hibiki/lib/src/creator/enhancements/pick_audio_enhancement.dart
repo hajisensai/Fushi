@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:hibiki/creator.dart';
+import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 
 /// An enhancement that can be used to select an audio file.
@@ -22,6 +23,9 @@ class PickAudioEnhancement extends AudioEnhancement {
   /// Used to identify this enhancement and to allow a constant value for the
   /// default mappings value of [AnkiMapping].
   static const String key = 'pick_audio';
+
+  @override
+  String getLocalisedLabel(AppModel appModel) => t.creator_enhancement_pick_audio;
 
   @override
   Future<void> enhanceCreatorParams({

@@ -8,6 +8,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:multi_value_listenable_builder/multi_value_listenable_builder.dart';
 import 'package:hibiki/creator.dart';
 import 'package:hibiki/dictionary.dart';
+import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/utils.dart';
 
@@ -32,6 +33,9 @@ class AudioSentenceField extends AudioExportField {
 
   /// The unique key for this field.
   static const String key = 'audio_sentence';
+
+  @override
+  String getLocalisedLabel(AppModel appModel) => t.creator_field_audio_sentence;
 
   AudioPlayer _audioPlayer = AudioPlayer();
 

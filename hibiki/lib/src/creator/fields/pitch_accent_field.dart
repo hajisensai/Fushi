@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/creator.dart';
 import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/language.dart';
+import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 
 /// Returns the formatted pitch accent diagram HTML of a [DictionaryEntry].
@@ -27,6 +28,9 @@ class PitchAccentField extends Field {
 
   /// The unique key for this field.
   static const String key = 'pitch_accent';
+
+  @override
+  String getLocalisedLabel(AppModel appModel) => t.creator_field_pitch_accent;
 
   /// Extra value key for pitch-position HTML.
   static const String pitchPositionsExtraKey = 'pitchPositions';

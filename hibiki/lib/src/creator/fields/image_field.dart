@@ -31,6 +31,9 @@ class ImageField extends ImageExportField {
   static const String key = 'image';
 
   @override
+  String getLocalisedLabel(AppModel appModel) => t.creator_field_image;
+
+  @override
   String? onCreatorOpenAction({
     required WidgetRef ref,
     required AppModel appModel,

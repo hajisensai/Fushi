@@ -22,6 +22,9 @@ class SaveTagsEnhancement extends Enhancement {
   static const String key = 'save_tags';
 
   @override
+  String getLocalisedLabel(AppModel appModel) => t.creator_enhancement_save_tags;
+
+  @override
   Future<void> enhanceCreatorParams({
     required BuildContext context,
     required WidgetRef ref,

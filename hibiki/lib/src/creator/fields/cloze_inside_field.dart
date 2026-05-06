@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/creator.dart';
 import 'package:hibiki/dictionary.dart';
+import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 
 /// Highlighted text in a sentence.
@@ -23,6 +24,9 @@ class ClozeInsideField extends Field {
 
   /// The unique key for this field.
   static const String key = 'cloze_inside';
+
+  @override
+  String getLocalisedLabel(AppModel appModel) => t.creator_field_cloze_inside;
 
   @override
   String? onCreatorOpenAction({

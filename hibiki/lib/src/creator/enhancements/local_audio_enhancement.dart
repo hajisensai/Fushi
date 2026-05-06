@@ -22,6 +22,9 @@ class LocalAudioEnhancement extends AudioEnhancement {
   static const String key = 'local_audio';
 
   @override
+  String getLocalisedLabel(AppModel appModel) => t.creator_enhancement_local_audio;
+
+  @override
   Future<void> enhanceCreatorParams({
     required BuildContext context,
     required WidgetRef ref,

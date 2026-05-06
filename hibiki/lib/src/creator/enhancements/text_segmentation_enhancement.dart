@@ -21,6 +21,9 @@ class TextSegmentationEnhancement extends Enhancement {
   static const String key = 'text_segmentation';
 
   @override
+  String getLocalisedLabel(AppModel appModel) => t.creator_enhancement_text_segmentation;
+
+  @override
   Future<void> enhanceCreatorParams({
     required BuildContext context,
     required WidgetRef ref,

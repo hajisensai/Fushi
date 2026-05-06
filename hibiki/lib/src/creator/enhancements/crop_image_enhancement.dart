@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:network_to_file_image/network_to_file_image.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:hibiki/creator.dart';
+import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 
@@ -24,6 +25,9 @@ class CropImageEnhancement extends ImageEnhancement {
   /// Used to identify this enhancement and to allow a constant value for the
   /// default mappings value of [AnkiMapping].
   static const String key = 'crop_image';
+
+  @override
+  String getLocalisedLabel(AppModel appModel) => t.creator_enhancement_crop_image;
 
   @override
   Future<void> enhanceCreatorParams({

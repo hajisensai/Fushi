@@ -21,6 +21,9 @@ class PopFromStashEnhancement extends Enhancement {
   static const String key = 'pop_from_stash';
 
   @override
+  String getLocalisedLabel(AppModel appModel) => t.creator_enhancement_pop_from_stash;
+
+  @override
   Future<void> enhanceCreatorParams({
     required BuildContext context,
     required WidgetRef ref,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/creator.dart';
+import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 
 /// An enhancement used effectively as a shortcut for clearing the contents
@@ -18,6 +19,9 @@ class ClearFieldEnhancement extends Enhancement {
   /// Used to identify this enhancement and to allow a constant value for the
   /// default mappings value of [AnkiMapping].
   static const String key = 'clear_field';
+
+  @override
+  String getLocalisedLabel(AppModel appModel) => t.creator_enhancement_clear_field;
 
   @override
   Future<void> enhanceCreatorParams({

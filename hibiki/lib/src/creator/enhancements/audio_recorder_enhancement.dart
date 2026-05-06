@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:hibiki/creator.dart';
+import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 
@@ -24,6 +25,9 @@ class AudioRecorderEnhancement extends AudioEnhancement {
   /// Used to identify this enhancement and to allow a constant value for the
   /// default mappings value of [AnkiMapping].
   static const String key = 'audio_recorder';
+
+  @override
+  String getLocalisedLabel(AppModel appModel) => t.creator_enhancement_audio_recorder;
 
   @override
   Future<void> enhanceCreatorParams({

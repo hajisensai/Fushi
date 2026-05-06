@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/creator.dart';
+import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/dictionary.dart';
 
@@ -19,6 +20,9 @@ class CopyToClipboardAction extends QuickAction {
   /// Used to identify this enhancement and to allow a constant value for the
   /// default mappings value of [AnkiMapping].
   static const String key = 'copy_to_clipboard';
+
+  @override
+  String getLocalisedLabel(AppModel appModel) => t.creator_action_copy_to_clipboard;
 
   @override
   Future<void> executeAction({

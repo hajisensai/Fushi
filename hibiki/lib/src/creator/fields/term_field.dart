@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/creator.dart';
 import 'package:hibiki/dictionary.dart';
+import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 
 /// Returns the word or phrase particular to a selected headword.
@@ -22,6 +23,9 @@ class TermField extends Field {
 
   /// The unique key for this field.
   static const String key = 'term';
+
+  @override
+  String getLocalisedLabel(AppModel appModel) => t.creator_field_term;
 
   @override
   String? onCreatorOpenAction({

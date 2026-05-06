@@ -4,6 +4,7 @@ import 'package:ruby_text/ruby_text.dart';
 import 'package:hibiki/creator.dart';
 import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/language.dart';
+import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 
 /// Returns the formatted furigana HTML of a [DictionaryEntry].
@@ -24,6 +25,9 @@ class FuriganaField extends Field {
 
   /// The unique key for this field.
   static const String key = 'furigana';
+
+  @override
+  String getLocalisedLabel(AppModel appModel) => t.creator_field_furigana;
 
   @override
   String? onCreatorOpenAction({

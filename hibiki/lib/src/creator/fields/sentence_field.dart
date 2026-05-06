@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/creator.dart';
 import 'package:hibiki/dictionary.dart';
+import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 
 /// Used to track the current sentence context from the current playing media
@@ -24,6 +25,9 @@ class SentenceField extends Field {
 
   /// The unique key for this field.
   static const String key = 'sentence';
+
+  @override
+  String getLocalisedLabel(AppModel appModel) => t.creator_field_sentence;
 
   @override
   String? onCreatorOpenAction({

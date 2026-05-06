@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/creator.dart';
 import 'package:hibiki/dictionary.dart';
+import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 
 /// Text before highlighted text in a sentence
@@ -24,6 +25,9 @@ class ClozeBeforeField extends Field {
 
   /// The unique key for this field.
   static const String key = 'cloze_before';
+
+  @override
+  String getLocalisedLabel(AppModel appModel) => t.creator_field_cloze_before;
 
   @override
   String? onCreatorOpenAction({
