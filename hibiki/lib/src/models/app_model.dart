@@ -3333,7 +3333,10 @@ class AppModel with ChangeNotifier {
     return _getPref('local_audio_db_display_name', defaultValue: '');
   }
 
-  Future<void> setLocalAudioDbPath(String sourcePath) async {
+  Future<void> setLocalAudioDbPath(
+    String sourcePath, {
+    required String displayName,
+  }) async {
     final internalPath =
         path.join(_databaseDirectory.path, 'local_audio.db');
     final sourceFile = File(sourcePath);
@@ -3341,8 +3344,7 @@ class AppModel with ChangeNotifier {
       await sourceFile.copy(internalPath);
     }
     await _setPref('local_audio_db_path', internalPath);
-    await _setPref(
-        'local_audio_db_display_name', path.basename(sourcePath));
+    await _setPref('local_audio_db_display_name', displayName);
     TtsChannel.instance.setLocalAudioDb(internalPath);
   }
 

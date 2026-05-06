@@ -400,6 +400,7 @@ class _DictionaryDialogPageState extends BasePageState {
           type: FileType.any,
         );
         if (result != null && result.files.single.path != null && mounted) {
+          final file = result.files.single;
           showDialog(
             context: context,
             barrierDismissible: false,
@@ -421,8 +422,10 @@ class _DictionaryDialogPageState extends BasePageState {
             ),
           );
           try {
-            await appModelNoUpdate
-                .setLocalAudioDbPath(result.files.single.path!);
+            await appModelNoUpdate.setLocalAudioDbPath(
+              file.path!,
+              displayName: file.name,
+            );
           } finally {
             if (mounted) {
               Navigator.of(context).pop();
