@@ -275,17 +275,14 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
 
   ReadingTimeTracker? _readingTimeTracker;
 
-  late final AppModel _cachedAppModel;
-
   @override
   void initState() {
     super.initState();
-    _cachedAppModel = ref.read(appProvider);
-    _readingTimeTracker = ReadingTimeTracker(_cachedAppModel.database);
+    _readingTimeTracker = ReadingTimeTracker(appModelNoUpdate.database);
     _readingTimeTracker!.start();
     debugPrint('[hibiki-reader-lifecycle] initState ${identityHashCode(this)}');
     WidgetsBinding.instance.addObserver(this);
-    _cachedAppModel.addListener(_onAppModelChanged);
+    appModelNoUpdate.addListener(_onAppModelChanged);
     _applyVolumeKeyIntercept();
     _registerFloatingLyricHandlers();
     // 同步预判：Isar 查 Audiobook / SrtBook 记录。命中就让 WebView 首帧
@@ -381,9 +378,9 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     _notifPlaySub?.cancel();
     _notifSkipNextSub?.cancel();
     _notifSkipPrevSub?.cancel();
-    _cachedAppModel.audioHandler?.clearNotification();
-    _cachedAppModel.removeListener(_onAppModelChanged);
-    if (_cachedAppModel.showFloatingLyric) {
+    appModelNoUpdate.audioHandler?.clearNotification();
+    appModelNoUpdate.removeListener(_onAppModelChanged);
+    if (appModelNoUpdate.showFloatingLyric) {
       FloatingLyricChannel.hide();
     }
     _audiobookController?.removeListener(_onCueChanged);
@@ -416,7 +413,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         }
       },
       onClose: () {
-        unawaited(_cachedAppModel.setShowFloatingLyric(false));
+        unawaited(appModelNoUpdate.setShowFloatingLyric(false));
         if (mounted) {
           setState(() {});
         }
@@ -584,7 +581,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     _lastSavedPos = ReaderViewportPos(section: section, offset: offset);
     try {
       final ReaderPositionRepository repo =
-          ReaderPositionRepository(_cachedAppModel.database);
+          ReaderPositionRepository(appModelNoUpdate.database);
       await repo.save(
         ttuBookId: ttuId,
         sectionIndex: section,
