@@ -247,10 +247,6 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
 
   Completer<bool>? _scrollToNormOffsetCompleter;
 
-  /// 同段恢复时短暂抑制 reveal scroll，给 ttu 自带 scrollToBookmark 留时间。
-  /// 否则 _onCueChanged 的 reveal=true 会立刻把页面拉到音频 cue 位置，
-  /// 覆盖用户上次阅读的书签。
-  bool _suppressRevealScroll = false;
 
   // ── 窗口尺寸变化时保持阅读位置 ──────────────────────────────────────
   Timer? _metricsDebounce;
@@ -3530,7 +3526,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       'pos=${controller?.position?.inMilliseconds}ms '
       'followAudio=${controller?.followAudio.value} '
       'hasPlayed=${controller?.hasPlayedOnce} '
-      'suppress=$_suppressRevealScroll',
+      'restoreInFlight=$_restoreInFlight',
     );
     if (appModel.showFloatingLyric && controller != null) {
       unawaited(FloatingLyricChannel.setPlaybackState(
@@ -3555,8 +3551,8 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     }
     if (controller?.isImagePaused ?? false) return;
     final bool forceReveal = controller?.consumeForceReveal() ?? false;
-    final bool reveal = !_suppressRevealScroll &&
-        (forceReveal || (controller?.shouldRevealCurrentCue ?? true));
+    final bool reveal =
+        forceReveal || (controller?.shouldRevealCurrentCue ?? true);
     if (reveal && (controller?.imagePauseSec.value ?? 0) > 0) {
       AudiobookBridge.saveScrollPos(_controller);
     }
