@@ -122,7 +122,21 @@ class ReadingStatistics extends Table {
       ];
 }
 
-// ── preferences (key-value) ─────────────────────────────────────────
+// ── reading_hourly_logs ────────────────────────────���────────────────
+@DataClassName('ReadingHourlyLogRow')
+class ReadingHourlyLogs extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get dateKey => text()();
+  IntColumn get hour => integer()();
+  IntColumn get readingTimeMs => integer()();
+
+  @override
+  List<Set<Column>> get uniqueKeys => [
+        {dateKey, hour},
+      ];
+}
+
+// ── preferences (key-value) ─────────────────────────────���───────────
 @DataClassName('PreferenceRow')
 class Preferences extends Table {
   TextColumn get key => text()();

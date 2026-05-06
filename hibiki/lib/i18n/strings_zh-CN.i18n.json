@@ -666,6 +666,7 @@
     "stat_refresh": "刷新",
     "stat_no_data": "暂无阅读数据",
     "stat_by_book": "按书统计",
+    "stat_today_hourly": "今日按小时",
     "stat_last_30_days": "近 30 天",
     "stat_today": "今日",
     "stat_this_week": "本周",

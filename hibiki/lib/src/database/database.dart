@@ -24,6 +24,7 @@ LazyDatabase _openDb(String dbDirectory) {
   SrtBooks,
   ReaderPositions,
   ReadingStatistics,
+  ReadingHourlyLogs,
   Preferences,
   DictionaryMetadata,
   DictionaryHistory,
@@ -33,13 +34,16 @@ class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onUpgrade: (m, from, to) async {
           if (from < 2) {
             await m.addColumn(dictionaryMetadata, dictionaryMetadata.type);
+          }
+          if (from < 3) {
+            await m.createTable(readingHourlyLogs);
           }
         },
       );
@@ -306,6 +310,37 @@ class HibikiDatabase extends _$HibikiDatabase {
 
   Future<List<ReadingStatisticRow>> getAllReadingStatistics() =>
       select(readingStatistics).get();
+
+  // ── reading hourly logs ─────────────────────────────────────────
+  Future<void> addHourlyReadingTime({
+    required String dateKey,
+    required int hour,
+    required int deltaMs,
+  }) async {
+    final existing = await (select(readingHourlyLogs)
+          ..where(
+              (t) => t.dateKey.equals(dateKey) & t.hour.equals(hour)))
+        .getSingleOrNull();
+    if (existing != null) {
+      await (update(readingHourlyLogs)
+            ..where((t) => t.id.equals(existing.id)))
+          .write(ReadingHourlyLogsCompanion(
+        readingTimeMs: Value(existing.readingTimeMs + deltaMs),
+      ));
+    } else {
+      await into(readingHourlyLogs).insert(
+        ReadingHourlyLogsCompanion.insert(
+          dateKey: dateKey,
+          hour: hour,
+          readingTimeMs: deltaMs,
+        ),
+      );
+    }
+  }
+
+  Future<List<ReadingHourlyLogRow>> getHourlyLogsForDate(String dateKey) =>
+      (select(readingHourlyLogs)..where((t) => t.dateKey.equals(dateKey)))
+          .get();
 
   // ── dictionary metadata ─────────────────────────────────────────
   Future<List<DictionaryMetaRow>> getAllDictionaryMetadata() =>

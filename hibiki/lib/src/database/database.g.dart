@@ -4106,6 +4106,273 @@ class ReadingStatisticsCompanion extends UpdateCompanion<ReadingStatisticRow> {
   }
 }
 
+class $ReadingHourlyLogsTable extends ReadingHourlyLogs
+    with TableInfo<$ReadingHourlyLogsTable, ReadingHourlyLogRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ReadingHourlyLogsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _dateKeyMeta =
+      const VerificationMeta('dateKey');
+  @override
+  late final GeneratedColumn<String> dateKey = GeneratedColumn<String>(
+      'date_key', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _hourMeta = const VerificationMeta('hour');
+  @override
+  late final GeneratedColumn<int> hour = GeneratedColumn<int>(
+      'hour', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _readingTimeMsMeta =
+      const VerificationMeta('readingTimeMs');
+  @override
+  late final GeneratedColumn<int> readingTimeMs = GeneratedColumn<int>(
+      'reading_time_ms', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns => [id, dateKey, hour, readingTimeMs];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'reading_hourly_logs';
+  @override
+  VerificationContext validateIntegrity(
+      Insertable<ReadingHourlyLogRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('date_key')) {
+      context.handle(_dateKeyMeta,
+          dateKey.isAcceptableOrUnknown(data['date_key']!, _dateKeyMeta));
+    } else if (isInserting) {
+      context.missing(_dateKeyMeta);
+    }
+    if (data.containsKey('hour')) {
+      context.handle(
+          _hourMeta, hour.isAcceptableOrUnknown(data['hour']!, _hourMeta));
+    } else if (isInserting) {
+      context.missing(_hourMeta);
+    }
+    if (data.containsKey('reading_time_ms')) {
+      context.handle(
+          _readingTimeMsMeta,
+          readingTimeMs.isAcceptableOrUnknown(
+              data['reading_time_ms']!, _readingTimeMsMeta));
+    } else if (isInserting) {
+      context.missing(_readingTimeMsMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [
+        {dateKey, hour},
+      ];
+  @override
+  ReadingHourlyLogRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ReadingHourlyLogRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      dateKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}date_key'])!,
+      hour: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}hour'])!,
+      readingTimeMs: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}reading_time_ms'])!,
+    );
+  }
+
+  @override
+  $ReadingHourlyLogsTable createAlias(String alias) {
+    return $ReadingHourlyLogsTable(attachedDatabase, alias);
+  }
+}
+
+class ReadingHourlyLogRow extends DataClass
+    implements Insertable<ReadingHourlyLogRow> {
+  final int id;
+  final String dateKey;
+  final int hour;
+  final int readingTimeMs;
+  const ReadingHourlyLogRow(
+      {required this.id,
+      required this.dateKey,
+      required this.hour,
+      required this.readingTimeMs});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['date_key'] = Variable<String>(dateKey);
+    map['hour'] = Variable<int>(hour);
+    map['reading_time_ms'] = Variable<int>(readingTimeMs);
+    return map;
+  }
+
+  ReadingHourlyLogsCompanion toCompanion(bool nullToAbsent) {
+    return ReadingHourlyLogsCompanion(
+      id: Value(id),
+      dateKey: Value(dateKey),
+      hour: Value(hour),
+      readingTimeMs: Value(readingTimeMs),
+    );
+  }
+
+  factory ReadingHourlyLogRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ReadingHourlyLogRow(
+      id: serializer.fromJson<int>(json['id']),
+      dateKey: serializer.fromJson<String>(json['dateKey']),
+      hour: serializer.fromJson<int>(json['hour']),
+      readingTimeMs: serializer.fromJson<int>(json['readingTimeMs']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'dateKey': serializer.toJson<String>(dateKey),
+      'hour': serializer.toJson<int>(hour),
+      'readingTimeMs': serializer.toJson<int>(readingTimeMs),
+    };
+  }
+
+  ReadingHourlyLogRow copyWith(
+          {int? id, String? dateKey, int? hour, int? readingTimeMs}) =>
+      ReadingHourlyLogRow(
+        id: id ?? this.id,
+        dateKey: dateKey ?? this.dateKey,
+        hour: hour ?? this.hour,
+        readingTimeMs: readingTimeMs ?? this.readingTimeMs,
+      );
+  ReadingHourlyLogRow copyWithCompanion(ReadingHourlyLogsCompanion data) {
+    return ReadingHourlyLogRow(
+      id: data.id.present ? data.id.value : this.id,
+      dateKey: data.dateKey.present ? data.dateKey.value : this.dateKey,
+      hour: data.hour.present ? data.hour.value : this.hour,
+      readingTimeMs: data.readingTimeMs.present
+          ? data.readingTimeMs.value
+          : this.readingTimeMs,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ReadingHourlyLogRow(')
+          ..write('id: $id, ')
+          ..write('dateKey: $dateKey, ')
+          ..write('hour: $hour, ')
+          ..write('readingTimeMs: $readingTimeMs')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, dateKey, hour, readingTimeMs);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ReadingHourlyLogRow &&
+          other.id == this.id &&
+          other.dateKey == this.dateKey &&
+          other.hour == this.hour &&
+          other.readingTimeMs == this.readingTimeMs);
+}
+
+class ReadingHourlyLogsCompanion extends UpdateCompanion<ReadingHourlyLogRow> {
+  final Value<int> id;
+  final Value<String> dateKey;
+  final Value<int> hour;
+  final Value<int> readingTimeMs;
+  const ReadingHourlyLogsCompanion({
+    this.id = const Value.absent(),
+    this.dateKey = const Value.absent(),
+    this.hour = const Value.absent(),
+    this.readingTimeMs = const Value.absent(),
+  });
+  ReadingHourlyLogsCompanion.insert({
+    this.id = const Value.absent(),
+    required String dateKey,
+    required int hour,
+    required int readingTimeMs,
+  })  : dateKey = Value(dateKey),
+        hour = Value(hour),
+        readingTimeMs = Value(readingTimeMs);
+  static Insertable<ReadingHourlyLogRow> custom({
+    Expression<int>? id,
+    Expression<String>? dateKey,
+    Expression<int>? hour,
+    Expression<int>? readingTimeMs,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (dateKey != null) 'date_key': dateKey,
+      if (hour != null) 'hour': hour,
+      if (readingTimeMs != null) 'reading_time_ms': readingTimeMs,
+    });
+  }
+
+  ReadingHourlyLogsCompanion copyWith(
+      {Value<int>? id,
+      Value<String>? dateKey,
+      Value<int>? hour,
+      Value<int>? readingTimeMs}) {
+    return ReadingHourlyLogsCompanion(
+      id: id ?? this.id,
+      dateKey: dateKey ?? this.dateKey,
+      hour: hour ?? this.hour,
+      readingTimeMs: readingTimeMs ?? this.readingTimeMs,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (dateKey.present) {
+      map['date_key'] = Variable<String>(dateKey.value);
+    }
+    if (hour.present) {
+      map['hour'] = Variable<int>(hour.value);
+    }
+    if (readingTimeMs.present) {
+      map['reading_time_ms'] = Variable<int>(readingTimeMs.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ReadingHourlyLogsCompanion(')
+          ..write('id: $id, ')
+          ..write('dateKey: $dateKey, ')
+          ..write('hour: $hour, ')
+          ..write('readingTimeMs: $readingTimeMs')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $PreferencesTable extends Preferences
     with TableInfo<$PreferencesTable, PreferenceRow> {
   @override
@@ -4942,6 +5209,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
       $ReaderPositionsTable(this);
   late final $ReadingStatisticsTable readingStatistics =
       $ReadingStatisticsTable(this);
+  late final $ReadingHourlyLogsTable readingHourlyLogs =
+      $ReadingHourlyLogsTable(this);
   late final $PreferencesTable preferences = $PreferencesTable(this);
   late final $DictionaryMetadataTable dictionaryMetadata =
       $DictionaryMetadataTable(this);
@@ -4960,6 +5229,7 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
         srtBooks,
         readerPositions,
         readingStatistics,
+        readingHourlyLogs,
         preferences,
         dictionaryMetadata,
         dictionaryHistory

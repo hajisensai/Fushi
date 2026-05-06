@@ -697,6 +697,7 @@
     "stat_refresh": "Refresh",
     "stat_no_data": "No reading data yet",
     "stat_by_book": "By Book",
+    "stat_today_hourly": "Today by Hour",
     "stat_last_30_days": "Last 30 Days",
     "stat_today": "Today",
     "stat_this_week": "This Week",

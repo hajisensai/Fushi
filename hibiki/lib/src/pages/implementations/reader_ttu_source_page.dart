@@ -24,6 +24,7 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart';
+import 'package:hibiki/src/media/audiobook/reading_time_tracker.dart';
 import 'package:hibiki/src/media/audiobook/highlight_bridge.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_controller.dart';
 import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
@@ -272,12 +273,16 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   StreamSubscription<void>? _notifSkipNextSub;
   StreamSubscription<void>? _notifSkipPrevSub;
 
+  ReadingTimeTracker? _readingTimeTracker;
+
   late final AppModel _cachedAppModel;
 
   @override
   void initState() {
     super.initState();
     _cachedAppModel = ref.read(appProvider);
+    _readingTimeTracker = ReadingTimeTracker(_cachedAppModel.database);
+    _readingTimeTracker!.start();
     debugPrint('[hibiki-reader-lifecycle] initState ${identityHashCode(this)}');
     WidgetsBinding.instance.addObserver(this);
     _cachedAppModel.addListener(_onAppModelChanged);
@@ -356,6 +361,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   @override
   void dispose() {
     debugPrint('[hibiki-reader-lifecycle] dispose ${identityHashCode(this)}');
+    _readingTimeTracker?.dispose();
     VolumeKeyChannel.instance.setHandlers();
     VolumeKeyChannel.instance.setInterceptEnabled(false);
     FloatingLyricChannel.clearEventHandlers();
@@ -699,8 +705,11 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     super.didChangeAppLifecycleState(state);
 
     if (state == AppLifecycleState.resumed) {
+      _readingTimeTracker?.start();
       FocusScope.of(context).unfocus();
       _focusNode.requestFocus();
+    } else if (state == AppLifecycleState.paused) {
+      _readingTimeTracker?.stop();
     }
   }
 

@@ -32,6 +32,9 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   // 每日数据（最近 30 天）
   List<_DayData> _dailyData = [];
 
+  // 今日每小时数据（0-23）
+  List<int> _hourlyMs = List.filled(24, 0);
+
   // 按书聚合
   List<_BookData> _bookData = [];
 
@@ -92,10 +95,23 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       final db = appModelNoUpdate.database;
       _allStats = await db.getAllReadingStatistics();
       _computeAggregates();
+      await _loadHourlyData();
     } catch (e) {
       _error = e.toString();
     }
     setState(() => _loading = false);
+  }
+
+  Future<void> _loadHourlyData() async {
+    final db = appModelNoUpdate.database;
+    final todayKey = _dateKey(DateTime.now());
+    final rows = await db.getHourlyLogsForDate(todayKey);
+    _hourlyMs = List.filled(24, 0);
+    for (final row in rows) {
+      if (row.hour >= 0 && row.hour < 24) {
+        _hourlyMs[row.hour] = row.readingTimeMs;
+      }
+    }
   }
 
   void _computeAggregates() {
@@ -209,6 +225,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     return CustomScrollView(
       slivers: [
         SliverToBoxAdapter(child: _buildSummaryCards()),
+        SliverToBoxAdapter(child: _buildHourlyChart()),
         SliverToBoxAdapter(child: _buildDailyChart()),
         SliverToBoxAdapter(
           child: Padding(
@@ -285,6 +302,32 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
                     )),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildHourlyChart() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(t.stat_today_hourly,
+              style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 140,
+            child: CustomPaint(
+              size: Size.infinite,
+              painter: _HourlyChartPainter(
+                hourlyMs: _hourlyMs,
+                barColor: Theme.of(context).colorScheme.tertiary,
+                labelColor: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+        ],
       ),
     );
   }
@@ -374,6 +417,69 @@ class _BookData {
   final String title;
   int chars = 0;
   int ms = 0;
+}
+
+class _HourlyChartPainter extends CustomPainter {
+  _HourlyChartPainter({
+    required this.hourlyMs,
+    required this.barColor,
+    required this.labelColor,
+  });
+
+  final List<int> hourlyMs;
+  final Color barColor;
+  final Color labelColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (hourlyMs.isEmpty) return;
+
+    final maxMs = hourlyMs.fold<int>(0, (prev, ms) => ms > prev ? ms : prev);
+    if (maxMs == 0) return;
+
+    const bottomPadding = 20.0;
+    final chartHeight = size.height - bottomPadding;
+    final step = size.width / 24;
+    final barWidth = step * 0.7;
+    final gap = step * 0.15;
+
+    final paint = Paint()
+      ..color = barColor
+      ..style = PaintingStyle.fill;
+
+    final labelStyle = TextStyle(fontSize: 9, color: labelColor);
+
+    for (int i = 0; i < 24; i++) {
+      final x = i * step + gap;
+      final barHeight = (hourlyMs[i] / maxMs) * chartHeight;
+
+      if (hourlyMs[i] > 0) {
+        final rect = RRect.fromRectAndRadius(
+          Rect.fromLTWH(x, chartHeight - barHeight, barWidth, barHeight),
+          const Radius.circular(2),
+        );
+        canvas.drawRRect(rect, paint);
+      }
+
+      if (i % 3 == 0) {
+        final tp = TextPainter(
+          text: TextSpan(
+            text: i.toString().padLeft(2, '0'),
+            style: labelStyle,
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        tp.paint(
+          canvas,
+          Offset(x + barWidth / 2 - tp.width / 2, chartHeight + 4),
+        );
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _HourlyChartPainter oldDelegate) =>
+      hourlyMs != oldDelegate.hourlyMs;
 }
 
 class _BarChartPainter extends CustomPainter {
