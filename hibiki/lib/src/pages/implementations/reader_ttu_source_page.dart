@@ -994,12 +994,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
           backgroundColor: _ttuThemeFlutterColor(),
           resizeToAvoidBottomInset: false,
           body: SafeArea(
-            // top 走 `extendPageBeyondNavigationBar` 偏好：默认 true，
-            // 给刘海 / 摄像头挖孔区留主题色 Scaffold 背景做遮罩，避免
-            // WebView 内容被挖孔挡掉。ttu 原生顶部工具栏的"空白横条"
-            // 不在这一层 —— 那一条走 javascriptToExecute 里的
-            // hibiki-hide-ttu-native-ui-css display:none 解决。
-            top: !mediaSource.extendPageBeyondNavigationBar,
+            top: true,
             bottom: false,
             child: Stack(
               fit: StackFit.expand,
@@ -1216,26 +1211,16 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     } catch (_) {}
   }
 
-  Promise.all([
-    'serviceWorker' in navigator
-      ? navigator.serviceWorker.getRegistrations()
-          .then(function(registrations) {
-            return Promise.all(registrations.map(function(registration) {
-              return registration.unregister();
-            }));
-          })
-          .catch(function() {})
-      : Promise.resolve(),
-    window.caches
-      ? caches.keys()
-          .then(function(keys) {
-            return Promise.all(keys.map(function(cacheKey) {
-              return caches.delete(cacheKey);
-            }));
-          })
-          .catch(function() {})
-      : Promise.resolve()
-  ]).then(function() {
+  (window.caches
+    ? caches.keys()
+        .then(function(keys) {
+          return Promise.all(keys.map(function(cacheKey) {
+            return caches.delete(cacheKey);
+          }));
+        })
+        .catch(function() {})
+    : Promise.resolve()
+  ).then(function() {
     try { window.localStorage.setItem(key, '1'); } catch (_) {}
     try { window.sessionStorage.setItem(key, '1'); } catch (_) {}
   }).catch(function() {});
@@ -1366,14 +1351,6 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
               'var r=ev.reason;'
               'console.error("__HIBIKI_UNHANDLED_REJECTION__ "+(r&&r.stack?r.stack:String(r)));'
               '});',
-          injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
-        ),
-        UserScript(
-          source:
-              "if('serviceWorker' in navigator){"
-              'navigator.serviceWorker.getRegistrations()'
-              '.then(function(r){r.forEach(function(g){g.unregister()})})'
-              '.catch(function(){});}',
           injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
         ),
         if (_ttuVersionChanged)

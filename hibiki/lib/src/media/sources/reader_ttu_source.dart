@@ -623,21 +623,6 @@ new Promise(function(resolve) {
     );
   }
 
-  /// Whether or not to add to extend the webpage beyond the navigation bar.
-  /// This may be helpful for devices that don't have difficulty accessing the
-  /// top bar (i.e. don't have a teardrop notch).
-  bool get extendPageBeyondNavigationBar {
-    return getPreference<bool>(
-        key: 'extend_page_beyond_navbar', defaultValue: false);
-  }
-
-  /// Toggles the extend navbar option.
-  void toggleExtendPageBeyondNavigationBar() async {
-    await setPreference<bool>(
-      key: 'extend_page_beyond_navbar',
-      value: !extendPageBeyondNavigationBar,
-    );
-  }
 
   /// Whether or not the dictionary popup should adapt to the reader's theme.
   bool get adaptTtuTheme {

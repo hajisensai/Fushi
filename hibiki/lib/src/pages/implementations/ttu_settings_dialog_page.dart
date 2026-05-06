@@ -199,14 +199,6 @@ List<Widget> _buildReaderOnlySwitches(VoidCallback rebuild,
       },
     ),
     _buildSwitch(
-      label: t.extend_page_beyond_navbar,
-      value: _source.extendPageBeyondNavigationBar,
-      onChanged: (_) {
-        _source.toggleExtendPageBeyondNavigationBar();
-        rebuild();
-      },
-    ),
-    _buildSwitch(
       label: t.adapt_ttu_theme,
       value: _source.adaptTtuTheme,
       onChanged: (_) {
@@ -259,28 +251,6 @@ List<Widget> _buildReaderOnlySwitches(VoidCallback rebuild,
     ),
     if (appModel != null)
       _PopupMaxWidthSlider(appModel: appModel, rebuild: rebuild),
-    Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Expanded(child: Text(t.ttu_second_dimension_margin)),
-          SizedBox(
-            width: 140,
-            child: Slider(
-              value: _source.ttuSecondDimensionMargin,
-              min: 0,
-              max: 100,
-              divisions: 20,
-              label: '${_source.ttuSecondDimensionMargin.round()}',
-              onChanged: (v) {
-                _source.setTtuSecondDimensionMargin(v);
-                rebuild();
-              },
-            ),
-          ),
-        ],
-      ),
-    ),
   ];
 }
 
