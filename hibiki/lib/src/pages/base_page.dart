@@ -30,10 +30,19 @@ class BasePageState<T extends BasePage> extends ConsumerState<T> {
   }
 
   /// Access the global model responsible for app-wide state management.
-  AppModel get appModel => ref.watch(appProvider);
+  /// Falls back to cached instance after dispose to prevent
+  /// ProviderSubscription.read on closed subscription.
+  AppModel get appModel {
+    if (!mounted) return _cachedAppModel;
+    return ref.watch(appProvider);
+  }
 
   /// Access the global model responsible for creator state management.
-  CreatorModel get creatorModel => ref.watch(creatorProvider);
+  /// Falls back to cached instance after dispose.
+  CreatorModel get creatorModel {
+    if (!mounted) return _cachedCreatorModel;
+    return ref.watch(creatorProvider);
+  }
 
   /// Access the global model responsible for app-wide state management without
   /// listening to state updates. Safe to use in dispose().

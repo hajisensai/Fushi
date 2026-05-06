@@ -3215,12 +3215,16 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       }
       _lastSasayakiAppliedSection = -1;
       await _injectAudiobookBridge(controller);
+      if (!mounted) return;
       await _bootstrapCurrentTtuSection(controller);
+      if (!mounted) return;
       if (!_restoreInFlight) {
         await _bootstrapRestoreReaderPos();
+        if (!mounted) return;
       }
       if (_currentTtuSection >= 0) {
         await _applySasayakiCuesForSection(_currentTtuSection);
+        if (!mounted) return;
       }
       _onCueChanged();
     } finally {
@@ -4013,6 +4017,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         sectionIndex: sectionIndex,
         cues: cues,
       );
+      if (!mounted) return;
       if (_currentTtuSection != sectionIndex) {
         debugPrint(
           '[hibiki-audiobook] applySasayakiCues stale: applied=$sectionIndex '
