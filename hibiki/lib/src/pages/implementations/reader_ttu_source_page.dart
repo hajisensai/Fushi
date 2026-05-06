@@ -576,9 +576,15 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     required int offset,
     required String from,
   }) async {
-    if (section < 0 || offset < 0) return;
+    if (section < 0 || offset < 0) {
+      debugPrint('[hibiki-reader-pos] persist skip: negative s=$section o=$offset');
+      return;
+    }
     final int? ttuId = _extractTtuBookId();
-    if (ttuId == null || ttuId <= 0) return;
+    if (ttuId == null || ttuId <= 0) {
+      debugPrint('[hibiki-reader-pos] persist skip: no ttuId');
+      return;
+    }
     if (_lastSavedPos?.section == section && _lastSavedPos?.offset == offset) {
       return;
     }
@@ -1456,13 +1462,17 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         controller.addJavaScriptHandler(
           handlerName: 'saveReaderPos',
           callback: (data) async {
-            if (_restoreInFlight) return;
+            if (_restoreInFlight) {
+              debugPrint('[hibiki-reader-pos] saveReaderPos BLOCKED by restoreInFlight');
+              return;
+            }
             if (data.isEmpty) return;
             try {
               final Map<String, dynamic> payload =
                   Map<String, dynamic>.from(data[0] as Map);
               final int? section = (payload['section'] as num?)?.toInt();
               final int? offset = (payload['offset'] as num?)?.toInt();
+              debugPrint('[hibiki-reader-pos] saveReaderPos received s=$section o=$offset');
               if (section == null || offset == null) return;
               await _persistReaderPos(
                 section: section,
@@ -2640,14 +2650,26 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     if (timer) clearTimeout(timer);
     timer = setTimeout(function() {
       try {
-        if (window.__hoshiAutoScrollInFlight) return;
-        if (!window.__hibikiGetViewportNormOffset) return;
+        if (window.__hoshiAutoScrollInFlight) {
+          console.log(JSON.stringify({'hibiki-message-type':'pos-save-skip','reason':'autoScrollInFlight'}));
+          return;
+        }
+        if (!window.__hibikiGetViewportNormOffset) {
+          console.log(JSON.stringify({'hibiki-message-type':'pos-save-skip','reason':'noGetOffset'}));
+          return;
+        }
         var p = window.__hibikiGetViewportNormOffset();
-        if (!p) return;
+        if (!p) {
+          console.log(JSON.stringify({'hibiki-message-type':'pos-save-skip','reason':'nullOffset'}));
+          return;
+        }
+        console.log(JSON.stringify({'hibiki-message-type':'pos-save-fire','s':p.section,'o':p.offset}));
         if (window.flutter_inappwebview) {
           window.flutter_inappwebview.callHandler('saveReaderPos', p);
         }
-      } catch (e) {}
+      } catch (e) {
+        console.log(JSON.stringify({'hibiki-message-type':'pos-save-err','e':String(e)}));
+      }
     }, 500);
   }
   document.addEventListener('scroll', function(e) {

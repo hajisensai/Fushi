@@ -857,7 +857,7 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
             } else {
               window.scrollBy(0, rect.top - 16);
             }
-            signalDone(true);
+            requestAnimationFrame(function() { signalDone(true); });
             return;
           }
           normPos += wk;
