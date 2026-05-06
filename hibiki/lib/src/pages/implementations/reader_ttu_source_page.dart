@@ -1343,19 +1343,29 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   }
 
   Future<void> _revealAndUnmask() async {
-    await _removeInitialHideCss();
+    final bool removed = await _removeInitialHideCss();
+    if (!removed) {
+      debugPrint('[hibiki-reader-pos] CSS hide removal failed, unmasking anyway');
+    }
     if (!_readerContentReady && mounted) {
       setState(() => _readerContentReady = true);
     }
   }
 
-  Future<void> _removeInitialHideCss() async {
-    if (!_controllerInitialised) return;
-    try {
-      await _controller.evaluateJavascript(
-        source: 'var e=document.getElementById("hibiki-content-hide");if(e)e.remove();',
-      );
-    } catch (_) {}
+  Future<bool> _removeInitialHideCss() async {
+    if (!_controllerInitialised) return false;
+    for (int i = 0; i < 3; i++) {
+      try {
+        final Object? result = await _controller.evaluateJavascript(
+          source: '(function(){var e=document.getElementById("hibiki-content-hide");if(e){e.remove();return true}return false})()',
+        );
+        return result != null;
+      } catch (e) {
+        debugPrint('[hibiki-reader-pos] removeInitialHideCss attempt $i err: $e');
+        if (i < 2) await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+    }
+    return false;
   }
 
   Future<void> _setJsRestoreFlag() async {
