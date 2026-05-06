@@ -50,6 +50,7 @@ class AnkiRepository {
 
   Future<AnkiFetchResult> fetchConfiguration() async {
     try {
+      await _channel.invokeMethod('requestAnkidroidPermissions');
       final decksRaw = await _channel.invokeMethod('getDecks') as Map?;
       final modelsRaw = await _channel.invokeMethod('getModelList') as Map?;
       if (decksRaw == null || modelsRaw == null) {

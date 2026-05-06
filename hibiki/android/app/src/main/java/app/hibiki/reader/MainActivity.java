@@ -381,14 +381,32 @@ public class MainActivity extends AudioServiceActivity {
                             }
                             break;
                         case "getDecks":
-                            result.success(api.getDeckList());
+                            if (mAnkiDroid.shouldRequestPermission()) {
+                                mAnkiDroid.requestPermission(MainActivity.this, AD_PERM_REQUEST);
+                                result.error("PERMISSION_DENIED",
+                                    "AnkiDroid permission not granted. Please grant and retry.",
+                                    null);
+                            } else {
+                                result.success(api.getDeckList());
+                            }
                             break;
                         case "getModelList":
-                            result.success(api.getModelList());
+                            if (mAnkiDroid.shouldRequestPermission()) {
+                                result.error("PERMISSION_DENIED",
+                                    "AnkiDroid permission not granted. Please grant and retry.",
+                                    null);
+                            } else {
+                                result.success(api.getModelList());
+                            }
                             break;
                         case "getFieldList":
                             Long mid = mAnkiDroid.findModelIdByName(model, 1);
-                            result.success(Arrays.asList(api.getFieldList(mid)));
+                            if (mid == null) {
+                                result.error("MODEL_NOT_FOUND",
+                                    "Note type not found: " + model, null);
+                            } else {
+                                result.success(Arrays.asList(api.getFieldList(mid)));
+                            }
                             break;
                         case "addDefaultModel":
                             addDefaultModel();
