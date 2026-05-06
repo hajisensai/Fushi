@@ -218,6 +218,8 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   int _lastSasayakiAppliedSection = -1;
 
   bool _audiobookBridgeInjecting = false;
+  int _sasayakiRetryCount = 0;
+  static const int _maxSasayakiRetries = 5;
 
   // ── 位置持久化（ReaderPosition Isar 表） ────────────────────────────────
   //
@@ -1721,14 +1723,18 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         break;
       case 'sasayakiApplySkip':
         _lastSasayakiAppliedSection = -1;
-        if (_currentTtuSection >= 0) {
+        _sasayakiRetryCount++;
+        if (_currentTtuSection >= 0 &&
+            !_audiobookBridgeInjecting &&
+            _sasayakiRetryCount <= _maxSasayakiRetries) {
           Future.delayed(const Duration(milliseconds: 500), () {
             if (!mounted) return;
+            if (_lastSasayakiAppliedSection == _currentTtuSection) return;
             debugPrint(
               '[hibiki-audiobook] retrying cueMap build after sasayakiApplySkip '
-              'section=$_currentTtuSection',
+              'section=$_currentTtuSection (attempt $_sasayakiRetryCount/$_maxSasayakiRetries)',
             );
-            _applySasayakiCuesForSection(_currentTtuSection);
+            unawaited(_applySasayakiCuesForSection(_currentTtuSection));
           });
         }
         break;
@@ -3057,8 +3063,8 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       return;
     }
     if (_audiobookBridgeInjecting) {
-      debugPrint('[hibiki-audiobook] injection already running, '
-          'skipping $trigger (will retry via sasayakiApplySkip)');
+      debugPrint('[hibiki-audiobook] injection in progress, '
+          'skipping redundant $trigger');
       return;
     }
     _audiobookBridgeInjecting = true;
@@ -3067,6 +3073,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       _didRestorePos = false;
       _readerContentReady = false;
       _lastSasayakiAppliedSection = -1;
+      _sasayakiRetryCount = 0;
       await _injectAudiobookBridge(controller);
       await _bootstrapCurrentTtuSection(controller);
       await _bootstrapRestoreReaderPos();
