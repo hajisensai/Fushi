@@ -410,7 +410,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         }
       },
       onClose: () {
-        unawaited(appModel.setShowFloatingLyric(false));
+        unawaited(_cachedAppModel.setShowFloatingLyric(false));
         if (mounted) {
           setState(() {});
         }
@@ -578,7 +578,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     _lastSavedPos = ReaderViewportPos(section: section, offset: offset);
     try {
       final ReaderPositionRepository repo =
-          ReaderPositionRepository(appModel.database);
+          ReaderPositionRepository(_cachedAppModel.database);
       await repo.save(
         ttuBookId: ttuId,
         sectionIndex: section,
@@ -1366,6 +1366,14 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
               'var r=ev.reason;'
               'console.error("__HIBIKI_UNHANDLED_REJECTION__ "+(r&&r.stack?r.stack:String(r)));'
               '});',
+          injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+        ),
+        UserScript(
+          source:
+              "if('serviceWorker' in navigator){"
+              'navigator.serviceWorker.getRegistrations()'
+              '.then(function(r){r.forEach(function(g){g.unregister()})})'
+              '.catch(function(){});}',
           injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
         ),
         if (_ttuVersionChanged)
