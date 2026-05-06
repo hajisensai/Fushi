@@ -86,51 +86,20 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
 
   Widget? buildPopupAudioControls() => null;
 
-  /// Standard warning dialog for leaving a source page. All sources should
+  /// Handles leaving a source page. All sources should
   /// use this and wrap their [build] function with a [WillPopScope].
   Future<bool> onWillPop() async {
-    Widget alertDialog = AlertDialog(
-      shape: const RoundedRectangleBorder(),
-      title: Text(t.exit_media_title),
-      content: Text(t.exit_media_description),
-      actions: <Widget>[
-        TextButton(
-            child: Text(
-              t.dialog_exit,
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.primary,
-              ),
-            ),
-            onPressed: () async {
-              final mediaSource = appModel.currentMediaSource;
-              await onSourcePagePop();
+    final mediaSource = appModel.currentMediaSource;
+    await onSourcePagePop();
 
-              if (mounted) {
-                Navigator.pop(context, true);
-              }
-              if (mediaSource == null) {
-                return;
-              }
-              await appModel.closeMedia(
-                ref: ref,
-                mediaSource: mediaSource,
-                item: widget.item,
-              );
-            }),
-        TextButton(
-          child: Text(
-            t.dialog_cancel,
-          ),
-          onPressed: () => Navigator.pop(context, false),
-        ),
-      ],
-    );
-
-    return await showAppDialog(
-          context: context,
-          builder: (context) => alertDialog,
-        ) ??
-        false;
+    if (mediaSource != null) {
+      await appModel.closeMedia(
+        ref: ref,
+        mediaSource: mediaSource,
+        item: widget.item,
+      );
+    }
+    return true;
   }
 
   bool _showMore = false;
