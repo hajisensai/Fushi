@@ -1265,6 +1265,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   ).then(function() {
     try { window.localStorage.setItem(key, '1'); } catch (_) {}
     try { window.sessionStorage.setItem(key, '1'); } catch (_) {}
+    console.log(JSON.stringify({"hibiki-message-type":"ttuCacheRefreshDone"}));
   }).catch(function() {});
 })();
 ''';
@@ -1752,11 +1753,6 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
           unawaited(_installTtuBookmarkBridge(controller));
           await HighlightBridge.inject(controller);
           unawaited(_applyHighlightsForCurrentSection());
-          if (_ttuVersionChanged) {
-            unawaited(mediaSource.setTtuInternalVersion().catchError((e) {
-              debugPrint('[hibiki] setTtuInternalVersion failed: $e');
-            }));
-          }
         } finally {
           _onLoadStopRunning = false;
           if (!_restoreInFlight) _markReaderContentReady();
@@ -1889,6 +1885,13 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
           'WebView.$msgType',
           error ?? message.message,
         );
+        break;
+      case 'ttuCacheRefreshDone':
+        if (_ttuVersionChanged) {
+          unawaited(mediaSource.setTtuInternalVersion().catchError((e) {
+            debugPrint('[hibiki] setTtuInternalVersion failed: $e');
+          }));
+        }
         break;
       case 'alignToRectDiag':
         // ignore: avoid_print
