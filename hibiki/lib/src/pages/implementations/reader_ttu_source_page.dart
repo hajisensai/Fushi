@@ -1330,14 +1330,28 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         's.id="hibiki-initial-bg";'
         's.textContent=":root,html,body{background-color:$hex!important}";'
         '(document.head||document.documentElement).appendChild(s);'
+        'var h=document.createElement("style");'
+        'h.id="hibiki-content-hide";'
+        'h.textContent=":root,html,body{visibility:hidden!important}";'
+        '(document.head||document.documentElement).appendChild(h);'
         '})()';
   }
 
   void _markReaderContentReady() {
     unawaited(_clearJsRestoreFlag());
+    unawaited(_removeInitialHideCss());
     if (!_readerContentReady && mounted) {
       setState(() => _readerContentReady = true);
     }
+  }
+
+  Future<void> _removeInitialHideCss() async {
+    if (!_controllerInitialised) return;
+    try {
+      await _controller.evaluateJavascript(
+        source: 'var e=document.getElementById("hibiki-content-hide");if(e)e.remove();',
+      );
+    } catch (_) {}
   }
 
   Future<void> _setJsRestoreFlag() async {
