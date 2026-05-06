@@ -389,9 +389,10 @@ class _DictionaryDialogPageState extends BasePageState {
 
   Widget buildLocalAudioDbPath() {
     final currentPath = appModel.localAudioDbPath;
+    final displayName = appModel.localAudioDbDisplayName;
     final displayPath = currentPath.isEmpty
         ? t.local_audio_not_set
-        : currentPath.split('/').last;
+        : displayName.isNotEmpty ? displayName : currentPath.split('/').last;
 
     return InkWell(
       onTap: () async {

@@ -3329,6 +3329,10 @@ class AppModel with ChangeNotifier {
     return _getPref('local_audio_db_path', defaultValue: '');
   }
 
+  String get localAudioDbDisplayName {
+    return _getPref('local_audio_db_display_name', defaultValue: '');
+  }
+
   Future<void> setLocalAudioDbPath(String sourcePath) async {
     final internalPath =
         path.join(_databaseDirectory.path, 'local_audio.db');
@@ -3337,6 +3341,8 @@ class AppModel with ChangeNotifier {
       await sourceFile.copy(internalPath);
     }
     await _setPref('local_audio_db_path', internalPath);
+    await _setPref(
+        'local_audio_db_display_name', path.basename(sourcePath));
     TtsChannel.instance.setLocalAudioDb(internalPath);
   }
 
@@ -3345,6 +3351,7 @@ class AppModel with ChangeNotifier {
         path.join(_databaseDirectory.path, 'local_audio.db');
     await TtsChannel.instance.setLocalAudioDb('');
     await _setPref('local_audio_db_path', '');
+    await _setPref('local_audio_db_display_name', '');
     for (final suffix in ['', '-wal', '-shm']) {
       final f = File('$internalPath$suffix');
       if (await f.exists()) {
