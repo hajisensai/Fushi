@@ -56,6 +56,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
 
   String? _alignmentPath;
   bool _importing = false;
+  final ValueNotifier<double> _progress = ValueNotifier<double>(0.0);
+  final ValueNotifier<String> _progressMsg = ValueNotifier<String>('');
 
   /// 已有记录但缺音频源 → 进入"补音频"模式，显示导入表单而非只读视图。
   bool _patchingAudio = false;
@@ -99,6 +101,13 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
   void initState() {
     super.initState();
     _initExisting();
+  }
+
+  @override
+  void dispose() {
+    _progress.dispose();
+    _progressMsg.dispose();
+    super.dispose();
   }
 
   Future<void> _initExisting() async {
@@ -330,7 +339,18 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
         ],
         if (_importing) ...[
           const SizedBox(height: 16),
-          const LinearProgressIndicator(),
+          ValueListenableBuilder<double>(
+            valueListenable: _progress,
+            builder: (_, value, __) => LinearProgressIndicator(value: value),
+          ),
+          const SizedBox(height: 4),
+          ValueListenableBuilder<String>(
+            valueListenable: _progressMsg,
+            builder: (_, msg, __) => Text(
+              msg,
+              style: const TextStyle(fontSize: 11, color: Colors.grey),
+            ),
+          ),
         ],
       ],
     );
@@ -526,6 +546,11 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
 
   // ── 导入 ─────────────────────────────────────────────────────────────────────
 
+  void _reportProgress(double value, String msg) {
+    _progress.value = value;
+    _progressMsg.value = msg;
+  }
+
   Future<void> _doImport() async {
     if (!_hasAudioSource || _alignmentPath == null) {
       Fluttertoast.showToast(msg: t.audiobook_import_error);
@@ -535,9 +560,10 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     debugPrint('[hibiki-audiobook] doImport bookUid.len=${widget.bookUid.length} '
         'hash=${widget.bookUid.hashCode} uid=${widget.bookUid}');
     setState(() => _importing = true);
-    Fluttertoast.showToast(msg: t.dialog_importing);
+    _reportProgress(0.0, '');
 
     try {
+      _reportProgress(0.1, t.import_step_parsing);
       final String ext =
           _alignmentPath!.split('.').last.toLowerCase();
       const Set<String> cueFormats = {'smil', 'srt', 'lrc', 'vtt', 'ass'};
@@ -549,6 +575,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       // 见 `updateHealth readback THREW`。
       final AudiobookHealth health = await _parseCues(format);
 
+      _reportProgress(0.5, t.import_step_persisting);
       // file_picker 返回的路径在 cache/ 下，Android 随时会清理。
       // 把音频和对齐文件复制到持久目录再存路径。
       final Directory persistDir = await _ensurePersistDir();
@@ -567,6 +594,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
         persistedAudioRoot = _audioDir;
       }
 
+      _reportProgress(0.8, t.import_step_saving);
       final Audiobook audiobook = Audiobook()
         ..bookUid = widget.bookUid
         ..alignmentFormat = format
@@ -587,6 +615,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
         bookUid: widget.bookUid,
         health: health,
       );
+      _reportProgress(1.0, t.import_step_done);
 
       if (mounted) {
         final String? tail = _summarizeHealth(health);
@@ -653,6 +682,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       return AudiobookHealth.failed(reason: 'parser returned 0 cues');
     }
     try {
+      _reportProgress(0.2, t.import_step_reading_idb);
       final TtuBookRecord rec = await TtuIdbReader.readBookRecord(
         ttuBookId: ttuId,
         serverPort: port,
@@ -663,6 +693,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
           reason: 'ttu IDB record had 0 sections',
         );
       }
+      _reportProgress(0.3, t.import_step_matching);
       // 匹配器放 isolate 跑，主线程不能被大书的 bigram 扫描挤出 ANR。
       final MatchResult result = await EpubCueMatcher.matchInIsolate(
         sections: sections,

@@ -460,7 +460,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
     required String? author,
   }) async {
     final String uid = 'srtbook_${DateTime.now().millisecondsSinceEpoch}';
-    _reportProgress(0.1, '解析字幕...');
+    _reportProgress(0.1, t.import_step_parsing);
 
     final List<AudioCue> cues = await _parseCuesWithIndex(
       File(_subtitlePath!),
@@ -472,12 +472,12 @@ class _BookImportDialogState extends State<BookImportDialog> {
     int ttuBookId = 0;
     if (cues.isNotEmpty) {
       try {
-        _reportProgress(0.3, '生成 EPUB...');
+        _reportProgress(0.3, t.import_step_building_epub);
         final TtuIdbPayload payload = CuesToEpub.buildIdbPayload(
           title: title,
           cues: cues,
         );
-        _reportProgress(0.5, '写入数据库...');
+        _reportProgress(0.5, t.import_step_injecting_idb);
         ttuBookId = await _injectPayloadIntoTtuIdb(payload);
         debugPrint('[hibiki-import] subtitleBook: IDB inject done, id=$ttuBookId');
       } catch (e) {
@@ -485,7 +485,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
       }
     }
 
-    _reportProgress(0.7, '保存文件...');
+    _reportProgress(0.7, t.import_step_persisting);
     final Directory persistDir = await _ensurePersistDir(uid);
     final String persistedSrt =
         await _persistFile(File(_subtitlePath!), persistDir);
@@ -495,7 +495,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
       persistedAudioPath = await _persistFile(File(_audioPath!), persistDir);
     }
 
-    _reportProgress(0.9, '保存记录...');
+    _reportProgress(0.9, t.import_step_saving);
     final SrtBook book = SrtBook()
       ..uid = uid
       ..title = title
@@ -514,7 +514,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
 
     await widget.repo.save(book);
     await widget.repo.saveCues(uid: uid, cues: cues);
-    _reportProgress(1.0, '完成');
+    _reportProgress(1.0, t.import_step_done);
   }
 
   Future<void> _importEpubOnly({required String title}) async {
@@ -522,9 +522,9 @@ class _BookImportDialogState extends State<BookImportDialog> {
     final Uint8List bytes;
     final String filename;
 
-    _reportProgress(0.2, '读取文件...');
+    _reportProgress(0.2, t.import_step_reading);
     if (TextToEpub.isSupported(_epubPath!)) {
-      _reportProgress(0.3, '转换为 EPUB...');
+      _reportProgress(0.3, t.import_step_converting_epub);
       bytes = await TextToEpub.convert(file: file, title: title);
       filename = '${title.replaceAll(RegExp(r'[^\w\s\-]'), '')}.epub';
     } else {
@@ -532,13 +532,13 @@ class _BookImportDialogState extends State<BookImportDialog> {
       filename = _epubName ?? _basename(_epubPath!);
     }
 
-    _reportProgress(0.5, '导入 EPUB...');
+    _reportProgress(0.5, t.import_step_importing_epub);
     await TtuEpubImporter.import(
       bytes: bytes,
       filename: filename,
       serverPort: widget.serverPort,
     );
-    _reportProgress(1.0, '完成');
+    _reportProgress(1.0, t.import_step_done);
   }
 
   Future<String?> _importEpubWithAlignment({required String title}) async {
@@ -546,9 +546,9 @@ class _BookImportDialogState extends State<BookImportDialog> {
     final Uint8List importBytes;
     final String importFilename;
 
-    _reportProgress(0.05, '读取文件...');
+    _reportProgress(0.05, t.import_step_reading);
     if (TextToEpub.isSupported(_epubPath!)) {
-      _reportProgress(0.1, '转换为 EPUB...');
+      _reportProgress(0.1, t.import_step_converting_epub);
       importBytes = await TextToEpub.convert(file: epubFile, title: title);
       importFilename = '${title.replaceAll(RegExp(r'[^\w\s\-]'), '')}.epub';
     } else {
@@ -556,7 +556,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
       importFilename = _epubName ?? _basename(_epubPath!);
     }
 
-    _reportProgress(0.2, '导入 EPUB...');
+    _reportProgress(0.2, t.import_step_importing_epub);
     final int ttuBookId = await TtuEpubImporter.import(
       bytes: importBytes,
       filename: importFilename,
@@ -566,7 +566,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
       throw StateError('ttu returned invalid book id');
     }
 
-    _reportProgress(0.35, '读取书籍信息...');
+    _reportProgress(0.35, t.import_step_reading_idb);
     String idbTitle = '';
     List<EpubSection> sections = const <EpubSection>[];
     try {
@@ -597,7 +597,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
     AudiobookHealth health;
     final bool runMatcher = SasayakiRematch.supportedFormats.contains(ext);
     if (runMatcher && sections.isNotEmpty && cues.isNotEmpty) {
-      _reportProgress(0.55, 'Sasayaki 对齐...');
+      _reportProgress(0.55, t.import_step_matching);
       MatchResult? matchResult;
       int chosenWindow = _searchWindow;
       if (_autoWindow) {
@@ -636,7 +636,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
       );
     }
 
-    _reportProgress(0.8, '保存文件...');
+    _reportProgress(0.8, t.import_step_persisting);
     final Directory persistDir = await _ensurePersistDir(bookUid);
     final String persistedSrt =
         await _persistFile(File(_subtitlePath!), persistDir);
@@ -646,7 +646,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
       persistedAudioPath = await _persistFile(File(_audioPath!), persistDir);
     }
 
-    _reportProgress(0.9, '保存记录...');
+    _reportProgress(0.9, t.import_step_saving);
     final Audiobook audiobook = Audiobook()
       ..bookUid = bookUid
       ..alignmentFormat = ext
@@ -666,7 +666,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
       bookUid: bookUid,
       health: health,
     );
-    _reportProgress(1.0, '完成');
+    _reportProgress(1.0, t.import_step_done);
 
     return _summarizeHealth(health);
   }
