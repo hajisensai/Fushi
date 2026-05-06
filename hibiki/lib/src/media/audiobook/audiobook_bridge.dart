@@ -52,7 +52,23 @@ window.__hoshiAlignToRect = function(rect) {
 
   if (typeof window.__ttuGetPageInfo !== 'function') { console.log('alignToRect:noApi'); return; }
   var info = window.__ttuGetPageInfo();
-  if (!info || !info.stride || info.stride < 10) { console.log('alignToRect:noInfo ' + JSON.stringify(info)); return; }
+  if (!info || (!info.stride && info.stride !== 0)) { console.log('alignToRect:noInfo ' + JSON.stringify(info)); return; }
+  if (info.stride < 10) {
+    if (info.stride === 0) {
+      if (info.verticalMode) {
+        window.scrollBy({ left: -(window.innerWidth - rect.right - 16), top: 0 });
+      } else {
+        window.scrollBy({ left: 0, top: rect.top - 16 });
+      }
+      window.__hoshiAutoScrollInFlight = true;
+      if (window.__hoshiAutoScrollTimer) clearTimeout(window.__hoshiAutoScrollTimer);
+      window.__hoshiAutoScrollTimer = setTimeout(function() {
+        window.__hoshiAutoScrollInFlight = false;
+        window.__hoshiAutoScrollTimer = null;
+      }, 250);
+    }
+    return;
+  }
   var content = document.querySelector('.book-content') ||
                 document.scrollingElement || document.documentElement;
   var cRect = content.getBoundingClientRect();
