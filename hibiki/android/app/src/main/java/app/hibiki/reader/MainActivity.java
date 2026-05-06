@@ -137,23 +137,30 @@ public class MainActivity extends AudioServiceActivity {
         });
     }
 
-    @Override
-    protected void onDestroy() {
-        dbSetupExecutor.shutdownNow();
+    /** Must be called while holding dbLock. Waits for index task, then closes DB. */
+    private void closeAudioDbLocked() {
         if (indexFuture != null) {
-            indexFuture.cancel(true);
             try {
-                indexFuture.get(2, java.util.concurrent.TimeUnit.SECONDS);
+                indexFuture.get(10, java.util.concurrent.TimeUnit.SECONDS);
             } catch (Exception ignored) {}
             indexFuture = null;
         }
-        ioExecutor.shutdownNow();
-        synchronized (dbLock) {
-            if (localAudioDb != null) {
-                localAudioDb.close();
-                localAudioDb = null;
-            }
+        if (localAudioDb != null) {
+            localAudioDb.close();
+            localAudioDb = null;
         }
+    }
+
+    @Override
+    protected void onDestroy() {
+        dbSetupExecutor.shutdown();
+        try {
+            dbSetupExecutor.awaitTermination(12, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (InterruptedException ignored) {}
+        synchronized (dbLock) {
+            closeAudioDbLocked();
+        }
+        ioExecutor.shutdownNow();
         if (mediaPlayer != null) {
             mediaPlayer.release();
             mediaPlayer = null;
@@ -595,16 +602,7 @@ public class MainActivity extends AudioServiceActivity {
                         String dbPath = call.argument("path");
                         dbSetupExecutor.execute(() -> {
                             synchronized (dbLock) {
-                                if (indexFuture != null) {
-                                    try {
-                                        indexFuture.get();
-                                    } catch (Exception ignored) {}
-                                    indexFuture = null;
-                                }
-                                if (localAudioDb != null) {
-                                    localAudioDb.close();
-                                    localAudioDb = null;
-                                }
+                                closeAudioDbLocked();
                                 localAudioDbPath = dbPath;
                                 if (dbPath != null && !dbPath.isEmpty()) {
                                     try {
