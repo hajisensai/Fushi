@@ -252,7 +252,7 @@ class AnkiRepository {
         path,
         'hibiki_cover_${File(path).uri.pathSegments.last}',
         mimeTypeForPath(path));
-    return raw != null ? '<img src="$raw">' : null;
+    return raw != null ? '<img src="${const HtmlEscape().convert(raw)}">' : null;
   }
 
   Future<String?> _addSasayakiAudio(String path) async {
