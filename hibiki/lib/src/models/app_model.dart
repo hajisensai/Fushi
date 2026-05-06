@@ -3340,6 +3340,17 @@ class AppModel with ChangeNotifier {
     TtsChannel.instance.setLocalAudioDb(internalPath);
   }
 
+  Future<void> clearLocalAudioDb() async {
+    final internalPath =
+        path.join(_databaseDirectory.path, 'local_audio.db');
+    TtsChannel.instance.setLocalAudioDb('');
+    await _setPref('local_audio_db_path', '');
+    final file = File(internalPath);
+    if (await file.exists()) {
+      await file.delete();
+    }
+  }
+
   bool get localAudioEnabled {
     return _getPref('local_audio_enabled', defaultValue: false);
   }

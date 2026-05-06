@@ -419,12 +419,15 @@ class _DictionaryDialogPageState extends BasePageState {
               ),
             ),
           );
-          await appModelNoUpdate
-              .setLocalAudioDbPath(result.files.single.path!);
-          if (mounted) {
-            Navigator.of(context).pop();
-            setState(() {});
+          try {
+            await appModelNoUpdate
+                .setLocalAudioDbPath(result.files.single.path!);
+          } finally {
+            if (mounted) {
+              Navigator.of(context).pop();
+            }
           }
+          if (mounted) setState(() {});
         }
       },
       child: Container(
@@ -450,6 +453,16 @@ class _DictionaryDialogPageState extends BasePageState {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
+            if (currentPath.isNotEmpty)
+              JidoujishoIconButton(
+                tooltip: t.dialog_delete,
+                size: 18,
+                icon: Icons.delete_outline,
+                onTap: () async {
+                  await appModelNoUpdate.clearLocalAudioDb();
+                  if (mounted) setState(() {});
+                },
+              ),
           ],
         ),
       ),
