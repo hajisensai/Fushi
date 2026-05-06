@@ -1334,6 +1334,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   void _markReaderContentReady() {
     if (!_readerContentReady && mounted) {
       setState(() => _readerContentReady = true);
+      unawaited(_clearJsRestoreFlag());
     }
   }
 
