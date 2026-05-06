@@ -792,6 +792,13 @@ window.__hibikiGetViewportNormOffset = function() {
 window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
   var retry = _retryCount || 0;
   var maxRetries = 15;
+  function signalDone(ok) {
+    try {
+      if (window.flutter_inappwebview) {
+        window.flutter_inappwebview.callHandler('scrollToNormOffsetDone', {success: !!ok});
+      }
+    } catch(e2) {}
+  }
   console.log(JSON.stringify({
     'hibiki-message-type': 'scrollToNormOffset-enter',
     'section': section, 'offset': offset, 'retry': retry,
@@ -812,6 +819,7 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
         'hibiki-message-type': 'scrollToNormOffset-noRoot',
         'triedSelectors': '.book-content-container, .book-content'
       }));
+      signalDone(false);
       return;
     }
     var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
@@ -849,6 +857,7 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
             } else {
               window.scrollBy(0, rect.top - 16);
             }
+            signalDone(true);
             return;
           }
           normPos += wk;
@@ -870,12 +879,14 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
       'hibiki-message-type': 'scrollToNormOffset-exhausted',
       'totalNormPos': normPos, 'requestedOffset': offset, 'retry': retry
     }));
+    signalDone(false);
   } catch (e) {
     console.log(JSON.stringify({
       'hibiki-message-type': 'hibikiScrollToNormOffsetErr',
       'error': String(e),
       'section': section, 'offset': offset
     }));
+    signalDone(false);
   }
 };
 ''';
@@ -1178,6 +1189,7 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
     }
     await new Promise(function(r){setTimeout(r,100)});
   }
+  try{if(window.flutter_inappwebview)window.flutter_inappwebview.callHandler('scrollToNormOffsetDone',{success:false});}catch(e){}
 })();
 ''',
     );

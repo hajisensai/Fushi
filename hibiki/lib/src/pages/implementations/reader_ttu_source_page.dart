@@ -245,6 +245,8 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   /// 否则音频 cue 推着 reader 往播放位置跑，恢复目标章就被覆盖。
   bool _restoreInFlight = false;
 
+  Completer<bool>? _scrollToNormOffsetCompleter;
+
   /// 同段恢复时短暂抑制 reveal scroll，给 ttu 自带 scrollToBookmark 留时间。
   /// 否则 _onCueChanged 的 reveal=true 会立刻把页面拉到音频 cue 位置，
   /// 覆盖用户上次阅读的书签。
@@ -1474,6 +1476,18 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         );
 
         controller.addJavaScriptHandler(
+          handlerName: 'scrollToNormOffsetDone',
+          callback: (data) {
+            final bool ok = data.isNotEmpty &&
+                (data[0] as Map?)?['success'] == true;
+            final Completer<bool>? c = _scrollToNormOffsetCompleter;
+            if (c != null && !c.isCompleted) {
+              c.complete(ok);
+            }
+          },
+        );
+
+        controller.addJavaScriptHandler(
           handlerName: 'hibikiTtuBookmarkAdded',
           callback: (data) async {
             await _addCurrentViewportBookmark(from: 'ttu');
@@ -2603,16 +2617,14 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
 }
 
 // ReaderPosition 保存触发：监听 `.book-content` / `.book-content-container`
-// 的 scroll 事件，debounce 200ms 后调 `__hibikiGetViewportNormOffset()`
+// 的 scroll 事件，debounce 500ms 后调 `__hibikiGetViewportNormOffset()`
 // 反查当前视口的 (section, 章内 normCharOffset)，再通过 flutter_inappwebview
 // 的 saveReaderPos handler 回传 Dart 写 Isar。
 //
-// 为什么 200ms：paginated 翻一页本质是单次 scroll 事件（scrollTop 跳一大步
-// 后稳定），之后无后续 scroll。更长的 debounce 相当于"等一个不会再来的
-// 事件"，让用户翻页后几秒内才写库，关书前 dispose flush 才兜住。200ms
-// 足够过滤同一次翻页动画里的多发 scroll（动画本身 < 100ms），又让翻页
-// 到落盘基本无感延迟。Dart 侧 _persistReaderPos 自带同值去重，即便 JS
-// debounce 偶尔多 fire 一次也不会额外 writeTxn。
+// 为什么 500ms：paginated 翻一页本质是单次 scroll 事件（scrollTop 跳一大步
+// 后稳定），之后无后续 scroll。500ms 足够过滤同一次翻页动画里的多发
+// scroll，又让翻页到落盘基本无感延迟。Dart 侧 _persistReaderPos 自带
+// 同值去重，即便 JS debounce 偶尔多 fire 一次也不会额外 writeTxn。
 //
 // - scroll 事件不冒泡，必须 capture 阶段监听，并挂到 document 上做事件委托
 //   （ttu 切换章节会重建 `.book-content` DOM，直接绑到那个元素会丢）
@@ -3993,6 +4005,8 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
   }
 
   /// consume `_pendingRestorePos`：调 JS 滚到章内归一化偏移，清守卫。
+  /// JS 完成滚动后通过 callHandler('scrollToNormOffsetDone') 通知 Dart，
+  /// 收到信号后才清 _restoreInFlight 并撤遮罩。
   Future<void> _finishRestore() async {
     final ReaderViewportPos? pending = _pendingRestorePos;
     if (pending == null) {
@@ -4001,21 +4015,24 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     }
     _pendingRestorePos = null;
     try {
+      _scrollToNormOffsetCompleter = Completer<bool>();
       await AudiobookBridge.scrollToNormOffset(
         _controller,
         section: pending.section,
         offset: pending.offset,
       );
-      debugPrint(
-        '[hibiki-reader-pos] scrolled s=${pending.section} o=${pending.offset}',
+      final bool ok = await _scrollToNormOffsetCompleter!.future.timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => false,
       );
-      // evaluateJavascript 不等 async IIFE 完成——JS 实际滚动 +
-      // __hoshiAutoScrollInFlight 窗口 + 500ms scroll debounce 可能
-      // 晚于此处 1s+。延迟清 _restoreInFlight 防止 scroll listener
-      // 在恢复期间覆写正确位置。
-      await Future.delayed(const Duration(seconds: 2));
+      _scrollToNormOffsetCompleter = null;
+      debugPrint(
+        '[hibiki-reader-pos] scrolled s=${pending.section} '
+        'o=${pending.offset} ok=$ok',
+      );
     } catch (e) {
       debugPrint('[hibiki-reader-pos] scrollToNormOffset err: $e');
+      _scrollToNormOffsetCompleter = null;
     } finally {
       _restoreInFlight = false;
       _markReaderContentReady();
