@@ -1343,8 +1343,8 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   }
 
   Future<void> _revealAndUnmask() async {
-    final bool removed = await _removeInitialHideCss();
-    if (!removed) {
+    final bool revealOk = await _removeInitialHideCss();
+    if (!revealOk) {
       debugPrint('[hibiki-reader-pos] CSS hide removal failed, unmasking anyway');
     }
     if (!_readerContentReady && mounted) {
