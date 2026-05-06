@@ -585,7 +585,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
     final String bookUid =
         '${widget.ttuMediaSourceIdentifier}/$mediaIdentifier';
 
-    _reportProgress(0.45, '解析字幕...');
+    _reportProgress(0.45, t.import_step_parsing);
     final String ext = _subtitlePath!.split('.').last.toLowerCase();
     final List<AudioCue> cues = await _parseCuesWithIndex(
       File(_subtitlePath!),

@@ -55,6 +55,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
   List<String>? _audioPaths;  // files 模式
 
   String? _alignmentPath;
+  String? _alignmentName;
   bool _importing = false;
   final ValueNotifier<double> _progress = ValueNotifier<double>(0.0);
   final ValueNotifier<String> _progressMsg = ValueNotifier<String>('');
@@ -408,7 +409,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
               ),
               if (_alignmentPath != null)
                 Text(
-                  _basename(_alignmentPath!),
+                  _alignmentName ?? _basename(_alignmentPath!),
                   style: const TextStyle(fontSize: 11, color: Colors.grey),
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
@@ -463,10 +464,12 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       type: FileType.custom,
       allowedExtensions: ['smil', 'json', 'srt', 'lrc', 'vtt', 'ass'],
     );
-    final String? path = result?.files.single.path;
-    if (path != null && mounted) {
+    final PlatformFile? file = result?.files.single;
+    final String? path = file?.path;
+    if (path != null && file != null && mounted) {
       setState(() {
         _alignmentPath = path;
+        _alignmentName = file.name;
         // 换了 alignment 文件 → cue 可能完全不同，清掉 probe cue 缓存。
         // sections 来源只与 ttuBookId 相关，不清。
         _probedCues = null;
