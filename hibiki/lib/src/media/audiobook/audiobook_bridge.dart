@@ -63,7 +63,7 @@ window.__hoshiAlignToRect = function(rect) {
       if (info.verticalMode) {
         var safeL = vpW * margin;
         var safeR = vpW * (1 - margin);
-        if (rect.right < safeL || rect.left > safeR) {
+        if (rect.left < safeL || rect.right > safeR) {
           dx = -(vpW * 0.67 - rect.right);
           needScroll = true;
         }
@@ -79,7 +79,8 @@ window.__hoshiAlignToRect = function(rect) {
         'hibiki-message-type': 'alignDiag',
         'mode': 'continuous',
         'verticalMode': info.verticalMode,
-        'rectT': Math.round(rect.top), 'rectR': Math.round(rect.right),
+        'rectT': Math.round(rect.top), 'rectB': Math.round(rect.bottom),
+        'rectL': Math.round(rect.left), 'rectR': Math.round(rect.right),
         'dx': Math.round(dx), 'dy': Math.round(dy),
         'needScroll': needScroll
       }));
