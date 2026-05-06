@@ -11,7 +11,7 @@
 
 ## 当前状态
 
-界面的中文和英文混用，未完全遵守语言设置
+界面已完成 i18n（17 语言），通过 Slang 框架管理；Creator labels 保留英文稳定标识，UI 通过 getLocalisedLabel 动态翻译
 
 ## 核心技术栈
 
