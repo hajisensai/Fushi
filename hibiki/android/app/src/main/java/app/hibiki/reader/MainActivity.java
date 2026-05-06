@@ -155,6 +155,17 @@ public class MainActivity extends AudioServiceActivity {
         super.onDestroy();
     }
 
+    private boolean requireAnkiPermission(MethodChannel.Result result) {
+        if (mAnkiDroid.shouldRequestPermission()) {
+            mAnkiDroid.requestPermission(this, AD_PERM_REQUEST);
+            result.error("PERMISSION_DENIED",
+                "AnkiDroid permission not granted. Please grant and retry.",
+                null);
+            return false;
+        }
+        return true;
+    }
+
     private boolean deckExists(String deck) {
         Long deckId = mAnkiDroid.findDeckIdByName(deck);
         return (deckId != null);
@@ -381,32 +392,17 @@ public class MainActivity extends AudioServiceActivity {
                             }
                             break;
                         case "getDecks":
-                            if (mAnkiDroid.shouldRequestPermission()) {
-                                mAnkiDroid.requestPermission(MainActivity.this, AD_PERM_REQUEST);
-                                result.error("PERMISSION_DENIED",
-                                    "AnkiDroid permission not granted. Please grant and retry.",
-                                    null);
-                            } else {
+                            if (requireAnkiPermission(result)) {
                                 result.success(api.getDeckList());
                             }
                             break;
                         case "getModelList":
-                            if (mAnkiDroid.shouldRequestPermission()) {
-                                mAnkiDroid.requestPermission(MainActivity.this, AD_PERM_REQUEST);
-                                result.error("PERMISSION_DENIED",
-                                    "AnkiDroid permission not granted. Please grant and retry.",
-                                    null);
-                            } else {
+                            if (requireAnkiPermission(result)) {
                                 result.success(api.getModelList());
                             }
                             break;
                         case "getFieldList":
-                            if (mAnkiDroid.shouldRequestPermission()) {
-                                mAnkiDroid.requestPermission(MainActivity.this, AD_PERM_REQUEST);
-                                result.error("PERMISSION_DENIED",
-                                    "AnkiDroid permission not granted. Please grant and retry.",
-                                    null);
-                            } else {
+                            if (requireAnkiPermission(result)) {
                                 Long mid = mAnkiDroid.findModelIdByName(model, 1);
                                 if (mid == null) {
                                     result.error("MODEL_NOT_FOUND",
