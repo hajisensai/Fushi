@@ -2179,6 +2179,7 @@ if (!window.getSelection().isCollapsed) {
     if (ttuId == null) return;
     final List<FavoriteSentence> all =
         await FavoriteSentenceRepository(appModel.database).getAll();
+    if (!mounted) return;
     final List<FavoriteSentence> sectionHighlights = all
         .where((FavoriteSentence f) =>
             f.ttuBookId == ttuId && f.sectionIndex == _currentTtuSection)
