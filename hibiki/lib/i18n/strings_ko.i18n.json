@@ -724,7 +724,7 @@
   "unit_dp": "dp",
   "error_log_empty": "오류 로그 없음",
   "error_log_previous_run": "이전 로그 (지난 실행 전)",
-  "import_unsupported_file_format": "지원하지 않는 파일 형식: {ext}",
+  "import_unsupported_file_format": "지원하지 않는 파일 형식: $ext",
   "dictionary_unrecognized_format": "인식할 수 없는 사전 형식",
   "dictionary_mdx_not_found": ".mdx 파일을 찾을 수 없습니다",
   "reader_theme_light": "화이트",

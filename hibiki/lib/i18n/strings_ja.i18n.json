@@ -724,7 +724,7 @@
   "unit_dp": "dp",
   "error_log_empty": "エラーログなし",
   "error_log_previous_run": "過去のログ（前回起動前）",
-  "import_unsupported_file_format": "未対応のファイル形式: {ext}",
+  "import_unsupported_file_format": "未対応のファイル形式: $ext",
   "dictionary_unrecognized_format": "辞書形式を認識できません",
   "dictionary_mdx_not_found": ".mdx ファイルが見つかりません",
   "reader_theme_light": "ホワイト",

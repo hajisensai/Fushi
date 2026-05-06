@@ -724,7 +724,7 @@
   "unit_dp": "dp",
   "error_log_empty": "Hata kaydı yok",
   "error_log_previous_run": "Önceki kayıtlar (son çalıştırmadan önce)",
-  "import_unsupported_file_format": "Desteklenmeyen dosya biçimi: {ext}",
+  "import_unsupported_file_format": "Desteklenmeyen dosya biçimi: $ext",
   "dictionary_unrecognized_format": "Sözlük biçimi tanınamadı",
   "dictionary_mdx_not_found": ".mdx dosyası bulunamadı",
   "reader_theme_light": "Beyaz",

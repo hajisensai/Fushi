@@ -724,7 +724,7 @@
   "unit_dp": "dp",
   "error_log_empty": "Keine Fehlerprotokolle",
   "error_log_previous_run": "Vorherige Protokolle (vor dem letzten Start)",
-  "import_unsupported_file_format": "Nicht unterstütztes Dateiformat: {ext}",
+  "import_unsupported_file_format": "Nicht unterstütztes Dateiformat: $ext",
   "dictionary_unrecognized_format": "Wörterbuchformat nicht erkannt",
   "dictionary_mdx_not_found": ".mdx-Datei nicht gefunden",
   "reader_theme_light": "Weiß",

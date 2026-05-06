@@ -724,7 +724,7 @@
   "unit_dp": "dp",
   "error_log_empty": "暫無錯誤日誌",
   "error_log_previous_run": "歷史日誌（上次運行前）",
-  "import_unsupported_file_format": "不支援的檔案格式: {ext}",
+  "import_unsupported_file_format": "不支援的檔案格式: $ext",
   "dictionary_unrecognized_format": "無法識別的詞典格式",
   "dictionary_mdx_not_found": "找不到 .mdx 檔案",
   "reader_theme_light": "白色",

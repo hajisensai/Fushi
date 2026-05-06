@@ -724,7 +724,7 @@
   "unit_dp": "dp",
   "error_log_empty": "ไม่มีบันทึกข้อผิดพลาด",
   "error_log_previous_run": "บันทึกเก่า (ก่อนการทำงานครั้งก่อน)",
-  "import_unsupported_file_format": "รูปแบบไฟล์ไม่รองรับ: {ext}",
+  "import_unsupported_file_format": "รูปแบบไฟล์ไม่รองรับ: $ext",
   "dictionary_unrecognized_format": "ไม่สามารถรู้จำรูปแบบพจนานุกรม",
   "dictionary_mdx_not_found": "ไม่พบไฟล์ .mdx",
   "reader_theme_light": "ขาว",
