@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:hibiki/language.dart';
 
-enum DictionaryType { term, frequency, pitch }
+enum DictionaryType { term, frequency, pitch, kanji }
 
 class Dictionary {
   Dictionary({

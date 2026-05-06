@@ -962,7 +962,11 @@ ImportResult dictionary_importer::import(const std::string& zip_path, const std:
     write_terms(blobs, offsets, zip, files.kanji_banks, write_offset, result, low_ram, process_kanji_bank);
     write_meta(blobs, offsets, zip, files.meta_banks, write_offset, result, low_ram);
 
-    if (!files.term_banks.empty() || !files.kanji_banks.empty()) {
+    if (!files.term_banks.empty() && !files.kanji_banks.empty()) {
+      result.detected_type = "term";
+    } else if (!files.kanji_banks.empty()) {
+      result.detected_type = "kanji";
+    } else if (!files.term_banks.empty()) {
       result.detected_type = "term";
     } else if (!files.meta_banks.empty()) {
       std::string first_meta = zip.read(files.meta_banks[0]);
