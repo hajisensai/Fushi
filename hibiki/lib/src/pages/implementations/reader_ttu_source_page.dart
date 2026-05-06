@@ -205,6 +205,12 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   /// Timer 兜底 ttu fork 缺失 / 跳章失败 3s 内没回报时强制降级为 pill。
   Timer? _navRestoreTimeout;
 
+  /// Reader position restore has a different failure mode from audio follow:
+  /// it must not reveal the WebView at section top just because the first
+  /// section navigation callback is slow. Retry before failing open.
+  Timer? _readerRestoreNavTimeout;
+  int _readerRestoreNavAttempts = 0;
+
   /// reader 当前挂载的 ttu section index。-1 = 还没收到任何 sectionChanged
   /// 事件（开书前 / ttu 还没初始化）。供 controller 通过
   /// [AudiobookPlayerController.getCurrentReaderSection] 读取，作为"cue 是否
@@ -372,6 +378,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     VolumeKeyChannel.instance.setInterceptEnabled(false);
     FloatingLyricChannel.clearEventHandlers();
     _navRestoreTimeout?.cancel();
+    _readerRestoreNavTimeout?.cancel();
     _metricsDebounce?.cancel();
     if (_scrollToNormOffsetCompleter != null &&
         !_scrollToNormOffsetCompleter!.isCompleted) {
@@ -728,6 +735,9 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     if (_pendingRestorePos?.section == sectionIndex) {
       _pendingRestorePos = null;
       _restoreInFlight = false;
+      _readerRestoreNavTimeout?.cancel();
+      _readerRestoreNavTimeout = null;
+      _readerRestoreNavAttempts = 0;
     }
     _audiobookController?.cancelChapterTransition();
     return true;
@@ -752,6 +762,8 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   void didChangeMetrics() {
     super.didChangeMetrics();
     if (!_controllerInitialised) return;
+    if (!_readerContentReady) return;
+    if (_restoreInFlight) return;
     if (_metricsDebounce == null || !_metricsDebounce!.isActive) {
       AudiobookBridge.getViewportNormOffset(_controller).then((pos) {
         if (pos != null) _preMetricsPos = pos;
@@ -1359,6 +1371,8 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
 
   void _markReaderContentReady() {
     if (!mounted) return;
+    _metricsDebounce?.cancel();
+    _preMetricsPos = null;
     unawaited(_clearJsRestoreFlag());
     unawaited(_revealAndUnmask());
   }
@@ -4140,36 +4154,83 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     // `_inFlightNavSection` 分支会处理回报。
     _inFlightNavSection = targetSection;
     _lastSasayakiAppliedSection = -1;
+    _readerRestoreNavAttempts = 0;
     try {
       await AudiobookBridge.requestSectionNav(
         _controller,
         sectionIndex: targetSection,
       );
-      Future.delayed(const Duration(seconds: 5), () async {
-        if (_restoreInFlight && mounted) {
-          debugPrint('[hibiki-reader-pos] restore timeout, clearing flags');
-          _restoreInFlight = false;
-          _pendingRestorePos = null;
-          _inFlightNavSection = null;
-          final Completer<bool>? c = _scrollToNormOffsetCompleter;
-          if (c != null && !c.isCompleted) c.complete(false);
-          final Completer<bool>? vc = _viewportStableCompleter;
-          if (vc != null && !vc.isCompleted) vc.complete(false);
-          await _clearJsRestoreFlag();
-          _markReaderContentReady();
-        }
-      });
+      _armReaderRestoreNavTimeout(targetSection);
     } catch (e) {
       debugPrint('[hibiki-reader-pos] restore requestSectionNav err: $e');
       _restoreInFlight = false;
       _pendingRestorePos = null;
       _inFlightNavSection = null;
+      _readerRestoreNavTimeout?.cancel();
+      _readerRestoreNavTimeout = null;
+      _readerRestoreNavAttempts = 0;
       unawaited(_clearJsRestoreFlag());
       _markReaderContentReady();
     }
   }
 
+  void _armReaderRestoreNavTimeout(int targetSection) {
+    _readerRestoreNavTimeout?.cancel();
+    _readerRestoreNavTimeout = Timer(const Duration(seconds: 5), () {
+      unawaited(_handleReaderRestoreNavTimeout(targetSection));
+    });
+  }
+
+  Future<void> _handleReaderRestoreNavTimeout(int targetSection) async {
+    if (!mounted || !_restoreInFlight) {
+      return;
+    }
+    if (_pendingRestorePos?.section != targetSection ||
+        _inFlightNavSection != targetSection) {
+      return;
+    }
+    _readerRestoreNavAttempts++;
+    if (_readerRestoreNavAttempts < 3) {
+      debugPrint(
+        '[hibiki-reader-pos] restore section nav slow, retry '
+        '$_readerRestoreNavAttempts target=$targetSection',
+      );
+      try {
+        await AudiobookBridge.requestSectionNav(
+          _controller,
+          sectionIndex: targetSection,
+        );
+        _armReaderRestoreNavTimeout(targetSection);
+        return;
+      } catch (e) {
+        debugPrint('[hibiki-reader-pos] restore section nav retry err: $e');
+      }
+    }
+
+    debugPrint(
+      '[hibiki-reader-pos] restore section nav timeout, clearing flags',
+    );
+    _restoreInFlight = false;
+    _pendingRestorePos = null;
+    _inFlightNavSection = null;
+    _readerRestoreNavTimeout = null;
+    _readerRestoreNavAttempts = 0;
+    final Completer<bool>? c = _scrollToNormOffsetCompleter;
+    if (c != null && !c.isCompleted) {
+      c.complete(false);
+    }
+    final Completer<bool>? vc = _viewportStableCompleter;
+    if (vc != null && !vc.isCompleted) {
+      vc.complete(false);
+    }
+    await _clearJsRestoreFlag();
+    _markReaderContentReady();
+  }
+
   Future<void> _finishRestore() async {
+    _readerRestoreNavTimeout?.cancel();
+    _readerRestoreNavTimeout = null;
+    _readerRestoreNavAttempts = 0;
     final ReaderViewportPos? pending = _pendingRestorePos;
     if (pending == null) {
       _restoreInFlight = false;
@@ -4240,6 +4301,9 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       if (_inFlightNavSection == idx) {
         _currentTtuSection = idx;
         _navRestoreTimeout?.cancel();
+        _readerRestoreNavTimeout?.cancel();
+        _readerRestoreNavTimeout = null;
+        _readerRestoreNavAttempts = 0;
         unawaited(_applyThenCompleteNav(idx));
       } else if (_inFlightNavSection == null) {
         // timeout 已清 inFlight，但 ttu 的 sectionChanged 迟到了——
@@ -4268,6 +4332,9 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       );
       _navRestoreTimeout?.cancel();
       _navRestoreTimeout = null;
+      _readerRestoreNavTimeout?.cancel();
+      _readerRestoreNavTimeout = null;
+      _readerRestoreNavAttempts = 0;
       _inFlightNavSection = null;
       _audiobookController?.cancelChapterTransition();
     }

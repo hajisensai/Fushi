@@ -897,7 +897,7 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
   function waitStable(targetSection, targetOffset, rescrollsLeft) {
     var stableCount = 0;
     var prevOffset = -1;
-    var maxFrames = 30;
+    var maxFrames = 45;
     var frame = 0;
     function check() {
       if (myToken !== window.__hoshiRestoreToken) return;
@@ -923,8 +923,29 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
           stableCount = 1;
           prevOffset = cur.offset;
         }
-        if (stableCount >= 3) {
-          signalStable(cur.section, cur.offset, true);
+        if (stableCount >= 6) {
+          setTimeout(function() {
+            if (myToken !== window.__hoshiRestoreToken) return;
+            var recheck = null;
+            try {
+              if (typeof window.__hibikiGetViewportNormOffset === 'function') {
+                recheck = window.__hibikiGetViewportNormOffset();
+              }
+            } catch(e2) {}
+            if (recheck && recheck.section === targetSection &&
+                Math.abs(recheck.offset - targetOffset) <= 5) {
+              signalStable(recheck.section, recheck.offset, true);
+            } else if (rescrollsLeft > 0) {
+              rescrollsLeft--;
+              scrollToCharOffset(targetOffset);
+              stableCount = 0;
+              prevOffset = -1;
+              frame = 0;
+              requestAnimationFrame(check);
+            } else {
+              signalStable(targetSection, targetOffset, false);
+            }
+          }, 150);
           return;
         }
         requestAnimationFrame(check);
