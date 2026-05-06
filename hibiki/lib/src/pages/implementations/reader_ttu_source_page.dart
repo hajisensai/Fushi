@@ -221,10 +221,9 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
 
   // ── 位置持久化（ReaderPosition Isar 表） ────────────────────────────────
   //
-  // 保存触发：JS 侧 scroll debounce 1s 调 saveReaderPos handler，Dart 侧
+  // 保存触发：JS 侧 scroll debounce 500ms 调 saveReaderPos handler，Dart 侧
   // 拿到 {section, offset} 即刻写 Isar（去重：同 section+offset 跳过）。
-  // ttu sectionChanged(auto=false) 翻章也主动写一次（offset=0 记段首）。
-  // dispose 里做一次 flush：evaluate 当前视口位置 → 写库，兜 1s debounce
+  // dispose 里做一次 flush：evaluate 当前视口位置 → 写库，兜 500ms debounce
   // 窗内关书丢失。
 
   /// 上一次写进 Isar 的位置，用于去重，避免高频 scroll 里重复 writeTxn。
@@ -375,7 +374,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       _scrollToNormOffsetCompleter!.complete(false);
     }
     // 在 WebView 销毁前同步读一次当前视口位置（fire-and-forget 写 Isar），
-    // 兜住 JS 侧 1s scroll-debounce 窗内关书导致的保存丢失。
+    // 兜住 JS 侧 500ms scroll-debounce 窗内关书导致的保存丢失。
     // unawaited 是有意的：dispose 不能 async，Isar 写不依赖 UI 线程，
     // Future 在 widget 销毁后仍能跑完。
     _flushReaderPosOnDispose();
@@ -1450,7 +1449,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
           },
         );
 
-        // JS 侧 `.book-content` scroll debounce 1s 后调这里，把当前视口
+        // JS 侧 `.book-content` scroll debounce 500ms 后调这里，把当前视口
         // 的 (sectionIndex, 章内 normCharOffset) 写进 Isar ReaderPosition。
         // JS 已经 debounce 过了，Dart 侧直接写，不再加层 debounce。
         controller.addJavaScriptHandler(
@@ -3992,6 +3991,8 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           _restoreInFlight = false;
           _pendingRestorePos = null;
           _inFlightNavSection = null;
+          final Completer<bool>? c = _scrollToNormOffsetCompleter;
+          if (c != null && !c.isCompleted) c.complete(false);
           _markReaderContentReady();
         }
       });
