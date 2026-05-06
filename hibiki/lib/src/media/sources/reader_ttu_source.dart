@@ -396,7 +396,7 @@ class ReaderTtuSource extends ReaderMediaSource {
                 break;
             }
           }
-        } on FormatException catch (e) {
+        } on FormatException catch (_) {
           debugPrint(
               '[hibiki-books] non-JSON console: ${message.message.length > 200 ? message.message.substring(0, 200) : message.message}');
         }
@@ -438,7 +438,7 @@ class ReaderTtuSource extends ReaderMediaSource {
     }
   }
 
-  /// 用 Isar ReaderPosition 覆写每本书的 position，让书架进度条反映实际阅读位置。
+  /// 用 Isar ReaderPosition 覆写每本书的章级 position，让书架进度条反映实际阅读章节。
   static Future<void> _enrichWithReaderProgress(
     List<MediaItem> items,
     AppModel appModel,
@@ -469,7 +469,6 @@ class ReaderTtuSource extends ReaderMediaSource {
       for (int i = 0; i < clampedSection; i++) {
         charsRead += sectionChars[i];
       }
-      charsRead += min(pos.normCharOffset, sectionChars[clampedSection]);
 
       item.position = charsRead;
     }
@@ -638,8 +637,7 @@ new Promise(function(resolve) {
           duration: duration,
           canDelete: false,
           canEdit: true,
-          sourceMetadata:
-              sectionChars.isNotEmpty ? jsonEncode(sectionChars) : null,
+          sourceMetadata: totalChars > 0 ? jsonEncode(sectionChars) : null,
         ),
       );
     }).toList();
@@ -1130,7 +1128,10 @@ indexedDB.databases().then(async (databases) => {
         try {
           if (Array.isArray(item["sections"])) {
             sectionChars = item["sections"].map(function(s) {
-              return (s && typeof s.characters === "number") ? s.characters : 0;
+              if (!s) return 0;
+              if (typeof s.characters === "number") return s.characters;
+              if (typeof s.charactersWeight === "number") return s.charactersWeight;
+              return 0;
             });
           }
         } catch (e) {}
