@@ -1232,16 +1232,19 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     return selectedText;
   }
 
-  late final bool _ttuVersionChanged = mediaSource.currentTtuInternalVersion !=
-      ReaderTtuSource.ttuInternalVersion;
+  late final bool _ttuVersionChanged = () {
+    final changed = mediaSource.currentTtuInternalVersion !=
+        ReaderTtuSource.ttuInternalVersion;
+    if (changed) {
+      mediaSource.setTtuInternalVersion();
+    }
+    return changed;
+  }();
 
   CacheMode get cacheMode {
-    if (!_ttuVersionChanged) {
-      return CacheMode.LOAD_CACHE_ELSE_NETWORK;
-    }
-
-    mediaSource.setTtuInternalVersion();
-    return CacheMode.LOAD_NO_CACHE;
+    return _ttuVersionChanged
+        ? CacheMode.LOAD_NO_CACHE
+        : CacheMode.LOAD_CACHE_ELSE_NETWORK;
   }
 
   String _buildTtuCacheRefreshJs() {
