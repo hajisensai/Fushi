@@ -808,7 +808,7 @@ window.__hibikiGetViewportNormOffset = function() {
       k += wk;
     }
   }
-  return { section: section, offset: 0 };
+  return null;
 };
 
 window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {

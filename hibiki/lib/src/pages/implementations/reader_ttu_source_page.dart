@@ -245,8 +245,10 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   bool _restoreInFlight = false;
 
   Completer<bool>? _scrollToNormOffsetCompleter;
-  Completer<void>? _viewportStableCompleter;
+  Completer<bool>? _viewportStableCompleter;
   int _restoreToken = 0;
+  int _restoreTargetSection = -1;
+  int _restoreTargetOffset = -1;
 
   // ── 窗口尺寸变化时保持阅读位置 ──────────────────────────────────────
   Timer? _metricsDebounce;
@@ -376,7 +378,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     }
     if (_viewportStableCompleter != null &&
         !_viewportStableCompleter!.isCompleted) {
-      _viewportStableCompleter!.complete();
+      _viewportStableCompleter!.complete(false);
     }
     // 在 WebView 销毁前同步读一次当前视口位置（fire-and-forget 写 Isar），
     // 兜住 JS 侧 500ms scroll-debounce 窗内关书导致的保存丢失。
@@ -1332,9 +1334,9 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   }
 
   void _markReaderContentReady() {
+    unawaited(_clearJsRestoreFlag());
     if (!_readerContentReady && mounted) {
       setState(() => _readerContentReady = true);
-      unawaited(_clearJsRestoreFlag());
     }
   }
 
@@ -1533,14 +1535,23 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
                 data.isNotEmpty ? (data[0] as Map?)?.cast<String, dynamic>() : null;
             final int token = (payload?['token'] as num?)?.toInt() ?? -1;
             final bool success = payload?['success'] == true;
+            final int sec = (payload?['section'] as num?)?.toInt() ?? -1;
+            final int off = (payload?['offset'] as num?)?.toInt() ?? -1;
             debugPrint(
               '[hibiki-reader-pos] viewportStable token=$token '
-              'expected=$_restoreToken success=$success',
+              'expected=$_restoreToken success=$success '
+              's=$sec o=$off target=s$_restoreTargetSection/o$_restoreTargetOffset',
             );
             if (token != _restoreToken) return;
-            final Completer<void>? c = _viewportStableCompleter;
+            if (success &&
+                (sec != _restoreTargetSection ||
+                    (off - _restoreTargetOffset).abs() > 5)) {
+              debugPrint('[hibiki-reader-pos] viewportStable section/offset mismatch, rejecting');
+              return;
+            }
+            final Completer<bool>? c = _viewportStableCompleter;
             if (c != null && !c.isCompleted) {
-              c.complete();
+              c.complete(success);
             }
           },
         );
@@ -4072,8 +4083,8 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           _inFlightNavSection = null;
           final Completer<bool>? c = _scrollToNormOffsetCompleter;
           if (c != null && !c.isCompleted) c.complete(false);
-          final Completer<void>? vc = _viewportStableCompleter;
-          if (vc != null && !vc.isCompleted) vc.complete();
+          final Completer<bool>? vc = _viewportStableCompleter;
+          if (vc != null && !vc.isCompleted) vc.complete(false);
           await _clearJsRestoreFlag();
           _markReaderContentReady();
         }
@@ -4099,7 +4110,9 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     _pendingRestorePos = null;
     try {
       _scrollToNormOffsetCompleter = Completer<bool>();
-      _viewportStableCompleter = Completer<void>();
+      _viewportStableCompleter = Completer<bool>();
+      _restoreTargetSection = pending.section;
+      _restoreTargetOffset = pending.offset;
       await AudiobookBridge.scrollToNormOffset(
         _controller,
         section: pending.section,
@@ -4115,11 +4128,14 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         'o=${pending.offset} ok=$scrollOk',
       );
       if (scrollOk) {
-        await _viewportStableCompleter!.future.timeout(
+        final bool stable = await _viewportStableCompleter!.future.timeout(
           const Duration(seconds: 5),
-          onTimeout: () {},
+          onTimeout: () => false,
         );
-        debugPrint('[hibiki-reader-pos] viewportStable reached');
+        debugPrint(
+          '[hibiki-reader-pos] viewportStable '
+          '${stable ? "reached" : "timeout/failed"}',
+        );
       }
       _viewportStableCompleter = null;
     } catch (e) {
