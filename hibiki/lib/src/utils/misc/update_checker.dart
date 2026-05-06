@@ -151,10 +151,10 @@ class UpdateChecker {
     return list.first as Map<String, dynamic>;
   }
 
-  static List<int> _parseVersion(String version) {
-    return version
-        .split('+')
-        .first
+  static String _stripBuild(String version) => version.split('+').first;
+
+  static List<int> _baseVersion(String stripped) {
+    return stripped
         .split('-')
         .first
         .split('.')
@@ -162,9 +162,13 @@ class UpdateChecker {
         .toList();
   }
 
+  static bool _hasPrerelease(String stripped) => stripped.contains('-');
+
   static bool _isNewer(String remote, String local) {
-    final r = _parseVersion(remote);
-    final l = _parseVersion(local);
+    final rs = _stripBuild(remote);
+    final ls = _stripBuild(local);
+    final r = _baseVersion(rs);
+    final l = _baseVersion(ls);
 
     final len = r.length > l.length ? r.length : l.length;
     for (int i = 0; i < len; i++) {
@@ -173,6 +177,8 @@ class UpdateChecker {
       if (rv > lv) return true;
       if (rv < lv) return false;
     }
+    // 1.2.3 > 1.2.3-beta.1: stable beats prerelease of same base
+    if (!_hasPrerelease(rs) && _hasPrerelease(ls)) return true;
     return false;
   }
 
