@@ -375,6 +375,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       FloatingLyricChannel.hide();
     }
     _audiobookController?.removeListener(_onCueChanged);
+    _audiobookController?.removeListener(_onMediaNotificationUpdate);
     _audiobookController?.dispose();
     _barThemeNotifier.dispose();
     WidgetsBinding.instance.removeObserver(this);
@@ -3623,20 +3624,8 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       duration: controller.duration,
     );
 
-    controller.addListener(() {
-      handler.updatePlaybackState(
-        playing: controller.isPlaying,
-        position: controller.position,
-        speed: controller.speed,
-        duration: controller.duration,
-      );
-      handler.updateNotificationSubtitle(
-        title: bookTitle,
-        subtitle: appModelNoUpdate.showSubtitlesInNotification
-            ? controller.currentCue?.text
-            : null,
-      );
-    });
+    controller.removeListener(_onMediaNotificationUpdate);
+    controller.addListener(_onMediaNotificationUpdate);
 
     _notifPlaySub?.cancel();
     _notifPlaySub = appModelNoUpdate.playStream.listen((_) {
@@ -3650,6 +3639,25 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     _notifSkipPrevSub = appModelNoUpdate.skipPreviousStream.listen((_) {
       controller.skipToPrevCue();
     });
+  }
+
+  void _onMediaNotificationUpdate() {
+    final controller = _audiobookController;
+    if (controller == null) return;
+    final handler = appModelNoUpdate.audioHandler;
+    if (handler == null) return;
+    handler.updatePlaybackState(
+      playing: controller.isPlaying,
+      position: controller.position,
+      speed: controller.speed,
+      duration: controller.duration,
+    );
+    handler.updateNotificationSubtitle(
+      title: widget.item?.title ?? 'Audiobook',
+      subtitle: appModelNoUpdate.showSubtitlesInNotification
+          ? controller.currentCue?.text
+          : null,
+    );
   }
 
   /// cue 跨章时由控制器触发。
@@ -4177,6 +4185,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     appModelNoUpdate.audioHandler?.clearNotification();
     final AudiobookPlayerController? ctrl = _audiobookController;
     ctrl?.removeListener(_onCueChanged);
+    ctrl?.removeListener(_onMediaNotificationUpdate);
     ctrl?.dispose();
     setState(() {
       _audiobookController = null;
