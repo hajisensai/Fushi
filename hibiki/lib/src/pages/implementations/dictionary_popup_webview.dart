@@ -72,6 +72,7 @@ class DictionaryPopupWebViewState
       document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
       document.documentElement.style.setProperty('--hoshi-primary-highlight', '$primaryRgba');
       window.audioSources = $audioSourcesJson;
+      window.needsAudio = true;
       window.deduplicatePitchAccents = $deduplicatePitch;
       window.harmonicFrequency = $harmonicFreq;
       window.collapseDictionaries = $collapseDict;

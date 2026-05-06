@@ -140,17 +140,16 @@ class AnkiRepository {
               mimeTypeForPath(context.coverPath!))
           : null,
       sasayakiAudioPath: context.sasayakiAudioPath != null
-          ? await _addMediaFile(
-              context.sasayakiAudioPath!,
-              File(context.sasayakiAudioPath!).uri.pathSegments.last,
-              'audio/mp4')
+          ? await _addSasayakiAudio(context.sasayakiAudioPath!)
           : null,
       sentenceOffset: context.sentenceOffset,
     );
 
-    final processedAudio = payload.audio.isNotEmpty
-        ? await _addRemoteAudio(payload.audio) ?? ''
-        : '';
+    final rawAudio = payload.audio.isNotEmpty
+        ? await _addRemoteAudio(payload.audio)
+        : null;
+    final processedAudio =
+        rawAudio != null ? '[sound:$rawAudio]' : '';
 
     final mediaPayload = AnkiMiningPayload(
       expression: payload.expression,
@@ -249,6 +248,12 @@ class AnkiRepository {
     } catch (_) {
       return false;
     }
+  }
+
+  Future<String?> _addSasayakiAudio(String path) async {
+    final raw = await _addMediaFile(
+        path, File(path).uri.pathSegments.last, 'audio/mp4');
+    return raw != null ? '[sound:$raw]' : null;
   }
 
   Future<String?> _addRemoteAudio(String url) async {
