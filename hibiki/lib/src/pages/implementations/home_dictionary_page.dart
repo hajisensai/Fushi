@@ -36,22 +36,30 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
   void initState() {
     super.initState();
     appModelNoUpdate.dictionarySearchAgainNotifier.addListener(searchAgain);
-    appModelNoUpdate.dictionaryEntriesNotifier.addListener(() {
-      if (mediaType.floatingSearchBarController.isClosed) {
-        if (!appModel.isMediaOpen &&
-            DictionaryMediaType.instance ==
-                appModel.mediaTypes.values
-                    .toList()[appModel.currentHomeTabIndex]) {
-          if (mounted) {
-            setState(() {});
-          }
-        }
+    appModelNoUpdate.dictionaryEntriesNotifier
+        .addListener(_onDictionaryEntriesChanged);
+  }
+
+  void _onDictionaryEntriesChanged() {
+    if (!mounted) {
+      return;
+    }
+    final model = appModelNoUpdate;
+    if (mediaType.floatingSearchBarController.isClosed) {
+      if (!model.isMediaOpen &&
+          DictionaryMediaType.instance ==
+              model.mediaTypes.values
+                  .toList()[model.currentHomeTabIndex]) {
+        setState(() {});
       }
-    });
+    }
   }
 
   @override
   void dispose() {
+    appModelNoUpdate.dictionarySearchAgainNotifier.removeListener(searchAgain);
+    appModelNoUpdate.dictionaryEntriesNotifier
+        .removeListener(_onDictionaryEntriesChanged);
     super.dispose();
   }
 
