@@ -638,6 +638,7 @@
   "error_log_share_subject": "Journal d'erreurs hibiki",
   "update_never_remind": "Ne plus rappeler",
   "update_auto_install": "Installer automatiquement les mises à jour",
+  "update_beta_channel": "Recevoir les mises à jour bêta",
   "disable_dialog_scrim": "Désactiver le fond du popup (e-ink)",
   "native_dictionary_popup": "Popup de dictionnaire natif (e-ink)",
   "update_settings": "Paramètres de mise à jour",

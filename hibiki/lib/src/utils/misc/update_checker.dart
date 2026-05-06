@@ -151,9 +151,20 @@ class UpdateChecker {
     return list.first as Map<String, dynamic>;
   }
 
+  static List<int> _parseVersion(String version) {
+    return version
+        .split('+')
+        .first
+        .split('-')
+        .first
+        .split('.')
+        .map((s) => int.tryParse(s) ?? 0)
+        .toList();
+  }
+
   static bool _isNewer(String remote, String local) {
-    final r = remote.split('+').first.split('.').map(_parseInt).toList();
-    final l = local.split('+').first.split('.').map(_parseInt).toList();
+    final r = _parseVersion(remote);
+    final l = _parseVersion(local);
 
     final len = r.length > l.length ? r.length : l.length;
     for (int i = 0; i < len; i++) {
@@ -164,8 +175,6 @@ class UpdateChecker {
     }
     return false;
   }
-
-  static int _parseInt(String s) => int.tryParse(s) ?? 0;
 
   static void _showUpdateDialog(
     BuildContext context,

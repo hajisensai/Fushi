@@ -651,6 +651,7 @@
   "error_log_share_subject": "Registro errori hibiki",
   "update_never_remind": "Non ricordarmelo più",
   "update_auto_install": "Installa automaticamente gli aggiornamenti",
+  "update_beta_channel": "Ricevi aggiornamenti beta",
   "disable_dialog_scrim": "Disattiva overlay popup (e-ink)",
   "native_dictionary_popup": "Popup dizionario nativo (e-ink)",
   "update_settings": "Impostazioni aggiornamento",
