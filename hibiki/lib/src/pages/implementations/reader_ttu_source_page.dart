@@ -1454,6 +1454,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         controller.addJavaScriptHandler(
           handlerName: 'saveReaderPos',
           callback: (data) async {
+            if (_restoreInFlight) return;
             if (data.isEmpty) return;
             try {
               final Map<String, dynamic> payload =
@@ -2627,6 +2628,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     if (timer) clearTimeout(timer);
     timer = setTimeout(function() {
       try {
+        if (window.__hoshiAutoScrollInFlight) return;
         if (!window.__hibikiGetViewportNormOffset) return;
         var p = window.__hibikiGetViewportNormOffset();
         if (!p) return;
@@ -4007,6 +4009,11 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       debugPrint(
         '[hibiki-reader-pos] scrolled s=${pending.section} o=${pending.offset}',
       );
+      // evaluateJavascript 不等 async IIFE 完成——JS 实际滚动 +
+      // __hoshiAutoScrollInFlight 窗口 + 500ms scroll debounce 可能
+      // 晚于此处 1s+。延迟清 _restoreInFlight 防止 scroll listener
+      // 在恢复期间覆写正确位置。
+      await Future.delayed(const Duration(seconds: 2));
     } catch (e) {
       debugPrint('[hibiki-reader-pos] scrollToNormOffset err: $e');
     } finally {
@@ -4078,11 +4085,8 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     if (!recentNav) {
       _autoOffFollowOnManualTurn();
     }
-    unawaited(_persistReaderPos(
-      section: idx,
-      offset: 0,
-      from: 'sectionChanged',
-    ));
+    // 不在这里写 offset:0 —— scroll listener 的 500ms debounce 会带上
+    // 真实偏移。急着写 0 会覆盖用户上次在本章的有效存档。
     // 用户翻到新章节，预建该章 Sasayaki cueMap。
     unawaited(_applySasayakiCuesForSection(idx));
     unawaited(_applyHighlightsForCurrentSection());
