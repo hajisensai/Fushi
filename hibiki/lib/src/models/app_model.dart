@@ -122,6 +122,12 @@ Color _readableOnColor(Color color) {
       : Colors.black;
 }
 
+Color _deriveContainer(Color role, Brightness brightness) {
+  final Color target =
+      brightness == Brightness.dark ? Colors.black : Colors.white;
+  return Color.lerp(role, target, brightness == Brightness.dark ? 0.7 : 0.85)!;
+}
+
 ColorScheme buildHibikiColorScheme({
   required Color seedColor,
   required Brightness brightness,
@@ -134,14 +140,26 @@ ColorScheme buildHibikiColorScheme({
     seedColor: seedColor,
     brightness: brightness,
   );
+  final Color? secContainer =
+      secondary != null ? _deriveContainer(secondary, brightness) : null;
+  final Color? terContainer =
+      tertiary != null ? _deriveContainer(tertiary, brightness) : null;
   return base.copyWith(
     primary: primary ?? base.primary,
     onPrimary: primary != null ? _readableOnColor(primary) : base.onPrimary,
     secondary: secondary ?? base.secondary,
     onSecondary:
         secondary != null ? _readableOnColor(secondary) : base.onSecondary,
+    secondaryContainer: secContainer ?? base.secondaryContainer,
+    onSecondaryContainer: secContainer != null
+        ? _readableOnColor(secContainer)
+        : base.onSecondaryContainer,
     tertiary: tertiary ?? base.tertiary,
     onTertiary: tertiary != null ? _readableOnColor(tertiary) : base.onTertiary,
+    tertiaryContainer: terContainer ?? base.tertiaryContainer,
+    onTertiaryContainer: terContainer != null
+        ? _readableOnColor(terContainer)
+        : base.onTertiaryContainer,
     primaryContainer: primaryContainer ?? base.primaryContainer,
     onPrimaryContainer: primaryContainer != null
         ? _readableOnColor(primaryContainer)
