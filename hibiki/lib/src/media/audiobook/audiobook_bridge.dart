@@ -742,6 +742,18 @@ window.__hoshiClearSeenImages = function() {
   ///
   /// 依赖 `__hoshiIsSkippable`，必须在 _sasayakiFn 之后 evaluate。
   static const String _readerPosFn = '''
+window.__hibikiGetSectionRoot = function(sectionIndex) {
+  if (typeof window.__ttuGetSectionRef === 'function') {
+    var ref = window.__ttuGetSectionRef(sectionIndex);
+    if (ref) {
+      var el = document.getElementById(ref);
+      if (el) return el;
+    }
+  }
+  return document.querySelector('.book-content-container') ||
+         document.querySelector('.book-content');
+};
+
 window.__hibikiGetViewportNormOffset = function() {
   var section = -1;
   try {
@@ -752,8 +764,7 @@ window.__hibikiGetViewportNormOffset = function() {
   } catch (e) {}
   if (section < 0) return null;
 
-  var root = document.querySelector('.book-content-container') ||
-             document.querySelector('.book-content');
+  var root = window.__hibikiGetSectionRoot(section);
   if (!root) return null;
 
   var vh = window.innerHeight || 640;
@@ -843,8 +854,7 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
     } catch(e2) {}
   }
   function scrollToCharOffset(targetOffset) {
-    var root = document.querySelector('.book-content-container') ||
-               document.querySelector('.book-content');
+    var root = window.__hibikiGetSectionRoot(section);
     if (!root) return {ok: false, reason: 'no-root'};
     var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
       acceptNode: function(n) {
