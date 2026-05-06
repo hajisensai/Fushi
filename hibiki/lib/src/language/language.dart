@@ -428,59 +428,75 @@ abstract class Language {
   }
 }
 
+String buildLookupEntryExtra(HoshiLookupResult r, HoshiGlossaryEntry g) {
+  return jsonEncode({
+    'definitionTags': g.definitionTags,
+    'termTags': g.termTags,
+    'matched': r.matched,
+    'deinflected': r.deinflected,
+    'frequencies': r.term.frequencies
+        .map((f) => {
+              'dictName': f.dictName,
+              'values': f.frequencies
+                  .map((v) => {
+                        'value': v.value,
+                        'display': v.displayValue,
+                      })
+                  .toList(),
+            })
+        .toList(),
+    'pitches': r.term.pitches
+        .map((p) => {
+              'dictName': p.dictName,
+              'positions': p.pitchPositions,
+            })
+        .toList(),
+  });
+}
+
+DictionarySearchResult _buildResultFromLookup({
+  required String searchTerm,
+  required List<HoshiLookupResult> results,
+}) {
+  int bestLength = 0;
+  final entries = <DictionaryEntry>[];
+  for (final r in results) {
+    if (r.matched.length > bestLength) {
+      bestLength = r.matched.length;
+    }
+    for (final g in r.term.glossaries) {
+      entries.add(DictionaryEntry(
+        dictionaryName: g.dictName,
+        word: r.term.expression,
+        reading: r.term.reading,
+        meaning: g.glossary,
+        extra: buildLookupEntryExtra(r, g),
+        popularity: 0,
+      ));
+    }
+  }
+  return DictionarySearchResult(
+    searchTerm: searchTerm,
+    entries: entries,
+    bestLength: bestLength,
+  );
+}
+
 Future<DictionarySearchResult?> prepareSearchResultsStandard(
     DictionarySearchParams params) async {
   if (params.dictionaryPaths.isEmpty) return null;
 
   final hoshi = HoshiDicts.withPaths(params.dictionaryPaths);
   try {
-    final results = hoshi.lookup(params.searchTerm);
+    final results = hoshi.lookup(
+      params.searchTerm,
+      maxResults: params.maximumDictionarySearchResults,
+      scanLength: params.maximumDictionaryTermsInResult,
+    );
     if (results.isEmpty) return null;
-
-    int bestLength = 0;
-    final entries = <DictionaryEntry>[];
-    for (final r in results) {
-      if (r.matched.length > bestLength) {
-        bestLength = r.matched.length;
-      }
-      for (final g in r.term.glossaries) {
-        entries.add(DictionaryEntry(
-          dictionaryName: g.dictName,
-          word: r.term.expression,
-          reading: r.term.reading,
-          meaning: g.glossary,
-          extra: jsonEncode({
-            'definitionTags': g.definitionTags,
-            'termTags': g.termTags,
-            'matched': r.matched,
-            'deinflected': r.deinflected,
-            'frequencies': r.term.frequencies
-                .map((f) => {
-                      'dictName': f.dictName,
-                      'values': f.frequencies
-                          .map((v) => {
-                                'value': v.value,
-                                'display': v.displayValue,
-                              })
-                          .toList(),
-                    })
-                .toList(),
-            'pitches': r.term.pitches
-                .map((p) => {
-                      'dictName': p.dictName,
-                      'positions': p.pitchPositions,
-                    })
-                .toList(),
-          }),
-          popularity: 0,
-        ));
-      }
-    }
-
-    return DictionarySearchResult(
+    return _buildResultFromLookup(
       searchTerm: params.searchTerm,
-      entries: entries,
-      bestLength: bestLength,
+      results: results,
     );
   } finally {
     hoshi.dispose();
@@ -500,50 +516,8 @@ DictionarySearchResult? prepareSearchResultsDirectStandard({
     scanLength: maximumDictionaryTermsInResult,
   );
   if (results.isEmpty) return null;
-
-  int bestLength = 0;
-  final entries = <DictionaryEntry>[];
-  for (final r in results) {
-    if (r.matched.length > bestLength) {
-      bestLength = r.matched.length;
-    }
-    for (final g in r.term.glossaries) {
-      entries.add(DictionaryEntry(
-        dictionaryName: g.dictName,
-        word: r.term.expression,
-        reading: r.term.reading,
-        meaning: g.glossary,
-        extra: jsonEncode({
-          'definitionTags': g.definitionTags,
-          'termTags': g.termTags,
-          'matched': r.matched,
-          'deinflected': r.deinflected,
-          'frequencies': r.term.frequencies
-              .map((f) => {
-                    'dictName': f.dictName,
-                    'values': f.frequencies
-                        .map((v) => {
-                              'value': v.value,
-                              'display': v.displayValue,
-                            })
-                        .toList(),
-                  })
-              .toList(),
-          'pitches': r.term.pitches
-              .map((p) => {
-                    'dictName': p.dictName,
-                    'positions': p.pitchPositions,
-                  })
-              .toList(),
-        }),
-        popularity: 0,
-      ));
-    }
-  }
-
-  return DictionarySearchResult(
+  return _buildResultFromLookup(
     searchTerm: searchTerm,
-    entries: entries,
-    bestLength: bestLength,
+    results: results,
   );
 }
