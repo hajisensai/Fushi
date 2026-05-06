@@ -31,6 +31,8 @@ class _CustomThemePageState extends BasePageState {
   Color? _containerColor;
   bool _useContainerColor = false;
 
+  ScrollHoldController? _pickerScrollHold;
+
   @override
   void initState() {
     super.initState();
@@ -58,6 +60,12 @@ class _CustomThemePageState extends BasePageState {
     _containerColor = appModelNoUpdate.customThemeContainerColor;
     _useContainerColor = _containerColor != null;
     _containerColor ??= generated.primaryContainer;
+  }
+
+  @override
+  void dispose() {
+    _pickerScrollHold?.cancel();
+    super.dispose();
   }
 
   ColorScheme get _generatedScheme => ColorScheme.fromSeed(
@@ -92,6 +100,17 @@ class _CustomThemePageState extends BasePageState {
       _dark = value;
       _refreshInactiveRoleColors();
     });
+  }
+
+  void _holdScroll(BuildContext innerContext) {
+    _pickerScrollHold?.cancel();
+    _pickerScrollHold =
+        Scrollable.maybeOf(innerContext)?.position.hold(() {});
+  }
+
+  void _releaseScroll() {
+    _pickerScrollHold?.cancel();
+    _pickerScrollHold = null;
   }
 
   String _encodeTheme() {
@@ -258,6 +277,11 @@ class _CustomThemePageState extends BasePageState {
 
   @override
   Widget build(BuildContext context) {
+    final TextStyle? hintStyle = Theme.of(context)
+        .textTheme
+        .bodySmall
+        ?.copyWith(color: Theme.of(context).hintColor);
+
     return Scaffold(
       appBar: AppBar(
         title: Text(t.custom_theme),
@@ -296,30 +320,77 @@ class _CustomThemePageState extends BasePageState {
               ),
             ],
           ),
+          // ── 种子色 ──
           const SizedBox(height: 8),
           Text(t.seed_color, style: Theme.of(context).textTheme.titleSmall),
+          Text(t.seed_color_desc, style: hintStyle),
           const SizedBox(height: 8),
           LayoutBuilder(
-            builder: (context, constraints) {
+            builder: (layoutContext, constraints) {
               final pickerWidth = constraints.maxWidth
-                  .clamp(0.0, MediaQuery.of(context).size.width - 64);
-              final isLandscape =
-                  MediaQuery.of(context).orientation == Orientation.landscape;
-              return ColorPicker(
-                pickerColor: _seed,
-                onColorChanged: _setSeed,
-                colorPickerWidth: pickerWidth,
-                pickerAreaHeightPercent: isLandscape ? 0.4 : 0.6,
-                enableAlpha: false,
-                displayThumbColor: true,
-                hexInputBar: true,
-                labelTypes: const [],
+                  .clamp(0.0, MediaQuery.of(layoutContext).size.width - 64);
+              final isLandscape = MediaQuery.of(layoutContext).orientation ==
+                  Orientation.landscape;
+              return Listener(
+                onPointerDown: (_) => _holdScroll(layoutContext),
+                onPointerUp: (_) => _releaseScroll(),
+                onPointerCancel: (_) => _releaseScroll(),
+                child: ColorPicker(
+                  pickerColor: _seed,
+                  onColorChanged: _setSeed,
+                  colorPickerWidth: pickerWidth,
+                  pickerAreaHeightPercent: isLandscape ? 0.4 : 0.6,
+                  enableAlpha: false,
+                  displayThumbColor: true,
+                  hexInputBar: true,
+                  labelTypes: const [],
+                ),
               );
             },
           ),
+          // ── 阅读器颜色 ──
+          const SizedBox(height: 20),
+          Text(t.section_reader_colors,
+              style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          _buildOptionalColorPicker(
+            label: t.font_color,
+            description: t.font_color_desc,
+            preview: _buildFontColorPreview(),
+            enabled: _useFontColor,
+            onEnabledChanged: (v) => setState(() => _useFontColor = v),
+            color: _fontColor!,
+            onChanged: (c) => setState(() => _fontColor = c),
+            enableAlpha: true,
+          ),
+          const SizedBox(height: 12),
+          _buildOptionalColorPicker(
+            label: t.background_color,
+            description: t.background_color_desc,
+            preview: _buildBgColorPreview(),
+            enabled: _useBgColor,
+            onEnabledChanged: (v) => setState(() => _useBgColor = v),
+            color: _bgColor!,
+            onChanged: (c) => setState(() => _bgColor = c),
+            enableAlpha: false,
+          ),
+          const SizedBox(height: 12),
+          _buildOptionalColorPicker(
+            label: t.selection_color,
+            description: t.selection_color_desc,
+            preview: _buildSelectionPreview(),
+            enabled: _useSelectionColor,
+            onEnabledChanged: (v) => setState(() => _useSelectionColor = v),
+            color: _selectionColor!,
+            onChanged: (c) => setState(() => _selectionColor = c),
+            enableAlpha: true,
+          ),
+          // ── 主色（音频高亮）──
           const SizedBox(height: 16),
           _buildOptionalColorPicker(
             label: t.color_primary,
+            description: t.color_primary_desc,
+            preview: _buildPrimaryPreview(),
             enabled: _usePrimaryColor,
             onEnabledChanged: (bool value) {
               setState(() {
@@ -335,114 +406,77 @@ class _CustomThemePageState extends BasePageState {
             onChanged: (Color color) => setState(() => _primaryColor = color),
             enableAlpha: false,
           ),
-          const SizedBox(height: 12),
-          _buildOptionalColorPicker(
-            label: t.color_secondary,
-            enabled: _useSecondaryColor,
-            onEnabledChanged: (bool value) {
-              setState(() {
-                _useSecondaryColor = value;
-                if (value) {
-                  _secondaryColor ??= _generatedScheme.secondary;
-                } else {
-                  _secondaryColor = _generatedScheme.secondary;
-                }
-              });
-            },
-            color: _secondaryColor!,
-            onChanged: (Color color) => setState(() => _secondaryColor = color),
-            enableAlpha: false,
-          ),
-          const SizedBox(height: 12),
-          _buildOptionalColorPicker(
-            label: t.color_tertiary,
-            enabled: _useTertiaryColor,
-            onEnabledChanged: (bool value) {
-              setState(() {
-                _useTertiaryColor = value;
-                if (value) {
-                  _tertiaryColor ??= _generatedScheme.tertiary;
-                } else {
-                  _tertiaryColor = _generatedScheme.tertiary;
-                }
-              });
-            },
-            color: _tertiaryColor!,
-            onChanged: (Color color) => setState(() => _tertiaryColor = color),
-            enableAlpha: false,
-          ),
-          const SizedBox(height: 12),
-          _buildOptionalColorPicker(
-            label: t.color_container,
-            enabled: _useContainerColor,
-            onEnabledChanged: (bool value) {
-              setState(() {
-                _useContainerColor = value;
-                if (value) {
-                  _containerColor ??= _generatedScheme.primaryContainer;
-                } else {
-                  _containerColor = _generatedScheme.primaryContainer;
-                }
-              });
-            },
-            color: _containerColor!,
-            onChanged: (Color color) => setState(() => _containerColor = color),
-            enableAlpha: false,
-          ),
-          const SizedBox(height: 16),
-          Row(
+          // ── 高级选项 ──
+          const SizedBox(height: 8),
+          ExpansionTile(
+            title: Text(t.section_advanced_colors),
+            tilePadding: EdgeInsets.zero,
+            childrenPadding: const EdgeInsets.only(bottom: 8),
             children: [
-              Expanded(child: Text(t.font_color)),
-              Switch(
-                value: _useFontColor,
-                onChanged: (v) => setState(() => _useFontColor = v),
+              _buildOptionalColorPicker(
+                label: t.color_secondary,
+                description: t.color_secondary_desc,
+                preview: _buildSecondaryPreview(),
+                enabled: _useSecondaryColor,
+                onEnabledChanged: (bool value) {
+                  setState(() {
+                    _useSecondaryColor = value;
+                    if (value) {
+                      _secondaryColor ??= _generatedScheme.secondary;
+                    } else {
+                      _secondaryColor = _generatedScheme.secondary;
+                    }
+                  });
+                },
+                color: _secondaryColor!,
+                onChanged: (Color color) =>
+                    setState(() => _secondaryColor = color),
+                enableAlpha: false,
+              ),
+              const SizedBox(height: 12),
+              _buildOptionalColorPicker(
+                label: t.color_tertiary,
+                description: t.color_tertiary_desc,
+                preview: _buildTertiaryPreview(),
+                enabled: _useTertiaryColor,
+                onEnabledChanged: (bool value) {
+                  setState(() {
+                    _useTertiaryColor = value;
+                    if (value) {
+                      _tertiaryColor ??= _generatedScheme.tertiary;
+                    } else {
+                      _tertiaryColor = _generatedScheme.tertiary;
+                    }
+                  });
+                },
+                color: _tertiaryColor!,
+                onChanged: (Color color) =>
+                    setState(() => _tertiaryColor = color),
+                enableAlpha: false,
+              ),
+              const SizedBox(height: 12),
+              _buildOptionalColorPicker(
+                label: t.color_container,
+                description: t.color_container_desc,
+                preview: _buildContainerPreview(),
+                enabled: _useContainerColor,
+                onEnabledChanged: (bool value) {
+                  setState(() {
+                    _useContainerColor = value;
+                    if (value) {
+                      _containerColor ??= _generatedScheme.primaryContainer;
+                    } else {
+                      _containerColor = _generatedScheme.primaryContainer;
+                    }
+                  });
+                },
+                color: _containerColor!,
+                onChanged: (Color color) =>
+                    setState(() => _containerColor = color),
+                enableAlpha: false,
               ),
             ],
           ),
-          if (_useFontColor) ...[
-            const SizedBox(height: 8),
-            _buildCompactColorPicker(
-              color: _fontColor!,
-              onChanged: (c) => setState(() => _fontColor = c),
-              enableAlpha: true,
-            ),
-          ],
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(child: Text(t.background_color)),
-              Switch(
-                value: _useBgColor,
-                onChanged: (v) => setState(() => _useBgColor = v),
-              ),
-            ],
-          ),
-          if (_useBgColor) ...[
-            const SizedBox(height: 8),
-            _buildCompactColorPicker(
-              color: _bgColor!,
-              onChanged: (c) => setState(() => _bgColor = c),
-              enableAlpha: false,
-            ),
-          ],
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(child: Text(t.selection_color)),
-              Switch(
-                value: _useSelectionColor,
-                onChanged: (v) => setState(() => _useSelectionColor = v),
-              ),
-            ],
-          ),
-          if (_useSelectionColor) ...[
-            const SizedBox(height: 8),
-            _buildCompactColorPicker(
-              color: _selectionColor!,
-              onChanged: (c) => setState(() => _selectionColor = c),
-              enableAlpha: true,
-            ),
-          ],
           const SizedBox(height: 16),
           FilledButton.icon(
             onPressed: () async {
@@ -471,8 +505,14 @@ class _CustomThemePageState extends BasePageState {
     );
   }
 
+  // ── 预览卡片 ──
+
   Widget _buildPreviewCard() {
     final cs = _preview;
+    final Color textColor = _useFontColor ? _fontColor! : cs.onSurface;
+    final Color bgColor =
+        _useBgColor ? _bgColor! : cs.surfaceContainerLow;
+
     return Card(
       color: cs.surface,
       child: Padding(
@@ -494,7 +534,8 @@ class _CustomThemePageState extends BasePageState {
                 const SizedBox(width: 8),
                 _swatch(cs.tertiary, t.color_tertiary, cs.onSurface),
                 const SizedBox(width: 8),
-                _swatch(cs.primaryContainer, t.color_container, cs.onSurface),
+                _swatch(
+                    cs.primaryContainer, t.color_container, cs.onSurface),
               ],
             ),
             const SizedBox(height: 12),
@@ -502,26 +543,90 @@ class _CustomThemePageState extends BasePageState {
               width: double.infinity,
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: _useBgColor ? _bgColor : cs.surfaceContainerLow,
+                color: bgColor,
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: RichText(
-                text: TextSpan(
-                  style: TextStyle(
-                      color: _useFontColor ? _fontColor : cs.onSurface),
-                  children: [
-                    const TextSpan(text: '日本語の'),
-                    TextSpan(
-                      text: 'テキスト',
-                      style: TextStyle(
-                        backgroundColor:
-                            _useSelectionColor ? _selectionColor : null,
-                      ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  RichText(
+                    text: TextSpan(
+                      style: TextStyle(color: textColor, fontSize: 15),
+                      children: [
+                        const TextSpan(text: '日本語の'),
+                        TextSpan(
+                          text: 'テキスト',
+                          style: TextStyle(
+                            backgroundColor:
+                                _useSelectionColor ? _selectionColor : null,
+                          ),
+                        ),
+                        const TextSpan(text: 'プレビュー'),
+                      ],
                     ),
-                    const TextSpan(text: 'プレビュー\nSample text preview'),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: cs.primary.withValues(alpha: 0.34),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      '♪ 音声ハイライト',
+                      style: TextStyle(color: textColor, fontSize: 13),
+                    ),
+                  ),
+                ],
               ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    color: cs.primaryContainer,
+                    borderRadius: BorderRadius.circular(11),
+                  ),
+                  alignment: Alignment.centerRight,
+                  padding: const EdgeInsets.all(2),
+                  child: Container(
+                    width: 18,
+                    height: 18,
+                    decoration: BoxDecoration(
+                      color: cs.primary,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text('Switch',
+                    style: TextStyle(color: cs.onSurface, fontSize: 12)),
+                const SizedBox(width: 16),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: cs.secondaryContainer,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text('Badge',
+                      style: TextStyle(
+                          color: cs.onSecondaryContainer, fontSize: 11)),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  width: 40,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: cs.tertiary,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -529,26 +634,182 @@ class _CustomThemePageState extends BasePageState {
     );
   }
 
+  // ── 每种颜色的使用场景迷你预览 ──
+
+  Widget _buildFontColorPreview() {
+    final cs = _preview;
+    final Color fc = _useFontColor ? _fontColor! : cs.onSurface;
+    final Color bg = _useBgColor ? _bgColor! : cs.surfaceContainerLow;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text('あいうえお',
+          style: TextStyle(color: fc, fontSize: 13)),
+    );
+  }
+
+  Widget _buildBgColorPreview() {
+    final cs = _preview;
+    final Color fc = _useFontColor ? _fontColor! : cs.onSurface;
+    final Color bg = _useBgColor ? _bgColor! : cs.surfaceContainerLow;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: Theme.of(context).dividerColor.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Text('日本語', style: TextStyle(color: fc, fontSize: 13)),
+    );
+  }
+
+  Widget _buildSelectionPreview() {
+    final cs = _preview;
+    final Color fc = _useFontColor ? _fontColor! : cs.onSurface;
+    final Color sel = _useSelectionColor ? _selectionColor! : Colors.grey;
+    return RichText(
+      text: TextSpan(
+        style: TextStyle(color: fc, fontSize: 13),
+        children: [
+          const TextSpan(text: '読み'),
+          TextSpan(
+            text: '選択中',
+            style: TextStyle(backgroundColor: sel),
+          ),
+          const TextSpan(text: 'テスト'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPrimaryPreview() {
+    final Color primary = _primaryColor!;
+    final cs = _preview;
+    final Color fc = _useFontColor ? _fontColor! : cs.onSurface;
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: primary.withValues(alpha: 0.34),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Text('♪ ハイライト',
+              style: TextStyle(color: fc, fontSize: 12)),
+        ),
+        const SizedBox(width: 8),
+        Container(
+          width: 32,
+          height: 18,
+          decoration: BoxDecoration(
+            color: (_useContainerColor ? _containerColor : _generatedScheme.primaryContainer) ?? cs.primaryContainer,
+            borderRadius: BorderRadius.circular(9),
+          ),
+          alignment: Alignment.centerRight,
+          padding: const EdgeInsets.all(2),
+          child: Container(
+            width: 14,
+            height: 14,
+            decoration: BoxDecoration(
+              color: primary,
+              shape: BoxShape.circle,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSecondaryPreview() {
+    final cs = _preview;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: cs.secondaryContainer,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text('辞書',
+          style: TextStyle(color: cs.onSecondaryContainer, fontSize: 11)),
+    );
+  }
+
+  Widget _buildTertiaryPreview() {
+    return Row(
+      children: [
+        Container(
+          width: 48,
+          height: 8,
+          decoration: BoxDecoration(
+            color: _tertiaryColor,
+            borderRadius: BorderRadius.circular(4),
+          ),
+        ),
+        const SizedBox(width: 4),
+        Container(
+          width: 32,
+          height: 8,
+          decoration: BoxDecoration(
+            color: _tertiaryColor?.withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(4),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildContainerPreview() {
+    return Container(
+      width: 40,
+      height: 22,
+      decoration: BoxDecoration(
+        color: _containerColor,
+        borderRadius: BorderRadius.circular(11),
+      ),
+      alignment: Alignment.centerRight,
+      padding: const EdgeInsets.all(2),
+      child: Container(
+        width: 18,
+        height: 18,
+        decoration: BoxDecoration(
+          color: _primaryColor,
+          shape: BoxShape.circle,
+        ),
+      ),
+    );
+  }
+
+  // ── 通用组件 ──
+
   Widget _buildCompactColorPicker({
     required Color color,
     required ValueChanged<Color> onChanged,
     required bool enableAlpha,
   }) {
     return LayoutBuilder(
-      builder: (context, constraints) {
+      builder: (layoutContext, constraints) {
         final pickerWidth = constraints.maxWidth
-            .clamp(0.0, MediaQuery.of(context).size.width - 64);
-        final isLandscape =
-            MediaQuery.of(context).orientation == Orientation.landscape;
-        return ColorPicker(
-          pickerColor: color,
-          onColorChanged: onChanged,
-          colorPickerWidth: pickerWidth,
-          pickerAreaHeightPercent: isLandscape ? 0.35 : 0.5,
-          enableAlpha: enableAlpha,
-          displayThumbColor: true,
-          hexInputBar: true,
-          labelTypes: const [],
+            .clamp(0.0, MediaQuery.of(layoutContext).size.width - 64);
+        final isLandscape = MediaQuery.of(layoutContext).orientation ==
+            Orientation.landscape;
+        return Listener(
+          onPointerDown: (_) => _holdScroll(layoutContext),
+          onPointerUp: (_) => _releaseScroll(),
+          onPointerCancel: (_) => _releaseScroll(),
+          child: ColorPicker(
+            pickerColor: color,
+            onColorChanged: onChanged,
+            colorPickerWidth: pickerWidth,
+            pickerAreaHeightPercent: isLandscape ? 0.35 : 0.5,
+            enableAlpha: enableAlpha,
+            displayThumbColor: true,
+            hexInputBar: true,
+            labelTypes: const [],
+          ),
         );
       },
     );
@@ -556,20 +817,53 @@ class _CustomThemePageState extends BasePageState {
 
   Widget _buildOptionalColorPicker({
     required String label,
+    String? description,
+    Widget? preview,
     required bool enabled,
     required ValueChanged<bool> onEnabledChanged,
     required Color color,
     required ValueChanged<Color> onChanged,
     required bool enableAlpha,
   }) {
+    final TextStyle? hintStyle = Theme.of(context)
+        .textTheme
+        .bodySmall
+        ?.copyWith(color: Theme.of(context).hintColor);
+
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            Expanded(child: Text(label)),
+            Container(
+              width: 20,
+              height: 20,
+              decoration: BoxDecoration(
+                color: color,
+                shape: BoxShape.circle,
+                border: Border.all(color: Theme.of(context).dividerColor),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label),
+                  if (description != null) Text(description, style: hintStyle),
+                ],
+              ),
+            ),
             Switch(value: enabled, onChanged: onEnabledChanged),
           ],
         ),
+        if (preview != null) ...[
+          const SizedBox(height: 6),
+          Padding(
+            padding: const EdgeInsets.only(left: 28),
+            child: preview,
+          ),
+        ],
         if (enabled) ...[
           const SizedBox(height: 8),
           _buildCompactColorPicker(
