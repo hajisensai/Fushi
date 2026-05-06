@@ -281,6 +281,7 @@ class _CustomThemePageState extends BasePageState {
         .textTheme
         .bodySmall
         ?.copyWith(color: Theme.of(context).hintColor);
+    final ColorScheme cs = _preview;
 
     return Scaffold(
       appBar: AppBar(
@@ -309,7 +310,7 @@ class _CustomThemePageState extends BasePageState {
               MediaQuery.of(context).viewInsets.bottom,
         ),
         children: [
-          _buildPreviewCard(),
+          _buildPreviewCard(cs),
           const SizedBox(height: 16),
           Row(
             children: [
@@ -356,7 +357,8 @@ class _CustomThemePageState extends BasePageState {
           _buildOptionalColorPicker(
             label: t.font_color,
             description: t.font_color_desc,
-            preview: _buildFontColorPreview(),
+            preview: _buildFontColorPreview(cs),
+            hintStyle: hintStyle,
             enabled: _useFontColor,
             onEnabledChanged: (v) => setState(() => _useFontColor = v),
             color: _fontColor!,
@@ -367,7 +369,8 @@ class _CustomThemePageState extends BasePageState {
           _buildOptionalColorPicker(
             label: t.background_color,
             description: t.background_color_desc,
-            preview: _buildBgColorPreview(),
+            preview: _buildBgColorPreview(cs),
+            hintStyle: hintStyle,
             enabled: _useBgColor,
             onEnabledChanged: (v) => setState(() => _useBgColor = v),
             color: _bgColor!,
@@ -378,7 +381,8 @@ class _CustomThemePageState extends BasePageState {
           _buildOptionalColorPicker(
             label: t.selection_color,
             description: t.selection_color_desc,
-            preview: _buildSelectionPreview(),
+            preview: _buildSelectionPreview(cs),
+            hintStyle: hintStyle,
             enabled: _useSelectionColor,
             onEnabledChanged: (v) => setState(() => _useSelectionColor = v),
             color: _selectionColor!,
@@ -390,7 +394,8 @@ class _CustomThemePageState extends BasePageState {
           _buildOptionalColorPicker(
             label: t.color_primary,
             description: t.color_primary_desc,
-            preview: _buildPrimaryPreview(),
+            preview: _buildPrimaryPreview(cs),
+            hintStyle: hintStyle,
             enabled: _usePrimaryColor,
             onEnabledChanged: (bool value) {
               setState(() {
@@ -416,7 +421,8 @@ class _CustomThemePageState extends BasePageState {
               _buildOptionalColorPicker(
                 label: t.color_secondary,
                 description: t.color_secondary_desc,
-                preview: _buildSecondaryPreview(),
+                preview: _buildSecondaryPreview(cs),
+                hintStyle: hintStyle,
                 enabled: _useSecondaryColor,
                 onEnabledChanged: (bool value) {
                   setState(() {
@@ -437,7 +443,8 @@ class _CustomThemePageState extends BasePageState {
               _buildOptionalColorPicker(
                 label: t.color_tertiary,
                 description: t.color_tertiary_desc,
-                preview: _buildTertiaryPreview(),
+                preview: _buildTertiaryPreview(cs),
+                hintStyle: hintStyle,
                 enabled: _useTertiaryColor,
                 onEnabledChanged: (bool value) {
                   setState(() {
@@ -458,7 +465,8 @@ class _CustomThemePageState extends BasePageState {
               _buildOptionalColorPicker(
                 label: t.color_container,
                 description: t.color_container_desc,
-                preview: _buildContainerPreview(),
+                preview: _buildContainerPreview(cs),
+                hintStyle: hintStyle,
                 enabled: _useContainerColor,
                 onEnabledChanged: (bool value) {
                   setState(() {
@@ -507,8 +515,7 @@ class _CustomThemePageState extends BasePageState {
 
   // ── 预览卡片 ──
 
-  Widget _buildPreviewCard() {
-    final cs = _preview;
+  Widget _buildPreviewCard(ColorScheme cs) {
     final Color textColor = _useFontColor ? _fontColor! : cs.onSurface;
     final Color bgColor =
         _useBgColor ? _bgColor! : cs.surfaceContainerLow;
@@ -636,8 +643,7 @@ class _CustomThemePageState extends BasePageState {
 
   // ── 每种颜色的使用场景迷你预览 ──
 
-  Widget _buildFontColorPreview() {
-    final cs = _preview;
+  Widget _buildFontColorPreview(ColorScheme cs) {
     final Color fc = _useFontColor ? _fontColor! : cs.onSurface;
     final Color bg = _useBgColor ? _bgColor! : cs.surfaceContainerLow;
     return Container(
@@ -651,8 +657,7 @@ class _CustomThemePageState extends BasePageState {
     );
   }
 
-  Widget _buildBgColorPreview() {
-    final cs = _preview;
+  Widget _buildBgColorPreview(ColorScheme cs) {
     final Color fc = _useFontColor ? _fontColor! : cs.onSurface;
     final Color bg = _useBgColor ? _bgColor! : cs.surfaceContainerLow;
     return Container(
@@ -668,8 +673,7 @@ class _CustomThemePageState extends BasePageState {
     );
   }
 
-  Widget _buildSelectionPreview() {
-    final cs = _preview;
+  Widget _buildSelectionPreview(ColorScheme cs) {
     final Color fc = _useFontColor ? _fontColor! : cs.onSurface;
     final Color sel = _useSelectionColor ? _selectionColor! : Colors.grey;
     return RichText(
@@ -687,9 +691,8 @@ class _CustomThemePageState extends BasePageState {
     );
   }
 
-  Widget _buildPrimaryPreview() {
+  Widget _buildPrimaryPreview(ColorScheme cs) {
     final Color primary = _primaryColor!;
-    final cs = _preview;
     final Color fc = _useFontColor ? _fontColor! : cs.onSurface;
     return Row(
       children: [
@@ -725,8 +728,7 @@ class _CustomThemePageState extends BasePageState {
     );
   }
 
-  Widget _buildSecondaryPreview() {
-    final cs = _preview;
+  Widget _buildSecondaryPreview(ColorScheme cs) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
@@ -738,7 +740,7 @@ class _CustomThemePageState extends BasePageState {
     );
   }
 
-  Widget _buildTertiaryPreview() {
+  Widget _buildTertiaryPreview(ColorScheme cs) {
     return Row(
       children: [
         Container(
@@ -762,7 +764,7 @@ class _CustomThemePageState extends BasePageState {
     );
   }
 
-  Widget _buildContainerPreview() {
+  Widget _buildContainerPreview(ColorScheme cs) {
     return Container(
       width: 40,
       height: 22,
@@ -819,17 +821,13 @@ class _CustomThemePageState extends BasePageState {
     required String label,
     String? description,
     Widget? preview,
+    TextStyle? hintStyle,
     required bool enabled,
     required ValueChanged<bool> onEnabledChanged,
     required Color color,
     required ValueChanged<Color> onChanged,
     required bool enableAlpha,
   }) {
-    final TextStyle? hintStyle = Theme.of(context)
-        .textTheme
-        .bodySmall
-        ?.copyWith(color: Theme.of(context).hintColor);
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
