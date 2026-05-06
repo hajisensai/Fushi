@@ -374,6 +374,10 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     FloatingLyricChannel.clearEventHandlers();
     _navRestoreTimeout?.cancel();
     _metricsDebounce?.cancel();
+    if (_scrollToNormOffsetCompleter != null &&
+        !_scrollToNormOffsetCompleter!.isCompleted) {
+      _scrollToNormOffsetCompleter!.complete(false);
+    }
     // 在 WebView 销毁前同步读一次当前视口位置（fire-and-forget 写 Isar），
     // 兜住 JS 侧 1s scroll-debounce 窗内关书导致的保存丢失。
     // unawaited 是有意的：dispose 不能 async，Isar 写不依赖 UI 线程，
