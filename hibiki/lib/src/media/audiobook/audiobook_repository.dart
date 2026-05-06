@@ -19,6 +19,20 @@ class AudiobookRepository {
     return _rowToAudiobook(row);
   }
 
+  Future<Audiobook?> findByTtuBookId(int ttuBookId) async {
+    final rows = await _db.getAllAudiobooks();
+    final idStr = ttuBookId.toString();
+    for (final row in rows) {
+      final uri = Uri.tryParse(
+        row.bookUid.contains('/') ? row.bookUid.substring(row.bookUid.indexOf('/') + 1) : row.bookUid,
+      );
+      if (uri != null && uri.queryParameters['id'] == idStr) {
+        return _rowToAudiobook(row);
+      }
+    }
+    return null;
+  }
+
   Future<List<AudioCue>> cuesForChapter({
     required String bookUid,
     required String chapterHref,

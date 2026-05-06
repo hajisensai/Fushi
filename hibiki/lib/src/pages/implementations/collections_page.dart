@@ -21,14 +21,10 @@ MediaItem buildCollectionReaderMediaItem({
   required int ttuId,
   required int port,
   required String title,
-  MediaItem? original,
 }) {
-  if (original != null) {
-    return original.copyWith(title: title);
-  }
   return MediaItem(
     mediaIdentifier:
-        'http://localhost:$port/b.html?id=$ttuId&title=${Uri.encodeComponent(title)}',
+        'http://localhost:$port/b.html?id=$ttuId&?title=$title',
     title: title,
     mediaTypeIdentifier: ReaderTtuSource.instance.mediaType.uniqueKey,
     mediaSourceIdentifier: ReaderTtuSource.instance.uniqueKey,
@@ -50,6 +46,7 @@ class _CollectionItem {
     this.chapterLabel,
     this.sectionIndex,
     this.normCharOffset,
+    this.favoriteId,
   });
 
   final _CollectionType type;
@@ -61,6 +58,7 @@ class _CollectionItem {
   final String? chapterLabel;
   final int? sectionIndex;
   final int? normCharOffset;
+  final String? favoriteId;
 }
 
 class CollectionsPage extends BasePage {
@@ -74,7 +72,6 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   bool _loading = true;
   List<_CollectionItem> _items = [];
   Map<int, String> _bookTitleMap = {};
-  Map<int, MediaItem> _mediaItemMap = {};
   Map<int, List<AudioCue>> _cueMap = {};
   Map<int, List<File>> _audioFileMap = {};
   bool _playingAudio = false;
@@ -106,28 +103,6 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       }
     }
 
-    final mediaItemMap = <int, MediaItem>{};
-    final sourceId = ReaderTtuSource.instance.uniqueKey;
-    final rows = await db.getMediaItemsBySource(sourceId);
-    for (final row in rows) {
-      final uri = Uri.tryParse(row.mediaIdentifier);
-      final ttuId = int.tryParse(uri?.queryParameters['id'] ?? '');
-      if (ttuId != null && ttuId > 0) {
-        mediaItemMap.putIfAbsent(
-            ttuId,
-            () => MediaItem(
-                  mediaIdentifier: row.mediaIdentifier,
-                  title: row.title,
-                  mediaTypeIdentifier: row.mediaTypeIdentifier,
-                  mediaSourceIdentifier: row.mediaSourceIdentifier,
-                  position: row.position,
-                  duration: row.duration,
-                  canDelete: row.canDelete,
-                  canEdit: row.canEdit,
-                ));
-      }
-    }
-
     final items = <_CollectionItem>[];
 
     for (final bm in allBookmarks) {
@@ -152,6 +127,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         chapterLabel: fav.chapterLabel,
         sectionIndex: fav.sectionIndex,
         normCharOffset: fav.normCharOffset,
+        favoriteId: fav.id,
       ));
     }
 
@@ -190,14 +166,11 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         }
       }
 
-      // Audiobook (Sasayaki)
-      final original = mediaItemMap[ttuId];
-      if (original == null) continue;
-      final bookUid = original.uniqueKey;
-      final ab = await abRepo.findByBookUid(bookUid);
+      // Audiobook (Sasayaki) — ttuBookId 回退查找
+      final ab = await abRepo.findByTtuBookId(ttuId);
       if (ab == null) continue;
 
-      final cues = await abRepo.cuesForBook(bookUid);
+      final cues = await abRepo.cuesForBook(ab.bookUid);
       if (cues.isEmpty) continue;
 
       final audioFiles = await _resolveAudioFiles(
@@ -214,7 +187,6 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       setState(() {
         _items = items;
         _bookTitleMap = bookTitleMap;
-        _mediaItemMap = mediaItemMap;
         _cueMap = cueMap;
         _audioFileMap = audioFileMap;
         _loading = false;
@@ -226,17 +198,15 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     final int? ttuId = item.ttuBookId;
     if (ttuId == null || ttuId <= 0) return;
 
-    final MediaItem? original = _mediaItemMap[ttuId];
     final int port =
         ReaderTtuSource.instance.getPortForLanguage(appModel.targetLanguage);
     final String title =
-        original?.title ?? _bookTitleMap[ttuId] ?? item.bookTitle ?? '';
+        _bookTitleMap[ttuId] ?? item.bookTitle ?? '';
 
     final MediaItem mediaItem = buildCollectionReaderMediaItem(
       ttuId: ttuId,
       port: port,
       title: title,
-      original: original,
     );
 
     final Bookmark? bookmark = item.sectionIndex != null
@@ -367,6 +337,28 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     }
   }
 
+  Future<void> _deleteItem(_CollectionItem item) async {
+    final db = appModel.database;
+    if (item.type == _CollectionType.bookmark) {
+      final ttuId = item.ttuBookId;
+      if (ttuId == null || ttuId <= 0) return;
+      final repo = BookmarkRepository(db);
+      final bookmarks = await repo.getBookmarks(ttuId);
+      final idx = bookmarks.indexWhere((Bookmark b) =>
+          b.sectionIndex == item.sectionIndex &&
+          b.normCharOffset == item.normCharOffset &&
+          b.createdAt == item.createdAt);
+      if (idx >= 0) {
+        await repo.removeBookmark(ttuId, idx);
+      }
+    } else {
+      final id = item.favoriteId;
+      if (id == null) return;
+      await FavoriteSentenceRepository(db).removeById(id);
+    }
+    setState(() => _items.remove(item));
+  }
+
   bool _hasAudio(_CollectionItem item) {
     return _cueMap.containsKey(item.ttuBookId) &&
         _audioFileMap.containsKey(item.ttuBookId);
@@ -418,66 +410,81 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
     final canNavigate = item.ttuBookId != null && item.ttuBookId! > 0;
 
-    return ListTile(
-      leading: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon,
-              size: 20,
-              color: isBookmark
-                  ? Theme.of(context).colorScheme.primary
-                  : Theme.of(context).colorScheme.tertiary),
-          Text(
-            typeLabel,
-            style: textTheme.labelSmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-              fontSize: 10,
-            ),
-          ),
-        ],
+    final key = isBookmark
+        ? 'bm_${item.ttuBookId}_${item.createdAt.microsecondsSinceEpoch}'
+        : 'fav_${item.favoriteId}';
+
+    return Dismissible(
+      key: Key(key),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        color: Theme.of(context).colorScheme.error,
+        child: Icon(Icons.delete, color: Theme.of(context).colorScheme.onError),
       ),
-      title: Text(
-        title,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-      ),
-      subtitle: Text(
-        [
-          if (subtitle != null && subtitle.isNotEmpty) subtitle,
-          _dateFmt.format(item.createdAt),
-        ].join(' · '),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: textTheme.bodySmall,
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (_hasAudio(item))
-            IconButton(
-              icon: Icon(
-                _playingAudio ? Icons.hourglass_top : Icons.volume_up,
-                size: 18,
+      onDismissed: (_) => _deleteItem(item),
+      child: ListTile(
+        leading: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon,
+                size: 20,
+                color: isBookmark
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).colorScheme.tertiary),
+            Text(
+              typeLabel,
+              style: textTheme.labelSmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontSize: 10,
               ),
-              onPressed: _playingAudio ? null : () => _playItemAudio(item),
-              visualDensity: VisualDensity.compact,
             ),
-          if (!isBookmark && item.text != null)
-            IconButton(
-              icon: const Icon(Icons.copy, size: 18),
-              onPressed: () {
-                Clipboard.setData(ClipboardData(text: item.text!));
-              },
-              visualDensity: VisualDensity.compact,
-            ),
-          if (canNavigate)
-            Icon(
-              Icons.chevron_right,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-        ],
+          ],
+        ),
+        title: Text(
+          title,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(
+          [
+            if (subtitle != null && subtitle.isNotEmpty) subtitle,
+            _dateFmt.format(item.createdAt),
+          ].join(' · '),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: textTheme.bodySmall,
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_hasAudio(item))
+              IconButton(
+                icon: Icon(
+                  _playingAudio ? Icons.hourglass_top : Icons.volume_up,
+                  size: 18,
+                ),
+                onPressed: _playingAudio ? null : () => _playItemAudio(item),
+                visualDensity: VisualDensity.compact,
+              ),
+            if (!isBookmark && item.text != null)
+              IconButton(
+                icon: const Icon(Icons.copy, size: 18),
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: item.text!));
+                },
+                visualDensity: VisualDensity.compact,
+              ),
+            if (canNavigate)
+              Icon(
+                Icons.chevron_right,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+          ],
+        ),
+        onTap: canNavigate ? () => _openBook(item) : null,
       ),
-      onTap: canNavigate ? () => _openBook(item) : null,
     );
   }
 }

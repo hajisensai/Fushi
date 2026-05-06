@@ -322,9 +322,15 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     // initState 阶段不能 ref.watch，走 appModelNoUpdate（ref.read）取 DB。
     final database = appModelNoUpdate.database;
     final String? bookUid = widget.item?.uniqueKey;
+    final abRepo = AudiobookRepository(database);
     if (bookUid != null) {
-      final Audiobook? ab =
-          await AudiobookRepository(database).findByBookUid(bookUid);
+      Audiobook? ab = await abRepo.findByBookUid(bookUid);
+      if (ab == null) {
+        final int? ttuId = _extractTtuBookId();
+        if (ttuId != null && ttuId > 0) {
+          ab = await abRepo.findByTtuBookId(ttuId);
+        }
+      }
       if (ab != null) {
         return (ab.audioPaths?.isNotEmpty ?? false) ||
             (ab.audioRoot != null && ab.audioRoot!.isNotEmpty);
@@ -2671,9 +2677,21 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     debugPrint('[hibiki-audiobook] initAudiobook bookUid.len=${bookUid.length} '
         'hash=${bookUid.hashCode} uid=$bookUid');
     final AudiobookRepository repo = AudiobookRepository(appModel.database);
-    final Audiobook? audiobook = await repo.findByBookUid(bookUid);
+    Audiobook? audiobook = await repo.findByBookUid(bookUid);
+
+    // bookUid 不匹配时（如从收藏夹打开，URL 格式可能不同），按 ttuBookId 回退
+    if (audiobook == null) {
+      final int? ttuId = _extractTtuBookId();
+      if (ttuId != null && ttuId > 0) {
+        audiobook = await repo.findByTtuBookId(ttuId);
+        if (audiobook != null) {
+          debugPrint('[hibiki-audiobook] bookUid miss, ttuId=$ttuId fallback hit');
+        }
+      }
+    }
 
     if (audiobook != null) {
+      final String effectiveUid = audiobook.bookUid;
       // ── 常规 EPUB 有声书路径 ─────────────────────────────────────────────
       final List<File> audioFiles = await _resolveAudioFiles(
         audioPaths: audiobook.audioPaths,
@@ -2689,11 +2707,11 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
 
       final AudiobookPlayerController controller = AudiobookPlayerController();
       final prefs = await Future.wait([
-        repo.readFollowAudio(bookUid),
-        repo.readDelayMs(bookUid),
-        repo.readSpeed(bookUid),
-        repo.readPositionMs(bookUid),
-        repo.readImagePauseSec(bookUid),
+        repo.readFollowAudio(effectiveUid),
+        repo.readDelayMs(effectiveUid),
+        repo.readSpeed(effectiveUid),
+        repo.readPositionMs(effectiveUid),
+        repo.readImagePauseSec(effectiveUid),
       ]);
       await controller.load(
         audiobook: audiobook,
@@ -2708,7 +2726,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         repo.updatePositionMs(bookUid: uid, positionMs: posMs);
       };
       controller.addListener(_onCueChanged);
-      _wireFollowAudio(controller, bookUid: bookUid, repo: repo);
+      _wireFollowAudio(controller, bookUid: effectiveUid, repo: repo);
       unawaited(_wireMediaNotification(controller));
 
       if (mounted) {
