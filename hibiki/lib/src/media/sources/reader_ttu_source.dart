@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
@@ -13,6 +14,7 @@ import 'package:hibiki/language.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
+import 'package:hibiki/src/media/audiobook/reader_position_repository.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
@@ -408,8 +410,8 @@ class ReaderTtuSource extends ReaderMediaSource {
 
       // Poll until items is set or we time out (20 s).
       Future(() async {
-        const timeout = Duration(seconds: 20);
-        final deadline = DateTime.now().add(timeout);
+        const Duration timeout = Duration(seconds: 20);
+        final DateTime deadline = DateTime.now().add(timeout);
         while (items == null) {
           if (DateTime.now().isAfter(deadline)) {
             if (!completer.isCompleted) {
@@ -428,10 +430,54 @@ class ReaderTtuSource extends ReaderMediaSource {
         }
       });
 
-      return await completer.future;
+      final List<MediaItem> rawItems = await completer.future;
+      await _enrichWithReaderProgress(rawItems, appModel);
+      return rawItems;
     } finally {
       await webView.dispose();
     }
+  }
+
+  /// 用 Isar ReaderPosition 覆写每本书的 position，让书架进度条反映实际阅读位置。
+  static Future<void> _enrichWithReaderProgress(
+    List<MediaItem> items,
+    AppModel appModel,
+  ) async {
+    final ReaderPositionRepository repo =
+        ReaderPositionRepository(appModel.database);
+    for (final MediaItem item in items) {
+      final int? ttuId = _extractTtuIdFromUrl(item.mediaIdentifier);
+      if (ttuId == null) continue;
+      final pos = await repo.findByTtuBookId(ttuId);
+      if (pos == null) continue;
+
+      List<int> sectionChars = const [];
+      if (item.sourceMetadata != null) {
+        try {
+          sectionChars = List<int>.from(
+            jsonDecode(item.sourceMetadata!) as List,
+          );
+        } catch (_) {}
+      }
+      if (sectionChars.isEmpty) continue;
+
+      final int clampedSection =
+          min(pos.sectionIndex, sectionChars.length - 1);
+      if (clampedSection < 0) continue;
+
+      int charsRead = 0;
+      for (int i = 0; i < clampedSection; i++) {
+        charsRead += sectionChars[i];
+      }
+      charsRead += min(pos.normCharOffset, sectionChars[clampedSection]);
+
+      item.position = charsRead;
+    }
+  }
+
+  static int? _extractTtuIdFromUrl(String url) {
+    final Uri? uri = Uri.tryParse(url);
+    return int.tryParse(uri?.queryParameters['id'] ?? '');
   }
 
   /// Delete a book and its bookmark/lastItem entries from ttu IndexedDB.
@@ -558,6 +604,18 @@ new Promise(function(resolve) {
         }
       }
 
+      List<int> sectionChars = [];
+      try {
+        final dynamic raw = data['sectionChars'];
+        if (raw is List) {
+          sectionChars = raw.map((dynamic e) => (e as num).toInt()).toList();
+        }
+      } catch (_) {}
+      final int totalChars = sectionChars.fold<int>(0, (int a, int b) => a + b);
+      if (totalChars > 0) {
+        duration = totalChars;
+      }
+
       String id = data['id'].toString();
       String title = data['title'] as String? ?? ' ';
       String? base64Image;
@@ -580,6 +638,8 @@ new Promise(function(resolve) {
           duration: duration,
           canDelete: false,
           canEdit: true,
+          sourceMetadata:
+              sectionChars.isNotEmpty ? jsonEncode(sectionChars) : null,
         ),
       );
     }).toList();
@@ -1066,11 +1126,20 @@ indexedDB.databases().then(async (databases) => {
         try {
           coverImage = await blobToBase64(item["coverImage"]);
         } catch (e) {}
+        var sectionChars = [];
+        try {
+          if (Array.isArray(item["sections"])) {
+            sectionChars = item["sections"].map(function(s) {
+              return (s && typeof s.characters === "number") ? s.characters : 0;
+            });
+          }
+        } catch (e) {}
         return {
           id: item["id"],
           title: item["title"],
           coverImage: coverImage,
           lastBookOpen: item["lastBookOpen"] || 0,
+          sectionChars: sectionChars,
         };
       }));
       dataJson = JSON.stringify(bookSummaries);
