@@ -31,6 +31,7 @@ import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
 import 'package:hibiki/src/media/audiobook/favorite_sentence_repository.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
+import 'package:hibiki/src/media/audiobook/collection_audio_matcher.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:hibiki/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
@@ -3195,37 +3196,6 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     }
   }
 
-  static List<AudioCue> _findCoveringCues(
-      List<AudioCue> cues, String favText) {
-    if (cues.isEmpty || favText.isEmpty) return const [];
-    int bestStart = -1;
-    int bestEnd = -1;
-    for (int i = 0; i < cues.length; i++) {
-      final String cueText = cues[i].text;
-      if (cueText.contains(favText) || favText.contains(cueText)) {
-        if (bestStart < 0) bestStart = i;
-        bestEnd = i;
-      }
-      if (bestStart >= 0 && bestEnd >= 0) {
-        final StringBuffer concat = StringBuffer();
-        for (int j = bestStart; j <= bestEnd; j++) {
-          concat.write(cues[j].text);
-        }
-        if (concat.toString().contains(favText)) break;
-      }
-    }
-    if (bestStart < 0) {
-      for (int i = 0; i < cues.length - 1; i++) {
-        final String pair = cues[i].text + cues[i + 1].text;
-        if (pair.contains(favText)) {
-          return cues.sublist(i, i + 2);
-        }
-      }
-      return const [];
-    }
-    return cues.sublist(bestStart, bestEnd + 1);
-  }
-
   /// 打开 reader 设置面板。两个入口：
   /// - 有声书模式：播放栏 ⚙，传入 [ctrl] 显示全套（倍速 / 音画同步 等）
   /// - 普通 EPUB：左下角 FAB，传 null 省略音频相关节
@@ -3349,12 +3319,19 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           onPlayFavorite: _audiobookController != null
               ? (FavoriteSentence fav) async {
                   final ctrl = _audiobookController;
-                  if (ctrl == null) return;
-                  final List<AudioCue> cues = ctrl.chapterCuesSnapshot;
-                  final List<AudioCue> covering =
-                      _findCoveringCues(cues, fav.text);
-                  if (covering.isNotEmpty) {
-                    await ctrl.playClip(covering);
+                  if (ctrl == null) {
+                    return;
+                  }
+                  final AudioPlaybackRange? range =
+                      CollectionAudioMatcher.findPlaybackRange(
+                    cues: ctrl.chapterCuesSnapshot,
+                    sectionIndex: fav.sectionIndex,
+                    normCharOffset: fav.normCharOffset,
+                    normCharLength: fav.normCharLength,
+                    text: fav.text,
+                  );
+                  if (range != null) {
+                    await ctrl.playRange(range);
                   }
                 }
               : null,
@@ -3907,6 +3884,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
   /// 拆出来是因为 _handleTtuSectionChanged 是 void，这里需要 await。
   Future<void> _applyThenCompleteNav(int idx) async {
     await _applySasayakiCuesForSection(idx);
+    unawaited(_applyHighlightsForCurrentSection());
     final AudiobookPlayerController? controller = _audiobookController;
     if (controller != null) {
       _completeNavRestore(

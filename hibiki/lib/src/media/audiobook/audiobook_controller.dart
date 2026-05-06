@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
+import 'package:hibiki/src/media/audiobook/collection_audio_matcher.dart';
 import 'package:hibiki/src/media/audiobook/json_alignment_parser.dart';
 import 'package:hibiki/src/media/audiobook/sasayaki_match_codec.dart';
 
@@ -946,6 +947,36 @@ class AudiobookPlayerController extends ChangeNotifier {
         child: AudioSource.file(_audioFiles[fileIdx].path),
         start: Duration(milliseconds: startMs),
         end: Duration(milliseconds: endMs),
+      ),
+    );
+    await clip.setSpeed(_player.speed);
+
+    clip.playerStateStream.listen((PlayerState state) {
+      if (state.processingState == ProcessingState.completed) {
+        stopClip();
+      }
+    });
+
+    await clip.play();
+  }
+
+  Future<void> playRange(AudioPlaybackRange range) async {
+    if (range.audioFileIndex < 0 || range.audioFileIndex >= _audioFiles.length) {
+      return;
+    }
+    if (range.endMs <= range.startMs) {
+      return;
+    }
+    await stopClip();
+
+    final AudioPlayer clip = AudioPlayer();
+    _clipPlayer = clip;
+
+    await clip.setAudioSource(
+      ClippingAudioSource(
+        child: AudioSource.file(_audioFiles[range.audioFileIndex].path),
+        start: Duration(milliseconds: range.startMs),
+        end: Duration(milliseconds: range.endMs),
       ),
     );
     await clip.setSpeed(_player.speed);
