@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:hibiki/i18n/strings.g.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/sasayaki_match_codec.dart';
@@ -1631,13 +1632,13 @@ class TtuReaderSettings {
     'black-theme',
   ];
 
-  static const Map<String, String> themeLabels = {
-    'light-theme': '白色',
-    'ecru-theme': '米黄',
-    'water-theme': '水蓝',
-    'gray-theme': '灰暗',
-    'dark-theme': '深暗',
-    'black-theme': '纯黑',
+  static Map<String, String> get themeLabels => {
+    'light-theme': t.reader_theme_light,
+    'ecru-theme': t.reader_theme_ecru,
+    'water-theme': t.reader_theme_water,
+    'gray-theme': t.reader_theme_gray,
+    'dark-theme': t.reader_theme_dark,
+    'black-theme': t.reader_theme_black,
   };
 }
 

@@ -53,7 +53,7 @@ Future<void> prepareDirectoryMdictFormat(
 
   final mdxFile = _findFileByExtension(params.resourceDirectory, '.mdx');
   if (mdxFile == null) {
-    throw Exception('找不到 .mdx 文件');
+    throw Exception(t.dictionary_mdx_not_found);
   }
 
   // MDict reading via dict_reader has been removed; will be replaced by

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:archive/archive_io.dart';
+import 'package:hibiki/i18n/strings.g.dart';
 import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -19,7 +20,7 @@ class _RecommendedFont {
   final List<String> urls;
   final String license;
   final String description;
-  const _RecommendedFont({
+  _RecommendedFont({
     required this.name,
     required this.nameJa,
     required this.urls,
@@ -29,7 +30,7 @@ class _RecommendedFont {
 }
 
 // Google Fonts API 为主，jsDelivr CDN（中国可访问）为备选。
-const _recommendedFonts = [
+List<_RecommendedFont> get _recommendedFonts => [
   // ── 推荐首选 ──
   _RecommendedFont(
     name: 'Klee One',
@@ -39,7 +40,7 @@ const _recommendedFonts = [
       'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/kleeone/KleeOne-Regular.ttf',
     ],
     license: 'OFL 1.1',
-    description: '手写教科书体 · 清晰易读 · 建议搭配 Noto Sans JP 回退',
+    description: t.font_desc_klee_one,
   ),
   // ── CJK 覆盖（日中韩通用，不会缺字） ──
   _RecommendedFont(
@@ -50,7 +51,7 @@ const _recommendedFonts = [
       'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosansjp/NotoSansJP%5Bwght%5D.ttf',
     ],
     license: 'OFL 1.1',
-    description: 'Google/Adobe 黑体 · 日语字形优先 · 可变字重',
+    description: t.font_desc_noto_sans_jp,
   ),
   _RecommendedFont(
     name: 'Noto Serif JP',
@@ -60,7 +61,7 @@ const _recommendedFonts = [
       'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notoserifjp/NotoSerifJP%5Bwght%5D.ttf',
     ],
     license: 'OFL 1.1',
-    description: 'Google/Adobe 宋体 · 日语字形优先 · 适合竖排阅读',
+    description: t.font_desc_noto_serif_jp,
   ),
   _RecommendedFont(
     name: 'Noto Sans SC',
@@ -70,7 +71,7 @@ const _recommendedFonts = [
       'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf',
     ],
     license: 'OFL 1.1',
-    description: 'Google/Adobe 黑体 · 简中字形优先 · 搭配日文字体做回退',
+    description: t.font_desc_noto_sans_sc,
   ),
   _RecommendedFont(
     name: 'Noto Serif SC',
@@ -79,7 +80,7 @@ const _recommendedFonts = [
       'https://fonts.google.com/download?family=Noto+Serif+SC',
     ],
     license: 'OFL 1.1',
-    description: 'Google/Adobe 宋体 · 简中字形优先 · 搭配日文字体做回退',
+    description: t.font_desc_noto_serif_sc,
   ),
   _RecommendedFont(
     name: 'Noto Sans TC',
@@ -89,7 +90,7 @@ const _recommendedFonts = [
       'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanstc/NotoSansTC%5Bwght%5D.ttf',
     ],
     license: 'OFL 1.1',
-    description: 'Google/Adobe 黑体 · 繁中字形优先',
+    description: t.font_desc_noto_sans_tc,
   ),
   // ── 日语特色字体（风格独特，建议搭配 Noto Sans JP 做回退） ──
   _RecommendedFont(
@@ -100,7 +101,7 @@ const _recommendedFonts = [
       'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/shipporimincho/ShipporiMincho-Regular.ttf',
     ],
     license: 'OFL 1.1',
-    description: '优雅明朝体 · 文学作品推荐 · 建议搭配 Noto Sans JP 回退',
+    description: t.font_desc_shippori_mincho,
   ),
   _RecommendedFont(
     name: 'Zen Old Mincho',
@@ -110,7 +111,7 @@ const _recommendedFonts = [
       'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zenoldmincho/ZenOldMincho-Regular.ttf',
     ],
     license: 'OFL 1.1',
-    description: '复古明朝体 · 古典文学风格 · 建议搭配 Noto Sans JP 回退',
+    description: t.font_desc_zen_old_mincho,
   ),
   _RecommendedFont(
     name: 'Zen Maru Gothic',
@@ -120,7 +121,7 @@ const _recommendedFonts = [
       'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zenmarugothic/ZenMaruGothic-Regular.ttf',
     ],
     license: 'OFL 1.1',
-    description: '柔和圆润黑体 · 建议搭配 Noto Sans JP 回退',
+    description: t.font_desc_zen_maru_gothic,
   ),
   _RecommendedFont(
     name: 'M PLUS Rounded 1c',
@@ -130,7 +131,7 @@ const _recommendedFonts = [
       'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/mplusrounded1c/MPLUSRounded1c-Regular.ttf',
     ],
     license: 'OFL 1.1',
-    description: '圆角可爱风格 · 适合轻小说 · 建议搭配 Noto Sans JP 回退',
+    description: t.font_desc_mplus_rounded_1c,
   ),
   _RecommendedFont(
     name: 'Hina Mincho',
@@ -140,7 +141,7 @@ const _recommendedFonts = [
       'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/hinamincho/HinaMincho-Regular.ttf',
     ],
     license: 'OFL 1.1',
-    description: '柔和装饰性明朝体 · 建议搭配 Noto Sans JP 回退',
+    description: t.font_desc_hina_mincho,
   ),
   _RecommendedFont(
     name: 'Zen Kaku Gothic New',
@@ -150,7 +151,7 @@ const _recommendedFonts = [
       'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zenkakugothicnew/ZenKakuGothicNew-Regular.ttf',
     ],
     license: 'OFL 1.1',
-    description: '现代角黑体 · 通用阅读 · 建议搭配 Noto Sans JP 回退',
+    description: t.font_desc_zen_kaku_gothic_new,
   ),
 ];
 

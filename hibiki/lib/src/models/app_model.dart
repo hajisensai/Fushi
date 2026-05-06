@@ -47,6 +47,7 @@ import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
 import 'package:hibiki/src/media/audiobook/reader_position_model.dart';
 import 'package:hibiki/src/media/audiobook/reading_statistic_model.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_model.dart';
+import 'package:hibiki/i18n/strings.g.dart';
 
 /// A list of fields that the app will support at runtime.
 final List<Field> globalFields = List<Field>.unmodifiable(
@@ -359,6 +360,8 @@ class AppModel with ChangeNotifier {
       .toList();
   List<Dictionary> get pitchDictionaries =>
       _dictionariesCache.where((d) => d.type == DictionaryType.pitch).toList();
+  List<Dictionary> get kanjiDictionaries =>
+      _dictionariesCache.where((d) => d.type == DictionaryType.kanji).toList();
 
   void _rebuildDictPathsCache() {
     final termPaths = <String>[];
@@ -369,6 +372,7 @@ class AppModel with ChangeNotifier {
       if (!Directory(p).existsSync()) continue;
       switch (d.type) {
         case DictionaryType.term:
+        case DictionaryType.kanji:
           termPaths.add(p);
         case DictionaryType.frequency:
           freqPaths.add(p);
@@ -1710,7 +1714,7 @@ class AppModel with ChangeNotifier {
       // fallback: try yomichan
       return dictionaryFormats['yomichan']!;
     }
-    throw Exception('不支持的文件格式: $ext');
+    throw Exception(t.import_unsupported_file_format(ext: ext));
   }
 
   List<String> _readZipFileNames(File file) {
@@ -1741,7 +1745,7 @@ class AppModel with ChangeNotifier {
     if (hasJson) {
       return dictionaryFormats['migaku']!;
     }
-    throw Exception('无法识别的词典格式');
+    throw Exception(t.dictionary_unrecognized_format);
   }
 
   /// Import a dictionary from a folder.
@@ -1920,6 +1924,8 @@ class AppModel with ChangeNotifier {
         return DictionaryType.frequency;
       case 'pitch':
         return DictionaryType.pitch;
+      case 'kanji':
+        return DictionaryType.kanji;
       default:
         return DictionaryType.term;
     }

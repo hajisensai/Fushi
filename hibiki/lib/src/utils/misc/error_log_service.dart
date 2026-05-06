@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:hibiki/i18n/strings.g.dart';
 import 'package:path_provider/path_provider.dart';
 
 class ErrorLogEntry {
@@ -79,7 +80,7 @@ class ErrorLogService {
   }
 
   String getFullLog() {
-    if (_entries.isEmpty && _persistedLog.isEmpty) return '暂无错误日志';
+    if (_entries.isEmpty && _persistedLog.isEmpty) return t.error_log_empty;
     final buf = StringBuffer();
     for (final e in _entries.reversed) {
       buf.write(e.format());
@@ -87,7 +88,7 @@ class ErrorLogService {
     if (_persistedLog.isNotEmpty) {
       if (_entries.isNotEmpty) {
         buf.writeln('═' * 60);
-        buf.writeln('▼ 历史日志（上次运行前）');
+        buf.writeln('▼ ${t.error_log_previous_run}');
         buf.writeln('═' * 60);
       }
       buf.write(_persistedLog);
