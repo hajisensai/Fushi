@@ -377,7 +377,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     _notifSkipPrevSub?.cancel();
     _cachedAppModel.audioHandler?.clearNotification();
     _cachedAppModel.removeListener(_onAppModelChanged);
-    if (appModel.showFloatingLyric) {
+    if (_cachedAppModel.showFloatingLyric) {
       FloatingLyricChannel.hide();
     }
     _audiobookController?.removeListener(_onCueChanged);
