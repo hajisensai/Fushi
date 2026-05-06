@@ -552,6 +552,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
 
   void _flushReaderPosOnDispose() {
     if (!_controllerInitialised) return;
+    if (_restoreInFlight) return;
     final InAppWebViewController controller = _controller;
     Future<void>.microtask(() async {
       try {
