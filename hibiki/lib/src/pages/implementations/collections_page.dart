@@ -11,7 +11,7 @@ import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
 import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
 import 'package:hibiki/src/media/audiobook/favorite_sentence_repository.dart';
-import 'package:hibiki/src/media/audiobook/sasayaki_match_codec.dart';
+import 'package:hibiki/src/media/audiobook/collection_audio_matcher.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
 import 'package:hibiki/src/pages/base_page.dart';
 
@@ -46,6 +46,7 @@ class _CollectionItem {
     this.chapterLabel,
     this.sectionIndex,
     this.normCharOffset,
+    this.normCharLength,
     this.favoriteId,
   });
 
@@ -58,6 +59,7 @@ class _CollectionItem {
   final String? chapterLabel;
   final int? sectionIndex;
   final int? normCharOffset;
+  final int? normCharLength;
   final String? favoriteId;
 }
 
@@ -127,6 +129,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         chapterLabel: fav.chapterLabel,
         sectionIndex: fav.sectionIndex,
         normCharOffset: fav.normCharOffset,
+        normCharLength: fav.normCharLength,
         favoriteId: fav.id,
       ));
     }
@@ -259,76 +262,39 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     return [];
   }
 
-  AudioCue? _findCueForItem(_CollectionItem item) {
-    final ttuId = item.ttuBookId;
-    if (ttuId == null || ttuId <= 0) return null;
-
-    final cues = _cueMap[ttuId];
-    if (cues == null || cues.isEmpty) return null;
-
-    AudioCue? match;
-
-    // 1) 文本匹配（收藏句子）
-    final text = item.text ?? '';
-    if (text.isNotEmpty) {
-      for (final cue in cues) {
-        if (cue.text == text) {
-          match = cue;
-          break;
-        }
-      }
-      match ??= cues.cast<AudioCue?>().firstWhere(
-            (c) => c!.text.contains(text) || text.contains(c.text),
-            orElse: () => null,
-          );
-    }
-
-    // 2) 位置匹配（Sasayaki fragment 编码了 sectionIndex + normCharOffset）
-    if (match == null && item.sectionIndex != null) {
-      final sec = item.sectionIndex!;
-      final offset = item.normCharOffset ?? 0;
-      int bestDist = 1 << 30;
-      for (final cue in cues) {
-        final frag = SasayakiMatchCodec.tryDecode(cue.textFragmentId);
-        if (frag == null || frag.sectionIndex != sec) continue;
-        if (frag.normCharStart <= offset && frag.normCharEnd > offset) {
-          match = cue;
-          break;
-        }
-        final dist = (frag.normCharStart - offset).abs();
-        if (dist < bestDist) {
-          bestDist = dist;
-          match = cue;
-        }
-      }
-    }
-
-    return match;
-  }
-
   Future<void> _playItemAudio(_CollectionItem item) async {
-    final ttuId = item.ttuBookId;
+    final int? ttuId = item.ttuBookId;
     if (ttuId == null || ttuId <= 0) return;
 
-    final audioFiles = _audioFileMap[ttuId];
+    final List<File>? audioFiles = _audioFileMap[ttuId];
     if (audioFiles == null || audioFiles.isEmpty) return;
 
-    final match = _findCueForItem(item);
-    if (match == null) return;
-    if (match.audioFileIndex < 0 || match.audioFileIndex >= audioFiles.length) {
+    final List<AudioCue>? cues = _cueMap[ttuId];
+    if (cues == null || cues.isEmpty) return;
+
+    final AudioPlaybackRange? range = CollectionAudioMatcher.findPlaybackRange(
+      cues: cues,
+      sectionIndex: item.sectionIndex,
+      normCharOffset: item.normCharOffset,
+      normCharLength: item.normCharLength,
+      text: item.text,
+    );
+    if (range == null) return;
+    if (range.audioFileIndex < 0 || range.audioFileIndex >= audioFiles.length) {
       return;
     }
 
     setState(() => _playingAudio = true);
     try {
-      final inputPath = audioFiles[match.audioFileIndex].path;
-      final tmpDir = await getTemporaryDirectory();
-      final outputPath = p.join(tmpDir.path, 'collections_audio_segment.m4a');
+      final String inputPath = audioFiles[range.audioFileIndex].path;
+      final Directory tmpDir = await getTemporaryDirectory();
+      final String outputPath =
+          p.join(tmpDir.path, 'collections_audio_segment.m4a');
 
-      final result = await TtsChannel.instance.extractAudioSegment(
+      final String? result = await TtsChannel.instance.extractAudioSegment(
         inputPath: inputPath,
-        startMs: match.startMs,
-        endMs: match.endMs,
+        startMs: range.startMs,
+        endMs: range.endMs,
         outputPath: outputPath,
       );
       if (result != null) {
