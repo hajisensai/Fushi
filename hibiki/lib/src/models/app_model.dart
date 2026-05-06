@@ -3387,6 +3387,15 @@ class AppModel with ChangeNotifier {
     notifyListeners();
   }
 
+  bool get updateBetaChannel {
+    return _getPref('update_beta_channel', defaultValue: false);
+  }
+
+  Future<void> setUpdateBetaChannel(bool value) async {
+    await _setPref('update_beta_channel', value);
+    notifyListeners();
+  }
+
   bool get disableDialogScrim {
     return _getPref('disable_dialog_scrim', defaultValue: false);
   }

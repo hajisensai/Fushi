@@ -639,6 +639,14 @@ class _UpdateSettingsPageState extends BasePageState {
               setState(() {});
             },
           ),
+          _buildSwitch(
+            label: t.update_beta_channel,
+            value: appModel.updateBetaChannel,
+            onChanged: (v) {
+              appModel.setUpdateBetaChannel(v);
+              setState(() {});
+            },
+          ),
         ],
       ),
     );

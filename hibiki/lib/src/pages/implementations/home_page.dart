@@ -47,6 +47,7 @@ class _HomePageState extends BasePageState<HomePage>
           appVersion,
           neverRemind: appModel.updateNeverRemind,
           autoInstall: appModel.updateAutoInstall,
+          betaChannel: appModel.updateBetaChannel,
         );
       }
     });

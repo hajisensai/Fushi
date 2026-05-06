@@ -24,10 +24,13 @@ class UpdateChecker {
     String currentVersion, {
     bool neverRemind = false,
     bool autoInstall = false,
+    bool betaChannel = false,
   }) {
     SchedulerBinding.instance.addPostFrameCallback((_) {
       _check(context, currentVersion,
-          neverRemind: neverRemind, autoInstall: autoInstall);
+          neverRemind: neverRemind,
+          autoInstall: autoInstall,
+          betaChannel: betaChannel);
     });
   }
 
@@ -36,26 +39,17 @@ class UpdateChecker {
     String currentVersion, {
     bool neverRemind = false,
     bool autoInstall = false,
+    bool betaChannel = false,
   }) async {
     if (neverRemind && !autoInstall) return;
     try {
       final client = HttpClient();
       client.connectionTimeout = const Duration(seconds: 10);
 
-      final uri = Uri.parse(
-        'https://api.github.com/repos/$_kGitHubRepo/releases/latest',
-      );
-      final request = await client.getUrl(uri);
-      request.headers.set('Accept', 'application/vnd.github+json');
-
-      final response = await request.close();
-      if (response.statusCode != 200) {
-        await response.drain<void>();
-        return;
-      }
-
-      final body = await response.transform(utf8.decoder).join();
-      final json = jsonDecode(body) as Map<String, dynamic>;
+      final json = betaChannel
+          ? await _fetchLatestRelease(client)
+          : await _fetchStableRelease(client);
+      if (json == null) return;
 
       final tagName =
           (json['tag_name'] as String? ?? '').replaceAll(RegExp('^v'), '');
@@ -121,6 +115,40 @@ class UpdateChecker {
     } catch (e) {
       debugPrint('[Hibiki] update check failed: $e');
     }
+  }
+
+  static Future<Map<String, dynamic>?> _fetchStableRelease(
+      HttpClient client) async {
+    final uri = Uri.parse(
+      'https://api.github.com/repos/$_kGitHubRepo/releases/latest',
+    );
+    final request = await client.getUrl(uri);
+    request.headers.set('Accept', 'application/vnd.github+json');
+    final response = await request.close();
+    if (response.statusCode != 200) {
+      await response.drain<void>();
+      return null;
+    }
+    final body = await response.transform(utf8.decoder).join();
+    return jsonDecode(body) as Map<String, dynamic>;
+  }
+
+  static Future<Map<String, dynamic>?> _fetchLatestRelease(
+      HttpClient client) async {
+    final uri = Uri.parse(
+      'https://api.github.com/repos/$_kGitHubRepo/releases?per_page=1',
+    );
+    final request = await client.getUrl(uri);
+    request.headers.set('Accept', 'application/vnd.github+json');
+    final response = await request.close();
+    if (response.statusCode != 200) {
+      await response.drain<void>();
+      return null;
+    }
+    final body = await response.transform(utf8.decoder).join();
+    final list = jsonDecode(body) as List<dynamic>;
+    if (list.isEmpty) return null;
+    return list.first as Map<String, dynamic>;
   }
 
   static bool _isNewer(String remote, String local) {
