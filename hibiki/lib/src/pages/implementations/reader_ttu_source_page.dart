@@ -217,6 +217,8 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   /// rootLen），Dart 侧再挡一层减少 bridge 开销。
   int _lastSasayakiAppliedSection = -1;
 
+  bool _audiobookBridgeInjecting = false;
+
   // ── 位置持久化（ReaderPosition Isar 表） ────────────────────────────────
   //
   // 保存触发：JS 侧 scroll debounce 1s 调 saveReaderPos handler，Dart 侧
@@ -1366,10 +1368,11 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
               'if(!String.prototype.replaceAll){String.prototype.replaceAll=function(a,b){if(a instanceof RegExp){if(!a.global)throw new TypeError("replaceAll must be called with a global RegExp");return this.replace(a,b)}return this.split(a).join(b)}}',
           injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
         ),
-        UserScript(
-          source: 'window.__hoshiManagesPosition = true;',
-          injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
-        ),
+        if (_hasAudioSlot)
+          UserScript(
+            source: 'window.__hoshiManagesPosition = true;',
+            injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+          ),
         UserScript(
           source: _buildInitialBgCssJs(),
           injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
@@ -1718,6 +1721,16 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         break;
       case 'sasayakiApplySkip':
         _lastSasayakiAppliedSection = -1;
+        if (_currentTtuSection >= 0) {
+          Future.delayed(const Duration(milliseconds: 500), () {
+            if (!mounted) return;
+            debugPrint(
+              '[hibiki-audiobook] retrying cueMap build after sasayakiApplySkip '
+              'section=$_currentTtuSection',
+            );
+            _applySasayakiCuesForSection(_currentTtuSection);
+          });
+        }
         break;
       case 'sasayakiNavErr':
         final int? navSection = (messageJson['section'] as num?)?.toInt();
@@ -3043,29 +3056,27 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     if (_audiobookController == null) {
       return;
     }
-    debugPrint('[hibiki-audiobook] injecting via $trigger');
-    _didRestorePos = false;
-    _readerContentReady = false;
-    await _injectAudiobookBridge(controller);
-    // 引导 _currentTtuSection：ttu fork 的 sectionChanged 订阅带 skip(1)，
-    // 首次挂载（封面 / 最近阅读章）那次 Wn 发射被吃掉，字段会一直卡在 -1。
-    // 跨章守卫 currentSec<0 下就永远不会自动跳章——用户在封面开 Follow
-    // audio 时音频的 section 明明和当前页不同，但也跳不过去。inject 之后
-    // 立即 probe ttu 的 __ttuCurrentSection() 把字段拨正。
-    await _bootstrapCurrentTtuSection(controller);
-    // 位置恢复：在 _bootstrapCurrentTtuSection 之后，这样 _currentTtuSection
-    // 已经从 ttu probe 拿到真值（fork skip(1) 的坑不然留 -1，跨段判定会
-    // 走错路径）。_didRestorePos 在函数内部自守只跑一次。
-    await _bootstrapRestoreReaderPos();
-    // 初始章节预建 Sasayaki cueMap（首次 sectionChanged 被 ttu skip(1) 吃掉，
-    // 这里兜住）。必须 await：_onCueChanged 需要 cueMap 已就绪才能命中首条
-    // cue 的高亮；如果 unawaited，highlight 在 cueMap 构建完成前执行会 miss，
-    // 而 positionStream 不会重发同 index 的 cue 变更。
-    if (_currentTtuSection >= 0) {
-      await _applySasayakiCuesForSection(_currentTtuSection);
+    if (_audiobookBridgeInjecting) {
+      debugPrint('[hibiki-audiobook] injection already running, '
+          'skipping $trigger (will retry via sasayakiApplySkip)');
+      return;
     }
-    // 章节加载后立刻把视口拉回当前句所在页（Hoshi pendingFragment 模式）。
-    _onCueChanged();
+    _audiobookBridgeInjecting = true;
+    try {
+      debugPrint('[hibiki-audiobook] injecting via $trigger');
+      _didRestorePos = false;
+      _readerContentReady = false;
+      _lastSasayakiAppliedSection = -1;
+      await _injectAudiobookBridge(controller);
+      await _bootstrapCurrentTtuSection(controller);
+      await _bootstrapRestoreReaderPos();
+      if (_currentTtuSection >= 0) {
+        await _applySasayakiCuesForSection(_currentTtuSection);
+      }
+      _onCueChanged();
+    } finally {
+      _audiobookBridgeInjecting = false;
+    }
   }
 
   static List<AudioCue> _findCoveringCues(
