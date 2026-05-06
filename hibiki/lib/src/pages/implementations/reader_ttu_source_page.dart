@@ -1245,28 +1245,23 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     return '''
 (function() {
   var key = 'hibiki_ttu_cache_refresh_${ReaderTtuSource.ttuInternalVersion}';
-  try {
-    if (window.localStorage.getItem(key) === '1') return;
-  } catch (_) {
-    try {
-      if (window.sessionStorage.getItem(key) === '1') return;
-    } catch (_) {}
+  var alreadyDone = false;
+  try { alreadyDone = window.sessionStorage.getItem(key) === '1'; } catch (_) {}
+
+  if (alreadyDone) {
+    console.log(JSON.stringify({"hibiki-message-type":"ttuCacheRefreshDone"}));
+    return;
   }
 
   (window.caches
-    ? caches.keys()
-        .then(function(keys) {
-          return Promise.all(keys.map(function(cacheKey) {
-            return caches.delete(cacheKey);
-          }));
-        })
-        .catch(function() {})
+    ? caches.keys().then(function(keys) {
+        return Promise.all(keys.map(function(k) { return caches.delete(k); }));
+      })
     : Promise.resolve()
   ).then(function() {
-    try { window.localStorage.setItem(key, '1'); } catch (_) {}
     try { window.sessionStorage.setItem(key, '1'); } catch (_) {}
     console.log(JSON.stringify({"hibiki-message-type":"ttuCacheRefreshDone"}));
-  }).catch(function() {});
+  });
 })();
 ''';
   }
