@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:hibiki/src/media/audiobook/audio_text_normalizer.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 
 /// EPUB 一个章节，供 [EpubSrtMatcher] 使用。
@@ -170,7 +171,7 @@ class EpubSrtMatcher {
 
     for (int ci = 0; ci < cues.length; ci++) {
       final AudioCue cue = cues[ci];
-      final String nc = _normalize(cue.text);
+      final String nc = AudioTextNormalizer.normalize(cue.text);
       if (nc.isEmpty) {
         results.add(CueMatch.unmatched);
         continue;
@@ -431,7 +432,7 @@ class EpubSrtMatcher {
       if (raw.startsWith('＊') || raw.startsWith('*')) {
         continue;
       }
-      final String nc = _normalize(raw);
+      final String nc = AudioTextNormalizer.normalize(raw);
       if (nc.length < defaultProbeMinLen) {
         continue;
       }
@@ -464,60 +465,6 @@ class EpubSrtMatcher {
     return r.length <= n ? r : '${r.substring(0, n)}…';
   }
 
-  // ---------- normalize ----------
-
-  static String _normalize(String s) {
-    final StringBuffer buf = StringBuffer();
-    _appendNormalized(buf, s);
-    return buf.toString();
-  }
-
-  static void _appendNormalized(StringBuffer buf, String s) {
-    for (final int cp in s.runes) {
-      if (!_isKeepable(cp)) continue;
-      if (cp >= 0x41 && cp <= 0x5A) {
-        buf.writeCharCode(cp + 0x20);
-      } else if (cp >= 0xFF21 && cp <= 0xFF3A) {
-        buf.writeCharCode(cp + 0x20);
-      } else {
-        buf.writeCharCode(cp);
-      }
-    }
-  }
-
-  /// 白名单：只保留日文正文字符（假名 / 汉字 / CJK 扩展 A / 迭代符）+ 字母
-  /// 数字（ASCII 与全角 / 半角）。
-  ///
-  /// 与 `audiobook_bridge.dart::__hoshiIsSkippable` 的 JS 镜像必须**严格一致**，
-  /// 否则 matcher 写回的 normCharStart/End 与 WebView 运行期计数对不上，高亮
-  /// 会漂。
-  static bool _isKeepable(int c) {
-    if (c >= 0x30 && c <= 0x39) return true;
-    if (c >= 0x41 && c <= 0x5A) return true;
-    if (c >= 0x61 && c <= 0x7A) return true;
-    if (c == 0x3005 || c == 0x3006 || c == 0x3007) return true;
-    if (c >= 0x3041 && c <= 0x3096) return true;
-    if (c >= 0x309D && c <= 0x309F) return true;
-    if (c >= 0x30A1 && c <= 0x30FA) return true;
-    if (c >= 0x30FC && c <= 0x30FF) return true;
-    if (c >= 0x3400 && c <= 0x4DBF) return true;
-    if (c >= 0x4E00 && c <= 0x9FFF) return true;
-    if (c == 0x25CB || c == 0x25EF) return true;
-    if (c == 0x303B) return true;
-    if (c >= 0x2E80 && c <= 0x2EFF) return true;
-    if (c >= 0x2F00 && c <= 0x2FDF) return true;
-    if (c >= 0xF900 && c <= 0xFAFF) return true;
-    if (c >= 0x20000 && c <= 0x2A6DF) return true;
-    if (c >= 0x2A700 && c <= 0x2EBE0) return true;
-    if (c >= 0x2F800 && c <= 0x2FA1F) return true;
-    if (c >= 0x30000 && c <= 0x323AF) return true;
-    if (c >= 0xFF10 && c <= 0xFF19) return true;
-    if (c >= 0xFF21 && c <= 0xFF3A) return true;
-    if (c >= 0xFF41 && c <= 0xFF5A) return true;
-    if (c >= 0xFF66 && c <= 0xFF9D) return true;
-    return false;
-  }
-
   // ---------- index ----------
 
   static _Index _buildIndex(List<EpubSection> sections) {
@@ -525,7 +472,7 @@ class EpubSrtMatcher {
     final List<int> normStarts = <int>[];
     for (final EpubSection s in sections) {
       normStarts.add(buf.length);
-      _appendNormalized(buf, s.text);
+      AudioTextNormalizer.appendNormalized(buf, s.text);
     }
     return _Index(buf.toString(), normStarts);
   }

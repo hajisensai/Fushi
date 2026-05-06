@@ -161,7 +161,7 @@ window.__hoshiHighlight = function(selector, reveal) {
   ///   **归一化文本长度**（以及累计起点）。ttu 在渲染时会剥掉 section
   ///   原始 id，所以我们放弃"找章节根"这条路，改为用"整本书归一化偏移"
   ///   在 `.book-content-container` 里定位。
-  /// - `__hoshiIsSkippable(code)`：镜像 Dart 的 `EpubSrtMatcher._isKeepable`
+  /// - `__hoshiIsSkippable(code)`：镜像 Dart 的 `AudioTextNormalizer._isKeepable`
   ///   的反函数。白名单规则（只留假名/汉字/字母数字），其余一律视为可跳过。
   ///
   /// 与字幕 EPUB 路径（`[data-cue-id]`）互不冲突：入口在 Dart 侧的
@@ -285,7 +285,7 @@ window.__hoshiLoadSasayakiRefs = function(ttuBookId) {
 };
 
 window.__hoshiIsSkippable = function(c) {
-  // 与 Dart EpubSrtMatcher._isKeepable 对应的"反函数"：只要不在白名单里
+  // 与 Dart AudioTextNormalizer._isKeepable 对应的"反函数"：只要不在白名单里
   // 就视为 skippable（不计入 normChar 计数）。白名单必须与 Dart 严格一致，
   // 否则匹配期写回的 normCharStart/End 与 WebView 运行期计数对不上 → 高亮漂。
   if (c >= 0x30 && c <= 0x39) return false;   // 0-9
