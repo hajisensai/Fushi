@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
@@ -479,7 +480,7 @@ class _HourlyChartPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _HourlyChartPainter oldDelegate) =>
-      hourlyMs != oldDelegate.hourlyMs;
+      !listEquals(hourlyMs, oldDelegate.hourlyMs);
 }
 
 class _BarChartPainter extends CustomPainter {

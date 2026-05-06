@@ -316,27 +316,28 @@ class HibikiDatabase extends _$HibikiDatabase {
     required String dateKey,
     required int hour,
     required int deltaMs,
-  }) async {
-    final existing = await (select(readingHourlyLogs)
-          ..where(
-              (t) => t.dateKey.equals(dateKey) & t.hour.equals(hour)))
-        .getSingleOrNull();
-    if (existing != null) {
-      await (update(readingHourlyLogs)
-            ..where((t) => t.id.equals(existing.id)))
-          .write(ReadingHourlyLogsCompanion(
-        readingTimeMs: Value(existing.readingTimeMs + deltaMs),
-      ));
-    } else {
-      await into(readingHourlyLogs).insert(
-        ReadingHourlyLogsCompanion.insert(
-          dateKey: dateKey,
-          hour: hour,
-          readingTimeMs: deltaMs,
-        ),
-      );
-    }
-  }
+  }) =>
+      transaction(() async {
+        final existing = await (select(readingHourlyLogs)
+              ..where(
+                  (t) => t.dateKey.equals(dateKey) & t.hour.equals(hour)))
+            .getSingleOrNull();
+        if (existing != null) {
+          await (update(readingHourlyLogs)
+                ..where((t) => t.id.equals(existing.id)))
+              .write(ReadingHourlyLogsCompanion(
+            readingTimeMs: Value(existing.readingTimeMs + deltaMs),
+          ));
+        } else {
+          await into(readingHourlyLogs).insert(
+            ReadingHourlyLogsCompanion.insert(
+              dateKey: dateKey,
+              hour: hour,
+              readingTimeMs: deltaMs,
+            ),
+          );
+        }
+      });
 
   Future<List<ReadingHourlyLogRow>> getHourlyLogsForDate(String dateKey) =>
       (select(readingHourlyLogs)..where((t) => t.dateKey.equals(dateKey)))

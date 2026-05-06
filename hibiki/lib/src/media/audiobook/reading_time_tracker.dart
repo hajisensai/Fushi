@@ -37,10 +37,25 @@ class ReadingTimeTracker {
     if (elapsed <= 0) return;
     _tickStart = now;
 
-    final dateKey = _formatDateKey(start);
-    final hour = start.hour;
+    if (start.hour != now.hour || start.day != now.day) {
+      final boundary = DateTime(
+          start.year, start.month, start.day, start.hour + 1);
+      final firstMs = boundary.difference(start).inMilliseconds;
+      final secondMs = now.difference(boundary).inMilliseconds;
+      if (firstMs > 0) {
+        _write(_formatDateKey(start), start.hour, firstMs);
+      }
+      if (secondMs > 0) {
+        _write(_formatDateKey(now), now.hour, secondMs);
+      }
+    } else {
+      _write(_formatDateKey(start), start.hour, elapsed);
+    }
+  }
+
+  void _write(String dateKey, int hour, int deltaMs) {
     _database
-        .addHourlyReadingTime(dateKey: dateKey, hour: hour, deltaMs: elapsed)
+        .addHourlyReadingTime(dateKey: dateKey, hour: hour, deltaMs: deltaMs)
         .catchError((Object e) {
       debugPrint('[reading-time-tracker] write error: $e');
     });
