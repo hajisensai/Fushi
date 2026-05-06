@@ -3778,6 +3778,8 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       }
     }
 
+    if (!mounted || _audiobookController != controller) return;
+
     handler.setMediaItemInfo(
       title: bookTitle,
       duration: controller.duration,
