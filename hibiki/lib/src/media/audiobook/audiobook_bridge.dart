@@ -41,11 +41,11 @@ class AudiobookBridge {
   /// 对齐到整页：anchor = rect 中心的绝对坐标，pageIndex = floor(anchor / stride)，
   /// 通过 ttu 的 `__ttuScrollToPos` API 同步写 scrollTop 和 virtualScrollPos$。
   static const String _highlightFn = '''
-window.__hoshiAutoScrollInFlight = false;
-window.__hoshiAutoScrollTimer = null;
+if (window.__hoshiAutoScrollInFlight === undefined) window.__hoshiAutoScrollInFlight = false;
+if (window.__hoshiAutoScrollTimer === undefined) window.__hoshiAutoScrollTimer = null;
 window.__hoshiAlignToRect = function(rect) {
   if (!rect) return;
-  if (window.__hoshiAutoScrollInFlight) return;
+  if (window.__hoshiAutoScrollInFlight && !window.__hoshiRestoreInFlight) return;
   var isDegenerate = rect.width === 0 && rect.height === 0 &&
                      rect.left === 0 && rect.top === 0;
   if (isDegenerate) return;
@@ -352,8 +352,6 @@ window.__hoshiClearSasayakiApplied = function() {
 };
 
 window.__hoshiApplySasayakiCues = function(sectionIndex, cuesJson) {
-  // 委托给 ttu fork 的 __ttuWrapCueSpans：ttu 自己走 live DOM、realign、包
-  // span，偏移天然一致。skipFn 传 hibiki 的 __hoshiIsSkippable 保持归一化规则。
   if (typeof window.__ttuWrapCueSpans !== 'function') {
     console.log(JSON.stringify({
       'hibiki-message-type': 'sasayakiApplySkip',
@@ -362,7 +360,37 @@ window.__hoshiApplySasayakiCues = function(sectionIndex, cuesJson) {
     }));
     return;
   }
+  var savedPos = null;
+  try {
+    if (typeof window.__ttuGetPageInfo === 'function') {
+      var info = window.__ttuGetPageInfo();
+      if (info) savedPos = info.virtualScrollPos;
+    }
+  } catch(e) {}
   var result = window.__ttuWrapCueSpans(cuesJson, window.__hoshiIsSkippable);
+  var afterPos = null;
+  try {
+    if (typeof window.__ttuGetPageInfo === 'function') {
+      var ai = window.__ttuGetPageInfo();
+      if (ai) afterPos = ai.virtualScrollPos;
+    }
+  } catch(e2) {}
+  if (savedPos !== null && typeof window.__ttuScrollToPos === 'function') {
+    if (afterPos !== savedPos) {
+      window.__ttuScrollToPos(savedPos);
+    }
+    window.__hoshiAutoScrollInFlight = true;
+    if (window.__hoshiAutoScrollTimer) clearTimeout(window.__hoshiAutoScrollTimer);
+    window.__hoshiAutoScrollTimer = setTimeout(function() {
+      window.__hoshiAutoScrollInFlight = false;
+      window.__hoshiAutoScrollTimer = null;
+    }, 1200);
+  }
+  console.log(JSON.stringify({
+    'hibiki-message-type': 'sasayakiScrollRestore',
+    'savedPos': savedPos, 'afterPos': afterPos,
+    'restored': savedPos !== null && afterPos !== savedPos
+  }));
   window.__hoshiSasayakiAppliedForSection = sectionIndex;
   var root = document.querySelector('.book-content-container') ||
              document.querySelector('.book-content');
@@ -720,38 +748,9 @@ window.__hibikiGetViewportNormOffset = function() {
              document.querySelector('.book-content');
   if (!root) return null;
 
-  // 视口左上不一定命中文本，多试几个探针点（避开边距 / 段首空行）
-  var w = window.innerWidth || 360;
-  var h = window.innerHeight || 640;
-  var probes = [
-    [16, 32],
-    [Math.floor(w * 0.1), Math.floor(h * 0.15)],
-    [Math.floor(w * 0.2), Math.floor(h * 0.25)],
-    [Math.floor(w * 0.5), Math.floor(h * 0.5)]
-  ];
-  var target = null;
-  for (var i = 0; i < probes.length; i++) {
-    var px = probes[i][0], py = probes[i][1];
-    var r = null;
-    try {
-      if (document.caretRangeFromPoint) {
-        r = document.caretRangeFromPoint(px, py);
-      } else if (document.caretPositionFromPoint) {
-        var cp = document.caretPositionFromPoint(px, py);
-        if (cp && cp.offsetNode) {
-          r = document.createRange();
-          r.setStart(cp.offsetNode, cp.offset);
-        }
-      }
-    } catch (err) { r = null; }
-    if (r && r.startContainer && r.startContainer.nodeType === 3) {
-      target = { node: r.startContainer, offset: r.startOffset };
-      break;
-    }
-  }
-  if (!target) return { section: section, offset: 0 };
+  var vh = window.innerHeight || 640;
+  var vw = window.innerWidth || 360;
 
-  // Sasayaki walker 配方：SHOW_TEXT + 拒绝 rt/rp 祖先（ruby 振假名不计数）
   var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode: function(n) {
       var p = n.parentNode;
@@ -766,32 +765,59 @@ window.__hibikiGetViewportNormOffset = function() {
   var normPos = 0;
   var node;
   while ((node = walker.nextNode())) {
-    if (node === target.node) {
-      var t = node.nodeValue || '';
-      var cap = Math.min(target.offset, t.length);
-      for (var j = 0; j < cap; ) {
-        var cj = t.codePointAt(j);
-        var wj = (cj > 0xFFFF) ? 2 : 1;
-        if (!window.__hoshiIsSkippable(cj)) normPos += Math.min(wj, cap - j);
-        j += wj;
-      }
-      return { section: section, offset: normPos };
-    }
     var txt = node.nodeValue || '';
+    if (!txt) continue;
+    var nr = document.createRange();
+    nr.selectNodeContents(node);
+    var nrect = nr.getBoundingClientRect();
+    if (nrect.right < 0 || nrect.bottom < 0) {
+      for (var k = 0; k < txt.length; ) {
+        var ck = txt.codePointAt(k);
+        var wk = (ck > 0xFFFF) ? 2 : 1;
+        if (!window.__hoshiIsSkippable(ck)) normPos += wk;
+        k += wk;
+      }
+      continue;
+    }
+    var overlaps = !(nrect.left > vw || nrect.top > vh);
+    if (!overlaps) {
+      for (var k = 0; k < txt.length; ) {
+        var ck = txt.codePointAt(k);
+        var wk = (ck > 0xFFFF) ? 2 : 1;
+        if (!window.__hoshiIsSkippable(ck)) normPos += wk;
+        k += wk;
+      }
+      continue;
+    }
     for (var k = 0; k < txt.length; ) {
       var ck = txt.codePointAt(k);
       var wk = (ck > 0xFFFF) ? 2 : 1;
-      if (!window.__hoshiIsSkippable(ck)) normPos += wk;
+      if (!window.__hoshiIsSkippable(ck)) {
+        var cr = document.createRange();
+        cr.setStart(node, k);
+        cr.collapse(true);
+        var crect = cr.getBoundingClientRect();
+        if (crect.top >= -2 && crect.top < vh &&
+            crect.left >= -2 && crect.left < vw &&
+            !(crect.width === 0 && crect.height === 0 &&
+              crect.left === 0 && crect.top === 0)) {
+          return { section: section, offset: normPos };
+        }
+        normPos += wk;
+      }
       k += wk;
     }
   }
-  // target 不在 walker 可达范围（比如被 rt/rp 拒）→ 拿累加到终点的值兜底
-  return { section: section, offset: normPos };
+  return { section: section, offset: 0 };
 };
 
 window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
   var retry = _retryCount || 0;
   var maxRetries = 15;
+  if (!retry) {
+    window.__hoshiRestoreToken = (window.__hoshiRestoreToken || 0) + 1;
+  }
+  var myToken = window.__hoshiRestoreToken;
   function signalDone(ok) {
     try {
       if (window.flutter_inappwebview) {
@@ -799,29 +825,19 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
       }
     } catch(e2) {}
   }
-  console.log(JSON.stringify({
-    'hibiki-message-type': 'scrollToNormOffset-enter',
-    'section': section, 'offset': offset, 'retry': retry,
-    'hasAlignToRect': typeof window.__hoshiAlignToRect === 'function',
-    'hasTtuPageApi': typeof window.__ttuGetPageInfo === 'function'
-  }));
-  try {
+  function signalStable(sec, off, success) {
+    try {
+      if (window.flutter_inappwebview) {
+        window.flutter_inappwebview.callHandler('viewportStable', {
+          section: sec, offset: off, success: !!success, token: myToken
+        });
+      }
+    } catch(e2) {}
+  }
+  function scrollToCharOffset(targetOffset) {
     var root = document.querySelector('.book-content-container') ||
                document.querySelector('.book-content');
-    if (!root) {
-      if (retry < maxRetries) {
-        setTimeout(function() {
-          window.__hibikiScrollToNormOffset(section, offset, retry + 1);
-        }, 100);
-        return;
-      }
-      console.log(JSON.stringify({
-        'hibiki-message-type': 'scrollToNormOffset-noRoot',
-        'triedSelectors': '.book-content-container, .book-content'
-      }));
-      signalDone(false);
-      return;
-    }
+    if (!root) return {ok: false, reason: 'no-root'};
     var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
       acceptNode: function(n) {
         var p = n.parentNode;
@@ -841,51 +857,91 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
         var ck = txt.codePointAt(k);
         var wk = (ck > 0xFFFF) ? 2 : 1;
         if (!window.__hoshiIsSkippable(ck)) {
-          if (normPos + wk > offset) {
+          if (normPos + wk > targetOffset) {
             var r = document.createRange();
             r.setStart(node, k);
             r.collapse(true);
             var rect = r.getBoundingClientRect();
-            console.log(JSON.stringify({
-              'hibiki-message-type': 'scrollToNormOffset-foundTarget',
-              'normPos': normPos, 'requestedOffset': offset, 'retry': retry,
-              'rectTop': rect.top, 'rectLeft': rect.left,
-              'rectW': rect.width, 'rectH': rect.height
-            }));
             if (typeof window.__hoshiAlignToRect === 'function') {
               window.__hoshiAlignToRect(rect);
             } else {
               window.scrollBy(0, rect.top - 16);
             }
-            requestAnimationFrame(function() { signalDone(true); });
-            return;
+            return {ok: true};
           }
           normPos += wk;
         }
         k += wk;
       }
     }
-    if (normPos === 0 && retry < maxRetries) {
-      console.log(JSON.stringify({
-        'hibiki-message-type': 'scrollToNormOffset-domNotReady',
-        'retry': retry, 'nextIn': '100ms'
-      }));
-      setTimeout(function() {
-        window.__hibikiScrollToNormOffset(section, offset, retry + 1);
-      }, 100);
+    return {ok: false, reason: normPos === 0 ? 'empty' : 'exhausted'};
+  }
+  function waitStable(targetSection, targetOffset, rescrollsLeft) {
+    var stableCount = 0;
+    var prevOffset = -1;
+    var maxFrames = 30;
+    var frame = 0;
+    function check() {
+      if (myToken !== window.__hoshiRestoreToken) return;
+      frame++;
+      if (frame > maxFrames) {
+        signalStable(targetSection, targetOffset, false);
+        return;
+      }
+      var cur = null;
+      try {
+        if (typeof window.__hibikiGetViewportNormOffset === 'function') {
+          cur = window.__hibikiGetViewportNormOffset();
+        }
+      } catch(e) {}
+      if (!cur) {
+        requestAnimationFrame(check);
+        return;
+      }
+      if (cur.section === targetSection && Math.abs(cur.offset - targetOffset) <= 5) {
+        if (prevOffset === cur.offset) {
+          stableCount++;
+        } else {
+          stableCount = 1;
+          prevOffset = cur.offset;
+        }
+        if (stableCount >= 3) {
+          signalStable(cur.section, cur.offset, true);
+          return;
+        }
+        requestAnimationFrame(check);
+        return;
+      }
+      stableCount = 0;
+      prevOffset = -1;
+      if (rescrollsLeft > 0) {
+        rescrollsLeft--;
+        scrollToCharOffset(targetOffset);
+        frame = 0;
+        requestAnimationFrame(check);
+        return;
+      }
+      signalStable(targetSection, targetOffset, false);
+    }
+    requestAnimationFrame(check);
+  }
+  try {
+    var result = scrollToCharOffset(offset);
+    if (!result.ok) {
+      if (result.reason !== 'exhausted' && retry < maxRetries) {
+        setTimeout(function() {
+          window.__hibikiScrollToNormOffset(section, offset, retry + 1);
+        }, 100);
+        return;
+      }
+      signalDone(false);
       return;
     }
-    console.log(JSON.stringify({
-      'hibiki-message-type': 'scrollToNormOffset-exhausted',
-      'totalNormPos': normPos, 'requestedOffset': offset, 'retry': retry
-    }));
-    signalDone(false);
+    requestAnimationFrame(function() {
+      signalDone(true);
+      waitStable(section, offset, 2);
+    });
   } catch (e) {
-    console.log(JSON.stringify({
-      'hibiki-message-type': 'hibikiScrollToNormOffsetErr',
-      'error': String(e),
-      'section': section, 'offset': offset
-    }));
     signalDone(false);
   }
 };

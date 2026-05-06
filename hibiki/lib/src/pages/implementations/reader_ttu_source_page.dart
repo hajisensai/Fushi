@@ -245,7 +245,8 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   bool _restoreInFlight = false;
 
   Completer<bool>? _scrollToNormOffsetCompleter;
-
+  Completer<void>? _viewportStableCompleter;
+  int _restoreToken = 0;
 
   // ── 窗口尺寸变化时保持阅读位置 ──────────────────────────────────────
   Timer? _metricsDebounce;
@@ -372,6 +373,10 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     if (_scrollToNormOffsetCompleter != null &&
         !_scrollToNormOffsetCompleter!.isCompleted) {
       _scrollToNormOffsetCompleter!.complete(false);
+    }
+    if (_viewportStableCompleter != null &&
+        !_viewportStableCompleter!.isCompleted) {
+      _viewportStableCompleter!.complete();
     }
     // 在 WebView 销毁前同步读一次当前视口位置（fire-and-forget 写 Isar），
     // 兜住 JS 侧 500ms scroll-debounce 窗内关书导致的保存丢失。
@@ -1332,6 +1337,25 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     }
   }
 
+  Future<void> _setJsRestoreFlag() async {
+    if (!_controllerInitialised) return;
+    _restoreToken++;
+    try {
+      await _controller.evaluateJavascript(
+        source: 'window.__hoshiRestoreInFlight = true;',
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _clearJsRestoreFlag() async {
+    if (!_controllerInitialised) return;
+    try {
+      await _controller.evaluateJavascript(
+        source: 'window.__hoshiRestoreInFlight = false;',
+      );
+    } catch (_) {}
+  }
+
   String _buildCustomThemeJs() {
     return buildTtuCustomThemeJs(
       dark: appModel.customThemeDark,
@@ -1378,6 +1402,10 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         ),
         UserScript(
           source: 'window.__hoshiManagesPosition = true;',
+          injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+        ),
+        UserScript(
+          source: 'window.__hoshiRestoreInFlight = true;',
           injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
         ),
         UserScript(
@@ -1493,6 +1521,25 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
             final Completer<bool>? c = _scrollToNormOffsetCompleter;
             if (c != null && !c.isCompleted) {
               c.complete(ok);
+            }
+          },
+        );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'viewportStable',
+          callback: (data) {
+            final Map<String, dynamic>? payload =
+                data.isNotEmpty ? (data[0] as Map?)?.cast<String, dynamic>() : null;
+            final int token = (payload?['token'] as num?)?.toInt() ?? -1;
+            final bool success = payload?['success'] == true;
+            debugPrint(
+              '[hibiki-reader-pos] viewportStable token=$token '
+              'expected=$_restoreToken success=$success',
+            );
+            if (token != _restoreToken) return;
+            final Completer<void>? c = _viewportStableCompleter;
+            if (c != null && !c.isCompleted) {
+              c.complete();
             }
           },
         );
@@ -2650,7 +2697,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     if (timer) clearTimeout(timer);
     timer = setTimeout(function() {
       try {
-        if (window.__hoshiAutoScrollInFlight) {
+        if (window.__hoshiAutoScrollInFlight || window.__hoshiRestoreInFlight) {
           console.log(JSON.stringify({'hibiki-message-type':'pos-save-skip','reason':'autoScrollInFlight'}));
           return;
         }
@@ -3088,13 +3135,17 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     }
     _audiobookBridgeInjecting = true;
     try {
-      debugPrint('[hibiki-audiobook] injecting via $trigger');
-      _didRestorePos = false;
-      _readerContentReady = false;
+      debugPrint('[hibiki-audiobook] injecting via $trigger restoreInFlight=$_restoreInFlight');
+      if (!_restoreInFlight) {
+        _didRestorePos = false;
+        _readerContentReady = false;
+      }
       _lastSasayakiAppliedSection = -1;
       await _injectAudiobookBridge(controller);
       await _bootstrapCurrentTtuSection(controller);
-      await _bootstrapRestoreReaderPos();
+      if (!_restoreInFlight) {
+        await _bootstrapRestoreReaderPos();
+      }
       if (_currentTtuSection >= 0) {
         await _applySasayakiCuesForSection(_currentTtuSection);
       }
@@ -3827,6 +3878,9 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       _navRestoreTimeout = null;
       _inFlightNavSection = null;
     }
+    if (_restoreInFlight && _pendingRestorePos != null) {
+      await _finishRestore();
+    }
   }
 
   /// pill 被点击时的跳章入口；成功后清空 pill。
@@ -3992,6 +4046,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     final int targetSection = _pendingRestorePos!.section;
     final int targetOffset = _pendingRestorePos!.offset;
     _restoreInFlight = true;
+    await _setJsRestoreFlag();
     if (_currentTtuSection == targetSection) {
       debugPrint(
         '[hibiki-reader-pos] same section, scrolling to o=$targetOffset',
@@ -4008,7 +4063,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         _controller,
         sectionIndex: targetSection,
       );
-      Future.delayed(const Duration(seconds: 5), () {
+      Future.delayed(const Duration(seconds: 5), () async {
         if (_restoreInFlight && mounted) {
           debugPrint('[hibiki-reader-pos] restore timeout, clearing flags');
           _restoreInFlight = false;
@@ -4016,6 +4071,9 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           _inFlightNavSection = null;
           final Completer<bool>? c = _scrollToNormOffsetCompleter;
           if (c != null && !c.isCompleted) c.complete(false);
+          final Completer<void>? vc = _viewportStableCompleter;
+          if (vc != null && !vc.isCompleted) vc.complete();
+          await _clearJsRestoreFlag();
           _markReaderContentReady();
         }
       });
@@ -4024,41 +4082,52 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       _restoreInFlight = false;
       _pendingRestorePos = null;
       _inFlightNavSection = null;
+      unawaited(_clearJsRestoreFlag());
       _markReaderContentReady();
     }
   }
 
-  /// consume `_pendingRestorePos`：调 JS 滚到章内归一化偏移，清守卫。
-  /// JS 完成滚动后通过 callHandler('scrollToNormOffsetDone') 通知 Dart，
-  /// 收到信号后才清 _restoreInFlight 并撤遮罩。
   Future<void> _finishRestore() async {
     final ReaderViewportPos? pending = _pendingRestorePos;
     if (pending == null) {
       _restoreInFlight = false;
+      await _clearJsRestoreFlag();
+      _markReaderContentReady();
       return;
     }
     _pendingRestorePos = null;
     try {
       _scrollToNormOffsetCompleter = Completer<bool>();
+      _viewportStableCompleter = Completer<void>();
       await AudiobookBridge.scrollToNormOffset(
         _controller,
         section: pending.section,
         offset: pending.offset,
       );
-      final bool ok = await _scrollToNormOffsetCompleter!.future.timeout(
+      final bool scrollOk = await _scrollToNormOffsetCompleter!.future.timeout(
         const Duration(seconds: 5),
         onTimeout: () => false,
       );
       _scrollToNormOffsetCompleter = null;
       debugPrint(
         '[hibiki-reader-pos] scrolled s=${pending.section} '
-        'o=${pending.offset} ok=$ok',
+        'o=${pending.offset} ok=$scrollOk',
       );
+      if (scrollOk) {
+        await _viewportStableCompleter!.future.timeout(
+          const Duration(seconds: 5),
+          onTimeout: () {},
+        );
+        debugPrint('[hibiki-reader-pos] viewportStable reached');
+      }
+      _viewportStableCompleter = null;
     } catch (e) {
       debugPrint('[hibiki-reader-pos] scrollToNormOffset err: $e');
       _scrollToNormOffsetCompleter = null;
+      _viewportStableCompleter = null;
     } finally {
       _restoreInFlight = false;
+      await _clearJsRestoreFlag();
       _markReaderContentReady();
     }
   }
@@ -4085,9 +4154,6 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         _currentTtuSection = idx;
         _navRestoreTimeout?.cancel();
         unawaited(_applyThenCompleteNav(idx));
-        if (_restoreInFlight && _pendingRestorePos?.section == idx) {
-          unawaited(_finishRestore());
-        }
       } else if (_inFlightNavSection == null) {
         // timeout 已清 inFlight，但 ttu 的 sectionChanged 迟到了——
         // 仍接受并更新 _currentTtuSection，否则后续跨章判定全错。
