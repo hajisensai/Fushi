@@ -55,26 +55,43 @@ window.__hoshiAlignToRect = function(rect) {
   if (!info || (!info.stride && info.stride !== 0)) { console.log('alignToRect:noInfo ' + JSON.stringify(info)); return; }
   if (info.stride < 10) {
     if (info.stride === 0) {
+      var vpW = window.innerWidth;
+      var vpH = window.innerHeight;
+      var margin = 0.15;
       var dx = 0, dy = 0;
+      var needScroll = false;
       if (info.verticalMode) {
-        dx = -(window.innerWidth - rect.right - 16);
+        var safeL = vpW * margin;
+        var safeR = vpW * (1 - margin);
+        if (rect.right < safeL || rect.left > safeR) {
+          dx = -(vpW * 0.67 - rect.right);
+          needScroll = true;
+        }
       } else {
-        dy = rect.top - 16;
+        var safeT = vpH * margin;
+        var safeB = vpH * (1 - margin);
+        if (rect.top < safeT || rect.bottom > safeB) {
+          dy = rect.top - vpH * 0.33;
+          needScroll = true;
+        }
       }
       console.log(JSON.stringify({
         'hibiki-message-type': 'alignDiag',
         'mode': 'continuous',
         'verticalMode': info.verticalMode,
         'rectT': Math.round(rect.top), 'rectR': Math.round(rect.right),
-        'dx': Math.round(dx), 'dy': Math.round(dy)
+        'dx': Math.round(dx), 'dy': Math.round(dy),
+        'needScroll': needScroll
       }));
-      window.scrollBy({ left: dx, top: dy });
-      window.__hoshiAutoScrollInFlight = true;
-      if (window.__hoshiAutoScrollTimer) clearTimeout(window.__hoshiAutoScrollTimer);
-      window.__hoshiAutoScrollTimer = setTimeout(function() {
-        window.__hoshiAutoScrollInFlight = false;
-        window.__hoshiAutoScrollTimer = null;
-      }, 250);
+      if (needScroll) {
+        window.scrollBy({ left: dx, top: dy });
+        window.__hoshiAutoScrollInFlight = true;
+        if (window.__hoshiAutoScrollTimer) clearTimeout(window.__hoshiAutoScrollTimer);
+        window.__hoshiAutoScrollTimer = setTimeout(function() {
+          window.__hoshiAutoScrollInFlight = false;
+          window.__hoshiAutoScrollTimer = null;
+        }, 250);
+      }
     }
     return;
   }
