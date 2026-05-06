@@ -140,6 +140,13 @@ public class MainActivity extends AudioServiceActivity {
     @Override
     protected void onDestroy() {
         dbSetupExecutor.shutdownNow();
+        if (indexFuture != null) {
+            indexFuture.cancel(true);
+            try {
+                indexFuture.get(2, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (Exception ignored) {}
+            indexFuture = null;
+        }
         ioExecutor.shutdownNow();
         synchronized (dbLock) {
             if (localAudioDb != null) {
