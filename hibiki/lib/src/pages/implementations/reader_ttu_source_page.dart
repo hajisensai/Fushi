@@ -1370,11 +1370,10 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
               'if(!String.prototype.replaceAll){String.prototype.replaceAll=function(a,b){if(a instanceof RegExp){if(!a.global)throw new TypeError("replaceAll must be called with a global RegExp");return this.replace(a,b)}return this.split(a).join(b)}}',
           injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
         ),
-        if (_hasAudioSlot)
-          UserScript(
-            source: 'window.__hoshiManagesPosition = true;',
-            injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
-          ),
+        UserScript(
+          source: 'window.__hoshiManagesPosition = true;',
+          injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+        ),
         UserScript(
           source: _buildInitialBgCssJs(),
           injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
