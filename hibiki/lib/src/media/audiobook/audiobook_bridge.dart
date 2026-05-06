@@ -55,11 +55,20 @@ window.__hoshiAlignToRect = function(rect) {
   if (!info || (!info.stride && info.stride !== 0)) { console.log('alignToRect:noInfo ' + JSON.stringify(info)); return; }
   if (info.stride < 10) {
     if (info.stride === 0) {
+      var dx = 0, dy = 0;
       if (info.verticalMode) {
-        window.scrollBy({ left: -(window.innerWidth - rect.right - 16), top: 0 });
+        dx = -(window.innerWidth - rect.right - 16);
       } else {
-        window.scrollBy({ left: 0, top: rect.top - 16 });
+        dy = rect.top - 16;
       }
+      console.log(JSON.stringify({
+        'hibiki-message-type': 'alignDiag',
+        'mode': 'continuous',
+        'verticalMode': info.verticalMode,
+        'rectT': Math.round(rect.top), 'rectR': Math.round(rect.right),
+        'dx': Math.round(dx), 'dy': Math.round(dy)
+      }));
+      window.scrollBy({ left: dx, top: dy });
       window.__hoshiAutoScrollInFlight = true;
       if (window.__hoshiAutoScrollTimer) clearTimeout(window.__hoshiAutoScrollTimer);
       window.__hoshiAutoScrollTimer = setTimeout(function() {
