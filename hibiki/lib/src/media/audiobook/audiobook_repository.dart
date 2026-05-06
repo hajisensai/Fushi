@@ -20,17 +20,25 @@ class AudiobookRepository {
   }
 
   Future<Audiobook?> findByTtuBookId(int ttuBookId) async {
+    final map = await buildTtuBookIdMap();
+    return map[ttuBookId];
+  }
+
+  Future<Map<int, Audiobook>> buildTtuBookIdMap() async {
     final rows = await _db.getAllAudiobooks();
-    final idStr = ttuBookId.toString();
+    final map = <int, Audiobook>{};
     for (final row in rows) {
-      final uri = Uri.tryParse(
-        row.bookUid.contains('/') ? row.bookUid.substring(row.bookUid.indexOf('/') + 1) : row.bookUid,
-      );
-      if (uri != null && uri.queryParameters['id'] == idStr) {
-        return _rowToAudiobook(row);
+      final raw = row.bookUid;
+      final toParse = raw.contains('/')
+          ? raw.substring(raw.indexOf('/') + 1)
+          : raw;
+      final uri = Uri.tryParse(toParse);
+      final id = int.tryParse(uri?.queryParameters['id'] ?? '');
+      if (id != null && id > 0) {
+        map.putIfAbsent(id, () => _rowToAudiobook(row));
       }
     }
-    return null;
+    return map;
   }
 
   Future<List<AudioCue>> cuesForChapter({

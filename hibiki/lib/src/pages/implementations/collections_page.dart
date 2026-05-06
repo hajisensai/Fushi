@@ -148,6 +148,8 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     final cueMap = <int, List<AudioCue>>{};
     final audioFileMap = <int, List<File>>{};
 
+    final audiobookByTtuId = await abRepo.buildTtuBookIdMap();
+
     for (final ttuId in allTtuIds) {
       // SrtBook
       final srtBook = await srtBookRepo.findByTtuBookId(ttuId);
@@ -166,8 +168,8 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         }
       }
 
-      // Audiobook (Sasayaki) — ttuBookId 回退查找
-      final ab = await abRepo.findByTtuBookId(ttuId);
+      // Audiobook (Sasayaki)
+      final ab = audiobookByTtuId[ttuId];
       if (ab == null) continue;
 
       final cues = await abRepo.cuesForBook(ab.bookUid);
@@ -423,6 +425,29 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         color: Theme.of(context).colorScheme.error,
         child: Icon(Icons.delete, color: Theme.of(context).colorScheme.onError),
       ),
+      confirmDismiss: (_) async {
+        return await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            content: Text(isBookmark
+                ? '${t.collection_bookmark}: ${item.label ?? ""}'
+                : item.text ?? ''),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: Text(t.dialog_close),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: Text(
+                  t.dialog_delete,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ),
+            ],
+          ),
+        ) ?? false;
+      },
       onDismissed: (_) => _deleteItem(item),
       child: ListTile(
         leading: Column(
