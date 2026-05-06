@@ -352,6 +352,14 @@ window.__hoshiClearSasayakiApplied = function() {
 };
 
 window.__hoshiApplySasayakiCues = function(sectionIndex, cuesJson) {
+  if (!document.body && !document.documentElement) {
+    console.log(JSON.stringify({
+      'hibiki-message-type': 'sasayakiApplySkip',
+      'reason': 'no_dom',
+      'sectionIndex': sectionIndex
+    }));
+    return;
+  }
   if (typeof window.__ttuWrapCueSpans !== 'function') {
     console.log(JSON.stringify({
       'hibiki-message-type': 'sasayakiApplySkip',
@@ -1307,6 +1315,7 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
     await controller.evaluateJavascript(
       source: '''
 (async function(){
+  if(!document.body&&!document.documentElement)return;
   for(var i=0;i<20;i++){
     if(typeof __hoshiApplySasayakiCues!=="undefined"
        && typeof __ttuWrapCueSpans==="function"){

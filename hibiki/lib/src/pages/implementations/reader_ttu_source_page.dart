@@ -2876,6 +2876,10 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       controller.onPositionWrite = (String uid, int posMs) {
         repo.updatePositionMs(bookUid: uid, positionMs: posMs);
       };
+      if (!mounted) {
+        controller.dispose();
+        return;
+      }
       controller.addListener(_onCueChanged);
       _wireFollowAudio(controller, bookUid: effectiveUid, repo: repo);
       unawaited(_wireMediaNotification(controller));
@@ -2965,6 +2969,10 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     } catch (e) {
       debugPrint('[hibiki-audiobook] srt init: controller.load failed: $e');
       Fluttertoast.showToast(msg: t.srt_audio_load_error);
+      controller.dispose();
+      return;
+    }
+    if (!mounted) {
       controller.dispose();
       return;
     }
@@ -3929,6 +3937,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
   /// 拆出来是因为 _handleTtuSectionChanged 是 void，这里需要 await。
   Future<void> _applyThenCompleteNav(int idx) async {
     await _applySasayakiCuesForSection(idx);
+    if (!mounted) return;
     unawaited(_applyHighlightsForCurrentSection());
     final AudiobookPlayerController? controller = _audiobookController;
     if (controller != null) {
