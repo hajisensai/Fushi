@@ -965,7 +965,10 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
   var s = document.createElement('style');
   s.id = '__hoshi_audio_css';
   s.textContent = $cssJsonStr;
-  document.head.appendChild(s);
+  var parent = document.head || document.documentElement || document.body;
+  if (parent) {
+    parent.appendChild(s);
+  }
 })();
 ''');
 

@@ -1129,72 +1129,72 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   }
 
   Future<void> setDictionaryColors() async {
+    if (!mounted) return;
+    final app = appModelNoUpdate;
     String currentTheme = (await _controller.evaluateJavascript(
             source: 'window.localStorage.getItem("theme")'))
         .toString();
+    if (!mounted) return;
     switch (currentTheme) {
       case 'light-theme':
         final c = Color.fromRGBO(249, 249, 249, 1);
-        appModel
-            .setOverrideDictionaryTheme(_themedWithSurface(appModel.theme, c));
-        appModel.setOverrideDictionaryColor(
+        app.setOverrideDictionaryTheme(_themedWithSurface(app.theme, c));
+        app.setOverrideDictionaryColor(
             c.withValues(alpha: dictionaryEntryOpacity));
         break;
       case 'ecru-theme':
         final c = Color.fromRGBO(247, 246, 235, 1);
-        appModel
-            .setOverrideDictionaryTheme(_themedWithSurface(appModel.theme, c));
-        appModel.setOverrideDictionaryColor(
+        app.setOverrideDictionaryTheme(_themedWithSurface(app.theme, c));
+        app.setOverrideDictionaryColor(
             c.withValues(alpha: dictionaryEntryOpacity));
         break;
       case 'water-theme':
         final c = Color.fromRGBO(223, 236, 244, 1);
-        appModel
-            .setOverrideDictionaryTheme(_themedWithSurface(appModel.theme, c));
-        appModel.setOverrideDictionaryColor(
+        app.setOverrideDictionaryTheme(_themedWithSurface(app.theme, c));
+        app.setOverrideDictionaryColor(
             c.withValues(alpha: dictionaryEntryOpacity));
         break;
       case 'gray-theme':
         final c = Color.fromRGBO(35, 39, 42, 1);
-        appModel.setOverrideDictionaryTheme(
-            _themedWithSurface(appModel.darkTheme, c));
-        appModel.setOverrideDictionaryColor(
+        app.setOverrideDictionaryTheme(
+            _themedWithSurface(app.darkTheme, c));
+        app.setOverrideDictionaryColor(
             c.withValues(alpha: dictionaryEntryOpacity));
         break;
       case 'dark-theme':
         final c = Color.fromRGBO(18, 18, 18, 1);
-        appModel.setOverrideDictionaryTheme(
-            _themedWithSurface(appModel.darkTheme, c));
-        appModel.setOverrideDictionaryColor(
+        app.setOverrideDictionaryTheme(
+            _themedWithSurface(app.darkTheme, c));
+        app.setOverrideDictionaryColor(
             c.withValues(alpha: dictionaryEntryOpacity));
         break;
       case 'black-theme':
         final c = Color.fromRGBO(16, 16, 16, 1);
-        appModel.setOverrideDictionaryTheme(
-            _themedWithSurface(appModel.darkTheme, c));
-        appModel.setOverrideDictionaryColor(
+        app.setOverrideDictionaryTheme(
+            _themedWithSurface(app.darkTheme, c));
+        app.setOverrideDictionaryColor(
             c.withValues(alpha: dictionaryEntryOpacity));
         break;
       case 'custom-theme':
-        if (appModel.customThemeDark) {
-          final c = appModel.customThemeBackgroundColor ??
+        if (app.customThemeDark) {
+          final c = app.customThemeBackgroundColor ??
               const Color.fromRGBO(35, 39, 42, 1);
-          appModel.setOverrideDictionaryTheme(
-              _themedWithSurface(appModel.darkTheme, c));
-          appModel.setOverrideDictionaryColor(
+          app.setOverrideDictionaryTheme(
+              _themedWithSurface(app.darkTheme, c));
+          app.setOverrideDictionaryColor(
               c.withValues(alpha: dictionaryEntryOpacity));
         } else {
-          final c = appModel.customThemeBackgroundColor ??
+          final c = app.customThemeBackgroundColor ??
               const Color.fromRGBO(249, 249, 249, 1);
-          appModel.setOverrideDictionaryTheme(
-              _themedWithSurface(appModel.theme, c));
-          appModel.setOverrideDictionaryColor(
+          app.setOverrideDictionaryTheme(
+              _themedWithSurface(app.theme, c));
+          app.setOverrideDictionaryColor(
               c.withValues(alpha: dictionaryEntryOpacity));
         }
         break;
     }
 
-    _barThemeNotifier.value = appModel.overrideDictionaryTheme;
+    _barThemeNotifier.value = app.overrideDictionaryTheme;
     _scheduleFloatingLyricStyleSync(force: true);
 
     if (mounted) {
@@ -1339,23 +1339,32 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     final String hex =
         '#${c.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}';
     return '(function(){'
+        'function appendStyle(e){'
+        'var p=document.head||document.documentElement||document.body;'
+        'if(p){p.appendChild(e);return;}'
+        'document.addEventListener("DOMContentLoaded",function(){'
+        '(document.head||document.documentElement||document.body).appendChild(e);'
+        '},{once:true});'
+        '}'
         'var s=document.createElement("style");'
         's.id="hibiki-initial-bg";'
         's.textContent=":root,html,body{background-color:$hex!important}";'
-        '(document.head||document.documentElement).appendChild(s);'
+        'appendStyle(s);'
         'var h=document.createElement("style");'
         'h.id="hibiki-content-hide";'
         'h.textContent=":root,html,body{visibility:hidden!important}";'
-        '(document.head||document.documentElement).appendChild(h);'
+        'appendStyle(h);'
         '})()';
   }
 
   void _markReaderContentReady() {
+    if (!mounted) return;
     unawaited(_clearJsRestoreFlag());
     unawaited(_revealAndUnmask());
   }
 
   Future<void> _revealAndUnmask() async {
+    if (!mounted) return;
     final bool revealOk = await _removeInitialHideCss();
     if (!revealOk) {
       debugPrint('[hibiki-reader-pos] CSS hide removal failed, unmasking anyway');
@@ -1366,7 +1375,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   }
 
   Future<bool> _removeInitialHideCss() async {
-    if (!_controllerInitialised) return false;
+    if (!_controllerInitialised || !mounted) return false;
     for (int i = 0; i < 3; i++) {
       try {
         final Object? result = await _controller.evaluateJavascript(
@@ -1463,10 +1472,17 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         if (fontFaceCss.isNotEmpty)
           UserScript(
             source: '(function(){'
+                'function appendStyle(e){'
+                'var p=document.head||document.documentElement||document.body;'
+                'if(p){p.appendChild(e);return;}'
+                'document.addEventListener("DOMContentLoaded",function(){'
+                '(document.head||document.documentElement||document.body).appendChild(e);'
+                '},{once:true});'
+                '}'
                 'var s=document.createElement("style");'
                 's.id="hibiki-custom-fonts";'
                 "s.textContent='${fontFaceCss.replaceAll('\\', '\\\\').replaceAll("'", "\\'").replaceAll('\n', ' ')}';"
-                '(document.head||document.documentElement).appendChild(s);})()',
+                'appendStyle(s);})()',
             injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
           ),
       ]),
@@ -3100,6 +3116,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
   Future<void> _injectPrimarySelectionColor(
     InAppWebViewController controller,
   ) async {
+    if (!mounted) return;
     final Color primary = Theme.of(context).colorScheme.primary;
     final int pr = (primary.r * 255.0).round().clamp(0, 255);
     final int pg = (primary.g * 255.0).round().clamp(0, 255);
@@ -3113,7 +3130,10 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
   var s = document.createElement('style');
   s.id = id;
   s.textContent = ':root { --hoshi-primary-selection: $rgba; }';
-  document.head.appendChild(s);
+  var parent = document.head || document.documentElement || document.body;
+  if (parent) {
+    parent.appendChild(s);
+  }
 })();
 ''');
   }
@@ -3619,7 +3639,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
 
   /// currentCue 变化时高亮对应 DOM 元素。
   void _onCueChanged() async {
-    if (!_controllerInitialised) {
+    if (!mounted || !_controllerInitialised) {
       return;
     }
     final AudiobookPlayerController? controller = _audiobookController;
@@ -3632,7 +3652,8 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       'hasPlayed=${controller?.hasPlayedOnce} '
       'restoreInFlight=$_restoreInFlight',
     );
-    if (appModel.showFloatingLyric && controller != null) {
+    final bool showFloatingLyric = appModelNoUpdate.showFloatingLyric;
+    if (showFloatingLyric && controller != null) {
       unawaited(FloatingLyricChannel.setPlaybackState(
         playing: controller.isPlaying,
       ));
@@ -3644,11 +3665,14 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           SasayakiMatchCodec.tryDecode(cue.textFragmentId);
       if (frag != null) {
         if (frag.sectionIndex != _currentTtuSection) {
-          AudiobookBridge.highlight(_controller, cue: null);
+          if (mounted) {
+            AudiobookBridge.highlight(_controller, cue: null);
+          }
           return;
         }
         if (_pendingNavSection != null &&
-            frag.sectionIndex == _currentTtuSection) {
+            frag.sectionIndex == _currentTtuSection &&
+            mounted) {
           setState(() => _pendingNavSection = null);
         }
       }
@@ -3660,11 +3684,14 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     if (reveal && (controller?.imagePauseSec.value ?? 0) > 0) {
       AudiobookBridge.saveScrollPos(_controller);
     }
+    if (!mounted) return;
     await AudiobookBridge.highlight(_controller, cue: cue, reveal: reveal);
-    if (appModel.showFloatingLyric && cue != null) {
+    if (!mounted) return;
+    if (showFloatingLyric && cue != null) {
       FloatingLyricChannel.updateText(cue.text);
     }
     await Future.delayed(const Duration(milliseconds: 50));
+    if (!mounted) return;
     _maybeImagePause(controller);
   }
 

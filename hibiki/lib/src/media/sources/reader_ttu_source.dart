@@ -974,7 +974,8 @@ new Promise(function(resolve) {
         '(function(){'
         'var s=document.getElementById("hibiki-custom-fonts");'
         'if(!s){s=document.createElement("style");s.id="hibiki-custom-fonts";'
-        'document.head.appendChild(s)}'
+        'var p=document.head||document.documentElement||document.body;'
+        'if(p){p.appendChild(s)}}'
         "s.textContent='$escapedFaces'"
         '})()',
       );
