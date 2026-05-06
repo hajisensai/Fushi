@@ -1339,7 +1339,11 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
 
   void _markReaderContentReady() {
     unawaited(_clearJsRestoreFlag());
-    unawaited(_removeInitialHideCss());
+    unawaited(_revealAndUnmask());
+  }
+
+  Future<void> _revealAndUnmask() async {
+    await _removeInitialHideCss();
     if (!_readerContentReady && mounted) {
       setState(() => _readerContentReady = true);
     }
