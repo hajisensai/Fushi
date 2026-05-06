@@ -260,15 +260,19 @@ class AnkiRepository {
         audioFile = File(url);
       } else if (url.startsWith('http')) {
         final client = HttpClient();
-        final request = await client.getUrl(Uri.parse(url));
-        final response = await request.close();
-        final bytes =
-            await response.fold<List<int>>([], (a, b) => a..addAll(b));
-        final cacheDir = await _mediaCacheDir();
-        audioFile =
-            File('${cacheDir.path}/hibiki_audio_${bytes.hashCode}.mp3');
-        await audioFile.writeAsBytes(bytes);
-        client.close();
+        try {
+          final request = await client.getUrl(Uri.parse(url));
+          final response = await request.close();
+          final bytes =
+              await response.fold<List<int>>([], (a, b) => a..addAll(b));
+          final cacheDir = await _mediaCacheDir();
+          final urlHash = url.hashCode.toUnsigned(32).toRadixString(16);
+          audioFile =
+              File('${cacheDir.path}/hibiki_audio_$urlHash.mp3');
+          await audioFile.writeAsBytes(bytes);
+        } finally {
+          client.close();
+        }
       }
       if (audioFile == null || !audioFile.existsSync()) return null;
       return _addMediaFile(
