@@ -613,6 +613,18 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     }
   }
 
+  Future<void> _persistReaderPosForCue(AudioCue? cue, String from) async {
+    if (cue == null) return;
+    final SasayakiFragment? frag =
+        SasayakiMatchCodec.tryDecode(cue.textFragmentId);
+    if (frag == null) return;
+    await _persistReaderPos(
+      section: frag.sectionIndex,
+      offset: frag.normCharStart,
+      from: from,
+    );
+  }
+
   /// Wire native volume-key interception according to the current setting.
   /// Called on page mount and whenever the toggle flips via the settings
   /// dialog so the key handler stops swallowing volume presses once the
@@ -3889,6 +3901,12 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     unawaited(_applyHighlightsForCurrentSection());
     final AudiobookPlayerController? controller = _audiobookController;
     if (controller != null) {
+      if (!_restoreInFlight) {
+        await _persistReaderPosForCue(
+          controller.currentCue,
+          'follow-audio',
+        );
+      }
       _completeNavRestore(
         controller: controller,
         currentReaderSection: idx,
