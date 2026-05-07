@@ -3312,10 +3312,15 @@ class AppModel with ChangeNotifier {
     HoshiDicts.disposeInstance();
   }
 
+  static const _lifecycleChannel =
+      MethodChannel('app.hibiki.reader/lifecycle');
+
   Future<void> moveToBack() async {
     try {
-      await SystemNavigator.pop();
-    } catch (_) {}
+      await _lifecycleChannel.invokeMethod<void>('moveTaskToBack');
+    } catch (e) {
+      debugPrint('[Hibiki] moveToBack failed: $e');
+    }
   }
 
   /// Get whether or not the transcript should show play/pause.

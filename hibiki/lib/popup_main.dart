@@ -19,14 +19,14 @@ void popupMain() {
 
     final initialText = await PopupChannel.instance.getInitialProcessText();
 
-    await appModel.initialiseForDictionaryPopup();
-
     runApp(
       UncontrolledProviderScope(
         container: container,
         child: PopupDictApp(initialText: initialText ?? ''),
       ),
     );
+
+    appModel.initialiseForDictionaryPopup();
   }, (exception, stack) {
     debugPrint('[Hibiki-popup] uncaught: $exception\n$stack');
   });

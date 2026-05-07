@@ -134,6 +134,10 @@ public class AnkiChannelHandler {
 
     private void addNote(String model, String deck,
                          ArrayList<String> fields, ArrayList<String> tags) {
+        if (fields == null || fields.isEmpty()) {
+            android.util.Log.w("hibiki-anki", "addNote: fields is null or empty");
+            return;
+        }
         final AddContentApi api = new AddContentApi(activity);
 
         long deckId;
@@ -152,9 +156,11 @@ public class AnkiChannelHandler {
         long modelId = modelIdObj;
 
         Set<String> allTags = new HashSet<>(Arrays.asList("Yuuna"));
-        allTags.addAll(tags);
+        if (tags != null) {
+            allTags.addAll(tags);
+        }
 
-        api.addNote(modelId, deckId, fields.toArray(new String[fields.size()]), allTags);
+        api.addNote(modelId, deckId, fields.toArray(new String[0]), allTags);
     }
 
     private boolean checkForDuplicates(ArrayList<String> models, String key,

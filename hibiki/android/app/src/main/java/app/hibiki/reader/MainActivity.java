@@ -50,6 +50,7 @@ public class MainActivity extends AudioServiceActivity {
     private static final String FONTS_CHANNEL = "app.hibiki.reader/fonts";
     private static final String FLOATING_LYRIC_CHANNEL = "app.hibiki.reader/floating_lyric";
     private static final String SPLASH_CHANNEL = "app.hibiki.reader/splash";
+    private static final String LIFECYCLE_CHANNEL = "app.hibiki.reader/lifecycle";
     private static final String SPLASH_PREFS = "hibiki_splash";
     private static final int SAF_PICK_DIR_REQUEST = 1001;
     private static MethodChannel floatingLyricChannel;
@@ -442,6 +443,16 @@ public class MainActivity extends AudioServiceActivity {
                         android.util.Log.d("hibiki-fonts", "Found " + sorted.size() + " fonts: " + sorted.subList(0, Math.min(5, sorted.size())));
                         new Handler(Looper.getMainLooper()).post(() -> result.success(sorted));
                     });
+                } else {
+                    result.notImplemented();
+                }
+            });
+
+        new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), LIFECYCLE_CHANNEL)
+            .setMethodCallHandler((call, result) -> {
+                if ("moveTaskToBack".equals(call.method)) {
+                    moveTaskToBack(true);
+                    result.success(null);
                 } else {
                     result.notImplemented();
                 }

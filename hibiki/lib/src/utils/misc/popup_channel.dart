@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 class PopupChannel {
@@ -22,9 +23,11 @@ class PopupChannel {
 
   Future<String?> getInitialProcessText() async {
     try {
-      final result = await _channel.invokeMethod<String>('getInitialProcessText');
+      final result =
+          await _channel.invokeMethod<String>('getInitialProcessText');
       return result;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[Hibiki-popup] getInitialProcessText failed: $e');
       return null;
     }
   }
@@ -32,6 +35,8 @@ class PopupChannel {
   Future<void> finishPopup() async {
     try {
       await _channel.invokeMethod<void>('finishPopup');
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[Hibiki-popup] finishPopup failed: $e');
+    }
   }
 }
