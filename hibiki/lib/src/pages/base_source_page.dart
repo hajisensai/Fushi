@@ -183,14 +183,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
     }
   }
 
-  void clearDictionaryResult() {
-    _searchGeneration++;
-    _pendingSelectionRect = null;
-    _isSearchingNotifier.value = false;
-    _popupStack.value = [];
-    appModel.currentMediaSource?.clearCurrentSentence();
-    appModel.currentMediaSource?.clearExtraData();
-  }
+  void clearDictionaryResult() => _dismissPopupAt(0);
 
   double get popupMaxWidth => appModel.popupMaxWidth;
   double get popupMaxHeight => 360;
@@ -322,8 +315,13 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
   }
 
   void _dismissPopupAt(int index) {
+    _searchGeneration++;
+    _pendingSelectionRect = null;
+    _isSearchingNotifier.value = false;
     if (index == 0) {
-      clearDictionaryResult();
+      _popupStack.value = [];
+      appModel.currentMediaSource?.clearCurrentSentence();
+      appModel.currentMediaSource?.clearExtraData();
     } else {
       _popupStack.value = _popupStack.value.sublist(0, index);
     }
