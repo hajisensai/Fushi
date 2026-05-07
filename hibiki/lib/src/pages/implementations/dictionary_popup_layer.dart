@@ -44,6 +44,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     required this.onDuplicateCheck,
     this.onTapOutside,
     this.headerWidget,
+    this.overlayWidget,
     this.isDark = false,
     super.key,
   });
@@ -58,6 +59,7 @@ class DictionaryPopupLayer extends StatelessWidget {
       onDuplicateCheck;
   final VoidCallback? onTapOutside;
   final Widget? headerWidget;
+  final Widget? overlayWidget;
   final bool isDark;
 
   @override
@@ -66,6 +68,16 @@ class DictionaryPopupLayer extends StatelessWidget {
     final borderColor = isDark
         ? Colors.white.withValues(alpha: 0.15)
         : Colors.black.withValues(alpha: 0.18);
+
+    Widget content = _buildContent();
+    if (overlayWidget != null) {
+      content = Stack(
+        children: [
+          content,
+          Positioned.fill(child: overlayWidget!),
+        ],
+      );
+    }
 
     return SwipeDismissWrapper(
       sensitivity: ReaderTtuSource.instance.dismissSwipeSensitivity,
@@ -77,7 +89,7 @@ class DictionaryPopupLayer extends StatelessWidget {
           border: Border.all(color: borderColor, width: 1),
         ),
         clipBehavior: Clip.antiAlias,
-        child: _buildContent(),
+        child: content,
       ),
     );
   }

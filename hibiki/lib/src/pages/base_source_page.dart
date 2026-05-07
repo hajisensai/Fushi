@@ -283,47 +283,43 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
       top: pos.top,
       width: pos.width,
       height: pos.height,
-      child: Stack(
-        children: [
-          DictionaryPopupLayer(
-            result: item.result,
-            webViewKey: item.webViewKey,
-            isDark: isDark,
-            onDismiss: () => _dismissPopupAt(index),
-            onTapOutside: clearDictionaryResult,
-            headerWidget: index == 0 ? buildPopupAudioControls() : null,
-            onTextSelected: (text, localRect) async {
-              final parentPos =
-                  _calculatePopupPosition(item.selectionRect, screen);
-              final childRect = localRect == Rect.zero
-                  ? item.selectionRect
-                  : localRect.shift(Offset(parentPos.left, parentPos.top));
-              _popupStack.value =
-                  _popupStack.value.sublist(0, index + 1);
-              final count = await searchDictionaryResult(
-                searchTerm: text,
-                selectionRect: childRect,
-              );
-              if (count > 0) {
-                item.webViewKey.currentState?.highlightSelection(count);
-              }
-            },
-            onLinkClick: (query) async {
-              _popupStack.value =
-                  _popupStack.value.sublist(0, index + 1);
-              await searchDictionaryResult(
-                searchTerm: query,
-                selectionRect: item.selectionRect,
-              );
-            },
-            onMineEntry: onMineFromPopup,
-            onDuplicateCheck: (expression, reading) async {
-              final repo = ref.read(ankiRepositoryProvider);
-              return repo.isDuplicate(expression, reading);
-            },
-          ),
-          if (isTop) Positioned.fill(child: buildDictionaryLoading()),
-        ],
+      child: DictionaryPopupLayer(
+        result: item.result,
+        webViewKey: item.webViewKey,
+        isDark: isDark,
+        onDismiss: () => _dismissPopupAt(index),
+        onTapOutside: clearDictionaryResult,
+        headerWidget: index == 0 ? buildPopupAudioControls() : null,
+        overlayWidget: isTop ? buildDictionaryLoading() : null,
+        onTextSelected: (text, localRect) async {
+          final parentPos =
+              _calculatePopupPosition(item.selectionRect, screen);
+          final childRect = localRect == Rect.zero
+              ? item.selectionRect
+              : localRect.shift(Offset(parentPos.left, parentPos.top));
+          _popupStack.value =
+              _popupStack.value.sublist(0, index + 1);
+          final count = await searchDictionaryResult(
+            searchTerm: text,
+            selectionRect: childRect,
+          );
+          if (count > 0) {
+            item.webViewKey.currentState?.highlightSelection(count);
+          }
+        },
+        onLinkClick: (query) async {
+          _popupStack.value =
+              _popupStack.value.sublist(0, index + 1);
+          await searchDictionaryResult(
+            searchTerm: query,
+            selectionRect: item.selectionRect,
+          );
+        },
+        onMineEntry: onMineFromPopup,
+        onDuplicateCheck: (expression, reading) async {
+          final repo = ref.read(ankiRepositoryProvider);
+          return repo.isDuplicate(expression, reading);
+        },
       ),
     );
   }
