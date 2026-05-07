@@ -2391,24 +2391,11 @@ window.__hibikiIsSelectionScrollLocked = function() {
 };
 
 window.__hibikiRunWithScrollLock = function(fn) {
-  var roots = window.__hibikiGetScrollRoots ? window.__hibikiGetScrollRoots() : [];
-  if (!roots.length) {
-    var fb = document.querySelector('.book-content') || document.scrollingElement || document.documentElement;
-    if (fb) roots = [fb];
-  }
-  var overflows = roots.map(function(el) {
-    var orig = el.style.overflow;
-    el.style.overflow = 'hidden';
-    return { el: el, orig: orig };
-  });
   window.__hibikiSelectionScrollLockCount++;
   var cleaned = false;
   function cleanup() {
     if (cleaned) return;
     cleaned = true;
-    for (var i = 0; i < overflows.length; i++) {
-      overflows[i].el.style.overflow = overflows[i].orig;
-    }
     window.__hibikiSelectionScrollLockCount = Math.max(0, (window.__hibikiSelectionScrollLockCount || 1) - 1);
   }
   try {
