@@ -320,8 +320,11 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
     final termDicts = appModel.termDictionaries;
     final freqDicts = appModel.freqDictionaries;
     final pitchDicts = appModel.pitchDictionaries;
-    final allEmpty =
-        termDicts.isEmpty && freqDicts.isEmpty && pitchDicts.isEmpty;
+    final kanjiDicts = appModel.kanjiDictionaries;
+    final allEmpty = termDicts.isEmpty &&
+        freqDicts.isEmpty &&
+        pitchDicts.isEmpty &&
+        kanjiDicts.isEmpty;
     ScrollController contentController = ScrollController();
 
     return SizedBox(
@@ -345,6 +348,10 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
                   _buildSection(
                     title: t.dictionary_section_term,
                     dictionaries: termDicts,
+                  ),
+                  _buildSection(
+                    title: t.dictionary_section_kanji,
+                    dictionaries: kanjiDicts,
                   ),
                   _buildSection(
                     title: t.dictionary_section_frequency,
