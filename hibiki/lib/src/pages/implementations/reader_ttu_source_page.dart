@@ -339,11 +339,24 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   }
 
   void _captureStableInsets() {
+    final mq = MediaQuery.of(context);
+    final vp = mq.viewPadding;
+    final p = mq.padding;
+    // ignore: avoid_print
+    print('[hibiki-insets] capture: viewPadding.top=${vp.top} viewPadding.bottom=${vp.bottom} '
+        'padding.top=${p.top} padding.bottom=${p.bottom} '
+        'viewInsets=${mq.viewInsets} '
+        'systemGestureInsets=${mq.systemGestureInsets} '
+        'captured=$_stableInsetsCaptured stableTop=$_stableTopInset '
+        'stableBottom=$_stableBottomInset screenH=${mq.size.height} '
+        'devicePixelRatio=${mq.devicePixelRatio}');
     if (!_stableInsetsCaptured) {
-      final vp = MediaQuery.of(context).viewPadding;
       _stableTopInset = vp.top;
       _stableBottomInset = vp.bottom;
       _stableInsetsCaptured = true;
+      // ignore: avoid_print
+      print('[hibiki-insets] SET stableTop=$_stableTopInset '
+          'stableBottom=$_stableBottomInset');
     }
   }
 
@@ -1092,6 +1105,13 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     }
     _lastAppThemeSignature = currentThemeSignature;
     _scheduleFloatingLyricStyleSync();
+
+    // ignore: avoid_print
+    print('[hibiki-layout] build: screenH=${MediaQuery.of(context).size.height} '
+        'stableTop=$_stableTopInset stableBottom=$_stableBottomInset '
+        'chromeH=$_readerChromeHeight hasChrome=$_hasReaderBottomChrome '
+        'bottomReserve=$_readerBottomReserve '
+        'webViewH=${MediaQuery.of(context).size.height - _stableTopInset - _readerBottomReserve}');
 
     return Focus(
       autofocus: true,
@@ -2872,8 +2892,10 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
   range.setStart(offsetNode, result.startOffset - adjustIndex + whitespaceOffset);
   if (isSpaceDelimited) {
     range.expand("word");
-  } else {
+  } else if (lastNode && lastNode.nodeType) {
     range.setEnd(lastNode, endOffset);
+  } else {
+    range.setEnd(offsetNode, Math.min(result.startOffset - adjustIndex + whitespaceOffset + 1, offsetNode.length || 0));
   }
 
   _applySelection(range);
@@ -4491,35 +4513,33 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       left: 0,
       right: 0,
       bottom: 0,
-      child: SizedBox(
-        height: _readerChromeHeight + _stableBottomInset,
-        child: Column(
-          children: [
-            BottomAppBar(
-              height: _readerChromeHeight,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Row(
-                children: [
-                  if (bookUid != null)
-                    IconButton(
-                      icon: const Icon(Icons.headphones),
-                      iconSize: 22,
-                      onPressed: () => _openImportDialog(bookUid),
-                      tooltip: t.audiobook_import,
-                    ),
-                  const Spacer(),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          BottomAppBar(
+            height: _readerChromeHeight,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Row(
+              children: [
+                if (bookUid != null)
                   IconButton(
-                    icon: const Icon(Icons.tune),
-                    iconSize: 20,
-                    onPressed: () => _showReaderSettingsSheet(null),
-                    tooltip: t.reader_settings_label,
+                    icon: const Icon(Icons.headphones),
+                    iconSize: 22,
+                    onPressed: () => _openImportDialog(bookUid),
+                    tooltip: t.audiobook_import,
                   ),
-                ],
-              ),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.tune),
+                  iconSize: 20,
+                  onPressed: () => _showReaderSettingsSheet(null),
+                  tooltip: t.reader_settings_label,
+                ),
+              ],
             ),
-            SizedBox(height: _stableBottomInset),
-          ],
-        ),
+          ),
+          SizedBox(height: _stableBottomInset),
+        ],
       ),
     );
     final ThemeData? overrideTheme = appModel.overrideDictionaryTheme;
@@ -4707,30 +4727,32 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     return ListenableBuilder(
       listenable: Listenable.merge([ctrl, _barThemeNotifier]),
       builder: (context, _) {
+        // ignore: avoid_print
+        print('[hibiki-bar] buildAudiobookBar: chromeH=$_readerChromeHeight '
+            'stableBottom=$_stableBottomInset total=${_readerChromeHeight + _stableBottomInset} '
+            'screenH=${MediaQuery.of(context).size.height} '
+            'viewPadding=${MediaQuery.of(context).viewPadding} '
+            'padding=${MediaQuery.of(context).padding}');
         final barWidget = Positioned(
           left: 0,
           right: 0,
           bottom: 0,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildFollowPill(),
-              SizedBox(
-                height: _readerChromeHeight + _stableBottomInset,
-                child: Column(
-                  children: [
-                    SizedBox(
-                      height: _readerChromeHeight,
-                      child: AudiobookPlayBar(
-                        controller: ctrl,
-                        onOpenSettings: () => _showReaderSettingsSheet(ctrl),
-                      ),
-                    ),
-                    SizedBox(height: _stableBottomInset),
-                  ],
-                ),
-              ),
-            ],
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              // ignore: avoid_print
+              print('[hibiki-measure] audiobar minW=${constraints.minWidth} maxW=${constraints.maxWidth} minH=${constraints.minHeight} maxH=${constraints.maxHeight}');
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildFollowPill(),
+                  AudiobookPlayBar(
+                    controller: ctrl,
+                    onOpenSettings: () => _showReaderSettingsSheet(ctrl),
+                  ),
+                  SizedBox(height: _stableBottomInset),
+                ],
+              );
+            },
           ),
         );
         final ThemeData? overrideTheme = appModel.overrideDictionaryTheme;
