@@ -1140,6 +1140,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
                     top: _stableTopInset,
                     child: ColoredBox(color: _ttuThemeFlutterColor()),
                   ),
+                _buildTopProgressBar(),
                 buildDictionary(),
                 buildAudiobookBar(),
                 buildAudiobookImportButton(),
@@ -1421,6 +1422,88 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       default:
         return const Color(0xFFF9F9F9);
     }
+  }
+
+  bool get _isDarkReaderTheme {
+    switch (appModel.appThemeKey) {
+      case 'gray-theme':
+      case 'dark-theme':
+      case 'black-theme':
+        return true;
+      case 'custom-theme':
+        return appModel.customThemeDark;
+      default:
+        return false;
+    }
+  }
+
+  Widget _buildTopProgressBar() {
+    if (_stableTopInset <= 0 || !_readerContentReady) {
+      return const SizedBox.shrink();
+    }
+    final int section = _currentTtuSection;
+    final int? total = _ttuSectionCount;
+    if (section < 0 || total == null || total <= 0) {
+      return const SizedBox.shrink();
+    }
+    final String? label = _tocLabels[section];
+    final bool dark = _isDarkReaderTheme;
+    final Color fg = dark
+        ? Colors.white.withValues(alpha: 0.7)
+        : Colors.black.withValues(alpha: 0.6);
+    final Color barBg = dark
+        ? Colors.white.withValues(alpha: 0.1)
+        : Colors.black.withValues(alpha: 0.08);
+    final Color barFg = dark
+        ? Colors.white.withValues(alpha: 0.35)
+        : Colors.black.withValues(alpha: 0.25);
+    final double progress = (section + 1) / total;
+
+    return Positioned(
+      left: 0,
+      right: 0,
+      top: 0,
+      height: _stableTopInset,
+      child: ColoredBox(
+        color: _ttuThemeFlutterColor(),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  if (label != null)
+                    Expanded(
+                      child: Text(
+                        label,
+                        style: TextStyle(fontSize: 10, color: fg),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  if (label != null) const SizedBox(width: 8),
+                  Text(
+                    '${section + 1}/$total',
+                    style: TextStyle(fontSize: 10, color: fg),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 2),
+            SizedBox(
+              height: 2,
+              child: LinearProgressIndicator(
+                value: progress,
+                backgroundColor: barBg,
+                valueColor: AlwaysStoppedAnimation<Color>(barFg),
+                minHeight: 2,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   /// 返回注入到 WebView document start 的 CSS，让背景色在任何 JS/CSS 加载前生效，
@@ -2382,15 +2465,29 @@ window.__hibikiIsSelectionScrollLocked = function() {
 };
 
 window.__hibikiRunWithScrollLock = function(fn) {
+  var roots = window.__hibikiGetScrollRoots ? window.__hibikiGetScrollRoots() : [];
+  if (!roots.length) {
+    var fb = document.querySelector('.book-content') || document.scrollingElement || document.documentElement;
+    if (fb) roots = [fb];
+  }
+  var saved = roots.map(function(el) { return { el: el, top: el.scrollTop, left: el.scrollLeft }; });
+  function restore() {
+    for (var i = 0; i < saved.length; i++) {
+      saved[i].el.scrollTop = saved[i].top;
+      saved[i].el.scrollLeft = saved[i].left;
+    }
+  }
   window.__hibikiSelectionScrollLockCount++;
   var cleaned = false;
   function cleanup() {
     if (cleaned) return;
     cleaned = true;
+    restore();
     window.__hibikiSelectionScrollLockCount = Math.max(0, (window.__hibikiSelectionScrollLockCount || 1) - 1);
   }
   try {
     fn();
+    restore();
   } finally {
     setTimeout(cleanup, 150);
   }
@@ -3677,6 +3774,9 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       if (toc.isNotEmpty) {
         _tocLabels = {for (final e in toc) e.index: e.label};
       }
+      if (prev != _currentTtuSection || toc.isNotEmpty) {
+        setState(() {});
+      }
     } catch (e) {
       debugPrint('[hibiki-audiobook] probeTtuApi failed: $e');
     }
@@ -4410,16 +4510,14 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     // 导航完成后的 stale 延迟事件）全部丢弃，不更新 _currentTtuSection。
     if (auto) {
       if (_inFlightNavSection == idx) {
-        _currentTtuSection = idx;
+        setState(() { _currentTtuSection = idx; });
         _navRestoreTimeout?.cancel();
         _readerRestoreNavTimeout?.cancel();
         _readerRestoreNavTimeout = null;
         _readerRestoreNavAttempts = 0;
         unawaited(_applyThenCompleteNav(idx));
       } else if (_inFlightNavSection == null) {
-        // timeout 已清 inFlight，但 ttu 的 sectionChanged 迟到了——
-        // 仍接受并更新 _currentTtuSection，否则后续跨章判定全错。
-        _currentTtuSection = idx;
+        setState(() { _currentTtuSection = idx; });
         _lastSasayakiAppliedSection = -1;
         unawaited(_applySasayakiCuesForSection(idx));
         unawaited(_applyHighlightsForCurrentSection());
@@ -4433,7 +4531,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       );
       return;
     }
-    _currentTtuSection = idx;
+    setState(() { _currentTtuSection = idx; });
     // 用户手动翻章时，废弃正在进行的程序化跳章——否则旧的
     // _applyThenCompleteNav 异步完成后会用错误章节的 cueMap 覆盖当前章。
     if (_inFlightNavSection != null) {
