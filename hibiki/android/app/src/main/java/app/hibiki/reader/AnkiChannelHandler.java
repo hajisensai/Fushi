@@ -55,8 +55,17 @@ public class AnkiChannelHandler {
 
                 switch (call.method) {
                     case "addNote":
-                        addNote(model, deck, fields, tags);
-                        result.success("Added note");
+                        if (fields == null || fields.isEmpty()) {
+                            result.error("INVALID_FIELDS",
+                                "fields is null or empty", null);
+                        } else {
+                            String addError = addNote(model, deck, fields, tags);
+                            if (addError != null) {
+                                result.error("ADD_NOTE_FAILED", addError, null);
+                            } else {
+                                result.success("Added note");
+                            }
+                        }
                         break;
                     case "checkForDuplicates":
                         if (ankiDroid.shouldRequestPermission()) {
@@ -132,12 +141,8 @@ public class AnkiChannelHandler {
         return true;
     }
 
-    private void addNote(String model, String deck,
-                         ArrayList<String> fields, ArrayList<String> tags) {
-        if (fields == null || fields.isEmpty()) {
-            android.util.Log.w("hibiki-anki", "addNote: fields is null or empty");
-            return;
-        }
+    private String addNote(String model, String deck,
+                           ArrayList<String> fields, ArrayList<String> tags) {
         final AddContentApi api = new AddContentApi(activity);
 
         long deckId;
@@ -150,8 +155,7 @@ public class AnkiChannelHandler {
 
         Long modelIdObj = ankiDroid.findModelIdByName(model, fields.size());
         if (modelIdObj == null) {
-            android.util.Log.w("hibiki-anki", "Model not found: " + model);
-            return;
+            return "Note type not found: " + model;
         }
         long modelId = modelIdObj;
 
@@ -161,6 +165,7 @@ public class AnkiChannelHandler {
         }
 
         api.addNote(modelId, deckId, fields.toArray(new String[0]), allTags);
+        return null;
     }
 
     private boolean checkForDuplicates(ArrayList<String> models, String key,

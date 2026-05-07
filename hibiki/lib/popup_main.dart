@@ -26,7 +26,7 @@ void popupMain() {
       ),
     );
 
-    appModel.initialiseForDictionaryPopup();
+    unawaited(appModel.initialiseForDictionaryPopup());
   }, (exception, stack) {
     debugPrint('[Hibiki-popup] uncaught: $exception\n$stack');
   });
