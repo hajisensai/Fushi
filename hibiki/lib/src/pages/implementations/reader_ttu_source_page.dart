@@ -172,6 +172,10 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   bool _hasAudioSlot = false;
   bool _audioSlotResolved = false;
 
+  static const double _readerChromeHeight = 56;
+  double _stableBottomInset = 0;
+  bool _stableBottomInsetCaptured = false;
+
   /// 当前章节的 href（用于 cue 查询和 JS 注解）。
   String _currentChapterHref = '';
 
@@ -324,6 +328,14 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _scheduleFloatingLyricStyleSync(force: true);
+    _captureStableBottomInset();
+  }
+
+  void _captureStableBottomInset() {
+    if (!_stableBottomInsetCaptured) {
+      _stableBottomInset = MediaQuery.of(context).viewPadding.bottom;
+      _stableBottomInsetCaptured = true;
+    }
   }
 
   /// 异步判定当前书是否有已配置音频的 Audiobook 或 SrtBook 记录。
@@ -1054,6 +1066,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         clearDictionaryResult();
       }
       lastOrientation = orientation;
+      _stableBottomInset = MediaQuery.of(context).viewPadding.bottom;
     }
 
     final currentThemeSignature = _appThemeSignature();
@@ -1095,7 +1108,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
               alignment: Alignment.center,
               children: <Widget>[
                 Positioned.fill(
-                  bottom: 56,
+                  bottom: _readerChromeHeight + _stableBottomInset,
                   child: buildBody(),
                 ),
                 if (!_readerContentReady)
@@ -4469,25 +4482,33 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       left: 0,
       right: 0,
       bottom: 0,
-      child: BottomAppBar(
-        height: 56,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        child: Row(
+      child: SizedBox(
+        height: _readerChromeHeight + _stableBottomInset,
+        child: Column(
           children: [
-            if (bookUid != null)
-              IconButton(
-                icon: const Icon(Icons.headphones),
-                iconSize: 22,
-                onPressed: () => _openImportDialog(bookUid),
-                tooltip: t.audiobook_import,
+            BottomAppBar(
+              height: _readerChromeHeight,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Row(
+                children: [
+                  if (bookUid != null)
+                    IconButton(
+                      icon: const Icon(Icons.headphones),
+                      iconSize: 22,
+                      onPressed: () => _openImportDialog(bookUid),
+                      tooltip: t.audiobook_import,
+                    ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.tune),
+                    iconSize: 20,
+                    onPressed: () => _showReaderSettingsSheet(null),
+                    tooltip: t.reader_settings_label,
+                  ),
+                ],
               ),
-            const Spacer(),
-            IconButton(
-              icon: const Icon(Icons.tune),
-              iconSize: 20,
-              onPressed: () => _showReaderSettingsSheet(null),
-              tooltip: t.reader_settings_label,
             ),
+            SizedBox(height: _stableBottomInset),
           ],
         ),
       ),
@@ -4685,9 +4706,20 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
             mainAxisSize: MainAxisSize.min,
             children: [
               _buildFollowPill(),
-              AudiobookPlayBar(
-                controller: ctrl,
-                onOpenSettings: () => _showReaderSettingsSheet(ctrl),
+              SizedBox(
+                height: _readerChromeHeight + _stableBottomInset,
+                child: Column(
+                  children: [
+                    SizedBox(
+                      height: _readerChromeHeight,
+                      child: AudiobookPlayBar(
+                        controller: ctrl,
+                        onOpenSettings: () => _showReaderSettingsSheet(ctrl),
+                      ),
+                    ),
+                    SizedBox(height: _stableBottomInset),
+                  ],
+                ),
               ),
             ],
           ),
