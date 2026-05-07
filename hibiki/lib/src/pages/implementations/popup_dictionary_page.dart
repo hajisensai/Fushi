@@ -39,6 +39,7 @@ class PopupDictionaryPage extends ConsumerStatefulWidget {
 
 class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
   final List<_StackEntry> _stack = [];
+  int _searchGeneration = 0;
 
   static const double _popupPadding = 6.0;
   static const double _popupMaxWidth = 360.0;
@@ -57,6 +58,8 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
   Future<void> _pushSearch(String query, Rect selectionRect) async {
     if (query.trim().isEmpty) return;
 
+    _searchGeneration++;
+    final gen = _searchGeneration;
     final entry = _StackEntry(query: query, selectionRect: selectionRect);
     setState(() => _stack.add(entry));
 
@@ -67,12 +70,11 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
         overrideMaximumTerms: appModel.maximumTerms,
       );
     } finally {
-      if (mounted) {
-        setState(() => entry.isSearching = false);
-      }
+      if (!mounted || !_stack.contains(entry)) return;
+      setState(() => entry.isSearching = false);
     }
 
-    if (!mounted) return;
+    if (!mounted || !_stack.contains(entry)) return;
 
     if (entry.result != null && entry.result!.entries.isNotEmpty) {
       appModel.addToSearchHistory(
@@ -83,18 +85,14 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
     }
   }
 
-  bool _popStack() {
-    if (_stack.length <= 1) return false;
-    setState(() => _stack.removeLast());
-    return true;
-  }
-
   void _popAt(int index) {
     if (index <= 0) return;
+    _searchGeneration++;
     setState(() => _stack.removeRange(index, _stack.length));
   }
 
   Future<void> _close() async {
+    _searchGeneration++;
     await appModel.closeForPopup();
     await PopupChannel.instance.finishPopup();
   }
@@ -125,9 +123,14 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: _stack.length <= 1,
+      canPop: false,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _popStack();
+        if (didPop) return;
+        if (_stack.length > 1) {
+          _popAt(_stack.length - 1);
+        } else {
+          _close();
+        }
       },
       child: Scaffold(
         backgroundColor: Colors.transparent,
@@ -159,17 +162,12 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
 
   Widget _buildLayer(BuildContext context, int index, Size screen) {
     final entry = _stack[index];
-
-    final bool isFirst = index == 0;
     final Rect pos;
 
-    if (isFirst) {
+    if (index == 0) {
       pos = Rect.fromLTWH(0, 0, screen.width, screen.height);
     } else {
-      final parentEntry = _stack[index - 1];
-      final parentPos = isFirst
-          ? Rect.fromLTWH(0, 0, screen.width, screen.height)
-          : _getLayerPosition(index - 1, screen);
+      final parentPos = _getLayerPosition(index - 1, screen);
       final absRect = entry.selectionRect.shift(
           Offset(parentPos.left, parentPos.top));
       pos = _calcPosition(absRect, screen);
@@ -238,15 +236,14 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
       key: entry.webViewKey,
       result: entry.result!,
       onTextSelected: (text, localRect) {
-        final layerPos = _getLayerPosition(index, screen);
-        final absRect = localRect.shift(Offset(layerPos.left, layerPos.top));
-        _stack.sublist(index + 1).forEach((_) {});
         if (_stack.length > index + 1) {
           setState(() {
             _stack.removeRange(index + 1, _stack.length);
           });
         }
-        _pushSearch(text, localRect);
+        final childRect =
+            localRect == Rect.zero ? entry.selectionRect : localRect;
+        _pushSearch(text, childRect);
       },
       onLinkClick: (query) {
         if (_stack.length > index + 1) {
