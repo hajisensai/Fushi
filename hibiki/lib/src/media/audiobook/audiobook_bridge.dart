@@ -899,7 +899,14 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
             r.setStart(node, k);
             r.collapse(true);
             var rect = r.getBoundingClientRect();
-            if (typeof window.__hoshiAlignToRect === 'function') {
+            var __pgInfo = (typeof window.__ttuGetPageInfo === 'function') ? window.__ttuGetPageInfo() : null;
+            if (__pgInfo && __pgInfo.stride === 0) {
+              if (__pgInfo.verticalMode) {
+                window.scrollBy({ left: rect.right - window.innerWidth + 8 });
+              } else {
+                window.scrollBy({ top: rect.top - 8 });
+              }
+            } else if (typeof window.__hoshiAlignToRect === 'function') {
               window.__hoshiAlignToRect(rect);
             } else {
               window.scrollBy(0, rect.top - 16);
