@@ -69,6 +69,8 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
 
   Rect? _pendingSelectionRect;
 
+  int _searchGeneration = 0;
+
   bool get isDictionaryShown => _popupStack.value.isNotEmpty;
 
   Widget? buildPopupAudioControls() => null;
@@ -99,6 +101,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
   }) async {
     overrideMaximumTerms ??= appModel.maximumTerms;
 
+    final gen = ++_searchGeneration;
     _pendingSelectionRect = selectionRect;
 
     try {
@@ -109,6 +112,8 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
         searchWithWildcards: false,
         overrideMaximumTerms: overrideMaximumTerms,
       );
+
+      if (_searchGeneration != gen) return;
 
       appModel.addToDictionaryHistory(result: dictionaryResult);
 
@@ -130,8 +135,10 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
         }
       }
     } finally {
-      _isSearchingNotifier.value = false;
-      _pendingSelectionRect = null;
+      if (_searchGeneration == gen) {
+        _isSearchingNotifier.value = false;
+        _pendingSelectionRect = null;
+      }
     }
   }
 
@@ -177,6 +184,9 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
   }
 
   void clearDictionaryResult() {
+    _searchGeneration++;
+    _pendingSelectionRect = null;
+    _isSearchingNotifier.value = false;
     _popupStack.value = [];
     appModel.currentMediaSource?.clearCurrentSentence();
     appModel.currentMediaSource?.clearExtraData();
@@ -186,41 +196,39 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
   double get popupMaxHeight => 360;
   double get popupPadding => 6;
 
+  late final Listenable _popupListenable =
+      Listenable.merge([_popupStack, _isSearchingNotifier]);
+
   Widget buildDictionary() {
     return Theme(
       data: appModel.overrideDictionaryTheme ?? theme,
-      child: ValueListenableBuilder<List<_PopupStackItem>>(
-        valueListenable: _popupStack,
-        builder: (context, stack, _) {
-          final bool isLoading = _isSearchingNotifier.value;
-          if (stack.isEmpty && !isLoading) return const SizedBox.shrink();
+      child: AnimatedBuilder(
+        animation: _popupListenable,
+        builder: (context, _) {
+          final stack = _popupStack.value;
+          final searching = _isSearchingNotifier.value;
+          if (stack.isEmpty && !searching) return const SizedBox.shrink();
 
-          return ValueListenableBuilder<bool>(
-            valueListenable: _isSearchingNotifier,
-            builder: (context, searching, _) {
-              final currentStack = _popupStack.value;
-              final showLoadingPlaceholder =
-                  searching && currentStack.isEmpty && _pendingSelectionRect != null;
+          final showLoadingPlaceholder =
+              searching && stack.isEmpty && _pendingSelectionRect != null;
 
-              return LayoutBuilder(
-                builder: (context, constraints) {
-                  final screen = Size(constraints.maxWidth, constraints.maxHeight);
-                  return Stack(
-                    children: [
-                      Positioned.fill(
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.translucent,
-                          onTap: clearDictionaryResult,
-                          child: Container(color: Colors.transparent),
-                        ),
-                      ),
-                      if (showLoadingPlaceholder)
-                        _buildLoadingPlaceholder(screen),
-                      for (int i = 0; i < currentStack.length; i++)
-                        _buildPopupLayer(currentStack, i, screen),
-                    ],
-                  );
-                },
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              final screen = Size(constraints.maxWidth, constraints.maxHeight);
+              return Stack(
+                children: [
+                  Positioned.fill(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onTap: clearDictionaryResult,
+                      child: Container(color: Colors.transparent),
+                    ),
+                  ),
+                  if (showLoadingPlaceholder)
+                    _buildLoadingPlaceholder(screen),
+                  for (int i = 0; i < stack.length; i++)
+                    _buildPopupLayer(stack, i, screen),
+                ],
               );
             },
           );
@@ -331,7 +339,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
     return DictionaryPopupWebView(
       key: item.webViewKey,
       result: item.result,
-      onTapOutside: () => _dismissPopupAt(index),
+      onTapOutside: clearDictionaryResult,
       onTextSelected: (text) {
         _popupStack.value = _popupStack.value.sublist(0, index + 1);
         searchDictionaryResult(
