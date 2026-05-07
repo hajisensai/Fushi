@@ -263,6 +263,8 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   /// 生命周期 pause→resume 过渡期间为 true，屏蔽 didChangeMetrics 的位置
   /// 捕获和恢复（此时 viewport 尺寸不稳定，拿到的 offset 不可信）。
   bool _lifecycleTransition = false;
+  Timer? _lifecycleResumeTimer;
+  int _lifecycleResumeToken = 0;
 
   /// 最近一次 _completeNavRestore 的时间戳。用于在 sectionChanged(auto=false)
   /// 中过滤紧接程序化跳章后 ttu 推出的 settle 事件，避免误触 follow auto-off。
@@ -384,6 +386,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     _navRestoreTimeout?.cancel();
     _readerRestoreNavTimeout?.cancel();
     _metricsDebounce?.cancel();
+    _lifecycleResumeTimer?.cancel();
     if (_scrollToNormOffsetCompleter != null &&
         !_scrollToNormOffsetCompleter!.isCompleted) {
       _scrollToNormOffsetCompleter!.complete(false);
@@ -753,6 +756,9 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
 
     if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
       _readingTimeTracker?.stop();
+      _lifecycleResumeTimer?.cancel();
+      _lifecycleResumeTimer = null;
+      _lifecycleResumeToken++;
       _lifecycleTransition = true;
       _metricsDebounce?.cancel();
       _preMetricsPos = null;
@@ -771,26 +777,34 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       _readingTimeTracker?.start();
       FocusScope.of(context).unfocus();
       _focusNode.requestFocus();
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky).then((_) {
-        if (!mounted) return;
-        Future.delayed(const Duration(milliseconds: 400), () {
-          if (!mounted) return;
-          _lifecycleTransition = false;
-          final ReaderViewportPos? pos = _lastSavedPos;
-          if (pos != null &&
-              _controllerInitialised &&
-              !_restoreInFlight &&
-              pos.section >= 0 &&
-              pos.offset >= 0) {
-            AudiobookBridge.scrollToNormOffset(
-              _controller,
-              section: pos.section,
-              offset: pos.offset,
-            ).catchError((_) {});
-          }
-        });
-      });
+      _lifecycleResumeTimer?.cancel();
+      final int myToken = ++_lifecycleResumeToken;
+      unawaited(_restoreAfterLifecycleResume(myToken));
     }
+  }
+
+  Future<void> _restoreAfterLifecycleResume(int token) async {
+    try {
+      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    } catch (_) {}
+    if (!mounted || token != _lifecycleResumeToken) return;
+    _lifecycleResumeTimer = Timer(const Duration(milliseconds: 400), () {
+      _lifecycleResumeTimer = null;
+      if (!mounted || token != _lifecycleResumeToken) return;
+      _lifecycleTransition = false;
+      final ReaderViewportPos? pos = _lastSavedPos;
+      if (pos != null &&
+          _controllerInitialised &&
+          !_restoreInFlight &&
+          pos.section >= 0 &&
+          pos.offset >= 0) {
+        AudiobookBridge.scrollToNormOffset(
+          _controller,
+          section: pos.section,
+          offset: pos.offset,
+        ).catchError((_) {});
+      }
+    });
   }
 
   @override
