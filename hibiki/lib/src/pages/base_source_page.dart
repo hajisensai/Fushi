@@ -6,8 +6,8 @@ import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
-import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:hibiki/utils.dart';
 
 /// A page template which assumes use of [BaseSourcePageState] by which all
@@ -274,49 +274,56 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
   Widget _buildPopupLayer(List<_PopupStackItem> stack, int index, Size screen) {
     final item = stack[index];
     final pos = _calculatePopupPosition(item.selectionRect, screen);
+    final isDark = (appModel.overrideDictionaryTheme ?? theme).brightness ==
+        Brightness.dark;
+    final isTop = index == stack.length - 1;
 
     return Positioned(
       left: pos.left,
       top: pos.top,
       width: pos.width,
       height: pos.height,
-      child: _buildPopupContent(stack, index, screen),
-    );
-  }
-
-  Widget _buildPopupContent(List<_PopupStackItem> stack, int index, Size screen) {
-    final isDark = (appModel.overrideDictionaryTheme ?? theme).brightness ==
-        Brightness.dark;
-    final fillColor = isDark ? Colors.black : Colors.white;
-    final borderColor = isDark
-        ? Colors.white.withValues(alpha: 0.15)
-        : Colors.black.withValues(alpha: 0.18);
-    final isTop = index == stack.length - 1;
-
-    return SwipeDismissWrapper(
-      onDismiss: () => _dismissPopupAt(index),
-      sensitivity: ReaderTtuSource.instance.dismissSwipeSensitivity,
-      child: Container(
-        decoration: BoxDecoration(
-          color: fillColor,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: borderColor, width: 1),
-        ),
-        child: Column(
-          children: [
-            if (index == 0)
-              if (buildPopupAudioControls() case final Widget controls)
-                controls,
-            Expanded(
-              child: Stack(
-                children: [
-                  _buildPopupSearchResult(stack, index, screen),
-                  if (isTop) buildDictionaryLoading(),
-                ],
-              ),
-            ),
-          ],
-        ),
+      child: Stack(
+        children: [
+          DictionaryPopupLayer(
+            result: item.result,
+            webViewKey: item.webViewKey,
+            isDark: isDark,
+            onDismiss: () => _dismissPopupAt(index),
+            onTapOutside: clearDictionaryResult,
+            headerWidget: index == 0 ? buildPopupAudioControls() : null,
+            onTextSelected: (text, localRect) async {
+              final parentPos =
+                  _calculatePopupPosition(item.selectionRect, screen);
+              final childRect = localRect == Rect.zero
+                  ? item.selectionRect
+                  : localRect.shift(Offset(parentPos.left, parentPos.top));
+              _popupStack.value =
+                  _popupStack.value.sublist(0, index + 1);
+              final count = await searchDictionaryResult(
+                searchTerm: text,
+                selectionRect: childRect,
+              );
+              if (count > 0) {
+                item.webViewKey.currentState?.highlightSelection(count);
+              }
+            },
+            onLinkClick: (query) async {
+              _popupStack.value =
+                  _popupStack.value.sublist(0, index + 1);
+              await searchDictionaryResult(
+                searchTerm: query,
+                selectionRect: item.selectionRect,
+              );
+            },
+            onMineEntry: onMineFromPopup,
+            onDuplicateCheck: (expression, reading) async {
+              final repo = ref.read(ankiRepositoryProvider);
+              return repo.isDuplicate(expression, reading);
+            },
+          ),
+          if (isTop) Positioned.fill(child: buildDictionaryLoading()),
+        ],
       ),
     );
   }
@@ -338,69 +345,15 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
     }
   }
 
-  Widget _buildPopupSearchResult(
-      List<_PopupStackItem> stack, int index, Size screen) {
-    final item = stack[index];
-
-    if (item.result.entries.isEmpty) {
-      return buildNoSearchResultsPlaceholderMessage();
-    }
-
-    return DictionaryPopupWebView(
-      key: item.webViewKey,
-      result: item.result,
-      onTapOutside: clearDictionaryResult,
-      onTextSelected: (text, localRect) async {
-        final parentPos = _calculatePopupPosition(item.selectionRect, screen);
-        final childRect = localRect == Rect.zero
-            ? item.selectionRect
-            : localRect.shift(Offset(parentPos.left, parentPos.top));
-
-        _popupStack.value = _popupStack.value.sublist(0, index + 1);
-        final count = await searchDictionaryResult(
-          searchTerm: text,
-          selectionRect: childRect,
-        );
-        if (count > 0) {
-          item.webViewKey.currentState?.highlightSelection(count);
-        }
-      },
-      onLinkClick: (query) async {
-        _popupStack.value = _popupStack.value.sublist(0, index + 1);
-        await searchDictionaryResult(
-          searchTerm: query,
-          selectionRect: item.selectionRect,
-        );
-      },
-      onMineEntry: onMineFromPopup,
-      onDuplicateCheck: (expression, reading) async {
-        final repo = ref.read(ankiRepositoryProvider);
-        return repo.isDuplicate(expression, reading);
-      },
-    );
-  }
 
   Rect _calculatePopupPosition(Rect sel, Size screen) {
-    final double width =
-        (screen.width - popupPadding * 2).clamp(0, popupMaxWidth);
-    final double height = (screen.height * 0.5).clamp(0, popupMaxHeight);
-
-    final double spaceBelow = screen.height - sel.bottom - popupPadding;
-    final double spaceAbove = sel.top - popupPadding;
-    final bool showBelow = spaceBelow >= height || spaceBelow >= spaceAbove;
-
-    double top;
-    if (showBelow) {
-      top = sel.bottom + 4;
-    } else {
-      top = sel.top - 4 - height;
-    }
-    top = top.clamp(popupPadding, screen.height - height - popupPadding);
-
-    double left = sel.left;
-    left = left.clamp(popupPadding, screen.width - width - popupPadding);
-
-    return Rect.fromLTWH(left, top, width, height);
+    return calcPopupPosition(
+      selectionRect: sel,
+      screen: screen,
+      padding: popupPadding,
+      maxWidth: popupMaxWidth,
+      maxHeight: popupMaxHeight,
+    );
   }
 
   bool get dictionaryPopupShown => _popupStack.value.isNotEmpty;

@@ -9,10 +9,9 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/src/anki/anki_models.dart';
 import 'package:hibiki/src/anki/anki_repository.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
-import 'package:hibiki/src/media/sources/reader_ttu_source.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki/src/utils/misc/popup_channel.dart';
-import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:hibiki/utils.dart';
 
 class _StackEntry {
@@ -42,9 +41,9 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
   final List<_StackEntry> _stack = [];
   bool _isClosing = false;
 
-  static const double _popupPadding = 6.0;
-  static const double _popupMaxWidth = 360.0;
-  static const double _popupMaxHeight = 480.0;
+  static const double _padding = 6.0;
+  static const double _maxWidth = 360.0;
+  static const double _maxHeight = 480.0;
 
   AppModel get appModel => ref.read(appProvider);
 
@@ -97,27 +96,21 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
     await PopupChannel.instance.finishPopup();
   }
 
-  Rect _calcPosition(Rect sel, Size screen) {
-    final double width =
-        (screen.width - _popupPadding * 2).clamp(0, _popupMaxWidth);
-    final double height = (screen.height * 0.5).clamp(0, _popupMaxHeight);
-
-    final double spaceBelow = screen.height - sel.bottom - _popupPadding;
-    final double spaceAbove = sel.top - _popupPadding;
-    final bool showBelow = spaceBelow >= height || spaceBelow >= spaceAbove;
-
-    double top;
-    if (showBelow) {
-      top = sel.bottom + 4;
-    } else {
-      top = sel.top - 4 - height;
+  Rect _layerPosition(int index, Size screen) {
+    if (index == 0) {
+      return Rect.fromLTWH(0, 0, screen.width, screen.height);
     }
-    top = top.clamp(_popupPadding, screen.height - height - _popupPadding);
-
-    double left = sel.left;
-    left = left.clamp(_popupPadding, screen.width - width - _popupPadding);
-
-    return Rect.fromLTWH(left, top, width, height);
+    final entry = _stack[index];
+    final parentPos = _layerPosition(index - 1, screen);
+    final absRect =
+        entry.selectionRect.shift(Offset(parentPos.left, parentPos.top));
+    return calcPopupPosition(
+      selectionRect: absRect,
+      screen: screen,
+      padding: _padding,
+      maxWidth: _maxWidth,
+      maxHeight: _maxHeight,
+    );
   }
 
   @override
@@ -148,9 +141,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
   }
 
   Widget _buildStack(BuildContext context, Size screen) {
-    if (_stack.isEmpty) {
-      return const SizedBox.shrink();
-    }
+    if (_stack.isEmpty) return const SizedBox.shrink();
 
     return Stack(
       children: [
@@ -162,32 +153,20 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
 
   Widget _buildLayer(BuildContext context, int index, Size screen) {
     final entry = _stack[index];
-    final Rect pos;
-
-    if (index == 0) {
-      pos = Rect.fromLTWH(0, 0, screen.width, screen.height);
-    } else {
-      final parentPos = _getLayerPosition(index - 1, screen);
-      final absRect = entry.selectionRect.shift(
-          Offset(parentPos.left, parentPos.top));
-      pos = _calcPosition(absRect, screen);
-    }
-
+    final pos = _layerPosition(index, screen);
     final isDark =
         (appModel.overrideDictionaryTheme ?? Theme.of(context)).brightness ==
             Brightness.dark;
-    final fillColor = isDark ? Colors.black : Colors.white;
-    final borderColor = isDark
-        ? Colors.white.withValues(alpha: 0.15)
-        : Colors.black.withValues(alpha: 0.18);
 
     return Positioned(
       left: pos.left,
       top: pos.top,
       width: pos.width,
       height: pos.height,
-      child: SwipeDismissWrapper(
-        sensitivity: ReaderTtuSource.instance.dismissSwipeSensitivity,
+      child: DictionaryPopupLayer(
+        result: entry.isSearching ? null : entry.result,
+        webViewKey: entry.webViewKey,
+        isDark: isDark,
         onDismiss: () {
           if (index == 0) {
             _close();
@@ -195,70 +174,26 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
             _popAt(index);
           }
         },
-        child: Container(
-          decoration: BoxDecoration(
-            color: fillColor,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: borderColor, width: 1),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: _buildEntryContent(entry, index, screen),
-        ),
+        onTextSelected: (text, localRect) {
+          if (_stack.length > index + 1) {
+            setState(() => _stack.removeRange(index + 1, _stack.length));
+          }
+          final childRect =
+              localRect == Rect.zero ? entry.selectionRect : localRect;
+          _pushSearch(text, childRect);
+        },
+        onLinkClick: (query) {
+          if (_stack.length > index + 1) {
+            setState(() => _stack.removeRange(index + 1, _stack.length));
+          }
+          _pushSearch(query, entry.selectionRect);
+        },
+        onMineEntry: _onMineEntry,
+        onDuplicateCheck: (expression, reading) async {
+          final repo = ref.read(ankiRepositoryProvider);
+          return repo.isDuplicate(expression, reading);
+        },
       ),
-    );
-  }
-
-  Rect _getLayerPosition(int index, Size screen) {
-    if (index == 0) {
-      return Rect.fromLTWH(0, 0, screen.width, screen.height);
-    }
-    final entry = _stack[index];
-    final parentPos = _getLayerPosition(index - 1, screen);
-    final absRect =
-        entry.selectionRect.shift(Offset(parentPos.left, parentPos.top));
-    return _calcPosition(absRect, screen);
-  }
-
-  Widget _buildEntryContent(_StackEntry entry, int index, Size screen) {
-    if (entry.isSearching) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    if (entry.result == null || entry.result!.entries.isEmpty) {
-      return Center(
-        child: JidoujishoPlaceholderMessage(
-          icon: Icons.search_off,
-          message: t.no_search_results,
-        ),
-      );
-    }
-
-    return DictionaryPopupWebView(
-      key: entry.webViewKey,
-      result: entry.result!,
-      onTextSelected: (text, localRect) {
-        if (_stack.length > index + 1) {
-          setState(() {
-            _stack.removeRange(index + 1, _stack.length);
-          });
-        }
-        final childRect =
-            localRect == Rect.zero ? entry.selectionRect : localRect;
-        _pushSearch(text, childRect);
-      },
-      onLinkClick: (query) {
-        if (_stack.length > index + 1) {
-          setState(() {
-            _stack.removeRange(index + 1, _stack.length);
-          });
-        }
-        _pushSearch(query, entry.selectionRect);
-      },
-      onMineEntry: _onMineEntry,
-      onDuplicateCheck: (expression, reading) async {
-        final repo = ref.read(ankiRepositoryProvider);
-        return repo.isDuplicate(expression, reading);
-      },
     );
   }
 
