@@ -57,6 +57,8 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
       }
     }
 
+    if (!mounted) return;
+
     if (_result != null && _result!.entries.isNotEmpty) {
       appModel.addToSearchHistory(
         historyKey: 'DictionaryMediaType',

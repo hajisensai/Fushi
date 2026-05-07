@@ -90,6 +90,7 @@ public class AnkiChannelHandler {
                         break;
                     case "addDefaultModel":
                         addDefaultModel();
+                        result.success(null);
                         break;
                     case "requestAnkidroidPermissions":
                         if (ankiDroid.shouldRequestPermission()) {
@@ -98,10 +99,6 @@ public class AnkiChannelHandler {
                         result.success(true);
                         break;
                     case "addFileToMedia":
-                        System.out.println(filename);
-                        System.out.println(preferredName);
-                        System.out.println(mimeType);
-
                         File file = new File(filename);
                         Uri fileUri = FileProvider.getUriForFile(
                             activity, BuildConfig.APPLICATION_ID + ".provider", file);
@@ -147,16 +144,17 @@ public class AnkiChannelHandler {
             deckId = api.addNewDeck(deck);
         }
 
-        long modelId = ankiDroid.findModelIdByName(model, fields.size());
+        Long modelIdObj = ankiDroid.findModelIdByName(model, fields.size());
+        if (modelIdObj == null) {
+            android.util.Log.w("hibiki-anki", "Model not found: " + model);
+            return;
+        }
+        long modelId = modelIdObj;
 
         Set<String> allTags = new HashSet<>(Arrays.asList("Yuuna"));
         allTags.addAll(tags);
 
         api.addNote(modelId, deckId, fields.toArray(new String[fields.size()]), allTags);
-
-        System.out.println("Added note via flutter_ankidroid_api");
-        System.out.println("Model: " + modelId);
-        System.out.println("Deck: " + deckId);
     }
 
     private boolean checkForDuplicates(ArrayList<String> models, String key,
