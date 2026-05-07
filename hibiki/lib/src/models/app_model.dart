@@ -1217,6 +1217,101 @@ class AppModel with ChangeNotifier {
     }
   }
 
+  Future<void> initialiseForDictionaryPopup() async {
+    try {
+      debugPrint('[Hibiki-popup] init: PackageInfo + DeviceInfo');
+      _packageInfo = await PackageInfo.fromPlatform();
+      _androidDeviceInfo = await DeviceInfoPlugin().androidInfo;
+
+      debugPrint('[Hibiki-popup] init: directories');
+      _temporaryDirectory = await getTemporaryDirectory();
+      _appDirectory = await getApplicationDocumentsDirectory();
+      _databaseDirectory = await getApplicationSupportDirectory();
+
+      debugPrint('[Hibiki-popup] init: Drift database');
+      _database = HibikiDatabase(_databaseDirectory.path);
+
+      _prefCache.addAll(await _database.getAllPrefs());
+
+      final dictRows = await _database.getAllDictionaryMetadata();
+      _dictionariesCache = dictRows.map(_rowToDictionary).toList()
+        ..sort((a, b) => a.order.compareTo(b.order));
+
+      _searchHistoryCache.clear();
+      final shRows = await _database.getAllSearchHistoryItems();
+      for (final row in shRows) {
+        _searchHistoryCache
+            .putIfAbsent(row.historyKey, () => [])
+            .add(row.searchTerm);
+      }
+
+      _dictionaryHistoryResults.clear();
+      final histRows = await _database.getAllDictionaryHistory();
+      for (final row in histRows) {
+        try {
+          _dictionaryHistoryResults
+              .add(DictionarySearchResult.fromJson(row.resultJson));
+        } catch (e) {
+          debugPrint('[Hibiki-popup] skipping corrupted dictionary history: $e');
+        }
+      }
+
+      _browserDirectory = Directory(path.join(appDirectory.path, 'browser'));
+      _thumbnailsDirectory =
+          Directory(path.join(appDirectory.path, 'thumbnails'));
+      _dictionaryResourceDirectory =
+          Directory(path.join(appDirectory.path, 'dictionaryResources'));
+      _dictionaryImportWorkingDirectory = Directory(
+          path.join(appDirectory.path, 'dictionaryImportWorkingDirectory'));
+      _exportDirectory = await prepareFallbackHibikiDirectory();
+      _alternateExportDirectory = _exportDirectory;
+      _webArchiveDirectory =
+          Directory(path.join(appDirectory.path, 'webArchive'));
+
+      thumbnailsDirectory.createSync();
+      dictionaryImportWorkingDirectory.createSync();
+      dictionaryResourceDirectory.createSync();
+      _rebuildDictPathsCache();
+
+      if (localAudioEnabled && localAudioDbPath.isNotEmpty) {
+        final storedPath = localAudioDbPath;
+        final internalPath =
+            path.join(_databaseDirectory.path, 'local_audio.db');
+        final storedExists = await File(storedPath).exists();
+        final internalExists = await File(internalPath).exists();
+        if (storedExists) {
+          TtsChannel.instance.setLocalAudioDb(storedPath);
+        } else if (internalExists) {
+          TtsChannel.instance.setLocalAudioDb(internalPath);
+        }
+      }
+
+      populateLanguages();
+      populateLocales();
+      LocaleSettings.setLocaleRaw(appLocale.toLanguageTag());
+      populateMediaTypes();
+      populateMediaSources();
+      populateDictionaryFormats();
+      populateEnhancements();
+
+      await targetLanguage.initialise();
+
+      for (Field field in globalFields) {
+        for (Enhancement enhancement in enhancements[field]!.values) {
+          await enhancement.initialise();
+        }
+      }
+
+      debugPrint('[Hibiki-popup] init: DONE');
+      _isInitialised = true;
+      notifyListeners();
+    } catch (e, stack) {
+      debugPrint('[Hibiki-popup] init FAILED: $e\n$stack');
+      _initError = '$e';
+      notifyListeners();
+    }
+  }
+
   // ── sync pref helpers (backed by in-memory cache) ───────────────────
 
   dynamic _getPref(String key, {dynamic defaultValue}) {
@@ -3209,6 +3304,18 @@ class AppModel with ChangeNotifier {
     databaseCloseNotifier.notifyListeners();
     await _database.close();
     FlutterExitApp.exitApp();
+  }
+
+  Future<void> closeForPopup() async {
+    databaseCloseNotifier.notifyListeners();
+    await _database.close();
+    HoshiDicts.disposeInstance();
+  }
+
+  Future<void> moveToBack() async {
+    try {
+      await SystemNavigator.pop();
+    } catch (_) {}
   }
 
   /// Get whether or not the transcript should show play/pause.

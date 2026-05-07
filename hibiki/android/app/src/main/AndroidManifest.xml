@@ -60,9 +60,21 @@
                 <action android:name="android.intent.action.SEARCH" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
+        </activity>
+        <activity
+            android:name=".PopupDictActivity"
+            android:theme="@style/PopupDictTheme"
+            android:taskAffinity="app.hibiki.reader.popup"
+            android:excludeFromRecents="true"
+            android:autoRemoveFromRecents="true"
+            android:launchMode="singleTop"
+            android:exported="true"
+            android:hardwareAccelerated="true"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.PROCESS_TEXT" />
-                <data android:mimeType="text/plain"/>
+                <data android:mimeType="text/plain" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>

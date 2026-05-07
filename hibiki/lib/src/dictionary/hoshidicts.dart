@@ -208,6 +208,11 @@ class HoshiDicts {
     initialize(paths);
   }
 
+  static void disposeInstance() {
+    _instance?.dispose();
+    _instance = null;
+  }
+
   static Map<String, String> get dictionaryStyles => _stylesCache;
 
   static void _rebuildStylesCache() {

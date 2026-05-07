@@ -16,24 +16,18 @@ import io.flutter.embedding.engine.FlutterEngine;
 import io.flutter.plugin.common.MethodChannel;
 
 import android.provider.Settings;
-import android.media.AudioAttributes;
-import android.media.MediaPlayer;
-import android.speech.tts.TextToSpeech;
-import java.util.Locale;
-
-import com.ichi2.anki.FlashCardsContract;
-import com.ichi2.anki.api.AddContentApi;
-import android.content.ContentValues;
 import android.content.SharedPreferences;
 import android.graphics.drawable.ColorDrawable;
 import androidx.core.content.FileProvider;
-import android.content.ContentResolver;
 
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
+import java.util.TreeSet;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -42,51 +36,30 @@ import java.io.FileOutputStream;
 import java.io.InputStreamReader;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.TreeSet;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
-import android.provider.DocumentsContract;
-import android.database.Cursor;
 import androidx.documentfile.provider.DocumentFile;
 
-import com.ichi2.anki.api.NoteInfo;
 import com.ryanheise.audioservice.AudioServiceActivity;
 import android.content.Context;
 import android.content.res.Configuration;
-import android.database.sqlite.SQLiteDatabase;
 
 public class MainActivity extends AudioServiceActivity {
-    private static final String ANKIDROID_CHANNEL = "app.hibiki.reader/anki";
     private static final String VOLUME_KEY_CHANNEL = "app.hibiki.reader/volume_keys";
     private static final String SAF_CHANNEL = "app.hibiki.reader/saf";
-    private static final String TTS_CHANNEL = "app.hibiki.reader/tts";
     private static final String UPDATE_CHANNEL = "app.hibiki.reader/update";
     private static final String FONTS_CHANNEL = "app.hibiki.reader/fonts";
     private static final String FLOATING_LYRIC_CHANNEL = "app.hibiki.reader/floating_lyric";
     private static final String SPLASH_CHANNEL = "app.hibiki.reader/splash";
     private static final String SPLASH_PREFS = "hibiki_splash";
-    private static final int AD_PERM_REQUEST = 0;
     private static final int SAF_PICK_DIR_REQUEST = 1001;
     private static MethodChannel floatingLyricChannel;
 
     private Activity context;
-    private AnkiDroidHelper mAnkiDroid;
+    private AnkiChannelHandler ankiChannelHandler;
+    private TtsChannelHandler ttsChannelHandler;
     private MethodChannel.Result pendingSafResult;
     private String pendingSafDestPath;
-    private TextToSpeech tts;
-    private boolean ttsReady = false;
-    private MediaPlayer mediaPlayer;
-    private volatile SQLiteDatabase localAudioDb;
-    private String localAudioDbPath;
-    private final Object dbLock = new Object();
     private final ExecutorService ioExecutor = Executors.newFixedThreadPool(2);
-    private final ExecutorService dbSetupExecutor = Executors.newSingleThreadExecutor();
-    private volatile java.util.concurrent.Future<?> indexFuture;
 
     // Reader opens this gate when volume-key page turning is enabled so
     // dispatchKeyEvent swallows VOLUME_UP/DOWN and forwards them to Dart.
@@ -123,74 +96,19 @@ public class MainActivity extends AudioServiceActivity {
         }
         super.onCreate(savedInstanceState);
         isAppRunning = false;
-        
+
         context = MainActivity.this;
-        // Create the example data
-        mAnkiDroid = new AnkiDroidHelper(context);
-
-        tts = new TextToSpeech(context, status -> {
-            if (status == TextToSpeech.SUCCESS) {
-                int langResult = tts.setLanguage(Locale.JAPAN);
-                ttsReady = (langResult != TextToSpeech.LANG_MISSING_DATA
-                        && langResult != TextToSpeech.LANG_NOT_SUPPORTED);
-            }
-        });
-    }
-
-    /** Must be called while holding dbLock. Waits for index task, then closes DB. */
-    private void closeAudioDbLocked() {
-        if (indexFuture != null) {
-            try {
-                indexFuture.get(10, java.util.concurrent.TimeUnit.SECONDS);
-            } catch (Exception ignored) {}
-            indexFuture = null;
-        }
-        if (localAudioDb != null) {
-            localAudioDb.close();
-            localAudioDb = null;
-        }
+        ankiChannelHandler = new AnkiChannelHandler(context);
+        ttsChannelHandler = new TtsChannelHandler(context);
     }
 
     @Override
     protected void onDestroy() {
-        dbSetupExecutor.shutdown();
-        try {
-            dbSetupExecutor.awaitTermination(12, java.util.concurrent.TimeUnit.SECONDS);
-        } catch (InterruptedException ignored) {}
-        synchronized (dbLock) {
-            closeAudioDbLocked();
+        if (ttsChannelHandler != null) {
+            ttsChannelHandler.destroy();
         }
         ioExecutor.shutdownNow();
-        if (mediaPlayer != null) {
-            mediaPlayer.release();
-            mediaPlayer = null;
-        }
-        if (tts != null) {
-            tts.shutdown();
-            tts = null;
-        }
         super.onDestroy();
-    }
-
-    private boolean requireAnkiPermission(MethodChannel.Result result) {
-        if (mAnkiDroid.shouldRequestPermission()) {
-            mAnkiDroid.requestPermission(this, AD_PERM_REQUEST);
-            result.error("PERMISSION_DENIED",
-                "AnkiDroid permission not granted. Please grant and retry.",
-                null);
-            return false;
-        }
-        return true;
-    }
-
-    private boolean deckExists(String deck) {
-        Long deckId = mAnkiDroid.findDeckIdByName(deck);
-        return (deckId != null);
-    }
-
-    private boolean modelExists(String model) {
-        Long deckId = mAnkiDroid.findModelIdByName(model, 17);
-        return (deckId != null);
     }
 
     private static boolean isAppRunning;
@@ -204,91 +122,6 @@ public class MainActivity extends AudioServiceActivity {
         new Handler(Looper.getMainLooper()).post(() -> {
             floatingLyricChannel.invokeMethod(method, arguments);
         });
-    }
-
-    public void addDefaultModel() {
-        final AddContentApi api = new AddContentApi(context);
-
-        long modelId;
-        if (modelExists("Lapis")) {
-            modelId = mAnkiDroid.findModelIdByName("Lapis", 17);
-        } else {
-            modelId = api.addNewCustomModel("Lapis",
-                new String[] {
-                    "Term", "Reading", "Furigana", "Sentence",
-                    "Cloze Before", "Cloze Inside", "Cloze After",
-                    "Meaning", "Expanded Meaning", "Collapsed Meaning",
-                    "Notes", "Context", "Frequency", "Pitch Accent",
-                    "Image", "Term Audio", "Sentence Audio",
-                },
-                new String[] {
-                    "Lapis"
-                },
-                new String[] {
-                    "<div id=\"word\">{{Term}}</div>"
-                },
-                new String[] {
-                    "<div id=\"word\">{{#Furigana}}{{furigana:Furigana}}{{/Furigana}}{{^Furigana}}{{Term}}{{/Furigana}}</div>{{#Pitch Accent}}{{Pitch Accent}}{{/Pitch Accent}}\n{{#Image}}<div class=\"image\">{{Image}}</div>{{/Image}}\n{{#Term Audio}}{{Term Audio}}{{/Term Audio}}{{#Sentence Audio}}{{Sentence Audio}}{{/Sentence Audio}}\n<div id=\"sentence\">{{#Cloze Inside}}{{Cloze Before}}<span class=\"cloze\">{{Cloze Inside}}</span>{{Cloze After}}{{/Cloze Inside}}{{^Cloze Inside}}{{Sentence}}{{/Cloze Inside}}</div>\n{{#Meaning}}<p><small>{{Meaning}}</small></p>{{/Meaning}}\n{{#Expanded Meaning}}<p><small>{{Expanded Meaning}}</small></p>{{/Expanded Meaning}}{{#Collapsed Meaning}}<details><summary></summary><p><small>{{Collapsed Meaning}}</small></p></details><br>\n{{/Collapsed Meaning}}"
-                },
-                ".card {\n  font-family: \"Helvetica Neue\", Arial, sans-serif;\n  font-size: 16px;\n  text-align: center;\n  color: #333333;\n  background-color: #F6F6F6;\n  border-radius: 12px;\n  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.2);\n  padding: 24px;\n  margin: 12px;\n  border: 1px solid #D9D9D9;\n}\n\n#word {\n  font-size: 30px;\n  font-weight: bold;\n  margin-bottom: 16px;\n}\n\n.details-summary {\n  cursor: pointer;\n  font-size: 16px;\n  text-shadow: 1px 1px #ffffff;\n  display: flex;\n  justify-content: space-between;\n  align-items: center;\n  margin-bottom: 16px;\n}\n\n.details-summary:hover {\n  color: #6495ED;\n}\n\n.details-summary:hover .arrow {\n  transform: translateX(4px);\n}\n\n.arrow {\n  fill: #777777;\n  transition: transform 0.2s ease-in-out;\n  margin-right: 8px;\n}\n\n.image img {\n  max-width: 100%;\n  height: 150px;\n  border-radius: 12px;\n  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.2);\n  margin-top: 8px;\n  transition: height 0.2s ease-in-out;\n}\n\n.image:hover img {\n  height: auto;\n}\n\n.furigana {\n  font-size: 22px;\n  font-weight: bold;\n  line-height: 1.4;\n  margin-bottom: 16px;\n  text-shadow: 1px 1px #ffffff;\n}\n\n.meaning {\n  font-size: 18px;\n  line-height: 1.6;\n  margin-bottom: 16px;\n  text-shadow: 1px 1px #ffffff;\n}\n\n.cloze {\n  font-weight: 900\n}\n\n#sentence {\n  font-size: 20px;\n  line-height: 1.6;\n  margin-top: 16px;\n} \n\n.pitch {\n  border-top: solid red 2px;\n  padding-top: 1px;\n}\n\n.pitch_end {\n  border-color: red;\n  border-right: solid red 2px;\n  border-top: solid red 2px;  \n  line-height: 1px;\n  margin-right: 1px;\n  padding-right: 1px;\n  padding-top:1px;\n}",
-                    null,
-                    null
-                    );
-        }
-    }
-
-    private boolean checkForDuplicates(ArrayList<String> models, String key,
-                                       String reading, ArrayList<Integer> readingFieldIndices) {
-        final AddContentApi api = new AddContentApi(context);
-        for (int i = 0; i < models.size(); i++) {
-            String model = models.get(i);
-            Long mid = mAnkiDroid.findModelIdByName(model, 1);
-            if (mid == null) {
-                continue;
-            }
-            List<NoteInfo> notes = api.findDuplicateNotes(mid, key);
-            if (notes.isEmpty()) {
-                continue;
-            }
-            if (reading == null || reading.isEmpty()) {
-                return true;
-            }
-            int readingIdx = (readingFieldIndices != null && i < readingFieldIndices.size())
-                    ? readingFieldIndices.get(i) : -1;
-            if (readingIdx < 0) {
-                return true;
-            }
-            for (NoteInfo note : notes) {
-                String[] fields = note.getFields();
-                if (readingIdx < fields.length && reading.equals(fields[readingIdx])) {
-                    return true;
-                }
-            }
-        }
-
-        return false;
-    }
-
-    private void addNote(String model, String deck, ArrayList<String> fields, ArrayList<String> tags) {
-        final AddContentApi api = new AddContentApi(context);
-
-        long deckId;
-        if (deckExists(deck)) {
-            deckId = mAnkiDroid.findDeckIdByName(deck);
-        } else {
-            deckId = api.addNewDeck(deck);
-        }
-
-        long modelId = mAnkiDroid.findModelIdByName(model, fields.size());
-       
-        Set<String> allTags = new HashSet<>(Arrays.asList("Yuuna"));
-        allTags.addAll(tags);
-
-        api.addNote(modelId, deckId, fields.toArray(new String[fields.size()]), allTags);
-
-        System.out.println("Added note via flutter_ankidroid_api");
-        System.out.println("Model: " + modelId);
-        System.out.println("Deck: " + deckId);
     }
 
     @Override
@@ -372,100 +205,8 @@ public class MainActivity extends AudioServiceActivity {
             }
         });
 
-        new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), ANKIDROID_CHANNEL)
-            .setMethodCallHandler(
-                (call, result) -> {
-                    final String model = call.argument("model");
-                    final String deck = call.argument("deck");
-                    final String key = call.argument("key");
-                    final String reading = call.argument("reading");
-                    final ArrayList<Integer> readingFieldIndices = call.argument("readingFieldIndices");
-                    final ArrayList<String> fields = call.argument("fields");
-                    final ArrayList<String> tags = call.argument("tags");
-                    final ArrayList<String> models = call.argument("models");
-
-                    final String filename = call.argument("filename");
-                    final String preferredName = call.argument("preferredName");
-                    final String mimeType = call.argument("mimeType");
-
-                    final AddContentApi api = new AddContentApi(context);
-
-                    switch (call.method) {
-                        case "addNote":
-                            addNote(model, deck, fields, tags);
-                            result.success("Added note");
-                            break;
-                        case "checkForDuplicates":
-                            if (mAnkiDroid.shouldRequestPermission()) {
-                                result.success(false);
-                                return;
-                            } else {
-                                new Handler(Looper.getMainLooper()).post(new Runnable() {
-                                @Override
-                                public void run() {
-                                    result.success(checkForDuplicates(models, key, reading, readingFieldIndices));
-                                }
-                                });
-                            }
-                            break;
-                        case "getDecks":
-                            if (requireAnkiPermission(result)) {
-                                result.success(api.getDeckList());
-                            }
-                            break;
-                        case "getModelList":
-                            if (requireAnkiPermission(result)) {
-                                result.success(api.getModelList());
-                            }
-                            break;
-                        case "getFieldList":
-                            if (requireAnkiPermission(result)) {
-                                Long mid = mAnkiDroid.findModelIdByName(model, 1);
-                                if (mid == null) {
-                                    result.error("MODEL_NOT_FOUND",
-                                        "Note type not found: " + model, null);
-                                } else {
-                                    result.success(Arrays.asList(api.getFieldList(mid)));
-                                }
-                            }
-                            break;
-                        case "addDefaultModel":
-                            addDefaultModel();
-                            break;
-                        case "requestAnkidroidPermissions":
-                            if (mAnkiDroid.shouldRequestPermission()) {
-                                mAnkiDroid.requestPermission(MainActivity.this, AD_PERM_REQUEST);
-                            }
-                            result.success(true);
-                            break;
-                        case "addFileToMedia":
-                            System.out.println(filename);
-                            System.out.println(preferredName);
-                            System.out.println(mimeType);
-
-                            // Workaround from KamWithK
-                            // https://github.com/ankidroid/Anki-Android/issues/10335
-  
-                            File file = new File(filename);
-
-                            Uri file_uri = FileProvider.getUriForFile(context, BuildConfig.APPLICATION_ID + ".provider", file);
-                            context.grantUriPermission("com.ichi2.anki", file_uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
-
-                            ContentValues contentValues = new ContentValues();
-                            contentValues.put(FlashCardsContract.AnkiMedia.FILE_URI, file_uri.toString());
-                            contentValues.put(FlashCardsContract.AnkiMedia.PREFERRED_NAME, preferredName);
-
-                            ContentResolver contentResolver = context.getContentResolver();
-                            Uri returnUri = contentResolver.insert(FlashCardsContract.AnkiMedia.CONTENT_URI, contentValues);
-
-                            result.success(new File(returnUri.getPath()).toString().substring(1));
-
-                            break;
-                        default:
-                            result.notImplemented();
-                    }
-                }
-            );
+        ankiChannelHandler.register(flutterEngine);
+        ttsChannelHandler.register(flutterEngine);
 
         new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), SAF_CHANNEL)
             .setMethodCallHandler((call, result) -> {
@@ -480,357 +221,6 @@ public class MainActivity extends AudioServiceActivity {
                         pendingSafDestPath = destPath;
                         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
                         startActivityForResult(intent, SAF_PICK_DIR_REQUEST);
-                        break;
-                    }
-                    default:
-                        result.notImplemented();
-                }
-            });
-
-        new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), TTS_CHANNEL)
-            .setMethodCallHandler((call, result) -> {
-                switch (call.method) {
-                    case "speak": {
-                        String text = call.argument("text");
-                        String locale = call.argument("locale");
-                        if (text == null || text.isEmpty()) {
-                            result.success(false);
-                            return;
-                        }
-                        if (!ttsReady) {
-                            result.success(false);
-                            return;
-                        }
-                        if (locale != null && !locale.isEmpty()) {
-                            String[] parts = locale.split("-");
-                            Locale loc = parts.length >= 2
-                                    ? new Locale(parts[0], parts[1])
-                                    : new Locale(parts[0]);
-                            tts.setLanguage(loc);
-                        }
-                        tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "hibiki_lookup");
-                        result.success(true);
-                        break;
-                    }
-                    case "ttsToFile": {
-                        String text = call.argument("text");
-                        String locale = call.argument("locale");
-                        String outputPath = call.argument("outputPath");
-                        if (text == null || text.isEmpty() || outputPath == null) {
-                            result.success(null);
-                            return;
-                        }
-                        if (!ttsReady) {
-                            result.success(null);
-                            return;
-                        }
-                        if (locale != null && !locale.isEmpty()) {
-                            String[] parts = locale.split("-");
-                            Locale loc = parts.length >= 2
-                                    ? new Locale(parts[0], parts[1])
-                                    : new Locale(parts[0]);
-                            tts.setLanguage(loc);
-                        }
-                        tts.setOnUtteranceProgressListener(new android.speech.tts.UtteranceProgressListener() {
-                            @Override public void onStart(String utteranceId) {}
-                            @Override public void onDone(String utteranceId) {
-                                tts.setOnUtteranceProgressListener(null);
-                                new Handler(Looper.getMainLooper()).post(() -> result.success(outputPath));
-                            }
-                            @Override public void onError(String utteranceId) {
-                                tts.setOnUtteranceProgressListener(null);
-                                new Handler(Looper.getMainLooper()).post(() -> result.success(null));
-                            }
-                        });
-                        File outFile = new File(outputPath);
-                        int r = tts.synthesizeToFile(text, null, outFile, "hibiki_tts_file");
-                        if (r != TextToSpeech.SUCCESS) {
-                            tts.setOnUtteranceProgressListener(null);
-                            result.success(null);
-                        }
-                        break;
-                    }
-                    case "stop": {
-                        if (ttsReady) tts.stop();
-                        if (mediaPlayer != null) {
-                            mediaPlayer.stop();
-                            mediaPlayer.release();
-                            mediaPlayer = null;
-                        }
-                        result.success(true);
-                        break;
-                    }
-                    case "playUrl": {
-                        String url = call.argument("url");
-                        if (url == null || url.isEmpty()) {
-                            result.success(false);
-                            return;
-                        }
-                        if (mediaPlayer != null) {
-                            mediaPlayer.stop();
-                            mediaPlayer.release();
-                            mediaPlayer = null;
-                        }
-                        try {
-                            mediaPlayer = new MediaPlayer();
-                            mediaPlayer.setAudioAttributes(
-                                new AudioAttributes.Builder()
-                                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                                    .build()
-                            );
-                            mediaPlayer.setDataSource(url);
-                            mediaPlayer.setOnPreparedListener(mp -> mp.start());
-                            mediaPlayer.setOnCompletionListener(mp -> {
-                                mp.release();
-                                mediaPlayer = null;
-                            });
-                            mediaPlayer.setOnErrorListener((mp, what, extra) -> {
-                                mp.release();
-                                mediaPlayer = null;
-                                return true;
-                            });
-                            mediaPlayer.prepareAsync();
-                            result.success(true);
-                        } catch (Exception e) {
-                            android.util.Log.w("hibiki-audio", "playUrl failed", e);
-                            result.success(false);
-                        }
-                        break;
-                    }
-                    case "setLocalAudioDb": {
-                        String dbPath = call.argument("path");
-                        dbSetupExecutor.execute(() -> {
-                            synchronized (dbLock) {
-                                closeAudioDbLocked();
-                                localAudioDbPath = dbPath;
-                                if (dbPath != null && !dbPath.isEmpty()) {
-                                    try {
-                                        File dbFile = new File(dbPath);
-                                        if (dbFile.exists()) {
-                                            localAudioDb = SQLiteDatabase.openDatabase(
-                                                dbPath, null, SQLiteDatabase.OPEN_READWRITE | SQLiteDatabase.NO_LOCALIZED_COLLATORS);
-                                            if (!localAudioDb.enableWriteAheadLogging()) {
-                                                android.util.Log.w("hibiki-audio", "WAL mode failed, queries may block during index creation");
-                                            }
-                                            final SQLiteDatabase db = localAudioDb;
-                                            indexFuture = ioExecutor.submit(() -> {
-                                                try {
-                                                    if (db.isOpen()) {
-                                                        db.execSQL(
-                                                            "CREATE INDEX IF NOT EXISTS idx_entries_expr_read ON entries(expression, reading)");
-                                                        db.execSQL(
-                                                            "CREATE INDEX IF NOT EXISTS idx_android_file_source ON android(file, source)");
-                                                    }
-                                                } catch (Exception e) {
-                                                    android.util.Log.w("hibiki-audio", "Index creation skipped", e);
-                                                }
-                                            });
-                                            runOnUiThread(() -> result.success(true));
-                                        } else {
-                                            runOnUiThread(() -> result.success(false));
-                                        }
-                                    } catch (Exception e) {
-                                        android.util.Log.e("hibiki-audio", "Failed to open local audio db", e);
-                                        runOnUiThread(() -> result.success(false));
-                                    }
-                                } else {
-                                    runOnUiThread(() -> result.success(true));
-                                }
-                            }
-                        });
-                        break;
-                    }
-                    case "queryLocalAudio": {
-                        String expression = call.argument("expression");
-                        String reading = call.argument("reading");
-                        if (localAudioDb == null || expression == null) {
-                            result.success(null);
-                            return;
-                        }
-                        ioExecutor.execute(() -> {
-                            synchronized (dbLock) {
-                                SQLiteDatabase db = localAudioDb;
-                                if (db == null || !db.isOpen()) {
-                                    new Handler(Looper.getMainLooper()).post(() -> result.success(null));
-                                    return;
-                                }
-                                Cursor cursor = null;
-                                try {
-                                    cursor = db.rawQuery(
-                                        "SELECT file, source FROM entries WHERE expression = ? AND reading = ? LIMIT 1",
-                                        new String[]{expression, reading != null ? reading : ""});
-                                    if (cursor == null || !cursor.moveToFirst()) {
-                                        if (cursor != null) cursor.close();
-                                        cursor = db.rawQuery(
-                                            "SELECT file, source FROM entries WHERE expression = ? LIMIT 1",
-                                            new String[]{expression});
-                                    }
-                                    if (cursor != null && cursor.moveToFirst()) {
-                                        String file = cursor.getString(0);
-                                        String source = cursor.getString(1);
-                                        Map<String, String> info = new HashMap<>();
-                                        info.put("file", file);
-                                        info.put("source", source);
-                                        new Handler(Looper.getMainLooper()).post(() -> result.success(info));
-                                    } else {
-                                        new Handler(Looper.getMainLooper()).post(() -> result.success(null));
-                                    }
-                                } catch (Exception e) {
-                                    android.util.Log.w("hibiki-audio", "queryLocalAudio failed", e);
-                                    new Handler(Looper.getMainLooper()).post(() -> result.success(null));
-                                } finally {
-                                    if (cursor != null) cursor.close();
-                                }
-                            }
-                        });
-                        break;
-                    }
-                    case "extractLocalAudio": {
-                        String fileArg = call.argument("file");
-                        String sourceArg = call.argument("source");
-                        if (localAudioDb == null || fileArg == null || sourceArg == null) {
-                            result.success(null);
-                            return;
-                        }
-                        final File cacheDir = getCacheDir();
-                        ioExecutor.execute(() -> {
-                            synchronized (dbLock) {
-                                SQLiteDatabase db = localAudioDb;
-                                if (db == null || !db.isOpen()) {
-                                    new Handler(Looper.getMainLooper()).post(() -> result.success(null));
-                                    return;
-                                }
-                                try (Cursor audioCursor = db.rawQuery(
-                                        "SELECT data FROM android WHERE file = ? AND source = ? LIMIT 1",
-                                        new String[]{fileArg, sourceArg})) {
-                                    if (audioCursor != null && audioCursor.moveToFirst()) {
-                                        byte[] audioData = audioCursor.getBlob(0);
-                                        String ext = fileArg.endsWith(".opus") ? ".opus" : ".mp3";
-                                        File tempFile = new File(cacheDir, "local_audio" + ext);
-                                        try (FileOutputStream fos = new FileOutputStream(tempFile)) {
-                                            fos.write(audioData);
-                                        }
-                                        new Handler(Looper.getMainLooper()).post(() ->
-                                            result.success(tempFile.getAbsolutePath()));
-                                    } else {
-                                        new Handler(Looper.getMainLooper()).post(() -> result.success(null));
-                                    }
-                                } catch (Exception e) {
-                                    android.util.Log.w("hibiki-audio", "extractLocalAudio failed", e);
-                                    new Handler(Looper.getMainLooper()).post(() -> result.success(null));
-                                }
-                            }
-                        });
-                        break;
-                    }
-                    case "extractAudioSegment": {
-                        String inputPath = call.argument("inputPath");
-                        Number startMsN = call.argument("startMs");
-                        Number endMsN = call.argument("endMs");
-                        String outputPath = call.argument("outputPath");
-                        if (inputPath == null || outputPath == null || startMsN == null || endMsN == null) {
-                            result.error("INVALID_ARGS", "Missing required arguments", null);
-                            return;
-                        }
-                        long startUs = startMsN.longValue() * 1000L;
-                        long endUs = endMsN.longValue() * 1000L;
-                        ioExecutor.execute(() -> {
-                            android.media.MediaExtractor extractor = null;
-                            android.media.MediaMuxer muxer = null;
-                            try {
-                                extractor = new android.media.MediaExtractor();
-                                extractor.setDataSource(inputPath);
-                                int audioTrack = -1;
-                                for (int i = 0; i < extractor.getTrackCount(); i++) {
-                                    android.media.MediaFormat fmt = extractor.getTrackFormat(i);
-                                    String m = fmt.getString(android.media.MediaFormat.KEY_MIME);
-                                    if (m != null && m.startsWith("audio/")) {
-                                        audioTrack = i;
-                                        break;
-                                    }
-                                }
-                                if (audioTrack < 0) {
-                                    new Handler(Looper.getMainLooper()).post(() ->
-                                        result.error("NO_AUDIO", "No audio track found", null));
-                                    return;
-                                }
-                                extractor.selectTrack(audioTrack);
-                                android.media.MediaFormat trackFormat = extractor.getTrackFormat(audioTrack);
-                                muxer = new android.media.MediaMuxer(
-                                    outputPath, android.media.MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
-                                int outTrack = muxer.addTrack(trackFormat);
-                                muxer.start();
-                                extractor.seekTo(startUs, android.media.MediaExtractor.SEEK_TO_CLOSEST_SYNC);
-                                java.nio.ByteBuffer buffer = java.nio.ByteBuffer.allocate(1024 * 1024);
-                                android.media.MediaCodec.BufferInfo info = new android.media.MediaCodec.BufferInfo();
-                                while (true) {
-                                    int sampleSize = extractor.readSampleData(buffer, 0);
-                                    if (sampleSize < 0) break;
-                                    long sampleTime = extractor.getSampleTime();
-                                    if (sampleTime > endUs) break;
-                                    if (sampleTime >= startUs) {
-                                        info.offset = 0;
-                                        info.size = sampleSize;
-                                        info.presentationTimeUs = sampleTime - startUs;
-                                        info.flags = extractor.getSampleFlags();
-                                        muxer.writeSampleData(outTrack, buffer, info);
-                                    }
-                                    extractor.advance();
-                                }
-                                muxer.stop();
-                                new Handler(Looper.getMainLooper()).post(() -> result.success(outputPath));
-                            } catch (Exception e) {
-                                android.util.Log.e("hibiki-audio", "extractAudioSegment failed", e);
-                                new Handler(Looper.getMainLooper()).post(() ->
-                                    result.error("EXTRACT_ERROR", e.getMessage(), null));
-                            } finally {
-                                if (muxer != null) {
-                                    try { muxer.release(); } catch (Exception ignored) {}
-                                }
-                                if (extractor != null) {
-                                    extractor.release();
-                                }
-                            }
-                        });
-                        break;
-                    }
-                    case "playFile": {
-                        String filePath = call.argument("path");
-                        if (filePath == null || filePath.isEmpty()) {
-                            result.success(false);
-                            return;
-                        }
-                        if (mediaPlayer != null) {
-                            mediaPlayer.stop();
-                            mediaPlayer.release();
-                            mediaPlayer = null;
-                        }
-                        try {
-                            mediaPlayer = new MediaPlayer();
-                            mediaPlayer.setAudioAttributes(
-                                new AudioAttributes.Builder()
-                                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                                    .build()
-                            );
-                            mediaPlayer.setDataSource(filePath);
-                            mediaPlayer.setOnPreparedListener(mp -> mp.start());
-                            mediaPlayer.setOnCompletionListener(mp -> {
-                                mp.release();
-                                mediaPlayer = null;
-                            });
-                            mediaPlayer.setOnErrorListener((mp, what, extra) -> {
-                                mp.release();
-                                mediaPlayer = null;
-                                return true;
-                            });
-                            mediaPlayer.prepare();
-                            result.success(true);
-                        } catch (Exception e) {
-                            android.util.Log.w("hibiki-audio", "playFile failed", e);
-                            result.success(false);
-                        }
                         break;
                     }
                     default:

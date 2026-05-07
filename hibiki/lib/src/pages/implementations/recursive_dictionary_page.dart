@@ -91,7 +91,7 @@ class _RecursiveDictionaryPageState
         canPop: !widget.killOnPop,
         onPopInvokedWithResult: (didPop, _) {
           if (!didPop && widget.killOnPop) {
-            appModel.shutdown();
+            appModel.moveToBack();
           }
         },
         child: Scaffold(
@@ -210,7 +210,7 @@ class _RecursiveDictionaryPageState
                 icon: Icons.arrow_back,
                 onTap: () async {
                   if (widget.killOnPop) {
-                    appModel.shutdown();
+                    appModel.moveToBack();
                   } else {
                     Navigator.pop(context);
                   }

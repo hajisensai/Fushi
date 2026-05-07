@@ -11,7 +11,12 @@ part 'database.g.dart';
 LazyDatabase _openDb(String dbDirectory) {
   return LazyDatabase(() async {
     final file = File(p.join(dbDirectory, 'hibiki.db'));
-    return NativeDatabase.createInBackground(file);
+    return NativeDatabase.createInBackground(
+      file,
+      setup: (db) {
+        db.execute('PRAGMA journal_mode=WAL');
+      },
+    );
   });
 }
 
