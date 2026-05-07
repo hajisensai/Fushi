@@ -307,6 +307,8 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
 
 .gloss-sc-table-container {
     display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
 .gloss-sc-table {
