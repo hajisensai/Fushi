@@ -13,9 +13,15 @@ import 'package:wakelock/wakelock.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/popup_main.dart' as popup_entrypoint;
 import 'package:hibiki/utils.dart';
 
 Color? _savedSplashColor;
+
+@pragma('vm:entry-point')
+void popupMain() {
+  popup_entrypoint.popupMain();
+}
 
 /// Application execution starts here.
 void main() {

@@ -1,9 +1,12 @@
 package app.hibiki.reader;
 
 import android.content.Intent;
+import android.os.Build;
 import android.os.Bundle;
 import android.util.DisplayMetrics;
+import android.view.Gravity;
 import android.view.WindowManager;
+import android.webkit.WebView;
 
 import androidx.annotation.NonNull;
 
@@ -13,6 +16,7 @@ import io.flutter.plugin.common.MethodChannel;
 
 public class PopupDictActivity extends FlutterActivity {
     private static final String POPUP_CHANNEL = "app.hibiki.reader/popup";
+    private static boolean webViewDataDirectoryConfigured = false;
 
     private MethodChannel popupChannel;
     private AnkiChannelHandler ankiChannelHandler;
@@ -27,6 +31,8 @@ public class PopupDictActivity extends FlutterActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        configureWebViewDataDirectory();
+
         ankiChannelHandler = new AnkiChannelHandler(this);
         ttsChannelHandler = new TtsChannelHandler(this);
         pendingProcessText = extractProcessText(getIntent());
@@ -47,7 +53,7 @@ public class PopupDictActivity extends FlutterActivity {
 
     @Override
     public void configureFlutterEngine(@NonNull FlutterEngine flutterEngine) {
-        super.configureFlutterEngine(flutterEngine);
+        PopupPluginRegistrant.registerWith(flutterEngine);
 
         ankiChannelHandler.register(flutterEngine);
         ttsChannelHandler.register(flutterEngine);
@@ -96,6 +102,15 @@ public class PopupDictActivity extends FlutterActivity {
         WindowManager.LayoutParams params = getWindow().getAttributes();
         params.width = width;
         params.height = height;
+        params.gravity = Gravity.CENTER;
         getWindow().setAttributes(params);
+    }
+
+    private static synchronized void configureWebViewDataDirectory() {
+        if (webViewDataDirectoryConfigured) return;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            WebView.setDataDirectorySuffix("popup");
+        }
+        webViewDataDirectoryConfigured = true;
     }
 }

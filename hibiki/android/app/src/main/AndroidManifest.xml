@@ -64,6 +64,7 @@
         <activity
             android:name=".PopupDictActivity"
             android:theme="@style/PopupDictTheme"
+            android:process=":popup"
             android:taskAffinity="app.hibiki.reader.popup"
             android:excludeFromRecents="true"
             android:autoRemoveFromRecents="true"

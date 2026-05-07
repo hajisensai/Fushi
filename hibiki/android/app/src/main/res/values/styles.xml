@@ -18,13 +18,13 @@
         <item name="android:windowBackground">#FFFFFF</item>
         <item name="android:colorControlActivated">#FF0000</item>
     </style>
-    <style name="PopupDictTheme" parent="@android:style/Theme.Translucent.NoTitleBar">
+    <style name="PopupDictTheme" parent="@android:style/Theme.DeviceDefault.NoActionBar">
         <item name="android:windowBackground">@android:color/transparent</item>
-        <item name="android:windowIsFloating">true</item>
         <item name="android:windowIsTranslucent">true</item>
         <item name="android:backgroundDimEnabled">true</item>
         <item name="android:backgroundDimAmount">0.4</item>
         <item name="android:windowCloseOnTouchOutside">true</item>
         <item name="android:windowFullscreen">false</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
     </style>
 </resources>

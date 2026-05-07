@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/pages/implementations/popup_dictionary_page.dart';
 import 'package:hibiki/src/utils/misc/popup_channel.dart';
+import 'package:spaces/spaces.dart';
 
 @pragma('vm:entry-point')
 void popupMain() {
@@ -64,6 +65,7 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
     if (appModel.initError != null) {
       return MaterialApp(
         debugShowCheckedModeBanner: false,
+        builder: _buildWithSpacing,
         home: Scaffold(
           body: Center(child: Text('Init error: ${appModel.initError}')),
         ),
@@ -77,6 +79,7 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
       return MaterialApp(
         debugShowCheckedModeBanner: false,
         theme: isDark ? ThemeData.dark() : null,
+        builder: _buildWithSpacing,
         home: Scaffold(
           backgroundColor: isDark ? const Color(0xFF121212) : Colors.white,
           body: Center(
@@ -90,6 +93,7 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
 
     return MaterialApp(
       debugShowCheckedModeBanner: false,
+      builder: _buildWithSpacing,
       theme: appModel.overrideDictionaryTheme ??
           ThemeData(
             colorSchemeSeed: const Color(0xFF1F4959),
@@ -99,6 +103,15 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
         key: ValueKey(_searchTerm),
         searchTerm: _searchTerm,
       ),
+    );
+  }
+
+  Widget _buildWithSpacing(BuildContext context, Widget? child) {
+    return Spacing(
+      dataBuilder: (context) {
+        return SpacingData.generate(10);
+      },
+      child: child ?? const SizedBox.shrink(),
     );
   }
 }
