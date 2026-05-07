@@ -14,10 +14,11 @@ import 'package:hibiki/src/utils/misc/popup_channel.dart';
 import 'package:hibiki/utils.dart';
 
 class _StackEntry {
-  _StackEntry({required this.query, this.result, this.isSearching = true});
+  _StackEntry({required this.query, required this.selectionRect});
   final String query;
+  final Rect selectionRect;
   DictionarySearchResult? result;
-  bool isSearching;
+  bool isSearching = true;
   final GlobalKey<DictionaryPopupWebViewState> webViewKey =
       GlobalKey<DictionaryPopupWebViewState>();
 }
@@ -38,20 +39,24 @@ class PopupDictionaryPage extends ConsumerStatefulWidget {
 class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
   final List<_StackEntry> _stack = [];
 
+  static const double _popupPadding = 6.0;
+  static const double _popupMaxWidth = 360.0;
+  static const double _popupMaxHeight = 480.0;
+
   AppModel get appModel => ref.read(appProvider);
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _pushSearch(widget.searchTerm);
+      _pushSearch(widget.searchTerm, Rect.zero);
     });
   }
 
-  Future<void> _pushSearch(String query) async {
+  Future<void> _pushSearch(String query, Rect selectionRect) async {
     if (query.trim().isEmpty) return;
 
-    final entry = _StackEntry(query: query);
+    final entry = _StackEntry(query: query, selectionRect: selectionRect);
     setState(() => _stack.add(entry));
 
     try {
@@ -88,6 +93,29 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
     await PopupChannel.instance.finishPopup();
   }
 
+  Rect _calcPosition(Rect sel, Size screen) {
+    final double width =
+        (screen.width - _popupPadding * 2).clamp(0, _popupMaxWidth);
+    final double height = (screen.height * 0.5).clamp(0, _popupMaxHeight);
+
+    final double spaceBelow = screen.height - sel.bottom - _popupPadding;
+    final double spaceAbove = sel.top - _popupPadding;
+    final bool showBelow = spaceBelow >= height || spaceBelow >= spaceAbove;
+
+    double top;
+    if (showBelow) {
+      top = sel.bottom + 4;
+    } else {
+      top = sel.top - 4 - height;
+    }
+    top = top.clamp(_popupPadding, screen.height - height - _popupPadding);
+
+    double left = sel.left;
+    left = left.clamp(_popupPadding, screen.width - width - _popupPadding);
+
+    return Rect.fromLTWH(left, top, width, height);
+  }
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -98,34 +126,49 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: SafeArea(
-          child: _buildStack(context),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final screen =
+                  Size(constraints.maxWidth, constraints.maxHeight);
+              return _buildStack(context, screen);
+            },
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildStack(BuildContext context) {
+  Widget _buildStack(BuildContext context, Size screen) {
     if (_stack.isEmpty) {
       return const SizedBox.shrink();
     }
 
-    const double inset = 6.0;
-
     return Stack(
       children: [
         for (int i = 0; i < _stack.length; i++)
-          Positioned(
-            left: inset * i,
-            top: inset * i,
-            right: inset * i,
-            bottom: inset * i,
-            child: _buildLayer(context, i),
-          ),
+          _buildLayer(context, i, screen),
       ],
     );
   }
 
-  Widget _buildLayer(BuildContext context, int index) {
+  Widget _buildLayer(BuildContext context, int index, Size screen) {
+    final entry = _stack[index];
+
+    final bool isFirst = index == 0;
+    final Rect pos;
+
+    if (isFirst) {
+      pos = Rect.fromLTWH(0, 0, screen.width, screen.height);
+    } else {
+      final parentEntry = _stack[index - 1];
+      final parentPos = isFirst
+          ? Rect.fromLTWH(0, 0, screen.width, screen.height)
+          : _getLayerPosition(index - 1, screen);
+      final absRect = entry.selectionRect.shift(
+          Offset(parentPos.left, parentPos.top));
+      pos = _calcPosition(absRect, screen);
+    }
+
     final isDark =
         (appModel.overrideDictionaryTheme ?? Theme.of(context)).brightness ==
             Brightness.dark;
@@ -133,20 +176,36 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
     final borderColor = isDark
         ? Colors.white.withValues(alpha: 0.15)
         : Colors.black.withValues(alpha: 0.18);
-    final entry = _stack[index];
 
-    return Container(
-      decoration: BoxDecoration(
-        color: fillColor,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: borderColor, width: 1),
+    return Positioned(
+      left: pos.left,
+      top: pos.top,
+      width: pos.width,
+      height: pos.height,
+      child: Container(
+        decoration: BoxDecoration(
+          color: fillColor,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: borderColor, width: 1),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: _buildEntryContent(entry, index, screen),
       ),
-      clipBehavior: Clip.antiAlias,
-      child: _buildEntryContent(entry, index),
     );
   }
 
-  Widget _buildEntryContent(_StackEntry entry, int index) {
+  Rect _getLayerPosition(int index, Size screen) {
+    if (index == 0) {
+      return Rect.fromLTWH(0, 0, screen.width, screen.height);
+    }
+    final entry = _stack[index];
+    final parentPos = _getLayerPosition(index - 1, screen);
+    final absRect =
+        entry.selectionRect.shift(Offset(parentPos.left, parentPos.top));
+    return _calcPosition(absRect, screen);
+  }
+
+  Widget _buildEntryContent(_StackEntry entry, int index, Size screen) {
     if (entry.isSearching) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -163,10 +222,25 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
     return DictionaryPopupWebView(
       key: entry.webViewKey,
       result: entry.result!,
-      onTextSelected: (text, _) {
-        _pushSearch(text);
+      onTextSelected: (text, localRect) {
+        final layerPos = _getLayerPosition(index, screen);
+        final absRect = localRect.shift(Offset(layerPos.left, layerPos.top));
+        _stack.sublist(index + 1).forEach((_) {});
+        if (_stack.length > index + 1) {
+          setState(() {
+            _stack.removeRange(index + 1, _stack.length);
+          });
+        }
+        _pushSearch(text, localRect);
       },
-      onLinkClick: _pushSearch,
+      onLinkClick: (query) {
+        if (_stack.length > index + 1) {
+          setState(() {
+            _stack.removeRange(index + 1, _stack.length);
+          });
+        }
+        _pushSearch(query, entry.selectionRect);
+      },
       onMineEntry: _onMineEntry,
       onDuplicateCheck: (expression, reading) async {
         final repo = ref.read(ankiRepositoryProvider);
