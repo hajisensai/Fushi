@@ -2079,6 +2079,10 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         mediaSource.setCurrentSentence(
           selection: selection,
         );
+      }).catchError((Object e) {
+        debugPrint('_processLookup async error: $e');
+        clearDictionaryResult();
+        mediaSource.clearCurrentSentence();
       });
     } catch (e) {
       debugPrint('_processLookup error: $e');
@@ -4487,29 +4491,34 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       left: 0,
       right: 0,
       bottom: 0,
-      child: SafeArea(
-        top: false,
-        child: BottomAppBar(
-          height: _readerChromeHeight,
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: Row(
-            children: [
-              if (bookUid != null)
-                IconButton(
-                  icon: const Icon(Icons.headphones),
-                  iconSize: 22,
-                  onPressed: () => _openImportDialog(bookUid),
-                  tooltip: t.audiobook_import,
-                ),
-              const Spacer(),
-              IconButton(
-                icon: const Icon(Icons.tune),
-                iconSize: 20,
-                onPressed: () => _showReaderSettingsSheet(null),
-                tooltip: t.reader_settings_label,
+      child: SizedBox(
+        height: _readerChromeHeight + _stableBottomInset,
+        child: Column(
+          children: [
+            BottomAppBar(
+              height: _readerChromeHeight,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Row(
+                children: [
+                  if (bookUid != null)
+                    IconButton(
+                      icon: const Icon(Icons.headphones),
+                      iconSize: 22,
+                      onPressed: () => _openImportDialog(bookUid),
+                      tooltip: t.audiobook_import,
+                    ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.tune),
+                    iconSize: 20,
+                    onPressed: () => _showReaderSettingsSheet(null),
+                    tooltip: t.reader_settings_label,
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+            SizedBox(height: _stableBottomInset),
+          ],
         ),
       ),
     );
@@ -4702,18 +4711,26 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           left: 0,
           right: 0,
           bottom: 0,
-          child: SafeArea(
-            top: false,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildFollowPill(),
-                AudiobookPlayBar(
-                  controller: ctrl,
-                  onOpenSettings: () => _showReaderSettingsSheet(ctrl),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildFollowPill(),
+              SizedBox(
+                height: _readerChromeHeight + _stableBottomInset,
+                child: Column(
+                  children: [
+                    SizedBox(
+                      height: _readerChromeHeight,
+                      child: AudiobookPlayBar(
+                        controller: ctrl,
+                        onOpenSettings: () => _showReaderSettingsSheet(ctrl),
+                      ),
+                    ),
+                    SizedBox(height: _stableBottomInset),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         );
         final ThemeData? overrideTheme = appModel.overrideDictionaryTheme;
