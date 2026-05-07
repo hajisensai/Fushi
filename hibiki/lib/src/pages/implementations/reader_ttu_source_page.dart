@@ -2157,28 +2157,34 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       InAppWebViewController webViewController) async {
     String source = '''
 if (!window.getSelection().isCollapsed) {
-  var roots = window.__hibikiGetScrollRoots ? window.__hibikiGetScrollRoots() : [];
-  if (!roots.length) {
-    var fb = document.querySelector('.book-content') || document.scrollingElement || document.documentElement;
-    if (fb) roots = [fb];
+  var saved = window.__hibikiCaptureScrollState ? window.__hibikiCaptureScrollState() : null;
+  var roots = saved ? saved.roots.map(function(item) { return item.el; }) : [];
+  var restoring = false;
+  function lockScroll() {
+    if (restoring) return;
+    restoring = true;
+    if (window.__hibikiRestoreScrollState) window.__hibikiRestoreScrollState(saved);
+    restoring = false;
   }
-  var saved = roots.map(function(el) { return { el: el, top: el.scrollTop, left: el.scrollLeft }; });
-  function restore() {
-    for (var i = 0; i < saved.length; i++) {
-      saved[i].el.scrollTop = saved[i].top;
-      saved[i].el.scrollLeft = saved[i].left;
-    }
+  for (var i = 0; i < roots.length; i++) {
+    roots[i].addEventListener('scroll', lockScroll);
   }
+  document.addEventListener('scroll', lockScroll, true);
   window.__hibikiSelectionScrollGuard = true;
   window.getSelection().removeAllRanges();
-  restore();
+  lockScroll();
   requestAnimationFrame(function() {
-    restore();
-    requestAnimationFrame(function() {
-      restore();
-      window.__hibikiSelectionScrollGuard = false;
-    });
+    lockScroll();
+    requestAnimationFrame(lockScroll);
   });
+  setTimeout(function() {
+    lockScroll();
+    for (var i = 0; i < roots.length; i++) {
+      roots[i].removeEventListener('scroll', lockScroll);
+    }
+    document.removeEventListener('scroll', lockScroll, true);
+    window.__hibikiSelectionScrollGuard = false;
+  }, 250);
 }
 ''';
     await webViewController.evaluateJavascript(source: source);
@@ -2380,6 +2386,39 @@ window.__hibikiGetScrollRoots = function() {
   if (se && se !== bcc && se !== bc) roots.push(se);
   if (de && de !== se && de !== bcc && de !== bc) roots.push(de);
   return roots;
+};
+
+window.__hibikiCaptureScrollState = function() {
+  var roots = window.__hibikiGetScrollRoots ? window.__hibikiGetScrollRoots() : [];
+  if (!roots.length) {
+    var fb = document.querySelector('.book-content') || document.scrollingElement || document.documentElement;
+    if (fb) roots = [fb];
+  }
+  var ttuPos = null;
+  try {
+    if (typeof window.__ttuGetPageInfo === 'function') {
+      var info = window.__ttuGetPageInfo();
+      if (info && Number.isFinite(info.virtualScrollPos)) {
+        ttuPos = info.virtualScrollPos;
+      }
+    }
+  } catch(e) {}
+  return {
+    roots: roots.map(function(el) { return { el: el, top: el.scrollTop, left: el.scrollLeft }; }),
+    ttuPos: ttuPos
+  };
+};
+
+window.__hibikiRestoreScrollState = function(state) {
+  if (!state) return;
+  if (state.ttuPos !== null && typeof window.__ttuScrollToPos === 'function') {
+    try { window.__ttuScrollToPos(state.ttuPos); } catch(e) {}
+  }
+  var roots = state.roots || [];
+  for (var i = 0; i < roots.length; i++) {
+    roots[i].el.scrollTop = roots[i].top;
+    roots[i].el.scrollLeft = roots[i].left;
+  }
 };
 
 window.__hibikiSelectionScrollGuard = false;
@@ -2723,30 +2762,36 @@ div.pointer-events-none.absolute.opacity-25 {
 
 
 function _applySelection(range) {
-  var roots = window.__hibikiGetScrollRoots ? window.__hibikiGetScrollRoots() : [];
-  if (!roots.length) {
-    var fb = document.querySelector('.book-content') || document.scrollingElement || document.documentElement;
-    if (fb) roots = [fb];
+  var saved = window.__hibikiCaptureScrollState ? window.__hibikiCaptureScrollState() : null;
+  var roots = saved ? saved.roots.map(function(item) { return item.el; }) : [];
+  var restoring = false;
+  function lockScroll() {
+    if (restoring) return;
+    restoring = true;
+    if (window.__hibikiRestoreScrollState) window.__hibikiRestoreScrollState(saved);
+    restoring = false;
   }
-  var saved = roots.map(function(el) { return { el: el, top: el.scrollTop, left: el.scrollLeft }; });
-  function restore() {
-    for (var i = 0; i < saved.length; i++) {
-      saved[i].el.scrollTop = saved[i].top;
-      saved[i].el.scrollLeft = saved[i].left;
-    }
+  for (var i = 0; i < roots.length; i++) {
+    roots[i].addEventListener('scroll', lockScroll);
   }
+  document.addEventListener('scroll', lockScroll, true);
   window.__hibikiSelectionScrollGuard = true;
   var selection = window.getSelection();
   selection.removeAllRanges();
   selection.addRange(range);
-  restore();
+  lockScroll();
   requestAnimationFrame(function() {
-    restore();
-    requestAnimationFrame(function() {
-      restore();
-      window.__hibikiSelectionScrollGuard = false;
-    });
+    lockScroll();
+    requestAnimationFrame(lockScroll);
   });
+  setTimeout(function() {
+    lockScroll();
+    for (var i = 0; i < roots.length; i++) {
+      roots[i].removeEventListener('scroll', lockScroll);
+    }
+    document.removeEventListener('scroll', lockScroll, true);
+    window.__hibikiSelectionScrollGuard = false;
+  }, 250);
 }
 
 function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceDelimited) {
