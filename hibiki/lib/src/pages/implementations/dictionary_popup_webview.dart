@@ -15,12 +15,14 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     super.key,
     required this.result,
     this.onTextSelected,
+    this.onTapOutside,
     this.onMineEntry,
     this.onDuplicateCheck,
   });
 
   final DictionarySearchResult result;
   final void Function(String text)? onTextSelected;
+  final VoidCallback? onTapOutside;
   final Future<bool> Function(Map<String, String> fields)? onMineEntry;
   final Future<bool> Function(String expression, String reading)?
       onDuplicateCheck;
@@ -135,7 +137,9 @@ class DictionaryPopupWebViewState
 
         controller.addJavaScriptHandler(
           handlerName: 'tapOutside',
-          callback: (_) {},
+          callback: (_) {
+            widget.onTapOutside?.call();
+          },
         );
 
         controller.addJavaScriptHandler(

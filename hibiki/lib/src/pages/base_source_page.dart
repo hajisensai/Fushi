@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:spaces/spaces.dart';
 import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
@@ -63,26 +62,14 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
   /// Allows customisation of opacity of dictionary entries.
   double get dictionaryEntryOpacity => 1;
 
-  /// The result from the last dictionary search performed with
-  /// [searchDictionaryResult].
-  final ValueNotifier<DictionarySearchResult?> _dictionaryResultNotifier =
-      ValueNotifier<DictionarySearchResult?>(null);
+  final ValueNotifier<List<_PopupStackItem>> _popupStack =
+      ValueNotifier<List<_PopupStackItem>>([]);
 
-  String? _lastSearchTerm;
-
-  /// Notifies the progress bar whether or not to refresh.
   final ValueNotifier<bool> _isSearchingNotifier = ValueNotifier<bool>(false);
 
-  /// Whether or not there is a present dictionary result.
-  bool get isDictionaryShown => _dictionaryResultNotifier.value != null;
+  Rect? _pendingSelectionRect;
 
-  /// The selection rect that triggered the popup, used for positioning.
-  /// null means popup is hidden.
-  final _selectionRectNotifier = ValueNotifier<Rect?>(null);
-
-  /// Key for the popup WebView to keep it persistent across rebuilds.
-  final GlobalKey<DictionaryPopupWebViewState> _popupWebViewKey =
-      GlobalKey<DictionaryPopupWebViewState>();
+  bool get isDictionaryShown => _popupStack.value.isNotEmpty;
 
   Widget? buildPopupAudioControls() => null;
 
@@ -102,52 +89,35 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
     return true;
   }
 
-  bool _showMore = false;
-
   /// Action to perform within the source page upon closing the media.
   Future<void> onSourcePagePop() async {}
 
-  /// Perform a search with a given query and update the dictionary search
-  /// result. The [position] parameter determines where the pop-up will
-  /// be shown on the screen.
   Future<void> searchDictionaryResult({
     required String searchTerm,
     required Rect selectionRect,
     int? overrideMaximumTerms,
   }) async {
-    if (_lastSearchTerm == searchTerm && overrideMaximumTerms == null) {
-      return;
-    } else {
-      _lastSearchTerm = searchTerm;
-    }
-
-    bool notShowMore = overrideMaximumTerms == null;
-
     overrideMaximumTerms ??= appModel.maximumTerms;
 
-    late DictionarySearchResult dictionaryResult;
-    _selectionRectNotifier.value = selectionRect;
+    _pendingSelectionRect = selectionRect;
 
     try {
       _isSearchingNotifier.value = true;
 
-      dictionaryResult = await appModel.searchDictionary(
+      final dictionaryResult = await appModel.searchDictionary(
         searchTerm: searchTerm,
         searchWithWildcards: false,
         overrideMaximumTerms: overrideMaximumTerms,
       );
-      if (notShowMore &&
-          resultScrollController.hasClients &&
-          resultScrollController.position.hasContentDimensions) {
-        resultScrollController
-            .jumpTo(resultScrollController.initialScrollOffset);
-      }
-
-      _lastSearchTerm = searchTerm;
 
       appModel.addToDictionaryHistory(result: dictionaryResult);
-      _showMore = dictionaryResult.entries.length < overrideMaximumTerms;
-      _dictionaryResultNotifier.value = dictionaryResult;
+
+      final item = _PopupStackItem(
+        result: dictionaryResult,
+        selectionRect: selectionRect,
+        searchTerm: searchTerm,
+      );
+      _popupStack.value = [..._popupStack.value, item];
 
       final bool arEnabled = ReaderTtuSource.instance.autoReadOnLookup;
       debugPrint('[hibiki-autoread] autoReadOnLookup=$arEnabled entries=${dictionaryResult.entries.length}');
@@ -161,6 +131,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
       }
     } finally {
       _isSearchingNotifier.value = false;
+      _pendingSelectionRect = null;
     }
   }
 
@@ -205,12 +176,8 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
     }
   }
 
-  /// Hide the dictionary and dispose of the current result.
-  void clearDictionaryResult() async {
-    _dictionaryResultNotifier.value = null;
-    _selectionRectNotifier.value = null;
-    _lastSearchTerm = null;
-    _showMore = false;
+  void clearDictionaryResult() {
+    _popupStack.value = [];
     appModel.currentMediaSource?.clearCurrentSentence();
     appModel.currentMediaSource?.clearExtraData();
   }
@@ -219,51 +186,164 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
   double get popupMaxHeight => 360;
   double get popupPadding => 6;
 
-  /// Build a dictionary showing the result with positioning.
   Widget buildDictionary() {
     return Theme(
       data: appModel.overrideDictionaryTheme ?? theme,
-      child: ValueListenableBuilder<Rect?>(
-        valueListenable: _selectionRectNotifier,
-        builder: (context, selectionRect, _) {
-          if (selectionRect == null &&
-              !_isSearchingNotifier.value &&
-              _dictionaryResultNotifier.value == null) {
-            return const SizedBox.shrink();
-          }
-          if (selectionRect == null) {
-            return const SizedBox.shrink();
-          }
+      child: ValueListenableBuilder<List<_PopupStackItem>>(
+        valueListenable: _popupStack,
+        builder: (context, stack, _) {
+          final bool isLoading = _isSearchingNotifier.value;
+          if (stack.isEmpty && !isLoading) return const SizedBox.shrink();
 
-          return LayoutBuilder(
-            builder: (context, constraints) {
-              final screen = Size(constraints.maxWidth, constraints.maxHeight);
-              final pos = _calculatePopupPosition(selectionRect, screen);
+          return ValueListenableBuilder<bool>(
+            valueListenable: _isSearchingNotifier,
+            builder: (context, searching, _) {
+              final currentStack = _popupStack.value;
+              final showLoadingPlaceholder =
+                  searching && currentStack.isEmpty && _pendingSelectionRect != null;
 
-              return Stack(
-                children: [
-                  Positioned.fill(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      onTap: clearDictionaryResult,
-                      child: Container(
-                        color: Colors.transparent,
+              return LayoutBuilder(
+                builder: (context, constraints) {
+                  final screen = Size(constraints.maxWidth, constraints.maxHeight);
+                  return Stack(
+                    children: [
+                      Positioned.fill(
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.translucent,
+                          onTap: clearDictionaryResult,
+                          child: Container(color: Colors.transparent),
+                        ),
                       ),
-                    ),
-                  ),
-                  Positioned(
-                    left: pos.left,
-                    top: pos.top,
-                    width: pos.width,
-                    height: pos.height,
-                    child: buildDictionaryResult(),
-                  ),
-                ],
+                      if (showLoadingPlaceholder)
+                        _buildLoadingPlaceholder(screen),
+                      for (int i = 0; i < currentStack.length; i++)
+                        _buildPopupLayer(currentStack, i, screen),
+                    ],
+                  );
+                },
               );
             },
           );
         },
       ),
+    );
+  }
+
+  Widget _buildLoadingPlaceholder(Size screen) {
+    final pos = _calculatePopupPosition(_pendingSelectionRect!, screen);
+    final isDark = (appModel.overrideDictionaryTheme ?? theme).brightness ==
+        Brightness.dark;
+    final fillColor = isDark ? Colors.black : Colors.white;
+    final borderColor = isDark
+        ? Colors.white.withValues(alpha: 0.15)
+        : Colors.black.withValues(alpha: 0.18);
+
+    return Positioned(
+      left: pos.left,
+      top: pos.top,
+      width: pos.width,
+      height: pos.height,
+      child: Container(
+        decoration: BoxDecoration(
+          color: fillColor,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: borderColor, width: 1),
+        ),
+        child: Column(
+          children: [
+            const LinearProgressIndicator(
+              backgroundColor: Colors.transparent,
+              valueColor: AlwaysStoppedAnimation<Color>(Colors.red),
+              minHeight: 2.75,
+            ),
+            Expanded(child: Container()),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPopupLayer(List<_PopupStackItem> stack, int index, Size screen) {
+    final item = stack[index];
+    final pos = _calculatePopupPosition(item.selectionRect, screen);
+
+    return Positioned(
+      left: pos.left,
+      top: pos.top,
+      width: pos.width,
+      height: pos.height,
+      child: _buildPopupContent(stack, index),
+    );
+  }
+
+  Widget _buildPopupContent(List<_PopupStackItem> stack, int index) {
+    final isDark = (appModel.overrideDictionaryTheme ?? theme).brightness ==
+        Brightness.dark;
+    final fillColor = isDark ? Colors.black : Colors.white;
+    final borderColor = isDark
+        ? Colors.white.withValues(alpha: 0.15)
+        : Colors.black.withValues(alpha: 0.18);
+    final isTop = index == stack.length - 1;
+
+    return _SwipeDismissWrapper(
+      onDismiss: () => _dismissPopupAt(index),
+      sensitivity: ReaderTtuSource.instance.dismissSwipeSensitivity,
+      child: Container(
+        decoration: BoxDecoration(
+          color: fillColor,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: borderColor, width: 1),
+        ),
+        child: Column(
+          children: [
+            if (isTop)
+              if (buildPopupAudioControls() case final Widget controls)
+                controls,
+            Expanded(
+              child: Stack(
+                children: [
+                  _buildPopupSearchResult(stack, index),
+                  if (isTop) buildDictionaryLoading(),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _dismissPopupAt(int index) {
+    if (index == 0) {
+      clearDictionaryResult();
+    } else {
+      _popupStack.value = _popupStack.value.sublist(0, index);
+    }
+  }
+
+  Widget _buildPopupSearchResult(List<_PopupStackItem> stack, int index) {
+    final item = stack[index];
+
+    if (item.result.entries.isEmpty) {
+      return buildNoSearchResultsPlaceholderMessage();
+    }
+
+    return DictionaryPopupWebView(
+      key: item.webViewKey,
+      result: item.result,
+      onTapOutside: () => _dismissPopupAt(index),
+      onTextSelected: (text) {
+        _popupStack.value = _popupStack.value.sublist(0, index + 1);
+        searchDictionaryResult(
+          searchTerm: text,
+          selectionRect: item.selectionRect,
+        );
+      },
+      onMineEntry: onMineFromPopup,
+      onDuplicateCheck: (expression, reading) async {
+        final repo = ref.read(ankiRepositoryProvider);
+        return repo.isDuplicate(expression, reading);
+      },
     );
   }
 
@@ -290,52 +370,12 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
     return Rect.fromLTWH(left, top, width, height);
   }
 
-  /// Used to check if the pop-up is open.
-  bool get dictionaryPopupShown => _selectionRectNotifier.value != null;
+  bool get dictionaryPopupShown => _popupStack.value.isNotEmpty;
 
-  /// The dictionary result unpositioned. See [buildDictionary] for the
-  /// positioned version.
-  Widget buildDictionaryResult() {
-    final isDark = (appModel.overrideDictionaryTheme ?? theme).brightness ==
-        Brightness.dark;
-    final fillColor = isDark ? Colors.black : Colors.white;
-    final borderColor = isDark
-        ? Colors.white.withValues(alpha: 0.15)
-        : Colors.black.withValues(alpha: 0.18);
-
-    return _SwipeDismissWrapper(
-      onDismiss: clearDictionaryResult,
-      sensitivity: ReaderTtuSource.instance.dismissSwipeSensitivity,
-      child: Container(
-        decoration: BoxDecoration(
-          color: fillColor,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: borderColor, width: 1),
-        ),
-        child: Column(
-          children: [
-            if (buildPopupAudioControls() case final Widget controls)
-              controls,
-            Expanded(
-              child: Stack(
-                children: [
-                  buildSearchResult(),
-                  buildDictionaryLoading(),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Executed on dictionary dismiss.
   void onDictionaryDismiss() {
     clearDictionaryResult();
   }
 
-  /// In progress indicator for dictionary searching.
   Widget buildDictionaryLoading() {
     return ValueListenableBuilder<bool>(
       valueListenable: _isSearchingNotifier,
@@ -366,108 +406,8 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
     );
   }
 
-  /// Scroll controller for the search result.
-  final ScrollController resultScrollController = ScrollController();
-
-  /// Displays the dictionary entries via a persistent popup WebView.
-  Widget buildSearchResult() {
-    return ValueListenableBuilder(
-      valueListenable: _dictionaryResultNotifier,
-      builder: (_, result, __) {
-        if (result == null) {
-          return SizedBox(
-            height: double.infinity,
-            width: double.infinity,
-            child: Card(
-              color: appModel.overrideDictionaryColor
-                      ?.withValues(alpha: dictionaryEntryOpacity) ??
-                  (Theme.of(context).brightness == Brightness.dark
-                      ? Color.fromRGBO(16, 16, 16, dictionaryEntryOpacity)
-                      : Color.fromRGBO(249, 249, 249, dictionaryEntryOpacity)),
-              elevation: 0,
-              shape: const RoundedRectangleBorder(),
-              child: Column(
-                children: [Container()],
-              ),
-            ),
-          );
-        }
-
-        if (result.entries.isEmpty) {
-          return buildNoSearchResultsPlaceholderMessage();
-        }
-
-        return DictionaryPopupWebView(
-          key: _popupWebViewKey,
-          result: result,
-          onTextSelected: (text) {
-            searchDictionaryResult(
-              searchTerm: text,
-              selectionRect:
-                  _selectionRectNotifier.value ?? Rect.fromLTWH(0, 0, 1, 1),
-            );
-          },
-          onMineEntry: onMineFromPopup,
-          onDuplicateCheck: (expression, reading) async {
-            final repo = ref.read(ankiRepositoryProvider);
-            return repo.isDuplicate(expression, reading);
-          },
-        );
-      },
-    );
-  }
-
-  /// Called when the user taps mine in the popup WebView.
   Future<bool> onMineFromPopup(Map<String, String> fields) async {
     return false;
-  }
-
-  /// Show more widget.
-  Widget? get footerWidget {
-    if (_showMore) {
-      return null;
-    }
-
-    return SliverToBoxAdapter(
-      child: Padding(
-        padding: Spacing.of(context).insets.all.small,
-        child: Semantics(
-          label: t.show_more,
-          button: true,
-          child: InkWell(
-            onTap: _isSearchingNotifier.value
-                ? null
-                : () async {
-                    searchDictionaryResult(
-                      searchTerm: _lastSearchTerm!,
-                      selectionRect: _selectionRectNotifier.value ??
-                          Rect.fromLTWH(0, 0, 1, 1),
-                      overrideMaximumTerms:
-                          _dictionaryResultNotifier.value!.entries.length +
-                              appModel.maximumTerms,
-                    );
-                  },
-            child: Container(
-              color: Theme.of(context).brightness == Brightness.dark
-                  ? Colors.white.withValues(alpha: 0.05)
-                  : Colors.black.withValues(alpha: 0.05),
-              width: double.maxFinite,
-              child: Padding(
-                padding: Spacing.of(context).insets.all.normal,
-                child: Text(
-                  t.show_more,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: (textTheme.labelMedium?.fontSize)! * 0.9,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
   }
 
   /// Placeholder when there are no search results.
@@ -480,8 +420,8 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
     );
   }
 
-  /// Get the result returned from the last search.
-  DictionarySearchResult? get currentResult => _dictionaryResultNotifier.value;
+  DictionarySearchResult? get currentResult =>
+      _popupStack.value.isNotEmpty ? _popupStack.value.last.result : null;
 
   /// Action upon selecting the Search option.
   @override
@@ -511,6 +451,20 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
 
   /// Performs an action after closing the Card Creator.
   void onCreatorClose() {}
+}
+
+class _PopupStackItem {
+  _PopupStackItem({
+    required this.result,
+    required this.selectionRect,
+    required this.searchTerm,
+  });
+
+  final DictionarySearchResult result;
+  final Rect selectionRect;
+  final String searchTerm;
+  final GlobalKey<DictionaryPopupWebViewState> webViewKey =
+      GlobalKey<DictionaryPopupWebViewState>();
 }
 
 class _SwipeDismissWrapper extends StatefulWidget {
