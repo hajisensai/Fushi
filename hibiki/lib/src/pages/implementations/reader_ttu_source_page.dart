@@ -339,24 +339,11 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   }
 
   void _captureStableInsets() {
-    final mq = MediaQuery.of(context);
-    final vp = mq.viewPadding;
-    final p = mq.padding;
-    // ignore: avoid_print
-    print('[hibiki-insets] capture: viewPadding.top=${vp.top} viewPadding.bottom=${vp.bottom} '
-        'padding.top=${p.top} padding.bottom=${p.bottom} '
-        'viewInsets=${mq.viewInsets} '
-        'systemGestureInsets=${mq.systemGestureInsets} '
-        'captured=$_stableInsetsCaptured stableTop=$_stableTopInset '
-        'stableBottom=$_stableBottomInset screenH=${mq.size.height} '
-        'devicePixelRatio=${mq.devicePixelRatio}');
     if (!_stableInsetsCaptured) {
+      final vp = MediaQuery.of(context).viewPadding;
       _stableTopInset = vp.top;
       _stableBottomInset = vp.bottom;
       _stableInsetsCaptured = true;
-      // ignore: avoid_print
-      print('[hibiki-insets] SET stableTop=$_stableTopInset '
-          'stableBottom=$_stableBottomInset');
     }
   }
 
@@ -1105,13 +1092,6 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     }
     _lastAppThemeSignature = currentThemeSignature;
     _scheduleFloatingLyricStyleSync();
-
-    // ignore: avoid_print
-    print('[hibiki-layout] build: screenH=${MediaQuery.of(context).size.height} '
-        'stableTop=$_stableTopInset stableBottom=$_stableBottomInset '
-        'chromeH=$_readerChromeHeight hasChrome=$_hasReaderBottomChrome '
-        'bottomReserve=$_readerBottomReserve '
-        'webViewH=${MediaQuery.of(context).size.height - _stableTopInset - _readerBottomReserve}');
 
     return Focus(
       autofocus: true,
@@ -2753,9 +2733,10 @@ function _applySelection(range) {
 
 function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceDelimited) {
   var result = document.caretRangeFromPoint(x, y);
+  if (!result || !result.startContainer || !(result.startContainer instanceof Node)) return;
 
   // Resolve furigana hit → base text in parent <ruby>
-  if (result && result.startContainer && result.startContainer.nodeType === Node.TEXT_NODE) {
+  if (result.startContainer.nodeType === Node.TEXT_NODE) {
     var _el = result.startContainer.parentElement;
     if (_el && _el.closest('rt, rp')) {
       var _ruby = _el.closest('ruby');
@@ -2774,115 +2755,99 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     }
   }
 
-  var selectedElement = result.startContainer;
-  var paragraph = result.startContainer;
   var offsetNode = result.startContainer;
-  var offset = result.startOffset;
+  if (!(offsetNode instanceof Node) || offsetNode.nodeType !== Node.TEXT_NODE) return;
+  var nodeLen = offsetNode.textContent ? offsetNode.textContent.length : 0;
+  var offset = Math.min(result.startOffset, nodeLen);
 
   var adjustIndex = false;
 
-  if (!!offsetNode && offsetNode.nodeType === Node.TEXT_NODE && offset) {
-      const range = new Range();
-      range.setStart(offsetNode, offset - 1);
-      range.setEnd(offsetNode, offset);
-
-      const bbox = range.getBoundingClientRect();
+  if (offset > 0) {
+      var testRange = document.createRange();
+      testRange.setStart(offsetNode, offset - 1);
+      testRange.setEnd(offsetNode, offset);
+      var bbox = testRange.getBoundingClientRect();
       if (bbox.left <= x && bbox.right >= x &&
           bbox.top <= y && bbox.bottom >= y) {
           if (length == 1) {
-            const range = new Range();
-            range.setStart(offsetNode, result.startOffset - 1);
-            range.setEnd(offsetNode, result.startOffset);
-
-            _applySelection(range);
+            var r1 = document.createRange();
+            r1.setStart(offsetNode, offset - 1);
+            r1.setEnd(offsetNode, offset);
+            _applySelection(r1);
             return;
           }
-
-          result.startOffset = result.startOffset - 1;
+          offset = offset - 1;
           adjustIndex = true;
       }
   }
 
   if (length == 1) {
-    const range = new Range();
-    range.setStart(offsetNode, result.startOffset);
-    range.setEnd(offsetNode, result.startOffset + 1);
-
-    _applySelection(range);
+    var end1 = Math.min(offset + 1, nodeLen);
+    if (end1 <= offset) return;
+    var r2 = document.createRange();
+    r2.setStart(offsetNode, offset);
+    r2.setEnd(offsetNode, end1);
+    _applySelection(r2);
     return;
   }
 
+  var paragraph = offsetNode;
   while (paragraph && paragraph.nodeName !== 'P') {
     paragraph = paragraph.parentNode;
   }
-  if (paragraph === null) {
-    paragraph = result.startContainer.parentNode;
+  if (!paragraph) {
+    paragraph = offsetNode.parentNode;
   }
-  var noFuriganaText = [];
-  var lastNode;
+  if (!paragraph) return;
 
+  var lastNode = null;
   var endOffset = 0;
   var done = false;
+  var charCount = 0;
+  var target = length + index;
+
+  function walkTextNode(tnode) {
+    if (done) return;
+    lastNode = tnode;
+    endOffset = 0;
+    var tlen = tnode.textContent ? tnode.textContent.length : 0;
+    for (var i = 0; i < tlen; i++) {
+      endOffset = i + 1;
+      charCount++;
+      if (charCount >= target) { done = true; return; }
+    }
+  }
 
   for (var value of paragraph.childNodes.values()) {
-    if (done) {
-      console.log(noFuriganaText.join());
-      break;
-    }
-    
-    if (value.nodeName === "#text") {
-      endOffset = 0;
-      lastNode = value;
-      for (var i = 0; i < value.textContent.length; i++) {
-        noFuriganaText.push(value.textContent[i]);
-        endOffset = endOffset + 1;
-        if (noFuriganaText.length >= length + index) {
-          done = true;
-          break;
-        }
-      }
+    if (done) break;
+    if (value.nodeName === '#text') {
+      walkTextNode(value);
     } else {
       for (var node of value.childNodes.values()) {
-        if (done) {
-          break;
-        }
-
-        if (node.nodeName === "#text") {
-          endOffset = 0;
-          lastNode = node;
-
-          for (var i = 0; i < node.textContent.length; i++) {
-            noFuriganaText.push(node.textContent[i]);
-            endOffset = endOffset + 1;
-            if (noFuriganaText.length >= length + index) {
-              done = true;
-              break;
-            }
-          }
-        } else if (node.firstChild && node.firstChild.nodeName === "#text" && node.nodeName !== "RT" && node.nodeName !== "RP") {
-          endOffset = 0;
-          lastNode = node.firstChild;
-          for (var i = 0; i < node.firstChild.textContent.length; i++) {
-            noFuriganaText.push(node.firstChild.textContent[i]);
-            endOffset = endOffset + 1;
-            if (noFuriganaText.length >= length + index) {
-              done = true;
-              break;
-            }
-          }
+        if (done) break;
+        if (node.nodeName === '#text') {
+          walkTextNode(node);
+        } else if (node.nodeName !== 'RT' && node.nodeName !== 'RP' &&
+                   node.firstChild && node.firstChild.nodeName === '#text') {
+          walkTextNode(node.firstChild);
         }
       }
     }
   }
 
-  const range = new Range();
-  range.setStart(offsetNode, result.startOffset - adjustIndex + whitespaceOffset);
+  var startOff = Math.max(0, Math.min(offset + whitespaceOffset, nodeLen));
+  var range = document.createRange();
+  range.setStart(offsetNode, startOff);
   if (isSpaceDelimited) {
-    range.expand("word");
-  } else if (lastNode && lastNode.nodeType) {
-    range.setEnd(lastNode, endOffset);
+    range.expand('word');
+  } else if (lastNode instanceof Node && endOffset > 0) {
+    var lastLen = lastNode.textContent ? lastNode.textContent.length : 0;
+    range.setEnd(lastNode, Math.min(endOffset, lastLen));
   } else {
-    range.setEnd(offsetNode, Math.min(result.startOffset - adjustIndex + whitespaceOffset + 1, offsetNode.length || 0));
+    var fallbackEnd = Math.min(startOff + 1, nodeLen);
+    if (fallbackEnd > startOff) {
+      range.setEnd(offsetNode, fallbackEnd);
+    }
   }
 
   _applySelection(range);
@@ -4503,26 +4468,32 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          BottomAppBar(
-            height: _readerChromeHeight,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Row(
-              children: [
-                if (bookUid != null)
-                  IconButton(
-                    icon: const Icon(Icons.headphones),
-                    iconSize: 22,
-                    onPressed: () => _openImportDialog(bookUid),
-                    tooltip: t.audiobook_import,
-                  ),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.tune),
-                  iconSize: 20,
-                  onPressed: () => _showReaderSettingsSheet(null),
-                  tooltip: t.reader_settings_label,
+          Material(
+            elevation: 2,
+            color: Theme.of(context).colorScheme.surfaceContainer,
+            child: SizedBox(
+              height: _readerChromeHeight,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Row(
+                  children: [
+                    if (bookUid != null)
+                      IconButton(
+                        icon: const Icon(Icons.headphones),
+                        iconSize: 22,
+                        onPressed: () => _openImportDialog(bookUid),
+                        tooltip: t.audiobook_import,
+                      ),
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.tune),
+                      iconSize: 20,
+                      onPressed: () => _showReaderSettingsSheet(null),
+                      tooltip: t.reader_settings_label,
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
           SizedBox(height: _stableBottomInset),
@@ -4714,32 +4685,20 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     return ListenableBuilder(
       listenable: Listenable.merge([ctrl, _barThemeNotifier]),
       builder: (context, _) {
-        // ignore: avoid_print
-        print('[hibiki-bar] buildAudiobookBar: chromeH=$_readerChromeHeight '
-            'stableBottom=$_stableBottomInset total=${_readerChromeHeight + _stableBottomInset} '
-            'screenH=${MediaQuery.of(context).size.height} '
-            'viewPadding=${MediaQuery.of(context).viewPadding} '
-            'padding=${MediaQuery.of(context).padding}');
         final barWidget = Positioned(
           left: 0,
           right: 0,
           bottom: 0,
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              // ignore: avoid_print
-              print('[hibiki-measure] audiobar minW=${constraints.minWidth} maxW=${constraints.maxWidth} minH=${constraints.minHeight} maxH=${constraints.maxHeight}');
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _buildFollowPill(),
-                  AudiobookPlayBar(
-                    controller: ctrl,
-                    onOpenSettings: () => _showReaderSettingsSheet(ctrl),
-                  ),
-                  SizedBox(height: _stableBottomInset),
-                ],
-              );
-            },
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildFollowPill(),
+              AudiobookPlayBar(
+                controller: ctrl,
+                onOpenSettings: () => _showReaderSettingsSheet(ctrl),
+              ),
+              SizedBox(height: _stableBottomInset),
+            ],
           ),
         );
         final ThemeData? overrideTheme = appModel.overrideDictionaryTheme;
