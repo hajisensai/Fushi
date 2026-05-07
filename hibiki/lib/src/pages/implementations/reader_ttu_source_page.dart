@@ -274,6 +274,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   /// 生命周期 pause→resume 过渡期间为 true，屏蔽 didChangeMetrics 的位置
   /// 捕获和恢复（此时 viewport 尺寸不稳定，拿到的 offset 不可信）。
   bool _lifecycleTransition = false;
+  bool _lookupInFlight = false;
   Timer? _lifecycleResumeTimer;
   int _lifecycleResumeToken = 0;
 
@@ -837,6 +838,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     if (!_readerContentReady) return;
     if (_restoreInFlight) return;
     if (_lifecycleTransition) return;
+    if (_lookupInFlight) return;
     if (_metricsDebounce == null || !_metricsDebounce!.isActive) {
       AudiobookBridge.getViewportNormOffset(_controller).then((pos) {
         if (pos != null) _preMetricsPos = pos;
@@ -1981,6 +1983,10 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   }
 
   Future<void> _processLookup(Map<String, dynamic> payload) async {
+    _lookupInFlight = true;
+    _metricsDebounce?.cancel();
+    _preMetricsPos = null;
+
     FocusScope.of(context).unfocus();
     _focusNode.requestFocus();
 
@@ -2081,12 +2087,11 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         mediaSource.setCurrentSentence(
           selection: selection,
         );
-      }).catchError((Object e) {
-        debugPrint('_processLookup async error: $e');
-        clearDictionaryResult();
-        mediaSource.clearCurrentSentence();
+      }).whenComplete(() {
+        _lookupInFlight = false;
       });
     } catch (e) {
+      _lookupInFlight = false;
       debugPrint('_processLookup error: $e');
       clearDictionaryResult();
     }
