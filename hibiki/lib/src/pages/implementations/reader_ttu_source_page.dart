@@ -173,8 +173,9 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   bool _audioSlotResolved = false;
 
   static const double _readerChromeHeight = 56;
+  double _stableTopInset = 0;
   double _stableBottomInset = 0;
-  bool _stableBottomInsetCaptured = false;
+  bool _stableInsetsCaptured = false;
 
   bool get _hasReaderBottomChrome =>
       _audiobookController == null || appModel.showPlayBar;
@@ -334,13 +335,15 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _scheduleFloatingLyricStyleSync(force: true);
-    _captureStableBottomInset();
+    _captureStableInsets();
   }
 
-  void _captureStableBottomInset() {
-    if (!_stableBottomInsetCaptured) {
-      _stableBottomInset = MediaQuery.of(context).viewPadding.bottom;
-      _stableBottomInsetCaptured = true;
+  void _captureStableInsets() {
+    if (!_stableInsetsCaptured) {
+      final vp = MediaQuery.of(context).viewPadding;
+      _stableTopInset = vp.top;
+      _stableBottomInset = vp.bottom;
+      _stableInsetsCaptured = true;
     }
   }
 
@@ -1072,7 +1075,9 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         clearDictionaryResult();
       }
       lastOrientation = orientation;
-      _stableBottomInset = MediaQuery.of(context).viewPadding.bottom;
+      final vp = MediaQuery.of(context).viewPadding;
+      _stableTopInset = vp.top;
+      _stableBottomInset = vp.bottom;
     }
 
     final currentThemeSignature = _appThemeSignature();
@@ -1114,11 +1119,14 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
               alignment: Alignment.center,
               children: <Widget>[
                 Positioned.fill(
+                  top: _stableTopInset,
                   bottom: _readerBottomReserve,
                   child: buildBody(),
                 ),
                 if (!_readerContentReady)
                   Positioned.fill(
+                    top: _stableTopInset,
+                    bottom: _readerBottomReserve,
                     child: ColoredBox(color: _ttuThemeFlutterColor()),
                   ),
                 buildDictionary(),
