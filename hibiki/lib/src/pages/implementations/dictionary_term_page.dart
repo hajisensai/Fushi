@@ -10,7 +10,6 @@ import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/models/creator_model.dart';
 import 'package:hibiki/utils.dart';
-import 'package:collection/collection.dart';
 
 /// Returns the widget for a list of [DictionaryEntry] making up a term.
 class DictionaryTermPage extends ConsumerWidget {
@@ -50,7 +49,7 @@ class DictionaryTermPage extends ConsumerWidget {
   /// Lists the order of dictionaries.
   final Map<String, int> dictionaryNamesByOrder;
 
-  /// Optional footer foor use in [DictionaryHistoryPage].
+  /// Optional footer widget shown below the term entries.
   final Widget? footerWidget;
 
   /// Override color for card background color.

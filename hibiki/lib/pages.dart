@@ -4,7 +4,6 @@ export 'src/pages/implementations/example_sentences_dialog_page.dart';
 export 'src/pages/implementations/dictionary_term_page.dart';
 export 'src/pages/implementations/dictionary_entry_page.dart';
 export 'src/pages/implementations/dictionary_result_page.dart';
-export 'src/pages/implementations/dictionary_history_page.dart';
 export 'src/pages/implementations/dictionary_dialog_page.dart';
 export 'src/pages/implementations/dictionary_dialog_delete_page.dart';
 export 'src/pages/implementations/dictionary_dialog_import_page.dart';

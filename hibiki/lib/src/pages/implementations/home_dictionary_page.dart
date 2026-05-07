@@ -113,11 +113,17 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
       itemCount: historyResults.length,
       itemBuilder: (context, index) {
         final result = historyResults[index];
-        if (result.entries.isEmpty) return const SizedBox.shrink();
+        if (result.entries.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        final searchTerm = result.searchTerm.trim();
         final first = result.entries.first;
         final word = first.word;
         final reading = first.reading;
-        final hasReading = reading.isNotEmpty && reading != word;
+        final hasWordInfo =
+            word.isNotEmpty && word != searchTerm;
+        final hasReading =
+            reading.isNotEmpty && reading != word && reading != searchTerm;
         final dictCount = result.entries
             .map((e) => e.dictionaryName)
             .toSet()
@@ -128,9 +134,9 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
             setState(() {});
           },
           onLongPress: () {
-            mediaType.floatingSearchBarController.query = word;
+            mediaType.floatingSearchBarController.query = searchTerm;
             mediaType.floatingSearchBarController.openWithoutFocus();
-            search(word);
+            search(searchTerm);
           },
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
@@ -153,45 +159,27 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Row(
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  word,
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w500,
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurface,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              if (hasReading) ...[
-                                const SizedBox(width: 8),
-                                Text(
-                                  reading,
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurfaceVariant,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
-                            ],
+                          Text(
+                            searchTerm.replaceAll('\n', ' '),
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w500,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurface,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          if (result.searchTerm.isNotEmpty &&
-                              result.searchTerm != word) ...[
+                          if (hasWordInfo || hasReading) ...[
                             const SizedBox(height: 2),
                             Text(
-                              result.searchTerm,
+                              [
+                                if (hasWordInfo) word,
+                                if (hasReading) reading,
+                              ].join('  '),
                               style: TextStyle(
-                                fontSize: 12,
+                                fontSize: 13,
                                 color: Theme.of(context)
                                     .colorScheme
                                     .onSurfaceVariant,
