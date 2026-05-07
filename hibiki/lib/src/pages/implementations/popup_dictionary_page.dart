@@ -168,7 +168,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
     return DictionaryPopupWebView(
       key: ValueKey(_result),
       result: _result!,
-      onTextSelected: (text) {
+      onTextSelected: (text, _, __) {
         _search(text);
       },
       onMineEntry: _onMineEntry,

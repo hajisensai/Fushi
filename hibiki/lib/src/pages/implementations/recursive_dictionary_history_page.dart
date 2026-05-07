@@ -31,7 +31,7 @@ class _RecursiveDictionaryHistoryPageState
       body: SafeArea(
         child: DictionaryPopupWebView(
           result: widget.result,
-          onTextSelected: (text) {
+          onTextSelected: (text, _, __) {
             onSearch(text);
           },
         ),

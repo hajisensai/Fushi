@@ -549,7 +549,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
           child: DictionaryPopupWebView(
             key: ValueKey(_result),
             result: _result!,
-            onTextSelected: (text) {
+            onTextSelected: (text, _, __) {
               mediaType.floatingSearchBarController.query = text;
               search(text);
             },

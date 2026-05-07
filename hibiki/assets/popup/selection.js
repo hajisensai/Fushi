@@ -264,7 +264,7 @@ window.hoshiSelection = {
         };
 
         const sentence = this.getSentence(hit.node, hit.offset);
-        window.flutter_inappwebview.callHandler('textSelected', text);
+        window.flutter_inappwebview.callHandler('textSelected', text, x, y);
 
         return text;
     },

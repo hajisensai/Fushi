@@ -273,11 +273,11 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
       top: pos.top,
       width: pos.width,
       height: pos.height,
-      child: _buildPopupContent(stack, index),
+      child: _buildPopupContent(stack, index, screen),
     );
   }
 
-  Widget _buildPopupContent(List<_PopupStackItem> stack, int index) {
+  Widget _buildPopupContent(List<_PopupStackItem> stack, int index, Size screen) {
     final isDark = (appModel.overrideDictionaryTheme ?? theme).brightness ==
         Brightness.dark;
     final fillColor = isDark ? Colors.black : Colors.white;
@@ -303,7 +303,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
             Expanded(
               child: Stack(
                 children: [
-                  _buildPopupSearchResult(stack, index),
+                  _buildPopupSearchResult(stack, index, screen),
                   if (isTop) buildDictionaryLoading(),
                 ],
               ),
@@ -327,7 +327,8 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
     }
   }
 
-  Widget _buildPopupSearchResult(List<_PopupStackItem> stack, int index) {
+  Widget _buildPopupSearchResult(
+      List<_PopupStackItem> stack, int index, Size screen) {
     final item = stack[index];
 
     if (item.result.entries.isEmpty) {
@@ -338,11 +339,16 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
       key: item.webViewKey,
       result: item.result,
       onTapOutside: clearDictionaryResult,
-      onTextSelected: (text) {
+      onTextSelected: (text, localX, localY) {
+        final parentPos = _calculatePopupPosition(item.selectionRect, screen);
+        final screenX = parentPos.left + localX;
+        final screenY = parentPos.top + localY;
+        final childRect = Rect.fromLTWH(screenX, screenY, 1, 1);
+
         _popupStack.value = _popupStack.value.sublist(0, index + 1);
         searchDictionaryResult(
           searchTerm: text,
-          selectionRect: item.selectionRect,
+          selectionRect: childRect,
         );
       },
       onMineEntry: onMineFromPopup,
