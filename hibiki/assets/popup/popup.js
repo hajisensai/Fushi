@@ -1301,7 +1301,7 @@ function createEntryHeader(entry, idx) {
             mineButton.disabled = true;
             const isAnkiConnect = await mineEntry(expression, reading, frequencies, pitches, rules, matched, idx, lastSelection);
             const checkDuplicate = async () => {
-                const wasAdded = await window.flutter_inappwebview.callHandler('duplicateCheck', expression);
+                const wasAdded = await window.flutter_inappwebview.callHandler('duplicateCheck', { expression, reading });
                 mineButton.textContent = wasAdded ? '✓' : '+';
                 if (wasAdded) {
                     mineButton.classList.add('duplicate');
@@ -1317,7 +1317,7 @@ function createEntryHeader(entry, idx) {
         }
     });
     buttonsContainer.appendChild(mineButton);
-    window.flutter_inappwebview.callHandler('duplicateCheck', expression).then(isDuplicate => {
+    window.flutter_inappwebview.callHandler('duplicateCheck', { expression, reading }).then(isDuplicate => {
         if (isDuplicate) {
             mineButton.textContent = '✓';
             mineButton.classList.add('duplicate');
