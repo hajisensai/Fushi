@@ -364,6 +364,13 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
           item.webViewKey.currentState?.highlightSelection(count);
         }
       },
+      onLinkClick: (query) async {
+        _popupStack.value = _popupStack.value.sublist(0, index + 1);
+        await searchDictionaryResult(
+          searchTerm: query,
+          selectionRect: item.selectionRect,
+        );
+      },
       onMineEntry: onMineFromPopup,
       onDuplicateCheck: (expression, reading) async {
         final repo = ref.read(ankiRepositoryProvider);

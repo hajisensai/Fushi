@@ -15,6 +15,7 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     super.key,
     required this.result,
     this.onTextSelected,
+    this.onLinkClick,
     this.onTapOutside,
     this.onMineEntry,
     this.onDuplicateCheck,
@@ -22,6 +23,7 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
 
   final DictionarySearchResult result;
   final void Function(String text, Rect localRect)? onTextSelected;
+  final void Function(String query)? onLinkClick;
   final VoidCallback? onTapOutside;
   final Future<bool> Function(Map<String, String> fields)? onMineEntry;
   final Future<bool> Function(String expression, String reading)?
@@ -243,7 +245,7 @@ class DictionaryPopupWebViewState
             if (args.isNotEmpty) {
               final text = args[0].toString();
               if (text.isNotEmpty) {
-                widget.onTextSelected?.call(text, Rect.zero);
+                widget.onLinkClick?.call(text);
               }
             }
           },
