@@ -2367,82 +2367,36 @@ window.__hibikiGetScrollRoots = function() {
   return roots;
 };
 
-window.__hibikiCaptureScrollState = function() {
-  var roots = window.__hibikiGetScrollRoots ? window.__hibikiGetScrollRoots() : [];
-  if (!roots.length) {
-    var fb = document.querySelector('.book-content') || document.scrollingElement || document.documentElement;
-    if (fb) roots = [fb];
-  }
-  var ttuPos = null;
-  try {
-    if (typeof window.__ttuGetPageInfo === 'function') {
-      var info = window.__ttuGetPageInfo();
-      if (info &&
-          Number.isFinite(info.stride) &&
-          info.stride >= 10 &&
-          Number.isFinite(info.virtualScrollPos)) {
-        ttuPos = info.virtualScrollPos;
-      }
-    }
-  } catch(e) {}
-  return {
-    roots: roots.map(function(el) { return { el: el, top: el.scrollTop, left: el.scrollLeft }; }),
-    ttuPos: ttuPos
-  };
-};
-
-window.__hibikiRestoreScrollState = function(state) {
-  if (!state) return;
-  if (state.ttuPos !== null && typeof window.__ttuScrollToPos === 'function') {
-    try { window.__ttuScrollToPos(state.ttuPos); } catch(e) {}
-  }
-  var roots = state.roots || [];
-  for (var i = 0; i < roots.length; i++) {
-    roots[i].el.scrollTop = roots[i].top;
-    roots[i].el.scrollLeft = roots[i].left;
-  }
-};
-
 window.__hibikiSelectionScrollLockCount = window.__hibikiSelectionScrollLockCount || 0;
 window.__hibikiIsSelectionScrollLocked = function() {
   return (window.__hibikiSelectionScrollLockCount || 0) > 0;
 };
 
 window.__hibikiRunWithScrollLock = function(fn) {
-  var saved = window.__hibikiCaptureScrollState ? window.__hibikiCaptureScrollState() : null;
-  var roots = saved ? saved.roots.map(function(item) { return item.el; }) : [];
-  var restoring = false;
-  function lockScroll() {
-    if (restoring) return;
-    restoring = true;
-    if (window.__hibikiRestoreScrollState) window.__hibikiRestoreScrollState(saved);
-    restoring = false;
+  var roots = window.__hibikiGetScrollRoots ? window.__hibikiGetScrollRoots() : [];
+  if (!roots.length) {
+    var fb = document.querySelector('.book-content') || document.scrollingElement || document.documentElement;
+    if (fb) roots = [fb];
   }
-  for (var i = 0; i < roots.length; i++) {
-    roots[i].addEventListener('scroll', lockScroll);
-  }
-  document.addEventListener('scroll', lockScroll, true);
+  var overflows = roots.map(function(el) {
+    var orig = el.style.overflow;
+    el.style.overflow = 'hidden';
+    return { el: el, orig: orig };
+  });
   window.__hibikiSelectionScrollLockCount++;
   var cleaned = false;
   function cleanup() {
     if (cleaned) return;
     cleaned = true;
-    lockScroll();
-    for (var i = 0; i < roots.length; i++) {
-      roots[i].removeEventListener('scroll', lockScroll);
+    for (var i = 0; i < overflows.length; i++) {
+      overflows[i].el.style.overflow = overflows[i].orig;
     }
-    document.removeEventListener('scroll', lockScroll, true);
     window.__hibikiSelectionScrollLockCount = Math.max(0, (window.__hibikiSelectionScrollLockCount || 1) - 1);
   }
   try {
     fn();
   } finally {
-    lockScroll();
-    requestAnimationFrame(function() {
-      lockScroll();
-      requestAnimationFrame(lockScroll);
-    });
-    setTimeout(cleanup, 250);
+    setTimeout(cleanup, 150);
   }
 };
 
