@@ -9,6 +9,7 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/src/anki/anki_models.dart';
 import 'package:hibiki/src/anki/anki_repository.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
+import 'package:hibiki/src/media/sources/reader_ttu_source.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki/src/utils/misc/popup_channel.dart';
 import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
@@ -39,7 +40,7 @@ class PopupDictionaryPage extends ConsumerStatefulWidget {
 
 class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
   final List<_StackEntry> _stack = [];
-  int _searchGeneration = 0;
+  bool _isClosing = false;
 
   static const double _popupPadding = 6.0;
   static const double _popupMaxWidth = 360.0;
@@ -58,8 +59,6 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
   Future<void> _pushSearch(String query, Rect selectionRect) async {
     if (query.trim().isEmpty) return;
 
-    _searchGeneration++;
-    final gen = _searchGeneration;
     final entry = _StackEntry(query: query, selectionRect: selectionRect);
     setState(() => _stack.add(entry));
 
@@ -70,8 +69,9 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
         overrideMaximumTerms: appModel.maximumTerms,
       );
     } finally {
-      if (!mounted || !_stack.contains(entry)) return;
-      setState(() => entry.isSearching = false);
+      if (mounted && _stack.contains(entry)) {
+        setState(() => entry.isSearching = false);
+      }
     }
 
     if (!mounted || !_stack.contains(entry)) return;
@@ -87,12 +87,12 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
 
   void _popAt(int index) {
     if (index <= 0) return;
-    _searchGeneration++;
     setState(() => _stack.removeRange(index, _stack.length));
   }
 
   Future<void> _close() async {
-    _searchGeneration++;
+    if (_isClosing) return;
+    _isClosing = true;
     await appModel.closeForPopup();
     await PopupChannel.instance.finishPopup();
   }
@@ -187,6 +187,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
       width: pos.width,
       height: pos.height,
       child: SwipeDismissWrapper(
+        sensitivity: ReaderTtuSource.instance.dismissSwipeSensitivity,
         onDismiss: () {
           if (index == 0) {
             _close();
