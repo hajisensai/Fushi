@@ -837,6 +837,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     if (!_readerContentReady) return;
     if (_restoreInFlight) return;
     if (_lifecycleTransition) return;
+    if (dictionaryPopupShown) return;
     if (_metricsDebounce == null || !_metricsDebounce!.isActive) {
       AudiobookBridge.getViewportNormOffset(_controller).then((pos) {
         if (pos != null) _preMetricsPos = pos;
@@ -844,6 +845,10 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     }
     _metricsDebounce?.cancel();
     _metricsDebounce = Timer(const Duration(milliseconds: 600), () async {
+      if (dictionaryPopupShown) {
+        _preMetricsPos = null;
+        return;
+      }
       final pos = _preMetricsPos ?? _lastSavedPos;
       _preMetricsPos = null;
       if (pos == null || pos.section < 0 || pos.offset < 0) return;
@@ -1120,13 +1125,11 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
               children: <Widget>[
                 Positioned.fill(
                   top: _stableTopInset,
-                  bottom: _readerBottomReserve,
                   child: buildBody(),
                 ),
                 if (!_readerContentReady)
                   Positioned.fill(
                     top: _stableTopInset,
-                    bottom: _readerBottomReserve,
                     child: ColoredBox(color: _ttuThemeFlutterColor()),
                   ),
                 buildDictionary(),
@@ -2349,7 +2352,7 @@ xhr.send();
   /// This is executed upon page load and change.
   /// More accurate readability courtesy of
   /// https://github.com/birchill/10ten-ja-reader/blob/fbbbde5c429f1467a7b5a938e9d67597d7bd5ffa/src/content/get-text.ts#L314
-  String javascriptToExecute = """
+  String get javascriptToExecute => """
 /*jshint esversion: 6 */
 
 window.__hibikiGetScrollRoots = function() {
@@ -2718,6 +2721,10 @@ button.fixed.top-0 {
    auto-bookmark，这颗半透明图钉对用户没用，且容易盖住正文，直接隐藏。 */
 div.pointer-events-none.absolute.opacity-25 {
   display: none !important;
+}
+
+.book-content {
+  padding-bottom: ${_readerBottomReserve.round()}px !important;
 }
 </style>
 `);
