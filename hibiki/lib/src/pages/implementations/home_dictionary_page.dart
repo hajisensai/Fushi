@@ -140,14 +140,12 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
         final dictCount =
             result.entries.map((e) => e.dictionaryName).toSet().length;
         return InkWell(
-          onTap: () async {
-            await appModel.openResultFromHistory(result: result);
-            setState(() {});
+          onTap: () {
+            mediaType.floatingSearchBarController.query = searchTerm;
+            search(searchTerm);
           },
           onLongPress: () {
-            mediaType.floatingSearchBarController.query = searchTerm;
-            mediaType.floatingSearchBarController.openWithoutFocus();
-            search(searchTerm);
+            appModel.openResultFromHistory(result: result);
           },
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
@@ -253,13 +251,10 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
       onQueryChanged: onQueryChanged,
       onSubmitted: search,
       debounceDelay: Duration(milliseconds: appModel.searchDebounceDelay),
-      leadingActions: [
-        buildBackButton(),
-      ],
+      leadingActions: const [],
       actions: [
         buildDictionarySettingsButton(),
         buildClearButton(),
-        buildSearchClearButton(),
         buildSearchButton(),
       ],
     );
@@ -365,8 +360,6 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
 
   Widget buildClearButton() {
     return FloatingSearchBarAction(
-      showIfOpened: false,
-      showIfClosed: true,
       child: JidoujishoIconButton(
         size: textTheme.titleLarge?.fontSize,
         tooltip: t.clear_dictionary_title,
@@ -378,7 +371,6 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
 
   Widget buildSearchButton() {
     return FloatingSearchBarAction(
-      showIfOpened: true,
       builder: (context, animation) {
         final bar = FloatingSearchAppBar.of(context)!;
 
@@ -411,23 +403,9 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
     );
   }
 
-  Widget buildSearchClearButton() {
-    return FloatingSearchBarAction(
-      showIfOpened: true,
-      showIfClosed: false,
-      child: JidoujishoIconButton(
-        size: textTheme.titleLarge?.fontSize,
-        tooltip: t.clear_search_title,
-        icon: Icons.manage_search,
-        onTap: showDeleteSearchHistoryPrompt,
-      ),
-    );
-  }
-
   /// Dictionary settings bar action.
   Widget buildDictionarySettingsButton() {
     return FloatingSearchBarAction(
-      showIfOpened: true,
       child: JidoujishoIconButton(
         size: Theme.of(context).textTheme.titleLarge?.fontSize,
         tooltip: t.dictionary_settings,
@@ -445,42 +423,6 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
           }
         },
       ),
-    );
-  }
-
-  void showDeleteSearchHistoryPrompt() async {
-    Widget alertDialog = AlertDialog(
-      title: Text(t.clear_search_title),
-      content: Text(
-        t.clear_search_description,
-      ),
-      actions: <Widget>[
-        TextButton(
-          child: Text(
-            t.dialog_clear,
-            style: TextStyle(
-              color: theme.colorScheme.primary,
-            ),
-          ),
-          onPressed: () async {
-            appModel.clearSearchHistory(
-                historyKey: DictionaryMediaType.instance.uniqueKey);
-            mediaType.floatingSearchBarController.clear();
-
-            setState(() {});
-            Navigator.pop(context);
-          },
-        ),
-        TextButton(
-          child: Text(t.dialog_cancel),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ],
-    );
-
-    await showAppDialog(
-      context: context,
-      builder: (context) => alertDialog,
     );
   }
 
