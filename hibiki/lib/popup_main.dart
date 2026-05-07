@@ -61,6 +61,15 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
   Widget build(BuildContext context) {
     final appModel = ref.watch(appProvider);
 
+    if (appModel.initError != null) {
+      return MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(
+          body: Center(child: Text('Init error: ${appModel.initError}')),
+        ),
+      );
+    }
+
     if (!appModel.isInitialised) {
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
@@ -75,15 +84,6 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
               color: isDark ? Colors.white70 : null,
             ),
           ),
-        ),
-      );
-    }
-
-    if (appModel.initError != null) {
-      return MaterialApp(
-        debugShowCheckedModeBanner: false,
-        home: Scaffold(
-          body: Center(child: Text('Init error: ${appModel.initError}')),
         ),
       );
     }
