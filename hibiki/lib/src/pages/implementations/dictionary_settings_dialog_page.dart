@@ -396,11 +396,13 @@ class _DictionaryDialogPageState extends BasePageState {
 
     return InkWell(
       onTap: () async {
-        final result = await FilePicker.platform.pickFiles(
-          type: FileType.any,
-        );
-        if (result != null && result.files.single.path != null && mounted) {
-          final file = result.files.single;
+        bool importDialogShown = false;
+
+        void showImportDialog() {
+          if (importDialogShown || !mounted) {
+            return;
+          }
+          importDialogShown = true;
           showDialog(
             context: context,
             barrierDismissible: false,
@@ -421,17 +423,31 @@ class _DictionaryDialogPageState extends BasePageState {
               ),
             ),
           );
-          try {
+        }
+
+        try {
+          final result = await FilePicker.platform.pickFiles(
+            onFileLoading: (status) {
+              if (status == FilePickerStatus.picking) {
+                showImportDialog();
+              }
+            },
+          );
+          if (result != null && result.files.single.path != null && mounted) {
+            final file = result.files.single;
+            showImportDialog();
             await appModelNoUpdate.setLocalAudioDbPath(
               file.path!,
               displayName: file.name,
             );
-          } finally {
             if (mounted) {
-              Navigator.of(context).pop();
+              setState(() {});
             }
           }
-          if (mounted) setState(() {});
+        } finally {
+          if (importDialogShown && mounted) {
+            Navigator.of(context).pop();
+          }
         }
       },
       child: Container(
