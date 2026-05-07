@@ -169,7 +169,13 @@ class HibikiDatabase extends _$HibikiDatabase {
       select(searchHistoryItems).get();
 
   Future<void> upsertSearchHistoryItem(SearchHistoryItemsCompanion item) =>
-      into(searchHistoryItems).insertOnConflictUpdate(item);
+      into(searchHistoryItems).insert(
+        item,
+        onConflict: DoUpdate(
+          (old) => item,
+          target: [searchHistoryItems.uniqueKey],
+        ),
+      );
 
   Future<int> deleteSearchHistoryByUniqueKey(String uk) =>
       (delete(searchHistoryItems)..where((t) => t.uniqueKey.equals(uk))).go();
