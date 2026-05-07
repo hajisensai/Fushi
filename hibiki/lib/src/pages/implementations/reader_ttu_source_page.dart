@@ -4468,32 +4468,26 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Material(
-            elevation: 2,
-            color: Theme.of(context).colorScheme.surfaceContainer,
-            child: SizedBox(
-              height: _readerChromeHeight,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Row(
-                  children: [
-                    if (bookUid != null)
-                      IconButton(
-                        icon: const Icon(Icons.headphones),
-                        iconSize: 22,
-                        onPressed: () => _openImportDialog(bookUid),
-                        tooltip: t.audiobook_import,
-                      ),
-                    const Spacer(),
-                    IconButton(
-                      icon: const Icon(Icons.tune),
-                      iconSize: 20,
-                      onPressed: () => _showReaderSettingsSheet(null),
-                      tooltip: t.reader_settings_label,
-                    ),
-                  ],
+          BottomAppBar(
+            height: _readerChromeHeight,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Row(
+              children: [
+                if (bookUid != null)
+                  IconButton(
+                    icon: const Icon(Icons.headphones),
+                    iconSize: 22,
+                    onPressed: () => _openImportDialog(bookUid),
+                    tooltip: t.audiobook_import,
+                  ),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.tune),
+                  iconSize: 20,
+                  onPressed: () => _showReaderSettingsSheet(null),
+                  tooltip: t.reader_settings_label,
                 ),
-              ),
+              ],
             ),
           ),
           SizedBox(height: _stableBottomInset),
