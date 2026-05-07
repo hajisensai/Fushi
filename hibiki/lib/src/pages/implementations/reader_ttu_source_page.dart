@@ -831,21 +831,29 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   @override
   ReaderViewportPos? _preMetricsPos;
 
+  Size? _metricsScreenSize;
+
   void didChangeMetrics() {
     super.didChangeMetrics();
     if (!_controllerInitialised) return;
     if (!_readerContentReady) return;
     if (_restoreInFlight) return;
     if (_lifecycleTransition) return;
-    if (dictionaryPopupShown) return;
+    final currentSize = MediaQuery.of(context).size;
     if (_metricsDebounce == null || !_metricsDebounce!.isActive) {
+      _metricsScreenSize = currentSize;
       AudiobookBridge.getViewportNormOffset(_controller).then((pos) {
         if (pos != null) _preMetricsPos = pos;
       });
     }
     _metricsDebounce?.cancel();
     _metricsDebounce = Timer(const Duration(milliseconds: 600), () async {
-      if (dictionaryPopupShown) {
+      final sizeNow = MediaQuery.of(context).size;
+      final sizeChanged = _metricsScreenSize != null &&
+          (_metricsScreenSize!.width != sizeNow.width ||
+           _metricsScreenSize!.height != sizeNow.height);
+      _metricsScreenSize = null;
+      if (!sizeChanged) {
         _preMetricsPos = null;
         return;
       }
