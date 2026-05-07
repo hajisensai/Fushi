@@ -30,7 +30,6 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
   DictionarySearchResult? _result;
 
   bool _isSearching = false;
-  bool _lastOpenedState = false;
 
   @override
   void initState() {
@@ -45,13 +44,10 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
       return;
     }
     final model = appModelNoUpdate;
-    if (mediaType.floatingSearchBarController.isClosed) {
-      if (!model.isMediaOpen &&
-          DictionaryMediaType.instance ==
-              model.mediaTypes.values
-                  .toList()[model.currentHomeTabIndex]) {
-        setState(() {});
-      }
+    if (!model.isMediaOpen &&
+        DictionaryMediaType.instance ==
+            model.mediaTypes.values.toList()[model.currentHomeTabIndex]) {
+      setState(() {});
     }
   }
 
@@ -65,15 +61,33 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
 
   bool get shouldPlaceholderBeShown => appModel.dictionaryHistory.isEmpty;
 
+  bool get _hasActiveQuery =>
+      mediaType.floatingSearchBarController.query.isNotEmpty;
+
   @override
   Widget build(BuildContext context) {
     return Stack(children: [
-      if (shouldPlaceholderBeShown && !_lastOpenedState)
+      if (_hasActiveQuery)
+        _buildQueryBody()
+      else if (shouldPlaceholderBeShown)
         buildPlaceholder()
-      else if (!_lastOpenedState)
+      else
         buildDictionaryHistory(),
       buildFloatingSearchBar(),
     ]);
+  }
+
+  Widget _buildQueryBody() {
+    if (_result != null && _result!.entries.isNotEmpty) {
+      return buildSearchResultBody();
+    }
+    if (_isSearching) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: kToolbarHeight),
+      child: buildNoSearchResultsPlaceholderMessage(),
+    );
   }
 
   /// This is shown as the body when [shouldPlaceholderBeShown] is true.
@@ -120,14 +134,11 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
         final first = result.entries.first;
         final word = first.word;
         final reading = first.reading;
-        final hasWordInfo =
-            word.isNotEmpty && word != searchTerm;
+        final hasWordInfo = word.isNotEmpty && word != searchTerm;
         final hasReading =
             reading.isNotEmpty && reading != word && reading != searchTerm;
-        final dictCount = result.entries
-            .map((e) => e.dictionaryName)
-            .toSet()
-            .length;
+        final dictCount =
+            result.entries.map((e) => e.dictionaryName).toSet().length;
         return InkWell(
           onTap: () async {
             await appModel.openResultFromHistory(result: result);
@@ -164,9 +175,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.w500,
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurface,
+                              color: Theme.of(context).colorScheme.onSurface,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -195,16 +204,14 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
                       '$dictCount',
                       style: TextStyle(
                         fontSize: 12,
-                        color:
-                            Theme.of(context).colorScheme.onSurfaceVariant,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
                     const SizedBox(width: 4),
                     Icon(
                       Icons.chevron_right,
                       size: 20,
-                      color:
-                          Theme.of(context).colorScheme.onSurfaceVariant,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ],
                 ),
@@ -260,9 +267,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
 
   @override
   void onFocusChanged({required bool focused}) async {
-    final isOpen = mediaType.floatingSearchBarController.isOpen;
-    if (isOpen != _lastOpenedState) {
-      _lastOpenedState = isOpen;
+    if (!focused) {
       setState(() {});
     }
   }
@@ -275,6 +280,17 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
   Duration get historyDelay => const Duration(milliseconds: 500);
 
   void onQueryChanged(String query) async {
+    if (query.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _result = null;
+          _isSearching = false;
+          lastQuery = '';
+        });
+      }
+      return;
+    }
+
     if (!appModel.autoSearchEnabled) {
       return;
     }
@@ -506,66 +522,36 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
     BuildContext context,
     Animation<double> transition,
   ) {
-    if (appModel.dictionaries.isEmpty) {
-      return buildImportDictionariesPlaceholderMessage();
-    }
-    if (mediaType.floatingSearchBarController.query.isEmpty) {
-      if (appModel.getSearchHistory(historyKey: mediaType.uniqueKey).isEmpty) {
-        return buildEnterSearchTermPlaceholderMessage();
-      } else {
-        return JidoujishoSearchHistory(
-          uniqueKey: mediaType.uniqueKey,
-          onSearchTermSelect: (searchTerm) {
-            setState(() {
-              mediaType.floatingSearchBarController.query = searchTerm;
-              search(searchTerm);
-            });
-          },
-          onUpdate: () {
-            setState(() {});
-          },
-        );
-      }
-    }
-    if (_isSearching) {
-      if (_result != null && _result!.entries.isNotEmpty) {
-        return buildSearchResult();
-      } else {
-        return const SizedBox.shrink();
-      }
-    }
-
-    if (_result == null || _result!.entries.isEmpty) {
-      return buildNoSearchResultsPlaceholderMessage();
-    }
-
-    return buildSearchResult();
+    return const SizedBox.shrink();
   }
 
-  Widget buildSearchResult() {
-    return Column(
-      children: [
-        Expanded(
-          child: DictionaryPopupWebView(
-            key: ValueKey(_result),
-            result: _result!,
-            onTextSelected: (text, _) {
-              mediaType.floatingSearchBarController.query = text;
-              search(text);
-            },
-            onLinkClick: (query) {
-              mediaType.floatingSearchBarController.query = query;
-              search(query);
-            },
-            onMineEntry: _onMineEntry,
-            onDuplicateCheck: (expression, reading) async {
-              final repo = ref.read(ankiRepositoryProvider);
-              return repo.isDuplicate(expression, reading);
-            },
+  Widget buildSearchResultBody() {
+    return Padding(
+      padding: const EdgeInsets.only(top: kToolbarHeight),
+      child: Column(
+        children: [
+          Expanded(
+            child: DictionaryPopupWebView(
+              key: ValueKey(_result),
+              result: _result!,
+              onTextSelected: (text, _) {
+                mediaType.floatingSearchBarController.query = text;
+                search(text);
+              },
+              onLinkClick: (query, _) {
+                mediaType.floatingSearchBarController.query = query;
+                search(query);
+              },
+              onMineEntry: _onMineEntry,
+              onDuplicateCheck: (expression, reading) async {
+                final repo = ref.read(ankiRepositoryProvider);
+                return repo.isDuplicate(expression, reading);
+              },
+            ),
           ),
-        ),
-        if (footerWidget != null) footerWidget!,
-      ],
+          if (footerWidget != null) footerWidget!,
+        ],
+      ),
     );
   }
 
@@ -633,24 +619,6 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  Widget buildEnterSearchTermPlaceholderMessage() {
-    return Center(
-      child: JidoujishoPlaceholderMessage(
-        icon: Icons.search,
-        message: t.enter_search_term,
-      ),
-    );
-  }
-
-  Widget buildImportDictionariesPlaceholderMessage() {
-    return Center(
-      child: JidoujishoPlaceholderMessage(
-        icon: mediaType.outlinedIcon,
-        message: t.dictionaries_menu_empty,
       ),
     );
   }
