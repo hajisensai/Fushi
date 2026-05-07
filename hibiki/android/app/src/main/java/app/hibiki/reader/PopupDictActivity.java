@@ -27,11 +27,12 @@ public class PopupDictActivity extends FlutterActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
         ankiChannelHandler = new AnkiChannelHandler(this);
         ttsChannelHandler = new TtsChannelHandler(this);
-
         pendingProcessText = extractProcessText(getIntent());
+
+        super.onCreate(savedInstanceState);
+
         applyPopupWindowSize();
     }
 

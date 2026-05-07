@@ -1,7 +1,14 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:hibiki/dictionary.dart';
+import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
+import 'package:hibiki/src/anki/anki_models.dart';
+import 'package:hibiki/src/anki/anki_repository.dart';
+import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki/src/utils/misc/popup_channel.dart';
 import 'package:hibiki/utils.dart';
@@ -61,7 +68,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
 
     if (_result != null && _result!.entries.isNotEmpty) {
       appModel.addToSearchHistory(
-        historyKey: 'DictionaryMediaType',
+        historyKey: DictionaryMediaType.instance.uniqueKey,
         searchTerm: query,
       );
       appModel.addToDictionaryHistory(result: _result!);
@@ -164,6 +171,41 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
       onTextSelected: (text) {
         _search(text);
       },
+      onMineEntry: _onMineEntry,
+      onDuplicateCheck: (expression, reading) async {
+        final repo = ref.read(ankiRepositoryProvider);
+        return repo.isDuplicate(expression, reading);
+      },
     );
+  }
+
+  Future<bool> _onMineEntry(Map<String, String> fields) async {
+    final repo = ref.read(ankiRepositoryProvider);
+    final miningContext = AnkiMiningContext(
+      sentence: fields['sentence'] ?? '',
+    );
+    final result = await repo.mineEntry(
+      rawPayloadJson: jsonEncode(fields),
+      context: miningContext,
+    );
+    switch (result) {
+      case MineResult.success:
+        final settings = await repo.loadSettings();
+        Fluttertoast.showToast(
+          msg: t.card_exported(deck: settings.selectedDeckName ?? ''),
+          toastLength: Toast.LENGTH_SHORT,
+          gravity: ToastGravity.BOTTOM,
+        );
+        return true;
+      case MineResult.duplicate:
+        Fluttertoast.showToast(msg: t.card_duplicate);
+        return false;
+      case MineResult.notConfigured:
+        Fluttertoast.showToast(msg: t.card_export_not_configured);
+        return false;
+      case MineResult.error:
+        Fluttertoast.showToast(msg: t.card_export_failed);
+        return false;
+    }
   }
 }

@@ -94,12 +94,12 @@ public class MainActivity extends AudioServiceActivity {
         if (bgColor != 0) {
             getWindow().setBackgroundDrawable(new ColorDrawable(bgColor));
         }
-        super.onCreate(savedInstanceState);
-        isAppRunning = false;
-
         context = MainActivity.this;
         ankiChannelHandler = new AnkiChannelHandler(context);
         ttsChannelHandler = new TtsChannelHandler(context);
+
+        super.onCreate(savedInstanceState);
+        isAppRunning = false;
     }
 
     @Override
