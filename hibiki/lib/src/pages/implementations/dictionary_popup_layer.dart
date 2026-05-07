@@ -69,16 +69,6 @@ class DictionaryPopupLayer extends StatelessWidget {
         ? Colors.white.withValues(alpha: 0.15)
         : Colors.black.withValues(alpha: 0.18);
 
-    Widget content = _buildContent();
-    if (overlayWidget != null) {
-      content = Stack(
-        children: [
-          content,
-          Positioned.fill(child: overlayWidget!),
-        ],
-      );
-    }
-
     return SwipeDismissWrapper(
       sensitivity: ReaderTtuSource.instance.dismissSwipeSensitivity,
       onDismiss: onDismiss,
@@ -89,12 +79,12 @@ class DictionaryPopupLayer extends StatelessWidget {
           border: Border.all(color: borderColor, width: 1),
         ),
         clipBehavior: Clip.antiAlias,
-        child: content,
+        child: _buildContent(),
       ),
     );
   }
 
-  Widget _buildContent() {
+  Widget _buildBody() {
     if (result == null) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -108,7 +98,7 @@ class DictionaryPopupLayer extends StatelessWidget {
       );
     }
 
-    final webView = DictionaryPopupWebView(
+    return DictionaryPopupWebView(
       key: webViewKey,
       result: result!,
       onTapOutside: onTapOutside,
@@ -117,16 +107,28 @@ class DictionaryPopupLayer extends StatelessWidget {
       onMineEntry: onMineEntry,
       onDuplicateCheck: onDuplicateCheck,
     );
+  }
+
+  Widget _buildContent() {
+    Widget body = _buildBody();
+    if (overlayWidget != null) {
+      body = Stack(
+        children: [
+          body,
+          Positioned.fill(child: overlayWidget!),
+        ],
+      );
+    }
 
     if (headerWidget != null) {
       return Column(
         children: [
           headerWidget!,
-          Expanded(child: webView),
+          Expanded(child: body),
         ],
       );
     }
 
-    return webView;
+    return body;
   }
 }
