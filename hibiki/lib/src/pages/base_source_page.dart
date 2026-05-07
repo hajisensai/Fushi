@@ -7,6 +7,7 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:hibiki/utils.dart';
 
 /// A page template which assumes use of [BaseSourcePageState] by which all
@@ -292,7 +293,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
         : Colors.black.withValues(alpha: 0.18);
     final isTop = index == stack.length - 1;
 
-    return _SwipeDismissWrapper(
+    return SwipeDismissWrapper(
       onDismiss: () => _dismissPopupAt(index),
       sensitivity: ReaderTtuSource.instance.dismissSwipeSensitivity,
       child: Container(
@@ -499,75 +500,3 @@ class _PopupStackItem {
       GlobalKey<DictionaryPopupWebViewState>();
 }
 
-class _SwipeDismissWrapper extends StatefulWidget {
-  const _SwipeDismissWrapper({
-    required this.child,
-    required this.onDismiss,
-    this.sensitivity = 0.3,
-  });
-  final Widget child;
-  final VoidCallback onDismiss;
-
-  /// 0.1 (hard to dismiss) ~ 1.0 (easy). Maps to threshold & decision distance.
-  final double sensitivity;
-
-  @override
-  State<_SwipeDismissWrapper> createState() => _SwipeDismissWrapperState();
-}
-
-class _SwipeDismissWrapperState extends State<_SwipeDismissWrapper> {
-  double _dragX = 0;
-  double _dragY = 0;
-  bool _decided = false;
-  bool _isHorizontal = false;
-
-  /// Threshold scales inversely with sensitivity: low sensitivity = high threshold.
-  double get _threshold => 30 + (1.0 - widget.sensitivity) * 160;
-
-  /// Decision distance also scales inversely.
-  double get _decisionDistance => 10 + (1.0 - widget.sensitivity) * 20;
-
-  void _reset() {
-    setState(() {
-      _dragX = 0;
-      _dragY = 0;
-      _decided = false;
-      _isHorizontal = false;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Listener(
-      onPointerMove: (e) {
-        _dragX += e.delta.dx;
-        _dragY += e.delta.dy;
-        if (!_decided &&
-            (_dragX.abs() > _decisionDistance ||
-                _dragY.abs() > _decisionDistance)) {
-          _decided = true;
-          _isHorizontal = _dragX.abs() > _dragY.abs() * 2.5;
-        }
-        if (_decided && _isHorizontal) {
-          setState(() {});
-        }
-      },
-      onPointerUp: (_) {
-        if (_decided && _isHorizontal && _dragX.abs() > _threshold) {
-          widget.onDismiss();
-        }
-        _reset();
-      },
-      onPointerCancel: (_) => _reset(),
-      child: Transform.translate(
-        offset: Offset(_decided && _isHorizontal ? _dragX : 0, 0),
-        child: Opacity(
-          opacity: _decided && _isHorizontal
-              ? (1 - (_dragX.abs() / 300)).clamp(0.3, 1.0)
-              : 1.0,
-          child: widget.child,
-        ),
-      ),
-    );
-  }
-}

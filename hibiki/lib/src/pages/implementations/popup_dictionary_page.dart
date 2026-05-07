@@ -11,6 +11,7 @@ import 'package:hibiki/src/anki/anki_repository.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki/src/utils/misc/popup_channel.dart';
+import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:hibiki/utils.dart';
 
 class _StackEntry {
@@ -86,6 +87,11 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
     if (_stack.length <= 1) return false;
     setState(() => _stack.removeLast());
     return true;
+  }
+
+  void _popAt(int index) {
+    if (index <= 0) return;
+    setState(() => _stack.removeRange(index, _stack.length));
   }
 
   Future<void> _close() async {
@@ -182,14 +188,23 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
       top: pos.top,
       width: pos.width,
       height: pos.height,
-      child: Container(
-        decoration: BoxDecoration(
-          color: fillColor,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: borderColor, width: 1),
+      child: SwipeDismissWrapper(
+        onDismiss: () {
+          if (index == 0) {
+            _close();
+          } else {
+            _popAt(index);
+          }
+        },
+        child: Container(
+          decoration: BoxDecoration(
+            color: fillColor,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: borderColor, width: 1),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: _buildEntryContent(entry, index, screen),
         ),
-        clipBehavior: Clip.antiAlias,
-        child: _buildEntryContent(entry, index, screen),
       ),
     );
   }
