@@ -173,6 +173,8 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   bool _audioSlotResolved = false;
 
   static const double _readerChromeHeight = 56;
+  static const double _topProgressBarHeight = 18;
+  static const int _resumeRestoreOffsetTolerance = 500;
   double _stableTopInset = 0;
   double _stableBottomInset = 0;
   bool _stableInsetsCaptured = false;
@@ -182,6 +184,18 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
 
   double get _readerBottomReserve =>
       (_hasReaderBottomChrome ? _readerChromeHeight : 0) + _stableBottomInset;
+
+  int? _progressCurrentChars;
+  int? _progressTotalChars;
+
+  bool get _showTopProgress =>
+      _readerContentReady &&
+      _progressCurrentChars != null &&
+      _progressTotalChars != null &&
+      _progressTotalChars! > 0;
+
+  double get _readerTopOffset =>
+      _stableTopInset + (_showTopProgress ? _topProgressBarHeight : 0);
 
   /// 当前章节的 href（用于 cue 查询和 JS 注解）。
   String _currentChapterHref = '';
@@ -809,20 +823,30 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     } catch (_) {}
     if (!mounted || token != _lifecycleResumeToken) return;
-    _lifecycleResumeTimer = Timer(const Duration(milliseconds: 400), () {
+    _lifecycleResumeTimer = Timer(const Duration(milliseconds: 400), () async {
       _lifecycleResumeTimer = null;
       if (!mounted || token != _lifecycleResumeToken) return;
       _lifecycleTransition = false;
-      final ReaderViewportPos? pos = _lastSavedPos;
-      if (pos != null &&
+      final ReaderViewportPos? target = _lastSavedPos;
+      if (target != null &&
           _controllerInitialised &&
           !_restoreInFlight &&
-          pos.section >= 0 &&
-          pos.offset >= 0) {
+          target.section >= 0 &&
+          target.offset >= 0) {
+        ReaderViewportPos? current;
+        try {
+          current = await AudiobookBridge.getViewportNormOffset(_controller);
+        } catch (_) {}
+        if (current != null &&
+            current.section == target.section &&
+            (current.offset - target.offset).abs() <
+                _resumeRestoreOffsetTolerance) {
+          return;
+        }
         AudiobookBridge.scrollToNormOffset(
           _controller,
-          section: pos.section,
-          offset: pos.offset,
+          section: target.section,
+          offset: target.offset,
         ).catchError((_) {});
       }
     });
@@ -839,6 +863,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     if (!_readerContentReady) return;
     if (_restoreInFlight) return;
     if (_lifecycleTransition) return;
+    if (dictionaryPopupShown) return;
     final currentSize = MediaQuery.of(context).size;
     if (_metricsDebounce == null || !_metricsDebounce!.isActive) {
       _metricsScreenSize = currentSize;
@@ -848,6 +873,11 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     }
     _metricsDebounce?.cancel();
     _metricsDebounce = Timer(const Duration(milliseconds: 600), () async {
+      if (dictionaryPopupShown) {
+        _preMetricsPos = null;
+        _metricsScreenSize = null;
+        return;
+      }
       final sizeNow = MediaQuery.of(context).size;
       final sizeChanged = _metricsScreenSize != null &&
           (_metricsScreenSize!.width != sizeNow.width ||
@@ -1132,7 +1162,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
               alignment: Alignment.center,
               children: <Widget>[
                 Positioned.fill(
-                  top: _stableTopInset,
+                  top: _readerTopOffset,
                   child: buildBody(),
                 ),
                 if (!_readerContentReady)
@@ -1385,6 +1415,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       'window.localStorage.setItem("furiganaStyle","$furiganaStyle")',
       'window.localStorage.setItem("textIndentation",${src.ttuTextIndentation})',
       'window.localStorage.setItem("firstDimensionMargin",${src.ttuFirstDimensionMargin})',
+      'window.localStorage.setItem("pageMarginBottom",${_readerBottomReserve.round()})',
       'window.localStorage.setItem("secondDimensionMaxValue",${src.ttuSecondDimensionMaxValue})',
       'window.localStorage.setItem("pageColumns",${src.ttuPageColumns})',
       'window.localStorage.setItem("enableVerticalFontKerning","${src.ttuEnableVerticalFontKerning ? 1 : 0}")',
@@ -1437,70 +1468,77 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     }
   }
 
+  Future<void> _refreshPageProgress() async {
+    try {
+      final Object? raw = await _controller.evaluateJavascript(source: '''
+(function() {
+  var el = document.querySelector('.book-content');
+  if (!el) return null;
+  var totalChars = (el.textContent || '').length;
+  if (totalChars <= 0) return null;
+  var sh = el.scrollHeight || 1;
+  var vh = el.clientHeight || 1;
+  var st = el.scrollTop || 0;
+  var maxScroll = sh - vh;
+  var ratio = maxScroll > 0 ? Math.min(1, st / maxScroll) : 0;
+  var currentChars = Math.round(ratio * totalChars);
+  return JSON.stringify({c: currentChars, t: totalChars});
+})()
+''');
+      if (raw == null || raw == 'null') return;
+      final String str = raw is String ? raw : raw.toString();
+      final Map<String, dynamic> json =
+          Map<String, dynamic>.from(jsonDecode(str) as Map);
+      final int? c = (json['c'] as num?)?.toInt();
+      final int? t = (json['t'] as num?)?.toInt();
+      if (c != null && t != null && t > 0) {
+        if (c != _progressCurrentChars || t != _progressTotalChars) {
+          setState(() {
+            _progressCurrentChars = c;
+            _progressTotalChars = t;
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
   Widget _buildTopProgressBar() {
-    if (_stableTopInset <= 0 || !_readerContentReady) {
-      return const SizedBox.shrink();
-    }
-    final int section = _currentTtuSection;
-    final int? total = _ttuSectionCount;
-    if (section < 0 || total == null || total <= 0) {
-      return const SizedBox.shrink();
-    }
-    final String? label = _tocLabels[section];
+    if (!_showTopProgress) return const SizedBox.shrink();
+    final int current = _progressCurrentChars!;
+    final int total = _progressTotalChars!;
+    final double pct = total > 0 ? current / total * 100 : 0;
+    final String title = widget.item?.title ?? '';
     final bool dark = _isDarkReaderTheme;
     final Color fg = dark
         ? Colors.white.withValues(alpha: 0.7)
         : Colors.black.withValues(alpha: 0.6);
-    final Color barBg = dark
-        ? Colors.white.withValues(alpha: 0.1)
-        : Colors.black.withValues(alpha: 0.08);
-    final Color barFg = dark
-        ? Colors.white.withValues(alpha: 0.35)
-        : Colors.black.withValues(alpha: 0.25);
-    final double progress = (section + 1) / total;
 
     return Positioned(
       left: 0,
       right: 0,
-      top: 0,
-      height: _stableTopInset,
+      top: _stableTopInset,
+      height: _topProgressBarHeight,
       child: ColoredBox(
         color: _ttuThemeFlutterColor(),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                children: [
-                  if (label != null)
-                    Expanded(
-                      child: Text(
-                        label,
-                        style: TextStyle(fontSize: 10, color: fg),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  if (label != null) const SizedBox(width: 8),
-                  Text(
-                    '${section + 1}/$total',
-                    style: TextStyle(fontSize: 10, color: fg),
-                  ),
-                ],
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(fontSize: 10, color: fg, height: 1.0),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-            ),
-            const SizedBox(height: 2),
-            SizedBox(
-              height: 2,
-              child: LinearProgressIndicator(
-                value: progress,
-                backgroundColor: barBg,
-                valueColor: AlwaysStoppedAnimation<Color>(barFg),
-                minHeight: 2,
+              const SizedBox(width: 8),
+              Text(
+                '$current / $total  ${pct.toStringAsFixed(2)}%',
+                style: TextStyle(fontSize: 10, color: fg, height: 1.0),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1743,6 +1781,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
                 offset: offset,
                 from: 'scroll',
               );
+              unawaited(_refreshPageProgress());
             } catch (e) {
               debugPrint('[hibiki-reader-pos] saveReaderPos error: $e');
             }
@@ -2118,6 +2157,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       int length = appModel.targetLanguage.getGuessHighlightLength(
         searchTerm: searchTerm,
       );
+      final int initialHighlightLength = length;
 
       if (mediaSource.highlightOnTap) {
         await selectTextOnwards(
@@ -2142,24 +2182,23 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         searchTerm: searchTerm,
         selectionRect: selectionRect,
       ).then((_) async {
-        length = appModel.targetLanguage.getFinalHighlightLength(
+        final int finalLength = appModel.targetLanguage.getFinalHighlightLength(
           result: currentResult,
           searchTerm: searchTerm,
         );
+        length = finalLength;
 
-        if (mediaSource.highlightOnTap) {
+        if (mediaSource.highlightOnTap &&
+            finalLength != initialHighlightLength &&
+            !dictionaryPopupShown) {
           await selectTextOnwards(
             cursorX: x,
             cursorY: y,
             offsetIndex: offsetIndex,
-            length: length,
+            length: finalLength,
             whitespaceOffset: whitespaceOffset,
             isSpaceDelimited: isSpaceDelimited,
           );
-
-          if (!dictionaryPopupShown) {
-            unselectWebViewTextSelection(_controller);
-          }
         }
 
         JidoujishoTextSelection selection =
@@ -2828,9 +2867,6 @@ div.pointer-events-none.absolute.opacity-25 {
   display: none !important;
 }
 
-.book-content {
-  padding-bottom: ${_readerBottomReserve.round()}px !important;
-}
 </style>
 `);
 
@@ -3777,6 +3813,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       if (prev != _currentTtuSection || toc.isNotEmpty) {
         setState(() {});
       }
+      unawaited(_refreshPageProgress());
     } catch (e) {
       debugPrint('[hibiki-audiobook] probeTtuApi failed: $e');
     }
@@ -4560,6 +4597,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     // 用户翻到新章节，预建该章 Sasayaki cueMap。
     unawaited(_applySasayakiCuesForSection(idx));
     unawaited(_applyHighlightsForCurrentSection());
+    unawaited(_refreshPageProgress());
   }
 
   // ── 有声书导入按钮 ──────────────────────────────────────────────────────────
