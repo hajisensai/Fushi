@@ -2028,7 +2028,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       );
 
       if (mediaSource.highlightOnTap) {
-        selectTextOnwards(
+        await selectTextOnwards(
           cursorX: x,
           cursorY: y,
           offsetIndex: offsetIndex,
@@ -2398,7 +2398,10 @@ window.__hibikiCaptureScrollState = function() {
   try {
     if (typeof window.__ttuGetPageInfo === 'function') {
       var info = window.__ttuGetPageInfo();
-      if (info && Number.isFinite(info.virtualScrollPos)) {
+      if (info &&
+          Number.isFinite(info.stride) &&
+          info.stride >= 10 &&
+          Number.isFinite(info.virtualScrollPos)) {
         ttuPos = info.virtualScrollPos;
       }
     }
