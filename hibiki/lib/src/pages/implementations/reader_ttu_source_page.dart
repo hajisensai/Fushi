@@ -274,7 +274,6 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   /// 生命周期 pause→resume 过渡期间为 true，屏蔽 didChangeMetrics 的位置
   /// 捕获和恢复（此时 viewport 尺寸不稳定，拿到的 offset 不可信）。
   bool _lifecycleTransition = false;
-  bool _lookupInFlight = false;
   Timer? _lifecycleResumeTimer;
   int _lifecycleResumeToken = 0;
 
@@ -838,7 +837,6 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     if (!_readerContentReady) return;
     if (_restoreInFlight) return;
     if (_lifecycleTransition) return;
-    if (_lookupInFlight) return;
     if (_metricsDebounce == null || !_metricsDebounce!.isActive) {
       AudiobookBridge.getViewportNormOffset(_controller).then((pos) {
         if (pos != null) _preMetricsPos = pos;
@@ -1983,14 +1981,8 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   }
 
   Future<void> _processLookup(Map<String, dynamic> payload) async {
-    _lookupInFlight = true;
-    _metricsDebounce?.cancel();
-    _preMetricsPos = null;
-
     FocusScope.of(context).unfocus();
     _focusNode.requestFocus();
-
-    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
     int index = (payload['index'] as num).toInt();
     String text = (payload['text'] as String?) ?? '';
@@ -2087,11 +2079,8 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         mediaSource.setCurrentSentence(
           selection: selection,
         );
-      }).whenComplete(() {
-        _lookupInFlight = false;
       });
     } catch (e) {
-      _lookupInFlight = false;
       debugPrint('_processLookup error: $e');
       clearDictionaryResult();
     }
@@ -4498,34 +4487,29 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       left: 0,
       right: 0,
       bottom: 0,
-      child: SizedBox(
-        height: _readerChromeHeight + _stableBottomInset,
-        child: Column(
-          children: [
-            BottomAppBar(
-              height: _readerChromeHeight,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Row(
-                children: [
-                  if (bookUid != null)
-                    IconButton(
-                      icon: const Icon(Icons.headphones),
-                      iconSize: 22,
-                      onPressed: () => _openImportDialog(bookUid),
-                      tooltip: t.audiobook_import,
-                    ),
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.tune),
-                    iconSize: 20,
-                    onPressed: () => _showReaderSettingsSheet(null),
-                    tooltip: t.reader_settings_label,
-                  ),
-                ],
+      child: SafeArea(
+        top: false,
+        child: BottomAppBar(
+          height: _readerChromeHeight,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: Row(
+            children: [
+              if (bookUid != null)
+                IconButton(
+                  icon: const Icon(Icons.headphones),
+                  iconSize: 22,
+                  onPressed: () => _openImportDialog(bookUid),
+                  tooltip: t.audiobook_import,
+                ),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.tune),
+                iconSize: 20,
+                onPressed: () => _showReaderSettingsSheet(null),
+                tooltip: t.reader_settings_label,
               ),
-            ),
-            SizedBox(height: _stableBottomInset),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -4718,26 +4702,18 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           left: 0,
           right: 0,
           bottom: 0,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildFollowPill(),
-              SizedBox(
-                height: _readerChromeHeight + _stableBottomInset,
-                child: Column(
-                  children: [
-                    SizedBox(
-                      height: _readerChromeHeight,
-                      child: AudiobookPlayBar(
-                        controller: ctrl,
-                        onOpenSettings: () => _showReaderSettingsSheet(ctrl),
-                      ),
-                    ),
-                    SizedBox(height: _stableBottomInset),
-                  ],
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildFollowPill(),
+                AudiobookPlayBar(
+                  controller: ctrl,
+                  onOpenSettings: () => _showReaderSettingsSheet(ctrl),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         );
         final ThemeData? overrideTheme = appModel.overrideDictionaryTheme;
