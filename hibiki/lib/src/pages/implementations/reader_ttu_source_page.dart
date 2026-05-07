@@ -176,6 +176,12 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   double _stableBottomInset = 0;
   bool _stableBottomInsetCaptured = false;
 
+  bool get _hasReaderBottomChrome =>
+      _audiobookController == null || appModel.showPlayBar;
+
+  double get _readerBottomReserve =>
+      (_hasReaderBottomChrome ? _readerChromeHeight : 0) + _stableBottomInset;
+
   /// 当前章节的 href（用于 cue 查询和 JS 注解）。
   String _currentChapterHref = '';
 
@@ -1108,7 +1114,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
               alignment: Alignment.center,
               children: <Widget>[
                 Positioned.fill(
-                  bottom: _readerChromeHeight + _stableBottomInset,
+                  bottom: _readerBottomReserve,
                   child: buildBody(),
                 ),
                 if (!_readerContentReady)
