@@ -2134,7 +2134,28 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       InAppWebViewController webViewController) async {
     String source = '''
 if (!window.getSelection().isCollapsed) {
+  var roots = window.__hibikiGetScrollRoots ? window.__hibikiGetScrollRoots() : [];
+  if (!roots.length) {
+    var fb = document.querySelector('.book-content') || document.scrollingElement || document.documentElement;
+    if (fb) roots = [fb];
+  }
+  var saved = roots.map(function(el) { return { el: el, top: el.scrollTop, left: el.scrollLeft }; });
+  function restore() {
+    for (var i = 0; i < saved.length; i++) {
+      saved[i].el.scrollTop = saved[i].top;
+      saved[i].el.scrollLeft = saved[i].left;
+    }
+  }
+  window.__hibikiSelectionScrollGuard = true;
   window.getSelection().removeAllRanges();
+  restore();
+  requestAnimationFrame(function() {
+    restore();
+    requestAnimationFrame(function() {
+      restore();
+      window.__hibikiSelectionScrollGuard = false;
+    });
+  });
 }
 ''';
     await webViewController.evaluateJavascript(source: source);
