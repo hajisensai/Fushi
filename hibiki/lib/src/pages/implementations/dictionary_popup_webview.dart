@@ -21,7 +21,7 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   });
 
   final DictionarySearchResult result;
-  final void Function(String text, double localX, double localY)? onTextSelected;
+  final void Function(String text, Rect localRect)? onTextSelected;
   final VoidCallback? onTapOutside;
   final Future<bool> Function(Map<String, String> fields)? onMineEntry;
   final Future<bool> Function(String expression, String reading)?
@@ -36,6 +36,18 @@ class DictionaryPopupWebViewState
     extends ConsumerState<DictionaryPopupWebView> {
   InAppWebViewController? _controller;
   bool _ready = false;
+
+  void highlightSelection(int charCount) {
+    _controller?.evaluateJavascript(
+      source: 'window.hoshiSelection.highlightSelection($charCount)',
+    );
+  }
+
+  void clearSelection() {
+    _controller?.evaluateJavascript(
+      source: 'window.hoshiSelection.clearSelection()',
+    );
+  }
 
   @override
   void didUpdateWidget(DictionaryPopupWebView oldWidget) {
@@ -181,17 +193,21 @@ class DictionaryPopupWebViewState
 
         controller.addJavaScriptHandler(
           handlerName: 'textSelected',
-          callback: (args) {
+          callback: (args) async {
             if (args.isNotEmpty && args[0] is String) {
               final text = args[0] as String;
               if (text.isNotEmpty) {
-                final double lx = (args.length > 1 && args[1] is num)
-                    ? (args[1] as num).toDouble()
-                    : 0;
-                final double ly = (args.length > 2 && args[2] is num)
-                    ? (args[2] as num).toDouble()
-                    : 0;
-                widget.onTextSelected?.call(text, lx, ly);
+                Rect localRect = Rect.zero;
+                if (args.length > 1 && args[1] is Map) {
+                  final r = args[1] as Map;
+                  localRect = Rect.fromLTWH(
+                    (r['x'] as num?)?.toDouble() ?? 0,
+                    (r['y'] as num?)?.toDouble() ?? 0,
+                    (r['width'] as num?)?.toDouble() ?? 1,
+                    (r['height'] as num?)?.toDouble() ?? 1,
+                  );
+                }
+                widget.onTextSelected?.call(text, localRect);
               }
             }
           },
@@ -227,7 +243,7 @@ class DictionaryPopupWebViewState
             if (args.isNotEmpty) {
               final text = args[0].toString();
               if (text.isNotEmpty) {
-                widget.onTextSelected?.call(text, 0, 0);
+                widget.onTextSelected?.call(text, Rect.zero);
               }
             }
           },

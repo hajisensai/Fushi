@@ -523,7 +523,7 @@ class _RecursiveDictionaryPageState
           child: DictionaryPopupWebView(
             key: ValueKey(_result),
             result: _result!,
-            onTextSelected: (text, _, __) {
+            onTextSelected: (text, _) {
               _controller.query = text;
               search(text);
               setState(() {

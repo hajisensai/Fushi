@@ -94,7 +94,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
   /// Action to perform within the source page upon closing the media.
   Future<void> onSourcePagePop() async {}
 
-  Future<void> searchDictionaryResult({
+  Future<int> searchDictionaryResult({
     required String searchTerm,
     required Rect selectionRect,
     int? overrideMaximumTerms,
@@ -113,7 +113,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
         overrideMaximumTerms: overrideMaximumTerms,
       );
 
-      if (_searchGeneration != gen) return;
+      if (_searchGeneration != gen) return 0;
 
       appModel.addToDictionaryHistory(result: dictionaryResult);
 
@@ -123,6 +123,10 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
         searchTerm: searchTerm,
       );
       _popupStack.value = [..._popupStack.value, item];
+
+      final int highlightCount = dictionaryResult.entries.isNotEmpty
+          ? dictionaryResult.entries.first.word.runes.length
+          : 0;
 
       final bool arEnabled = ReaderTtuSource.instance.autoReadOnLookup;
       debugPrint('[hibiki-autoread] autoReadOnLookup=$arEnabled entries=${dictionaryResult.entries.length}');
@@ -134,6 +138,8 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
           _autoReadWord(expression, reading);
         }
       }
+
+      return highlightCount;
     } finally {
       if (_searchGeneration == gen) {
         _isSearchingNotifier.value = false;
@@ -318,6 +324,10 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
     _searchGeneration++;
     _pendingSelectionRect = null;
     _isSearchingNotifier.value = false;
+    if (index > 0) {
+      final parent = _popupStack.value[index - 1];
+      parent.webViewKey.currentState?.clearSelection();
+    }
     if (index == 0) {
       _popupStack.value = [];
       appModel.currentMediaSource?.clearCurrentSentence();
@@ -339,17 +349,20 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
       key: item.webViewKey,
       result: item.result,
       onTapOutside: clearDictionaryResult,
-      onTextSelected: (text, localX, localY) {
+      onTextSelected: (text, localRect) async {
         final parentPos = _calculatePopupPosition(item.selectionRect, screen);
-        final screenX = parentPos.left + localX;
-        final screenY = parentPos.top + localY;
-        final childRect = Rect.fromLTWH(screenX, screenY, 1, 1);
+        final childRect = localRect == Rect.zero
+            ? item.selectionRect
+            : localRect.shift(Offset(parentPos.left, parentPos.top));
 
         _popupStack.value = _popupStack.value.sublist(0, index + 1);
-        searchDictionaryResult(
+        final count = await searchDictionaryResult(
           searchTerm: text,
           selectionRect: childRect,
         );
+        if (count > 0) {
+          item.webViewKey.currentState?.highlightSelection(count);
+        }
       },
       onMineEntry: onMineFromPopup,
       onDuplicateCheck: (expression, reading) async {

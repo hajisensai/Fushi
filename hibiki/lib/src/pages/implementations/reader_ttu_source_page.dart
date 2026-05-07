@@ -880,7 +880,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   }
 
   @override
-  Future<void> searchDictionaryResult({
+  Future<int> searchDictionaryResult({
     required String searchTerm,
     required Rect selectionRect,
     int? overrideMaximumTerms,

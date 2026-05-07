@@ -264,9 +264,22 @@ window.hoshiSelection = {
         };
 
         const sentence = this.getSentence(hit.node, hit.offset);
-        window.flutter_inappwebview.callHandler('textSelected', text, x, y);
+        const rect = this.getSelectionRect(x, y);
+        window.flutter_inappwebview.callHandler('textSelected', text, rect);
 
         return text;
+    },
+
+    getSelectionRect(x, y) {
+        if (!this.selection?.ranges.length) return null;
+        const first = this.selection.ranges[0];
+        const range = document.createRange();
+        range.setStart(first.node, first.start);
+        range.setEnd(first.node, first.start + 1);
+        const rects = Array.from(range.getClientRects());
+        const rect = rects.find(r => x >= r.left && x <= r.right && y >= r.top && y <= r.bottom)
+            ?? range.getBoundingClientRect();
+        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
     },
 
     highlightSelection(charCount) {
