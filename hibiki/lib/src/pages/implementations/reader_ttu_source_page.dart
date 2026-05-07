@@ -1090,15 +1090,12 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         child: Scaffold(
           backgroundColor: _ttuThemeFlutterColor(),
           resizeToAvoidBottomInset: false,
-          body: SafeArea(
-            top: true,
-            bottom: false,
-            child: Stack(
+          body: Stack(
               fit: StackFit.expand,
               alignment: Alignment.center,
               children: <Widget>[
                 Positioned.fill(
-                  bottom: 56 + MediaQuery.of(context).padding.bottom,
+                  bottom: 56,
                   child: buildBody(),
                 ),
                 if (!_readerContentReady)
@@ -1111,7 +1108,6 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
                 buildReaderSettingsFab(),
               ],
             ),
-          ),
         ),
       ),
     );
