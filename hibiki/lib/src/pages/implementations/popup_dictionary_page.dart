@@ -82,76 +82,31 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final am = ref.watch(appProvider);
-
-    Color? backgroundColor = theme.colorScheme.surface;
-    if (am.overrideDictionaryColor != null) {
-      final dictTheme = am.overrideDictionaryTheme ?? theme;
-      if (dictTheme.brightness == Brightness.dark) {
-        backgroundColor =
-            JidoujishoColor.lighten(am.overrideDictionaryColor!, 0.025);
-      } else {
-        backgroundColor =
-            JidoujishoColor.darken(am.overrideDictionaryColor!, 0.025);
-      }
-    }
+    final isDark =
+        (appModel.overrideDictionaryTheme ?? Theme.of(context)).brightness ==
+            Brightness.dark;
+    final fillColor = isDark ? Colors.black : Colors.white;
+    final borderColor = isDark
+        ? Colors.white.withValues(alpha: 0.15)
+        : Colors.black.withValues(alpha: 0.18);
 
     return Scaffold(
-      backgroundColor: backgroundColor,
+      backgroundColor: Colors.transparent,
       body: SafeArea(
-        child: Column(
-          children: [
-            _buildHeader(theme, am),
-            Expanded(child: _buildBody(am)),
-          ],
+        child: Container(
+          decoration: BoxDecoration(
+            color: fillColor,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: borderColor, width: 1),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: _buildBody(),
         ),
       ),
     );
   }
 
-  Widget _buildHeader(ThemeData theme, AppModel am) {
-    Color? headerBg = am.isDarkMode
-        ? const Color.fromARGB(255, 30, 30, 30)
-        : const Color.fromARGB(255, 229, 229, 229);
-    if (am.overrideDictionaryColor != null) {
-      final dictTheme = am.overrideDictionaryTheme ?? theme;
-      if (dictTheme.brightness == Brightness.dark) {
-        headerBg =
-            JidoujishoColor.lighten(am.overrideDictionaryColor!, 0.05);
-      } else {
-        headerBg =
-            JidoujishoColor.darken(am.overrideDictionaryColor!, 0.05);
-      }
-    }
-
-    return Material(
-      color: headerBg,
-      child: SizedBox(
-        height: kToolbarHeight,
-        child: Row(
-          children: [
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                _currentQuery,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.close),
-              onPressed: _close,
-              tooltip: t.back,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBody(AppModel am) {
+  Widget _buildBody() {
     if (_isSearching && _result == null) {
       return const Center(child: CircularProgressIndicator());
     }
