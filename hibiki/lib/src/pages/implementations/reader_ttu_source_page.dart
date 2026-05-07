@@ -260,6 +260,10 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   // ── 窗口尺寸变化时保持阅读位置 ──────────────────────────────────────
   Timer? _metricsDebounce;
 
+  /// 生命周期 pause→resume 过渡期间为 true，屏蔽 didChangeMetrics 的位置
+  /// 捕获和恢复（此时 viewport 尺寸不稳定，拿到的 offset 不可信）。
+  bool _lifecycleTransition = false;
+
   /// 最近一次 _completeNavRestore 的时间戳。用于在 sectionChanged(auto=false)
   /// 中过滤紧接程序化跳章后 ttu 推出的 settle 事件，避免误触 follow auto-off。
   DateTime? _lastNavRestoreTime;
@@ -747,12 +751,45 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
 
-    if (state == AppLifecycleState.resumed) {
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      _readingTimeTracker?.stop();
+      _lifecycleTransition = true;
+      _metricsDebounce?.cancel();
+      _preMetricsPos = null;
+      if (_controllerInitialised && !_restoreInFlight) {
+        AudiobookBridge.getViewportNormOffset(_controller).then((pos) {
+          if (pos != null) {
+            _persistReaderPos(
+              section: pos.section,
+              offset: pos.offset,
+              from: 'lifecycle-pause',
+            );
+          }
+        }).catchError((_) {});
+      }
+    } else if (state == AppLifecycleState.resumed) {
       _readingTimeTracker?.start();
       FocusScope.of(context).unfocus();
       _focusNode.requestFocus();
-    } else if (state == AppLifecycleState.paused) {
-      _readingTimeTracker?.stop();
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky).then((_) {
+        if (!mounted) return;
+        Future.delayed(const Duration(milliseconds: 400), () {
+          if (!mounted) return;
+          _lifecycleTransition = false;
+          final ReaderViewportPos? pos = _lastSavedPos;
+          if (pos != null &&
+              _controllerInitialised &&
+              !_restoreInFlight &&
+              pos.section >= 0 &&
+              pos.offset >= 0) {
+            AudiobookBridge.scrollToNormOffset(
+              _controller,
+              section: pos.section,
+              offset: pos.offset,
+            ).catchError((_) {});
+          }
+        });
+      });
     }
   }
 
@@ -764,6 +801,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     if (!_controllerInitialised) return;
     if (!_readerContentReady) return;
     if (_restoreInFlight) return;
+    if (_lifecycleTransition) return;
     if (_metricsDebounce == null || !_metricsDebounce!.isActive) {
       AudiobookBridge.getViewportNormOffset(_controller).then((pos) {
         if (pos != null) _preMetricsPos = pos;
@@ -1909,7 +1947,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     FocusScope.of(context).unfocus();
     _focusNode.requestFocus();
 
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
     int index = (payload['index'] as num).toInt();
     String text = (payload['text'] as String?) ?? '';
@@ -2273,6 +2311,21 @@ xhr.send();
   String javascriptToExecute = """
 /*jshint esversion: 6 */
 
+window.__hibikiGetScrollRoots = function() {
+  var roots = [];
+  var bcc = document.querySelector('.book-content-container');
+  var bc = document.querySelector('.book-content');
+  var se = document.scrollingElement;
+  var de = document.documentElement;
+  if (bcc) roots.push(bcc);
+  if (bc && bc !== bcc) roots.push(bc);
+  if (se && se !== bcc && se !== bc) roots.push(se);
+  if (de && de !== se && de !== bcc && de !== bc) roots.push(de);
+  return roots;
+};
+
+window.__hibikiSelectionScrollGuard = false;
+
 function tapToSelect(e) {
   console.log('[hibiki] tapToSelect x=' + e.clientX + ' y=' + e.clientY + ' target=' + (e.target ? e.target.nodeName : 'null'));
 
@@ -2612,14 +2665,30 @@ div.pointer-events-none.absolute.opacity-25 {
 
 
 function _applySelection(range) {
-  var scrollEl = document.querySelector('.book-content') || document.scrollingElement || document.documentElement;
-  var savedTop = scrollEl.scrollTop;
-  var savedLeft = scrollEl.scrollLeft;
+  var roots = window.__hibikiGetScrollRoots ? window.__hibikiGetScrollRoots() : [];
+  if (!roots.length) {
+    var fb = document.querySelector('.book-content') || document.scrollingElement || document.documentElement;
+    if (fb) roots = [fb];
+  }
+  var saved = roots.map(function(el) { return { el: el, top: el.scrollTop, left: el.scrollLeft }; });
+  function restore() {
+    for (var i = 0; i < saved.length; i++) {
+      saved[i].el.scrollTop = saved[i].top;
+      saved[i].el.scrollLeft = saved[i].left;
+    }
+  }
+  window.__hibikiSelectionScrollGuard = true;
   var selection = window.getSelection();
   selection.removeAllRanges();
   selection.addRange(range);
-  scrollEl.scrollTop = savedTop;
-  scrollEl.scrollLeft = savedLeft;
+  restore();
+  requestAnimationFrame(function() {
+    restore();
+    requestAnimationFrame(function() {
+      restore();
+      window.__hibikiSelectionScrollGuard = false;
+    });
+  });
 }
 
 function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceDelimited) {
@@ -2781,7 +2850,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     if (timer) clearTimeout(timer);
     timer = setTimeout(function() {
       try {
-        if (window.__hoshiAutoScrollInFlight || window.__hoshiRestoreInFlight) {
+        if (window.__hoshiAutoScrollInFlight || window.__hoshiRestoreInFlight || window.__hibikiSelectionScrollGuard) {
           console.log(JSON.stringify({'hibiki-message-type':'pos-save-skip','reason':'autoScrollInFlight'}));
           return;
         }
