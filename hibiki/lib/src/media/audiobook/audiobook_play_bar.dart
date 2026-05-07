@@ -36,51 +36,48 @@ class AudiobookPlayBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      top: false,
-      child: BottomAppBar(
-        height: 56,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        child: Row(
-          children: [
-            IconButton(
-              icon: const Icon(Icons.skip_previous),
-              iconSize: 22,
-              onPressed: controller.skipToPrevCue,
-              tooltip: t.prev_sentence,
+    return BottomAppBar(
+      height: 56,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.skip_previous),
+            iconSize: 22,
+            onPressed: controller.skipToPrevCue,
+            tooltip: t.prev_sentence,
+          ),
+          IconButton.filledTonal(
+            icon: Icon(
+              controller.isPlaying ? Icons.pause : Icons.play_arrow,
             ),
-            IconButton.filledTonal(
-              icon: Icon(
-                controller.isPlaying ? Icons.pause : Icons.play_arrow,
-              ),
-              iconSize: 24,
-              onPressed: controller.togglePlayPause,
-              tooltip: controller.isPlaying ? t.pause : t.play,
+            iconSize: 24,
+            onPressed: controller.togglePlayPause,
+            tooltip: controller.isPlaying ? t.pause : t.play,
+          ),
+          IconButton(
+            icon: const Icon(Icons.skip_next),
+            iconSize: 22,
+            onPressed: controller.skipToNextCue,
+            tooltip: t.next_sentence,
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(
+              controller.currentCue?.text ?? '',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall,
             ),
-            IconButton(
-              icon: const Icon(Icons.skip_next),
-              iconSize: 22,
-              onPressed: controller.skipToNextCue,
-              tooltip: t.next_sentence,
-            ),
-            const SizedBox(width: 4),
-            Expanded(
-              child: Text(
-                controller.currentCue?.text ?? '',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ),
-            AudiobookFollowAudioButton(controller: controller),
-            IconButton(
-              icon: const Icon(Icons.tune),
-              iconSize: 20,
-              onPressed: onOpenSettings,
-              tooltip: t.audiobook_settings,
-            ),
-          ],
-        ),
+          ),
+          AudiobookFollowAudioButton(controller: controller),
+          IconButton(
+            icon: const Icon(Icons.tune),
+            iconSize: 20,
+            onPressed: onOpenSettings,
+            tooltip: t.audiobook_settings,
+          ),
+        ],
       ),
     );
   }

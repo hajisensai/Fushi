@@ -4469,29 +4469,26 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       left: 0,
       right: 0,
       bottom: 0,
-      child: SafeArea(
-        top: false,
-        child: BottomAppBar(
-          height: 56,
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: Row(
-            children: [
-              if (bookUid != null)
-                IconButton(
-                  icon: const Icon(Icons.headphones),
-                  iconSize: 22,
-                  onPressed: () => _openImportDialog(bookUid),
-                  tooltip: t.audiobook_import,
-                ),
-              const Spacer(),
+      child: BottomAppBar(
+        height: 56,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Row(
+          children: [
+            if (bookUid != null)
               IconButton(
-                icon: const Icon(Icons.tune),
-                iconSize: 20,
-                onPressed: () => _showReaderSettingsSheet(null),
-                tooltip: t.reader_settings_label,
+                icon: const Icon(Icons.headphones),
+                iconSize: 22,
+                onPressed: () => _openImportDialog(bookUid),
+                tooltip: t.audiobook_import,
               ),
-            ],
-          ),
+            const Spacer(),
+            IconButton(
+              icon: const Icon(Icons.tune),
+              iconSize: 20,
+              onPressed: () => _showReaderSettingsSheet(null),
+              tooltip: t.reader_settings_label,
+            ),
+          ],
         ),
       ),
     );
