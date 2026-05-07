@@ -2157,9 +2157,13 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       InAppWebViewController webViewController) async {
     String source = '''
 if (!window.getSelection().isCollapsed) {
-  window.__hibikiRunWithScrollLock(function() {
+  if (window.__hibikiRunWithScrollLock) {
+    window.__hibikiRunWithScrollLock(function() {
+      window.getSelection().removeAllRanges();
+    });
+  } else {
     window.getSelection().removeAllRanges();
-  });
+  }
 }
 ''';
     await webViewController.evaluateJavascript(source: source);
@@ -2399,7 +2403,7 @@ window.__hibikiRestoreScrollState = function(state) {
   }
 };
 
-window.__hibikiSelectionScrollLockCount = 0;
+window.__hibikiSelectionScrollLockCount = window.__hibikiSelectionScrollLockCount || 0;
 window.__hibikiIsSelectionScrollLocked = function() {
   return (window.__hibikiSelectionScrollLockCount || 0) > 0;
 };
