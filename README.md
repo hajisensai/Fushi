@@ -176,8 +176,7 @@ hibiki/
 │   └── android/
 │       └── app/src/main/cpp/ # hoshidicts C++ 词典引擎
 ├── docs/                    # 开发文档
-├── chisa/                   # jidoujisho 早期版本参考
-└── legacy/                  # 遗留参考代码
+└── chisa/                   # jidoujisho 早期版本参考
 ```
 
 ## 致谢

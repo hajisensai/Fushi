@@ -7,7 +7,7 @@
 - 仓库根：`d:\APP\vs_claude_code\hibiki\`
 - Flutter app：`hibiki/hibiki/`（子目录，非根）
 - 计划文档：根目录下 `AUDIOBOOK_SYNC.md`、`SUBTITLE_TO_EPUB_PLAN.md` 等
-- 遗留 / 参考：`legacy/`、`chisa/`
+- 遗留 / 参考：`chisa/`（旧 jidoujisho 参考见[上游仓库](https://github.com/arianneorpilla/jidoujisho)）
 
 ## 当前状态
 
