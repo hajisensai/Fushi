@@ -2157,34 +2157,9 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       InAppWebViewController webViewController) async {
     String source = '''
 if (!window.getSelection().isCollapsed) {
-  var saved = window.__hibikiCaptureScrollState ? window.__hibikiCaptureScrollState() : null;
-  var roots = saved ? saved.roots.map(function(item) { return item.el; }) : [];
-  var restoring = false;
-  function lockScroll() {
-    if (restoring) return;
-    restoring = true;
-    if (window.__hibikiRestoreScrollState) window.__hibikiRestoreScrollState(saved);
-    restoring = false;
-  }
-  for (var i = 0; i < roots.length; i++) {
-    roots[i].addEventListener('scroll', lockScroll);
-  }
-  document.addEventListener('scroll', lockScroll, true);
-  window.__hibikiSelectionScrollGuard = true;
-  window.getSelection().removeAllRanges();
-  lockScroll();
-  requestAnimationFrame(function() {
-    lockScroll();
-    requestAnimationFrame(lockScroll);
+  window.__hibikiRunWithScrollLock(function() {
+    window.getSelection().removeAllRanges();
   });
-  setTimeout(function() {
-    lockScroll();
-    for (var i = 0; i < roots.length; i++) {
-      roots[i].removeEventListener('scroll', lockScroll);
-    }
-    document.removeEventListener('scroll', lockScroll, true);
-    window.__hibikiSelectionScrollGuard = false;
-  }, 250);
 }
 ''';
     await webViewController.evaluateJavascript(source: source);
@@ -2424,7 +2399,48 @@ window.__hibikiRestoreScrollState = function(state) {
   }
 };
 
-window.__hibikiSelectionScrollGuard = false;
+window.__hibikiSelectionScrollLockCount = 0;
+window.__hibikiIsSelectionScrollLocked = function() {
+  return (window.__hibikiSelectionScrollLockCount || 0) > 0;
+};
+
+window.__hibikiRunWithScrollLock = function(fn) {
+  var saved = window.__hibikiCaptureScrollState ? window.__hibikiCaptureScrollState() : null;
+  var roots = saved ? saved.roots.map(function(item) { return item.el; }) : [];
+  var restoring = false;
+  function lockScroll() {
+    if (restoring) return;
+    restoring = true;
+    if (window.__hibikiRestoreScrollState) window.__hibikiRestoreScrollState(saved);
+    restoring = false;
+  }
+  for (var i = 0; i < roots.length; i++) {
+    roots[i].addEventListener('scroll', lockScroll);
+  }
+  document.addEventListener('scroll', lockScroll, true);
+  window.__hibikiSelectionScrollLockCount++;
+  var cleaned = false;
+  function cleanup() {
+    if (cleaned) return;
+    cleaned = true;
+    lockScroll();
+    for (var i = 0; i < roots.length; i++) {
+      roots[i].removeEventListener('scroll', lockScroll);
+    }
+    document.removeEventListener('scroll', lockScroll, true);
+    window.__hibikiSelectionScrollLockCount = Math.max(0, (window.__hibikiSelectionScrollLockCount || 1) - 1);
+  }
+  try {
+    fn();
+  } finally {
+    lockScroll();
+    requestAnimationFrame(function() {
+      lockScroll();
+      requestAnimationFrame(lockScroll);
+    });
+    setTimeout(cleanup, 250);
+  }
+};
 
 function tapToSelect(e) {
   console.log('[hibiki] tapToSelect x=' + e.clientX + ' y=' + e.clientY + ' target=' + (e.target ? e.target.nodeName : 'null'));
@@ -2765,36 +2781,11 @@ div.pointer-events-none.absolute.opacity-25 {
 
 
 function _applySelection(range) {
-  var saved = window.__hibikiCaptureScrollState ? window.__hibikiCaptureScrollState() : null;
-  var roots = saved ? saved.roots.map(function(item) { return item.el; }) : [];
-  var restoring = false;
-  function lockScroll() {
-    if (restoring) return;
-    restoring = true;
-    if (window.__hibikiRestoreScrollState) window.__hibikiRestoreScrollState(saved);
-    restoring = false;
-  }
-  for (var i = 0; i < roots.length; i++) {
-    roots[i].addEventListener('scroll', lockScroll);
-  }
-  document.addEventListener('scroll', lockScroll, true);
-  window.__hibikiSelectionScrollGuard = true;
-  var selection = window.getSelection();
-  selection.removeAllRanges();
-  selection.addRange(range);
-  lockScroll();
-  requestAnimationFrame(function() {
-    lockScroll();
-    requestAnimationFrame(lockScroll);
+  window.__hibikiRunWithScrollLock(function() {
+    var selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
   });
-  setTimeout(function() {
-    lockScroll();
-    for (var i = 0; i < roots.length; i++) {
-      roots[i].removeEventListener('scroll', lockScroll);
-    }
-    document.removeEventListener('scroll', lockScroll, true);
-    window.__hibikiSelectionScrollGuard = false;
-  }, 250);
 }
 
 function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceDelimited) {
@@ -2956,7 +2947,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     if (timer) clearTimeout(timer);
     timer = setTimeout(function() {
       try {
-        if (window.__hoshiAutoScrollInFlight || window.__hoshiRestoreInFlight || window.__hibikiSelectionScrollGuard) {
+        if (window.__hoshiAutoScrollInFlight || window.__hoshiRestoreInFlight || (window.__hibikiIsSelectionScrollLocked && window.__hibikiIsSelectionScrollLocked())) {
           console.log(JSON.stringify({'hibiki-message-type':'pos-save-skip','reason':'autoScrollInFlight'}));
           return;
         }
