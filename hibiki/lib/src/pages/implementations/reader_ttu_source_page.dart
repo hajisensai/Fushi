@@ -185,6 +185,29 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   double get _readerBottomReserve =>
       (_hasReaderBottomChrome ? _readerChromeHeight : 0) + _stableBottomInset;
 
+  /// ttu 的 pageMarginBottom 应该是"用户原有底部页边距 + 播放栏预留"。
+  /// pageMarginBottom == -1 时 ttu 会 fallback 到 legacyVerticalPageMargin：
+  ///   horizontal-tb → firstDimensionMargin
+  ///   vertical-rl   → secondDimensionMargin
+  /// 我们直接算出同样的值再加上 Flutter chrome 高度，避免破坏页边距语义。
+  int _ttuPageMarginBottom() {
+    final ReaderTtuSource src = ReaderTtuSource.instance;
+    final double base = src.ttuWritingMode == 'vertical-rl'
+        ? src.ttuSecondDimensionMargin
+        : src.ttuFirstDimensionMargin;
+    return (base + _readerBottomReserve).round();
+  }
+
+  /// 播放栏显隐变化后，通过 ttu bridge 实时同步 pageMarginBottom。
+  void _syncTtuPageMarginBottom() {
+    if (!_controllerInitialised) return;
+    AudiobookBridge.setReaderSetting(
+      _controller,
+      key: 'pageMarginBottom',
+      value: _ttuPageMarginBottom(),
+    );
+  }
+
   int? _progressCurrentChars;
   int? _progressTotalChars;
 
@@ -1415,7 +1438,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       'window.localStorage.setItem("furiganaStyle","$furiganaStyle")',
       'window.localStorage.setItem("textIndentation",${src.ttuTextIndentation})',
       'window.localStorage.setItem("firstDimensionMargin",${src.ttuFirstDimensionMargin})',
-      'window.localStorage.setItem("pageMarginBottom",${_readerBottomReserve.round()})',
+      'window.localStorage.setItem("pageMarginBottom",${_ttuPageMarginBottom()})',
       'window.localStorage.setItem("secondDimensionMaxValue",${src.ttuSecondDimensionMaxValue})',
       'window.localStorage.setItem("pageColumns",${src.ttuPageColumns})',
       'window.localStorage.setItem("enableVerticalFontKerning","${src.ttuEnableVerticalFontKerning ? 1 : 0}")',
@@ -3682,6 +3705,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           onTogglePlayBar: () {
             appModel.toggleShowPlayBar();
             setState(() {});
+            _syncTtuPageMarginBottom();
           },
           showMediaNotification: appModel.showMediaNotification,
           onToggleMediaNotification: () {
