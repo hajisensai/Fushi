@@ -303,7 +303,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
         ),
         child: Column(
           children: [
-            if (isTop)
+            if (index == 0)
               if (buildPopupAudioControls() case final Widget controls)
                 controls,
             Expanded(
