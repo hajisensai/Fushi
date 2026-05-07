@@ -553,6 +553,10 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
               mediaType.floatingSearchBarController.query = text;
               search(text);
             },
+            onLinkClick: (query) {
+              mediaType.floatingSearchBarController.query = query;
+              search(query);
+            },
             onMineEntry: _onMineEntry,
             onDuplicateCheck: (expression, reading) async {
               final repo = ref.read(ankiRepositoryProvider);

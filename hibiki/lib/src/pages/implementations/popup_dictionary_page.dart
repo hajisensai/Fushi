@@ -171,6 +171,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
       onTextSelected: (text, _) {
         _search(text);
       },
+      onLinkClick: _search,
       onMineEntry: _onMineEntry,
       onDuplicateCheck: (expression, reading) async {
         final repo = ref.read(ankiRepositoryProvider);
