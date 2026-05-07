@@ -184,6 +184,7 @@ class AudiobookSettingsSheet extends StatefulWidget {
     this.floatingLyricFontSize = 20,
     this.onFloatingLyricFontSizeChanged,
     this.onSearchJump,
+    this.onPageMarginChanged,
     super.key,
   });
 
@@ -213,6 +214,7 @@ class AudiobookSettingsSheet extends StatefulWidget {
   final double floatingLyricFontSize;
   final ValueChanged<double>? onFloatingLyricFontSizeChanged;
   final Future<void> Function(int sectionIndex, int charOffset)? onSearchJump;
+  final VoidCallback? onPageMarginChanged;
 
   @override
   State<AudiobookSettingsSheet> createState() => _AudiobookSettingsSheetState();
@@ -261,6 +263,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         await src.setTtuLineHeight((value as num).toDouble());
       case 'writingMode':
         await src.setTtuWritingMode(value as String);
+        widget.onPageMarginChanged?.call();
       case 'viewMode':
         await src.setTtuViewMode(value as String);
       case 'theme':
@@ -271,6 +274,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         await src.setTtuTextIndentation((value as num).toDouble());
       case 'firstDimensionMargin':
         await src.setTtuFirstDimensionMargin((value as num).toDouble());
+        widget.onPageMarginChanged?.call();
       case 'secondDimensionMaxValue':
         await src.setTtuSecondDimensionMaxValue((value as num).toDouble());
       case 'pageColumns':

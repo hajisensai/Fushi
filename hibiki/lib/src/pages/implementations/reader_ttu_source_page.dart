@@ -3750,6 +3750,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
             }
             setState(() {});
           },
+          onPageMarginChanged: _syncTtuPageMarginBottom,
         );
         return ValueListenableBuilder<ThemeData?>(
           valueListenable: sheetThemeNotifier,
