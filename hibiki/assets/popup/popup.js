@@ -1654,10 +1654,11 @@ document.addEventListener('click', (e) => {
     const target = e.target?.nodeType === Node.TEXT_NODE ? e.target.parentElement : e.target;
     if (target?.closest('.copy-toast')) return;
     if (target?.closest('.mine-button') || target?.closest('.audio-button')) return;
-    if (!target?.closest('.glossary-content') && !target?.closest('.entry-header') && !target?.closest('.entry-tags')) {
+    if (!target?.closest('.glossary-content') && !target?.closest('.entry-header') && !target?.closest('.entry-tags') && !target?.closest('.glossary-group')) {
         window.flutter_inappwebview.callHandler('tapOutside');
         return;
     }
+    if (target?.closest('summary')) return;
     if (target?.closest('.glossary-content')) {
         if (target?.closest('summary')) return;
         if (target?.closest('a[href]')) return;
