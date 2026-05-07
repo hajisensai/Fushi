@@ -13,6 +13,15 @@ import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki/src/utils/misc/popup_channel.dart';
 import 'package:hibiki/utils.dart';
 
+class _StackEntry {
+  _StackEntry({required this.query, this.result, this.isSearching = true});
+  final String query;
+  DictionarySearchResult? result;
+  bool isSearching;
+  final GlobalKey<DictionaryPopupWebViewState> webViewKey =
+      GlobalKey<DictionaryPopupWebViewState>();
+}
+
 class PopupDictionaryPage extends ConsumerStatefulWidget {
   const PopupDictionaryPage({
     required this.searchTerm,
@@ -27,52 +36,51 @@ class PopupDictionaryPage extends ConsumerStatefulWidget {
 }
 
 class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
-  DictionarySearchResult? _result;
-  bool _isSearching = false;
-  late String _currentQuery;
+  final List<_StackEntry> _stack = [];
 
   AppModel get appModel => ref.read(appProvider);
 
   @override
   void initState() {
     super.initState();
-    _currentQuery = widget.searchTerm;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _search(_currentQuery);
+      _pushSearch(widget.searchTerm);
     });
   }
 
-  Future<void> _search(String query) async {
+  Future<void> _pushSearch(String query) async {
     if (query.trim().isEmpty) return;
 
-    setState(() {
-      _isSearching = true;
-      _currentQuery = query;
-    });
+    final entry = _StackEntry(query: query);
+    setState(() => _stack.add(entry));
 
     try {
-      _result = await appModel.searchDictionary(
+      entry.result = await appModel.searchDictionary(
         searchTerm: query,
         searchWithWildcards: true,
         overrideMaximumTerms: appModel.maximumTerms,
       );
     } finally {
       if (mounted) {
-        setState(() {
-          _isSearching = false;
-        });
+        setState(() => entry.isSearching = false);
       }
     }
 
     if (!mounted) return;
 
-    if (_result != null && _result!.entries.isNotEmpty) {
+    if (entry.result != null && entry.result!.entries.isNotEmpty) {
       appModel.addToSearchHistory(
         historyKey: DictionaryMediaType.instance.uniqueKey,
         searchTerm: query,
       );
-      appModel.addToDictionaryHistory(result: _result!);
+      appModel.addToDictionaryHistory(result: entry.result!);
     }
+  }
+
+  bool _popStack() {
+    if (_stack.length <= 1) return false;
+    setState(() => _stack.removeLast());
+    return true;
   }
 
   Future<void> _close() async {
@@ -82,6 +90,42 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
 
   @override
   Widget build(BuildContext context) {
+    return PopScope(
+      canPop: _stack.length <= 1,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _popStack();
+      },
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: SafeArea(
+          child: _buildStack(context),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStack(BuildContext context) {
+    if (_stack.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    const double inset = 6.0;
+
+    return Stack(
+      children: [
+        for (int i = 0; i < _stack.length; i++)
+          Positioned(
+            left: inset * i,
+            top: inset * i,
+            right: inset * i,
+            bottom: inset * i,
+            child: _buildLayer(context, i),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildLayer(BuildContext context, int index) {
     final isDark =
         (appModel.overrideDictionaryTheme ?? Theme.of(context)).brightness ==
             Brightness.dark;
@@ -89,29 +133,25 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
     final borderColor = isDark
         ? Colors.white.withValues(alpha: 0.15)
         : Colors.black.withValues(alpha: 0.18);
+    final entry = _stack[index];
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: SafeArea(
-        child: Container(
-          decoration: BoxDecoration(
-            color: fillColor,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: borderColor, width: 1),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: _buildBody(),
-        ),
+    return Container(
+      decoration: BoxDecoration(
+        color: fillColor,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: borderColor, width: 1),
       ),
+      clipBehavior: Clip.antiAlias,
+      child: _buildEntryContent(entry, index),
     );
   }
 
-  Widget _buildBody() {
-    if (_isSearching && _result == null) {
+  Widget _buildEntryContent(_StackEntry entry, int index) {
+    if (entry.isSearching) {
       return const Center(child: CircularProgressIndicator());
     }
 
-    if (_result == null || _result!.entries.isEmpty) {
+    if (entry.result == null || entry.result!.entries.isEmpty) {
       return Center(
         child: JidoujishoPlaceholderMessage(
           icon: Icons.search_off,
@@ -121,12 +161,12 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
     }
 
     return DictionaryPopupWebView(
-      key: ValueKey(_result),
-      result: _result!,
+      key: entry.webViewKey,
+      result: entry.result!,
       onTextSelected: (text, _) {
-        _search(text);
+        _pushSearch(text);
       },
-      onLinkClick: _search,
+      onLinkClick: _pushSearch,
       onMineEntry: _onMineEntry,
       onDuplicateCheck: (expression, reading) async {
         final repo = ref.read(ankiRepositoryProvider);
