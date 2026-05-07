@@ -130,7 +130,8 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
           : 0;
 
       final bool arEnabled = ReaderTtuSource.instance.autoReadOnLookup;
-      debugPrint('[hibiki-autoread] autoReadOnLookup=$arEnabled entries=${dictionaryResult.entries.length}');
+      debugPrint(
+          '[hibiki-autoread] autoReadOnLookup=$arEnabled entries=${dictionaryResult.entries.length}');
       if (arEnabled && dictionaryResult.entries.isNotEmpty) {
         final entry = dictionaryResult.entries.first;
         final expression = entry.word;
@@ -153,7 +154,8 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
   Future<void> _autoReadWord(String expression, String reading) async {
     try {
       final sources = appModel.enabledAudioSources;
-      debugPrint('[hibiki-autoread] "$expression" reading="$reading" sources=${sources.length}');
+      debugPrint(
+          '[hibiki-autoread] "$expression" reading="$reading" sources=${sources.length}');
       final WordAudioResolver resolver = WordAudioResolver(
         queryLocalAudio: (String expression, String reading) async {
           try {
@@ -161,7 +163,8 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
                 .queryLocalAudio(expression, reading)
                 .timeout(const Duration(milliseconds: 500));
           } on TimeoutException {
-            debugPrint('[hibiki-autoread] queryLocalAudio timed out for "$expression"');
+            debugPrint(
+                '[hibiki-autoread] queryLocalAudio timed out for "$expression"');
             return null;
           }
         },
@@ -176,7 +179,8 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
       if (url == null || url.isEmpty) return;
 
       if (url.startsWith('file://')) {
-        final ok = await TtsChannel.instance.playFile(url.replaceFirst('file://', ''));
+        final ok =
+            await TtsChannel.instance.playFile(url.replaceFirst('file://', ''));
         debugPrint('[hibiki-autoread] playFile ok=$ok');
       } else if (url.startsWith('/')) {
         final ok = await TtsChannel.instance.playFile(url);
@@ -224,8 +228,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
                       child: Container(color: Colors.transparent),
                     ),
                   ),
-                  if (showLoadingPlaceholder)
-                    _buildLoadingPlaceholder(screen),
+                  if (showLoadingPlaceholder) _buildLoadingPlaceholder(screen),
                   for (int i = 0; i < stack.length; i++)
                     _buildPopupLayer(stack, i, screen),
                 ],
@@ -292,13 +295,11 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
         headerWidget: index == 0 ? buildPopupAudioControls() : null,
         overlayWidget: isTop ? buildDictionaryLoading() : null,
         onTextSelected: (text, localRect) async {
-          final parentPos =
-              _calculatePopupPosition(item.selectionRect, screen);
+          final parentPos = _calculatePopupPosition(item.selectionRect, screen);
           final childRect = localRect == Rect.zero
               ? item.selectionRect
               : localRect.shift(Offset(parentPos.left, parentPos.top));
-          _popupStack.value =
-              _popupStack.value.sublist(0, index + 1);
+          _popupStack.value = _popupStack.value.sublist(0, index + 1);
           final count = await searchDictionaryResult(
             searchTerm: text,
             selectionRect: childRect,
@@ -307,12 +308,15 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
             item.webViewKey.currentState?.highlightSelection(count);
           }
         },
-        onLinkClick: (query) async {
-          _popupStack.value =
-              _popupStack.value.sublist(0, index + 1);
+        onLinkClick: (query, localRect) async {
+          final parentPos = _calculatePopupPosition(item.selectionRect, screen);
+          final childRect = localRect == Rect.zero
+              ? item.selectionRect
+              : localRect.shift(Offset(parentPos.left, parentPos.top));
+          _popupStack.value = _popupStack.value.sublist(0, index + 1);
           await searchDictionaryResult(
             searchTerm: query,
-            selectionRect: item.selectionRect,
+            selectionRect: childRect,
           );
         },
         onMineEntry: onMineFromPopup,
@@ -340,7 +344,6 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
       _popupStack.value = _popupStack.value.sublist(0, index);
     }
   }
-
 
   Rect _calculatePopupPosition(Rect sel, Size screen) {
     return calcPopupPosition(
@@ -448,4 +451,3 @@ class _PopupStackItem {
   final GlobalKey<DictionaryPopupWebViewState> webViewKey =
       GlobalKey<DictionaryPopupWebViewState>();
 }
-

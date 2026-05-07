@@ -53,7 +53,7 @@ class DictionaryPopupLayer extends StatelessWidget {
   final GlobalKey<DictionaryPopupWebViewState> webViewKey;
   final VoidCallback onDismiss;
   final void Function(String text, Rect localRect) onTextSelected;
-  final void Function(String query) onLinkClick;
+  final void Function(String query, Rect localRect) onLinkClick;
   final Future<bool> Function(Map<String, String> fields) onMineEntry;
   final Future<bool> Function(String expression, String reading)
       onDuplicateCheck;

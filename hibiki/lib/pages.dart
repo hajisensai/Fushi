@@ -18,7 +18,6 @@ export 'src/pages/implementations/history_reader_page.dart';
 export 'src/pages/implementations/home_reader_page.dart';
 export 'src/pages/implementations/home_page.dart';
 export 'src/pages/implementations/recursive_dictionary_page.dart';
-export 'src/pages/implementations/recursive_dictionary_history_page.dart';
 export 'src/pages/implementations/text_segmentation_dialog_page.dart';
 export 'src/pages/implementations/reader_ttu_source_page.dart';
 export 'src/pages/implementations/reader_ttu_source_history_page.dart';

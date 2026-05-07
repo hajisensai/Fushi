@@ -322,7 +322,13 @@ function renderStructuredContent(parent, node, language, dictName, exporting) {
                 const query = node.href.indexOf('?') >= 0
                     ? new URLSearchParams(node.href.substring(node.href.indexOf('?'))).get('query') || element.textContent || ''
                     : element.textContent || '';
-                window.flutter_inappwebview.callHandler('onLinkClick', query);
+                const rect = element.getBoundingClientRect();
+                window.flutter_inappwebview.callHandler('onLinkClick', query, {
+                    x: rect.left,
+                    y: rect.top,
+                    width: rect.width,
+                    height: rect.height
+                });
             }
         };
     }

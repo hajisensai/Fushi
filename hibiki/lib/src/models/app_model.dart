@@ -389,7 +389,6 @@ class AppModel with ChangeNotifier {
     }
   }
 
-
   /// Returns all dictionary history results. Oldest is first.
   List<DictionarySearchResult> get dictionaryHistory =>
       List.unmodifiable(_dictionaryHistoryResults);
@@ -421,7 +420,6 @@ class AppModel with ChangeNotifier {
   Stream<bool> get creatorActiveStream => _creatorActiveController.stream;
   final StreamController<bool> _creatorActiveController =
       StreamController.broadcast();
-
 
   /// Used to check whether or not the app is currently using a media source.
   bool get isMediaOpen => _currentMediaSource != null;
@@ -680,7 +678,6 @@ class AppModel with ChangeNotifier {
     _currentMediaSource = mediaItem.getMediaSource(appModel: this);
   }
 
-
   /// Update the user-defined order of a given dictionary in the database.
   /// See the dictionary dialog's [ReorderableListView] for usage.
   void updateDictionaryOrder(List<Dictionary> newDictionaries) async {
@@ -694,7 +691,6 @@ class AppModel with ChangeNotifier {
       await _database.upsertDictionaryMeta(_dictionaryToCompanion(dictionary));
     }
   }
-
 
   /// Populate maps for languages at startup to optimise performance.
   void populateLanguages() async {
@@ -1064,7 +1060,6 @@ class AppModel with ChangeNotifier {
       _dictionariesCache = dictRows.map(_rowToDictionary).toList()
         ..sort((a, b) => a.order.compareTo(b.order));
 
-
       /// Load media items cache.
       final miRows = await _database.getAllMediaItems();
       _mediaItemsCache = miRows.map(_rowToMediaItem).toList();
@@ -1252,7 +1247,8 @@ class AppModel with ChangeNotifier {
           _dictionaryHistoryResults
               .add(DictionarySearchResult.fromJson(row.resultJson));
         } catch (e) {
-          debugPrint('[Hibiki-popup] skipping corrupted dictionary history: $e');
+          debugPrint(
+              '[Hibiki-popup] skipping corrupted dictionary history: $e');
         }
       }
 
@@ -1678,7 +1674,6 @@ class AppModel with ChangeNotifier {
     return modelName;
   }
 
-
   /// Persist a new target language in preferences.
   Future<void> setTargetLanguage(Language language) async {
     String localeTag = language.locale.toLanguageTag();
@@ -1718,7 +1713,6 @@ class AppModel with ChangeNotifier {
   Future<void> setLastSelectedDeck(String deckName) async {
     await _setPref('last_selected_deck', deckName);
   }
-
 
   /// Get the current home tab index. The order of the tab indexes are based on
   /// the ordering in [mediaTypes].
@@ -2608,13 +2602,9 @@ class AppModel with ChangeNotifier {
   Future<void> openResultFromHistory({
     required DictionarySearchResult result,
   }) async {
-    await Navigator.push(
-      _navigatorKey.currentContext!,
-      MaterialPageRoute(
-        builder: (context) => RecursiveDictionaryHistoryPage(
-          result: result,
-        ),
-      ),
+    await openRecursiveDictionarySearch(
+      searchTerm: result.searchTerm,
+      killOnPop: false,
     );
   }
 
@@ -3312,8 +3302,7 @@ class AppModel with ChangeNotifier {
     HoshiDicts.disposeInstance();
   }
 
-  static const _lifecycleChannel =
-      MethodChannel('app.hibiki.reader/lifecycle');
+  static const _lifecycleChannel = MethodChannel('app.hibiki.reader/lifecycle');
 
   Future<void> moveToBack() async {
     try {
@@ -3455,8 +3444,7 @@ class AppModel with ChangeNotifier {
     String sourcePath, {
     required String displayName,
   }) async {
-    final internalPath =
-        path.join(_databaseDirectory.path, 'local_audio.db');
+    final internalPath = path.join(_databaseDirectory.path, 'local_audio.db');
     final sourceFile = File(sourcePath);
     if (sourcePath != internalPath && await sourceFile.exists()) {
       await sourceFile.copy(internalPath);
@@ -3467,8 +3455,7 @@ class AppModel with ChangeNotifier {
   }
 
   Future<void> clearLocalAudioDb() async {
-    final internalPath =
-        path.join(_databaseDirectory.path, 'local_audio.db');
+    final internalPath = path.join(_databaseDirectory.path, 'local_audio.db');
     await TtsChannel.instance.setLocalAudioDb('');
     await _setPref('local_audio_db_path', '');
     await _setPref('local_audio_db_display_name', '');

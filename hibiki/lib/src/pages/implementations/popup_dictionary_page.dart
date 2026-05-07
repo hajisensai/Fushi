@@ -130,8 +130,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
         body: SafeArea(
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final screen =
-                  Size(constraints.maxWidth, constraints.maxHeight);
+              final screen = Size(constraints.maxWidth, constraints.maxHeight);
               return _buildStack(context, screen);
             },
           ),
@@ -145,8 +144,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
 
     return Stack(
       children: [
-        for (int i = 0; i < _stack.length; i++)
-          _buildLayer(context, i, screen),
+        for (int i = 0; i < _stack.length; i++) _buildLayer(context, i, screen),
       ],
     );
   }
@@ -178,15 +176,21 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
           if (_stack.length > index + 1) {
             setState(() => _stack.removeRange(index + 1, _stack.length));
           }
-          final childRect =
-              localRect == Rect.zero ? entry.selectionRect : localRect;
+          final parentPos = _layerPosition(index, screen);
+          final childRect = localRect == Rect.zero
+              ? entry.selectionRect
+              : localRect.shift(Offset(parentPos.left, parentPos.top));
           _pushSearch(text, childRect);
         },
-        onLinkClick: (query) {
+        onLinkClick: (query, localRect) {
           if (_stack.length > index + 1) {
             setState(() => _stack.removeRange(index + 1, _stack.length));
           }
-          _pushSearch(query, entry.selectionRect);
+          final parentPos = _layerPosition(index, screen);
+          final childRect = localRect == Rect.zero
+              ? entry.selectionRect
+              : localRect.shift(Offset(parentPos.left, parentPos.top));
+          _pushSearch(query, childRect);
         },
         onMineEntry: _onMineEntry,
         onDuplicateCheck: (expression, reading) async {

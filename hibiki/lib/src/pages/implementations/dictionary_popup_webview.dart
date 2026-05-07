@@ -23,7 +23,7 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
 
   final DictionarySearchResult result;
   final void Function(String text, Rect localRect)? onTextSelected;
-  final void Function(String query)? onLinkClick;
+  final void Function(String query, Rect localRect)? onLinkClick;
   final VoidCallback? onTapOutside;
   final Future<bool> Function(Map<String, String> fields)? onMineEntry;
   final Future<bool> Function(String expression, String reading)?
@@ -245,7 +245,17 @@ class DictionaryPopupWebViewState
             if (args.isNotEmpty) {
               final text = args[0].toString();
               if (text.isNotEmpty) {
-                widget.onLinkClick?.call(text);
+                Rect localRect = Rect.zero;
+                if (args.length > 1 && args[1] is Map) {
+                  final r = args[1] as Map;
+                  localRect = Rect.fromLTWH(
+                    (r['x'] as num?)?.toDouble() ?? 0,
+                    (r['y'] as num?)?.toDouble() ?? 0,
+                    (r['width'] as num?)?.toDouble() ?? 1,
+                    (r['height'] as num?)?.toDouble() ?? 1,
+                  );
+                }
+                widget.onLinkClick?.call(text, localRect);
               }
             }
           },

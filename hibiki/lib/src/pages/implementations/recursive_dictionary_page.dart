@@ -2,7 +2,6 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
-import 'package:material_floating_search_bar/material_floating_search_bar.dart';
 import 'package:spaces/spaces.dart';
 import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/media.dart';
@@ -11,6 +10,7 @@ import 'package:hibiki/src/anki/anki_models.dart';
 import 'package:hibiki/src/anki/anki_repository.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/media/types/dictionary_media_type.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki/utils.dart';
 
@@ -40,21 +40,19 @@ class RecursiveDictionaryPage extends BasePage {
 
 class _RecursiveDictionaryPageState
     extends BasePageState<RecursiveDictionaryPage> {
-  final FloatingSearchBarController _controller = FloatingSearchBarController();
+  final TextEditingController _controller = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
 
   DictionarySearchResult? _result;
+  final List<_NestedPopupEntry> _popupStack = [];
 
   bool _isSearching = false;
-  bool _isEditingQuery = false;
-  late String _displayQuery;
 
   @override
   void initState() {
     super.initState();
 
-    _displayQuery = widget.searchTerm;
-
-    _controller.query = widget.searchTerm;
+    _controller.text = widget.searchTerm;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       appModel.addToSearchHistory(
@@ -70,6 +68,8 @@ class _RecursiveDictionaryPageState
   @override
   void dispose() {
     appModelNoUpdate.dictionarySearchAgainNotifier.removeListener(searchAgain);
+    _searchFocusNode.dispose();
+    _controller.dispose();
     super.dispose();
   }
 
@@ -79,7 +79,7 @@ class _RecursiveDictionaryPageState
       return const SizedBox.shrink();
     }
 
-    Color? backgroundColor = theme.colorScheme.background;
+    Color? backgroundColor = theme.colorScheme.surface;
     if (appModel.overrideDictionaryColor != null) {
       if ((appModel.overrideDictionaryTheme ?? theme).brightness ==
           Brightness.dark) {
@@ -94,9 +94,14 @@ class _RecursiveDictionaryPageState
     return Theme(
       data: appModel.overrideDictionaryTheme ?? theme,
       child: PopScope(
-        canPop: !widget.killOnPop,
+        canPop: !widget.killOnPop && _popupStack.isEmpty,
         onPopInvokedWithResult: (didPop, _) {
-          if (!didPop && widget.killOnPop) {
+          if (didPop) {
+            return;
+          }
+          if (_popupStack.isNotEmpty) {
+            popNestedPopupAt(_popupStack.length - 1);
+          } else if (widget.killOnPop) {
             appModel.moveToBack();
           }
         },
@@ -106,71 +111,11 @@ class _RecursiveDictionaryPageState
           body: SafeArea(
             child: Padding(
               padding: Spacing.of(context).insets.onlyTop.semiSmall,
-              child: _isEditingQuery
-                  ? buildFloatingSearchBar()
-                  : buildDictionaryResultView(),
+              child: buildDictionaryResultView(),
             ),
           ),
         ),
       ),
-    );
-  }
-
-  Widget buildFloatingSearchBar() {
-    Color? backgroundColor = appModel.isDarkMode
-        ? const Color.fromARGB(255, 30, 30, 30)
-        : const Color.fromARGB(255, 229, 229, 229);
-    if (appModel.overrideDictionaryColor != null) {
-      if ((appModel.overrideDictionaryTheme ?? theme).brightness ==
-          Brightness.dark) {
-        backgroundColor =
-            JidoujishoColor.lighten(appModel.overrideDictionaryColor!, 0.05);
-      } else {
-        backgroundColor =
-            JidoujishoColor.darken(appModel.overrideDictionaryColor!, 0.05);
-      }
-    }
-
-    return FloatingSearchBar(
-      physics: const AlwaysScrollableScrollPhysics(
-        parent: BouncingScrollPhysics(),
-      ),
-      hint: t.search_ellipsis,
-      controller: _controller,
-      builder: buildFloatingSearchBody,
-      borderRadius: BorderRadius.zero,
-      elevation: 0,
-      backgroundColor: backgroundColor,
-      backdropColor: Colors.transparent,
-      accentColor: theme.colorScheme.primary,
-      scrollPadding: const EdgeInsets.only(top: 6, bottom: 56),
-      transitionDuration: Duration.zero,
-      margins: const EdgeInsets.symmetric(horizontal: 6),
-      width: double.maxFinite,
-      transition: SlideFadeFloatingSearchBarTransition(),
-      automaticallyImplyBackButton: false,
-      isScrollControlled: true,
-      debounceDelay: Duration(milliseconds: appModel.searchDebounceDelay),
-      onFocusChanged: (focused) {
-        if (!focused) {
-          if (!mounted) {
-            return;
-          }
-          setState(() {
-            _isEditingQuery = false;
-          });
-        }
-      },
-      progress: _isSearching,
-      leadingActions: [
-        buildBackButton(),
-      ],
-      actions: [
-        buildSegmentButton(),
-        buildSearchButton(),
-      ],
-      onQueryChanged: onQueryChanged,
-      onSubmitted: search,
     );
   }
 
@@ -189,58 +134,80 @@ class _RecursiveDictionaryPageState
   }
 
   Widget buildQueryHeader() {
-    Color? backgroundColor = appModel.isDarkMode
-        ? const Color.fromARGB(255, 30, 30, 30)
-        : const Color.fromARGB(255, 229, 229, 229);
-    if (appModel.overrideDictionaryColor != null) {
-      if ((appModel.overrideDictionaryTheme ?? theme).brightness ==
-          Brightness.dark) {
-        backgroundColor =
-            JidoujishoColor.lighten(appModel.overrideDictionaryColor!, 0.05);
-      } else {
-        backgroundColor =
-            JidoujishoColor.darken(appModel.overrideDictionaryColor!, 0.05);
-      }
-    }
+    final ColorScheme colors = theme.colorScheme;
+    final bool dark = (appModel.overrideDictionaryTheme ?? theme).brightness ==
+        Brightness.dark;
+    final Color searchFill = dark
+        ? Colors.white.withValues(alpha: 0.08)
+        : Colors.white.withValues(alpha: 0.82);
+    final Color borderColor = dark
+        ? Colors.white.withValues(alpha: 0.14)
+        : Colors.black.withValues(alpha: 0.12);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 6),
-      child: Material(
-        color: backgroundColor,
-        child: SizedBox(
-          height: kToolbarHeight,
-          child: Row(
-            children: [
-              JidoujishoIconButton(
-                tooltip: t.back,
-                icon: Icons.arrow_back,
-                onTap: () async {
-                  if (widget.killOnPop) {
-                    appModel.moveToBack();
-                  } else {
-                    Navigator.pop(context);
-                  }
-                },
-              ),
-              Expanded(
-                child: InkWell(
-                  onTap: startEditingQuery,
-                  child: Text(
-                    _displayQuery,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: textTheme.titleMedium,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: SizedBox(
+        height: kToolbarHeight,
+        child: Row(
+          children: [
+            JidoujishoIconButton(
+              tooltip: t.back,
+              icon: Icons.arrow_back,
+              onTap: () async {
+                if (widget.killOnPop) {
+                  appModel.moveToBack();
+                } else {
+                  Navigator.pop(context);
+                }
+              },
+            ),
+            Expanded(
+              child: SizedBox(
+                height: 42,
+                child: TextField(
+                  controller: _controller,
+                  focusNode: _searchFocusNode,
+                  textInputAction: TextInputAction.search,
+                  cursorColor: colors.primary,
+                  style: textTheme.bodyMedium,
+                  decoration: InputDecoration(
+                    hintText: t.search_ellipsis,
+                    prefixIcon: Icon(
+                      Icons.search,
+                      size: 18,
+                      color: colors.onSurfaceVariant,
+                    ),
+                    isDense: true,
+                    filled: true,
+                    fillColor: searchFill,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide(color: borderColor),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide(color: colors.primary),
+                    ),
                   ),
+                  onChanged: onQueryChanged,
+                  onSubmitted: searchInCurrentPage,
                 ),
               ),
-              buildInlineSegmentButton(),
-              JidoujishoIconButton(
-                tooltip: t.search,
-                icon: Icons.search,
-                onTap: startEditingQuery,
-              ),
-            ],
-          ),
+            ),
+            buildInlineSegmentButton(),
+            JidoujishoIconButton(
+              tooltip: t.search,
+              icon: Icons.search,
+              onTap: () {
+                searchInCurrentPage(_controller.text);
+                _searchFocusNode.unfocus();
+              },
+            ),
+          ],
         ),
       ),
     );
@@ -255,22 +222,25 @@ class _RecursiveDictionaryPageState
     );
   }
 
-  void startEditingQuery() {
-    setState(() {
-      _isEditingQuery = true;
-    });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) {
-        return;
-      }
-      _controller.query = _displayQuery;
-      _controller.open();
-    });
+  void searchInCurrentPage(String query) {
+    final String trimmed = query.trim();
+    if (trimmed.isEmpty) {
+      return;
+    }
+
+    _controller.text = trimmed;
+    _controller.selection = TextSelection.collapsed(offset: trimmed.length);
+    search(trimmed);
+  }
+
+  void updateCurrentQueryFromLookup(String query) {
+    searchInCurrentPage(query);
+    widget.onUpdateQuery?.call(query);
   }
 
   void searchAgain() {
     _result = null;
-    search(_controller.query);
+    search(_controller.text);
   }
 
   Duration get historyDelay => Duration.zero;
@@ -299,11 +269,15 @@ class _RecursiveDictionaryPageState
     }
 
     overrideMaximumTerms ??= appModel.maximumTerms;
+    if (_controller.text != query) {
+      _controller.text = query;
+      _controller.selection = TextSelection.collapsed(offset: query.length);
+    }
 
     if (mounted) {
       setState(() {
         _isSearching = true;
-        _displayQuery = query;
+        _popupStack.clear();
       });
     }
 
@@ -315,7 +289,7 @@ class _RecursiveDictionaryPageState
       );
     } finally {
       if (_result != null) {
-        if (query == _controller.query) {
+        if (query == _controller.text) {
           if (mounted) {
             setState(() {
               _isSearching = false;
@@ -323,10 +297,10 @@ class _RecursiveDictionaryPageState
             });
           }
           Future.delayed(historyDelay, () async {
-            if (query == _controller.query) {
+            if (query == _controller.text) {
               appModel.addToSearchHistory(
                 historyKey: DictionaryMediaType.instance.uniqueKey,
-                searchTerm: _controller.query,
+                searchTerm: _controller.text,
               );
             }
             if (_result!.entries.isNotEmpty) {
@@ -338,106 +312,88 @@ class _RecursiveDictionaryPageState
     }
   }
 
-  Widget buildBackButton() {
-    return FloatingSearchBarAction(
-      showIfOpened: true,
-      showIfClosed: false,
-      child: JidoujishoIconButton(
-        tooltip: t.back,
-        icon: Icons.arrow_back,
-        onTap: () async {
-          if (widget.killOnPop) {
-            appModel.shutdown();
-          } else {
-            Navigator.pop(context);
-          }
-        },
-      ),
-    );
-  }
-
-  Widget buildSearchButton() {
-    return FloatingSearchBarAction(
-      showIfOpened: true,
-      builder: (context, animation) {
-        final bar = FloatingSearchAppBar.of(context)!;
-
-        return ValueListenableBuilder<String>(
-          valueListenable: bar.queryNotifer,
-          builder: (context, query, _) {
-            final isEmpty = query.isEmpty;
-
-            return SearchToClear(
-              isEmpty: isEmpty,
-              size: textTheme.titleLarge!.fontSize!,
-              color: bar.style.iconColor,
-              duration: const Duration(milliseconds: 900) * 0.5,
-              onTap: () {
-                if (!isEmpty) {
-                  bar.clear();
-                } else {
-                  bar.isOpen =
-                      !bar.isOpen || (!bar.hasFocus && bar.isAlwaysOpened);
-                }
-
-                setState(() {});
-              },
-              searchButtonSemanticLabel: t.search,
-              clearButtonSemanticLabel: t.clear,
-            );
-          },
-        );
-      },
-    );
-  }
-
   @override
   void onSearch(String searchTerm, {String? sentence = ''}) async {
-    await appModel.openRecursiveDictionarySearch(
-      searchTerm: searchTerm,
-      killOnPop: false,
-      onUpdateQuery: widget.onUpdateQuery,
-    );
+    updateCurrentQueryFromLookup(searchTerm);
   }
 
-  Widget buildSegmentButton() {
-    return FloatingSearchBarAction(
-      showIfOpened: true,
-      child: JidoujishoIconButton(
-        size: Theme.of(context).textTheme.titleLarge?.fontSize,
-        tooltip: t.text_segmentation,
-        icon: Icons.account_tree,
-        onTap: openTextSegmentationForQuery,
-      ),
+  Future<void> pushNestedPopup(
+    String query,
+    Rect selectionRect, {
+    bool replaceStack = false,
+  }) async {
+    final String trimmed = query.trim();
+    if (trimmed.isEmpty) {
+      return;
+    }
+
+    final entry = _NestedPopupEntry(
+      query: trimmed,
+      selectionRect: _fallbackSelectionRect(selectionRect),
     );
+    setState(() {
+      if (replaceStack) {
+        _popupStack.clear();
+      }
+      _popupStack.add(entry);
+    });
+
+    try {
+      entry.result = await appModel.searchDictionary(
+        searchTerm: trimmed,
+        searchWithWildcards: true,
+        overrideMaximumTerms: appModel.maximumTerms,
+      );
+    } finally {
+      if (mounted && _popupStack.contains(entry)) {
+        setState(() {
+          entry.isSearching = false;
+        });
+      }
+    }
+
+    if (!mounted || !_popupStack.contains(entry)) {
+      return;
+    }
+    final DictionarySearchResult? result = entry.result;
+    if (result != null && result.entries.isNotEmpty) {
+      appModel.addToSearchHistory(
+        historyKey: DictionaryMediaType.instance.uniqueKey,
+        searchTerm: trimmed,
+      );
+      appModel.addToDictionaryHistory(result: result);
+    }
+  }
+
+  Rect _fallbackSelectionRect(Rect rect) {
+    if (rect != Rect.zero) {
+      return rect;
+    }
+    return const Rect.fromLTWH(12, 12, 1, 1);
+  }
+
+  void popNestedPopupAt(int index) {
+    if (index < 0 || index >= _popupStack.length) {
+      return;
+    }
+    setState(() {
+      if (index == 0) {
+        _popupStack.clear();
+      } else {
+        _popupStack.removeRange(index, _popupStack.length);
+      }
+    });
   }
 
   Future<void> openTextSegmentationForQuery() async {
     await appModel.openTextSegmentationDialog(
-      sourceText: _displayQuery,
+      sourceText: _controller.text,
       onSearch: (selection) async {
-        await appModel.openRecursiveDictionarySearch(
-          searchTerm: selection.textInside,
-          killOnPop: false,
-          onUpdateQuery: widget.onUpdateQuery,
-        );
+        updateCurrentQueryFromLookup(selection.textInside);
       },
     );
 
-    widget.onUpdateQuery?.call(_displayQuery);
-  }
-
-  Widget buildSearchClearButton() {
-    return FloatingSearchBarAction(
-      showIfOpened: true,
-      showIfClosed: false,
-      child: JidoujishoIconButton(
-        size: textTheme.titleLarge?.fontSize,
-        tooltip: t.clear,
-        icon: Icons.manage_search,
-        onTap: showDeleteSearchHistoryPrompt,
-      ),
-    );
+    widget.onUpdateQuery?.call(_controller.text);
   }
 
   void showDeleteSearchHistoryPrompt() async {
@@ -483,7 +439,7 @@ class _RecursiveDictionaryPageState
     if (appModel.dictionaries.isEmpty) {
       return buildImportDictionariesPlaceholderMessage();
     }
-    if (_displayQuery.isEmpty) {
+    if (_controller.text.isEmpty) {
       if (appModel
           .getSearchHistory(historyKey: DictionaryMediaType.instance.uniqueKey)
           .isEmpty) {
@@ -492,11 +448,8 @@ class _RecursiveDictionaryPageState
         return JidoujishoSearchHistory(
           uniqueKey: DictionaryMediaType.instance.uniqueKey,
           onSearchTermSelect: (searchTerm) {
-            _controller.query = searchTerm;
-            search(searchTerm);
-            setState(() {
-              _isEditingQuery = false;
-            });
+            searchInCurrentPage(searchTerm);
+            _searchFocusNode.unfocus();
           },
           onUpdate: () {
             setState(() {});
@@ -523,25 +476,97 @@ class _RecursiveDictionaryPageState
   }
 
   Widget buildSearchResult() {
-    return Column(
-      children: [
-        Expanded(
-          child: DictionaryPopupWebView(
-            key: ValueKey(_result),
-            result: _result!,
-            onTextSelected: (text, _) {
-              onSearch(text);
-            },
-            onLinkClick: onSearch,
-            onMineEntry: _onMineEntry,
-            onDuplicateCheck: (expression, reading) async {
-              final repo = ref.read(ankiRepositoryProvider);
-              return repo.isDuplicate(expression, reading);
-            },
-          ),
-        ),
-        if (footerWidget != null) footerWidget!,
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final Size screen = Size(constraints.maxWidth, constraints.maxHeight);
+        return Stack(
+          children: [
+            Column(
+              children: [
+                Expanded(
+                  child: DictionaryPopupWebView(
+                    key: ValueKey(_result),
+                    result: _result!,
+                    onTextSelected: (text, localRect) {
+                      pushNestedPopup(text, localRect, replaceStack: true);
+                    },
+                    onLinkClick: (query, localRect) {
+                      pushNestedPopup(query, localRect, replaceStack: true);
+                    },
+                    onMineEntry: _onMineEntry,
+                    onDuplicateCheck: (expression, reading) async {
+                      final repo = ref.read(ankiRepositoryProvider);
+                      return repo.isDuplicate(expression, reading);
+                    },
+                  ),
+                ),
+                if (footerWidget != null) footerWidget!,
+              ],
+            ),
+            if (_popupStack.isNotEmpty)
+              Positioned.fill(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: () => popNestedPopupAt(0),
+                  child: Container(color: Colors.transparent),
+                ),
+              ),
+            for (int i = 0; i < _popupStack.length; i++)
+              buildNestedPopupLayer(i, screen),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget buildNestedPopupLayer(int index, Size screen) {
+    final _NestedPopupEntry entry = _popupStack[index];
+    final Rect pos = calcPopupPosition(
+      selectionRect: entry.selectionRect,
+      screen: screen,
+      padding: 6,
+      maxWidth: appModel.popupMaxWidth,
+      maxHeight: 360,
+    );
+    final bool isDark =
+        (appModel.overrideDictionaryTheme ?? theme).brightness ==
+            Brightness.dark;
+
+    return Positioned(
+      left: pos.left,
+      top: pos.top,
+      width: pos.width,
+      height: pos.height,
+      child: DictionaryPopupLayer(
+        result: entry.isSearching ? null : entry.result,
+        webViewKey: entry.webViewKey,
+        isDark: isDark,
+        onDismiss: () => popNestedPopupAt(index),
+        onTapOutside: () => popNestedPopupAt(0),
+        onTextSelected: (text, localRect) {
+          final Rect childRect = localRect == Rect.zero
+              ? entry.selectionRect
+              : localRect.shift(Offset(pos.left, pos.top));
+          setState(() {
+            _popupStack.removeRange(index + 1, _popupStack.length);
+          });
+          pushNestedPopup(text, childRect);
+        },
+        onLinkClick: (query, localRect) {
+          final Rect childRect = localRect == Rect.zero
+              ? entry.selectionRect
+              : localRect.shift(Offset(pos.left, pos.top));
+          setState(() {
+            _popupStack.removeRange(index + 1, _popupStack.length);
+          });
+          pushNestedPopup(query, childRect);
+        },
+        onMineEntry: _onMineEntry,
+        onDuplicateCheck: (expression, reading) async {
+          final repo = ref.read(ankiRepositoryProvider);
+          return repo.isDuplicate(expression, reading);
+        },
+      ),
     );
   }
 
@@ -590,7 +615,7 @@ class _RecursiveDictionaryPageState
               ? null
               : () async {
                   search(
-                    _controller.query,
+                    _controller.text,
                     overrideMaximumTerms:
                         _result!.entries.length + appModel.maximumTerms,
                   );
@@ -649,4 +674,18 @@ class _RecursiveDictionaryPageState
       ),
     );
   }
+}
+
+class _NestedPopupEntry {
+  _NestedPopupEntry({
+    required this.query,
+    required this.selectionRect,
+  });
+
+  final String query;
+  final Rect selectionRect;
+  DictionarySearchResult? result;
+  bool isSearching = true;
+  final GlobalKey<DictionaryPopupWebViewState> webViewKey =
+      GlobalKey<DictionaryPopupWebViewState>();
 }
