@@ -104,30 +104,127 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
 
   Widget buildDictionaryHistory() {
     final historyResults = appModel.dictionaryHistory.reversed.toList();
-    final allEntries = historyResults.expand((r) => r.entries).toList();
-    if (allEntries.isEmpty) {
+    if (historyResults.every((r) => r.entries.isEmpty)) {
       return buildPlaceholder();
     }
-    final mergedResult = DictionarySearchResult(
-      entries: allEntries,
-      searchTerm: '',
-    );
-    return Padding(
-      padding: const EdgeInsets.only(top: 60),
-      child: DictionaryPopupWebView(
-        key: ValueKey(allEntries.length),
-        result: mergedResult,
-        onTextSelected: (text) {
-          mediaType.floatingSearchBarController.query = text;
-          mediaType.floatingSearchBarController.openWithoutFocus();
-          search(text);
-        },
-        onMineEntry: _onMineEntry,
-        onDuplicateCheck: (expression, reading) async {
-          final repo = ref.read(ankiRepositoryProvider);
-          return repo.isDuplicate(expression, reading);
-        },
-      ),
+    return ListView.builder(
+      padding: const EdgeInsets.only(top: 64, bottom: 16),
+      controller: DictionaryMediaType.instance.scrollController,
+      itemCount: historyResults.length,
+      itemBuilder: (context, index) {
+        final result = historyResults[index];
+        if (result.entries.isEmpty) return const SizedBox.shrink();
+        final first = result.entries.first;
+        final word = first.word;
+        final reading = first.reading;
+        final hasReading = reading.isNotEmpty && reading != word;
+        final dictCount = result.entries
+            .map((e) => e.dictionaryName)
+            .toSet()
+            .length;
+        return InkWell(
+          onTap: () async {
+            await appModel.openResultFromHistory(result: result);
+            setState(() {});
+          },
+          onLongPress: () {
+            mediaType.floatingSearchBarController.query = word;
+            mediaType.floatingSearchBarController.openWithoutFocus();
+            search(word);
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+            child: Card(
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                  width: 0.5,
+                ),
+              ),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  word,
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w500,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurface,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              if (hasReading) ...[
+                                const SizedBox(width: 8),
+                                Text(
+                                  reading,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ],
+                          ),
+                          if (result.searchTerm.isNotEmpty &&
+                              result.searchTerm != word) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              result.searchTerm,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    Text(
+                      '$dictCount',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color:
+                            Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(
+                      Icons.chevron_right,
+                      size: 20,
+                      color:
+                          Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
