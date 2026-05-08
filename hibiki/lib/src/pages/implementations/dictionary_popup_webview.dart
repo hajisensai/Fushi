@@ -86,6 +86,7 @@ class DictionaryPopupWebViewState
     final collapsedNamesJson = jsonEncode(collapsedNames);
     final audioSourcesJson = jsonEncode(appModel.enabledAudioSources);
 
+    final bool needsScrollCheck = widget.onScrolledToBottom != null;
     _controller!.evaluateJavascript(source: '''
       document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
       document.documentElement.style.setProperty('--hoshi-primary-highlight', '$primaryRgba');
@@ -98,6 +99,7 @@ class DictionaryPopupWebViewState
       window.lookupEntries = $entriesJson;
       window.dictionaryStyles = $stylesJson;
       window.renderPopup();
+      ${needsScrollCheck ? "if(window.__hoshiScrollCheck){setTimeout(window.__hoshiScrollCheck,0);setTimeout(window.__hoshiScrollCheck,150);}" : ""}
     ''');
   }
 
@@ -316,7 +318,6 @@ class DictionaryPopupWebViewState
       },
       onLoadStop: (controller, url) {
         _ready = true;
-        _pushResults();
         if (widget.onScrolledToBottom != null) {
           controller.evaluateJavascript(source: '''
 (function(){
@@ -332,12 +333,12 @@ class DictionaryPopupWebViewState
       window.flutter_inappwebview.callHandler('scrolledToBottom');
     }
   }
+  window.__hoshiScrollCheck=check;
   window.addEventListener('scroll',check,true);
-  setTimeout(check,0);
-  setTimeout(check,150);
 })();
 ''');
         }
+        _pushResults();
       },
     );
   }
