@@ -1093,7 +1093,7 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount, _exte
     if (!result.ok) {
       if (result.reason !== 'exhausted' && retry < maxRetries) {
         setTimeout(function() {
-          window.__hibikiScrollToNormOffset(section, offset, retry + 1);
+          window.__hibikiScrollToNormOffset(section, offset, retry + 1, _externalToken);
         }, 100);
         return;
       }
