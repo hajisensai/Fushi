@@ -71,7 +71,6 @@ public class PopupDictActivity extends FlutterActivity {
 
     @Override
     public void configureFlutterEngine(@NonNull FlutterEngine flutterEngine) {
-        PopupPluginRegistrant.registerWith(flutterEngine);
         ankiChannelHandler.register(flutterEngine);
         ttsChannelHandler.register(flutterEngine);
 
@@ -91,10 +90,18 @@ public class PopupDictActivity extends FlutterActivity {
             }
         });
 
-        if (dartStarted && pendingProcessText != null) {
+        if (!dartStarted) {
+            dartStarted = true;
+            FlutterLoader loader = FlutterInjector.instance().flutterLoader();
+            flutterEngine.getDartExecutor().executeDartEntrypoint(
+                new DartExecutor.DartEntrypoint(
+                    loader.findAppBundlePath(),
+                    "popupMain"
+                )
+            );
+        } else if (pendingProcessText != null) {
             popupChannel.invokeMethod("onNewProcessText", pendingProcessText);
         }
-        dartStarted = true;
     }
 
     @NonNull
@@ -143,12 +150,7 @@ public class PopupDictActivity extends FlutterActivity {
         loader.ensureInitializationComplete(appContext, null);
 
         FlutterEngine engine = new FlutterEngine(appContext);
-        engine.getDartExecutor().executeDartEntrypoint(
-            new DartExecutor.DartEntrypoint(
-                loader.findAppBundlePath(),
-                "popupMain"
-            )
-        );
+        PopupPluginRegistrant.registerWith(engine);
         FlutterEngineCache.getInstance().put(ENGINE_ID, engine);
     }
 
