@@ -259,7 +259,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
             _controller.text = searchTerm;
             _controller.selection =
                 TextSelection.collapsed(offset: searchTerm.length);
-            _search(searchTerm);
+            _showCachedResult(result);
           },
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
@@ -348,12 +348,24 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
 
   void _searchAgain() {
     _result = null;
+    _lastQuery = '';
     _search(_controller.text);
+  }
+
+  void _showCachedResult(DictionarySearchResult cached) {
+    setState(() {
+      _result = cached;
+      _isSearching = false;
+      _allLoaded = true;
+      _lastQuery = cached.searchTerm.trim();
+      _popupStack.clear();
+    });
   }
 
   void _search(
     String query, {
     int? overrideMaximumTerms,
+    bool writeHistory = true,
   }) async {
     final String trimmed = query.trim();
     if (trimmed.isEmpty) return;
@@ -391,17 +403,14 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
           });
         }
 
-        // Auto-load more when not all results are loaded yet.
-        if (!allLoaded && mounted) {
-          _loadMore();
-        }
-
-        appModel.addToSearchHistory(
-          historyKey: mediaType.uniqueKey,
-          searchTerm: trimmed,
-        );
-        if (_result!.entries.isNotEmpty) {
-          appModel.addToDictionaryHistory(result: _result!);
+        if (writeHistory) {
+          appModel.addToSearchHistory(
+            historyKey: mediaType.uniqueKey,
+            searchTerm: trimmed,
+          );
+          if (_result!.entries.isNotEmpty) {
+            appModel.addToDictionaryHistory(result: _result!);
+          }
         }
       }
     }
@@ -414,6 +423,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
     _search(
       _controller.text,
       overrideMaximumTerms: current + appModel.maximumTerms,
+      writeHistory: false,
     );
   }
 
@@ -439,6 +449,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
                 final repo = ref.read(ankiRepositoryProvider);
                 return repo.isDuplicate(expression, reading);
               },
+              onScrolledToBottom: _allLoaded ? null : _loadMore,
             ),
             if (_popupStack.isNotEmpty)
               Positioned.fill(

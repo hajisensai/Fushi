@@ -2671,8 +2671,7 @@ class AppModel with ChangeNotifier {
       list.removeAt(0);
     }
 
-    // Persist
-    await _database.deleteSearchHistoryByUniqueKey(uk);
+    // Persist (upsert targets unique_key, no need to delete first)
     await _database.upsertSearchHistoryItem(SearchHistoryItemsCompanion.insert(
       historyKey: historyKey,
       searchTerm: searchTerm,

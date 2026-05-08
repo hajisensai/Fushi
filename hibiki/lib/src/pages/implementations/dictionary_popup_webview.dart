@@ -19,6 +19,7 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     this.onTapOutside,
     this.onMineEntry,
     this.onDuplicateCheck,
+    this.onScrolledToBottom,
   });
 
   final DictionarySearchResult result;
@@ -28,6 +29,7 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   final Future<bool> Function(Map<String, String> fields)? onMineEntry;
   final Future<bool> Function(String expression, String reading)?
       onDuplicateCheck;
+  final VoidCallback? onScrolledToBottom;
 
   @override
   ConsumerState<DictionaryPopupWebView> createState() =>
@@ -153,6 +155,13 @@ class DictionaryPopupWebViewState
           handlerName: 'tapOutside',
           callback: (_) {
             widget.onTapOutside?.call();
+          },
+        );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'scrolledToBottom',
+          callback: (_) {
+            widget.onScrolledToBottom?.call();
           },
         );
 
@@ -308,6 +317,23 @@ class DictionaryPopupWebViewState
       onLoadStop: (controller, url) {
         _ready = true;
         _pushResults();
+        if (widget.onScrolledToBottom != null) {
+          controller.evaluateJavascript(source: '''
+(function(){
+  var fired=false;
+  window.addEventListener('scroll',function(){
+    if(fired) return;
+    var sh=document.documentElement.scrollHeight;
+    var st=window.scrollY||document.documentElement.scrollTop;
+    var ch=window.innerHeight;
+    if(sh-st-ch<200){
+      fired=true;
+      window.flutter_inappwebview.callHandler('scrolledToBottom');
+    }
+  },true);
+})();
+''');
+        }
       },
     );
   }
