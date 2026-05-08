@@ -184,6 +184,8 @@ class AudiobookSettingsSheet extends StatefulWidget {
     this.floatingLyricFontSize = 20,
     this.onFloatingLyricFontSizeChanged,
     this.onSearchJump,
+    this.onJumpToCharOffset,
+    this.charProgress,
     this.onPageMarginChanged,
     super.key,
   });
@@ -214,6 +216,8 @@ class AudiobookSettingsSheet extends StatefulWidget {
   final double floatingLyricFontSize;
   final ValueChanged<double>? onFloatingLyricFontSizeChanged;
   final Future<void> Function(int sectionIndex, int charOffset)? onSearchJump;
+  final Future<void> Function(int globalCharOffset)? onJumpToCharOffset;
+  final (int current, int total)? charProgress;
   final VoidCallback? onPageMarginChanged;
 
   @override
@@ -226,6 +230,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
   TtuReaderSettings? _settings;
 
   final TextEditingController _searchController = TextEditingController();
+  final TextEditingController _charJumpController = TextEditingController();
   List<BookSearchResult> _searchResults = const [];
   bool _isSearching = false;
 
@@ -240,6 +245,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
   @override
   void dispose() {
     _searchController.dispose();
+    _charJumpController.dispose();
     super.dispose();
   }
 
@@ -420,6 +426,10 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _buildSearchSection(theme),
+            if (widget.onJumpToCharOffset != null) ...[
+              const SizedBox(height: 12),
+              _buildCharJumpSection(theme),
+            ],
             if (widget.toc.isNotEmpty) ...[
               const SizedBox(height: 12),
               _buildTocSection(context, theme),
@@ -674,6 +684,70 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         );
       },
     );
+  }
+
+  Widget _buildCharJumpSection(ThemeData theme) {
+    final int? current = widget.charProgress?.$1;
+    final int? total = widget.charProgress?.$2;
+    final bool hasProgress = current != null && total != null && total > 0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(t.jump_to_char, style: theme.textTheme.titleMedium),
+        const SizedBox(height: 8),
+        if (hasProgress)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              t.jump_to_char_current(current: current, total: total),
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _charJumpController,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  hintText: t.jump_to_char_hint,
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  border: const OutlineInputBorder(),
+                ),
+                style: theme.textTheme.bodyMedium,
+                onSubmitted: (_) => _doCharJump(context),
+              ),
+            ),
+            const SizedBox(width: 8),
+            SizedBox(
+              height: 40,
+              child: FilledButton.tonal(
+                onPressed: () => _doCharJump(context),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  visualDensity: VisualDensity.compact,
+                ),
+                child: const Icon(Icons.arrow_forward, size: 20),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  void _doCharJump(BuildContext context) {
+    final String text = _charJumpController.text.trim();
+    if (text.isEmpty) return;
+    final int? target = int.tryParse(text);
+    if (target == null || target < 0) return;
+    Navigator.pop(context);
+    widget.onJumpToCharOffset?.call(target);
   }
 
   Widget _buildTocSection(BuildContext context, ThemeData theme) {
