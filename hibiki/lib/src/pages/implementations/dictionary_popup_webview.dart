@@ -321,17 +321,20 @@ class DictionaryPopupWebViewState
           controller.evaluateJavascript(source: '''
 (function(){
   var t=0;
-  window.addEventListener('scroll',function(){
+  function check(){
     var now=Date.now();
     if(now-t<500) return;
     var sh=document.documentElement.scrollHeight;
     var st=window.scrollY||document.documentElement.scrollTop;
     var ch=window.innerHeight;
-    if(sh-st-ch<200){
+    if(sh>0&&sh-st-ch<200){
       t=now;
       window.flutter_inappwebview.callHandler('scrolledToBottom');
     }
-  },true);
+  }
+  window.addEventListener('scroll',check,true);
+  setTimeout(check,0);
+  setTimeout(check,150);
 })();
 ''');
         }

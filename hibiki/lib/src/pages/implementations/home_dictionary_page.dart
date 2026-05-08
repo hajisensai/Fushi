@@ -356,7 +356,9 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
     setState(() {
       _result = cached;
       _isSearching = false;
-      _allLoaded = cached.entries.length < appModel.maximumTerms;
+      // Non-empty cache always allows one scroll-to-bottom probe;
+      // _loadMore will set _allLoaded if nothing new comes back.
+      _allLoaded = cached.entries.isEmpty;
       _lastQuery = cached.searchTerm.trim();
       _popupStack.clear();
     });
