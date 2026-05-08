@@ -76,6 +76,13 @@ public class PopupDictActivity extends FlutterActivity {
     }
 
     @Override
+    public void finish() {
+        if (!moveTaskToBack(true)) {
+            super.finish();
+        }
+    }
+
+    @Override
     protected void onDestroy() {
         if (ttsChannelHandler != null) {
             ttsChannelHandler.destroy();

@@ -43,6 +43,7 @@ class PopupDictApp extends ConsumerStatefulWidget {
 
 class _PopupDictAppState extends ConsumerState<PopupDictApp> {
   late String _searchTerm;
+  int _searchGeneration = 0;
 
   @override
   void initState() {
@@ -53,6 +54,7 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
       onNewProcessText: (text) {
         setState(() {
           _searchTerm = text;
+          _searchGeneration++;
         });
       },
     );
@@ -100,7 +102,7 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
             brightness: appModel.isDarkMode ? Brightness.dark : Brightness.light,
           ),
       home: PopupDictionaryPage(
-        key: ValueKey(_searchTerm),
+        key: ValueKey('$_searchTerm:$_searchGeneration'),
         searchTerm: _searchTerm,
       ),
     );

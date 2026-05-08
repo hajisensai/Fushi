@@ -45,19 +45,31 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
   static const double _maxWidth = 360.0;
   static const double _maxHeight = 480.0;
 
+  late final TextEditingController _searchController;
+  final FocusNode _searchFocusNode = FocusNode();
+
   AppModel get appModel => ref.read(appProvider);
 
   @override
   void initState() {
     super.initState();
+    _searchController = TextEditingController(text: widget.searchTerm);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _pushSearch(widget.searchTerm, Rect.zero);
     });
   }
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    super.dispose();
+  }
+
   Future<void> _pushSearch(String query, Rect selectionRect) async {
     if (query.trim().isEmpty) return;
 
+    _searchController.text = query;
     final entry = _StackEntry(query: query, selectionRect: selectionRect);
     setState(() => _stack.add(entry));
 
@@ -87,13 +99,22 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
   void _popAt(int index) {
     if (index <= 0) return;
     setState(() => _stack.removeRange(index, _stack.length));
+    if (_stack.isNotEmpty) {
+      _searchController.text = _stack.last.query;
+    }
   }
 
   Future<void> _close() async {
     if (_isClosing) return;
     _isClosing = true;
-    await appModel.closeForPopup();
     await PopupChannel.instance.finishPopup();
+  }
+
+  void _onSearchSubmit(String text) {
+    if (text.trim().isEmpty) return;
+    _searchFocusNode.unfocus();
+    setState(() => _stack.clear());
+    _pushSearch(text.trim(), Rect.zero);
   }
 
   Rect _layerPosition(int index, Size screen) {
@@ -115,6 +136,10 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark =
+        (appModel.overrideDictionaryTheme ?? Theme.of(context)).brightness ==
+            Brightness.dark;
+
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
@@ -128,13 +153,69 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final screen = Size(constraints.maxWidth, constraints.maxHeight);
-              return _buildStack(context, screen);
-            },
+          child: Column(
+            children: [
+              _buildSearchBar(isDark),
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final screen =
+                        Size(constraints.maxWidth, constraints.maxHeight);
+                    return _buildStack(context, screen);
+                  },
+                ),
+              ),
+            ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildSearchBar(bool isDark) {
+    final fillColor = isDark ? const Color(0xFF1E1E1E) : Colors.white;
+    final borderColor = isDark
+        ? Colors.white.withValues(alpha: 0.15)
+        : Colors.black.withValues(alpha: 0.18);
+    final textColor = isDark ? Colors.white : Colors.black;
+    final hintColor = isDark ? Colors.white54 : Colors.black45;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(0, 0, 0, 4),
+      decoration: BoxDecoration(
+        color: fillColor,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: borderColor, width: 1),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _searchController,
+              focusNode: _searchFocusNode,
+              style: TextStyle(color: textColor, fontSize: 14),
+              decoration: InputDecoration(
+                hintText: t.search,
+                hintStyle: TextStyle(color: hintColor, fontSize: 14),
+                isDense: true,
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                border: InputBorder.none,
+              ),
+              textInputAction: TextInputAction.search,
+              onSubmitted: _onSearchSubmit,
+            ),
+          ),
+          SizedBox(
+            width: 36,
+            height: 36,
+            child: IconButton(
+              icon: Icon(Icons.search, color: hintColor, size: 20),
+              padding: EdgeInsets.zero,
+              onPressed: () => _onSearchSubmit(_searchController.text),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -1213,6 +1213,10 @@ class AppModel with ChangeNotifier {
   }
 
   Future<void> initialiseForDictionaryPopup() async {
+    if (_isInitialised) {
+      debugPrint('[Hibiki-popup] init: already initialised, skipping');
+      return;
+    }
     try {
       debugPrint('[Hibiki-popup] init: PackageInfo + DeviceInfo');
       _packageInfo = await PackageInfo.fromPlatform();
