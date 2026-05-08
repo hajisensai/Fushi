@@ -41,6 +41,32 @@ class DictionaryPopupWebViewState
   InAppWebViewController? _controller;
   bool _ready = false;
 
+  static const String _scrollCheckJs = '''
+(function(){
+  if(!window.__hoshiScrollInstalled){
+    window.__hoshiScrollInstalled=true;
+    var t=0;
+    function check(){
+      var now=Date.now();
+      if(now-t<500) return;
+      var sh=document.documentElement.scrollHeight;
+      var st=window.scrollY||document.documentElement.scrollTop;
+      var ch=window.innerHeight;
+      if(sh>0&&sh-st-ch<200){
+        t=now;
+        window.flutter_inappwebview.callHandler('scrolledToBottom');
+      }
+    }
+    window.__hoshiScrollCheck=check;
+    window.addEventListener('scroll',check,true);
+  }
+  if(window.__hoshiScrollCheck){
+    setTimeout(window.__hoshiScrollCheck,0);
+    setTimeout(window.__hoshiScrollCheck,150);
+  }
+})();
+''';
+
   void highlightSelection(int charCount) {
     _controller?.evaluateJavascript(
       source: 'window.hoshiSelection.highlightSelection($charCount)',
@@ -99,7 +125,7 @@ class DictionaryPopupWebViewState
       window.lookupEntries = $entriesJson;
       window.dictionaryStyles = $stylesJson;
       window.renderPopup();
-      ${needsScrollCheck ? "if(window.__hoshiScrollCheck){setTimeout(window.__hoshiScrollCheck,0);setTimeout(window.__hoshiScrollCheck,150);}" : ""}
+      ${needsScrollCheck ? _scrollCheckJs : ""}
     ''');
   }
 
@@ -318,26 +344,6 @@ class DictionaryPopupWebViewState
       },
       onLoadStop: (controller, url) {
         _ready = true;
-        if (widget.onScrolledToBottom != null) {
-          controller.evaluateJavascript(source: '''
-(function(){
-  var t=0;
-  function check(){
-    var now=Date.now();
-    if(now-t<500) return;
-    var sh=document.documentElement.scrollHeight;
-    var st=window.scrollY||document.documentElement.scrollTop;
-    var ch=window.innerHeight;
-    if(sh>0&&sh-st-ch<200){
-      t=now;
-      window.flutter_inappwebview.callHandler('scrolledToBottom');
-    }
-  }
-  window.__hoshiScrollCheck=check;
-  window.addEventListener('scroll',check,true);
-})();
-''');
-        }
         _pushResults();
       },
     );
