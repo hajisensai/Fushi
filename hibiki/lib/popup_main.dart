@@ -70,6 +70,7 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
         debugShowCheckedModeBanner: false,
         builder: _buildWithSpacing,
         home: Scaffold(
+          backgroundColor: Colors.transparent,
           body: Center(child: Text('Init error: ${appModel.initError}')),
         ),
       );
@@ -84,7 +85,7 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
         theme: isDark ? ThemeData.dark() : null,
         builder: _buildWithSpacing,
         home: Scaffold(
-          backgroundColor: isDark ? const Color(0xFF121212) : Colors.white,
+          backgroundColor: Colors.transparent,
           body: Center(
             child: CircularProgressIndicator(
               color: isDark ? Colors.white70 : null,
@@ -100,7 +101,8 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
       theme: appModel.overrideDictionaryTheme ??
           ThemeData(
             colorSchemeSeed: const Color(0xFF1F4959),
-            brightness: appModel.isDarkMode ? Brightness.dark : Brightness.light,
+            brightness:
+                appModel.isDarkMode ? Brightness.dark : Brightness.light,
           ),
       home: PopupDictionaryPage(
         key: ValueKey('$_searchTerm:$_searchGeneration'),

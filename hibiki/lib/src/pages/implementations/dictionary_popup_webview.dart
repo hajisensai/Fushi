@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -74,6 +75,28 @@ class DictionaryPopupWebViewState
   void clearSelection() {
     _controller?.evaluateJavascript(
       source: 'window.hoshiSelection.clearSelection()',
+    );
+  }
+
+  Future<String?> _resolveWordAudio(String expression, String reading) async {
+    final appModel = ref.read(appProvider);
+    final WordAudioResolver resolver = WordAudioResolver(
+      queryLocalAudio: (String expression, String reading) async {
+        if (!appModel.localAudioEnabled) return null;
+        try {
+          return await TtsChannel.instance
+              .queryLocalAudio(expression, reading)
+              .timeout(const Duration(milliseconds: 500));
+        } on TimeoutException {
+          return null;
+        }
+      },
+      extractLocalAudio: TtsChannel.instance.extractLocalAudio,
+    );
+    return resolver.resolve(
+      expression: expression,
+      reading: reading,
+      sources: appModel.enabledAudioSources,
     );
   }
 
@@ -312,6 +335,18 @@ class DictionaryPopupWebViewState
             final path = await TtsChannel.instance
                 .extractLocalAudio(info['file']!, info['source']!);
             return path;
+          },
+        );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'resolveWordAudio',
+          callback: (args) async {
+            if (args.isEmpty || args[0] is! Map) return null;
+            final data = args[0] as Map;
+            final expression = data['expression']?.toString() ?? '';
+            final reading = data['reading']?.toString() ?? '';
+            if (expression.isEmpty) return null;
+            return _resolveWordAudio(expression, reading);
           },
         );
 

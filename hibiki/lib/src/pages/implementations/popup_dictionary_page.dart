@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -93,6 +94,43 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
         searchTerm: query,
       );
       appModel.addToDictionaryHistory(result: entry.result!);
+      if (ReaderTtuSource.instance.autoReadOnLookup) {
+        final first = entry.result!.entries.first;
+        await _autoReadWord(first.word, first.reading);
+      }
+    }
+  }
+
+  Future<void> _autoReadWord(String expression, String reading) async {
+    try {
+      final WordAudioResolver resolver = WordAudioResolver(
+        queryLocalAudio: (String expression, String reading) async {
+          try {
+            return await TtsChannel.instance
+                .queryLocalAudio(expression, reading)
+                .timeout(const Duration(milliseconds: 500));
+          } on TimeoutException {
+            return null;
+          }
+        },
+        extractLocalAudio: TtsChannel.instance.extractLocalAudio,
+      );
+      final String? url = await resolver.resolve(
+        expression: expression,
+        reading: reading,
+        sources: appModel.enabledAudioSources,
+      );
+      if (url == null || url.isEmpty) return;
+
+      if (url.startsWith('file://')) {
+        await TtsChannel.instance.playFile(url.replaceFirst('file://', ''));
+      } else if (url.startsWith('/')) {
+        await TtsChannel.instance.playFile(url);
+      } else if (url.startsWith('http')) {
+        await TtsChannel.instance.playUrl(url);
+      }
+    } catch (e, st) {
+      debugPrint('[hibiki-popup-audio] auto-read failed: $e\n$st');
     }
   }
 

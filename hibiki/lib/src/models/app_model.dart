@@ -1108,21 +1108,7 @@ class AppModel with ChangeNotifier {
       dictionaryResourceDirectory.createSync();
       _rebuildDictPathsCache();
 
-      if (localAudioEnabled && localAudioDbPath.isNotEmpty) {
-        final storedPath = localAudioDbPath;
-        final internalPath =
-            path.join(_databaseDirectory.path, 'local_audio.db');
-        final storedExists = await File(storedPath).exists();
-        final internalExists = await File(internalPath).exists();
-        if (storedExists) {
-          TtsChannel.instance.setLocalAudioDb(storedPath);
-        } else if (internalExists) {
-          await _setPref('local_audio_db_path', internalPath);
-          TtsChannel.instance.setLocalAudioDb(internalPath);
-        } else {
-          await _setPref('local_audio_db_path', '');
-        }
-      }
+      await _bindLocalAudioDbForNativeHandler(clearMissingPath: true);
 
       debugPrint('[Hibiki] init: licenses');
 
@@ -1215,6 +1201,7 @@ class AppModel with ChangeNotifier {
   Future<void> initialiseForDictionaryPopup() async {
     if (_isInitialised) {
       debugPrint('[Hibiki-popup] init: already initialised, skipping');
+      await _bindLocalAudioDbForNativeHandler();
       return;
     }
     try {
@@ -1273,18 +1260,7 @@ class AppModel with ChangeNotifier {
       dictionaryResourceDirectory.createSync();
       _rebuildDictPathsCache();
 
-      if (localAudioEnabled && localAudioDbPath.isNotEmpty) {
-        final storedPath = localAudioDbPath;
-        final internalPath =
-            path.join(_databaseDirectory.path, 'local_audio.db');
-        final storedExists = await File(storedPath).exists();
-        final internalExists = await File(internalPath).exists();
-        if (storedExists) {
-          TtsChannel.instance.setLocalAudioDb(storedPath);
-        } else if (internalExists) {
-          TtsChannel.instance.setLocalAudioDb(internalPath);
-        }
-      }
+      await _bindLocalAudioDbForNativeHandler();
 
       populateLanguages();
       populateLocales();
@@ -1339,6 +1315,31 @@ class AppModel with ChangeNotifier {
     }
     _prefCache[key] = strVal;
     await _database.setPref(key, strVal);
+  }
+
+  Future<void> _bindLocalAudioDbForNativeHandler({
+    bool clearMissingPath = false,
+  }) async {
+    if (!localAudioEnabled || localAudioDbPath.isEmpty) {
+      return;
+    }
+
+    final String storedPath = localAudioDbPath;
+    final String internalPath =
+        path.join(_databaseDirectory.path, 'local_audio.db');
+    final bool storedExists = await File(storedPath).exists();
+    final bool internalExists = await File(internalPath).exists();
+
+    if (storedExists) {
+      await TtsChannel.instance.setLocalAudioDb(storedPath);
+    } else if (internalExists) {
+      if (storedPath != internalPath) {
+        await _setPref('local_audio_db_path', internalPath);
+      }
+      await TtsChannel.instance.setLocalAudioDb(internalPath);
+    } else if (clearMissingPath) {
+      await _setPref('local_audio_db_path', '');
+    }
   }
 
   // ── model / Drift row conversion helpers ──────────────────────────

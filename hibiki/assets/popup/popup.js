@@ -1206,39 +1206,20 @@ function createGlossarySectionWrapper(entry) {
 }
 
 async function fetchAudioUrl(expression, reading) {
-    const templates = window.audioSources;
-    if (!templates?.length) return null;
-
-    for (const template of templates) {
-        if (template === 'http://localhost:8765/localaudio/get/?term={term}&reading={reading}') {
-            try {
-                const localPath = await window.flutter_inappwebview.callHandler(
-                    'queryLocalAudio', { expression, reading });
-                if (localPath) return localPath;
-            } catch {}
-            continue;
-        }
-        const url = template
-        .replace('{term}', encodeURIComponent(expression))
-        .replace('{reading}', encodeURIComponent(reading));
-        try {
-            const response = await fetch(url);
-            const data = await response.json();
-            if (data.type === 'audioSourceList' && data.audioSources?.[0]?.url) {
-                return data.audioSources[0].url;
-            }
-        } catch {}
+    try {
+        return await window.flutter_inappwebview.callHandler(
+            'resolveWordAudio', { expression, reading });
+    } catch {
+        return null;
     }
-    return null;
 }
 
-function playWordAudio(audioUrl) {
+async function playWordAudio(audioUrl) {
     try {
-        window.flutter_inappwebview.callHandler('playWordAudio', {
+        return await window.flutter_inappwebview.callHandler('playWordAudio', {
             url: audioUrl,
             mode: window.audioPlaybackMode || 'interrupt'
         });
-        return true;
     } catch {
         return false;
     }
@@ -1263,7 +1244,7 @@ function createAudioButton(expression, reading, entryIndex) {
                 showAudioError(button);
                 return;
             }
-            if (!playWordAudio(audioUrls[entryIndex])) {
+            if (!await playWordAudio(audioUrls[entryIndex])) {
                 showAudioError(button);
             }
         }
