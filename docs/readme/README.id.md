@@ -18,7 +18,7 @@
 
 ## Tentang
 
-**hibiki** adalah aplikasi baca di Android untuk pelajar bahasa Jepang, dibangun ulang dari [jidoujisho](https://github.com/arianneorpilla/jidoujisho), dengan target menyamai fitur [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) di iOS.
+**hibiki** adalah aplikasi baca di Android untuk pelajar bahasa Jepang.
 
 ## Fitur
 

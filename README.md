@@ -18,7 +18,7 @@
 
 ## 简介
 
-**hibiki** 是一款面向日语学习者的 Android 阅读应用，基于 [jidoujisho](https://github.com/arianneorpilla/jidoujisho) 重构，功能对标 iOS 端 [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader)。
+**hibiki** 是一款面向日语学习者的 Android 阅读应用。
 
 ## 功能
 
@@ -183,9 +183,10 @@ hibiki/
 
 | 项目 | 说明 |
 |---|---|
-| [jidoujisho](https://github.com/arianneorpilla/jidoujisho) | 本项目基于 jidoujisho 重构，大部分代码与架构源自该项目 |
-| [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) | iOS 日语阅读器，hibiki 的功能对标目标 |
-| [Sasayaki](https://github.com/Manhhao/Hoshi-Reader/blob/develop/SASAYAKI.md) | Hoshi Reader 有声书同步方案，hibiki 音频同步的参考蓝本 |
+| [jidoujisho](https://github.com/arianneorpilla/jidoujisho) | 日语沉浸式学习工具 |
+| [Hoshi Reader Android](https://github.com/HuangAntimony/Hoshi-Reader-Android) | Android 日语阅读器 |
+| [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) | iOS 日语阅读器 |
+| [Sasayaki](https://github.com/Manhhao/Hoshi-Reader/blob/develop/SASAYAKI.md) | 有声书同步方案 |
 | [ttu Ebook Reader](https://github.com/ttu-ttu/ebook-reader) | EPUB 渲染引擎 |
 | [kamperemu/ebook-reader](https://github.com/kamperemu/ebook-reader) | ttu 社区维护版（SvelteKit v2），hibiki fork 的上游基准 |
 | [Yomitan](https://github.com/yomidevs/yomitan) | 词典格式来源 |

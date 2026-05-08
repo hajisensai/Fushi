@@ -18,7 +18,7 @@
 
 ## Acerca de
 
-**hibiki** es una aplicación de lectura en Android para estudiantes de japonés, reconstruida a partir de [jidoujisho](https://github.com/arianneorpilla/jidoujisho), con el objetivo de igualar las funciones de [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) en iOS.
+**hibiki** es una aplicación de lectura en Android para estudiantes de japonés.
 
 ## Características
 

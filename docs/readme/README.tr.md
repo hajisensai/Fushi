@@ -18,7 +18,7 @@
 
 ## Hakkında
 
-**hibiki**, Japonca öğrenenler için [jidoujisho](https://github.com/arianneorpilla/jidoujisho) üzerine yeniden inşa edilmiş, iOS'taki [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) ile aynı özellikleri hedefleyen bir Android okuma uygulamasıdır.
+**hibiki**, Japonca öğrenenler için bir Android okuma uygulamasıdır.
 
 ## Özellikler
 
