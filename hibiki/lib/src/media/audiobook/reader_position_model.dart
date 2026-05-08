@@ -19,6 +19,10 @@ class ReaderPosition {
   /// 章内归一化字符偏移。`0` = 章首。
   late int normCharOffset;
 
+  /// TTU 原生章内字符偏移（包含 ruby/空白/标点）。
+  /// null 表示旧数据未采集此值，恢复时 fallback 到 normCharOffset。
+  int? ttuCharOffset;
+
   /// 更新时间戳（ms since epoch）。
   late int updatedAt;
 }

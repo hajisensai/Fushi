@@ -37,9 +37,11 @@ class AnkiMappings extends Table {
   TextColumn get tagsJson => text()();
   TextColumn get enhancementsJson => text()();
   TextColumn get actionsJson => text()();
-  BoolColumn get exportMediaTags => boolean().withDefault(const Constant(true))();
+  BoolColumn get exportMediaTags =>
+      boolean().withDefault(const Constant(true))();
   BoolColumn get useBrTags => boolean().withDefault(const Constant(true))();
-  BoolColumn get prependDictionaryNames => boolean().withDefault(const Constant(true))();
+  BoolColumn get prependDictionaryNames =>
+      boolean().withDefault(const Constant(true))();
 }
 
 // ── search_history_items ────────────────────────────────────────────
@@ -103,6 +105,7 @@ class ReaderPositions extends Table {
   IntColumn get ttuBookId => integer().unique()();
   IntColumn get sectionIndex => integer()();
   IntColumn get normCharOffset => integer()();
+  IntColumn get ttuCharOffset => integer().withDefault(const Constant(-1))();
   IntColumn get updatedAt => integer()();
 }
 
@@ -154,8 +157,10 @@ class DictionaryMetadata extends Table {
   IntColumn get order => integer()();
   TextColumn get type => text().withDefault(const Constant('term'))();
   TextColumn get metadataJson => text().withDefault(const Constant('{}'))();
-  TextColumn get hiddenLanguagesJson => text().withDefault(const Constant('[]'))();
-  TextColumn get collapsedLanguagesJson => text().withDefault(const Constant('[]'))();
+  TextColumn get hiddenLanguagesJson =>
+      text().withDefault(const Constant('[]'))();
+  TextColumn get collapsedLanguagesJson =>
+      text().withDefault(const Constant('[]'))();
 
   @override
   Set<Column> get primaryKey => {name};

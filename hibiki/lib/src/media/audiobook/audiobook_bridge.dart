@@ -784,8 +784,9 @@ window.__hoshiClearSeenImages = function() {
   ///   用 `caretRangeFromPoint` 找视口顶部第一个可见文本节点，再用 Sasayaki
   ///   那套 walker 逐字符累加到命中位置。用于 Flutter 节流后写 Isar
   ///   [ReaderPosition]。
-  /// - `__hibikiScrollToNormOffset(section, offset)`：调用 ttu fork 的
-  ///   `__ttuScrollToCharOffset` 把目标位置滚进视口。
+  /// - `__hibikiScrollToNormOffset(section, offset)`：优先调用 ttu fork 的
+  ///   `__ttuScrollToCharOffset`，让 ttu pageManager/bookmarkManager 计算页位置；
+  ///   旧 DOM rect 对齐只作为 API 不存在或失败时的 fallback。
   ///
   /// 依赖 `__hoshiIsSkippable`，必须在 _sasayakiFn 之后 evaluate。
   static const String _readerPosFn = '''
@@ -877,10 +878,12 @@ window.__hibikiGetViewportNormOffset = function() {
   return null;
 };
 
-window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
+window.__hibikiScrollToNormOffset = function(section, offset, _retryCount, _externalToken) {
   var retry = _retryCount || 0;
   var maxRetries = 15;
-  if (!retry) {
+  if (_externalToken != null) {
+    window.__hoshiRestoreToken = _externalToken;
+  } else if (!retry) {
     window.__hoshiRestoreToken = (window.__hoshiRestoreToken || 0) + 1;
   }
   var myToken = window.__hoshiRestoreToken;
@@ -899,6 +902,54 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
         });
       }
     } catch(e2) {}
+  }
+  function waitTtuPageStable(targetSection, targetOffset) {
+    var stableCount = 0;
+    var prevKey = null;
+    var frame = 0;
+    var maxFrames = 45;
+    function readKey() {
+      try {
+        if (typeof window.__ttuGetPageInfo === 'function') {
+          var info = window.__ttuGetPageInfo();
+          if (info) {
+            return [
+              info.currentPage,
+              Math.round(info.virtualScrollPos || 0),
+              Math.round(info.stride || 0),
+              Math.round(info.viewportSize || 0)
+            ].join(':');
+          }
+        }
+      } catch(e) {}
+      return [
+        Math.round(window.scrollX || 0),
+        Math.round(window.scrollY || 0),
+        window.innerWidth || 0,
+        window.innerHeight || 0
+      ].join(':');
+    }
+    function check() {
+      if (myToken !== window.__hoshiRestoreToken) return;
+      frame++;
+      if (frame > maxFrames) {
+        signalStable(targetSection, targetOffset, false);
+        return;
+      }
+      var key = readKey();
+      if (key === prevKey) {
+        stableCount++;
+      } else {
+        prevKey = key;
+        stableCount = 1;
+      }
+      if (stableCount >= 6) {
+        signalStable(targetSection, targetOffset, true);
+        return;
+      }
+      requestAnimationFrame(check);
+    }
+    requestAnimationFrame(check);
   }
   function scrollToCharOffset(targetOffset) {
     var root = window.__hibikiGetSectionRoot(section);
@@ -1019,6 +1070,25 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
     requestAnimationFrame(check);
   }
   try {
+    if (typeof window.__ttuScrollToCharOffset === 'function') {
+      Promise.resolve(window.__ttuScrollToCharOffset(section, offset)).then(function() {
+        requestAnimationFrame(function() {
+          signalDone(true);
+          waitTtuPageStable(section, offset);
+        });
+      }).catch(function(e) {
+        var fallback = scrollToCharOffset(offset);
+        if (!fallback.ok) {
+          signalDone(false);
+          return;
+        }
+        requestAnimationFrame(function() {
+          signalDone(true);
+          waitStable(section, offset, 2);
+        });
+      });
+      return;
+    }
     var result = scrollToCharOffset(offset);
     if (!result.ok) {
       if (result.reason !== 'exhausted' && retry < maxRetries) {
@@ -1327,18 +1397,94 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
     InAppWebViewController controller, {
     required int section,
     required int offset,
+    int? restoreToken,
   }) async {
+    final String tokenArg = restoreToken != null ? ', $restoreToken' : '';
     await controller.evaluateJavascript(
       source: '''
 (async function(){
   for(var i=0;i<20;i++){
     if(typeof __hibikiScrollToNormOffset!=="undefined"){
-      __hibikiScrollToNormOffset($section, $offset);
+      __hibikiScrollToNormOffset($section, $offset, 0$tokenArg);
       return;
     }
     await new Promise(function(r){setTimeout(r,100)});
   }
   try{if(window.flutter_inappwebview)window.flutter_inappwebview.callHandler('scrollToNormOffsetDone',{success:false});}catch(e){}
+})();
+''',
+    );
+  }
+
+  static Future<({int sectionIndex, int sectionCharOffset})?> getTtuCharOffset(
+    InAppWebViewController controller,
+  ) async {
+    final Object? result = await controller.evaluateJavascript(source: '''
+(function() {
+  if (typeof window.__ttuGetExploredCharCount !== 'function') return null;
+  var r = window.__ttuGetExploredCharCount();
+  if (!r || typeof r.sectionCharOffset !== 'number') return null;
+  return JSON.stringify({s: r.sectionIndex, o: r.sectionCharOffset});
+})();
+''');
+    if (result == null || result == 'null') return null;
+    final Map<String, dynamic> parsed =
+        jsonDecode(result as String) as Map<String, dynamic>;
+    return (
+      sectionIndex: (parsed['s'] as num).toInt(),
+      sectionCharOffset: (parsed['o'] as num).toInt(),
+    );
+  }
+
+  static Future<void> scrollToTtuCharOffset(
+    InAppWebViewController controller, {
+    required int section,
+    required int ttuCharOffset,
+    required int expectedNormOffset,
+    required int restoreToken,
+  }) async {
+    await controller.evaluateJavascript(
+      source: '''
+(function(){
+  window.__hoshiRestoreToken = $restoreToken;
+  var myToken = $restoreToken;
+  function signalDone(ok) {
+    try { if (window.flutter_inappwebview) window.flutter_inappwebview.callHandler('scrollToNormOffsetDone', {success: !!ok}); } catch(e) {}
+  }
+  function signalStable(success) {
+    try { if (window.flutter_inappwebview) window.flutter_inappwebview.callHandler('viewportStable', {section: $section, offset: $expectedNormOffset, success: !!success, token: myToken}); } catch(e) {}
+  }
+  if (typeof window.__ttuScrollToCharOffset !== 'function') {
+    signalDone(false);
+    return;
+  }
+  Promise.resolve(window.__ttuScrollToCharOffset($section, $ttuCharOffset)).then(function() {
+    requestAnimationFrame(function() {
+      signalDone(true);
+      var stableCount = 0, prevKey = null, frame = 0;
+      function readKey() {
+        try {
+          if (typeof window.__ttuGetPageInfo === 'function') {
+            var info = window.__ttuGetPageInfo();
+            if (info) return [info.currentPage, Math.round(info.virtualScrollPos || 0), Math.round(info.stride || 0), Math.round(info.viewportSize || 0)].join(':');
+          }
+        } catch(e) {}
+        return [Math.round(window.scrollX || 0), Math.round(window.scrollY || 0), window.innerWidth || 0, window.innerHeight || 0].join(':');
+      }
+      function check() {
+        if (myToken !== window.__hoshiRestoreToken) return;
+        frame++;
+        if (frame > 45) { signalStable(false); return; }
+        var key = readKey();
+        if (key === prevKey) { stableCount++; } else { prevKey = key; stableCount = 1; }
+        if (stableCount >= 6) { signalStable(true); return; }
+        requestAnimationFrame(check);
+      }
+      requestAnimationFrame(check);
+    });
+  }).catch(function(e) {
+    signalDone(false);
+  });
 })();
 ''',
     );
@@ -1607,12 +1753,18 @@ class TtuTocEntry {
 /// 跟 AudioCue.normCharStart 同基准（ruby 剥、skippable 跳过），字号 /
 /// pageColumns 变了也不会飘。对应 Isar 里的 [ReaderPosition]。
 class ReaderViewportPos {
-  const ReaderViewportPos({required this.section, required this.offset});
+  const ReaderViewportPos({
+    required this.section,
+    required this.offset,
+    this.ttuCharOffset,
+  });
   final int section;
   final int offset;
+  final int? ttuCharOffset;
 
   @override
-  String toString() => 'ReaderViewportPos(section=$section, offset=$offset)';
+  String toString() =>
+      'ReaderViewportPos(section=$section, offset=$offset, ttu=$ttuCharOffset)';
 }
 
 /// ttu 阅读器设定的快照，由 `__ttuReaderSettings.get()` 返回。

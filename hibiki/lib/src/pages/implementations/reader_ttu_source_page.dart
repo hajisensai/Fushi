@@ -126,11 +126,28 @@ class ReaderTtuBridgeInjectionGate {
   }
 }
 
-/// Whether the TTU WebView needs bottom space reserved for reader chrome.
-bool shouldReserveReaderBottomChrome({
-  required bool showPlayBar,
+enum ReaderSectionChangeDecision {
+  ignore,
+  accept,
+  completeRestore,
+}
+
+ReaderSectionChangeDecision resolveManualSectionChangeDuringRestore({
+  required bool didRestorePos,
+  required bool restoreInFlight,
+  required int? inFlightNavSection,
+  required int sectionIndex,
 }) {
-  return showPlayBar;
+  if (!didRestorePos) {
+    return ReaderSectionChangeDecision.ignore;
+  }
+  if (restoreInFlight && inFlightNavSection != null) {
+    if (sectionIndex == inFlightNavSection) {
+      return ReaderSectionChangeDecision.completeRestore;
+    }
+    return ReaderSectionChangeDecision.ignore;
+  }
+  return ReaderSectionChangeDecision.accept;
 }
 
 int resolveTtuPageMarginBottom({
@@ -225,9 +242,8 @@ List<int> parseReaderProgressSectionChars(String? raw) {
   if (globalOffset < 0 || globalOffset > total) return null;
   // TTU paginated mode treats localOffset == sectionChars[i] as "next
   // section", so clamp to total-1 to stay inside the last section.
-  final int effective = globalOffset >= total && total > 0
-      ? total - 1
-      : globalOffset;
+  final int effective =
+      globalOffset >= total && total > 0 ? total - 1 : globalOffset;
   int accumulated = 0;
   for (int i = 0; i < sectionChars.length; i++) {
     if (accumulated + sectionChars[i] > effective) {
@@ -313,9 +329,9 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
   double _stableBottomInset = 0;
   bool _stableInsetsCaptured = false;
 
-  bool get _hasReaderBottomChrome => shouldReserveReaderBottomChrome(
-        showPlayBar: appModel.showPlayBar,
-      );
+  // 普通书始终有设置底栏；有声书仅在播放栏可见时预留。
+  bool get _hasReaderBottomChrome =>
+      _audiobookController == null || appModel.showPlayBar;
 
   double get _readerBottomReserve =>
       (_hasReaderBottomChrome ? _readerChromeHeight : 0) + _stableBottomInset;
@@ -802,10 +818,11 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
     });
   }
 
-  /// 把位置写进 Isar。同 section+offset 则跳过，避免重复 writeTxn。
+  /// 把位置写进 DB。同 section+offset 且无新 ttuCharOffset 则跳过。
   Future<void> _persistReaderPos({
     required int section,
     required int offset,
+    int? ttuCharOffset,
     required String from,
   }) async {
     if (section < 0 || offset < 0) {
@@ -818,10 +835,16 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       debugPrint('[hibiki-reader-pos] persist skip: no ttuId');
       return;
     }
-    if (_lastSavedPos?.section == section && _lastSavedPos?.offset == offset) {
+    if (_lastSavedPos?.section == section &&
+        _lastSavedPos?.offset == offset &&
+        ttuCharOffset == null) {
       return;
     }
-    _lastSavedPos = ReaderViewportPos(section: section, offset: offset);
+    _lastSavedPos = ReaderViewportPos(
+      section: section,
+      offset: offset,
+      ttuCharOffset: ttuCharOffset,
+    );
     try {
       final ReaderPositionRepository repo =
           ReaderPositionRepository(appModelNoUpdate.database);
@@ -829,9 +852,10 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         ttuBookId: ttuId,
         sectionIndex: section,
         normCharOffset: offset,
+        ttuCharOffset: ttuCharOffset,
       );
       debugPrint(
-        '[hibiki-reader-pos] save($from) ttuId=$ttuId s=$section o=$offset',
+        '[hibiki-reader-pos] save($from) ttuId=$ttuId s=$section o=$offset ttu=$ttuCharOffset',
       );
     } catch (e) {
       debugPrint('[hibiki-reader-pos] save err: $e');
@@ -1343,8 +1367,7 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
               _buildTopProgressBar(),
               buildDictionary(),
               buildAudiobookBar(),
-              buildAudiobookImportButton(),
-              buildReaderSettingsFab(),
+              buildReaderSettingsBar(),
               if (!_readerContentReady)
                 Positioned.fill(
                   top: _stableTopInset,
@@ -2002,12 +2025,14 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
                   Map<String, dynamic>.from(data[0] as Map);
               final int? section = (payload['section'] as num?)?.toInt();
               final int? offset = (payload['offset'] as num?)?.toInt();
+              final int? ttuOff = (payload['ttuCharOffset'] as num?)?.toInt();
               debugPrint(
-                  '[hibiki-reader-pos] saveReaderPos received s=$section o=$offset');
+                  '[hibiki-reader-pos] saveReaderPos received s=$section o=$offset ttu=$ttuOff');
               if (section == null || offset == null) return;
               await _persistReaderPos(
                 section: section,
                 offset: offset,
+                ttuCharOffset: ttuOff,
                 from: 'scroll',
               );
               unawaited(_refreshPageProgress());
@@ -3267,7 +3292,17 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           console.log(JSON.stringify({'hibiki-message-type':'pos-save-skip','reason':'nullOffset'}));
           return;
         }
-        console.log(JSON.stringify({'hibiki-message-type':'pos-save-fire','s':p.section,'o':p.offset}));
+        var ttuOff = null;
+        if (typeof window.__ttuGetExploredCharCount === 'function') {
+          try {
+            var ttu = window.__ttuGetExploredCharCount();
+            if (ttu && ttu.sectionIndex === p.section && Number.isFinite(ttu.sectionCharOffset)) {
+              ttuOff = ttu.sectionCharOffset;
+            }
+          } catch(e2) {}
+        }
+        p.ttuCharOffset = ttuOff;
+        console.log(JSON.stringify({'hibiki-message-type':'pos-save-fire','s':p.section,'o':p.offset,'ttu':ttuOff}));
         if (window.flutter_inappwebview) {
           window.flutter_inappwebview.callHandler('saveReaderPos', p);
         }
@@ -3728,7 +3763,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
 
   /// 打开 reader 设置面板。两个入口：
   /// - 有声书模式：播放栏 ⚙，传入 [ctrl] 显示全套（倍速 / 音画同步 等）
-  /// - 普通 EPUB：左下角 FAB，传 null 省略音频相关节
+  /// - 普通 EPUB：底部栏设置按钮，传 null 省略音频相关节
   ///
   /// probe 结果 await 完再展开 —— 用户短暂 tap 延迟可接受，比先展开空
   /// 面板再填要好；TOC 列表在一次阅读会话里是静态的，一次 probe 够用。
@@ -3914,16 +3949,14 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
                     globalOffset: globalOffset,
                   );
                   if (resolved == null) {
-                    final int total =
-                        sc.fold<int>(0, (int a, int b) => a + b);
+                    final int total = sc.fold<int>(0, (int a, int b) => a + b);
                     Fluttertoast.showToast(
                       msg: t.jump_to_char_out_of_range(max: total),
                     );
                     return;
                   }
                   final (int targetSection, int localOffset) = resolved;
-                  if (_dropStaleSectionNavigation(
-                      targetSection, 'char-jump')) {
+                  if (_dropStaleSectionNavigation(targetSection, 'char-jump')) {
                     return;
                   }
                   await AudiobookBridge.requestSectionNav(
@@ -4645,6 +4678,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       _pendingRestorePos = ReaderViewportPos(
         section: saved.sectionIndex,
         offset: saved.normCharOffset,
+        ttuCharOffset: saved.ttuCharOffset,
       );
     }
     if (_pendingRestorePos == null) {
@@ -4759,15 +4793,35 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     }
     _pendingRestorePos = null;
     try {
-      _scrollToNormOffsetCompleter = Completer<bool>();
-      _viewportStableCompleter = Completer<bool>();
-      _restoreTargetSection = pending.section;
-      _restoreTargetOffset = pending.offset;
-      await AudiobookBridge.scrollToNormOffset(
-        _controller,
-        section: pending.section,
-        offset: pending.offset,
-      );
+      final int? ttuOff = pending.ttuCharOffset;
+      bool usedNativePath = false;
+
+      if (ttuOff != null && ttuOff >= 0) {
+        usedNativePath = true;
+        _scrollToNormOffsetCompleter = Completer<bool>();
+        _viewportStableCompleter = Completer<bool>();
+        _restoreTargetSection = pending.section;
+        _restoreTargetOffset = pending.offset;
+        await AudiobookBridge.scrollToTtuCharOffset(
+          _controller,
+          section: pending.section,
+          ttuCharOffset: ttuOff,
+          expectedNormOffset: pending.offset,
+          restoreToken: _restoreToken,
+        );
+      } else {
+        _scrollToNormOffsetCompleter = Completer<bool>();
+        _viewportStableCompleter = Completer<bool>();
+        _restoreTargetSection = pending.section;
+        _restoreTargetOffset = pending.offset;
+        await AudiobookBridge.scrollToNormOffset(
+          _controller,
+          section: pending.section,
+          offset: pending.offset,
+          restoreToken: _restoreToken,
+        );
+      }
+
       final bool scrollOk = await _scrollToNormOffsetCompleter!.future.timeout(
         const Duration(seconds: 5),
         onTimeout: () => false,
@@ -4775,9 +4829,39 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       _scrollToNormOffsetCompleter = null;
       debugPrint(
         '[hibiki-reader-pos] scrolled s=${pending.section} '
-        'o=${pending.offset} ok=$scrollOk',
+        'o=${pending.offset} ttu=$ttuOff ok=$scrollOk native=$usedNativePath',
       );
-      if (scrollOk) {
+
+      if (!scrollOk && usedNativePath) {
+        debugPrint(
+            '[hibiki-reader-pos] native path failed, fallback to normCharOffset');
+        _scrollToNormOffsetCompleter = Completer<bool>();
+        _viewportStableCompleter = Completer<bool>();
+        await AudiobookBridge.scrollToNormOffset(
+          _controller,
+          section: pending.section,
+          offset: pending.offset,
+          restoreToken: _restoreToken,
+        );
+        final bool fallbackOk =
+            await _scrollToNormOffsetCompleter!.future.timeout(
+          const Duration(seconds: 5),
+          onTimeout: () => false,
+        );
+        _scrollToNormOffsetCompleter = null;
+        debugPrint('[hibiki-reader-pos] fallback scrollOk=$fallbackOk');
+        if (fallbackOk) {
+          final bool stable = await _viewportStableCompleter!.future.timeout(
+            const Duration(seconds: 5),
+            onTimeout: () => false,
+          );
+          debugPrint(
+            '[hibiki-reader-pos] viewportStable (fallback) '
+            '${stable ? "reached" : "timeout/failed"}',
+          );
+        }
+        _viewportStableCompleter = null;
+      } else if (scrollOk) {
         final bool stable = await _viewportStableCompleter!.future.timeout(
           const Duration(seconds: 5),
           onTimeout: () => false,
@@ -4786,8 +4870,10 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           '[hibiki-reader-pos] viewportStable '
           '${stable ? "reached" : "timeout/failed"}',
         );
+        _viewportStableCompleter = null;
+      } else {
+        _viewportStableCompleter = null;
       }
-      _viewportStableCompleter = null;
     } catch (e) {
       debugPrint('[hibiki-reader-pos] scrollToNormOffset err: $e');
       _scrollToNormOffsetCompleter = null;
@@ -4837,15 +4923,31 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       return;
     }
     // auto=false：用户 swipe / ToC 翻页，始终更新 _currentTtuSection。
-    if (!_didRestorePos) {
+    final ReaderSectionChangeDecision manualDecision =
+        resolveManualSectionChangeDuringRestore(
+      didRestorePos: _didRestorePos,
+      restoreInFlight: _restoreInFlight,
+      inFlightNavSection: _inFlightNavSection,
+      sectionIndex: idx,
+    );
+    if (manualDecision == ReaderSectionChangeDecision.ignore) {
       debugPrint(
-        '[hibiki-reader-pos] ignoring pre-bootstrap sectionChanged idx=$idx',
+        '[hibiki-reader-pos] ignoring sectionChanged idx=$idx '
+        'during restore bootstrap',
       );
       return;
     }
     setState(() {
       _currentTtuSection = idx;
     });
+    if (manualDecision == ReaderSectionChangeDecision.completeRestore) {
+      _navRestoreTimeout?.cancel();
+      _readerRestoreNavTimeout?.cancel();
+      _readerRestoreNavTimeout = null;
+      _readerRestoreNavAttempts = 0;
+      unawaited(_applyThenCompleteNav(idx));
+      return;
+    }
     // 用户手动翻章时，废弃正在进行的程序化跳章——否则旧的
     // _applyThenCompleteNav 异步完成后会用错误章节的 cueMap 覆盖当前章。
     if (_inFlightNavSection != null) {
@@ -4877,18 +4979,14 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
     unawaited(_refreshPageProgress());
   }
 
-  // ── 有声书导入按钮 ──────────────────────────────────────────────────────────
+  // ── 普通书底部栏 ──────────────────────────────────────────────────────────
 
-  /// 右下角耳机图标，仅在无有声书时显示，点击打开导入对话框。
-  Widget buildAudiobookImportButton() {
-    return const SizedBox.shrink();
-  }
-
-  Widget buildReaderSettingsFab() {
+  Widget buildReaderSettingsBar() {
     if (_audiobookController != null) {
       return const SizedBox.shrink();
     }
     final String? bookUid = widget.item?.uniqueKey;
+    final String title = widget.item?.title ?? '';
     final Widget bar = Positioned(
       left: 0,
       right: 0,
@@ -4908,7 +5006,14 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
                     onPressed: () => _openImportDialog(bookUid),
                     tooltip: t.audiobook_import,
                   ),
-                const Spacer(),
+                Expanded(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
                 IconButton(
                   icon: const Icon(Icons.tune),
                   iconSize: 20,
@@ -4977,7 +5082,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
   }
 
   /// 用户从对话框里移除有声书后调用。拆 listener、dispose 控制器、清掉
-  /// SrtBook 关联状态，并 setState 让播放条消失、耳机 FAB 重新出现。
+  /// SrtBook 关联状态，并 setState 让播放条消失、普通书底栏重新出现。
   /// Isar 那边 deleteAudiobook 已经由对话框负责；这里只管内存状态。
   void _tearDownAudiobook() {
     _notifPlaySub?.cancel();

@@ -39,7 +39,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -49,6 +49,9 @@ class HibikiDatabase extends _$HibikiDatabase {
           }
           if (from < 3) {
             await m.createTable(readingHourlyLogs);
+          }
+          if (from < 4) {
+            await m.addColumn(readerPositions, readerPositions.ttuCharOffset);
           }
         },
       );
@@ -137,8 +140,7 @@ class HibikiDatabase extends _$HibikiDatabase {
 
   // ── anki mappings ───────────────────────────────────────────────
   Future<List<AnkiMappingRow>> getAllMappings() =>
-      (select(ankiMappings)..orderBy([(t) => OrderingTerm.asc(t.order)]))
-          .get();
+      (select(ankiMappings)..orderBy([(t) => OrderingTerm.asc(t.order)])).get();
 
   Future<AnkiMappingRow?> getMappingByLabel(String label) =>
       (select(ankiMappings)..where((t) => t.label.equals(label)))
@@ -237,20 +239,18 @@ class HibikiDatabase extends _$HibikiDatabase {
           String bookUid, String chapterHref) =>
       (select(audioCues)
             ..where((t) =>
-                t.bookUid.equals(bookUid) &
-                t.chapterHref.equals(chapterHref))
+                t.bookUid.equals(bookUid) & t.chapterHref.equals(chapterHref))
             ..orderBy([(t) => OrderingTerm.asc(t.sentenceIndex)]))
           .get();
 
-  Future<List<AudioCueRow>> getCuesForBook(String bookUid) =>
-      (select(audioCues)
-            ..where((t) => t.bookUid.equals(bookUid))
-            ..orderBy([
-              (t) => OrderingTerm.asc(t.audioFileIndex),
-              (t) => OrderingTerm.asc(t.startMs),
-              (t) => OrderingTerm.asc(t.sentenceIndex),
-            ]))
-          .get();
+  Future<List<AudioCueRow>> getCuesForBook(String bookUid) => (select(audioCues)
+        ..where((t) => t.bookUid.equals(bookUid))
+        ..orderBy([
+          (t) => OrderingTerm.asc(t.audioFileIndex),
+          (t) => OrderingTerm.asc(t.startMs),
+          (t) => OrderingTerm.asc(t.sentenceIndex),
+        ]))
+      .get();
 
   Future<AudioCueRow?> findCue(
           String bookUid, String chapterHref, int sentenceIndex) =>
@@ -264,8 +264,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   Future<void> replaceCuesForBook(
           String bookUid, List<AudioCuesCompanion> cues) =>
       transaction(() async {
-        await (delete(audioCues)..where((t) => t.bookUid.equals(bookUid)))
-            .go();
+        await (delete(audioCues)..where((t) => t.bookUid.equals(bookUid))).go();
         for (final c in cues) {
           await into(audioCues).insert(c);
         }
@@ -334,8 +333,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   }) =>
       transaction(() async {
         final existing = await (select(readingHourlyLogs)
-              ..where(
-                  (t) => t.dateKey.equals(dateKey) & t.hour.equals(hour)))
+              ..where((t) => t.dateKey.equals(dateKey) & t.hour.equals(hour)))
             .getSingleOrNull();
         if (existing != null) {
           await (update(readingHourlyLogs)
