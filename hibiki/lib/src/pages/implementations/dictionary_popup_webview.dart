@@ -46,9 +46,9 @@ class DictionaryPopupWebViewState
   if(!window.__hoshiScrollInstalled){
     window.__hoshiScrollInstalled=true;
     var t=0;
-    function check(){
+    function check(force){
       var now=Date.now();
-      if(now-t<500) return;
+      if(!force&&now-t<500) return;
       var sh=document.documentElement.scrollHeight;
       var st=window.scrollY||document.documentElement.scrollTop;
       var ch=window.innerHeight;
@@ -58,12 +58,10 @@ class DictionaryPopupWebViewState
       }
     }
     window.__hoshiScrollCheck=check;
-    window.addEventListener('scroll',check,true);
+    window.addEventListener('scroll',function(){check(false);},true);
   }
-  if(window.__hoshiScrollCheck){
-    setTimeout(window.__hoshiScrollCheck,0);
-    setTimeout(window.__hoshiScrollCheck,150);
-  }
+  setTimeout(function(){window.__hoshiScrollCheck(true);},0);
+  setTimeout(function(){window.__hoshiScrollCheck(true);},150);
 })();
 ''';
 
