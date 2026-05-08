@@ -223,16 +223,20 @@ List<int> parseReaderProgressSectionChars(String? raw) {
   if (sectionChars.isEmpty) return null;
   final int total = sectionChars.fold<int>(0, (int a, int b) => a + b);
   if (globalOffset < 0 || globalOffset > total) return null;
-  final int clamped = globalOffset.clamp(0, total);
+  // TTU paginated mode treats localOffset == sectionChars[i] as "next
+  // section", so clamp to total-1 to stay inside the last section.
+  final int effective = globalOffset >= total && total > 0
+      ? total - 1
+      : globalOffset;
   int accumulated = 0;
   for (int i = 0; i < sectionChars.length; i++) {
-    if (accumulated + sectionChars[i] > clamped) {
-      return (i, clamped - accumulated);
+    if (accumulated + sectionChars[i] > effective) {
+      return (i, effective - accumulated);
     }
     accumulated += sectionChars[i];
   }
   final int last = sectionChars.length - 1;
-  return (last, sectionChars[last]);
+  return (last, (sectionChars[last] - 1).clamp(0, sectionChars[last]));
 }
 
 /// Builds the native reader chrome theme around the TTU page surface.

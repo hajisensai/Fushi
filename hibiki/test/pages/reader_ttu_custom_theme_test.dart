@@ -274,11 +274,11 @@ void main() {
       );
     });
 
-    test('offset == total lands on last section end', () {
+    test('offset == total backs off by 1 to avoid TTU next-section overflow', () {
       expect(
         resolveGlobalCharOffset(
             sectionChars: const [100, 200], globalOffset: 300),
-        (1, 200),
+        (1, 199),
       );
     });
   });
