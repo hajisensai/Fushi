@@ -71,7 +71,7 @@ public class PopupDictActivity extends FlutterActivity {
                     break;
                 case "finishPopup":
                     result.success(null);
-                    moveTaskToBack(true);
+                    finish();
                     break;
                 default:
                     result.notImplemented();
