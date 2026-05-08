@@ -212,13 +212,74 @@ void main() {
       );
     });
 
-    test('parses reader progress section metadata once into positive lengths',
-        () {
+    test('preserves 0-length sections for index alignment', () {
       expect(
         parseReaderProgressSectionChars('[100, 0, -1, 200.9, "bad", 300]'),
-        const [100, 200, 300],
+        const [100, 0, 0, 200, 300],
       );
       expect(parseReaderProgressSectionChars('not json'), const <int>[]);
+    });
+  });
+
+  group('resolveGlobalCharOffset', () {
+    test('returns null for empty sectionChars', () {
+      expect(
+        resolveGlobalCharOffset(sectionChars: const [], globalOffset: 0),
+        isNull,
+      );
+    });
+
+    test('returns null for out-of-range offset', () {
+      expect(
+        resolveGlobalCharOffset(
+            sectionChars: const [100, 200], globalOffset: 301),
+        isNull,
+      );
+      expect(
+        resolveGlobalCharOffset(
+            sectionChars: const [100, 200], globalOffset: -1),
+        isNull,
+      );
+    });
+
+    test('resolves offset within first section', () {
+      expect(
+        resolveGlobalCharOffset(
+            sectionChars: const [100, 200, 300], globalOffset: 50),
+        (0, 50),
+      );
+    });
+
+    test('resolves offset at section boundary', () {
+      expect(
+        resolveGlobalCharOffset(
+            sectionChars: const [100, 200, 300], globalOffset: 100),
+        (1, 0),
+      );
+    });
+
+    test('skips 0-length section correctly', () {
+      expect(
+        resolveGlobalCharOffset(
+            sectionChars: const [100, 0, 200], globalOffset: 150),
+        (2, 50),
+      );
+    });
+
+    test('offset at 0-length section boundary lands on next section', () {
+      expect(
+        resolveGlobalCharOffset(
+            sectionChars: const [100, 0, 200], globalOffset: 100),
+        (2, 0),
+      );
+    });
+
+    test('offset == total lands on last section end', () {
+      expect(
+        resolveGlobalCharOffset(
+            sectionChars: const [100, 200], globalOffset: 300),
+        (1, 200),
+      );
     });
   });
 }

@@ -209,12 +209,30 @@ List<int> parseReaderProgressSectionChars(String? raw) {
     if (decoded is! List) return const <int>[];
     return decoded
         .whereType<num>()
-        .map((num value) => value.toInt())
-        .where((int value) => value > 0)
+        .map((num v) => v.toInt() < 0 ? 0 : v.toInt())
         .toList(growable: false);
   } catch (_) {
     return const <int>[];
   }
+}
+
+(int sectionIndex, int localOffset)? resolveGlobalCharOffset({
+  required List<int> sectionChars,
+  required int globalOffset,
+}) {
+  if (sectionChars.isEmpty) return null;
+  final int total = sectionChars.fold<int>(0, (int a, int b) => a + b);
+  if (globalOffset < 0 || globalOffset > total) return null;
+  final int clamped = globalOffset.clamp(0, total);
+  int accumulated = 0;
+  for (int i = 0; i < sectionChars.length; i++) {
+    if (accumulated + sectionChars[i] > clamped) {
+      return (i, clamped - accumulated);
+    }
+    accumulated += sectionChars[i];
+  }
+  final int last = sectionChars.length - 1;
+  return (last, sectionChars[last]);
 }
 
 /// Builds the native reader chrome theme around the TTU page surface.
@@ -3883,43 +3901,41 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
               debugPrint('[hibiki-search] jump error: $e');
             }
           },
-          onJumpToCharOffset: (int globalOffset) async {
-            final List<int> sc = _readerProgressSectionChars();
-            if (sc.isEmpty) return;
-            final int total = sc.fold<int>(0, (int a, int b) => a + b);
-            final int clamped = globalOffset.clamp(0, total);
-            int accumulated = 0;
-            int targetSection = 0;
-            int localOffset = 0;
-            for (int i = 0; i < sc.length; i++) {
-              if (accumulated + sc[i] > clamped) {
-                targetSection = i;
-                localOffset = clamped - accumulated;
-                break;
-              }
-              accumulated += sc[i];
-              if (i == sc.length - 1) {
-                targetSection = i;
-                localOffset = sc[i];
-              }
-            }
-            if (_dropStaleSectionNavigation(targetSection, 'char-jump')) {
-              return;
-            }
-            await AudiobookBridge.requestSectionNav(
-              _controller,
-              sectionIndex: targetSection,
-            );
-            await Future.delayed(const Duration(milliseconds: 500));
-            try {
-              await _controller.evaluateJavascript(
-                source:
-                    'window.__ttuScrollToCharOffset($targetSection, $localOffset)',
-              );
-            } catch (e) {
-              debugPrint('[hibiki-char-jump] jump error: $e');
-            }
-          },
+          onJumpToCharOffset: _readerProgressSectionChars().isEmpty
+              ? null
+              : (int globalOffset) async {
+                  final List<int> sc = _readerProgressSectionChars();
+                  final (int, int)? resolved = resolveGlobalCharOffset(
+                    sectionChars: sc,
+                    globalOffset: globalOffset,
+                  );
+                  if (resolved == null) {
+                    final int total =
+                        sc.fold<int>(0, (int a, int b) => a + b);
+                    Fluttertoast.showToast(
+                      msg: t.jump_to_char_out_of_range(max: total),
+                    );
+                    return;
+                  }
+                  final (int targetSection, int localOffset) = resolved;
+                  if (_dropStaleSectionNavigation(
+                      targetSection, 'char-jump')) {
+                    return;
+                  }
+                  await AudiobookBridge.requestSectionNav(
+                    _controller,
+                    sectionIndex: targetSection,
+                  );
+                  await Future.delayed(const Duration(milliseconds: 500));
+                  try {
+                    await _controller.evaluateJavascript(
+                      source:
+                          'window.__ttuScrollToCharOffset($targetSection, $localOffset)',
+                    );
+                  } catch (e) {
+                    debugPrint('[hibiki-char-jump] jump error: $e');
+                  }
+                },
           webViewController: _controller,
           appModel: appModel,
           onThemeChanged: () async {
