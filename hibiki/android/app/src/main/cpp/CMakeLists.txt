@@ -21,6 +21,7 @@ add_subdirectory(hoshidicts_external/libdeflate)
 
 add_library(hoshidicts STATIC
     hoshidicts_src/hash/hash.cpp
+    hoshidicts_src/hash/bloom.cpp
     hoshidicts_src/importer.cpp
     hoshidicts_src/memory/memory.cpp
     hoshidicts_src/zip/zip.cpp

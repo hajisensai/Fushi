@@ -4,6 +4,12 @@
 #include <string>
 #include <vector>
 
+#if defined(__clang__) && defined(__APPLE__)
+#define SWIFT_IMPORT_UNSAFE __attribute__((swift_attr("import_unsafe")))
+#else
+#define SWIFT_IMPORT_UNSAFE
+#endif
+
 struct Frequency {
   int value;
   std::string display_value;
@@ -14,11 +20,18 @@ struct DictionaryStyle {
   std::string styles;
 };
 
+struct MediaFileView {
+  const char* data;
+  size_t size;
+};
+
 struct GlossaryEntry {
   std::string dict_name;
   std::string glossary;
   std::string definition_tags;
   std::string term_tags;
+  const uint8_t* compressed_data = nullptr;
+  uint32_t compressed_size = 0;
 };
 
 struct FrequencyEntry {
@@ -61,10 +74,16 @@ class DictionaryQuery {
   std::vector<TermResult> query(const std::string& expression) const;
 
   std::vector<char> get_media_file(const std::string& dict_name, const std::string& media_path) const;
+  SWIFT_IMPORT_UNSAFE
+  MediaFileView get_media_file_view(const std::string& dict_name, const std::string& media_path) const;
   std::vector<DictionaryStyle> get_styles() const;
   std::vector<std::string> get_freq_dict_order() const;
 
  private:
+  friend class Lookup;
+  std::vector<TermResult> query_raw(const std::string& expression) const;
+  void materialize(TermResult& term) const;
+
   struct DictionaryData;
   struct Dictionary {
     std::string name;

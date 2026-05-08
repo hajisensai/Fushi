@@ -3,7 +3,6 @@
 #include <ankerl/unordered_dense.h>
 #include <zstd.h>
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -32,51 +31,21 @@ std::string_view read_str(const uint8_t*& addr, uint32_t len) {
   addr += len;
   return result;
 }
-
-namespace migration {
-bool write_media_index(const std::string& dict_path, const uint8_t* media_ptr, size_t media_size) {
-  if (!media_ptr || media_size == 0) {
-    return false;
-  }
-
-  std::vector<std::pair<std::string_view, uint32_t>> index_entries;
-  const uint8_t* addr = media_ptr;
-  const uint8_t* eof = addr + media_size;
-  while (addr < eof) {
-    uint32_t record_start = addr - media_ptr;
-    auto path_size = read_val<uint16_t>(addr);
-    std::string_view media_path = read_str(addr, path_size);
-    auto blob_size = read_val<uint32_t>(addr);
-    index_entries.emplace_back(media_path, record_start);
-    addr += blob_size;
-  }
-
-  std::ranges::sort(index_entries);
-  uint32_t count = index_entries.size();
-  std::vector<char> index_buf(sizeof(uint32_t) + index_entries.size() * sizeof(uint64_t));
-  std::memcpy(index_buf.data(), &count, sizeof(uint32_t));
-  for (size_t i = 0; i < index_entries.size(); ++i) {
-    uint64_t offset = index_entries[i].second;
-    std::memcpy(index_buf.data() + sizeof(uint32_t) + i * sizeof(uint64_t), &offset, sizeof(uint64_t));
-  }
-
-  std::ofstream out(dict_path + "/media.idx", std::ios::binary);
-  out.write(index_buf.data(), static_cast<std::streamsize>(index_buf.size()));
-  return true;
-}
-}
 }
 
 struct DictionaryQuery::DictionaryData {
   hash::linear table;
+  hash::bloom bloom;
   memory::mapped_file blobs;
   memory::mapped_file hash_table;
+  memory::mapped_file bloom_filter;
   memory::mapped_file media;
   memory::mapped_file media_index;
 
   ~DictionaryData() {
     memory::unmap(blobs);
     memory::unmap(hash_table);
+    memory::unmap(bloom_filter);
     memory::unmap(media);
     memory::unmap(media_index);
   }
@@ -114,6 +83,14 @@ void DictionaryQuery::add_dict(const std::string& path, DictionaryType type) {
   }
   dict.data->table.load(dict.data->hash_table.data);
 
+  dict.data->bloom_filter = memory::map_rd(path + "/bloom.filter");
+  if (!dict.data->bloom_filter) {
+    hash::bloom::build_to_file(dict.data->table.populated(), path + "/bloom.filter");
+    dict.data->bloom_filter = memory::map_rd(path + "/bloom.filter");
+  }
+  dict.data->bloom.load(dict.data->bloom_filter.data);
+  dict.data->table.set_bloom(&dict.data->bloom);
+
   dict.data->blobs = memory::map_rd(path + "/blobs.bin");
   if (!dict.data->blobs) {
     return;
@@ -122,10 +99,6 @@ void DictionaryQuery::add_dict(const std::string& path, DictionaryType type) {
   dict.data->media = memory::map_rd(path + "/media.bin");
   if (dict.data->media) {
     dict.data->media_index = memory::map_rd(path + "/media.idx");
-    if (dict.data->media_index) {
-    } else if (dict.data->media && migration::write_media_index(path, dict.data->media.data, dict.data->media.size)) {
-      dict.data->media_index = memory::map_rd(path + "/media.idx");
-    }
   }
 
   switch (type) {
@@ -150,6 +123,14 @@ void DictionaryQuery::add_pitch_dict(const std::string& path) {
 }
 
 std::vector<TermResult> DictionaryQuery::query(const std::string& expression) const {
+  auto results = query_raw(expression);
+  for (auto& term : results) {
+    materialize(term);
+  }
+  return results;
+}
+
+std::vector<TermResult> DictionaryQuery::query_raw(const std::string& expression) const {
   std::map<std::pair<std::string_view, std::string_view>, TermResult> term_map;
   for (const auto& [name, styles, data] : term_dicts_) {
     uint64_t offset_addr = data->table(expression);
@@ -181,7 +162,6 @@ std::vector<TermResult> DictionaryQuery::query(const std::string& expression) co
 
       auto glossary_offset = read_val<uint64_t>(blob_addr);
       auto glossary_size = read_val<uint32_t>(blob_addr);
-      std::string glossary = decompress_glossary(data->blobs.data + glossary_offset, glossary_size);
 
       auto def_tags_size = read_val<uint8_t>(blob_addr);
       std::string_view definition_tags = read_str(blob_addr, def_tags_size);
@@ -196,7 +176,8 @@ std::vector<TermResult> DictionaryQuery::query(const std::string& expression) co
       entry.dict_name = name;
       entry.definition_tags = definition_tags;
       entry.term_tags = term_tags;
-      entry.glossary = glossary;
+      entry.compressed_data = data->blobs.data + glossary_offset;
+      entry.compressed_size = glossary_size;
 
       auto [it, inserted] = term_map.try_emplace({expr, reading});
       if (inserted) {
@@ -347,7 +328,18 @@ std::string DictionaryQuery::decompress_glossary(const void* data, size_t size) 
   return result;
 }
 
+void DictionaryQuery::materialize(TermResult& term) const {
+  for (auto& g : term.glossaries) {
+    g.glossary = decompress_glossary(g.compressed_data, g.compressed_size);
+  }
+}
+
 std::vector<char> DictionaryQuery::get_media_file(const std::string& dict_name, const std::string& media_path) const {
+  auto view = get_media_file_view(dict_name, media_path);
+  return {view.data, view.data + view.size};
+}
+
+MediaFileView DictionaryQuery::get_media_file_view(const std::string& dict_name, const std::string& media_path) const {
   for (const auto& [name, styles, data] : term_dicts_) {
     if (name != dict_name) {
       continue;
@@ -377,7 +369,7 @@ std::vector<char> DictionaryQuery::get_media_file(const std::string& dict_name, 
       } else {
         auto blob_size = read_val<uint32_t>(record);
         const char* blob_data = reinterpret_cast<const char*>(record);
-        return {blob_data, blob_data + blob_size};
+        return {.data=blob_data, .size=blob_size};
       }
     }
     return {};

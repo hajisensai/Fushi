@@ -50,15 +50,6 @@ struct ParsedPitch {
   std::vector<int> pitches;
 };
 
-struct Kanji {
-  std::string_view character;
-  std::string_view onyomi;
-  std::string_view kunyomi;
-  std::string_view tags;
-  std::vector<std::string_view> meanings;
-  glz::raw_json_view stats;
-};
-
 namespace yomitan_parser {
 bool parse_index(std::string_view content, Index& out);
 bool parse_term_bank(std::string_view content, std::vector<Term>& out);
@@ -66,6 +57,4 @@ bool parse_meta_bank(std::string_view content, std::vector<Meta>& out);
 bool parse_tag_bank(std::string_view content, std::vector<Tag>& out);
 bool parse_frequency(std::string_view content, ParsedFrequency& out);
 bool parse_pitch(std::string_view content, ParsedPitch& out);
-bool parse_kanji_bank(std::string_view content, std::vector<Kanji>& out);
-std::vector<Term> kanji_to_terms(const std::vector<Kanji>& kanji, std::vector<std::string>& storage);
 };

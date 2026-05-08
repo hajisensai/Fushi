@@ -44,10 +44,6 @@ std::string Zip::read(int index) const {
     return "";
   }
 
-  if (e.data_offset + e.compressed_size > file.size) {
-    return "";
-  }
-
   std::string result;
   result.resize(e.uncompressed_size);
   const auto* src = file.data + e.data_offset;
@@ -73,10 +69,6 @@ std::optional<Zip::MediaResult> Zip::read_media(int index) const {
   out.blob.resize(e.uncompressed_size);
   if (e.uncompressed_size == 0) {
     return out;
-  }
-
-  if (e.data_offset + e.compressed_size > file.size) {
-    return std::nullopt;
   }
 
   const auto* src = file.data + e.data_offset;
@@ -137,39 +129,9 @@ bool Zip::parse_central_directory() {
     auto extra_len = read_at<uint16_t>(base, pos + 30);
     auto comment_len = read_at<uint16_t>(base, pos + 32);
 
-    uint64_t lfh_offset = read_at<uint32_t>(base, pos + 42);
+    auto lfh_offset = read_at<uint32_t>(base, pos + 42);
     e.name.assign(reinterpret_cast<const char*>(base + pos + 46), name_len);
 
-    // Parse Zip64 extra field if sizes are 0xFFFFFFFF
-    size_t extra_start = pos + 46 + name_len;
-    size_t extra_end = extra_start + extra_len;
-    if (extra_end <= file.size) {
-      size_t epos = extra_start;
-      while (epos + 4 <= extra_end) {
-        uint16_t header_id = read_at<uint16_t>(base, epos);
-        uint16_t data_size = read_at<uint16_t>(base, epos + 2);
-        if (header_id == 0x0001 && epos + 4 + data_size <= extra_end) {
-          size_t fpos = epos + 4;
-          if (e.uncompressed_size == 0xFFFFFFFF && fpos + 8 <= epos + 4 + data_size) {
-            e.uncompressed_size = read_at<uint64_t>(base, fpos);
-            fpos += 8;
-          }
-          if (e.compressed_size == 0xFFFFFFFF && fpos + 8 <= epos + 4 + data_size) {
-            e.compressed_size = read_at<uint64_t>(base, fpos);
-            fpos += 8;
-          }
-          if (lfh_offset == 0xFFFFFFFF && fpos + 8 <= epos + 4 + data_size) {
-            lfh_offset = read_at<uint64_t>(base, fpos);
-          }
-          break;
-        }
-        epos += 4 + data_size;
-      }
-    }
-
-    if (lfh_offset + 30 > file.size) {
-      return false;
-    }
     auto lfh_name_len = read_at<uint16_t>(base, lfh_offset + 26);
     auto lfh_extra_len = read_at<uint16_t>(base, lfh_offset + 28);
     e.data_offset = lfh_offset + 30 + lfh_name_len + lfh_extra_len;

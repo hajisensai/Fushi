@@ -10,7 +10,6 @@ struct ImportResult {
   size_t meta_count = 0;
   size_t tag_count = 0;
   size_t media_count = 0;
-  std::string detected_type = "term";
   std::vector<std::string> errors;
 };
 

@@ -37,18 +37,6 @@ int get_freq_value_for_dict(const TermResult& term, const std::string& dict_name
 
   return INT_MAX;
 }
-
-bool freq_sort_order(const LookupResult& a, const LookupResult& b, const std::vector<std::string>& freq_dict_order) {
-  for (const auto& dict_name : freq_dict_order) {
-    const int freq_a = get_freq_value_for_dict(a.term, dict_name);
-    const int freq_b = get_freq_value_for_dict(b.term, dict_name);
-    if (freq_a != freq_b) {
-      return freq_a < freq_b;
-    }
-  }
-
-  return false;
-}
 }
 
 std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int max_results, size_t scan_length) const {
@@ -65,10 +53,10 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
     for (auto& variant : processor_results) {
       auto deinflection_results = deinflector_.deinflect(variant.text);
       for (auto& deinflection : deinflection_results) {
-        auto terms = query_.query(deinflection.text);
+        auto terms = query_.query_raw(deinflection.text);
         filter_by_pos(terms, deinflection);
 
-        for (const auto& term : terms) {
+        for (auto& term : terms) {
           // deduplicate glossaries
           auto key = std::make_pair(term.expression, term.reading);
           auto it = result_map.find(key);
@@ -79,14 +67,14 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
               it->second = LookupResult{.matched = search_str,
                                         .deinflected = deinflection.text,
                                         .trace = deinflection.trace,
-                                        .term = term,
+                                        .term = std::move(term),
                                         .preprocessor_steps = variant.steps};
             }
           } else {
             result_map.emplace(key, LookupResult{.matched = search_str,
                                                  .deinflected = deinflection.text,
                                                  .trace = deinflection.trace,
-                                                 .term = term,
+                                                 .term = std::move(term),
                                                  .preprocessor_steps = variant.steps});
           }
         }
@@ -119,11 +107,31 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
       return trace_len_a < trace_len_b;
     }
 
-    return freq_sort_order(a, b, freq_dict_order);
+    auto match_a = a.term.expression == a.deinflected;
+    auto match_b = b.term.expression == b.deinflected;
+    if (match_a != match_b) {
+      return match_a > match_b;
+    }
+
+    for (const auto& dict_name : freq_dict_order) {
+      const int freq_a = get_freq_value_for_dict(a.term, dict_name);
+      const int freq_b = get_freq_value_for_dict(b.term, dict_name);
+      if (freq_a != freq_b) {
+        return freq_a < freq_b;
+      }
+    }
+
+    auto a_reading_expr_match = a.term.expression == a.term.reading;
+    auto b_reading_expr_match = b.term.expression == b.term.reading;
+    return a_reading_expr_match > b_reading_expr_match;
   });
 
   if (results.size() > static_cast<size_t>(max_results)) {
     results.resize(max_results);
+  }
+
+  for (auto& r : results) {
+    query_.materialize(r.term);
   }
 
   return results;

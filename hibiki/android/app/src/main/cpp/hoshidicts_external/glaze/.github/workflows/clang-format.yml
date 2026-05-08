@@ -1,0 +1,28 @@
+name: clang-format
+
+on: 
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v6
+    - uses: DoozyX/clang-format-lint-action@v0.20
+      with:
+        source: '.'
+        exclude: ''
+        extensions: 'h,hpp,cpp'
+        clangFormatVersion: 20
+        style: file
+        inplace: True
+    - uses: EndBug/add-and-commit@v9
+      with:
+        message: 'Committing clang-format changes'
