@@ -178,7 +178,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
     final hintColor = isDark ? Colors.white54 : Colors.black45;
 
     return Container(
-      margin: const EdgeInsets.fromLTRB(0, 0, 0, 4),
+      margin: EdgeInsets.zero,
       decoration: BoxDecoration(
         color: fillColor,
         borderRadius: BorderRadius.circular(8),

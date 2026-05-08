@@ -11,6 +11,7 @@ import android.webkit.WebView;
 import androidx.annotation.NonNull;
 
 import io.flutter.embedding.android.FlutterActivity;
+import io.flutter.embedding.android.FlutterActivityLaunchConfigs;
 import io.flutter.embedding.engine.FlutterEngine;
 import io.flutter.plugin.common.MethodChannel;
 
@@ -70,7 +71,7 @@ public class PopupDictActivity extends FlutterActivity {
                     break;
                 case "finishPopup":
                     result.success(null);
-                    finish();
+                    moveTaskToBack(true);
                     break;
                 default:
                     result.notImplemented();
@@ -78,11 +79,10 @@ public class PopupDictActivity extends FlutterActivity {
         });
     }
 
+    @NonNull
     @Override
-    public void finish() {
-        if (!moveTaskToBack(true)) {
-            super.finish();
-        }
+    protected FlutterActivityLaunchConfigs.BackgroundMode getBackgroundMode() {
+        return FlutterActivityLaunchConfigs.BackgroundMode.transparent;
     }
 
     @Override
