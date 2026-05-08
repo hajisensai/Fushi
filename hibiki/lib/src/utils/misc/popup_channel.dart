@@ -19,6 +19,13 @@ class PopupChannel {
         }
       }
     });
+    if (_onNewProcessText != null) {
+      getInitialProcessText().then((text) {
+        if (text != null && text.trim().isNotEmpty) {
+          _onNewProcessText?.call(text);
+        }
+      });
+    }
   }
 
   Future<String?> getInitialProcessText() async {
