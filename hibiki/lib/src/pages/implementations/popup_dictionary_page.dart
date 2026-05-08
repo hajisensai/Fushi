@@ -55,6 +55,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
     super.initState();
     _searchController = TextEditingController(text: widget.searchTerm);
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       _pushSearch(widget.searchTerm, Rect.zero);
     });
   }
@@ -69,7 +70,6 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
   Future<void> _pushSearch(String query, Rect selectionRect) async {
     if (query.trim().isEmpty) return;
 
-    _searchController.text = query;
     final entry = _StackEntry(query: query, selectionRect: selectionRect);
     setState(() => _stack.add(entry));
 
@@ -99,9 +99,6 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
   void _popAt(int index) {
     if (index <= 0) return;
     setState(() => _stack.removeRange(index, _stack.length));
-    if (_stack.isNotEmpty) {
-      _searchController.text = _stack.last.query;
-    }
   }
 
   Future<void> _close() async {

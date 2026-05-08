@@ -46,8 +46,11 @@ public class PopupDictActivity extends FlutterActivity {
     protected void onNewIntent(@NonNull Intent intent) {
         super.onNewIntent(intent);
         String text = extractProcessText(intent);
-        if (text != null && popupChannel != null) {
-            popupChannel.invokeMethod("onNewProcessText", text);
+        if (text != null) {
+            pendingProcessText = text;
+            if (popupChannel != null) {
+                popupChannel.invokeMethod("onNewProcessText", text);
+            }
         }
     }
 
