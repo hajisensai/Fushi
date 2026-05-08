@@ -9,7 +9,10 @@ class PopupChannel {
 
   void Function(String)? _onNewProcessText;
 
-  void init({void Function(String)? onNewProcessText}) {
+  void init({
+    String? initialText,
+    void Function(String)? onNewProcessText,
+  }) {
     _onNewProcessText = onNewProcessText;
     _channel.setMethodCallHandler((call) async {
       if (call.method == 'onNewProcessText' && _onNewProcessText != null) {
@@ -21,7 +24,9 @@ class PopupChannel {
     });
     if (_onNewProcessText != null) {
       getInitialProcessText().then((text) {
-        if (text != null && text.trim().isNotEmpty) {
+        if (text != null &&
+            text.trim().isNotEmpty &&
+            text != initialText) {
           _onNewProcessText?.call(text);
         }
       });

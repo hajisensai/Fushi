@@ -51,6 +51,7 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
     _searchTerm = widget.initialText;
 
     PopupChannel.instance.init(
+      initialText: widget.initialText,
       onNewProcessText: (text) {
         setState(() {
           _searchTerm = text;
