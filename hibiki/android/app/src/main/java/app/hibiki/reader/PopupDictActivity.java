@@ -1,5 +1,6 @@
 package app.hibiki.reader;
 
+import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
 import android.os.Bundle;
@@ -9,34 +10,47 @@ import android.view.WindowManager;
 import android.webkit.WebView;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
+import io.flutter.FlutterInjector;
 import io.flutter.embedding.android.FlutterActivity;
 import io.flutter.embedding.android.FlutterActivityLaunchConfigs;
 import io.flutter.embedding.engine.FlutterEngine;
+import io.flutter.embedding.engine.FlutterEngineCache;
+import io.flutter.embedding.engine.dart.DartExecutor;
+import io.flutter.embedding.engine.loader.FlutterLoader;
 import io.flutter.plugin.common.MethodChannel;
 
 public class PopupDictActivity extends FlutterActivity {
+    private static final String ENGINE_ID = "popup_dict_engine";
     private static final String POPUP_CHANNEL = "app.hibiki.reader/popup";
     private static boolean webViewDataDirectoryConfigured = false;
+    private static boolean dartStarted = false;
 
     private MethodChannel popupChannel;
     private AnkiChannelHandler ankiChannelHandler;
     private TtsChannelHandler ttsChannelHandler;
     private String pendingProcessText;
 
-    @NonNull
+    @Nullable
     @Override
-    public String getDartEntrypointFunctionName() {
-        return "popupMain";
+    public String getCachedEngineId() {
+        return ENGINE_ID;
+    }
+
+    @Override
+    public boolean shouldDestroyEngineWithHost() {
+        return false;
     }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         configureWebViewDataDirectory();
+        pendingProcessText = extractProcessText(getIntent());
+        ensureCachedEngine(this);
 
         ankiChannelHandler = new AnkiChannelHandler(this);
         ttsChannelHandler = new TtsChannelHandler(this);
-        pendingProcessText = extractProcessText(getIntent());
 
         super.onCreate(savedInstanceState);
 
@@ -58,7 +72,6 @@ public class PopupDictActivity extends FlutterActivity {
     @Override
     public void configureFlutterEngine(@NonNull FlutterEngine flutterEngine) {
         PopupPluginRegistrant.registerWith(flutterEngine);
-
         ankiChannelHandler.register(flutterEngine);
         ttsChannelHandler.register(flutterEngine);
 
@@ -77,6 +90,11 @@ public class PopupDictActivity extends FlutterActivity {
                     result.notImplemented();
             }
         });
+
+        if (dartStarted && pendingProcessText != null) {
+            popupChannel.invokeMethod("onNewProcessText", pendingProcessText);
+        }
+        dartStarted = true;
     }
 
     @NonNull
@@ -114,6 +132,24 @@ public class PopupDictActivity extends FlutterActivity {
         params.height = height;
         params.gravity = Gravity.CENTER;
         getWindow().setAttributes(params);
+    }
+
+    private static synchronized void ensureCachedEngine(@NonNull Context context) {
+        if (FlutterEngineCache.getInstance().contains(ENGINE_ID)) return;
+
+        Context appContext = context.getApplicationContext();
+        FlutterLoader loader = FlutterInjector.instance().flutterLoader();
+        loader.startInitialization(appContext);
+        loader.ensureInitializationComplete(appContext, null);
+
+        FlutterEngine engine = new FlutterEngine(appContext);
+        engine.getDartExecutor().executeDartEntrypoint(
+            new DartExecutor.DartEntrypoint(
+                loader.findAppBundlePath(),
+                "popupMain"
+            )
+        );
+        FlutterEngineCache.getInstance().put(ENGINE_ID, engine);
     }
 
     private static synchronized void configureWebViewDataDirectory() {
