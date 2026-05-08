@@ -356,7 +356,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
     setState(() {
       _result = cached;
       _isSearching = false;
-      _allLoaded = true;
+      _allLoaded = cached.entries.length < appModel.maximumTerms;
       _lastQuery = cached.searchTerm.trim();
       _popupStack.clear();
     });

@@ -320,14 +320,15 @@ class DictionaryPopupWebViewState
         if (widget.onScrolledToBottom != null) {
           controller.evaluateJavascript(source: '''
 (function(){
-  var fired=false;
+  var t=0;
   window.addEventListener('scroll',function(){
-    if(fired) return;
+    var now=Date.now();
+    if(now-t<500) return;
     var sh=document.documentElement.scrollHeight;
     var st=window.scrollY||document.documentElement.scrollTop;
     var ch=window.innerHeight;
     if(sh-st-ch<200){
-      fired=true;
+      t=now;
       window.flutter_inappwebview.callHandler('scrolledToBottom');
     }
   },true);

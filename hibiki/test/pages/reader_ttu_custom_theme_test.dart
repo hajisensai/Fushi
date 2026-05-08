@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/pages/implementations/reader_ttu_source_page.dart';
@@ -56,4 +58,176 @@ void main() {
       expect(theme.sliderTheme.activeTrackColor, const Color(0xFF008577));
     });
   });
+
+  group('Reader bridge injection gate', () {
+    test('joins an in-flight injection instead of completing early', () async {
+      final gate = ReaderTtuBridgeInjectionGate();
+      final completer = Completer<void>();
+      int runs = 0;
+
+      final Future<void> first = gate.run(() {
+        runs++;
+        return completer.future;
+      });
+      final Future<void> second = gate.run(() {
+        runs++;
+        return Future<void>.value();
+      });
+
+      await Future<void>.delayed(Duration.zero);
+
+      expect(runs, 1);
+      expect(await isCompleted(second), isFalse);
+
+      completer.complete();
+      await Future.wait([first, second]);
+
+      expect(runs, 1);
+    });
+
+    test('allows a new injection after the previous one finishes', () async {
+      final gate = ReaderTtuBridgeInjectionGate();
+      int runs = 0;
+
+      await gate.run(() async {
+        runs++;
+      });
+      await gate.run(() async {
+        runs++;
+      });
+
+      expect(runs, 2);
+    });
+  });
+
+  group('Reader bottom chrome reserve', () {
+    test('keeps TTU page margin independent from Flutter chrome reserve', () {
+      expect(
+        resolveTtuPageMarginBottom(
+          writingMode: 'vertical-rl',
+          firstDimensionMargin: 12,
+          secondDimensionMargin: 20,
+        ),
+        20,
+      );
+      expect(
+        resolveTtuPageMarginBottom(
+          writingMode: 'horizontal-tb',
+          firstDimensionMargin: 12,
+          secondDimensionMargin: 20,
+        ),
+        12,
+      );
+    });
+
+    test('reserves the slot for a plain book when the play bar is visible', () {
+      expect(
+        shouldReserveReaderBottomChrome(
+          showPlayBar: true,
+        ),
+        isTrue,
+      );
+    });
+
+    test('does not reserve the slot when the play bar is hidden', () {
+      expect(
+        shouldReserveReaderBottomChrome(
+          showPlayBar: false,
+        ),
+        isFalse,
+      );
+    });
+  });
+
+  group('Reader progress metrics', () {
+    test('uses absolute horizontal position for vertical continuous mode', () {
+      expect(
+        resolveReaderProgressRatio(
+          scrollPosition: -250,
+          scrollExtent: 1000,
+          viewportExtent: 500,
+        ),
+        0.5,
+      );
+    });
+
+    test('clamps progress when scroll is past the rendered extent', () {
+      expect(
+        resolveReaderProgressRatio(
+          scrollPosition: 750,
+          scrollExtent: 1000,
+          viewportExtent: 500,
+        ),
+        1,
+      );
+    });
+
+    test('converts TTU zero-based page info to displayed page progress', () {
+      expect(
+        resolveDisplayedPageProgress(currentPage: 0, totalPages: 12),
+        (1, 12),
+      );
+      expect(
+        resolveDisplayedPageProgress(currentPage: 11, totalPages: 12),
+        (12, 12),
+      );
+    });
+
+    test('converts current section progress into full-book progress', () {
+      expect(
+        resolveFullBookReaderProgress(
+          sectionChars: const [100, 200, 300],
+          sectionIndex: 1,
+          sectionCurrentChars: 100,
+          sectionTotalChars: 200,
+        ),
+        (200, 600),
+      );
+    });
+
+    test(
+        'does not fall back to section progress while full-book data waits for TTU section',
+        () {
+      expect(
+        resolveTopReaderProgress(
+          sectionChars: const [100, 200, 300],
+          sectionIndex: -1,
+          sectionCurrentChars: 100,
+          sectionTotalChars: 200,
+        ),
+        isNull,
+      );
+    });
+
+    test('falls back to section progress when no full-book metadata exists',
+        () {
+      expect(
+        resolveTopReaderProgress(
+          sectionChars: const [],
+          sectionIndex: -1,
+          sectionCurrentChars: 100,
+          sectionTotalChars: 200,
+        ),
+        (100, 200),
+      );
+    });
+
+    test('parses reader progress section metadata once into positive lengths',
+        () {
+      expect(
+        parseReaderProgressSectionChars('[100, 0, -1, 200.9, "bad", 300]'),
+        const [100, 200, 300],
+      );
+      expect(parseReaderProgressSectionChars('not json'), const <int>[]);
+    });
+  });
+}
+
+Future<bool> isCompleted(Future<void> future) async {
+  bool completed = false;
+  unawaited(future.then((_) {
+    completed = true;
+  }));
+  await Future<void>.delayed(Duration.zero);
+  return completed;
 }

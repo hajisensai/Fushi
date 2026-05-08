@@ -172,7 +172,6 @@ window.__hoshiHighlight = function(selector, reveal) {
 
 ''';
 
-
   /// Sasayaki 路径的辅助 JS：
   ///
   /// - `__hoshiLoadSasayakiRefs(ttuBookId)`：从 ttu IndexedDB 读 `sections` +
@@ -552,32 +551,61 @@ window.__hoshiTtuProbe = function() {
   try {
     var el = document.querySelector('.book-content');
     if (el) {
-      var isPaginated = document.body.classList.contains('overflow-hidden');
+      var settings = null;
+      try {
+        settings = window.__ttuReaderSettings && window.__ttuReaderSettings.get
+          ? window.__ttuReaderSettings.get()
+          : null;
+      } catch (e) {}
+      var viewMode = (settings && settings.viewMode) || '';
+      var writingMode = (settings && settings.writingMode) || getComputedStyle(el).writingMode || '';
+      var isVertical = writingMode === 'vertical-rl';
+      var isPaginated = viewMode === 'paginated' ||
+        (viewMode !== 'continuous' && document.body.classList.contains('overflow-hidden'));
       if (isPaginated) {
-        var cs = getComputedStyle(el);
-        var isVertical = cs.writingMode === 'vertical-rl';
-        var gap = 0;
-        var container = document.querySelector('.book-content-container');
-        if (container) {
-          var g = parseFloat(getComputedStyle(container).columnGap);
-          if (isFinite(g)) gap = g;
-        }
-        if (isVertical) {
-          var sz = el.clientHeight + gap;
-          result.totalPages = Math.max(1, Math.ceil(el.scrollHeight / sz));
-          result.currentPage = Math.floor(el.scrollTop / sz) + 1;
+        var info = null;
+        try {
+          info = typeof window.__ttuGetPageInfo === 'function' ? window.__ttuGetPageInfo() : null;
+        } catch (e) {}
+        if (info && info.totalPages > 0) {
+          result.totalPages = info.totalPages;
+          result.currentPage = Math.max(1, Math.min(info.currentPage + 1, info.totalPages));
         } else {
-          var sz = el.clientWidth + gap;
-          result.totalPages = Math.max(1, Math.ceil(el.scrollWidth / sz));
-          result.currentPage = Math.floor(Math.abs(el.scrollLeft) / sz) + 1;
+          var gap = 0;
+          var container = document.querySelector('.book-content-container');
+          if (container) {
+            var g = parseFloat(getComputedStyle(container).columnGap);
+            if (isFinite(g)) gap = g;
+          }
+          if (isVertical) {
+            var sz = el.clientHeight + gap;
+            result.totalPages = Math.max(1, Math.ceil(el.scrollHeight / sz));
+            result.currentPage = Math.floor(el.scrollTop / sz) + 1;
+          } else {
+            var sz = el.clientWidth + gap;
+            result.totalPages = Math.max(1, Math.ceil(el.scrollWidth / sz));
+            result.currentPage = Math.floor(Math.abs(el.scrollLeft) / sz) + 1;
+          }
         }
       } else {
-        var vh = window.innerHeight;
-        var sh = document.documentElement.scrollHeight;
-        var st = window.scrollY || document.documentElement.scrollTop;
-        if (vh > 0) {
-          result.totalPages = Math.max(1, Math.ceil(sh / vh));
-          result.currentPage = Math.floor(st / vh) + 1;
+        var doc = document.documentElement || {};
+        var body = document.body || {};
+        if (isVertical) {
+          var vw = window.innerWidth || doc.clientWidth || el.clientWidth;
+          var sw = Math.max(doc.scrollWidth || 0, body.scrollWidth || 0, el.scrollWidth || 0);
+          var sx = Math.abs(window.scrollX || doc.scrollLeft || body.scrollLeft || 0);
+          if (vw > 0) {
+            result.totalPages = Math.max(1, Math.ceil(sw / vw));
+            result.currentPage = Math.floor(sx / vw) + 1;
+          }
+        } else {
+          var vh = window.innerHeight || doc.clientHeight || el.clientHeight;
+          var sh = Math.max(doc.scrollHeight || 0, body.scrollHeight || 0, el.scrollHeight || 0);
+          var st = Math.abs(window.scrollY || doc.scrollTop || body.scrollTop || 0);
+          if (vh > 0) {
+            result.totalPages = Math.max(1, Math.ceil(sh / vh));
+            result.currentPage = Math.floor(st / vh) + 1;
+          }
         }
       }
     }
@@ -1091,15 +1119,13 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
     InAppWebViewController controller,
   ) async {
     final Object? raw = await controller.evaluateJavascript(
-      source:
-          'if(typeof __hoshiTtuProbe!=="undefined")__hoshiTtuProbe();',
+      source: 'if(typeof __hoshiTtuProbe!=="undefined")__hoshiTtuProbe();',
     );
     if (raw is! String) {
       return const TtuApiProbe.missing();
     }
     try {
-      final Map<String, dynamic> json =
-          jsonDecode(raw) as Map<String, dynamic>;
+      final Map<String, dynamic> json = jsonDecode(raw) as Map<String, dynamic>;
       return TtuApiProbe(
         hasGoToSection: json['hasGoToSection'] == true,
         hasCurrentSection: json['hasCurrentSection'] == true,
@@ -1191,8 +1217,7 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
                 label: (m['label'] as String?) ?? '',
                 parent: m['parent'] as String?,
               ))
-          .where((TtuTocEntry e) =>
-              e.index >= 0 && !e.label.startsWith('ttu-'))
+          .where((TtuTocEntry e) => e.index >= 0 && !e.label.startsWith('ttu-'))
           .toList(growable: false);
     } catch (_) {
       return const <TtuTocEntry>[];
@@ -1399,8 +1424,7 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
     required String chapterHref,
   }) async {
     await controller.evaluateJavascript(
-      source:
-          'if(typeof __hoshiAnnotate!=="undefined")'
+      source: 'if(typeof __hoshiAnnotate!=="undefined")'
           '__hoshiAnnotate(${jsonEncode(chapterHref)});',
     );
   }
@@ -1431,16 +1455,14 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
     final SasayakiFragment? frag = SasayakiMatchCodec.tryDecode(raw);
     if (frag != null) {
       await controller.evaluateJavascript(
-        source:
-            'if(typeof __hoshiHighlightSasayakiCueById!=="undefined")'
+        source: 'if(typeof __hoshiHighlightSasayakiCueById!=="undefined")'
             'window.__hoshiHighlightSasayakiCueById('
             '${jsonEncode(raw)}, $reveal);',
       );
       return;
     }
     await controller.evaluateJavascript(
-      source:
-          'if(typeof __hoshiHighlight!=="undefined")'
+      source: 'if(typeof __hoshiHighlight!=="undefined")'
           '__hoshiHighlight(${jsonEncode(raw)}, $reveal);',
     );
   }
@@ -1451,8 +1473,7 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount) {
     required String selector,
   }) async {
     await controller.evaluateJavascript(
-      source:
-          'if(typeof __hoshiHighlight!=="undefined")'
+      source: 'if(typeof __hoshiHighlight!=="undefined")'
           '__hoshiHighlight(${jsonEncode(selector)});',
     );
   }
@@ -1549,8 +1570,7 @@ class TtuApiProbe {
   final int? totalPages;
 
   /// 三项都挂上才算 fork 就绪；任何一项缺失都走兼容路径。
-  bool get forkReady =>
-      hasGoToSection && hasCurrentSection && hasSectionCount;
+  bool get forkReady => hasGoToSection && hasCurrentSection && hasSectionCount;
 
   /// 人话版摘要，方便写进 `AudiobookHealth.reason` 或 debug 日志。
   String describe() {
@@ -1640,13 +1660,13 @@ class TtuReaderSettings {
   ];
 
   static Map<String, String> get themeLabels => {
-    'light-theme': t.reader_theme_light,
-    'ecru-theme': t.reader_theme_ecru,
-    'water-theme': t.reader_theme_water,
-    'gray-theme': t.reader_theme_gray,
-    'dark-theme': t.reader_theme_dark,
-    'black-theme': t.reader_theme_black,
-  };
+        'light-theme': t.reader_theme_light,
+        'ecru-theme': t.reader_theme_ecru,
+        'water-theme': t.reader_theme_water,
+        'gray-theme': t.reader_theme_gray,
+        'dark-theme': t.reader_theme_dark,
+        'black-theme': t.reader_theme_black,
+      };
 }
 
 /// 用户在 WebView 中点击有声书句子所产生的事件。
