@@ -516,10 +516,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (_controller == null) {
       return;
     }
-    final String? result = await _controller!.evaluateJavascript(
+    final dynamic result = await _controller!.evaluateJavascript(
       source: ReaderPaginationScripts.progressInvocation(),
     );
-    final double? progress = ReaderPaginationScripts.doubleResult(result);
+    final double? progress = _toDouble(result);
     if (progress == null) {
       return;
     }
@@ -570,10 +570,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       return;
     }
     try {
-      final String? result = await _controller!.evaluateJavascript(
+      final dynamic result = await _controller!.evaluateJavascript(
         source: ReaderPaginationScripts.progressInvocation(),
       );
-      final double? progress = ReaderPaginationScripts.doubleResult(result);
+      final double? progress = _toDouble(result);
       if (progress != null) {
         await _persistPosition(_currentChapter, progress);
       }
@@ -604,10 +604,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (_controller == null) {
       return;
     }
-    final String? result = await _controller!.evaluateJavascript(
+    final dynamic result = await _controller!.evaluateJavascript(
       source: ReaderPaginationScripts.paginateInvocation(direction),
     );
-    if (ReaderPaginationScripts.didScroll(result)) {
+    if (_didScroll(result)) {
       _refreshProgress();
     } else {
       _handlePageTurnLimit(direction.jsValue);
@@ -685,6 +685,24 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       default:
         return const Color(0xDE000000);
     }
+  }
+
+  // ── JS result helpers (evaluateJavascript returns dynamic) ────────
+
+  static double? _toDouble(dynamic result) {
+    if (result is double) return result;
+    if (result is int) return result.toDouble();
+    if (result is String) {
+      return double.tryParse(result.trim().replaceAll('"', ''));
+    }
+    return null;
+  }
+
+  static bool _didScroll(dynamic result) {
+    if (result is String) {
+      return result.trim().replaceAll('"', '') == 'scrolled';
+    }
+    return false;
   }
 
   // ── Helpers ───────────────────────────────────────────────────────
