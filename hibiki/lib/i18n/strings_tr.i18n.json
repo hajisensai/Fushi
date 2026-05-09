@@ -1,4 +1,4 @@
-{
+﻿{
   "dictionary_media_type": "S?zlük",
   "dialog_importing": "??E AKTARILIYOR…",
   "player_media_type": "Oynat?c?",
@@ -204,7 +204,7 @@
   "unimplemented_source": "Uygulanmam?? kaynak",
   "clear_browser_title": "Taray?c? verilerini temizle",
   "clear_browser_description": "Web kaynaklar?nda kullan?lan tüm tarama verileri temizlenecek. Emin misiniz?",
-  "ttu_no_books_added": "ッツ Ebook Reader'a kitap eklenmemi?",
+  "ttu_no_books_added": "Kütüphanede kitap yok",
   "local_media_directory_empty": "Klas?rde klas?r veya video yok",
   "pick_video_file": "Video dosyas? se?",
   "navigate_up_one_directory_level": "Bir seviye yukar? ??k",

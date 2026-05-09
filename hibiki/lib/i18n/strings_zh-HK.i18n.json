@@ -196,7 +196,7 @@
   "unimplemented_source": "未實作的來源",
   "clear_browser_title": "清除瀏覽器資料",
   "clear_browser_description": "此操作將清除所有使用網頁內容的媒體來源的瀏覽資料。確定嗎？",
-  "ttu_no_books_added": "ッツ 電子書閱讀器尚未新增任何書籍",
+  "ttu_no_books_added": "書庫中尚未有任何書籍",
   "local_media_directory_empty": "目錄內沒有資料夾或影片",
   "pick_video_file": "選擇影片檔案",
   "navigate_up_one_directory_level": "向上一層目錄",

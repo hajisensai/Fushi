@@ -1,4 +1,4 @@
-{
+﻿{
   "dictionary_media_type": "Diccionario",
   "dialog_importing": "IMPORTANDO…",
   "player_media_type": "Reproductor",
@@ -196,7 +196,7 @@
   "unimplemented_source": "Fuente no implementada",
   "clear_browser_title": "Borrar datos del navegador",
   "clear_browser_description": "Esto eliminará todos los datos de navegación usados en fuentes de contenido web. ?Estás seguro?",
-  "ttu_no_books_added": "No se han a?adido libros al lector ッツ",
+  "ttu_no_books_added": "No hay libros en la biblioteca",
   "local_media_directory_empty": "El directorio no tiene carpetas ni vídeos",
   "pick_video_file": "Elegir archivo de vídeo",
   "navigate_up_one_directory_level": "Subir un nivel de directorio",

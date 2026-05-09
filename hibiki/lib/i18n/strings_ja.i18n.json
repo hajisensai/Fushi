@@ -196,7 +196,7 @@
   "unimplemented_source": "未実装のソース",
   "clear_browser_title": "ブラウザデータを消去",
   "clear_browser_description": "Webコンテンツを使用するメディアソースのブラウザデータがすべて消去されます。よろしいですか？",
-  "ttu_no_books_added": "ッツ Ebook Readerに本が追加されていません",
+  "ttu_no_books_added": "書庫に本がありません",
   "local_media_directory_empty": "ディレクトリにフォルダや動画がありません",
   "pick_video_file": "動画ファイルを選択",
   "navigate_up_one_directory_level": "上のディレクトリに移動",
