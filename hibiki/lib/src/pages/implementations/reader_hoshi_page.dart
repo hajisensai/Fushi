@@ -137,14 +137,22 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
     await _resolveAudioSlot();
 
-    final ReaderPositionRepository repo =
-        ReaderPositionRepository(appModel.database);
-    final ReaderPosition? saved = await repo.findByTtuBookId(widget.bookId);
-    if (saved != null &&
-        saved.sectionIndex >= 0 &&
-        saved.sectionIndex < _book!.chapters.length) {
-      _currentChapter = saved.sectionIndex;
-      _initialProgress = saved.normCharOffset / 10000.0;
+    final Bookmark? bm = widget.initialBookmarkJump;
+    if (bm != null &&
+        bm.sectionIndex >= 0 &&
+        bm.sectionIndex < _book!.chapters.length) {
+      _currentChapter = bm.sectionIndex;
+      _initialProgress = bm.normCharOffset / 10000.0;
+    } else {
+      final ReaderPositionRepository repo =
+          ReaderPositionRepository(appModel.database);
+      final ReaderPosition? saved = await repo.findByTtuBookId(widget.bookId);
+      if (saved != null &&
+          saved.sectionIndex >= 0 &&
+          saved.sectionIndex < _book!.chapters.length) {
+        _currentChapter = saved.sectionIndex;
+        _initialProgress = saved.normCharOffset / 10000.0;
+      }
     }
 
     if (_settings!.keepScreenAwake) {
@@ -358,7 +366,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   String _buildReaderSetupScript() {
     final ReaderSettings s = _settings!;
-    final String css = ReaderContentStyles.css(settings: s);
     final String selectionJs = ReaderSelectionScripts.source();
     final String paginationJs = _stripScriptTags(
       ReaderPaginationScripts.shellScript(
@@ -370,10 +377,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
     return '''
 (function() {
-  var style = document.createElement('style');
-  style.textContent = ${jsonEncode(css)};
-  document.head.appendChild(style);
-  document.documentElement.style.visibility = 'visible';
   window.scanNonJapaneseText = false;
   $selectionJs
   $paginationJs
@@ -438,8 +441,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       initialUserScripts: UnmodifiableListView<UserScript>(<UserScript>[
         UserScript(
           source:
-              'window.onerror=function(m,s,l,c,e){console.error("__HIBIKI_JS_ERROR__ "+m+" at "+s+":"+l+":"+c);return false;};'
-              'document.documentElement.style.visibility="hidden";',
+              'window.onerror=function(m,s,l,c,e){console.error("__HIBIKI_JS_ERROR__ "+m+" at "+s+":"+l+":"+c);return false;};',
           injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
         ),
       ]),
