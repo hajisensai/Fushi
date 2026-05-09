@@ -14,6 +14,7 @@ import 'package:hibiki/src/epub/epub_book.dart';
 import 'package:hibiki/src/epub/epub_parser.dart';
 import 'package:hibiki/src/epub/epub_storage.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_controller.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
 import 'package:hibiki/src/media/audiobook/reading_time_tracker.dart';
@@ -90,7 +91,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       _stableTopInset + (_showTopProgress ? _topProgressBarHeight : 0);
 
   double get _readerBottomReserve =>
-      (_showChrome ? _readerChromeHeight : 0) + _stableBottomInset;
+      _readerChromeHeight + _stableBottomInset;
 
   @override
   void initState() {
@@ -523,7 +524,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       setState(() {
         _readerContentReady = true;
       });
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+      SystemChrome.setEnabledSystemUIMode(
+        _showChrome ? SystemUiMode.edgeToEdge : SystemUiMode.immersiveSticky,
+      );
     }
 
     _readingTimeTracker ??= ReadingTimeTracker(appModel.database);
@@ -545,6 +548,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _currentChapter = index;
     _initialProgress = progress;
     _restoreInFlight = true;
+    setState(() {
+      _readerContentReady = false;
+    });
 
     final String url = _chapterUrl(index);
     await _controller!.loadUrl(urlRequest: URLRequest(url: WebUri(url)));
@@ -561,6 +567,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _initialProgress = 0.0;
     _initialFragment = fragment;
     _restoreInFlight = true;
+    setState(() {
+      _readerContentReady = false;
+    });
 
     final String url = _chapterUrl(index);
     await _controller!.loadUrl(urlRequest: URLRequest(url: WebUri(url)));
@@ -759,63 +768,68 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   }
 
   Widget _buildBottomChrome() {
-    if (!_showChrome || !_readerContentReady) {
+    if (!_readerContentReady) {
       return const SizedBox.shrink();
     }
+    if (_audiobookController != null) {
+      return _buildAudiobookBar();
+    }
+    return _buildSettingsBar();
+  }
 
-    final Color textColor = _themeTextColor();
+  Widget _buildAudiobookBar() {
     return Positioned(
-      bottom: _stableBottomInset,
       left: 0,
       right: 0,
-      height: _readerChromeHeight,
-      child: Container(
-        color: _themeBackgroundColor().withValues(alpha: 0.95),
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: <Widget>[
-            IconButton(
-              icon: Icon(Icons.chevron_left, color: textColor, size: 28),
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-            PopupMenuButton<String>(
-              icon: Icon(Icons.tune, color: textColor),
-              color: _themeBackgroundColor(),
-              onSelected: (String value) {
-                if (value == 'chapters') {
-                  _showChapterSheet();
-                } else if (value == 'appearance') {
-                  _showAppearanceSheet();
-                }
-              },
-              itemBuilder: (BuildContext ctx) => <PopupMenuEntry<String>>[
-                PopupMenuItem<String>(
-                  value: 'appearance',
-                  child: Row(
-                    children: <Widget>[
-                      Icon(Icons.palette_outlined, color: textColor),
-                      const SizedBox(width: 12),
-                      Text('Appearance',
-                          style: TextStyle(color: textColor)),
-                    ],
-                  ),
+      bottom: 0,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          AudiobookPlayBar(
+            controller: _audiobookController!,
+            onOpenSettings: _showAppearanceSheet,
+          ),
+          SizedBox(height: _stableBottomInset),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSettingsBar() {
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: 0,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          BottomAppBar(
+            height: _readerChromeHeight,
+            color: _themeBackgroundColor(),
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Row(
+              children: <Widget>[
+                IconButton(
+                  icon: Icon(Icons.arrow_back, color: _themeTextColor()),
+                  iconSize: 22,
+                  onPressed: () => Navigator.of(context).pop(),
                 ),
-                PopupMenuItem<String>(
-                  value: 'chapters',
-                  child: Row(
-                    children: <Widget>[
-                      Icon(Icons.list, color: textColor),
-                      const SizedBox(width: 12),
-                      Text('Chapters',
-                          style: TextStyle(color: textColor)),
-                    ],
-                  ),
+                const Spacer(),
+                IconButton(
+                  icon: Icon(Icons.list, color: _themeTextColor()),
+                  iconSize: 20,
+                  onPressed: _showChapterSheet,
+                ),
+                IconButton(
+                  icon: Icon(Icons.tune, color: _themeTextColor()),
+                  iconSize: 20,
+                  onPressed: _showAppearanceSheet,
                 ),
               ],
             ),
-          ],
-        ),
+          ),
+          SizedBox(height: _stableBottomInset),
+        ],
       ),
     );
   }
