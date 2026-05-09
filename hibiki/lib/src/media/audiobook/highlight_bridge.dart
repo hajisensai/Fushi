@@ -21,9 +21,7 @@ class HighlightBridge {
   };
 
   function _root() {
-    return document.querySelector('.book-content-container')
-        || document.querySelector('.book-content')
-        || document.body;
+    return document.body;
   }
 
   function _walker(root) {
