@@ -27,6 +27,7 @@ import 'package:hibiki/src/reader/reader_selection_data.dart';
 import 'package:hibiki/src/reader/reader_selection_scripts.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/utils/misc/jidoujisho_text_selection.dart';
+import 'package:wakelock/wakelock.dart';
 
 class ReaderHoshiPage extends BaseSourcePage {
   const ReaderHoshiPage({
@@ -140,6 +141,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       _initialProgress = saved.normCharOffset / 10000.0;
     }
 
+    if (_settings!.keepScreenAwake) {
+      Wakelock.enable();
+    }
+
     if (mounted) {
       setState(() {});
     }
@@ -203,6 +208,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _audiobookController?.dispose();
     _readingTimeTracker?.dispose();
     _focusNode.dispose();
+    Wakelock.disable();
     super.dispose();
   }
 
