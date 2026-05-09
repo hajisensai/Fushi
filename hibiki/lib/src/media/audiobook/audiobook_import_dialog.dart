@@ -55,6 +55,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
   String? _alignmentPath;
   String? _alignmentName;
   bool _importing = false;
+  bool _pickerActive = false;
   final ValueNotifier<double> _progress = ValueNotifier<double>(0.0);
   final ValueNotifier<String> _progressMsg = ValueNotifier<String>('');
 
@@ -425,52 +426,68 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
   // ── 文件/目录选择 ────────────────────────────────────────────────────────────
 
   Future<void> _pickAudioDir() async {
-    final String? dir = await FilePicker.platform.getDirectoryPath();
-    if (dir != null && mounted) {
-      setState(() {
-        _audioDir = dir;
-        _audioPaths = null;
-      });
+    if (_pickerActive) return;
+    _pickerActive = true;
+    try {
+      final String? dir = await FilePicker.platform.getDirectoryPath();
+      if (dir != null && mounted) {
+        setState(() {
+          _audioDir = dir;
+          _audioPaths = null;
+        });
+      }
+    } finally {
+      _pickerActive = false;
     }
   }
 
   Future<void> _pickAudioFiles() async {
-    final FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.audio,
-      allowMultiple: true,
-    );
-    if (result == null || !mounted) return;
+    if (_pickerActive) return;
+    _pickerActive = true;
+    try {
+      final FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.audio,
+        allowMultiple: true,
+      );
+      if (result == null || !mounted) return;
 
-    final List<String> paths = result.files
-        .map((f) => f.path)
-        .whereType<String>()
-        .toList()
-      ..sort();
+      final List<String> paths = result.files
+          .map((f) => f.path)
+          .whereType<String>()
+          .toList()
+        ..sort();
 
-    if (paths.isNotEmpty) {
-      setState(() {
-        _audioPaths = paths;
-        _audioDir = null;
-      });
+      if (paths.isNotEmpty) {
+        setState(() {
+          _audioPaths = paths;
+          _audioDir = null;
+        });
+      }
+    } finally {
+      _pickerActive = false;
     }
   }
 
   Future<void> _pickAlignment() async {
-    final FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['smil', 'json', 'srt', 'lrc', 'vtt', 'ass'],
-    );
-    final PlatformFile? file = result?.files.single;
-    final String? path = file?.path;
-    if (path != null && file != null && mounted) {
-      setState(() {
-        _alignmentPath = path;
-        _alignmentName = file.name;
-        // 换了 alignment 文件 → cue 可能完全不同，清掉 probe cue 缓存。
-        // sections 来源只与 ttuBookId 相关，不清。
-        _probedCues = null;
-        _probedCuesSourcePath = null;
-      });
+    if (_pickerActive) return;
+    _pickerActive = true;
+    try {
+      final FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['smil', 'json', 'srt', 'lrc', 'vtt', 'ass'],
+      );
+      final PlatformFile? file = result?.files.single;
+      final String? path = file?.path;
+      if (path != null && file != null && mounted) {
+        setState(() {
+          _alignmentPath = path;
+          _alignmentName = file.name;
+          _probedCues = null;
+          _probedCuesSourcePath = null;
+        });
+      }
+    } finally {
+      _pickerActive = false;
     }
   }
 
