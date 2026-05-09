@@ -1,22 +1,20 @@
-import 'dart:async';
-import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:path/path.dart' as p;
+import 'package:hibiki/src/epub/epub_storage.dart';
 import 'package:hibiki/utils.dart';
 
 class IllustrationsViewerPage extends StatefulWidget {
   const IllustrationsViewerPage({
     required this.bookTitle,
-    required this.ttuBookId,
-    required this.port,
+    required this.bookId,
     super.key,
   });
 
   final String bookTitle;
-  final int ttuBookId;
-  final int port;
+  final int bookId;
 
   @override
   State<IllustrationsViewerPage> createState() =>
@@ -34,201 +32,57 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
     _extractImages();
   }
 
+  static const Set<String> _imageExtensions = {
+    '.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg',
+  };
+
   Future<void> _extractImages() async {
-    bool jsInjected = false;
-    final completer = Completer<void>();
-    int expectedCount = -1;
-
-    final HeadlessInAppWebView webView = HeadlessInAppWebView(
-      initialSettings: InAppWebViewSettings(
-        databaseEnabled: true,
-        domStorageEnabled: true,
-      ),
-      initialUrlRequest: URLRequest(
-        url: WebUri('http://localhost:${widget.port}/_hibiki_idb.html'),
-      ),
-      onLoadStop: (controller, url) async {
-        if (!jsInjected) {
-          jsInjected = true;
-          await controller.evaluateJavascript(source: _extractImagesJs);
-        }
-      },
-      onReceivedError: (controller, request, error) {
-        if (!completer.isCompleted) {
-          completer.completeError(error.description);
-        }
-      },
-      onConsoleMessage: (controller, message) {
-        try {
-          final Map<String, dynamic> json = jsonDecode(message.message);
-          final String? msgType = json['messageType'] as String?;
-
-          if (msgType == 'illustrations_count') {
-            expectedCount = json['count'] as int;
-            if (expectedCount == 0 && !completer.isCompleted) {
-              completer.complete();
-            }
-          } else if (msgType == 'illustration') {
-            final String base64Data = json['data'] as String;
-            final int commaIdx = base64Data.indexOf(',');
-            final String raw =
-                commaIdx >= 0 ? base64Data.substring(commaIdx + 1) : base64Data;
-            try {
-              final bytes = base64Decode(raw);
-              if (mounted) {
-                setState(() => _images.add(bytes));
-              }
-              if (_images.length >= expectedCount &&
-                  !completer.isCompleted) {
-                completer.complete();
-              }
-            } catch (e) {
-              debugPrint('[Hibiki] illustration decode failed: $e');
-            }
-          } else if (msgType == 'illustrations_error') {
-            if (!completer.isCompleted) {
-              completer.completeError(
-                  json['error'] ?? 'Failed to extract images');
-            }
-          }
-        } on FormatException catch (_) {}
-      },
-    );
-
     try {
-      await webView.run();
-      await completer.future.timeout(const Duration(seconds: 30));
+      final String extractDir =
+          await EpubStorage.bookDirectory(widget.bookId);
+      final Directory dir = Directory(extractDir);
+      if (!dir.existsSync()) {
+        if (mounted) {
+          setState(() {
+            _error = 'Book directory not found';
+            _loading = false;
+          });
+        }
+        return;
+      }
+
+      final List<File> imageFiles = dir
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((f) {
+            final String ext = p.extension(f.path).toLowerCase();
+            return _imageExtensions.contains(ext);
+          })
+          .toList();
+
+      for (final File file in imageFiles) {
+        if (!mounted) {
+          return;
+        }
+        try {
+          final Uint8List bytes = file.readAsBytesSync();
+          if (bytes.isNotEmpty) {
+            setState(() => _images.add(bytes));
+          }
+        } catch (e) {
+          debugPrint('[Hibiki] illustration read failed: $e');
+        }
+      }
     } catch (e) {
       if (mounted) {
         setState(() => _error = e.toString());
       }
     } finally {
-      await webView.dispose();
       if (mounted) {
         setState(() => _loading = false);
       }
     }
   }
-
-  String get _extractImagesJs => '''
-(async function() {
-  try {
-    var bookId = ${widget.ttuBookId};
-
-    function getFromIDB(storeName, key) {
-      return new Promise(function(resolve, reject) {
-        var req = indexedDB.open("books");
-        req.onupgradeneeded = function(e) {
-          e.target.transaction.abort();
-          reject(Error("DB not initialized"));
-        };
-        req.onerror = function() { reject(Error("Cannot open IDB")); };
-        req.onsuccess = function(e) {
-          var db = e.target.result;
-          try {
-            var tx = db.transaction([storeName], 'readonly');
-            var store = tx.objectStore(storeName);
-            var getReq = store.get(key);
-            getReq.onsuccess = function() { resolve(getReq.result); };
-            getReq.onerror = function() { reject(Error("Get failed")); };
-          } catch(ex) { reject(ex); }
-        };
-      });
-    }
-
-    function blobToBase64(blob) {
-      return new Promise(function(resolve, reject) {
-        var reader = new FileReader();
-        reader.onload = function() { resolve(reader.result); };
-        reader.onerror = function() { reject(Error("FileReader error")); };
-        reader.readAsDataURL(blob);
-      });
-    }
-
-    var bookData = await getFromIDB('data', bookId);
-    if (!bookData) {
-      console.log(JSON.stringify({messageType: 'illustrations_error', error: 'Book not found in IDB'}));
-      return;
-    }
-
-    var images = [];
-    var sections = bookData.sections || bookData.htmlContent || [];
-
-    for (var i = 0; i < sections.length; i++) {
-      var html = '';
-      if (typeof sections[i] === 'string') {
-        html = sections[i];
-      } else if (sections[i] && sections[i].innerHTML) {
-        html = sections[i].innerHTML;
-      } else if (sections[i] && sections[i].htmlContent) {
-        html = sections[i].htmlContent;
-      } else {
-        continue;
-      }
-
-      var parser = new DOMParser();
-      var doc = parser.parseFromString(html, 'text/html');
-      var imgs = doc.querySelectorAll('img, image');
-      for (var j = 0; j < imgs.length; j++) {
-        var src = imgs[j].getAttribute('src') || imgs[j].getAttribute('href') || imgs[j].getAttribute('xlink:href') || '';
-        if (src) images.push(src);
-      }
-    }
-
-    if (bookData.blobs) {
-      var imgExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg'];
-
-      // Build ordered list: match each src from sections to a blob key
-      var orderedBlobs = [];
-      var usedKeys = {};
-      for (var si = 0; si < images.length; si++) {
-        var src = images[si];
-        var srcFile = src.split('/').pop().split('?')[0].split('#')[0];
-        var blobKeys = Object.keys(bookData.blobs);
-        for (var ki = 0; ki < blobKeys.length; ki++) {
-          var bk = blobKeys[ki];
-          if (usedKeys[bk]) continue;
-          var bkFile = bk.split('/').pop();
-          if (src.indexOf(bk) >= 0 || bk.indexOf(src) >= 0 ||
-              srcFile === bkFile || bk.endsWith(srcFile)) {
-            orderedBlobs.push(bk);
-            usedKeys[bk] = true;
-            break;
-          }
-        }
-      }
-
-      // Append any remaining image blobs not referenced in sections
-      var allBlobKeys = Object.keys(bookData.blobs);
-      for (var ai = 0; ai < allBlobKeys.length; ai++) {
-        var key = allBlobKeys[ai];
-        if (usedKeys[key]) continue;
-        var lower = key.toLowerCase();
-        if (imgExtensions.some(function(ext) { return lower.endsWith(ext); })) {
-          orderedBlobs.push(key);
-        }
-      }
-
-      console.log(JSON.stringify({messageType: 'illustrations_count', count: orderedBlobs.length}));
-
-      for (var ri = 0; ri < orderedBlobs.length; ri++) {
-        try {
-          var blob = bookData.blobs[orderedBlobs[ri]];
-          if (blob instanceof Blob) {
-            var b64 = await blobToBase64(blob);
-            console.log(JSON.stringify({messageType: 'illustration', data: b64}));
-          }
-        } catch(e) {}
-      }
-    } else {
-      console.log(JSON.stringify({messageType: 'illustrations_count', count: 0}));
-    }
-
-  } catch(e) {
-    console.log(JSON.stringify({messageType: 'illustrations_error', error: e.message || String(e)}));
-  }
-})();
-''';
 
   @override
   Widget build(BuildContext context) {

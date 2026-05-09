@@ -629,16 +629,13 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
   }
 
   void _openIllustrations(MediaItem item, int ttuBookId) {
-    final int port = ReaderTtuSource.instance
-        .getPortForLanguage(appModel.targetLanguage);
     Navigator.pop(context);
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => IllustrationsViewerPage(
           bookTitle: item.title,
-          ttuBookId: ttuBookId,
-          port: port,
+          bookId: ttuBookId,
         ),
       ),
     );

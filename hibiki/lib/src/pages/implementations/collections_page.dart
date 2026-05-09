@@ -19,15 +19,13 @@ enum _CollectionType { bookmark, sentence }
 
 MediaItem buildCollectionReaderMediaItem({
   required int ttuId,
-  required int port,
   required String title,
 }) {
   return MediaItem(
-    mediaIdentifier:
-        'http://localhost:$port/b.html?id=$ttuId&?title=$title',
+    mediaIdentifier: 'hoshi://book/$ttuId',
     title: title,
-    mediaTypeIdentifier: ReaderTtuSource.instance.mediaType.uniqueKey,
-    mediaSourceIdentifier: ReaderTtuSource.instance.uniqueKey,
+    mediaTypeIdentifier: ReaderHoshiSource.instance.mediaType.uniqueKey,
+    mediaSourceIdentifier: ReaderHoshiSource.instance.uniqueKey,
     position: 0,
     duration: 1,
     canDelete: false,
@@ -203,14 +201,11 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     final int? ttuId = item.ttuBookId;
     if (ttuId == null || ttuId <= 0) return;
 
-    final int port =
-        ReaderTtuSource.instance.getPortForLanguage(appModel.targetLanguage);
     final String title =
         _bookTitleMap[ttuId] ?? item.bookTitle ?? '';
 
     final MediaItem mediaItem = buildCollectionReaderMediaItem(
       ttuId: ttuId,
-      port: port,
       title: title,
     );
 
@@ -225,7 +220,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
     appModel.openMedia(
       ref: ref,
-      mediaSource: ReaderTtuSource.instance,
+      mediaSource: ReaderHoshiSource.instance,
       item: mediaItem,
       initialBookmarkJump: bookmark,
     );
