@@ -70,8 +70,11 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   int? _progressTotalChars;
 
   int _sessionCharsRead = 0;
-  int _highWaterChars = 0;
+  int _lastAbsoluteCount = 0;
   DateTime _sessionStartTime = DateTime.now();
+
+  List<int> _chapterCharCounts = [];
+  List<int> _chapterCumulativeChars = [];
 
   Timer? _saveDebounce;
   int _lastSavedSection = -1;
@@ -134,6 +137,17 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final List<String> hrefs =
         _book!.chapters.map((EpubChapter ch) => ch.href).toList();
     debugPrint('[ReaderHoshi] chapter hrefs: $hrefs');
+
+    _chapterCharCounts = List<int>.generate(
+      _book!.chapters.length,
+      (int i) => _book!.chapterPlainText(i).length,
+    );
+    int cumulative = 0;
+    _chapterCumulativeChars = <int>[];
+    for (final int count in _chapterCharCounts) {
+      _chapterCumulativeChars.add(cumulative);
+      cumulative += count;
+    }
 
     await _resolveAudioSlot();
 
@@ -556,6 +570,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _readingTimeTracker ??= ReadingTimeTracker(appModel.database);
     _readingTimeTracker!.start();
     _sessionStartTime = DateTime.now();
+    _lastAbsoluteCount = _absoluteCharPosition(_initialProgress);
 
     _refreshProgress();
   }
@@ -570,7 +585,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       return;
     }
 
-    _highWaterChars = 0;
     _flushReadingStats();
 
     _currentChapter = index;
@@ -591,7 +605,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (_book == null || index < 0 || index >= _book!.chapters.length) return;
     if (_controller == null) return;
 
-    _highWaterChars = 0;
     _flushReadingStats();
 
     _currentChapter = index;
@@ -686,12 +699,15 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final int? total = int.tryParse(parts[1]);
     if (current == null || total == null || total <= 0) return;
 
-    if (current > _highWaterChars) {
-      _sessionCharsRead += current - _highWaterChars;
-      _highWaterChars = current;
-    }
-
     final double progress = current / total;
+    final int absoluteChars = _absoluteCharPosition(progress);
+    final int charDiff = absoluteChars - _lastAbsoluteCount;
+    if (charDiff < 0 && charDiff.abs() > _sessionCharsRead) {
+      _sessionCharsRead = 0;
+    } else {
+      _sessionCharsRead += charDiff;
+    }
+    _lastAbsoluteCount = absoluteChars;
     _debouncedSavePosition(progress);
 
     if (mounted) {
@@ -745,6 +761,15 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         await _persistPosition(_currentChapter, progress);
       }
     } catch (_) {}
+  }
+
+  int _absoluteCharPosition(double progress) {
+    if (_chapterCumulativeChars.isEmpty ||
+        _currentChapter >= _chapterCumulativeChars.length) {
+      return 0;
+    }
+    return _chapterCumulativeChars[_currentChapter] +
+        (progress * _chapterCharCounts[_currentChapter]).round();
   }
 
   void _flushReadingStats() {
