@@ -69,6 +69,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   int? _progressCurrentChars;
   int? _progressTotalChars;
 
+  int _sessionCharsRead = 0;
+  int _lastCharsInChapter = 0;
+  DateTime _sessionStartTime = DateTime.now();
+
   Timer? _saveDebounce;
   int _lastSavedSection = -1;
   double _lastSavedProgress = -1;
@@ -207,6 +211,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     WidgetsBinding.instance.removeObserver(this);
     _saveDebounce?.cancel();
     _flushPosition();
+    _flushReadingStats();
     _audiobookController?.dispose();
     _readingTimeTracker?.dispose();
     _focusNode.dispose();
@@ -321,6 +326,19 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       final String cssText = utf8.decode(data);
       final String sanitized = ReaderResourceSanitizer.sanitizeCss(cssText);
       data = Uint8List.fromList(utf8.encode(sanitized));
+    }
+
+    if ((mime == 'text/html' || mime.contains('xhtml')) && _settings != null) {
+      String html = utf8.decode(data);
+      final String styleTag = ReaderContentStyles.styleTag(settings: _settings!);
+      final RegExp headPattern = RegExp(r'<head[^>]*>', caseSensitive: false);
+      final RegExpMatch? headMatch = headPattern.firstMatch(html);
+      if (headMatch != null) {
+        html = '${html.substring(0, headMatch.end)}\n$styleTag${html.substring(headMatch.end)}';
+      } else {
+        html = '$styleTag\n$html';
+      }
+      data = Uint8List.fromList(utf8.encode(html));
     }
 
     return WebResourceResponse(
@@ -549,6 +567,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       return;
     }
 
+    _lastCharsInChapter = 0;
+    _flushReadingStats();
+
     _currentChapter = index;
     _initialProgress = progress;
     _restoreInFlight = true;
@@ -566,6 +587,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   ) async {
     if (_book == null || index < 0 || index >= _book!.chapters.length) return;
     if (_controller == null) return;
+
+    _lastCharsInChapter = 0;
+    _flushReadingStats();
 
     _currentChapter = index;
     _initialProgress = 0.0;
@@ -659,6 +683,11 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final int? total = int.tryParse(parts[1]);
     if (current == null || total == null || total <= 0) return;
 
+    if (current > _lastCharsInChapter) {
+      _sessionCharsRead += current - _lastCharsInChapter;
+    }
+    _lastCharsInChapter = current;
+
     final double progress = current / total;
     _debouncedSavePosition(progress);
 
@@ -713,6 +742,26 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         await _persistPosition(_currentChapter, progress);
       }
     } catch (_) {}
+  }
+
+  void _flushReadingStats() {
+    if (_sessionCharsRead <= 0 || _book?.title == null) return;
+    final DateTime now = DateTime.now();
+    final int elapsedMs = now.difference(_sessionStartTime).inMilliseconds;
+    final String dateKey =
+        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    appModel.database
+        .addReadingStatistic(
+          title: _book!.title,
+          dateKey: dateKey,
+          charsRead: _sessionCharsRead,
+          timeMs: elapsedMs,
+        )
+        .catchError((Object e) {
+      debugPrint('[ReaderHoshi] stats flush error: $e');
+    });
+    _sessionCharsRead = 0;
+    _sessionStartTime = DateTime.now();
   }
 
   // ── Key Navigation ────────────────────────────────────────────────
