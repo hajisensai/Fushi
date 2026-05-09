@@ -47,6 +47,8 @@ import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
 import 'package:hibiki/src/media/audiobook/reader_position_model.dart';
 import 'package:hibiki/src/media/audiobook/reading_statistic_model.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_model.dart';
+import 'package:hibiki/src/epub/ttu_migration.dart';
+import 'package:hibiki/src/epub/ttu_migration_server.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 
 /// A list of fields that the app will support at runtime.
@@ -1162,6 +1164,21 @@ class AppModel with ChangeNotifier {
         for (MediaSource source in mediaSources[type]!.values) {
           await source.initialise();
         }
+      }
+
+      debugPrint('[Hibiki] init: ttu → EpubBooks migration');
+      try {
+        final migServer =
+            await TtuMigrationServer.start(targetLanguage);
+        final int migCount = await TtuMigration.migrateIfNeeded(
+          _database,
+          migServer.boundPort!,
+        );
+        if (migCount > 0) {
+          debugPrint('[Hibiki] ttu migration: $migCount books migrated');
+        }
+      } catch (e) {
+        debugPrint('[Hibiki] ttu migration failed (non-fatal): $e');
       }
 
       debugPrint('[Hibiki] init: search preload');
