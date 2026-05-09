@@ -270,7 +270,7 @@ class ReaderHoshiSource extends ReaderMediaSource {
         mediaSourceIdentifier: uniqueKey,
         position: position,
         duration: duration,
-        canDelete: true,
+        canDelete: false,
         canEdit: true,
         sourceMetadata:
             totalChars > 0 ? jsonEncode(sectionChars) : null,

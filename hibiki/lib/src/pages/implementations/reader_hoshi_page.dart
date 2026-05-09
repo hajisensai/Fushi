@@ -252,11 +252,11 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
               ),
               _buildTopProgressBar(),
               buildDictionary(),
-              _buildBottomChrome(),
               if (!_readerContentReady)
                 Positioned.fill(
                   child: ColoredBox(color: bgColor),
                 ),
+              _buildBottomChrome(),
             ],
           ),
         ),
@@ -784,54 +784,61 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       left: 0,
       right: 0,
       bottom: 0,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          AudiobookPlayBar(
-            controller: _audiobookController!,
-            onOpenSettings: _showAppearanceSheet,
-          ),
-          SizedBox(height: _stableBottomInset),
-        ],
+      child: Container(
+        color: _themeBackgroundColor(),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            AudiobookPlayBar(
+              controller: _audiobookController!,
+              onOpenSettings: _showAppearanceSheet,
+            ),
+            SizedBox(height: _stableBottomInset),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildSettingsBar() {
+    final Color bg = _themeBackgroundColor();
     return Positioned(
       left: 0,
       right: 0,
       bottom: 0,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          BottomAppBar(
-            height: _readerChromeHeight,
-            color: _themeBackgroundColor(),
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Row(
-              children: <Widget>[
-                IconButton(
-                  icon: Icon(Icons.arrow_back, color: _themeTextColor()),
-                  iconSize: 22,
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-                const Spacer(),
-                IconButton(
-                  icon: Icon(Icons.list, color: _themeTextColor()),
-                  iconSize: 20,
-                  onPressed: _showChapterSheet,
-                ),
-                IconButton(
-                  icon: Icon(Icons.tune, color: _themeTextColor()),
-                  iconSize: 20,
-                  onPressed: _showAppearanceSheet,
-                ),
-              ],
+      child: Container(
+        color: bg,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            BottomAppBar(
+              height: _readerChromeHeight,
+              color: bg,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Row(
+                children: <Widget>[
+                  IconButton(
+                    icon: Icon(Icons.arrow_back, color: _themeTextColor()),
+                    iconSize: 22,
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: Icon(Icons.list, color: _themeTextColor()),
+                    iconSize: 20,
+                    onPressed: _showChapterSheet,
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.tune, color: _themeTextColor()),
+                    iconSize: 20,
+                    onPressed: _showAppearanceSheet,
+                  ),
+                ],
+              ),
             ),
-          ),
-          SizedBox(height: _stableBottomInset),
-        ],
+            SizedBox(height: _stableBottomInset),
+          ],
+        ),
       ),
     );
   }

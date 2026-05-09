@@ -53,9 +53,13 @@ class EpubImporter {
             )
           : null;
 
+      final String resolvedTitle = book.title == p.basenameWithoutExtension(extractDir)
+          ? p.basenameWithoutExtension(fileName)
+          : book.title;
+
       final int bookId = await db.into(db.epubBooks).insert(
             EpubBooksCompanion.insert(
-              title: book.title,
+              title: resolvedTitle,
               author: book.author != null ? Value(book.author!) : const Value.absent(),
               coverPath: book.coverHref != null ? Value(book.coverHref!) : const Value.absent(),
               epubPath: fileName,
