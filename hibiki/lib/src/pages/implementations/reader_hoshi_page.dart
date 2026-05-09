@@ -245,14 +245,16 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
               Positioned.fill(
                 top: _readerTopOffset,
                 bottom: _readerBottomReserve,
-                child: _buildBody(),
+                child: Opacity(
+                  opacity: _readerContentReady ? 1.0 : 0.0,
+                  child: _buildBody(),
+                ),
               ),
               _buildTopProgressBar(),
               buildDictionary(),
               _buildBottomChrome(),
               if (!_readerContentReady)
                 Positioned.fill(
-                  top: _stableTopInset,
                   child: ColoredBox(color: bgColor),
                 ),
             ],
