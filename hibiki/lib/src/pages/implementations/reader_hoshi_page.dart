@@ -702,6 +702,11 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
             }
           },
         );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'onImageDetected',
+          callback: (_) => _audiobookController?.triggerImagePause(),
+        );
       },
       shouldInterceptRequest:
           (InAppWebViewController controller, WebResourceRequest request) async {

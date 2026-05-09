@@ -144,6 +144,36 @@ window.__sasayakiRequestNav = async function(n) {
 };
 ''';
 
+  /// 图片进入视口检测 — IntersectionObserver 监测 <img> / <svg>，回调 Flutter。
+  static const String _imagePauseFn = r'''
+(function() {
+  if (window.__hoshiImageObserver) return;
+  var cooldown = false;
+  window.__hoshiImageObserver = new IntersectionObserver(function(entries) {
+    if (cooldown) return;
+    for (var i = 0; i < entries.length; i++) {
+      if (entries[i].isIntersecting) {
+        cooldown = true;
+        if (window.flutter_inappwebview) {
+          window.flutter_inappwebview.callHandler('onImageDetected');
+        }
+        setTimeout(function() { cooldown = false; }, 3000);
+        break;
+      }
+    }
+  }, { threshold: 0.3 });
+  function observe() {
+    var imgs = document.querySelectorAll('img, svg');
+    for (var j = 0; j < imgs.length; j++) {
+      window.__hoshiImageObserver.observe(imgs[j]);
+    }
+  }
+  observe();
+  var mo = new MutationObserver(function() { observe(); });
+  mo.observe(document.body || document.documentElement, { childList: true, subtree: true });
+})();
+''';
+
   /// 自动句子标注函数：按日文句末标点分割文本节点，包裹 data-hoshi-sid span。
   static const String _annotateFn = '''
 window.__hoshiAnnotate = function(chapterHref) {
@@ -225,6 +255,7 @@ window.__hoshiAnnotate = function(chapterHref) {
     await controller.evaluateJavascript(source: _sasayakiFn);
     await controller.evaluateJavascript(source: _chapterNavFn);
     await controller.evaluateJavascript(source: _annotateFn);
+    await controller.evaluateJavascript(source: _imagePauseFn);
   }
 
   /// 高亮 [cue] 对应的句子。
