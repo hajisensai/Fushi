@@ -16,6 +16,11 @@ import 'package:hibiki/src/epub/epub_book.dart';
 class EpubParser {
   /// Parse EPUB [bytes], extract to [extractDir], return [EpubBook].
   static Future<EpubBook> parse(Uint8List bytes, String extractDir) async {
+    return parseSync(bytes, extractDir);
+  }
+
+  /// Synchronous parse — safe for use in `compute()` isolates.
+  static EpubBook parseSync(Uint8List bytes, String extractDir) {
     final Archive archive = ZipDecoder().decodeBytes(bytes);
     _extractArchive(archive, extractDir);
     return parseFromExtracted(extractDir);
