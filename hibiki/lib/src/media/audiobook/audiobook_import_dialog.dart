@@ -62,6 +62,9 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
   /// 已有记录但缺音频源 → 进入"补音频"模式，显示导入表单而非只读视图。
   bool _patchingAudio = false;
 
+  Audiobook? _existing;
+  bool _existingLoaded = false;
+
   int _searchWindow = EpubSrtMatcher.defaultSearchWindow;
   double _similarityThreshold = EpubSrtMatcher.defaultSimilarityThreshold;
 
@@ -111,12 +114,15 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
 
   Future<void> _initExisting() async {
     final Audiobook? existing = await widget.repo.findByBookUid(widget.bookUid);
-    if (existing != null && !_existingHasAudio(existing) && mounted) {
-      setState(() {
+    if (!mounted) return;
+    setState(() {
+      _existing = existing;
+      _existingLoaded = true;
+      if (existing != null && !_existingHasAudio(existing)) {
         _patchingAudio = true;
         _alignmentPath = existing.alignmentPath;
-      });
-    }
+      }
+    });
   }
 
   static bool _existingHasAudio(Audiobook ab) =>
@@ -127,65 +133,66 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<Audiobook?>(
-      future: widget.repo.findByBookUid(widget.bookUid),
-      builder: (context, snapshot) {
-        final Audiobook? existing = snapshot.data;
-        debugPrint('[hibiki-audiobook] dialog build bookUid.len=${widget.bookUid.length} '
-            'hash=${widget.bookUid.hashCode} existing=${existing != null} patching=$_patchingAudio');
+    if (!_existingLoaded) {
+      return const AlertDialog(
+        content: SizedBox(
+          height: 64,
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      );
+    }
 
-        final bool showImportForm = existing == null || _patchingAudio;
+    final Audiobook? existing = _existing;
+    final bool showImportForm = existing == null || _patchingAudio;
 
-        return AlertDialog(
-          title: Text(
-            showImportForm ? t.audiobook_import : t.audiobook_attached,
-          ),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: showImportForm
-                ? SingleChildScrollView(child: _buildImportForm())
-                : _buildAttachedView(existing!),
-          ),
-          actions: showImportForm
-              ? [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: Text(t.dialog_cancel),
-                  ),
-                  FilledButton(
-                    onPressed: _importing ? null : _doImport,
-                    child: _importing
-                        ? Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white70,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Text(t.dialog_importing),
-                            ],
-                          )
-                        : Text(t.dialog_import),
-                  ),
-                ]
-              : [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: Text(t.dialog_close),
-                  ),
-                  _destructiveFilledButton(
-                    context: context,
-                    label: t.audiobook_remove,
-                    onPressed: () => _removeAudiobook(existing!),
-                  ),
-                ],
-        );
-      },
+    return AlertDialog(
+      title: Text(
+        showImportForm ? t.audiobook_import : t.audiobook_attached,
+      ),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: showImportForm
+            ? SingleChildScrollView(child: _buildImportForm())
+            : _buildAttachedView(existing!),
+      ),
+      actions: showImportForm
+          ? [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text(t.dialog_cancel),
+              ),
+              FilledButton(
+                onPressed: _importing ? null : _doImport,
+                child: _importing
+                    ? Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white70,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(t.dialog_importing),
+                        ],
+                      )
+                    : Text(t.dialog_import),
+              ),
+            ]
+          : [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text(t.dialog_close),
+              ),
+              _destructiveFilledButton(
+                context: context,
+                label: t.audiobook_remove,
+                onPressed: () => _removeAudiobook(existing!),
+              ),
+            ],
     );
   }
 

@@ -86,19 +86,6 @@ window.__hoshiIsSkippable = function(c) {
   return true;
 };
 
-if (!document.__hoshiSasayakiClickRegistered) {
-  document.__hoshiSasayakiClickRegistered = true;
-  document.addEventListener('click', function(e) {
-    var span = e.target.closest('[data-sasayaki-key]');
-    if (!span) return;
-    var key = span.getAttribute('data-sasayaki-key');
-    if (!key) return;
-    if (window.flutter_inappwebview) {
-      window.flutter_inappwebview.callHandler('onSasayakiCueClick', key);
-    }
-  }, true);
-}
-
 window.__hoshiSasayakiCueMap = window.__hoshiSasayakiCueMap || null;
 
 window.__hoshiClearSasayakiApplied = function() {
@@ -208,17 +195,6 @@ window.__hoshiAnnotate = function(chapterHref) {
   while (walker.nextNode()) nodes.push(walker.currentNode);
   nodes.forEach(wrapText);
 
-  document.addEventListener('click', function(e) {
-    var span = e.target.closest('[data-hoshi-sid]');
-    if (!span) return;
-    if (window.flutter_inappwebview) {
-      window.flutter_inappwebview.callHandler('onSasayakiCueClick',
-        JSON.stringify({
-          chapter: span.dataset.hoshiChapter || '',
-          sid: parseInt(span.dataset.hoshiSid, 10)
-        }));
-    }
-  }, true);
 };
 ''';
 
@@ -335,31 +311,6 @@ window.__hoshiAnnotate = function(chapterHref) {
       source: 'if(typeof __hoshiAnnotate!=="undefined")'
           '__hoshiAnnotate(${jsonEncode(chapterHref)});',
     );
-  }
-
-  /// 为字幕 EPUB 中的 `[data-cue-id]` span 注册点击事件。
-  static Future<void> injectCueClickHandler(
-    InAppWebViewController controller, {
-    required String chapterHref,
-  }) async {
-    final String chapterJson = jsonEncode(chapterHref);
-    await controller.evaluateJavascript(source: '''
-(function() {
-  if (document.__hoshiCueClickRegistered) return;
-  document.__hoshiCueClickRegistered = true;
-
-  document.addEventListener('click', function(e) {
-    var span = e.target.closest('[data-cue-id]');
-    if (!span) return;
-    var sid = parseInt(span.getAttribute('data-cue-id'), 10);
-    if (isNaN(sid)) return;
-    if (window.flutter_inappwebview) {
-      window.flutter_inappwebview.callHandler('onSasayakiCueClick',
-        JSON.stringify({chapter: $chapterJson, sid: sid}));
-    }
-  }, true);
-})();
-''');
   }
 
   /// 请求跳转到指定章节。Dart 侧通过 callHandler 处理。

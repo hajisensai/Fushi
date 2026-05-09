@@ -58,33 +58,29 @@ class _MediaItemDialogPageState extends BasePageState<MediaItemDialogPage> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          AspectRatio(
-            aspectRatio: mediaSource.aspectRatio,
-            child: FadeInImage(
-              placeholder: MemoryImage(kTransparentImage),
-              imageErrorBuilder: (_, __, ___) {
-                if (widget.item.extraUrl != null) {
-                  return FadeInImage(
-                    placeholder: MemoryImage(kTransparentImage),
-                    imageErrorBuilder: (_, __, ___) => const SizedBox.expand(),
-                    image: mediaSource.getDisplayThumbnailFromMediaItem(
-                      appModel: appModel,
-                      item: widget.item,
-                      fallbackUrl: widget.item.extraUrl,
-                    ),
-                    fit: BoxFit.contain,
-                  );
-                } else {
-                  return const SizedBox.expand();
-                }
-              },
-              image: mediaSource.getDisplayThumbnailFromMediaItem(
-                appModel: appModel,
-                item: widget.item,
-              ),
-              fit: BoxFit.contain,
-              alignment: Alignment.topCenter,
+          FadeInImage(
+            placeholder: MemoryImage(kTransparentImage),
+            imageErrorBuilder: (_, __, ___) {
+              if (widget.item.extraUrl != null) {
+                return FadeInImage(
+                  placeholder: MemoryImage(kTransparentImage),
+                  imageErrorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                  image: mediaSource.getDisplayThumbnailFromMediaItem(
+                    appModel: appModel,
+                    item: widget.item,
+                    fallbackUrl: widget.item.extraUrl,
+                  ),
+                  fit: BoxFit.contain,
+                );
+              } else {
+                return const SizedBox.shrink();
+              }
+            },
+            image: mediaSource.getDisplayThumbnailFromMediaItem(
+              appModel: appModel,
+              item: widget.item,
             ),
+            fit: BoxFit.contain,
           ),
         ],
       ),

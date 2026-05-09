@@ -28,7 +28,6 @@ import 'package:hibiki/src/media/audiobook/reader_position_repository.dart';
 import 'package:hibiki/src/media/audiobook/sasayaki_match_codec.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_model.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
-import 'package:hibiki/src/media/audiobook/srt_parser.dart';
 import 'package:hibiki/src/reader/reader_content_styles.dart';
 import 'package:hibiki/src/reader/reader_resource_sanitizer.dart';
 import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
@@ -106,7 +105,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       _progressTotalChars != null &&
       _progressTotalChars! > 0;
 
-  double get _readerTopOffset => _stableTopInset;
+  double get _readerTopOffset =>
+      _stableTopInset + (_showTopProgress ? _infoFontSize * 1.5 : 0);
 
   double get _readerBottomReserve =>
       _readerChromeHeight + _stableBottomInset;
@@ -867,10 +867,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (_srtBookUid != null) {
       _audiobookController!.setChapterCues(allCues);
       _audiobookController!.setAllBookCues(allCues);
-      await AudiobookBridge.injectCueClickHandler(
-        _controller!,
-        chapterHref: SrtParser.defaultChapter,
-      );
     } else if (_audiobookBookUid != null) {
       if (_cachedSasayaki) {
         _audiobookController!.setChapterCues(allCues);
@@ -1035,8 +1031,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
     if (mounted) {
       setState(() {
-        _progressCurrentChars = current;
-        _progressTotalChars = total;
+        _progressCurrentChars = absoluteChars;
+        _progressTotalChars = _chapterCumulativeChars.isNotEmpty
+            ? _chapterCumulativeChars.last + _chapterCharCounts.last
+            : total;
       });
     }
   }
@@ -1288,6 +1286,23 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
     _syncSettingsToHive();
 
+    final ReaderHoshiSource src = ReaderHoshiSource.instance;
+    final double snapshotFontSize = src.ttuFontSize;
+    final double snapshotLineHeight = src.ttuLineHeight;
+    final String snapshotWritingMode = src.ttuWritingMode;
+    final String snapshotViewMode = src.ttuViewMode;
+    final String snapshotTheme = src.ttuTheme;
+    final String snapshotFuriganaMode = src.ttuFuriganaMode;
+    final double snapshotTextIndentation = src.ttuTextIndentation;
+    final double snapshotFirstDimensionMargin = src.ttuFirstDimensionMargin;
+    final double snapshotSecondDimensionMaxValue = src.ttuSecondDimensionMaxValue;
+    final int snapshotPageColumns = src.ttuPageColumns;
+    final bool snapshotVerticalFontKerning = src.ttuEnableVerticalFontKerning;
+    final bool snapshotFontVPAL = src.ttuEnableFontVPAL;
+    final String snapshotVerticalTextOrientation = src.ttuVerticalTextOrientation;
+    final bool snapshotTextJustification = src.ttuEnableTextJustification;
+    final bool snapshotPrioritizeReaderStyles = src.ttuPrioritizeReaderStyles;
+
     final List<TtuTocEntry> toc = _buildTtuToc();
     final int bookId = widget.bookId;
     final BookmarkRepository bmRepo = BookmarkRepository(appModel.database);
@@ -1311,7 +1326,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           toc: toc,
           readerProgress: (_currentChapter + 1, _book!.chapters.length),
           onJumpSection: (int index) async {
-            Navigator.of(ctx).pop();
             _navigateToChapter(index);
           },
           onBookmark: () async {
@@ -1370,8 +1384,27 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       },
     );
 
+    final ReaderHoshiSource srcAfter = ReaderHoshiSource.instance;
+    final bool changed = srcAfter.ttuFontSize != snapshotFontSize ||
+        srcAfter.ttuLineHeight != snapshotLineHeight ||
+        srcAfter.ttuWritingMode != snapshotWritingMode ||
+        srcAfter.ttuViewMode != snapshotViewMode ||
+        srcAfter.ttuTheme != snapshotTheme ||
+        srcAfter.ttuFuriganaMode != snapshotFuriganaMode ||
+        srcAfter.ttuTextIndentation != snapshotTextIndentation ||
+        srcAfter.ttuFirstDimensionMargin != snapshotFirstDimensionMargin ||
+        srcAfter.ttuSecondDimensionMaxValue != snapshotSecondDimensionMaxValue ||
+        srcAfter.ttuPageColumns != snapshotPageColumns ||
+        srcAfter.ttuEnableVerticalFontKerning != snapshotVerticalFontKerning ||
+        srcAfter.ttuEnableFontVPAL != snapshotFontVPAL ||
+        srcAfter.ttuVerticalTextOrientation != snapshotVerticalTextOrientation ||
+        srcAfter.ttuEnableTextJustification != snapshotTextJustification ||
+        srcAfter.ttuPrioritizeReaderStyles != snapshotPrioritizeReaderStyles;
+
     _syncSettingsFromHive();
-    _reloadWithCurrentSettings();
+    if (changed) {
+      _reloadWithCurrentSettings();
+    }
   }
 
   Future<void> _addBookmarkAtCurrentPosition() async {
