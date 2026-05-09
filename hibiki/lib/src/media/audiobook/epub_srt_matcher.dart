@@ -4,8 +4,8 @@ import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 
 /// EPUB 一个章节，供 [EpubSrtMatcher] 使用。
 ///
-/// `text` 必须是剥离 HTML（含 ruby `<rt>/<rp>`）后的纯文本，一般通过 ttu IDB
-/// 的 `elementHtml` 或原始 XHTML 抽取得到。
+/// `text` 必须是剥离 HTML（含 ruby `<rt>/<rp>`）后的纯文本，一般通过
+/// EpubBooks 数据库的 `elementHtml` 或原始 XHTML 抽取得到。
 class EpubSection {
   const EpubSection({
     required this.index,

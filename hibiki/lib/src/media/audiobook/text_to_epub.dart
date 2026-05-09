@@ -5,7 +5,7 @@ import 'dart:typed_data';
 import 'package:hibiki/src/media/audiobook/text_file_io.dart';
 
 /// Converts plain text files (TXT, HTML, MD, etc.) into valid EPUB 3 bytes
-/// suitable for import via [TtuEpubImporter].
+/// suitable for import via [EpubImporter].
 class TextToEpub {
   static const int kMaxCharsPerChapter = 30000;
 

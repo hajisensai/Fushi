@@ -24,7 +24,7 @@ enum HealthKind {
   /// 匹配率低于阈值但 > 0。UI 在书卡上挂黄色角标。
   partial,
 
-  /// 匹配率为 0 或跑不起来（ttu IDB 读失败、文件格式错误等）。reason
+  /// 匹配率为 0 或跑不起来（EPUB 数据库读失败、文件格式错误等）。reason
   /// 里放具体原因。
   failed,
 

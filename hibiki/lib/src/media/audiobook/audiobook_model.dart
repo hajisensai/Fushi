@@ -34,7 +34,7 @@ class Audiobook {
   DateTime? healthMeasuredAt;
 
   /// partial/failed 时的人话解释，直接展示给用户（"3 章 SMIL fragment
-  /// 找不到"，"ttu IDB 未就绪" 等）。
+  /// 找不到"，"EPUB 数据库未就绪" 等）。
   String? healthReason;
 
   /// PR8b "Follow audio" 开关的持久化状态。
