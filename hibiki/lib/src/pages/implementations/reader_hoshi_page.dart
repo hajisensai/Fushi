@@ -227,6 +227,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     return Focus(
       autofocus: true,
       focusNode: _focusNode,
+      onKeyEvent: _handleKeyEvent,
       child: WillPopScope(
         onWillPop: onWillPop,
         child: Scaffold(
@@ -674,6 +675,33 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         await _persistPosition(_currentChapter, progress);
       }
     } catch (_) {}
+  }
+
+  // ── Key Navigation ────────────────────────────────────────────────
+
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+
+    final LogicalKeyboardKey key = event.logicalKey;
+
+    if (key == LogicalKeyboardKey.audioVolumeDown) {
+      _paginate(ReaderNavigationDirection.forward);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.audioVolumeUp) {
+      _paginate(ReaderNavigationDirection.backward);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.pageDown) {
+      _paginate(ReaderNavigationDirection.forward);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.pageUp) {
+      _paginate(ReaderNavigationDirection.backward);
+      return KeyEventResult.handled;
+    }
+
+    return KeyEventResult.ignored;
   }
 
   // ── Page Turn ─────────────────────────────────────────────────────
