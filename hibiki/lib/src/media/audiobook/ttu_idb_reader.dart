@@ -255,6 +255,9 @@ class TtuIdbReader {
 
   /// Read a book's full data for migration: title, elementHtml, sections
   /// metadata, coverImage. Returns null if book not found or IDB access fails.
+  ///
+  /// Uses callHandler instead of console.log to avoid message truncation
+  /// for large books.
   static Future<Map<String, dynamic>?> readBookForMigration({
     required int ttuBookId,
     required int serverPort,
@@ -266,37 +269,49 @@ class TtuIdbReader {
     final String js = '''
 (async function() {
   try {
-    const record = await new Promise((resolve, reject) => {
+    const db = await new Promise((resolve, reject) => {
       const req = indexedDB.open('books');
       req.onupgradeneeded = (e) => {
         e.target.transaction.abort();
         reject('db_not_initialized');
       };
       req.onsuccess = (ev) => {
-        const db = ev.target.result;
-        if (!db.objectStoreNames.contains('data')) {
-          db.close();
+        const d = ev.target.result;
+        if (!d.objectStoreNames.contains('data')) {
+          d.close();
           reject('data_store_missing'); return;
         }
-        const tx = db.transaction(['data'], 'readonly');
-        const get = tx.objectStore('data').get($ttuBookId);
-        get.onsuccess = (e) => resolve(e.target.result);
-        get.onerror = (e) => reject(String(e.target.error));
+        resolve(d);
       };
       req.onerror = (e) => reject(String(e.target.error));
     });
+
+    const record = await new Promise((resolve, reject) => {
+      const tx = db.transaction(['data'], 'readonly');
+      const get = tx.objectStore('data').get($ttuBookId);
+      get.onsuccess = (e) => resolve(e.target.result);
+      get.onerror = (e) => reject(String(e.target.error));
+    });
+
     if (!record) {
-      console.log(JSON.stringify({messageType: 'ttu_mig_err', error: 'not_found'}));
+      db.close();
+      window.flutter_inappwebview.callHandler('migResult', null);
       return;
     }
+
     const title = typeof record.title === 'string' ? record.title : '';
     const html = record.elementHtml || '';
     const sectionsMeta = Array.isArray(record.sections) ? record.sections : [];
-    const sections = sectionsMeta.map(s => ({
+    const sections = Array.from(sectionsMeta.map(s => ({
       reference: (s && s.reference) || '',
       label: (s && s.label) || '',
       characters: (s && s.characters) || 0,
-    }));
+    })));
+
+    const progress = typeof record.progress === 'number' ? record.progress : 0;
+    const lastSectionIndex = typeof record.lastSectionIndex === 'number'
+        ? record.lastSectionIndex : -1;
+    const characters = typeof record.characters === 'number' ? record.characters : 0;
 
     let coverBase64 = null;
     if (record.coverImage instanceof Blob) {
@@ -308,15 +323,32 @@ class TtuIdbReader {
       });
     }
 
-    console.log(JSON.stringify({
-      messageType: 'ttu_mig_ok',
+    let bookmarkData = null;
+    if (db.objectStoreNames.contains('bookmark')) {
+      try {
+        bookmarkData = await new Promise((resolve) => {
+          const tx = db.transaction(['bookmark'], 'readonly');
+          const get = tx.objectStore('bookmark').get($ttuBookId);
+          get.onsuccess = (e) => resolve(e.target.result || null);
+          get.onerror = () => resolve(null);
+        });
+      } catch (e) {}
+    }
+
+    db.close();
+
+    window.flutter_inappwebview.callHandler('migResult', {
       title: title,
       elementHtml: html,
       sections: sections,
       coverImageBase64: coverBase64,
-    }));
+      progress: progress,
+      lastSectionIndex: lastSectionIndex,
+      characters: characters,
+      bookmarkData: bookmarkData,
+    });
   } catch (e) {
-    console.log(JSON.stringify({messageType: 'ttu_mig_err', error: String(e)}));
+    window.flutter_inappwebview.callHandler('migError', String(e));
   }
 })();
 ''';
@@ -330,27 +362,34 @@ class TtuIdbReader {
         databaseEnabled: true,
         domStorageEnabled: true,
       ),
+      onWebViewCreated: (InAppWebViewController controller) {
+        controller.addJavaScriptHandler(
+          handlerName: 'migResult',
+          callback: (List<dynamic> args) {
+            if (completer.isCompleted) return;
+            if (args.isEmpty || args[0] == null) {
+              completer.complete(null);
+            } else {
+              completer.complete(args[0] as Map<String, dynamic>);
+            }
+          },
+        );
+        controller.addJavaScriptHandler(
+          handlerName: 'migError',
+          callback: (List<dynamic> args) {
+            if (completer.isCompleted) return;
+            debugPrint(
+              'TtuIdbReader.readBookForMigration error: '
+              '${args.isNotEmpty ? args[0] : "unknown"}',
+            );
+            completer.complete(null);
+          },
+        );
+      },
       onLoadStop: (controller, url) async {
         if (jsDispatched) return;
         jsDispatched = true;
         await controller.evaluateJavascript(source: js);
-      },
-      onConsoleMessage: (controller, message) {
-        if (completer.isCompleted) return;
-        try {
-          final Map<String, dynamic> msg =
-              jsonDecode(message.message) as Map<String, dynamic>;
-          final String type = msg['messageType'] as String? ?? '';
-          if (type == 'ttu_mig_ok') {
-            completer.complete(msg);
-          } else if (type == 'ttu_mig_err') {
-            debugPrint(
-                'TtuIdbReader.readBookForMigration error: ${msg['error']}');
-            completer.complete(null);
-          }
-        } catch (e) {
-          debugPrint('TtuIdbReader.readBookForMigration decode error: $e');
-        }
       },
     );
 

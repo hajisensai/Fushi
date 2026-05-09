@@ -8,6 +8,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:hibiki/src/database/database.dart';
 import 'package:hibiki/src/epub/epub_storage.dart';
+import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
+import 'package:hibiki/src/media/audiobook/reader_position_repository.dart';
 import 'package:hibiki/src/media/audiobook/ttu_idb_reader.dart';
 
 class TtuMigration {
@@ -67,7 +69,8 @@ class TtuMigration {
             bookData['sections'] as List<dynamic>;
         final String elementHtml = bookData['elementHtml'] as String;
 
-        _writeSectionFiles(extractDir, elementHtml, sections);
+        final int actualChapters =
+            _writeSectionFiles(extractDir, elementHtml, sections);
 
         if (bookData['coverImageBase64'] != null) {
           File(p.join(extractDir, 'cover.jpg')).writeAsBytesSync(
@@ -76,7 +79,7 @@ class TtuMigration {
 
         final String chaptersJson = jsonEncode(
           List<Map<String, Object>>.generate(
-            sections.length,
+            actualChapters,
             (i) => <String, Object>{
               'id': 'section-$i',
               'href': 'section_$i.html',
@@ -91,12 +94,18 @@ class TtuMigration {
                 title: bookData['title'] as String? ?? 'Untitled',
                 epubPath: '',
                 extractDir: extractDir,
-                chapterCount: sections.length,
+                chapterCount: actualChapters,
                 chaptersJson: chaptersJson,
                 importedAt: DateTime.now().millisecondsSinceEpoch,
               ),
               mode: InsertMode.insertOrIgnore,
             );
+
+        await _migrateReadingProgress(db, ttuId, bookData, actualChapters);
+        await _migrateBookmarks(
+          db, ttuId, bookData,
+          bookData['title'] as String? ?? 'Untitled',
+        );
 
         await prefs.setBool(flagKey, true);
         migrated++;
@@ -109,7 +118,7 @@ class TtuMigration {
     return migrated;
   }
 
-  static void _writeSectionFiles(
+  static int _writeSectionFiles(
     String extractDir,
     String elementHtml,
     List<dynamic> sections,
@@ -119,7 +128,7 @@ class TtuMigration {
     if (sections.isEmpty) {
       File(p.join(extractDir, 'section_0.html'))
           .writeAsStringSync(_wrapHtml(elementHtml));
-      return;
+      return 1;
     }
 
     final List<_SectionSpan> spans = <_SectionSpan>[];
@@ -161,26 +170,121 @@ class TtuMigration {
 
     bool anyWritten = false;
     for (int i = 0; i < sections.length; i++) {
-      final File file = File(p.join(extractDir, 'section_$i.html'));
       if (spans[i].start >= 0 && spans[i].end > spans[i].start) {
-        final String sectionHtml =
-            elementHtml.substring(spans[i].start, spans[i].end);
-        file.writeAsStringSync(_wrapHtml(sectionHtml));
         anyWritten = true;
-      } else {
-        file.writeAsStringSync(_wrapHtml(''));
+        break;
       }
     }
 
     if (!anyWritten) {
       File(p.join(extractDir, 'section_0.html'))
           .writeAsStringSync(_wrapHtml(elementHtml));
+      return 1;
     }
+
+    for (int i = 0; i < sections.length; i++) {
+      final File file = File(p.join(extractDir, 'section_$i.html'));
+      if (spans[i].start >= 0 && spans[i].end > spans[i].start) {
+        final String sectionHtml =
+            elementHtml.substring(spans[i].start, spans[i].end);
+        file.writeAsStringSync(_wrapHtml(sectionHtml));
+      } else {
+        file.writeAsStringSync(_wrapHtml(''));
+      }
+    }
+
+    return sections.length;
   }
 
   static String _wrapHtml(String body) =>
-      '<!DOCTYPE html><html><head><meta charset="utf-8"></head>'
-      ' <body>$body</body></html>';
+      '<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8">'
+      '<meta name="viewport" content="width=device-width, initial-scale=1.0">'
+      '</head><body>$body</body></html>';
+
+  static Future<void> _migrateReadingProgress(
+    HibikiDatabase db,
+    int ttuId,
+    Map<String, dynamic> bookData,
+    int chapterCount,
+  ) async {
+    final num progress = bookData['progress'] as num? ?? 0;
+    final int lastSection = bookData['lastSectionIndex'] as int? ?? -1;
+    if (progress <= 0 && lastSection < 0) return;
+
+    final int section = lastSection >= 0 && lastSection < chapterCount
+        ? lastSection
+        : 0;
+    final int normOffset = (progress * 10000).round().clamp(0, 10000);
+
+    final ReaderPositionRepository repo = ReaderPositionRepository(db);
+    await repo.save(
+      ttuBookId: ttuId,
+      sectionIndex: section,
+      normCharOffset: normOffset,
+    );
+    debugPrint('[ttu-migration] book $ttuId: restored progress '
+        'section=$section offset=$normOffset');
+  }
+
+  static Future<void> _migrateBookmarks(
+    HibikiDatabase db,
+    int ttuId,
+    Map<String, dynamic> bookData,
+    String bookTitle,
+  ) async {
+    final dynamic bmRaw = bookData['bookmarkData'];
+    if (bmRaw == null) return;
+
+    final BookmarkRepository repo = BookmarkRepository(db);
+
+    if (bmRaw is Map<String, dynamic>) {
+      final Bookmark? bm = _tryParseBookmark(bmRaw, ttuId, bookTitle);
+      if (bm != null) {
+        await repo.addBookmark(ttuId, bm);
+        debugPrint('[ttu-migration] book $ttuId: migrated 1 bookmark');
+      }
+    } else if (bmRaw is List) {
+      int count = 0;
+      for (final dynamic entry in bmRaw) {
+        if (entry is Map<String, dynamic>) {
+          final Bookmark? bm = _tryParseBookmark(entry, ttuId, bookTitle);
+          if (bm != null) {
+            await repo.addBookmark(ttuId, bm);
+            count++;
+          }
+        }
+      }
+      if (count > 0) {
+        debugPrint('[ttu-migration] book $ttuId: migrated $count bookmarks');
+      }
+    }
+  }
+
+  static Bookmark? _tryParseBookmark(
+    Map<String, dynamic> raw,
+    int ttuId,
+    String bookTitle,
+  ) {
+    final num exploredChars = raw['exploredCharCount'] as num? ?? 0;
+    final num progress = raw['progress'] as num? ?? 0;
+    if (exploredChars <= 0 && progress <= 0) return null;
+
+    final int sectionIndex =
+        (raw['lastSectionIndex'] as num?)?.toInt() ?? 0;
+    final int normOffset = (progress * 10000).round().clamp(0, 10000);
+
+    return Bookmark(
+      sectionIndex: sectionIndex,
+      normCharOffset: normOffset,
+      label: raw['label'] as String? ?? 'ttu bookmark',
+      createdAt: DateTime.fromMillisecondsSinceEpoch(
+        (raw['lastBookModified'] as num?)?.toInt() ??
+            DateTime.now().millisecondsSinceEpoch,
+      ),
+      ttuBookId: ttuId,
+      bookTitle: bookTitle,
+    );
+  }
 }
 
 class _SectionSpan {
