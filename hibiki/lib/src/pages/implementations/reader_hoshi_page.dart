@@ -60,6 +60,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   int _currentChapter = 0;
   bool _readerContentReady = false;
+  bool _hasEverLoaded = false;
   bool _restoreInFlight = false;
   double _initialProgress = 0.0;
   String? _initialFragment;
@@ -425,7 +426,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
               ),
               if (!_readerContentReady)
                 Positioned.fill(
-                  top: _stableTopInset,
+                  top: _hasEverLoaded ? _readerTopOffset : _stableTopInset,
+                  bottom: _hasEverLoaded ? _readerBottomReserve : 0,
                   child: ColoredBox(color: bgColor),
                 ),
               _buildTopProgressBar(),
@@ -708,6 +710,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (!_readerContentReady) {
       setState(() {
         _readerContentReady = true;
+        _hasEverLoaded = true;
       });
       SystemChrome.setEnabledSystemUIMode(
         _showChrome ? SystemUiMode.edgeToEdge : SystemUiMode.immersiveSticky,
@@ -1359,30 +1362,17 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final double ratio =
         (_progressCurrentChars! / _progressTotalChars!).clamp(0.0, 1.0);
     final Color infoColor = _infoTextColor();
-    final String title = _book?.title ?? '';
 
     return Positioned(
       top: _stableTopInset,
       left: 96,
       right: 96,
       child: IgnorePointer(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            if (title.isNotEmpty)
-              Text(
-                title,
-                style: TextStyle(fontSize: 13, color: infoColor),
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
-              ),
-            const SizedBox(height: 2),
-            Text(
-              '$_progressCurrentChars / $_progressTotalChars'
-              '  ${(ratio * 100).toStringAsFixed(2)}%',
-              style: TextStyle(fontSize: 12, color: infoColor),
-            ),
-          ],
+        child: Text(
+          '$_progressCurrentChars / $_progressTotalChars'
+          '  ${(ratio * 100).toStringAsFixed(2)}%',
+          style: TextStyle(fontSize: 12, color: infoColor),
+          textAlign: TextAlign.center,
         ),
       ),
     );
