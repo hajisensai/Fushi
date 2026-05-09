@@ -10,7 +10,7 @@ import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_controller.dart';
 import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
 import 'package:hibiki/src/media/audiobook/favorite_sentence_repository.dart';
-import 'package:hibiki/src/media/sources/reader_ttu_source.dart';
+import 'package:hibiki/src/media/sources/reader_hoshi_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/custom_theme_page.dart';
 import 'package:hibiki/utils.dart';
@@ -225,7 +225,7 @@ class AudiobookSettingsSheet extends StatefulWidget {
 }
 
 class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
-  ReaderTtuSource get _src => ReaderTtuSource.instance;
+  ReaderHoshiSource get _src => ReaderHoshiSource.instance;
 
   TtuReaderSettings? _settings;
 
@@ -261,7 +261,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
       key: key,
       value: value,
     );
-    final ReaderTtuSource src = ReaderTtuSource.instance;
+    final ReaderHoshiSource src = ReaderHoshiSource.instance;
     switch (key) {
       case 'fontSize':
         await src.setTtuFontSize((value as num).toDouble());

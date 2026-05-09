@@ -97,7 +97,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// InAppWebViewController 的地方。
   void Function(int sectionIndex)? onCrossChapter;
 
-  /// 由 reader 页面提供：返回 ttu 当前挂载的 section index（开书前 -1）。
+  /// 由 reader 页面提供：返回当前挂载的 chapter index（开书前 -1）。
   int Function()? getCurrentReaderSection;
 
   /// 边界跳句回调：skipToPrevCue 到章首 / skipToNextCue 到章尾时触发。
@@ -736,7 +736,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     onCrossChapter?.call(cueSec);
   }
 
-  /// 由 reader 在 `__ttuGoToSection` 完成（或失败）后调用：清守卫，
+  /// 由 reader 在章节跳转完成（或失败）后调用：清守卫，
   /// 用当前播放位置重算 cue 并立刻 notify，暂停态也能即时高亮。
   ///
   /// 无论成功失败都必须调用，否则 _chapterTransition 永远卡 true。

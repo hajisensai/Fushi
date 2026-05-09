@@ -12,7 +12,7 @@ class DisplaySettingsPage extends BasePage {
 }
 
 class _DisplaySettingsPageState extends BasePageState {
-  ReaderTtuSource get _source => ReaderTtuSource.instance;
+  ReaderHoshiSource get _source => ReaderHoshiSource.instance;
 
   @override
   Widget build(BuildContext context) {
