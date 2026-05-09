@@ -437,7 +437,9 @@ window.hoshiReader = {
       var firstPage = this.contentFirstPageScroll(context);
       this.setPagePosition(context, firstPage);
       this.registerSnapScroll(firstPage);
-      this.notifyRestoreComplete();
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => this.notifyRestoreComplete());
+      });
       return;
     }
     if (progress >= 0.99) {

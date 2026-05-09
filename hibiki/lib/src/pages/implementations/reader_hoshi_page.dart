@@ -13,9 +13,11 @@ import 'package:hibiki/src/database/database.dart';
 import 'package:hibiki/src/epub/epub_book.dart';
 import 'package:hibiki/src/epub/epub_parser.dart';
 import 'package:hibiki/src/epub/epub_storage.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_controller.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
+import 'package:hibiki/src/media/sources/reader_hoshi_source.dart';
 import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
 import 'package:hibiki/src/media/audiobook/reading_time_tracker.dart';
 import 'package:hibiki/src/media/audiobook/reader_position_model.dart';
@@ -245,17 +247,15 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
               Positioned.fill(
                 top: _readerTopOffset,
                 bottom: _readerBottomReserve,
-                child: Opacity(
-                  opacity: _readerContentReady ? 1.0 : 0.0,
-                  child: _buildBody(),
-                ),
+                child: _buildBody(),
               ),
-              _buildTopProgressBar(),
-              buildDictionary(),
               if (!_readerContentReady)
                 Positioned.fill(
+                  top: _stableTopInset,
                   child: ColoredBox(color: bgColor),
                 ),
+              _buildTopProgressBar(),
+              buildDictionary(),
               _buildBottomChrome(),
             ],
           ),
@@ -355,6 +355,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   var style = document.createElement('style');
   style.textContent = ${jsonEncode(css)};
   document.head.appendChild(style);
+  document.documentElement.style.visibility = 'visible';
   window.scanNonJapaneseText = false;
   $selectionJs
   $paginationJs
@@ -419,7 +420,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       initialUserScripts: UnmodifiableListView<UserScript>(<UserScript>[
         UserScript(
           source:
-              'window.onerror=function(m,s,l,c,e){console.error("__HIBIKI_JS_ERROR__ "+m+" at "+s+":"+l+":"+c);return false;};',
+              'window.onerror=function(m,s,l,c,e){console.error("__HIBIKI_JS_ERROR__ "+m+" at "+s+":"+l+":"+c);return false;};'
+              'document.documentElement.style.visibility="hidden";',
           injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
         ),
       ]),
@@ -784,61 +786,54 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       left: 0,
       right: 0,
       bottom: 0,
-      child: Container(
-        color: _themeBackgroundColor(),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            AudiobookPlayBar(
-              controller: _audiobookController!,
-              onOpenSettings: _showAppearanceSheet,
-            ),
-            SizedBox(height: _stableBottomInset),
-          ],
-        ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          AudiobookPlayBar(
+            controller: _audiobookController!,
+            onOpenSettings: _showAppearanceSheet,
+          ),
+          SizedBox(height: _stableBottomInset),
+        ],
       ),
     );
   }
 
   Widget _buildSettingsBar() {
-    final Color bg = _themeBackgroundColor();
     return Positioned(
       left: 0,
       right: 0,
       bottom: 0,
-      child: Container(
-        color: bg,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            BottomAppBar(
-              height: _readerChromeHeight,
-              color: bg,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Row(
-                children: <Widget>[
-                  IconButton(
-                    icon: Icon(Icons.arrow_back, color: _themeTextColor()),
-                    iconSize: 22,
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    icon: Icon(Icons.list, color: _themeTextColor()),
-                    iconSize: 20,
-                    onPressed: _showChapterSheet,
-                  ),
-                  IconButton(
-                    icon: Icon(Icons.tune, color: _themeTextColor()),
-                    iconSize: 20,
-                    onPressed: _showAppearanceSheet,
-                  ),
-                ],
-              ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          BottomAppBar(
+            height: _readerChromeHeight,
+            color: _themeBackgroundColor(),
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Row(
+              children: <Widget>[
+                IconButton(
+                  icon: Icon(Icons.arrow_back, color: _themeTextColor()),
+                  iconSize: 22,
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: Icon(Icons.list, color: _themeTextColor()),
+                  iconSize: 20,
+                  onPressed: _showChapterSheet,
+                ),
+                IconButton(
+                  icon: Icon(Icons.tune, color: _themeTextColor()),
+                  iconSize: 20,
+                  onPressed: _showAppearanceSheet,
+                ),
+              ],
             ),
-            SizedBox(height: _stableBottomInset),
-          ],
-        ),
+          ),
+          SizedBox(height: _stableBottomInset),
+        ],
       ),
     );
   }
@@ -913,192 +908,112 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   }
 
   void _showAppearanceSheet() {
-    if (_settings == null) return;
+    if (_settings == null || _controller == null || _book == null) return;
+
+    _syncSettingsToHive();
+
+    final List<TtuTocEntry> toc = _buildTtuToc();
 
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: _themeBackgroundColor(),
       isScrollControlled: true,
       builder: (BuildContext ctx) {
-        return StatefulBuilder(
-          builder: (BuildContext ctx, StateSetter setSheetState) {
-            return DraggableScrollableSheet(
-              initialChildSize: 0.6,
-              minChildSize: 0.3,
-              maxChildSize: 0.9,
-              expand: false,
-              builder: (BuildContext ctx, ScrollController scrollCtrl) {
-                return ListView(
-                  controller: scrollCtrl,
-                  padding: const EdgeInsets.all(16),
-                  children: <Widget>[
-                    _buildThemeSelector(setSheetState),
-                    const SizedBox(height: 16),
-                    _buildFontSizeSlider(setSheetState),
-                    const SizedBox(height: 16),
-                    _buildLineHeightSlider(setSheetState),
-                    const SizedBox(height: 16),
-                    _buildWritingModeToggle(setSheetState),
-                    const SizedBox(height: 16),
-                    _buildViewModeToggle(setSheetState),
-                    const SizedBox(height: 16),
-                    _buildFuriganaModeSelector(setSheetState),
-                  ],
-                );
-              },
-            );
+        return AudiobookSettingsSheet(
+          controller: _audiobookController,
+          toc: toc,
+          readerProgress: (_currentChapter + 1, _book!.chapters.length),
+          onJumpSection: (int index) async {
+            Navigator.of(ctx).pop();
+            _navigateToChapter(index);
           },
+          onBookmark: () async {},
+          onExitReader: () {
+            Navigator.of(ctx).pop();
+            Navigator.of(context).pop();
+          },
+          webViewController: _controller!,
+          appModel: appModel,
+          isHoshiReader: true,
+          charProgress: _progressCurrentChars != null && _progressTotalChars != null
+              ? (_progressCurrentChars!, _progressTotalChars!)
+              : null,
         );
       },
-    ).then((_) => _reloadWithCurrentSettings());
+    ).then((_) {
+      _syncSettingsFromHive();
+      _reloadWithCurrentSettings();
+    });
   }
 
-  Widget _buildThemeSelector(StateSetter setSheetState) {
-    final List<(String, String, Color)> themes = <(String, String, Color)>[
-      ('light-theme', 'Light', const Color(0xFFFFFFFF)),
-      ('ecru-theme', 'Ecru', const Color(0xFFF7F6EB)),
-      ('water-theme', 'Water', const Color(0xFFDFECF4)),
-      ('gray-theme', 'Gray', const Color(0xFF23272A)),
-      ('dark-theme', 'Dark', const Color(0xFF121212)),
-      ('black-theme', 'Black', const Color(0xFF000000)),
-    ];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Text('Theme', style: TextStyle(color: _themeTextColor(), fontWeight: FontWeight.bold)),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          children: themes.map(((String, String, Color) t) {
-            final bool selected = _settings!.theme == t.$1;
-            return GestureDetector(
-              onTap: () {
-                _settings!.setTheme(t.$1);
-                setSheetState(() {});
-                setState(() {});
-              },
-              child: Container(
-                width: 40, height: 40,
-                decoration: BoxDecoration(
-                  color: t.$3,
-                  border: Border.all(
-                    color: selected ? Colors.blue : Colors.grey,
-                    width: selected ? 2 : 1,
-                  ),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-            );
-          }).toList(),
-        ),
-      ],
-    );
+  void _syncSettingsToHive() {
+    final ReaderSettings s = _settings!;
+    final ReaderHoshiSource src = ReaderHoshiSource.instance;
+    src.setTtuFontSize(s.fontSize);
+    src.setTtuLineHeight(s.lineHeight);
+    src.setTtuWritingMode(s.writingMode);
+    src.setTtuViewMode(s.viewMode);
+    src.setTtuTheme(s.theme);
+    src.setTtuFuriganaMode(s.furiganaMode);
+    src.setTtuTextIndentation(s.textIndentation);
+    src.setTtuFirstDimensionMargin(s.firstDimensionMargin);
+    src.setTtuSecondDimensionMaxValue(s.secondDimensionMaxValue);
+    src.setTtuPageColumns(s.pageColumns);
+    src.setTtuEnableVerticalFontKerning(s.enableVerticalFontKerning);
+    src.setTtuEnableFontVPAL(s.enableFontVPAL);
+    src.setTtuVerticalTextOrientation(s.verticalTextOrientation);
+    src.setTtuEnableTextJustification(s.enableTextJustification);
+    src.setTtuPrioritizeReaderStyles(s.prioritizeReaderStyles);
   }
 
-  Widget _buildFontSizeSlider(StateSetter setSheetState) {
-    return Row(
-      children: <Widget>[
-        Text('Font Size', style: TextStyle(color: _themeTextColor())),
-        Expanded(
-          child: Slider(
-            value: _settings!.fontSize,
-            min: 12,
-            max: 60,
-            divisions: 48,
-            label: '${_settings!.fontSize.round()}',
-            onChanged: (double v) {
-              _settings!.setFontSize(v);
-              setSheetState(() {});
-            },
-          ),
-        ),
-        Text('${_settings!.fontSize.round()}', style: TextStyle(color: _themeTextColor())),
-      ],
-    );
+  void _syncSettingsFromHive() {
+    final ReaderSettings s = _settings!;
+    final ReaderHoshiSource src = ReaderHoshiSource.instance;
+    s.setFontSize(src.ttuFontSize);
+    s.setLineHeight(src.ttuLineHeight);
+    s.setWritingMode(src.ttuWritingMode);
+    s.setViewMode(src.ttuViewMode);
+    s.setTheme(src.ttuTheme);
+    s.setFuriganaMode(src.ttuFuriganaMode);
+    s.setTextIndentation(src.ttuTextIndentation);
+    s.setFirstDimensionMargin(src.ttuFirstDimensionMargin);
+    s.setSecondDimensionMaxValue(src.ttuSecondDimensionMaxValue);
+    s.setPageColumns(src.ttuPageColumns);
+    s.setEnableVerticalFontKerning(src.ttuEnableVerticalFontKerning);
+    s.setEnableFontVPAL(src.ttuEnableFontVPAL);
+    s.setVerticalTextOrientation(src.ttuVerticalTextOrientation);
+    s.setEnableTextJustification(src.ttuEnableTextJustification);
+    s.setPrioritizeReaderStyles(src.ttuPrioritizeReaderStyles);
   }
 
-  Widget _buildLineHeightSlider(StateSetter setSheetState) {
-    return Row(
-      children: <Widget>[
-        Text('Line Height', style: TextStyle(color: _themeTextColor())),
-        Expanded(
-          child: Slider(
-            value: _settings!.lineHeight,
-            min: 1.0,
-            max: 2.5,
-            divisions: 15,
-            label: _settings!.lineHeight.toStringAsFixed(1),
-            onChanged: (double v) {
-              _settings!.setLineHeight(v);
-              setSheetState(() {});
-            },
-          ),
-        ),
-        Text(_settings!.lineHeight.toStringAsFixed(1),
-            style: TextStyle(color: _themeTextColor())),
-      ],
-    );
+  List<TtuTocEntry> _buildTtuToc() {
+    final List<EpubTocItem> toc = _book!.toc;
+    if (toc.isEmpty) {
+      return List<TtuTocEntry>.generate(
+        _book!.chapters.length,
+        (int i) => TtuTocEntry(index: i, label: 'Chapter ${i + 1}'),
+      );
+    }
+    final List<TtuTocEntry> result = <TtuTocEntry>[];
+    _flattenTocToTtu(toc, result, null);
+    return result;
   }
 
-  Widget _buildWritingModeToggle(StateSetter setSheetState) {
-    return Row(
-      children: <Widget>[
-        Text('Writing Mode', style: TextStyle(color: _themeTextColor())),
-        const Spacer(),
-        SegmentedButton<String>(
-          segments: const <ButtonSegment<String>>[
-            ButtonSegment<String>(value: 'vertical-rl', label: Text('Vertical')),
-            ButtonSegment<String>(value: 'horizontal-tb', label: Text('Horizontal')),
-          ],
-          selected: <String>{_settings!.writingMode},
-          onSelectionChanged: (Set<String> v) {
-            _settings!.setWritingMode(v.first);
-            setSheetState(() {});
-          },
-        ),
-      ],
-    );
-  }
-
-  Widget _buildViewModeToggle(StateSetter setSheetState) {
-    return Row(
-      children: <Widget>[
-        Text('View Mode', style: TextStyle(color: _themeTextColor())),
-        const Spacer(),
-        SegmentedButton<String>(
-          segments: const <ButtonSegment<String>>[
-            ButtonSegment<String>(value: 'paginated', label: Text('Paginated')),
-            ButtonSegment<String>(value: 'continuous', label: Text('Continuous')),
-          ],
-          selected: <String>{_settings!.viewMode},
-          onSelectionChanged: (Set<String> v) {
-            _settings!.setViewMode(v.first);
-            setSheetState(() {});
-          },
-        ),
-      ],
-    );
-  }
-
-  Widget _buildFuriganaModeSelector(StateSetter setSheetState) {
-    return Row(
-      children: <Widget>[
-        Text('Furigana', style: TextStyle(color: _themeTextColor())),
-        const Spacer(),
-        SegmentedButton<String>(
-          segments: const <ButtonSegment<String>>[
-            ButtonSegment<String>(value: 'show', label: Text('Show')),
-            ButtonSegment<String>(value: 'hide', label: Text('Hide')),
-            ButtonSegment<String>(value: 'toggle', label: Text('Toggle')),
-          ],
-          selected: <String>{_settings!.furiganaMode},
-          onSelectionChanged: (Set<String> v) {
-            _settings!.setFuriganaMode(v.first);
-            setSheetState(() {});
-          },
-        ),
-      ],
-    );
+  void _flattenTocToTtu(
+    List<EpubTocItem> items,
+    List<TtuTocEntry> result,
+    String? parentLabel,
+  ) {
+    for (final EpubTocItem item in items) {
+      final int index = _tocHrefToChapterIndex(item.href);
+      if (index >= 0) {
+        result.add(TtuTocEntry(
+          index: index,
+          label: item.label,
+          parent: parentLabel,
+        ));
+      }
+      _flattenTocToTtu(item.children, result, item.label);
+    }
   }
 
   Future<void> _reloadWithCurrentSettings() async {

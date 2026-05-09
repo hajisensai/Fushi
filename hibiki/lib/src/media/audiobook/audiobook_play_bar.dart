@@ -187,6 +187,7 @@ class AudiobookSettingsSheet extends StatefulWidget {
     this.onJumpToCharOffset,
     this.charProgress,
     this.onPageMarginChanged,
+    this.isHoshiReader = false,
     super.key,
   });
 
@@ -220,6 +221,9 @@ class AudiobookSettingsSheet extends StatefulWidget {
   final (int current, int total)? charProgress;
   final VoidCallback? onPageMarginChanged;
 
+  /// When true, skip AudiobookBridge JS calls and disable ttu-only features.
+  final bool isHoshiReader;
+
   @override
   State<AudiobookSettingsSheet> createState() => _AudiobookSettingsSheetState();
 }
@@ -250,17 +254,33 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
   }
 
   Future<void> _loadSettings() async {
+    if (widget.isHoshiReader) {
+      final TtuReaderSettings s = TtuReaderSettings(
+        fontSize: _src.ttuFontSize,
+        lineHeight: _src.ttuLineHeight,
+        writingMode: _src.ttuWritingMode,
+        viewMode: _src.ttuViewMode,
+        theme: _src.ttuTheme,
+        hideFurigana: _src.ttuFuriganaMode == 'hide',
+        fontFamilyGroupOne: 'Noto Serif JP',
+        fontFamilyGroupTwo: 'Noto Sans JP',
+      );
+      if (mounted) setState(() => _settings = s);
+      return;
+    }
     final TtuReaderSettings s =
         await AudiobookBridge.getReaderSettings(widget.webViewController);
     if (mounted) setState(() => _settings = s);
   }
 
   Future<void> _updateSetting(String key, Object value) async {
-    await AudiobookBridge.setReaderSetting(
-      widget.webViewController,
-      key: key,
-      value: value,
-    );
+    if (!widget.isHoshiReader) {
+      await AudiobookBridge.setReaderSetting(
+        widget.webViewController,
+        key: key,
+        value: value,
+      );
+    }
     final ReaderHoshiSource src = ReaderHoshiSource.instance;
     switch (key) {
       case 'fontSize':
@@ -299,6 +319,10 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
   }
 
   Future<void> _applyFuriganaMode(String mode) async {
+    if (widget.isHoshiReader) {
+      _src.setTtuFuriganaMode(mode);
+      return;
+    }
     final hide = mode != 'show';
     final style = switch (mode) {
       'hide' => 'Hide',
@@ -425,7 +449,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         content = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildSearchSection(theme),
+            if (!widget.isHoshiReader) _buildSearchSection(theme),
             if (widget.onJumpToCharOffset != null) ...[
               const SizedBox(height: 12),
               _buildCharJumpSection(theme),
