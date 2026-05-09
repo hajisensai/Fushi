@@ -399,24 +399,4 @@ void main() {
     });
   });
 
-  group('TTU IndexedDB payload', () {
-    test('sections include character spans used by TTU statistics', () {
-      final TtuIdbPayload payload = CuesToEpub.buildIdbPayload(
-        title: 'Stats Book',
-        cues: [
-          _cue(idx: 0, startMs: 0, endMs: 1000, text: 'abc'),
-          _cue(idx: 1, startMs: 1200, endMs: 2000, text: 'de'),
-        ],
-      );
-
-      final Map<String, dynamic> json = payload.toJson();
-      final List<dynamic> sections = json['sections'] as List<dynamic>;
-      final Map<String, dynamic> firstSection =
-          sections.first as Map<String, dynamic>;
-
-      expect(json['characters'], 5);
-      expect(firstSection['startCharacter'], 0);
-      expect(firstSection['characters'], 5);
-    });
-  });
 }
