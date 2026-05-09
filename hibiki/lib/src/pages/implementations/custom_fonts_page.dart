@@ -292,7 +292,7 @@ class CustomFontsPage extends BasePage {
 }
 
 class _CustomFontsPageState extends BasePageState {
-  ReaderTtuSource get _source => ReaderTtuSource.instance;
+  ReaderHoshiSource get _source => ReaderHoshiSource.instance;
 
   List<Map<String, dynamic>> _fonts = [];
 

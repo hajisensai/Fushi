@@ -225,8 +225,8 @@ class _HomePageState extends BasePageState<HomePage>
       tooltip: t.import_book,
       icon: Icons.add,
       onTap: () async {
-        final src = ReaderTtuSource.instance;
-        final int port = src.getPortForLanguage(appModel.targetLanguage);
+        final ReaderHoshiSource src = ReaderHoshiSource.instance;
+        final int port = src.portForLanguage(appModel.targetLanguage);
         await showAppDialog(
           context: context,
           builder: (_) => BookImportDialog(
@@ -236,7 +236,7 @@ class _HomePageState extends BasePageState<HomePage>
             ttuMediaSourceIdentifier: src.uniqueKey,
           ),
         );
-        ref.invalidate(ttuBooksProvider(appModel.targetLanguage));
+        ref.invalidate(hoshiBooksProvider(appModel.targetLanguage));
       },
     );
   }

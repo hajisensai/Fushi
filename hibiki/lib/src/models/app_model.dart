@@ -771,7 +771,7 @@ class AppModel with ChangeNotifier {
     /// A list of media sources that the app will support at runtime.
     final Map<MediaType, List<MediaSource>> availableMediaSources = {
       ReaderMediaType.instance: [
-        ReaderTtuSource.instance,
+        ReaderHoshiSource.instance,
       ],
       DictionaryMediaType.instance: [],
     };
@@ -2495,10 +2495,7 @@ class AppModel with ChangeNotifier {
     _overrideDictionaryColor = null;
     _overrideDictionaryTheme = null;
 
-    // Only the reader remains as a media source (Phase 1 stripped the rest),
-    // so the keep-screen-awake pref lives on ReaderTtuSource — respect it
-    // here so users who turn the toggle off aren't forced to stay awake.
-    if (ReaderTtuSource.instance.keepScreenAwake) {
+    if (ReaderHoshiSource.instance.keepScreenAwake) {
       await Wakelock.enable();
     }
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);

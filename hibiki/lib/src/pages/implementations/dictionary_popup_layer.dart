@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hibiki/dictionary.dart';
-import 'package:hibiki/src/media/sources/reader_ttu_source.dart';
+import 'package:hibiki/src/media/sources/reader_hoshi_source.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:hibiki/utils.dart';
@@ -70,7 +70,7 @@ class DictionaryPopupLayer extends StatelessWidget {
         : Colors.black.withValues(alpha: 0.18);
 
     return SwipeDismissWrapper(
-      sensitivity: ReaderTtuSource.instance.dismissSwipeSensitivity,
+      sensitivity: ReaderHoshiSource.instance.dismissSwipeSensitivity,
       onDismiss: onDismiss,
       child: Container(
         decoration: BoxDecoration(

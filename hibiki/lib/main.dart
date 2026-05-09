@@ -170,16 +170,8 @@ void main() {
         debugPrint('[Hibiki] WebView warmup failed (non-fatal): $e');
       }
     }));
-    // ttuServerProvider 是非 autoDispose 的 FutureProvider.family，
-    // read 触发后缓存在 container 里，用户点书时直接取 data 态。
-    unawaited(Future(() {
-      try {
-        container.read(ttuServerProvider(appModel.targetLanguage));
-        debugPrint('[Hibiki] ttu server provider triggered');
-      } catch (e) {
-        debugPrint('[Hibiki] ttu server warmup failed (non-fatal): $e');
-      }
-    }));
+    // ttuServerProvider 仅用于迁移路径，不再需要预热。
+    // TtuMigrationServer 在上方 fire-and-forget 块中按需启动。
 
     /// Capture Flutter framework errors with full details.
     FlutterError.onError = (details) {

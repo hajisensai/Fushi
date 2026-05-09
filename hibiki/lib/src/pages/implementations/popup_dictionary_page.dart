@@ -94,7 +94,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
         searchTerm: query,
       );
       appModel.addToDictionaryHistory(result: entry.result!);
-      if (ReaderTtuSource.instance.autoReadOnLookup) {
+      if (ReaderHoshiSource.instance.autoReadOnLookup) {
         final first = entry.result!.entries.first;
         await _autoReadWord(first.word, first.reading);
       }

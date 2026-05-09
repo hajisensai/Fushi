@@ -129,7 +129,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
           ? dictionaryResult.entries.first.word.runes.length
           : 0;
 
-      final bool arEnabled = ReaderTtuSource.instance.autoReadOnLookup;
+      final bool arEnabled = ReaderHoshiSource.instance.autoReadOnLookup;
       debugPrint(
           '[hibiki-autoread] autoReadOnLookup=$arEnabled entries=${dictionaryResult.entries.length}');
       if (arEnabled && dictionaryResult.entries.isNotEmpty) {
