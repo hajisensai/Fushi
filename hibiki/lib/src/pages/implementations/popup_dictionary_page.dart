@@ -105,6 +105,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
     try {
       final WordAudioResolver resolver = WordAudioResolver(
         queryLocalAudio: (String expression, String reading) async {
+          if (!appModel.localAudioEnabled) return null;
           try {
             return await TtsChannel.instance
                 .queryLocalAudio(expression, reading)

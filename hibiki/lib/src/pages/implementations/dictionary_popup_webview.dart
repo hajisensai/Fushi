@@ -360,16 +360,13 @@ class DictionaryPopupWebViewState
             }
             if (url.isNotEmpty && url.startsWith('file://')) {
               final filePath = url.replaceFirst('file://', '');
-              TtsChannel.instance.playFile(filePath);
-              return true;
+              return await TtsChannel.instance.playFile(filePath);
             }
             if (url.isNotEmpty && url.startsWith('/')) {
-              TtsChannel.instance.playFile(url);
-              return true;
+              return await TtsChannel.instance.playFile(url);
             }
             if (url.isNotEmpty && url.startsWith('http')) {
-              TtsChannel.instance.playUrl(url);
-              return true;
+              return await TtsChannel.instance.playUrl(url);
             }
             return false;
           },
