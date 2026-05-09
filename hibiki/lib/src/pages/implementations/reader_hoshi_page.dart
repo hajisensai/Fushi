@@ -72,6 +72,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   double _stableBottomInset = 0;
 
   static const double _readerChromeHeight = 56;
+  static const double _infoFontSize = 12;
 
   int? _progressCurrentChars;
   int? _progressTotalChars;
@@ -845,10 +846,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           SasayakiMatchCodec.tryDecode(cue.textFragmentId);
       if (frag == null || frag.sectionIndex != _currentChapter) continue;
       payload.add(<String, dynamic>{
-        'key': cue.textFragmentId,
-        'ns': frag.normCharStart,
-        'ne': frag.normCharEnd,
-        't': cue.text,
+        'id': cue.textFragmentId,
+        'start': frag.normCharStart,
+        'length': frag.normCharEnd - frag.normCharStart,
       });
     }
     if (payload.isEmpty) return null;
@@ -1213,7 +1213,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   }
 
   Widget _buildSettingsBar() {
-    final String title = _book?.title ?? '';
     return Positioned(
       left: 0,
       right: 0,
@@ -1234,17 +1233,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
                       iconSize: 22,
                       onPressed: _openAudioImportDialog,
                     ),
-                    Expanded(
-                      child: Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style:
-                            Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: _themeTextColor(),
-                                ),
-                      ),
-                    ),
+                    const Spacer(),
                     IconButton(
                       icon: Icon(Icons.tune, color: _themeTextColor()),
                       iconSize: 20,
@@ -1538,31 +1527,14 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
     return Positioned(
       top: _stableTopInset,
-      left: 0,
-      right: 0,
+      left: 96,
+      right: 96,
       child: IgnorePointer(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 96),
-              child: Text(
-                '$_progressCurrentChars / $_progressTotalChars'
-                '  ${(ratio * 100).toStringAsFixed(2)}%',
-                style: TextStyle(fontSize: 12, color: infoColor),
-                textAlign: TextAlign.center,
-              ),
-            ),
-            const SizedBox(height: 2),
-            LinearProgressIndicator(
-              value: ratio,
-              minHeight: 2,
-              backgroundColor: infoColor.withOpacity(0.15),
-              valueColor: AlwaysStoppedAnimation<Color>(
-                infoColor.withOpacity(0.4),
-              ),
-            ),
-          ],
+        child: Text(
+          '$_progressCurrentChars / $_progressTotalChars'
+          '  ${(ratio * 100).toStringAsFixed(2)}%',
+          style: TextStyle(fontSize: _infoFontSize, color: infoColor),
+          textAlign: TextAlign.center,
         ),
       ),
     );

@@ -311,10 +311,9 @@ window.__hoshiAnnotate = function(chapterHref) {
         continue;
       }
       payload.add(<String, dynamic>{
-        'key': cue.textFragmentId,
-        'ns': frag.normCharStart,
-        'ne': frag.normCharEnd,
-        't': cue.text,
+        'id': cue.textFragmentId,
+        'start': frag.normCharStart,
+        'length': frag.normCharEnd - frag.normCharStart,
       });
     }
     if (payload.isEmpty) {
