@@ -16,7 +16,9 @@ import 'package:hibiki/src/epub/epub_storage.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_controller.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_play_bar.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
 import 'package:hibiki/src/media/sources/reader_hoshi_source.dart';
 import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
 import 'package:hibiki/src/media/audiobook/reading_time_tracker.dart';
@@ -81,7 +83,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   double _lastSavedProgress = -1;
 
   AudiobookPlayerController? _audiobookController;
-  bool _hasAudioSlot = false;
+
   bool _audioSlotResolved = false;
 
   ReadingTimeTracker? _readingTimeTracker;
@@ -216,16 +218,161 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final SrtBook? srt =
         (await db.getSrtBookByTtuBookId(widget.bookId))?.let(_srtBookFromRow);
 
-    _hasAudioSlot = ab != null || srt != null;
     _audioSlotResolved = true;
 
-    if (_hasAudioSlot && ab != null) {
-      // TODO: Initialize audiobook controller in Task 23
+    if (ab != null) {
+      await _initAudiobookController(ab, bookUid);
+    } else if (srt != null) {
+      await _initSrtBookController(srt);
     }
 
     if (mounted) {
       setState(() {});
     }
+  }
+
+  Future<void> _initAudiobookController(
+    Audiobook audiobook,
+    String bookUid,
+  ) async {
+    final AudiobookRepository repo = AudiobookRepository(appModel.database);
+    final List<File> audioFiles = await _resolveAudioFiles(
+      audioPaths: audiobook.audioPaths,
+      audioRoot: audiobook.audioRoot,
+    );
+    if (audioFiles.isEmpty) {
+      debugPrint('[ReaderHoshi] audiobook found but no audio files');
+      debugPrint('[ReaderHoshi] audio slot cleared: no files found');
+      return;
+    }
+
+    final AudiobookPlayerController controller = AudiobookPlayerController();
+    final List<Object> prefs = await Future.wait(<Future<Object>>[
+      repo.readFollowAudio(bookUid),
+      repo.readDelayMs(bookUid),
+      repo.readSpeed(bookUid),
+      repo.readPositionMs(bookUid),
+      repo.readImagePauseSec(bookUid),
+    ]);
+    await controller.load(
+      audiobook: audiobook,
+      audioFiles: audioFiles,
+      initialFollowAudio: prefs[0] as bool,
+      initialDelayMs: prefs[1] as int,
+      initialSpeed: prefs[2] as double,
+      initialPositionMs: prefs[3] as int,
+      initialImagePauseSec: prefs[4] as int,
+    );
+
+    if (!mounted) {
+      controller.dispose();
+      return;
+    }
+
+    controller.onPositionWrite = (String uid, int posMs) {
+      repo.updatePositionMs(bookUid: uid, positionMs: posMs);
+    };
+    controller.onDelayPersist = (int ms) async {
+      await repo.updateDelayMs(bookUid: bookUid, ms: ms);
+    };
+    controller.onSpeedPersist = (double speed) async {
+      await repo.updateSpeed(bookUid: bookUid, speed: speed);
+    };
+    controller.onImagePausePersist = (int sec) async {
+      await repo.updateImagePauseSec(bookUid: bookUid, sec: sec);
+    };
+    controller.getCurrentReaderSection = () => _currentChapter;
+
+    setState(() {
+      _audiobookController = controller;
+    });
+  }
+
+  Future<void> _initSrtBookController(SrtBook srtBook) async {
+    final List<File> audioFiles = await _resolveAudioFiles(
+      audioPaths: srtBook.audioPaths,
+      audioRoot: srtBook.audioRoot,
+    );
+    if (audioFiles.isEmpty) {
+      debugPrint('[ReaderHoshi] srt book found but no audio files');
+      debugPrint('[ReaderHoshi] audio slot cleared: no files found');
+      return;
+    }
+
+    final Audiobook syntheticAudiobook = Audiobook()
+      ..bookUid = srtBook.uid
+      ..audioRoot = srtBook.audioRoot
+      ..audioPaths = srtBook.audioPaths
+      ..alignmentFormat = 'srt'
+      ..alignmentPath = srtBook.srtPath;
+
+    final String srtBookUid = srtBook.uid;
+    final AudiobookRepository abRepo = AudiobookRepository(appModel.database);
+    final AudiobookPlayerController controller = AudiobookPlayerController();
+
+    final List<Object> prefs = await Future.wait(<Future<Object>>[
+      abRepo.readDelayMs(srtBookUid),
+      abRepo.readSpeed(srtBookUid),
+      abRepo.readImagePauseSec(srtBookUid),
+    ]);
+    await controller.load(
+      audiobook: syntheticAudiobook,
+      audioFiles: audioFiles,
+      initialDelayMs: prefs[0] as int,
+      initialSpeed: prefs[1] as double,
+      initialImagePauseSec: prefs[2] as int,
+    );
+
+    if (!mounted) {
+      controller.dispose();
+      return;
+    }
+
+    controller.onDelayPersist = (int ms) async {
+      await abRepo.updateDelayMs(bookUid: srtBookUid, ms: ms);
+    };
+    controller.onSpeedPersist = (double speed) async {
+      await abRepo.updateSpeed(bookUid: srtBookUid, speed: speed);
+    };
+    controller.onImagePausePersist = (int sec) async {
+      await abRepo.updateImagePauseSec(bookUid: srtBookUid, sec: sec);
+    };
+    controller.getCurrentReaderSection = () => _currentChapter;
+
+    setState(() {
+      _audiobookController = controller;
+    });
+  }
+
+  Future<List<File>> _resolveAudioFiles({
+    required List<String>? audioPaths,
+    required String? audioRoot,
+  }) async {
+    if (audioPaths != null && audioPaths.isNotEmpty) {
+      final List<File> files = <File>[];
+      for (final String path in audioPaths) {
+        final File f = File(path);
+        if (await f.exists()) files.add(f);
+      }
+      return files;
+    }
+    if (audioRoot != null) {
+      final Directory dir = Directory(audioRoot);
+      if (!await dir.exists()) return <File>[];
+      final List<FileSystemEntity> entries = await dir.list().toList();
+      final List<File> files = entries.whereType<File>().where((File f) {
+        final String ext = f.path.toLowerCase();
+        return ext.endsWith('.mp3') ||
+            ext.endsWith('.m4a') ||
+            ext.endsWith('.ogg') ||
+            ext.endsWith('.aac') ||
+            ext.endsWith('.wav') ||
+            ext.endsWith('.mp4');
+      }).toList()
+        ..sort((File a, File b) => a.path.compareTo(b.path));
+      return files;
+    }
+    return <File>[];
   }
 
   @override
@@ -859,24 +1006,31 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   }
 
   Widget _buildAudiobookBar() {
-    return Positioned(
-      left: 0,
-      right: 0,
-      bottom: 0,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          AudiobookPlayBar(
-            controller: _audiobookController!,
-            onOpenSettings: _showAppearanceSheet,
+    final AudiobookPlayerController ctrl = _audiobookController!;
+    return ListenableBuilder(
+      listenable: ctrl,
+      builder: (BuildContext context, Widget? _) {
+        return Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              AudiobookPlayBar(
+                controller: ctrl,
+                onOpenSettings: _showAppearanceSheet,
+              ),
+              SizedBox(height: _stableBottomInset),
+            ],
           ),
-          SizedBox(height: _stableBottomInset),
-        ],
-      ),
+        );
+      },
     );
   }
 
   Widget _buildSettingsBar() {
+    final String title = _book?.title ?? '';
     return Positioned(
       left: 0,
       right: 0,
@@ -891,15 +1045,19 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
             child: Row(
               children: <Widget>[
                 IconButton(
-                  icon: Icon(Icons.arrow_back, color: _themeTextColor()),
+                  icon: Icon(Icons.headphones, color: _themeTextColor()),
                   iconSize: 22,
-                  onPressed: () => Navigator.of(context).pop(),
+                  onPressed: _openAudioImportDialog,
                 ),
-                const Spacer(),
-                IconButton(
-                  icon: Icon(Icons.list, color: _themeTextColor()),
-                  iconSize: 20,
-                  onPressed: _showChapterSheet,
+                Expanded(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: _themeTextColor(),
+                        ),
+                  ),
                 ),
                 IconButton(
                   icon: Icon(Icons.tune, color: _themeTextColor()),
@@ -915,62 +1073,20 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     );
   }
 
-  void _showChapterSheet() {
-    if (_book == null) return;
+  Future<void> _openAudioImportDialog() async {
+    final String bookUid = widget.bookId.toString();
+    final AudiobookRepository repo = AudiobookRepository(appModel.database);
 
-    final List<EpubTocItem> toc = _book!.toc;
-    final List<EpubChapter> chapters = _book!.chapters;
-
-    final List<({String label, int chapterIndex})> items;
-    if (toc.isNotEmpty) {
-      items = _flattenToc(toc);
-    } else {
-      items = List<({String label, int chapterIndex})>.generate(
-        chapters.length,
-        (int i) => (label: 'Chapter ${i + 1}', chapterIndex: i),
-      );
-    }
-
-    showModalBottomSheet<void>(
+    await showDialog<void>(
       context: context,
-      backgroundColor: _themeBackgroundColor(),
-      builder: (BuildContext ctx) {
-        return ListView.builder(
-          itemCount: items.length,
-          itemBuilder: (BuildContext ctx, int i) {
-            final bool isCurrent = items[i].chapterIndex == _currentChapter;
-            return ListTile(
-              title: Text(
-                items[i].label,
-                style: TextStyle(
-                  color: _themeTextColor(),
-                  fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
-                ),
-              ),
-              selected: isCurrent,
-              onTap: () {
-                Navigator.of(ctx).pop();
-                _toggleChrome();
-                _navigateToChapter(items[i].chapterIndex);
-              },
-            );
-          },
-        );
-      },
+      builder: (BuildContext ctx) => AudiobookImportDialog(
+        bookUid: bookUid,
+        repo: repo,
+        ttuBookId: widget.bookId,
+      ),
     );
-  }
 
-  List<({String label, int chapterIndex})> _flattenToc(List<EpubTocItem> items) {
-    final List<({String label, int chapterIndex})> result =
-        <({String label, int chapterIndex})>[];
-    for (final EpubTocItem item in items) {
-      final int index = _tocHrefToChapterIndex(item.href);
-      if (index >= 0) {
-        result.add((label: item.label, chapterIndex: index));
-      }
-      result.addAll(_flattenToc(item.children));
-    }
-    return result;
+    await _resolveAudioSlot();
   }
 
   int _tocHrefToChapterIndex(String? href) {
