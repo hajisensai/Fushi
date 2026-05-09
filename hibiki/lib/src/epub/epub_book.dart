@@ -47,6 +47,24 @@ class EpubBook {
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
   }
+
+  ({int chapterIndex, String? fragment})? resolveInternalLink(String url) {
+    final Uri? uri = Uri.tryParse(url);
+    if (uri == null) return null;
+    if (uri.host != 'hoshi.local') return null;
+    if (!uri.path.startsWith('/epub/')) return null;
+
+    final String epubPath = Uri.decodeComponent(uri.path.substring('/epub/'.length));
+    final String? fragment = uri.fragment.isNotEmpty ? uri.fragment : null;
+
+    for (int i = 0; i < chapters.length; i++) {
+      if (chapters[i].href == epubPath) {
+        return (chapterIndex: i, fragment: fragment);
+      }
+    }
+
+    return null;
+  }
 }
 
 class EpubChapter {

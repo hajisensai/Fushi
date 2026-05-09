@@ -55,6 +55,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   bool _readerContentReady = false;
   bool _restoreInFlight = false;
   double _initialProgress = 0.0;
+  String? _initialFragment;
 
   double _stableTopInset = 0;
   double _stableBottomInset = 0;
@@ -336,6 +337,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       ReaderPaginationScripts.shellScript(
         initialProgress: _initialProgress,
         continuousMode: s.isContinuousMode,
+        initialFragment: _initialFragment,
       ),
     );
 
@@ -411,6 +413,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         domStorageEnabled: false,
         useShouldInterceptRequest: true,
         mixedContentMode: MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
+        useShouldOverrideUrlLoading: true,
       ),
       onWebViewCreated: (InAppWebViewController controller) {
         _controller = controller;
@@ -461,8 +464,23 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           (InAppWebViewController controller, WebResourceRequest request) async {
         return _interceptRequest(request.url);
       },
+      shouldOverrideUrlLoading:
+          (InAppWebViewController controller, NavigationAction action) async {
+        final String url = action.request.url?.toString() ?? '';
+        final ({int chapterIndex, String? fragment})? link =
+            _book?.resolveInternalLink(url);
+        if (link != null) {
+          _navigateToChapterWithFragment(link.chapterIndex, link.fragment);
+          return NavigationActionPolicy.CANCEL;
+        }
+        if (url.startsWith('https://hoshi.local/')) {
+          return NavigationActionPolicy.ALLOW;
+        }
+        return NavigationActionPolicy.CANCEL;
+      },
       onLoadStop: (InAppWebViewController controller, WebUri? url) async {
         await controller.evaluateJavascript(source: _buildReaderSetupScript());
+        _initialFragment = null;
       },
       onConsoleMessage:
           (InAppWebViewController controller, ConsoleMessage msg) {
@@ -504,6 +522,22 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
     _currentChapter = index;
     _initialProgress = progress;
+    _restoreInFlight = true;
+
+    final String url = _chapterUrl(index);
+    await _controller!.loadUrl(urlRequest: URLRequest(url: WebUri(url)));
+  }
+
+  Future<void> _navigateToChapterWithFragment(
+    int index,
+    String? fragment,
+  ) async {
+    if (_book == null || index < 0 || index >= _book!.chapters.length) return;
+    if (_controller == null) return;
+
+    _currentChapter = index;
+    _initialProgress = 0.0;
+    _initialFragment = fragment;
     _restoreInFlight = true;
 
     final String url = _chapterUrl(index);
