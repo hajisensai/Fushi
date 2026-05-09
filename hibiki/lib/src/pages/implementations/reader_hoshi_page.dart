@@ -53,6 +53,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   int _currentChapter = 0;
   bool _readerContentReady = false;
   bool _restoreInFlight = false;
+  double _initialProgress = 0.0;
 
   double _stableTopInset = 0;
   double _stableBottomInset = 0;
@@ -126,6 +127,16 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     debugPrint('[ReaderHoshi] chapter hrefs: $hrefs');
 
     await _resolveAudioSlot();
+
+    final ReaderPositionRepository repo =
+        ReaderPositionRepository(appModel.database);
+    final ReaderPosition? saved = await repo.findByTtuBookId(widget.bookId);
+    if (saved != null &&
+        saved.sectionIndex >= 0 &&
+        saved.sectionIndex < _book!.chapters.length) {
+      _currentChapter = saved.sectionIndex;
+      _initialProgress = saved.normCharOffset / 10000.0;
+    }
 
     if (mounted) {
       setState(() {});
@@ -295,7 +306,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final String css = ReaderContentStyles.css(settings: s);
     final String selectionJs = ReaderSelectionScripts.source();
     final String paginationJs = _stripScriptTags(
-      ReaderPaginationScripts.shellScript(continuousMode: s.isContinuousMode),
+      ReaderPaginationScripts.shellScript(
+        initialProgress: _initialProgress,
+        continuousMode: s.isContinuousMode,
+      ),
     );
 
     return '''
@@ -450,6 +464,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     }
 
     _currentChapter = index;
+    _initialProgress = progress;
     _restoreInFlight = true;
 
     final String url = _chapterUrl(index);
@@ -578,24 +593,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         await _persistPosition(_currentChapter, progress);
       }
     } catch (_) {}
-  }
-
-  Future<void> _restorePosition() async {
-    final ReaderPositionRepository repo =
-        ReaderPositionRepository(appModel.database);
-    final ReaderPosition? pos = await repo.findByTtuBookId(widget.bookId);
-    if (pos == null) {
-      return;
-    }
-
-    if (pos.sectionIndex != _currentChapter &&
-        pos.sectionIndex >= 0 &&
-        pos.sectionIndex < (_book?.chapters.length ?? 0)) {
-      await _navigateToChapter(
-        pos.sectionIndex,
-        progress: pos.normCharOffset / 10000.0,
-      );
-    }
   }
 
   // ── Page Turn ─────────────────────────────────────────────────────
