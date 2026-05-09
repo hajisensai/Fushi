@@ -1,4 +1,4 @@
-﻿{
+{
   "dictionary_media_type": "S?zlük",
   "dialog_importing": "??E AKTARILIYOR…",
   "player_media_type": "Oynat?c?",
@@ -13,6 +13,7 @@
   "pick_image": "Resim se?",
   "undo": "Geri al",
   "copy": "Kopyala",
+  "cut": "Kes",
   "clear": "Temizle",
   "creator": "Olu?turucu",
   "share": "Payla?",

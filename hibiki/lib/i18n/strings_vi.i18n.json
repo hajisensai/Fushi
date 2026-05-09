@@ -1,4 +1,4 @@
-﻿{
+{
   "dictionary_media_type": "T? ?i?n",
   "dialog_importing": "?ANG NH?P…",
   "player_media_type": "Trình phát",
@@ -13,6 +13,7 @@
   "pick_image": "Ch?n ?nh",
   "undo": "Hoàn tác",
   "copy": "Sao chép",
+  "cut": "Cắt",
   "clear": "Xóa",
   "creator": "T?o th?",
   "share": "Chia s?",

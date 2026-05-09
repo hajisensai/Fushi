@@ -34,6 +34,8 @@ dependencies:
   float_column: ^4.0.3
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
   flutter_archive: ^5.0.0
   flutter_cache_manager: ^3.3.0
   flutter_charset_detector: ^1.0.2
@@ -60,7 +62,7 @@ dependencies:
   html: ^0.15.2
   image_picker: ^0.8.7
   infinite_scroll_pagination: ^4.0.0
-  intl: ^0.18.0
+  intl: ^0.20.2
   json_annotation: ^4.8.1
   json_serializable: ^6.6.1
   just_audio: ^0.9.31

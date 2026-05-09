@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_logs/flutter_logs.dart';
@@ -353,7 +353,9 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
       home: home,
       locale: locale,
       localizationsDelegates: const [
-        HoshiReaderLocalizationsDelegate(),
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
       ],
       supportedLocales: appModel.locales.values,
       themeMode: themeMode,
@@ -383,28 +385,4 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
 
   /// The current locale, dependent on the active target language.
   Locale get locale => appModel.targetLanguage.locale;
-}
-
-/// Used to override certain strings.
-class HoshiReaderLocalizations extends DefaultMaterialLocalizations {
-  @override
-  String get licensesPageTitle => t.options_attribution;
-}
-
-/// Delegate for [HoshiReaderLocalizations].
-class HoshiReaderLocalizationsDelegate
-    extends LocalizationsDelegate<MaterialLocalizations> {
-  /// Initialise this delegate.
-  const HoshiReaderLocalizationsDelegate();
-  @override
-  bool isSupported(Locale locale) => true;
-
-  @override
-  Future<HoshiReaderLocalizations> load(Locale locale) {
-    return SynchronousFuture<HoshiReaderLocalizations>(
-        HoshiReaderLocalizations());
-  }
-
-  @override
-  bool shouldReload(HoshiReaderLocalizationsDelegate old) => false;
 }

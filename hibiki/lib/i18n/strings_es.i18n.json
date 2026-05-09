@@ -1,4 +1,4 @@
-﻿{
+{
   "dictionary_media_type": "Diccionario",
   "dialog_importing": "IMPORTANDO…",
   "player_media_type": "Reproductor",
@@ -13,6 +13,7 @@
   "pick_image": "Elegir imagen",
   "undo": "Deshacer",
   "copy": "Copiar",
+  "cut": "Cortar",
   "clear": "Limpiar",
   "creator": "Creador",
   "share": "Compartir",
