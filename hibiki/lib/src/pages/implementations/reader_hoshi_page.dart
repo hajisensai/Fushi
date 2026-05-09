@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:hibiki/pages.dart';
@@ -19,7 +22,6 @@ import 'package:hibiki/src/media/audiobook/reader_position_repository.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_model.dart';
 import 'package:hibiki/src/reader/reader_content_styles.dart';
 import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
-import 'package:hibiki/src/reader/reader_resource_server.dart';
 import 'package:hibiki/src/reader/reader_selection_data.dart';
 import 'package:hibiki/src/reader/reader_selection_scripts.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
@@ -44,9 +46,9 @@ class ReaderHoshiPage extends BaseSourcePage {
 class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     with WidgetsBindingObserver {
   InAppWebViewController? _controller;
-  ReaderResourceServer? _resourceServer;
   EpubBook? _book;
   ReaderSettings? _settings;
+  String? _extractDir;
 
   int _currentChapter = 0;
   bool _readerContentReady = false;
@@ -109,16 +111,55 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
     final String extractDir =
         await EpubStorage.bookDirectory(widget.bookId);
-    _book = EpubParser.parseFromExtracted(extractDir);
+    _extractDir = extractDir;
 
-    _resourceServer = ReaderResourceServer(extractDir: extractDir);
-    await _resourceServer!.start();
+    try {
+      _book = EpubParser.parseFromExtracted(extractDir);
+      debugPrint('[ReaderHoshi] parsed EPUB: ${_book!.chapters.length} chapters');
+    } on FormatException catch (e) {
+      debugPrint('[ReaderHoshi] EPUB parse failed ($e), using legacy mode');
+      _book = _buildLegacyBook(extractDir);
+    }
+
+    final List<String> hrefs =
+        _book!.chapters.map((EpubChapter ch) => ch.href).toList();
+    debugPrint('[ReaderHoshi] chapter hrefs: $hrefs');
 
     await _resolveAudioSlot();
 
     if (mounted) {
       setState(() {});
     }
+  }
+
+  EpubBook _buildLegacyBook(String extractDir) {
+    final List<FileSystemEntity> htmlFiles = Directory(extractDir)
+        .listSync(recursive: true)
+        .where((FileSystemEntity e) {
+      if (e is! File) return false;
+      final String ext = p.extension(e.path).toLowerCase();
+      return ext == '.html' || ext == '.xhtml' || ext == '.htm';
+    }).toList()
+      ..sort((FileSystemEntity a, FileSystemEntity b) =>
+          a.path.compareTo(b.path));
+
+    final List<EpubChapter> chapters = <EpubChapter>[];
+    for (int i = 0; i < htmlFiles.length; i++) {
+      final File f = htmlFiles[i] as File;
+      chapters.add(EpubChapter(
+        id: 'section-$i',
+        href: p.relative(f.path, from: extractDir).replaceAll('\\', '/'),
+        mediaType: 'text/html',
+        html: f.readAsStringSync(),
+        spineIndex: i,
+      ));
+    }
+
+    return EpubBook(
+      title: 'Book ${widget.bookId}',
+      chapters: chapters,
+      rootDirectory: extractDir,
+    );
   }
 
   Future<void> _resolveAudioSlot() async {
@@ -146,7 +187,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     WidgetsBinding.instance.removeObserver(this);
     _saveDebounce?.cancel();
     _flushPosition();
-    _resourceServer?.stop();
     _audiobookController?.dispose();
     _readingTimeTracker?.dispose();
     _focusNode.dispose();
@@ -203,26 +243,108 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   }
 
   Widget _buildBody() {
-    if (!_audioSlotResolved || _book == null || _resourceServer == null) {
+    if (!_audioSlotResolved || _book == null || _extractDir == null) {
       return const Center(child: CircularProgressIndicator());
     }
     return _buildWebView();
   }
 
-  Widget _buildWebView() {
-    final ReaderSettings s = _settings!;
-    final String css = ReaderContentStyles.css(
-      settings: s,
-      fontServerPort: _resourceServer!.port,
-    );
-    final String paginationJs = ReaderPaginationScripts.shellScript(
-      continuousMode: s.isContinuousMode,
-    );
-    final String selectionJs = ReaderSelectionScripts.script();
+  // ── URL & Resource Serving (mirrors Hoshi Android's hoshi.local scheme) ──
 
+  String _chapterUrl(int index) {
+    if (_book == null || index < 0 || index >= _book!.chapters.length) {
+      return 'about:blank';
+    }
+    return 'https://hoshi.local/epub/${_book!.chapters[index].href}';
+  }
+
+  WebResourceResponse? _interceptRequest(WebUri url) {
+    if (url.host != 'hoshi.local') return null;
+    final String path = url.path;
+    if (!path.startsWith('/epub/')) return null;
+    if (_extractDir == null) return null;
+
+    final String epubPath = Uri.decodeComponent(path.substring('/epub/'.length));
+    final String filePath = p.join(_extractDir!, epubPath);
+    final File file = File(filePath);
+    if (!file.existsSync()) {
+      debugPrint('[ReaderHoshi] resource not found: $epubPath');
+      return null;
+    }
+
+    final Uint8List data = file.readAsBytesSync();
+    final String mime = fallbackMimeType(filePath);
+
+    return WebResourceResponse(
+      contentType: mime,
+      contentEncoding: mime.startsWith('text/') ? 'utf-8' : null,
+      statusCode: 200,
+      reasonPhrase: 'OK',
+      headers: <String, String>{
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'no-cache',
+      },
+      data: data,
+    );
+  }
+
+  // ── Single IIFE setup script (mirrors Hoshi Android's readerSetupScript) ──
+
+  String _buildReaderSetupScript() {
+    final ReaderSettings s = _settings!;
+    final String css = ReaderContentStyles.css(settings: s);
+    final String selectionJs = ReaderSelectionScripts.source();
+    final String paginationJs = _stripScriptTags(
+      ReaderPaginationScripts.shellScript(continuousMode: s.isContinuousMode),
+    );
+
+    return '''
+(function() {
+  var style = document.createElement('style');
+  style.textContent = ${jsonEncode(css)};
+  document.head.appendChild(style);
+  window.scanNonJapaneseText = false;
+  $selectionJs
+  $paginationJs
+  var startX = 0, startY = 0, startTime = 0;
+  document.addEventListener('touchstart', function(e) {
+    var t = e.touches[0];
+    startX = t.clientX;
+    startY = t.clientY;
+    startTime = Date.now();
+  }, {passive: true});
+  document.addEventListener('touchend', function(e) {
+    var t = e.changedTouches[0];
+    var dx = t.clientX - startX;
+    var dy = t.clientY - startY;
+    var elapsed = Date.now() - startTime;
+    var absDx = Math.abs(dx);
+    var absDy = Math.abs(dy);
+    var velocity = absDx / Math.max(1, elapsed) * 1000;
+    if (absDx > absDy && (absDx >= 72 || (absDx >= 36 && velocity >= 900))) {
+      if (dx < 0) {
+        window.flutter_inappwebview.callHandler('onSwipe', 'left');
+      } else {
+        window.flutter_inappwebview.callHandler('onSwipe', 'right');
+      }
+    }
+  }, {passive: true});
+})();
+''';
+  }
+
+  static String _stripScriptTags(String js) {
+    return js
+        .replaceFirst(RegExp(r'^<script[^>]*>\n?'), '')
+        .replaceFirst(RegExp(r'\n?</script>$'), '');
+  }
+
+  // ── WebView ──────────────────────────────────────────────────────────
+
+  Widget _buildWebView() {
     return InAppWebView(
       initialUrlRequest: URLRequest(
-        url: WebUri(_resourceServer!.chapterUrl(_currentChapter)),
+        url: WebUri(_chapterUrl(_currentChapter)),
       ),
       initialUserScripts: UnmodifiableListView<UserScript>(<UserScript>[
         UserScript(
@@ -244,16 +366,16 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         scrollbarFadingEnabled: false,
         databaseEnabled: false,
         domStorageEnabled: false,
+        useShouldInterceptRequest: true,
+        mixedContentMode: MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
       ),
-      onWebViewCreated: (controller) {
+      onWebViewCreated: (InAppWebViewController controller) {
         _controller = controller;
 
         controller.addJavaScriptHandler(
           handlerName: 'onTextSelected',
-          callback: (args) async {
-            if (args.isEmpty) {
-              return;
-            }
+          callback: (List<dynamic> args) async {
+            if (args.isEmpty) return;
             try {
               final Map<String, dynamic> payload =
                   jsonDecode(args[0] as String) as Map<String, dynamic>;
@@ -266,19 +388,31 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
         controller.addJavaScriptHandler(
           handlerName: 'onRestoreComplete',
-          callback: (_) {
-            _onRestoreComplete();
+          callback: (_) => _onRestoreComplete(),
+        );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'onSwipe',
+          callback: (List<dynamic> args) {
+            if (args.isEmpty) return;
+            final String dir = args[0] as String;
+            if (dir == 'left') {
+              _paginate(ReaderNavigationDirection.forward);
+            } else if (dir == 'right') {
+              _paginate(ReaderNavigationDirection.backward);
+            }
           },
         );
       },
-      onLoadStop: (controller, url) async {
-        final String styleJs =
-            "var s=document.createElement('style');s.textContent=${jsonEncode(css)};document.head.appendChild(s);";
-        await controller.evaluateJavascript(source: styleJs);
-        await controller.evaluateJavascript(source: selectionJs);
-        await controller.evaluateJavascript(source: paginationJs);
+      shouldInterceptRequest:
+          (InAppWebViewController controller, WebResourceRequest request) async {
+        return _interceptRequest(request.url);
       },
-      onConsoleMessage: (controller, msg) {
+      onLoadStop: (InAppWebViewController controller, WebUri? url) async {
+        await controller.evaluateJavascript(source: _buildReaderSetupScript());
+      },
+      onConsoleMessage:
+          (InAppWebViewController controller, ConsoleMessage msg) {
         debugPrint('[WebView] ${msg.message}');
       },
     );
@@ -318,7 +452,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _currentChapter = index;
     _restoreInFlight = true;
 
-    final String url = _resourceServer!.chapterUrl(index);
+    final String url = _chapterUrl(index);
     await _controller!.loadUrl(urlRequest: URLRequest(url: WebUri(url)));
   }
 

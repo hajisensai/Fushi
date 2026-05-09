@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_floating_search_bar/material_floating_search_bar.dart';
 
@@ -120,13 +121,14 @@ class ReaderHoshiSource extends ReaderMediaSource {
   }
 
   static int _extractBookId(String identifier) {
-    // hoshi://book/123
     final Uri? uri = Uri.tryParse(identifier);
-    if (uri != null && uri.pathSegments.length >= 2) {
-      return int.tryParse(uri.pathSegments[1]) ?? 0;
+    if (uri == null) return 0;
+    // hoshi://book/123 → scheme=hoshi, host=book, path=/123
+    if (uri.scheme == 'hoshi' && uri.host == 'book' && uri.pathSegments.isNotEmpty) {
+      return int.tryParse(uri.pathSegments[0]) ?? 0;
     }
     // Legacy ttu URL: http://localhost:52059/b.html?id=123
-    final String? idParam = uri?.queryParameters['id'];
+    final String? idParam = uri.queryParameters['id'];
     if (idParam != null) {
       return int.tryParse(idParam) ?? 0;
     }
@@ -245,9 +247,24 @@ class ReaderHoshiSource extends ReaderMediaSource {
         position = charsRead;
       }
 
+      String? imageUrl;
+      if (book.coverPath != null && book.coverPath!.isNotEmpty) {
+        final String absPath = p.join(book.extractDir, book.coverPath!);
+        if (File(absPath).existsSync()) {
+          imageUrl = Uri.file(absPath).toString();
+        }
+      }
+      if (imageUrl == null) {
+        final String fallback = p.join(book.extractDir, 'cover.jpg');
+        if (File(fallback).existsSync()) {
+          imageUrl = Uri.file(fallback).toString();
+        }
+      }
+
       items.add(MediaItem(
         mediaIdentifier: 'hoshi://book/${book.id}',
         title: book.title,
+        imageUrl: imageUrl,
         base64Image: null,
         mediaTypeIdentifier: mediaType.uniqueKey,
         mediaSourceIdentifier: uniqueKey,

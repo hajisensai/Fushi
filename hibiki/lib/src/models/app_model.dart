@@ -2881,7 +2881,9 @@ class AppModel with ChangeNotifier {
     await mediaSource.onMediaItemClear(item);
 
     _mediaItemsCache.removeWhere((m) => m.id == item.id);
-    await _database.deleteMediaItemById(item.id!);
+    if (item.id != null) {
+      await _database.deleteMediaItemById(item.id!);
+    }
   }
 
   /// Copies a [term] to clipboard and shows an appropriate toast.

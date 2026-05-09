@@ -6,9 +6,13 @@ import 'package:path/path.dart' as p;
 import 'package:hibiki/src/epub/epub_book.dart';
 
 class ReaderResourceServer {
-  ReaderResourceServer({required this.extractDir});
+  ReaderResourceServer({
+    required this.extractDir,
+    this.chapterHrefs = const <String>[],
+  });
 
   final String extractDir;
+  final List<String> chapterHrefs;
 
   HttpServer? _server;
   int _port = 0;
@@ -54,8 +58,7 @@ class ReaderResourceServer {
       return;
     }
 
-    final String chapterDir = _findChapterDir(index);
-    final File chapterFile = File(chapterDir);
+    final File chapterFile = _resolveChapterFile(index);
     if (!chapterFile.existsSync()) {
       request.response
         ..statusCode = HttpStatus.notFound
@@ -74,6 +77,13 @@ class ReaderResourceServer {
       ..headers.set('Cache-Control', 'no-cache')
       ..write(html)
       ..close();
+  }
+
+  File _resolveChapterFile(int index) {
+    if (index >= 0 && index < chapterHrefs.length) {
+      return File(p.join(extractDir, chapterHrefs[index]));
+    }
+    return File('');
   }
 
   void _serveResource(HttpRequest request, String path) {
@@ -108,24 +118,6 @@ class ReaderResourceServer {
           ..close();
       } catch (_) {}
     }
-  }
-
-  String _findChapterDir(int index) {
-    final List<FileSystemEntity> htmlFiles = Directory(extractDir)
-        .listSync(recursive: true)
-        .where((FileSystemEntity e) {
-      if (e is! File) return false;
-      final String ext = p.extension(e.path).toLowerCase();
-      return ext == '.html' || ext == '.xhtml' || ext == '.htm';
-    }).toList();
-
-    htmlFiles.sort((FileSystemEntity a, FileSystemEntity b) =>
-        a.path.compareTo(b.path));
-
-    if (index >= 0 && index < htmlFiles.length) {
-      return htmlFiles[index].path;
-    }
-    return '';
   }
 
   String _chapterBaseHref(String chapterPath) {
