@@ -215,9 +215,7 @@ class ReaderSettings {
   }
 
   /// CSS font-family string and @font-face declarations for enabled fonts.
-  ({String fontFamily, String fontFaces}) buildCustomFontCss({
-    required int fontServerPort,
-  }) {
+  ({String fontFamily, String fontFaces}) buildCustomFontCss() {
     final Iterable<Map<String, dynamic>> enabled =
         customFonts.where((Map<String, dynamic> e) =>
             e['enabled'] as bool? ?? true);
@@ -230,7 +228,7 @@ class ReaderSettings {
       final String? path = e['path'] as String?;
       if (path != null) {
         final String uri =
-            'http://localhost:$fontServerPort/${Uri.encodeComponent(path)}';
+            'https://hoshi.local/fonts/${Uri.encodeComponent(path)}';
         faces.add(
           '@font-face { font-family: ${_cssFontFamilyName(normalized)}; '
           'src: url("$uri"); font-display: swap; }',

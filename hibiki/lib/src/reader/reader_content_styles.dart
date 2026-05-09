@@ -24,13 +24,11 @@ class ReaderContentStyles {
     required ReaderSettings settings,
     String? fontFaces,
     String? fontFamily,
-    int fontServerPort = 0,
   }) {
     return '<style>\n${css(
       settings: settings,
       fontFaces: fontFaces,
       fontFamily: fontFamily,
-      fontServerPort: fontServerPort,
     )}\n</style>';
   }
 
@@ -38,7 +36,6 @@ class ReaderContentStyles {
     required ReaderSettings settings,
     String? fontFaces,
     String? fontFamily,
-    int fontServerPort = 0,
   }) {
     final ({String textColor, String backgroundColor}) colors =
         _themeColors(settings.theme);
@@ -48,16 +45,13 @@ class ReaderContentStyles {
     if (fontFaces != null && fontFamily != null) {
       resolvedFontFaces = fontFaces;
       resolvedFontFamily = '$fontFamily, serif';
-    } else if (fontServerPort > 0) {
+    } else {
       final ({String fontFamily, String fontFaces}) custom =
-          settings.buildCustomFontCss(fontServerPort: fontServerPort);
+          settings.buildCustomFontCss();
       resolvedFontFaces = custom.fontFaces;
       resolvedFontFamily = custom.fontFamily.isNotEmpty
           ? '${custom.fontFamily}, serif'
           : 'serif';
-    } else {
-      resolvedFontFaces = '';
-      resolvedFontFamily = 'serif';
     }
 
     final bool isVertical = settings.writingMode.startsWith('vertical');

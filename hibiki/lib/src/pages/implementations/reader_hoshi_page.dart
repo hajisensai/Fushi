@@ -273,6 +273,26 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   WebResourceResponse? _interceptRequest(WebUri url) {
     if (url.host != 'hoshi.local') return null;
     final String path = url.path;
+
+    if (path.startsWith('/fonts/')) {
+      final String fontPath =
+          Uri.decodeComponent(path.substring('/fonts/'.length));
+      final File fontFile = File(fontPath);
+      if (!fontFile.existsSync()) return null;
+      final Uint8List data = fontFile.readAsBytesSync();
+      final String mime = fallbackMimeType(fontPath);
+      return WebResourceResponse(
+        contentType: mime,
+        statusCode: 200,
+        reasonPhrase: 'OK',
+        headers: <String, String>{
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'max-age=3600',
+        },
+        data: data,
+      );
+    }
+
     if (!path.startsWith('/epub/')) return null;
     if (_extractDir == null) return null;
 

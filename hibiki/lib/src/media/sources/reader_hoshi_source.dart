@@ -618,14 +618,12 @@ class ReaderHoshiSource extends ReaderMediaSource {
   }
 
   ({String fontFamily, String fontFaces}) buildCustomFontCss() {
-    return customFontCssForEntries(customFonts,
-        fontServerPort: fontServerPort);
+    return customFontCssForEntries(customFonts);
   }
 
   static ({String fontFamily, String fontFaces}) customFontCssForEntries(
-    Iterable<Map<String, dynamic>> fonts, {
-    required int fontServerPort,
-  }) {
+    Iterable<Map<String, dynamic>> fonts,
+  ) {
     final Iterable<Map<String, dynamic>> enabled =
         fonts.where((e) => e['enabled'] as bool? ?? true);
     final List<String> families = <String>[];
@@ -637,7 +635,7 @@ class ReaderHoshiSource extends ReaderMediaSource {
       final String? path = e['path'] as String?;
       if (path != null) {
         final String uri =
-            'http://localhost:$fontServerPort/${Uri.encodeComponent(path)}';
+            'https://hoshi.local/fonts/${Uri.encodeComponent(path)}';
         faces.add(
           '@font-face { font-family: ${cssFontFamilyName(normalizedName)}; '
           'src: url("$uri"); font-display: swap; }',
