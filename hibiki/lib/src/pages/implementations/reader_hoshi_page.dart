@@ -251,7 +251,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
               ),
               _buildTopProgressBar(),
               buildDictionary(),
-              _buildSettingsBar(),
               _buildBottomChrome(),
               if (!_readerContentReady)
                 Positioned.fill(
@@ -729,13 +728,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     }
   }
 
-  // ── Settings Bar ──────────────────────────────────────────────────
-
-  Widget _buildSettingsBar() {
-    // TODO: Implement full settings panel in Task 24
-    return const SizedBox.shrink();
-  }
-
   // ── Bottom Chrome ─────────────────────────────────────────────────
 
   void _toggleChrome() {
@@ -852,7 +844,205 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   }
 
   void _showAppearanceSheet() {
-    // Implemented in Task 10
+    if (_settings == null) return;
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: _themeBackgroundColor(),
+      isScrollControlled: true,
+      builder: (BuildContext ctx) {
+        return StatefulBuilder(
+          builder: (BuildContext ctx, StateSetter setSheetState) {
+            return DraggableScrollableSheet(
+              initialChildSize: 0.6,
+              minChildSize: 0.3,
+              maxChildSize: 0.9,
+              expand: false,
+              builder: (BuildContext ctx, ScrollController scrollCtrl) {
+                return ListView(
+                  controller: scrollCtrl,
+                  padding: const EdgeInsets.all(16),
+                  children: <Widget>[
+                    _buildThemeSelector(setSheetState),
+                    const SizedBox(height: 16),
+                    _buildFontSizeSlider(setSheetState),
+                    const SizedBox(height: 16),
+                    _buildLineHeightSlider(setSheetState),
+                    const SizedBox(height: 16),
+                    _buildWritingModeToggle(setSheetState),
+                    const SizedBox(height: 16),
+                    _buildViewModeToggle(setSheetState),
+                    const SizedBox(height: 16),
+                    _buildFuriganaModeSelector(setSheetState),
+                  ],
+                );
+              },
+            );
+          },
+        );
+      },
+    ).then((_) => _reloadWithCurrentSettings());
+  }
+
+  Widget _buildThemeSelector(StateSetter setSheetState) {
+    final List<(String, String, Color)> themes = <(String, String, Color)>[
+      ('light-theme', 'Light', const Color(0xFFFFFFFF)),
+      ('ecru-theme', 'Ecru', const Color(0xFFF7F6EB)),
+      ('water-theme', 'Water', const Color(0xFFDFECF4)),
+      ('gray-theme', 'Gray', const Color(0xFF23272A)),
+      ('dark-theme', 'Dark', const Color(0xFF121212)),
+      ('black-theme', 'Black', const Color(0xFF000000)),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text('Theme', style: TextStyle(color: _themeTextColor(), fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          children: themes.map(((String, String, Color) t) {
+            final bool selected = _settings!.theme == t.$1;
+            return GestureDetector(
+              onTap: () {
+                _settings!.setTheme(t.$1);
+                setSheetState(() {});
+                setState(() {});
+              },
+              child: Container(
+                width: 40, height: 40,
+                decoration: BoxDecoration(
+                  color: t.$3,
+                  border: Border.all(
+                    color: selected ? Colors.blue : Colors.grey,
+                    width: selected ? 2 : 1,
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFontSizeSlider(StateSetter setSheetState) {
+    return Row(
+      children: <Widget>[
+        Text('Font Size', style: TextStyle(color: _themeTextColor())),
+        Expanded(
+          child: Slider(
+            value: _settings!.fontSize,
+            min: 12,
+            max: 60,
+            divisions: 48,
+            label: '${_settings!.fontSize.round()}',
+            onChanged: (double v) {
+              _settings!.setFontSize(v);
+              setSheetState(() {});
+            },
+          ),
+        ),
+        Text('${_settings!.fontSize.round()}', style: TextStyle(color: _themeTextColor())),
+      ],
+    );
+  }
+
+  Widget _buildLineHeightSlider(StateSetter setSheetState) {
+    return Row(
+      children: <Widget>[
+        Text('Line Height', style: TextStyle(color: _themeTextColor())),
+        Expanded(
+          child: Slider(
+            value: _settings!.lineHeight,
+            min: 1.0,
+            max: 2.5,
+            divisions: 15,
+            label: _settings!.lineHeight.toStringAsFixed(1),
+            onChanged: (double v) {
+              _settings!.setLineHeight(v);
+              setSheetState(() {});
+            },
+          ),
+        ),
+        Text(_settings!.lineHeight.toStringAsFixed(1),
+            style: TextStyle(color: _themeTextColor())),
+      ],
+    );
+  }
+
+  Widget _buildWritingModeToggle(StateSetter setSheetState) {
+    return Row(
+      children: <Widget>[
+        Text('Writing Mode', style: TextStyle(color: _themeTextColor())),
+        const Spacer(),
+        SegmentedButton<String>(
+          segments: const <ButtonSegment<String>>[
+            ButtonSegment<String>(value: 'vertical-rl', label: Text('Vertical')),
+            ButtonSegment<String>(value: 'horizontal-tb', label: Text('Horizontal')),
+          ],
+          selected: <String>{_settings!.writingMode},
+          onSelectionChanged: (Set<String> v) {
+            _settings!.setWritingMode(v.first);
+            setSheetState(() {});
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildViewModeToggle(StateSetter setSheetState) {
+    return Row(
+      children: <Widget>[
+        Text('View Mode', style: TextStyle(color: _themeTextColor())),
+        const Spacer(),
+        SegmentedButton<String>(
+          segments: const <ButtonSegment<String>>[
+            ButtonSegment<String>(value: 'paginated', label: Text('Paginated')),
+            ButtonSegment<String>(value: 'continuous', label: Text('Continuous')),
+          ],
+          selected: <String>{_settings!.viewMode},
+          onSelectionChanged: (Set<String> v) {
+            _settings!.setViewMode(v.first);
+            setSheetState(() {});
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFuriganaModeSelector(StateSetter setSheetState) {
+    return Row(
+      children: <Widget>[
+        Text('Furigana', style: TextStyle(color: _themeTextColor())),
+        const Spacer(),
+        SegmentedButton<String>(
+          segments: const <ButtonSegment<String>>[
+            ButtonSegment<String>(value: 'show', label: Text('Show')),
+            ButtonSegment<String>(value: 'hide', label: Text('Hide')),
+            ButtonSegment<String>(value: 'toggle', label: Text('Toggle')),
+          ],
+          selected: <String>{_settings!.furiganaMode},
+          onSelectionChanged: (Set<String> v) {
+            _settings!.setFuriganaMode(v.first);
+            setSheetState(() {});
+          },
+        ),
+      ],
+    );
+  }
+
+  Future<void> _reloadWithCurrentSettings() async {
+    if (_controller == null) return;
+    final dynamic result = await _controller!.evaluateJavascript(
+      source: ReaderPaginationScripts.progressInvocation(),
+    );
+    final double? progress = _toDouble(result);
+    _initialProgress = progress ?? 0.0;
+    _restoreInFlight = true;
+
+    final String url = _chapterUrl(_currentChapter);
+    await _controller!.loadUrl(urlRequest: URLRequest(url: WebUri(url)));
   }
 
   // ── Top Progress Bar ──────────────────────────────────────────────
