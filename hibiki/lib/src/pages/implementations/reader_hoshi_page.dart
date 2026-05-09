@@ -585,7 +585,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
     final Rect selectionRect = data.rect != null
         ? Rect.fromLTWH(
-            data.rect!['x']! + _stableTopInset,
+            data.rect!['x']!,
             data.rect!['y']! + _readerTopOffset,
             data.rect!['width']!,
             data.rect!['height']!,
@@ -1040,6 +1040,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final double? progress = _toDouble(result);
     _initialProgress = progress ?? 0.0;
     _restoreInFlight = true;
+
+    setState(() {
+      _readerContentReady = false;
+    });
 
     final String url = _chapterUrl(_currentChapter);
     await _controller!.loadUrl(urlRequest: URLRequest(url: WebUri(url)));
