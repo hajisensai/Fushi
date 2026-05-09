@@ -25,7 +25,10 @@ import 'package:hibiki/src/media/audiobook/favorite_sentence_repository.dart';
 import 'package:hibiki/src/media/audiobook/reading_time_tracker.dart';
 import 'package:hibiki/src/media/audiobook/reader_position_model.dart';
 import 'package:hibiki/src/media/audiobook/reader_position_repository.dart';
+import 'package:hibiki/src/media/audiobook/sasayaki_match_codec.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_model.dart';
+import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
+import 'package:hibiki/src/media/audiobook/srt_parser.dart';
 import 'package:hibiki/src/reader/reader_content_styles.dart';
 import 'package:hibiki/src/reader/reader_resource_sanitizer.dart';
 import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
@@ -85,6 +88,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   double _lastSavedProgress = -1;
 
   AudiobookPlayerController? _audiobookController;
+  String? _audiobookBookUid;
+  String? _srtBookUid;
 
   bool _audioSlotResolved = false;
 
@@ -282,7 +287,15 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     controller.onImagePausePersist = (int sec) async {
       await repo.updateImagePauseSec(bookUid: bookUid, sec: sec);
     };
+    controller.onFollowAudioPersist = (bool value) async {
+      await repo.updateFollowAudio(bookUid: bookUid, value: value);
+    };
     controller.getCurrentReaderSection = () => _currentChapter;
+    controller.onCrossChapter = _handleCueCrossChapter;
+    controller.onBoundarySkip = _handleBoundarySkip;
+    controller.addListener(_onCueChanged);
+
+    _audiobookBookUid = bookUid;
 
     setState(() {
       _audiobookController = controller;
@@ -339,6 +352,11 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       await abRepo.updateImagePauseSec(bookUid: srtBookUid, sec: sec);
     };
     controller.getCurrentReaderSection = () => _currentChapter;
+    controller.onCrossChapter = _handleCueCrossChapter;
+    controller.onBoundarySkip = _handleBoundarySkip;
+    controller.addListener(_onCueChanged);
+
+    _srtBookUid = srtBookUid;
 
     setState(() {
       _audiobookController = controller;
@@ -382,6 +400,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _saveDebounce?.cancel();
     _flushPosition();
     _flushReadingStats();
+    _audiobookController?.removeListener(_onCueChanged);
     _audiobookController?.dispose();
     _readingTimeTracker?.dispose();
     _focusNode.dispose();
@@ -691,6 +710,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       onLoadStop: (InAppWebViewController controller, WebUri? url) async {
         await controller.evaluateJavascript(source: _buildReaderSetupScript());
         _initialFragment = null;
+        if (_audiobookController != null) {
+          await _loadAndApplyCues();
+        }
       },
       onConsoleMessage:
           (InAppWebViewController controller, ConsoleMessage msg) {
@@ -723,6 +745,103 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _lastAbsoluteCount = _absoluteCharPosition(_initialProgress);
 
     _refreshProgress();
+  }
+
+  // ── Audiobook Cue Wiring ──────────────────────────────────────────
+
+  void _onCueChanged() {
+    if (!mounted) return;
+    final AudiobookPlayerController? controller = _audiobookController;
+    if (controller == null) return;
+    final AudioCue? cue = controller.currentCue;
+    if (cue != null && _controller != null) {
+      final SasayakiFragment? frag =
+          SasayakiMatchCodec.tryDecode(cue.textFragmentId);
+      if (frag != null && frag.sectionIndex != _currentChapter) {
+        AudiobookBridge.highlight(_controller!, cue: null);
+        return;
+      }
+    }
+    if (_controller != null) {
+      final bool forceReveal = controller.consumeForceReveal();
+      final bool reveal =
+          forceReveal || (controller.shouldRevealCurrentCue);
+      AudiobookBridge.highlight(_controller!, cue: cue, reveal: reveal);
+    }
+  }
+
+  Future<void> _handleCueCrossChapter(int newSection) async {
+    if (_restoreInFlight) return;
+    if (_book == null || newSection < 0 || newSection >= _book!.chapters.length) {
+      return;
+    }
+    await _navigateToChapter(newSection);
+  }
+
+  Future<void> _handleBoundarySkip(int delta) async {
+    final AudiobookPlayerController? controller = _audiobookController;
+    if (controller == null) return;
+    final int targetSec = _currentChapter + delta;
+    if (_book == null || targetSec < 0 || targetSec >= _book!.chapters.length) {
+      return;
+    }
+    final List<AudioCue> targetCues =
+        controller.sasayakiCuesForSection(targetSec);
+    if (targetCues.isEmpty) {
+      await _navigateToChapter(targetSec);
+      return;
+    }
+    await controller.skipToCue(targetCues.first);
+  }
+
+  Future<void> _loadAndApplyCues() async {
+    if (_controller == null || _audiobookController == null) return;
+
+    final Color primary = Theme.of(context).colorScheme.primary;
+    await AudiobookBridge.inject(_controller!, primaryColor: primary);
+
+    if (_srtBookUid != null) {
+      final SrtBookRepository srtRepo = SrtBookRepository(appModel.database);
+      final List<AudioCue> cues = await srtRepo.cuesFor(_srtBookUid!);
+      _audiobookController!.setChapterCues(cues);
+      _audiobookController!.setAllBookCues(cues);
+      await AudiobookBridge.injectCueClickHandler(
+        _controller!,
+        chapterHref: SrtParser.defaultChapter,
+      );
+    } else if (_audiobookBookUid != null) {
+      final AudiobookRepository repo = AudiobookRepository(appModel.database);
+      final List<AudioCue> allCues =
+          await repo.cuesForBook(_audiobookBookUid!);
+      final bool sasayaki = allCues.any(
+        (AudioCue c) =>
+            SasayakiMatchCodec.tryDecode(c.textFragmentId) != null,
+      );
+      if (sasayaki) {
+        _audiobookController!.setChapterCues(allCues);
+        _audiobookController!.setAllBookCues(allCues);
+        await AudiobookBridge.applySasayakiCues(
+          _controller!,
+          sectionIndex: _currentChapter,
+          cues: allCues,
+        );
+      } else {
+        final String chapterHref = _book!.chapters[_currentChapter].href;
+        final List<AudioCue> cues = await repo.cuesForChapter(
+          bookUid: _audiobookBookUid!,
+          chapterHref: chapterHref,
+        );
+        _audiobookController!.setChapterCues(cues);
+        _audiobookController!.setAllBookCues(allCues);
+        if (cues.isEmpty) {
+          await AudiobookBridge.annotate(
+            _controller!,
+            chapterHref: chapterHref,
+          );
+        }
+      }
+    }
+    _onCueChanged();
   }
 
   // ── Chapter Navigation ────────────────────────────────────────────
