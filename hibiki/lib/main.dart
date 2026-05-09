@@ -14,6 +14,8 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/popup_main.dart' as popup_entrypoint;
+import 'package:hibiki/src/epub/ttu_migration.dart';
+import 'package:hibiki/src/epub/ttu_migration_server.dart';
 import 'package:hibiki/utils.dart';
 
 Color? _savedSplashColor;
@@ -129,6 +131,25 @@ void main() {
     /// [HomePage].
     final appModel = container.read(appProvider);
     await appModel.initialise();
+
+    // ── ttu → EpubBooks 数据迁移 ─────────────────────────────────────
+    // 必须用固定端口（52059/52060）启动 ttu asset server，否则 IndexedDB
+    // 的 origin 不匹配找不到用户数据。迁移是 per-book retryable 的。
+    unawaited(Future(() async {
+      try {
+        final migServer =
+            await TtuMigrationServer.start(appModel.targetLanguage);
+        final int count = await TtuMigration.migrateIfNeeded(
+          appModel.database,
+          migServer.boundPort!,
+        );
+        if (count > 0) {
+          debugPrint('[Hibiki] ttu migration: $count books migrated');
+        }
+      } catch (e) {
+        debugPrint('[Hibiki] ttu migration failed (non-fatal): $e');
+      }
+    }));
 
     // ── 预热：WebView 引擎 + ttu assets server ─────────────────────────
     // 两者互不依赖，各自 fire-and-forget。用户还在看主页/书架时就把冷启动

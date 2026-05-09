@@ -166,4 +166,202 @@ class TtuIdbReader {
       await webView.dispose();
     }
   }
+
+  /// Returns list of all book IDs in the ttu IndexedDB 'data' store.
+  /// Returns null on IDB access failure (distinguishes from empty library).
+  static Future<List<int>?> readAllBookIds(int serverPort) async {
+    final Completer<List<int>?> completer = Completer<List<int>?>();
+    bool jsDispatched = false;
+    HeadlessInAppWebView? webView;
+    webView = HeadlessInAppWebView(
+      initialUrlRequest: URLRequest(
+        url: WebUri('http://localhost:$serverPort/_hibiki_idb.html'),
+      ),
+      initialSettings: InAppWebViewSettings(
+        databaseEnabled: true,
+        domStorageEnabled: true,
+      ),
+      onLoadStop: (controller, url) async {
+        if (jsDispatched) return;
+        jsDispatched = true;
+        await controller.evaluateJavascript(source: '''
+(async function() {
+  try {
+    const db = await new Promise((resolve, reject) => {
+      const req = indexedDB.open('books');
+      req.onupgradeneeded = (e) => {
+        e.target.transaction.abort();
+        reject('db_not_initialized');
+      };
+      req.onsuccess = (ev) => {
+        const db = ev.target.result;
+        if (!db.objectStoreNames.contains('data')) {
+          db.close();
+          reject('data_store_missing');
+          return;
+        }
+        resolve(db);
+      };
+      req.onerror = (e) => reject(String(e.target.error));
+    });
+    const tx = db.transaction('data', 'readonly');
+    const store = tx.objectStore('data');
+    const keys = await new Promise((resolve, reject) => {
+      const req = store.getAllKeys();
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    db.close();
+    console.log(JSON.stringify({messageType: 'ttu_keys_ok', keys: keys}));
+  } catch (e) {
+    console.log(JSON.stringify({messageType: 'ttu_keys_err', error: String(e)}));
+  }
+})();
+        ''');
+      },
+      onConsoleMessage: (controller, message) {
+        if (completer.isCompleted) return;
+        try {
+          final Map<String, dynamic> msg =
+              jsonDecode(message.message) as Map<String, dynamic>;
+          switch (msg['messageType']) {
+            case 'ttu_keys_ok':
+              completer.complete(
+                (msg['keys'] as List<dynamic>).cast<int>(),
+              );
+              break;
+            case 'ttu_keys_err':
+              debugPrint(
+                  'TtuIdbReader.readAllBookIds error: ${msg['error']}');
+              completer.complete(null);
+              break;
+          }
+        } catch (e) {
+          debugPrint('TtuIdbReader.readAllBookIds decode error: $e');
+        }
+      },
+    );
+
+    try {
+      await webView.run();
+      return await completer.future.timeout(
+        const Duration(seconds: 15),
+        onTimeout: () => null,
+      );
+    } finally {
+      await webView.dispose();
+    }
+  }
+
+  /// Read a book's full data for migration: title, elementHtml, sections
+  /// metadata, coverImage. Returns null if book not found or IDB access fails.
+  static Future<Map<String, dynamic>?> readBookForMigration({
+    required int ttuBookId,
+    required int serverPort,
+  }) async {
+    final Completer<Map<String, dynamic>?> completer =
+        Completer<Map<String, dynamic>?>();
+    bool jsDispatched = false;
+
+    final String js = '''
+(async function() {
+  try {
+    const record = await new Promise((resolve, reject) => {
+      const req = indexedDB.open('books');
+      req.onupgradeneeded = (e) => {
+        e.target.transaction.abort();
+        reject('db_not_initialized');
+      };
+      req.onsuccess = (ev) => {
+        const db = ev.target.result;
+        if (!db.objectStoreNames.contains('data')) {
+          db.close();
+          reject('data_store_missing'); return;
+        }
+        const tx = db.transaction(['data'], 'readonly');
+        const get = tx.objectStore('data').get($ttuBookId);
+        get.onsuccess = (e) => resolve(e.target.result);
+        get.onerror = (e) => reject(String(e.target.error));
+      };
+      req.onerror = (e) => reject(String(e.target.error));
+    });
+    if (!record) {
+      console.log(JSON.stringify({messageType: 'ttu_mig_err', error: 'not_found'}));
+      return;
+    }
+    const title = typeof record.title === 'string' ? record.title : '';
+    const html = record.elementHtml || '';
+    const sectionsMeta = Array.isArray(record.sections) ? record.sections : [];
+    const sections = sectionsMeta.map(s => ({
+      reference: (s && s.reference) || '',
+      label: (s && s.label) || '',
+      characters: (s && s.characters) || 0,
+    }));
+
+    let coverBase64 = null;
+    if (record.coverImage instanceof Blob) {
+      coverBase64 = await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(record.coverImage);
+      });
+    }
+
+    console.log(JSON.stringify({
+      messageType: 'ttu_mig_ok',
+      title: title,
+      elementHtml: html,
+      sections: sections,
+      coverImageBase64: coverBase64,
+    }));
+  } catch (e) {
+    console.log(JSON.stringify({messageType: 'ttu_mig_err', error: String(e)}));
+  }
+})();
+''';
+
+    HeadlessInAppWebView? webView;
+    webView = HeadlessInAppWebView(
+      initialUrlRequest: URLRequest(
+        url: WebUri('http://localhost:$serverPort/_hibiki_idb.html'),
+      ),
+      initialSettings: InAppWebViewSettings(
+        databaseEnabled: true,
+        domStorageEnabled: true,
+      ),
+      onLoadStop: (controller, url) async {
+        if (jsDispatched) return;
+        jsDispatched = true;
+        await controller.evaluateJavascript(source: js);
+      },
+      onConsoleMessage: (controller, message) {
+        if (completer.isCompleted) return;
+        try {
+          final Map<String, dynamic> msg =
+              jsonDecode(message.message) as Map<String, dynamic>;
+          final String type = msg['messageType'] as String? ?? '';
+          if (type == 'ttu_mig_ok') {
+            completer.complete(msg);
+          } else if (type == 'ttu_mig_err') {
+            debugPrint(
+                'TtuIdbReader.readBookForMigration error: ${msg['error']}');
+            completer.complete(null);
+          }
+        } catch (e) {
+          debugPrint('TtuIdbReader.readBookForMigration decode error: $e');
+        }
+      },
+    );
+
+    try {
+      await webView.run();
+      return await completer.future.timeout(
+        const Duration(seconds: 20),
+        onTimeout: () => null,
+      );
+    } finally {
+      await webView.dispose();
+    }
+  }
 }
