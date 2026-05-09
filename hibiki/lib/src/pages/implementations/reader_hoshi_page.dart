@@ -217,6 +217,15 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   }
 
   Future<void> _resolveAudioSlot() async {
+    final AudiobookPlayerController? old = _audiobookController;
+    if (old != null) {
+      old.removeListener(_onCueChanged);
+      old.dispose();
+      _audiobookController = null;
+      _audiobookBookUid = null;
+      _srtBookUid = null;
+    }
+
     final HibikiDatabase db = appModel.database;
     final String bookUid = widget.bookId.toString();
     final Audiobook? ab =
