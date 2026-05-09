@@ -70,7 +70,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   int? _progressTotalChars;
 
   int _sessionCharsRead = 0;
-  int _lastCharsInChapter = 0;
+  int _highWaterChars = 0;
   DateTime _sessionStartTime = DateTime.now();
 
   Timer? _saveDebounce;
@@ -570,7 +570,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       return;
     }
 
-    _lastCharsInChapter = 0;
+    _highWaterChars = 0;
     _flushReadingStats();
 
     _currentChapter = index;
@@ -591,7 +591,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (_book == null || index < 0 || index >= _book!.chapters.length) return;
     if (_controller == null) return;
 
-    _lastCharsInChapter = 0;
+    _highWaterChars = 0;
     _flushReadingStats();
 
     _currentChapter = index;
@@ -686,10 +686,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final int? total = int.tryParse(parts[1]);
     if (current == null || total == null || total <= 0) return;
 
-    if (current > _lastCharsInChapter) {
-      _sessionCharsRead += current - _lastCharsInChapter;
+    if (current > _highWaterChars) {
+      _sessionCharsRead += current - _highWaterChars;
+      _highWaterChars = current;
     }
-    _lastCharsInChapter = current;
 
     final double progress = current / total;
     _debouncedSavePosition(progress);
