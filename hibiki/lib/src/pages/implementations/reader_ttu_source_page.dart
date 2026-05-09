@@ -807,15 +807,30 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
         final ReaderViewportPos? pos =
             await AudiobookBridge.getViewportNormOffset(controller);
         if (pos == null) return;
+        final int? ttuCharOffset =
+            await _getTtuCharOffsetForViewportPos(controller, pos);
         await _persistReaderPos(
           section: pos.section,
           offset: pos.offset,
+          ttuCharOffset: ttuCharOffset,
           from: 'dispose',
         );
       } catch (e) {
         debugPrint('[hibiki-reader-pos] dispose flush err: $e');
       }
     });
+  }
+
+  Future<int?> _getTtuCharOffsetForViewportPos(
+    InAppWebViewController controller,
+    ReaderViewportPos pos,
+  ) async {
+    final ({int sectionCharOffset, int sectionIndex})? ttuPos =
+        await AudiobookBridge.getTtuCharOffset(controller);
+    if (ttuPos == null || ttuPos.sectionIndex != pos.section) {
+      return null;
+    }
+    return ttuPos.sectionCharOffset;
   }
 
   /// 把位置写进 DB。同 section+offset 且无新 ttuCharOffset 则跳过。
@@ -999,11 +1014,14 @@ class _ReaderTtuSourcePageState extends BaseSourcePageState<ReaderTtuSourcePage>
       _metricsDebounce?.cancel();
       _preMetricsPos = null;
       if (_controllerInitialised && !_restoreInFlight) {
-        AudiobookBridge.getViewportNormOffset(_controller).then((pos) {
+        AudiobookBridge.getViewportNormOffset(_controller).then((pos) async {
           if (pos != null) {
+            final int? ttuCharOffset =
+                await _getTtuCharOffsetForViewportPos(_controller, pos);
             _persistReaderPos(
               section: pos.section,
               offset: pos.offset,
+              ttuCharOffset: ttuCharOffset,
               from: 'lifecycle-pause',
             );
           }
@@ -4796,7 +4814,7 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
       final int? ttuOff = pending.ttuCharOffset;
       bool usedNativePath = false;
 
-      if (ttuOff != null && ttuOff >= 0) {
+      if (ttuOff != null && ttuOff >= pending.offset) {
         usedNativePath = true;
         _scrollToNormOffsetCompleter = Completer<bool>();
         _viewportStableCompleter = Completer<bool>();
@@ -4810,6 +4828,12 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
           restoreToken: _restoreToken,
         );
       } else {
+        if (ttuOff != null && ttuOff >= 0) {
+          debugPrint(
+            '[hibiki-reader-pos] native ttu offset rejected: '
+            'ttu=$ttuOff norm=${pending.offset}',
+          );
+        }
         _scrollToNormOffsetCompleter = Completer<bool>();
         _viewportStableCompleter = Completer<bool>();
         _restoreTargetSection = pending.section;
@@ -4832,9 +4856,27 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         'o=${pending.offset} ttu=$ttuOff ok=$scrollOk native=$usedNativePath',
       );
 
-      if (!scrollOk && usedNativePath) {
+      bool needsFallback = !scrollOk && usedNativePath;
+      if (scrollOk) {
+        final bool stable = await _viewportStableCompleter!.future.timeout(
+          const Duration(seconds: 5),
+          onTimeout: () => false,
+        );
         debugPrint(
-            '[hibiki-reader-pos] native path failed, fallback to normCharOffset');
+          '[hibiki-reader-pos] viewportStable '
+          '${stable ? "reached" : "timeout/failed"}',
+        );
+        _viewportStableCompleter = null;
+        needsFallback = usedNativePath && !stable;
+      } else {
+        _viewportStableCompleter = null;
+      }
+
+      if (needsFallback) {
+        debugPrint(
+          '[hibiki-reader-pos] native path not verified, '
+          'fallback to normCharOffset',
+        );
         _scrollToNormOffsetCompleter = Completer<bool>();
         _viewportStableCompleter = Completer<bool>();
         await AudiobookBridge.scrollToNormOffset(
@@ -4860,18 +4902,6 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
             '${stable ? "reached" : "timeout/failed"}',
           );
         }
-        _viewportStableCompleter = null;
-      } else if (scrollOk) {
-        final bool stable = await _viewportStableCompleter!.future.timeout(
-          const Duration(seconds: 5),
-          onTimeout: () => false,
-        );
-        debugPrint(
-          '[hibiki-reader-pos] viewportStable '
-          '${stable ? "reached" : "timeout/failed"}',
-        );
-        _viewportStableCompleter = null;
-      } else {
         _viewportStableCompleter = null;
       }
     } catch (e) {

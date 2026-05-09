@@ -53,3 +53,17 @@ test_screenshots/
 screenshot_*.png
 tmp_screen*.png
 *.xml
+
+# QA screenshots and debug artifacts
+qa-*.png
+qa-*-summary.txt
+popup_*.png
+debug_screenshot.png
+
+# Codex test artifacts
+.codex-test/
+
+# AI-generated docs (local-only)
+docs/superpowers/
+docs/REGRESSION_BUGS.md
+docs/TODO.md

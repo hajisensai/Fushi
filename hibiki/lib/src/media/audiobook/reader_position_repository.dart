@@ -19,12 +19,18 @@ class ReaderPositionRepository {
     required int normCharOffset,
     int? ttuCharOffset,
   }) async {
+    final ReaderPositionRow? existing =
+        ttuCharOffset == null ? await _db.getReaderPosition(ttuBookId) : null;
+    final Value<int> ttuCharOffsetValue = ttuCharOffset != null
+        ? Value(ttuCharOffset)
+        : existing == null || existing.sectionIndex == sectionIndex
+            ? const Value.absent()
+            : const Value(-1);
     await _db.upsertReaderPosition(ReaderPositionsCompanion(
       ttuBookId: Value(ttuBookId),
       sectionIndex: Value(sectionIndex),
       normCharOffset: Value(normCharOffset),
-      ttuCharOffset:
-          ttuCharOffset != null ? Value(ttuCharOffset) : const Value.absent(),
+      ttuCharOffset: ttuCharOffsetValue,
       updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
     ));
   }

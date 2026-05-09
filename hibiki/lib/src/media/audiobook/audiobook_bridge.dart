@@ -1451,8 +1451,20 @@ window.__hibikiScrollToNormOffset = function(section, offset, _retryCount, _exte
   function signalDone(ok) {
     try { if (window.flutter_inappwebview) window.flutter_inappwebview.callHandler('scrollToNormOffsetDone', {success: !!ok}); } catch(e) {}
   }
+  function readNormPos() {
+    try {
+      if (typeof window.__hibikiGetViewportNormOffset === 'function') {
+        return window.__hibikiGetViewportNormOffset();
+      }
+    } catch(e) {}
+    return null;
+  }
   function signalStable(success) {
-    try { if (window.flutter_inappwebview) window.flutter_inappwebview.callHandler('viewportStable', {section: $section, offset: $expectedNormOffset, success: !!success, token: myToken}); } catch(e) {}
+    var pos = readNormPos();
+    var sec = pos && typeof pos.section === 'number' ? pos.section : $section;
+    var off = pos && typeof pos.offset === 'number' ? pos.offset : -1;
+    var reached = !!success && pos && sec === $section && Math.abs(off - $expectedNormOffset) <= 5;
+    try { if (window.flutter_inappwebview) window.flutter_inappwebview.callHandler('viewportStable', {section: sec, offset: off, success: !!reached, token: myToken}); } catch(e) {}
   }
   if (typeof window.__ttuScrollToCharOffset !== 'function') {
     signalDone(false);

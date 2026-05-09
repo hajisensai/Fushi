@@ -16,9 +16,7 @@ void main() {
     await db.close();
   });
 
-  test(
-      'save with ttuCharOffset then save with null preserves ttuCharOffset',
-      () async {
+  test('save with ttuCharOffset then same-section null preserves it', () async {
     await repo.save(
       ttuBookId: 42,
       sectionIndex: 3,
@@ -31,21 +29,43 @@ void main() {
 
     await repo.save(
       ttuBookId: 42,
-      sectionIndex: 4,
+      sectionIndex: 3,
       normCharOffset: 200,
       ttuCharOffset: null,
     );
     pos = await repo.findByTtuBookId(42);
     expect(pos, isNotNull);
-    expect(pos!.sectionIndex, equals(4), reason: 'sectionIndex should update');
+    expect(pos!.sectionIndex, equals(3));
     expect(pos!.normCharOffset, equals(200),
         reason: 'normCharOffset should update');
     expect(pos!.ttuCharOffset, equals(500),
-        reason: 'ttuCharOffset must NOT be overwritten by null save');
+        reason: 'same-section null save may preserve ttuCharOffset');
   });
 
-  test('save with ttuCharOffset then save with new value updates it',
-      () async {
+  test('cross-section null save invalidates local ttuCharOffset', () async {
+    await repo.save(
+      ttuBookId: 42,
+      sectionIndex: 3,
+      normCharOffset: 100,
+      ttuCharOffset: 500,
+    );
+
+    await repo.save(
+      ttuBookId: 42,
+      sectionIndex: 4,
+      normCharOffset: 200,
+      ttuCharOffset: null,
+    );
+    final pos = await repo.findByTtuBookId(42);
+    expect(pos, isNotNull);
+    expect(pos!.sectionIndex, equals(4), reason: 'sectionIndex should update');
+    expect(pos.normCharOffset, equals(200),
+        reason: 'normCharOffset should update');
+    expect(pos.ttuCharOffset, isNull,
+        reason: 'section-local ttuCharOffset must not survive section changes');
+  });
+
+  test('save with ttuCharOffset then save with new value updates it', () async {
     await repo.save(
       ttuBookId: 42,
       sectionIndex: 3,

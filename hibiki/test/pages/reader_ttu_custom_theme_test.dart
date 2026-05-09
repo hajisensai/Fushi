@@ -119,24 +119,43 @@ void main() {
         12,
       );
     });
+  });
 
-    test('reserves the slot for a plain book when the play bar is visible', () {
-      expect(
-        shouldReserveReaderBottomChrome(
-          showPlayBar: true,
-        ),
-        isTrue,
+  group('Reader restore section changes', () {
+    // (didRestorePos, restoreInFlight, inFlightNavSection, sectionIndex, expected)
+    final restoreTable = <(bool, bool, int?, int, ReaderSectionChangeDecision)>[
+      // Before bootstrap completes → always ignore
+      (false, false, null, 0, ReaderSectionChangeDecision.ignore),
+      (false, true, 4, 0, ReaderSectionChangeDecision.ignore),
+      // Restore in-flight, non-target section → ignore
+      (true, true, 4, 0, ReaderSectionChangeDecision.ignore),
+      (true, true, 4, 3, ReaderSectionChangeDecision.ignore),
+      // Restore in-flight, target section reached → complete
+      (true, true, 4, 4, ReaderSectionChangeDecision.completeRestore),
+      // Restore done, no in-flight → accept any manual change
+      (true, false, null, 0, ReaderSectionChangeDecision.accept),
+      (true, false, null, 7, ReaderSectionChangeDecision.accept),
+    ];
+    for (final (didRestore, inFlight, navSection, idx, expected)
+        in restoreTable) {
+      test(
+        'resolveManualSectionChangeDuringRestore('
+        'didRestorePos: $didRestore, restoreInFlight: $inFlight, '
+        'inFlightNavSection: $navSection, sectionIndex: $idx) == '
+        '${expected.name}',
+        () {
+          expect(
+            resolveManualSectionChangeDuringRestore(
+              didRestorePos: didRestore,
+              restoreInFlight: inFlight,
+              inFlightNavSection: navSection,
+              sectionIndex: idx,
+            ),
+            expected,
+          );
+        },
       );
-    });
-
-    test('does not reserve the slot when the play bar is hidden', () {
-      expect(
-        shouldReserveReaderBottomChrome(
-          showPlayBar: false,
-        ),
-        isFalse,
-      );
-    });
+    }
   });
 
   group('Reader progress metrics', () {
@@ -274,7 +293,8 @@ void main() {
       );
     });
 
-    test('offset == total backs off by 1 to avoid TTU next-section overflow', () {
+    test('offset == total backs off by 1 to avoid TTU next-section overflow',
+        () {
       expect(
         resolveGlobalCharOffset(
             sectionChars: const [100, 200], globalOffset: 300),
