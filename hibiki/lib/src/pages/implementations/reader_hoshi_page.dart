@@ -76,6 +76,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   ReadingTimeTracker? _readingTimeTracker;
 
+  bool _showChrome = false;
+
   final FocusNode _focusNode = FocusNode();
 
   bool get _showTopProgress =>
@@ -250,6 +252,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
               _buildTopProgressBar(),
               buildDictionary(),
               _buildSettingsBar(),
+              _buildBottomChrome(),
               if (!_readerContentReady)
                 Positioned.fill(
                   top: _stableTopInset,
@@ -733,6 +736,60 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     return const SizedBox.shrink();
   }
 
+  // ── Bottom Chrome ─────────────────────────────────────────────────
+
+  void _toggleChrome() {
+    setState(() {
+      _showChrome = !_showChrome;
+      if (_showChrome) {
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+      } else {
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+      }
+    });
+  }
+
+  Widget _buildBottomChrome() {
+    if (!_showChrome || !_readerContentReady) {
+      return const SizedBox.shrink();
+    }
+
+    return Positioned(
+      bottom: _stableBottomInset,
+      left: 0,
+      right: 0,
+      height: _readerChromeHeight,
+      child: Container(
+        color: _themeBackgroundColor().withValues(alpha: 0.95),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: <Widget>[
+            IconButton(
+              icon: Icon(Icons.arrow_back, color: _themeTextColor()),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+            IconButton(
+              icon: Icon(Icons.list, color: _themeTextColor()),
+              onPressed: _showChapterSheet,
+            ),
+            IconButton(
+              icon: Icon(Icons.text_fields, color: _themeTextColor()),
+              onPressed: _showAppearanceSheet,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showChapterSheet() {
+    // Implemented in Task 9
+  }
+
+  void _showAppearanceSheet() {
+    // Implemented in Task 10
+  }
+
   // ── Top Progress Bar ──────────────────────────────────────────────
 
   Widget _buildTopProgressBar() {
@@ -749,7 +806,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       right: 0,
       height: _topProgressBarHeight,
       child: GestureDetector(
-        onTap: () {},
+        onTap: _toggleChrome,
         child: Container(
           color: _themeBackgroundColor(),
           alignment: Alignment.center,
