@@ -182,6 +182,11 @@ img:not(.block-img) {
   max-height: var(--hoshi-image-max-height, $imageMaxHeight)$readerStylePriority;
   object-fit: contain$readerStylePriority;
 }
+p > img:only-child, div > img:only-child, section > img:only-child {
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+}
 svg {
   max-width: var(--hoshi-image-max-width, $imageMaxWidth)$readerStylePriority;
   max-height: var(--hoshi-image-max-height, $imageMaxHeight)$readerStylePriority;

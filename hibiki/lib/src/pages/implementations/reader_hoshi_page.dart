@@ -60,7 +60,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   double _stableTopInset = 0;
   double _stableBottomInset = 0;
-  static const double _topProgressBarHeight = 18;
+  static const double _topProgressBarHeight = 36;
   static const double _readerChromeHeight = 56;
 
   int? _progressCurrentChars;
@@ -76,7 +76,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   ReadingTimeTracker? _readingTimeTracker;
 
-  bool _showChrome = false;
+  bool _showChrome = true;
 
   final FocusNode _focusNode = FocusNode();
 
@@ -89,11 +89,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   double get _readerTopOffset =>
       _stableTopInset + (_showTopProgress ? _topProgressBarHeight : 0);
 
-  bool get _hasReaderBottomChrome =>
-      _audiobookController == null || appModel.showPlayBar;
-
   double get _readerBottomReserve =>
-      (_hasReaderBottomChrome ? _readerChromeHeight : 0) + _stableBottomInset;
+      (_showChrome ? _readerChromeHeight : 0) + _stableBottomInset;
 
   @override
   void initState() {
@@ -374,6 +371,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     var absDy = Math.abs(dy);
     var velocity = absDx / Math.max(1, elapsed) * 1000;
     if (absDx > absDy && (absDx >= 72 || (absDx >= 36 && velocity >= 900))) {
+      e.preventDefault();
       if (dx < 0) {
         window.flutter_inappwebview.callHandler('onSwipe', 'left');
       } else {
@@ -382,7 +380,22 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     } else if (absDx < 20 && absDy < 20) {
       window.flutter_inappwebview.callHandler('onTap', t.clientX, t.clientY);
     }
-  }, {passive: true});
+  }, {passive: false});
+  window.hoshiProgressDetails = function() {
+    var r = window.hoshiReader;
+    if (!r) return '';
+    var p = r.calculateProgress();
+    var m = r.paginationMetrics;
+    var total = (m && m.totalChars) ? m.totalChars : 0;
+    if (total <= 0 && r.createWalker) {
+      var walker = r.createWalker();
+      var node;
+      total = 0;
+      while (node = walker.nextNode()) total += r.countChars(node.textContent);
+    }
+    if (total <= 0) return '';
+    return Math.round(p * total) + ',' + total;
+  };
 })();
 ''';
   }
@@ -618,24 +631,28 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   // ── Progress Save/Restore ─────────────────────────────────────────
 
   Future<void> _refreshProgress() async {
-    if (_controller == null) {
-      return;
-    }
+    if (_controller == null) return;
     final dynamic result = await _controller!.evaluateJavascript(
-      source: ReaderPaginationScripts.progressInvocation(),
+      source: 'window.hoshiProgressDetails()',
     );
-    final double? progress = _toDouble(result);
-    if (progress == null) {
-      return;
-    }
+    if (result == null) return;
+    final String str =
+        result.toString().replaceAll('"', '').trim();
+    if (str.isEmpty) return;
 
+    final List<String> parts = str.split(',');
+    if (parts.length != 2) return;
+    final int? current = int.tryParse(parts[0]);
+    final int? total = int.tryParse(parts[1]);
+    if (current == null || total == null || total <= 0) return;
+
+    final double progress = current / total;
     _debouncedSavePosition(progress);
 
     if (mounted) {
       setState(() {
-        _progressCurrentChars =
-            (progress * 1000).round();
-        _progressTotalChars = 1000;
+        _progressCurrentChars = current;
+        _progressTotalChars = total;
       });
     }
   }
@@ -746,6 +763,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       return const SizedBox.shrink();
     }
 
+    final Color textColor = _themeTextColor();
     return Positioned(
       bottom: _stableBottomInset,
       left: 0,
@@ -753,20 +771,48 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       height: _readerChromeHeight,
       child: Container(
         color: _themeBackgroundColor().withValues(alpha: 0.95),
+        padding: const EdgeInsets.symmetric(horizontal: 8),
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: <Widget>[
             IconButton(
-              icon: Icon(Icons.arrow_back, color: _themeTextColor()),
+              icon: Icon(Icons.chevron_left, color: textColor, size: 28),
               onPressed: () => Navigator.of(context).pop(),
             ),
-            IconButton(
-              icon: Icon(Icons.list, color: _themeTextColor()),
-              onPressed: _showChapterSheet,
-            ),
-            IconButton(
-              icon: Icon(Icons.text_fields, color: _themeTextColor()),
-              onPressed: _showAppearanceSheet,
+            PopupMenuButton<String>(
+              icon: Icon(Icons.tune, color: textColor),
+              color: _themeBackgroundColor(),
+              onSelected: (String value) {
+                if (value == 'chapters') {
+                  _showChapterSheet();
+                } else if (value == 'appearance') {
+                  _showAppearanceSheet();
+                }
+              },
+              itemBuilder: (BuildContext ctx) => <PopupMenuEntry<String>>[
+                PopupMenuItem<String>(
+                  value: 'appearance',
+                  child: Row(
+                    children: <Widget>[
+                      Icon(Icons.palette_outlined, color: textColor),
+                      const SizedBox(width: 12),
+                      Text('Appearance',
+                          style: TextStyle(color: textColor)),
+                    ],
+                  ),
+                ),
+                PopupMenuItem<String>(
+                  value: 'chapters',
+                  child: Row(
+                    children: <Widget>[
+                      Icon(Icons.list, color: textColor),
+                      const SizedBox(width: 12),
+                      Text('Chapters',
+                          style: TextStyle(color: textColor)),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -1058,6 +1104,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
     final double ratio =
         (_progressCurrentChars! / _progressTotalChars!).clamp(0.0, 1.0);
+    final String title = _book?.title ?? '';
+    final Color textColor = _themeTextColor();
 
     return Positioned(
       top: _stableTopInset,
@@ -1068,14 +1116,23 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         onTap: _toggleChrome,
         child: Container(
           color: _themeBackgroundColor(),
-          alignment: Alignment.center,
-          child: Text(
-            '${_currentChapter + 1}/${_book?.chapters.length ?? 0}'
-            '  ${(ratio * 100).toStringAsFixed(0)}%',
-            style: TextStyle(
-              fontSize: 11,
-              color: _themeTextColor(),
-            ),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              if (title.isNotEmpty)
+                Text(
+                  title,
+                  style: TextStyle(fontSize: 10, color: textColor),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+              Text(
+                '$_progressCurrentChars / $_progressTotalChars'
+                '  ${(ratio * 100).toStringAsFixed(2)}%',
+                style: TextStyle(fontSize: 10, color: textColor),
+              ),
+            ],
           ),
         ),
       ),
