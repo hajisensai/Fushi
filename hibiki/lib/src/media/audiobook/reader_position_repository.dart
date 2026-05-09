@@ -2,6 +2,10 @@ import 'package:drift/drift.dart';
 import 'package:hibiki/src/database/database.dart';
 import 'package:hibiki/src/media/audiobook/reader_position_model.dart';
 
+/// 阅读位置持久化。
+///
+/// 参数名 `ttuBookId` 沿用旧列名保持数据库兼容，
+/// 语义上等同于 `EpubBooks.id`（书的主键）。
 class ReaderPositionRepository {
   const ReaderPositionRepository(this._db);
 
