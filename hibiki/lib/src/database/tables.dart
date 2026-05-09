@@ -173,3 +173,19 @@ class DictionaryHistory extends Table {
   IntColumn get position => integer()();
   TextColumn get resultJson => text()();
 }
+
+// ── epub_books ─────────────────────────────────────────────────────
+@DataClassName('EpubBookRow')
+class EpubBooks extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get title => text()();
+  TextColumn get author => text().nullable()();
+  TextColumn get coverPath => text().nullable()();
+  TextColumn get epubPath => text()();
+  TextColumn get extractDir => text()();
+  IntColumn get chapterCount => integer()();
+  TextColumn get chaptersJson => text()();
+  TextColumn get tocJson => text().nullable()();
+  TextColumn get sourceMetadata => text().nullable()();
+  IntColumn get importedAt => integer()();
+}

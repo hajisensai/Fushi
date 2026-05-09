@@ -33,13 +33,14 @@ LazyDatabase _openDb(String dbDirectory) {
   Preferences,
   DictionaryMetadata,
   DictionaryHistory,
+  EpubBooks,
 ])
 class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase(String dbDirectory) : super(_openDb(dbDirectory));
   HibikiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -52,6 +53,9 @@ class HibikiDatabase extends _$HibikiDatabase {
           }
           if (from < 4) {
             await m.addColumn(readerPositions, readerPositions.ttuCharOffset);
+          }
+          if (from < 5) {
+            await m.createTable(epubBooks);
           }
         },
       );
@@ -384,4 +388,29 @@ class HibikiDatabase extends _$HibikiDatabase {
       });
 
   Future<int> clearDictionaryHistory() => delete(dictionaryHistory).go();
+
+  // ── epub books ──────────────────────────────────────────────────
+  Future<List<EpubBookRow>> getAllEpubBooks() =>
+      (select(epubBooks)..orderBy([(t) => OrderingTerm.desc(t.importedAt)]))
+          .get();
+
+  Future<EpubBookRow?> getEpubBook(int id) =>
+      (select(epubBooks)..where((t) => t.id.equals(id))).getSingleOrNull();
+
+  Future<int> insertEpubBook(EpubBooksCompanion book) =>
+      into(epubBooks).insert(book);
+
+  Future<int> insertEpubBookOrIgnore(EpubBooksCompanion book) =>
+      into(epubBooks).insert(book, mode: InsertMode.insertOrIgnore);
+
+  Future<void> updateEpubBookTitle(int bookId, String title) =>
+      (update(epubBooks)..where((t) => t.id.equals(bookId)))
+          .write(EpubBooksCompanion(title: Value(title)));
+
+  Future<void> updateEpubBookPath(int bookId, String epubPath) =>
+      (update(epubBooks)..where((t) => t.id.equals(bookId)))
+          .write(EpubBooksCompanion(epubPath: Value(epubPath)));
+
+  Future<int> deleteEpubBook(int id) =>
+      (delete(epubBooks)..where((t) => t.id.equals(id))).go();
 }

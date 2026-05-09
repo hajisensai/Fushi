@@ -5235,6 +5235,569 @@ class DictionaryHistoryCompanion extends UpdateCompanion<DictionaryHistoryRow> {
   }
 }
 
+class $EpubBooksTable extends EpubBooks
+    with TableInfo<$EpubBooksTable, EpubBookRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $EpubBooksTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+      'title', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _authorMeta = const VerificationMeta('author');
+  @override
+  late final GeneratedColumn<String> author = GeneratedColumn<String>(
+      'author', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _coverPathMeta =
+      const VerificationMeta('coverPath');
+  @override
+  late final GeneratedColumn<String> coverPath = GeneratedColumn<String>(
+      'cover_path', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _epubPathMeta =
+      const VerificationMeta('epubPath');
+  @override
+  late final GeneratedColumn<String> epubPath = GeneratedColumn<String>(
+      'epub_path', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _extractDirMeta =
+      const VerificationMeta('extractDir');
+  @override
+  late final GeneratedColumn<String> extractDir = GeneratedColumn<String>(
+      'extract_dir', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _chapterCountMeta =
+      const VerificationMeta('chapterCount');
+  @override
+  late final GeneratedColumn<int> chapterCount = GeneratedColumn<int>(
+      'chapter_count', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _chaptersJsonMeta =
+      const VerificationMeta('chaptersJson');
+  @override
+  late final GeneratedColumn<String> chaptersJson = GeneratedColumn<String>(
+      'chapters_json', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _tocJsonMeta =
+      const VerificationMeta('tocJson');
+  @override
+  late final GeneratedColumn<String> tocJson = GeneratedColumn<String>(
+      'toc_json', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _sourceMetadataMeta =
+      const VerificationMeta('sourceMetadata');
+  @override
+  late final GeneratedColumn<String> sourceMetadata = GeneratedColumn<String>(
+      'source_metadata', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _importedAtMeta =
+      const VerificationMeta('importedAt');
+  @override
+  late final GeneratedColumn<int> importedAt = GeneratedColumn<int>(
+      'imported_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns => [
+        id,
+        title,
+        author,
+        coverPath,
+        epubPath,
+        extractDir,
+        chapterCount,
+        chaptersJson,
+        tocJson,
+        sourceMetadata,
+        importedAt
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'epub_books';
+  @override
+  VerificationContext validateIntegrity(Insertable<EpubBookRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('title')) {
+      context.handle(
+          _titleMeta, title.isAcceptableOrUnknown(data['title']!, _titleMeta));
+    } else if (isInserting) {
+      context.missing(_titleMeta);
+    }
+    if (data.containsKey('author')) {
+      context.handle(_authorMeta,
+          author.isAcceptableOrUnknown(data['author']!, _authorMeta));
+    }
+    if (data.containsKey('cover_path')) {
+      context.handle(_coverPathMeta,
+          coverPath.isAcceptableOrUnknown(data['cover_path']!, _coverPathMeta));
+    }
+    if (data.containsKey('epub_path')) {
+      context.handle(_epubPathMeta,
+          epubPath.isAcceptableOrUnknown(data['epub_path']!, _epubPathMeta));
+    } else if (isInserting) {
+      context.missing(_epubPathMeta);
+    }
+    if (data.containsKey('extract_dir')) {
+      context.handle(
+          _extractDirMeta,
+          extractDir.isAcceptableOrUnknown(
+              data['extract_dir']!, _extractDirMeta));
+    } else if (isInserting) {
+      context.missing(_extractDirMeta);
+    }
+    if (data.containsKey('chapter_count')) {
+      context.handle(
+          _chapterCountMeta,
+          chapterCount.isAcceptableOrUnknown(
+              data['chapter_count']!, _chapterCountMeta));
+    } else if (isInserting) {
+      context.missing(_chapterCountMeta);
+    }
+    if (data.containsKey('chapters_json')) {
+      context.handle(
+          _chaptersJsonMeta,
+          chaptersJson.isAcceptableOrUnknown(
+              data['chapters_json']!, _chaptersJsonMeta));
+    } else if (isInserting) {
+      context.missing(_chaptersJsonMeta);
+    }
+    if (data.containsKey('toc_json')) {
+      context.handle(_tocJsonMeta,
+          tocJson.isAcceptableOrUnknown(data['toc_json']!, _tocJsonMeta));
+    }
+    if (data.containsKey('source_metadata')) {
+      context.handle(
+          _sourceMetadataMeta,
+          sourceMetadata.isAcceptableOrUnknown(
+              data['source_metadata']!, _sourceMetadataMeta));
+    }
+    if (data.containsKey('imported_at')) {
+      context.handle(
+          _importedAtMeta,
+          importedAt.isAcceptableOrUnknown(
+              data['imported_at']!, _importedAtMeta));
+    } else if (isInserting) {
+      context.missing(_importedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  EpubBookRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return EpubBookRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      title: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}title'])!,
+      author: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}author']),
+      coverPath: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}cover_path']),
+      epubPath: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}epub_path'])!,
+      extractDir: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}extract_dir'])!,
+      chapterCount: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}chapter_count'])!,
+      chaptersJson: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}chapters_json'])!,
+      tocJson: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}toc_json']),
+      sourceMetadata: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}source_metadata']),
+      importedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}imported_at'])!,
+    );
+  }
+
+  @override
+  $EpubBooksTable createAlias(String alias) {
+    return $EpubBooksTable(attachedDatabase, alias);
+  }
+}
+
+class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
+  final int id;
+  final String title;
+  final String? author;
+  final String? coverPath;
+  final String epubPath;
+  final String extractDir;
+  final int chapterCount;
+  final String chaptersJson;
+  final String? tocJson;
+  final String? sourceMetadata;
+  final int importedAt;
+  const EpubBookRow(
+      {required this.id,
+      required this.title,
+      this.author,
+      this.coverPath,
+      required this.epubPath,
+      required this.extractDir,
+      required this.chapterCount,
+      required this.chaptersJson,
+      this.tocJson,
+      this.sourceMetadata,
+      required this.importedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['title'] = Variable<String>(title);
+    if (!nullToAbsent || author != null) {
+      map['author'] = Variable<String>(author);
+    }
+    if (!nullToAbsent || coverPath != null) {
+      map['cover_path'] = Variable<String>(coverPath);
+    }
+    map['epub_path'] = Variable<String>(epubPath);
+    map['extract_dir'] = Variable<String>(extractDir);
+    map['chapter_count'] = Variable<int>(chapterCount);
+    map['chapters_json'] = Variable<String>(chaptersJson);
+    if (!nullToAbsent || tocJson != null) {
+      map['toc_json'] = Variable<String>(tocJson);
+    }
+    if (!nullToAbsent || sourceMetadata != null) {
+      map['source_metadata'] = Variable<String>(sourceMetadata);
+    }
+    map['imported_at'] = Variable<int>(importedAt);
+    return map;
+  }
+
+  EpubBooksCompanion toCompanion(bool nullToAbsent) {
+    return EpubBooksCompanion(
+      id: Value(id),
+      title: Value(title),
+      author:
+          author == null && nullToAbsent ? const Value.absent() : Value(author),
+      coverPath: coverPath == null && nullToAbsent
+          ? const Value.absent()
+          : Value(coverPath),
+      epubPath: Value(epubPath),
+      extractDir: Value(extractDir),
+      chapterCount: Value(chapterCount),
+      chaptersJson: Value(chaptersJson),
+      tocJson: tocJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(tocJson),
+      sourceMetadata: sourceMetadata == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sourceMetadata),
+      importedAt: Value(importedAt),
+    );
+  }
+
+  factory EpubBookRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return EpubBookRow(
+      id: serializer.fromJson<int>(json['id']),
+      title: serializer.fromJson<String>(json['title']),
+      author: serializer.fromJson<String?>(json['author']),
+      coverPath: serializer.fromJson<String?>(json['coverPath']),
+      epubPath: serializer.fromJson<String>(json['epubPath']),
+      extractDir: serializer.fromJson<String>(json['extractDir']),
+      chapterCount: serializer.fromJson<int>(json['chapterCount']),
+      chaptersJson: serializer.fromJson<String>(json['chaptersJson']),
+      tocJson: serializer.fromJson<String?>(json['tocJson']),
+      sourceMetadata: serializer.fromJson<String?>(json['sourceMetadata']),
+      importedAt: serializer.fromJson<int>(json['importedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'title': serializer.toJson<String>(title),
+      'author': serializer.toJson<String?>(author),
+      'coverPath': serializer.toJson<String?>(coverPath),
+      'epubPath': serializer.toJson<String>(epubPath),
+      'extractDir': serializer.toJson<String>(extractDir),
+      'chapterCount': serializer.toJson<int>(chapterCount),
+      'chaptersJson': serializer.toJson<String>(chaptersJson),
+      'tocJson': serializer.toJson<String?>(tocJson),
+      'sourceMetadata': serializer.toJson<String?>(sourceMetadata),
+      'importedAt': serializer.toJson<int>(importedAt),
+    };
+  }
+
+  EpubBookRow copyWith(
+          {int? id,
+          String? title,
+          Value<String?> author = const Value.absent(),
+          Value<String?> coverPath = const Value.absent(),
+          String? epubPath,
+          String? extractDir,
+          int? chapterCount,
+          String? chaptersJson,
+          Value<String?> tocJson = const Value.absent(),
+          Value<String?> sourceMetadata = const Value.absent(),
+          int? importedAt}) =>
+      EpubBookRow(
+        id: id ?? this.id,
+        title: title ?? this.title,
+        author: author.present ? author.value : this.author,
+        coverPath: coverPath.present ? coverPath.value : this.coverPath,
+        epubPath: epubPath ?? this.epubPath,
+        extractDir: extractDir ?? this.extractDir,
+        chapterCount: chapterCount ?? this.chapterCount,
+        chaptersJson: chaptersJson ?? this.chaptersJson,
+        tocJson: tocJson.present ? tocJson.value : this.tocJson,
+        sourceMetadata:
+            sourceMetadata.present ? sourceMetadata.value : this.sourceMetadata,
+        importedAt: importedAt ?? this.importedAt,
+      );
+  EpubBookRow copyWithCompanion(EpubBooksCompanion data) {
+    return EpubBookRow(
+      id: data.id.present ? data.id.value : this.id,
+      title: data.title.present ? data.title.value : this.title,
+      author: data.author.present ? data.author.value : this.author,
+      coverPath: data.coverPath.present ? data.coverPath.value : this.coverPath,
+      epubPath: data.epubPath.present ? data.epubPath.value : this.epubPath,
+      extractDir:
+          data.extractDir.present ? data.extractDir.value : this.extractDir,
+      chapterCount: data.chapterCount.present
+          ? data.chapterCount.value
+          : this.chapterCount,
+      chaptersJson: data.chaptersJson.present
+          ? data.chaptersJson.value
+          : this.chaptersJson,
+      tocJson: data.tocJson.present ? data.tocJson.value : this.tocJson,
+      sourceMetadata: data.sourceMetadata.present
+          ? data.sourceMetadata.value
+          : this.sourceMetadata,
+      importedAt:
+          data.importedAt.present ? data.importedAt.value : this.importedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('EpubBookRow(')
+          ..write('id: $id, ')
+          ..write('title: $title, ')
+          ..write('author: $author, ')
+          ..write('coverPath: $coverPath, ')
+          ..write('epubPath: $epubPath, ')
+          ..write('extractDir: $extractDir, ')
+          ..write('chapterCount: $chapterCount, ')
+          ..write('chaptersJson: $chaptersJson, ')
+          ..write('tocJson: $tocJson, ')
+          ..write('sourceMetadata: $sourceMetadata, ')
+          ..write('importedAt: $importedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+      id,
+      title,
+      author,
+      coverPath,
+      epubPath,
+      extractDir,
+      chapterCount,
+      chaptersJson,
+      tocJson,
+      sourceMetadata,
+      importedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is EpubBookRow &&
+          other.id == this.id &&
+          other.title == this.title &&
+          other.author == this.author &&
+          other.coverPath == this.coverPath &&
+          other.epubPath == this.epubPath &&
+          other.extractDir == this.extractDir &&
+          other.chapterCount == this.chapterCount &&
+          other.chaptersJson == this.chaptersJson &&
+          other.tocJson == this.tocJson &&
+          other.sourceMetadata == this.sourceMetadata &&
+          other.importedAt == this.importedAt);
+}
+
+class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
+  final Value<int> id;
+  final Value<String> title;
+  final Value<String?> author;
+  final Value<String?> coverPath;
+  final Value<String> epubPath;
+  final Value<String> extractDir;
+  final Value<int> chapterCount;
+  final Value<String> chaptersJson;
+  final Value<String?> tocJson;
+  final Value<String?> sourceMetadata;
+  final Value<int> importedAt;
+  const EpubBooksCompanion({
+    this.id = const Value.absent(),
+    this.title = const Value.absent(),
+    this.author = const Value.absent(),
+    this.coverPath = const Value.absent(),
+    this.epubPath = const Value.absent(),
+    this.extractDir = const Value.absent(),
+    this.chapterCount = const Value.absent(),
+    this.chaptersJson = const Value.absent(),
+    this.tocJson = const Value.absent(),
+    this.sourceMetadata = const Value.absent(),
+    this.importedAt = const Value.absent(),
+  });
+  EpubBooksCompanion.insert({
+    this.id = const Value.absent(),
+    required String title,
+    this.author = const Value.absent(),
+    this.coverPath = const Value.absent(),
+    required String epubPath,
+    required String extractDir,
+    required int chapterCount,
+    required String chaptersJson,
+    this.tocJson = const Value.absent(),
+    this.sourceMetadata = const Value.absent(),
+    required int importedAt,
+  })  : title = Value(title),
+        epubPath = Value(epubPath),
+        extractDir = Value(extractDir),
+        chapterCount = Value(chapterCount),
+        chaptersJson = Value(chaptersJson),
+        importedAt = Value(importedAt);
+  static Insertable<EpubBookRow> custom({
+    Expression<int>? id,
+    Expression<String>? title,
+    Expression<String>? author,
+    Expression<String>? coverPath,
+    Expression<String>? epubPath,
+    Expression<String>? extractDir,
+    Expression<int>? chapterCount,
+    Expression<String>? chaptersJson,
+    Expression<String>? tocJson,
+    Expression<String>? sourceMetadata,
+    Expression<int>? importedAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (title != null) 'title': title,
+      if (author != null) 'author': author,
+      if (coverPath != null) 'cover_path': coverPath,
+      if (epubPath != null) 'epub_path': epubPath,
+      if (extractDir != null) 'extract_dir': extractDir,
+      if (chapterCount != null) 'chapter_count': chapterCount,
+      if (chaptersJson != null) 'chapters_json': chaptersJson,
+      if (tocJson != null) 'toc_json': tocJson,
+      if (sourceMetadata != null) 'source_metadata': sourceMetadata,
+      if (importedAt != null) 'imported_at': importedAt,
+    });
+  }
+
+  EpubBooksCompanion copyWith(
+      {Value<int>? id,
+      Value<String>? title,
+      Value<String?>? author,
+      Value<String?>? coverPath,
+      Value<String>? epubPath,
+      Value<String>? extractDir,
+      Value<int>? chapterCount,
+      Value<String>? chaptersJson,
+      Value<String?>? tocJson,
+      Value<String?>? sourceMetadata,
+      Value<int>? importedAt}) {
+    return EpubBooksCompanion(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      author: author ?? this.author,
+      coverPath: coverPath ?? this.coverPath,
+      epubPath: epubPath ?? this.epubPath,
+      extractDir: extractDir ?? this.extractDir,
+      chapterCount: chapterCount ?? this.chapterCount,
+      chaptersJson: chaptersJson ?? this.chaptersJson,
+      tocJson: tocJson ?? this.tocJson,
+      sourceMetadata: sourceMetadata ?? this.sourceMetadata,
+      importedAt: importedAt ?? this.importedAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
+    if (author.present) {
+      map['author'] = Variable<String>(author.value);
+    }
+    if (coverPath.present) {
+      map['cover_path'] = Variable<String>(coverPath.value);
+    }
+    if (epubPath.present) {
+      map['epub_path'] = Variable<String>(epubPath.value);
+    }
+    if (extractDir.present) {
+      map['extract_dir'] = Variable<String>(extractDir.value);
+    }
+    if (chapterCount.present) {
+      map['chapter_count'] = Variable<int>(chapterCount.value);
+    }
+    if (chaptersJson.present) {
+      map['chapters_json'] = Variable<String>(chaptersJson.value);
+    }
+    if (tocJson.present) {
+      map['toc_json'] = Variable<String>(tocJson.value);
+    }
+    if (sourceMetadata.present) {
+      map['source_metadata'] = Variable<String>(sourceMetadata.value);
+    }
+    if (importedAt.present) {
+      map['imported_at'] = Variable<int>(importedAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('EpubBooksCompanion(')
+          ..write('id: $id, ')
+          ..write('title: $title, ')
+          ..write('author: $author, ')
+          ..write('coverPath: $coverPath, ')
+          ..write('epubPath: $epubPath, ')
+          ..write('extractDir: $extractDir, ')
+          ..write('chapterCount: $chapterCount, ')
+          ..write('chaptersJson: $chaptersJson, ')
+          ..write('tocJson: $tocJson, ')
+          ..write('sourceMetadata: $sourceMetadata, ')
+          ..write('importedAt: $importedAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$HibikiDatabase extends GeneratedDatabase {
   _$HibikiDatabase(QueryExecutor e) : super(e);
   $HibikiDatabaseManager get managers => $HibikiDatabaseManager(this);
@@ -5256,6 +5819,7 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
       $DictionaryMetadataTable(this);
   late final $DictionaryHistoryTable dictionaryHistory =
       $DictionaryHistoryTable(this);
+  late final $EpubBooksTable epubBooks = $EpubBooksTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -5272,7 +5836,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
         readingHourlyLogs,
         preferences,
         dictionaryMetadata,
-        dictionaryHistory
+        dictionaryHistory,
+        epubBooks
       ];
 }
 
@@ -7228,6 +7793,163 @@ typedef $$ReadingStatisticsTableProcessedTableManager = ProcessedTableManager<
     ),
     ReadingStatisticRow,
     PrefetchHooks Function()>;
+typedef $$ReadingHourlyLogsTableCreateCompanionBuilder
+    = ReadingHourlyLogsCompanion Function({
+  Value<int> id,
+  required String dateKey,
+  required int hour,
+  required int readingTimeMs,
+});
+typedef $$ReadingHourlyLogsTableUpdateCompanionBuilder
+    = ReadingHourlyLogsCompanion Function({
+  Value<int> id,
+  Value<String> dateKey,
+  Value<int> hour,
+  Value<int> readingTimeMs,
+});
+
+class $$ReadingHourlyLogsTableFilterComposer
+    extends Composer<_$HibikiDatabase, $ReadingHourlyLogsTable> {
+  $$ReadingHourlyLogsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get dateKey => $composableBuilder(
+      column: $table.dateKey, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get hour => $composableBuilder(
+      column: $table.hour, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get readingTimeMs => $composableBuilder(
+      column: $table.readingTimeMs, builder: (column) => ColumnFilters(column));
+}
+
+class $$ReadingHourlyLogsTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $ReadingHourlyLogsTable> {
+  $$ReadingHourlyLogsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get dateKey => $composableBuilder(
+      column: $table.dateKey, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get hour => $composableBuilder(
+      column: $table.hour, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get readingTimeMs => $composableBuilder(
+      column: $table.readingTimeMs,
+      builder: (column) => ColumnOrderings(column));
+}
+
+class $$ReadingHourlyLogsTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $ReadingHourlyLogsTable> {
+  $$ReadingHourlyLogsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get dateKey =>
+      $composableBuilder(column: $table.dateKey, builder: (column) => column);
+
+  GeneratedColumn<int> get hour =>
+      $composableBuilder(column: $table.hour, builder: (column) => column);
+
+  GeneratedColumn<int> get readingTimeMs => $composableBuilder(
+      column: $table.readingTimeMs, builder: (column) => column);
+}
+
+class $$ReadingHourlyLogsTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $ReadingHourlyLogsTable,
+    ReadingHourlyLogRow,
+    $$ReadingHourlyLogsTableFilterComposer,
+    $$ReadingHourlyLogsTableOrderingComposer,
+    $$ReadingHourlyLogsTableAnnotationComposer,
+    $$ReadingHourlyLogsTableCreateCompanionBuilder,
+    $$ReadingHourlyLogsTableUpdateCompanionBuilder,
+    (
+      ReadingHourlyLogRow,
+      BaseReferences<_$HibikiDatabase, $ReadingHourlyLogsTable,
+          ReadingHourlyLogRow>
+    ),
+    ReadingHourlyLogRow,
+    PrefetchHooks Function()> {
+  $$ReadingHourlyLogsTableTableManager(
+      _$HibikiDatabase db, $ReadingHourlyLogsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ReadingHourlyLogsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ReadingHourlyLogsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ReadingHourlyLogsTableAnnotationComposer(
+                  $db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<String> dateKey = const Value.absent(),
+            Value<int> hour = const Value.absent(),
+            Value<int> readingTimeMs = const Value.absent(),
+          }) =>
+              ReadingHourlyLogsCompanion(
+            id: id,
+            dateKey: dateKey,
+            hour: hour,
+            readingTimeMs: readingTimeMs,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required String dateKey,
+            required int hour,
+            required int readingTimeMs,
+          }) =>
+              ReadingHourlyLogsCompanion.insert(
+            id: id,
+            dateKey: dateKey,
+            hour: hour,
+            readingTimeMs: readingTimeMs,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$ReadingHourlyLogsTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $ReadingHourlyLogsTable,
+    ReadingHourlyLogRow,
+    $$ReadingHourlyLogsTableFilterComposer,
+    $$ReadingHourlyLogsTableOrderingComposer,
+    $$ReadingHourlyLogsTableAnnotationComposer,
+    $$ReadingHourlyLogsTableCreateCompanionBuilder,
+    $$ReadingHourlyLogsTableUpdateCompanionBuilder,
+    (
+      ReadingHourlyLogRow,
+      BaseReferences<_$HibikiDatabase, $ReadingHourlyLogsTable,
+          ReadingHourlyLogRow>
+    ),
+    ReadingHourlyLogRow,
+    PrefetchHooks Function()>;
 typedef $$PreferencesTableCreateCompanionBuilder = PreferencesCompanion
     Function({
   required String key,
@@ -7361,6 +8083,7 @@ typedef $$DictionaryMetadataTableCreateCompanionBuilder
   required String name,
   required String formatKey,
   required int order,
+  Value<String> type,
   Value<String> metadataJson,
   Value<String> hiddenLanguagesJson,
   Value<String> collapsedLanguagesJson,
@@ -7371,6 +8094,7 @@ typedef $$DictionaryMetadataTableUpdateCompanionBuilder
   Value<String> name,
   Value<String> formatKey,
   Value<int> order,
+  Value<String> type,
   Value<String> metadataJson,
   Value<String> hiddenLanguagesJson,
   Value<String> collapsedLanguagesJson,
@@ -7394,6 +8118,9 @@ class $$DictionaryMetadataTableFilterComposer
 
   ColumnFilters<int> get order => $composableBuilder(
       column: $table.order, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get type => $composableBuilder(
+      column: $table.type, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<String> get metadataJson => $composableBuilder(
       column: $table.metadataJson, builder: (column) => ColumnFilters(column));
@@ -7425,6 +8152,9 @@ class $$DictionaryMetadataTableOrderingComposer
   ColumnOrderings<int> get order => $composableBuilder(
       column: $table.order, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<String> get type => $composableBuilder(
+      column: $table.type, builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<String> get metadataJson => $composableBuilder(
       column: $table.metadataJson,
       builder: (column) => ColumnOrderings(column));
@@ -7455,6 +8185,9 @@ class $$DictionaryMetadataTableAnnotationComposer
 
   GeneratedColumn<int> get order =>
       $composableBuilder(column: $table.order, builder: (column) => column);
+
+  GeneratedColumn<String> get type =>
+      $composableBuilder(column: $table.type, builder: (column) => column);
 
   GeneratedColumn<String> get metadataJson => $composableBuilder(
       column: $table.metadataJson, builder: (column) => column);
@@ -7498,6 +8231,7 @@ class $$DictionaryMetadataTableTableManager extends RootTableManager<
             Value<String> name = const Value.absent(),
             Value<String> formatKey = const Value.absent(),
             Value<int> order = const Value.absent(),
+            Value<String> type = const Value.absent(),
             Value<String> metadataJson = const Value.absent(),
             Value<String> hiddenLanguagesJson = const Value.absent(),
             Value<String> collapsedLanguagesJson = const Value.absent(),
@@ -7507,6 +8241,7 @@ class $$DictionaryMetadataTableTableManager extends RootTableManager<
             name: name,
             formatKey: formatKey,
             order: order,
+            type: type,
             metadataJson: metadataJson,
             hiddenLanguagesJson: hiddenLanguagesJson,
             collapsedLanguagesJson: collapsedLanguagesJson,
@@ -7516,6 +8251,7 @@ class $$DictionaryMetadataTableTableManager extends RootTableManager<
             required String name,
             required String formatKey,
             required int order,
+            Value<String> type = const Value.absent(),
             Value<String> metadataJson = const Value.absent(),
             Value<String> hiddenLanguagesJson = const Value.absent(),
             Value<String> collapsedLanguagesJson = const Value.absent(),
@@ -7525,6 +8261,7 @@ class $$DictionaryMetadataTableTableManager extends RootTableManager<
             name: name,
             formatKey: formatKey,
             order: order,
+            type: type,
             metadataJson: metadataJson,
             hiddenLanguagesJson: hiddenLanguagesJson,
             collapsedLanguagesJson: collapsedLanguagesJson,
@@ -7694,6 +8431,265 @@ typedef $$DictionaryHistoryTableProcessedTableManager = ProcessedTableManager<
     ),
     DictionaryHistoryRow,
     PrefetchHooks Function()>;
+typedef $$EpubBooksTableCreateCompanionBuilder = EpubBooksCompanion Function({
+  Value<int> id,
+  required String title,
+  Value<String?> author,
+  Value<String?> coverPath,
+  required String epubPath,
+  required String extractDir,
+  required int chapterCount,
+  required String chaptersJson,
+  Value<String?> tocJson,
+  Value<String?> sourceMetadata,
+  required int importedAt,
+});
+typedef $$EpubBooksTableUpdateCompanionBuilder = EpubBooksCompanion Function({
+  Value<int> id,
+  Value<String> title,
+  Value<String?> author,
+  Value<String?> coverPath,
+  Value<String> epubPath,
+  Value<String> extractDir,
+  Value<int> chapterCount,
+  Value<String> chaptersJson,
+  Value<String?> tocJson,
+  Value<String?> sourceMetadata,
+  Value<int> importedAt,
+});
+
+class $$EpubBooksTableFilterComposer
+    extends Composer<_$HibikiDatabase, $EpubBooksTable> {
+  $$EpubBooksTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get title => $composableBuilder(
+      column: $table.title, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get author => $composableBuilder(
+      column: $table.author, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get coverPath => $composableBuilder(
+      column: $table.coverPath, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get epubPath => $composableBuilder(
+      column: $table.epubPath, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get extractDir => $composableBuilder(
+      column: $table.extractDir, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get chapterCount => $composableBuilder(
+      column: $table.chapterCount, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get chaptersJson => $composableBuilder(
+      column: $table.chaptersJson, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get tocJson => $composableBuilder(
+      column: $table.tocJson, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get sourceMetadata => $composableBuilder(
+      column: $table.sourceMetadata,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get importedAt => $composableBuilder(
+      column: $table.importedAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$EpubBooksTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $EpubBooksTable> {
+  $$EpubBooksTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get title => $composableBuilder(
+      column: $table.title, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get author => $composableBuilder(
+      column: $table.author, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get coverPath => $composableBuilder(
+      column: $table.coverPath, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get epubPath => $composableBuilder(
+      column: $table.epubPath, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get extractDir => $composableBuilder(
+      column: $table.extractDir, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get chapterCount => $composableBuilder(
+      column: $table.chapterCount,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get chaptersJson => $composableBuilder(
+      column: $table.chaptersJson,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get tocJson => $composableBuilder(
+      column: $table.tocJson, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get sourceMetadata => $composableBuilder(
+      column: $table.sourceMetadata,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get importedAt => $composableBuilder(
+      column: $table.importedAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$EpubBooksTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $EpubBooksTable> {
+  $$EpubBooksTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<String> get author =>
+      $composableBuilder(column: $table.author, builder: (column) => column);
+
+  GeneratedColumn<String> get coverPath =>
+      $composableBuilder(column: $table.coverPath, builder: (column) => column);
+
+  GeneratedColumn<String> get epubPath =>
+      $composableBuilder(column: $table.epubPath, builder: (column) => column);
+
+  GeneratedColumn<String> get extractDir => $composableBuilder(
+      column: $table.extractDir, builder: (column) => column);
+
+  GeneratedColumn<int> get chapterCount => $composableBuilder(
+      column: $table.chapterCount, builder: (column) => column);
+
+  GeneratedColumn<String> get chaptersJson => $composableBuilder(
+      column: $table.chaptersJson, builder: (column) => column);
+
+  GeneratedColumn<String> get tocJson =>
+      $composableBuilder(column: $table.tocJson, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceMetadata => $composableBuilder(
+      column: $table.sourceMetadata, builder: (column) => column);
+
+  GeneratedColumn<int> get importedAt => $composableBuilder(
+      column: $table.importedAt, builder: (column) => column);
+}
+
+class $$EpubBooksTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $EpubBooksTable,
+    EpubBookRow,
+    $$EpubBooksTableFilterComposer,
+    $$EpubBooksTableOrderingComposer,
+    $$EpubBooksTableAnnotationComposer,
+    $$EpubBooksTableCreateCompanionBuilder,
+    $$EpubBooksTableUpdateCompanionBuilder,
+    (
+      EpubBookRow,
+      BaseReferences<_$HibikiDatabase, $EpubBooksTable, EpubBookRow>
+    ),
+    EpubBookRow,
+    PrefetchHooks Function()> {
+  $$EpubBooksTableTableManager(_$HibikiDatabase db, $EpubBooksTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$EpubBooksTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$EpubBooksTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$EpubBooksTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<String> title = const Value.absent(),
+            Value<String?> author = const Value.absent(),
+            Value<String?> coverPath = const Value.absent(),
+            Value<String> epubPath = const Value.absent(),
+            Value<String> extractDir = const Value.absent(),
+            Value<int> chapterCount = const Value.absent(),
+            Value<String> chaptersJson = const Value.absent(),
+            Value<String?> tocJson = const Value.absent(),
+            Value<String?> sourceMetadata = const Value.absent(),
+            Value<int> importedAt = const Value.absent(),
+          }) =>
+              EpubBooksCompanion(
+            id: id,
+            title: title,
+            author: author,
+            coverPath: coverPath,
+            epubPath: epubPath,
+            extractDir: extractDir,
+            chapterCount: chapterCount,
+            chaptersJson: chaptersJson,
+            tocJson: tocJson,
+            sourceMetadata: sourceMetadata,
+            importedAt: importedAt,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required String title,
+            Value<String?> author = const Value.absent(),
+            Value<String?> coverPath = const Value.absent(),
+            required String epubPath,
+            required String extractDir,
+            required int chapterCount,
+            required String chaptersJson,
+            Value<String?> tocJson = const Value.absent(),
+            Value<String?> sourceMetadata = const Value.absent(),
+            required int importedAt,
+          }) =>
+              EpubBooksCompanion.insert(
+            id: id,
+            title: title,
+            author: author,
+            coverPath: coverPath,
+            epubPath: epubPath,
+            extractDir: extractDir,
+            chapterCount: chapterCount,
+            chaptersJson: chaptersJson,
+            tocJson: tocJson,
+            sourceMetadata: sourceMetadata,
+            importedAt: importedAt,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$EpubBooksTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $EpubBooksTable,
+    EpubBookRow,
+    $$EpubBooksTableFilterComposer,
+    $$EpubBooksTableOrderingComposer,
+    $$EpubBooksTableAnnotationComposer,
+    $$EpubBooksTableCreateCompanionBuilder,
+    $$EpubBooksTableUpdateCompanionBuilder,
+    (
+      EpubBookRow,
+      BaseReferences<_$HibikiDatabase, $EpubBooksTable, EpubBookRow>
+    ),
+    EpubBookRow,
+    PrefetchHooks Function()>;
 
 class $HibikiDatabaseManager {
   final _$HibikiDatabase _db;
@@ -7714,10 +8710,14 @@ class $HibikiDatabaseManager {
       $$ReaderPositionsTableTableManager(_db, _db.readerPositions);
   $$ReadingStatisticsTableTableManager get readingStatistics =>
       $$ReadingStatisticsTableTableManager(_db, _db.readingStatistics);
+  $$ReadingHourlyLogsTableTableManager get readingHourlyLogs =>
+      $$ReadingHourlyLogsTableTableManager(_db, _db.readingHourlyLogs);
   $$PreferencesTableTableManager get preferences =>
       $$PreferencesTableTableManager(_db, _db.preferences);
   $$DictionaryMetadataTableTableManager get dictionaryMetadata =>
       $$DictionaryMetadataTableTableManager(_db, _db.dictionaryMetadata);
   $$DictionaryHistoryTableTableManager get dictionaryHistory =>
       $$DictionaryHistoryTableTableManager(_db, _db.dictionaryHistory);
+  $$EpubBooksTableTableManager get epubBooks =>
+      $$EpubBooksTableTableManager(_db, _db.epubBooks);
 }
