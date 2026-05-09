@@ -7,7 +7,9 @@ import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
 import 'package:hibiki/src/media/audiobook/epub_cue_matcher.dart';
 import 'package:hibiki/src/media/audiobook/epub_srt_matcher.dart';
 import 'package:hibiki/src/media/audiobook/sasayaki_match_codec.dart';
-import 'package:hibiki/src/media/audiobook/ttu_idb_reader.dart';
+import 'package:hibiki/src/epub/epub_book.dart';
+import 'package:hibiki/src/epub/epub_parser.dart';
+import 'package:hibiki/src/epub/epub_storage.dart';
 import 'package:hibiki/utils.dart';
 
 /// Sasayaki 重匹配入口，被 [AudiobookImportDialog]（已附加视图）和书架
@@ -47,7 +49,6 @@ class SasayakiRematch {
     required Audiobook ab,
     required AudiobookRepository repo,
     required int ttuBookId,
-    required int serverPort,
     void Function(bool running)? onRunningChanged,
   }) async {
     if (ttuBookId <= 0) {
@@ -61,7 +62,6 @@ class SasayakiRematch {
       repo: repo,
       bookUid: ab.bookUid,
       ttuBookId: ttuBookId,
-      serverPort: serverPort,
     );
     if (picked == null) {
       return false;
@@ -72,7 +72,6 @@ class SasayakiRematch {
         ab: ab,
         repo: repo,
         ttuBookId: ttuBookId,
-        serverPort: serverPort,
         searchWindow: picked.window,
         similarityThreshold: picked.threshold,
       );
@@ -88,7 +87,6 @@ class SasayakiRematch {
     required AudiobookRepository repo,
     required String bookUid,
     required int ttuBookId,
-    required int serverPort,
   }) async {
     int window = EpubSrtMatcher.defaultSearchWindow;
     double threshold = EpubSrtMatcher.defaultSimilarityThreshold;
@@ -124,7 +122,6 @@ class SasayakiRematch {
               try {
                 probedSections ??= await _loadSections(
                   ttuBookId: ttuBookId,
-                  serverPort: serverPort,
                 );
                 probedCues ??= await repo.cuesForBook(bookUid);
                 final int? best = await runAutoProbe(
@@ -232,14 +229,19 @@ class SasayakiRematch {
 
   static Future<List<EpubSection>> _loadSections({
     required int ttuBookId,
-    required int serverPort,
   }) async {
     try {
-      final TtuBookRecord rec = await TtuIdbReader.readBookRecord(
-        ttuBookId: ttuBookId,
-        serverPort: serverPort,
+      final String extractDir =
+          await EpubStorage.bookDirectory(ttuBookId);
+      final EpubBook book = EpubParser.parseFromExtracted(extractDir);
+      return List<EpubSection>.generate(
+        book.chapters.length,
+        (int i) => EpubSection(
+          index: i,
+          href: book.chapters[i].href,
+          text: book.chapterPlainText(i),
+        ),
       );
-      return rec.sections;
     } catch (e) {
       debugPrint('[hibiki-audiobook] loadSections failed: $e');
       return const <EpubSection>[];
@@ -250,7 +252,6 @@ class SasayakiRematch {
     required Audiobook ab,
     required AudiobookRepository repo,
     required int ttuBookId,
-    required int serverPort,
     required int searchWindow,
     double similarityThreshold = EpubSrtMatcher.defaultSimilarityThreshold,
   }) async {
@@ -260,16 +261,23 @@ class SasayakiRematch {
         Fluttertoast.showToast(msg: t.sasayaki_no_stored_cues);
         return;
       }
-      final TtuBookRecord rec = await TtuIdbReader.readBookRecord(
-        ttuBookId: ttuBookId,
-        serverPort: serverPort,
+      final String extractDir =
+          await EpubStorage.bookDirectory(ttuBookId);
+      final EpubBook book = EpubParser.parseFromExtracted(extractDir);
+      final List<EpubSection> sections = List<EpubSection>.generate(
+        book.chapters.length,
+        (int i) => EpubSection(
+          index: i,
+          href: book.chapters[i].href,
+          text: book.chapterPlainText(i),
+        ),
       );
-      if (rec.sections.isEmpty) {
+      if (sections.isEmpty) {
         Fluttertoast.showToast(msg: t.sasayaki_no_idb_sections);
         return;
       }
       final MatchResult result = await EpubCueMatcher.matchInIsolate(
-        sections: rec.sections,
+        sections: sections,
         cues: cues,
         searchWindow: searchWindow,
         similarityThreshold: similarityThreshold,

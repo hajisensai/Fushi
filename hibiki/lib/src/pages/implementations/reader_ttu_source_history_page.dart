@@ -652,7 +652,6 @@ class _ReaderTtuSourceHistoryPageState<T extends HistoryReaderPage>
         bookUid: item.uniqueKey,
         repo: AudiobookRepository(appModel.database),
         ttuBookId: ttuBookId,
-        serverPort: port,
       ),
     );
     if (mounted) {

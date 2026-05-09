@@ -5098,7 +5098,6 @@ function selectTextForTextLength(x, y, index, length, whitespaceOffset, isSpaceD
         bookUid: bookUid,
         repo: AudiobookRepository(appModel.database),
         ttuBookId: ttuBookIdForDialog,
-        serverPort: serverPort,
       ),
     );
     // result == true 表示用户完成导入，重新初始化播放器；

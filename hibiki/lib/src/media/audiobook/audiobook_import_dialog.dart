@@ -17,8 +17,10 @@ import 'package:hibiki/src/media/audiobook/sasayaki_match_codec.dart';
 import 'package:hibiki/src/media/audiobook/sasayaki_rematch.dart';
 import 'package:hibiki/src/media/audiobook/smil_parser.dart';
 import 'package:hibiki/src/media/audiobook/srt_parser.dart';
-import 'package:hibiki/src/media/audiobook/ttu_idb_reader.dart';
 import 'package:hibiki/src/media/audiobook/vtt_parser.dart';
+import 'package:hibiki/src/epub/epub_book.dart';
+import 'package:hibiki/src/epub/epub_parser.dart';
+import 'package:hibiki/src/epub/epub_storage.dart';
 import 'package:hibiki/utils.dart';
 
 /// 有声书导入/移除对话框。
@@ -30,20 +32,16 @@ class AudiobookImportDialog extends StatefulWidget {
     required this.bookUid,
     required this.repo,
     this.ttuBookId,
-    this.serverPort,
     super.key,
   });
 
   final String bookUid;
   final AudiobookRepository repo;
 
-  /// ttu Ebook Reader IndexedDB primary key for this book. 当传入且对齐文件是
-  /// `.srt` 时，走 Sasayaki 路径：读 ttu IDB 取章节文本 → EpubSrtMatcher 匹配
+  /// Drift EpubBooks primary key. 当传入且对齐文件是
+  /// `.srt` 时，走 Sasayaki 路径：从提取目录读章节文本 → EpubSrtMatcher 匹配
   /// → 把命中 cue 的偏移编码写回 textFragmentId。
   final int? ttuBookId;
-
-  /// ttu 本地服务端口，读 IDB 时需要。
-  final int? serverPort;
 
   @override
   State<AudiobookImportDialog> createState() => _AudiobookImportDialogState();
@@ -82,8 +80,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     return SasayakiRematch.supportedFormats.contains(ext);
   }
 
-  /// 自动匹配还要求 ttu local server 端口可用（probe 要去 IDB 拿 sections）。
-  bool get _canAutoProbe => _willRunMatcher && widget.serverPort != null;
+  bool get _canAutoProbe => _willRunMatcher;
 
   // ── 辅助 getter ─────────────────────────────────────────────────────────────
 
@@ -239,7 +236,6 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
   /// unrun 状态也允许重跑 — 历史脏记录的书借此给它跑一次。
   bool _canReMatch(Audiobook ab, AudiobookHealth health) {
     if (widget.ttuBookId == null || widget.ttuBookId! <= 0) return false;
-    if (widget.serverPort == null) return false;
     if (!SasayakiRematch.isEligible(ab)) return false;
     switch (health.kind) {
       case HealthKind.partial:
@@ -503,17 +499,21 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
   }
 
   Future<List<EpubSection>> _loadSectionsForProbe() async {
-    if (widget.ttuBookId == null ||
-        widget.ttuBookId! <= 0 ||
-        widget.serverPort == null) {
+    if (widget.ttuBookId == null || widget.ttuBookId! <= 0) {
       return const <EpubSection>[];
     }
     try {
-      final TtuBookRecord rec = await TtuIdbReader.readBookRecord(
-        ttuBookId: widget.ttuBookId!,
-        serverPort: widget.serverPort!,
+      final String extractDir =
+          await EpubStorage.bookDirectory(widget.ttuBookId!);
+      final EpubBook book = EpubParser.parseFromExtracted(extractDir);
+      return List<EpubSection>.generate(
+        book.chapters.length,
+        (int i) => EpubSection(
+          index: i,
+          href: book.chapters[i].href,
+          text: book.chapterPlainText(i),
+        ),
       );
-      return rec.sections;
     } catch (e, stack) {
       ErrorLogService.instance.log('AudiobookImport.loadSections', e, stack);
       debugPrint('[hibiki-audiobook] probe loadSections failed: $e');
@@ -646,8 +646,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
   /// 字节写坏）。
   Future<void> _openReMatchSheet(Audiobook ab) async {
     final int? ttuId = widget.ttuBookId;
-    final int? port = widget.serverPort;
-    if (ttuId == null || ttuId <= 0 || port == null) {
+    if (ttuId == null || ttuId <= 0) {
       Fluttertoast.showToast(msg: t.ttu_not_bound_cannot_rematch);
       return;
     }
@@ -656,7 +655,6 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       ab: ab,
       repo: widget.repo,
       ttuBookId: ttuId,
-      serverPort: port,
       onRunningChanged: (bool running) {
         if (mounted) setState(() => _importing = running);
       },
@@ -674,10 +672,9 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
   /// [Audiobook.healthKindRaw] 等字段。
   Future<AudiobookHealth> _matchCuesToTtu(List<AudioCue> cues) async {
     final int? ttuId = widget.ttuBookId;
-    final int? port = widget.serverPort;
-    if (ttuId == null || ttuId <= 0 || port == null) {
+    if (ttuId == null || ttuId <= 0) {
       return AudiobookHealth.notApplicable(
-        reason: 'no ttu book bound — subtitle playback works, but no '
+        reason: 'no book bound — subtitle playback works, but no '
             'cross-chapter highlight',
       );
     }
@@ -686,14 +683,19 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     }
     try {
       _reportProgress(0.2, t.import_step_reading_idb);
-      final TtuBookRecord rec = await TtuIdbReader.readBookRecord(
-        ttuBookId: ttuId,
-        serverPort: port,
+      final String extractDir = await EpubStorage.bookDirectory(ttuId);
+      final EpubBook epubBook = EpubParser.parseFromExtracted(extractDir);
+      final List<EpubSection> sections = List<EpubSection>.generate(
+        epubBook.chapters.length,
+        (int i) => EpubSection(
+          index: i,
+          href: epubBook.chapters[i].href,
+          text: epubBook.chapterPlainText(i),
+        ),
       );
-      final List<EpubSection> sections = rec.sections;
       if (sections.isEmpty) {
         return AudiobookHealth.failed(
-          reason: 'ttu IDB record had 0 sections',
+          reason: 'EPUB has 0 chapters',
         );
       }
       _reportProgress(0.3, t.import_step_matching);
