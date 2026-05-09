@@ -326,6 +326,39 @@ class HibikiDatabase extends _$HibikiDatabase {
         ),
       );
 
+  Future<void> addReadingStatistic({
+    required String title,
+    required String dateKey,
+    required int charsRead,
+    required int timeMs,
+  }) =>
+      transaction(() async {
+        final existing = await (select(readingStatistics)
+              ..where(
+                  (t) => t.title.equals(title) & t.dateKey.equals(dateKey)))
+            .getSingleOrNull();
+        if (existing != null) {
+          await (update(readingStatistics)
+                ..where((t) => t.id.equals(existing.id)))
+              .write(ReadingStatisticsCompanion(
+            charactersRead: Value(existing.charactersRead + charsRead),
+            readingTimeMs: Value(existing.readingTimeMs + timeMs),
+            lastStatisticModified:
+                Value(DateTime.now().millisecondsSinceEpoch),
+          ));
+        } else {
+          await into(readingStatistics).insert(
+            ReadingStatisticsCompanion.insert(
+              title: title,
+              dateKey: dateKey,
+              charactersRead: charsRead,
+              readingTimeMs: timeMs,
+              lastStatisticModified: DateTime.now().millisecondsSinceEpoch,
+            ),
+          );
+        }
+      });
+
   Future<List<ReadingStatisticRow>> getAllReadingStatistics() =>
       select(readingStatistics).get();
 
