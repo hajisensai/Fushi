@@ -755,6 +755,11 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       );
     }
 
+    _audiobookController?.notifySectionRestoreCompleted(
+      currentReaderSection: _currentChapter,
+      success: true,
+    );
+
     _readingTimeTracker ??= ReadingTimeTracker(appModel.database);
     _readingTimeTracker!.start();
     _sessionStartTime = DateTime.now();
@@ -921,6 +926,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (_book == null || index < 0 || index >= _book!.chapters.length) return;
     if (_controller == null) return;
 
+    _audiobookController?.cancelChapterTransition();
     _flushReadingStats();
 
     _currentChapter = index;
@@ -939,6 +945,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (_book == null) {
       return;
     }
+    _audiobookController?.cancelChapterTransition();
     if (direction == 'forward') {
       if (_currentChapter < _book!.chapters.length - 1) {
         _navigateToChapter(_currentChapter + 1);
