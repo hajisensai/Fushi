@@ -130,9 +130,8 @@ void main() {
     final appModel = container.read(appProvider);
     await appModel.initialise();
 
-    // ── 预热：WebView 引擎 + ttu assets server ─────────────────────────
-    // 两者互不依赖，各自 fire-and-forget。用户还在看主页/书架时就把冷启动
-    // 成本吃掉：WebView 进程 ~500-1500ms，LocalAssetsServer ~200-800ms。
+    // ── 预热 WebView 引擎 ──────────────────────────────────────────────
+    // 用户还在看主页/书架时就把冷启动成本吃掉：~500-1500ms。
     unawaited(Future(() async {
       try {
         late final HeadlessInAppWebView warmup;
@@ -149,8 +148,6 @@ void main() {
         debugPrint('[Hibiki] WebView warmup failed (non-fatal): $e');
       }
     }));
-    // ttuServerProvider 仅用于迁移路径，不再需要预热。
-    // TtuMigrationServer 在上方 fire-and-forget 块中按需启动。
 
     /// Capture Flutter framework errors with full details.
     FlutterError.onError = (details) {

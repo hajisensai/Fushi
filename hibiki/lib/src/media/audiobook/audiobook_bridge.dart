@@ -398,36 +398,6 @@ window.__hoshiAnnotate = function(chapterHref) {
     return AudiobookClickEvent(chapterHref: chapter, sentenceIndex: sid);
   }
 
-  // ── 保留签名但简化的旧 API（供 reader_ttu_source_page 编译通过）──────────
-
-  /// 不再需要 — hoshiReader 不使用 ttu IndexedDB。
-  static Future<void> initSasayakiRefs(
-    InAppWebViewController controller, {
-    required int ttuBookId,
-  }) async {
-    // No-op: hoshiReader 不依赖 ttu IndexedDB
-  }
-
-  /// 不再需要 — 返回"未就绪"桩值。
-  static Future<TtuApiProbe> probeTtuApi(
-    InAppWebViewController controller,
-  ) async {
-    return const TtuApiProbe.missing();
-  }
-
-  static Future<void> saveScrollPos(
-    InAppWebViewController controller,
-  ) async {}
-
-  static Future<bool> checkNewImage(
-    InAppWebViewController controller,
-  ) async {
-    return false;
-  }
-
-  static Future<void> clearSeenImages(
-    InAppWebViewController controller,
-  ) async {}
 
   static Future<void> bookmarkCurrentPage(
     InAppWebViewController controller,
@@ -514,56 +484,6 @@ window.__hoshiAnnotate = function(chapterHref) {
   }
 }
 
-/// ttu section 导航 API 探针结果（保留类型供现有代码编译）。
-class TtuApiProbe {
-  const TtuApiProbe({
-    required this.hasGoToSection,
-    required this.hasCurrentSection,
-    required this.hasSectionCount,
-    this.sectionCount,
-    this.currentSection,
-    this.currentPage,
-    this.totalPages,
-  });
-
-  const TtuApiProbe.missing()
-      : hasGoToSection = false,
-        hasCurrentSection = false,
-        hasSectionCount = false,
-        sectionCount = null,
-        currentSection = null,
-        currentPage = null,
-        totalPages = null;
-
-  final bool hasGoToSection;
-  final bool hasCurrentSection;
-  final bool hasSectionCount;
-  final int? sectionCount;
-  final int? currentSection;
-  final int? currentPage;
-  final int? totalPages;
-
-  bool get forkReady => hasGoToSection && hasCurrentSection && hasSectionCount;
-
-  String describe() {
-    if (forkReady) {
-      return 'ttu fork ready (sections=$sectionCount, cur=$currentSection)';
-    }
-    final List<String> missing = <String>[];
-    if (!hasGoToSection) {
-      missing.add('goToSection');
-    }
-    if (!hasCurrentSection) {
-      missing.add('currentSection');
-    }
-    if (!hasSectionCount) {
-      missing.add('sectionCount');
-    }
-    return 'ttu fork missing: ${missing.join(", ")}';
-  }
-}
-
-/// ttu 章节列表条目（保留类型供现有代码编译）。
 class TtuTocEntry {
   const TtuTocEntry({
     required this.index,
