@@ -341,6 +341,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       } else {
         window.flutter_inappwebview.callHandler('onSwipe', 'right');
       }
+    } else if (absDx < 20 && absDy < 20) {
+      window.flutter_inappwebview.callHandler('onTap', t.clientX, t.clientY);
     }
   }, {passive: true});
 })();
@@ -403,6 +405,16 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         controller.addJavaScriptHandler(
           handlerName: 'onRestoreComplete',
           callback: (_) => _onRestoreComplete(),
+        );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'onTap',
+          callback: (List<dynamic> args) {
+            if (args.length < 2) return;
+            final double x = _toDouble(args[0]) ?? 0;
+            final double y = _toDouble(args[1]) ?? 0;
+            _selectTextAt(x, y);
+          },
         );
 
         controller.addJavaScriptHandler(
@@ -487,6 +499,14 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   }
 
   // ── Text Selection → Dictionary ───────────────────────────────────
+
+  Future<void> _selectTextAt(double cssX, double cssY) async {
+    if (_controller == null) return;
+    const int maxLength = 400;
+    await _controller!.evaluateJavascript(
+      source: ReaderSelectionScripts.selectInvocation(cssX, cssY, maxLength),
+    );
+  }
 
   Future<void> _handleTextSelected(ReaderSelectionData data) async {
     if (data.text.isEmpty) {
