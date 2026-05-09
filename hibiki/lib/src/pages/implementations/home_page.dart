@@ -134,7 +134,7 @@ class _HomePageState extends BasePageState<HomePage>
       case 1:
         return const HomeDictionaryPage();
       case 2:
-        return const DisplaySettingsPage();
+        return const HoshiSettingsContent();
       default:
         return const HomeReaderPage();
     }

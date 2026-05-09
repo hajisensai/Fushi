@@ -20,6 +20,8 @@ export 'src/pages/implementations/home_page.dart';
 export 'src/pages/implementations/recursive_dictionary_page.dart';
 export 'src/pages/implementations/text_segmentation_dialog_page.dart';
 export 'src/pages/implementations/reader_hoshi_page.dart';
+export 'src/pages/implementations/reader_hoshi_history_page.dart';
+export 'src/pages/implementations/hoshi_settings_page.dart';
 export 'src/pages/implementations/placeholder_source_page.dart';
 export 'src/pages/implementations/custom_theme_page.dart';
 export 'src/pages/implementations/custom_fonts_page.dart';

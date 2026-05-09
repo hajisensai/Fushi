@@ -189,7 +189,7 @@ class ReaderHoshiSource extends ReaderMediaSource {
         onTap: () {
           showAppDialog(
             context: context,
-            builder: (context) => const DisplaySettingsPage(),
+            builder: (context) => const HoshiSettingsDialogPage(),
           );
         },
       ),
@@ -198,7 +198,7 @@ class ReaderHoshiSource extends ReaderMediaSource {
 
   @override
   BasePage buildHistoryPage({MediaItem? item}) {
-    return const HistoryReaderPage();
+    return const ReaderHoshiHistoryPage();
   }
 
   // ── Book listing from Drift ─────────────────────────────────────────
