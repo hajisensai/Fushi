@@ -25,6 +25,7 @@ class EpubImporter {
   }) async {
     final int tempId = DateTime.now().millisecondsSinceEpoch;
     final String extractDir = await EpubStorage.bookDirectory(tempId);
+    int? insertedBookId;
 
     try {
       final EpubBook book = await compute(
@@ -57,7 +58,7 @@ class EpubImporter {
           ? p.basenameWithoutExtension(fileName)
           : book.title;
 
-      final int bookId = await db.into(db.epubBooks).insert(
+      insertedBookId = await db.into(db.epubBooks).insert(
             EpubBooksCompanion.insert(
               title: resolvedTitle,
               author: book.author != null ? Value(book.author!) : const Value.absent(),
@@ -72,27 +73,40 @@ class EpubImporter {
           );
 
       // Rename temp directory to actual book ID directory
-      if (bookId != tempId) {
-        final String realDir = await EpubStorage.bookDirectory(bookId);
+      if (insertedBookId != tempId) {
+        final String realDir = await EpubStorage.bookDirectory(insertedBookId);
         if (realDir != extractDir) {
           final Directory srcDir = Directory(extractDir);
           if (srcDir.existsSync()) {
             srcDir.renameSync(realDir);
           }
-          await (db.update(db.epubBooks)..where((tbl) => tbl.id.equals(bookId)))
+          await (db.update(db.epubBooks)..where((tbl) => tbl.id.equals(insertedBookId!)))
               .write(EpubBooksCompanion(extractDir: Value(realDir)));
         }
       }
 
-      return bookId;
+      return insertedBookId;
     } catch (e) {
-      final Directory dir = Directory(extractDir);
-      if (dir.existsSync()) {
+      if (insertedBookId != null) {
         try {
-          dir.deleteSync(recursive: true);
+          await (db.delete(db.epubBooks)
+                ..where((tbl) => tbl.id.equals(insertedBookId!)))
+              .go();
         } catch (_) {}
+        final String realDir = await EpubStorage.bookDirectory(insertedBookId);
+        _tryDeleteDir(realDir);
       }
+      _tryDeleteDir(extractDir);
       rethrow;
+    }
+  }
+
+  static void _tryDeleteDir(String path) {
+    final Directory dir = Directory(path);
+    if (dir.existsSync()) {
+      try {
+        dir.deleteSync(recursive: true);
+      } catch (_) {}
     }
   }
 

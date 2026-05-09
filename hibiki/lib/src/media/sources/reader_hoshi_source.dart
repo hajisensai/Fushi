@@ -506,52 +506,6 @@ class ReaderHoshiSource extends ReaderMediaSource {
 
   // ── Custom fonts ────────────────────────────────────────────────────
 
-  HttpServer? _fontServer;
-  int get fontServerPort => 52061;
-
-  Future<void> ensureFontServer() async {
-    if (_fontServer != null) {
-      return;
-    }
-    try {
-      _fontServer = await HttpServer.bind(
-        InternetAddress.loopbackIPv4,
-        fontServerPort,
-      );
-      _fontServer!.listen((request) async {
-        final String fontPath = Uri.decodeComponent(
-            request.requestedUri.path.replaceFirst('/', ''));
-        final File file = File(fontPath);
-        request.response.headers
-          ..set('Access-Control-Allow-Origin', '*')
-          ..set('Access-Control-Allow-Methods', 'GET')
-          ..set('Cache-Control', 'max-age=604800');
-        if (request.method == 'OPTIONS') {
-          request.response.statusCode = 204;
-          await request.response.close();
-          return;
-        }
-        if (await file.exists()) {
-          final String ext = fontPath.split('.').last.toLowerCase();
-          final String mime = switch (ext) {
-            'woff2' => 'font/woff2',
-            'woff' => 'font/woff',
-            'otf' => 'font/otf',
-            _ => 'font/ttf',
-          };
-          request.response.headers.set('Content-Type', mime);
-          await file.openRead().pipe(request.response);
-        } else {
-          request.response.statusCode = 404;
-          await request.response.close();
-        }
-      });
-      debugPrint('[hibiki] Font server started on port $fontServerPort');
-    } catch (e) {
-      debugPrint('[hibiki] Font server failed: $e');
-    }
-  }
-
   List<Map<String, dynamic>> get customFonts {
     final String raw =
         getPreference<String>(key: 'custom_fonts', defaultValue: '[]');

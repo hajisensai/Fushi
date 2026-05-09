@@ -85,6 +85,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   List<int> _chapterCumulativeChars = [];
 
   Timer? _saveDebounce;
+  Timer? _progressPollTimer;
   int _lastSavedSection = -1;
   double _lastSavedProgress = -1;
 
@@ -408,6 +409,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _progressPollTimer?.cancel();
     _saveDebounce?.cancel();
     _flushPosition();
     _flushReadingStats();
@@ -768,6 +770,15 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _lastAbsoluteCount = _absoluteCharPosition(_initialProgress);
 
     _refreshProgress();
+    _startProgressPoll();
+  }
+
+  void _startProgressPoll() {
+    _progressPollTimer?.cancel();
+    _progressPollTimer = Timer.periodic(
+      const Duration(seconds: 3),
+      (_) => _refreshProgress(),
+    );
   }
 
   // ── Audiobook Cue Wiring ──────────────────────────────────────────
@@ -903,6 +914,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       return;
     }
 
+    _progressPollTimer?.cancel();
     _flushReadingStats();
 
     _currentChapter = index;
@@ -923,6 +935,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (_book == null || index < 0 || index >= _book!.chapters.length) return;
     if (_controller == null) return;
 
+    _progressPollTimer?.cancel();
     _audiobookController?.cancelChapterTransition();
     _flushReadingStats();
 
