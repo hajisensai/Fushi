@@ -783,7 +783,72 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   }
 
   void _showChapterSheet() {
-    // Implemented in Task 9
+    if (_book == null) return;
+
+    final List<EpubTocItem> toc = _book!.toc;
+    final List<EpubChapter> chapters = _book!.chapters;
+
+    final List<({String label, int chapterIndex})> items;
+    if (toc.isNotEmpty) {
+      items = _flattenToc(toc);
+    } else {
+      items = List<({String label, int chapterIndex})>.generate(
+        chapters.length,
+        (int i) => (label: 'Chapter ${i + 1}', chapterIndex: i),
+      );
+    }
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: _themeBackgroundColor(),
+      builder: (BuildContext ctx) {
+        return ListView.builder(
+          itemCount: items.length,
+          itemBuilder: (BuildContext ctx, int i) {
+            final bool isCurrent = items[i].chapterIndex == _currentChapter;
+            return ListTile(
+              title: Text(
+                items[i].label,
+                style: TextStyle(
+                  color: _themeTextColor(),
+                  fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+                ),
+              ),
+              selected: isCurrent,
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _toggleChrome();
+                _navigateToChapter(items[i].chapterIndex);
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  List<({String label, int chapterIndex})> _flattenToc(List<EpubTocItem> items) {
+    final List<({String label, int chapterIndex})> result =
+        <({String label, int chapterIndex})>[];
+    for (final EpubTocItem item in items) {
+      final int index = _tocHrefToChapterIndex(item.href);
+      if (index >= 0) {
+        result.add((label: item.label, chapterIndex: index));
+      }
+      result.addAll(_flattenToc(item.children));
+    }
+    return result;
+  }
+
+  int _tocHrefToChapterIndex(String? href) {
+    if (href == null || _book == null) return -1;
+    final String cleanHref = href.split('#').first;
+    for (int i = 0; i < _book!.chapters.length; i++) {
+      if (_book!.chapters[i].href == cleanHref) {
+        return i;
+      }
+    }
+    return -1;
   }
 
   void _showAppearanceSheet() {
