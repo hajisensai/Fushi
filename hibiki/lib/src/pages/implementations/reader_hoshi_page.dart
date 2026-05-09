@@ -21,6 +21,7 @@ import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
 import 'package:hibiki/src/media/sources/reader_hoshi_source.dart';
 import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
+import 'package:hibiki/src/media/audiobook/favorite_sentence_repository.dart';
 import 'package:hibiki/src/media/audiobook/reading_time_tracker.dart';
 import 'package:hibiki/src/media/audiobook/reader_position_model.dart';
 import 'package:hibiki/src/media/audiobook/reader_position_repository.dart';
@@ -65,7 +66,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   double _stableTopInset = 0;
   double _stableBottomInset = 0;
-  static const double _topProgressBarHeight = 36;
+
   static const double _readerChromeHeight = 56;
 
   int? _progressCurrentChars;
@@ -98,8 +99,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       _progressTotalChars != null &&
       _progressTotalChars! > 0;
 
-  double get _readerTopOffset =>
-      _stableTopInset + (_showTopProgress ? _topProgressBarHeight : 0);
+  double get _readerTopOffset => _stableTopInset;
 
   double get _readerBottomReserve =>
       _readerChromeHeight + _stableBottomInset;
@@ -1020,8 +1020,15 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
               AudiobookPlayBar(
                 controller: ctrl,
                 onOpenSettings: _showAppearanceSheet,
+                backgroundColor: _themeBackgroundColor(),
               ),
-              SizedBox(height: _stableBottomInset),
+              ColoredBox(
+                color: _themeBackgroundColor(),
+                child: SizedBox(
+                  height: _stableBottomInset,
+                  width: double.infinity,
+                ),
+              ),
             ],
           ),
         );
@@ -1038,36 +1045,47 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          BottomAppBar(
-            height: _readerChromeHeight,
+          ColoredBox(
             color: _themeBackgroundColor(),
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Row(
-              children: <Widget>[
-                IconButton(
-                  icon: Icon(Icons.headphones, color: _themeTextColor()),
-                  iconSize: 22,
-                  onPressed: _openAudioImportDialog,
+            child: SizedBox(
+              height: _readerChromeHeight,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Row(
+                  children: <Widget>[
+                    IconButton(
+                      icon: Icon(Icons.headphones, color: _themeTextColor()),
+                      iconSize: 22,
+                      onPressed: _openAudioImportDialog,
+                    ),
+                    Expanded(
+                      child: Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style:
+                            Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: _themeTextColor(),
+                                ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.tune, color: _themeTextColor()),
+                      iconSize: 20,
+                      onPressed: _showAppearanceSheet,
+                    ),
+                  ],
                 ),
-                Expanded(
-                  child: Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: _themeTextColor(),
-                        ),
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(Icons.tune, color: _themeTextColor()),
-                  iconSize: 20,
-                  onPressed: _showAppearanceSheet,
-                ),
-              ],
+              ),
             ),
           ),
-          SizedBox(height: _stableBottomInset),
+          ColoredBox(
+            color: _themeBackgroundColor(),
+            child: SizedBox(
+              height: _stableBottomInset,
+              width: double.infinity,
+            ),
+          ),
         ],
       ),
     );
@@ -1100,14 +1118,26 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     return -1;
   }
 
-  void _showAppearanceSheet() {
+  Future<void> _showAppearanceSheet() async {
     if (_settings == null || _controller == null || _book == null) return;
 
     _syncSettingsToHive();
 
     final List<TtuTocEntry> toc = _buildTtuToc();
+    final int bookId = widget.bookId;
+    final BookmarkRepository bmRepo = BookmarkRepository(appModel.database);
+    final FavoriteSentenceRepository favRepo =
+        FavoriteSentenceRepository(appModel.database);
 
-    showModalBottomSheet<void>(
+    List<Bookmark> bookmarks = await bmRepo.getBookmarks(bookId);
+    final List<FavoriteSentence> allFavorites = await favRepo.getAll();
+    final List<FavoriteSentence> favorites = allFavorites
+        .where((FavoriteSentence f) => f.ttuBookId == bookId)
+        .toList();
+
+    if (!mounted) return;
+
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       builder: (BuildContext ctx) {
@@ -1119,7 +1149,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
             Navigator.of(ctx).pop();
             _navigateToChapter(index);
           },
-          onBookmark: () async {},
+          onBookmark: () async {
+            await _addBookmarkAtCurrentPosition();
+          },
           onExitReader: () {
             Navigator.of(ctx).pop();
             Navigator.of(context).pop();
@@ -1127,15 +1159,92 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           webViewController: _controller!,
           appModel: appModel,
           isHoshiReader: true,
-          charProgress: _progressCurrentChars != null && _progressTotalChars != null
+          charProgress: _progressCurrentChars != null &&
+                  _progressTotalChars != null
               ? (_progressCurrentChars!, _progressTotalChars!)
               : null,
+          bookmarks: bookmarks,
+          onJumpToBookmark: (Bookmark bm) async {
+            Navigator.of(ctx).pop();
+            if (bm.sectionIndex != _currentChapter) {
+              _navigateToChapter(bm.sectionIndex);
+              await Future<void>.delayed(const Duration(milliseconds: 600));
+            }
+            final double progress = bm.normCharOffset / 10000.0;
+            await _controller!.evaluateJavascript(
+              source:
+                  'window.hoshiReader && window.hoshiReader.restoreProgress($progress);',
+            );
+          },
+          onDeleteBookmark: (int index) async {
+            await bmRepo.removeBookmark(bookId, index);
+            bookmarks = await bmRepo.getBookmarks(bookId);
+          },
+          favoriteSentences: favorites,
+          onDeleteFavorite: (int index) async {
+            if (index >= 0 && index < favorites.length) {
+              await favRepo.removeById(favorites[index].id);
+            }
+          },
+          onJumpToFavorite: (FavoriteSentence fav) async {
+            if (fav.sectionIndex == null) return;
+            Navigator.of(ctx).pop();
+            if (fav.sectionIndex != _currentChapter) {
+              _navigateToChapter(fav.sectionIndex!);
+              await Future<void>.delayed(const Duration(milliseconds: 600));
+            }
+            if (fav.normCharOffset != null) {
+              final double progress = fav.normCharOffset! / 10000.0;
+              await _controller!.evaluateJavascript(
+                source:
+                    'window.hoshiReader && window.hoshiReader.restoreProgress($progress);',
+              );
+            }
+          },
         );
       },
-    ).then((_) {
-      _syncSettingsFromHive();
-      _reloadWithCurrentSettings();
-    });
+    );
+
+    _syncSettingsFromHive();
+    _reloadWithCurrentSettings();
+  }
+
+  Future<void> _addBookmarkAtCurrentPosition() async {
+    if (_controller == null) return;
+
+    final dynamic result = await _controller!.evaluateJavascript(
+      source: ReaderPaginationScripts.progressInvocation(),
+    );
+    final double? progress = _toDouble(result);
+    if (progress == null) return;
+
+    final int normOffset = (progress * 10000).round();
+    final String label = _book?.toc.isNotEmpty == true
+        ? _currentChapterLabel()
+        : 'Ch. ${_currentChapter + 1}';
+
+    final Bookmark bm = Bookmark(
+      sectionIndex: _currentChapter,
+      normCharOffset: normOffset,
+      label: label,
+      createdAt: DateTime.now(),
+      ttuBookId: widget.bookId,
+      bookTitle: _book?.title,
+    );
+
+    await BookmarkRepository(appModel.database)
+        .addBookmark(widget.bookId, bm);
+  }
+
+  String _currentChapterLabel() {
+    if (_book == null) return '';
+    final List<TtuTocEntry> toc = _buildTtuToc();
+    for (int i = toc.length - 1; i >= 0; i--) {
+      if (toc[i].index <= _currentChapter) {
+        return toc[i].label;
+      }
+    }
+    return 'Ch. ${_currentChapter + 1}';
   }
 
   void _syncSettingsToHive() {
@@ -1228,6 +1337,20 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   // ── Top Progress Bar ──────────────────────────────────────────────
 
+  Color _infoTextColor() {
+    final String theme = _settings?.theme ?? 'light-theme';
+    switch (theme) {
+      case 'gray-theme':
+      case 'dark-theme':
+      case 'black-theme':
+        return const Color(0x99FFFFFF);
+      case 'ecru-theme':
+        return const Color(0x7A5C5448);
+      default:
+        return const Color(0x8A000000);
+    }
+  }
+
   Widget _buildTopProgressBar() {
     if (!_showTopProgress) {
       return const SizedBox.shrink();
@@ -1235,36 +1358,31 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
     final double ratio =
         (_progressCurrentChars! / _progressTotalChars!).clamp(0.0, 1.0);
+    final Color infoColor = _infoTextColor();
     final String title = _book?.title ?? '';
-    final Color textColor = _themeTextColor();
 
     return Positioned(
       top: _stableTopInset,
-      left: 0,
-      right: 0,
-      height: _topProgressBarHeight,
-      child: GestureDetector(
-        onTap: _toggleChrome,
-        child: Container(
-          color: _themeBackgroundColor(),
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: <Widget>[
-              if (title.isNotEmpty)
-                Text(
-                  title,
-                  style: TextStyle(fontSize: 10, color: textColor),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                ),
+      left: 96,
+      right: 96,
+      child: IgnorePointer(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            if (title.isNotEmpty)
               Text(
-                '$_progressCurrentChars / $_progressTotalChars'
-                '  ${(ratio * 100).toStringAsFixed(2)}%',
-                style: TextStyle(fontSize: 10, color: textColor),
+                title,
+                style: TextStyle(fontSize: 13, color: infoColor),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
               ),
-            ],
-          ),
+            const SizedBox(height: 2),
+            Text(
+              '$_progressCurrentChars / $_progressTotalChars'
+              '  ${(ratio * 100).toStringAsFixed(2)}%',
+              style: TextStyle(fontSize: 12, color: infoColor),
+            ),
+          ],
         ),
       ),
     );

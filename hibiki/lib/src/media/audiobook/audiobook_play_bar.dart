@@ -25,10 +25,12 @@ class AudiobookPlayBar extends StatelessWidget {
   const AudiobookPlayBar({
     required this.controller,
     required this.onOpenSettings,
+    this.backgroundColor,
     super.key,
   });
 
   final AudiobookPlayerController controller;
+  final Color? backgroundColor;
 
   /// 用户点 ⚙ 设置按钮后触发。由 reader 页面侧注入，因为设置面板要
   /// 访问 WebView controller 才能 probe ttu 当前章节 / TOC、触发书签。
@@ -36,48 +38,53 @@ class AudiobookPlayBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BottomAppBar(
-      height: 56,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: Row(
-        children: [
-          IconButton(
-            icon: const Icon(Icons.skip_previous),
-            iconSize: 22,
-            onPressed: controller.skipToPrevCue,
-            tooltip: t.prev_sentence,
+    return ColoredBox(
+      color: backgroundColor ?? Theme.of(context).colorScheme.surface,
+      child: SizedBox(
+        height: 56,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.skip_previous),
+                iconSize: 22,
+                onPressed: controller.skipToPrevCue,
+                tooltip: t.prev_sentence,
+              ),
+              IconButton.filledTonal(
+                icon: Icon(
+                  controller.isPlaying ? Icons.pause : Icons.play_arrow,
+                ),
+                iconSize: 24,
+                onPressed: controller.togglePlayPause,
+                tooltip: controller.isPlaying ? t.pause : t.play,
+              ),
+              IconButton(
+                icon: const Icon(Icons.skip_next),
+                iconSize: 22,
+                onPressed: controller.skipToNextCue,
+                tooltip: t.next_sentence,
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  controller.currentCue?.text ?? '',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+              AudiobookFollowAudioButton(controller: controller),
+              IconButton(
+                icon: const Icon(Icons.tune),
+                iconSize: 20,
+                onPressed: onOpenSettings,
+                tooltip: t.audiobook_settings,
+              ),
+            ],
           ),
-          IconButton.filledTonal(
-            icon: Icon(
-              controller.isPlaying ? Icons.pause : Icons.play_arrow,
-            ),
-            iconSize: 24,
-            onPressed: controller.togglePlayPause,
-            tooltip: controller.isPlaying ? t.pause : t.play,
-          ),
-          IconButton(
-            icon: const Icon(Icons.skip_next),
-            iconSize: 22,
-            onPressed: controller.skipToNextCue,
-            tooltip: t.next_sentence,
-          ),
-          const SizedBox(width: 4),
-          Expanded(
-            child: Text(
-              controller.currentCue?.text ?? '',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ),
-          AudiobookFollowAudioButton(controller: controller),
-          IconButton(
-            icon: const Icon(Icons.tune),
-            iconSize: 20,
-            onPressed: onOpenSettings,
-            tooltip: t.audiobook_settings,
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -295,7 +302,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
       case 'theme':
         await src.setTtuTheme(value as String);
       case 'hideFurigana':
-        break;
+        await src.setTtuFuriganaMode((value as bool) ? 'hide' : 'toggle');
       case 'textIndentation':
         await src.setTtuTextIndentation((value as num).toDouble());
       case 'firstDimensionMargin':
