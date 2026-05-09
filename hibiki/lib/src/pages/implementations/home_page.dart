@@ -6,7 +6,7 @@ import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
 import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
-import 'package:hibiki/src/media/sources/reader_ttu_source.dart';
+import 'package:hibiki/src/media/sources/reader_hoshi_source.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:hibiki/utils.dart';
 
@@ -134,7 +134,7 @@ class _HomePageState extends BasePageState<HomePage>
       case 1:
         return const HomeDictionaryPage();
       case 2:
-        return const TtuSettingsDialogContent();
+        return const DisplaySettingsPage();
       default:
         return const HomeReaderPage();
     }
