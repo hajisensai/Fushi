@@ -555,6 +555,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
     _readingTimeTracker ??= ReadingTimeTracker(appModel.database);
     _readingTimeTracker!.start();
+    _sessionStartTime = DateTime.now();
 
     _refreshProgress();
   }
@@ -747,7 +748,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   }
 
   void _flushReadingStats() {
-    if (_sessionCharsRead <= 0 || _book?.title == null) return;
+    if (_sessionCharsRead <= 0 || _book == null) return;
     final DateTime now = DateTime.now();
     final int elapsedMs = now.difference(_sessionStartTime).inMilliseconds;
     final String dateKey =
