@@ -45,10 +45,9 @@ class EpubImporter {
       final String? tocJson = book.toc.isNotEmpty
           ? jsonEncode(
               book.toc
-                  .map((EpubTocEntry e) => <String, Object?>{
-                        'title': e.title,
+                  .map((EpubTocItem e) => <String, Object?>{
+                        'title': e.label,
                         'href': e.href,
-                        'chapterIndex': e.chapterIndex,
                       })
                   .toList(),
             )
@@ -58,7 +57,7 @@ class EpubImporter {
             EpubBooksCompanion.insert(
               title: book.title,
               author: book.author != null ? Value(book.author!) : const Value.absent(),
-              coverPath: book.coverPath != null ? Value(book.coverPath!) : const Value.absent(),
+              coverPath: book.coverHref != null ? Value(book.coverHref!) : const Value.absent(),
               epubPath: fileName,
               extractDir: extractDir,
               chapterCount: book.chapters.length,

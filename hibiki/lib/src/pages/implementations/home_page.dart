@@ -226,13 +226,12 @@ class _HomePageState extends BasePageState<HomePage>
       icon: Icons.add,
       onTap: () async {
         final ReaderHoshiSource src = ReaderHoshiSource.instance;
-        final int port = src.portForLanguage(appModel.targetLanguage);
         await showAppDialog(
           context: context,
           builder: (_) => BookImportDialog(
             repo: SrtBookRepository(appModel.database),
             audiobookRepo: AudiobookRepository(appModel.database),
-            serverPort: port,
+            db: appModel.database,
             ttuMediaSourceIdentifier: src.uniqueKey,
           ),
         );

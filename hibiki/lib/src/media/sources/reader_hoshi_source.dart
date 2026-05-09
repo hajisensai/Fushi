@@ -164,7 +164,7 @@ class ReaderHoshiSource extends ReaderMediaSource {
             builder: (_) => BookImportDialog(
               repo: SrtBookRepository(appModel.database),
               audiobookRepo: AudiobookRepository(appModel.database),
-              serverPort: portForLanguage(appModel.targetLanguage),
+              db: appModel.database,
               ttuMediaSourceIdentifier: uniqueKey,
             ),
           );

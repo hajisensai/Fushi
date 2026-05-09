@@ -4,21 +4,20 @@ import 'package:hibiki/src/pages/implementations/collections_page.dart';
 
 void main() {
   group('buildCollectionReaderMediaItem', () {
-    test('generates URL matching bookshelf format', () {
+    test('generates hoshi URL matching bookshelf format', () {
       final MediaItem opened = buildCollectionReaderMediaItem(
         ttuId: 42,
-        port: 52059,
         title: 'MyBook',
       );
 
       expect(
         opened.mediaIdentifier,
-        'http://localhost:52059/b.html?id=42&?title=MyBook',
+        'hoshi://book/42',
       );
       expect(opened.title, 'MyBook');
       expect(
         opened.mediaSourceIdentifier,
-        ReaderTtuSource.instance.uniqueKey,
+        ReaderHoshiSource.instance.uniqueKey,
       );
     });
   });

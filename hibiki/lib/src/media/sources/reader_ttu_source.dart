@@ -280,8 +280,7 @@ class ReaderTtuSource extends ReaderMediaSource {
             builder: (_) => BookImportDialog(
               repo: SrtBookRepository(appModel.database),
               audiobookRepo: AudiobookRepository(appModel.database),
-              serverPort: ReaderTtuSource.instance
-                  .getPortForLanguage(appModel.targetLanguage),
+              db: appModel.database,
               ttuMediaSourceIdentifier: ReaderTtuSource.instance.uniqueKey,
             ),
           );

@@ -1,11 +1,8 @@
-import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
@@ -23,9 +20,11 @@ import 'package:hibiki/src/media/audiobook/ass_parser.dart';
 import 'package:hibiki/src/media/audiobook/lrc_parser.dart';
 import 'package:hibiki/src/media/audiobook/srt_parser.dart';
 import 'package:hibiki/src/media/audiobook/text_to_epub.dart';
-import 'package:hibiki/src/media/audiobook/ttu_epub_importer.dart';
-import 'package:hibiki/src/media/audiobook/ttu_idb_schema.dart';
-import 'package:hibiki/src/media/audiobook/ttu_idb_reader.dart';
+import 'package:hibiki/src/database/database.dart';
+import 'package:hibiki/src/epub/epub_book.dart';
+import 'package:hibiki/src/epub/epub_importer.dart';
+import 'package:hibiki/src/epub/epub_parser.dart';
+import 'package:hibiki/src/epub/epub_storage.dart';
 import 'package:hibiki/src/media/audiobook/vtt_parser.dart';
 import 'package:hibiki/utils.dart';
 
@@ -33,35 +32,27 @@ import 'package:hibiki/utils.dart';
 ///
 /// 路由规则（以"选中了什么"为准）：
 ///
-/// - **仅 EPUB**：[TtuEpubImporter] 驱动 ttu 的 `<input type=file>` 管线导入，
-///   不落 [SrtBook] / [Audiobook]，书自然出现在书架的 EPUB 区。
-/// - **仅字幕（可带音频）**：解析 cues → [CuesToEpub.buildIdbPayload] 拼 ttu
-///   原生 IDB 载荷并 `put()` 写入（带 `data-cue-id` span，供 AudiobookBridge
-///   做高亮同步）；同时把 cues + audio 路径落到 Isar 的 [SrtBook] / [AudioCue]。
-/// - **EPUB + 字幕（可带音频）**：先用 ttu 导入 EPUB 拿 `ttuBookId`；再从 IDB
-///   读回章节文本，跑 [EpubSrtMatcher] + [SasayakiMatchCodec]，把 cue 对齐到
-///   真实 EPUB；cues + 可选音频落到 [AudiobookRepository]（bookUid 复用
-///   `MediaItem.uniqueKey` 约定：`$sourceId/b.html?id=X&?title=Y`）。
+/// - **仅 EPUB**：[EpubImporter] 解压 + 入 Drift，书自然出现在书架。
+/// - **仅字幕（可带音频）**：解析 cues → [CuesToEpub] 生成真 EPUB 并
+///   [EpubImporter] 导入；同时把 cues + audio 路径落到 Isar [SrtBook] / [AudioCue]。
+/// - **EPUB + 字幕（可带音频）**：先 [EpubImporter] 导入 EPUB 拿 `bookId`；再用
+///   [EpubParser] 读回章节文本，跑 [EpubSrtMatcher] + [SasayakiMatchCodec]，
+///   把 cue 对齐到真实 EPUB；cues + 可选音频落到 [AudiobookRepository]。
 /// - **音频但无字幕**：非法组合，音频必须配合字幕使用。
 class BookImportDialog extends StatefulWidget {
   const BookImportDialog({
     required this.repo,
     required this.audiobookRepo,
-    required this.serverPort,
+    required this.db,
     required this.ttuMediaSourceIdentifier,
     super.key,
   });
 
   final SrtBookRepository repo;
-
-  /// 存 EPUB+字幕 组合路径的 Audiobook / AudioCue。
   final AudiobookRepository audiobookRepo;
+  final HibikiDatabase db;
 
-  /// ッツ Ebook Reader local server port.
-  final int serverPort;
-
-  /// `MediaItem.mediaSourceIdentifier` 值（同 `ReaderTtuSource.instance.uniqueKey`）。
-  /// 用于构造 EPUB+字幕 组合的 bookUid。
+  /// `MediaItem.mediaSourceIdentifier` 值。
   final String ttuMediaSourceIdentifier;
 
   @override
@@ -469,19 +460,28 @@ class _BookImportDialogState extends State<BookImportDialog> {
     );
     debugPrint('[hibiki-import] subtitleBook: parsed ${cues.length} cues');
 
-    int ttuBookId = 0;
+    int bookId = 0;
     if (cues.isNotEmpty) {
       try {
         _reportProgress(0.3, t.import_step_building_epub);
-        final TtuIdbPayload payload = CuesToEpub.buildIdbPayload(
+        final Directory tmpDir = await getTemporaryDirectory();
+        final String epubPath = p.join(tmpDir.path, 'cues_to_epub_$uid.epub');
+        await CuesToEpub.convert(
           title: title,
           cues: cues,
+          outputPath: epubPath,
+          author: author,
         );
-        _reportProgress(0.5, t.import_step_injecting_idb);
-        ttuBookId = await _injectPayloadIntoTtuIdb(payload);
-        debugPrint('[hibiki-import] subtitleBook: IDB inject done, id=$ttuBookId');
+        _reportProgress(0.5, t.import_step_importing_epub);
+        final File epubFile = File(epubPath);
+        bookId = await EpubImporter.import(
+          db: widget.db,
+          bytes: await epubFile.readAsBytes(),
+          fileName: '${title.replaceAll(RegExp(r'[^\w\s\-]'), '')}.epub',
+        );
+        debugPrint('[hibiki-import] subtitleBook: EPUB import done, id=$bookId');
       } catch (e) {
-        debugPrint('[hibiki-import] ttu IDB inject failed: $e');
+        debugPrint('[hibiki-import] EPUB generation/import failed: $e');
       }
     }
 
@@ -501,7 +501,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
       ..title = title
       ..srtPath = persistedSrt
       ..importedAt = DateTime.now().millisecondsSinceEpoch
-      ..ttuBookId = ttuBookId;
+      ..ttuBookId = bookId;
     if (persistedAudioPath != null) {
       book.audioPaths = [persistedAudioPath];
     }
@@ -510,7 +510,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
     }
 
     debugPrint('[hibiki-import] SrtBook save: uid=$uid title="$title" '
-        'ttuBookId=$ttuBookId cues=${cues.length}');
+        'bookId=$bookId cues=${cues.length}');
 
     await widget.repo.save(book);
     await widget.repo.saveCues(uid: uid, cues: cues);
@@ -533,10 +533,10 @@ class _BookImportDialogState extends State<BookImportDialog> {
     }
 
     _reportProgress(0.5, t.import_step_importing_epub);
-    await TtuEpubImporter.import(
+    await EpubImporter.import(
+      db: widget.db,
       bytes: bytes,
-      filename: filename,
-      serverPort: widget.serverPort,
+      fileName: filename,
     );
     _reportProgress(1.0, t.import_step_done);
   }
@@ -557,31 +557,29 @@ class _BookImportDialogState extends State<BookImportDialog> {
     }
 
     _reportProgress(0.2, t.import_step_importing_epub);
-    final int ttuBookId = await TtuEpubImporter.import(
+    final int bookId = await EpubImporter.import(
+      db: widget.db,
       bytes: importBytes,
-      filename: importFilename,
-      serverPort: widget.serverPort,
+      fileName: importFilename,
     );
-    if (ttuBookId <= 0) {
-      throw StateError('ttu returned invalid book id');
-    }
 
     _reportProgress(0.35, t.import_step_reading_idb);
-    String idbTitle = '';
     List<EpubSection> sections = const <EpubSection>[];
     try {
-      final TtuBookRecord rec = await TtuIdbReader.readBookRecord(
-        ttuBookId: ttuBookId,
-        serverPort: widget.serverPort,
+      final String extractDir = await EpubStorage.bookDirectory(bookId);
+      final EpubBook epubBook = EpubParser.parseFromExtracted(extractDir);
+      sections = List<EpubSection>.generate(
+        epubBook.chapters.length,
+        (int i) => EpubSection(
+          index: i,
+          href: epubBook.chapters[i].href,
+          text: epubBook.chapterPlainText(i),
+        ),
       );
-      idbTitle = rec.title;
-      sections = rec.sections;
     } catch (e) {
-      debugPrint('[hibiki-import] readBookRecord failed: $e');
+      debugPrint('[hibiki-import] parseFromExtracted failed: $e');
     }
-    final String safeTitle = idbTitle.isNotEmpty ? idbTitle : ' ';
-    final String mediaIdentifier =
-        'http://localhost:${widget.serverPort}/b.html?id=$ttuBookId&?title=$safeTitle';
+    final String mediaIdentifier = 'hoshi://book/$bookId';
     final String bookUid =
         '${widget.ttuMediaSourceIdentifier}/$mediaIdentifier';
 
@@ -697,76 +695,6 @@ class _BookImportDialogState extends State<BookImportDialog> {
         return AssParser.defaultChapter;
       default:
         return SrtParser.defaultChapter;
-    }
-  }
-
-  /// Injects [payload] into the ッツ reader's "books" IDB via a
-  /// headless WebView and resolves with the auto-incremented row key.
-  Future<int> _injectPayloadIntoTtuIdb(TtuIdbPayload payload) async {
-    final String jsonStr = jsonEncode(payload.toJson());
-    final String js = '''
-(async function() {
-  ${TtuIdbSchema.openBooksDbJs}
-  const payload = $jsonStr;
-  const db = await hibikiOpenBooksDb();
-  const id = await new Promise((resolve, reject) => {
-    if (!db.objectStoreNames.contains('data')) {
-      db.close();
-      reject('data_store_missing'); return;
-    }
-    const tx = db.transaction(['data'], 'readwrite');
-    const store = tx.objectStore('data');
-    const put = store.put(payload);
-    put.onsuccess = (e) => resolve(e.target.result);
-    put.onerror = (e) => reject(String(e.target.error));
-    tx.oncomplete = () => db.close();
-    tx.onabort = () => db.close();
-  });
-  console.log(JSON.stringify({messageType: 'srt_idb_ok', id: id}));
-})().catch(err => {
-  console.log(JSON.stringify({messageType: 'srt_idb_err', error: String(err)}));
-});
-''';
-
-    final Completer<int> completer = Completer<int>();
-    HeadlessInAppWebView? webView;
-    // ttu 是 SPA，启动期间可能多次触发 onLoadStop；不去重会让 store.put
-    // 执行多次、产生自增 id 不同的孤儿 IDB 条目，在书架 EPUB 区多出一本。
-    bool jsDispatched = false;
-    webView = HeadlessInAppWebView(
-      initialUrlRequest: URLRequest(
-        url: WebUri('http://localhost:${widget.serverPort}/_hibiki_idb.html'),
-      ),
-      initialSettings: InAppWebViewSettings(
-        allowFileAccessFromFileURLs: true,
-        allowUniversalAccessFromFileURLs: true,
-        databaseEnabled: true,
-        domStorageEnabled: true,
-      ),
-      onLoadStop: (controller, url) async {
-        if (jsDispatched) return;
-        jsDispatched = true;
-        await controller.evaluateJavascript(source: js);
-      },
-      onConsoleMessage: (controller, message) {
-        try {
-          final Map<String, dynamic> msg =
-              jsonDecode(message.message) as Map<String, dynamic>;
-          if (completer.isCompleted) return;
-          if (msg['messageType'] == 'srt_idb_ok') {
-            completer.complete((msg['id'] as num).toInt());
-          } else if (msg['messageType'] == 'srt_idb_err') {
-            completer.completeError(msg['error'] ?? 'idb_error');
-          }
-        } catch (_) {}
-      },
-    );
-
-    try {
-      await webView.run();
-      return await completer.future.timeout(const Duration(seconds: 15));
-    } finally {
-      await webView.dispose();
     }
   }
 
