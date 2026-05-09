@@ -21,6 +21,7 @@ import 'package:hibiki/src/media/audiobook/reader_position_model.dart';
 import 'package:hibiki/src/media/audiobook/reader_position_repository.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_model.dart';
 import 'package:hibiki/src/reader/reader_content_styles.dart';
+import 'package:hibiki/src/reader/reader_resource_sanitizer.dart';
 import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
 import 'package:hibiki/src/reader/reader_selection_data.dart';
 import 'package:hibiki/src/reader/reader_selection_scripts.dart';
@@ -283,8 +284,14 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       return null;
     }
 
-    final Uint8List data = file.readAsBytesSync();
+    Uint8List data = file.readAsBytesSync();
     final String mime = fallbackMimeType(filePath);
+
+    if (mime == 'text/css') {
+      final String cssText = utf8.decode(data);
+      final String sanitized = ReaderResourceSanitizer.sanitizeCss(cssText);
+      data = Uint8List.fromList(utf8.encode(sanitized));
+    }
 
     return WebResourceResponse(
       contentType: mime,
