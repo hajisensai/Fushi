@@ -6,6 +6,8 @@ class ReaderSelectionData {
     this.normalizedOffset,
     this.normalizedLength,
     this.sentenceOffset = 0,
+    this.sentenceNormalizedOffset,
+    this.sentenceNormalizedLength,
   });
 
   factory ReaderSelectionData.fromJson(Map<String, dynamic> json) {
@@ -26,6 +28,10 @@ class ReaderSelectionData {
       normalizedOffset: (json['normalizedOffset'] as num?)?.toInt(),
       normalizedLength: (json['normalizedLength'] as num?)?.toInt(),
       sentenceOffset: (json['sentenceOffset'] as num?)?.toInt() ?? 0,
+      sentenceNormalizedOffset:
+          (json['sentenceNormalizedOffset'] as num?)?.toInt(),
+      sentenceNormalizedLength:
+          (json['sentenceNormalizedLength'] as num?)?.toInt(),
     );
   }
 
@@ -35,4 +41,6 @@ class ReaderSelectionData {
   final int? normalizedOffset;
   final int? normalizedLength;
   final int sentenceOffset;
+  final int? sentenceNormalizedOffset;
+  final int? sentenceNormalizedLength;
 }

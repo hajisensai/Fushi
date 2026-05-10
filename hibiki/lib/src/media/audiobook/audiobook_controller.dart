@@ -444,7 +444,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   ///
   /// 对齐 Hoshi `playCue(cue, stop: true)`：从 cue.startMs 播放到
   /// cue.endMs 自动暂停，恢复主播放器位置到调用前。
-  Future<void> playCueOnce(AudioCue cue) async {
+  Future<void> playCueOnce(AudioCue cue, {bool silent = false}) async {
     await _loadReady.future;
     final Duration? dur = _player.duration;
     if (dur == null || dur.inMilliseconds <= 0) return;
@@ -463,11 +463,13 @@ class AudiobookPlayerController extends ChangeNotifier {
 
     await _player.seek(Duration(milliseconds: startGlobal.clamp(0, dur.inMilliseconds)));
     _chapterTransition = false;
-    final int idx = _chapterCues.indexOf(cue);
-    if (idx >= 0) {
-      _currentCueIndex = idx;
-      _currentCue = cue;
-      notifyListeners();
+    if (!silent) {
+      final int idx = _chapterCues.indexOf(cue);
+      if (idx >= 0) {
+        _currentCueIndex = idx;
+        _currentCue = cue;
+        notifyListeners();
+      }
     }
     _hasPlayedOnce = true;
     unawaited(_player.play());

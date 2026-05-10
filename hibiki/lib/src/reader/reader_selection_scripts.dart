@@ -160,18 +160,24 @@ window.hoshiSelection = {
     var partsBefore = [];
     var node = startNode;
     var limit = startOffset;
+    var sStartNode = startNode;
+    var sStartOffset = 0;
     while (node) {
       var text = node.textContent;
       var foundStart = false;
       for (var i = limit - 1; i >= 0; i--) {
         if (this.sentenceDelimiters.includes(text[i])) {
           partsBefore.push(text.slice(i + 1, limit));
+          sStartNode = node;
+          sStartOffset = i + 1;
           foundStart = true;
           break;
         }
       }
       if (foundStart) break;
       partsBefore.push(text.slice(0, limit));
+      sStartNode = node;
+      sStartOffset = 0;
       node = walker.previousNode();
       if (node) limit = node.textContent.length;
     }
@@ -179,6 +185,8 @@ window.hoshiSelection = {
     var partsAfter = [];
     node = startNode;
     var start = startOffset;
+    var sEndNode = startNode;
+    var sEndOffset = startNode.textContent.length;
     while (node) {
       var afterText = node.textContent;
       var foundEnd = false;
@@ -187,12 +195,16 @@ window.hoshiSelection = {
           var end = j + 1;
           while (end < afterText.length && this.trailingSentenceChars.includes(afterText[end])) end++;
           partsAfter.push(afterText.slice(start, end));
+          sEndNode = node;
+          sEndOffset = end;
           foundEnd = true;
           break;
         }
       }
       if (foundEnd) break;
       partsAfter.push(afterText.slice(start));
+      sEndNode = node;
+      sEndOffset = afterText.length;
       node = walker.nextNode();
       start = 0;
     }
@@ -201,7 +213,11 @@ window.hoshiSelection = {
     var leadingTrim = rawSentence.length - rawSentence.trimStart().length;
     return {
       sentence: rawSentence.trim(),
-      sentenceOffset: Math.max(0, beforeText.length - leadingTrim)
+      sentenceOffset: Math.max(0, beforeText.length - leadingTrim),
+      sStartNode: sStartNode,
+      sStartOffset: sStartOffset,
+      sEndNode: sEndNode,
+      sEndOffset: sEndOffset
     };
   },
   getSentence: function(startNode, startOffset) {
@@ -253,13 +269,25 @@ window.hoshiSelection = {
       var normalizedEnd = this.getNormalizedOffset(lastRange.node, lastRange.end);
       if (normalizedEnd !== null) normalizedLength = Math.max(0, normalizedEnd - normalizedOffset);
     }
+    var sentenceNormalizedOffset = null;
+    var sentenceNormalizedLength = null;
+    if (window.hoshiReader) {
+      var snStart = this.getNormalizedOffset(sentenceContext.sStartNode, sentenceContext.sStartOffset);
+      var snEnd = this.getNormalizedOffset(sentenceContext.sEndNode, sentenceContext.sEndOffset);
+      if (snStart !== null && snEnd !== null) {
+        sentenceNormalizedOffset = snStart;
+        sentenceNormalizedLength = Math.max(0, snEnd - snStart);
+      }
+    }
     window.flutter_inappwebview.callHandler('onTextSelected', JSON.stringify({
       text: text,
       sentence: sentenceContext.sentence,
       rect: this.getSelectionRect(x, y),
       normalizedOffset: normalizedOffset,
       normalizedLength: normalizedLength,
-      sentenceOffset: sentenceContext.sentenceOffset
+      sentenceOffset: sentenceContext.sentenceOffset,
+      sentenceNormalizedOffset: sentenceNormalizedOffset,
+      sentenceNormalizedLength: sentenceNormalizedLength
     }));
     return text;
   },
@@ -294,17 +322,39 @@ window.hoshiSelection = {
     CSS.highlights.set('hoshi-selection', new Highlight(...highlights));
   },
   getNormalizedOffset: function(targetNode, offset) {
-    if (!window.hoshiReader || !window.hoshiReader.nodeStartOffsets) return null;
-    var base = window.hoshiReader.nodeStartOffsets.get(targetNode);
-    if (base === undefined) return null;
-    var count = base || 0;
-    var text = targetNode.textContent;
-    for (var i = 0; i < offset;) {
-      var char = String.fromCodePoint(text.codePointAt(i));
-      if (window.hoshiReader.isMatchableChar(char)) count++;
-      i += char.length;
+    if (!window.hoshiReader) return null;
+    var base = window.hoshiReader.nodeStartOffsets
+      ? window.hoshiReader.nodeStartOffsets.get(targetNode) : undefined;
+    if (base !== undefined) {
+      var count = base || 0;
+      var text = targetNode.textContent;
+      for (var i = 0; i < offset;) {
+        var char = String.fromCodePoint(text.codePointAt(i));
+        if (window.hoshiReader.isMatchableChar(char)) count++;
+        i += char.length;
+      }
+      return count;
     }
-    return count;
+    var walker = this.createWalker(document.body);
+    var count = 0;
+    var node;
+    while ((node = walker.nextNode()) != null) {
+      var nodeText = node.textContent;
+      if (node === targetNode) {
+        for (var i = 0; i < offset;) {
+          var char = String.fromCodePoint(nodeText.codePointAt(i));
+          if (window.hoshiReader.isMatchableChar(char)) count++;
+          i += char.length;
+        }
+        return count;
+      }
+      for (var i = 0; i < nodeText.length;) {
+        var char = String.fromCodePoint(nodeText.codePointAt(i));
+        if (window.hoshiReader.isMatchableChar(char)) count++;
+        i += char.length;
+      }
+    }
+    return null;
   },
   clearSelection: function() {
     window.getSelection().removeAllRanges();

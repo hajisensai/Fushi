@@ -104,6 +104,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   bool _showChrome = true;
   double _lastSyncedWidth = 0;
+  double _displayedProgress = 0.0;
 
   final FocusNode _focusNode = FocusNode();
 
@@ -987,6 +988,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   AudioCue? _lookupCue;
   ({int offset, int length, String text})? _cachedSelectionRange;
+  ({int offset, int length})? _cachedSentenceRange;
 
   AudioCue? _findCueForOffset(int normalizedOffset) {
     final AudiobookPlayerController? ctrl = _audiobookController;
@@ -1008,6 +1010,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   void clearDictionaryResult() {
     _lookupCue = null;
     _cachedSelectionRange = null;
+    _cachedSentenceRange = null;
     super.clearDictionaryResult();
   }
 
@@ -1258,6 +1261,15 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     } else {
       _cachedSelectionRange = null;
     }
+    if (data.sentenceNormalizedOffset != null &&
+        data.sentenceNormalizedLength != null) {
+      _cachedSentenceRange = (
+        offset: data.sentenceNormalizedOffset!,
+        length: data.sentenceNormalizedLength!,
+      );
+    } else {
+      _cachedSentenceRange = null;
+    }
   }
 
   // ── Progress Save/Restore ─────────────────────────────────────────
@@ -1280,6 +1292,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (current == null || total == null || total <= 0) return;
 
     final double progress = current / total;
+    _displayedProgress = progress;
     final int absoluteChars = _absoluteCharPosition(progress);
     final int charDiff = absoluteChars - _lastAbsoluteCount;
     if (charDiff < 0 && charDiff.abs() > _sessionCharsRead) {
@@ -1698,13 +1711,23 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
                       fav.sectionIndex == null) {
                     return;
                   }
-                  if (fav.sectionIndex != _currentChapter) {
-                    await _navigateToChapterAndWait(fav.sectionIndex!);
+                  final int section = fav.sectionIndex!;
+                  final List<AudioCue> cues = _audiobookController!
+                      .sasayakiCuesForSection(section);
+                  AudioCue? target;
+                  for (final AudioCue cue in cues) {
+                    final SasayakiFragment? frag =
+                        SasayakiMatchCodec.tryDecode(cue.textFragmentId);
+                    if (frag == null) continue;
+                    if (frag.normCharStart <= fav.normCharOffset! &&
+                        frag.normCharEnd > fav.normCharOffset!) {
+                      target = cue;
+                      break;
+                    }
                   }
-                  final AudioCue? cue =
-                      _findCueForOffset(fav.normCharOffset!);
-                  if (cue != null) {
-                    await _audiobookController!.playCueOnce(cue);
+                  if (target != null) {
+                    await _audiobookController!
+                        .playCueOnce(target, silent: true);
                   }
                 },
         );
@@ -1986,7 +2009,12 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       return;
     }
 
-    final range = _cachedSelectionRange;
+    final sentenceRange = _cachedSentenceRange ?? (
+      _cachedSelectionRange != null
+          ? (offset: _cachedSelectionRange!.offset,
+             length: _cachedSelectionRange!.length)
+          : null
+    );
     final FavoriteSentence fav = FavoriteSentence(
       text: sentence,
       bookTitle: _book!.title,
@@ -1996,13 +2024,13 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       createdAt: DateTime.now(),
       ttuBookId: widget.bookId,
       sectionIndex: _currentChapter,
-      normCharOffset: range?.offset,
-      normCharLength: range?.length,
+      normCharOffset: sentenceRange?.offset,
+      normCharLength: sentenceRange?.length,
     );
     final FavoriteSentenceRepository repo =
         FavoriteSentenceRepository(appModel.database);
     await repo.add(fav);
-    if (range != null) {
+    if (sentenceRange != null) {
       final List<FavoriteSentence> all = await repo.getAll();
       final List<FavoriteSentence> chapterFavs = all
           .where((FavoriteSentence s) =>
