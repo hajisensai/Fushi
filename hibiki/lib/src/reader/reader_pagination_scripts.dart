@@ -424,7 +424,7 @@ window.hoshiReader = {
     var exploredChars = 0;
     while (low <= high) {
       var mid = Math.floor((low + high) / 2);
-      if (stops[mid].scroll <= currentScroll) {
+      if (stops[mid].scroll < currentScroll) {
         exploredChars = stops[mid].exploredChars;
         low = mid + 1;
       } else {
@@ -597,7 +597,22 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
   var newHeight = Math.round(cssHeight) + $bottomOverlapPx;
   var newWidth = Math.round(cssWidth);
   if (newHeight === this.pageHeight && newWidth === this.pageWidth) return;
-  var progress = this.calculateProgress();
+  var context = this.getScrollContext();
+  var oldScroll = this.getPagePosition(context);
+  var anchorNode = null;
+  var walker = this.createWalker();
+  var node;
+  while (node = walker.nextNode()) {
+    var range = document.createRange();
+    range.selectNodeContents(node);
+    var rect = this.getRect(range);
+    if (!rect || rect.width <= 0 || rect.height <= 0) continue;
+    var nodeEnd = (context.vertical ? rect.bottom : rect.right) + oldScroll;
+    if (nodeEnd > oldScroll) {
+      anchorNode = node;
+      break;
+    }
+  }
   document.documentElement.style.setProperty('--page-height', newHeight + 'px');
   document.documentElement.style.setProperty('--page-width', newWidth + 'px');
   document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(newWidth * $imageWidthRatio)) + 'px');
@@ -605,7 +620,17 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
   this.pageHeight = newHeight;
   this.pageWidth = newWidth;
   this.paginationMetrics = null;
-  this.restoreProgress(progress);
+  if (anchorNode) {
+    var newContext = this.getScrollContext();
+    var range = document.createRange();
+    range.setStart(anchorNode, 0);
+    range.setEnd(anchorNode, Math.min(1, anchorNode.length));
+    var rect = this.getRect(range);
+    var newScroll = this.getPagePosition(newContext);
+    var anchor = (newContext.vertical ? rect.top : rect.left) + newScroll;
+    var targetScroll = this.alignToPage(newContext, anchor);
+    this.setPagePosition(newContext, targetScroll);
+  }
 };
 window.addEventListener('load', function() {
   window.hoshiReader.initialize();
