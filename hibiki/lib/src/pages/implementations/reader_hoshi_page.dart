@@ -1890,7 +1890,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
               IconButton(
                 icon: const Icon(Icons.replay, size: 20),
                 onPressed: hasCue
-                    ? () => ctrl.skipToCue(cue)
+                    ? () => ctrl.playCueOnce(cue)
                     : null,
                 tooltip: t.repeat_cue,
                 visualDensity: VisualDensity.compact,
@@ -1908,7 +1908,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
               IconButton(
                 icon: const Icon(Icons.play_circle_outline, size: 20),
                 onPressed: hasCue
-                    ? () => ctrl.playCueAndContinue(cue)
+                    ? () {
+                        ctrl.playCueAndContinue(cue);
+                        clearDictionaryResult();
+                      }
                     : null,
                 tooltip: t.play_from_cue,
                 visualDensity: VisualDensity.compact,
