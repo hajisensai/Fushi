@@ -1211,14 +1211,13 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final Uint8List bytes = file.readAsBytesSync();
     Navigator.push(
       context,
-      MaterialPageRoute<void>(
-        builder: (_) => Scaffold(
-          backgroundColor: Colors.black,
-          appBar: AppBar(
-            backgroundColor: Colors.transparent,
-            foregroundColor: Colors.white,
-          ),
-          body: InteractiveViewer(
+      PageRouteBuilder<void>(
+        opaque: false,
+        barrierColor: Colors.black87,
+        barrierDismissible: true,
+        pageBuilder: (_, __, ___) => GestureDetector(
+          onTap: () => Navigator.pop(context),
+          child: InteractiveViewer(
             minScale: 0.5,
             maxScale: 5.0,
             child: Center(
