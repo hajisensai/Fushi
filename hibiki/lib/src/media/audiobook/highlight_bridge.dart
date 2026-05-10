@@ -121,37 +121,49 @@ class HighlightBridge {
     // 倒序 wrap 以避免 offset 失效
     for (var h = sorted.length - 1; h >= 0; h--) {
       var hl = sorted[h];
-      var startEntry = null, endEntry = null;
+      var segments = [];
       for (var m = 0; m < map.length; m++) {
-        if (map[m].normIdx === hl.offset && !startEntry) startEntry = map[m];
-        if (map[m].normIdx === hl.offset + hl.length - 1) endEntry = map[m];
+        if (map[m].normIdx >= hl.offset && map[m].normIdx < hl.offset + hl.length) {
+          segments.push(map[m]);
+        }
       }
-      if (!startEntry || !endEntry) continue;
+      if (segments.length === 0) continue;
 
-      try {
-        var r = document.createRange();
-        r.setStart(startEntry.node, startEntry.rawIdx);
-        r.setEnd(endEntry.node, endEntry.rawIdx + 1);
-
-        var span = document.createElement('span');
-        span.setAttribute('data-highlight-id', hl.id);
-        span.style.backgroundColor = COLORS[hl.color] || COLORS.yellow;
-        span.style.borderRadius = '2px';
-        r.surroundContents(span);
-      } catch (e) {
-        // surroundContents 在跨元素 range 时会失败，跳过
+      var color = COLORS[hl.color] || COLORS.yellow;
+      var groups = [];
+      var cur = null;
+      for (var s = 0; s < segments.length; s++) {
+        if (!cur || cur.node !== segments[s].node) {
+          cur = { node: segments[s].node, start: segments[s].rawIdx, end: segments[s].rawIdx + 1 };
+          groups.push(cur);
+        } else {
+          cur.end = segments[s].rawIdx + 1;
+        }
+      }
+      for (var g = groups.length - 1; g >= 0; g--) {
+        try {
+          var r = document.createRange();
+          r.setStart(groups[g].node, groups[g].start);
+          r.setEnd(groups[g].node, groups[g].end);
+          var span = document.createElement('span');
+          span.setAttribute('data-highlight-id', hl.id);
+          span.style.backgroundColor = color;
+          span.style.borderRadius = '2px';
+          r.surroundContents(span);
+        } catch (e) {}
       }
     }
   };
 
   // ── 移除单条高亮 ──
   window.__hibikiRemoveHighlight = function(id) {
-    var el = document.querySelector('[data-highlight-id="' + id + '"]');
-    if (!el) return;
-    var parent = el.parentNode;
-    while (el.firstChild) parent.insertBefore(el.firstChild, el);
-    parent.removeChild(el);
-    parent.normalize();
+    var els = document.querySelectorAll('[data-highlight-id="' + id + '"]');
+    els.forEach(function(el) {
+      var parent = el.parentNode;
+      while (el.firstChild) parent.insertBefore(el.firstChild, el);
+      parent.removeChild(el);
+      parent.normalize();
+    });
   };
 })();
 ''';
