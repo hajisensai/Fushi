@@ -534,6 +534,28 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     return 'https://hoshi.local/epub/${_book!.chapters[index].href}';
   }
 
+  Future<void> _loadChapterDirectly(int index) async {
+    final String url = _chapterUrl(index);
+    final WebResourceResponse? response = _interceptRequest(WebUri(url));
+    if (response?.data == null) {
+      debugPrint('[ReaderHoshi] failed to prepare chapter $index');
+      return;
+    }
+
+    final String chapterHref = _book!.chapters[index].href;
+    final String dir = p.dirname(chapterHref);
+    final String base = (dir.isEmpty || dir == '.')
+        ? 'https://hoshi.local/epub/'
+        : 'https://hoshi.local/epub/$dir/';
+
+    await _controller!.loadData(
+      data: utf8.decode(response!.data!),
+      mimeType: response.contentType ?? 'text/html',
+      encoding: 'utf-8',
+      baseUrl: WebUri(base),
+    );
+  }
+
   WebResourceResponse? _interceptRequest(WebUri url) {
     if (url.host != 'hoshi.local') return null;
     final String path = url.path;
@@ -681,13 +703,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   // ── WebView ──────────────────────────────────────────────────────────
 
   Widget _buildWebView() {
-    final String chapterUrl = _chapterUrl(_currentChapter);
     debugPrint('[ReaderHoshi] buildWebView: chapter=$_currentChapter '
-        'url=$chapterUrl progress=$_initialProgress');
+        'progress=$_initialProgress');
     return InAppWebView(
-      initialUrlRequest: URLRequest(
-        url: WebUri(chapterUrl),
-      ),
+      initialUrlRequest: URLRequest(url: WebUri('about:blank')),
       initialUserScripts: UnmodifiableListView<UserScript>(<UserScript>[
         UserScript(
           source:
@@ -714,6 +733,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       ),
       onWebViewCreated: (InAppWebViewController controller) {
         _controller = controller;
+        _loadChapterDirectly(_currentChapter);
 
         controller.addJavaScriptHandler(
           handlerName: 'onTextSelected',
@@ -790,6 +810,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         return NavigationActionPolicy.CANCEL;
       },
       onLoadStop: (InAppWebViewController controller, WebUri? url) async {
+        if (url?.toString() == 'about:blank') return;
         debugPrint('[ReaderHoshi] onLoadStop: url=$url '
             'chapter=$_currentChapter progress=$_initialProgress');
         String? sasayakiCuesJson;
@@ -1020,8 +1041,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       _readerContentReady = false;
     });
 
-    final String url = _chapterUrl(index);
-    await _controller!.loadUrl(urlRequest: URLRequest(url: WebUri(url)));
+    await _loadChapterDirectly(index);
   }
 
   Future<void> _navigateToChapterWithFragment(
@@ -1043,8 +1063,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       _readerContentReady = false;
     });
 
-    final String url = _chapterUrl(index);
-    await _controller!.loadUrl(urlRequest: URLRequest(url: WebUri(url)));
+    await _loadChapterDirectly(index);
   }
 
   void _handlePageTurnLimit(String direction) {
@@ -1704,8 +1723,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       _readerContentReady = false;
     });
 
-    final String url = _chapterUrl(_currentChapter);
-    await _controller!.loadUrl(urlRequest: URLRequest(url: WebUri(url)));
+    await _loadChapterDirectly(_currentChapter);
   }
 
   // ── Top Progress Bar ──────────────────────────────────────────────
