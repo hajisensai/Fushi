@@ -1464,19 +1464,21 @@ function createGlossarySection(dictName, contents, isFirst, entryIdx) {
 window.renderPopup = function() {
     const container = document.getElementById('entries-container');
     if (!container) return;
-    container.innerHTML = '';
 
     if (!window.lookupEntries || !window.lookupEntries.length) {
+        container.innerHTML = '';
         return;
     }
 
     (async () => {
+        const fragment = document.createDocumentFragment();
+
         for (let idx = 0; idx < window.lookupEntries.length; idx++) {
             const entry = window.lookupEntries[idx];
             if (!entry) continue;
 
             if (idx > 0) {
-                container.appendChild(document.createElement('hr'));
+                fragment.appendChild(document.createElement('hr'));
             }
 
             const entryDiv = el('div', { className: 'entry' });
@@ -1497,19 +1499,20 @@ window.renderPopup = function() {
                 entryDiv.appendChild(pitchSection);
             }
 
-            container.appendChild(entryDiv);
-            await new Promise(r => requestAnimationFrame(r));
-
             const glossaryWrapper = createGlossarySectionWrapper(entry);
             if (glossaryWrapper) {
                 const { details, body, grouped, dictNames } = glossaryWrapper;
                 entryDiv.appendChild(details);
                 for (let dictIdx = 0; dictIdx < dictNames.length; dictIdx++) {
                     body.appendChild(createGlossarySection(dictNames[dictIdx], grouped[dictNames[dictIdx]], dictIdx === 0, idx));
-                    await new Promise(r => requestAnimationFrame(r));
                 }
             }
+
+            fragment.appendChild(entryDiv);
         }
+
+        container.innerHTML = '';
+        container.appendChild(fragment);
 
         window.flutter_inappwebview.callHandler('popupRendered',
             document.body.scrollHeight);

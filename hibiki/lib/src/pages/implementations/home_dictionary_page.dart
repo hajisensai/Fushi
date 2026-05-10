@@ -357,7 +357,6 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
   }
 
   void _searchAgain() {
-    _result = null;
     _lastQuery = '';
     _search(_controller.text);
   }
