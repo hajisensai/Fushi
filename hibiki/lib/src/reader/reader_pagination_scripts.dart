@@ -255,7 +255,7 @@ window.hoshiReader = {
     var vertical = this.isVertical();
     var scrollEl = document.body;
     var pageSize = Math.max(1, vertical ? (this.pageHeight || window.innerHeight) : (this.pageWidth || window.innerWidth));
-    var gap = parseFloat(getComputedStyle(scrollEl).columnGap) || 0;
+    var gap = vertical ? 0 : (parseFloat(getComputedStyle(scrollEl).columnGap) || 0);
     var columnPitch = pageSize + gap;
     var totalSize = vertical ? scrollEl.scrollHeight : scrollEl.scrollWidth;
     var maxScroll = Math.max(0, totalSize - pageSize);
@@ -426,7 +426,7 @@ window.hoshiReader = {
     var exploredChars = 0;
     while (low <= high) {
       var mid = Math.floor((low + high) / 2);
-      if (stops[mid].scroll < currentScroll) {
+      if (stops[mid].scroll <= currentScroll) {
         exploredChars = stops[mid].exploredChars;
         low = mid + 1;
       } else {
