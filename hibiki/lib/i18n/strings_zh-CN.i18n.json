@@ -565,7 +565,7 @@
     "audiobook_settings": "有声书设置",
     "show_play_bar": "显示播放栏",
     "show_media_notification": "显示媒体通知",
-    "follow_audio_on_tooltip": "音频跟随：开启（跨章自动跳转）",
+    "follow_audio_on_tooltip": "音频跟随：开启",
     "follow_audio_off_tooltip": "音频跟随：关闭",
     "reading_progress": "阅读进度",
     "chapter_progress": "第 $idx / $total 章$suffix · $pct%",

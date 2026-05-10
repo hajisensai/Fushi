@@ -553,7 +553,7 @@
   "audiobook_settings": "Sesli kitap ayarlar?",
   "show_play_bar": "Oynatma çubuğunu göster",
   "show_media_notification": "Medya bildirimini göster",
-  "follow_audio_on_tooltip": "Ses takibi: A?IK (b?lümler aras? otomatik atlama)",
+  "follow_audio_on_tooltip": "Ses takibi: A?IK",
   "follow_audio_off_tooltip": "Ses takibi: KAPALI",
   "reading_progress": "Okuma ilerlemesi",
   "chapter_progress": "B?lüm $idx / $total$suffix · $pct%",

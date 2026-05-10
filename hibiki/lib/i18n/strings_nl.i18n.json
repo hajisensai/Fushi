@@ -553,7 +553,7 @@
   "audiobook_settings": "Audioboekinstellingen",
   "show_play_bar": "Afspeelbalk tonen",
   "show_media_notification": "Mediamelding tonen",
-  "follow_audio_on_tooltip": "Audio volgen: AAN (automatisch springen tussen hoofdstukken)",
+  "follow_audio_on_tooltip": "Audio volgen: AAN",
   "follow_audio_off_tooltip": "Audio volgen: UIT",
   "reading_progress": "Leesvoortgang",
   "chapter_progress": "Hoofdstuk $idx / $total$suffix · $pct%",

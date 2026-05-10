@@ -550,7 +550,7 @@
   "show_media_notification": "عرض إشعار الوسائط",
   "show_floating_lyric": "ترجمة عائمة",
   "floating_lyric_hint": "عرض الجملة الحالية فوق التطبيقات الأخرى.",
-  "follow_audio_on_tooltip": "تتبع الصوت: مفعّل (انتقال تلقائي بين الفصول)",
+  "follow_audio_on_tooltip": "تتبع الصوت: مفعّل",
   "follow_audio_off_tooltip": "تتبع الصوت: معطّل",
   "reading_progress": "تقدّم القراءة",
   "chapter_progress": "الفصل $idx / $total$suffix · $pct%",

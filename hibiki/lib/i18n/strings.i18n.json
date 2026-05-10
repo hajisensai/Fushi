@@ -593,7 +593,7 @@
     "show_media_notification": "Show media notification",
     "show_floating_lyric": "Floating lyric overlay",
     "floating_lyric_hint": "Show current sentence over other apps.",
-    "follow_audio_on_tooltip": "Follow audio: ON (auto-jump across chapters)",
+    "follow_audio_on_tooltip": "Follow audio: ON",
     "follow_audio_off_tooltip": "Follow audio: OFF",
     "reading_progress": "Reading Progress",
     "chapter_progress": "Chapter $idx / $total$suffix · $pct%",

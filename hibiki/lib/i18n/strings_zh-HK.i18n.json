@@ -538,7 +538,7 @@
   "audiobook_settings": "有聲書設定",
   "show_play_bar": "顯示播放欄",
   "show_media_notification": "顯示媒體通知",
-  "follow_audio_on_tooltip": "音頻跟隨：開啟（跨章自動跳轉）",
+  "follow_audio_on_tooltip": "音頻跟隨：開啟",
   "follow_audio_off_tooltip": "音頻跟隨：關閉",
   "reading_progress": "閱讀進度",
   "chapter_progress": "第 $idx / $total 章$suffix · $pct%",

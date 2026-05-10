@@ -527,7 +527,7 @@
   "audiobook_settings": "Cài ??t sách nói",
   "show_play_bar": "Hiện thanh phát",
   "show_media_notification": "Hiện thông báo media",
-  "follow_audio_on_tooltip": "Theo d?i am thanh: B?T (t? chuy?n ch??ng)",
+  "follow_audio_on_tooltip": "Theo d?i am thanh: B?T",
   "follow_audio_off_tooltip": "Theo d?i am thanh: T?T",
   "reading_progress": "Ti?n ?? ??c",
   "chapter_progress": "Ch??ng $idx / $total$suffix · $pct%",

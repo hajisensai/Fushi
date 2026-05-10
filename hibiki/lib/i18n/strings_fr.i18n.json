@@ -527,7 +527,7 @@
   "audiobook_settings": "Paramètres du livre audio",
   "show_play_bar": "Barre de lecture",
   "show_media_notification": "Notification multimédia",
-  "follow_audio_on_tooltip": "Suivi audio : ACTIVé (saut automatique entre chapitres)",
+  "follow_audio_on_tooltip": "Suivi audio : ACTIVé",
   "follow_audio_off_tooltip": "Suivi audio : DéSACTIVé",
   "reading_progress": "Progression de lecture",
   "chapter_progress": "Chapitre $idx / $total$suffix · $pct%",

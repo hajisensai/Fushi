@@ -527,7 +527,7 @@
   "audiobook_settings": "Pengaturan Buku Audio",
   "show_play_bar": "Tampilkan bilah pemutaran",
   "show_media_notification": "Tampilkan notifikasi media",
-  "follow_audio_on_tooltip": "Ikuti audio: AKTIF (lompat bab otomatis)",
+  "follow_audio_on_tooltip": "Ikuti audio: AKTIF",
   "follow_audio_off_tooltip": "Ikuti audio: NONAKTIF",
   "reading_progress": "Progres Membaca",
   "chapter_progress": "Bab $idx / $total$suffix · $pct%",

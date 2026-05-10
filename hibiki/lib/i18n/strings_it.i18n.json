@@ -553,7 +553,7 @@
   "audiobook_settings": "Impostazioni audiolibro",
   "show_play_bar": "Mostra barra di riproduzione",
   "show_media_notification": "Mostra notifica multimediale",
-  "follow_audio_on_tooltip": "Segui audio: ATTIVO (salto automatico tra capitoli)",
+  "follow_audio_on_tooltip": "Segui audio: ATTIVO",
   "follow_audio_off_tooltip": "Segui audio: DISATTIVO",
   "reading_progress": "Progresso di lettura",
   "chapter_progress": "Capitolo $idx / $total$suffix · $pct%",

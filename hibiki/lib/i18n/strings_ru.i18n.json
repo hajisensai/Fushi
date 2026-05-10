@@ -527,7 +527,7 @@
   "audiobook_settings": "Настройки аудиокниги",
   "show_play_bar": "Показать панель воспроизведения",
   "show_media_notification": "Показать уведомление о медиа",
-  "follow_audio_on_tooltip": "Следование за аудио: ВКЛ (автопереход между главами)",
+  "follow_audio_on_tooltip": "Следование за аудио: ВКЛ",
   "follow_audio_off_tooltip": "Следование за аудио: ВЫКЛ",
   "reading_progress": "Прогресс чтения",
   "chapter_progress": "Глава $idx / $total$suffix · $pct%",

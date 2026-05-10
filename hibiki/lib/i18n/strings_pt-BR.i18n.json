@@ -527,7 +527,7 @@
   "audiobook_settings": "Configura??es do Audiolivro",
   "show_play_bar": "Mostrar barra de reprodução",
   "show_media_notification": "Mostrar notificação de mídia",
-  "follow_audio_on_tooltip": "Acompanhar áudio: LIGADO (pular entre capítulos automaticamente)",
+  "follow_audio_on_tooltip": "Acompanhar áudio: LIGADO",
   "follow_audio_off_tooltip": "Acompanhar áudio: DESLIGADO",
   "reading_progress": "Progresso da Leitura",
   "chapter_progress": "Capítulo $idx / $total$suffix · $pct%",

@@ -527,7 +527,7 @@
   "audiobook_settings": "H?rbuch-Einstellungen",
   "show_play_bar": "Wiedergabeleiste anzeigen",
   "show_media_notification": "Medienbenachrichtigung anzeigen",
-  "follow_audio_on_tooltip": "Audio-Verfolgung: AN (automatischer Kapitelsprung)",
+  "follow_audio_on_tooltip": "Audio-Verfolgung: AN",
   "follow_audio_off_tooltip": "Audio-Verfolgung: AUS",
   "reading_progress": "Lesefortschritt",
   "chapter_progress": "Kapitel $idx / $total$suffix · $pct%",
