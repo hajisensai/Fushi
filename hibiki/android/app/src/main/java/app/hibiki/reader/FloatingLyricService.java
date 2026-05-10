@@ -227,8 +227,6 @@ public class FloatingLyricService extends Service {
         int dp12 = dpToPx(12);
         int dp16 = dpToPx(16);
 
-        int fixedHeight = dpToPx(160);
-
         rootView = new LinearLayout(this);
         rootView.setOrientation(LinearLayout.VERTICAL);
         rootView.setGravity(Gravity.CENTER_HORIZONTAL);
@@ -237,12 +235,13 @@ public class FloatingLyricService extends Service {
         lyricText = new TextView(this);
         lyricText.setTextSize(TypedValue.COMPLEX_UNIT_SP, fontSize);
         lyricText.setTextColor(textColor);
-        lyricText.setGravity(Gravity.CENTER_HORIZONTAL | Gravity.BOTTOM);
+        lyricText.setGravity(Gravity.CENTER_HORIZONTAL);
         lyricText.setTypeface(Typeface.DEFAULT);
         lyricText.setText(currentText);
 
         LinearLayout.LayoutParams textLp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
         rootView.addView(lyricText, textLp);
 
         controlsView = new LinearLayout(this);
@@ -286,14 +285,14 @@ public class FloatingLyricService extends Service {
 
         layoutParams = new WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
-                fixedHeight,
+                WindowManager.LayoutParams.WRAP_CONTENT,
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                         ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
                         : WindowManager.LayoutParams.TYPE_PHONE,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                         | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                 PixelFormat.TRANSLUCENT);
-        layoutParams.gravity = Gravity.TOP | Gravity.START;
+        layoutParams.gravity = Gravity.BOTTOM | Gravity.START;
         layoutParams.x = 0;
         layoutParams.y = savedY;
 
@@ -373,7 +372,7 @@ public class FloatingLyricService extends Service {
                         float dy = event.getRawY() - initialTouchY;
                         if (Math.abs(dy) > 10) isDragging = true;
                         if (isDragging) {
-                            layoutParams.y = initialY + (int) dy;
+                            layoutParams.y = initialY - (int) dy;
                             windowManager.updateViewLayout(rootView, layoutParams);
                         }
                         return true;
