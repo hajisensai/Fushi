@@ -896,6 +896,32 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     await controller.skipToCue(targetCues.first);
   }
 
+  AudioCue? _lookupCue;
+  ({int offset, int length, String text})? _cachedSelectionRange;
+
+  AudioCue? _findCueForOffset(int normalizedOffset) {
+    final AudiobookPlayerController? ctrl = _audiobookController;
+    if (ctrl == null) return null;
+    final List<AudioCue> cues = ctrl.sasayakiCuesForSection(_currentChapter);
+    for (final AudioCue cue in cues) {
+      final SasayakiFragment? frag =
+          SasayakiMatchCodec.tryDecode(cue.textFragmentId);
+      if (frag == null) continue;
+      if (frag.normCharStart <= normalizedOffset &&
+          frag.normCharEnd > normalizedOffset) {
+        return cue;
+      }
+    }
+    return null;
+  }
+
+  @override
+  void clearDictionaryResult() {
+    _lookupCue = null;
+    _cachedSelectionRange = null;
+    super.clearDictionaryResult();
+  }
+
   List<AudioCue>? _cachedAllCues;
   bool _cachedSasayaki = false;
 
@@ -1072,6 +1098,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       selection: JidoujishoTextSelection(text: data.sentence),
     );
 
+    _lookupCue = data.normalizedOffset != null
+        ? _findCueForOffset(data.normalizedOffset!)
+        : null;
+
     final int highlightCount = await searchDictionaryResult(
       searchTerm: data.text,
       selectionRect: selectionRect,
@@ -1081,6 +1111,11 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       await _controller!.evaluateJavascript(
         source: ReaderSelectionScripts.highlightInvocation(highlightCount),
       );
+      // 选区在 popup 出现后会被清除，必须在此时缓存归一化范围供收藏使用
+      _cachedSelectionRange =
+          await HighlightBridge.getSelectionRange(_controller!);
+    } else {
+      _cachedSelectionRange = null;
     }
   }
 
@@ -1795,7 +1830,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         appModel.currentMediaSource?.currentSentence.text ?? '';
     if (sentence.isEmpty) return;
 
-    final range = await HighlightBridge.getSelectionRange(_controller!);
+    final range = _cachedSelectionRange;
     final FavoriteSentence fav = FavoriteSentence(
       text: sentence,
       bookTitle: _book!.title,
@@ -1828,7 +1863,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final AudiobookPlayerController? ctrl = _audiobookController;
     final bool hasAudio = ctrl != null && ctrl.chapterCueCount > 0;
 
-    Widget buildRow(ThemeData theme, {bool hasCue = false}) {
+    Widget buildRow(ThemeData theme) {
+      final AudioCue? cue = _lookupCue;
+      final bool hasCue = cue != null;
       return Container(
         decoration: BoxDecoration(
           border: Border(
@@ -1853,7 +1890,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
               IconButton(
                 icon: const Icon(Icons.replay, size: 20),
                 onPressed: hasCue
-                    ? () => ctrl.skipToCue(ctrl.currentCue!)
+                    ? () => ctrl.skipToCue(cue)
                     : null,
                 tooltip: t.repeat_cue,
                 visualDensity: VisualDensity.compact,
@@ -1871,10 +1908,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
               IconButton(
                 icon: const Icon(Icons.play_circle_outline, size: 20),
                 onPressed: hasCue
-                    ? () async {
-                        await ctrl.skipToCue(ctrl.currentCue!);
-                        await ctrl.play();
-                      }
+                    ? () => ctrl.playCueAndContinue(cue)
                     : null,
                 tooltip: t.play_from_cue,
                 visualDensity: VisualDensity.compact,
@@ -1895,10 +1929,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     return ListenableBuilder(
       listenable: ctrl,
       builder: (BuildContext context, _) {
-        return buildRow(
-          Theme.of(context),
-          hasCue: ctrl.currentCue != null,
-        );
+        return buildRow(Theme.of(context));
       },
     );
   }
