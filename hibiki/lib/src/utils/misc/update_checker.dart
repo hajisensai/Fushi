@@ -11,10 +11,10 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/utils.dart';
 
 const String _kGitHubRepo = 'hdjsadgfwtg/hibiki';
-const _kUpdateChannel = MethodChannel('app.hibiki.reader/update');
 
 class UpdateChecker {
   UpdateChecker._();
@@ -347,7 +347,7 @@ class UpdateChecker {
 
       status.value = t.update_installing;
 
-      await _kUpdateChannel.invokeMethod('installApk', {
+      await HibikiChannels.update.invokeMethod('installApk', {
         'path': apkFile.path,
       });
     } catch (e) {

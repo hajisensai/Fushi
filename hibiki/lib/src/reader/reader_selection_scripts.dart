@@ -247,11 +247,18 @@ window.hoshiSelection = {
     this.selection = { startNode: hit.node, startOffset: hit.offset, ranges: ranges, text: text };
     var sentenceContext = this.getSentenceContext(hit.node, hit.offset);
     var normalizedOffset = window.hoshiReader ? this.getNormalizedOffset(hit.node, hit.offset) : null;
+    var normalizedLength = null;
+    if (normalizedOffset !== null && ranges.length > 0) {
+      var lastRange = ranges[ranges.length - 1];
+      var normalizedEnd = this.getNormalizedOffset(lastRange.node, lastRange.end);
+      if (normalizedEnd !== null) normalizedLength = normalizedEnd - normalizedOffset;
+    }
     window.flutter_inappwebview.callHandler('onTextSelected', JSON.stringify({
       text: text,
       sentence: sentenceContext.sentence,
       rect: this.getSelectionRect(x, y),
       normalizedOffset: normalizedOffset,
+      normalizedLength: normalizedLength,
       sentenceOffset: sentenceContext.sentenceOffset
     }));
     return text;

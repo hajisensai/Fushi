@@ -1175,9 +1175,13 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       await _controller!.evaluateJavascript(
         source: ReaderSelectionScripts.highlightInvocation(highlightCount),
       );
-      // 选区在 popup 出现后会被清除，必须在此时缓存归一化范围供收藏使用
-      _cachedSelectionRange =
-          await HighlightBridge.getSelectionRange(_controller!);
+    }
+    if (data.normalizedOffset != null && data.normalizedLength != null) {
+      _cachedSelectionRange = (
+        offset: data.normalizedOffset!,
+        length: data.normalizedLength!,
+        text: data.text,
+      );
     } else {
       _cachedSelectionRange = null;
     }

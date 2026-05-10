@@ -8,6 +8,7 @@ import 'package:spaces/spaces.dart';
 import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/utils.dart';
 import 'package:collection/collection.dart';
 
@@ -233,7 +234,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
     );
   }
 
-  static const _safChannel = MethodChannel('app.hibiki.reader/saf');
+  static const _safChannel = HibikiChannels.saf;
 
   Widget buildImportFolderButton() {
     return TextButton(

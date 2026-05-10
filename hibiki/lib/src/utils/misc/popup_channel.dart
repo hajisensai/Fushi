@@ -1,11 +1,12 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:hibiki/src/utils/misc/channel_constants.dart';
 
 class PopupChannel {
   PopupChannel._();
   static final PopupChannel instance = PopupChannel._();
 
-  static const _channel = MethodChannel('app.hibiki.reader/popup');
+  static const _channel = HibikiChannels.popup;
 
   void Function(String)? _onNewProcessText;
 

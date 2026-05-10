@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/utils.dart';
 import 'package:path/path.dart' as p;
 
@@ -161,7 +162,7 @@ bool _isFontFile(String path) {
 
 // ── 系统字体扫描（通过 platform channel） ─────────────────────────────────────
 
-const _fontsChannel = MethodChannel('app.hibiki.reader/fonts');
+const _fontsChannel = HibikiChannels.fonts;
 List<String>? _cachedSystemFonts;
 
 Future<List<String>> _getSystemFonts() async {

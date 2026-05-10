@@ -4,6 +4,7 @@ class ReaderSelectionData {
     required this.sentence,
     this.rect,
     this.normalizedOffset,
+    this.normalizedLength,
     this.sentenceOffset = 0,
   });
 
@@ -23,6 +24,7 @@ class ReaderSelectionData {
       sentence: json['sentence'] as String? ?? '',
       rect: rect,
       normalizedOffset: (json['normalizedOffset'] as num?)?.toInt(),
+      normalizedLength: (json['normalizedLength'] as num?)?.toInt(),
       sentenceOffset: (json['sentenceOffset'] as num?)?.toInt() ?? 0,
     );
   }
@@ -31,5 +33,6 @@ class ReaderSelectionData {
   final String sentence;
   final Map<String, double>? rect;
   final int? normalizedOffset;
+  final int? normalizedLength;
   final int sentenceOffset;
 }

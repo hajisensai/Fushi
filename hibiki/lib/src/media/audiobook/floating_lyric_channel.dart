@@ -1,4 +1,5 @@
 import 'package:flutter/services.dart';
+import 'package:hibiki/src/utils/misc/channel_constants.dart';
 
 typedef FloatingLyricLookupHandler = void Function(String text, int index);
 typedef FloatingLyricControlHandler = void Function();
@@ -7,8 +8,7 @@ typedef FloatingLyricControlHandler = void Function();
 class FloatingLyricChannel {
   FloatingLyricChannel._();
 
-  static const MethodChannel _channel =
-      MethodChannel('app.hibiki.reader/floating_lyric');
+  static const MethodChannel _channel = HibikiChannels.floatingLyric;
 
   static FloatingLyricLookupHandler? _onLookupText;
   static FloatingLyricControlHandler? _onPreviousCue;

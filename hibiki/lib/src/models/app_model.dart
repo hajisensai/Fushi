@@ -39,6 +39,7 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
+import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/src/utils/misc/tts_channel.dart';
 import 'package:hibiki/src/dictionary/dictionary_utils.dart'
     show importDictionaryViaHoshidicts;
@@ -1621,7 +1622,7 @@ class AppModel with ChangeNotifier {
     return themePresets[appThemeKey]?.brightness == Brightness.dark;
   }
 
-  static const _splashChannel = MethodChannel('app.hibiki.reader/splash');
+  static const _splashChannel = HibikiChannels.splash;
 
   void _persistSplashColor() {
     final brightness = isDarkMode ? Brightness.dark : Brightness.light;
@@ -2312,8 +2313,7 @@ class AppModel with ChangeNotifier {
   }
 
   /// Used to communicate back and forth with Dart and native code.
-  static const MethodChannel methodChannel =
-      MethodChannel('app.hibiki.reader/anki');
+  static const MethodChannel methodChannel = HibikiChannels.anki;
 
   /// Shows the AnkiDroid API message. Called when an Anki-related API get call
   /// fails.
@@ -3322,7 +3322,7 @@ class AppModel with ChangeNotifier {
     HoshiDicts.disposeInstance();
   }
 
-  static const _lifecycleChannel = MethodChannel('app.hibiki.reader/lifecycle');
+  static const _lifecycleChannel = HibikiChannels.lifecycle;
 
   Future<void> moveToBack() async {
     try {

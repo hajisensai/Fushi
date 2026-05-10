@@ -14,6 +14,7 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/popup_main.dart' as popup_entrypoint;
+import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/utils.dart';
 
 Color? _savedSplashColor;
@@ -65,7 +66,7 @@ void main() {
     );
 
     try {
-      final raw = await const MethodChannel('app.hibiki.reader/splash')
+      final raw = await HibikiChannels.splash
           .invokeMethod<int>('getSplashColor');
       if (raw != null && raw != 0) _savedSplashColor = Color(raw);
     } catch (e) {

@@ -1,12 +1,12 @@
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:hibiki/src/media/audiobook/ass_parser.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_health.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_storage.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
 import 'package:hibiki/src/media/audiobook/epub_cue_matcher.dart';
@@ -95,7 +95,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     if (_audioPaths != null && _audioPaths!.isNotEmpty) {
       return t.srt_import_files_selected(n: _audioPaths!.length);
     }
-    if (_audioDir != null) return _basename(_audioDir!);
+    if (_audioDir != null) return p.basename(_audioDir!);
     return '';
   }
 
@@ -413,7 +413,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
               ),
               if (_alignmentPath != null)
                 Text(
-                  _alignmentName ?? _basename(_alignmentPath!),
+                  _alignmentName ?? p.basename(_alignmentPath!),
                   style: const TextStyle(fontSize: 11, color: Colors.grey),
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
@@ -945,25 +945,9 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     );
   }
 
-  String _basename(String path) =>
-      path.split(Platform.pathSeparator).last;
+  Future<Directory> _ensurePersistDir() =>
+      AudiobookStorage.ensurePersistDir(widget.bookUid);
 
-  Future<Directory> _ensurePersistDir() async {
-    final Directory docs = await getApplicationDocumentsDirectory();
-    final String hash = widget.bookUid.hashCode.toRadixString(16);
-    final Directory dir = Directory(p.join(docs.path, 'audiobooks', hash));
-    if (!dir.existsSync()) {
-      dir.createSync(recursive: true);
-    }
-    return dir;
-  }
-
-  /// 如果 [src] 已经在持久目录内就原样返回路径，否则复制过去。
-  Future<String> _persistFile(File src, Directory persistDir) async {
-    if (src.path.startsWith(persistDir.path)) return src.path;
-    final String dest = p.join(persistDir.path, p.basename(src.path));
-    await src.copy(dest);
-    debugPrint('[hibiki-audiobook] persisted ${src.path} → $dest');
-    return dest;
-  }
+  Future<String> _persistFile(File src, Directory persistDir) =>
+      AudiobookStorage.persistFile(src, persistDir);
 }

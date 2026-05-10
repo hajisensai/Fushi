@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:hibiki/src/utils/misc/channel_constants.dart';
 
 /// Thin wrapper around the native Android TextToSpeech MethodChannel.
 /// Calls are fire-and-forget; failures are silently swallowed.
@@ -7,7 +8,7 @@ class TtsChannel {
   TtsChannel._();
   static final TtsChannel instance = TtsChannel._();
 
-  static const _channel = MethodChannel('app.hibiki.reader/tts');
+  static const _channel = HibikiChannels.tts;
 
   /// Speak [text] using the given [locale] (e.g. "ja-JP").
   /// Returns immediately; errors are ignored.

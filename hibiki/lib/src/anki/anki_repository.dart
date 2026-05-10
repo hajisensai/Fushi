@@ -8,9 +8,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:hibiki/src/anki/anki_models.dart';
 import 'package:hibiki/src/anki/lapis_preset.dart';
+import 'package:hibiki/src/utils/misc/channel_constants.dart';
 
 class AnkiRepository {
-  static const _channel = MethodChannel('app.hibiki.reader/anki');
+  static const _channel = HibikiChannels.anki;
   static const _settingsKey = 'hoshi_anki_settings';
   static const _legacyDeckKey = 'last_selected_deck';
 

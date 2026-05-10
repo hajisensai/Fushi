@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_storage.dart';
 import 'package:path/path.dart' as p;
 import 'package:hibiki/src/media/audiobook/audiobook_health.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
@@ -218,7 +219,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
                   style: const TextStyle(fontSize: 13)),
               if (_epubPath != null)
                 Text(
-                  _epubName ?? _basename(_epubPath!),
+                  _epubName ?? p.basename(_epubPath!),
                   style: const TextStyle(fontSize: 11, color: Colors.grey),
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
@@ -246,7 +247,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
                   style: const TextStyle(fontSize: 13)),
               if (_subtitlePath != null)
                 Text(
-                  _subtitleName ?? _basename(_subtitlePath!),
+                  _subtitleName ?? p.basename(_subtitlePath!),
                   style: const TextStyle(fontSize: 11, color: Colors.grey),
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
@@ -282,7 +283,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
                   style: const TextStyle(fontSize: 13)),
               if (_audioPath != null)
                 Text(
-                  _audioName ?? _basename(_audioPath!),
+                  _audioName ?? p.basename(_audioPath!),
                   style: const TextStyle(fontSize: 11, color: Colors.grey),
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
@@ -526,7 +527,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
       filename = '${title.replaceAll(RegExp(r'[^\w\s\-]'), '')}.epub';
     } else {
       bytes = await file.readAsBytes();
-      filename = _epubName ?? _basename(_epubPath!);
+      filename = _epubName ?? p.basename(_epubPath!);
     }
 
     _reportProgress(0.5, t.import_step_importing_epub);
@@ -550,7 +551,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
       importFilename = '${title.replaceAll(RegExp(r'[^\w\s\-]'), '')}.epub';
     } else {
       importBytes = await epubFile.readAsBytes();
-      importFilename = _epubName ?? _basename(_epubPath!);
+      importFilename = _epubName ?? p.basename(_epubPath!);
     }
 
     _reportProgress(0.2, t.import_step_importing_epub);
@@ -716,23 +717,9 @@ class _BookImportDialogState extends State<BookImportDialog> {
     }
   }
 
-  String _basename(String path) => path.split(Platform.pathSeparator).last;
+  Future<Directory> _ensurePersistDir(String key) =>
+      AudiobookStorage.ensurePersistDir(key);
 
-  Future<Directory> _ensurePersistDir(String key) async {
-    final Directory docs = await getApplicationDocumentsDirectory();
-    final String hash = key.hashCode.toRadixString(16);
-    final Directory dir = Directory(p.join(docs.path, 'audiobooks', hash));
-    if (!dir.existsSync()) {
-      dir.createSync(recursive: true);
-    }
-    return dir;
-  }
-
-  Future<String> _persistFile(File src, Directory persistDir) async {
-    if (src.path.startsWith(persistDir.path)) return src.path;
-    final String dest = p.join(persistDir.path, p.basename(src.path));
-    await src.copy(dest);
-    debugPrint('[hibiki-import] persisted ${src.path} → $dest');
-    return dest;
-  }
+  Future<String> _persistFile(File src, Directory persistDir) =>
+      AudiobookStorage.persistFile(src, persistDir);
 }

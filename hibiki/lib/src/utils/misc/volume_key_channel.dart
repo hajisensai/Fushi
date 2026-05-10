@@ -1,4 +1,5 @@
 import 'package:flutter/services.dart';
+import 'package:hibiki/src/utils/misc/channel_constants.dart';
 
 /// Native bridge for hardware volume-key page turning.
 ///
@@ -16,8 +17,7 @@ class VolumeKeyChannel {
   /// enough for the whole app.
   static final VolumeKeyChannel instance = VolumeKeyChannel._();
 
-  static const MethodChannel _channel =
-      MethodChannel('app.hibiki.reader/volume_keys');
+  static const MethodChannel _channel = HibikiChannels.volumeKeys;
 
   VoidCallback? _onVolumeUp;
   VoidCallback? _onVolumeDown;
