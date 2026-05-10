@@ -220,7 +220,7 @@ class AudiobookSettingsSheet extends StatefulWidget {
   final bool showMediaNotification;
   final VoidCallback? onToggleMediaNotification;
   final bool showFloatingLyric;
-  final VoidCallback? onToggleFloatingLyric;
+  final Future<bool> Function()? onToggleFloatingLyric;
   final double floatingLyricFontSize;
   final ValueChanged<double>? onFloatingLyricFontSizeChanged;
   final Future<void> Function(int sectionIndex, int charOffset)? onSearchJump;
@@ -250,6 +250,10 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
   late List<Bookmark> _bookmarks = List<Bookmark>.of(widget.bookmarks);
   late List<FavoriteSentence> _favorites =
       List<FavoriteSentence>.of(widget.favoriteSentences);
+
+  late bool _localShowFloatingLyric = widget.showFloatingLyric;
+  late bool _localShowMediaNotification = widget.showMediaNotification;
+  late double _localFloatingLyricFontSize = widget.floatingLyricFontSize;
 
   @override
   void initState() {
@@ -1175,8 +1179,13 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                 child: Text(t.show_media_notification,
                     style: theme.textTheme.bodyMedium)),
             Switch(
-              value: widget.showMediaNotification,
-              onChanged: (_) => widget.onToggleMediaNotification?.call(),
+              value: _localShowMediaNotification,
+              onChanged: (_) {
+                widget.onToggleMediaNotification?.call();
+                setState(() {
+                  _localShowMediaNotification = !_localShowMediaNotification;
+                });
+              },
             ),
           ],
         ),
@@ -1198,8 +1207,16 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               ),
             ),
             Switch(
-              value: widget.showFloatingLyric,
-              onChanged: (_) => widget.onToggleFloatingLyric?.call(),
+              value: _localShowFloatingLyric,
+              onChanged: (_) async {
+                final bool ok =
+                    await widget.onToggleFloatingLyric?.call() ?? false;
+                if (ok && mounted) {
+                  setState(() {
+                    _localShowFloatingLyric = !_localShowFloatingLyric;
+                  });
+                }
+              },
             ),
           ],
         ),
@@ -1214,14 +1231,15 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                 visualDensity: VisualDensity.compact,
                 onPressed: () {
                   final double value =
-                      (widget.floatingLyricFontSize - 1).clamp(8, 64);
+                      (_localFloatingLyricFontSize - 1).clamp(8, 64);
                   widget.onFloatingLyricFontSizeChanged?.call(value);
+                  setState(() => _localFloatingLyricFontSize = value);
                 },
               ),
               SizedBox(
                 width: 36,
                 child: Text(
-                  '${widget.floatingLyricFontSize.round()}',
+                  '${_localFloatingLyricFontSize.round()}',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyLarge,
                 ),
@@ -1231,8 +1249,9 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                 visualDensity: VisualDensity.compact,
                 onPressed: () {
                   final double value =
-                      (widget.floatingLyricFontSize + 1).clamp(8, 64);
+                      (_localFloatingLyricFontSize + 1).clamp(8, 64);
                   widget.onFloatingLyricFontSizeChanged?.call(value);
+                  setState(() => _localFloatingLyricFontSize = value);
                 },
               ),
             ],
