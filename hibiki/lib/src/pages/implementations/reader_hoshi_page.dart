@@ -14,7 +14,9 @@ import 'package:hibiki/src/database/database.dart';
 import 'package:hibiki/src/epub/epub_book.dart';
 import 'package:hibiki/src/epub/epub_parser.dart';
 import 'package:hibiki/src/epub/epub_storage.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart';
+import 'package:hibiki/src/media/audiobook/highlight_bridge.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_controller.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
@@ -1441,7 +1443,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
             await _addBookmarkAtCurrentPosition();
           },
           onExitReader: () {
-            Navigator.of(ctx).pop();
             Navigator.of(context).pop();
           },
           webViewController: _controller!,
@@ -1453,7 +1454,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
               : null,
           bookmarks: bookmarks,
           onJumpToBookmark: (Bookmark bm) async {
-            Navigator.of(ctx).pop();
             if (bm.sectionIndex != _currentChapter) {
               _navigateToChapter(bm.sectionIndex);
               await Future<void>.delayed(const Duration(milliseconds: 600));
@@ -1476,7 +1476,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           },
           onJumpToFavorite: (FavoriteSentence fav) async {
             if (fav.sectionIndex == null) return;
-            Navigator.of(ctx).pop();
             if (fav.sectionIndex != _currentChapter) {
               _navigateToChapter(fav.sectionIndex!);
               await Future<void>.delayed(const Duration(milliseconds: 600));
@@ -1760,28 +1759,67 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   // ── Popup Audio Controls ───────────────────────────────────────────
 
+  Future<void> _saveFavoriteSentence() async {
+    if (_controller == null || _book == null) return;
+    final String sentence =
+        appModel.currentMediaSource?.currentSentence.text ?? '';
+    if (sentence.isEmpty) return;
+
+    final range = await HighlightBridge.getSelectionRange(_controller!);
+    final FavoriteSentence fav = FavoriteSentence(
+      text: sentence,
+      bookTitle: _book!.title,
+      chapterLabel: _currentChapter < _book!.chapters.length
+          ? _book!.chapters[_currentChapter].href
+          : null,
+      createdAt: DateTime.now(),
+      ttuBookId: widget.bookId,
+      sectionIndex: _currentChapter,
+      normCharOffset: range?.offset,
+      normCharLength: range?.length,
+    );
+    final FavoriteSentenceRepository repo =
+        FavoriteSentenceRepository(appModel.database);
+    await repo.add(fav);
+    if (range != null) {
+      final List<FavoriteSentence> all = await repo.getAll();
+      final List<FavoriteSentence> chapterFavs = all
+          .where((FavoriteSentence s) =>
+              s.ttuBookId == widget.bookId &&
+              s.sectionIndex == _currentChapter)
+          .toList();
+      await HighlightBridge.applyHighlights(_controller!, chapterFavs);
+    }
+    Fluttertoast.showToast(msg: t.favorite_added);
+  }
+
   @override
   Widget? buildPopupAudioControls() {
     final AudiobookPlayerController? ctrl = _audiobookController;
-    if (ctrl == null || ctrl.chapterCueCount == 0) return null;
-    return ListenableBuilder(
-      listenable: ctrl,
-      builder: (BuildContext context, _) {
-        final bool hasCue = ctrl.currentCue != null;
-        final ThemeData theme = Theme.of(context);
-        return Container(
-          decoration: BoxDecoration(
-            border: Border(
-              bottom: BorderSide(
-                color: theme.dividerColor,
-                width: 0.5,
-              ),
+    final bool hasAudio = ctrl != null && ctrl.chapterCueCount > 0;
+
+    Widget buildRow(ThemeData theme, {bool hasCue = false}) {
+      return Container(
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+              color: theme.dividerColor,
+              width: 0.5,
             ),
           ),
-          padding: const EdgeInsets.symmetric(vertical: 2),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
+        ),
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.star_border, size: 20),
+              onPressed: _saveFavoriteSentence,
+              tooltip: t.action_favorite,
+              visualDensity: VisualDensity.compact,
+            ),
+            if (hasAudio) ...[
+              const SizedBox(width: 8),
               IconButton(
                 icon: const Icon(Icons.replay, size: 20),
                 onPressed: hasCue
@@ -1790,7 +1828,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
                 tooltip: t.repeat_cue,
                 visualDensity: VisualDensity.compact,
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 8),
               IconButton(
                 icon: Icon(
                   ctrl.isPlaying ? Icons.pause : Icons.play_arrow,
@@ -1799,7 +1837,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
                 onPressed: () => ctrl.togglePlayPause(),
                 visualDensity: VisualDensity.compact,
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 8),
               IconButton(
                 icon: const Icon(Icons.play_circle_outline, size: 20),
                 onPressed: hasCue
@@ -1812,7 +1850,24 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
                 visualDensity: VisualDensity.compact,
               ),
             ],
-          ),
+          ],
+        ),
+      );
+    }
+
+    if (!hasAudio) {
+      return Builder(
+        builder: (BuildContext context) =>
+            buildRow(Theme.of(context)),
+      );
+    }
+
+    return ListenableBuilder(
+      listenable: ctrl,
+      builder: (BuildContext context, _) {
+        return buildRow(
+          Theme.of(context),
+          hasCue: ctrl.currentCue != null,
         );
       },
     );
