@@ -603,12 +603,14 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if ((mime == 'text/html' || mime.contains('xhtml')) && _settings != null) {
       String html = utf8.decode(data);
       final String styleTag = ReaderContentStyles.styleTag(settings: _settings!);
+      const String hideUntilReady =
+          '<style id="hoshi-cloak">body{visibility:hidden!important}</style>';
       final RegExp headPattern = RegExp(r'<head[^>]*>', caseSensitive: false);
       final RegExpMatch? headMatch = headPattern.firstMatch(html);
       if (headMatch != null) {
-        html = '${html.substring(0, headMatch.end)}\n$styleTag${html.substring(headMatch.end)}';
+        html = '${html.substring(0, headMatch.end)}\n$hideUntilReady\n$styleTag${html.substring(headMatch.end)}';
       } else {
-        html = '$styleTag\n$html';
+        html = '$hideUntilReady\n$styleTag\n$html';
       }
       data = Uint8List.fromList(utf8.encode(html));
     }
@@ -691,6 +693,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (total <= 0) return '';
     return Math.round(p * total) + ',' + total;
   };
+  var cloak = document.getElementById('hoshi-cloak');
+  if (cloak) cloak.remove();
 })();
 ''';
   }
@@ -707,7 +711,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     debugPrint('[ReaderHoshi] buildWebView: chapter=$_currentChapter '
         'progress=$_initialProgress');
     return InAppWebView(
-      initialUrlRequest: URLRequest(url: WebUri('about:blank')),
+      initialUrlRequest: null,
       initialUserScripts: UnmodifiableListView<UserScript>(<UserScript>[
         UserScript(
           source:
@@ -811,7 +815,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         return NavigationActionPolicy.CANCEL;
       },
       onLoadStop: (InAppWebViewController controller, WebUri? url) async {
-        if (url?.toString() == 'about:blank') return;
         debugPrint('[ReaderHoshi] onLoadStop: url=$url '
             'chapter=$_currentChapter progress=$_initialProgress');
         String? sasayakiCuesJson;
