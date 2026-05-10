@@ -720,12 +720,17 @@ window.hoshiReader = {
   },
   scrollToTarget: function(target) {
     var rect = this.getRect(target);
+    var margin = 0.2;
     if (this.isVertical()) {
-      if (rect.left >= 0 && rect.right <= window.innerWidth) return false;
-    } else if (rect.top >= 0 && rect.bottom <= window.innerHeight) {
-      return false;
+      var safeLeft = window.innerWidth * margin;
+      var safeRight = window.innerWidth * (1 - margin);
+      if (rect.left >= safeLeft && rect.right <= safeRight) return false;
+    } else {
+      var safeTop = window.innerHeight * margin;
+      var safeBottom = window.innerHeight * (1 - margin);
+      if (rect.top >= safeTop && rect.bottom <= safeBottom) return false;
     }
-    target.scrollIntoView({ block: 'start', inline: 'nearest' });
+    target.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
     return true;
   },
   collectSasayakiCueRanges: function(cues) {
