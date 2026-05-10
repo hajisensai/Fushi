@@ -165,6 +165,11 @@ class ReaderSettings {
   Future<void> toggleKeepScreenAwake() =>
       _set<bool>('keep_screen_awake', !keepScreenAwake);
 
+  bool get tapEmptyToHideChrome =>
+      _get<bool>('tap_empty_hide_chrome', false);
+  Future<void> toggleTapEmptyToHideChrome() =>
+      _set<bool>('tap_empty_hide_chrome', !tapEmptyToHideChrome);
+
   int get volumePageTurningSpeed =>
       _get<int>('volume_page_turning_speed', 100);
   Future<void> setVolumePageTurningSpeed(int v) =>

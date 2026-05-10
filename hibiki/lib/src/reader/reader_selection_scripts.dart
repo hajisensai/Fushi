@@ -214,6 +214,7 @@ window.hoshiSelection = {
     var hit = this.getCharacterAtPoint(x, y);
     if (!hit) {
       this.clearSelection();
+      window.flutter_inappwebview.callHandler('onTapEmpty');
       return null;
     }
     if (this.selection && hit.node === this.selection.startNode && hit.offset === this.selection.startOffset) {

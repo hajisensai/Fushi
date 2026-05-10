@@ -1092,6 +1092,8 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
 
     return [
       sw(t.highlight_on_tap, _src.highlightOnTap, _src.toggleHighlightOnTap),
+      sw(t.tap_empty_hide_chrome, _src.tapEmptyToHideChrome,
+          _src.toggleTapEmptyToHideChrome),
       sw(t.volume_button_page_turning, _src.volumePageTurningEnabled, () {
         _src.toggleVolumePageTurningEnabled();
         VolumeKeyChannel.instance

@@ -17,6 +17,9 @@ class ReaderPaginationScripts {
   static String progressInvocation() =>
       'window.hoshiReader.calculateProgress()';
 
+  static String updatePageSizeInvocation(double width, double height) =>
+      'window.hoshiReader && window.hoshiReader.updatePageSize($width, $height)';
+
   static String applySasayakiCuesInvocation(String cuesJson) =>
       'window.hoshiReader.applySasayakiCues($cuesJson)';
 
@@ -421,7 +424,7 @@ window.hoshiReader = {
     var exploredChars = 0;
     while (low <= high) {
       var mid = Math.floor((low + high) / 2);
-      if (stops[mid].scroll < currentScroll) {
+      if (stops[mid].scroll <= currentScroll) {
         exploredChars = stops[mid].exploredChars;
         low = mid + 1;
       } else {
@@ -585,12 +588,24 @@ window.hoshiReader.initialize = function() {
   spacer.style.breakInside = 'avoid';
   document.body.appendChild(spacer);
   Promise.all(imagePromises).then(function() {
-    return new Promise(function(resolve) { setTimeout(resolve, 50); });
-  }).then(function() {
     window.hoshiReader.buildNodeOffsets();
     $sasayakiInit
     $initialRestoreScript
   });
+};
+window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
+  var newHeight = Math.round(cssHeight) + $bottomOverlapPx;
+  var newWidth = Math.round(cssWidth);
+  if (newHeight === this.pageHeight && newWidth === this.pageWidth) return;
+  var progress = this.calculateProgress();
+  document.documentElement.style.setProperty('--page-height', newHeight + 'px');
+  document.documentElement.style.setProperty('--page-width', newWidth + 'px');
+  document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(newWidth * $imageWidthRatio)) + 'px');
+  document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, newHeight - $bottomOverlapPx) + 'px');
+  this.pageHeight = newHeight;
+  this.pageWidth = newWidth;
+  this.paginationMetrics = null;
+  this.restoreProgress(progress);
 };
 window.addEventListener('load', function() {
   window.hoshiReader.initialize();
@@ -924,12 +939,16 @@ window.hoshiReader.initialize = function() {
     });
   });
   Promise.all(imagePromises).then(function() {
-    return new Promise(function(resolve) { setTimeout(resolve, 50); });
-  }).then(function() {
     window.hoshiReader.buildNodeOffsets();
     $sasayakiInit
     $initialRestoreScript
   });
+};
+window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
+  var newHeight = Math.round(cssHeight);
+  document.documentElement.style.setProperty('--hoshi-continuous-height', newHeight + 'px');
+  document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(Math.round(cssWidth) * $imageWidthRatio)) + 'px');
+  document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, newHeight - $bottomOverlapPx) + 'px');
 };
 window.addEventListener('load', function() {
   window.hoshiReader.initialize();

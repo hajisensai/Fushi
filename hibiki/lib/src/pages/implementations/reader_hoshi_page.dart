@@ -68,6 +68,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   bool _readerContentReady = false;
   bool _hasEverLoaded = false;
   bool _restoreInFlight = false;
+  bool _isNavigatingToChapter = false;
   double _initialProgress = 0.0;
   String? _initialFragment;
 
@@ -114,8 +115,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   double get _readerTopOffset =>
       _stableTopInset + (_showTopProgress ? _infoFontSize * 1.5 : 0);
 
-  double get _readerBottomReserve =>
-      _readerChromeHeight + _stableBottomInset;
+  double get _readerBottomReserve => _showChrome
+      ? _readerChromeHeight + _stableBottomInset
+      : _stableBottomInset;
 
   @override
   void initState() {
@@ -473,6 +475,19 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       return;
     }
     setState(() {});
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _syncPageSize();
+    });
+  }
+
+  void _syncPageSize() {
+    if (_controller == null || !_readerContentReady) return;
+    final Size screen = MediaQuery.of(context).size;
+    final double w = screen.width;
+    final double h = screen.height - _readerTopOffset - _readerBottomReserve;
+    _controller!.evaluateJavascript(
+      source: ReaderPaginationScripts.updatePageSizeInvocation(w, h),
+    );
   }
 
   // ── UI Build ──────────────────────────────────────────────────────
@@ -536,24 +551,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   Future<void> _loadChapterDirectly(int index) async {
     final String url = _chapterUrl(index);
-    final WebResourceResponse? response = _interceptRequest(WebUri(url));
-    if (response?.data == null) {
-      debugPrint('[ReaderHoshi] failed to prepare chapter $index');
-      return;
-    }
-
-    final String chapterHref = _book!.chapters[index].href;
-    final String dir = p.dirname(chapterHref);
-    final String base = (dir.isEmpty || dir == '.')
-        ? 'https://hoshi.local/epub/'
-        : 'https://hoshi.local/epub/$dir/';
-
-    await _controller!.loadData(
-      data: utf8.decode(response!.data!),
-      mimeType: response.contentType ?? 'text/html',
-      encoding: 'utf-8',
-      baseUrl: WebUri(base),
-      historyUrl: WebUri(url),
+    _isNavigatingToChapter = true;
+    await _controller!.loadUrl(
+      urlRequest: URLRequest(url: WebUri(url)),
     );
   }
 
@@ -763,10 +763,23 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           handlerName: 'onTap',
           callback: (List<dynamic> args) {
             if (args.length < 2) return;
+            if (!_showChrome) {
+              _toggleChrome();
+              return;
+            }
             if (!ReaderHoshiSource.instance.highlightOnTap) return;
             final double x = _toDouble(args[0]) ?? 0;
             final double y = _toDouble(args[1]) ?? 0;
             _selectTextAt(x, y);
+          },
+        );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'onTapEmpty',
+          callback: (_) {
+            if (ReaderHoshiSource.instance.tapEmptyToHideChrome) {
+              _toggleChrome();
+            }
           },
         );
 
@@ -803,6 +816,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       shouldOverrideUrlLoading:
           (InAppWebViewController controller, NavigationAction action) async {
         final String url = action.request.url?.toString() ?? '';
+        if (_isNavigatingToChapter) {
+          return NavigationActionPolicy.ALLOW;
+        }
         final ({int chapterIndex, String? fragment})? link =
             _book?.resolveInternalLink(url);
         if (link != null) {
@@ -812,6 +828,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         return NavigationActionPolicy.CANCEL;
       },
       onLoadStop: (InAppWebViewController controller, WebUri? url) async {
+        _isNavigatingToChapter = false;
         debugPrint('[ReaderHoshi] onLoadStop: url=$url '
             'chapter=$_currentChapter progress=$_initialProgress');
         String? sasayakiCuesJson;
@@ -846,10 +863,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         _readerContentReady = true;
         _hasEverLoaded = true;
       });
-      SystemChrome.setEnabledSystemUIMode(
-        _showChrome ? SystemUiMode.edgeToEdge : SystemUiMode.immersiveSticky,
-      );
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     }
+
 
     _audiobookController?.notifySectionRestoreCompleted(
       currentReaderSection: _currentChapter,
@@ -1354,16 +1370,14 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   void _toggleChrome() {
     setState(() {
       _showChrome = !_showChrome;
-      if (_showChrome) {
-        SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-      } else {
-        SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-      }
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _syncPageSize();
     });
   }
 
   Widget _buildBottomChrome() {
-    if (!_readerContentReady) {
+    if (!_readerContentReady || !_showChrome) {
       return const SizedBox.shrink();
     }
     if (_audiobookController != null) {

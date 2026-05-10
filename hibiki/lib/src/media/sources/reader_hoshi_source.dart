@@ -382,6 +382,16 @@ class ReaderHoshiSource extends ReaderMediaSource {
     );
   }
 
+  bool get tapEmptyToHideChrome =>
+      getPreference<bool>(key: 'tap_empty_hide_chrome', defaultValue: false);
+
+  void toggleTapEmptyToHideChrome() async {
+    await setPreference<bool>(
+      key: 'tap_empty_hide_chrome',
+      value: !tapEmptyToHideChrome,
+    );
+  }
+
   // ── ttu 阅读器设置 ─────────────────────────────────────────────────
 
   double get ttuFontSize =>
