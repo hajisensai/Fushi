@@ -163,13 +163,6 @@ public class FloatingLyricService extends Service {
             } else {
                 lyricText.setText(currentText);
             }
-            lyricText.post(() -> {
-                Layout layout = lyricText.getLayout();
-                if (layout != null) {
-                    int scrollY = layout.getLineTop(lyricText.getLineCount()) - lyricText.getHeight();
-                    lyricText.scrollTo(0, Math.max(0, scrollY));
-                }
-            });
         }
     }
 
@@ -234,6 +227,8 @@ public class FloatingLyricService extends Service {
         int dp12 = dpToPx(12);
         int dp16 = dpToPx(16);
 
+        int fixedHeight = dpToPx(160);
+
         rootView = new LinearLayout(this);
         rootView.setOrientation(LinearLayout.VERTICAL);
         rootView.setGravity(Gravity.CENTER_HORIZONTAL);
@@ -242,14 +237,12 @@ public class FloatingLyricService extends Service {
         lyricText = new TextView(this);
         lyricText.setTextSize(TypedValue.COMPLEX_UNIT_SP, fontSize);
         lyricText.setTextColor(textColor);
-        lyricText.setMaxLines(6);
-        lyricText.setGravity(Gravity.CENTER_HORIZONTAL);
+        lyricText.setGravity(Gravity.CENTER_HORIZONTAL | Gravity.BOTTOM);
         lyricText.setTypeface(Typeface.DEFAULT);
         lyricText.setText(currentText);
 
         LinearLayout.LayoutParams textLp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
         rootView.addView(lyricText, textLp);
 
         controlsView = new LinearLayout(this);
@@ -293,7 +286,7 @@ public class FloatingLyricService extends Service {
 
         layoutParams = new WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.WRAP_CONTENT,
+                fixedHeight,
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                         ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
                         : WindowManager.LayoutParams.TYPE_PHONE,
