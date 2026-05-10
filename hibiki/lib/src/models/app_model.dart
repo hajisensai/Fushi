@@ -3516,6 +3516,11 @@ class AppModel with ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setShowMediaNotification(bool value) async {
+    await _setPref('show_media_notification', value);
+    notifyListeners();
+  }
+
   bool get showFloatingLyric {
     return _getPref('show_floating_lyric', defaultValue: false);
   }

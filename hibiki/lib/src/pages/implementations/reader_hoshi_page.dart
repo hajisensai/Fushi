@@ -665,15 +665,12 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   window.scanNonJapaneseText = false;
   $selectionJs
   $paginationJs
-  var startX = 0, startY = 0, startTime = 0, startScroll = 0;
+  var startX = 0, startY = 0, startTime = 0;
   document.addEventListener('touchstart', function(e) {
     var t = e.touches[0];
     startX = t.clientX;
     startY = t.clientY;
     startTime = Date.now();
-    var root = document.scrollingElement || document.documentElement;
-    var vert = window.getComputedStyle(document.body).writingMode === 'vertical-rl';
-    startScroll = vert ? window.scrollX : root.scrollTop;
   }, {passive: true});
   document.addEventListener('touchend', function(e) {
     var t = e.changedTouches[0];
@@ -685,10 +682,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     var velocity = absDx / Math.max(1, elapsed) * 1000;
     if (absDx > absDy && (absDx >= 72 || (absDx >= 36 && velocity >= 900))) {
       e.preventDefault();
-      var root = document.scrollingElement || document.documentElement;
-      var vert = window.getComputedStyle(document.body).writingMode === 'vertical-rl';
-      if (vert) { window.scrollTo(startScroll, window.scrollY); }
-      else { root.scrollTop = startScroll; }
       if (dx < 0) {
         window.flutter_inappwebview.callHandler('onSwipe', 'left');
       } else {
@@ -1506,28 +1499,34 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (appModel.showFloatingLyric) {
       final bool canDraw = await FloatingLyricChannel.canDrawOverlays();
       if (canDraw) {
-        await FloatingLyricChannel.show();
-        await FloatingLyricChannel.updateStyle(
-          fontSize: appModel.floatingLyricFontSize,
-        );
-        await FloatingLyricChannel.updateLabels(
-          previous: t.floating_lyric_previous,
-          playPause: t.floating_lyric_play_pause,
-          next: t.floating_lyric_next,
-          lock: t.floating_lyric_lock,
-          unlock: t.floating_lyric_unlock,
-          close: t.floating_lyric_close,
-        );
-        _setupFloatingLyricHandlers();
+        await _showFloatingLyricOverlay();
+        _syncFloatingLyric(ctrl);
       }
     }
     if (appModel.showMediaNotification) {
       final handler = appModel.audioHandler;
       handler?.setMediaItemInfo(title: _book?.title ?? 'Hibiki');
+      _syncMediaNotification(ctrl);
     }
   }
 
   // ── Floating Lyric ─────────────────────────────────────────────────
+
+  Future<void> _showFloatingLyricOverlay() async {
+    await FloatingLyricChannel.show();
+    await FloatingLyricChannel.updateStyle(
+      fontSize: appModel.floatingLyricFontSize,
+    );
+    await FloatingLyricChannel.updateLabels(
+      previous: t.floating_lyric_previous,
+      playPause: t.floating_lyric_play_pause,
+      next: t.floating_lyric_next,
+      lock: t.floating_lyric_lock,
+      unlock: t.floating_lyric_unlock,
+      close: t.floating_lyric_close,
+    );
+    _setupFloatingLyricHandlers();
+  }
 
   Future<void> _toggleFloatingLyric() async {
     final bool current = appModel.showFloatingLyric;
@@ -1537,19 +1536,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         Fluttertoast.showToast(msg: t.floating_lyric_hint);
         return;
       }
-      await FloatingLyricChannel.show();
-      await FloatingLyricChannel.updateStyle(
-        fontSize: appModel.floatingLyricFontSize,
-      );
-      await FloatingLyricChannel.updateLabels(
-        previous: t.floating_lyric_previous,
-        playPause: t.floating_lyric_play_pause,
-        next: t.floating_lyric_next,
-        lock: t.floating_lyric_lock,
-        unlock: t.floating_lyric_unlock,
-        close: t.floating_lyric_close,
-      );
-      _setupFloatingLyricHandlers();
+      await _showFloatingLyricOverlay();
       if (_audiobookController != null) {
         _syncFloatingLyric(_audiobookController!);
       }
@@ -1602,8 +1589,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   }
 
   Future<void> _toggleMediaNotification() async {
-    appModel.toggleShowMediaNotification();
-    if (appModel.showMediaNotification && _audiobookController != null) {
+    final bool newValue = !appModel.showMediaNotification;
+    await appModel.setShowMediaNotification(newValue);
+    if (newValue && _audiobookController != null) {
       final handler = appModel.audioHandler;
       handler?.setMediaItemInfo(title: _book?.title ?? 'Hibiki');
       _syncMediaNotification(_audiobookController!);
