@@ -279,7 +279,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     }
 
     final HibikiDatabase db = appModel.database;
-    final String bookUid = widget.bookId.toString();
+    final String bookUid = 'reader_ttu/hoshi://book/${widget.bookId}';
     final Audiobook? ab =
         (await db.getAudiobookByBookUid(bookUid))?.let(_audiobookFromRow);
     final SrtBook? srt =
@@ -1462,7 +1462,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   }
 
   Future<void> _openAudioImportDialog() async {
-    final String bookUid = widget.bookId.toString();
+    final String bookUid = 'reader_ttu/hoshi://book/${widget.bookId}';
     final AudiobookRepository repo = AudiobookRepository(appModel.database);
 
     await showDialog<void>(
