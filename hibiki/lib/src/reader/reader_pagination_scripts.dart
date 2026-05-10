@@ -109,7 +109,7 @@ class ReaderPaginationScripts {
       count += this.countChars(node.textContent);
     }
     this.nodeStartOffsets = offsets;
-    this.paginationMetrics = null;
+    if (this.paginationMetrics !== undefined) this.paginationMetrics = null;
   },
   collectSasayakiCueRanges: function(cues) {
     var cueRanges = new Map();
@@ -240,7 +240,7 @@ class ReaderPaginationScripts {
   document.head.appendChild(newViewport);
 ''';
 
-  static String _sharedInitImages(double imageWidthRatio) => '''
+  static String _sharedInitImages() => '''
   Array.from(document.querySelectorAll('svg')).forEach(function(svg) {
     if (svg.querySelector('image') && svg.getAttribute('preserveAspectRatio') === 'none') {
       svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
@@ -294,7 +294,7 @@ if (document.readyState === 'complete') {
     const String spacerHeight = ReaderLayoutDefaults.trailingSpacerHeightCss;
     const String spacerWidth = ReaderLayoutDefaults.trailingSpacerWidthCss;
 
-    final String initImages = _sharedInitImages(imageWidthRatio);
+    final String initImages = _sharedInitImages();
 
     return '''<script>
 window.hoshiReader = {
@@ -686,7 +686,7 @@ $_sharedInitBoot
     const int bottomOverlapPx = ReaderLayoutDefaults.bottomOverlapPx;
     const double imageWidthRatio = ReaderLayoutDefaults.imageWidthViewportRatio;
 
-    final String initImages = _sharedInitImages(imageWidthRatio);
+    final String initImages = _sharedInitImages();
 
     return '''<script>
 window.hoshiReader = {
