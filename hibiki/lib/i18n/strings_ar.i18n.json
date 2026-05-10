@@ -666,6 +666,7 @@
   "update_never_remind": "عدم التذكير بالتحديثات",
   "update_auto_install": "تثبيت التحديثات تلقائياً",
   "update_beta_channel": "تلقي تحديثات تجريبية",
+    "debug_log_toggle": "تفعيل سجل التصحيح",
   "disable_dialog_scrim": "تعطيل تراكب النافذة المنبثقة (حبر إلكتروني)",
   "native_dictionary_popup": "نافذة قاموس أصلية (حبر إلكتروني)",
   "update_settings": "إعدادات التحديث",

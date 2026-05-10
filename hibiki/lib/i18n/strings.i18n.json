@@ -734,6 +734,7 @@
     "update_never_remind": "Don't remind me about updates",
     "update_auto_install": "Auto-install updates",
     "update_beta_channel": "Receive beta updates",
+    "debug_log_toggle": "Enable debug log",
     "disable_dialog_scrim": "Disable popup overlay (e-ink)",
     "native_dictionary_popup": "Native dictionary popup (e-ink)",
     "update_settings": "Update Settings",

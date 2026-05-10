@@ -654,6 +654,7 @@
   "update_never_remind": "Niet meer herinneren",
   "update_auto_install": "Updates automatisch installeren",
   "update_beta_channel": "Bèta-updates ontvangen",
+    "debug_log_toggle": "Debug-log inschakelen",
   "disable_dialog_scrim": "Pop-up overlay uitschakelen (e-ink)",
   "native_dictionary_popup": "Native woordenboek-popup (e-ink)",
   "update_settings": "Update-instellingen",

@@ -640,6 +640,7 @@
   "update_never_remind": "No recordar de nuevo",
   "update_auto_install": "Instalar actualizaciones automáticamente",
   "update_beta_channel": "Recibir actualizaciones beta",
+    "debug_log_toggle": "Activar registro de depuración",
   "disable_dialog_scrim": "Desactivar superposición de popup (e-ink)",
   "native_dictionary_popup": "Popup de diccionario nativo (e-ink)",
   "update_settings": "Configuración de actualizaciones",

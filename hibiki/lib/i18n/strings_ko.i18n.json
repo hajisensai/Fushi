@@ -640,6 +640,7 @@
   "update_never_remind": "?? ??? ??",
   "update_auto_install": "?? ??",
   "update_beta_channel": "베타 업데이트 받기",
+    "debug_log_toggle": "디버그 로그 활성화",
   "disable_dialog_scrim": "팝업 오버레이 비활성화 (e-ink)",
   "native_dictionary_popup": "기본 사전 팝업 (e-ink)",
   "update_settings": "???? ??",

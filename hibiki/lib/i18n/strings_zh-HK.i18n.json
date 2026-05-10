@@ -651,6 +651,7 @@
   "update_never_remind": "不再提醒",
   "update_auto_install": "自動安裝更新",
   "update_beta_channel": "接收測試版更新",
+    "debug_log_toggle": "啟用偵錯日誌",
   "disable_dialog_scrim": "關閉彈窗背景遮罩（墨水屏）",
   "native_dictionary_popup": "原生辭典彈窗（墨水屏）",
   "update_settings": "更新設定",

@@ -656,6 +656,7 @@
   "update_never_remind": "今後通知しない",
   "update_auto_install": "自動インストール",
   "update_beta_channel": "ベータ版アップデートを受信",
+    "debug_log_toggle": "デバッグログを有効にする",
   "disable_dialog_scrim": "ポップアップの背景オーバーレイを無効にする（E Ink）",
   "native_dictionary_popup": "ネイティブ辞書ポップアップ（電子ペーパー）",
   "update_settings": "アップデート設定",

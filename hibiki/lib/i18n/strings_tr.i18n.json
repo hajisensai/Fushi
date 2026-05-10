@@ -654,6 +654,7 @@
   "update_never_remind": "Güncellemeleri hat?rlatma",
   "update_auto_install": "Güncellemeleri otomatik yükle",
   "update_beta_channel": "Beta güncellemelerini al",
+    "debug_log_toggle": "Hata ayıklama günlüğünü etkinleştir",
   "disable_dialog_scrim": "Açılır pencere arka planını devre dışı bırak (e-ink)",
   "native_dictionary_popup": "Yerel sözlük açılır penceresi (e-ink)",
   "update_settings": "Güncelleme ayarlar?",

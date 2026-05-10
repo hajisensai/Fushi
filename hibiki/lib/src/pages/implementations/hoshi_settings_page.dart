@@ -525,6 +525,18 @@ class _HoshiSettingsContentState extends BasePageState {
             ).then((_) => setState(() {}));
           },
         ),
+        if (DebugLogService.instance.enabled)
+          _categoryTile(
+            context,
+            icon: Icons.terminal,
+            label: 'Debug Log (${DebugLogService.instance.entries.length})',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const DebugLogPage()),
+              ).then((_) => setState(() {}));
+            },
+          ),
       ],
     );
   }
@@ -644,6 +656,15 @@ class _UpdateSettingsPageState extends BasePageState {
             value: appModel.updateBetaChannel,
             onChanged: (v) {
               appModel.setUpdateBetaChannel(v);
+              setState(() {});
+            },
+          ),
+          const Divider(),
+          _buildSwitch(
+            label: t.debug_log_toggle,
+            value: DebugLogService.instance.enabled,
+            onChanged: (v) async {
+              await DebugLogService.instance.setEnabled(v);
               setState(() {});
             },
           ),

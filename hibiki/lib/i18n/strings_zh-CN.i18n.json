@@ -703,6 +703,7 @@
     "update_never_remind": "不再提醒自动更新",
     "update_auto_install": "自动安装更新",
     "update_beta_channel": "接收测试版更新",
+    "debug_log_toggle": "启用调试日志",
     "disable_dialog_scrim": "关闭弹窗背景遮罩（墨水屏）",
     "native_dictionary_popup": "原生辞典弹窗（墨水屏）",
     "update_settings": "更新设置",

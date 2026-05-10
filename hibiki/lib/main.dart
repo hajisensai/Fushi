@@ -108,6 +108,7 @@ void main() {
 
     /// Initialise error log service.
     await ErrorLogService.instance.init();
+    await DebugLogService.instance.init();
 
     /// Initialise local file-based logging.
     await FlutterLogs.initLogs(

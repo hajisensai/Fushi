@@ -640,6 +640,7 @@
   "update_never_remind": "Nicht mehr erinnern",
   "update_auto_install": "Updates automatisch installieren",
   "update_beta_channel": "Beta-Updates erhalten",
+    "debug_log_toggle": "Debug-Log aktivieren",
   "disable_dialog_scrim": "Popup-Overlay deaktivieren (E-Ink)",
   "native_dictionary_popup": "Natives Wörterbuch-Popup (E-Ink)",
   "update_settings": "Update-Einstellungen",

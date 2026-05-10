@@ -640,6 +640,7 @@
   "update_never_remind": "Jangan ingatkan lagi",
   "update_auto_install": "Pasang pembaruan otomatis",
   "update_beta_channel": "Terima pembaruan beta",
+    "debug_log_toggle": "Aktifkan log debug",
   "disable_dialog_scrim": "Nonaktifkan overlay popup (e-ink)",
   "native_dictionary_popup": "Popup kamus bawaan (e-ink)",
   "update_settings": "Pengaturan Pembaruan",
