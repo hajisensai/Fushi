@@ -1724,7 +1724,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   }
 
   void _syncDictionaryTheme() {
-    if (!ReaderHoshiSource.instance.adaptTtuTheme) return;
     final Color bg = _themeBackgroundColor();
     final Brightness brightness =
         _isReaderThemeDark ? Brightness.dark : Brightness.light;

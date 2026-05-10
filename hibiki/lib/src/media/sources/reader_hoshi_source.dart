@@ -329,16 +329,6 @@ class ReaderHoshiSource extends ReaderMediaSource {
     );
   }
 
-  bool get adaptTtuTheme =>
-      getPreference<bool>(key: 'adapt_ttu_theme', defaultValue: true);
-
-  void toggleAdaptTtuTheme() async {
-    await setPreference<bool>(
-      key: 'adapt_ttu_theme',
-      value: !adaptTtuTheme,
-    );
-  }
-
   int get volumePageTurningSpeed =>
       getPreference<int>(
           key: 'volume_page_turning_speed',

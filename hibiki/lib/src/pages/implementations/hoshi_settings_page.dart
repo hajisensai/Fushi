@@ -199,14 +199,6 @@ List<Widget> _buildReaderOnlySwitches(VoidCallback rebuild,
       },
     ),
     _buildSwitch(
-      label: t.adapt_ttu_theme,
-      value: _source.adaptTtuTheme,
-      onChanged: (_) {
-        _source.toggleAdaptTtuTheme();
-        rebuild();
-      },
-    ),
-    _buildSwitch(
       label: t.keep_screen_awake,
       value: _source.keepScreenAwake,
       onChanged: (_) async {
