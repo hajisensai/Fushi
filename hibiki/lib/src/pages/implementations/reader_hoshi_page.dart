@@ -39,6 +39,7 @@ import 'package:hibiki/src/reader/reader_selection_data.dart';
 import 'package:hibiki/src/reader/reader_selection_scripts.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/utils/misc/jidoujisho_text_selection.dart';
+import 'package:hibiki/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:hibiki/src/utils/misc/volume_key_channel.dart';
 import 'package:wakelock/wakelock.dart';
 
@@ -358,6 +359,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     setState(() {
       _audiobookController = controller;
     });
+    _initAudioFeatures(controller);
   }
 
   Future<void> _initSrtBookController(SrtBook srtBook) async {
@@ -419,6 +421,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     setState(() {
       _audiobookController = controller;
     });
+    _initAudioFeatures(controller);
   }
 
   Future<List<File>> _resolveAudioFiles({
@@ -468,6 +471,11 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _audiobookController?.dispose();
     _readingTimeTracker?.dispose();
     _focusNode.dispose();
+    FloatingLyricChannel.clearEventHandlers();
+    if (appModel.showFloatingLyric) {
+      FloatingLyricChannel.hide();
+    }
+    appModel.audioHandler?.clearNotification();
     Wakelock.disable();
     super.dispose();
   }
@@ -657,12 +665,15 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   window.scanNonJapaneseText = false;
   $selectionJs
   $paginationJs
-  var startX = 0, startY = 0, startTime = 0;
+  var startX = 0, startY = 0, startTime = 0, startScroll = 0;
   document.addEventListener('touchstart', function(e) {
     var t = e.touches[0];
     startX = t.clientX;
     startY = t.clientY;
     startTime = Date.now();
+    var root = document.scrollingElement || document.documentElement;
+    var vert = window.getComputedStyle(document.body).writingMode === 'vertical-rl';
+    startScroll = vert ? window.scrollX : root.scrollTop;
   }, {passive: true});
   document.addEventListener('touchend', function(e) {
     var t = e.changedTouches[0];
@@ -674,6 +685,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     var velocity = absDx / Math.max(1, elapsed) * 1000;
     if (absDx > absDy && (absDx >= 72 || (absDx >= 36 && velocity >= 900))) {
       e.preventDefault();
+      var root = document.scrollingElement || document.documentElement;
+      var vert = window.getComputedStyle(document.body).writingMode === 'vertical-rl';
+      if (vert) { window.scrollTo(startScroll, window.scrollY); }
+      else { root.scrollTop = startScroll; }
       if (dx < 0) {
         window.flutter_inappwebview.callHandler('onSwipe', 'left');
       } else {
@@ -718,8 +733,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   // ── WebView ──────────────────────────────────────────────────────────
 
   Widget _buildWebView() {
-    debugPrint('[ReaderHoshi] buildWebView: chapter=$_currentChapter '
-        'progress=$_initialProgress');
     return InAppWebView(
       initialUrlRequest: null,
       initialUserScripts: UnmodifiableListView<UserScript>(<UserScript>[
@@ -886,20 +899,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
             s.ttuBookId == widget.bookId &&
             s.sectionIndex == _currentChapter)
         .toList();
-    debugPrint('[_applyChapterHighlights] count=${chapterFavs.length} '
-        'continuous=${_settings?.isContinuousMode}');
     if (chapterFavs.isNotEmpty) {
       if (_settings?.isContinuousMode == true) {
-        final Object? scrollBefore = await _controller!.evaluateJavascript(
-          source: '(document.scrollingElement||document.documentElement).scrollTop',
-        );
-        debugPrint('[_applyChapterHighlights] scrollBefore=$scrollBefore');
         await HighlightBridge.applyHighlights(_controller!, chapterFavs,
             isDark: _isReaderThemeDark);
-        final Object? scrollAfter = await _controller!.evaluateJavascript(
-          source: '(document.scrollingElement||document.documentElement).scrollTop',
-        );
-        debugPrint('[_applyChapterHighlights] scrollAfter=$scrollAfter');
       } else {
         await HighlightBridge.applyHighlights(_controller!, chapterFavs,
             isDark: _isReaderThemeDark);
@@ -972,13 +975,13 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final bool forceReveal = controller.consumeForceReveal();
     final bool reveal =
         forceReveal || controller.shouldRevealCurrentCue;
-    debugPrint('[_onCueChanged] cue=${cue?.textFragmentId} '
-        'reveal=$reveal forceReveal=$forceReveal '
-        'follow=${controller.followAudio.value} '
-        'played=${controller.hasPlayedOnce} '
-        'playing=${controller.isPlaying} '
-        'continuous=${_settings?.isContinuousMode}');
+    if (reveal) {
+      debugPrint('[_onCueChanged] reveal cue=${cue?.textFragmentId} '
+          'forceReveal=$forceReveal');
+    }
     AudiobookBridge.highlight(_controller!, cue: cue, reveal: reveal);
+    _syncFloatingLyric(controller);
+    _syncMediaNotification(controller);
   }
 
   Future<void> _handleCueCrossChapter(int newSection) async {
@@ -1294,7 +1297,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final dynamic result = await _controller!.evaluateJavascript(
       source: 'window.hoshiProgressDetails()',
     );
-    debugPrint('[ReaderHoshi] progressDetails raw=$result');
     if (result == null) return;
     final String str =
         result.toString().replaceAll('"', '').trim();
@@ -1498,6 +1500,118 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     );
   }
 
+  // ── Audio Features Init ────────────────────────────────────────────
+
+  Future<void> _initAudioFeatures(AudiobookPlayerController ctrl) async {
+    if (appModel.showFloatingLyric) {
+      final bool canDraw = await FloatingLyricChannel.canDrawOverlays();
+      if (canDraw) {
+        await FloatingLyricChannel.show();
+        await FloatingLyricChannel.updateStyle(
+          fontSize: appModel.floatingLyricFontSize,
+        );
+        await FloatingLyricChannel.updateLabels(
+          previous: t.floating_lyric_previous,
+          playPause: t.floating_lyric_play_pause,
+          next: t.floating_lyric_next,
+          lock: t.floating_lyric_lock,
+          unlock: t.floating_lyric_unlock,
+          close: t.floating_lyric_close,
+        );
+        _setupFloatingLyricHandlers();
+      }
+    }
+    if (appModel.showMediaNotification) {
+      final handler = appModel.audioHandler;
+      handler?.setMediaItemInfo(title: _book?.title ?? 'Hibiki');
+    }
+  }
+
+  // ── Floating Lyric ─────────────────────────────────────────────────
+
+  Future<void> _toggleFloatingLyric() async {
+    final bool current = appModel.showFloatingLyric;
+    if (!current) {
+      final bool canDraw = await FloatingLyricChannel.canDrawOverlays();
+      if (!canDraw) {
+        Fluttertoast.showToast(msg: t.floating_lyric_hint);
+        return;
+      }
+      await FloatingLyricChannel.show();
+      await FloatingLyricChannel.updateStyle(
+        fontSize: appModel.floatingLyricFontSize,
+      );
+      await FloatingLyricChannel.updateLabels(
+        previous: t.floating_lyric_previous,
+        playPause: t.floating_lyric_play_pause,
+        next: t.floating_lyric_next,
+        lock: t.floating_lyric_lock,
+        unlock: t.floating_lyric_unlock,
+        close: t.floating_lyric_close,
+      );
+      _setupFloatingLyricHandlers();
+      if (_audiobookController != null) {
+        _syncFloatingLyric(_audiobookController!);
+      }
+    } else {
+      await FloatingLyricChannel.hide();
+      FloatingLyricChannel.clearEventHandlers();
+    }
+    await appModel.setShowFloatingLyric(!current);
+  }
+
+  void _setupFloatingLyricHandlers() {
+    FloatingLyricChannel.setEventHandlers(
+      onPlayPause: () => _audiobookController?.togglePlayPause(),
+      onPreviousCue: () => _audiobookController?.skipToPrevCue(),
+      onNextCue: () => _audiobookController?.skipToNextCue(),
+      onClose: () async {
+        await FloatingLyricChannel.hide();
+        FloatingLyricChannel.clearEventHandlers();
+        await appModel.setShowFloatingLyric(false);
+      },
+    );
+  }
+
+  void _syncFloatingLyric(AudiobookPlayerController ctrl) {
+    if (!appModel.showFloatingLyric) return;
+    final AudioCue? cue = ctrl.currentCue;
+    FloatingLyricChannel.updateText(cue?.text ?? '');
+    FloatingLyricChannel.setPlaybackState(playing: ctrl.isPlaying);
+  }
+
+  // ── Media Notification ────────────────────────────────────────────
+
+  void _syncMediaNotification(AudiobookPlayerController ctrl) {
+    if (!appModel.showMediaNotification) return;
+    final handler = appModel.audioHandler;
+    if (handler == null) return;
+    handler.updatePlaybackState(
+      playing: ctrl.isPlaying,
+      position: ctrl.position,
+      speed: 1.0,
+      duration: ctrl.duration,
+    );
+    final AudioCue? cue = ctrl.currentCue;
+    if (cue != null) {
+      handler.updateNotificationSubtitle(
+        title: _book?.title ?? 'Hibiki',
+        subtitle: cue.text,
+      );
+    }
+  }
+
+  Future<void> _toggleMediaNotification() async {
+    appModel.toggleShowMediaNotification();
+    if (appModel.showMediaNotification && _audiobookController != null) {
+      final handler = appModel.audioHandler;
+      handler?.setMediaItemInfo(title: _book?.title ?? 'Hibiki');
+      _syncMediaNotification(_audiobookController!);
+    } else {
+      appModel.audioHandler?.clearNotification();
+    }
+  }
+
   // ── Bottom Chrome ─────────────────────────────────────────────────
 
   void _toggleChrome() {
@@ -1678,6 +1792,15 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           webViewController: _controller!,
           appModel: appModel,
           isHoshiReader: true,
+          showFloatingLyric: appModel.showFloatingLyric,
+          onToggleFloatingLyric: _toggleFloatingLyric,
+          floatingLyricFontSize: appModel.floatingLyricFontSize,
+          onFloatingLyricFontSizeChanged: (double v) async {
+            await appModel.setFloatingLyricFontSize(v);
+            await FloatingLyricChannel.updateStyle(fontSize: v);
+          },
+          showMediaNotification: appModel.showMediaNotification,
+          onToggleMediaNotification: _toggleMediaNotification,
           charProgress: _progressCurrentChars != null &&
                   _progressTotalChars != null
               ? (_progressCurrentChars!, _progressTotalChars!)
@@ -1895,6 +2018,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final double? progress = _toDouble(result);
     _initialProgress = progress ?? 0.0;
     _restoreInFlight = true;
+    debugPrint('[ReaderHoshi] reloadWithCurrentSettings: '
+        'chapter=$_currentChapter progress=$_initialProgress '
+        'continuous=${_settings?.isContinuousMode}');
 
     setState(() {
       _readerContentReady = false;
