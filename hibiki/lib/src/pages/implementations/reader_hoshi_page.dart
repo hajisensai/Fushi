@@ -168,10 +168,15 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         bm.sectionIndex < _book!.chapters.length) {
       _currentChapter = bm.sectionIndex;
       _initialProgress = bm.normCharOffset / 10000.0;
+      debugPrint('[ReaderHoshi] restore from bookmark: '
+          'chapter=$_currentChapter progress=$_initialProgress');
     } else {
       final ReaderPositionRepository repo =
           ReaderPositionRepository(appModel.database);
       final ReaderPosition? saved = await repo.findByTtuBookId(widget.bookId);
+      debugPrint('[ReaderHoshi] restore lookup: bookId=${widget.bookId} '
+          'saved=$saved section=${saved?.sectionIndex} '
+          'offset=${saved?.normCharOffset}');
       if (saved != null &&
           saved.sectionIndex >= 0 &&
           saved.sectionIndex < _book!.chapters.length) {
@@ -183,6 +188,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (_settings!.keepScreenAwake) {
       Wakelock.enable();
     }
+
+    _audioSlotResolved = true;
 
     if (mounted) {
       setState(() {});
@@ -236,16 +243,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final SrtBook? srt =
         (await db.getSrtBookByTtuBookId(widget.bookId))?.let(_srtBookFromRow);
 
-    _audioSlotResolved = true;
-
     if (ab != null) {
       await _initAudiobookController(ab, bookUid);
     } else if (srt != null) {
       await _initSrtBookController(srt);
-    }
-
-    if (mounted) {
-      setState(() {});
     }
   }
 
@@ -630,9 +631,12 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   // ── WebView ──────────────────────────────────────────────────────────
 
   Widget _buildWebView() {
+    final String chapterUrl = _chapterUrl(_currentChapter);
+    debugPrint('[ReaderHoshi] buildWebView: chapter=$_currentChapter '
+        'url=$chapterUrl progress=$_initialProgress');
     return InAppWebView(
       initialUrlRequest: URLRequest(
-        url: WebUri(_chapterUrl(_currentChapter)),
+        url: WebUri(chapterUrl),
       ),
       initialUserScripts: UnmodifiableListView<UserScript>(<UserScript>[
         UserScript(
@@ -727,6 +731,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         return NavigationActionPolicy.CANCEL;
       },
       onLoadStop: (InAppWebViewController controller, WebUri? url) async {
+        debugPrint('[ReaderHoshi] onLoadStop: url=$url '
+            'chapter=$_currentChapter progress=$_initialProgress');
         String? sasayakiCuesJson;
         if (_audiobookController != null) {
           sasayakiCuesJson = await _prepareSasayakiCuesJson();
@@ -1026,6 +1032,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final dynamic result = await _controller!.evaluateJavascript(
       source: 'window.hoshiProgressDetails()',
     );
+    debugPrint('[ReaderHoshi] progressDetails raw=$result');
     if (result == null) return;
     final String str =
         result.toString().replaceAll('"', '').trim();
@@ -1078,6 +1085,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _lastSavedProgress = progress;
 
     final int normOffset = (progress * 10000).round();
+    debugPrint('[ReaderHoshi] save position: bookId=${widget.bookId} '
+        'section=$section normOffset=$normOffset');
     final ReaderPositionRepository repo =
         ReaderPositionRepository(appModel.database);
     await repo.save(
