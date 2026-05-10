@@ -1106,7 +1106,16 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       _readerContentReady = false;
     });
 
-    await _loadChapterDirectly(index);
+    try {
+      await _loadChapterDirectly(index);
+    } catch (e) {
+      debugPrint('[ReaderHoshi] _navigateToChapter loadUrl failed: $e');
+      _restoreInFlight = false;
+      if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
+        _restoreCompleter!.complete();
+      }
+      _restoreCompleter = null;
+    }
   }
 
   Future<void> _navigateToChapterAndWait(int index) async {
@@ -1115,6 +1124,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       const Duration(seconds: 10),
       onTimeout: () {
         debugPrint('[ReaderHoshi] _navigateToChapterAndWait timed out');
+        _isNavigatingToChapter = false;
         _restoreCompleter = null;
         _restoreInFlight = false;
       },
@@ -1145,7 +1155,16 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       _readerContentReady = false;
     });
 
-    await _loadChapterDirectly(index);
+    try {
+      await _loadChapterDirectly(index);
+    } catch (e) {
+      debugPrint('[ReaderHoshi] _navigateToChapterWithFragment loadUrl failed: $e');
+      _restoreInFlight = false;
+      if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
+        _restoreCompleter!.complete();
+      }
+      _restoreCompleter = null;
+    }
   }
 
   void _handlePageTurnLimit(String direction) {
