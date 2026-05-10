@@ -133,10 +133,28 @@ class DictionaryPopupWebViewState
     final collapsedNamesJson = jsonEncode(collapsedNames);
     final audioSourcesJson = jsonEncode(appModel.enabledAudioSources);
 
+    final Color onSurface = theme.colorScheme.onSurface;
+    final int tr = (onSurface.r * 255.0).round().clamp(0, 255);
+    final int tg = (onSurface.g * 255.0).round().clamp(0, 255);
+    final int tb = (onSurface.b * 255.0).round().clamp(0, 255);
+    final double ta = onSurface.a;
+    final String textRgba = 'rgba($tr, $tg, $tb, ${ta.toStringAsFixed(2)})';
+
+    final Color? bgOverride = appModel.overrideDictionaryColor;
+    String bgCssOverride = '';
+    if (bgOverride != null) {
+      final int br = (bgOverride.r * 255.0).round().clamp(0, 255);
+      final int bgg = (bgOverride.g * 255.0).round().clamp(0, 255);
+      final int bb = (bgOverride.b * 255.0).round().clamp(0, 255);
+      bgCssOverride = "document.documentElement.style.setProperty('--background-color', 'rgb($br, $bgg, $bb)');";
+    }
+
     final bool needsScrollCheck = widget.onScrolledToBottom != null;
     _controller!.evaluateJavascript(source: '''
       document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
       document.documentElement.style.setProperty('--hoshi-primary-highlight', '$primaryRgba');
+      document.documentElement.style.setProperty('--text-color', '$textRgba');
+      $bgCssOverride
       window.audioSources = $audioSourcesJson;
       window.needsAudio = true;
       window.deduplicatePitchAccents = $deduplicatePitch;

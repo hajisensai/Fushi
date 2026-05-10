@@ -46,6 +46,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.headerWidget,
     this.overlayWidget,
     this.isDark = false,
+    this.overrideFillColor,
     super.key,
   });
 
@@ -61,10 +62,12 @@ class DictionaryPopupLayer extends StatelessWidget {
   final Widget? headerWidget;
   final Widget? overlayWidget;
   final bool isDark;
+  final Color? overrideFillColor;
 
   @override
   Widget build(BuildContext context) {
-    final fillColor = isDark ? Colors.black : Colors.white;
+    final fillColor =
+        overrideFillColor ?? (isDark ? Colors.black : Colors.white);
     final borderColor = isDark
         ? Colors.white.withValues(alpha: 0.15)
         : Colors.black.withValues(alpha: 0.18);

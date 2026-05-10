@@ -1725,6 +1725,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   void _syncDictionaryTheme() {
     final Color bg = _themeBackgroundColor();
+    final Color textColor = _themeTextColor();
     final Brightness brightness =
         _isReaderThemeDark ? Brightness.dark : Brightness.light;
     appModel.setOverrideDictionaryColor(bg);
@@ -1733,6 +1734,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           .copyWith(colorScheme: ColorScheme.fromSeed(
         seedColor: bg,
         brightness: brightness,
+      ).copyWith(
+        onSurface: textColor,
       )),
     );
   }

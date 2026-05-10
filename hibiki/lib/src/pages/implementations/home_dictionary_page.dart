@@ -545,6 +545,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
         result: entry.isSearching ? null : entry.result,
         webViewKey: entry.webViewKey,
         isDark: isDark,
+        overrideFillColor: appModel.overrideDictionaryColor,
         onDismiss: () => _popNestedPopupAt(index),
         onTapOutside: () => _popNestedPopupAt(0),
         onTextSelected: (text, localRect) {

@@ -282,6 +282,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
         result: entry.isSearching ? null : entry.result,
         webViewKey: entry.webViewKey,
         isDark: isDark,
+        overrideFillColor: appModel.overrideDictionaryColor,
         onDismiss: () {
           if (index == 0) {
             _close();

@@ -244,7 +244,8 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
     final pos = _calculatePopupPosition(_pendingSelectionRect!, screen);
     final isDark = (appModel.overrideDictionaryTheme ?? theme).brightness ==
         Brightness.dark;
-    final fillColor = isDark ? Colors.black : Colors.white;
+    final fillColor =
+        appModel.overrideDictionaryColor ?? (isDark ? Colors.black : Colors.white);
     final borderColor = isDark
         ? Colors.white.withValues(alpha: 0.15)
         : Colors.black.withValues(alpha: 0.18);
@@ -290,6 +291,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
         result: item.result,
         webViewKey: item.webViewKey,
         isDark: isDark,
+        overrideFillColor: appModel.overrideDictionaryColor,
         onDismiss: () => _dismissPopupAt(index),
         onTapOutside: clearDictionaryResult,
         headerWidget: index == 0 ? buildPopupAudioControls() : null,

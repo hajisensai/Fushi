@@ -541,6 +541,7 @@ class _RecursiveDictionaryPageState
         result: entry.isSearching ? null : entry.result,
         webViewKey: entry.webViewKey,
         isDark: isDark,
+        overrideFillColor: appModel.overrideDictionaryColor,
         onDismiss: () => popNestedPopupAt(index),
         onTapOutside: () => popNestedPopupAt(0),
         onTextSelected: (text, localRect) {
