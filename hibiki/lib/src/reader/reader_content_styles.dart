@@ -24,11 +24,15 @@ class ReaderContentStyles {
     required ReaderSettings settings,
     String? fontFaces,
     String? fontFamily,
+    String? customBg,
+    String? customFg,
   }) {
     return '<style>\n${css(
       settings: settings,
       fontFaces: fontFaces,
       fontFamily: fontFamily,
+      customBg: customBg,
+      customFg: customFg,
     )}\n</style>';
   }
 
@@ -36,9 +40,11 @@ class ReaderContentStyles {
     required ReaderSettings settings,
     String? fontFaces,
     String? fontFamily,
+    String? customBg,
+    String? customFg,
   }) {
     final ({String textColor, String backgroundColor}) colors =
-        _themeColors(settings.theme);
+        _themeColors(settings.theme, customBg: customBg, customFg: customFg);
 
     final String resolvedFontFaces;
     final String resolvedFontFamily;
@@ -206,6 +212,10 @@ ruby > rt, ruby > rp {
   background-color: rgba(160, 160, 160, 0.4) !important;
   color: inherit;
 }
+.hoshi-sasayaki-cue {
+  background-color: transparent;
+  -webkit-line-box-contain: block glyphs replaced;
+}
 .hoshi-sasayaki-cue.hoshi-sasayaki-active {
   color: var(--hoshi-sasayaki-text-color) !important;
   background-color: var(--hoshi-sasayaki-background-color) !important;
@@ -342,7 +352,7 @@ ruby.show-rt rt {
   }
 
   static ({String textColor, String backgroundColor}) _themeColors(
-      String theme) {
+      String theme, {String? customBg, String? customFg}) {
     switch (theme) {
       case 'ecru-theme':
         return (
@@ -368,6 +378,11 @@ ruby.show-rt rt {
         return (
           textColor: 'rgba(255, 255, 255, 0.87)',
           backgroundColor: '#000',
+        );
+      case 'custom-theme':
+        return (
+          textColor: customFg ?? 'rgba(0, 0, 0, 0.87)',
+          backgroundColor: customBg ?? '#fff',
         );
       default:
         return (

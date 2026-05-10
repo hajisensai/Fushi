@@ -629,7 +629,11 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
     if ((mime == 'text/html' || mime.contains('xhtml')) && _settings != null) {
       String html = utf8.decode(data);
-      final String styleTag = ReaderContentStyles.styleTag(settings: _settings!);
+      final String styleTag = ReaderContentStyles.styleTag(
+        settings: _settings!,
+        customBg: _settings!.theme == 'custom-theme' ? _readerBackgroundHex : null,
+        customFg: _settings!.theme == 'custom-theme' ? _customThemeTextCss : null,
+      );
       const String hideUntilReady =
           '<style id="hoshi-cloak">body{visibility:hidden!important}</style>';
       final RegExp headPattern = RegExp(r'<head[^>]*>', caseSensitive: false);
@@ -2137,6 +2141,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         return const Color(0xFF121212);
       case 'black-theme':
         return const Color(0xFF000000);
+      case 'custom-theme':
+        return appModel.customThemeBackgroundColor ??
+            const Color(0xFFFFFFFF);
       default:
         return const Color(0xFFFFFFFF);
     }
@@ -2150,6 +2157,11 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         return const Color(0xDEFFFFFF);
       case 'dark-theme':
         return const Color(0x99FFFFFF);
+      case 'custom-theme':
+        final Color? fg = appModel.customThemeFontColor;
+        if (fg != null) return fg;
+        final bool dark = appModel.customThemeDark;
+        return dark ? const Color(0xDEFFFFFF) : const Color(0xDE000000);
       default:
         return const Color(0xDE000000);
     }
@@ -2157,21 +2169,15 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   bool get _isReaderThemeDark {
     final String theme = _settings?.theme ?? 'light-theme';
+    if (theme == 'custom-theme') return appModel.customThemeDark;
     return theme == 'gray-theme' ||
         theme == 'dark-theme' ||
         theme == 'black-theme';
   }
 
   String get _readerBackgroundHex {
-    final String theme = _settings?.theme ?? 'light-theme';
-    switch (theme) {
-      case 'ecru-theme':  return '#f7f6eb';
-      case 'water-theme': return '#dfecf4';
-      case 'gray-theme':  return '#23272a';
-      case 'dark-theme':  return '#121212';
-      case 'black-theme': return '#000000';
-      default:            return '#ffffff';
-    }
+    final Color bg = _themeBackgroundColor();
+    return '#${(bg.value & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}';
   }
 
   void _syncDictionaryTheme() {
