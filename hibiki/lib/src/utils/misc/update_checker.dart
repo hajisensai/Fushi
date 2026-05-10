@@ -16,6 +16,11 @@ import 'package:hibiki/utils.dart';
 
 const String _kGitHubRepo = 'hdjsadgfwtg/hibiki';
 
+const List<String> _kProxyPrefixes = [
+  'https://ghfast.top/',
+  'https://mirror.ghproxy.com/',
+];
+
 class UpdateChecker {
   UpdateChecker._();
 
@@ -117,35 +122,49 @@ class UpdateChecker {
     }
   }
 
+  static Future<String?> _httpGetString(
+    HttpClient client,
+    String url, {
+    Map<String, String> headers = const {},
+  }) async {
+    final urls = [url, ..._kProxyPrefixes.map((p) => '$p$url')];
+    for (final u in urls) {
+      try {
+        final request = await client.getUrl(Uri.parse(u));
+        for (final e in headers.entries) {
+          request.headers.set(e.key, e.value);
+        }
+        final response = await request.close();
+        if (response.statusCode == 200) {
+          return await response.transform(utf8.decoder).join();
+        }
+        await response.drain<void>();
+      } catch (e) {
+        debugPrint('[Hibiki] request failed ($u): $e');
+      }
+    }
+    return null;
+  }
+
   static Future<Map<String, dynamic>?> _fetchStableRelease(
       HttpClient client) async {
-    final uri = Uri.parse(
+    final body = await _httpGetString(
+      client,
       'https://api.github.com/repos/$_kGitHubRepo/releases/latest',
+      headers: {'Accept': 'application/vnd.github+json'},
     );
-    final request = await client.getUrl(uri);
-    request.headers.set('Accept', 'application/vnd.github+json');
-    final response = await request.close();
-    if (response.statusCode != 200) {
-      await response.drain<void>();
-      return null;
-    }
-    final body = await response.transform(utf8.decoder).join();
+    if (body == null) return null;
     return jsonDecode(body) as Map<String, dynamic>;
   }
 
   static Future<Map<String, dynamic>?> _fetchLatestRelease(
       HttpClient client) async {
-    final uri = Uri.parse(
+    final body = await _httpGetString(
+      client,
       'https://api.github.com/repos/$_kGitHubRepo/releases?per_page=1',
+      headers: {'Accept': 'application/vnd.github+json'},
     );
-    final request = await client.getUrl(uri);
-    request.headers.set('Accept', 'application/vnd.github+json');
-    final response = await request.close();
-    if (response.statusCode != 200) {
-      await response.drain<void>();
-      return null;
-    }
-    final body = await response.transform(utf8.decoder).join();
+    if (body == null) return null;
     final list = jsonDecode(body) as List<dynamic>;
     if (list.isEmpty) return null;
     return list.first as Map<String, dynamic>;
@@ -334,15 +353,27 @@ class UpdateChecker {
       final client = HttpClient();
       client.connectionTimeout = const Duration(seconds: 30);
       client.idleTimeout = const Duration(seconds: 60);
-      final request = await client.getUrl(Uri.parse(url));
-      request.headers.set('User-Agent', 'Hibiki/$version');
-      final response = await request.close();
 
-      if (response.statusCode == 200) {
-        await _writeResponse(response, apkFile, progress);
-      } else {
-        await response.drain<void>();
-        throw Exception('HTTP ${response.statusCode}');
+      final urls = [url, ..._kProxyPrefixes.map((p) => '$p$url')];
+      var downloaded = false;
+      for (final u in urls) {
+        try {
+          progress.value = 0;
+          final request = await client.getUrl(Uri.parse(u));
+          request.headers.set('User-Agent', 'Hibiki/$version');
+          final response = await request.close();
+          if (response.statusCode == 200) {
+            await _writeResponse(response, apkFile, progress);
+            downloaded = true;
+            break;
+          }
+          await response.drain<void>();
+        } catch (e) {
+          debugPrint('[Hibiki] download failed ($u): $e');
+        }
+      }
+      if (!downloaded) {
+        throw Exception('All download sources failed');
       }
 
       status.value = t.update_installing;
