@@ -588,6 +588,12 @@ window.hoshiReader.initialize = function() {
   spacer.style.breakInside = 'avoid';
   document.body.appendChild(spacer);
   Promise.all(imagePromises).then(function() {
+    var actualWidth = document.body.clientWidth;
+    if (actualWidth > 0 && actualWidth < window.hoshiReader.pageWidth) {
+      window.hoshiReader.pageWidth = actualWidth;
+      document.documentElement.style.setProperty('--page-width', actualWidth + 'px');
+      document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(actualWidth * $imageWidthRatio)) + 'px');
+    }
     window.hoshiReader.buildNodeOffsets();
     $sasayakiInit
     $initialRestoreScript

@@ -958,8 +958,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       }
     }
     final bool forceReveal = controller.consumeForceReveal();
-    final bool reveal =
-        forceReveal || controller.shouldRevealCurrentCue;
+    final bool isContinuous = _settings?.isContinuousMode ?? false;
+    final bool reveal = forceReveal ||
+        (!isContinuous && controller.shouldRevealCurrentCue);
     AudiobookBridge.highlight(_controller!, cue: cue, reveal: reveal);
   }
 
