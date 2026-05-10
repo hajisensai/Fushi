@@ -188,97 +188,13 @@ class ReaderSettings {
     }
   }
 
-  Future<void> setCustomFonts(List<Map<String, dynamic>> fonts) =>
-      _set<String>('custom_fonts', jsonEncode(fonts));
-
-  Future<void> addCustomFont({required String name, String? path}) async {
-    final List<Map<String, dynamic>> list = customFonts;
-    list.add(<String, dynamic>{'name': name, 'path': path, 'enabled': true});
-    await setCustomFonts(list);
-  }
-
-  Future<void> removeCustomFont(int index) async {
-    final List<Map<String, dynamic>> list = customFonts;
-    if (index < 0 || index >= list.length) return;
-    list.removeAt(index);
-    await setCustomFonts(list);
-  }
-
-  Future<void> toggleCustomFont(int index) async {
-    final List<Map<String, dynamic>> list = customFonts;
-    if (index < 0 || index >= list.length) return;
-    list[index]['enabled'] = !(list[index]['enabled'] as bool? ?? true);
-    await setCustomFonts(list);
-  }
-
-  Future<void> reorderCustomFonts(int oldIndex, int newIndex) async {
-    final List<Map<String, dynamic>> list = customFonts;
-    int adjusted = newIndex;
-    if (adjusted > oldIndex) adjusted--;
-    final Map<String, dynamic> item = list.removeAt(oldIndex);
-    list.insert(adjusted, item);
-    await setCustomFonts(list);
-  }
-
   /// CSS font-family string and @font-face declarations for enabled fonts.
-  ({String fontFamily, String fontFaces}) buildCustomFontCss() {
-    final Iterable<Map<String, dynamic>> enabled =
-        customFonts.where((Map<String, dynamic> e) =>
-            e['enabled'] as bool? ?? true);
-    final List<String> families = <String>[];
-    final List<String> faces = <String>[];
-    for (final Map<String, dynamic> e in enabled) {
-      final String name = e['name'] as String;
-      final String normalized = _normalizedFontFamilyName(name);
-      families.add(_cssFontFamilyName(normalized));
-      final String? path = e['path'] as String?;
-      if (path != null) {
-        final String uri = ReaderHoshiSource.fontUrl(path);
-        faces.add(
-          '@font-face { font-family: ${_cssFontFamilyName(normalized)}; '
-          'src: url("$uri"); font-display: swap; }',
-        );
-      }
-    }
-    return (fontFamily: families.join(', '), fontFaces: faces.join('\n'));
-  }
+  ({String fontFamily, String fontFaces}) buildCustomFontCss() =>
+      ReaderHoshiSource.customFontCssForEntries(customFonts);
 
-  // ── Furigana helpers ──────────────────────────────────────────────
+  static String normalizeFuriganaMode(String mode) =>
+      ReaderHoshiSource.normalizeFuriganaMode(mode);
 
-  static String normalizeFuriganaMode(String mode) {
-    switch (mode.toLowerCase()) {
-      case 'show':
-      case 'hide':
-      case 'partial':
-      case 'toggle':
-        return mode.toLowerCase();
-      default:
-        return 'show';
-    }
-  }
-
-  static String furiganaModeToStyle(String mode) {
-    switch (normalizeFuriganaMode(mode)) {
-      case 'hide':
-        return 'Hide';
-      case 'partial':
-        return 'Partial';
-      case 'toggle':
-        return 'Toggle';
-      default:
-        return 'Show';
-    }
-  }
-
-  // ── Font helpers ──────────────────────────────────────────────────
-
-  static String _normalizedFontFamilyName(String name) =>
-      name.replaceAll('_', ' ').trim();
-
-  static String _cssFontFamilyName(String name) {
-    final String normalized = _normalizedFontFamilyName(name);
-    final String escaped =
-        normalized.replaceAll('\\', r'\\').replaceAll('"', r'\"');
-    return '"$escaped"';
-  }
+  static String furiganaModeToStyle(String mode) =>
+      ReaderHoshiSource.furiganaModeToStyle(mode);
 }

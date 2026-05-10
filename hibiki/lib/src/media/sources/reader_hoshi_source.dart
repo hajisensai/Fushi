@@ -632,12 +632,13 @@ class ReaderHoshiSource extends ReaderMediaSource {
   // ── Furigana helpers ────────────────────────────────────────────────
 
   static String normalizeFuriganaMode(String mode) {
-    switch (mode) {
+    final String lower = mode.toLowerCase();
+    switch (lower) {
       case 'show':
       case 'hide':
       case 'partial':
       case 'toggle':
-        return mode;
+        return lower;
       default:
         return 'show';
     }
@@ -648,11 +649,11 @@ class ReaderHoshiSource extends ReaderMediaSource {
       case 'hide':
         return 'Hide';
       case 'partial':
-        return 'partial';
+        return 'Partial';
       case 'toggle':
-        return 'toggle';
+        return 'Toggle';
       default:
-        return 'partial';
+        return 'Show';
     }
   }
 }
