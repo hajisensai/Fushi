@@ -20,6 +20,7 @@ class HighlightBridge {
     purple: [170,0,255]
   };
   window.__hibikiHighlightBg = '#ffffff';
+  window.__hibikiCustomHighlightColor = null;
 
   function _luminance(hex) {
     var h = hex.replace('#','');
@@ -43,6 +44,7 @@ class HighlightBridge {
   }
 
   function _hlColor(name) {
+    if (window.__hibikiCustomHighlightColor) return window.__hibikiCustomHighlightColor;
     var rgb = BASE_COLORS[name] || BASE_COLORS.yellow;
     var a = _pickAlpha(name, _luminance(window.__hibikiHighlightBg));
     return 'rgba('+rgb[0]+','+rgb[1]+','+rgb[2]+','+a+')';
@@ -222,6 +224,7 @@ class HighlightBridge {
     InAppWebViewController controller,
     List<FavoriteSentence> highlights, {
     String backgroundHex = '#ffffff',
+    String? customHighlightCss,
   }) async {
     final List<Map<String, dynamic>> payload = highlights
         .where((FavoriteSentence h) =>
@@ -234,10 +237,14 @@ class HighlightBridge {
             })
         .toList();
     final String json = jsonEncode(payload);
-    final String escaped = jsonEncode(backgroundHex);
+    final String escapedBg = jsonEncode(backgroundHex);
+    final String escapedCustom = customHighlightCss != null
+        ? jsonEncode(customHighlightCss)
+        : 'null';
     await controller.evaluateJavascript(
       source:
-          'window.__hibikiHighlightBg=$escaped;'
+          'window.__hibikiHighlightBg=$escapedBg;'
+          'window.__hibikiCustomHighlightColor=$escapedCustom;'
           'window.__hibikiApplyHighlights && window.__hibikiApplyHighlights($json);',
     );
   }

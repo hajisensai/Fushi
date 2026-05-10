@@ -906,13 +906,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
             s.sectionIndex == _currentChapter)
         .toList();
     if (chapterFavs.isNotEmpty) {
-      if (_settings?.isContinuousMode == true) {
-        await HighlightBridge.applyHighlights(_controller!, chapterFavs,
-            backgroundHex: _readerBackgroundHex);
-      } else {
-        await HighlightBridge.applyHighlights(_controller!, chapterFavs,
-            backgroundHex: _readerBackgroundHex);
-      }
+      await HighlightBridge.applyHighlights(_controller!, chapterFavs,
+          backgroundHex: _readerBackgroundHex,
+          customHighlightCss: _customHighlightCss);
       await _controller!.evaluateJavascript(
         source: 'window.hoshiReader && window.hoshiReader.buildNodeOffsets();',
       );
@@ -2290,7 +2286,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
               s.sectionIndex == _currentChapter)
           .toList();
       await HighlightBridge.applyHighlights(_controller!, chapterFavs,
-          backgroundHex: _readerBackgroundHex);
+          backgroundHex: _readerBackgroundHex,
+          customHighlightCss: _customHighlightCss);
       await _controller!.evaluateJavascript(
         source: 'window.hoshiReader && window.hoshiReader.buildNodeOffsets();',
       );

@@ -163,6 +163,13 @@ public class FloatingLyricService extends Service {
             } else {
                 lyricText.setText(currentText);
             }
+            lyricText.post(() -> {
+                Layout layout = lyricText.getLayout();
+                if (layout != null) {
+                    int scrollY = layout.getLineTop(lyricText.getLineCount()) - lyricText.getHeight();
+                    lyricText.scrollTo(0, Math.max(0, scrollY));
+                }
+            });
         }
     }
 
@@ -229,15 +236,14 @@ public class FloatingLyricService extends Service {
 
         rootView = new LinearLayout(this);
         rootView.setOrientation(LinearLayout.VERTICAL);
-        rootView.setGravity(Gravity.CENTER);
+        rootView.setGravity(Gravity.CENTER_HORIZONTAL);
         rootView.setPadding(dp16, dp8, dp16, dp8);
 
         lyricText = new TextView(this);
         lyricText.setTextSize(TypedValue.COMPLEX_UNIT_SP, fontSize);
         lyricText.setTextColor(textColor);
-        lyricText.setMaxLines(4);
-        lyricText.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        lyricText.setGravity(Gravity.CENTER);
+        lyricText.setMaxLines(6);
+        lyricText.setGravity(Gravity.CENTER_HORIZONTAL);
         lyricText.setTypeface(Typeface.DEFAULT);
         lyricText.setText(currentText);
 
