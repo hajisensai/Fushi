@@ -1071,6 +1071,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _progressPollTimer?.cancel();
     _flushReadingStats();
 
+    _restoreCompleter?.complete();
+    _restoreCompleter = Completer<void>();
+
     _currentChapter = index;
     _initialProgress = progress;
     _restoreInFlight = true;
@@ -1079,6 +1082,11 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     });
 
     await _loadChapterDirectly(index);
+  }
+
+  Future<void> _navigateToChapterAndWait(int index) async {
+    await _navigateToChapter(index);
+    await _restoreCompleter?.future;
   }
 
   Future<void> _navigateToChapterWithFragment(
@@ -1575,8 +1583,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           bookmarks: bookmarks,
           onJumpToBookmark: (Bookmark bm) async {
             if (bm.sectionIndex != _currentChapter) {
-              _navigateToChapter(bm.sectionIndex);
-              await Future<void>.delayed(const Duration(milliseconds: 600));
+              await _navigateToChapterAndWait(bm.sectionIndex);
             }
             final double progress = bm.normCharOffset / 10000.0;
             await _controller!.evaluateJavascript(
@@ -1597,8 +1604,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           onJumpToFavorite: (FavoriteSentence fav) async {
             if (fav.sectionIndex == null) return;
             if (fav.sectionIndex != _currentChapter) {
-              _navigateToChapter(fav.sectionIndex!);
-              await Future<void>.delayed(const Duration(milliseconds: 600));
+              await _navigateToChapterAndWait(fav.sectionIndex!);
             }
             if (fav.normCharOffset != null) {
               final double progress = fav.normCharOffset! / 10000.0;
@@ -1608,6 +1614,22 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
               );
             }
           },
+          onPlayFavorite: _audiobookController == null
+              ? null
+              : (FavoriteSentence fav) async {
+                  if (fav.normCharOffset == null ||
+                      fav.sectionIndex == null) {
+                    return;
+                  }
+                  if (fav.sectionIndex != _currentChapter) {
+                    await _navigateToChapterAndWait(fav.sectionIndex!);
+                  }
+                  final AudioCue? cue =
+                      _findCueForOffset(fav.normCharOffset!);
+                  if (cue != null) {
+                    await _audiobookController!.playCueOnce(cue);
+                  }
+                },
         );
       },
     );
