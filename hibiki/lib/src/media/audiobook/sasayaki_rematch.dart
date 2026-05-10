@@ -273,7 +273,7 @@ class SasayakiRematch {
         ),
       );
       if (sections.isEmpty) {
-        Fluttertoast.showToast(msg: t.sasayaki_no_idb_sections);
+        Fluttertoast.showToast(msg: t.sasayaki_no_chapters);
         return;
       }
       final MatchResult result = await EpubCueMatcher.matchInIsolate(

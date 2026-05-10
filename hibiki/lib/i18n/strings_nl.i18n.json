@@ -591,7 +591,7 @@
   "sasayaki_auto_picked": "Automatisch geselecteerd $window (treffers $pct%)",
   "sasayaki_auto_failed": "Automatisch matchen mislukt: $error",
   "sasayaki_no_stored_cues": "Geen opgeslagen referenties, kan niet opnieuw uitvoeren",
-  "sasayaki_no_idb_sections": "ttu IDB bevat geen hoofdstuktekst",
+  "sasayaki_no_chapters": "EPUB bevat geen hoofdstuktekst",
   "sasayaki_rematch_failed": "Opnieuw matchen mislukt: $error",
   "sasayaki_search_window": "Zoekvenster",
   "sasayaki_window_hint": "Aantal tekens om vooruit te zoeken per referentie in de tekst. Pas aan als het trefpercentage laag is; te hoog kan de cursor verschuiven bij korte, ruizige referenties.",

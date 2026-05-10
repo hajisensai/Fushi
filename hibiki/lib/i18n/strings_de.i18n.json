@@ -583,7 +583,7 @@
   "sasayaki_auto_picked": "Automatisch $window ausgew?hlt (Treffer $pct%)",
   "sasayaki_auto_failed": "Automatischer Abgleich fehlgeschlagen: $error",
   "sasayaki_no_stored_cues": "Keine gespeicherten Cues, erneuter Abgleich nicht m?glich",
-  "sasayaki_no_idb_sections": "ttu IDB hat keinen Kapiteltext",
+  "sasayaki_no_chapters": "EPUB hat keinen Kapiteltext",
   "sasayaki_rematch_failed": "Neuabgleich fehlgeschlagen: $error",
   "sasayaki_search_window": "Suchfenster",
   "sasayaki_window_hint": "Anzahl der Zeichen, die pro Cue im Text vorw?rts durchsucht werden. Anpassen, wenn die Trefferquote niedrig ist; zu gro? kann den Cursor bei kurzen verrauschten Cues verzerren.",

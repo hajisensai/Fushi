@@ -583,7 +583,7 @@
   "sasayaki_auto_picked": "Selección automática $window (acierto $pct%)",
   "sasayaki_auto_failed": "Emparejamiento automático fallido: $error",
   "sasayaki_no_stored_cues": "No hay marcas almacenadas, no se puede re-ejecutar",
-  "sasayaki_no_idb_sections": "ttu IDB no tiene texto de capítulos",
+  "sasayaki_no_chapters": "EPUB no tiene texto de capítulos",
   "sasayaki_rematch_failed": "Re-emparejamiento fallido: $error",
   "sasayaki_search_window": "Ventana de búsqueda",
   "sasayaki_window_hint": "Número de caracteres a buscar hacia adelante por marca en el texto. Ajusta si la tasa de aciertos es baja; demasiado grande puede desviar el cursor con marcas cortas y ruidosas.",

@@ -596,7 +596,7 @@
   "sasayaki_auto_picked": "تم اختيار $window تلقائياً (نسبة $pct%)",
   "sasayaki_auto_failed": "فشلت المطابقة التلقائية: $error",
   "sasayaki_no_stored_cues": "لا توجد ترجمات مخزّنة، لا يمكن إعادة التشغيل",
-  "sasayaki_no_idb_sections": "ttu IDB لا يحتوي على نص فصول",
+  "sasayaki_no_chapters": "EPUB لا يحتوي على نص فصول",
   "sasayaki_rematch_failed": "فشلت إعادة المطابقة: $error",
   "sasayaki_search_window": "نافذة البحث",
   "sasayaki_window_hint": "عدد الأحرف للبحث للأمام لكل ترجمة في النص. اضبط إذا كانت نسبة الإصابة منخفضة؛ قيمة كبيرة جداً قد تُنحرف المؤشر مع الترجمات القصيرة.",

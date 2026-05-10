@@ -583,7 +583,7 @@
   "sasayaki_auto_picked": "Sélection automatique de $window (taux $pct%)",
   "sasayaki_auto_failed": "échec de la correspondance automatique : $error",
   "sasayaki_no_stored_cues": "Aucun repère enregistré, impossible de relancer",
-  "sasayaki_no_idb_sections": "ttu IDB ne contient aucun texte de chapitre",
+  "sasayaki_no_chapters": "EPUB ne contient aucun texte de chapitre",
   "sasayaki_rematch_failed": "échec de la correspondance : $error",
   "sasayaki_search_window": "Fenêtre de recherche",
   "sasayaki_window_hint": "Nombre de caractères à rechercher en avant par repère dans le texte. Ajustez si le taux de correspondance est faible ; une valeur trop élevée peut fausser le curseur avec des repères courts et bruités.",

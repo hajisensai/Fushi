@@ -641,7 +641,7 @@
     "sasayaki_auto_picked": "Auto-selected $window (hit $pct%)",
     "sasayaki_auto_failed": "Auto-match failed: $error",
     "sasayaki_no_stored_cues": "No stored cues, cannot re-run",
-    "sasayaki_no_idb_sections": "ttu IDB has no chapter text",
+    "sasayaki_no_chapters": "EPUB has no chapter text",
     "sasayaki_rematch_failed": "Re-match failed: $error",
     "sasayaki_search_window": "Search Window",
     "sasayaki_window_hint": "Number of characters to search forward per cue in the text. Adjust if hit rate is low; too large may skew cursor with short noisy cues.",

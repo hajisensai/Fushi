@@ -583,7 +583,7 @@
   "sasayaki_auto_picked": "Автоматически выбрано $window (совпадение $pct%)",
   "sasayaki_auto_failed": "Автосопоставление не удалось: $error",
   "sasayaki_no_stored_cues": "Нет сохранённых меток, перезапуск невозможен",
-  "sasayaki_no_idb_sections": "В ttu IDB нет текста глав",
+  "sasayaki_no_chapters": "В EPUB нет текста глав",
   "sasayaki_rematch_failed": "Пересопоставление не удалось: $error",
   "sasayaki_search_window": "Окно поиска",
   "sasayaki_window_hint": "Количество символов для поиска вперёд на каждую метку. Увеличьте, если процент совпадений низкий; слишком большое значение может сместить курсор при коротких шумных метках.",

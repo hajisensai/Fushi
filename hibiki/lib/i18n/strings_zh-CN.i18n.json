@@ -610,7 +610,7 @@
     "sasayaki_auto_picked": "自动选定 $window（命中 $pct%）",
     "sasayaki_auto_failed": "自动匹配失败：$error",
     "sasayaki_no_stored_cues": "没有已存字幕条目，无法重跑",
-    "sasayaki_no_idb_sections": "ttu IDB 没有章节文本",
+    "sasayaki_no_chapters": "EPUB 没有章节文本",
     "sasayaki_rematch_failed": "重跑失败：$error",
     "sasayaki_search_window": "搜索窗口",
     "sasayaki_window_hint": "每条字幕在正文里向前找的字符数。命中率低时可左右调整，过大容易被短噪声字幕拉偏光标。",

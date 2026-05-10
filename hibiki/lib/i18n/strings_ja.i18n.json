@@ -593,7 +593,7 @@
   "sasayaki_auto_picked": "$window を自動選択しました（ヒット率 $pct%）",
   "sasayaki_auto_failed": "自動マッチングに失敗しました：$error",
   "sasayaki_no_stored_cues": "保存されたキューがないため、再実行できません",
-  "sasayaki_no_idb_sections": "ttu IDBにチャプターテキストがありません",
+  "sasayaki_no_chapters": "EPUBにチャプターテキストがありません",
   "sasayaki_rematch_failed": "再マッチングに失敗しました：$error",
   "sasayaki_search_window": "検索ウィンドウ",
   "sasayaki_window_hint": "テキスト内で各キューごとに前方検索する文字数。ヒット率が低い場合は調整してください。大きすぎると短い/ノイズの多いキューでカーソルがずれる場合があります。",

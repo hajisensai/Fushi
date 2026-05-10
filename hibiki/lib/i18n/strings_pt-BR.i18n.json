@@ -583,7 +583,7 @@
   "sasayaki_auto_picked": "Selecionado automaticamente $window (acerto $pct%)",
   "sasayaki_auto_failed": "Correspondência automática falhou: $error",
   "sasayaki_no_stored_cues": "Nenhuma frase armazenada, n?o é possível reexecutar",
-  "sasayaki_no_idb_sections": "ttu IDB n?o tem texto de capítulo",
+  "sasayaki_no_chapters": "EPUB n?o tem texto de capítulo",
   "sasayaki_rematch_failed": "Falha na correspondência: $error",
   "sasayaki_search_window": "Janela de Busca",
   "sasayaki_window_hint": "Número de caracteres a buscar à frente por frase no texto. Ajuste se a taxa de acerto estiver baixa; valores muito altos podem deslocar o cursor com frases curtas e ruidosas.",

@@ -583,7 +583,7 @@
   "sasayaki_auto_picked": "Otomatis memilih $window (cocok $pct%)",
   "sasayaki_auto_failed": "Pencocokan otomatis gagal: $error",
   "sasayaki_no_stored_cues": "Tidak ada cue tersimpan, tidak dapat menjalankan ulang",
-  "sasayaki_no_idb_sections": "ttu IDB tidak memiliki teks bab",
+  "sasayaki_no_chapters": "EPUB tidak memiliki teks bab",
   "sasayaki_rematch_failed": "Pencocokan ulang gagal: $error",
   "sasayaki_search_window": "Jendela Pencarian",
   "sasayaki_window_hint": "Jumlah karakter untuk dicari ke depan per cue dalam teks. Sesuaikan jika tingkat kecocokan rendah; terlalu besar dapat menggeser kursor dengan cue pendek yang berisik.",

@@ -583,7 +583,7 @@
   "sasayaki_auto_picked": "?? t? ??ng ch?n $window (kh?p $pct%)",
   "sasayaki_auto_failed": "T? ??ng kh?p th?t b?i: $error",
   "sasayaki_no_stored_cues": "Kh?ng có cue ?? l?u, kh?ng th? ch?y l?i",
-  "sasayaki_no_idb_sections": "ttu IDB kh?ng có v?n b?n ch??ng",
+  "sasayaki_no_chapters": "EPUB kh?ng có v?n b?n ch??ng",
   "sasayaki_rematch_failed": "Kh?p l?i th?t b?i: $error",
   "sasayaki_search_window": "C?a s? tìm ki?m",
   "sasayaki_window_hint": "S? ky t? tìm ki?m phía tr??c m?i cue trong v?n b?n. ?i?u ch?nh n?u t? l? kh?p th?p; quá l?n có th? l?ch con tr? v?i cue ng?n nhi?u.",

@@ -591,7 +591,7 @@
   "sasayaki_auto_picked": "Selezione automatica di $window (tasso $pct%)",
   "sasayaki_auto_failed": "Corrispondenza automatica fallita: $error",
   "sasayaki_no_stored_cues": "Nessun riferimento memorizzato, impossibile riavviare",
-  "sasayaki_no_idb_sections": "ttu IDB non contiene testo di capitolo",
+  "sasayaki_no_chapters": "EPUB non contiene testo di capitolo",
   "sasayaki_rematch_failed": "Corrispondenza fallita: $error",
   "sasayaki_search_window": "Finestra di ricerca",
   "sasayaki_window_hint": "Numero di caratteri da cercare in avanti per riferimento nel testo. Regola se il tasso di corrispondenza è basso; un valore troppo alto può falsare il cursore con riferimenti brevi e rumorosi.",
