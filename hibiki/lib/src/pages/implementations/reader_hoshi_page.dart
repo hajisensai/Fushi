@@ -1441,6 +1441,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     );
 
     await _resolveAudioSlot();
+    if (mounted) setState(() {});
   }
 
   int _tocHrefToChapterIndex(String? href) {
@@ -1828,7 +1829,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (_controller == null || _book == null) return;
     final String sentence =
         appModel.currentMediaSource?.currentSentence.text ?? '';
-    if (sentence.isEmpty) return;
+    if (sentence.isEmpty) {
+      Fluttertoast.showToast(msg: t.no_sentence_selected);
+      return;
+    }
 
     final range = _cachedSelectionRange;
     final FavoriteSentence fav = FavoriteSentence(

@@ -778,6 +778,7 @@
   "manage_audio_sources": "Manage audio sources",
   "action_favorite": "Favorite",
   "favorite_added": "Sentence saved to favorites",
+  "no_sentence_selected": "No sentence selected",
   "favorites": "Favorites ($n)",
   "no_favorites": "No saved sentences",
   "favorites_title": "Favorite Sentences",
