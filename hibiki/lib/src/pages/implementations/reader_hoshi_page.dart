@@ -970,7 +970,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         forceReveal || controller.shouldRevealCurrentCue;
     if (reveal) {
       debugPrint('[_onCueChanged] reveal cue=${cue?.textFragmentId} '
-          'forceReveal=$forceReveal');
+          'forceReveal=$forceReveal '
+          'follow=${controller.followAudio.value} '
+          'playing=${controller.isPlaying}');
     }
     AudiobookBridge.highlight(_controller!, cue: cue, reveal: reveal);
     _syncFloatingLyric(controller);
@@ -1451,6 +1453,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (_controller == null) {
       return;
     }
+    if (_settings?.isContinuousMode == true) {
+      _handlePageTurnLimit(direction.jsValue);
+      return;
+    }
     final dynamic result = await _controller!.evaluateJavascript(
       source: ReaderPaginationScripts.paginateInvocation(direction),
     );
@@ -1528,15 +1534,23 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _setupFloatingLyricHandlers();
   }
 
-  Future<void> _toggleFloatingLyric() async {
+  Future<bool> _toggleFloatingLyric() async {
     final bool current = appModel.showFloatingLyric;
     if (!current) {
-      final bool canDraw = await FloatingLyricChannel.canDrawOverlays();
-      if (!canDraw) {
-        Fluttertoast.showToast(msg: t.floating_lyric_hint);
-        return;
-      }
-      await _showFloatingLyricOverlay();
+      final bool shown = await FloatingLyricChannel.show();
+      if (!shown) return false;
+      await FloatingLyricChannel.updateStyle(
+        fontSize: appModel.floatingLyricFontSize,
+      );
+      await FloatingLyricChannel.updateLabels(
+        previous: t.floating_lyric_previous,
+        playPause: t.floating_lyric_play_pause,
+        next: t.floating_lyric_next,
+        lock: t.floating_lyric_lock,
+        unlock: t.floating_lyric_unlock,
+        close: t.floating_lyric_close,
+      );
+      _setupFloatingLyricHandlers();
       if (_audiobookController != null) {
         _syncFloatingLyric(_audiobookController!);
       }
@@ -1545,6 +1559,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       FloatingLyricChannel.clearEventHandlers();
     }
     await appModel.setShowFloatingLyric(!current);
+    return true;
   }
 
   void _setupFloatingLyricHandlers() {
