@@ -864,6 +864,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         .toList();
     if (chapterFavs.isNotEmpty) {
       await HighlightBridge.applyHighlights(_controller!, chapterFavs);
+      await _controller!.evaluateJavascript(
+        source: 'window.hoshiReader && window.hoshiReader.buildNodeOffsets();',
+      );
     }
   }
 
@@ -1937,6 +1940,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
               s.sectionIndex == _currentChapter)
           .toList();
       await HighlightBridge.applyHighlights(_controller!, chapterFavs);
+      await _controller!.evaluateJavascript(
+        source: 'window.hoshiReader && window.hoshiReader.buildNodeOffsets();',
+      );
     }
     Fluttertoast.showToast(msg: t.favorite_added);
   }
