@@ -903,12 +903,12 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         'continuous=${_settings?.isContinuousMode}');
     if (chapterFavs.isNotEmpty) {
       if (_settings?.isContinuousMode == true) {
-        final String? scrollBefore = await _controller!.evaluateJavascript(
+        final Object? scrollBefore = await _controller!.evaluateJavascript(
           source: '(document.scrollingElement||document.documentElement).scrollTop',
         );
         debugPrint('[_applyChapterHighlights] scrollBefore=$scrollBefore');
         await HighlightBridge.applyHighlights(_controller!, chapterFavs);
-        final String? scrollAfter = await _controller!.evaluateJavascript(
+        final Object? scrollAfter = await _controller!.evaluateJavascript(
           source: '(document.scrollingElement||document.documentElement).scrollTop',
         );
         debugPrint('[_applyChapterHighlights] scrollAfter=$scrollAfter');
