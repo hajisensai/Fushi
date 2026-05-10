@@ -65,7 +65,7 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
           return;
         }
         try {
-          final Uint8List bytes = file.readAsBytesSync();
+          final Uint8List bytes = await file.readAsBytes();
           if (bytes.isNotEmpty) {
             setState(() => _images.add(bytes));
           }

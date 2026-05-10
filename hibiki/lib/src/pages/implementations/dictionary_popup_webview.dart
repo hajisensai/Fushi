@@ -144,9 +144,9 @@ class DictionaryPopupWebViewState
     String bgCssOverride = '';
     if (bgOverride != null) {
       final int br = (bgOverride.r * 255.0).round().clamp(0, 255);
-      final int bgg = (bgOverride.g * 255.0).round().clamp(0, 255);
+      final int bg = (bgOverride.g * 255.0).round().clamp(0, 255);
       final int bb = (bgOverride.b * 255.0).round().clamp(0, 255);
-      bgCssOverride = "document.documentElement.style.setProperty('--background-color', 'rgb($br, $bgg, $bb)');";
+      bgCssOverride = "document.documentElement.style.setProperty('--background-color', 'rgb($br, $bg, $bb)');";
     }
 
     final bool needsScrollCheck = widget.onScrolledToBottom != null;
