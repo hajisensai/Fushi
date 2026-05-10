@@ -37,15 +37,20 @@ class EpubBook {
     return resources[normalizeHref(path)]?.mediaType ?? fallbackMimeType(path);
   }
 
+  static final RegExp _rtRpRegex =
+      RegExp(r'<r[tp][^>]*>.*?</r[tp]>', dotAll: true);
+  static final RegExp _htmlTagRegex = RegExp(r'<[^>]+>');
+  static final RegExp _whitespaceRegex = RegExp(r'\s+');
+
   /// Plain text of chapter at [index], with ruby annotations stripped.
   /// Used by EpubSrtMatcher and sasayaki rematch for audiobook alignment.
   String chapterPlainText(int index) {
     if (index < 0 || index >= chapters.length) return '';
     return chapters[index]
         .html
-        .replaceAll(RegExp(r'<ruby[^>]*>.*?</ruby>', dotAll: true), '')
-        .replaceAll(RegExp(r'<[^>]+>'), '')
-        .replaceAll(RegExp(r'\s+'), ' ')
+        .replaceAll(_rtRpRegex, '')
+        .replaceAll(_htmlTagRegex, '')
+        .replaceAll(_whitespaceRegex, ' ')
         .trim();
   }
 
