@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -47,6 +48,7 @@ class _RecursiveDictionaryPageState
   final List<_NestedPopupEntry> _popupStack = [];
 
   bool _isSearching = false;
+  Timer? _debounceTimer;
 
   @override
   void initState() {
@@ -67,6 +69,7 @@ class _RecursiveDictionaryPageState
 
   @override
   void dispose() {
+    _debounceTimer?.cancel();
     appModelNoUpdate.dictionarySearchAgainNotifier.removeListener(searchAgain);
     _searchFocusNode.dispose();
     _controller.dispose();
@@ -245,13 +248,16 @@ class _RecursiveDictionaryPageState
 
   Duration get historyDelay => Duration.zero;
 
-  void onQueryChanged(String query) async {
-    if (!appModel.autoSearchEnabled) {
-      return;
-    }
-
-    if (mounted) {
-      search(query);
+  void onQueryChanged(String query) {
+    _debounceTimer?.cancel();
+    if (!appModel.autoSearchEnabled) return;
+    final int delay = appModel.searchDebounceDelay;
+    if (delay <= 0) {
+      if (mounted) search(query);
+    } else {
+      _debounceTimer = Timer(Duration(milliseconds: delay), () {
+        if (mounted) search(query);
+      });
     }
   }
 
@@ -485,7 +491,6 @@ class _RecursiveDictionaryPageState
               children: [
                 Expanded(
                   child: DictionaryPopupWebView(
-                    key: ValueKey(_result),
                     result: _result!,
                     onTextSelected: (text, localRect) {
                       pushNestedPopup(text, localRect, replaceStack: true);

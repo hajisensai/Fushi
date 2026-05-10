@@ -34,6 +34,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
   bool _isSearching = false;
   String _lastQuery = '';
   bool _allLoaded = false;
+  Timer? _debounceTimer;
 
   @override
   void initState() {
@@ -58,6 +59,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
     appModelNoUpdate.dictionarySearchAgainNotifier.removeListener(_searchAgain);
     appModelNoUpdate.dictionaryEntriesNotifier
         .removeListener(_onDictionaryEntriesChanged);
+    _debounceTimer?.cancel();
     _searchFocusNode.dispose();
     _controller.dispose();
     super.dispose();
@@ -338,12 +340,20 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
   // ── search logic ───────────────────────────────────────────────────
 
   void _onQueryChanged(String query) {
+    _debounceTimer?.cancel();
     if (query.isEmpty) {
       _clearSearch();
       return;
     }
     if (!appModel.autoSearchEnabled) return;
-    if (mounted) _search(query);
+    final int delay = appModel.searchDebounceDelay;
+    if (delay <= 0) {
+      if (mounted) _search(query);
+    } else {
+      _debounceTimer = Timer(Duration(milliseconds: delay), () {
+        if (mounted) _search(query);
+      });
+    }
   }
 
   void _searchAgain() {
@@ -438,7 +448,6 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
         return Stack(
           children: [
             DictionaryPopupWebView(
-              key: ValueKey(_result),
               result: _result!,
               onTextSelected: (text, localRect) {
                 _pushNestedPopup(text, localRect, replaceStack: true);
