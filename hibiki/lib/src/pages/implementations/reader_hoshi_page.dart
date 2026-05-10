@@ -1096,11 +1096,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   Future<void> _reloadAtCurrentProgress() async {
     if (_controller == null) return;
-    final dynamic result = await _controller!.evaluateJavascript(
-      source: 'window.hoshiReader ? window.hoshiReader.calculateProgress() : 0',
-    );
-    final double progress = _toDouble(result) ?? 0.0;
-    await _navigateToChapter(_currentChapter, progress: progress);
+    await _navigateToChapter(_currentChapter, progress: _displayedProgress);
   }
 
   Future<void> _navigateToChapter(int index, {double progress = 0.0}) async {
