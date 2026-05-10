@@ -1575,8 +1575,15 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   Future<void> _showFloatingLyricOverlay() async {
     await FloatingLyricChannel.show();
+    final Color bg = _themeBackgroundColor();
+    final Color fg = _themeTextColor();
+    final bool dark = _isReaderThemeDark;
     await FloatingLyricChannel.updateStyle(
       fontSize: appModel.floatingLyricFontSize,
+      textColor: fg.value,
+      bgColor: bg.withAlpha(dark ? 230 : 220).value,
+      buttonTextColor: fg.value,
+      buttonBgColor: (dark ? const Color(0x33FFFFFF) : const Color(0x1A000000)).value,
     );
     await FloatingLyricChannel.updateLabels(
       previous: t.floating_lyric_previous,
@@ -1594,8 +1601,15 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (!current) {
       final bool shown = await FloatingLyricChannel.show();
       if (!shown) return false;
+      final Color bg = _themeBackgroundColor();
+      final Color fg = _themeTextColor();
+      final bool dark = _isReaderThemeDark;
       await FloatingLyricChannel.updateStyle(
         fontSize: appModel.floatingLyricFontSize,
+        textColor: fg.value,
+        bgColor: bg.withAlpha(dark ? 230 : 220).value,
+        buttonTextColor: fg.value,
+        buttonBgColor: (dark ? const Color(0x33FFFFFF) : const Color(0x1A000000)).value,
       );
       await FloatingLyricChannel.updateLabels(
         previous: t.floating_lyric_previous,
@@ -1854,7 +1868,16 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           floatingLyricFontSize: appModel.floatingLyricFontSize,
           onFloatingLyricFontSizeChanged: (double v) async {
             await appModel.setFloatingLyricFontSize(v);
-            await FloatingLyricChannel.updateStyle(fontSize: v);
+            final Color bg = _themeBackgroundColor();
+            final Color fg = _themeTextColor();
+            final bool dark = _isReaderThemeDark;
+            await FloatingLyricChannel.updateStyle(
+              fontSize: v,
+              textColor: fg.value,
+              bgColor: bg.withAlpha(dark ? 230 : 220).value,
+              buttonTextColor: fg.value,
+              buttonBgColor: (dark ? const Color(0x33FFFFFF) : const Color(0x1A000000)).value,
+            );
           },
           showMediaNotification: appModel.showMediaNotification,
           onToggleMediaNotification: _toggleMediaNotification,

@@ -235,7 +235,8 @@ public class FloatingLyricService extends Service {
         lyricText = new TextView(this);
         lyricText.setTextSize(TypedValue.COMPLEX_UNIT_SP, fontSize);
         lyricText.setTextColor(textColor);
-        lyricText.setMaxLines(3);
+        lyricText.setMaxLines(4);
+        lyricText.setEllipsize(android.text.TextUtils.TruncateAt.END);
         lyricText.setGravity(Gravity.CENTER);
         lyricText.setTypeface(Typeface.DEFAULT);
         lyricText.setText(currentText);
