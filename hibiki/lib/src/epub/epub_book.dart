@@ -37,8 +37,10 @@ class EpubBook {
     return resources[normalizeHref(path)]?.mediaType ?? fallbackMimeType(path);
   }
 
+  // Must match JS isFurigana() in reader_pagination_scripts.dart — both
+  // sides strip <rt>/<rp> but keep ruby base text so normalized offsets agree.
   static final RegExp _rtRpRegex =
-      RegExp(r'<r[tp][^>]*>.*?</r[tp]>', dotAll: true);
+      RegExp(r'<r[tp]c?[^>]*>.*?</r[tp]c?>', caseSensitive: false, dotAll: true);
   static final RegExp _htmlTagRegex = RegExp(r'<[^>]+>');
   static final RegExp _whitespaceRegex = RegExp(r'\s+');
 
