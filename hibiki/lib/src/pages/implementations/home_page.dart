@@ -232,7 +232,6 @@ class _HomePageState extends BasePageState<HomePage>
             repo: SrtBookRepository(appModel.database),
             audiobookRepo: AudiobookRepository(appModel.database),
             db: appModel.database,
-            ttuMediaSourceIdentifier: src.uniqueKey,
           ),
         );
         ref.invalidate(hoshiBooksProvider(appModel.targetLanguage));

@@ -45,6 +45,10 @@ class ReaderHoshiSource extends ReaderMediaSource {
 
   static int get defaultScrollingSpeed => 100;
 
+  static String mediaIdentifierFor(int bookId) => 'hoshi://book/$bookId';
+
+  static String bookUidFor(int bookId) => 'reader_ttu/hoshi://book/$bookId';
+
   // ── Sasayaki sentence audio ─────────────────────────────────────────
 
   AudioCue? _pendingCue;
@@ -167,7 +171,6 @@ class ReaderHoshiSource extends ReaderMediaSource {
               repo: SrtBookRepository(appModel.database),
               audiobookRepo: AudiobookRepository(appModel.database),
               db: appModel.database,
-              ttuMediaSourceIdentifier: uniqueKey,
             ),
           );
           if (imported == true) {
@@ -262,7 +265,7 @@ class ReaderHoshiSource extends ReaderMediaSource {
       }
 
       items.add(MediaItem(
-        mediaIdentifier: 'hoshi://book/${book.id}',
+        mediaIdentifier: mediaIdentifierFor(book.id),
         title: book.title,
         imageUrl: imageUrl,
         base64Image: null,

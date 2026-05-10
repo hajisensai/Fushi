@@ -22,7 +22,7 @@ MediaItem buildCollectionReaderMediaItem({
   required String title,
 }) {
   return MediaItem(
-    mediaIdentifier: 'hoshi://book/$ttuId',
+    mediaIdentifier: ReaderHoshiSource.mediaIdentifierFor(ttuId),
     title: title,
     mediaTypeIdentifier: ReaderHoshiSource.instance.mediaType.uniqueKey,
     mediaSourceIdentifier: ReaderHoshiSource.instance.uniqueKey,

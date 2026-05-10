@@ -262,7 +262,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
         builder: (_) => ReaderHoshiPage(
           bookId: book.ttuBookId,
           item: MediaItem(
-            mediaIdentifier: 'hoshi://book/${book.ttuBookId}',
+            mediaIdentifier: ReaderHoshiSource.mediaIdentifierFor(book.ttuBookId),
             title: book.title,
             mediaTypeIdentifier:
                 ReaderHoshiSource.instance.mediaType.uniqueKey,

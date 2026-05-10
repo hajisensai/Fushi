@@ -26,6 +26,7 @@ import 'package:hibiki/src/epub/epub_importer.dart';
 import 'package:hibiki/src/epub/epub_parser.dart';
 import 'package:hibiki/src/epub/epub_storage.dart';
 import 'package:hibiki/src/media/audiobook/vtt_parser.dart';
+import 'package:hibiki/src/media/sources/reader_hoshi_source.dart';
 import 'package:hibiki/utils.dart';
 
 /// 统一"导入书"对话框。EPUB、字幕、音频可按需组合，一次导入。
@@ -44,16 +45,12 @@ class BookImportDialog extends StatefulWidget {
     required this.repo,
     required this.audiobookRepo,
     required this.db,
-    required this.ttuMediaSourceIdentifier,
     super.key,
   });
 
   final SrtBookRepository repo;
   final AudiobookRepository audiobookRepo;
   final HibikiDatabase db;
-
-  /// `MediaItem.mediaSourceIdentifier` 值。
-  final String ttuMediaSourceIdentifier;
 
   @override
   State<BookImportDialog> createState() => _BookImportDialogState();
@@ -579,9 +576,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
     } catch (e) {
       debugPrint('[hibiki-import] parseFromExtracted failed: $e');
     }
-    final String mediaIdentifier = 'hoshi://book/$bookId';
-    final String bookUid =
-        '${widget.ttuMediaSourceIdentifier}/$mediaIdentifier';
+    final String bookUid = ReaderHoshiSource.bookUidFor(bookId);
 
     _reportProgress(0.45, t.import_step_parsing);
     final String ext = _subtitlePath!.split('.').last.toLowerCase();
