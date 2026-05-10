@@ -52,11 +52,21 @@ class EpubBook {
     'lrm': '‎', 'rlm': '‏', 'ndash': '–',
     'mdash': '—', 'lsquo': '‘', 'rsquo': '’',
     'ldquo': '“', 'rdquo': '”', 'hellip': '…',
+    'shy': '­', 'copy': '©', 'reg': '®',
+    'trade': '™', 'bull': '•', 'middot': '·',
   };
 
   static String _decodeEntity(Match m) {
-    if (m[2] != null) return String.fromCharCode(int.parse(m[2]!, radix: 16));
-    if (m[3] != null) return String.fromCharCode(int.parse(m[3]!));
+    try {
+      if (m[2] != null) {
+        return String.fromCharCode(int.parse(m[2]!, radix: 16));
+      }
+      if (m[3] != null) {
+        return String.fromCharCode(int.parse(m[3]!));
+      }
+    } on Object {
+      return m[0]!;
+    }
     return _namedEntities[m[4]] ?? m[0]!;
   }
 
