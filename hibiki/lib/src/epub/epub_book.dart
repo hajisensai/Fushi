@@ -2,6 +2,8 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:hibiki/src/media/sources/reader_hoshi_source.dart';
+import 'package:html/parser.dart' as html_parser;
+import 'package:html/dom.dart' as html_dom;
 import 'package:path/path.dart' as p;
 
 class EpubBook {
@@ -37,50 +39,26 @@ class EpubBook {
     return resources[normalizeHref(path)]?.mediaType ?? fallbackMimeType(path);
   }
 
-  // Must match JS isFurigana() in reader_pagination_scripts.dart — both
-  // sides strip <rt>/<rp> but keep ruby base text so normalized offsets agree.
-  static final RegExp _rtRpRegex =
-      RegExp(r'<r[tp]c?[^>]*>.*?</r[tp]c?>', caseSensitive: false, dotAll: true);
-  static final RegExp _htmlTagRegex = RegExp(r'<[^>]+>');
-  static final RegExp _entityRegex = RegExp(r'&(#x([0-9a-fA-F]+)|#([0-9]+)|([a-zA-Z]+));');
-  static final RegExp _whitespaceRegex = RegExp(r'\s+');
-
-  static const Map<String, String> _namedEntities = <String, String>{
-    'amp': '&', 'lt': '<', 'gt': '>', 'quot': '"', 'apos': "'",
-    'nbsp': ' ', 'ensp': ' ', 'emsp': ' ',
-    'thinsp': ' ', 'zwnj': '‌', 'zwj': '‍',
-    'lrm': '‎', 'rlm': '‏', 'ndash': '–',
-    'mdash': '—', 'lsquo': '‘', 'rsquo': '’',
-    'ldquo': '“', 'rdquo': '”', 'hellip': '…',
-    'shy': '­', 'copy': '©', 'reg': '®',
-    'trade': '™', 'bull': '•', 'middot': '·',
-  };
-
-  static String _decodeEntity(Match m) {
-    try {
-      if (m[2] != null) {
-        return String.fromCharCode(int.parse(m[2]!, radix: 16));
-      }
-      if (m[3] != null) {
-        return String.fromCharCode(int.parse(m[3]!));
-      }
-    } on Object {
-      return m[0]!;
-    }
-    return _namedEntities[m[4]] ?? m[0]!;
-  }
-
+  // Uses package:html DOM parser — same parsing semantics as the WebView.
+  // Entities, nesting, malformed HTML are all handled by the parser, not regex.
+  // Must match JS isFurigana() in reader_pagination_scripts.dart: both sides
+  // drop <rt>/<rp>/<rtc> content but keep ruby base text.
   /// Plain text of chapter at [index], with ruby annotations stripped.
   /// Used by EpubSrtMatcher and sasayaki rematch for audiobook alignment.
   String chapterPlainText(int index) {
     if (index < 0 || index >= chapters.length) return '';
-    return chapters[index]
-        .html
-        .replaceAll(_rtRpRegex, '')
-        .replaceAll(_htmlTagRegex, '')
-        .replaceAllMapped(_entityRegex, _decodeEntity)
-        .replaceAll(_whitespaceRegex, ' ')
-        .trim();
+    final html_dom.Document doc =
+        html_parser.parse(chapters[index].html);
+    _removeRubyAnnotations(doc.body);
+    final String raw = doc.body?.text ?? '';
+    return raw.replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  static void _removeRubyAnnotations(html_dom.Element? root) {
+    if (root == null) return;
+    root.querySelectorAll('rt, rp, rtc').forEach(
+      (html_dom.Element el) => el.remove(),
+    );
   }
 
   ({int chapterIndex, String? fragment})? resolveInternalLink(String url) {
