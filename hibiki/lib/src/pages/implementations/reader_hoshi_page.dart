@@ -488,24 +488,11 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final Size screen = MediaQuery.of(context).size;
     final double w = screen.width;
     final double h = screen.height - _readerTopOffset - _readerBottomReserve;
-    if (_lastSyncedWidth > 0 && (w - _lastSyncedWidth).abs() > 1) {
-      _lastSyncedWidth = w;
-      final dynamic freshResult = await _controller!.evaluateJavascript(
-        source: ReaderPaginationScripts.progressInvocation(),
-      );
-      if (freshResult != null) {
-        final double? p = double.tryParse(freshResult.toString());
-        if (p != null && p > 0) {
-          _displayedProgress = p;
-        }
-      }
-      await _reloadAtCurrentProgress();
-      return;
-    }
     _lastSyncedWidth = w;
-    _controller!.evaluateJavascript(
+    await _controller!.evaluateJavascript(
       source: ReaderPaginationScripts.updatePageSizeInvocation(w, h),
     );
+    _refreshProgress();
   }
 
   // ── UI Build ──────────────────────────────────────────────────────
