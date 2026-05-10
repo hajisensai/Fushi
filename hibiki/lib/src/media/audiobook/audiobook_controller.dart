@@ -670,13 +670,14 @@ class AudiobookPlayerController extends ChangeNotifier {
   }
 
   /// 对齐 Sasayaki `displayCue(cue, reveal: autoScroll && hasPlayedOnce)`：
-  /// 高亮时是否把 cue 滚进视口。Follow audio OFF 或者还没按过 play 时，
-  /// 即使 cue 切换也**只加高亮 class、不动视口**，让用户保持当前阅读位置
-  /// 不被音频位置覆盖。
+  /// 高亮时是否把 cue 滚进视口。Follow audio OFF、还没按过 play、或音频
+  /// 已暂停时，即使 cue 切换也**只加高亮 class、不动视口**，让用户保持
+  /// 当前阅读位置不被音频位置覆盖。
   ///
   /// reader 的 `_onCueChanged` 在调 AudiobookBridge.highlight 时读一次
   /// 这个值传过去。
-  bool get shouldRevealCurrentCue => followAudio.value && _hasPlayedOnce;
+  bool get shouldRevealCurrentCue =>
+      followAudio.value && _hasPlayedOnce && _player.playing;
 
   /// 诊断用：暴露 `_hasPlayedOnce` 供 reader 日志打印，不参与业务判断。
   bool get hasPlayedOnce => _hasPlayedOnce;
