@@ -60,34 +60,14 @@ class ReaderPaginationScripts {
     );
   }
 
-  static String _paginatedShellScript({
-    required double initialProgress,
-    String? sasayakiCuesJson,
-    String? initialFragment,
-  }) {
-    final String initialRestoreScript = initialFragment != null
-        ? 'window.hoshiReader.jumpToFragment(${_jsStringLiteral(initialFragment)});'
-        : 'window.hoshiReader.restoreProgress($initialProgress);';
+  // ── Shared JS (properties + methods used by both modes) ────────────
 
-    final String sasayakiInit = sasayakiCuesJson != null
-        ? 'window.hoshiReader.applySasayakiCues($sasayakiCuesJson);'
-        : '';
-
-    const int bottomOverlapPx = ReaderLayoutDefaults.bottomOverlapPx;
-    const double imageWidthRatio = ReaderLayoutDefaults.imageWidthViewportRatio;
-    const String spacerHeight = ReaderLayoutDefaults.trailingSpacerHeightCss;
-    const String spacerWidth = ReaderLayoutDefaults.trailingSpacerWidthCss;
-
-    return '''<script>
-window.hoshiReader = {
-  pageHeight: 0,
-  pageWidth: 0,
+  static const String _sharedJs = r'''
   cueWrappers: new Map(),
   activeCueId: null,
   ttuRegexNegated: /[^0-9A-Za-z○◯々-〇〻ぁ-ゖゝ-ゟァ-ヺー-ヿ０-９Ａ-Ｚａ-ｚｦ-ﾝ\u{2E80}-\u{2EFF}\u{2F00}-\u{2FDF}\u{3400}-\u{4DBF}\u{4E00}-\u{9FFF}\u{F900}-\u{FAFF}\u{20000}-\u{2A6DF}\u{2A700}-\u{2EBE0}\u{2F800}-\u{2FA1F}\u{30000}-\u{323AF}]+/gimu,
   ttuRegex: /[0-9A-Za-z○◯々-〇〻ぁ-ゖゝ-ゟァ-ヺー-ヿ０-９Ａ-Ｚａ-ｚｦ-ﾝ\u{2E80}-\u{2EFF}\u{2F00}-\u{2FDF}\u{3400}-\u{4DBF}\u{4E00}-\u{9FFF}\u{F900}-\u{FAFF}\u{20000}-\u{2A6DF}\u{2A700}-\u{2EBE0}\u{2F800}-\u{2FA1F}\u{30000}-\u{323AF}]/iu,
   nodeStartOffsets: new WeakMap(),
-  paginationMetrics: null,
   isVertical: function() {
     return window.getComputedStyle(document.body).writingMode === "vertical-rl";
   },
@@ -219,12 +199,8 @@ window.hoshiReader = {
     if (!wrappers || !wrappers.length) return null;
     this.activeCueId = cueId;
     wrappers.forEach(function(wrapper) { wrapper.classList.add('hoshi-sasayaki-active'); });
-    if (reveal) {
-      var range = document.createRange();
-      range.selectNodeContents(wrappers[0]);
-      if (this.scrollToRange(range)) {
-        return this.calculateProgress();
-      }
+    if (reveal && this.revealElement(wrappers[0])) {
+      return this.calculateProgress();
     }
     return null;
   },
@@ -250,6 +226,86 @@ window.hoshiReader = {
       parent.removeChild(wrapper);
       parent.normalize();
     });
+  },
+''';
+
+  // ── Shared init logic (viewport + SVG + images) ────────────────────
+
+  static const String _sharedInitViewport = r'''
+  var viewport = document.querySelector('meta[name="viewport"]');
+  if (viewport) { viewport.remove(); }
+  var newViewport = document.createElement('meta');
+  newViewport.name = 'viewport';
+  newViewport.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+  document.head.appendChild(newViewport);
+''';
+
+  static String _sharedInitImages(double imageWidthRatio) => '''
+  Array.from(document.querySelectorAll('svg')).forEach(function(svg) {
+    if (svg.querySelector('image') && svg.getAttribute('preserveAspectRatio') === 'none') {
+      svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    }
+  });
+  var imagePromises = Array.from(document.querySelectorAll('img')).map(function(img) {
+    return new Promise(function(resolve) {
+      var isGaiji = img.classList.contains('gaiji') || img.classList.contains('gaiji-line');
+      var mark = function() {
+        if (!isGaiji && (img.naturalWidth > 256 || img.naturalHeight > 256)) {
+          img.classList.add('block-img');
+        }
+        resolve();
+      };
+      if (img.complete && img.naturalWidth > 0) {
+        mark();
+      } else {
+        img.onload = mark;
+        img.onerror = function() { resolve(); };
+      }
+    });
+  });
+''';
+
+  static const String _sharedInitBoot = r'''
+window.addEventListener('load', function() {
+  window.hoshiReader.initialize();
+});
+if (document.readyState === 'complete') {
+  window.hoshiReader.initialize();
+}
+''';
+
+  // ── Paginated mode ─────────────────────────────────────────────────
+
+  static String _paginatedShellScript({
+    required double initialProgress,
+    String? sasayakiCuesJson,
+    String? initialFragment,
+  }) {
+    final String initialRestoreScript = initialFragment != null
+        ? 'window.hoshiReader.jumpToFragment(${_jsStringLiteral(initialFragment)});'
+        : 'window.hoshiReader.restoreProgress($initialProgress);';
+
+    final String sasayakiInit = sasayakiCuesJson != null
+        ? 'window.hoshiReader.applySasayakiCues($sasayakiCuesJson);'
+        : '';
+
+    const int bottomOverlapPx = ReaderLayoutDefaults.bottomOverlapPx;
+    const double imageWidthRatio = ReaderLayoutDefaults.imageWidthViewportRatio;
+    const String spacerHeight = ReaderLayoutDefaults.trailingSpacerHeightCss;
+    const String spacerWidth = ReaderLayoutDefaults.trailingSpacerWidthCss;
+
+    final String initImages = _sharedInitImages(imageWidthRatio);
+
+    return '''<script>
+window.hoshiReader = {
+  pageHeight: 0,
+  pageWidth: 0,
+  paginationMetrics: null,
+$_sharedJs
+  revealElement: function(element) {
+    var range = document.createRange();
+    range.selectNodeContents(element);
+    return this.scrollToRange(range);
   },
   getScrollContext: function() {
     var vertical = this.isVertical();
@@ -547,12 +603,7 @@ window.hoshiReader = {
 window.hoshiReader.initialize = function() {
   if (window.hoshiReader.didInitialize) return;
   window.hoshiReader.didInitialize = true;
-  var viewport = document.querySelector('meta[name="viewport"]');
-  if (viewport) { viewport.remove(); }
-  var newViewport = document.createElement('meta');
-  newViewport.name = 'viewport';
-  newViewport.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
-  document.head.appendChild(newViewport);
+$_sharedInitViewport
   var pageHeight = window.innerHeight + $bottomOverlapPx;
   var pageWidth = window.innerWidth;
   document.documentElement.style.setProperty('--page-height', pageHeight + 'px');
@@ -561,28 +612,7 @@ window.hoshiReader.initialize = function() {
   document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, pageHeight - $bottomOverlapPx) + 'px');
   window.hoshiReader.pageHeight = pageHeight;
   window.hoshiReader.pageWidth = pageWidth;
-  Array.from(document.querySelectorAll('svg')).forEach(function(svg) {
-    if (svg.querySelector('image') && svg.getAttribute('preserveAspectRatio') === 'none') {
-      svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-    }
-  });
-  var imagePromises = Array.from(document.querySelectorAll('img')).map(function(img) {
-    return new Promise(function(resolve) {
-      var isGaiji = img.classList.contains('gaiji') || img.classList.contains('gaiji-line');
-      var mark = function() {
-        if (!isGaiji && (img.naturalWidth > 256 || img.naturalHeight > 256)) {
-          img.classList.add('block-img');
-        }
-        resolve();
-      };
-      if (img.complete && img.naturalWidth > 0) {
-        mark();
-      } else {
-        img.onload = mark;
-        img.onerror = function() { resolve(); };
-      }
-    });
-  });
+$initImages
   var spacer = document.createElement('div');
   spacer.style.height = '$spacerHeight';
   spacer.style.width = '$spacerWidth';
@@ -634,14 +664,11 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
     this.setPagePosition(newContext, targetScroll);
   }
 };
-window.addEventListener('load', function() {
-  window.hoshiReader.initialize();
-});
-if (document.readyState === 'complete') {
-  window.hoshiReader.initialize();
-}
+$_sharedInitBoot
 </script>''';
   }
+
+  // ── Continuous mode ────────────────────────────────────────────────
 
   static String _continuousShellScript({
     required double initialProgress,
@@ -659,34 +686,11 @@ if (document.readyState === 'complete') {
     const int bottomOverlapPx = ReaderLayoutDefaults.bottomOverlapPx;
     const double imageWidthRatio = ReaderLayoutDefaults.imageWidthViewportRatio;
 
+    final String initImages = _sharedInitImages(imageWidthRatio);
+
     return '''<script>
 window.hoshiReader = {
-  cueWrappers: new Map(),
-  activeCueId: null,
-  ttuRegexNegated: /[^0-9A-Za-z○◯々-〇〻ぁ-ゖゝ-ゟァ-ヺー-ヿ０-９Ａ-Ｚａ-ｚｦ-ﾝ\u{2E80}-\u{2EFF}\u{2F00}-\u{2FDF}\u{3400}-\u{4DBF}\u{4E00}-\u{9FFF}\u{F900}-\u{FAFF}\u{20000}-\u{2A6DF}\u{2A700}-\u{2EBE0}\u{2F800}-\u{2FA1F}\u{30000}-\u{323AF}]+/gimu,
-  ttuRegex: /[0-9A-Za-z○◯々-〇〻ぁ-ゖゝ-ゟァ-ヺー-ヿ０-９Ａ-Ｚａ-ｚｦ-ﾝ\u{2E80}-\u{2EFF}\u{2F00}-\u{2FDF}\u{3400}-\u{4DBF}\u{4E00}-\u{9FFF}\u{F900}-\u{FAFF}\u{20000}-\u{2A6DF}\u{2A700}-\u{2EBE0}\u{2F800}-\u{2FA1F}\u{30000}-\u{323AF}]/iu,
-  nodeStartOffsets: new WeakMap(),
-  isVertical: function() {
-    return window.getComputedStyle(document.body).writingMode === "vertical-rl";
-  },
-  isFurigana: function(node) {
-    var el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
-    return !!(el && el.closest('rt, rp'));
-  },
-  normalizeText: function(text) {
-    return (text || '').replace(this.ttuRegexNegated, '');
-  },
-  countChars: function(text) {
-    return Array.from(this.normalizeText(text)).length;
-  },
-  isMatchableChar: function(char) {
-    return this.ttuRegex.test(char || '');
-  },
-  notifyRestoreComplete: function() {
-    if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
-      window.flutter_inappwebview.callHandler('onRestoreComplete');
-    }
-  },
+$_sharedJs
   scrollToChapterStart: function() {
     var root = document.scrollingElement || document.documentElement;
     window.scrollTo(0, 0);
@@ -697,31 +701,11 @@ window.hoshiReader = {
     document.body.scrollTop = 0;
     document.body.scrollLeft = 0;
   },
-  createWalker: function(rootNode) {
-    var root = rootNode || document.body;
-    return document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-      acceptNode: (n) => this.isFurigana(n) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
-    });
-  },
-  getRect: function(target) {
-    var rect = target.getClientRects()[0];
-    return rect || target.getBoundingClientRect();
-  },
-  buildNodeOffsets: function() {
-    var offsets = new WeakMap();
-    var walker = this.createWalker();
-    var count = 0;
-    var node;
-    while (node = walker.nextNode()) {
-      offsets.set(node, count);
-      count += this.countChars(node.textContent);
-    }
-    this.nodeStartOffsets = offsets;
-  },
   scrollToTarget: function(target) {
     var rect = this.getRect(target);
     var margin = 0.2;
-    if (this.isVertical()) {
+    var vertical = this.isVertical();
+    if (vertical) {
       var safeLeft = window.innerWidth * margin;
       var safeRight = window.innerWidth * (1 - margin);
       if (rect.left >= safeLeft && rect.right <= safeRight) return false;
@@ -730,124 +714,15 @@ window.hoshiReader = {
       var safeBottom = window.innerHeight * (1 - margin);
       if (rect.top >= safeTop && rect.bottom <= safeBottom) return false;
     }
-    target.scrollIntoView({ block: 'start', inline: 'nearest', behavior: 'smooth' });
+    target.scrollIntoView({
+      block: vertical ? 'nearest' : 'start',
+      inline: vertical ? 'start' : 'nearest',
+      behavior: 'smooth'
+    });
     return true;
   },
-  collectSasayakiCueRanges: function(cues) {
-    var cueRanges = new Map();
-    if (!cues.length) return [];
-    var index = 0;
-    var current = cues[0];
-    var start = current.start;
-    var end = start + current.length;
-    var cursor = 0;
-    var segment = null;
-    var flushSegment = function(node) {
-      if (!segment) return;
-      var ranges = cueRanges.get(segment.id) || [];
-      ranges.push({ node: node, start: segment.start, end: segment.end });
-      cueRanges.set(segment.id, ranges);
-      segment = null;
-    };
-    var advanceCue = function() {
-      index += 1;
-      current = cues[index];
-      if (current) {
-        start = current.start;
-        end = start + current.length;
-      }
-    };
-    var walker = this.createWalker();
-    var node;
-    while (current && (node = walker.nextNode())) {
-      var text = node.textContent;
-      var i = 0;
-      while (i < text.length && current) {
-        var char = String.fromCodePoint(text.codePointAt(i));
-        var next = i + char.length;
-        if (this.isMatchableChar(char)) {
-          if (cursor >= start && cursor < end) {
-            if (!segment) {
-              segment = { id: current.id, start: i, end: next };
-            } else {
-              segment.end = next;
-            }
-          } else {
-            flushSegment(node);
-          }
-          cursor += 1;
-          if (cursor === end) {
-            flushSegment(node);
-            advanceCue();
-          }
-        } else if (segment) {
-          segment.end = next;
-        }
-        i = next;
-      }
-      flushSegment(node);
-    }
-    return cues.map(function(cue) {
-      return { id: cue.id, ranges: cueRanges.get(cue.id) || [] };
-    });
-  },
-  applySasayakiCues: function(cues) {
-    this.resetSasayakiCues();
-    var cueRanges = this.collectSasayakiCueRanges(cues);
-    var range = document.createRange();
-    for (var i = cueRanges.length - 1; i >= 0; i--) {
-      var id = cueRanges[i].id;
-      var ranges = cueRanges[i].ranges;
-      if (!ranges.length) continue;
-      var wrappers = [];
-      for (var j = ranges.length - 1; j >= 0; j--) {
-        var segment = ranges[j];
-        range.setStart(segment.node, segment.start);
-        range.setEnd(segment.node, segment.end);
-        var wrapper = document.createElement('span');
-        wrapper.className = 'hoshi-sasayaki-cue';
-        wrapper.appendChild(range.extractContents());
-        range.insertNode(wrapper);
-        wrappers.push(wrapper);
-      }
-      wrappers.reverse();
-      this.cueWrappers.set(id, wrappers);
-    }
-    this.buildNodeOffsets();
-  },
-  highlightSasayakiCue: function(cueId, reveal) {
-    this.clearSasayakiCue();
-    var wrappers = this.cueWrappers.get(cueId);
-    if (!wrappers || !wrappers.length) return null;
-    this.activeCueId = cueId;
-    wrappers.forEach(function(wrapper) { wrapper.classList.add('hoshi-sasayaki-active'); });
-    if (reveal && this.scrollToTarget(wrappers[0])) {
-      return this.calculateProgress();
-    }
-    return null;
-  },
-  clearSasayakiCue: function() {
-    if (!this.activeCueId) return;
-    var wrappers = this.cueWrappers.get(this.activeCueId) || [];
-    wrappers.forEach(function(wrapper) { wrapper.classList.remove('hoshi-sasayaki-active'); });
-    this.activeCueId = null;
-  },
-  resetSasayakiCues: function() {
-    var self = this;
-    this.cueWrappers.forEach(function(wrappers) { self.unwrap(wrappers); });
-    this.cueWrappers.clear();
-    this.activeCueId = null;
-  },
-  unwrap: function(wrappers) {
-    wrappers.forEach(function(wrapper) {
-      var parent = wrapper.parentNode;
-      if (!parent) return;
-      while (wrapper.firstChild) {
-        parent.insertBefore(wrapper.firstChild, wrapper);
-      }
-      parent.removeChild(wrapper);
-      parent.normalize();
-    });
+  revealElement: function(element) {
+    return this.scrollToTarget(element);
   },
   calculateProgress: function() {
     var vertical = this.isVertical();
@@ -941,37 +816,11 @@ window.hoshiReader = {
 window.hoshiReader.initialize = function() {
   if (window.hoshiReader.didInitialize) return;
   window.hoshiReader.didInitialize = true;
-  var viewport = document.querySelector('meta[name="viewport"]');
-  if (viewport) { viewport.remove(); }
-  var newViewport = document.createElement('meta');
-  newViewport.name = 'viewport';
-  newViewport.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
-  document.head.appendChild(newViewport);
+$_sharedInitViewport
   document.documentElement.style.setProperty('--hoshi-continuous-height', window.innerHeight + 'px');
   document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(window.innerWidth * $imageWidthRatio)) + 'px');
   document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, window.innerHeight - $bottomOverlapPx) + 'px');
-  Array.from(document.querySelectorAll('svg')).forEach(function(svg) {
-    if (svg.querySelector('image') && svg.getAttribute('preserveAspectRatio') === 'none') {
-      svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-    }
-  });
-  var imagePromises = Array.from(document.querySelectorAll('img')).map(function(img) {
-    return new Promise(function(resolve) {
-      var isGaiji = img.classList.contains('gaiji') || img.classList.contains('gaiji-line');
-      var mark = function() {
-        if (!isGaiji && (img.naturalWidth > 256 || img.naturalHeight > 256)) {
-          img.classList.add('block-img');
-        }
-        resolve();
-      };
-      if (img.complete && img.naturalWidth > 0) {
-        mark();
-      } else {
-        img.onload = mark;
-        img.onerror = function() { resolve(); };
-      }
-    });
-  });
+$initImages
   Promise.all(imagePromises).then(function() {
     window.hoshiReader.buildNodeOffsets();
     $sasayakiInit
@@ -984,12 +833,7 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
   document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(Math.round(cssWidth) * $imageWidthRatio)) + 'px');
   document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, newHeight - $bottomOverlapPx) + 'px');
 };
-window.addEventListener('load', function() {
-  window.hoshiReader.initialize();
-});
-if (document.readyState === 'complete') {
-  window.hoshiReader.initialize();
-}
+$_sharedInitBoot
 </script>''';
   }
 

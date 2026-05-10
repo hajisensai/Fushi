@@ -2208,6 +2208,13 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     return 'rgba(${c.red},${c.green},${c.blue},${(c.alpha / 255).toStringAsFixed(2)})';
   }
 
+  String? get _customHighlightCss {
+    if (_settings?.theme != 'custom-theme') return null;
+    final Color? c = appModel.customThemePrimaryColor;
+    if (c == null) return null;
+    return 'rgba(${c.red},${c.green},${c.blue},0.34)';
+  }
+
   void _syncDictionaryTheme() {
     final Color bg = _themeBackgroundColor();
     final Color textColor = _themeTextColor();
