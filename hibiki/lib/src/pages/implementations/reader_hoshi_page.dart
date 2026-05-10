@@ -809,9 +809,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           _navigateToChapterWithFragment(link.chapterIndex, link.fragment);
           return NavigationActionPolicy.CANCEL;
         }
-        if (url.startsWith('https://hoshi.local/')) {
-          return NavigationActionPolicy.ALLOW;
-        }
         return NavigationActionPolicy.CANCEL;
       },
       onLoadStop: (InAppWebViewController controller, WebUri? url) async {
