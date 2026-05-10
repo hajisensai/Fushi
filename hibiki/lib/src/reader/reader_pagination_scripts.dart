@@ -628,7 +628,7 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
     var rect = this.getRect(range);
     var newScroll = this.getPagePosition(newContext);
     var anchor = (newContext.vertical ? rect.top : rect.left) + newScroll;
-    var targetScroll = this.alignToPage(newContext, anchor);
+    var targetScroll = Math.round(anchor / newContext.pageSize) * newContext.pageSize;
     this.setPagePosition(newContext, targetScroll);
   }
 };

@@ -103,6 +103,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   ReadingTimeTracker? _readingTimeTracker;
 
   bool _showChrome = true;
+  double _lastSyncedWidth = 0;
 
   final FocusNode _focusNode = FocusNode();
 
@@ -480,11 +481,17 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     });
   }
 
-  void _syncPageSize() {
+  Future<void> _syncPageSize() async {
     if (_controller == null || !_readerContentReady) return;
     final Size screen = MediaQuery.of(context).size;
     final double w = screen.width;
     final double h = screen.height - _readerTopOffset - _readerBottomReserve;
+    if (_lastSyncedWidth > 0 && (w - _lastSyncedWidth).abs() > 1) {
+      _lastSyncedWidth = w;
+      await _reloadAtCurrentProgress();
+      return;
+    }
+    _lastSyncedWidth = w;
     _controller!.evaluateJavascript(
       source: ReaderPaginationScripts.updatePageSizeInvocation(w, h),
     );
@@ -849,6 +856,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         }
         await HighlightBridge.inject(controller);
         await _applyChapterHighlights();
+        _lastSyncedWidth = MediaQuery.of(context).size.width;
       },
       onReceivedError:
           (InAppWebViewController controller, WebResourceRequest request,
@@ -1082,6 +1090,15 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   }
 
   // ── Chapter Navigation ────────────────────────────────────────────
+
+  Future<void> _reloadAtCurrentProgress() async {
+    if (_controller == null) return;
+    final dynamic result = await _controller!.evaluateJavascript(
+      source: 'window.hoshiReader ? window.hoshiReader.calculateProgress() : 0',
+    );
+    final double progress = _toDouble(result) ?? 0.0;
+    await _navigateToChapter(_currentChapter, progress: progress);
+  }
 
   Future<void> _navigateToChapter(int index, {double progress = 0.0}) async {
     if (_book == null || index < 0 || index >= _book!.chapters.length) {
