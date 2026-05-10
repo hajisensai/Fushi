@@ -894,13 +894,15 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           source: '(document.scrollingElement||document.documentElement).scrollTop',
         );
         debugPrint('[_applyChapterHighlights] scrollBefore=$scrollBefore');
-        await HighlightBridge.applyHighlights(_controller!, chapterFavs);
+        await HighlightBridge.applyHighlights(_controller!, chapterFavs,
+            isDark: _isReaderThemeDark);
         final Object? scrollAfter = await _controller!.evaluateJavascript(
           source: '(document.scrollingElement||document.documentElement).scrollTop',
         );
         debugPrint('[_applyChapterHighlights] scrollAfter=$scrollAfter');
       } else {
-        await HighlightBridge.applyHighlights(_controller!, chapterFavs);
+        await HighlightBridge.applyHighlights(_controller!, chapterFavs,
+            isDark: _isReaderThemeDark);
       }
       await _controller!.evaluateJavascript(
         source: 'window.hoshiReader && window.hoshiReader.buildNodeOffsets();',
@@ -2055,7 +2057,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
               s.ttuBookId == widget.bookId &&
               s.sectionIndex == _currentChapter)
           .toList();
-      await HighlightBridge.applyHighlights(_controller!, chapterFavs);
+      await HighlightBridge.applyHighlights(_controller!, chapterFavs,
+          isDark: _isReaderThemeDark);
       await _controller!.evaluateJavascript(
         source: 'window.hoshiReader && window.hoshiReader.buildNodeOffsets();',
       );

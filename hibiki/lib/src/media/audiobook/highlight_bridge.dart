@@ -12,13 +12,21 @@ class HighlightBridge {
   if (window.__hibikiHighlightsInstalled) return;
   window.__hibikiHighlightsInstalled = true;
 
-  var COLORS = {
+  var LIGHT_COLORS = {
     yellow: 'rgba(255,220,0,0.35)',
     green: 'rgba(0,200,83,0.3)',
     blue: 'rgba(68,138,255,0.3)',
     pink: 'rgba(255,64,129,0.3)',
     purple: 'rgba(170,0,255,0.25)'
   };
+  var DARK_COLORS = {
+    yellow: 'rgba(255,220,0,0.45)',
+    green: 'rgba(0,200,83,0.4)',
+    blue: 'rgba(68,138,255,0.4)',
+    pink: 'rgba(255,64,129,0.4)',
+    purple: 'rgba(170,0,255,0.4)'
+  };
+  window.__hibikiHighlightsDark = false;
 
   function _root() {
     return document.body;
@@ -129,7 +137,8 @@ class HighlightBridge {
       }
       if (segments.length === 0) continue;
 
-      var color = COLORS[hl.color] || COLORS.yellow;
+      var palette = window.__hibikiHighlightsDark ? DARK_COLORS : LIGHT_COLORS;
+      var color = palette[hl.color] || palette.yellow;
       var groups = [];
       var cur = null;
       for (var s = 0; s < segments.length; s++) {
@@ -192,8 +201,9 @@ class HighlightBridge {
 
   static Future<void> applyHighlights(
     InAppWebViewController controller,
-    List<FavoriteSentence> highlights,
-  ) async {
+    List<FavoriteSentence> highlights, {
+    bool isDark = false,
+  }) async {
     final List<Map<String, dynamic>> payload = highlights
         .where((FavoriteSentence h) =>
             h.normCharOffset != null && h.normCharLength != null)
@@ -207,6 +217,7 @@ class HighlightBridge {
     final String json = jsonEncode(payload);
     await controller.evaluateJavascript(
       source:
+          'window.__hibikiHighlightsDark=$isDark;'
           'window.__hibikiApplyHighlights && window.__hibikiApplyHighlights($json);',
     );
   }
