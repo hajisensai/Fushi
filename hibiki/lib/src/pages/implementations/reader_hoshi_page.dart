@@ -899,8 +899,22 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
             s.ttuBookId == widget.bookId &&
             s.sectionIndex == _currentChapter)
         .toList();
+    debugPrint('[_applyChapterHighlights] count=${chapterFavs.length} '
+        'continuous=${_settings?.isContinuousMode}');
     if (chapterFavs.isNotEmpty) {
-      await HighlightBridge.applyHighlights(_controller!, chapterFavs);
+      if (_settings?.isContinuousMode == true) {
+        final String? scrollBefore = await _controller!.evaluateJavascript(
+          source: '(document.scrollingElement||document.documentElement).scrollTop',
+        );
+        debugPrint('[_applyChapterHighlights] scrollBefore=$scrollBefore');
+        await HighlightBridge.applyHighlights(_controller!, chapterFavs);
+        final String? scrollAfter = await _controller!.evaluateJavascript(
+          source: '(document.scrollingElement||document.documentElement).scrollTop',
+        );
+        debugPrint('[_applyChapterHighlights] scrollAfter=$scrollAfter');
+      } else {
+        await HighlightBridge.applyHighlights(_controller!, chapterFavs);
+      }
       await _controller!.evaluateJavascript(
         source: 'window.hoshiReader && window.hoshiReader.buildNodeOffsets();',
       );
@@ -969,6 +983,12 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final bool forceReveal = controller.consumeForceReveal();
     final bool reveal =
         forceReveal || controller.shouldRevealCurrentCue;
+    debugPrint('[_onCueChanged] cue=${cue?.textFragmentId} '
+        'reveal=$reveal forceReveal=$forceReveal '
+        'follow=${controller.followAudio.value} '
+        'played=${controller.hasPlayedOnce} '
+        'playing=${controller.isPlaying} '
+        'continuous=${_settings?.isContinuousMode}');
     AudiobookBridge.highlight(_controller!, cue: cue, reveal: reveal);
   }
 
