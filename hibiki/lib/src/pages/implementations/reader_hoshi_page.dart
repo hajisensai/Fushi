@@ -600,7 +600,12 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         window.flutter_inappwebview.callHandler('onSwipe', 'right');
       }
     } else if (absDx < 20 && absDy < 20) {
-      window.flutter_inappwebview.callHandler('onTap', t.clientX, t.clientY);
+      var target = document.elementFromPoint(t.clientX, t.clientY);
+      if (target && target.tagName === 'IMG' && target.src) {
+        window.flutter_inappwebview.callHandler('onImageTap', target.src);
+      } else {
+        window.flutter_inappwebview.callHandler('onTap', t.clientX, t.clientY);
+      }
     }
   }, {passive: false});
   window.hoshiProgressDetails = function() {
@@ -710,6 +715,14 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         controller.addJavaScriptHandler(
           handlerName: 'onImageDetected',
           callback: (_) => _audiobookController?.triggerImagePause(),
+        );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'onImageTap',
+          callback: (List<dynamic> args) {
+            if (args.isEmpty) return;
+            _openImageViewer(args[0] as String);
+          },
         );
       },
       shouldInterceptRequest:
@@ -1182,6 +1195,39 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     } else {
       _handlePageTurnLimit(direction.jsValue);
     }
+  }
+
+  // ── Image Viewer ──────────────────────────────────────────────────
+
+  void _openImageViewer(String imgUrl) {
+    final Uri? uri = Uri.tryParse(imgUrl);
+    if (uri == null || _extractDir == null) return;
+    if (uri.host != 'hoshi.local') return;
+    final String epubPath =
+        Uri.decodeComponent(uri.path.substring('/epub/'.length));
+    final String filePath = p.join(_extractDir!, epubPath);
+    final File file = File(filePath);
+    if (!file.existsSync()) return;
+    final Uint8List bytes = file.readAsBytesSync();
+    Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            backgroundColor: Colors.transparent,
+            foregroundColor: Colors.white,
+          ),
+          body: InteractiveViewer(
+            minScale: 0.5,
+            maxScale: 5.0,
+            child: Center(
+              child: Image.memory(bytes, fit: BoxFit.contain),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   // ── Bottom Chrome ─────────────────────────────────────────────────
