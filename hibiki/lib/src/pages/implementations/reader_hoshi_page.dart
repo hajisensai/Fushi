@@ -2180,6 +2180,11 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     return '#${(bg.value & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}';
   }
 
+  String? get _customThemeTextCss {
+    final Color c = _themeTextColor();
+    return 'rgba(${c.red},${c.green},${c.blue},${(c.alpha / 255).toStringAsFixed(2)})';
+  }
+
   void _syncDictionaryTheme() {
     final Color bg = _themeBackgroundColor();
     final Color textColor = _themeTextColor();
