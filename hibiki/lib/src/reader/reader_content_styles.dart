@@ -104,7 +104,7 @@ p {
     final String maxValueCss = settings.secondDimensionMaxValue > 0
         ? (isVertical
             ? 'max-height: ${settings.secondDimensionMaxValue}px !important;'
-            : 'max-width: ${settings.secondDimensionMaxValue}px !important;\n  margin: 0 auto !important;')
+            : 'max-width: ${settings.secondDimensionMaxValue}px !important;')
         : '';
 
     final String columnsCss = settings.pageColumns > 0
