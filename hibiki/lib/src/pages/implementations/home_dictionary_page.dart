@@ -348,10 +348,10 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
     if (!appModel.autoSearchEnabled) return;
     final int delay = appModel.searchDebounceDelay;
     if (delay <= 0) {
-      if (mounted) _search(query);
+      if (mounted) _search(query, writeHistory: false);
     } else {
       _debounceTimer = Timer(Duration(milliseconds: delay), () {
-        if (mounted) _search(query);
+        if (mounted) _search(query, writeHistory: false);
       });
     }
   }

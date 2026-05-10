@@ -246,17 +246,15 @@ class _RecursiveDictionaryPageState
     search(_controller.text);
   }
 
-  Duration get historyDelay => Duration.zero;
-
   void onQueryChanged(String query) {
     _debounceTimer?.cancel();
     if (!appModel.autoSearchEnabled) return;
     final int delay = appModel.searchDebounceDelay;
     if (delay <= 0) {
-      if (mounted) search(query);
+      if (mounted) search(query, writeHistory: false);
     } else {
       _debounceTimer = Timer(Duration(milliseconds: delay), () {
-        if (mounted) search(query);
+        if (mounted) search(query, writeHistory: false);
       });
     }
   }
@@ -267,6 +265,7 @@ class _RecursiveDictionaryPageState
   void search(
     String query, {
     int? overrideMaximumTerms,
+    bool writeHistory = true,
   }) async {
     if (lastQuery == query && overrideMaximumTerms == null) {
       return;
@@ -302,17 +301,15 @@ class _RecursiveDictionaryPageState
               _showMore = _result!.entries.length < overrideMaximumTerms!;
             });
           }
-          Future.delayed(historyDelay, () async {
-            if (query == _controller.text) {
-              appModel.addToSearchHistory(
-                historyKey: DictionaryMediaType.instance.uniqueKey,
-                searchTerm: _controller.text,
-              );
-            }
+          if (writeHistory) {
+            appModel.addToSearchHistory(
+              historyKey: DictionaryMediaType.instance.uniqueKey,
+              searchTerm: _controller.text,
+            );
             if (_result!.entries.isNotEmpty) {
               appModel.addToDictionaryHistory(result: _result!);
             }
-          });
+          }
         }
       }
     }
