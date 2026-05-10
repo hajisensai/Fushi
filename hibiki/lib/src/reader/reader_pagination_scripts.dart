@@ -921,14 +921,16 @@ window.hoshiReader = {
   paginate: function(direction) {
     var vertical = this.isVertical();
     var root = document.scrollingElement || document.documentElement;
-    var before = vertical ? window.scrollX : root.scrollTop;
-    if (vertical) {
-      window.scrollBy({ left: direction === "forward" ? -window.innerWidth : window.innerWidth, behavior: "instant" });
-    } else {
-      window.scrollBy({ top: direction === "forward" ? window.innerHeight : -window.innerHeight, behavior: "instant" });
+    if (direction === "forward") {
+      if (vertical) {
+        return Math.abs(window.scrollX) + window.innerWidth >= root.scrollWidth - 2 ? "limit" : "scrolled";
+      }
+      return root.scrollTop + window.innerHeight >= root.scrollHeight - 2 ? "limit" : "scrolled";
     }
-    var after = vertical ? window.scrollX : root.scrollTop;
-    return Math.abs(after - before) > 1 ? "scrolled" : "limit";
+    if (vertical) {
+      return window.scrollX >= -2 ? "limit" : "scrolled";
+    }
+    return root.scrollTop <= 2 ? "limit" : "scrolled";
   }
 };
 window.hoshiReader.initialize = function() {
