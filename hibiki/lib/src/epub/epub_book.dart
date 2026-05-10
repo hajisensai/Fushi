@@ -42,7 +42,23 @@ class EpubBook {
   static final RegExp _rtRpRegex =
       RegExp(r'<r[tp]c?[^>]*>.*?</r[tp]c?>', caseSensitive: false, dotAll: true);
   static final RegExp _htmlTagRegex = RegExp(r'<[^>]+>');
+  static final RegExp _entityRegex = RegExp(r'&(#x([0-9a-fA-F]+)|#([0-9]+)|([a-zA-Z]+));');
   static final RegExp _whitespaceRegex = RegExp(r'\s+');
+
+  static const Map<String, String> _namedEntities = <String, String>{
+    'amp': '&', 'lt': '<', 'gt': '>', 'quot': '"', 'apos': "'",
+    'nbsp': ' ', 'ensp': ' ', 'emsp': ' ',
+    'thinsp': ' ', 'zwnj': '‌', 'zwj': '‍',
+    'lrm': '‎', 'rlm': '‏', 'ndash': '–',
+    'mdash': '—', 'lsquo': '‘', 'rsquo': '’',
+    'ldquo': '“', 'rdquo': '”', 'hellip': '…',
+  };
+
+  static String _decodeEntity(Match m) {
+    if (m[2] != null) return String.fromCharCode(int.parse(m[2]!, radix: 16));
+    if (m[3] != null) return String.fromCharCode(int.parse(m[3]!));
+    return _namedEntities[m[4]] ?? m[0]!;
+  }
 
   /// Plain text of chapter at [index], with ruby annotations stripped.
   /// Used by EpubSrtMatcher and sasayaki rematch for audiobook alignment.
@@ -52,6 +68,7 @@ class EpubBook {
         .html
         .replaceAll(_rtRpRegex, '')
         .replaceAll(_htmlTagRegex, '')
+        .replaceAllMapped(_entityRegex, _decodeEntity)
         .replaceAll(_whitespaceRegex, ' ')
         .trim();
   }
