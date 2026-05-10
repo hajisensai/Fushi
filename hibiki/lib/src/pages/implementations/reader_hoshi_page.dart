@@ -104,6 +104,11 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   ReadingTimeTracker? _readingTimeTracker;
 
+  StreamSubscription<void>? _playStreamSub;
+  StreamSubscription<Duration>? _seekStreamSub;
+  StreamSubscription<void>? _skipNextSub;
+  StreamSubscription<void>? _skipPrevSub;
+
   bool _showChrome = true;
   double _lastSyncedWidth = 0;
   double _displayedProgress = 0.0;
@@ -471,6 +476,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _audiobookController?.dispose();
     _readingTimeTracker?.dispose();
     _focusNode.dispose();
+    _playStreamSub?.cancel();
+    _seekStreamSub?.cancel();
+    _skipNextSub?.cancel();
+    _skipPrevSub?.cancel();
     FloatingLyricChannel.clearEventHandlers();
     if (appModel.showFloatingLyric) {
       FloatingLyricChannel.hide();
@@ -895,10 +904,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (chapterFavs.isNotEmpty) {
       if (_settings?.isContinuousMode == true) {
         await HighlightBridge.applyHighlights(_controller!, chapterFavs,
-            isDark: _isReaderThemeDark);
+            backgroundHex: _readerBackgroundHex);
       } else {
         await HighlightBridge.applyHighlights(_controller!, chapterFavs,
-            isDark: _isReaderThemeDark);
+            backgroundHex: _readerBackgroundHex);
       }
       await _controller!.evaluateJavascript(
         source: 'window.hoshiReader && window.hoshiReader.buildNodeOffsets();',
@@ -1454,7 +1463,12 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       return;
     }
     if (_settings?.isContinuousMode == true) {
-      _handlePageTurnLimit(direction.jsValue);
+      final dynamic result = await _controller!.evaluateJavascript(
+        source: ReaderPaginationScripts.paginateInvocation(direction),
+      );
+      if (!_didScroll(result)) {
+        _handlePageTurnLimit(direction.jsValue);
+      }
       return;
     }
     final dynamic result = await _controller!.evaluateJavascript(
@@ -1502,6 +1516,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   // ── Audio Features Init ────────────────────────────────────────────
 
   Future<void> _initAudioFeatures(AudiobookPlayerController ctrl) async {
+    _subscribeNotificationStreams(ctrl);
     if (appModel.showFloatingLyric) {
       final bool canDraw = await FloatingLyricChannel.canDrawOverlays();
       if (canDraw) {
@@ -1510,10 +1525,46 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       }
     }
     if (appModel.showMediaNotification) {
-      final handler = appModel.audioHandler;
-      handler?.setMediaItemInfo(title: _book?.title ?? 'Hibiki');
+      _setMediaItemWithCover(ctrl);
       _syncMediaNotification(ctrl);
     }
+  }
+
+  void _subscribeNotificationStreams(AudiobookPlayerController ctrl) {
+    _playStreamSub?.cancel();
+    _seekStreamSub?.cancel();
+    _skipNextSub?.cancel();
+    _skipPrevSub?.cancel();
+    _playStreamSub = appModel.playStream.listen((_) {
+      ctrl.togglePlayPause();
+    });
+    _seekStreamSub = appModel.seekStream.listen((Duration pos) {
+      ctrl.seekMs(pos.inMilliseconds);
+    });
+    _skipNextSub = appModel.skipNextStream.listen((_) {
+      ctrl.skipToNextCue();
+    });
+    _skipPrevSub = appModel.skipPreviousStream.listen((_) {
+      ctrl.skipToPrevCue();
+    });
+  }
+
+  void _setMediaItemWithCover(AudiobookPlayerController ctrl) {
+    final handler = appModel.audioHandler;
+    if (handler == null) return;
+    Uri? artUri;
+    if (_book?.coverHref != null && _extractDir != null) {
+      final File coverFile = File(p.join(_extractDir!, _book!.coverHref!));
+      if (coverFile.existsSync()) {
+        artUri = coverFile.uri;
+      }
+    }
+    handler.setMediaItemInfo(
+      title: _book?.title ?? 'Hibiki',
+      artist: _book?.author,
+      duration: ctrl.duration,
+      artUri: artUri,
+    );
   }
 
   // ── Floating Lyric ─────────────────────────────────────────────────
@@ -1591,7 +1642,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     handler.updatePlaybackState(
       playing: ctrl.isPlaying,
       position: ctrl.position,
-      speed: 1.0,
+      speed: ctrl.speed,
       duration: ctrl.duration,
     );
     final AudioCue? cue = ctrl.currentCue;
@@ -1607,8 +1658,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final bool newValue = !appModel.showMediaNotification;
     await appModel.setShowMediaNotification(newValue);
     if (newValue && _audiobookController != null) {
-      final handler = appModel.audioHandler;
-      handler?.setMediaItemInfo(title: _book?.title ?? 'Hibiki');
+      _setMediaItemWithCover(_audiobookController!);
       _syncMediaNotification(_audiobookController!);
     } else {
       appModel.audioHandler?.clearNotification();
@@ -2112,6 +2162,18 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         theme == 'black-theme';
   }
 
+  String get _readerBackgroundHex {
+    final String theme = _settings?.theme ?? 'light-theme';
+    switch (theme) {
+      case 'ecru-theme':  return '#f7f6eb';
+      case 'water-theme': return '#dfecf4';
+      case 'gray-theme':  return '#23272a';
+      case 'dark-theme':  return '#121212';
+      case 'black-theme': return '#000000';
+      default:            return '#ffffff';
+    }
+  }
+
   void _syncDictionaryTheme() {
     final Color bg = _themeBackgroundColor();
     final Color textColor = _themeTextColor();
@@ -2187,7 +2249,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
               s.sectionIndex == _currentChapter)
           .toList();
       await HighlightBridge.applyHighlights(_controller!, chapterFavs,
-          isDark: _isReaderThemeDark);
+          backgroundHex: _readerBackgroundHex);
       await _controller!.evaluateJavascript(
         source: 'window.hoshiReader && window.hoshiReader.buildNodeOffsets();',
       );

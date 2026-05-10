@@ -12,21 +12,41 @@ class HighlightBridge {
   if (window.__hibikiHighlightsInstalled) return;
   window.__hibikiHighlightsInstalled = true;
 
-  var LIGHT_COLORS = {
-    yellow: 'rgba(255,220,0,0.35)',
-    green: 'rgba(0,200,83,0.3)',
-    blue: 'rgba(68,138,255,0.3)',
-    pink: 'rgba(255,64,129,0.3)',
-    purple: 'rgba(170,0,255,0.25)'
+  var BASE_COLORS = {
+    yellow: [255,220,0],
+    green:  [0,200,83],
+    blue:   [68,138,255],
+    pink:   [255,64,129],
+    purple: [170,0,255]
   };
-  var DARK_COLORS = {
-    yellow: 'rgba(255,220,0,0.45)',
-    green: 'rgba(0,200,83,0.4)',
-    blue: 'rgba(68,138,255,0.4)',
-    pink: 'rgba(255,64,129,0.4)',
-    purple: 'rgba(170,0,255,0.4)'
-  };
-  window.__hibikiHighlightsDark = false;
+  window.__hibikiHighlightBg = '#ffffff';
+
+  function _luminance(hex) {
+    var h = hex.replace('#','');
+    if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+    var r = parseInt(h.substr(0,2),16)/255;
+    var g = parseInt(h.substr(2,2),16)/255;
+    var b = parseInt(h.substr(4,2),16)/255;
+    return 0.2126*r + 0.7152*g + 0.0722*b;
+  }
+
+  function _pickAlpha(colorName, bgLum) {
+    var dark = bgLum < 0.4;
+    var alphas = {
+      yellow: dark ? 0.45 : 0.35,
+      green:  dark ? 0.40 : 0.30,
+      blue:   dark ? 0.40 : 0.30,
+      pink:   dark ? 0.40 : 0.30,
+      purple: dark ? 0.40 : 0.25
+    };
+    return alphas[colorName] || (dark ? 0.40 : 0.30);
+  }
+
+  function _hlColor(name) {
+    var rgb = BASE_COLORS[name] || BASE_COLORS.yellow;
+    var a = _pickAlpha(name, _luminance(window.__hibikiHighlightBg));
+    return 'rgba('+rgb[0]+','+rgb[1]+','+rgb[2]+','+a+')';
+  }
 
   function _root() {
     return document.body;
@@ -137,8 +157,7 @@ class HighlightBridge {
       }
       if (segments.length === 0) continue;
 
-      var palette = window.__hibikiHighlightsDark ? DARK_COLORS : LIGHT_COLORS;
-      var color = palette[hl.color] || palette.yellow;
+      var color = _hlColor(hl.color || 'yellow');
       var groups = [];
       var cur = null;
       for (var s = 0; s < segments.length; s++) {
@@ -202,7 +221,7 @@ class HighlightBridge {
   static Future<void> applyHighlights(
     InAppWebViewController controller,
     List<FavoriteSentence> highlights, {
-    bool isDark = false,
+    String backgroundHex = '#ffffff',
   }) async {
     final List<Map<String, dynamic>> payload = highlights
         .where((FavoriteSentence h) =>
@@ -215,9 +234,10 @@ class HighlightBridge {
             })
         .toList();
     final String json = jsonEncode(payload);
+    final String escaped = jsonEncode(backgroundHex);
     await controller.evaluateJavascript(
       source:
-          'window.__hibikiHighlightsDark=$isDark;'
+          'window.__hibikiHighlightBg=$escaped;'
           'window.__hibikiApplyHighlights && window.__hibikiApplyHighlights($json);',
     );
   }
