@@ -251,7 +251,7 @@ window.hoshiSelection = {
     if (normalizedOffset !== null && ranges.length > 0) {
       var lastRange = ranges[ranges.length - 1];
       var normalizedEnd = this.getNormalizedOffset(lastRange.node, lastRange.end);
-      if (normalizedEnd !== null) normalizedLength = normalizedEnd - normalizedOffset;
+      if (normalizedEnd !== null) normalizedLength = Math.max(0, normalizedEnd - normalizedOffset);
     }
     window.flutter_inappwebview.callHandler('onTextSelected', JSON.stringify({
       text: text,
@@ -295,7 +295,9 @@ window.hoshiSelection = {
   },
   getNormalizedOffset: function(targetNode, offset) {
     if (!window.hoshiReader || !window.hoshiReader.nodeStartOffsets) return null;
-    var count = window.hoshiReader.nodeStartOffsets.get(targetNode) || 0;
+    var base = window.hoshiReader.nodeStartOffsets.get(targetNode);
+    if (base === undefined) return null;
+    var count = base || 0;
     var text = targetNode.textContent;
     for (var i = 0; i < offset;) {
       var char = String.fromCodePoint(text.codePointAt(i));

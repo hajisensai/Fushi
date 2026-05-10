@@ -552,9 +552,14 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   Future<void> _loadChapterDirectly(int index) async {
     final String url = _chapterUrl(index);
     _isNavigatingToChapter = true;
-    await _controller!.loadUrl(
-      urlRequest: URLRequest(url: WebUri(url)),
-    );
+    try {
+      await _controller!.loadUrl(
+        urlRequest: URLRequest(url: WebUri(url)),
+      );
+    } catch (e) {
+      _isNavigatingToChapter = false;
+      rethrow;
+    }
   }
 
   WebResourceResponse? _interceptRequest(WebUri url) {
@@ -845,6 +850,19 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         await HighlightBridge.inject(controller);
         await _applyChapterHighlights();
       },
+      onReceivedError:
+          (InAppWebViewController controller, WebResourceRequest request,
+              WebResourceError error) {
+        if (request.isForMainFrame ?? false) {
+          debugPrint('[ReaderHoshi] onReceivedError: ${error.description}');
+          _isNavigatingToChapter = false;
+          _restoreInFlight = false;
+          if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
+            _restoreCompleter!.complete();
+          }
+          _restoreCompleter = null;
+        }
+      },
       onConsoleMessage:
           (InAppWebViewController controller, ConsoleMessage msg) {
         debugPrint('[WebView] ${msg.message}');
@@ -879,7 +897,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       return;
     }
     _restoreInFlight = false;
-    _restoreCompleter?.complete();
+    if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
+      _restoreCompleter!.complete();
+    }
     _restoreCompleter = null;
 
     if (!_readerContentReady) {
@@ -1074,7 +1094,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _progressPollTimer?.cancel();
     _flushReadingStats();
 
-    _restoreCompleter?.complete();
+    if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
+      _restoreCompleter!.complete();
+    }
     _restoreCompleter = Completer<void>();
 
     _currentChapter = index;
@@ -1089,7 +1111,14 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   Future<void> _navigateToChapterAndWait(int index) async {
     await _navigateToChapter(index);
-    await _restoreCompleter?.future;
+    await _restoreCompleter?.future.timeout(
+      const Duration(seconds: 10),
+      onTimeout: () {
+        debugPrint('[ReaderHoshi] _navigateToChapterAndWait timed out');
+        _restoreCompleter = null;
+        _restoreInFlight = false;
+      },
+    );
   }
 
   Future<void> _navigateToChapterWithFragment(
@@ -1102,6 +1131,11 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _progressPollTimer?.cancel();
     _audiobookController?.cancelChapterTransition();
     _flushReadingStats();
+
+    if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
+      _restoreCompleter!.complete();
+    }
+    _restoreCompleter = Completer<void>();
 
     _currentChapter = index;
     _initialProgress = 0.0;
