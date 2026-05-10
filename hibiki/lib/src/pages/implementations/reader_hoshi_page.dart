@@ -553,6 +553,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       mimeType: response.contentType ?? 'text/html',
       encoding: 'utf-8',
       baseUrl: WebUri(base),
+      historyUrl: WebUri(url),
     );
   }
 
