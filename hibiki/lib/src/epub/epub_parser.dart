@@ -181,8 +181,9 @@ class EpubParser {
   // ── Metadata ───────────────────────────────────────────────────────────────
 
   static String? _parseMetadata(XmlDocument opf, String localName) {
-    // dc:title, dc:creator etc. — try with and without namespace
-    for (final XmlElement el in opf.findAllElements(localName)) {
+    // dc:title, dc:creator etc. — namespace: '*' matches any prefix
+    for (final XmlElement el
+        in opf.findAllElements(localName, namespace: '*')) {
       final String text = el.innerText.trim();
       if (text.isNotEmpty) return text;
     }
