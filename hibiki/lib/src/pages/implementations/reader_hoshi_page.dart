@@ -36,6 +36,7 @@ import 'package:hibiki/src/reader/reader_selection_data.dart';
 import 'package:hibiki/src/reader/reader_selection_scripts.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/utils/misc/jidoujisho_text_selection.dart';
+import 'package:hibiki/src/utils/misc/volume_key_channel.dart';
 import 'package:wakelock/wakelock.dart';
 
 class ReaderHoshiPage extends BaseSourcePage {
@@ -86,6 +87,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   Timer? _saveDebounce;
   Timer? _progressPollTimer;
+  Timer? _volumeThrottleTimer;
   int _lastSavedSection = -1;
   double _lastSavedProgress = -1;
 
@@ -189,10 +191,44 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       Wakelock.enable();
     }
 
+    final ReaderHoshiSource src = ReaderHoshiSource.instance;
+    if (src.volumePageTurningEnabled) {
+      _setupVolumeKeyHandlers();
+    }
+
     _audioSlotResolved = true;
 
     if (mounted) {
       setState(() {});
+    }
+  }
+
+  void _setupVolumeKeyHandlers() {
+    final ReaderHoshiSource src = ReaderHoshiSource.instance;
+    VolumeKeyChannel.instance.setHandlers(
+      onVolumeUp: () => _onVolumeKey(isUp: true),
+      onVolumeDown: () => _onVolumeKey(isUp: false),
+    );
+    VolumeKeyChannel.instance.setInterceptEnabled(true);
+    debugPrint('[ReaderHoshi] volume key handlers installed '
+        '(inverted=${src.volumePageTurningInverted}, '
+        'speed=${src.volumePageTurningSpeed}ms)');
+  }
+
+  void _onVolumeKey({required bool isUp}) {
+    if (_volumeThrottleTimer?.isActive ?? false) return;
+
+    final ReaderHoshiSource src = ReaderHoshiSource.instance;
+    final bool inverted = src.volumePageTurningInverted;
+
+    final bool goForward = inverted ? isUp : !isUp;
+    _paginate(goForward
+        ? ReaderNavigationDirection.forward
+        : ReaderNavigationDirection.backward);
+
+    final int speedMs = src.volumePageTurningSpeed;
+    if (speedMs > 0) {
+      _volumeThrottleTimer = Timer(Duration(milliseconds: speedMs), () {});
     }
   }
 
@@ -412,6 +448,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     WidgetsBinding.instance.removeObserver(this);
     _progressPollTimer?.cancel();
     _saveDebounce?.cancel();
+    _volumeThrottleTimer?.cancel();
+    VolumeKeyChannel.instance.setHandlers();
+    VolumeKeyChannel.instance.setInterceptEnabled(false);
     _flushPosition();
     _flushReadingStats();
     _audiobookController?.removeListener(_onCueChanged);
@@ -693,6 +732,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           handlerName: 'onTap',
           callback: (List<dynamic> args) {
             if (args.length < 2) return;
+            if (!ReaderHoshiSource.instance.highlightOnTap) return;
             final double x = _toDouble(args[0]) ?? 0;
             final double y = _toDouble(args[1]) ?? 0;
             _selectTextAt(x, y);
@@ -1161,14 +1201,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
     final LogicalKeyboardKey key = event.logicalKey;
 
-    if (key == LogicalKeyboardKey.audioVolumeDown) {
-      _paginate(ReaderNavigationDirection.forward);
-      return KeyEventResult.handled;
-    }
-    if (key == LogicalKeyboardKey.audioVolumeUp) {
-      _paginate(ReaderNavigationDirection.backward);
-      return KeyEventResult.handled;
-    }
     if (key == LogicalKeyboardKey.pageDown) {
       _paginate(ReaderNavigationDirection.forward);
       return KeyEventResult.handled;
