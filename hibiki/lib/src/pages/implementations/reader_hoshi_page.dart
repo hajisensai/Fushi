@@ -196,6 +196,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       _setupVolumeKeyHandlers();
     }
 
+    _syncDictionaryTheme();
+
     _audioSlotResolved = true;
 
     if (mounted) {
@@ -451,6 +453,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _volumeThrottleTimer?.cancel();
     VolumeKeyChannel.instance.setHandlers();
     VolumeKeyChannel.instance.setInterceptEnabled(false);
+    appModel.setOverrideDictionaryTheme(null);
+    appModel.setOverrideDictionaryColor(null);
     _flushPosition();
     _flushReadingStats();
     _audiobookController?.removeListener(_onCueChanged);
@@ -1507,6 +1511,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         srcAfter.ttuPrioritizeReaderStyles != snapshotPrioritizeReaderStyles;
 
     _syncSettingsFromHive();
+    _syncDictionaryTheme();
     if (changed) {
       _reloadWithCurrentSettings();
     }
@@ -1709,6 +1714,28 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       default:
         return const Color(0xDE000000);
     }
+  }
+
+  bool get _isReaderThemeDark {
+    final String theme = _settings?.theme ?? 'light-theme';
+    return theme == 'gray-theme' ||
+        theme == 'dark-theme' ||
+        theme == 'black-theme';
+  }
+
+  void _syncDictionaryTheme() {
+    if (!ReaderHoshiSource.instance.adaptTtuTheme) return;
+    final Color bg = _themeBackgroundColor();
+    final Brightness brightness =
+        _isReaderThemeDark ? Brightness.dark : Brightness.light;
+    appModel.setOverrideDictionaryColor(bg);
+    appModel.setOverrideDictionaryTheme(
+      (brightness == Brightness.dark ? ThemeData.dark() : ThemeData.light())
+          .copyWith(colorScheme: ColorScheme.fromSeed(
+        seedColor: bg,
+        brightness: brightness,
+      )),
+    );
   }
 
   // ── JS result helpers (evaluateJavascript returns dynamic) ────────
