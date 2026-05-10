@@ -279,7 +279,8 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
       width: pos.width,
       height: pos.height,
       child: DictionaryPopupLayer(
-        result: entry.isSearching ? null : entry.result,
+        result: entry.result,
+        isSearching: entry.isSearching,
         webViewKey: entry.webViewKey,
         isDark: isDark,
         overrideFillColor: appModel.overrideDictionaryColor,

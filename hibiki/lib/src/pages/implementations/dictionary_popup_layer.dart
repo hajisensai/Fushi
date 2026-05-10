@@ -36,6 +36,7 @@ Rect calcPopupPosition({
 class DictionaryPopupLayer extends StatelessWidget {
   const DictionaryPopupLayer({
     required this.result,
+    this.isSearching = false,
     required this.webViewKey,
     required this.onDismiss,
     required this.onTextSelected,
@@ -51,6 +52,7 @@ class DictionaryPopupLayer extends StatelessWidget {
   });
 
   final DictionarySearchResult? result;
+  final bool isSearching;
   final GlobalKey<DictionaryPopupWebViewState> webViewKey;
   final VoidCallback onDismiss;
   final void Function(String text, Rect localRect) onTextSelected;
@@ -88,27 +90,45 @@ class DictionaryPopupLayer extends StatelessWidget {
   }
 
   Widget _buildBody() {
-    if (result == null) {
-      return const Center(child: CircularProgressIndicator());
+    if (result != null && result!.entries.isNotEmpty) {
+      return Stack(
+        children: [
+          DictionaryPopupWebView(
+            key: webViewKey,
+            result: result!,
+            onTapOutside: onTapOutside,
+            onTextSelected: onTextSelected,
+            onLinkClick: onLinkClick,
+            onMineEntry: onMineEntry,
+            onDuplicateCheck: onDuplicateCheck,
+          ),
+          if (isSearching)
+            const Center(
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2.5),
+              ),
+            ),
+        ],
+      );
     }
 
-    if (result!.entries.isEmpty) {
-      return Center(
-        child: JidoujishoPlaceholderMessage(
-          icon: Icons.search_off,
-          message: t.no_search_results,
+    if (isSearching) {
+      return const Center(
+        child: SizedBox(
+          width: 24,
+          height: 24,
+          child: CircularProgressIndicator(strokeWidth: 2.5),
         ),
       );
     }
 
-    return DictionaryPopupWebView(
-      key: webViewKey,
-      result: result!,
-      onTapOutside: onTapOutside,
-      onTextSelected: onTextSelected,
-      onLinkClick: onLinkClick,
-      onMineEntry: onMineEntry,
-      onDuplicateCheck: onDuplicateCheck,
+    return Center(
+      child: JidoujishoPlaceholderMessage(
+        icon: Icons.search_off,
+        message: t.no_search_results,
+      ),
     );
   }
 
