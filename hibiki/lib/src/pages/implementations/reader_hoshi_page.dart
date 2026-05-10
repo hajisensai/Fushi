@@ -1180,6 +1180,33 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         (progress * _chapterCharCounts[_currentChapter]).round();
   }
 
+  Future<void> _jumpToGlobalCharOffset(int globalOffset) async {
+    if (_chapterCumulativeChars.isEmpty || _controller == null) return;
+
+    int targetChapter = 0;
+    for (int i = 0; i < _chapterCumulativeChars.length; i++) {
+      if (_chapterCumulativeChars[i] <= globalOffset) {
+        targetChapter = i;
+      } else {
+        break;
+      }
+    }
+
+    final int chapterStart = _chapterCumulativeChars[targetChapter];
+    final int chapterLen = _chapterCharCounts[targetChapter];
+    final double progress =
+        chapterLen > 0 ? (globalOffset - chapterStart) / chapterLen : 0;
+
+    if (targetChapter != _currentChapter) {
+      _navigateToChapter(targetChapter, progress: progress.clamp(0.0, 1.0));
+    } else {
+      await _controller!.evaluateJavascript(
+        source:
+            'window.hoshiReader && window.hoshiReader.restoreProgress(${progress.clamp(0.0, 1.0)});',
+      );
+    }
+  }
+
   void _flushReadingStats() {
     if (_sessionCharsRead <= 0 || _book == null) return;
     final DateTime now = DateTime.now();
@@ -1452,6 +1479,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
                   _progressTotalChars != null
               ? (_progressCurrentChars!, _progressTotalChars!)
               : null,
+          onJumpToCharOffset: (int globalOffset) async {
+            _jumpToGlobalCharOffset(globalOffset);
+          },
           bookmarks: bookmarks,
           onJumpToBookmark: (Bookmark bm) async {
             if (bm.sectionIndex != _currentChapter) {
