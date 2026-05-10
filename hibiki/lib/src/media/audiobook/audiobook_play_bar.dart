@@ -247,6 +247,10 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
 
   String? _subPage;
 
+  late List<Bookmark> _bookmarks = List<Bookmark>.of(widget.bookmarks);
+  late List<FavoriteSentence> _favorites =
+      List<FavoriteSentence>.of(widget.favoriteSentences);
+
   @override
   void initState() {
     super.initState();
@@ -465,11 +469,11 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               const SizedBox(height: 12),
               _buildTocSection(context, theme),
             ],
-            if (widget.bookmarks.isNotEmpty) ...[
+            if (_bookmarks.isNotEmpty) ...[
               const SizedBox(height: 12),
               _buildBookmarkSection(context, theme),
             ],
-            if (widget.favoriteSentences.isNotEmpty) ...[
+            if (_favorites.isNotEmpty) ...[
               const SizedBox(height: 12),
               _buildFavoritesSection(context, theme),
             ],
@@ -847,7 +851,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         childrenPadding: EdgeInsets.zero,
         minTileHeight: 36,
         title: Text(
-          '${t.action_bookmark} (${widget.bookmarks.length})',
+          '${t.action_bookmark} (${_bookmarks.length})',
           style: theme.textTheme.titleMedium,
         ),
         children: [
@@ -855,9 +859,9 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
             constraints: const BoxConstraints(maxHeight: 240),
             child: ListView.builder(
               shrinkWrap: true,
-              itemCount: widget.bookmarks.length,
+              itemCount: _bookmarks.length,
               itemBuilder: (BuildContext ctx, int i) {
-                final Bookmark bm = widget.bookmarks[i];
+                final Bookmark bm = _bookmarks[i];
                 final String pageInfo =
                     bm.pageInChapter != null && bm.totalPagesInChapter != null
                         ? ' · ${bm.pageInChapter}/${bm.totalPagesInChapter}'
@@ -882,8 +886,11 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                     icon: const Icon(Icons.delete_outline, size: 18),
                     onPressed: () async {
                       await widget.onDeleteBookmark?.call(i);
-                      if (ctx.mounted) {
-                        Navigator.of(ctx).pop();
+                      if (mounted) {
+                        setState(() {
+                          _bookmarks = List<Bookmark>.of(_bookmarks)
+                            ..removeAt(i);
+                        });
                       }
                     },
                   ),
@@ -1695,7 +1702,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         tilePadding: EdgeInsets.zero,
         childrenPadding: EdgeInsets.zero,
         title: Text(
-          t.favorites(n: widget.favoriteSentences.length),
+          t.favorites(n: _favorites.length),
           style: theme.textTheme.titleMedium,
         ),
         children: [
@@ -1703,9 +1710,9 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
             constraints: const BoxConstraints(maxHeight: 300),
             child: ListView.builder(
               shrinkWrap: true,
-              itemCount: widget.favoriteSentences.length,
+              itemCount: _favorites.length,
               itemBuilder: (BuildContext ctx, int i) {
-                final FavoriteSentence fav = widget.favoriteSentences[i];
+                final FavoriteSentence fav = _favorites[i];
                 return ListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
@@ -1763,8 +1770,11 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                         icon: const Icon(Icons.delete_outline, size: 16),
                         onPressed: () async {
                           await widget.onDeleteFavorite?.call(i);
-                          if (ctx.mounted) {
-                            Navigator.of(ctx).pop();
+                          if (mounted) {
+                            setState(() {
+                              _favorites = List<FavoriteSentence>.of(_favorites)
+                                ..removeAt(i);
+                            });
                           }
                         },
                       ),

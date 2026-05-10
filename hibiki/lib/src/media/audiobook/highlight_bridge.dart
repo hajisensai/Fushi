@@ -39,8 +39,11 @@ class HighlightBridge {
   }
 
   function _skip(c) {
-    return (typeof __hoshiIsSkippable === 'function')
-      ? __hoshiIsSkippable(c) : false;
+    if (typeof __hoshiIsSkippable === 'function') return __hoshiIsSkippable(c);
+    if (window.hoshiReader && window.hoshiReader.isMatchableChar) {
+      return !window.hoshiReader.isMatchableChar(String.fromCodePoint(c));
+    }
+    return false;
   }
 
   // ── 从 selection 计算 normCharOffset + length ──
