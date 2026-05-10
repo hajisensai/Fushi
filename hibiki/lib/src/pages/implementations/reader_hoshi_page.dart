@@ -16,6 +16,7 @@ import 'package:hibiki/src/epub/epub_parser.dart';
 import 'package:hibiki/src/epub/epub_storage.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart';
+import 'package:hibiki/src/media/audiobook/collection_audio_matcher.dart';
 import 'package:hibiki/src/media/audiobook/highlight_bridge.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_controller.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_play_bar.dart';
@@ -957,8 +958,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       }
     }
     final bool forceReveal = controller.consumeForceReveal();
-    final bool reveal =
-        forceReveal || controller.shouldRevealCurrentCue;
+    final bool isContinuous = _settings?.isContinuousMode ?? false;
+    final bool reveal = forceReveal ||
+        (!isContinuous && controller.shouldRevealCurrentCue);
     AudiobookBridge.highlight(_controller!, cue: cue, reveal: reveal);
   }
 
@@ -1722,8 +1724,13 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
                     }
                   }
                   if (target != null) {
-                    await _audiobookController!
-                        .playCueOnce(target, silent: true);
+                    await _audiobookController!.playRange(
+                      AudioPlaybackRange(
+                        audioFileIndex: target.audioFileIndex,
+                        startMs: target.startMs,
+                        endMs: target.endMs,
+                      ),
+                    );
                   }
                 },
         );
