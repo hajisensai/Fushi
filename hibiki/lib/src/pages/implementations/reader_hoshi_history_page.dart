@@ -12,6 +12,7 @@ import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_model.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
+import 'package:hibiki/src/media/sources/reader_hoshi_source.dart';
 import 'package:hibiki/src/pages/implementations/illustrations_viewer_page.dart';
 import 'package:hibiki/utils.dart';
 
@@ -525,13 +526,8 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     setState(() {});
   }
 
-  int? _parseBookId(String mediaIdentifier) {
-    final Match? m = RegExp(r'hoshi://book/(\d+)').firstMatch(mediaIdentifier);
-    if (m != null) return int.tryParse(m.group(1)!);
-    final Match? legacy = RegExp(r'[?&]id=(\d+)').firstMatch(mediaIdentifier);
-    if (legacy != null) return int.tryParse(legacy.group(1)!);
-    return null;
-  }
+  int? _parseBookId(String mediaIdentifier) =>
+      ReaderHoshiSource.parseBookId(mediaIdentifier);
 
   void _openIllustrations(MediaItem item, int bookId) {
     Navigator.pop(context);

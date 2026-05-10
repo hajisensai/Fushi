@@ -299,9 +299,6 @@ class AudiobookPlayerController extends ChangeNotifier {
 
   // ── 进度持久化 ─────────────────────────────────────────────────────────────
 
-  /// Hive 里保存上次播放位置的 key 前缀（值为全局毫秒 int）。
-  static const String _kPositionKeyPrefix = 'audiobook_pos_';
-
   /// 上次写入时位置对应的**整秒下标**（对齐上游 SasayakiPlayer.tick 的
   /// `Int(seconds.rounded(.down)) != lastUpdate` 语义：只要秒变了就存）。
   /// -1 表示从未保存过。

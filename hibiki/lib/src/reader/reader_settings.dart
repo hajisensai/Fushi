@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/database/database.dart';
+import 'package:hibiki/src/media/sources/reader_hoshi_source.dart';
 
 /// All reader display/behavior settings, decoupled from the media source.
 ///
@@ -232,8 +233,7 @@ class ReaderSettings {
       families.add(_cssFontFamilyName(normalized));
       final String? path = e['path'] as String?;
       if (path != null) {
-        final String uri =
-            'https://hoshi.local/fonts/${Uri.encodeComponent(path)}';
+        final String uri = ReaderHoshiSource.fontUrl(path);
         faces.add(
           '@font-face { font-family: ${_cssFontFamilyName(normalized)}; '
           'src: url("$uri"); font-display: swap; }',

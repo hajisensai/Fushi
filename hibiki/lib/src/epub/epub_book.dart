@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:hibiki/src/media/sources/reader_hoshi_source.dart';
 import 'package:path/path.dart' as p;
 
 class EpubBook {
@@ -51,7 +52,7 @@ class EpubBook {
   ({int chapterIndex, String? fragment})? resolveInternalLink(String url) {
     final Uri? uri = Uri.tryParse(url);
     if (uri == null) return null;
-    if (uri.host != 'hoshi.local') return null;
+    if (uri.host != ReaderHoshiSource.kHost) return null;
     if (!uri.path.startsWith('/epub/')) return null;
 
     final String epubPath = Uri.decodeComponent(uri.path.substring('/epub/'.length));

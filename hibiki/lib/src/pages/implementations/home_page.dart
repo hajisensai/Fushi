@@ -225,7 +225,6 @@ class _HomePageState extends BasePageState<HomePage>
       tooltip: t.import_book,
       icon: Icons.add,
       onTap: () async {
-        final ReaderHoshiSource src = ReaderHoshiSource.instance;
         await showAppDialog(
           context: context,
           builder: (_) => BookImportDialog(

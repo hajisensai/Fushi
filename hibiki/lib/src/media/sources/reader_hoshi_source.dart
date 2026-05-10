@@ -45,9 +45,31 @@ class ReaderHoshiSource extends ReaderMediaSource {
 
   static int get defaultScrollingSpeed => 100;
 
+  // ── identifier helpers ────────────────────────────────────────────────
+
+  static const String kHost = 'hoshi.local';
+
   static String mediaIdentifierFor(int bookId) => 'hoshi://book/$bookId';
 
   static String bookUidFor(int bookId) => 'reader_ttu/hoshi://book/$bookId';
+
+  static String epubUrl(String href) => 'https://$kHost/epub/$href';
+
+  static String fontUrl(String path) =>
+      'https://$kHost/fonts/${Uri.encodeComponent(path)}';
+
+  static int? parseBookId(String identifier) {
+    final Uri? uri = Uri.tryParse(identifier);
+    if (uri == null) return null;
+    if (uri.scheme == 'hoshi' &&
+        uri.host == 'book' &&
+        uri.pathSegments.isNotEmpty) {
+      return int.tryParse(uri.pathSegments[0]);
+    }
+    final Match? legacy = RegExp(r'[?&]id=(\d+)').firstMatch(identifier);
+    if (legacy != null) return int.tryParse(legacy.group(1)!);
+    return null;
+  }
 
   // ── Sasayaki sentence audio ─────────────────────────────────────────
 
@@ -124,20 +146,8 @@ class ReaderHoshiSource extends ReaderMediaSource {
     );
   }
 
-  static int _extractBookId(String identifier) {
-    final Uri? uri = Uri.tryParse(identifier);
-    if (uri == null) return 0;
-    // hoshi://book/123 → scheme=hoshi, host=book, path=/123
-    if (uri.scheme == 'hoshi' && uri.host == 'book' && uri.pathSegments.isNotEmpty) {
-      return int.tryParse(uri.pathSegments[0]) ?? 0;
-    }
-    // Legacy ttu URL: http://localhost:52059/b.html?id=123
-    final String? idParam = uri.queryParameters['id'];
-    if (idParam != null) {
-      return int.tryParse(idParam) ?? 0;
-    }
-    return 0;
-  }
+  static int _extractBookId(String identifier) =>
+      parseBookId(identifier) ?? 0;
 
   @override
   List<Widget> getActions({
@@ -591,8 +601,7 @@ class ReaderHoshiSource extends ReaderMediaSource {
       families.add(cssFontFamilyName(normalizedName));
       final String? path = e['path'] as String?;
       if (path != null) {
-        final String uri =
-            'https://hoshi.local/fonts/${Uri.encodeComponent(path)}';
+        final String uri = fontUrl(path);
         faces.add(
           '@font-face { font-family: ${cssFontFamilyName(normalizedName)}; '
           'src: url("$uri"); font-display: swap; }',

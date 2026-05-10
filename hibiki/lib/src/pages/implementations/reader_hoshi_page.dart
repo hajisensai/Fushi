@@ -546,7 +546,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (_book == null || index < 0 || index >= _book!.chapters.length) {
       return 'about:blank';
     }
-    return 'https://hoshi.local/epub/${_book!.chapters[index].href}';
+    return ReaderHoshiSource.epubUrl(_book!.chapters[index].href);
   }
 
   Future<void> _loadChapterDirectly(int index) async {
@@ -558,7 +558,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   }
 
   WebResourceResponse? _interceptRequest(WebUri url) {
-    if (url.host != 'hoshi.local') return null;
+    if (url.host != ReaderHoshiSource.kHost) return null;
     final String path = url.path;
 
     if (path.startsWith('/fonts/')) {
@@ -842,6 +842,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         if (_audiobookController != null) {
           await _injectAudiobookBridge();
         }
+        await HighlightBridge.inject(controller);
+        await _applyChapterHighlights();
       },
       onConsoleMessage:
           (InAppWebViewController controller, ConsoleMessage msg) {
@@ -850,13 +852,32 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     );
   }
 
+  Future<void> _applyChapterHighlights() async {
+    if (_controller == null) return;
+    final FavoriteSentenceRepository repo =
+        FavoriteSentenceRepository(appModel.database);
+    final List<FavoriteSentence> all = await repo.getAll();
+    final List<FavoriteSentence> chapterFavs = all
+        .where((FavoriteSentence s) =>
+            s.ttuBookId == widget.bookId &&
+            s.sectionIndex == _currentChapter)
+        .toList();
+    if (chapterFavs.isNotEmpty) {
+      await HighlightBridge.applyHighlights(_controller!, chapterFavs);
+    }
+  }
+
   // ── Restore Complete ──────────────────────────────────────────────
+
+  Completer<void>? _restoreCompleter;
 
   void _onRestoreComplete() {
     if (!mounted) {
       return;
     }
     _restoreInFlight = false;
+    _restoreCompleter?.complete();
+    _restoreCompleter = null;
 
     if (!_readerContentReady) {
       setState(() {
@@ -865,7 +886,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       });
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     }
-
 
     _audiobookController?.notifySectionRestoreCompleted(
       currentReaderSection: _currentChapter,
@@ -1338,7 +1358,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   void _openImageViewer(String imgUrl) {
     final Uri? uri = Uri.tryParse(imgUrl);
     if (uri == null || _extractDir == null) return;
-    if (uri.host != 'hoshi.local') return;
+    if (uri.host != ReaderHoshiSource.kHost) return;
     final String epubPath =
         Uri.decodeComponent(uri.path.substring('/epub/'.length));
     final String filePath = p.join(_extractDir!, epubPath);
