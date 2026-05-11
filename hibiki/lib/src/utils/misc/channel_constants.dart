@@ -11,6 +11,8 @@ abstract final class HibikiChannels {
   static const MethodChannel volumeKeys = MethodChannel('$_prefix/volume_keys');
   static const MethodChannel floatingLyric =
       MethodChannel('$_prefix/floating_lyric');
+  static const MethodChannel floatingDict =
+      MethodChannel('$_prefix/floating_dict');
   static const MethodChannel lifecycle = MethodChannel('$_prefix/lifecycle');
   static const MethodChannel fonts = MethodChannel('$_prefix/fonts');
   static const MethodChannel saf = MethodChannel('$_prefix/saf');

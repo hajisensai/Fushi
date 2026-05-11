@@ -51,6 +51,7 @@ import 'package:hibiki/src/media/audiobook/reading_statistic_model.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_model.dart';
 import 'package:hibiki/src/epub/ttu_migration.dart';
 import 'package:hibiki/src/epub/ttu_migration_server.dart';
+import 'package:hibiki/src/media/floating_dict_channel.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 
 /// A list of fields that the app will support at runtime.
@@ -1285,6 +1286,7 @@ class AppModel with ChangeNotifier {
 
       debugPrint('[Hibiki] init: DONE');
       _isInitialised = true;
+      _setupFloatingDictHandlers();
       _persistSplashColor();
       notifyListeners();
     } catch (e, stack) {
@@ -3645,6 +3647,30 @@ class AppModel with ChangeNotifier {
   Future<void> setFloatingLyricFontSize(double value) async {
     await _setPref('floating_lyric_font_size', value.clamp(8, 64).toDouble());
     notifyListeners();
+  }
+
+  bool get showFloatingDict {
+    return _getPref('show_floating_dict', defaultValue: false);
+  }
+
+  Future<void> setShowFloatingDict(bool value) async {
+    await _setPref('show_floating_dict', value);
+    notifyListeners();
+  }
+
+  void _setupFloatingDictHandlers() {
+    FloatingDictChannel.setEventHandlers(
+      onSearch: (String term) async {
+        final DictionarySearchResult result = await searchDictionary(
+          searchTerm: term,
+          searchWithWildcards: false,
+        );
+        return result;
+      },
+      onAnkiExport: (String word, String reading, String meaning) async {
+        debugPrint('[FloatingDict] Anki export: $word / $reading');
+      },
+    );
   }
 
   bool get updateNeverRemind {

@@ -41,6 +41,7 @@ import 'package:hibiki/src/reader/reader_selection_scripts.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/utils/misc/jidoujisho_text_selection.dart';
 import 'package:hibiki/src/media/audiobook/floating_lyric_channel.dart';
+import 'package:hibiki/src/media/floating_dict_channel.dart';
 import 'package:hibiki/src/anki/anki_models.dart';
 import 'package:hibiki/src/anki/anki_repository.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
@@ -2137,6 +2138,19 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     return true;
   }
 
+  Future<bool> _toggleFloatingDict() async {
+    final bool current = appModel.showFloatingDict;
+    if (!current) {
+      final bool shown = await FloatingDictChannel.show();
+      if (!shown) return false;
+      await appModel.setShowFloatingDict(true);
+    } else {
+      await FloatingDictChannel.hide();
+      await appModel.setShowFloatingDict(false);
+    }
+    return true;
+  }
+
   void _setupFloatingLyricHandlers() {
     FloatingLyricChannel.setEventHandlers(
       onPlayPause: () => _audiobookController?.togglePlayPause(),
@@ -2388,6 +2402,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
               buttonBgColor: (dark ? const Color(0x33FFFFFF) : const Color(0x1A000000)).value,
             );
           },
+          showFloatingDict: appModel.showFloatingDict,
+          onToggleFloatingDict: _toggleFloatingDict,
           showMediaNotification: appModel.showMediaNotification,
           onToggleMediaNotification: _toggleMediaNotification,
           charProgress: _progressCurrentChars != null &&
