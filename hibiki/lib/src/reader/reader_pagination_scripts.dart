@@ -703,13 +703,17 @@ $_sharedJs
   },
   scrollToTarget: function(target) {
     var rect = this.getRect(target);
-    var vertical = this.isVertical();
     var margin = 0.15;
-    if (vertical) {
+    var wm = window.getComputedStyle(document.body).writingMode;
+    if (wm.startsWith('vertical')) {
       var vw = window.innerWidth;
       var safe = vw * margin;
       if (rect.left >= safe && rect.right <= vw - safe) return false;
-      window.scrollBy({left: rect.right - (vw - safe), behavior: 'smooth'});
+      if (wm === 'vertical-rl') {
+        window.scrollBy({left: rect.right - (vw - safe), behavior: 'smooth'});
+      } else {
+        window.scrollBy({left: rect.left - safe, behavior: 'smooth'});
+      }
     } else {
       var vh = window.innerHeight;
       var safe = vh * margin;
