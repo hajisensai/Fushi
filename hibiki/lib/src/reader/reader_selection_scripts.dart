@@ -367,6 +367,7 @@ window.hoshiSelection = {
     return null;
   },
   clearHighlightWrappers: function() {
+    if (!this.highlightWrappers.length) return;
     for (var i = 0; i < this.highlightWrappers.length; i++) {
       var wrapper = this.highlightWrappers[i];
       var parent = wrapper.parentNode;
@@ -378,6 +379,9 @@ window.hoshiSelection = {
       parent.normalize();
     }
     this.highlightWrappers = [];
+    if (window.hoshiReader && window.hoshiReader.buildNodeOffsets) {
+      window.hoshiReader.buildNodeOffsets();
+    }
   },
   clearSelection: function() {
     window.getSelection().removeAllRanges();
