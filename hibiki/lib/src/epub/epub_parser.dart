@@ -59,6 +59,7 @@ class EpubParser {
     final String title =
         _parseMetadata(opfXml, 'title') ?? p.basenameWithoutExtension(extractDir);
     final String? author = _parseMetadata(opfXml, 'creator');
+    final String? language = _parseMetadata(opfXml, 'language');
     final String? coverHref =
         _parseCoverHref(opfXml, manifest, opfDir, extractDir);
     final List<EpubTocItem> toc =
@@ -78,6 +79,7 @@ class EpubParser {
     return EpubBook(
       title: title,
       author: author,
+      language: language,
       chapters: chapters,
       toc: toc,
       coverHref: coverHref,

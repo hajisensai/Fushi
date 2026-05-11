@@ -15,10 +15,12 @@ class EpubBook {
     this.resources = const {},
     this.rootDirectory,
     this.author,
+    this.language,
   });
 
   final String title;
   final String? author;
+  final String? language;
   final List<EpubChapter> chapters;
   final List<EpubTocItem> toc;
   final String? coverHref;
