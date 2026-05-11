@@ -117,6 +117,7 @@ class TtuMigration {
         );
 
         await prefs.setBool(flagKey, true);
+        await prefs.setBool('ttu_migrated_blobs_$ttuId', true);
         migrated++;
         debugPrint('[ttu-migration] book $ttuId: migrated successfully');
       } catch (e) {
@@ -330,7 +331,7 @@ class TtuMigration {
 
   /// blob key 中替换 Windows 非法字符，防止文件创建失败。
   static String _sanitizeBlobKey(String key) {
-    return key.replaceAll(RegExp(r'[<>:"|?*]'), '_');
+    return key.replaceAll(RegExp(r'[<>:"|?*\\]'), '_');
   }
 
   /// 将 elementHtml 中 ttu 占位 src 替换为本地 blobs/ 相对路径。
