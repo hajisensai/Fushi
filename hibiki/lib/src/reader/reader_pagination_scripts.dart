@@ -35,9 +35,12 @@ class ReaderPaginationScripts {
   static bool didScroll(String? result) =>
       result?.trim().replaceAll('"', '') == 'scrolled';
 
-  static double? doubleResult(String? result) {
+  static double? doubleResult(dynamic result) {
     if (result == null) return null;
-    return double.tryParse(result.trim().replaceAll('"', ''));
+    if (result is double) return result;
+    if (result is num) return result.toDouble();
+    if (result is String) return double.tryParse(result.trim().replaceAll('"', ''));
+    return null;
   }
 
   static String shellScript({
