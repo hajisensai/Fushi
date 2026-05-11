@@ -371,7 +371,7 @@ $_sharedJs
     if (vertical) {
       var pt = parseFloat(cs.paddingTop) || 0;
       var pb = parseFloat(cs.paddingBottom) || 0;
-      pageSize = (scrollEl.clientHeight || this.pageHeight || window.innerHeight) - pt - pb;
+      pageSize = (this.pageHeight || scrollEl.clientHeight || window.innerHeight) - pt - pb;
     } else {
       var pl = parseFloat(cs.paddingLeft) || 0;
       var pr = parseFloat(cs.paddingRight) || 0;
@@ -379,11 +379,21 @@ $_sharedJs
     }
     pageSize = Math.max(1, pageSize);
     var clientSize = vertical
-      ? (scrollEl.clientHeight || this.pageHeight || window.innerHeight)
+      ? (this.pageHeight || scrollEl.clientHeight || window.innerHeight)
       : (scrollEl.clientWidth || this.pageWidth || window.innerWidth);
     var columnPitch = vertical ? clientSize : (clientSize + $fontSize);
     var totalSize = vertical ? scrollEl.scrollHeight : scrollEl.scrollWidth;
     var maxScroll = Math.max(0, totalSize - clientSize);
+    var gap = parseFloat(cs.columnGap) || 0;
+    var pageHeightVar = getComputedStyle(document.documentElement).getPropertyValue('--page-height');
+    var bodyRect = scrollEl.getBoundingClientRect();
+    var htmlCH = document.documentElement.clientHeight;
+    console.log('[HoshiPagination] ctx: v=' + vertical
+      + ' hoshiPH=' + this.pageHeight + ' clientH=' + scrollEl.clientHeight
+      + ' bodyRectH=' + bodyRect.height + ' --page-height=' + pageHeightVar
+      + ' scrollH=' + scrollEl.scrollHeight
+      + ' pageSize=' + pageSize + ' pitch=' + columnPitch
+      + ' cssGap=' + gap + ' innerH=' + window.innerHeight);
     return { vertical: vertical, scrollEl: scrollEl, pageSize: pageSize, columnPitch: columnPitch, maxScroll: maxScroll };
   },
   getPagePosition: function(context) {
@@ -600,10 +610,16 @@ $_sharedJs
     var metrics = this.paginationMetrics || this.buildPaginationMetrics();
     var minAlignedScroll = metrics.minScroll;
     var maxAlignedScroll = metrics.maxScroll;
+    var actualScroll = this.getPagePosition(context);
     if (direction === "forward") {
       if ((currentScroll + context.columnPitch) <= (maxAlignedScroll + 1)) {
         var targetForward = Math.round((currentScroll + context.columnPitch) / context.columnPitch) * context.columnPitch;
         this.setPagePosition(context, targetForward);
+        var afterScroll = this.getPagePosition(context);
+        console.log('[HoshiPagination] paginate FORWARD: before=' + currentScroll
+          + ' target=' + targetForward + ' after=' + afterScroll
+          + ' pitch=' + context.columnPitch + ' drift=' + (afterScroll - targetForward)
+          + ' min=' + minAlignedScroll + ' max=' + maxAlignedScroll);
         return "scrolled";
       }
       return "limit";
@@ -612,6 +628,11 @@ $_sharedJs
         var targetBack = Math.round((currentScroll - context.columnPitch) / context.columnPitch) * context.columnPitch;
         targetBack = Math.max(minAlignedScroll, targetBack);
         this.setPagePosition(context, targetBack);
+        var afterScroll = this.getPagePosition(context);
+        console.log('[HoshiPagination] paginate BACKWARD: before=' + currentScroll
+          + ' target=' + targetBack + ' after=' + afterScroll
+          + ' pitch=' + context.columnPitch + ' drift=' + (afterScroll - targetBack)
+          + ' min=' + minAlignedScroll + ' max=' + maxAlignedScroll);
         return "scrolled";
       }
       return "limit";
