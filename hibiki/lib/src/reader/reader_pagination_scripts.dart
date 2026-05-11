@@ -17,12 +17,8 @@ class ReaderPaginationScripts {
   static String progressInvocation() =>
       'window.hoshiReader.calculateProgress()';
 
-  static String updatePageSizeInvocation(
-    double width,
-    double height,
-    double progress,
-  ) =>
-      'window.hoshiReader && window.hoshiReader.updatePageSize($width, $height, $progress)';
+  static String updatePageSizeInvocation(double width, double height) =>
+      'window.hoshiReader && window.hoshiReader.updatePageSize($width, $height)';
 
   static String applySasayakiCuesInvocation(String cuesJson) =>
       'window.hoshiReader.applySasayakiCues($cuesJson)';
@@ -626,10 +622,11 @@ $initImages
     $initialRestoreScript
   });
 };
-window.hoshiReader.updatePageSize = function(cssWidth, cssHeight, progress) {
+window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
   var newHeight = Math.round(cssHeight) + $bottomOverlapPx;
   var newWidth = Math.round(cssWidth);
   if (newHeight === this.pageHeight && newWidth === this.pageWidth) return;
+  var progress = this.calculateProgress();
   document.documentElement.style.setProperty('--page-height', newHeight + 'px');
   document.documentElement.style.setProperty('--page-width', newWidth + 'px');
   document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(newWidth * $imageWidthRatio)) + 'px');
@@ -781,16 +778,17 @@ $initImages
     $initialRestoreScript
   });
 };
-window.hoshiReader.updatePageSize = function(cssWidth, cssHeight, progress) {
+window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
   var newHeight = Math.round(cssHeight);
   var newWidth = Math.round(cssWidth);
   var changed = (newHeight !== this._contH || newWidth !== this._contW);
   this._contH = newHeight;
   this._contW = newWidth;
+  var progress = changed ? this.calculateProgress() : 0;
   document.documentElement.style.setProperty('--hoshi-continuous-height', newHeight + 'px');
   document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(newWidth * $imageWidthRatio)) + 'px');
   document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, newHeight - $bottomOverlapPx) + 'px');
-  if (!changed || progress <= 0) return;
+  if (progress <= 0) return;
   var self = this;
   requestAnimationFrame(function() {
     self.scrollToProgressContinuous(progress);

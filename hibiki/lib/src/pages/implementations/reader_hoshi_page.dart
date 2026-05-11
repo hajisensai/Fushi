@@ -507,11 +507,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final double h = screen.height - _readerTopOffset - _readerBottomReserve;
     _lastSyncedWidth = w;
     await _controller!.evaluateJavascript(
-      source: ReaderPaginationScripts.updatePageSizeInvocation(
-        w,
-        h,
-        _displayedProgress,
-      ),
+      source: ReaderPaginationScripts.updatePageSizeInvocation(w, h),
     );
   }
 
