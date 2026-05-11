@@ -138,6 +138,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   Future<void> _initBook() async {
     final HibikiDatabase db = appModel.database;
     _settings = ReaderSettings(db);
+    await _settings!.ready;
 
     final bool exists = await EpubStorage.bookExists(widget.bookId);
     if (!exists) {
@@ -532,8 +533,13 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       autofocus: true,
       focusNode: _focusNode,
       onKeyEvent: _handleKeyEvent,
-      child: WillPopScope(
-        onWillPop: onWillPop,
+      child: PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (bool didPop, dynamic result) async {
+          if (didPop) return;
+          final bool allow = await onWillPop();
+          if (allow && mounted) Navigator.of(context).pop();
+        },
         child: Scaffold(
           backgroundColor: bgColor,
           resizeToAvoidBottomInset: false,
@@ -597,6 +603,20 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (path.startsWith('/fonts/')) {
       final String raw = path.substring('/fonts/'.length);
       final String fontPath = Uri.decodeComponent(raw);
+      final Set<String> allowedPaths = (_settings?.customFonts ?? <Map<String, dynamic>>[])
+          .map((Map<String, dynamic> e) => e['path'] as String?)
+          .whereType<String>()
+          .toSet();
+      if (!allowedPaths.contains(fontPath)) {
+        debugPrint('[ReaderHoshi] font path not in whitelist: $fontPath');
+        return WebResourceResponse(
+          contentType: 'text/plain',
+          statusCode: 403,
+          reasonPhrase: 'Forbidden',
+          headers: <String, String>{'Access-Control-Allow-Origin': '*'},
+          data: Uint8List(0),
+        );
+      }
       final File fontFile = File(fontPath);
       if (!fontFile.existsSync()) {
         debugPrint('[ReaderHoshi] font not found: $fontPath (raw=$raw)');
@@ -641,7 +661,17 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (_extractDir == null) return null;
 
     final String epubPath = Uri.decodeComponent(path.substring('/epub/'.length));
-    final String filePath = p.join(_extractDir!, epubPath);
+    final String filePath = p.canonicalize(p.join(_extractDir!, epubPath));
+    if (!filePath.startsWith(p.canonicalize(_extractDir!))) {
+      debugPrint('[ReaderHoshi] path traversal blocked: $epubPath');
+      return WebResourceResponse(
+        contentType: 'text/plain',
+        statusCode: 403,
+        reasonPhrase: 'Forbidden',
+        headers: <String, String>{'Access-Control-Allow-Origin': '*'},
+        data: Uint8List(0),
+      );
+    }
     final File file = File(filePath);
     if (!file.existsSync()) {
       debugPrint('[ReaderHoshi] resource not found: $epubPath');
@@ -789,8 +819,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         ),
       ]),
       initialSettings: InAppWebViewSettings(
-        allowFileAccessFromFileURLs: true,
-        allowUniversalAccessFromFileURLs: true,
+        allowFileAccessFromFileURLs: false,
+        allowUniversalAccessFromFileURLs: false,
         mediaPlaybackRequiresUserGesture: false,
         verticalScrollBarEnabled: false,
         horizontalScrollBarEnabled: false,
@@ -1379,9 +1409,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _displayedProgress = progress;
     final int absoluteChars = _absoluteCharPosition(progress);
     final int charDiff = absoluteChars - _lastAbsoluteCount;
-    if (charDiff < 0 && charDiff.abs() > _sessionCharsRead) {
-      _sessionCharsRead = 0;
-    } else {
+    if (charDiff > 0) {
       _sessionCharsRead += charDiff;
     }
     _lastAbsoluteCount = absoluteChars;

@@ -25,6 +25,7 @@ class _SwipeDismissWrapperState extends State<SwipeDismissWrapper> {
   double get _decisionDistance => 10 + (1.0 - widget.sensitivity) * 20;
 
   void _reset() {
+    if (!mounted) return;
     setState(() {
       _dragX = 0;
       _dragY = 0;
@@ -45,7 +46,7 @@ class _SwipeDismissWrapperState extends State<SwipeDismissWrapper> {
           _decided = true;
           _isHorizontal = _dragX.abs() > _dragY.abs() * 2.5;
         }
-        if (_decided && _isHorizontal) {
+        if (_decided && _isHorizontal && mounted) {
           setState(() {});
         }
       },

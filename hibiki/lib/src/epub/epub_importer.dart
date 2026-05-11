@@ -116,7 +116,7 @@ class EpubImporter {
     required String filePath,
   }) async {
     final File file = File(filePath);
-    final Uint8List bytes = file.readAsBytesSync();
+    final Uint8List bytes = await file.readAsBytes();
     return import(
       db: db,
       bytes: bytes,

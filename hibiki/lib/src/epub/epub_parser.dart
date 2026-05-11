@@ -91,8 +91,10 @@ class EpubParser {
     final Directory dir = Directory(extractDir);
     if (!dir.existsSync()) dir.createSync(recursive: true);
 
+    final String canonicalBase = p.canonicalize(extractDir);
     for (final ArchiveFile file in archive) {
-      final String filePath = p.join(extractDir, file.name);
+      final String filePath = p.canonicalize(p.join(extractDir, file.name));
+      if (!filePath.startsWith(canonicalBase)) continue;
       if (file.isFile) {
         final File outFile = File(filePath);
         outFile.parent.createSync(recursive: true);

@@ -11,11 +11,12 @@ import 'package:hibiki/src/media/sources/reader_hoshi_source.dart';
 /// Key format: `src:reader_ttu:<shortKey>`.
 class ReaderSettings {
   ReaderSettings(this._db) {
-    _loadAll();
+    ready = _loadAll();
   }
 
   final HibikiDatabase _db;
   final Map<String, dynamic> _cache = <String, dynamic>{};
+  late final Future<void> ready;
 
   static const String _prefix = 'src:reader_ttu:';
 
