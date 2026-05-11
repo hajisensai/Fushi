@@ -9,6 +9,7 @@ import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/utils.dart';
 import 'package:collection/collection.dart';
 
@@ -281,7 +282,8 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
               setState(() {});
             },
           );
-        } catch (e) {
+        } catch (e, stack) {
+          ErrorLogService.instance.log('DictionaryDialog.folderImport', e, stack);
           debugPrint('[Dictionary Import] folder import error: $e');
           progressNotifier.value = '$e';
           await Future.delayed(const Duration(seconds: 3));

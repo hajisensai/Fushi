@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/creator.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
@@ -135,7 +136,8 @@ class FrequencyField extends Field {
     Object? decoded;
     try {
       decoded = jsonDecode(entry.extra);
-    } catch (_) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('FrequencyField.decode', e, stack);
       return [];
     }
 

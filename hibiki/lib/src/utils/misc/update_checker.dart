@@ -11,6 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/utils.dart';
 
@@ -76,7 +77,8 @@ class UpdateChecker {
       try {
         final androidInfo = await DeviceInfoPlugin().androidInfo;
         supportedAbis = androidInfo.supportedAbis;
-      } catch (e) {
+      } catch (e, stack) {
+        ErrorLogService.instance.log('UpdateChecker.getAbi', e, stack);
         debugPrint('[Hibiki] failed to get device ABI info: $e');
       }
 
@@ -117,7 +119,8 @@ class UpdateChecker {
       } else {
         _showUpdateDialog(context, tagName, releaseBody, apkUrl);
       }
-    } catch (e) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('UpdateChecker.check', e, stack);
       debugPrint('[Hibiki] update check failed: $e');
     }
   }
@@ -139,7 +142,8 @@ class UpdateChecker {
           return await response.transform(utf8.decoder).join();
         }
         await response.drain<void>();
-      } catch (e) {
+      } catch (e, stack) {
+        ErrorLogService.instance.log('UpdateChecker.httpGet', e, stack);
         debugPrint('[Hibiki] request failed ($u): $e');
       }
     }
@@ -368,7 +372,8 @@ class UpdateChecker {
             break;
           }
           await response.drain<void>();
-        } catch (e) {
+        } catch (e, stack) {
+          ErrorLogService.instance.log('UpdateChecker.download', e, stack);
           debugPrint('[Hibiki] download failed ($u): $e');
         }
       }
@@ -381,7 +386,8 @@ class UpdateChecker {
       await HibikiChannels.update.invokeMethod('installApk', {
         'path': apkFile.path,
       });
-    } catch (e) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('UpdateChecker.downloadAndInstall', e, stack);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('${t.update_download_failed}: $e')),

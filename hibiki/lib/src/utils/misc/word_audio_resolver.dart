@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
 typedef LocalAudioQuery = Future<Map<String, String>?> Function(
     String expression, String reading);
@@ -87,7 +88,8 @@ class WordAudioResolver {
           .map((Map source) => source['url']?.toString() ?? '')
           .where((String value) => value.isNotEmpty)
           .toList(growable: false);
-    } catch (_) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('WordAudioResolver.resolve', e, stack);
       return const <String>[];
     }
   }

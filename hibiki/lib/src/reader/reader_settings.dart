@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/database/database.dart';
 import 'package:hibiki/src/media/sources/reader_hoshi_source.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
 /// All reader display/behavior settings, decoupled from the media source.
 ///
@@ -42,7 +43,8 @@ class ReaderSettings {
     _cache[key] = value;
     try {
       await _db.setPref('$_prefix$key', value.toString());
-    } catch (e) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderSettings.write', e, stack);
       debugPrint('[ReaderSettings] write error: $e');
     }
   }
@@ -192,7 +194,8 @@ class ReaderSettings {
     try {
       return (jsonDecode(raw) as List<dynamic>)
           .cast<Map<String, dynamic>>();
-    } catch (_) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderSettings.customFonts', e, stack);
       return <Map<String, dynamic>>[];
     }
   }

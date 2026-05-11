@@ -13,6 +13,7 @@ import 'package:list_counter/list_counter.dart';
 import 'package:path/path.dart' as path;
 import 'package:recase/recase.dart';
 import 'package:hibiki/dictionary.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/utils.dart';
 
 /// A dictionary format for archives following the latest Yomichan bank schema.
@@ -48,7 +49,8 @@ class YomichanFormat extends DictionaryFormat {
     try {
       jsonDecode(definition);
       return true;
-    } catch (e) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('YomichanFormat.shouldUseCustomWidget', e, stack);
       return false;
     }
   }

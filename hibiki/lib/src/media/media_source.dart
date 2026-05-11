@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:network_to_file_image/network_to_file_image.dart';
 import 'package:transparent_image/transparent_image.dart';
 import 'package:hibiki/media.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
@@ -153,7 +154,8 @@ abstract class MediaSource {
     if (db != null) {
       try {
         await db.setPref(_dbPrefKey(key), value.toString());
-      } catch (e) {
+      } catch (e, stack) {
+        ErrorLogService.instance.log('MediaSource.setPref', e, stack);
         debugPrint('[MediaSource] setPref write-through err: $e');
       }
     }

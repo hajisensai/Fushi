@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:hibiki/src/epub/epub_storage.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/utils.dart';
 
 class IllustrationsViewerPage extends StatefulWidget {
@@ -69,11 +70,13 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
           if (bytes.isNotEmpty) {
             setState(() => _images.add(bytes));
           }
-        } catch (e) {
+        } catch (e, stack) {
+          ErrorLogService.instance.log('IllustrationsViewer.readImage', e, stack);
           debugPrint('[Hibiki] illustration read failed: $e');
         }
       }
-    } catch (e) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('IllustrationsViewer.loadImages', e, stack);
       if (mounted) {
         setState(() => _error = e.toString());
       }

@@ -6,6 +6,7 @@ import 'package:hibiki/src/database/database.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_health.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_storage.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
 class AudiobookRepository {
   const AudiobookRepository(this._db);
@@ -180,7 +181,8 @@ class AudiobookRepository {
             ? DateTime.fromMillisecondsSinceEpoch(atMs)
             : DateTime.now(),
       );
-    } catch (e) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('AudiobookRepository.healthOverlay', e, stack);
       debugPrint('[hibiki-audiobook] readHealthOverlay parse failed: $e');
       return null;
     }

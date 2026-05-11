@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'reading_statistic_model.dart';
 
 /// 从 ttu IndexedDB `books` 库的 `statistic` object store 批量读取统计记录。
@@ -95,7 +96,8 @@ class ReadingStatisticIdbReader {
               StateError('stat_read_err: ${msg['error']}'),
             );
           }
-        } catch (e) {
+        } catch (e, stack) {
+          ErrorLogService.instance.log('ReadingStatisticIdbReader.consoleDecode', e, stack);
           debugPrint('ReadingStatisticIdbReader console decode error: $e');
         }
       },

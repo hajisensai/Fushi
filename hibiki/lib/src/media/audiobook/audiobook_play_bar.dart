@@ -13,6 +13,7 @@ import 'package:hibiki/src/media/audiobook/favorite_sentence_repository.dart';
 import 'package:hibiki/src/media/sources/reader_hoshi_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/custom_theme_page.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/utils.dart';
 
 /// 有声书播放控制条（紧凑型，固定于阅读器底部）。
@@ -586,7 +587,8 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               _searchResults = results;
               _isSearching = false;
             });
-          } catch (e) {
+          } catch (e, stack) {
+            ErrorLogService.instance.log('AudiobookPlayBar.search', e, stack);
             debugPrint('[hibiki-search] error: $e');
             setLocal(() {
               _searchResults = const [];

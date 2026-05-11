@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:hibiki/media.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/utils.dart';
@@ -174,7 +175,8 @@ Future<List<String>> _getSystemFonts() async {
         await _fontsChannel.invokeMethod<List<dynamic>>('listSystemFonts');
     debugPrint('[hibiki-fonts] channel returned ${result?.length} fonts');
     _cachedSystemFonts = result?.cast<String>() ?? [];
-  } catch (e) {
+  } catch (e, stack) {
+    ErrorLogService.instance.log('CustomFontsPage.listSystemFonts', e, stack);
     debugPrint('[hibiki-fonts] channel error: $e');
     _cachedSystemFonts = [];
   }
@@ -406,7 +408,8 @@ class _CustomFontsPageState extends BasePageState {
       } finally {
         await raf.close();
       }
-    } catch (_) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('CustomFontsPage.detectFontExt', e, stack);
       return null;
     }
   }
@@ -428,7 +431,8 @@ class _CustomFontsPageState extends BasePageState {
       } finally {
         await raf.close();
       }
-    } catch (_) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('CustomFontsPage.isZipArchive', e, stack);
       return false;
     }
   }
@@ -476,7 +480,8 @@ class _CustomFontsPageState extends BasePageState {
         count++;
       }
       return count;
-    } catch (e) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('CustomFontsPage.extractArchive', e, stack);
       debugPrint('[hibiki-fonts] archive extract failed: $e');
       Fluttertoast.showToast(msg: t.custom_fonts_archive_error);
       return 0;
@@ -738,7 +743,8 @@ class _CustomFontsPageState extends BasePageState {
       try {
         final f = File(filePath);
         if (await f.exists()) await f.delete();
-      } catch (e) {
+      } catch (e, stack) {
+        ErrorLogService.instance.log('CustomFontsPage.deleteFont', e, stack);
         debugPrint('[Hibiki] failed to delete font file $filePath: $e');
       }
     }

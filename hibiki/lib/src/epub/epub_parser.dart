@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:xml/xml.dart';
 
 import 'package:hibiki/src/epub/epub_book.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
 /// Pure Dart EPUB parser — no native FFI, no WebView, no IndexedDB.
 ///
@@ -293,7 +294,8 @@ class EpubParser {
           }
         }
       }
-    } catch (_) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('EpubParser.parseNav', e, stack);
       // Malformed nav doc — fall through to NCX
     }
     return <EpubTocItem>[];
@@ -347,7 +349,8 @@ class EpubParser {
       final Iterable<XmlElement> navMaps = doc.findAllElements('navMap');
       if (navMaps.isEmpty) return <EpubTocItem>[];
       return _parseNavPoints(navMaps.first, ncxDir, extractDir);
-    } catch (_) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('EpubParser.parseNcx', e, stack);
       return <EpubTocItem>[];
     }
   }

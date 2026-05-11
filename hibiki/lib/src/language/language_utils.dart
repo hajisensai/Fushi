@@ -1,6 +1,7 @@
 import 'package:kana_kit/kana_kit.dart';
 import 'package:ruby_text/ruby_text.dart';
 import 'package:hibiki/dictionary.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
 /// Extra methods for [RegExp].
 
@@ -136,7 +137,8 @@ class LanguageUtils {
       if (segments != null) {
         return segments;
       }
-    } catch (e) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('LanguageUtils.rubySegments', e, stack);
       /// This is the fallback upon failure.
       return [RubyTextData(term, ruby: reading)];
     }

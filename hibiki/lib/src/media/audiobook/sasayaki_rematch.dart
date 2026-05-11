@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_health.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
@@ -242,7 +243,8 @@ class SasayakiRematch {
           text: book.chapterPlainText(i),
         ),
       );
-    } catch (e) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SasayakiRematch.loadSections', e, stack);
       debugPrint('[hibiki-audiobook] loadSections failed: $e');
       return const <EpubSection>[];
     }

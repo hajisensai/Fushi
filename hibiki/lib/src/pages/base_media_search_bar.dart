@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:infinite_scroll_pagination/infinite_scroll_pagination.dart';
 import 'package:material_floating_search_bar/material_floating_search_bar.dart';
 import 'package:hibiki/media.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 
@@ -86,7 +87,8 @@ abstract class BaseMediaSearchBarState<T extends BaseMediaSearchBar>
         if (newItems != null && newItems.isNotEmpty) {
           pagingController?.appendPage(newItems, 2);
         }
-      } catch (e) {
+      } catch (e, stack) {
+        ErrorLogService.instance.log('MediaSearchBar.initialSearch', e, stack);
         pagingController?.appendLastPage([]);
       }
       pagingController?.addPageRequestListener((pageKey) async {
@@ -99,7 +101,8 @@ abstract class BaseMediaSearchBarState<T extends BaseMediaSearchBar>
           if (newItems != null && newItems.isNotEmpty) {
             pagingController?.appendPage(newItems, pageKey);
           }
-        } catch (e) {
+        } catch (e, stack) {
+          ErrorLogService.instance.log('MediaSearchBar.pageSearch', e, stack);
           pagingController?.appendLastPage([]);
         }
       });

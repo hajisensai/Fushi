@@ -9,6 +9,7 @@ import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/collection_audio_matcher.dart';
 import 'package:hibiki/src/media/audiobook/json_alignment_parser.dart';
 import 'package:hibiki/src/media/audiobook/sasayaki_match_codec.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
 /// 有声书播放控制器。
 ///
@@ -287,7 +288,8 @@ class AudiobookPlayerController extends ChangeNotifier {
     if ((initialSpeed - 1.0).abs() > 0.001) {
       try {
         await _player.setSpeed(initialSpeed);
-      } catch (e) {
+      } catch (e, stack) {
+        ErrorLogService.instance.log('AudiobookController.setSpeed', e, stack);
         debugPrint('[hibiki-audiobook] initial setSpeed $initialSpeed failed: $e');
       }
     }
@@ -914,7 +916,8 @@ class AudiobookPlayerController extends ChangeNotifier {
     try {
       final Duration? d = await probe.setFilePath(file.path);
       return d;
-    } catch (_) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('AudiobookController.durationOf', e, stack);
       return null;
     } finally {
       await probe.dispose();

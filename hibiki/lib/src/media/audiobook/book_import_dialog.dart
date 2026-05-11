@@ -22,6 +22,7 @@ import 'package:hibiki/src/media/audiobook/lrc_parser.dart';
 import 'package:hibiki/src/media/audiobook/srt_parser.dart';
 import 'package:hibiki/src/media/audiobook/text_to_epub.dart';
 import 'package:hibiki/src/database/database.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/epub/epub_book.dart';
 import 'package:hibiki/src/epub/epub_importer.dart';
 import 'package:hibiki/src/epub/epub_parser.dart';
@@ -432,7 +433,8 @@ class _BookImportDialogState extends State<BookImportDialog> {
         Fluttertoast.showToast(msg: msg);
         Navigator.pop(context, true);
       }
-    } catch (e) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('BookImportDialog.import', e, stack);
       debugPrint('BookImportDialog error: $e');
       if (mounted) {
         Fluttertoast.showToast(msg: '${t.srt_import_error}: $e');
@@ -478,7 +480,8 @@ class _BookImportDialogState extends State<BookImportDialog> {
           fileName: '${title.replaceAll(RegExp(r'[^\w\s\-]'), '')}.epub',
         );
         debugPrint('[hibiki-import] subtitleBook: EPUB import done, id=$bookId');
-      } catch (e) {
+      } catch (e, stack) {
+        ErrorLogService.instance.log('BookImportDialog.epubImport', e, stack);
         debugPrint('[hibiki-import] EPUB generation/import failed: $e');
       }
     }
@@ -574,7 +577,8 @@ class _BookImportDialogState extends State<BookImportDialog> {
           text: epubBook.chapterPlainText(i),
         ),
       );
-    } catch (e) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('BookImportDialog.parseEpub', e, stack);
       debugPrint('[hibiki-import] parseFromExtracted failed: $e');
     }
     final String bookUid = ReaderHoshiSource.bookUidFor(bookId);

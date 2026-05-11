@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/database/database.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
 class ReadingStatisticsPage extends BasePage {
   const ReadingStatisticsPage({super.key});
@@ -57,7 +58,8 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       _allStats = await db.getAllReadingStatistics();
       _computeAggregates();
       await _loadHourlyData();
-    } catch (e) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReadingStatisticsPage.load', e, stack);
       _error = e.toString();
     }
     setState(() => _loading = false);
