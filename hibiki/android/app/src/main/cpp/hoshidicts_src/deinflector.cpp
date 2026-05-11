@@ -217,10 +217,12 @@ void Deinflector::deinflect_recursive(const std::string& text, uint64_t conditio
                                       std::vector<DeinflectionResult>& results,
                                       int depth) const {
   size_t text_len = utf8::distance(text.begin(), text.end());
-  if (text_len <= 1) return;
+  if (text_len == 0) return;
   if (depth > kMaxRecursionDepth) return;
 
   results.emplace_back(text, conditions, trace);
+
+  if (text_len == 1) return;
 
   // Suffix matching: scan from longest to shortest
   size_t start = std::min(max_suffix_length_, text_len);
