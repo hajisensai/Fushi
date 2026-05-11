@@ -1112,6 +1112,8 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
       }),
       sw(t.invert_volume_buttons, _src.volumePageTurningInverted,
           _src.toggleVolumePageTurningInverted),
+      sw(t.invert_swipe_direction, _src.invertSwipeDirection,
+          _src.toggleInvertSwipeDirection),
       sw(t.keep_screen_awake, _src.keepScreenAwake, () async {
         _src.toggleKeepScreenAwake();
         if (_src.keepScreenAwake) {
