@@ -702,15 +702,23 @@ $_sharedJs
     document.body.scrollLeft = 0;
   },
   scrollToTarget: function(target) {
+    var rect = this.getRect(target);
     var vertical = this.isVertical();
-    var root = document.scrollingElement || document.documentElement;
-    var scrollBefore = vertical ? root.scrollLeft : root.scrollTop;
-    target.scrollIntoView({
-      block: vertical ? 'nearest' : 'center',
-      inline: vertical ? 'center' : 'nearest',
-      behavior: 'instant'
-    });
-    return vertical ? (root.scrollLeft !== scrollBefore) : (root.scrollTop !== scrollBefore);
+    var margin = 0.15;
+    if (vertical) {
+      var vw = window.innerWidth;
+      var safe = vw * margin;
+      if (rect.left >= safe && rect.right <= vw - safe) return false;
+      var dx = rect.left < safe ? (rect.left - safe) : (rect.right - vw + safe);
+      window.scrollBy({left: dx, behavior: 'instant'});
+    } else {
+      var vh = window.innerHeight;
+      var safe = vh * margin;
+      if (rect.top >= safe && rect.bottom <= vh - safe) return false;
+      var dy = rect.top < safe ? (rect.top - safe) : (rect.bottom - vh + safe);
+      window.scrollBy({top: dy, behavior: 'instant'});
+    }
+    return true;
   },
   revealElement: function(element) {
     return this.scrollToTarget(element);
