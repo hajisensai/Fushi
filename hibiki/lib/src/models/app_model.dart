@@ -1592,6 +1592,26 @@ class AppModel with ChangeNotifier {
     await _setPref('custom_theme_container_color', color?.toARGB32() ?? 0);
   }
 
+  Color? get customThemeSasayakiColor {
+    final int v = _getPref('custom_theme_sasayaki_color', defaultValue: 0);
+    if (v == 0) return null;
+    return Color(v);
+  }
+
+  Future<void> setCustomThemeSasayakiColor(Color? color) async {
+    await _setPref('custom_theme_sasayaki_color', color?.toARGB32() ?? 0);
+  }
+
+  Color? get customThemeLinkColor {
+    final int v = _getPref('custom_theme_link_color', defaultValue: 0);
+    if (v == 0) return null;
+    return Color(v);
+  }
+
+  Future<void> setCustomThemeLinkColor(Color? color) async {
+    await _setPref('custom_theme_link_color', color?.toARGB32() ?? 0);
+  }
+
   Future<void> applyCustomTheme({
     required Color seed,
     required bool dark,
@@ -1602,6 +1622,8 @@ class AppModel with ChangeNotifier {
     Color? secondaryColor,
     Color? tertiaryColor,
     Color? containerColor,
+    Color? sasayakiColor,
+    Color? linkColor,
   }) async {
     await setCustomThemeSeed(seed);
     await setCustomThemeDark(dark);
@@ -1612,6 +1634,8 @@ class AppModel with ChangeNotifier {
     await setCustomThemeSecondaryColor(secondaryColor);
     await setCustomThemeTertiaryColor(tertiaryColor);
     await setCustomThemeContainerColor(containerColor);
+    await setCustomThemeSasayakiColor(sasayakiColor);
+    await setCustomThemeLinkColor(linkColor);
     await _setPref('app_theme_key', 'custom-theme');
     notifyListeners();
     _persistSplashColor();
