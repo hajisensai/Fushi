@@ -1287,6 +1287,7 @@ class AppModel with ChangeNotifier {
       debugPrint('[Hibiki] init: DONE');
       _isInitialised = true;
       _setupFloatingDictHandlers();
+      if (showFloatingDict) setShowFloatingDict(false);
       _persistSplashColor();
       notifyListeners();
     } catch (e, stack) {
@@ -3669,6 +3670,10 @@ class AppModel with ChangeNotifier {
       },
       onAnkiExport: (String word, String reading, String meaning) async {
         debugPrint('[FloatingDict] Anki export: $word / $reading');
+        Fluttertoast.showToast(
+          msg: 'Anki export not yet implemented',
+          toastLength: Toast.LENGTH_SHORT,
+        );
       },
     );
   }

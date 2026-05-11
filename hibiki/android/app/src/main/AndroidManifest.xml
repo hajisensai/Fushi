@@ -108,7 +108,10 @@
             android:foregroundServiceType="mediaPlayback" />
         <service android:name=".FloatingDictService"
             android:exported="false"
-            android:foregroundServiceType="specialUse" />
+            android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="clipboard_dictionary_overlay"/>
+        </service>
         <service android:name=".FloatingDictTile"
             android:exported="true"
             android:label="Dictionary"
