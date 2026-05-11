@@ -157,8 +157,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       _book = EpubParser.parseFromExtracted(extractDir);
       debugPrint('[ReaderHoshi] parsed EPUB: ${_book!.chapters.length} chapters');
     } on FormatException catch (e) {
-      debugPrint('[ReaderHoshi] EPUB parse failed ($e), using legacy mode');
-      _book = _buildLegacyBook(extractDir);
+      debugPrint('[ReaderHoshi] EPUB parse failed ($e), trying DB metadata');
+      _book = await _buildBookFromDb(db, widget.bookId, extractDir);
+      _book ??= _buildLegacyBook(extractDir);
     }
 
     final List<String> hrefs =
@@ -248,6 +249,59 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     }
   }
 
+  Future<EpubBook?> _buildBookFromDb(
+    HibikiDatabase db,
+    int bookId,
+    String extractDir,
+  ) async {
+    final EpubBookRow? row = await db.getEpubBook(bookId);
+    if (row == null) return null;
+
+    final List<dynamic> rawChapters =
+        jsonDecode(row.chaptersJson) as List<dynamic>;
+    if (rawChapters.isEmpty) return null;
+
+    final List<EpubChapter> chapters = <EpubChapter>[];
+    for (int i = 0; i < rawChapters.length; i++) {
+      final Map<String, dynamic> ch =
+          rawChapters[i] as Map<String, dynamic>;
+      final String href = ch['href'] as String;
+      final File file = File(p.join(extractDir, href));
+      final String html = file.existsSync() ? file.readAsStringSync() : '';
+      chapters.add(EpubChapter(
+        id: ch['id'] as String? ?? 'section-$i',
+        href: href,
+        mediaType: ch['mediaType'] as String? ?? 'text/html',
+        html: html,
+        spineIndex: i,
+      ));
+    }
+
+    List<EpubTocItem> toc = const <EpubTocItem>[];
+    if (row.tocJson != null) {
+      final List<dynamic> rawToc =
+          jsonDecode(row.tocJson!) as List<dynamic>;
+      toc = rawToc.map((dynamic e) {
+        final Map<String, dynamic> item = e as Map<String, dynamic>;
+        return EpubTocItem(
+          label: item['title'] as String? ?? '',
+          href: item['href'] as String?,
+        );
+      }).toList();
+    }
+
+    debugPrint('[ReaderHoshi] built from DB: ${chapters.length} chapters, '
+        '${toc.length} toc entries');
+
+    return EpubBook(
+      title: row.title,
+      author: row.author,
+      chapters: chapters,
+      toc: toc,
+      rootDirectory: extractDir,
+    );
+  }
+
   EpubBook _buildLegacyBook(String extractDir) {
     final List<FileSystemEntity> htmlFiles = Directory(extractDir)
         .listSync(recursive: true)
@@ -257,7 +311,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       return ext == '.html' || ext == '.xhtml' || ext == '.htm';
     }).toList()
       ..sort((FileSystemEntity a, FileSystemEntity b) =>
-          a.path.compareTo(b.path));
+          _naturalCompare(a.path, b.path));
 
     final List<EpubChapter> chapters = <EpubChapter>[];
     for (int i = 0; i < htmlFiles.length; i++) {
@@ -276,6 +330,25 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       chapters: chapters,
       rootDirectory: extractDir,
     );
+  }
+
+  static final RegExp _chunkRe = RegExp(r'(\d+|\D+)');
+
+  static int _naturalCompare(String a, String b) {
+    final List<String> ac = _chunkRe.allMatches(a).map((m) => m[0]!).toList();
+    final List<String> bc = _chunkRe.allMatches(b).map((m) => m[0]!).toList();
+    final int len = ac.length < bc.length ? ac.length : bc.length;
+    for (int i = 0; i < len; i++) {
+      final int? an = int.tryParse(ac[i]);
+      final int? bn = int.tryParse(bc[i]);
+      if (an != null && bn != null) {
+        if (an != bn) return an.compareTo(bn);
+      } else {
+        final int cmp = ac[i].compareTo(bc[i]);
+        if (cmp != 0) return cmp;
+      }
+    }
+    return ac.length.compareTo(bc.length);
   }
 
   Future<void> _resolveAudioSlot() async {
@@ -879,10 +952,16 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           callback: (List<dynamic> args) {
             if (args.isEmpty) return;
             final String dir = args[0] as String;
+            final bool invert =
+                ReaderHoshiSource.instance.invertSwipeDirection;
             if (dir == 'left') {
-              _paginate(ReaderNavigationDirection.forward);
+              _paginate(invert
+                  ? ReaderNavigationDirection.backward
+                  : ReaderNavigationDirection.forward);
             } else if (dir == 'right') {
-              _paginate(ReaderNavigationDirection.backward);
+              _paginate(invert
+                  ? ReaderNavigationDirection.forward
+                  : ReaderNavigationDirection.backward);
             }
           },
         );
@@ -1098,6 +1177,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   AudioCue? _lookupCue;
   ({int offset, int length, String text})? _cachedSelectionRange;
   ({int offset, int length})? _cachedSentenceRange;
+  bool _currentSentenceIsFavorited = false;
 
   AudioCue? _findCueForOffset(int normalizedOffset) {
     final AudiobookPlayerController? ctrl = _audiobookController;
@@ -1120,6 +1200,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _lookupCue = null;
     _cachedSelectionRange = null;
     _cachedSentenceRange = null;
+    _currentSentenceIsFavorited = false;
     super.clearDictionaryResult();
   }
 
@@ -1376,6 +1457,34 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       );
     } else {
       _cachedSentenceRange = null;
+    }
+    _checkFavoriteStatus();
+  }
+
+  Future<void> _checkFavoriteStatus() async {
+    final String sentence =
+        appModel.currentMediaSource?.currentSentence.text ?? '';
+    if (sentence.isEmpty) {
+      if (_currentSentenceIsFavorited) {
+        setState(() => _currentSentenceIsFavorited = false);
+      }
+      return;
+    }
+    final sentenceRange = _cachedSentenceRange ?? (
+      _cachedSelectionRange != null
+          ? (offset: _cachedSelectionRange!.offset,
+             length: _cachedSelectionRange!.length)
+          : null
+    );
+    final bool favorited = await FavoriteSentenceRepository(appModel.database)
+        .isFavorited(
+      text: sentence,
+      ttuBookId: widget.bookId,
+      sectionIndex: _currentChapter,
+      normCharOffset: sentenceRange?.offset,
+    );
+    if (mounted && favorited != _currentSentenceIsFavorited) {
+      setState(() => _currentSentenceIsFavorited = favorited);
     }
   }
 
@@ -2332,7 +2441,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   // ── Popup Audio Controls ───────────────────────────────────────────
 
-  Future<void> _saveFavoriteSentence() async {
+  Future<void> _toggleFavoriteSentence() async {
     if (_controller == null || _book == null) return;
     final String sentence =
         appModel.currentMediaSource?.currentSentence.text ?? '';
@@ -2347,6 +2456,36 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
              length: _cachedSelectionRange!.length)
           : null
     );
+    final FavoriteSentenceRepository repo =
+        FavoriteSentenceRepository(appModel.database);
+
+    if (_currentSentenceIsFavorited) {
+      await repo.removeByContent(
+        text: sentence,
+        ttuBookId: widget.bookId,
+        sectionIndex: _currentChapter,
+        normCharOffset: sentenceRange?.offset,
+      );
+      setState(() => _currentSentenceIsFavorited = false);
+      if (sentenceRange != null) {
+        final List<FavoriteSentence> all = await repo.getAll();
+        final List<FavoriteSentence> chapterFavs = all
+            .where((FavoriteSentence s) =>
+                s.ttuBookId == widget.bookId &&
+                s.sectionIndex == _currentChapter)
+            .toList();
+        await HighlightBridge.applyHighlights(_controller!, chapterFavs,
+            backgroundHex: _readerBackgroundHex,
+            customHighlightCss: _customHighlightCss);
+        await _controller!.evaluateJavascript(
+          source:
+              'window.hoshiReader && window.hoshiReader.buildNodeOffsets();',
+        );
+      }
+      Fluttertoast.showToast(msg: t.favorite_removed);
+      return;
+    }
+
     final FavoriteSentence fav = FavoriteSentence(
       text: sentence,
       bookTitle: _book!.title,
@@ -2359,9 +2498,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       normCharOffset: sentenceRange?.offset,
       normCharLength: sentenceRange?.length,
     );
-    final FavoriteSentenceRepository repo =
-        FavoriteSentenceRepository(appModel.database);
     await repo.add(fav);
+    setState(() => _currentSentenceIsFavorited = true);
     if (sentenceRange != null) {
       final List<FavoriteSentence> all = await repo.getAll();
       final List<FavoriteSentence> chapterFavs = all
@@ -2401,8 +2539,14 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             IconButton(
-              icon: const Icon(Icons.star_border, size: 20),
-              onPressed: _saveFavoriteSentence,
+              icon: Icon(
+                _currentSentenceIsFavorited ? Icons.star : Icons.star_border,
+                size: 20,
+                color: _currentSentenceIsFavorited
+                    ? theme.colorScheme.primary
+                    : null,
+              ),
+              onPressed: _toggleFavoriteSentence,
               tooltip: t.action_favorite,
               visualDensity: VisualDensity.compact,
             ),

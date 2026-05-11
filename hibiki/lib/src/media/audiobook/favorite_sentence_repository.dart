@@ -74,13 +74,53 @@ class FavoriteSentenceRepository {
 
   Future<void> add(FavoriteSentence sentence) async {
     final sentences = await getAll();
-    if (sentences.any((FavoriteSentence s) => s.id == sentence.id)) return;
+    if (sentences.any((FavoriteSentence s) => _contentMatch(s, sentence))) {
+      return;
+    }
     sentences.insert(0, sentence);
     await _db.setPref(
       _key,
       jsonEncode(sentences.map((s) => s.toJson()).toList()),
     );
   }
+
+  Future<bool> isFavorited({
+    required String text,
+    required int? ttuBookId,
+    required int? sectionIndex,
+    required int? normCharOffset,
+  }) async {
+    final sentences = await getAll();
+    return sentences.any((FavoriteSentence s) =>
+        s.text == text &&
+        s.ttuBookId == ttuBookId &&
+        s.sectionIndex == sectionIndex &&
+        s.normCharOffset == normCharOffset);
+  }
+
+  Future<void> removeByContent({
+    required String text,
+    required int? ttuBookId,
+    required int? sectionIndex,
+    required int? normCharOffset,
+  }) async {
+    final sentences = await getAll();
+    sentences.removeWhere((FavoriteSentence s) =>
+        s.text == text &&
+        s.ttuBookId == ttuBookId &&
+        s.sectionIndex == sectionIndex &&
+        s.normCharOffset == normCharOffset);
+    await _db.setPref(
+      _key,
+      jsonEncode(sentences.map((FavoriteSentence s) => s.toJson()).toList()),
+    );
+  }
+
+  static bool _contentMatch(FavoriteSentence a, FavoriteSentence b) =>
+      a.text == b.text &&
+      a.ttuBookId == b.ttuBookId &&
+      a.sectionIndex == b.sectionIndex &&
+      a.normCharOffset == b.normCharOffset;
 
   Future<void> removeAt(int index) async {
     final sentences = await getAll();
