@@ -147,12 +147,5 @@ flutter:
     - assets/licenses/
     - assets/meta/
     - assets/ttu-ebook-reader/
-    - assets/ttu-ebook-reader/_app/
-    - assets/ttu-ebook-reader/_app/immutable/
-    - assets/ttu-ebook-reader/_app/immutable/assets/
-    - assets/ttu-ebook-reader/_app/immutable/chunks/
-    - assets/ttu-ebook-reader/_app/immutable/entry/
-    - assets/ttu-ebook-reader/_app/immutable/nodes/
-    - assets/ttu-ebook-reader/icons/
     - assets/popup/
 
