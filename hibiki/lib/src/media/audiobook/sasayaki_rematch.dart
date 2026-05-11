@@ -330,7 +330,7 @@ class SasayakiWindowSlider extends StatelessWidget {
   });
 
   static const int minWindow = 50;
-  static const int maxWindow = 350;
+  static const int maxWindow = 1000;
   static const int step = 25;
   static const int divisions = (maxWindow - minWindow) ~/ step;
 
