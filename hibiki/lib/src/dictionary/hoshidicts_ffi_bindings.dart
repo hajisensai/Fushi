@@ -124,6 +124,11 @@ typedef _AddDictNative = Void Function(
 typedef _AddDictDart = void Function(
     Pointer<Void> handle, Pointer<Utf8> path);
 
+typedef _LoadTransformsNative = Void Function(
+    Pointer<Void> handle, Pointer<Utf8> json);
+typedef _LoadTransformsDart = void Function(
+    Pointer<Void> handle, Pointer<Utf8> json);
+
 typedef _QueryNative = FfiQueryResult Function(
     Pointer<Void> handle, Pointer<Utf8> expression);
 typedef _QueryDart = FfiQueryResult Function(
@@ -166,6 +171,7 @@ class HoshidictsFfiBindings {
   late final _AddDictDart addTermDict;
   late final _AddDictDart addFreqDict;
   late final _AddDictDart addPitchDict;
+  late final _LoadTransformsDart loadTransforms;
   late final _QueryDart query;
   late final _FreeQueryResultDart freeQueryResult;
   late final _LookupDart lookup;
@@ -194,6 +200,8 @@ class HoshidictsFfiBindings {
         'hoshidicts_add_freq_dict');
     addPitchDict = _lib.lookupFunction<_AddDictNative, _AddDictDart>(
         'hoshidicts_add_pitch_dict');
+    loadTransforms = _lib.lookupFunction<_LoadTransformsNative,
+        _LoadTransformsDart>('hoshidicts_load_transforms');
     query =
         _lib.lookupFunction<_QueryNative, _QueryDart>('hoshidicts_query');
     freeQueryResult = _lib.lookupFunction<_FreeQueryResultNative,

@@ -12,6 +12,7 @@ import 'package:spaces/spaces.dart';
 import 'package:wakelock/wakelock.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
+import 'package:hibiki/src/dictionary/hoshidicts.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/popup_main.dart' as popup_entrypoint;
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
@@ -130,6 +131,8 @@ void main() {
     /// [AppModel.isInitialised] will flip to true and notify listeners when
     /// done, causing [HoshiReaderApp] to navigate from [LoadingPage] to
     /// [HomePage].
+    await HoshiDicts.preloadTransforms();
+
     final appModel = container.read(appProvider);
     await appModel.initialise();
 

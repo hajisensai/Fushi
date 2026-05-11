@@ -148,4 +148,5 @@ flutter:
     - assets/meta/
     - assets/ttu-ebook-reader/
     - assets/popup/
+    - assets/transforms/
 

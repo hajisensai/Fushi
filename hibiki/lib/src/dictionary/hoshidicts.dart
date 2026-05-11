@@ -3,6 +3,7 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:flutter/services.dart' show rootBundle;
 
 import 'hoshidicts_ffi_bindings.dart';
 
@@ -178,9 +179,34 @@ class HoshiDicts {
 
   static bool get isInitialized => _instance != null;
 
+  static List<String>? _cachedTransformJsons;
+
+  static Future<void> preloadTransforms() async {
+    const languages = [
+      'ar', 'de', 'el', 'en', 'eo', 'es', 'eu', 'fr',
+      'ga', 'grc', 'ja', 'ka', 'ko', 'la', 'sga', 'sq', 'tl', 'yi',
+    ];
+    final jsons = <String>[];
+    for (final lang in languages) {
+      try {
+        final json = await rootBundle.loadString('assets/transforms/$lang.json');
+        jsons.add(json);
+      } catch (_) {}
+    }
+    _cachedTransformJsons = jsons;
+  }
+
+  void _loadCachedTransforms() {
+    if (_cachedTransformJsons == null) return;
+    for (final json in _cachedTransformJsons!) {
+      loadTransforms(json);
+    }
+  }
+
   static void initialize(List<String> paths) {
     _instance?.dispose();
     final h = HoshiDicts();
+    h._loadCachedTransforms();
     for (final p in paths) {
       h.addTermDict(p);
       h.addFreqDict(p);
@@ -197,6 +223,7 @@ class HoshiDicts {
   }) {
     _instance?.dispose();
     final h = HoshiDicts();
+    h._loadCachedTransforms();
     for (final p in termPaths) h.addTermDict(p);
     for (final p in freqPaths) h.addFreqDict(p);
     for (final p in pitchPaths) h.addPitchDict(p);
@@ -262,6 +289,15 @@ class HoshiDicts {
     final p = path.toNativeUtf8();
     try {
       _bindings!.addPitchDict(_handle!, p);
+    } finally {
+      calloc.free(p);
+    }
+  }
+
+  void loadTransforms(String json) {
+    final p = json.toNativeUtf8();
+    try {
+      _bindings!.loadTransforms(_handle!, p);
     } finally {
       calloc.free(p);
     }
@@ -396,6 +432,7 @@ class HoshiDicts {
 
   static HoshiDicts withPaths(List<String> paths) {
     final h = HoshiDicts();
+    h._loadCachedTransforms();
     for (final p in paths) {
       h.addTermDict(p);
       h.addFreqDict(p);
