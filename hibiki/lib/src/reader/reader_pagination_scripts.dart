@@ -834,6 +834,41 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
   document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(Math.round(cssWidth) * $imageWidthRatio)) + 'px');
   document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, newHeight - $bottomOverlapPx) + 'px');
 };
+(function() {
+  var TAP_SLOP = 12;
+  var SWIPE_THRESHOLD = 20;
+  var downX = 0, downY = 0;
+  document.addEventListener('touchstart', function(e) {
+    if (!e.touches.length) return;
+    downX = e.touches[0].clientX;
+    downY = e.touches[0].clientY;
+  }, {passive: true});
+  document.addEventListener('touchend', function(e) {
+    if (!e.changedTouches.length) return;
+    var dx = e.changedTouches[0].clientX - downX;
+    var dy = e.changedTouches[0].clientY - downY;
+    if (Math.abs(dx) < TAP_SLOP && Math.abs(dy) < TAP_SLOP) return;
+    var root = document.scrollingElement || document.documentElement;
+    var vertical = window.hoshiReader && window.hoshiReader.isVertical();
+    var dir = null;
+    if (vertical) {
+      if (Math.abs(dx) < SWIPE_THRESHOLD || Math.abs(dx) < Math.abs(dy)) return;
+      var atStart = root.scrollLeft >= -2 && root.scrollLeft <= 2;
+      var atEnd = Math.abs(root.scrollLeft) + window.innerWidth >= root.scrollWidth - 2;
+      if (dx > 0 && atEnd) dir = 'forward';
+      else if (dx < 0 && atStart) dir = 'backward';
+    } else {
+      if (Math.abs(dy) < SWIPE_THRESHOLD || Math.abs(dy) < Math.abs(dx)) return;
+      var atTop = root.scrollTop <= 2;
+      var atBottom = root.scrollTop + window.innerHeight >= root.scrollHeight - 2;
+      if (dy < 0 && atBottom) dir = 'forward';
+      else if (dy > 0 && atTop) dir = 'backward';
+    }
+    if (dir && window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+      window.flutter_inappwebview.callHandler('onBoundarySwipe', dir);
+    }
+  }, {passive: true});
+})();
 $_sharedInitBoot
 </script>''';
   }

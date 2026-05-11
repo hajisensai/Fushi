@@ -826,6 +826,19 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         );
 
         controller.addJavaScriptHandler(
+          handlerName: 'onBoundarySwipe',
+          callback: (List<dynamic> args) {
+            if (args.isEmpty) return;
+            final String dir = args[0] as String;
+            if (dir == 'forward') {
+              _handlePageTurnLimit('forward');
+            } else if (dir == 'backward') {
+              _handlePageTurnLimit('backward');
+            }
+          },
+        );
+
+        controller.addJavaScriptHandler(
           handlerName: 'onImageDetected',
           callback: (_) => _audiobookController?.triggerImagePause(),
         );
@@ -1615,6 +1628,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         unlock: t.floating_lyric_unlock,
         close: t.floating_lyric_close,
       );
+      await appModel.setShowFloatingLyric(true);
       _setupFloatingLyricHandlers();
       if (_audiobookController != null) {
         _syncFloatingLyric(_audiobookController!);
@@ -1622,8 +1636,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     } else {
       await FloatingLyricChannel.hide();
       FloatingLyricChannel.clearEventHandlers();
+      await appModel.setShowFloatingLyric(false);
     }
-    await appModel.setShowFloatingLyric(!current);
     return true;
   }
 
