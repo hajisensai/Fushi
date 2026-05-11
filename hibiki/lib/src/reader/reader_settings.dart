@@ -30,6 +30,27 @@ class ReaderSettings {
       final String shortKey = entry.key.substring(_prefix.length);
       _cache[shortKey] = _parseValue(entry.value);
     }
+    _migrateMargins();
+  }
+
+  void _migrateMargins() {
+    final double? first = _cache['ttu_first_dimension_margin'] as double?;
+    final double? second = _cache['ttu_second_dimension_margin'] as double?;
+    if (first == null && second == null) return;
+    if (!_cache.containsKey('ttu_margin_top')) {
+      final double topBottom = first ?? 0;
+      final double leftRight = second ?? 0;
+      _set<double>('ttu_margin_top', topBottom);
+      _set<double>('ttu_margin_bottom', topBottom);
+      _set<double>('ttu_margin_left', leftRight);
+      _set<double>('ttu_margin_right', leftRight);
+    }
+    _cache.remove('ttu_first_dimension_margin');
+    _cache.remove('ttu_second_dimension_margin');
+    _cache.remove('ttu_second_dimension_max');
+    _db.deletePref('${_prefix}ttu_first_dimension_margin');
+    _db.deletePref('${_prefix}ttu_second_dimension_margin');
+    _db.deletePref('${_prefix}ttu_second_dimension_max');
   }
 
   T _get<T>(String key, T defaultValue) {

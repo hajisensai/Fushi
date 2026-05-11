@@ -72,6 +72,27 @@ class ReaderHoshiSource extends ReaderMediaSource {
     return null;
   }
 
+  @override
+  Future<void> prepareResources() async {
+    final double? first = getPreference<double?>(
+        key: 'ttu_first_dimension_margin', defaultValue: null);
+    final double? second = getPreference<double?>(
+        key: 'ttu_second_dimension_margin', defaultValue: null);
+    if (first != null || second != null) {
+      final bool hasNew = getPreference<double?>(
+              key: 'ttu_margin_top', defaultValue: null) !=
+          null;
+      if (!hasNew) {
+        final double tb = first ?? 0;
+        final double lr = second ?? 0;
+        await setPreference<double>(key: 'ttu_margin_top', value: tb);
+        await setPreference<double>(key: 'ttu_margin_bottom', value: tb);
+        await setPreference<double>(key: 'ttu_margin_left', value: lr);
+        await setPreference<double>(key: 'ttu_margin_right', value: lr);
+      }
+    }
+  }
+
   // ── Sasayaki sentence audio ─────────────────────────────────────────
 
   AudioCue? _pendingCue;
