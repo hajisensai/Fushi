@@ -26,9 +26,6 @@ class ReaderContentStyles {
     String? fontFamily,
     String? customBg,
     String? customFg,
-    String? selectionColor,
-    String? sasayakiColor,
-    String? linkColor,
   }) {
     return '<style>\n${css(
       settings: settings,
@@ -36,9 +33,6 @@ class ReaderContentStyles {
       fontFamily: fontFamily,
       customBg: customBg,
       customFg: customFg,
-      selectionColor: selectionColor,
-      sasayakiColor: sasayakiColor,
-      linkColor: linkColor,
     )}\n</style>';
   }
 
@@ -48,9 +42,6 @@ class ReaderContentStyles {
     String? fontFamily,
     String? customBg,
     String? customFg,
-    String? selectionColor,
-    String? sasayakiColor,
-    String? linkColor,
   }) {
     final ({String textColor, String backgroundColor}) colors =
         _themeColors(settings.theme, customBg: customBg, customFg: customFg);
@@ -175,7 +166,7 @@ $pageBreakCss
 @media (prefers-color-scheme: dark) { :root { --hoshi-system-text-color: #fff; } }
 :root {
   --hoshi-sasayaki-text-color: #000;
-  --hoshi-sasayaki-background-color: ${sasayakiColor ?? 'rgba(135, 206, 235, 0.4)'};
+  --hoshi-sasayaki-background-color: rgba(135, 206, 235, 0.4);
 }
 html {
   -webkit-line-box-contain: block glyphs replaced;
@@ -218,7 +209,7 @@ ruby > rt, ruby > rp {
   user-select: none;
 }
 ::highlight(hoshi-selection) {
-  background-color: ${selectionColor ?? 'rgba(160, 160, 160, 0.4)'} !important;
+  background-color: rgba(160, 160, 160, 0.4) !important;
   color: inherit;
 }
 .hoshi-sasayaki-cue {
@@ -230,7 +221,7 @@ ruby > rt, ruby > rp {
   background-color: var(--hoshi-sasayaki-background-color) !important;
 }
 a {
-  color: ${linkColor ?? 'rgba(66, 108, 245, 1)'}$readerStylePriority;
+  color: rgba(66, 108, 245, 1)$readerStylePriority;
 }
 ''';
   }

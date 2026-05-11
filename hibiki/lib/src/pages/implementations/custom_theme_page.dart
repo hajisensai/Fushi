@@ -30,10 +30,6 @@ class _CustomThemePageState extends BasePageState {
   bool _useTertiaryColor = false;
   Color? _containerColor;
   bool _useContainerColor = false;
-  Color? _sasayakiColor;
-  bool _useSasayakiColor = false;
-  Color? _linkColor;
-  bool _useLinkColor = false;
 
   ScrollHoldController? _pickerScrollHold;
 
@@ -64,12 +60,6 @@ class _CustomThemePageState extends BasePageState {
     _containerColor = appModelNoUpdate.customThemeContainerColor;
     _useContainerColor = _containerColor != null;
     _containerColor ??= generated.primaryContainer;
-    _sasayakiColor = appModelNoUpdate.customThemeSasayakiColor;
-    _useSasayakiColor = _sasayakiColor != null;
-    _sasayakiColor ??= const Color(0x6687CEEB);
-    _linkColor = appModelNoUpdate.customThemeLinkColor;
-    _useLinkColor = _linkColor != null;
-    _linkColor ??= generated.primary;
   }
 
   @override
@@ -96,7 +86,6 @@ class _CustomThemePageState extends BasePageState {
     if (!_useSecondaryColor) _secondaryColor = generated.secondary;
     if (!_useTertiaryColor) _tertiaryColor = generated.tertiary;
     if (!_useContainerColor) _containerColor = generated.primaryContainer;
-    if (!_useLinkColor) _linkColor = generated.primary;
   }
 
   void _setSeed(Color color) {
@@ -160,16 +149,6 @@ class _CustomThemePageState extends BasePageState {
           _containerColor!.toARGB32().toRadixString(16).padLeft(8, '0');
       code += ':cr$containerHex';
     }
-    if (_useSasayakiColor && _sasayakiColor != null) {
-      final sasayakiHex =
-          _sasayakiColor!.toARGB32().toRadixString(16).padLeft(8, '0');
-      code += ':sk$sasayakiHex';
-    }
-    if (_useLinkColor && _linkColor != null) {
-      final linkHex =
-          _linkColor!.toARGB32().toRadixString(16).padLeft(8, '0');
-      code += ':lk$linkHex';
-    }
     return code;
   }
 
@@ -182,9 +161,7 @@ class _CustomThemePageState extends BasePageState {
     Color? primaryColor,
     Color? secondaryColor,
     Color? tertiaryColor,
-    Color? containerColor,
-    Color? sasayakiColor,
-    Color? linkColor,
+    Color? containerColor
   })? _decodeTheme(String code) {
     final parts = code.trim().split(':');
     if (parts.length < 3 || parts[0] != 'hibiki-theme') return null;
@@ -199,8 +176,6 @@ class _CustomThemePageState extends BasePageState {
     Color? secondaryColor;
     Color? tertiaryColor;
     Color? containerColor;
-    Color? sasayakiColor;
-    Color? linkColor;
     for (int i = 3; i < parts.length; i++) {
       if (parts[i].startsWith('fc')) {
         final v = int.tryParse(parts[i].substring(2), radix: 16);
@@ -223,12 +198,6 @@ class _CustomThemePageState extends BasePageState {
       } else if (parts[i].startsWith('cr')) {
         final v = int.tryParse(parts[i].substring(2), radix: 16);
         if (v != null) containerColor = Color(v);
-      } else if (parts[i].startsWith('sk')) {
-        final v = int.tryParse(parts[i].substring(2), radix: 16);
-        if (v != null) sasayakiColor = Color(v);
-      } else if (parts[i].startsWith('lk')) {
-        final v = int.tryParse(parts[i].substring(2), radix: 16);
-        if (v != null) linkColor = Color(v);
       }
     }
     return (
@@ -240,9 +209,7 @@ class _CustomThemePageState extends BasePageState {
       primaryColor: primaryColor,
       secondaryColor: secondaryColor,
       tertiaryColor: tertiaryColor,
-      containerColor: containerColor,
-      sasayakiColor: sasayakiColor,
-      linkColor: linkColor,
+      containerColor: containerColor
     );
   }
 
@@ -298,11 +265,6 @@ class _CustomThemePageState extends BasePageState {
                 _containerColor =
                     result.containerColor ?? generated.primaryContainer;
                 _useContainerColor = result.containerColor != null;
-                _sasayakiColor =
-                    result.sasayakiColor ?? const Color(0x6687CEEB);
-                _useSasayakiColor = result.sasayakiColor != null;
-                _linkColor = result.linkColor ?? generated.primary;
-                _useLinkColor = result.linkColor != null;
               });
               Fluttertoast.showToast(msg: t.import_theme_success);
             },
@@ -427,39 +389,6 @@ class _CustomThemePageState extends BasePageState {
             onChanged: (c) => setState(() => _selectionColor = c),
             enableAlpha: true,
           ),
-          const SizedBox(height: 12),
-          _buildOptionalColorPicker(
-            label: t.color_sasayaki,
-            description: t.color_sasayaki_desc,
-            preview: _buildSasayakiPreview(cs),
-            hintStyle: hintStyle,
-            enabled: _useSasayakiColor,
-            onEnabledChanged: (v) => setState(() => _useSasayakiColor = v),
-            color: _sasayakiColor!,
-            onChanged: (c) => setState(() => _sasayakiColor = c),
-            enableAlpha: true,
-          ),
-          const SizedBox(height: 12),
-          _buildOptionalColorPicker(
-            label: t.color_link,
-            description: t.color_link_desc,
-            preview: _buildLinkPreview(cs),
-            hintStyle: hintStyle,
-            enabled: _useLinkColor,
-            onEnabledChanged: (bool value) {
-              setState(() {
-                _useLinkColor = value;
-                if (value) {
-                  _linkColor ??= _generatedScheme.primary;
-                } else {
-                  _linkColor = _generatedScheme.primary;
-                }
-              });
-            },
-            color: _linkColor!,
-            onChanged: (Color color) => setState(() => _linkColor = color),
-            enableAlpha: false,
-          ),
           // ── 主色（音频高亮）──
           const SizedBox(height: 16),
           _buildOptionalColorPicker(
@@ -570,8 +499,6 @@ class _CustomThemePageState extends BasePageState {
                 secondaryColor: _useSecondaryColor ? _secondaryColor : null,
                 tertiaryColor: _useTertiaryColor ? _tertiaryColor : null,
                 containerColor: _useContainerColor ? _containerColor : null,
-                sasayakiColor: _useSasayakiColor ? _sasayakiColor : null,
-                linkColor: _useLinkColor ? _linkColor : null,
               );
               if (!mounted) {
                 return;
@@ -656,33 +583,6 @@ class _CustomThemePageState extends BasePageState {
                     child: Text(
                       '♪ 音声ハイライト',
                       style: TextStyle(color: textColor, fontSize: 13),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  RichText(
-                    text: TextSpan(
-                      style: TextStyle(color: textColor, fontSize: 13),
-                      children: [
-                        const TextSpan(text: '♪ '),
-                        TextSpan(
-                          text: '字幕同期',
-                          style: TextStyle(
-                            backgroundColor: _useSasayakiColor
-                                ? _sasayakiColor
-                                : const Color(0x6687CEEB),
-                          ),
-                        ),
-                        const TextSpan(text: 'テスト　'),
-                        TextSpan(
-                          text: 'リンク',
-                          style: TextStyle(
-                            color: _useLinkColor ? _linkColor! : cs.primary,
-                            decoration: TextDecoration.underline,
-                            decorationColor:
-                                _useLinkColor ? _linkColor! : cs.primary,
-                          ),
-                        ),
-                      ],
                     ),
                   ),
                 ],
@@ -881,47 +781,6 @@ class _CustomThemePageState extends BasePageState {
           color: _primaryColor,
           shape: BoxShape.circle,
         ),
-      ),
-    );
-  }
-
-  Widget _buildSasayakiPreview(ColorScheme cs) {
-    final Color fc = _useFontColor ? _fontColor! : cs.onSurface;
-    final Color bg = _useBgColor ? _bgColor! : cs.surfaceContainerLow;
-    final Color sas = _useSasayakiColor
-        ? _sasayakiColor!
-        : const Color(0x6687CEEB);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: RichText(
-        text: TextSpan(
-          style: TextStyle(color: fc, fontSize: 13),
-          children: [
-            const TextSpan(text: '♪ '),
-            TextSpan(
-              text: '字幕',
-              style: TextStyle(backgroundColor: sas),
-            ),
-            const TextSpan(text: 'テスト'),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLinkPreview(ColorScheme cs) {
-    final Color lc = _useLinkColor ? _linkColor! : cs.primary;
-    return Text(
-      'リンク',
-      style: TextStyle(
-        color: lc,
-        fontSize: 13,
-        decoration: TextDecoration.underline,
-        decorationColor: lc,
       ),
     );
   }
