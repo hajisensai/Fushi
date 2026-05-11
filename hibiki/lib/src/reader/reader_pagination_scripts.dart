@@ -710,14 +710,14 @@ $_sharedJs
       var safeLeft = vw * margin;
       var safeRight = vw * (1 - margin);
       if (rect.left >= safeLeft && rect.right <= safeRight) return false;
-      target.scrollIntoView({inline: 'center', block: 'nearest', behavior: 'smooth'});
+      target.scrollIntoView({inline: 'center', block: 'nearest', behavior: 'instant'});
     } else {
       var vh = window.innerHeight;
       var safeTop = vh * margin;
       var safeBottom = vh * (1 - margin);
       if (rect.top >= safeTop && rect.bottom <= safeBottom) return false;
       var offset = document.body.scrollTop + rect.top - safeTop;
-      document.body.scrollTo({top: offset, behavior: 'smooth'});
+      document.body.scrollTo({top: offset, behavior: 'instant'});
     }
     return true;
   },
