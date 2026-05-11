@@ -707,19 +707,19 @@ $_sharedJs
     var vertical = this.isVertical();
     if (vertical) {
       var vw = window.innerWidth;
-      var safeLeft = vw * margin;
-      var safeRight = vw * (1 - margin);
-      if (rect.left >= safeLeft && rect.right <= safeRight) return false;
-      target.scrollIntoView({inline: 'center', block: 'nearest', behavior: 'instant'});
+      if (rect.left >= vw * margin && rect.right <= vw * (1 - margin)) return false;
     } else {
       var vh = window.innerHeight;
-      var safeTop = vh * margin;
-      var safeBottom = vh * (1 - margin);
-      if (rect.top >= safeTop && rect.bottom <= safeBottom) return false;
-      var offset = document.body.scrollTop + rect.top - safeTop;
-      document.body.scrollTo({top: offset, behavior: 'instant'});
+      if (rect.top >= vh * margin && rect.bottom <= vh * (1 - margin)) return false;
     }
-    return true;
+    var root = document.scrollingElement || document.documentElement;
+    var scrollBefore = vertical ? root.scrollLeft : root.scrollTop;
+    target.scrollIntoView({
+      block: vertical ? 'nearest' : 'center',
+      inline: vertical ? 'center' : 'nearest',
+      behavior: 'instant'
+    });
+    return vertical ? (root.scrollLeft !== scrollBefore) : (root.scrollTop !== scrollBefore);
   },
   revealElement: function(element) {
     return this.scrollToTarget(element);
