@@ -224,7 +224,6 @@ ruby > rt, ruby > rp {
 }
 .hoshi-sasayaki-cue {
   background-color: transparent;
-  -webkit-line-box-contain: block glyphs replaced;
 }
 .hoshi-sasayaki-cue.hoshi-sasayaki-active {
   color: var(--hoshi-sasayaki-text-color) !important;
