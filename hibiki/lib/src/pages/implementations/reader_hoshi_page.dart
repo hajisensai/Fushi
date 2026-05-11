@@ -508,7 +508,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (w == _lastSyncedWidth) return;
     _lastSyncedWidth = w;
 
-    final String? result = await _controller!.evaluateJavascript(
+    final dynamic result = await _controller!.evaluateJavascript(
       source: ReaderPaginationScripts.progressInvocation(),
     );
     final double? progress =
@@ -596,6 +596,17 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     }
   }
 
+  static WebResourceResponse _notFound(String reason) {
+    debugPrint('[ReaderHoshi] 404: $reason');
+    return WebResourceResponse(
+      contentType: 'text/plain',
+      statusCode: 404,
+      reasonPhrase: 'Not Found',
+      headers: <String, String>{'Access-Control-Allow-Origin': '*'},
+      data: Uint8List(0),
+    );
+  }
+
   WebResourceResponse? _interceptRequest(WebUri url) {
     if (url.host != ReaderHoshiSource.kHost) return null;
     final String path = url.path;
@@ -657,8 +668,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       );
     }
 
-    if (!path.startsWith('/epub/')) return null;
-    if (_extractDir == null) return null;
+    if (!path.startsWith('/epub/')) return _notFound('unknown path: $path');
+    if (_extractDir == null) return _notFound('extractDir not ready: $path');
 
     final String epubPath = Uri.decodeComponent(path.substring('/epub/'.length));
     final String filePath = p.canonicalize(p.join(_extractDir!, epubPath));
@@ -674,8 +685,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     }
     final File file = File(filePath);
     if (!file.existsSync()) {
-      debugPrint('[ReaderHoshi] resource not found: $epubPath');
-      return null;
+      return _notFound('resource not found: $epubPath (resolved: $filePath)');
     }
 
     Uint8List data = file.readAsBytesSync();
