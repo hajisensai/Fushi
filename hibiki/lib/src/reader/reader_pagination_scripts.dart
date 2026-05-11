@@ -375,10 +375,11 @@ $_sharedJs
       pageSize = (scrollEl.clientWidth || this.pageWidth || window.innerWidth) - pl - pr;
     }
     pageSize = Math.max(1, pageSize);
-    var gap = vertical ? 0 : (parseFloat(cs.columnGap) || 0);
+    var gap = parseFloat(cs.columnGap) || 0;
     var columnPitch = pageSize + gap;
     var totalSize = vertical ? scrollEl.scrollHeight : scrollEl.scrollWidth;
-    var maxScroll = Math.max(0, totalSize - pageSize);
+    var viewSize = vertical ? scrollEl.clientHeight : scrollEl.clientWidth;
+    var maxScroll = Math.max(0, totalSize - viewSize);
     return { vertical: vertical, scrollEl: scrollEl, pageSize: pageSize, columnPitch: columnPitch, maxScroll: maxScroll };
   },
   getPagePosition: function(context) {
