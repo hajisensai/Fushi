@@ -7,7 +7,6 @@ class ReaderLayoutDefaults {
   static const int bottomOverlapPx = fontSizePx;
   static const double imageWidthViewportRatio = 0.95;
 
-  static const String columnGapCss = 'calc(0vh + 0vh + 22px)';
   static const String pagePaddingCss = '0vh 2.5vw';
   static const String bottomPaddingCss = 'calc(0vh + 22px)';
   static const String imageMaxWidthFallbackCss = '95vw';

@@ -46,6 +46,7 @@ class ReaderPaginationScripts {
   static String shellScript({
     double initialProgress = 0.0,
     bool continuousMode = false,
+    int fontSize = ReaderLayoutDefaults.fontSizePx,
     String? sasayakiCuesJson,
     String? initialFragment,
   }) {
@@ -58,6 +59,7 @@ class ReaderPaginationScripts {
     }
     return _paginatedShellScript(
       initialProgress: initialProgress,
+      fontSize: fontSize,
       sasayakiCuesJson: sasayakiCuesJson,
       initialFragment: initialFragment,
     );
@@ -331,6 +333,7 @@ if (document.readyState === 'complete') {
 
   static String _paginatedShellScript({
     required double initialProgress,
+    int fontSize = ReaderLayoutDefaults.fontSizePx,
     String? sasayakiCuesJson,
     String? initialFragment,
   }) {
@@ -378,7 +381,7 @@ $_sharedJs
     var clientSize = vertical
       ? (scrollEl.clientHeight || this.pageHeight || window.innerHeight)
       : (scrollEl.clientWidth || this.pageWidth || window.innerWidth);
-    var columnPitch = vertical ? clientSize : (clientSize + $bottomOverlapPx);
+    var columnPitch = vertical ? clientSize : (clientSize + $fontSize);
     var totalSize = vertical ? scrollEl.scrollHeight : scrollEl.scrollWidth;
     var maxScroll = Math.max(0, totalSize - clientSize);
     return { vertical: vertical, scrollEl: scrollEl, pageSize: pageSize, columnPitch: columnPitch, maxScroll: maxScroll };

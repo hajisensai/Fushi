@@ -844,6 +844,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       ReaderPaginationScripts.shellScript(
         initialProgress: _initialProgress,
         continuousMode: s.isContinuousMode,
+        fontSize: s.fontSize.round(),
         initialFragment: _initialFragment,
         sasayakiCuesJson: sasayakiCuesJson,
       ),
