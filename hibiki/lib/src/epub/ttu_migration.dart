@@ -67,7 +67,16 @@ class TtuMigration {
         final String extractDir = await EpubStorage.bookDirectory(ttuId);
         final List<dynamic> sections =
             bookData['sections'] as List<dynamic>;
-        final String elementHtml = bookData['elementHtml'] as String;
+        String elementHtml = bookData['elementHtml'] as String;
+
+        final dynamic rawBlobs = bookData['blobsBase64'];
+        if (rawBlobs is Map<String, dynamic> && rawBlobs.isNotEmpty) {
+          final int written = await _writeBlobs(extractDir, rawBlobs);
+          elementHtml = _rewriteBlobRefs(elementHtml);
+          final num totalBytes = bookData['blobTotalBytes'] as num? ?? 0;
+          debugPrint('[ttu-migration] book $ttuId: wrote $written blobs '
+              '(${(totalBytes / 1024).round()} KB)');
+        }
 
         final int actualChapters =
             _writeSectionFiles(extractDir, elementHtml, sections);
@@ -284,6 +293,115 @@ class TtuMigration {
       ttuBookId: ttuId,
       bookTitle: bookTitle,
     );
+  }
+
+  /// 将 IDB blobs (key→base64) 写入 extractDir/blobs/ 磁盘。
+  /// 返回成功写入的文件数。
+  static Future<int> _writeBlobs(
+    String extractDir,
+    Map<String, dynamic> blobsBase64,
+  ) async {
+    final String blobDir = p.join(extractDir, 'blobs');
+    final String canonBlobDir = p.canonicalize(blobDir);
+    int written = 0;
+
+    for (final MapEntry<String, dynamic> entry in blobsBase64.entries) {
+      final String b64 = entry.value as String? ?? '';
+      if (b64.isEmpty) continue;
+
+      final String safeKey = _sanitizeBlobKey(entry.key);
+      if (safeKey.isEmpty) continue;
+
+      final String filePath = p.join(blobDir, safeKey);
+      final String canonPath = p.canonicalize(filePath);
+      if (!canonPath.startsWith(canonBlobDir)) {
+        debugPrint('[ttu-migration] path traversal blocked: ${entry.key}');
+        continue;
+      }
+
+      final File file = File(filePath);
+      await file.parent.create(recursive: true);
+      await file.writeAsBytes(base64Decode(b64));
+      written++;
+    }
+
+    return written;
+  }
+
+  /// blob key 中替换 Windows 非法字符，防止文件创建失败。
+  static String _sanitizeBlobKey(String key) {
+    return key.replaceAll(RegExp(r'[<>:"|?*]'), '_');
+  }
+
+  /// 将 elementHtml 中 ttu 占位 src 替换为本地 blobs/ 相对路径。
+  ///
+  /// ttu 的占位格式：data:image/gif;ttu:KEY;base64,<1x1 gif>
+  /// 替换为：blobs/KEY（sanitize 后的 key）
+  static String _rewriteBlobRefs(String html) {
+    return html.replaceAllMapped(
+      RegExp(r'data:image/gif;ttu:([^;]+);base64,[A-Za-z0-9+/=]+'),
+      (Match m) => 'blobs/${_sanitizeBlobKey(m[1]!)}',
+    );
+  }
+
+  /// 为已迁移但缺失 blobs 的书补提取插画。
+  /// 在正常迁移之后调用。
+  static Future<int> remediateMissingBlobs(
+    HibikiDatabase db,
+    int ttuServerPort,
+  ) async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final String? cachedIdsJson = prefs.getString(_idsKey);
+    if (cachedIdsJson == null) return 0;
+
+    final List<int> allIds =
+        (jsonDecode(cachedIdsJson) as List<dynamic>).cast<int>();
+
+    int remediated = 0;
+    for (final int ttuId in allIds) {
+      final String blobFlag = 'ttu_migrated_blobs_$ttuId';
+      if (prefs.getBool(blobFlag) == true) continue;
+
+      final EpubBookRow? existing = await db.getEpubBook(ttuId);
+      if (existing == null) continue;
+
+      final Directory blobDir =
+          Directory(p.join(existing.extractDir, 'blobs'));
+      if (blobDir.existsSync()) {
+        await prefs.setBool(blobFlag, true);
+        continue;
+      }
+
+      try {
+        final Map<String, dynamic>? bookData =
+            await TtuIdbReader.readBookForMigration(
+          ttuBookId: ttuId,
+          serverPort: ttuServerPort,
+        );
+        if (bookData == null) continue;
+
+        final dynamic rawBlobs = bookData['blobsBase64'];
+        if (rawBlobs is! Map<String, dynamic> || rawBlobs.isEmpty) {
+          await prefs.setBool(blobFlag, true);
+          continue;
+        }
+
+        final int written = await _writeBlobs(existing.extractDir, rawBlobs);
+        final String rewrittenHtml =
+            _rewriteBlobRefs(bookData['elementHtml'] as String);
+        final List<dynamic> sections =
+            bookData['sections'] as List<dynamic>;
+        _writeSectionFiles(existing.extractDir, rewrittenHtml, sections);
+
+        await prefs.setBool(blobFlag, true);
+        remediated++;
+        debugPrint('[ttu-migration] book $ttuId: remediated $written blobs');
+      } catch (e) {
+        debugPrint('[ttu-migration] blob remediation $ttuId failed: $e');
+      }
+    }
+
+    return remediated;
   }
 }
 

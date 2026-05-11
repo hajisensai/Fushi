@@ -335,6 +335,41 @@ class TtuIdbReader {
       } catch (e) {}
     }
 
+    // Extract illustration blobs as base64
+    const blobsBase64 = {};
+    let blobTotal = 0;
+    let blobFailed = 0;
+    if (record.blobs && typeof record.blobs === 'object') {
+      const entries = Object.entries(record.blobs);
+      for (let i = 0; i < entries.length; i++) {
+        const [key, blob] = entries[i];
+        if (!(blob instanceof Blob)) continue;
+        try {
+          const b64 = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result.split(',')[1]);
+            reader.onerror = () => {
+              console.warn('[ttu-migration] blob read failed: ' + key);
+              resolve(null);
+            };
+            reader.readAsDataURL(blob);
+          });
+          if (b64) {
+            blobsBase64[key] = b64;
+            blobTotal += blob.size;
+          } else {
+            blobFailed++;
+          }
+        } catch (e) {
+          console.warn('[ttu-migration] blob error: ' + key + ' ' + e);
+          blobFailed++;
+        }
+      }
+    }
+    if (blobFailed > 0) {
+      console.warn('[ttu-migration] ' + blobFailed + ' blobs failed to convert');
+    }
+
     db.close();
 
     window.flutter_inappwebview.callHandler('migResult', {
@@ -342,6 +377,8 @@ class TtuIdbReader {
       elementHtml: html,
       sections: sections,
       coverImageBase64: coverBase64,
+      blobsBase64: blobsBase64,
+      blobTotalBytes: blobTotal,
       progress: progress,
       lastSectionIndex: lastSectionIndex,
       characters: characters,

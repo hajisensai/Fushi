@@ -1178,6 +1178,13 @@ class AppModel with ChangeNotifier {
         if (migCount > 0) {
           debugPrint('[Hibiki] ttu migration: $migCount books migrated');
         }
+        final int blobCount = await TtuMigration.remediateMissingBlobs(
+          _database,
+          migServer.boundPort!,
+        );
+        if (blobCount > 0) {
+          debugPrint('[Hibiki] ttu blob remediation: $blobCount books fixed');
+        }
       } catch (e) {
         debugPrint('[Hibiki] ttu migration failed (non-fatal): $e');
       }
