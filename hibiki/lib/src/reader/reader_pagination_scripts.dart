@@ -629,22 +629,7 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
   var newHeight = Math.round(cssHeight) + $bottomOverlapPx;
   var newWidth = Math.round(cssWidth);
   if (newHeight === this.pageHeight && newWidth === this.pageWidth) return;
-  var context = this.getScrollContext();
-  var oldScroll = this.getPagePosition(context);
-  var anchorNode = null;
-  var walker = this.createWalker();
-  var node;
-  while (node = walker.nextNode()) {
-    var range = document.createRange();
-    range.selectNodeContents(node);
-    var rect = this.getRect(range);
-    if (!rect || rect.width <= 0 || rect.height <= 0) continue;
-    var nodeEnd = (context.vertical ? rect.bottom : rect.right) + oldScroll;
-    if (nodeEnd > oldScroll) {
-      anchorNode = node;
-      break;
-    }
-  }
+  var progress = this.calculateProgress();
   document.documentElement.style.setProperty('--page-height', newHeight + 'px');
   document.documentElement.style.setProperty('--page-width', newWidth + 'px');
   document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(newWidth * $imageWidthRatio)) + 'px');
@@ -652,17 +637,41 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
   this.pageHeight = newHeight;
   this.pageWidth = newWidth;
   this.paginationMetrics = null;
-  if (anchorNode) {
-    var newContext = this.getScrollContext();
-    var range = document.createRange();
-    range.setStart(anchorNode, 0);
-    range.setEnd(anchorNode, Math.min(1, anchorNode.length));
-    var rect = this.getRect(range);
-    var newScroll = this.getPagePosition(newContext);
-    var anchor = (newContext.vertical ? rect.top : rect.left) + newScroll;
-    var targetScroll = Math.round(anchor / newContext.columnPitch) * newContext.columnPitch;
-    this.setPagePosition(newContext, targetScroll);
-  }
+  var self = this;
+  requestAnimationFrame(function() {
+    var ctx = self.getScrollContext();
+    if (ctx.pageSize <= 0 || progress <= 0) {
+      self.setPagePosition(ctx, self.contentFirstPageScroll(ctx));
+      return;
+    }
+    if (progress >= 0.99) {
+      self.setPagePosition(ctx, Math.max(0, self.contentLastPageScroll(ctx)));
+      return;
+    }
+    var walker = self.createWalker();
+    var totalChars = 0;
+    var node;
+    while (node = walker.nextNode()) {
+      totalChars += self.countChars(node.textContent);
+    }
+    var targetCharCount = Math.ceil(totalChars * progress);
+    var runningSum = 0;
+    var targetNode = null;
+    walker = self.createWalker();
+    while (node = walker.nextNode()) {
+      runningSum += self.countChars(node.textContent);
+      if (runningSum > targetCharCount) { targetNode = node; break; }
+    }
+    if (targetNode) {
+      var range = document.createRange();
+      range.setStart(targetNode, 0);
+      range.setEnd(targetNode, Math.min(1, targetNode.length));
+      var rect = self.getRect(range);
+      var scroll = self.getPagePosition(ctx);
+      var anchor = (ctx.vertical ? rect.top : rect.left) + scroll;
+      self.setPagePosition(ctx, self.alignToPage(ctx, anchor));
+    }
+  });
 };
 $_sharedInitBoot
 </script>''';
@@ -830,9 +839,37 @@ $initImages
 };
 window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
   var newHeight = Math.round(cssHeight);
+  var progress = this.calculateProgress();
   document.documentElement.style.setProperty('--hoshi-continuous-height', newHeight + 'px');
   document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(Math.round(cssWidth) * $imageWidthRatio)) + 'px');
   document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, newHeight - $bottomOverlapPx) + 'px');
+  if (progress <= 0) return;
+  var self = this;
+  requestAnimationFrame(function() {
+    var walker = self.createWalker();
+    var totalChars = 0;
+    var node;
+    while (node = walker.nextNode()) {
+      totalChars += self.countChars(node.textContent);
+    }
+    if (totalChars <= 0) return;
+    var targetCharCount = Math.ceil(totalChars * progress);
+    var runningSum = 0;
+    var targetNode = null;
+    walker = self.createWalker();
+    while (node = walker.nextNode()) {
+      runningSum += self.countChars(node.textContent);
+      targetNode = node;
+      if (runningSum > targetCharCount) break;
+    }
+    if (targetNode && targetNode.parentElement) {
+      targetNode.parentElement.scrollIntoView({
+        block: progress >= 0.999999 ? 'end' : 'start',
+        inline: 'nearest',
+        behavior: 'instant'
+      });
+    }
+  });
 };
 (function() {
   var TAP_SLOP = 12;
