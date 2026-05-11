@@ -6,7 +6,6 @@ import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.graphics.Typeface;
@@ -22,9 +21,9 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
-import android.widget.LinearLayout;
 import android.widget.ImageButton;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import androidx.annotation.Nullable;
@@ -39,10 +38,20 @@ public class FloatingLyricService extends Service {
     private static final String PREFS_NAME = "floating_lyric_prefs";
     private static final int NOTIFICATION_ID = 9527;
 
+    private static final int DP_PAD_H = 16;
+    private static final int DP_PAD_V = 8;
+    private static final int DP_CONTROLS_BOTTOM = 6;
+    private static final int DP_BTN_PAD_H = 12;
+    private static final int DP_BTN_PAD_V = 4;
+    private static final int DP_BTN_MARGIN = 4;
+    private static final int DP_BTN_MIN_W = 44;
+    private static final int DP_BTN_MIN_H = 36;
+    private static final int DRAG_THRESHOLD = 10;
+    private static final int DEFAULT_POS_Y = 100;
+
     private WindowManager windowManager;
     private LinearLayout rootView;
     private TextView lyricText;
-    private LinearLayout controlsView;
     private ImageButton previousButton;
     private ImageButton playPauseButton;
     private ImageButton nextButton;
@@ -62,6 +71,7 @@ public class FloatingLyricService extends Service {
     private String currentText = "";
     private int highlightStart = -1;
     private int highlightLength = 0;
+
     private String previousLabel = "Previous";
     private String playPauseLabel = "Play";
     private String nextLabel = "Next";
@@ -87,26 +97,6 @@ public class FloatingLyricService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent != null) {
-            String action = intent.getStringExtra("action");
-            if ("updateText".equals(action)) {
-                String text = intent.getStringExtra("text");
-                if (text != null) {
-                    updateLyricText(text);
-                }
-            } else if ("updateStyle".equals(action)) {
-                fontSize = intent.getFloatExtra("fontSize", fontSize);
-                textColor = intent.getIntExtra("textColor", textColor);
-                bgColor = intent.getIntExtra("bgColor", bgColor);
-                buttonTextColor = intent.getIntExtra("buttonTextColor", buttonTextColor);
-                buttonBgColor = intent.getIntExtra("buttonBgColor", buttonBgColor);
-                highlightColor = intent.getIntExtra("highlightColor", highlightColor);
-                activeColor = intent.getIntExtra("activeColor", activeColor);
-                applyStyle();
-            } else if ("setLocked".equals(action)) {
-                setLocked(intent.getBooleanExtra("locked", false));
-            }
-        }
         return START_NOT_STICKY;
     }
 
@@ -133,6 +123,8 @@ public class FloatingLyricService extends Service {
         super.onTaskRemoved(rootIntent);
     }
 
+    // ── Public API (called from MainActivity) ──
+
     public void updateLyricText(String text) {
         currentText = text;
         highlightStart = -1;
@@ -146,37 +138,10 @@ public class FloatingLyricService extends Service {
         applyLyricText();
     }
 
-    private void applyLyricText() {
-        if (lyricText != null) {
-            if (highlightStart >= 0 && highlightLength > 0 && currentText != null) {
-                int start = Math.max(0, Math.min(highlightStart, currentText.length()));
-                int end = Math.max(start, Math.min(start + highlightLength, currentText.length()));
-                SpannableString span = new SpannableString(currentText);
-                if (end > start) {
-                    span.setSpan(
-                            new BackgroundColorSpan(highlightColor),
-                            start,
-                            end,
-                            Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                }
-                lyricText.setText(span);
-            } else {
-                lyricText.setText(currentText);
-            }
-            if (windowManager != null && rootView != null && layoutParams != null) {
-                rootView.post(() -> windowManager.updateViewLayout(rootView, layoutParams));
-            }
-        }
-    }
-
     public void updateStyle(
-            float size,
-            int color,
-            int bg,
-            int buttonColor,
-            int buttonBg,
-            int highlight,
-            int active) {
+            float size, int color, int bg,
+            int buttonColor, int buttonBg,
+            int highlight, int active) {
         fontSize = size;
         textColor = color;
         bgColor = bg;
@@ -189,51 +154,52 @@ public class FloatingLyricService extends Service {
 
     public void setLocked(boolean locked) {
         isLocked = locked;
-        updateLockButton();
-        updateTouchability();
+        applyLockButton();
     }
 
     public void setPlaybackState(boolean playing) {
         isPlaying = playing;
-        updatePlayPauseButton();
+        applyPlayPauseButton();
     }
 
     public void updateLabels(Map<String, Object> labels) {
-        previousLabel = stringLabel(labels, "previous", previousLabel);
-        playPauseLabel = stringLabel(labels, "playPause", playPauseLabel);
-        nextLabel = stringLabel(labels, "next", nextLabel);
-        lockLabel = stringLabel(labels, "lock", lockLabel);
-        unlockLabel = stringLabel(labels, "unlock", unlockLabel);
-        closeLabel = stringLabel(labels, "close", closeLabel);
-        updateControlLabels();
+        previousLabel = extractLabel(labels, "previous", previousLabel);
+        playPauseLabel = extractLabel(labels, "playPause", playPauseLabel);
+        nextLabel = extractLabel(labels, "next", nextLabel);
+        lockLabel = extractLabel(labels, "lock", lockLabel);
+        unlockLabel = extractLabel(labels, "unlock", unlockLabel);
+        closeLabel = extractLabel(labels, "close", closeLabel);
+        applyControlLabels();
     }
 
-    private String stringLabel(Map<String, Object> labels, String key, String fallback) {
-        if (labels == null) return fallback;
-        Object value = labels.get(key);
-        if (value == null) return fallback;
-        String text = value.toString();
-        return text.isEmpty() ? fallback : text;
-    }
-
-    private void updateControlLabels() {
-        if (previousButton != null) previousButton.setContentDescription(previousLabel);
-        if (playPauseButton != null) playPauseButton.setContentDescription(playPauseLabel);
-        if (nextButton != null) nextButton.setContentDescription(nextLabel);
-        if (closeButton != null) closeButton.setContentDescription(closeLabel);
-        updateLockButton();
-    }
+    // ── View creation ──
+    // Layout: controls on top (fixed height), lyric text below (expands downward).
+    // Gravity.TOP pins the top edge, so buttons never move when text reflows.
 
     private void createOverlayView() {
-        int dp6 = dpToPx(6);
-        int dp8 = dpToPx(8);
-        int dp12 = dpToPx(12);
-        int dp16 = dpToPx(16);
-
         rootView = new LinearLayout(this);
         rootView.setOrientation(LinearLayout.VERTICAL);
         rootView.setGravity(Gravity.CENTER_HORIZONTAL);
-        rootView.setPadding(dp16, dp8, dp16, dp8);
+        rootView.setPadding(dp(DP_PAD_H), dp(DP_PAD_V), dp(DP_PAD_H), dp(DP_PAD_V));
+
+        LinearLayout controls = new LinearLayout(this);
+        controls.setOrientation(LinearLayout.HORIZONTAL);
+        controls.setGravity(Gravity.CENTER);
+        controls.setPadding(0, 0, 0, dp(DP_CONTROLS_BOTTOM));
+        rootView.addView(controls, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        previousButton = addButton(controls, previousLabel, "previousCue",
+                R.drawable.ic_floating_previous);
+        playPauseButton = addButton(controls, playPauseLabel, "playPause",
+                R.drawable.ic_floating_play);
+        nextButton = addButton(controls, nextLabel, "nextCue",
+                R.drawable.ic_floating_next);
+        lockButton = addButton(controls, lockLabel, "toggleLock",
+                R.drawable.ic_floating_lock);
+        closeButton = addButton(controls, closeLabel, "close",
+                R.drawable.ic_floating_close);
 
         lyricText = new TextView(this);
         lyricText.setTextSize(TypedValue.COMPLEX_UNIT_SP, fontSize);
@@ -241,50 +207,14 @@ public class FloatingLyricService extends Service {
         lyricText.setGravity(Gravity.CENTER_HORIZONTAL);
         lyricText.setTypeface(Typeface.DEFAULT);
         lyricText.setText(currentText);
-
-        LinearLayout.LayoutParams textLp = new LinearLayout.LayoutParams(
+        rootView.addView(lyricText, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        rootView.addView(lyricText, textLp);
-
-        controlsView = new LinearLayout(this);
-        controlsView.setOrientation(LinearLayout.HORIZONTAL);
-        controlsView.setGravity(Gravity.CENTER);
-        controlsView.setPadding(0, dp6, 0, 0);
-        rootView.addView(controlsView, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        previousButton = addControlButton(
-                previousLabel,
-                "previousCue",
-                R.drawable.ic_floating_previous,
-                dp12);
-        playPauseButton = addControlButton(
-                playPauseLabel,
-                "playPause",
-                R.drawable.ic_floating_play,
-                dp12);
-        nextButton = addControlButton(
-                nextLabel,
-                "nextCue",
-                R.drawable.ic_floating_next,
-                dp12);
-        lockButton = addControlButton(
-                lockLabel,
-                "toggleLock",
-                R.drawable.ic_floating_lock,
-                dp12);
-        closeButton = addControlButton(
-                closeLabel,
-                "close",
-                R.drawable.ic_floating_close,
-                dp12);
 
         applyStyle();
 
-        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-        int savedY = prefs.getInt("posY", 100);
+        int savedY = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .getInt("posYTop", DEFAULT_POS_Y);
 
         layoutParams = new WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
@@ -295,129 +225,97 @@ public class FloatingLyricService extends Service {
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                         | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                 PixelFormat.TRANSLUCENT);
-        layoutParams.gravity = Gravity.BOTTOM | Gravity.START;
+        layoutParams.gravity = Gravity.TOP | Gravity.START;
         layoutParams.x = 0;
         layoutParams.y = savedY;
 
-        setupTouchListener();
+        rootView.setOnTouchListener(new OverlayTouchListener());
         windowManager.addView(rootView, layoutParams);
     }
 
-    private ImageButton addControlButton(
-            String label,
-            String action,
-            int iconResId,
-            int horizontalPadding) {
-        ImageButton button = new ImageButton(this);
-        button.setImageResource(iconResId);
-        button.setContentDescription(label);
-        button.setPadding(horizontalPadding, dpToPx(4), horizontalPadding, dpToPx(4));
-        button.setMinimumWidth(dpToPx(44));
-        button.setMinimumHeight(dpToPx(36));
-        button.setScaleType(ImageView.ScaleType.CENTER);
-        button.setBackgroundColor(buttonBgColor);
-        applyIconTint(button, buttonTextColor);
-        button.setOnClickListener(v -> {
-            if (isLocked && !"toggleLock".equals(action)) {
-                return;
-            }
-            if ("close".equals(action)) {
-                MainActivity.notifyFloatingLyricEvent("close", null);
-                stopSelf();
-            } else if ("toggleLock".equals(action)) {
-                setLocked(!isLocked);
-            } else {
-                MainActivity.notifyFloatingLyricEvent(action, null);
-            }
-        });
+    private ImageButton addButton(LinearLayout parent, String label,
+                                   String action, int iconResId) {
+        ImageButton btn = new ImageButton(this);
+        btn.setImageResource(iconResId);
+        btn.setContentDescription(label);
+        btn.setPadding(dp(DP_BTN_PAD_H), dp(DP_BTN_PAD_V),
+                dp(DP_BTN_PAD_H), dp(DP_BTN_PAD_V));
+        btn.setMinimumWidth(dp(DP_BTN_MIN_W));
+        btn.setMinimumHeight(dp(DP_BTN_MIN_H));
+        btn.setScaleType(ImageView.ScaleType.CENTER);
+        btn.setBackgroundColor(buttonBgColor);
+        tintIcon(btn, buttonTextColor);
+        btn.setOnClickListener(v -> onControlClick(action));
+
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        lp.setMargins(dpToPx(4), 0, dpToPx(4), 0);
-        controlsView.addView(button, lp);
-        return button;
+        lp.setMargins(dp(DP_BTN_MARGIN), 0, dp(DP_BTN_MARGIN), 0);
+        parent.addView(btn, lp);
+        return btn;
     }
 
-    private void updateLockButton() {
-        if (lockButton == null) return;
-        lockButton.setImageResource(
-                isLocked ? R.drawable.ic_floating_lock_open : R.drawable.ic_floating_lock);
-        lockButton.setContentDescription(isLocked ? unlockLabel : lockLabel);
-        applyIconTint(lockButton, isLocked ? activeColor : buttonTextColor);
-        lockButton.setBackgroundColor(buttonBgColor);
-    }
+    // ── Touch handling ──
 
-    private void updatePlayPauseButton() {
-        if (playPauseButton == null) return;
-        playPauseButton.setImageResource(
-                isPlaying ? R.drawable.ic_floating_pause : R.drawable.ic_floating_play);
-        playPauseButton.setContentDescription(playPauseLabel);
-        applyIconTint(playPauseButton, isPlaying ? activeColor : buttonTextColor);
-        playPauseButton.setBackgroundColor(buttonBgColor);
-    }
+    private class OverlayTouchListener implements View.OnTouchListener {
+        private int initialY;
+        private float initialTouchY;
+        private boolean isDragging;
 
-    private void setupTouchListener() {
-        View.OnTouchListener touchListener = new View.OnTouchListener() {
-            private int initialY;
-            private float initialTouchY;
-            private boolean isDragging = false;
-
-            @Override
-            public boolean onTouch(View v, MotionEvent event) {
-                if (isLocked) return true;
-                switch (event.getAction()) {
-                    case MotionEvent.ACTION_DOWN:
-                        initialY = layoutParams.y;
-                        initialTouchY = event.getRawY();
-                        isDragging = false;
-                        return true;
-                    case MotionEvent.ACTION_MOVE:
-                        float dy = event.getRawY() - initialTouchY;
-                        if (Math.abs(dy) > 10) isDragging = true;
-                        if (isDragging) {
-                            layoutParams.y = initialY - (int) dy;
-                            windowManager.updateViewLayout(rootView, layoutParams);
-                        }
-                        return true;
-                    case MotionEvent.ACTION_UP:
-                        if (isDragging) {
-                            savePosition();
-                        } else if (v == lyricText) {
-                            notifyLookupFromTouch(event);
-                        }
-                        return true;
-                }
-                return false;
+        @Override
+        public boolean onTouch(View v, MotionEvent event) {
+            if (isLocked) return true;
+            switch (event.getAction()) {
+                case MotionEvent.ACTION_DOWN:
+                    initialY = layoutParams.y;
+                    initialTouchY = event.getRawY();
+                    isDragging = false;
+                    return true;
+                case MotionEvent.ACTION_MOVE:
+                    float dy = event.getRawY() - initialTouchY;
+                    if (Math.abs(dy) > DRAG_THRESHOLD) isDragging = true;
+                    if (isDragging) {
+                        layoutParams.y = initialY + (int) dy;
+                        windowManager.updateViewLayout(rootView, layoutParams);
+                    }
+                    return true;
+                case MotionEvent.ACTION_UP:
+                    if (isDragging) {
+                        savePosition();
+                    } else {
+                        handleTap(event);
+                    }
+                    return true;
             }
-        };
-        rootView.setOnTouchListener(touchListener);
-        lyricText.setOnTouchListener(touchListener);
+            return false;
+        }
     }
 
-    private void notifyLookupFromTouch(MotionEvent event) {
-        int index = getTouchedTextIndex(event);
-        String text = currentText;
-        if (text == null || text.trim().isEmpty()) return;
+    private void handleTap(MotionEvent event) {
+        if (lyricText == null || currentText == null || currentText.trim().isEmpty()) return;
+        int[] loc = new int[2];
+        lyricText.getLocationOnScreen(loc);
+        float localX = event.getRawX() - loc[0];
+        float localY = event.getRawY() - loc[1];
+        if (localX < 0 || localX > lyricText.getWidth()
+                || localY < 0 || localY > lyricText.getHeight()) return;
 
+        int index = getCharIndexAt(localX, localY);
         Map<String, Object> args = new HashMap<>();
-        args.put("text", text);
+        args.put("text", currentText);
         args.put("index", index);
         MainActivity.notifyFloatingLyricEvent("lookupText", args);
         bringAppToFront();
     }
 
-    private int getTouchedTextIndex(MotionEvent event) {
-        if (lyricText == null) return 0;
+    private int getCharIndexAt(float x, float y) {
         Layout layout = lyricText.getLayout();
         CharSequence value = lyricText.getText();
-        if (layout == null || value == null || value.length() == 0) {
-            return 0;
-        }
-        int x = (int) event.getX() - lyricText.getTotalPaddingLeft()
-                + lyricText.getScrollX();
-        int y = (int) event.getY() - lyricText.getTotalPaddingTop()
-                + lyricText.getScrollY();
-        int line = layout.getLineForVertical(y);
+        if (layout == null || value == null || value.length() == 0) return 0;
+
+        float adjX = x - lyricText.getTotalPaddingLeft() + lyricText.getScrollX();
+        float adjY = y - lyricText.getTotalPaddingTop() + lyricText.getScrollY();
+        int line = layout.getLineForVertical((int) adjY);
         int lineStart = layout.getLineStart(line);
         int lineEnd = layout.getLineEnd(line);
         String source = value.toString();
@@ -429,34 +327,47 @@ public class FloatingLyricService extends Service {
         for (int i = lineStart; i < lineEnd; i++) {
             float left = layout.getPrimaryHorizontal(i);
             float right = layout.getPrimaryHorizontal(i + 1);
-            if (right < left) {
-                float tmp = left;
-                left = right;
-                right = tmp;
-            }
-            if (x >= left && x <= right) {
-                return i;
-            }
+            if (right < left) { float tmp = left; left = right; right = tmp; }
+            if (adjX >= left && adjX <= right) return i;
         }
 
-        int offset = layout.getOffsetForHorizontal(line, x);
+        int offset = layout.getOffsetForHorizontal(line, adjX);
         return Math.max(0, Math.min(offset, Math.max(0, source.length() - 1)));
     }
 
-    private void bringAppToFront() {
-        Intent launchIntent = getPackageManager().getLaunchIntentForPackage(getPackageName());
-        if (launchIntent == null) return;
-        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
-                | Intent.FLAG_ACTIVITY_SINGLE_TOP
-                | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        startActivity(launchIntent);
+    // ── Control callbacks ──
+
+    private void onControlClick(String action) {
+        if (isLocked && !"toggleLock".equals(action)) return;
+        if ("close".equals(action)) {
+            MainActivity.notifyFloatingLyricEvent("close", null);
+            stopSelf();
+        } else if ("toggleLock".equals(action)) {
+            setLocked(!isLocked);
+        } else {
+            MainActivity.notifyFloatingLyricEvent(action, null);
+        }
     }
 
-    private void updateTouchability() {
-        if (layoutParams == null || rootView == null) return;
-        layoutParams.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS;
-        windowManager.updateViewLayout(rootView, layoutParams);
+    // ── Style application ──
+
+    private void applyLyricText() {
+        if (lyricText == null) return;
+        if (highlightStart >= 0 && highlightLength > 0 && currentText != null) {
+            int start = Math.max(0, Math.min(highlightStart, currentText.length()));
+            int end = Math.max(start, Math.min(start + highlightLength, currentText.length()));
+            SpannableString span = new SpannableString(currentText);
+            if (end > start) {
+                span.setSpan(new BackgroundColorSpan(highlightColor),
+                        start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+            lyricText.setText(span);
+        } else {
+            lyricText.setText(currentText);
+        }
+        if (windowManager != null && rootView != null && layoutParams != null) {
+            rootView.post(() -> windowManager.updateViewLayout(rootView, layoutParams));
+        }
     }
 
     private void applyStyle() {
@@ -467,59 +378,98 @@ public class FloatingLyricService extends Service {
         applyButtonStyle(previousButton);
         applyButtonStyle(nextButton);
         applyButtonStyle(closeButton);
-        updatePlayPauseButton();
-        updateLockButton();
+        applyPlayPauseButton();
+        applyLockButton();
         applyLyricText();
     }
 
-    private void applyButtonStyle(ImageButton button) {
-        if (button == null) return;
-        button.setBackgroundColor(buttonBgColor);
-        applyIconTint(button, buttonTextColor);
+    private void applyButtonStyle(ImageButton btn) {
+        if (btn == null) return;
+        btn.setBackgroundColor(buttonBgColor);
+        tintIcon(btn, buttonTextColor);
     }
 
-    private void applyIconTint(ImageButton button, int color) {
-        Drawable drawable = button.getDrawable();
-        if (drawable == null) return;
-        drawable.mutate().setTint(color);
+    private void applyLockButton() {
+        if (lockButton == null) return;
+        lockButton.setImageResource(
+                isLocked ? R.drawable.ic_floating_lock_open : R.drawable.ic_floating_lock);
+        lockButton.setContentDescription(isLocked ? unlockLabel : lockLabel);
+        tintIcon(lockButton, isLocked ? activeColor : buttonTextColor);
+        lockButton.setBackgroundColor(buttonBgColor);
+    }
+
+    private void applyPlayPauseButton() {
+        if (playPauseButton == null) return;
+        playPauseButton.setImageResource(
+                isPlaying ? R.drawable.ic_floating_pause : R.drawable.ic_floating_play);
+        playPauseButton.setContentDescription(playPauseLabel);
+        tintIcon(playPauseButton, isPlaying ? activeColor : buttonTextColor);
+        playPauseButton.setBackgroundColor(buttonBgColor);
+    }
+
+    private void applyControlLabels() {
+        if (previousButton != null) previousButton.setContentDescription(previousLabel);
+        if (playPauseButton != null) playPauseButton.setContentDescription(playPauseLabel);
+        if (nextButton != null) nextButton.setContentDescription(nextLabel);
+        if (closeButton != null) closeButton.setContentDescription(closeLabel);
+        applyLockButton();
+    }
+
+    // ── Utilities ──
+
+    private void tintIcon(ImageButton btn, int color) {
+        Drawable d = btn.getDrawable();
+        if (d != null) d.mutate().setTint(color);
     }
 
     private void savePosition() {
         if (layoutParams == null) return;
-        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-                .edit()
-                .putInt("posY", layoutParams.y)
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+                .putInt("posYTop", layoutParams.y)
                 .apply();
     }
+
+    private void bringAppToFront() {
+        Intent intent = getPackageManager().getLaunchIntentForPackage(getPackageName());
+        if (intent == null) return;
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                | Intent.FLAG_ACTIVITY_SINGLE_TOP
+                | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        startActivity(intent);
+    }
+
+    private static String extractLabel(Map<String, Object> labels, String key, String fallback) {
+        if (labels == null) return fallback;
+        Object value = labels.get(key);
+        if (value == null) return fallback;
+        String text = value.toString();
+        return text.isEmpty() ? fallback : text;
+    }
+
+    private int dp(int value) {
+        return (int) (value * getResources().getDisplayMetrics().density);
+    }
+
+    // ── Notification (foreground service requirement) ──
 
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
-                    CHANNEL_ID,
-                    "Floating Lyric",
-                    NotificationManager.IMPORTANCE_LOW);
+                    CHANNEL_ID, "Floating Lyric", NotificationManager.IMPORTANCE_LOW);
             channel.setShowBadge(false);
-            NotificationManager nm = getSystemService(NotificationManager.class);
-            nm.createNotificationChannel(channel);
+            getSystemService(NotificationManager.class).createNotificationChannel(channel);
         }
     }
 
     private Notification buildNotification() {
-        Notification.Builder builder;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            builder = new Notification.Builder(this, CHANNEL_ID);
-        } else {
-            builder = new Notification.Builder(this);
-        }
+        Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                ? new Notification.Builder(this, CHANNEL_ID)
+                : new Notification.Builder(this);
         return builder
                 .setContentTitle("Hibiki")
                 .setContentText("Floating lyric is active")
                 .setSmallIcon(R.drawable.ic_stat_hibiki)
                 .setOngoing(true)
                 .build();
-    }
-
-    private int dpToPx(int dp) {
-        return (int) (dp * getResources().getDisplayMetrics().density);
     }
 }
