@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:hibiki/src/anki/anki_models.dart';
 import 'package:hibiki/src/anki/lapis_preset.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
 class AnkiRepository {
   static const _channel = HibikiChannels.anki;
@@ -25,13 +26,16 @@ class AnkiRepository {
         try {
           return AnkiSettings.fromJson(
               jsonDecode(migrated) as Map<String, dynamic>);
-        } catch (_) {}
+        } catch (e, stack) {
+          ErrorLogService.instance.log('AnkiRepository.loadSettings.legacy', e, stack);
+        }
       }
       return const AnkiSettings();
     }
     try {
       return AnkiSettings.fromJson(jsonDecode(raw) as Map<String, dynamic>);
-    } catch (_) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('AnkiRepository.loadSettings', e, stack);
       return const AnkiSettings();
     }
   }
@@ -128,7 +132,8 @@ class AnkiRepository {
       final json =
           Map<String, dynamic>.from(jsonDecode(rawPayloadJson) as Map);
       payload = AnkiMiningPayload.fromJson(json);
-    } catch (_) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('AnkiRepository.mineEntry.parsePayload', e, stack);
       return MineResult.error;
     }
 
@@ -205,7 +210,9 @@ class AnkiRepository {
             'readingFieldIndices': [readingIdx],
           });
           if (isDupe == true) return MineResult.duplicate;
-        } catch (_) {}
+        } catch (e, stack) {
+          ErrorLogService.instance.log('AnkiRepository.mineEntry.dupeCheck', e, stack);
+        }
       }
     }
 
@@ -223,7 +230,8 @@ class AnkiRepository {
         'tags': tags,
       });
       return MineResult.success;
-    } on PlatformException catch (e) {
+    } on PlatformException catch (e, stack) {
+      ErrorLogService.instance.log('AnkiRepository.mineEntry.addNote', e, stack);
       debugPrint('Failed to add note: ${e.message}');
       return MineResult.error;
     }
@@ -244,7 +252,8 @@ class AnkiRepository {
         'readingFieldIndices': [readingIdx],
       });
       return result == true;
-    } catch (_) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('AnkiRepository.isDuplicate', e, stack);
       return false;
     }
   }
@@ -289,7 +298,8 @@ class AnkiRepository {
       if (audioFile == null || !audioFile.existsSync()) return null;
       return _addMediaFile(
           audioFile.path, audioFile.uri.pathSegments.last, 'audio/mpeg');
-    } catch (e) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('AnkiRepository._addRemoteAudio', e, stack);
       debugPrint('Failed to add remote audio: $e');
       return null;
     }
@@ -305,7 +315,8 @@ class AnkiRepository {
       final result =
           await _addMediaFile(file.path, filename, mimeTypeForPath(media.path));
       return result != null ? ankiInlineMediaReference(result) : null;
-    } catch (e) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('AnkiRepository._addDictionaryMedia', e, stack);
       debugPrint('Failed to add dictionary media: $e');
       return null;
     }
@@ -321,7 +332,8 @@ class AnkiRepository {
         'mimeType': mimeType,
       });
       return result as String?;
-    } catch (e) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('AnkiRepository._addMediaFile', e, stack);
       debugPrint('Failed to add Anki media $preferredName: $e');
       return null;
     }

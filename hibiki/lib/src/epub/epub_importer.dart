@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:hibiki/src/database/database.dart';
 import 'package:hibiki/src/epub/epub_book.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/epub/epub_parser.dart';
 import 'package:hibiki/src/epub/epub_storage.dart';
 
@@ -92,7 +93,9 @@ class EpubImporter {
           await (db.delete(db.epubBooks)
                 ..where((tbl) => tbl.id.equals(insertedBookId!)))
               .go();
-        } catch (_) {}
+        } catch (e, stack) {
+          ErrorLogService.instance.log('EpubImporter.rollbackDelete', e, stack);
+        }
         final String realDir = await EpubStorage.bookDirectory(insertedBookId);
         _tryDeleteDir(realDir);
       }
@@ -106,7 +109,9 @@ class EpubImporter {
     if (dir.existsSync()) {
       try {
         dir.deleteSync(recursive: true);
-      } catch (_) {}
+      } catch (e, stack) {
+        ErrorLogService.instance.log('EpubImporter.cleanupDir', e, stack);
+      }
     }
   }
 

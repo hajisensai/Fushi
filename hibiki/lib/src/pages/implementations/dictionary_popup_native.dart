@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/src/dictionary/hoshidicts.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/utils.dart';
 
 class _GroupedEntry {
@@ -80,7 +81,9 @@ class _DictionaryPopupNativeState
         if (entry.extra.isNotEmpty) {
           try {
             extraData = jsonDecode(entry.extra) as Map<String, dynamic>;
-          } catch (_) {}
+          } catch (e, stack) {
+            ErrorLogService.instance.log('DictPopupNative.extraData', e, stack);
+          }
         }
 
         final trace = <Map<String, String>>[];
@@ -105,7 +108,8 @@ class _DictionaryPopupNativeState
       try {
         final parsed = jsonDecode(entry.meaning);
         contentText = _structuredContentToText(parsed);
-      } catch (_) {
+      } catch (e, stack) {
+        ErrorLogService.instance.log('DictPopupNative.meaning', e, stack);
         contentText = entry.meaning;
       }
 
@@ -114,7 +118,9 @@ class _DictionaryPopupNativeState
         try {
           final data = jsonDecode(entry.extra) as Map<String, dynamic>;
           defTags = data['definitionTags']?.toString() ?? '';
-        } catch (_) {}
+        } catch (e, stack) {
+          ErrorLogService.instance.log('DictPopupNative.definitionTags', e, stack);
+        }
       }
 
       grouped[key]!.glossaries.add(_GlossaryItem(

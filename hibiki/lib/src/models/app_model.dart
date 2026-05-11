@@ -40,6 +40,7 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/misc/tts_channel.dart';
 import 'package:hibiki/src/dictionary/dictionary_utils.dart'
     show importDictionaryViaHoshidicts;
@@ -417,7 +418,8 @@ class AppModel with ChangeNotifier {
         _database
             .upsertDictionaryMeta(_dictionaryToCompanion(_dictionariesCache[i]));
         debugPrint('[Hibiki] migrated dict type: ${d.name} → ${detected.name}');
-      } catch (e) {
+      } catch (e, stack) {
+        ErrorLogService.instance.log('AppModel.dictTypeMigration', e, stack);
         debugPrint('[Hibiki] dict type migration error for ${d.name}: $e');
       } finally {
         raf.closeSync();
@@ -1046,7 +1048,8 @@ class AppModel with ChangeNotifier {
       }
 
       return hibikiDirectory;
-    } catch (e) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('AppModel.prepareHibikiDirectory', e, stack);
       debugPrint('DCIM unavailable, using fallback directory.');
       return prepareFallbackHibikiDirectory();
     }
@@ -1143,7 +1146,8 @@ class AppModel with ChangeNotifier {
         try {
           _dictionaryHistoryResults
               .add(DictionarySearchResult.fromJson(row.resultJson));
-        } catch (e) {
+        } catch (e, stack) {
+          ErrorLogService.instance.log('AppModel.dictHistory', e, stack);
           debugPrint('[Hibiki] skipping corrupted dictionary history: $e');
         }
       }
@@ -1252,7 +1256,8 @@ class AppModel with ChangeNotifier {
         if (tocCount > 0) {
           debugPrint('[Hibiki] ttu TOC remediation: $tocCount books fixed');
         }
-      } catch (e) {
+      } catch (e, stack) {
+        ErrorLogService.instance.log('AppModel.ttuMigration', e, stack);
         debugPrint('[Hibiki] ttu migration failed (non-fatal): $e');
       }
 
@@ -1329,7 +1334,8 @@ class AppModel with ChangeNotifier {
         try {
           _dictionaryHistoryResults
               .add(DictionarySearchResult.fromJson(row.resultJson));
-        } catch (e) {
+        } catch (e, stack) {
+          ErrorLogService.instance.log('AppModel.popupDictHistory', e, stack);
           debugPrint(
               '[Hibiki-popup] skipping corrupted dictionary history: $e');
         }
@@ -1374,6 +1380,7 @@ class AppModel with ChangeNotifier {
       _isInitialised = true;
       notifyListeners();
     } catch (e, stack) {
+      ErrorLogService.instance.log('AppModel.popupInit', e, stack);
       debugPrint('[Hibiki-popup] init FAILED: $e\n$stack');
       _initError = '$e';
       notifyListeners();
@@ -1391,7 +1398,8 @@ class AppModel with ChangeNotifier {
     if (defaultValue is List) {
       try {
         return List<String>.from(jsonDecode(raw));
-      } catch (_) {
+      } catch (e, stack) {
+        ErrorLogService.instance.log('AppModel.getPreference.jsonList', e, stack);
         return defaultValue;
       }
     }
@@ -1938,7 +1946,8 @@ class AppModel with ChangeNotifier {
           .toList();
       input.closeSync();
       return names;
-    } catch (_) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('AppModel.fontNamesFromZip', e, stack);
       return [];
     }
   }
@@ -1992,7 +2001,8 @@ class AppModel with ChangeNotifier {
                 ext == '.woff2';
           });
           if (hasFont) fontDirs.add(d);
-        } catch (e) {
+        } catch (e, stack) {
+          ErrorLogService.instance.log('AppModel.scanFontDir', e, stack);
           debugPrint('[Hibiki] error scanning font dir ${d.path}: $e');
         }
       }
@@ -2008,7 +2018,8 @@ class AppModel with ChangeNotifier {
             fontDirs: fontDirs,
             onImportSuccess: onImportSuccess,
           );
-        } catch (e) {
+        } catch (e, stack) {
+          ErrorLogService.instance.log('AppModel.importDictZip', e, stack);
           Fluttertoast.showToast(
             msg: '${path.basenameWithoutExtension(zipFiles[i].path)}: $e',
             toastLength: Toast.LENGTH_LONG,
@@ -3425,7 +3436,8 @@ class AppModel with ChangeNotifier {
   Future<void> moveToBack() async {
     try {
       await _lifecycleChannel.invokeMethod<void>('moveTaskToBack');
-    } catch (e) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('AppModel.moveToBack', e, stack);
       debugPrint('[Hibiki] moveToBack failed: $e');
     }
   }

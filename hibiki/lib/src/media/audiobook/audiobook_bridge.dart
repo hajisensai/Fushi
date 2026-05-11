@@ -5,6 +5,7 @@ import 'package:hibiki/i18n/strings.g.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/sasayaki_match_codec.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
 /// WebView ↔ Flutter 双向通道，用于有声书句子高亮和点击跳转。
 ///
@@ -433,7 +434,8 @@ window.__hoshiAnnotate = function(chapterHref) {
         return null;
       }
       return ReaderViewportPos(section: section, offset: offset);
-    } catch (_) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('AudiobookBridge.viewportPos', e, stack);
       return null;
     }
   }

@@ -9,6 +9,7 @@ import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/src/dictionary/hoshidicts.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/utils.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class DictionaryPopupWebView extends ConsumerStatefulWidget {
@@ -407,7 +408,9 @@ class DictionaryPopupWebViewState
         if (entry.extra != null && entry.extra!.isNotEmpty) {
           try {
             extraData = jsonDecode(entry.extra!) as Map<String, dynamic>;
-          } catch (_) {}
+          } catch (e, stack) {
+            ErrorLogService.instance.log('DictPopupWebview.extraData', e, stack);
+          }
         }
 
         grouped[key] = {
@@ -435,7 +438,8 @@ class DictionaryPopupWebViewState
       dynamic contentValue;
       try {
         contentValue = jsonDecode(entry.meaning);
-      } catch (_) {
+      } catch (e, stack) {
+        ErrorLogService.instance.log('DictPopupWebview.meaning', e, stack);
         contentValue = entry.meaning;
       }
 
@@ -455,7 +459,8 @@ class DictionaryPopupWebViewState
     try {
       final data = jsonDecode(entry.extra!) as Map<String, dynamic>;
       return data[field]?.toString() ?? '';
-    } catch (_) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('DictPopupWebview.getExtraField', e, stack);
       return '';
     }
   }

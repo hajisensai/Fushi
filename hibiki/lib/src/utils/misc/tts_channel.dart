@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
 /// Thin wrapper around the native Android TextToSpeech MethodChannel.
 /// Calls are fire-and-forget; failures are silently swallowed.
@@ -18,8 +19,8 @@ class TtsChannel {
         'text': text,
         'locale': locale,
       });
-    } catch (_) {
-      // TTS failure is non-critical — silently ignore.
+    } catch (e, stack) {
+      ErrorLogService.instance.log('TtsChannel.speak', e, stack);
     }
   }
 
@@ -28,7 +29,8 @@ class TtsChannel {
     try {
       final result = await _channel.invokeMethod('playUrl', {'url': url});
       return result == true;
-    } catch (_) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('TtsChannel.playUrl', e, stack);
       return false;
     }
   }
@@ -38,7 +40,8 @@ class TtsChannel {
     try {
       final result = await _channel.invokeMethod('setLocalAudioDb', {'path': path});
       return result == true;
-    } catch (_) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('TtsChannel.setLocalAudioDb', e, stack);
       return false;
     }
   }
@@ -53,7 +56,8 @@ class TtsChannel {
       });
       if (result == null) return null;
       return Map<String, String>.from(result as Map);
-    } catch (_) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('TtsChannel.queryLocalAudio', e, stack);
       return null;
     }
   }
@@ -67,7 +71,8 @@ class TtsChannel {
         'source': source,
       });
       return result as String?;
-    } catch (_) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('TtsChannel.extractLocalAudio', e, stack);
       return null;
     }
   }
@@ -77,7 +82,8 @@ class TtsChannel {
     try {
       final result = await _channel.invokeMethod('playFile', {'path': filePath});
       return result == true;
-    } catch (_) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('TtsChannel.playFile', e, stack);
       return false;
     }
   }
@@ -98,7 +104,8 @@ class TtsChannel {
         'outputPath': outputPath,
       });
       return result as String?;
-    } catch (_) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('TtsChannel.extractAudioSegment', e, stack);
       return null;
     }
   }
@@ -113,7 +120,8 @@ class TtsChannel {
         'outputPath': outputPath,
       });
       return result as String?;
-    } catch (_) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('TtsChannel.ttsToFile', e, stack);
       return null;
     }
   }
@@ -122,7 +130,8 @@ class TtsChannel {
   Future<void> stop() async {
     try {
       await _channel.invokeMethod('stop');
-    } catch (e) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('TtsChannel.stop', e, stack);
       debugPrint('[Hibiki] TTS stop failed: $e');
     }
   }

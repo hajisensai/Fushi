@@ -12,6 +12,7 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/database/database.dart';
 import 'package:hibiki/src/epub/epub_storage.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
 import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
@@ -241,7 +242,9 @@ class ReaderHoshiSource extends ReaderMediaSource {
                       ?.toInt() ??
                   0)
               .toList();
-        } catch (_) {}
+        } catch (e, stack) {
+          ErrorLogService.instance.log('ReaderHoshiSource.sectionChars', e, stack);
+        }
       }
       final int totalChars =
           sectionChars.fold<int>(0, (int a, int b) => a + b);
@@ -316,7 +319,8 @@ class ReaderHoshiSource extends ReaderMediaSource {
           .go();
       await EpubStorage.deleteBook(bookId);
       return true;
-    } catch (e) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderHoshiSource.deleteBook', e, stack);
       debugPrint('[ReaderHoshiSource] deleteBook failed: $e');
       return false;
     }
@@ -550,7 +554,8 @@ class ReaderHoshiSource extends ReaderMediaSource {
     try {
       return (jsonDecode(raw) as List<dynamic>)
           .cast<Map<String, dynamic>>();
-    } catch (_) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderHoshiSource.customFonts', e, stack);
       return <Map<String, dynamic>>[];
     }
   }
@@ -581,7 +586,8 @@ class ReaderHoshiSource extends ReaderMediaSource {
         if (await f.exists()) {
           await f.delete();
         }
-      } catch (e) {
+      } catch (e, stack) {
+        ErrorLogService.instance.log('ReaderHoshiSource.deleteFont', e, stack);
         debugPrint(
             '[Hibiki] failed to delete custom font file $filePath: $e');
       }

@@ -43,6 +43,7 @@ import 'package:hibiki/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:hibiki/src/anki/anki_models.dart';
 import 'package:hibiki/src/anki/anki_repository.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/misc/tts_channel.dart';
 import 'package:hibiki/src/utils/misc/volume_key_channel.dart';
 import 'package:wakelock/wakelock.dart';
@@ -927,7 +928,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
               final Map<String, dynamic> payload =
                   jsonDecode(args[0] as String) as Map<String, dynamic>;
               await _handleTextSelected(ReaderSelectionData.fromJson(payload));
-            } catch (e) {
+            } catch (e, stack) {
+              ErrorLogService.instance.log('ReaderHoshi.onTextSelected', e, stack);
               debugPrint('[ReaderHoshi] onTextSelected error: $e');
             }
           },
@@ -1229,7 +1231,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   @override
   Future<bool> onMineFromPopup(Map<String, String> fields) async {
     final AnkiRepository repo = ref.read(ankiRepositoryProvider);
-    final String sentence = fields['sentence'] ?? '';
+    final String sentence =
+        appModel.currentMediaSource?.currentSentence.text ?? '';
 
     String? coverPath;
     if (_book?.coverHref != null && _extractDir != null) {
@@ -1397,7 +1400,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
     try {
       await _loadChapterDirectly(index);
-    } catch (e) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderHoshi._navigateToChapter', e, stack);
       debugPrint('[ReaderHoshi] _navigateToChapter loadUrl failed: $e');
       _restoreInFlight = false;
       if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
@@ -1447,7 +1451,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
     try {
       await _loadChapterDirectly(index);
-    } catch (e) {
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderHoshi._navigateToChapterWithFragment', e, stack);
       debugPrint('[ReaderHoshi] _navigateToChapterWithFragment loadUrl failed: $e');
       _restoreInFlight = false;
       if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
@@ -1652,7 +1657,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       if (progress != null) {
         await _persistPosition(_currentChapter, progress);
       }
-    } catch (_) {}
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderHoshi._flushReadingStats', e, stack);
+    }
   }
 
   int _absoluteCharPosition(double progress) {

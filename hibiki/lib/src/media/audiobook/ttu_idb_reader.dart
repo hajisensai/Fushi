@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:hibiki/src/media/audiobook/epub_srt_matcher.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
 /// ttu IDB 里一本书的基本元数据（当前只暴露 title + 章节文本）。
 class TtuBookRecord {
@@ -153,7 +154,8 @@ class TtuIdbReader {
               StateError('ttu_read_err: ${msg['error']}'),
             );
           }
-        } catch (e) {
+        } catch (e, stack) {
+          ErrorLogService.instance.log('TtuIdbReader.consoleDecode', e, stack);
           debugPrint('TtuIdbReader console decode error: $e');
         }
       },
@@ -236,7 +238,8 @@ class TtuIdbReader {
               completer.complete(null);
               break;
           }
-        } catch (e) {
+        } catch (e, stack) {
+          ErrorLogService.instance.log('TtuIdbReader.readAllBookIds', e, stack);
           debugPrint('TtuIdbReader.readAllBookIds decode error: $e');
         }
       },
@@ -306,6 +309,7 @@ class TtuIdbReader {
       reference: (s && s.reference) || '',
       label: (s && s.label) || '',
       characters: (s && s.characters) || 0,
+      parentChapter: (s && s.parentChapter) || '',
     })));
 
     const progress = typeof record.progress === 'number' ? record.progress : 0;
