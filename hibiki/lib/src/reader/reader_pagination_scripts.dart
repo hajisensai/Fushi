@@ -363,8 +363,19 @@ $_sharedJs
   getScrollContext: function() {
     var vertical = this.isVertical();
     var scrollEl = document.body;
-    var pageSize = Math.max(1, vertical ? (this.pageHeight || window.innerHeight) : (this.pageWidth || window.innerWidth));
-    var gap = vertical ? 0 : (parseFloat(getComputedStyle(scrollEl).columnGap) || 0);
+    var cs = getComputedStyle(scrollEl);
+    var pageSize;
+    if (vertical) {
+      var pt = parseFloat(cs.paddingTop) || 0;
+      var pb = parseFloat(cs.paddingBottom) || 0;
+      pageSize = (scrollEl.clientHeight || this.pageHeight || window.innerHeight) - pt - pb;
+    } else {
+      var pl = parseFloat(cs.paddingLeft) || 0;
+      var pr = parseFloat(cs.paddingRight) || 0;
+      pageSize = (scrollEl.clientWidth || this.pageWidth || window.innerWidth) - pl - pr;
+    }
+    pageSize = Math.max(1, pageSize);
+    var gap = vertical ? 0 : (parseFloat(cs.columnGap) || 0);
     var columnPitch = pageSize + gap;
     var totalSize = vertical ? scrollEl.scrollHeight : scrollEl.scrollWidth;
     var maxScroll = Math.max(0, totalSize - pageSize);
