@@ -163,6 +163,9 @@ public class FloatingLyricService extends Service {
             } else {
                 lyricText.setText(currentText);
             }
+            if (windowManager != null && rootView != null && layoutParams != null) {
+                rootView.post(() -> windowManager.updateViewLayout(rootView, layoutParams));
+            }
         }
     }
 
