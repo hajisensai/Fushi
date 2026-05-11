@@ -130,6 +130,7 @@ window.__lyricsGetCurrentIndex = function() { return _currentIdx; };
 
 // ── 点击句子跳转播放 ──
 document.getElementById('lc').addEventListener('click', function(e) {
+  if (_longPressed) { _longPressed = false; return; }
   var el = e.target.closest('.cue');
   if (!el) return;
   var idx = parseInt(el.getAttribute('data-cue-index'), 10);
@@ -141,11 +142,13 @@ document.getElementById('lc').addEventListener('click', function(e) {
 
 // ── 长按选词 (long-press to select; 短按→跳转，长按→查词) ──
 var _tapStartX = 0, _tapStartY = 0, _tapStartTime = 0;
+var _longPressed = false;
 document.addEventListener('touchstart', function(e) {
   var t = e.touches[0];
   _tapStartX = t.clientX;
   _tapStartY = t.clientY;
   _tapStartTime = Date.now();
+  _longPressed = false;
 }, {passive: true});
 
 document.addEventListener('touchend', function(e) {
@@ -154,6 +157,7 @@ document.addEventListener('touchend', function(e) {
   var dy = Math.abs(t.clientY - _tapStartY);
   var elapsed = Date.now() - _tapStartTime;
   if (dx < 20 && dy < 20 && elapsed >= 500) {
+    _longPressed = true;
     if (window.hoshiSelection) {
       window.hoshiSelection.selectText(t.clientX, t.clientY, 400);
     }

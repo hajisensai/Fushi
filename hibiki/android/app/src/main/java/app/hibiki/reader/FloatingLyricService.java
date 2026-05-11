@@ -1,17 +1,11 @@
 package app.hibiki.reader;
 
 import android.app.Notification;
-import android.app.NotificationChannel;
-import android.app.NotificationManager;
-import android.app.Service;
-import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
-import android.graphics.PixelFormat;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
-import android.os.IBinder;
 import android.text.Layout;
 import android.text.SpannableString;
 import android.text.Spanned;
@@ -20,23 +14,15 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
-import android.view.WindowManager;
 import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-import androidx.annotation.Nullable;
-
 import java.lang.ref.WeakReference;
-import java.util.HashMap;
 import java.util.Map;
 
-public class FloatingLyricService extends Service {
-
-    private static final String CHANNEL_ID = "hibiki_floating_lyric";
-    private static final String PREFS_NAME = "floating_lyric_prefs";
-    private static final int NOTIFICATION_ID = 9527;
+public class FloatingLyricService extends BaseFloatingService {
 
     private static final int DP_PAD_H = 16;
     private static final int DP_PAD_V = 8;
@@ -47,17 +33,13 @@ public class FloatingLyricService extends Service {
     private static final int DP_BTN_MIN_W = 44;
     private static final int DP_BTN_MIN_H = 36;
     private static final int DRAG_THRESHOLD = 10;
-    private static final int DEFAULT_POS_Y = 100;
 
-    private WindowManager windowManager;
-    private LinearLayout rootView;
     private TextView lyricText;
     private ImageButton previousButton;
     private ImageButton playPauseButton;
     private ImageButton nextButton;
     private ImageButton lockButton;
     private ImageButton closeButton;
-    private WindowManager.LayoutParams layoutParams;
 
     private float fontSize = 16f;
     private int textColor = Color.WHITE;
@@ -85,42 +67,160 @@ public class FloatingLyricService extends Service {
         return instanceRef != null ? instanceRef.get() : null;
     }
 
+    // ── BaseFloatingService abstract implementations ──
+
+    @Override
+    protected View createContentView() {
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setGravity(Gravity.CENTER_HORIZONTAL);
+        root.setPadding(dpToPx(DP_PAD_H), dpToPx(DP_PAD_V), dpToPx(DP_PAD_H), dpToPx(DP_PAD_V));
+
+        LinearLayout controls = new LinearLayout(this);
+        controls.setOrientation(LinearLayout.HORIZONTAL);
+        controls.setGravity(Gravity.CENTER);
+        controls.setPadding(0, 0, 0, dpToPx(DP_CONTROLS_BOTTOM));
+        root.addView(controls, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        previousButton = addButton(controls, previousLabel, "previousCue",
+                R.drawable.ic_floating_previous);
+        playPauseButton = addButton(controls, playPauseLabel, "playPause",
+                R.drawable.ic_floating_play);
+        nextButton = addButton(controls, nextLabel, "nextCue",
+                R.drawable.ic_floating_next);
+        lockButton = addButton(controls, lockLabel, "toggleLock",
+                R.drawable.ic_floating_lock);
+        closeButton = addButton(controls, closeLabel, "close",
+                R.drawable.ic_floating_close);
+
+        lyricText = new TextView(this);
+        lyricText.setTextSize(TypedValue.COMPLEX_UNIT_SP, fontSize);
+        lyricText.setTextColor(textColor);
+        lyricText.setGravity(Gravity.CENTER_HORIZONTAL);
+        lyricText.setTypeface(Typeface.DEFAULT);
+        lyricText.setText(currentText);
+        root.addView(lyricText, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        applyStyle();
+        return root;
+    }
+
+    @Override
+    protected String getPreferencePrefix() {
+        return "floating_lyric_prefs";
+    }
+
+    @Override
+    protected String getNotificationChannelId() {
+        return "hibiki_floating_lyric";
+    }
+
+    @Override
+    protected String getNotificationChannelName() {
+        return "Floating Lyric";
+    }
+
+    @Override
+    protected int getNotificationId() {
+        return 9527;
+    }
+
+    @Override
+    protected Notification buildNotification() {
+        Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                ? new Notification.Builder(this, getNotificationChannelId())
+                : new Notification.Builder(this);
+        return builder
+                .setContentTitle("Hibiki")
+                .setContentText("Floating lyric is active")
+                .setSmallIcon(R.drawable.ic_stat_hibiki)
+                .setOngoing(true)
+                .build();
+    }
+
+    @Override
+    protected void onServiceCommand(Intent intent) {
+        // FloatingLyricService is controlled via static getInstance() + public API
+    }
+
+    // ── Lifecycle ──
+
     @Override
     public void onCreate() {
         super.onCreate();
         instanceRef = new WeakReference<>(this);
-        windowManager = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
-        createNotificationChannel();
-        startForeground(NOTIFICATION_ID, buildNotification());
-        createOverlayView();
-    }
-
-    @Override
-    public int onStartCommand(Intent intent, int flags, int startId) {
-        return START_NOT_STICKY;
-    }
-
-    @Nullable
-    @Override
-    public IBinder onBind(Intent intent) {
-        return null;
     }
 
     @Override
     public void onDestroy() {
         instanceRef = null;
-        savePosition();
-        if (rootView != null) {
-            windowManager.removeView(rootView);
-            rootView = null;
-        }
         super.onDestroy();
     }
 
+    // ── Drag listener (lock-aware) ──
+
     @Override
-    public void onTaskRemoved(Intent rootIntent) {
-        stopSelf();
-        super.onTaskRemoved(rootIntent);
+    protected void setupDragListener() {
+        rootView.setOnTouchListener(new View.OnTouchListener() {
+            private int initialY;
+            private float initialTouchY;
+            private boolean isDragging;
+
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                if (isLocked) return true;
+                switch (event.getAction()) {
+                    case MotionEvent.ACTION_DOWN:
+                        initialY = layoutParams.y;
+                        initialTouchY = event.getRawY();
+                        isDragging = false;
+                        return true;
+                    case MotionEvent.ACTION_MOVE:
+                        float dy = event.getRawY() - initialTouchY;
+                        if (Math.abs(dy) > DRAG_THRESHOLD) isDragging = true;
+                        if (isDragging) {
+                            layoutParams.y = initialY + (int) dy;
+                            windowManager.updateViewLayout(rootView, layoutParams);
+                        }
+                        return true;
+                    case MotionEvent.ACTION_UP:
+                        if (isDragging) {
+                            savePosition();
+                        } else {
+                            handleTap(event);
+                        }
+                        return true;
+                }
+                return false;
+            }
+        });
+    }
+
+    // ── Saved position uses posYTop key for backward compat ──
+
+    @Override
+    protected void setupOverlay() {
+        int savedY = getSharedPreferences(getPreferencePrefix(), MODE_PRIVATE)
+                .getInt("posYTop", 100);
+
+        layoutParams = createLayoutParams();
+        layoutParams.x = 0;
+        layoutParams.y = savedY;
+
+        setupDragListener();
+        windowManager.addView(rootView, layoutParams);
+    }
+
+    @Override
+    protected void savePosition() {
+        if (layoutParams == null) return;
+        getSharedPreferences(getPreferencePrefix(), MODE_PRIVATE).edit()
+                .putInt("posYTop", layoutParams.y)
+                .apply();
     }
 
     // ── Public API (called from MainActivity) ──
@@ -172,76 +272,17 @@ public class FloatingLyricService extends Service {
         applyControlLabels();
     }
 
-    // ── View creation ──
-    // Layout: controls on top (fixed height), lyric text below (expands downward).
-    // Gravity.TOP pins the top edge, so buttons never move when text reflows.
-
-    private void createOverlayView() {
-        rootView = new LinearLayout(this);
-        rootView.setOrientation(LinearLayout.VERTICAL);
-        rootView.setGravity(Gravity.CENTER_HORIZONTAL);
-        rootView.setPadding(dp(DP_PAD_H), dp(DP_PAD_V), dp(DP_PAD_H), dp(DP_PAD_V));
-
-        LinearLayout controls = new LinearLayout(this);
-        controls.setOrientation(LinearLayout.HORIZONTAL);
-        controls.setGravity(Gravity.CENTER);
-        controls.setPadding(0, 0, 0, dp(DP_CONTROLS_BOTTOM));
-        rootView.addView(controls, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        previousButton = addButton(controls, previousLabel, "previousCue",
-                R.drawable.ic_floating_previous);
-        playPauseButton = addButton(controls, playPauseLabel, "playPause",
-                R.drawable.ic_floating_play);
-        nextButton = addButton(controls, nextLabel, "nextCue",
-                R.drawable.ic_floating_next);
-        lockButton = addButton(controls, lockLabel, "toggleLock",
-                R.drawable.ic_floating_lock);
-        closeButton = addButton(controls, closeLabel, "close",
-                R.drawable.ic_floating_close);
-
-        lyricText = new TextView(this);
-        lyricText.setTextSize(TypedValue.COMPLEX_UNIT_SP, fontSize);
-        lyricText.setTextColor(textColor);
-        lyricText.setGravity(Gravity.CENTER_HORIZONTAL);
-        lyricText.setTypeface(Typeface.DEFAULT);
-        lyricText.setText(currentText);
-        rootView.addView(lyricText, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        applyStyle();
-
-        int savedY = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-                .getInt("posYTop", DEFAULT_POS_Y);
-
-        layoutParams = new WindowManager.LayoutParams(
-                WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
-                        ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                        : WindowManager.LayoutParams.TYPE_PHONE,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                        | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-                PixelFormat.TRANSLUCENT);
-        layoutParams.gravity = Gravity.TOP | Gravity.START;
-        layoutParams.x = 0;
-        layoutParams.y = savedY;
-
-        rootView.setOnTouchListener(new OverlayTouchListener());
-        windowManager.addView(rootView, layoutParams);
-    }
+    // ── View helpers ──
 
     private ImageButton addButton(LinearLayout parent, String label,
                                    String action, int iconResId) {
         ImageButton btn = new ImageButton(this);
         btn.setImageResource(iconResId);
         btn.setContentDescription(label);
-        btn.setPadding(dp(DP_BTN_PAD_H), dp(DP_BTN_PAD_V),
-                dp(DP_BTN_PAD_H), dp(DP_BTN_PAD_V));
-        btn.setMinimumWidth(dp(DP_BTN_MIN_W));
-        btn.setMinimumHeight(dp(DP_BTN_MIN_H));
+        btn.setPadding(dpToPx(DP_BTN_PAD_H), dpToPx(DP_BTN_PAD_V),
+                dpToPx(DP_BTN_PAD_H), dpToPx(DP_BTN_PAD_V));
+        btn.setMinimumWidth(dpToPx(DP_BTN_MIN_W));
+        btn.setMinimumHeight(dpToPx(DP_BTN_MIN_H));
         btn.setScaleType(ImageView.ScaleType.CENTER);
         btn.setBackgroundColor(buttonBgColor);
         tintIcon(btn, buttonTextColor);
@@ -250,46 +291,12 @@ public class FloatingLyricService extends Service {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        lp.setMargins(dp(DP_BTN_MARGIN), 0, dp(DP_BTN_MARGIN), 0);
+        lp.setMargins(dpToPx(DP_BTN_MARGIN), 0, dpToPx(DP_BTN_MARGIN), 0);
         parent.addView(btn, lp);
         return btn;
     }
 
-    // ── Touch handling ──
-
-    private class OverlayTouchListener implements View.OnTouchListener {
-        private int initialY;
-        private float initialTouchY;
-        private boolean isDragging;
-
-        @Override
-        public boolean onTouch(View v, MotionEvent event) {
-            if (isLocked) return true;
-            switch (event.getAction()) {
-                case MotionEvent.ACTION_DOWN:
-                    initialY = layoutParams.y;
-                    initialTouchY = event.getRawY();
-                    isDragging = false;
-                    return true;
-                case MotionEvent.ACTION_MOVE:
-                    float dy = event.getRawY() - initialTouchY;
-                    if (Math.abs(dy) > DRAG_THRESHOLD) isDragging = true;
-                    if (isDragging) {
-                        layoutParams.y = initialY + (int) dy;
-                        windowManager.updateViewLayout(rootView, layoutParams);
-                    }
-                    return true;
-                case MotionEvent.ACTION_UP:
-                    if (isDragging) {
-                        savePosition();
-                    } else {
-                        handleTap(event);
-                    }
-                    return true;
-            }
-            return false;
-        }
-    }
+    // ── Tap handling ──
 
     private void handleTap(MotionEvent event) {
         if (lyricText == null || currentText == null || currentText.trim().isEmpty()) return;
@@ -301,7 +308,7 @@ public class FloatingLyricService extends Service {
                 || localY < 0 || localY > lyricText.getHeight()) return;
 
         int index = getCharIndexAt(localX, localY);
-        Map<String, Object> args = new HashMap<>();
+        java.util.HashMap<String, Object> args = new java.util.HashMap<>();
         args.put("text", currentText);
         args.put("index", index);
         MainActivity.notifyFloatingLyricEvent("lookupText", args);
@@ -422,13 +429,6 @@ public class FloatingLyricService extends Service {
         if (d != null) d.mutate().setTint(color);
     }
 
-    private void savePosition() {
-        if (layoutParams == null) return;
-        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
-                .putInt("posYTop", layoutParams.y)
-                .apply();
-    }
-
     private void bringAppToFront() {
         Intent intent = getPackageManager().getLaunchIntentForPackage(getPackageName());
         if (intent == null) return;
@@ -444,32 +444,5 @@ public class FloatingLyricService extends Service {
         if (value == null) return fallback;
         String text = value.toString();
         return text.isEmpty() ? fallback : text;
-    }
-
-    private int dp(int value) {
-        return (int) (value * getResources().getDisplayMetrics().density);
-    }
-
-    // ── Notification (foreground service requirement) ──
-
-    private void createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel channel = new NotificationChannel(
-                    CHANNEL_ID, "Floating Lyric", NotificationManager.IMPORTANCE_LOW);
-            channel.setShowBadge(false);
-            getSystemService(NotificationManager.class).createNotificationChannel(channel);
-        }
-    }
-
-    private Notification buildNotification() {
-        Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
-                ? new Notification.Builder(this, CHANNEL_ID)
-                : new Notification.Builder(this);
-        return builder
-                .setContentTitle("Hibiki")
-                .setContentText("Floating lyric is active")
-                .setSmallIcon(R.drawable.ic_stat_hibiki)
-                .setOngoing(true)
-                .build();
     }
 }
