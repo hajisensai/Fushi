@@ -702,16 +702,7 @@ $_sharedJs
     document.body.scrollLeft = 0;
   },
   scrollToTarget: function(target) {
-    var rect = this.getRect(target);
-    var margin = 0.2;
     var vertical = this.isVertical();
-    if (vertical) {
-      var vw = window.innerWidth;
-      if (rect.left >= vw * margin && rect.right <= vw * (1 - margin)) return false;
-    } else {
-      var vh = window.innerHeight;
-      if (rect.top >= vh * margin && rect.bottom <= vh * (1 - margin)) return false;
-    }
     var root = document.scrollingElement || document.documentElement;
     var scrollBefore = vertical ? root.scrollLeft : root.scrollTop;
     target.scrollIntoView({
