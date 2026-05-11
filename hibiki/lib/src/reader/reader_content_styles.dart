@@ -178,6 +178,7 @@ $pageBreakCss
   --hoshi-sasayaki-background-color: ${sasayakiColor ?? 'rgba(135, 206, 235, 0.4)'};
 }
 html {
+  /* block-container property: constrain line-box height so ruby/furigana won't expand it */
   -webkit-line-box-contain: block glyphs replaced;
 }
 $layoutCss
