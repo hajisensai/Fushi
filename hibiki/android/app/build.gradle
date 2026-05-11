@@ -151,4 +151,5 @@ dependencies {
     implementation 'com.github.ankidroid:Anki-Android:2.17alpha14'
     implementation 'com.github.umair13adil:RxLogs:v1.0.18'
     implementation 'androidx.documentfile:documentfile:1.0.1'
+    implementation 'androidx.media3:media3-transformer:1.10.0'
 }

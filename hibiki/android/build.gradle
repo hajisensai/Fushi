@@ -38,8 +38,12 @@ subprojects {
             def android = proj.extensions.findByName('android')
             if (android != null) {
                 // Force compileSdk for all subprojects so Material You attrs (lStar etc.) resolve
-                // Use 34 (not 36) to avoid null-safety API changes in 35+ breaking old Kotlin plugins
-                android.compileSdkVersion 34
+                // App uses 36 (media3 requires it); plugins stay at 34 to avoid null-safety breakage
+                if (proj.plugins.hasPlugin('com.android.application')) {
+                    android.compileSdkVersion 36
+                } else {
+                    android.compileSdkVersion 34
+                }
 
                 // Fix missing namespace
                 if (!android.namespace) {

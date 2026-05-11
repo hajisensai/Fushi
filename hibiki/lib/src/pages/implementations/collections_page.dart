@@ -284,7 +284,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       final String inputPath = audioFiles[range.audioFileIndex].path;
       final Directory tmpDir = await getTemporaryDirectory();
       final String outputPath =
-          p.join(tmpDir.path, 'collections_audio_segment.m4a');
+          p.join(tmpDir.path, 'collections_audio_segment.aac');
 
       final String? result = await TtsChannel.instance.extractAudioSegment(
         inputPath: inputPath,

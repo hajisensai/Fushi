@@ -259,7 +259,7 @@ class AnkiRepository {
 
   Future<String?> _addSasayakiAudio(String path) async {
     final raw = await _addMediaFile(
-        path, File(path).uri.pathSegments.last, 'audio/mp4');
+        path, File(path).uri.pathSegments.last, mimeTypeForPath(path));
     return raw != null ? '[sound:$raw]' : null;
   }
 

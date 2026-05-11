@@ -344,6 +344,7 @@ public class TtsChannelHandler {
         });
     }
 
+    @androidx.annotation.OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)
     private void handleExtractAudioSegment(MethodCall call, MethodChannel.Result result) {
         String inputPath = call.argument("inputPath");
         Number startMsN = call.argument("startMs");
@@ -353,57 +354,102 @@ public class TtsChannelHandler {
             result.error("INVALID_ARGS", "Missing required arguments", null);
             return;
         }
-        long startUs = startMsN.longValue() * 1000L;
-        long endUs = endMsN.longValue() * 1000L;
-        ioExecutor.execute(() -> {
-            android.media.MediaExtractor extractor = null;
-            android.media.MediaMuxer muxer = null;
+        long startMs = Math.max(startMsN.longValue(), 0L);
+        long endMs = Math.max(endMsN.longValue(), startMs + 1);
+
+        final File transformerTmp = new File(outputPath + ".tmp.m4a");
+
+        android.os.HandlerThread exportThread = new android.os.HandlerThread("HibikiAudioExport");
+        exportThread.start();
+        android.os.Handler exportHandler = new android.os.Handler(exportThread.getLooper());
+
+        final java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
+        final java.util.concurrent.atomic.AtomicBoolean completed = new java.util.concurrent.atomic.AtomicBoolean(false);
+        final java.util.concurrent.atomic.AtomicReference<Throwable> failure = new java.util.concurrent.atomic.AtomicReference<>(null);
+
+        exportHandler.post(() -> {
             try {
-                extractor = new android.media.MediaExtractor();
-                extractor.setDataSource(inputPath);
-                int audioTrack = -1;
-                for (int i = 0; i < extractor.getTrackCount(); i++) {
-                    android.media.MediaFormat fmt = extractor.getTrackFormat(i);
-                    String m = fmt.getString(android.media.MediaFormat.KEY_MIME);
-                    if (m != null && m.startsWith("audio/")) { audioTrack = i; break; }
-                }
-                if (audioTrack < 0) {
+                androidx.media3.transformer.Transformer transformer =
+                    new androidx.media3.transformer.Transformer.Builder(activity.getApplicationContext())
+                        .setLooper(exportThread.getLooper())
+                        .setAudioMimeType(androidx.media3.common.MimeTypes.AUDIO_AAC)
+                        .setMuxerFactory(new androidx.media3.transformer.FrameworkMuxer.Factory())
+                        .addListener(new androidx.media3.transformer.Transformer.Listener() {
+                            @Override
+                            public void onCompleted(
+                                    androidx.media3.transformer.Composition composition,
+                                    androidx.media3.transformer.ExportResult exportResult) {
+                                completed.set(true);
+                                done.countDown();
+                            }
+                            @Override
+                            public void onError(
+                                    androidx.media3.transformer.Composition composition,
+                                    androidx.media3.transformer.ExportResult exportResult,
+                                    androidx.media3.transformer.ExportException exportException) {
+                                failure.set(exportException);
+                                done.countDown();
+                            }
+                        })
+                        .build();
+
+                androidx.media3.common.MediaItem mediaItem =
+                    new androidx.media3.common.MediaItem.Builder()
+                        .setUri(android.net.Uri.fromFile(new File(inputPath)))
+                        .setClippingConfiguration(
+                            new androidx.media3.common.MediaItem.ClippingConfiguration.Builder()
+                                .setStartPositionMs(startMs)
+                                .setEndPositionMs(endMs)
+                                .build())
+                        .build();
+
+                androidx.media3.transformer.EditedMediaItem editedItem =
+                    new androidx.media3.transformer.EditedMediaItem.Builder(mediaItem)
+                        .setRemoveVideo(true)
+                        .build();
+
+                transformer.start(editedItem, transformerTmp.getAbsolutePath());
+            } catch (Exception e) {
+                failure.set(e);
+                done.countDown();
+            }
+        });
+
+        ioExecutor.execute(() -> {
+            try {
+                boolean finished = done.await(30, java.util.concurrent.TimeUnit.SECONDS);
+                exportThread.quitSafely();
+
+                if (!finished || !completed.get() || failure.get() != null) {
+                    Throwable err = failure.get();
+                    android.util.Log.e("hibiki-audio", "Transformer export failed",
+                        err != null ? err : new Exception("timeout"));
+                    transformerTmp.delete();
+                    new File(outputPath).delete();
                     new Handler(Looper.getMainLooper()).post(() ->
-                        result.error("NO_AUDIO", "No audio track found", null));
+                        result.error("EXTRACT_ERROR",
+                            err != null ? err.getMessage() : "Export timeout", null));
                     return;
                 }
-                extractor.selectTrack(audioTrack);
-                android.media.MediaFormat trackFormat = extractor.getTrackFormat(audioTrack);
-                muxer = new android.media.MediaMuxer(
-                    outputPath, android.media.MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
-                int outTrack = muxer.addTrack(trackFormat);
-                muxer.start();
-                extractor.seekTo(startUs, android.media.MediaExtractor.SEEK_TO_CLOSEST_SYNC);
-                java.nio.ByteBuffer buffer = java.nio.ByteBuffer.allocate(1024 * 1024);
-                android.media.MediaCodec.BufferInfo info = new android.media.MediaCodec.BufferInfo();
-                while (true) {
-                    int sampleSize = extractor.readSampleData(buffer, 0);
-                    if (sampleSize < 0) break;
-                    long sampleTime = extractor.getSampleTime();
-                    if (sampleTime > endUs) break;
-                    if (sampleTime >= startUs) {
-                        info.offset = 0;
-                        info.size = sampleSize;
-                        info.presentationTimeUs = sampleTime - startUs;
-                        info.flags = extractor.getSampleFlags();
-                        muxer.writeSampleData(outTrack, buffer, info);
-                    }
-                    extractor.advance();
+
+                File outputFile = new File(outputPath);
+                if (!AacAdtsCueAudioRewriter.rewrite(transformerTmp, outputFile)) {
+                    android.util.Log.e("hibiki-audio", "ADTS rewrite failed for " + transformerTmp.getAbsolutePath());
+                    transformerTmp.delete();
+                    outputFile.delete();
+                    new Handler(Looper.getMainLooper()).post(() ->
+                        result.error("REWRITE_ERROR", "ADTS rewrite failed", null));
+                    return;
                 }
-                muxer.stop();
+                transformerTmp.delete();
+
                 new Handler(Looper.getMainLooper()).post(() -> result.success(outputPath));
             } catch (Exception e) {
+                exportThread.quitSafely();
                 android.util.Log.e("hibiki-audio", "extractAudioSegment failed", e);
+                transformerTmp.delete();
                 new Handler(Looper.getMainLooper()).post(() ->
                     result.error("EXTRACT_ERROR", e.getMessage(), null));
-            } finally {
-                if (muxer != null) { try { muxer.release(); } catch (Exception ignored) {} }
-                if (extractor != null) { extractor.release(); }
             }
         });
     }

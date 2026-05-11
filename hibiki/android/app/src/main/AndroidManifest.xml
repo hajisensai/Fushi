@@ -112,7 +112,7 @@
         </intent-filter>
         </receiver> 
         <provider
-            android:name="androidx.core.content.FileProvider"
+            android:name="app.hibiki.reader.HibikiFileProvider"
             android:authorities="${applicationId}.provider"
             android:exported="false"
             android:grantUriPermissions="true">

@@ -105,7 +105,7 @@ class ReaderHoshiSource extends ReaderMediaSource {
     }
     final File inputFile = audioFiles[cue.audioFileIndex];
     final String outputPath =
-        '${Directory.systemTemp.path}/mine_sentence_audio.m4a';
+        '${Directory.systemTemp.path}/mine_sentence_audio.aac';
     final String? result = await TtsChannel.instance.extractAudioSegment(
       inputPath: inputFile.path,
       startMs: cue.startMs,
