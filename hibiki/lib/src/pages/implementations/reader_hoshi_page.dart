@@ -812,6 +812,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       case 'partial':
         return '''
   document.addEventListener('click', function(e) {
+    var sel = window.getSelection();
+    if (sel && !sel.isCollapsed) return;
     var node = e.target;
     while (node && node !== document.body) {
       if (node.tagName === 'RUBY') {
@@ -824,6 +826,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       case 'toggle':
         return '''
   document.addEventListener('dblclick', function() {
+    var sel = window.getSelection();
+    if (sel && !sel.isCollapsed) return;
     document.body.classList.toggle('show-all-rt');
   });''';
       default:
