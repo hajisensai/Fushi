@@ -823,7 +823,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
     return '''
 (function() {
-  window.scanNonJapaneseText = false;
+  window.scanNonJapaneseText = true;
   $selectionJs
   $paginationJs
   var startX = 0, startY = 0, startTime = 0, hasStart = false;
