@@ -807,6 +807,30 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         sig == 0x74746366; // TTC ("ttcf")
   }
 
+  static String _buildFuriganaJs(String mode) {
+    switch (mode) {
+      case 'partial':
+        return '''
+  document.addEventListener('click', function(e) {
+    var node = e.target;
+    while (node && node !== document.body) {
+      if (node.tagName === 'RUBY') {
+        node.classList.toggle('show-rt');
+        return;
+      }
+      node = node.parentElement;
+    }
+  }, true);''';
+      case 'toggle':
+        return '''
+  document.addEventListener('dblclick', function() {
+    document.body.classList.toggle('show-all-rt');
+  });''';
+      default:
+        return '';
+    }
+  }
+
   // ── Single IIFE setup script (mirrors Hoshi Android's readerSetupScript) ──
 
   String _buildReaderSetupScript({String? sasayakiCuesJson}) {
@@ -821,11 +845,14 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       ),
     );
 
+    final String furiganaJs = _buildFuriganaJs(s.furiganaMode);
+
     return '''
 (function() {
   window.scanNonJapaneseText = true;
   $selectionJs
   $paginationJs
+  $furiganaJs
   var startX = 0, startY = 0, startTime = 0, hasStart = false;
   document.addEventListener('touchstart', function(e) {
     var t = e.touches[0];
@@ -2096,6 +2123,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final String snapshotFuriganaMode = src.ttuFuriganaMode;
     final double snapshotTextIndentation = src.ttuTextIndentation;
     final double snapshotFirstDimensionMargin = src.ttuFirstDimensionMargin;
+    final double snapshotSecondDimensionMargin = src.ttuSecondDimensionMargin;
     final double snapshotSecondDimensionMaxValue = src.ttuSecondDimensionMaxValue;
     final int snapshotPageColumns = src.ttuPageColumns;
     final bool snapshotVerticalFontKerning = src.ttuEnableVerticalFontKerning;
@@ -2103,6 +2131,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final String snapshotVerticalTextOrientation = src.ttuVerticalTextOrientation;
     final bool snapshotTextJustification = src.ttuEnableTextJustification;
     final bool snapshotPrioritizeReaderStyles = src.ttuPrioritizeReaderStyles;
+    final String snapshotCustomFontsRaw =
+        src.getPreference<String>(key: 'custom_fonts', defaultValue: '[]');
 
     final List<TtuTocEntry> toc = _buildTtuToc();
     final int bookId = widget.bookId;
@@ -2241,13 +2271,17 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         srcAfter.ttuFuriganaMode != snapshotFuriganaMode ||
         srcAfter.ttuTextIndentation != snapshotTextIndentation ||
         srcAfter.ttuFirstDimensionMargin != snapshotFirstDimensionMargin ||
+        srcAfter.ttuSecondDimensionMargin != snapshotSecondDimensionMargin ||
         srcAfter.ttuSecondDimensionMaxValue != snapshotSecondDimensionMaxValue ||
         srcAfter.ttuPageColumns != snapshotPageColumns ||
         srcAfter.ttuEnableVerticalFontKerning != snapshotVerticalFontKerning ||
         srcAfter.ttuEnableFontVPAL != snapshotFontVPAL ||
         srcAfter.ttuVerticalTextOrientation != snapshotVerticalTextOrientation ||
         srcAfter.ttuEnableTextJustification != snapshotTextJustification ||
-        srcAfter.ttuPrioritizeReaderStyles != snapshotPrioritizeReaderStyles;
+        srcAfter.ttuPrioritizeReaderStyles != snapshotPrioritizeReaderStyles ||
+        srcAfter.getPreference<String>(
+                key: 'custom_fonts', defaultValue: '[]') !=
+            snapshotCustomFontsRaw;
 
     _syncSettingsFromHive();
     _syncDictionaryTheme();

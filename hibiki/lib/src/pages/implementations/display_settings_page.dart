@@ -17,6 +17,7 @@ class _DisplaySettingsPageState extends BasePageState {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final bool isVertical = _source.ttuWritingMode.startsWith('vertical');
     return Scaffold(
       appBar: AppBar(title: Text(t.display_settings)),
       body: ListView(
@@ -138,23 +139,24 @@ class _DisplaySettingsPageState extends BasePageState {
               style: _segmentedStyle(theme),
             ),
           ),
-          _settingRow(
-            theme,
-            label: t.ttu_vert_text_orient,
-            child: SegmentedButton<String>(
-              showSelectedIcon: false,
-              segments: [
-                ButtonSegment(
-                    value: 'mixed', label: Text(t.ttu_orient_mixed)),
-                ButtonSegment(
-                    value: 'upright', label: Text(t.ttu_orient_upright)),
-              ],
-              selected: {_source.ttuVerticalTextOrientation},
-              onSelectionChanged: (sel) =>
-                  _update(() => _source.setTtuVerticalTextOrientation(sel.first)),
-              style: _segmentedStyle(theme),
+          if (isVertical)
+            _settingRow(
+              theme,
+              label: t.ttu_vert_text_orient,
+              child: SegmentedButton<String>(
+                showSelectedIcon: false,
+                segments: [
+                  ButtonSegment(
+                      value: 'mixed', label: Text(t.ttu_orient_mixed)),
+                  ButtonSegment(
+                      value: 'upright', label: Text(t.ttu_orient_upright)),
+                ],
+                selected: {_source.ttuVerticalTextOrientation},
+                onSelectionChanged: (sel) =>
+                    _update(() => _source.setTtuVerticalTextOrientation(sel.first)),
+                style: _segmentedStyle(theme),
+              ),
             ),
-          ),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 4),
             child: Column(
@@ -201,23 +203,25 @@ class _DisplaySettingsPageState extends BasePageState {
                   _update(() => _source.setTtuEnableTextJustification(v)),
             ),
           ),
-          _settingRow(
-            theme,
-            label: t.ttu_vert_kerning,
-            child: Switch(
-              value: _source.ttuEnableVerticalFontKerning,
-              onChanged: (v) =>
-                  _update(() => _source.setTtuEnableVerticalFontKerning(v)),
+          if (isVertical)
+            _settingRow(
+              theme,
+              label: t.ttu_vert_kerning,
+              child: Switch(
+                value: _source.ttuEnableVerticalFontKerning,
+                onChanged: (v) =>
+                    _update(() => _source.setTtuEnableVerticalFontKerning(v)),
+              ),
             ),
-          ),
-          _settingRow(
-            theme,
-            label: t.ttu_font_vpal,
-            child: Switch(
-              value: _source.ttuEnableFontVPAL,
-              onChanged: (v) => _update(() => _source.setTtuEnableFontVPAL(v)),
+          if (isVertical)
+            _settingRow(
+              theme,
+              label: t.ttu_font_vpal,
+              child: Switch(
+                value: _source.ttuEnableFontVPAL,
+                onChanged: (v) => _update(() => _source.setTtuEnableFontVPAL(v)),
+              ),
             ),
-          ),
           _settingRow(
             theme,
             label: t.ttu_reader_styles,

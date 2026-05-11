@@ -343,7 +343,7 @@ rt {
   font-size: 0.45em;
   visibility: hidden;
 }
-ruby:hover rt, ruby:active rt, ruby.show-rt rt {
+ruby.show-rt rt {
   visibility: visible;
 }''';
       case 'toggle':
@@ -352,8 +352,8 @@ rt {
   font-size: 0.45em;
   visibility: hidden;
 }
-ruby.show-rt rt {
-  visibility: visible;
+body.show-all-rt rt {
+  visibility: visible !important;
 }''';
       default:
         return 'rt { font-size: 0.45em; }';
