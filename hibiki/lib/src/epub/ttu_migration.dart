@@ -11,6 +11,7 @@ import 'package:hibiki/src/epub/epub_storage.dart';
 import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
 import 'package:hibiki/src/media/audiobook/reader_position_repository.dart';
 import 'package:hibiki/src/media/audiobook/ttu_idb_reader.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
 class TtuMigration {
   static const String _idsKey = 'ttu_migration_book_ids';
@@ -97,6 +98,8 @@ class TtuMigration {
           ),
         );
 
+        final String? tocJson = _buildTocJson(sections, actualChapters);
+
         await db.into(db.epubBooks).insert(
               EpubBooksCompanion.insert(
                 id: Value(ttuId),
@@ -105,6 +108,9 @@ class TtuMigration {
                 extractDir: extractDir,
                 chapterCount: actualChapters,
                 chaptersJson: chaptersJson,
+                tocJson: tocJson != null
+                    ? Value(tocJson)
+                    : const Value.absent(),
                 importedAt: DateTime.now().millisecondsSinceEpoch,
               ),
               mode: InsertMode.insertOrIgnore,
@@ -120,7 +126,8 @@ class TtuMigration {
         await prefs.setBool('ttu_migrated_blobs_$ttuId', true);
         migrated++;
         debugPrint('[ttu-migration] book $ttuId: migrated successfully');
-      } catch (e) {
+      } catch (e, stack) {
+        ErrorLogService.instance.log('TtuMigration.migrate', e, stack);
         debugPrint('[ttu-migration] book $ttuId failed: $e');
       }
     }
@@ -397,8 +404,71 @@ class TtuMigration {
         await prefs.setBool(blobFlag, true);
         remediated++;
         debugPrint('[ttu-migration] book $ttuId: remediated $written blobs');
-      } catch (e) {
+      } catch (e, stack) {
+        ErrorLogService.instance.log('TtuMigration.remediateBlobs', e, stack);
         debugPrint('[ttu-migration] blob remediation $ttuId failed: $e');
+      }
+    }
+
+    return remediated;
+  }
+
+  static String? _buildTocJson(List<dynamic> sections, int actualChapters) {
+    final List<Map<String, String?>> entries = <Map<String, String?>>[];
+    for (int i = 0; i < sections.length && i < actualChapters; i++) {
+      final Map<String, dynamic> sec =
+          sections[i] as Map<String, dynamic>;
+      final String label = sec['label'] as String? ?? '';
+      final String parentChapter = sec['parentChapter'] as String? ?? '';
+      if (label.isEmpty || parentChapter.isNotEmpty) continue;
+      entries.add(<String, String?>{
+        'title': label,
+        'href': 'section_$i.html',
+      });
+    }
+    return entries.isNotEmpty ? jsonEncode(entries) : null;
+  }
+
+  /// 为已迁移但缺失 tocJson 的旧书补充章节标题。
+  static Future<int> remediateMissingToc(
+    HibikiDatabase db,
+    int ttuServerPort,
+  ) async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final String? cachedIdsJson = prefs.getString(_idsKey);
+    if (cachedIdsJson == null) return 0;
+
+    final List<int> allIds =
+        (jsonDecode(cachedIdsJson) as List<dynamic>).cast<int>();
+
+    int remediated = 0;
+    for (final int ttuId in allIds) {
+      final EpubBookRow? existing = await db.getEpubBook(ttuId);
+      if (existing == null || existing.tocJson != null) continue;
+
+      try {
+        final Map<String, dynamic>? bookData =
+            await TtuIdbReader.readBookForMigration(
+          ttuBookId: ttuId,
+          serverPort: ttuServerPort,
+        );
+        if (bookData == null) continue;
+
+        final List<dynamic> sections =
+            bookData['sections'] as List<dynamic>;
+        final String? tocJson =
+            _buildTocJson(sections, existing.chapterCount);
+        if (tocJson == null) continue;
+
+        await (db.update(db.epubBooks)
+              ..where((tbl) => tbl.id.equals(ttuId)))
+            .write(EpubBooksCompanion(tocJson: Value(tocJson)));
+
+        remediated++;
+        debugPrint('[ttu-migration] book $ttuId: remediated TOC');
+      } catch (e, stack) {
+        ErrorLogService.instance.log('TtuMigration.remediateToc', e, stack);
+        debugPrint('[ttu-migration] TOC remediation $ttuId failed: $e');
       }
     }
 

@@ -3,17 +3,17 @@ import 'package:hibiki/src/reader/reader_settings.dart';
 class ReaderLayoutDefaults {
   ReaderLayoutDefaults._();
 
-  static const int fontSizePx = 20;
+  static const int fontSizePx = 22;
   static const int bottomOverlapPx = fontSizePx;
   static const double imageWidthViewportRatio = 0.95;
 
-  static const String columnGapCss = 'calc(0vh + 20px)';
+  static const String columnGapCss = 'calc(0vh + 22px)';
   static const String pagePaddingCss = '0vh 2.5vw';
-  static const String bottomPaddingCss = 'calc(0vh + 20px)';
+  static const String bottomPaddingCss = 'calc(0vh + 22px)';
   static const String imageMaxWidthFallbackCss = '95vw';
   static const String imageMaxHeightFallbackCss =
-      'calc(var(--page-height, 100vh) - 20px)';
-  static const String trailingSpacerHeightCss = 'calc(0vh + 20px)';
+      'calc(var(--page-height, 100vh) - 22px)';
+  static const String trailingSpacerHeightCss = 'calc(0vh + 22px)';
   static const String trailingSpacerWidthCss = '0';
 }
 
