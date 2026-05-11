@@ -1,5 +1,6 @@
 window.hoshiSelection = {
     selection: null,
+    highlightWrappers: [],
     scanDelimiters: '。、！？…‥「」『』（）()【】〈〉《》〔〕｛｝{}［］[]・：；:;，,.─\n\r',
     sentenceDelimiters: '。！？.!?\n\r',
     trailingSentenceChars: '。、！？…‥」』）)】〉》〕｝}］]',
@@ -285,7 +286,9 @@ window.hoshiSelection = {
     highlightSelection(charCount) {
         if (!this.selection?.ranges.length) return;
 
-        const highlights = [];
+        this.clearHighlightWrappers();
+
+        const trimmedRanges = [];
         let remaining = charCount;
 
         for (const r of this.selection.ranges) {
@@ -297,19 +300,39 @@ window.hoshiSelection = {
                 end += char.length;
                 remaining--;
             }
-
-            const range = document.createRange();
-            range.setStart(r.node, r.start);
-            range.setEnd(r.node, end);
-            highlights.push(range);
+            trimmedRanges.push({ node: r.node, start: r.start, end });
         }
 
-        CSS.highlights?.set('hoshi-selection', new Highlight(...highlights));
+        const range = document.createRange();
+        for (let i = trimmedRanges.length - 1; i >= 0; i--) {
+            const seg = trimmedRanges[i];
+            range.setStart(seg.node, seg.start);
+            range.setEnd(seg.node, seg.end);
+            const wrapper = document.createElement('span');
+            wrapper.className = 'hoshi-dict-highlight';
+            wrapper.appendChild(range.extractContents());
+            range.insertNode(wrapper);
+            this.highlightWrappers.push(wrapper);
+        }
+        this.highlightWrappers.reverse();
+    },
+
+    clearHighlightWrappers() {
+        for (const wrapper of this.highlightWrappers) {
+            const parent = wrapper.parentNode;
+            if (!parent) continue;
+            while (wrapper.firstChild) {
+                parent.insertBefore(wrapper.firstChild, wrapper);
+            }
+            parent.removeChild(wrapper);
+            parent.normalize();
+        }
+        this.highlightWrappers = [];
     },
 
     clearSelection() {
         window.getSelection()?.removeAllRanges();
-        CSS.highlights?.get('hoshi-selection')?.clear();
+        this.clearHighlightWrappers();
         this.selection = null;
     }
 };

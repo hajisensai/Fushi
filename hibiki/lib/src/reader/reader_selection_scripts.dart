@@ -67,6 +67,7 @@ const JAPANESE_RANGES = [
 ];
 window.hoshiSelection = {
   selection: null,
+  highlightWrappers: [],
   scanDelimiters: '。、！？…‥「」『』（）()【】〈〉《》〔〕｛｝{}［］[]・：；:;，,.─\n\r',
   sentenceDelimiters: '。！？.!?\n\r',
   trailingSentenceChars: '。、！？…‥」』）)】〉》〕｝}］]',
@@ -302,8 +303,9 @@ window.hoshiSelection = {
     return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
   },
   highlightSelection: function(charCount) {
-    if (!this.selection || !this.selection.ranges.length || !CSS.highlights) return;
-    var highlights = [];
+    if (!this.selection || !this.selection.ranges.length) return;
+    this.clearHighlightWrappers();
+    var trimmedRanges = [];
     var remaining = charCount;
     for (var i = 0; i < this.selection.ranges.length; i++) {
       var r = this.selection.ranges[i];
@@ -314,12 +316,20 @@ window.hoshiSelection = {
         end += char.length;
         remaining--;
       }
-      var range = document.createRange();
-      range.setStart(r.node, r.start);
-      range.setEnd(r.node, end);
-      highlights.push(range);
+      trimmedRanges.push({ node: r.node, start: r.start, end: end });
     }
-    CSS.highlights.set('hoshi-selection', new Highlight(...highlights));
+    var range = document.createRange();
+    for (var i = trimmedRanges.length - 1; i >= 0; i--) {
+      var seg = trimmedRanges[i];
+      range.setStart(seg.node, seg.start);
+      range.setEnd(seg.node, seg.end);
+      var wrapper = document.createElement('span');
+      wrapper.className = 'hoshi-dict-highlight';
+      wrapper.appendChild(range.extractContents());
+      range.insertNode(wrapper);
+      this.highlightWrappers.push(wrapper);
+    }
+    this.highlightWrappers.reverse();
   },
   getNormalizedOffset: function(targetNode, offset) {
     if (!window.hoshiReader) return null;
@@ -356,9 +366,22 @@ window.hoshiSelection = {
     }
     return null;
   },
+  clearHighlightWrappers: function() {
+    for (var i = 0; i < this.highlightWrappers.length; i++) {
+      var wrapper = this.highlightWrappers[i];
+      var parent = wrapper.parentNode;
+      if (!parent) continue;
+      while (wrapper.firstChild) {
+        parent.insertBefore(wrapper.firstChild, wrapper);
+      }
+      parent.removeChild(wrapper);
+      parent.normalize();
+    }
+    this.highlightWrappers = [];
+  },
   clearSelection: function() {
     window.getSelection().removeAllRanges();
-    if (CSS.highlights && CSS.highlights.get('hoshi-selection')) CSS.highlights.get('hoshi-selection').clear();
+    this.clearHighlightWrappers();
     this.selection = null;
   }
 };

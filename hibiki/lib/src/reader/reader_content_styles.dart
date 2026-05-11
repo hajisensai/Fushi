@@ -217,13 +217,12 @@ ruby > rt, ruby > rp {
   -webkit-user-select: none;
   user-select: none;
 }
-::highlight(hoshi-selection) {
+.hoshi-dict-highlight {
   background-color: ${selectionColor ?? 'rgba(160, 160, 160, 0.4)'} !important;
   color: inherit;
 }
 .hoshi-sasayaki-cue {
   background-color: transparent;
-  -webkit-line-box-contain: block glyphs replaced;
 }
 .hoshi-sasayaki-cue.hoshi-sasayaki-active {
   color: var(--hoshi-sasayaki-text-color) !important;
