@@ -1159,6 +1159,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
     _currentChapter = index;
     _initialProgress = progress;
+    _displayedProgress = progress;
     _restoreInFlight = true;
     setState(() {
       _readerContentReady = false;
@@ -1207,6 +1208,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
     _currentChapter = index;
     _initialProgress = 0.0;
+    _displayedProgress = 0.0;
     _initialFragment = fragment;
     _restoreInFlight = true;
     setState(() {

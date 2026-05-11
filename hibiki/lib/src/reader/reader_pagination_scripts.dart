@@ -783,10 +783,14 @@ $initImages
 };
 window.hoshiReader.updatePageSize = function(cssWidth, cssHeight, progress) {
   var newHeight = Math.round(cssHeight);
+  var newWidth = Math.round(cssWidth);
+  var changed = (newHeight !== this._contH || newWidth !== this._contW);
+  this._contH = newHeight;
+  this._contW = newWidth;
   document.documentElement.style.setProperty('--hoshi-continuous-height', newHeight + 'px');
-  document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(Math.round(cssWidth) * $imageWidthRatio)) + 'px');
+  document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(newWidth * $imageWidthRatio)) + 'px');
   document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, newHeight - $bottomOverlapPx) + 'px');
-  if (progress <= 0) return;
+  if (!changed || progress <= 0) return;
   var self = this;
   requestAnimationFrame(function() {
     self.scrollToProgressContinuous(progress);
