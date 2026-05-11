@@ -366,7 +366,67 @@ class AppModel with ChangeNotifier {
   List<Dictionary> get kanjiDictionaries =>
       _dictionariesCache.where((d) => d.type == DictionaryType.kanji).toList();
 
+  bool _dictTypesMigrated = false;
+
+  void _migrateDictionaryTypes() {
+    if (_dictTypesMigrated) return;
+    _dictTypesMigrated = true;
+    for (int i = 0; i < _dictionariesCache.length; i++) {
+      final d = _dictionariesCache[i];
+      if (d.type != DictionaryType.term) continue;
+
+      final blobsFile = File(
+          path.join(dictionaryResourceDirectory.path, d.name, 'blobs.bin'));
+      if (!blobsFile.existsSync()) continue;
+
+      final raf = blobsFile.openSync();
+      try {
+        if (raf.lengthSync() < 4) continue;
+        final header = raf.readSync(4);
+        // type byte 0x00 = term record, 0x01 = meta record
+        if (header[0] != 0x01) continue;
+
+        final exprLen = header[1] | (header[2] << 8);
+        // skip expression bytes, then read mode_len(1B) + mode
+        raf.setPositionSync(3 + exprLen);
+        final modeLenBuf = raf.readSync(1);
+        if (modeLenBuf.isEmpty) continue;
+        final modeLen = modeLenBuf[0];
+        if (modeLen == 0) continue;
+        final modeBytes = raf.readSync(modeLen);
+        final mode = String.fromCharCodes(modeBytes);
+
+        DictionaryType detected;
+        if (mode == 'freq') {
+          detected = DictionaryType.frequency;
+        } else if (mode == 'pitch') {
+          detected = DictionaryType.pitch;
+        } else {
+          continue;
+        }
+
+        _dictionariesCache[i] = Dictionary(
+          name: d.name,
+          formatKey: d.formatKey,
+          order: d.order,
+          type: detected,
+          metadata: d.metadata,
+          hiddenLanguages: d.hiddenLanguages,
+          collapsedLanguages: d.collapsedLanguages,
+        );
+        _database
+            .upsertDictionaryMeta(_dictionaryToCompanion(_dictionariesCache[i]));
+        debugPrint('[Hibiki] migrated dict type: ${d.name} → ${detected.name}');
+      } catch (e) {
+        debugPrint('[Hibiki] dict type migration error for ${d.name}: $e');
+      } finally {
+        raf.closeSync();
+      }
+    }
+  }
+
   void _rebuildDictPathsCache() {
+    _migrateDictionaryTypes();
     final termPaths = <String>[];
     final freqPaths = <String>[];
     final pitchPaths = <String>[];
@@ -1184,6 +1244,13 @@ class AppModel with ChangeNotifier {
         );
         if (blobCount > 0) {
           debugPrint('[Hibiki] ttu blob remediation: $blobCount books fixed');
+        }
+        final int tocCount = await TtuMigration.remediateMissingToc(
+          _database,
+          migServer.boundPort!,
+        );
+        if (tocCount > 0) {
+          debugPrint('[Hibiki] ttu TOC remediation: $tocCount books fixed');
         }
       } catch (e) {
         debugPrint('[Hibiki] ttu migration failed (non-fatal): $e');

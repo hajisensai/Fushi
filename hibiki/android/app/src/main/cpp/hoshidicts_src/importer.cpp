@@ -28,6 +28,7 @@
 namespace {
 struct Files {
   std::vector<int> term_banks;
+  std::vector<int> kanji_banks;
   std::vector<int> meta_banks;
   std::vector<int> tag_banks;
   std::vector<int> media_files;
@@ -53,7 +54,9 @@ Files get_files(const Zip& zip) {
 
     if (name.starts_with("term_bank_")) {
       files.term_banks.push_back(i);
-    } else if (name.starts_with("term_meta_bank_")) {
+    } else if (name.starts_with("kanji_bank_")) {
+      files.kanji_banks.push_back(i);
+    } else if (name.starts_with("term_meta_bank_") || name.starts_with("kanji_meta_bank_")) {
       files.meta_banks.push_back(i);
     } else if (name.starts_with("tag_bank_")) {
       files.tag_banks.push_back(i);
@@ -62,6 +65,26 @@ Files get_files(const Zip& zip) {
     }
   }
   return files;
+}
+
+std::string detect_type(const Files& files, const Zip& zip) {
+  if (!files.kanji_banks.empty()) {
+    return "kanji";
+  }
+  if (!files.term_banks.empty()) {
+    return "term";
+  }
+  if (!files.meta_banks.empty()) {
+    std::string content = zip.read(files.meta_banks[0]);
+    if (!content.empty()) {
+      std::vector<Meta> metas;
+      if (yomitan_parser::parse_meta_bank(content, metas) && !metas.empty()) {
+        if (metas[0].mode == "freq") return "frequency";
+        if (metas[0].mode == "pitch") return "pitch";
+      }
+    }
+  }
+  return "term";
 }
 
 template <typename T>
@@ -475,6 +498,7 @@ ImportResult dictionary_importer::import(const std::string& zip_path, const std:
     }
 
     const Files files = get_files(zip);
+    result.detected_type = detect_type(files, zip);
     std::future<size_t> media_thread =
         std::async(std::launch::async, [&path, &zip, &files]() { return write_media(path, zip, files.media_files); });
 
