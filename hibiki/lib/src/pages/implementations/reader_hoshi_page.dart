@@ -1219,6 +1219,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   // ── Lyrics Mode ──────────────────────────────────────────────────
 
   Future<void> _toggleLyricsMode() async {
+    if (_lyricsModeTransition) return;
     if (_controller == null || _audiobookController == null) return;
     final bool entering = !_lyricsMode;
 
