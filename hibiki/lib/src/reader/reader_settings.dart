@@ -92,6 +92,8 @@ class ReaderSettings {
       );
       _set<String>('ttu_furigana_mode', merged);
       _cache.remove('ttu_hide_furigana');
+      _db.deletePref('${_prefix}ttu_hide_furigana');
+      _db.deletePref('${_prefix}ttu_furigana_style');
       return merged;
     }
     return normalizeFuriganaMode(

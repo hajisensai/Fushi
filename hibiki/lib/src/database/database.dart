@@ -85,6 +85,10 @@ class HibikiDatabase extends _$HibikiDatabase {
   Future<void> setPrefTyped<T>(String key, T value) =>
       setPref(key, value.toString());
 
+  Future<void> deletePref(String key) async {
+    await (delete(preferences)..where((t) => t.key.equals(key))).go();
+  }
+
   Future<Map<String, String>> getAllPrefs() async {
     final rows = await select(preferences).get();
     return Map.fromEntries(rows.map((r) => MapEntry(r.key, r.value)));
