@@ -79,7 +79,8 @@ class ReaderSettings {
   Future<void> setTheme(String v) => _set<String>('ttu_theme', v);
 
   String get furiganaMode {
-    final bool? legacy = _cache['ttu_hide_furigana'] as bool?;
+    final dynamic raw = _cache['ttu_hide_furigana'];
+    final bool? legacy = raw is bool ? raw : null;
     if (legacy != null) {
       final String oldStyle = _get<String>('ttu_furigana_style', 'partial')
           .toLowerCase();
