@@ -832,5 +832,7 @@
     "creator_action_copy_to_clipboard": "复制到剪贴板",
     "creator_action_add_to_stash": "添加到暂存",
     "creator_action_play_audio": "播放音频",
-    "creator_action_share": "分享"
+    "creator_action_share": "分享",
+    "favorite_removed": "句子已取消收藏。",
+    "no_sentence_selected": "未选择句子"
 }
