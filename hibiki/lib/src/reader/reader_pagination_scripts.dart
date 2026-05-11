@@ -613,6 +613,14 @@ $_sharedJs
     }
   }
 };
+window.hoshiReader._contentSize = function() {
+  var cs = getComputedStyle(document.body);
+  var pl = parseFloat(cs.paddingLeft) || 0;
+  var pr = parseFloat(cs.paddingRight) || 0;
+  var pt = parseFloat(cs.paddingTop) || 0;
+  var pb = parseFloat(cs.paddingBottom) || 0;
+  return { w: (document.body.clientWidth || window.innerWidth) - pl - pr, h: (document.body.clientHeight || window.innerHeight) - pt - pb };
+};
 window.hoshiReader.initialize = function() {
   if (window.hoshiReader.didInitialize) return;
   window.hoshiReader.didInitialize = true;
@@ -621,8 +629,9 @@ $_sharedInitViewport
   var pageWidth = window.innerWidth;
   document.documentElement.style.setProperty('--page-height', pageHeight + 'px');
   document.documentElement.style.setProperty('--page-width', pageWidth + 'px');
-  document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(pageWidth * $imageWidthRatio)) + 'px');
-  document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, pageHeight - $bottomOverlapPx) + 'px');
+  var cs = this._contentSize();
+  document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(cs.w * $imageWidthRatio)) + 'px');
+  document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, cs.h) + 'px');
   window.hoshiReader.pageHeight = pageHeight;
   window.hoshiReader.pageWidth = pageWidth;
 $initImages
@@ -645,8 +654,9 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
   var progress = this.calculateProgress();
   document.documentElement.style.setProperty('--page-height', newHeight + 'px');
   document.documentElement.style.setProperty('--page-width', newWidth + 'px');
-  document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(newWidth * $imageWidthRatio)) + 'px');
-  document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, newHeight - $bottomOverlapPx) + 'px');
+  var cs = this._contentSize();
+  document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(cs.w * $imageWidthRatio)) + 'px');
+  document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, cs.h) + 'px');
   this.pageHeight = newHeight;
   this.pageWidth = newWidth;
   this.paginationMetrics = null;
@@ -780,13 +790,22 @@ $_sharedJs
     return root.scrollTop <= 2 ? "limit" : "scrolled";
   }
 };
+window.hoshiReader._contentSize = function() {
+  var cs = getComputedStyle(document.body);
+  var pl = parseFloat(cs.paddingLeft) || 0;
+  var pr = parseFloat(cs.paddingRight) || 0;
+  var pt = parseFloat(cs.paddingTop) || 0;
+  var pb = parseFloat(cs.paddingBottom) || 0;
+  return { w: (document.body.clientWidth || window.innerWidth) - pl - pr, h: (document.body.clientHeight || window.innerHeight) - pt - pb };
+};
 window.hoshiReader.initialize = function() {
   if (window.hoshiReader.didInitialize) return;
   window.hoshiReader.didInitialize = true;
 $_sharedInitViewport
   document.documentElement.style.setProperty('--hoshi-continuous-height', window.innerHeight + 'px');
-  document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(window.innerWidth * $imageWidthRatio)) + 'px');
-  document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, window.innerHeight - $bottomOverlapPx) + 'px');
+  var cs = this._contentSize();
+  document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(cs.w * $imageWidthRatio)) + 'px');
+  document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, cs.h) + 'px');
 $initImages
   Promise.all(imagePromises).then(function() {
     window.hoshiReader.buildNodeOffsets();
@@ -802,8 +821,9 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
   this._contW = newWidth;
   var progress = changed ? this.calculateProgress() : 0;
   document.documentElement.style.setProperty('--hoshi-continuous-height', newHeight + 'px');
-  document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(newWidth * $imageWidthRatio)) + 'px');
-  document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, newHeight - $bottomOverlapPx) + 'px');
+  var cs = this._contentSize();
+  document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(cs.w * $imageWidthRatio)) + 'px');
+  document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, cs.h) + 'px');
   if (progress <= 0) return;
   var self = this;
   requestAnimationFrame(function() {
