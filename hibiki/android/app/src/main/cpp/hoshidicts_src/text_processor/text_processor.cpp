@@ -138,13 +138,6 @@ std::vector<TextProcessor> get_english_processors() {
          }
          return text;
        }},
-      // un- prefix removal
-      {.options = {0, 1}, .process = [](const std::u32string& text, int opt) -> std::u32string {
-         if (opt == 1 && text.size() > 3 && text[0] == U'u' && text[1] == U'n') {
-           return text.substr(2);
-         }
-         return text;
-       }},
   };
 }
 
