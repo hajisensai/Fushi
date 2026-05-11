@@ -709,14 +709,12 @@ $_sharedJs
       var vw = window.innerWidth;
       var safe = vw * margin;
       if (rect.left >= safe && rect.right <= vw - safe) return false;
-      var dx = rect.left < safe ? (rect.left - safe) : (rect.right - vw + safe);
-      window.scrollBy({left: dx, behavior: 'instant'});
+      window.scrollBy({left: rect.right - (vw - safe), behavior: 'smooth'});
     } else {
       var vh = window.innerHeight;
       var safe = vh * margin;
       if (rect.top >= safe && rect.bottom <= vh - safe) return false;
-      var dy = rect.top < safe ? (rect.top - safe) : (rect.bottom - vh + safe);
-      window.scrollBy({top: dy, behavior: 'instant'});
+      window.scrollBy({top: rect.top - safe, behavior: 'smooth'});
     }
     return true;
   },
