@@ -1352,6 +1352,9 @@ void Deinflector::init_english_transforms() {
   add_rule({.from = "were",        .to = "be",        .conditions_in = EN_V_ALL, .conditions_out = EN_V_ALL, .group_id = id});
   add_rule({.from = "had",         .to = "have",      .conditions_in = EN_V_ALL, .conditions_out = EN_V_ALL, .group_id = id});
   add_rule({.from = "did",         .to = "do",        .conditions_in = EN_V_ALL, .conditions_out = EN_V_ALL, .group_id = id});
+  add_rule({.from = "got",         .to = "get",       .conditions_in = EN_V_ALL, .conditions_out = EN_V_ALL, .group_id = id});
+  add_rule({.from = "made",        .to = "make",      .conditions_in = EN_V_ALL, .conditions_out = EN_V_ALL, .group_id = id});
+  add_rule({.from = "lay",         .to = "lie",       .conditions_in = EN_V_ALL, .conditions_out = EN_V_ALL, .group_id = id});
   add_rule({.from = "took",        .to = "take",      .conditions_in = EN_V_ALL, .conditions_out = EN_V_ALL, .group_id = id});
   add_rule({.from = "came",        .to = "come",      .conditions_in = EN_V_ALL, .conditions_out = EN_V_ALL, .group_id = id});
   add_rule({.from = "saw",         .to = "see",       .conditions_in = EN_V_ALL, .conditions_out = EN_V_ALL, .group_id = id});
@@ -1448,7 +1451,9 @@ void Deinflector::init_english_transforms() {
   add_rule({.from = "been",        .to = "be",        .conditions_in = EN_V_ALL, .conditions_out = EN_V_ALL, .group_id = id});
   add_rule({.from = "done",        .to = "do",        .conditions_in = EN_V_ALL, .conditions_out = EN_V_ALL, .group_id = id});
   add_rule({.from = "gone",        .to = "go",        .conditions_in = EN_V_ALL, .conditions_out = EN_V_ALL, .group_id = id});
+  add_rule({.from = "got",         .to = "get",       .conditions_in = EN_V_ALL, .conditions_out = EN_V_ALL, .group_id = id});
   add_rule({.from = "gotten",      .to = "get",       .conditions_in = EN_V_ALL, .conditions_out = EN_V_ALL, .group_id = id});
+  add_rule({.from = "made",        .to = "make",      .conditions_in = EN_V_ALL, .conditions_out = EN_V_ALL, .group_id = id});
   add_rule({.from = "taken",       .to = "take",      .conditions_in = EN_V_ALL, .conditions_out = EN_V_ALL, .group_id = id});
   add_rule({.from = "seen",        .to = "see",       .conditions_in = EN_V_ALL, .conditions_out = EN_V_ALL, .group_id = id});
   add_rule({.from = "known",       .to = "know",      .conditions_in = EN_V_ALL, .conditions_out = EN_V_ALL, .group_id = id});
