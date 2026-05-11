@@ -1,20 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:spaces/spaces.dart';
-import 'package:hibiki/language.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 
-/// The content of the dialog used for changing the target language or app
-/// locale.
+/// Dialog for changing the app locale.
 class LanguageDialogPage extends BasePage {
-  /// Create an instance of this page.
-  const LanguageDialogPage({
-    required this.isFirstTimeSetup,
-    super.key,
-  });
-
-  /// Whether or not it is the first time setup.
-  final bool isFirstTimeSetup;
+  const LanguageDialogPage({super.key});
 
   @override
   BasePageState createState() => _LanguageDialogPageState();
@@ -24,25 +15,13 @@ class _LanguageDialogPageState extends BasePageState<LanguageDialogPage> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: widget.isFirstTimeSetup ? Text(t.first_time_setup) : null,
-      titlePadding: Spacing.of(context)
-          .insets
-          .all
-          .big
-          .copyWith(bottom: Spacing.of(context).spaces.semiBig),
-      contentPadding: widget.isFirstTimeSetup
-          ? Spacing.of(context).insets.horizontal.big
-          : MediaQuery.of(context).orientation == Orientation.portrait
-              ? Spacing.of(context).insets.exceptBottom.big
-              : Spacing.of(context).insets.exceptBottom.normal,
+      contentPadding: MediaQuery.of(context).orientation == Orientation.portrait
+          ? Spacing.of(context).insets.exceptBottom.big
+          : Spacing.of(context).insets.exceptBottom.normal,
       content: buildContent(),
-      actions: actions,
+      actions: [buildCloseButton()],
     );
   }
-
-  List<Widget> get actions => [
-        buildCloseButton(),
-      ];
 
   Widget buildCloseButton() {
     return TextButton(
@@ -66,36 +45,6 @@ class _LanguageDialogPageState extends BasePageState<LanguageDialogPage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (widget.isFirstTimeSetup)
-                Text(
-                  t.first_time_setup_description,
-                  style: TextStyle(
-                    fontSize: textTheme.bodySmall?.fontSize,
-                  ),
-                  textAlign: TextAlign.justify,
-                ),
-              if (widget.isFirstTimeSetup) const Space.semiBig(),
-              Padding(
-                padding: Spacing.of(context).insets.onlyLeft.small,
-                child: Text(
-                  t.target_language,
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: theme.unselectedWidgetColor,
-                  ),
-                ),
-              ),
-              JidoujishoDropdown<Language>(
-                options: appModel.languages.values.toList(),
-                initialOption: appModel.targetLanguage,
-                generateLabel: (language) => language.languageName,
-                onChanged: (language) {
-                  appModel.setTargetLanguage(language!);
-                  appModel.clearDictionaryResultsCache();
-                  setState(() {});
-                },
-              ),
-              const Space.small(),
               Padding(
                 padding: Spacing.of(context).insets.onlyLeft.small,
                 child: Text(

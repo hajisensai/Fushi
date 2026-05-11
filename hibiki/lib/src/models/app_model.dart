@@ -1872,9 +1872,7 @@ class AppModel with ChangeNotifier {
     await showAppDialog(
       barrierDismissible: true,
       context: navigatorKey.currentContext!,
-      builder: (context) => LanguageDialogPage(
-        isFirstTimeSetup: isFirstTimeSetup,
-      ),
+      builder: (context) => const LanguageDialogPage(),
     );
   }
 
