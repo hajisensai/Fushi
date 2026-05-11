@@ -27,6 +27,8 @@ class AudiobookPlayBar extends StatelessWidget {
     required this.controller,
     required this.onOpenSettings,
     this.backgroundColor,
+    this.lyricsMode = false,
+    this.onToggleLyricsMode,
     super.key,
   });
 
@@ -36,6 +38,9 @@ class AudiobookPlayBar extends StatelessWidget {
   /// 用户点 ⚙ 设置按钮后触发。由 reader 页面侧注入，因为设置面板要
   /// 访问 WebView controller 才能 probe ttu 当前章节 / TOC、触发书签。
   final VoidCallback onOpenSettings;
+
+  final bool lyricsMode;
+  final VoidCallback? onToggleLyricsMode;
 
   @override
   Widget build(BuildContext context) {
@@ -77,12 +82,20 @@ class AudiobookPlayBar extends StatelessWidget {
                 ),
               ),
               AudiobookFollowAudioButton(controller: controller),
-              IconButton(
-                icon: const Icon(Icons.tune),
-                iconSize: 20,
-                onPressed: onOpenSettings,
-                tooltip: t.audiobook_settings,
-              ),
+              if (onToggleLyricsMode != null)
+                IconButton(
+                  icon: Icon(lyricsMode ? Icons.auto_stories : Icons.lyrics),
+                  iconSize: 20,
+                  onPressed: onToggleLyricsMode,
+                  tooltip: t.lyrics_mode,
+                ),
+              if (!lyricsMode)
+                IconButton(
+                  icon: const Icon(Icons.tune),
+                  iconSize: 20,
+                  onPressed: onOpenSettings,
+                  tooltip: t.audiobook_settings,
+                ),
             ],
           ),
         ),
