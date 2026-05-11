@@ -588,11 +588,23 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final String path = url.path;
 
     if (path.startsWith('/fonts/')) {
-      final String fontPath =
-          Uri.decodeComponent(path.substring('/fonts/'.length));
+      final String raw = path.substring('/fonts/'.length);
+      final String fontPath = Uri.decodeComponent(raw);
       final File fontFile = File(fontPath);
-      if (!fontFile.existsSync()) return null;
+      if (!fontFile.existsSync()) {
+        debugPrint('[ReaderHoshi] font not found: $fontPath (raw=$raw)');
+        return WebResourceResponse(
+          contentType: 'text/plain',
+          statusCode: 404,
+          reasonPhrase: 'Not Found',
+          headers: <String, String>{
+            'Access-Control-Allow-Origin': '*',
+          },
+          data: Uint8List(0),
+        );
+      }
       final Uint8List data = fontFile.readAsBytesSync();
+      debugPrint('[ReaderHoshi] font served: $fontPath (${data.length} bytes)');
       final String mime = fallbackMimeType(fontPath);
       return WebResourceResponse(
         contentType: mime,
@@ -870,12 +882,20 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       },
       onLoadStop: (InAppWebViewController controller, WebUri? url) async {
         _isNavigatingToChapter = false;
+        final int chapterSnapshot = _currentChapter;
         debugPrint('[ReaderHoshi] onLoadStop: url=$url '
-            'chapter=$_currentChapter progress=$_initialProgress');
+            'chapter=$chapterSnapshot progress=$_initialProgress');
+        final String expectedUrl = _chapterUrl(chapterSnapshot);
+        if (url != null &&
+            Uri.parse(url.toString()).path != Uri.parse(expectedUrl).path) {
+          debugPrint('[ReaderHoshi] onLoadStop: stale page (expected=$expectedUrl), ignoring');
+          return;
+        }
         String? sasayakiCuesJson;
         if (_audiobookController != null) {
           sasayakiCuesJson = await _prepareSasayakiCuesJson();
         }
+        if (_currentChapter != chapterSnapshot) return;
         await controller.evaluateJavascript(
           source: _buildReaderSetupScript(sasayakiCuesJson: sasayakiCuesJson),
         );

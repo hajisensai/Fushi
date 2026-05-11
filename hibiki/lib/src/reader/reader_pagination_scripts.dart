@@ -12,16 +12,16 @@ class ReaderPaginationScripts {
   ReaderPaginationScripts._();
 
   static String paginateInvocation(ReaderNavigationDirection direction) =>
-      "window.hoshiReader.paginate('${direction.jsValue}')";
+      "window.hoshiReader && window.hoshiReader.paginate('${direction.jsValue}')";
 
   static String progressInvocation() =>
-      'window.hoshiReader.calculateProgress()';
+      'window.hoshiReader && window.hoshiReader.calculateProgress()';
 
   static String updatePageSizeInvocation(double width, double height) =>
       'window.hoshiReader && window.hoshiReader.updatePageSize($width, $height)';
 
   static String applySasayakiCuesInvocation(String cuesJson) =>
-      'window.hoshiReader.applySasayakiCues($cuesJson)';
+      'window.hoshiReader && window.hoshiReader.applySasayakiCues($cuesJson)';
 
   static String highlightSasayakiCueInvocation(
     String cueId, {
