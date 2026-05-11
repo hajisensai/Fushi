@@ -126,11 +126,21 @@ public class FloatingDictService extends BaseFloatingService {
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                         ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
                         : WindowManager.LayoutParams.TYPE_PHONE,
-                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                         | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                 PixelFormat.TRANSLUCENT);
         lp.gravity = Gravity.TOP | Gravity.START;
         return lp;
+    }
+
+    private void setFocusable(boolean focusable) {
+        if (layoutParams == null) return;
+        if (focusable) {
+            layoutParams.flags &= ~WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
+        } else {
+            layoutParams.flags |= WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
+        }
+        windowManager.updateViewLayout(rootView, layoutParams);
     }
 
     @Override
@@ -183,9 +193,14 @@ public class FloatingDictService extends BaseFloatingService {
         searchInput.setBackgroundColor(0x33FFFFFF);
         searchInput.setPadding(dp8, dp4, dp8, dp4);
         searchInput.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
+        searchInput.setOnFocusChangeListener((v, hasFocus) -> {
+            setFocusable(hasFocus);
+        });
         searchInput.setOnEditorActionListener((v, actionId, event) -> {
             if (actionId == EditorInfo.IME_ACTION_SEARCH) {
                 triggerSearch(searchInput.getText().toString());
+                searchInput.clearFocus();
+                setFocusable(false);
                 return true;
             }
             return false;
@@ -367,7 +382,6 @@ public class FloatingDictService extends BaseFloatingService {
             return;
         }
         MainActivity.notifyFloatingDictAnki(currentWord, currentReading, currentMeaning);
-        Toast.makeText(this, "Sent to Anki: " + currentWord, Toast.LENGTH_SHORT).show();
     }
 
     public void setClipboardMonitoring(boolean enabled) {
