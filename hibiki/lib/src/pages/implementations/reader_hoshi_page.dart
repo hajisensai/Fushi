@@ -748,14 +748,17 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   window.scanNonJapaneseText = false;
   $selectionJs
   $paginationJs
-  var startX = 0, startY = 0, startTime = 0;
+  var startX = 0, startY = 0, startTime = 0, hasStart = false;
   document.addEventListener('touchstart', function(e) {
     var t = e.touches[0];
+    hasStart = true;
     startX = t.clientX;
     startY = t.clientY;
     startTime = Date.now();
   }, {passive: true});
   document.addEventListener('touchend', function(e) {
+    if (!hasStart) return;
+    hasStart = false;
     var t = e.changedTouches[0];
     var dx = t.clientX - startX;
     var dy = t.clientY - startY;

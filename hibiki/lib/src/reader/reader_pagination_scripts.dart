@@ -797,14 +797,16 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
 (function() {
   var TAP_SLOP = 12;
   var SWIPE_THRESHOLD = 20;
-  var downX = 0, downY = 0;
+  var downX = 0, downY = 0, hasDown = false;
   document.addEventListener('touchstart', function(e) {
     if (!e.touches.length) return;
+    hasDown = true;
     downX = e.touches[0].clientX;
     downY = e.touches[0].clientY;
   }, {passive: true});
   document.addEventListener('touchend', function(e) {
-    if (!e.changedTouches.length) return;
+    if (!hasDown || !e.changedTouches.length) return;
+    hasDown = false;
     var dx = e.changedTouches[0].clientX - downX;
     var dy = e.changedTouches[0].clientY - downY;
     if (Math.abs(dx) < TAP_SLOP && Math.abs(dy) < TAP_SLOP) return;
