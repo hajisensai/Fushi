@@ -7,7 +7,7 @@ class ReaderLayoutDefaults {
   static const int bottomOverlapPx = fontSizePx;
   static const double imageWidthViewportRatio = 0.95;
 
-  static const String columnGapCss = 'calc(0vh + 22px)';
+  static const String columnGapCss = 'calc(0vh + 0vh + 22px)';
   static const String pagePaddingCss = '0vh 2.5vw';
   static const String bottomPaddingCss = 'calc(0vh + 22px)';
   static const String imageMaxWidthFallbackCss = '95vw';
@@ -77,8 +77,8 @@ class ReaderContentStyles {
 
     final String paddingCss = '${mt}vh ${mr}vw ${mb}vh ${ml}vw';
     final String columnGapCss = isVertical
-        ? 'calc(${mt}vh + ${settings.fontSize.round()}px)'
-        : 'calc(${mr}vw + ${settings.fontSize.round()}px)';
+        ? 'calc(${mt}vh + ${mb}vh + ${settings.fontSize.round()}px)'
+        : 'calc(${ml}vw + ${mr}vw + ${settings.fontSize.round()}px)';
     final String bottomPaddingCss =
         'calc(${mb}vh + ${settings.fontSize.round()}px)';
 
@@ -258,7 +258,7 @@ body {
   $textSpacingCss
   box-sizing: border-box !important;
   column-width: var(--page-width, 100vw) !important;
-  column-gap: $columnGapCss;
+  column-gap: $columnGapCss !important;
   padding: $paddingCss !important;
   padding-bottom: $bottomPaddingCss !important;
   $gridCss
