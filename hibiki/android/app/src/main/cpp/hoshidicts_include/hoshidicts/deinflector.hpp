@@ -56,12 +56,25 @@ class Deinflector {
     V5S = V5SS | V5SP,
     V5 = V5D | V5S,
     V = V1 | V5 | VK | VS | VZ,
+
+    // English conditions (bits 18-24)
+    EN_V = 1 << 18,
+    EN_V_PHR = 1 << 19,
+    EN_N = 1 << 20,
+    EN_NP = 1 << 21,
+    EN_NS = 1 << 22,
+    EN_ADJ = 1 << 23,
+    EN_ADV = 1 << 24,
+    // Compound English conditions (matching Yomitan subConditions)
+    EN_V_ALL = EN_V | EN_V_PHR,
+    EN_N_ALL = EN_N | EN_NP | EN_NS,
   };
 
   void deinflect_recursive(const std::string& text, uint32_t conditions, std::vector<TransformGroup>& trace,
                            std::vector<DeinflectionResult>& results) const;
 
   void init_transforms();
+  void init_english_transforms();
 
   int add_group(const TransformGroup& group);
   void add_rule(const Rule& rule);

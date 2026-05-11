@@ -8,7 +8,10 @@
 #include <array>
 #include <cstddef>
 
-Deinflector::Deinflector() : max_length_(0) { init_transforms(); }
+Deinflector::Deinflector() : max_length_(0) {
+  init_transforms();
+  init_english_transforms();
+}
 
 namespace {
 constexpr std::string_view shimau_english_description =
@@ -1247,6 +1250,102 @@ void Deinflector::init_transforms() {
   add_rule({.from = "來やがる", .to = "來る", .conditions_in = V5, .conditions_out = VK, .group_id = id});
 }
 
+void Deinflector::init_english_transforms() {
+  // Helper: add doubled-consonant rules for a given suffix.
+  // For each char c in consonants, adds rule c+c+suffix -> c.
+  auto add_doubled = [&](const std::string& consonants, const std::string& suffix,
+                         uint32_t cond_in, uint32_t cond_out, int gid) {
+    for (char c : consonants) {
+      std::string from;
+      from += c;
+      from += c;
+      from += suffix;
+      std::string to;
+      to += c;
+      add_rule({.from = from, .to = to, .conditions_in = cond_in, .conditions_out = cond_out, .group_id = gid});
+    }
+  };
+
+  // ---------- plural ----------
+  int id = add_group({.name = "plural", .description = "Plural form of a noun."});
+  add_rule({.from = "s",   .to = "",   .conditions_in = EN_NP, .conditions_out = EN_NS, .group_id = id});
+  add_rule({.from = "es",  .to = "",   .conditions_in = EN_NP, .conditions_out = EN_NS, .group_id = id});
+  add_rule({.from = "ies", .to = "y",  .conditions_in = EN_NP, .conditions_out = EN_NS, .group_id = id});
+  add_rule({.from = "ves", .to = "fe", .conditions_in = EN_NP, .conditions_out = EN_NS, .group_id = id});
+  add_rule({.from = "ves", .to = "f",  .conditions_in = EN_NP, .conditions_out = EN_NS, .group_id = id});
+
+  // ---------- possessive ----------
+  id = add_group({.name = "possessive", .description = "Possessive form of a noun."});
+  add_rule({.from = "'s", .to = "",  .conditions_in = EN_N_ALL, .conditions_out = EN_N_ALL, .group_id = id});
+  add_rule({.from = "s'", .to = "s", .conditions_in = EN_N_ALL, .conditions_out = EN_N_ALL, .group_id = id});
+
+  // ---------- past tense ----------
+  id = add_group({.name = "past tense", .description = "Past tense form of a verb."});
+  add_rule({.from = "ed",   .to = "",    .conditions_in = EN_V_ALL, .conditions_out = EN_V_ALL, .group_id = id});
+  add_rule({.from = "ed",   .to = "e",   .conditions_in = EN_V_ALL, .conditions_out = EN_V_ALL, .group_id = id});
+  add_rule({.from = "ied",  .to = "y",   .conditions_in = EN_V_ALL, .conditions_out = EN_V_ALL, .group_id = id});
+  add_rule({.from = "cked", .to = "c",   .conditions_in = EN_V_ALL, .conditions_out = EN_V_ALL, .group_id = id});
+  add_doubled("bdgklmnprstz", "ed", EN_V_ALL, EN_V_ALL, id);
+  add_rule({.from = "laid", .to = "lay", .conditions_in = EN_V_ALL, .conditions_out = EN_V_ALL, .group_id = id});
+  add_rule({.from = "paid", .to = "pay", .conditions_in = EN_V_ALL, .conditions_out = EN_V_ALL, .group_id = id});
+  add_rule({.from = "said", .to = "say", .conditions_in = EN_V_ALL, .conditions_out = EN_V_ALL, .group_id = id});
+
+  // ---------- present participle / -ing ----------
+  id = add_group({.name = "-ing", .description = "Present participle / gerund form of a verb."});
+  add_rule({.from = "ing",   .to = "",   .conditions_in = EN_V_ALL, .conditions_out = EN_V_ALL, .group_id = id});
+  add_rule({.from = "ing",   .to = "e",  .conditions_in = EN_V_ALL, .conditions_out = EN_V_ALL, .group_id = id});
+  add_rule({.from = "ying",  .to = "ie", .conditions_in = EN_V_ALL, .conditions_out = EN_V_ALL, .group_id = id});
+  add_rule({.from = "cking", .to = "c",  .conditions_in = EN_V_ALL, .conditions_out = EN_V_ALL, .group_id = id});
+  add_doubled("bdgklmnprstz", "ing", EN_V_ALL, EN_V_ALL, id);
+
+  // ---------- 3rd person singular present ----------
+  id = add_group({.name = "3rd person singular", .description = "3rd person singular present form of a verb."});
+  add_rule({.from = "s",   .to = "",  .conditions_in = EN_V_ALL, .conditions_out = EN_V_ALL, .group_id = id});
+  add_rule({.from = "es",  .to = "",  .conditions_in = EN_V_ALL, .conditions_out = EN_V_ALL, .group_id = id});
+  add_rule({.from = "ies", .to = "y", .conditions_in = EN_V_ALL, .conditions_out = EN_V_ALL, .group_id = id});
+
+  // ---------- archaic -'d ----------
+  id = add_group({.name = "archaic past", .description = "Archaic contraction of -ed past tense."});
+  add_rule({.from = "'d", .to = "ed", .conditions_in = EN_V_ALL, .conditions_out = EN_V_ALL, .group_id = id});
+
+  // ---------- adverb ----------
+  id = add_group({.name = "adverb", .description = "Adverb form of an adjective."});
+  add_rule({.from = "ly",  .to = "",   .conditions_in = EN_ADV, .conditions_out = EN_ADJ, .group_id = id});
+  add_rule({.from = "ily", .to = "y",  .conditions_in = EN_ADV, .conditions_out = EN_ADJ, .group_id = id});
+  add_rule({.from = "ly",  .to = "le", .conditions_in = EN_ADV, .conditions_out = EN_ADJ, .group_id = id});
+
+  // ---------- comparative ----------
+  id = add_group({.name = "comparative", .description = "Comparative form of an adjective."});
+  add_rule({.from = "er",  .to = "",  .conditions_in = EN_ADJ, .conditions_out = EN_ADJ, .group_id = id});
+  add_rule({.from = "er",  .to = "e", .conditions_in = EN_ADJ, .conditions_out = EN_ADJ, .group_id = id});
+  add_rule({.from = "ier", .to = "y", .conditions_in = EN_ADJ, .conditions_out = EN_ADJ, .group_id = id});
+  add_doubled("bdgmnt", "er", EN_ADJ, EN_ADJ, id);
+
+  // ---------- superlative ----------
+  id = add_group({.name = "superlative", .description = "Superlative form of an adjective."});
+  add_rule({.from = "est",  .to = "",  .conditions_in = EN_ADJ, .conditions_out = EN_ADJ, .group_id = id});
+  add_rule({.from = "est",  .to = "e", .conditions_in = EN_ADJ, .conditions_out = EN_ADJ, .group_id = id});
+  add_rule({.from = "iest", .to = "y", .conditions_in = EN_ADJ, .conditions_out = EN_ADJ, .group_id = id});
+  add_doubled("bdgmnt", "est", EN_ADJ, EN_ADJ, id);
+
+  // ---------- dropped-g ----------
+  id = add_group({.name = "dropped g", .description = "Informal dropped-g form (runnin' → running)."});
+  add_rule({.from = "in'", .to = "ing", .conditions_in = EN_V_ALL, .conditions_out = EN_V_ALL, .group_id = id});
+
+  // ---------- -y adjective / noun / verb ----------
+  id = add_group({.name = "-y", .description = "-y suffix adjective derived from noun or verb."});
+  add_rule({.from = "y",  .to = "",  .conditions_in = EN_ADJ, .conditions_out = EN_N_ALL | EN_V_ALL, .group_id = id});
+  add_rule({.from = "y",  .to = "e", .conditions_in = EN_ADJ, .conditions_out = EN_N_ALL | EN_V_ALL, .group_id = id});
+  add_doubled("glmnprst", "y", EN_ADJ, EN_N_ALL | EN_V_ALL, id);
+
+  // ---------- -able ----------
+  id = add_group({.name = "-able", .description = "-able suffix adjective derived from a verb."});
+  add_rule({.from = "able",  .to = "",   .conditions_in = EN_V_ALL, .conditions_out = EN_ADJ, .group_id = id});
+  add_rule({.from = "able",  .to = "e",  .conditions_in = EN_V_ALL, .conditions_out = EN_ADJ, .group_id = id});
+  add_rule({.from = "iable", .to = "y",  .conditions_in = EN_V_ALL, .conditions_out = EN_ADJ, .group_id = id});
+  add_doubled("bdgklmnprstz", "able", EN_V_ALL, EN_ADJ, id);
+}
+
 int Deinflector::add_group(const TransformGroup& group) {
   auto id = static_cast<int>(groups_.size());
   groups_.emplace_back(group);
@@ -1286,6 +1385,22 @@ uint32_t Deinflector::pos_to_conditions(const std::vector<std::string>& part_of_
       result |= VZ;
     } else if (p == "adj-i") {
       result |= ADJ_I;
+    }
+    // English POS tags (Yomitan english-transforms.js)
+    else if (p == "v") {
+      result |= EN_V_ALL;
+    } else if (p == "v_phr") {
+      result |= EN_V_PHR;
+    } else if (p == "n") {
+      result |= EN_N_ALL;
+    } else if (p == "np") {
+      result |= EN_NP;
+    } else if (p == "ns") {
+      result |= EN_NS;
+    } else if (p == "adj") {
+      result |= EN_ADJ;
+    } else if (p == "adv") {
+      result |= EN_ADV;
     }
   }
   return result;
