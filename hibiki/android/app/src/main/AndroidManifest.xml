@@ -8,6 +8,7 @@
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
     <uses-permission android:name="android.permission.INTERNET"/>
@@ -105,6 +106,18 @@
         <service android:name=".FloatingLyricService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
+        <service android:name=".FloatingDictService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse" />
+        <service android:name=".FloatingDictTile"
+            android:exported="true"
+            android:label="Dictionary"
+            android:icon="@drawable/ic_stat_hibiki"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
         <receiver android:name="com.ryanheise.audioservice.MediaButtonReceiver"
             android:exported="true" tools:ignore="Instantiatable">
         <intent-filter>

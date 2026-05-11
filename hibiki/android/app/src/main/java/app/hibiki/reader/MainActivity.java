@@ -49,11 +49,13 @@ public class MainActivity extends AudioServiceActivity {
     private static final String UPDATE_CHANNEL = "app.hibiki.reader/update";
     private static final String FONTS_CHANNEL = "app.hibiki.reader/fonts";
     private static final String FLOATING_LYRIC_CHANNEL = "app.hibiki.reader/floating_lyric";
+    private static final String FLOATING_DICT_CHANNEL = "app.hibiki.reader/floating_dict";
     private static final String SPLASH_CHANNEL = "app.hibiki.reader/splash";
     private static final String LIFECYCLE_CHANNEL = "app.hibiki.reader/lifecycle";
     private static final String SPLASH_PREFS = "hibiki_splash";
     private static final int SAF_PICK_DIR_REQUEST = 1001;
     private static MethodChannel floatingLyricChannel;
+    private static MethodChannel floatingDictChannel;
 
     private Activity context;
     private AnkiChannelHandler ankiChannelHandler;
@@ -122,6 +124,24 @@ public class MainActivity extends AudioServiceActivity {
         if (floatingLyricChannel == null) return;
         new Handler(Looper.getMainLooper()).post(() -> {
             floatingLyricChannel.invokeMethod(method, arguments);
+        });
+    }
+
+    public static void notifyFloatingDictEvent(String method, Object arguments) {
+        if (floatingDictChannel == null) return;
+        new Handler(Looper.getMainLooper()).post(() -> {
+            floatingDictChannel.invokeMethod(method, arguments);
+        });
+    }
+
+    public static void notifyFloatingDictAnki(String word, String reading, String meaning) {
+        if (floatingDictChannel == null) return;
+        java.util.HashMap<String, Object> args = new java.util.HashMap<>();
+        args.put("word", word);
+        args.put("reading", reading);
+        args.put("meaning", meaning);
+        new Handler(Looper.getMainLooper()).post(() -> {
+            floatingDictChannel.invokeMethod("ankiExport", args);
         });
     }
 
@@ -393,6 +413,64 @@ public class MainActivity extends AudioServiceActivity {
                         result.notImplemented();
                 }
             });
+
+        floatingDictChannel = new MethodChannel(
+                flutterEngine.getDartExecutor().getBinaryMessenger(), FLOATING_DICT_CHANNEL);
+        floatingDictChannel.setMethodCallHandler((call, result) -> {
+            switch (call.method) {
+                case "show": {
+                    if (!Settings.canDrawOverlays(context)) {
+                        Intent intent = new Intent(
+                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:" + getPackageName()));
+                        startActivity(intent);
+                        result.success(false);
+                        return;
+                    }
+                    Intent svc = new Intent(context, FloatingDictService.class);
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        startForegroundService(svc);
+                    } else {
+                        startService(svc);
+                    }
+                    result.success(true);
+                    break;
+                }
+                case "hide": {
+                    stopService(new Intent(context, FloatingDictService.class));
+                    result.success(true);
+                    break;
+                }
+                case "isShowing": {
+                    result.success(FloatingDictService.getInstance() != null);
+                    break;
+                }
+                case "canDrawOverlays": {
+                    result.success(Settings.canDrawOverlays(context));
+                    break;
+                }
+                case "setClipboardMonitoring": {
+                    Boolean enabled = (Boolean) call.arguments;
+                    FloatingDictService svc = FloatingDictService.getInstance();
+                    if (svc != null) {
+                        svc.setClipboardMonitoring(enabled != null && enabled);
+                    }
+                    result.success(null);
+                    break;
+                }
+                case "searchResult": {
+                    String json = (String) call.arguments;
+                    FloatingDictService svc = FloatingDictService.getInstance();
+                    if (svc != null) {
+                        svc.onSearchResult(json);
+                    }
+                    result.success(null);
+                    break;
+                }
+                default:
+                    result.notImplemented();
+            }
+        });
 
         new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), FONTS_CHANNEL)
             .setMethodCallHandler((call, result) -> {
