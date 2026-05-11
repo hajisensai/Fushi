@@ -607,6 +607,17 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     );
   }
 
+  static WebResourceResponse _forbidden(String reason) {
+    debugPrint('[ReaderHoshi] 403: $reason');
+    return WebResourceResponse(
+      contentType: 'text/plain',
+      statusCode: 403,
+      reasonPhrase: 'Forbidden',
+      headers: <String, String>{'Access-Control-Allow-Origin': '*'},
+      data: Uint8List(0),
+    );
+  }
+
   WebResourceResponse? _interceptRequest(WebUri url) {
     if (url.host != ReaderHoshiSource.kHost) return null;
     final String path = url.path;
@@ -619,40 +630,15 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           .whereType<String>()
           .toSet();
       if (!allowedPaths.contains(fontPath)) {
-        debugPrint('[ReaderHoshi] font path not in whitelist: $fontPath');
-        return WebResourceResponse(
-          contentType: 'text/plain',
-          statusCode: 403,
-          reasonPhrase: 'Forbidden',
-          headers: <String, String>{'Access-Control-Allow-Origin': '*'},
-          data: Uint8List(0),
-        );
+        return _forbidden('font not in whitelist: $fontPath');
       }
       final File fontFile = File(fontPath);
       if (!fontFile.existsSync()) {
-        debugPrint('[ReaderHoshi] font not found: $fontPath (raw=$raw)');
-        return WebResourceResponse(
-          contentType: 'text/plain',
-          statusCode: 404,
-          reasonPhrase: 'Not Found',
-          headers: <String, String>{
-            'Access-Control-Allow-Origin': '*',
-          },
-          data: Uint8List(0),
-        );
+        return _notFound('font not found: $fontPath');
       }
       final Uint8List data = fontFile.readAsBytesSync();
       if (!_isValidFontData(data)) {
-        debugPrint('[ReaderHoshi] font corrupted (not a valid font file): $fontPath (${data.length} bytes)');
-        return WebResourceResponse(
-          contentType: 'text/plain',
-          statusCode: 404,
-          reasonPhrase: 'Not Found',
-          headers: <String, String>{
-            'Access-Control-Allow-Origin': '*',
-          },
-          data: Uint8List(0),
-        );
+        return _notFound('font corrupted: $fontPath (${data.length} bytes)');
       }
       debugPrint('[ReaderHoshi] font served: $fontPath (${data.length} bytes)');
       final String mime = fallbackMimeType(fontPath);
@@ -674,14 +660,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final String epubPath = Uri.decodeComponent(path.substring('/epub/'.length));
     final String filePath = p.canonicalize(p.join(_extractDir!, epubPath));
     if (!filePath.startsWith(p.canonicalize(_extractDir!))) {
-      debugPrint('[ReaderHoshi] path traversal blocked: $epubPath');
-      return WebResourceResponse(
-        contentType: 'text/plain',
-        statusCode: 403,
-        reasonPhrase: 'Forbidden',
-        headers: <String, String>{'Access-Control-Allow-Origin': '*'},
-        data: Uint8List(0),
-      );
+      return _forbidden('path traversal blocked: $epubPath');
     }
     final File file = File(filePath);
     if (!file.existsSync()) {
