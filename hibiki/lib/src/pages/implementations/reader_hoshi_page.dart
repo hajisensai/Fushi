@@ -2126,9 +2126,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final String snapshotTheme = src.ttuTheme;
     final String snapshotFuriganaMode = src.ttuFuriganaMode;
     final double snapshotTextIndentation = src.ttuTextIndentation;
-    final double snapshotFirstDimensionMargin = src.ttuFirstDimensionMargin;
-    final double snapshotSecondDimensionMargin = src.ttuSecondDimensionMargin;
-    final double snapshotSecondDimensionMaxValue = src.ttuSecondDimensionMaxValue;
+    final double snapshotMarginTop = src.ttuMarginTop;
+    final double snapshotMarginBottom = src.ttuMarginBottom;
+    final double snapshotMarginLeft = src.ttuMarginLeft;
+    final double snapshotMarginRight = src.ttuMarginRight;
     final int snapshotPageColumns = src.ttuPageColumns;
     final bool snapshotVerticalFontKerning = src.ttuEnableVerticalFontKerning;
     final bool snapshotFontVPAL = src.ttuEnableFontVPAL;
@@ -2274,9 +2275,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         srcAfter.ttuTheme != snapshotTheme ||
         srcAfter.ttuFuriganaMode != snapshotFuriganaMode ||
         srcAfter.ttuTextIndentation != snapshotTextIndentation ||
-        srcAfter.ttuFirstDimensionMargin != snapshotFirstDimensionMargin ||
-        srcAfter.ttuSecondDimensionMargin != snapshotSecondDimensionMargin ||
-        srcAfter.ttuSecondDimensionMaxValue != snapshotSecondDimensionMaxValue ||
+        srcAfter.ttuMarginTop != snapshotMarginTop ||
+        srcAfter.ttuMarginBottom != snapshotMarginBottom ||
+        srcAfter.ttuMarginLeft != snapshotMarginLeft ||
+        srcAfter.ttuMarginRight != snapshotMarginRight ||
         srcAfter.ttuPageColumns != snapshotPageColumns ||
         srcAfter.ttuEnableVerticalFontKerning != snapshotVerticalFontKerning ||
         srcAfter.ttuEnableFontVPAL != snapshotFontVPAL ||
@@ -2342,8 +2344,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     src.setTtuTheme(s.theme);
     src.setTtuFuriganaMode(s.furiganaMode);
     src.setTtuTextIndentation(s.textIndentation);
-    src.setTtuFirstDimensionMargin(s.firstDimensionMargin);
-    src.setTtuSecondDimensionMaxValue(s.secondDimensionMaxValue);
+    src.setTtuMarginTop(s.marginTop);
+    src.setTtuMarginBottom(s.marginBottom);
+    src.setTtuMarginLeft(s.marginLeft);
+    src.setTtuMarginRight(s.marginRight);
     src.setTtuPageColumns(s.pageColumns);
     src.setTtuEnableVerticalFontKerning(s.enableVerticalFontKerning);
     src.setTtuEnableFontVPAL(s.enableFontVPAL);
@@ -2362,8 +2366,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     s.setTheme(src.ttuTheme);
     s.setFuriganaMode(src.ttuFuriganaMode);
     s.setTextIndentation(src.ttuTextIndentation);
-    s.setFirstDimensionMargin(src.ttuFirstDimensionMargin);
-    s.setSecondDimensionMaxValue(src.ttuSecondDimensionMaxValue);
+    s.setMarginTop(src.ttuMarginTop);
+    s.setMarginBottom(src.ttuMarginBottom);
+    s.setMarginLeft(src.ttuMarginLeft);
+    s.setMarginRight(src.ttuMarginRight);
     s.setPageColumns(src.ttuPageColumns);
     s.setEnableVerticalFontKerning(src.ttuEnableVerticalFontKerning);
     s.setEnableFontVPAL(src.ttuEnableFontVPAL);

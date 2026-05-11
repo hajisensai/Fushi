@@ -70,18 +70,17 @@ class ReaderContentStyles {
     }
 
     final bool isVertical = settings.writingMode.startsWith('vertical');
-    final double firstMargin = settings.firstDimensionMargin;
-    final double secondMargin = settings.secondDimensionMargin;
+    final double mt = settings.marginTop;
+    final double mb = settings.marginBottom;
+    final double ml = settings.marginLeft;
+    final double mr = settings.marginRight;
 
-    final String paddingCss = isVertical
-        ? '${secondMargin}vh ${firstMargin}vw'
-        : '${firstMargin}vh ${secondMargin}vw';
+    final String paddingCss = '${mt}vh ${mr}vw ${mb}vh ${ml}vw';
     final String columnGapCss = isVertical
-        ? 'calc(${secondMargin}vh + ${settings.fontSize.round()}px)'
-        : 'calc(${secondMargin}vw + ${settings.fontSize.round()}px)';
-    final String bottomPaddingCss = isVertical
-        ? 'calc(${secondMargin}vh + ${settings.fontSize.round()}px)'
-        : 'calc(${firstMargin}vh + ${settings.fontSize.round()}px)';
+        ? 'calc(${mt}vh + ${settings.fontSize.round()}px)'
+        : 'calc(${mr}vw + ${settings.fontSize.round()}px)';
+    final String bottomPaddingCss =
+        'calc(${mb}vh + ${settings.fontSize.round()}px)';
 
     final String textSpacingCss = 'line-height: ${settings.lineHeight} !important;';
 
@@ -116,19 +115,11 @@ p {
         ? 'text-orientation: ${settings.verticalTextOrientation};'
         : '';
 
-    final String maxValueCss = settings.secondDimensionMaxValue > 0
-        ? (isVertical
-            ? 'max-height: ${settings.secondDimensionMaxValue}px !important;'
-            : 'max-width: ${settings.secondDimensionMaxValue}px !important;')
-        : '';
-
     final String columnsCss = settings.pageColumns > 0
         ? 'column-count: ${settings.pageColumns} !important;'
         : '';
 
-    final String imageMaxWidth = settings.secondDimensionMaxValue > 0
-        ? '${(settings.secondDimensionMaxValue * ReaderLayoutDefaults.imageWidthViewportRatio).round()}px'
-        : ReaderLayoutDefaults.imageMaxWidthFallbackCss;
+    const String imageMaxWidth = ReaderLayoutDefaults.imageMaxWidthFallbackCss;
     const String imageMaxHeight = ReaderLayoutDefaults.imageMaxHeightFallbackCss;
 
     final String layoutCss = settings.isContinuousMode
@@ -145,7 +136,6 @@ p {
             vertKerningCss: vertKerningCss,
             vpalCss: vpalCss,
             textOrientCss: textOrientCss,
-            maxValueCss: maxValueCss,
           )
         : _paginatedLayoutCss(
             settings: settings,
@@ -161,7 +151,6 @@ p {
             vertKerningCss: vertKerningCss,
             vpalCss: vpalCss,
             textOrientCss: textOrientCss,
-            maxValueCss: maxValueCss,
             columnsCss: columnsCss,
           );
 
@@ -249,7 +238,6 @@ a {
     required String vertKerningCss,
     required String vpalCss,
     required String textOrientCss,
-    required String maxValueCss,
     required String columnsCss,
   }) {
     return '''
@@ -278,7 +266,6 @@ body {
   $textIndentCss
   $vertKerningCss
   $vpalCss
-  $maxValueCss
   $columnsCss
 }''';
   }
@@ -296,7 +283,6 @@ body {
     required String vertKerningCss,
     required String vpalCss,
     required String textOrientCss,
-    required String maxValueCss,
   }) {
     final String hiddenOverflowAxis =
         isVertical ? 'overflow-y' : 'overflow-x';
@@ -329,7 +315,6 @@ body {
   $textIndentCss
   $vertKerningCss
   $vpalCss
-  $maxValueCss
 }''';
   }
 

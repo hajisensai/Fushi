@@ -111,20 +111,19 @@ class ReaderSettings {
   Future<void> setTextIndentation(double v) =>
       _set<double>('ttu_text_indentation', v);
 
-  double get firstDimensionMargin =>
-      _get<double>('ttu_first_dimension_margin', 0);
-  Future<void> setFirstDimensionMargin(double v) =>
-      _set<double>('ttu_first_dimension_margin', v);
+  double get marginTop => _get<double>('ttu_margin_top', 0);
+  Future<void> setMarginTop(double v) => _set<double>('ttu_margin_top', v);
 
-  double get secondDimensionMargin =>
-      _get<double>('ttu_second_dimension_margin', 0);
-  Future<void> setSecondDimensionMargin(double v) =>
-      _set<double>('ttu_second_dimension_margin', v);
+  double get marginBottom => _get<double>('ttu_margin_bottom', 0);
+  Future<void> setMarginBottom(double v) =>
+      _set<double>('ttu_margin_bottom', v);
 
-  double get secondDimensionMaxValue =>
-      _get<double>('ttu_second_dimension_max', 0);
-  Future<void> setSecondDimensionMaxValue(double v) =>
-      _set<double>('ttu_second_dimension_max', v);
+  double get marginLeft => _get<double>('ttu_margin_left', 0);
+  Future<void> setMarginLeft(double v) => _set<double>('ttu_margin_left', v);
+
+  double get marginRight => _get<double>('ttu_margin_right', 0);
+  Future<void> setMarginRight(double v) =>
+      _set<double>('ttu_margin_right', v);
 
   int get pageColumns => _get<int>('ttu_page_columns', 0);
   Future<void> setPageColumns(int v) => _set<int>('ttu_page_columns', v);

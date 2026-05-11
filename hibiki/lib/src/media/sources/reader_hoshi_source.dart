@@ -492,23 +492,25 @@ class ReaderHoshiSource extends ReaderMediaSource {
   Future<void> setTtuTextIndentation(double v) =>
       setPreference<double>(key: 'ttu_text_indentation', value: v);
 
-  double get ttuFirstDimensionMargin =>
-      getPreference<double>(
-          key: 'ttu_first_dimension_margin', defaultValue: 0);
-  Future<void> setTtuFirstDimensionMargin(double v) =>
-      setPreference<double>(key: 'ttu_first_dimension_margin', value: v);
+  double get ttuMarginTop =>
+      getPreference<double>(key: 'ttu_margin_top', defaultValue: 0);
+  Future<void> setTtuMarginTop(double v) =>
+      setPreference<double>(key: 'ttu_margin_top', value: v);
 
-  double get ttuSecondDimensionMargin =>
-      getPreference<double>(
-          key: 'ttu_second_dimension_margin', defaultValue: 0);
-  Future<void> setTtuSecondDimensionMargin(double v) =>
-      setPreference<double>(key: 'ttu_second_dimension_margin', value: v);
+  double get ttuMarginBottom =>
+      getPreference<double>(key: 'ttu_margin_bottom', defaultValue: 0);
+  Future<void> setTtuMarginBottom(double v) =>
+      setPreference<double>(key: 'ttu_margin_bottom', value: v);
 
-  double get ttuSecondDimensionMaxValue =>
-      getPreference<double>(
-          key: 'ttu_second_dimension_max', defaultValue: 0);
-  Future<void> setTtuSecondDimensionMaxValue(double v) =>
-      setPreference<double>(key: 'ttu_second_dimension_max', value: v);
+  double get ttuMarginLeft =>
+      getPreference<double>(key: 'ttu_margin_left', defaultValue: 0);
+  Future<void> setTtuMarginLeft(double v) =>
+      setPreference<double>(key: 'ttu_margin_left', value: v);
+
+  double get ttuMarginRight =>
+      getPreference<double>(key: 'ttu_margin_right', defaultValue: 0);
+  Future<void> setTtuMarginRight(double v) =>
+      setPreference<double>(key: 'ttu_margin_right', value: v);
 
   int get ttuPageColumns =>
       getPreference<int>(key: 'ttu_page_columns', defaultValue: 0);

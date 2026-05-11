@@ -314,11 +314,18 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         await src.setTtuFuriganaMode((value as bool) ? 'hide' : 'toggle');
       case 'textIndentation':
         await src.setTtuTextIndentation((value as num).toDouble());
-      case 'firstDimensionMargin':
-        await src.setTtuFirstDimensionMargin((value as num).toDouble());
+      case 'marginTop':
+        await src.setTtuMarginTop((value as num).toDouble());
         widget.onPageMarginChanged?.call();
-      case 'secondDimensionMaxValue':
-        await src.setTtuSecondDimensionMaxValue((value as num).toDouble());
+      case 'marginBottom':
+        await src.setTtuMarginBottom((value as num).toDouble());
+        widget.onPageMarginChanged?.call();
+      case 'marginLeft':
+        await src.setTtuMarginLeft((value as num).toDouble());
+        widget.onPageMarginChanged?.call();
+      case 'marginRight':
+        await src.setTtuMarginRight((value as num).toDouble());
+        widget.onPageMarginChanged?.call();
       case 'pageColumns':
         await src.setTtuPageColumns((value as num).toInt());
       case 'enableVerticalFontKerning':
@@ -1374,36 +1381,63 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         ),
         _numberStepper(
           theme,
-          label: t.ttu_first_dimension_margin,
-          value: _src.ttuFirstDimensionMargin,
-          step: 5,
+          label: t.margin_top,
+          value: _src.ttuMarginTop,
+          step: 1,
           min: 0,
-          max: 100,
+          max: 30,
           format: (v) => '${v.round()}',
           onChanged: (v) {
-            _src.setTtuFirstDimensionMargin(v);
+            _src.setTtuMarginTop(v);
             setState(() {});
-            _updateSetting('firstDimensionMargin', v);
+            _updateSetting('marginTop', v);
           },
         ),
         _numberStepper(
           theme,
-          label: t.ttu_second_dimension_max,
-          value: _src.ttuSecondDimensionMaxValue,
-          step: 50,
+          label: t.margin_bottom,
+          value: _src.ttuMarginBottom,
+          step: 1,
           min: 0,
-          max: 2000,
-          format: (v) =>
-              v.round() == 0 ? t.ttu_page_columns_auto : '${v.round()}',
+          max: 30,
+          format: (v) => '${v.round()}',
           onChanged: (v) {
-            _src.setTtuSecondDimensionMaxValue(v);
+            _src.setTtuMarginBottom(v);
             setState(() {});
-            _updateSetting('secondDimensionMaxValue', v);
+            _updateSetting('marginBottom', v);
           },
         ),
         _numberStepper(
           theme,
-          label: t.ttu_page_columns,
+          label: t.margin_left,
+          value: _src.ttuMarginLeft,
+          step: 1,
+          min: 0,
+          max: 30,
+          format: (v) => '${v.round()}',
+          onChanged: (v) {
+            _src.setTtuMarginLeft(v);
+            setState(() {});
+            _updateSetting('marginLeft', v);
+          },
+        ),
+        _numberStepper(
+          theme,
+          label: t.margin_right,
+          value: _src.ttuMarginRight,
+          step: 1,
+          min: 0,
+          max: 30,
+          format: (v) => '${v.round()}',
+          onChanged: (v) {
+            _src.setTtuMarginRight(v);
+            setState(() {});
+            _updateSetting('marginRight', v);
+          },
+        ),
+        _numberStepper(
+          theme,
+          label: t.columns_per_page,
           value: _src.ttuPageColumns.toDouble(),
           step: 1,
           min: 0,
