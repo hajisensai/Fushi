@@ -387,6 +387,28 @@ class _CustomThemePageState extends BasePageState {
               );
             },
           ),
+          // ── 主色（音频高亮、按钮、链接等全局强调色）──
+          const SizedBox(height: 20),
+          _buildOptionalColorPicker(
+            label: t.color_primary,
+            description: t.color_primary_desc,
+            preview: _buildPrimaryPreview(cs),
+            hintStyle: hintStyle,
+            enabled: _usePrimaryColor,
+            onEnabledChanged: (bool value) {
+              setState(() {
+                _usePrimaryColor = value;
+                if (value) {
+                  _primaryColor ??= _generatedScheme.primary;
+                } else {
+                  _primaryColor = _generatedScheme.primary;
+                }
+              });
+            },
+            color: _primaryColor!,
+            onChanged: (Color color) => setState(() => _primaryColor = color),
+            enableAlpha: false,
+          ),
           // ── 阅读器颜色 ──
           const SizedBox(height: 20),
           Text(t.section_reader_colors,
@@ -429,18 +451,6 @@ class _CustomThemePageState extends BasePageState {
           ),
           const SizedBox(height: 12),
           _buildOptionalColorPicker(
-            label: t.color_sasayaki,
-            description: t.color_sasayaki_desc,
-            preview: _buildSasayakiPreview(cs),
-            hintStyle: hintStyle,
-            enabled: _useSasayakiColor,
-            onEnabledChanged: (v) => setState(() => _useSasayakiColor = v),
-            color: _sasayakiColor!,
-            onChanged: (c) => setState(() => _sasayakiColor = c),
-            enableAlpha: true,
-          ),
-          const SizedBox(height: 12),
-          _buildOptionalColorPicker(
             label: t.color_link,
             description: t.color_link_desc,
             preview: _buildLinkPreview(cs),
@@ -460,27 +470,17 @@ class _CustomThemePageState extends BasePageState {
             onChanged: (Color color) => setState(() => _linkColor = color),
             enableAlpha: false,
           ),
-          // ── 主色（音频高亮）──
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           _buildOptionalColorPicker(
-            label: t.color_primary,
-            description: t.color_primary_desc,
-            preview: _buildPrimaryPreview(cs),
+            label: t.color_sasayaki,
+            description: t.color_sasayaki_desc,
+            preview: _buildSasayakiPreview(cs),
             hintStyle: hintStyle,
-            enabled: _usePrimaryColor,
-            onEnabledChanged: (bool value) {
-              setState(() {
-                _usePrimaryColor = value;
-                if (value) {
-                  _primaryColor ??= _generatedScheme.primary;
-                } else {
-                  _primaryColor = _generatedScheme.primary;
-                }
-              });
-            },
-            color: _primaryColor!,
-            onChanged: (Color color) => setState(() => _primaryColor = color),
-            enableAlpha: false,
+            enabled: _useSasayakiColor,
+            onEnabledChanged: (v) => setState(() => _useSasayakiColor = v),
+            color: _sasayakiColor!,
+            onChanged: (c) => setState(() => _sasayakiColor = c),
+            enableAlpha: true,
           ),
           // ── 高级选项 ──
           const SizedBox(height: 8),
