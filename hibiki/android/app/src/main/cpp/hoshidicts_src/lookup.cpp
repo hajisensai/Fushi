@@ -137,12 +137,12 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
   return results;
 }
 
-void Lookup::filter_by_pos(std::vector<TermResult>& terms, const DeinflectionResult& d) {
+void Lookup::filter_by_pos(std::vector<TermResult>& terms, const DeinflectionResult& d) const {
   if (d.conditions == 0) {
     return;
   }
   std::erase_if(terms, [&](const TermResult& term) {
-    auto dict_conditions = Deinflector::pos_to_conditions(split_whitespace(term.rules));
+    auto dict_conditions = deinflector_.pos_to_conditions(split_whitespace(term.rules));
     return (dict_conditions & d.conditions) == 0;
   });
 }
