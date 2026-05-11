@@ -513,7 +513,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         _displayedProgress,
       ),
     );
-    _refreshProgress();
   }
 
   // ── UI Build ──────────────────────────────────────────────────────

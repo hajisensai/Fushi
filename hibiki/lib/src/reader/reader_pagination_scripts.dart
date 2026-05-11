@@ -88,6 +88,54 @@ class ReaderPaginationScripts {
   isMatchableChar: function(char) {
     return this.ttuRegex.test(char || '');
   },
+  scrollToProgressContinuous: function(progress) {
+    var targetNode = this.findNodeAtProgress(progress);
+    if (targetNode && targetNode.parentElement) {
+      targetNode.parentElement.scrollIntoView({
+        block: progress >= 0.999999 ? 'end' : 'start',
+        inline: 'nearest',
+        behavior: 'instant'
+      });
+    }
+  },
+  findNodeAtProgress: function(progress) {
+    var walker = this.createWalker();
+    var totalChars = 0;
+    var node;
+    while (node = walker.nextNode()) {
+      totalChars += this.countChars(node.textContent);
+    }
+    if (totalChars <= 0) return null;
+    var targetCharCount = Math.ceil(totalChars * progress);
+    var runningSum = 0;
+    var targetNode = null;
+    walker = this.createWalker();
+    while (node = walker.nextNode()) {
+      runningSum += this.countChars(node.textContent);
+      if (runningSum > targetCharCount) { targetNode = node; break; }
+    }
+    return targetNode;
+  },
+  scrollToProgressPaged: function(context, progress) {
+    if (context.pageSize <= 0 || progress <= 0) {
+      this.setPagePosition(context, this.contentFirstPageScroll(context));
+      return;
+    }
+    if (progress >= 0.99) {
+      this.setPagePosition(context, Math.max(0, this.contentLastPageScroll(context)));
+      return;
+    }
+    var targetNode = this.findNodeAtProgress(progress);
+    if (targetNode) {
+      var range = document.createRange();
+      range.setStart(targetNode, 0);
+      range.setEnd(targetNode, Math.min(1, targetNode.length));
+      var rect = this.getRect(range);
+      var scroll = this.getPagePosition(context);
+      var anchor = (context.vertical ? rect.top : rect.left) + scroll;
+      this.setPagePosition(context, this.alignToPage(context, anchor));
+    }
+  },
   notifyRestoreComplete: function() {
     if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
       window.flutter_inappwebview.callHandler('onRestoreComplete');
@@ -498,62 +546,11 @@ $_sharedJs
   restoreProgress: async function(progress) {
     await document.fonts.ready;
     var context = this.getScrollContext();
-    if (context.pageSize <= 0 || progress <= 0) {
-      var firstPage = this.contentFirstPageScroll(context);
-      this.setPagePosition(context, firstPage);
-      this.registerSnapScroll(firstPage);
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => this.notifyRestoreComplete());
-      });
-      return;
-    }
-    if (progress >= 0.99) {
-      var lastPage = this.contentLastPageScroll(context);
-      lastPage = Math.max(0, lastPage);
-      this.setPagePosition(context, lastPage);
-      requestAnimationFrame(() => {
-        this.setPagePosition(context, lastPage);
-        this.registerSnapScroll(lastPage);
-        requestAnimationFrame(() => this.notifyRestoreComplete());
-      });
-      return;
-    }
-    var walker = this.createWalker();
-    var totalChars = 0;
-    var node;
-    while (node = walker.nextNode()) {
-      totalChars += this.countChars(node.textContent);
-    }
-    var targetCharCount = Math.ceil(totalChars * progress);
-    var runningSum = 0;
-    var targetNode = null;
-    walker = this.createWalker();
-    while (node = walker.nextNode()) {
-      runningSum += this.countChars(node.textContent);
-      if (runningSum > targetCharCount) {
-        targetNode = node;
-        break;
-      }
-    }
-    if (targetNode) {
-      var range = document.createRange();
-      range.setStart(targetNode, 0);
-      range.setEnd(targetNode, 1);
-      var rect = this.getRect(range);
-      var currentScroll = this.getPagePosition(context);
-      var anchor = (context.vertical ? rect.top : rect.left) + currentScroll;
-      var targetScroll = this.alignToPage(context, anchor);
-      this.setPagePosition(context, targetScroll);
-      requestAnimationFrame(() => {
-        this.setPagePosition(context, targetScroll);
-        this.registerSnapScroll(targetScroll);
-      });
-    } else {
-      var firstPage = this.contentFirstPageScroll(context);
-      this.setPagePosition(context, firstPage);
-      this.registerSnapScroll(firstPage);
-    }
+    this.scrollToProgressPaged(context, progress);
+    var pos = this.getPagePosition(context);
     requestAnimationFrame(() => {
+      this.setPagePosition(context, pos);
+      this.registerSnapScroll(pos);
       requestAnimationFrame(() => this.notifyRestoreComplete());
     });
   },
@@ -642,38 +639,7 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight, progress) {
   this.paginationMetrics = null;
   var self = this;
   requestAnimationFrame(function() {
-    var ctx = self.getScrollContext();
-    if (ctx.pageSize <= 0 || progress <= 0) {
-      self.setPagePosition(ctx, self.contentFirstPageScroll(ctx));
-      return;
-    }
-    if (progress >= 0.99) {
-      self.setPagePosition(ctx, Math.max(0, self.contentLastPageScroll(ctx)));
-      return;
-    }
-    var walker = self.createWalker();
-    var totalChars = 0;
-    var node;
-    while (node = walker.nextNode()) {
-      totalChars += self.countChars(node.textContent);
-    }
-    var targetCharCount = Math.ceil(totalChars * progress);
-    var runningSum = 0;
-    var targetNode = null;
-    walker = self.createWalker();
-    while (node = walker.nextNode()) {
-      runningSum += self.countChars(node.textContent);
-      if (runningSum > targetCharCount) { targetNode = node; break; }
-    }
-    if (targetNode) {
-      var range = document.createRange();
-      range.setStart(targetNode, 0);
-      range.setEnd(targetNode, Math.min(1, targetNode.length));
-      var rect = self.getRect(range);
-      var scroll = self.getPagePosition(ctx);
-      var anchor = (ctx.vertical ? rect.top : rect.left) + scroll;
-      self.setPagePosition(ctx, self.alignToPage(ctx, anchor));
-    }
+    self.scrollToProgressPaged(self.getScrollContext(), progress);
   });
 };
 $_sharedInitBoot
@@ -767,32 +733,7 @@ $_sharedJs
       });
       return;
     }
-    var walker = this.createWalker();
-    var totalChars = 0;
-    var node;
-    while (node = walker.nextNode()) {
-      totalChars += this.countChars(node.textContent);
-    }
-    if (totalChars <= 0) {
-      this.notifyRestoreComplete();
-      return;
-    }
-    var targetCharCount = Math.ceil(totalChars * progress);
-    var runningSum = 0;
-    var targetNode = null;
-    walker = this.createWalker();
-    while (node = walker.nextNode()) {
-      runningSum += this.countChars(node.textContent);
-      targetNode = node;
-      if (runningSum > targetCharCount) break;
-    }
-    if (targetNode && targetNode.parentElement) {
-      targetNode.parentElement.scrollIntoView({
-        block: progress >= 0.999999 ? 'end' : 'start',
-        inline: 'nearest',
-        behavior: 'instant'
-      });
-    }
+    this.scrollToProgressContinuous(progress);
     requestAnimationFrame(() => {
       requestAnimationFrame(() => this.notifyRestoreComplete());
     });
@@ -848,29 +789,7 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight, progress) {
   if (progress <= 0) return;
   var self = this;
   requestAnimationFrame(function() {
-    var walker = self.createWalker();
-    var totalChars = 0;
-    var node;
-    while (node = walker.nextNode()) {
-      totalChars += self.countChars(node.textContent);
-    }
-    if (totalChars <= 0) return;
-    var targetCharCount = Math.ceil(totalChars * progress);
-    var runningSum = 0;
-    var targetNode = null;
-    walker = self.createWalker();
-    while (node = walker.nextNode()) {
-      runningSum += self.countChars(node.textContent);
-      targetNode = node;
-      if (runningSum > targetCharCount) break;
-    }
-    if (targetNode && targetNode.parentElement) {
-      targetNode.parentElement.scrollIntoView({
-        block: progress >= 0.999999 ? 'end' : 'start',
-        inline: 'nearest',
-        behavior: 'instant'
-      });
-    }
+    self.scrollToProgressContinuous(progress);
   });
 };
 (function() {
