@@ -5,6 +5,8 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 import 'package:flutter/services.dart' show rootBundle;
 
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
+
 import 'hoshidicts_ffi_bindings.dart';
 
 // ── Dart data classes ───────────────────────────────────────────────
@@ -191,7 +193,9 @@ class HoshiDicts {
       try {
         final json = await rootBundle.loadString('assets/transforms/$lang.json');
         jsons.add(json);
-      } catch (_) {}
+      } catch (e, stack) {
+        ErrorLogService.instance.log('HoshiDicts.preloadTransforms($lang)', e, stack);
+      }
     }
     _cachedTransformJsons = jsons;
   }

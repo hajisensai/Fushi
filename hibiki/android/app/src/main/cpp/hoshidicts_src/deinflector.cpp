@@ -3,11 +3,16 @@
 #include <glaze/glaze.hpp>
 #include <utf8.h>
 
+#include <android/log.h>
+
 #include <algorithm>
 #include <cstddef>
 #include <map>
 #include <string>
 #include <vector>
+
+#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "hoshidicts", __VA_ARGS__)
+#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, "hoshidicts", __VA_ARGS__)
 
 namespace hoshidicts_json {
 
@@ -112,14 +117,20 @@ int Deinflector::add_group(const TransformGroup& group) {
 void Deinflector::load_transforms_json(const std::string& json) {
   hoshidicts_json::Descriptor descriptor;
   auto ec = glz::read<glz::opts{.error_on_unknown_keys = false}>(descriptor, json);
-  if (ec) return;
+  if (ec) {
+    LOGE("failed to parse transforms JSON: %s", glz::format_error(ec, json).c_str());
+    return;
+  }
 
   const std::string& lang = descriptor.language;
 
   // Per-language bit allocation
   int next_bit = 0;
   auto allocate_bit = [&]() -> uint64_t {
-    if (next_bit >= 64) return 0;
+    if (next_bit >= 64) {
+      LOGW("language '%s' exceeds 64 condition bits, extra conditions ignored", lang.c_str());
+      return 0;
+    }
     return uint64_t{1} << next_bit++;
   };
 
@@ -148,7 +159,10 @@ void Deinflector::load_transforms_json(const std::string& json) {
     }
   }
 
-  // Update pos_to_condition_cache with |= accumulation (bare POS tag keys)
+  // Bare POS tag → accumulated bits from all languages. |= means if two
+  // languages share a tag name (e.g. both define "v"), the bits merge.
+  // Suffix matching naturally routes by language (日語 suffixes ≠ English),
+  // so cross-language false positives in filter_by_pos are near-impossible.
   for (const auto& [key, _] : descriptor.conditions) {
     std::string qualified = lang + ":" + key;
     pos_to_condition_cache_[key] |= condition_bits_[qualified];

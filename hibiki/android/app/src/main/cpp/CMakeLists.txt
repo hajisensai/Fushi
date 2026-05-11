@@ -44,6 +44,7 @@ target_link_libraries(hoshidicts PRIVATE
     libzstd_static
     libdeflate_static
     unordered_dense
+    log
 )
 
 add_library(hoshidicts_ffi SHARED
