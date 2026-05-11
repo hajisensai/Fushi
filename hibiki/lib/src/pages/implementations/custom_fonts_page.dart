@@ -411,6 +411,10 @@ class _CustomFontsPageState extends BasePageState {
     }
   }
 
+  Future<bool> _isValidFontFile(File file) async {
+    return await _detectFontExtension(file) != null;
+  }
+
   Future<bool> _isZipFile(File file) async {
     try {
       final raf = await file.open();
@@ -554,6 +558,15 @@ class _CustomFontsPageState extends BasePageState {
               }
             },
           );
+          final tempFile = File(tempPath);
+          if (await tempFile.exists() &&
+              !await _isZipFile(tempFile) &&
+              !await _isValidFontFile(tempFile)) {
+            debugPrint('[hibiki-fonts] source ${i + 1} returned non-font data, skipping');
+            lastError = Exception('Downloaded file is not a valid font or archive');
+            await tempFile.delete();
+            continue;
+          }
           downloadedUrl = currentUrl;
           break;
         } on DioError catch (e) {
