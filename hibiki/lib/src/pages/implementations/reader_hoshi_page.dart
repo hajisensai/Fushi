@@ -40,6 +40,10 @@ import 'package:hibiki/src/reader/reader_selection_scripts.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/utils/misc/jidoujisho_text_selection.dart';
 import 'package:hibiki/src/media/audiobook/floating_lyric_channel.dart';
+import 'package:hibiki/src/anki/anki_models.dart';
+import 'package:hibiki/src/anki/anki_repository.dart';
+import 'package:hibiki/src/anki/anki_view_model.dart';
+import 'package:hibiki/src/utils/misc/tts_channel.dart';
 import 'package:hibiki/src/utils/misc/volume_key_channel.dart';
 import 'package:wakelock/wakelock.dart';
 
@@ -1220,6 +1224,66 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _cachedSentenceRange = null;
     _currentSentenceIsFavorited = false;
     super.clearDictionaryResult();
+  }
+
+  @override
+  Future<bool> onMineFromPopup(Map<String, String> fields) async {
+    final AnkiRepository repo = ref.read(ankiRepositoryProvider);
+    final String sentence = fields['sentence'] ?? '';
+
+    String? coverPath;
+    if (_book?.coverHref != null && _extractDir != null) {
+      final File coverFile = File(p.join(_extractDir!, _book!.coverHref!));
+      if (coverFile.existsSync()) coverPath = coverFile.path;
+    }
+
+    String? sasayakiAudioPath;
+    final AudioCue? cue = _lookupCue;
+    final List<File>? audioFiles = _audiobookController?.audioFiles;
+    if (cue != null && audioFiles != null && cue.audioFileIndex < audioFiles.length) {
+      final File inputFile = audioFiles[cue.audioFileIndex];
+      final String outputPath =
+          '${Directory.systemTemp.path}/mine_sentence_audio.aac';
+      sasayakiAudioPath = await TtsChannel.instance.extractAudioSegment(
+        inputPath: inputFile.path,
+        startMs: cue.startMs,
+        endMs: cue.endMs,
+        outputPath: outputPath,
+      );
+    }
+
+    final AnkiMiningContext miningContext = AnkiMiningContext(
+      sentence: sentence,
+      documentTitle: _book?.title,
+      coverPath: coverPath,
+      sasayakiAudioPath: sasayakiAudioPath,
+      sentenceOffset: _cachedSentenceRange?.offset,
+    );
+
+    final MineResult result = await repo.mineEntry(
+      rawPayloadJson: jsonEncode(fields),
+      context: miningContext,
+    );
+
+    switch (result) {
+      case MineResult.success:
+        final AnkiSettings settings = await repo.loadSettings();
+        Fluttertoast.showToast(
+          msg: t.card_exported(deck: settings.selectedDeckName ?? ''),
+          toastLength: Toast.LENGTH_SHORT,
+          gravity: ToastGravity.BOTTOM,
+        );
+        return true;
+      case MineResult.duplicate:
+        Fluttertoast.showToast(msg: t.card_duplicate);
+        return false;
+      case MineResult.notConfigured:
+        Fluttertoast.showToast(msg: t.card_export_not_configured);
+        return false;
+      case MineResult.error:
+        Fluttertoast.showToast(msg: t.card_export_failed);
+        return false;
+    }
   }
 
   List<AudioCue>? _cachedAllCues;
