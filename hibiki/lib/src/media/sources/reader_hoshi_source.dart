@@ -445,6 +445,13 @@ class ReaderHoshiSource extends ReaderMediaSource {
     );
   }
 
+  bool get lyricsMode =>
+      getPreference<bool>(key: 'lyrics_mode', defaultValue: false);
+
+  Future<void> setLyricsMode(bool value) async {
+    await setPreference<bool>(key: 'lyrics_mode', value: value);
+  }
+
   bool get tapEmptyToHideChrome =>
       getPreference<bool>(key: 'tap_empty_hide_chrome', defaultValue: false);
 

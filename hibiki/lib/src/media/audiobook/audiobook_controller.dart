@@ -78,6 +78,17 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 当前 cue 在章节 cue 列表中的 0-based 索引（-1 = 未定位）。
   int get currentCueIdx => _currentCueIndex;
 
+  /// 当前 cue 在 [allBookCuesSnapshot] 中的索引（-1 = 未匹配）。
+  /// 歌词模式使用此索引而非 [currentCueIdx]（后者是 chapter-relative）。
+  int get allBookCueIdx {
+    final AudioCue? cue = _currentCue;
+    if (cue == null || _allBookCues.isEmpty) return -1;
+    for (int i = 0; i < _allBookCues.length; i++) {
+      if (_allBookCues[i].textFragmentId == cue.textFragmentId) return i;
+    }
+    return -1;
+  }
+
   // ── PR8b: Follow audio ────────────────────────────────────────────────────
 
   /// 持久化后的 Follow audio 开关。UI 监听这个 ValueNotifier 切换磁铁图标。

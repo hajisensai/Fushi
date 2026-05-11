@@ -591,6 +591,7 @@
     "prev_sentence": "Previous sentence",
     "next_sentence": "Next sentence",
     "audiobook_settings": "Audiobook Settings",
+    "lyrics_mode": "Lyrics mode",
     "show_play_bar": "Show playback bar",
     "show_media_notification": "Show media notification",
     "show_floating_lyric": "Floating lyric overlay",
