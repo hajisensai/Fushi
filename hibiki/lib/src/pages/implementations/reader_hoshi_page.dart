@@ -9,7 +9,6 @@ import 'package:hibiki/i18n/strings.g.dart';
 import 'package:path/path.dart' as p;
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/database/database.dart';
 import 'package:hibiki/src/epub/epub_book.dart';
@@ -634,9 +633,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         settings: _settings!,
         customBg: _settings!.theme == 'custom-theme' ? _readerBackgroundHex : null,
         customFg: _settings!.theme == 'custom-theme' ? _customThemeTextCss : null,
-        selectionColor: _selectionColorCss,
-        sasayakiColor: _sasayakiColorCss,
-        linkColor: _linkColorCss,
       );
       const String hideUntilReady =
           '<style id="hoshi-cloak">body{visibility:hidden!important}</style>';
@@ -1597,8 +1593,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       bgColor: bg.withAlpha(dark ? 230 : 220).value,
       buttonTextColor: fg.value,
       buttonBgColor: (dark ? const Color(0x33FFFFFF) : const Color(0x1A000000)).value,
-      highlightColor: _floatingLyricHighlightColor,
-      activeColor: _floatingLyricActiveColor,
     );
     await FloatingLyricChannel.updateLabels(
       previous: t.floating_lyric_previous,
@@ -1625,8 +1619,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         bgColor: bg.withAlpha(dark ? 230 : 220).value,
         buttonTextColor: fg.value,
         buttonBgColor: (dark ? const Color(0x33FFFFFF) : const Color(0x1A000000)).value,
-        highlightColor: _floatingLyricHighlightColor,
-        activeColor: _floatingLyricActiveColor,
       );
       await FloatingLyricChannel.updateLabels(
         previous: t.floating_lyric_previous,
@@ -1895,8 +1887,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
               bgColor: bg.withAlpha(dark ? 230 : 220).value,
               buttonTextColor: fg.value,
               buttonBgColor: (dark ? const Color(0x33FFFFFF) : const Color(0x1A000000)).value,
-              highlightColor: _floatingLyricHighlightColor,
-              activeColor: _floatingLyricActiveColor,
             );
           },
           showMediaNotification: appModel.showMediaNotification,
@@ -2216,67 +2206,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     return theme == 'gray-theme' ||
         theme == 'dark-theme' ||
         theme == 'black-theme';
-  }
-
-  ColorScheme get _readerColorScheme {
-    final String theme = _settings?.theme ?? 'light-theme';
-    if (theme == 'custom-theme') {
-      return buildHibikiColorScheme(
-        seedColor: appModel.customThemeSeed,
-        brightness:
-            appModel.customThemeDark ? Brightness.dark : Brightness.light,
-        primary: appModel.customThemePrimaryColor,
-        secondary: appModel.customThemeSecondaryColor,
-        tertiary: appModel.customThemeTertiaryColor,
-        primaryContainer: appModel.customThemeContainerColor,
-      );
-    }
-    final preset = AppModel.themePresets[theme] ??
-        AppModel.themePresets['light-theme']!;
-    return buildHibikiColorScheme(
-      seedColor: preset.seed,
-      brightness: preset.brightness,
-    );
-  }
-
-  String get _selectionColorCss {
-    if (_settings?.theme == 'custom-theme') {
-      final Color? c = appModel.customThemeSelectionColor;
-      if (c != null) {
-        return 'rgba(${c.red},${c.green},${c.blue},${(c.alpha / 255).toStringAsFixed(2)})';
-      }
-    }
-    return 'rgba(160, 160, 160, 0.4)';
-  }
-
-  String get _sasayakiColorCss {
-    if (_settings?.theme == 'custom-theme') {
-      final Color? c = appModel.customThemeSasayakiColor;
-      if (c != null) {
-        return 'rgba(${c.red},${c.green},${c.blue},${(c.alpha / 255).toStringAsFixed(2)})';
-      }
-    }
-    return 'rgba(135, 206, 235, 0.4)';
-  }
-
-  String get _linkColorCss {
-    if (_settings?.theme == 'custom-theme') {
-      final Color? c = appModel.customThemeLinkColor;
-      if (c != null) {
-        return 'rgba(${c.red},${c.green},${c.blue},1)';
-      }
-    }
-    final Color c = _readerColorScheme.primary;
-    return 'rgba(${c.red},${c.green},${c.blue},1)';
-  }
-
-  int get _floatingLyricHighlightColor {
-    final Color c = _readerColorScheme.primary;
-    return c.withAlpha(128).value;
-  }
-
-  int get _floatingLyricActiveColor {
-    return _readerColorScheme.primary.value;
   }
 
   String get _readerBackgroundHex {

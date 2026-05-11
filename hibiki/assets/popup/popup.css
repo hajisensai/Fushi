@@ -47,7 +47,7 @@ body {
 
 .entry-header {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     padding-top: 4px;
 }
 
