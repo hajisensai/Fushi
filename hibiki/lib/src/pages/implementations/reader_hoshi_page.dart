@@ -111,6 +111,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   bool _showChrome = true;
   double _lastSyncedWidth = 0;
+  double _lastSyncedHeight = 0;
   double _displayedProgress = 0.0;
 
   final FocusNode _focusNode = FocusNode();
@@ -122,11 +123,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       _progressTotalChars! > 0;
 
   double get _readerTopOffset =>
-      _stableTopInset + (_showTopProgress ? _infoFontSize * 1.5 : 0);
+      _stableTopInset + _infoFontSize * 1.5;
 
-  double get _readerBottomReserve => _showChrome
-      ? _readerChromeHeight + _stableBottomInset
-      : _stableBottomInset;
+  double get _readerBottomReserve =>
+      _readerChromeHeight + _stableBottomInset;
 
   @override
   void initState() {
@@ -578,18 +578,29 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (_controller == null || !_readerContentReady) return;
     final Size screen = MediaQuery.of(context).size;
     final double w = screen.width;
-    if (w == _lastSyncedWidth) return;
+    final double h = screen.height - _readerTopOffset - _readerBottomReserve;
+    final bool widthChanged =
+        _lastSyncedWidth > 0 && w != _lastSyncedWidth;
+    final bool heightChanged = (h - _lastSyncedHeight).abs() >= 1;
+    if (!widthChanged && !heightChanged) return;
     _lastSyncedWidth = w;
+    _lastSyncedHeight = h;
 
-    final dynamic result = await _controller!.evaluateJavascript(
-      source: ReaderPaginationScripts.progressInvocation(),
-    );
-    final double? progress =
-        ReaderPaginationScripts.doubleResult(result);
-    if (progress != null && progress > 0) {
-      _displayedProgress = progress;
+    if (widthChanged) {
+      final dynamic result = await _controller!.evaluateJavascript(
+        source: ReaderPaginationScripts.progressInvocation(),
+      );
+      final double? progress =
+          ReaderPaginationScripts.doubleResult(result);
+      if (progress != null && progress > 0) {
+        _displayedProgress = progress;
+      }
+      await _navigateToChapter(_currentChapter, progress: _displayedProgress);
+    } else {
+      await _controller!.evaluateJavascript(
+        source: ReaderPaginationScripts.updatePageSizeInvocation(w, h),
+      );
     }
-    await _navigateToChapter(_currentChapter, progress: _displayedProgress);
   }
 
   // ── UI Build ──────────────────────────────────────────────────────
@@ -1092,11 +1103,18 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _restoreCompleter = null;
 
     if (!_readerContentReady) {
+      final Size screen = MediaQuery.of(context).size;
+      _lastSyncedWidth = screen.width;
+      _lastSyncedHeight =
+          screen.height - _readerTopOffset - _readerBottomReserve;
       setState(() {
         _readerContentReady = true;
         _hasEverLoaded = true;
       });
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _syncPageSize();
+      });
     }
 
     _audiobookController?.notifySectionRestoreCompleted(
@@ -1877,9 +1895,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   void _toggleChrome() {
     setState(() {
       _showChrome = !_showChrome;
-    });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _syncPageSize();
     });
   }
 
