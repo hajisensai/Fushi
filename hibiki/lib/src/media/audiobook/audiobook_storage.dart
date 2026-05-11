@@ -22,4 +22,14 @@ abstract final class AudiobookStorage {
     debugPrint('[hibiki-import] persisted ${src.path} → $dest');
     return dest;
   }
+
+  static Future<void> deletePersistDir(String bookUid) async {
+    final Directory docs = await getApplicationDocumentsDirectory();
+    final String hash = bookUid.hashCode.toRadixString(16);
+    final Directory dir = Directory(p.join(docs.path, 'audiobooks', hash));
+    if (dir.existsSync()) {
+      await dir.delete(recursive: true);
+      debugPrint('[hibiki-import] deleted persist dir: ${dir.path}');
+    }
+  }
 }

@@ -297,6 +297,20 @@ class ReaderHoshiSource extends ReaderMediaSource {
     required int bookId,
   }) async {
     try {
+      final String bookUid = bookUidFor(bookId);
+
+      final audiobookRepo = AudiobookRepository(db);
+      final ab = await audiobookRepo.findByBookUid(bookUid);
+      if (ab != null) {
+        await audiobookRepo.deleteAudiobook(bookUid);
+      }
+
+      final srtRepo = SrtBookRepository(db);
+      final srt = await srtRepo.findByTtuBookId(bookId);
+      if (srt != null) {
+        await srtRepo.delete(srt.uid);
+      }
+
       await (db.delete(db.epubBooks)
             ..where((tbl) => tbl.id.equals(bookId)))
           .go();

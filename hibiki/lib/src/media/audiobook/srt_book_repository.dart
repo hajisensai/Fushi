@@ -4,6 +4,7 @@ import 'package:drift/drift.dart';
 import 'package:hibiki/src/database/database.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_model.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_storage.dart';
 import 'package:hibiki/src/media/audiobook/srt_parser.dart';
 
 class SrtBookRepository {
@@ -43,7 +44,10 @@ class SrtBookRepository {
     ));
   }
 
-  Future<void> delete(String uid) => _db.deleteSrtBookByUid(uid);
+  Future<void> delete(String uid) async {
+    await _db.deleteSrtBookByUid(uid);
+    await AudiobookStorage.deletePersistDir(uid);
+  }
 
   Future<List<AudioCue>> cuesFor(String uid) async {
     final rows = await ((_db.select(_db.audioCues))

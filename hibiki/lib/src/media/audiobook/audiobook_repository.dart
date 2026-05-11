@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/database/database.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_health.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_storage.dart';
 
 class AudiobookRepository {
   const AudiobookRepository(this._db);
@@ -85,6 +86,7 @@ class AudiobookRepository {
             ..where((t) => t.bookUid.equals(bookUid)))
           .go();
     });
+    await AudiobookStorage.deletePersistDir(bookUid);
   }
 
   // ── playback position (preferences) ────────────────────────────

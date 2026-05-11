@@ -123,6 +123,7 @@ void main() {
       directoryStructure: DirectoryStructure.FOR_DATE,
       logTypesEnabled: ['device', 'network', 'errors'],
       logFileExtension: LogFileExtension.LOG,
+      logsRetentionPeriodInDays: 7,
     );
 
     /// Run the heavy initialisation after the first frame has been scheduled.
