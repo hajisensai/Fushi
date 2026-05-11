@@ -267,6 +267,11 @@ void hoshidicts_add_pitch_dict(void* handle, const char* path) {
   static_cast<HoshidictsHandle*>(handle)->query.add_pitch_dict(path);
 }
 
+__attribute__((visibility("default")))
+void hoshidicts_load_transforms(void* handle, const char* json) {
+  static_cast<HoshidictsHandle*>(handle)->deinflector.load_transforms_json(json);
+}
+
 // ── query ───────────────────────────────────────────────────────────
 
 __attribute__((visibility("default")))
