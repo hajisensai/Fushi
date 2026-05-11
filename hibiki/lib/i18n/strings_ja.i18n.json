@@ -287,6 +287,7 @@
   "manager": "管理",
   "volume_button_page_turning": "音量ボタンでページ送り",
   "invert_volume_buttons": "音量ボタンの方向を反転",
+  "invert_swipe_direction": "スワイプページ送り方向を反転",
   "volume_button_turning_speed": "音量キーページ送り速度",
   "extend_page_beyond_navbar": "ナビゲーションバーの先までページを拡張",
   "keep_screen_awake": "画面を常時点灯",

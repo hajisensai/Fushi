@@ -287,6 +287,7 @@
   "manager": "管理員",
   "volume_button_page_turning": "音量鍵翻頁",
   "invert_volume_buttons": "反轉音量鍵方向",
+  "invert_swipe_direction": "反轉滑動翻頁方向",
   "volume_button_turning_speed": "音量鍵翻頁速度",
   "extend_page_beyond_navbar": "頁面延伸至導覽列之外",
   "keep_screen_awake": "閱讀時防止螢幕關閉",

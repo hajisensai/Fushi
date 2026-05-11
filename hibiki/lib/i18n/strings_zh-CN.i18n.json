@@ -298,6 +298,7 @@
     "manager": "管理器",
     "volume_button_page_turning": "音量键翻页",
     "invert_volume_buttons": "反转音量键方向",
+    "invert_swipe_direction": "反转滑动翻页方向",
     "volume_button_turning_speed": "音量键翻页速度",
     "extend_page_beyond_navbar": "页面延伸至导航栏之外",
     "keep_screen_awake": "阅读时防止息屏",

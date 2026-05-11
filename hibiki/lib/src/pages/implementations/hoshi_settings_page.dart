@@ -199,6 +199,14 @@ List<Widget> _buildReaderOnlySwitches(VoidCallback rebuild,
       },
     ),
     _buildSwitch(
+      label: t.invert_swipe_direction,
+      value: _source.invertSwipeDirection,
+      onChanged: (_) {
+        _source.toggleInvertSwipeDirection();
+        rebuild();
+      },
+    ),
+    _buildSwitch(
       label: t.keep_screen_awake,
       value: _source.keepScreenAwake,
       onChanged: (_) async {

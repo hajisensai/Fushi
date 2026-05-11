@@ -59,7 +59,7 @@ class ReaderSettings {
 
   // ── Display settings (same Hive keys as old ReaderTtuSource) ──────
 
-  double get fontSize => _get<double>('ttu_font_size', 20);
+  double get fontSize => _get<double>('ttu_font_size', 22);
   Future<void> setFontSize(double v) => _set<double>('ttu_font_size', v);
 
   double get lineHeight => _get<double>('ttu_line_height', 1.65);
@@ -174,6 +174,11 @@ class ReaderSettings {
       _get<bool>('tap_empty_hide_chrome', false);
   Future<void> toggleTapEmptyToHideChrome() =>
       _set<bool>('tap_empty_hide_chrome', !tapEmptyToHideChrome);
+
+  bool get invertSwipeDirection =>
+      _get<bool>('invert_swipe_direction', true);
+  Future<void> toggleInvertSwipeDirection() =>
+      _set<bool>('invert_swipe_direction', !invertSwipeDirection);
 
   int get volumePageTurningSpeed =>
       _get<int>('volume_page_turning_speed', 100);

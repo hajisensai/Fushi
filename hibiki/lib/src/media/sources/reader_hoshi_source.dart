@@ -368,6 +368,17 @@ class ReaderHoshiSource extends ReaderMediaSource {
     );
   }
 
+  bool get invertSwipeDirection =>
+      getPreference<bool>(
+          key: 'invert_swipe_direction', defaultValue: true);
+
+  void toggleInvertSwipeDirection() async {
+    await setPreference<bool>(
+      key: 'invert_swipe_direction',
+      value: !invertSwipeDirection,
+    );
+  }
+
   bool get autoReadOnLookup =>
       getPreference<bool>(key: 'auto_read_on_lookup', defaultValue: true);
 
