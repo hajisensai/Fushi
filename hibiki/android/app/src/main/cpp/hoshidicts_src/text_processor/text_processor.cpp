@@ -116,6 +116,29 @@ std::u32string katakana_to_hiragana(const std::u32string& text) {
   return result;
 }
 
+std::u32string to_lowercase(const std::u32string& text) {
+  std::u32string result;
+  result.reserve(text.size());
+  for (char32_t c : text) {
+    if (c >= U'A' && c <= U'Z') {
+      result += static_cast<char32_t>(c + 32);
+    } else {
+      result += c;
+    }
+  }
+  return result;
+}
+
+std::vector<TextProcessor> get_english_processors() {
+  return {
+      {.options = {0, 1}, .process = [](const std::u32string& text, int opt) -> std::u32string {
+         if (opt == 1) {
+           return to_lowercase(text);
+         }
+         return text;
+       }}};
+}
+
 // TODO: implement rest of preprocessors
 std::vector<TextProcessor> get_japanese_processors() {
   return {
@@ -138,7 +161,11 @@ std::vector<TextVariant> text_processor::process(const std::string& src) {
   std::u32string text = utf8::utf8to32(src);
   std::map<std::u32string, int> variants = {{text, 0}};
 
-  for (const auto& processor : get_japanese_processors()) {
+  auto all_processors = get_japanese_processors();
+  auto en_processors = get_english_processors();
+  all_processors.insert(all_processors.end(), en_processors.begin(), en_processors.end());
+
+  for (const auto& processor : all_processors) {
     std::map<std::u32string, int> next;
 
     for (const auto& [variant, steps] : variants) {
