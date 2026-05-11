@@ -1336,7 +1336,7 @@ void Deinflector::init_english_transforms() {
   id = add_group({.name = "-y", .description = "-y suffix adjective derived from noun or verb."});
   add_rule({.from = "y",  .to = "",  .conditions_in = EN_ADJ, .conditions_out = EN_N_ALL | EN_V_ALL, .group_id = id});
   add_rule({.from = "y",  .to = "e", .conditions_in = EN_ADJ, .conditions_out = EN_N_ALL | EN_V_ALL, .group_id = id});
-  add_doubled("glmnprst", "y", EN_ADJ, EN_N_ALL | EN_V_ALL, id);
+  add_doubled("glmnprst", "y", NONE, EN_N_ALL | EN_V_ALL, id);
 
   // ---------- -able ----------
   id = add_group({.name = "-able", .description = "-able suffix adjective derived from a verb."});
