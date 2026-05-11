@@ -17,8 +17,12 @@ class ReaderPaginationScripts {
   static String progressInvocation() =>
       'window.hoshiReader.calculateProgress()';
 
-  static String updatePageSizeInvocation(double width, double height) =>
-      'window.hoshiReader && window.hoshiReader.updatePageSize($width, $height)';
+  static String updatePageSizeInvocation(
+    double width,
+    double height,
+    double progress,
+  ) =>
+      'window.hoshiReader && window.hoshiReader.updatePageSize($width, $height, $progress)';
 
   static String applySasayakiCuesInvocation(String cuesJson) =>
       'window.hoshiReader.applySasayakiCues($cuesJson)';
@@ -625,11 +629,10 @@ $initImages
     $initialRestoreScript
   });
 };
-window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
+window.hoshiReader.updatePageSize = function(cssWidth, cssHeight, progress) {
   var newHeight = Math.round(cssHeight) + $bottomOverlapPx;
   var newWidth = Math.round(cssWidth);
   if (newHeight === this.pageHeight && newWidth === this.pageWidth) return;
-  var progress = this.calculateProgress();
   document.documentElement.style.setProperty('--page-height', newHeight + 'px');
   document.documentElement.style.setProperty('--page-width', newWidth + 'px');
   document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(newWidth * $imageWidthRatio)) + 'px');
@@ -837,9 +840,8 @@ $initImages
     $initialRestoreScript
   });
 };
-window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
+window.hoshiReader.updatePageSize = function(cssWidth, cssHeight, progress) {
   var newHeight = Math.round(cssHeight);
-  var progress = this.calculateProgress();
   document.documentElement.style.setProperty('--hoshi-continuous-height', newHeight + 'px');
   document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(Math.round(cssWidth) * $imageWidthRatio)) + 'px');
   document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, newHeight - $bottomOverlapPx) + 'px');
