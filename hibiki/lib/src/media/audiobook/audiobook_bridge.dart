@@ -35,7 +35,19 @@ class AudiobookBridge {
 ''';
   }
 
-  /// 高亮函数 — 使用 scrollIntoView 代替旧 ttu 分页对齐。
+  /// 智能滚动：只在元素快超出视口时才滚动，留 18% 边距不贴边。
+  static const String _smartScrollFn = '''
+window.__hoshiSmartScroll = function(el) {
+  var rect = el.getBoundingClientRect();
+  var vh = window.innerHeight;
+  var margin = vh * 0.18;
+  if (rect.top >= margin && rect.bottom <= vh - margin) return;
+  var body = document.body;
+  body.scrollTo({top: body.scrollTop + rect.top - margin, behavior: 'instant'});
+};
+''';
+
+  /// 高亮函数 — 元素快出屏幕时才自动滚动。
   static const String _highlightFn = '''
 window.__hoshiHighlight = function(selector, reveal) {
   if (reveal === undefined) reveal = true;
@@ -47,7 +59,7 @@ window.__hoshiHighlight = function(selector, reveal) {
   if (el) {
     el.classList.add('hoshi-active');
     if (reveal) {
-      el.scrollIntoView({block: 'center', behavior: 'instant'});
+      window.__hoshiSmartScroll(el);
     }
   }
 };
@@ -119,8 +131,8 @@ window.__hoshiHighlightSasayakiCueById = function(key, reveal) {
   for (var wi = 0; wi < wrappers.length; wi++) {
     wrappers[wi].classList.add('hoshi-active');
   }
-  if (reveal && wrappers[0]) {
-    wrappers[0].scrollIntoView({block: 'center', behavior: 'instant'});
+  if (reveal && wrappers[0] && window.__hoshiSmartScroll) {
+    window.__hoshiSmartScroll(wrappers[0]);
   }
   return true;
 };
@@ -251,6 +263,7 @@ window.__hoshiAnnotate = function(chapterHref) {
 })();
 ''');
 
+    await controller.evaluateJavascript(source: _smartScrollFn);
     await controller.evaluateJavascript(source: _highlightFn);
     await controller.evaluateJavascript(source: _sasayakiFn);
     await controller.evaluateJavascript(source: _chapterNavFn);

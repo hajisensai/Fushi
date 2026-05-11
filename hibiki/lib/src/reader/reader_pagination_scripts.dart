@@ -706,19 +706,19 @@ $_sharedJs
     var margin = 0.2;
     var vertical = this.isVertical();
     if (vertical) {
-      var safeLeft = window.innerWidth * margin;
-      var safeRight = window.innerWidth * (1 - margin);
+      var vw = window.innerWidth;
+      var safeLeft = vw * margin;
+      var safeRight = vw * (1 - margin);
       if (rect.left >= safeLeft && rect.right <= safeRight) return false;
+      target.scrollIntoView({inline: 'center', block: 'nearest', behavior: 'smooth'});
     } else {
-      var safeTop = window.innerHeight * margin;
-      var safeBottom = window.innerHeight * (1 - margin);
+      var vh = window.innerHeight;
+      var safeTop = vh * margin;
+      var safeBottom = vh * (1 - margin);
       if (rect.top >= safeTop && rect.bottom <= safeBottom) return false;
+      var offset = document.body.scrollTop + rect.top - safeTop;
+      document.body.scrollTo({top: offset, behavior: 'smooth'});
     }
-    target.scrollIntoView({
-      block: vertical ? 'nearest' : 'start',
-      inline: vertical ? 'start' : 'nearest',
-      behavior: 'smooth'
-    });
     return true;
   },
   revealElement: function(element) {
