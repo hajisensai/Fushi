@@ -604,6 +604,18 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         );
       }
       final Uint8List data = fontFile.readAsBytesSync();
+      if (!_isValidFontData(data)) {
+        debugPrint('[ReaderHoshi] font corrupted (not a valid font file): $fontPath (${data.length} bytes)');
+        return WebResourceResponse(
+          contentType: 'text/plain',
+          statusCode: 404,
+          reasonPhrase: 'Not Found',
+          headers: <String, String>{
+            'Access-Control-Allow-Origin': '*',
+          },
+          data: Uint8List(0),
+        );
+      }
       debugPrint('[ReaderHoshi] font served: $fontPath (${data.length} bytes)');
       final String mime = fallbackMimeType(fontPath);
       return WebResourceResponse(
@@ -668,6 +680,16 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       },
       data: data,
     );
+  }
+
+  static bool _isValidFontData(Uint8List data) {
+    if (data.length < 4) return false;
+    final int sig = (data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3];
+    return sig == 0x00010000 || // TrueType
+        sig == 0x4F54544F || // OpenType CFF ("OTTO")
+        sig == 0x774F4646 || // WOFF ("wOFF")
+        sig == 0x774F4632 || // WOFF2 ("wOF2")
+        sig == 0x74746366; // TTC ("ttcf")
   }
 
   // ── Single IIFE setup script (mirrors Hoshi Android's readerSetupScript) ──
