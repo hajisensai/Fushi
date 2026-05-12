@@ -1,6 +1,7 @@
 import 'package:collection/collection.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:spaces/spaces.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
@@ -134,7 +135,7 @@ class _DictionaryDialogPageState extends BasePageState {
       onTap: () {
         showAppDialog(
           context: context,
-          builder: (_) => _DictCssEditorDialog(appModel: appModel),
+          builder: (_) => const _DictCssEditorDialog(),
         );
       },
       child: Padding(
@@ -695,8 +696,7 @@ class _AudioSourcesDialogState extends State<_AudioSourcesDialog> {
 }
 
 class _DictCssEditorDialog extends StatefulWidget {
-  const _DictCssEditorDialog({required this.appModel});
-  final AppModel appModel;
+  const _DictCssEditorDialog();
 
   @override
   State<_DictCssEditorDialog> createState() => _DictCssEditorDialogState();
@@ -706,8 +706,7 @@ class _DictCssEditorDialogState extends State<_DictCssEditorDialog> {
   late int _selectedIndex;
   late TextEditingController _cssController;
   late List<String> _dictNames;
-
-  AppModel get appModel => widget.appModel;
+  late AppModel _appModel;
 
   bool get _isGlobal => _selectedIndex == 0;
   String get _currentDictName => _dictNames[_selectedIndex - 1];
@@ -715,9 +714,10 @@ class _DictCssEditorDialogState extends State<_DictCssEditorDialog> {
   @override
   void initState() {
     super.initState();
-    _dictNames = appModel.dictionaries.map((d) => d.name).toList();
+    _appModel = ProviderScope.containerOf(context).read(appProvider);
+    _dictNames = _appModel.dictionaries.map((d) => d.name).toList();
     _selectedIndex = 0;
-    _cssController = TextEditingController(text: appModel.globalDictCSS);
+    _cssController = TextEditingController(text: _appModel.globalDictCSS);
   }
 
   @override
@@ -731,27 +731,31 @@ class _DictCssEditorDialogState extends State<_DictCssEditorDialog> {
     await _saveCurrentScope();
     _selectedIndex = index;
     _cssController.text = _isGlobal
-        ? appModel.globalDictCSS
-        : appModel.getCustomCSSForDict(_currentDictName);
+        ? _appModel.globalDictCSS
+        : _appModel.getCustomCSSForDict(_currentDictName);
     setState(() {});
   }
 
   Future<void> _saveCurrentScope() async {
     final css = _cssController.text;
     if (_isGlobal) {
-      await appModel.setGlobalDictCSS(css);
+      await _appModel.setGlobalDictCSS(css);
     } else {
-      await appModel.setCustomCSSForDict(_currentDictName, css);
+      await _appModel.setCustomCSSForDict(_currentDictName, css);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final maxHeight = MediaQuery.of(context).size.height * 0.55;
+
     return AlertDialog(
       title: Text(t.custom_dict_css),
-      content: SizedBox(
-        width: double.maxFinite,
-        height: 380,
+      content: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: double.maxFinite,
+          maxHeight: maxHeight,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -800,7 +804,15 @@ class _DictCssEditorDialogState extends State<_DictCssEditorDialog> {
           child: Text(t.dialog_close),
           onPressed: () async {
             await _saveCurrentScope();
-            if (context.mounted) Navigator.pop(context);
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(t.custom_dict_css_saved),
+                  duration: const Duration(seconds: 1),
+                ),
+              );
+              Navigator.pop(context);
+            }
           },
         ),
       ],
