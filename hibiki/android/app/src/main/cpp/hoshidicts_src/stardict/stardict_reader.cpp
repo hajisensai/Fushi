@@ -63,14 +63,25 @@ std::vector<uint8_t> decompress_gz(const uint8_t* data, size_t size) {
 }
 
 std::string parse_ifo_value(const std::string& content, const std::string& key) {
+  std::string prefix = key + "=";
   std::istringstream stream(content);
   std::string line;
   while (std::getline(stream, line)) {
-    if (line.starts_with(key + "=")) {
-      return line.substr(key.size() + 1);
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    if (line.starts_with(prefix)) {
+      return line.substr(prefix.size());
     }
   }
   return "";
+}
+
+std::string extract_typed_definition(const uint8_t* data, uint32_t size, char type_code) {
+  if (size == 0) return "";
+  if (type_code == 'm' || type_code == 'l' || type_code == 'g' ||
+      type_code == 't' || type_code == 'h' || type_code == 'x') {
+    return std::string(reinterpret_cast<const char*>(data), size);
+  }
+  return std::string(reinterpret_cast<const char*>(data), size);
 }
 
 }  // namespace
@@ -99,14 +110,17 @@ StardictResult stardict_reader::parse(const std::string& ifo_path) {
     if (dict_data.empty()) throw std::runtime_error("stardict: failed to read .dict");
   }
 
+  std::string sametypesequence = parse_ifo_value(ifo_content, "sametypesequence");
+
   return parse_from_data(bookname, idx_data.data(), idx_data.size(),
-                         dict_data.data(), dict_data.size());
+                         dict_data.data(), dict_data.size(), sametypesequence);
 }
 
 StardictResult stardict_reader::parse_from_data(
     const std::string& bookname,
     const uint8_t* idx_data, size_t idx_size,
-    const uint8_t* dict_data, size_t dict_size) {
+    const uint8_t* dict_data, size_t dict_size,
+    const std::string& sametypesequence) {
   StardictResult result;
   result.bookname = bookname;
 
@@ -125,13 +139,45 @@ StardictResult stardict_reader::parse_from_data(
     uint32_t offset = (uint32_t(idx_data[pos]) << 24) | (uint32_t(idx_data[pos + 1]) << 16) |
                       (uint32_t(idx_data[pos + 2]) << 8) | idx_data[pos + 3];
     pos += 4;
-    uint32_t size = (uint32_t(idx_data[pos]) << 24) | (uint32_t(idx_data[pos + 1]) << 16) |
-                    (uint32_t(idx_data[pos + 2]) << 8) | idx_data[pos + 3];
+    uint32_t entry_size = (uint32_t(idx_data[pos]) << 24) | (uint32_t(idx_data[pos + 1]) << 16) |
+                          (uint32_t(idx_data[pos + 2]) << 8) | idx_data[pos + 3];
     pos += 4;
 
-    if (offset + size > dict_size) continue;
+    if (offset + entry_size > dict_size) continue;
 
-    std::string definition(reinterpret_cast<const char*>(dict_data + offset), size);
+    std::string definition;
+    if (!sametypesequence.empty()) {
+      // All entries have the same type sequence — data has no per-entry type markers
+      definition = extract_typed_definition(dict_data + offset, entry_size, sametypesequence[0]);
+    } else {
+      // Each entry is prefixed with a type byte; extract text fields, skip binary ones
+      uint32_t dpos = 0;
+      while (dpos < entry_size) {
+        char type = static_cast<char>(dict_data[offset + dpos]);
+        dpos++;
+        bool is_text = (type == 'm' || type == 'l' || type == 'g' ||
+                        type == 't' || type == 'x' || type == 'h' ||
+                        type == 'k' || type == 'w' || type == 'y');
+        if (is_text) {
+          // Text types: null-terminated
+          const char* start = reinterpret_cast<const char*>(dict_data + offset + dpos);
+          size_t len = 0;
+          while (dpos + len < entry_size && dict_data[offset + dpos + len] != 0) len++;
+          if (!definition.empty()) definition += '\n';
+          definition.append(start, len);
+          dpos += len + 1;
+        } else {
+          // Binary types (W, P, X uppercase): size-prefixed (BE32 + data)
+          if (dpos + 4 > entry_size) break;
+          uint32_t bsize = (uint32_t(dict_data[offset + dpos]) << 24) |
+                           (uint32_t(dict_data[offset + dpos + 1]) << 16) |
+                           (uint32_t(dict_data[offset + dpos + 2]) << 8) |
+                           dict_data[offset + dpos + 3];
+          dpos += 4 + bsize;
+        }
+      }
+    }
+
     while (!definition.empty() && definition.back() == '\0') definition.pop_back();
 
     if (!word.empty() && !definition.empty()) {
