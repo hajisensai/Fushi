@@ -30,11 +30,20 @@ class FloatingDictPage extends ConsumerStatefulWidget {
 
 class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
   DictionarySearchResult? _result;
   bool _isSearching = false;
   String _lastSearch = '';
 
   AppModel get appModel => ref.read(appProvider);
+
+  @override
+  void initState() {
+    super.initState();
+    _searchFocusNode.addListener(() {
+      widget.channel.invokeMethod('setFocusable', _searchFocusNode.hasFocus);
+    });
+  }
 
   @override
   void didUpdateWidget(FloatingDictPage oldWidget) {
@@ -178,6 +187,7 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
           Expanded(
             child: TextField(
               controller: _searchController,
+              focusNode: _searchFocusNode,
               style: TextStyle(color: textColor, fontSize: 14),
               decoration: InputDecoration(
                 hintText: 'Search...',
@@ -269,6 +279,7 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
 
   @override
   void dispose() {
+    _searchFocusNode.dispose();
     _searchController.dispose();
     super.dispose();
   }
