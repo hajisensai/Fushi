@@ -665,8 +665,11 @@ function createDefinitionImage(data, dictionary, exporting = false) {
     
     if (typeof border === 'string') { imageContainer.style.border = border; }
     if (typeof borderRadius === 'string') { imageContainer.style.borderRadius = borderRadius; }
+    const isSvg = /\.svg$/i.test(path);
     if (sizeUnits === 'em') {
         imageContainer.style.width = `${usedWidth}em`;
+    } else if (!hasDimensions && isSvg) {
+        imageContainer.style.width = '1em';
     } else {
         imageContainer.style.width = `${usedWidth}px`;
     }
@@ -684,7 +687,7 @@ function createDefinitionImage(data, dictionary, exporting = false) {
             const img = document.createElement('img');
             img.classList.add('gloss-image');
             img.alt = nodeData?.alt || title || '';
-            if (!hasDimensions) {
+            if (!hasDimensions && !isSvg) {
                 img.addEventListener('load', () => {
                     imageContainer.style.width = `${Math.min(img.naturalWidth, window.innerWidth - 20)}px`;
                     aspectRatioSizer.style.paddingTop = `${(img.naturalHeight / img.naturalWidth) * 100}%`;
