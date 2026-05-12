@@ -1263,6 +1263,18 @@ function createEntryHeader(entry, idx) {
     } else {
         expressionSpan.textContent = expression;
     }
+    expressionSpan.style.cursor = 'pointer';
+    expressionSpan.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const rect = expressionSpan.getBoundingClientRect();
+        window.flutter_inappwebview.callHandler('onLinkClick', expression, {
+            x: rect.left,
+            y: rect.top,
+            width: rect.width,
+            height: rect.height
+        });
+    });
     if (needsScroll) {
         const expressionScroll = el('div', { className: 'expression-scroll' });
         expressionScroll.appendChild(expressionSpan);
