@@ -183,6 +183,12 @@ function createDefinitionImage(data, dictionary, exporting) {
     const invAspectRatio = (hasPreferredWidth && hasPreferredHeight ? preferredHeight / preferredWidth : height / width);
     const usedWidth = (hasPreferredWidth ? preferredWidth : (hasPreferredHeight ? preferredHeight / invAspectRatio : width));
 
+    console.log('[IMG-def]', path, JSON.stringify({
+        width, height, preferredWidth, preferredHeight,
+        usedWidth, hasDimensions, appearance, sizeUnits,
+        containerWidthEm: usedWidth + 'em'
+    }));
+
     const node = document.createElement('a');
     node.classList.add('gloss-image-link');
     node.target = '_blank';

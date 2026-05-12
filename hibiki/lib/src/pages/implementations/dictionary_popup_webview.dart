@@ -396,6 +396,13 @@ class DictionaryPopupWebViewState
         _ready = true;
         _pushResults();
       },
+      onConsoleMessage: (controller, consoleMessage) {
+        final msg = consoleMessage.message;
+        debugPrint('[PopupWebView] $msg');
+        if (msg.startsWith('[IMG')) {
+          ErrorLogService.instance.log('PopupImage', msg);
+        }
+      },
     );
   }
 

@@ -617,7 +617,13 @@ function createDefinitionImage(data, dictionary, exporting = false) {
                        preferredWidth :
                        (hasPreferredHeight ? preferredHeight / invAspectRatio : width)
                        );
-    
+
+    console.log('[IMG]', path, JSON.stringify({
+        width, height, preferredWidth, preferredHeight,
+        usedWidth, hasDimensions, appearance, sizeUnits,
+        containerWidthEm: usedWidth + 'em'
+    }));
+
     const node = document.createElement(exporting ? 'span' : 'a');
     node.classList.add('gloss-image-link');
     if (!exporting) {
