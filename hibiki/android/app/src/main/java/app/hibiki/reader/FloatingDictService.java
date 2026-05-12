@@ -59,8 +59,8 @@ public class FloatingDictService extends BaseFloatingService {
         instanceRef = new WeakReference<>(this);
         initEngineGroup(getApplicationContext());
         createOverlayEngine();
-        super.onCreate();
         setupOverlayChannel();
+        super.onCreate();
     }
 
     @Override
@@ -104,8 +104,11 @@ public class FloatingDictService extends BaseFloatingService {
                     Map<?, ?> args = (Map<?, ?>) call.arguments;
                     double dx = ((Number) args.get("dx")).doubleValue();
                     double dy = ((Number) args.get("dy")).doubleValue();
-                    layoutParams.x += (int) dx;
-                    layoutParams.y += (int) dy;
+                    DisplayMetrics dm = getResources().getDisplayMetrics();
+                    layoutParams.x = Math.max(-layoutParams.width / 2,
+                            Math.min(layoutParams.x + (int) dx, dm.widthPixels - layoutParams.width / 2));
+                    layoutParams.y = Math.max(-layoutParams.height / 4,
+                            Math.min(layoutParams.y + (int) dy, dm.heightPixels - layoutParams.height / 4));
                     windowManager.updateViewLayout(rootView, layoutParams);
                     result.success(null);
                     break;

@@ -46,6 +46,12 @@ class _FloatingDictAppState extends ConsumerState<FloatingDictApp> {
     widget.channel.setMethodCallHandler(_handleCall);
   }
 
+  @override
+  void dispose() {
+    widget.channel.setMethodCallHandler(null);
+    super.dispose();
+  }
+
   Future<dynamic> _handleCall(MethodCall call) async {
     switch (call.method) {
       case 'searchTerm':
@@ -81,7 +87,7 @@ class _FloatingDictAppState extends ConsumerState<FloatingDictApp> {
       home: FloatingDictPage(
         channel: widget.channel,
         pendingSearch: _pendingSearch,
-        onSearchConsumed: () => _pendingSearch = null,
+        onSearchConsumed: () => setState(() => _pendingSearch = null),
       ),
     );
   }
