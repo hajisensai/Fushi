@@ -88,6 +88,25 @@ final Map<String, Field> fieldsByKey = Map.unmodifiable(
   ),
 );
 
+/// Represents a single local audio database entry with path and display name.
+class LocalAudioDbEntry {
+  final String path;
+  final String displayName;
+
+  const LocalAudioDbEntry({required this.path, required this.displayName});
+
+  factory LocalAudioDbEntry.fromJson(Map<String, dynamic> json) =>
+      LocalAudioDbEntry(
+        path: json['path'] as String? ?? '',
+        displayName: json['displayName'] as String? ?? '',
+      );
+
+  Map<String, dynamic> toJson() => {
+        'path': path,
+        'displayName': displayName,
+      };
+}
+
 /// A global [Provider] for app-wide configuration and state management.
 final appProvider = ChangeNotifierProvider<AppModel>((ref) {
   return AppModel();
@@ -1433,25 +1452,20 @@ class AppModel with ChangeNotifier {
   Future<void> _bindLocalAudioDbForNativeHandler({
     bool clearMissingPath = false,
   }) async {
-    if (!localAudioEnabled || localAudioDbPath.isEmpty) {
-      return;
-    }
+    if (!localAudioEnabled) return;
+    final List<LocalAudioDbEntry> dbs = localAudioDbs;
+    if (dbs.isEmpty) return;
 
-    final String storedPath = localAudioDbPath;
-    final String internalPath =
-        path.join(_databaseDirectory.path, 'local_audio.db');
-    final bool storedExists = await File(storedPath).exists();
-    final bool internalExists = await File(internalPath).exists();
-
-    if (storedExists) {
-      await TtsChannel.instance.setLocalAudioDb(storedPath);
-    } else if (internalExists) {
-      if (storedPath != internalPath) {
-        await _setPref('local_audio_db_path', internalPath);
+    final List<String> validPaths = <String>[];
+    for (final LocalAudioDbEntry entry in dbs) {
+      if (await File(entry.path).exists()) {
+        validPaths.add(entry.path);
+      } else {
+        debugPrint('[hibiki-audio] DB missing, skipping: ${entry.path}');
       }
-      await TtsChannel.instance.setLocalAudioDb(internalPath);
-    } else if (clearMissingPath) {
-      await _setPref('local_audio_db_path', '');
+    }
+    if (validPaths.isNotEmpty) {
+      await TtsChannel.instance.setLocalAudioDbs(validPaths);
     }
   }
 
@@ -3608,40 +3622,90 @@ class AppModel with ChangeNotifier {
     await _setPref('audio_sources', sources);
   }
 
-  /// Path to local audio SQLite database (android.db from Yomitan Local Audio).
-  String get localAudioDbPath {
-    return _getPref('local_audio_db_path', defaultValue: '');
-  }
-
-  String get localAudioDbDisplayName {
-    return _getPref('local_audio_db_display_name', defaultValue: '');
-  }
-
-  Future<void> setLocalAudioDbPath(
-    String sourcePath, {
-    required String displayName,
-  }) async {
-    final internalPath = path.join(_databaseDirectory.path, 'local_audio.db');
-    final sourceFile = File(sourcePath);
-    if (sourcePath != internalPath && await sourceFile.exists()) {
-      await sourceFile.copy(internalPath);
+  /// All local audio database entries (multi-DB support).
+  List<LocalAudioDbEntry> get localAudioDbs {
+    final String raw = _getPref('local_audio_dbs', defaultValue: '');
+    if (raw.isEmpty) {
+      // Migrate old single-DB preference
+      final String oldPath =
+          _getPref('local_audio_db_path', defaultValue: '');
+      if (oldPath.isNotEmpty) {
+        final String oldName =
+            _getPref('local_audio_db_display_name', defaultValue: '');
+        return [LocalAudioDbEntry(path: oldPath, displayName: oldName)];
+      }
+      return [];
     }
-    await _setPref('local_audio_db_path', internalPath);
-    await _setPref('local_audio_db_display_name', displayName);
-    TtsChannel.instance.setLocalAudioDb(internalPath);
+    try {
+      final List<dynamic> list = jsonDecode(raw) as List<dynamic>;
+      return list
+          .map((dynamic e) =>
+              LocalAudioDbEntry.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      return [];
+    }
   }
 
-  Future<void> clearLocalAudioDb() async {
-    final internalPath = path.join(_databaseDirectory.path, 'local_audio.db');
-    await TtsChannel.instance.setLocalAudioDb('');
+  Future<void> setLocalAudioDbs(List<LocalAudioDbEntry> dbs) async {
+    await _setPref('local_audio_dbs',
+        jsonEncode(dbs.map((LocalAudioDbEntry e) => e.toJson()).toList()));
+    // Clear legacy single-DB prefs after migration
     await _setPref('local_audio_db_path', '');
     await _setPref('local_audio_db_display_name', '');
-    for (final suffix in ['', '-wal', '-shm']) {
-      final f = File('$internalPath$suffix');
-      if (await f.exists()) {
-        await f.delete();
-      }
+    await TtsChannel.instance
+        .setLocalAudioDbs(dbs.map((LocalAudioDbEntry e) => e.path).toList());
+  }
+
+  Future<void> addLocalAudioDb(String sourcePath,
+      {required String displayName}) async {
+    final String internalName =
+        'local_audio_${DateTime.now().millisecondsSinceEpoch}.db';
+    final String internalPath =
+        path.join(_databaseDirectory.path, internalName);
+    final File sourceFile = File(sourcePath);
+    if (await sourceFile.exists()) {
+      await sourceFile.copy(internalPath);
     }
+    final List<LocalAudioDbEntry> dbs =
+        List<LocalAudioDbEntry>.of(localAudioDbs);
+    dbs.add(LocalAudioDbEntry(path: internalPath, displayName: displayName));
+    await setLocalAudioDbs(dbs);
+  }
+
+  Future<void> removeLocalAudioDb(int index) async {
+    final List<LocalAudioDbEntry> dbs =
+        List<LocalAudioDbEntry>.of(localAudioDbs);
+    if (index < 0 || index >= dbs.length) return;
+    final LocalAudioDbEntry entry = dbs.removeAt(index);
+    for (final String suffix in ['', '-wal', '-shm']) {
+      final File f = File('${entry.path}$suffix');
+      if (await f.exists()) await f.delete();
+    }
+    await setLocalAudioDbs(dbs);
+  }
+
+  Future<void> reorderLocalAudioDbs(int oldIndex, int newIndex) async {
+    final List<LocalAudioDbEntry> dbs =
+        List<LocalAudioDbEntry>.of(localAudioDbs);
+    if (newIndex > oldIndex) newIndex--;
+    final LocalAudioDbEntry entry = dbs.removeAt(oldIndex);
+    dbs.insert(newIndex, entry);
+    await setLocalAudioDbs(dbs);
+  }
+
+  /// Backward-compatible getter for the first DB path.
+  @Deprecated('Use localAudioDbs instead')
+  String get localAudioDbPath {
+    final List<LocalAudioDbEntry> dbs = localAudioDbs;
+    return dbs.isNotEmpty ? dbs.first.path : '';
+  }
+
+  /// Backward-compatible getter for the first DB display name.
+  @Deprecated('Use localAudioDbs instead')
+  String get localAudioDbDisplayName {
+    final List<LocalAudioDbEntry> dbs = localAudioDbs;
+    return dbs.isNotEmpty ? dbs.first.displayName : '';
   }
 
   bool get localAudioEnabled {
@@ -3650,8 +3714,14 @@ class AppModel with ChangeNotifier {
 
   void toggleLocalAudio() async {
     await _setPref('local_audio_enabled', !localAudioEnabled);
-    if (localAudioEnabled && localAudioDbPath.isNotEmpty) {
-      TtsChannel.instance.setLocalAudioDb(localAudioDbPath);
+    if (localAudioEnabled) {
+      final List<String> paths =
+          localAudioDbs.map((LocalAudioDbEntry e) => e.path).toList();
+      if (paths.isNotEmpty) {
+        TtsChannel.instance.setLocalAudioDbs(paths);
+      }
+    } else {
+      TtsChannel.instance.setLocalAudioDbs(<String>[]);
     }
   }
 
