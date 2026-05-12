@@ -158,6 +158,15 @@
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="clipboard_dictionary_overlay"/>
         </service>
+        <service android:name=".DictAccessibilityService"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data android:name="android.accessibilityservice"
+                android:resource="@xml/hibiki_dict_accessibility" />
+        </service>
         <service android:name=".FloatingDictTile"
             android:exported="true"
             android:label="Dictionary"

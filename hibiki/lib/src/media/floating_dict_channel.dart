@@ -95,7 +95,13 @@ class FloatingDictChannel {
     return result ?? false;
   }
 
-  static Future<void> setClipboardMonitoring({required bool enabled}) async {
-    await _channel.invokeMethod<void>('setClipboardMonitoring', enabled);
+  static Future<void> openAccessibilitySettings() async {
+    await _channel.invokeMethod<void>('openAccessibilitySettings');
+  }
+
+  static Future<bool> isAccessibilityEnabled() async {
+    final bool? result =
+        await _channel.invokeMethod<bool>('isAccessibilityEnabled');
+    return result ?? false;
   }
 }

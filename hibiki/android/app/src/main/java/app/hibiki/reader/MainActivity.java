@@ -202,6 +202,17 @@ public class MainActivity extends AudioServiceActivity {
         }
     }
 
+    private static boolean isAccessibilityServiceEnabled(Context context,
+            Class<?> serviceClass) {
+        String prefString = android.provider.Settings.Secure.getString(
+                context.getContentResolver(),
+                android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+        if (prefString == null) return false;
+        String flatName = context.getPackageName() + "/"
+                + serviceClass.getName();
+        return prefString.contains(flatName);
+    }
+
     private void deleteRecursive(File f) {
         if (f.isDirectory()) {
             File[] children = f.listFiles();
@@ -451,13 +462,17 @@ public class MainActivity extends AudioServiceActivity {
                     result.success(Settings.canDrawOverlays(context));
                     break;
                 }
-                case "setClipboardMonitoring": {
-                    Boolean enabled = (Boolean) call.arguments;
-                    FloatingDictService svc = FloatingDictService.getInstance();
-                    if (svc != null) {
-                        svc.setClipboardMonitoring(enabled != null && enabled);
-                    }
+                case "openAccessibilitySettings": {
+                    Intent accIntent = new Intent(
+                            android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS);
+                    accIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(accIntent);
                     result.success(null);
+                    break;
+                }
+                case "isAccessibilityEnabled": {
+                    result.success(isAccessibilityServiceEnabled(context,
+                            DictAccessibilityService.class));
                     break;
                 }
                 case "searchResult": {

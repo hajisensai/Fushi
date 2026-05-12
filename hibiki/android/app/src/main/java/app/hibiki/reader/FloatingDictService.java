@@ -2,8 +2,6 @@ package app.hibiki.reader;
 
 import android.app.Notification;
 import android.app.PendingIntent;
-import android.content.ClipData;
-import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -45,10 +43,7 @@ public class FloatingDictService extends BaseFloatingService {
     private ScrollView resultScroll;
     private ImageButton ankiButton;
 
-    private ClipboardManager clipboardManager;
-    private ClipboardManager.OnPrimaryClipChangedListener clipListener;
-    private String lastClipText = "";
-    private boolean monitoringEnabled = true;
+    private String lastSelectedText = "";
 
     private String currentWord = "";
     private String currentReading = "";
@@ -64,17 +59,11 @@ public class FloatingDictService extends BaseFloatingService {
     public void onCreate() {
         super.onCreate();
         instanceRef = new WeakReference<>(this);
-        clipboardManager = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-        clipListener = this::onClipboardChanged;
-        clipboardManager.addPrimaryClipChangedListener(clipListener);
     }
 
     @Override
     public void onDestroy() {
         instanceRef = null;
-        if (clipboardManager != null && clipListener != null) {
-            clipboardManager.removePrimaryClipChangedListener(clipListener);
-        }
         super.onDestroy();
     }
 
@@ -92,11 +81,6 @@ public class FloatingDictService extends BaseFloatingService {
 
     @Override
     protected Notification buildNotification() {
-        Intent toggleIntent = new Intent(this, FloatingDictService.class);
-        toggleIntent.putExtra("action", "toggle_monitoring");
-        PendingIntent togglePending = PendingIntent.getService(this, 0,
-                toggleIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-
         Intent closeIntent = new Intent(this, FloatingDictService.class);
         closeIntent.putExtra("action", "close");
         PendingIntent closePending = PendingIntent.getService(this, 1,
@@ -109,17 +93,11 @@ public class FloatingDictService extends BaseFloatingService {
             builder = new Notification.Builder(this);
         }
 
-        String monitorLabel = monitoringEnabled ? "Pause" : "Resume";
-
         return builder
                 .setContentTitle("Hibiki Dictionary")
-                .setContentText(monitoringEnabled
-                        ? "Clipboard monitoring active"
-                        : "Clipboard monitoring paused")
+                .setContentText("Select text in any app to look up")
                 .setSmallIcon(R.drawable.ic_stat_hibiki)
                 .setOngoing(true)
-                .addAction(new Notification.Action.Builder(
-                        null, monitorLabel, togglePending).build())
                 .addAction(new Notification.Action.Builder(
                         null, "Close", closePending).build())
                 .build();
@@ -365,26 +343,16 @@ public class FloatingDictService extends BaseFloatingService {
     @Override
     protected void onServiceCommand(Intent intent) {
         String action = intent.getStringExtra("action");
-        if ("toggle_monitoring".equals(action)) {
-            monitoringEnabled = !monitoringEnabled;
-            startForeground(NOTIFICATION_ID, buildNotification());
-        } else if ("close".equals(action)) {
+        if ("close".equals(action)) {
             stopSelf();
-        } else if ("setClipboardMonitoring".equals(action)) {
-            monitoringEnabled = intent.getBooleanExtra("enabled", true);
-            startForeground(NOTIFICATION_ID, buildNotification());
         }
     }
 
-    private void onClipboardChanged() {
-        if (!monitoringEnabled) return;
-        ClipData clip = clipboardManager.getPrimaryClip();
-        if (clip == null || clip.getItemCount() == 0) return;
-        CharSequence text = clip.getItemAt(0).getText();
-        if (text == null) return;
-        String trimmed = text.toString().trim();
-        if (trimmed.isEmpty() || trimmed.equals(lastClipText)) return;
-        lastClipText = trimmed;
+    public void onTextSelected(String text) {
+        if (text == null || text.trim().isEmpty()) return;
+        String trimmed = text.trim();
+        if (trimmed.equals(lastSelectedText)) return;
+        lastSelectedText = trimmed;
         new Handler(Looper.getMainLooper()).post(() -> {
             searchInput.setText(trimmed);
             triggerSearch(trimmed);
@@ -453,8 +421,4 @@ public class FloatingDictService extends BaseFloatingService {
         MainActivity.notifyFloatingDictAnki(currentWord, currentReading, currentMeaning);
     }
 
-    public void setClipboardMonitoring(boolean enabled) {
-        monitoringEnabled = enabled;
-        startForeground(NOTIFICATION_ID, buildNotification());
-    }
 }

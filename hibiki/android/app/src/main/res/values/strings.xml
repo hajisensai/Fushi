@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="dict_accessibility_desc">Hibiki uses this service to detect text you select in other apps and automatically look it up in the floating dictionary.</string>
+</resources>
