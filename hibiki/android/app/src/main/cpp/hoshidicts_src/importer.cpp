@@ -560,6 +560,7 @@ ImportResult import_mdx_from_zip(Zip& zip, const std::string& output_dir) {
       {
         std::string content = zip.read(static_cast<int>(i));
         std::ofstream out(temp_path, std::ios::binary);
+        setup_stream_exceptions(out);
         out.write(content.data(), static_cast<std::streamsize>(content.size()));
       }
       auto result = import_mdx(temp_path, output_dir);
@@ -724,13 +725,18 @@ ImportResult import_dsl(const std::string& dsl_path, const std::string& output_d
     title = std::filesystem::path(dsl_path).stem().string();
   }
 
-  // Strip basic DSL markup tags: [b], [/b], [i], [/i], [u], [/u], etc.
+  // Strip DSL markup: remove [tag] markers, handle \[ \] escapes, convert [m] to indent
   for (auto& e : entries) {
     std::string& def = e.definition;
     std::string cleaned;
     cleaned.reserve(def.size());
     size_t i = 0;
     while (i < def.size()) {
+      if (def[i] == '\\' && i + 1 < def.size() && (def[i + 1] == '[' || def[i + 1] == ']')) {
+        cleaned += def[i + 1];
+        i += 2;
+        continue;
+      }
       if (def[i] == '[') {
         size_t end = def.find(']', i);
         if (end != std::string::npos) {
