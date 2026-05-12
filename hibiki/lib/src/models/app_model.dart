@@ -635,12 +635,17 @@ class AppModel with ChangeNotifier {
         thumbColor: MaterialStateColor.resolveWith((states) {
           return states.contains(MaterialState.selected)
               ? cs.primary
-              : Colors.grey;
+              : Colors.grey[400]!;
         }),
         trackColor: MaterialStateColor.resolveWith((states) {
           return states.contains(MaterialState.selected)
               ? cs.primaryContainer
-              : Colors.grey;
+              : Colors.grey[800]!;
+        }),
+        trackOutlineColor: MaterialStateColor.resolveWith((states) {
+          return states.contains(MaterialState.selected)
+              ? Colors.transparent
+              : Colors.grey[600]!;
         }),
       ),
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
