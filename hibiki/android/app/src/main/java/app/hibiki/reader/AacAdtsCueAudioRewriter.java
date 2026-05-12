@@ -26,6 +26,7 @@ final class AacAdtsCueAudioRewriter {
     private static final int STSC_ENTRY_SIZE = 12;
     private static final int ADTS_HEADER_SIZE = 7;
     private static final int AUDIO_SPECIFIC_CONFIG_TAG = 0x05;
+    private static final int MAX_REWRITE_SIZE = 100 * 1024 * 1024; // 100 MB
 
     static boolean rewrite(File input, File output) {
         try {
@@ -299,8 +300,13 @@ final class AacAdtsCueAudioRewriter {
     }
 
     private static byte[] readAllBytes(File file) throws IOException {
+        long len = file.length();
+        if (len > MAX_REWRITE_SIZE) {
+            throw new IOException("File too large for ADTS rewrite: "
+                + len + " bytes (max " + MAX_REWRITE_SIZE + ")");
+        }
         try (FileInputStream fis = new FileInputStream(file)) {
-            byte[] data = new byte[(int) file.length()];
+            byte[] data = new byte[(int) len];
             int offset = 0;
             while (offset < data.length) {
                 int read = fis.read(data, offset, data.length - offset);

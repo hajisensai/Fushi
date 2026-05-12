@@ -265,9 +265,16 @@ class AudiobookPlayerController extends ChangeNotifier {
     await _configureAudioSession();
 
     if (audioFiles.length == 1) {
-      await _player.setAudioSource(
-        AudioSource.file(audioFiles.first.path),
-      );
+      try {
+        await _player.setAudioSource(
+          AudioSource.file(audioFiles.first.path),
+        ).timeout(const Duration(seconds: 60));
+      } catch (e, stack) {
+        ErrorLogService.instance.log('AudiobookController.setSource', e, stack);
+        debugPrint('[hibiki-audiobook] setAudioSource failed: $e');
+        _loadReady.complete();
+        rethrow;
+      }
       _fileOffsets = [0];
     } else {
       // 多文件：先逐个设置以获取时长，计算累计偏移
@@ -280,7 +287,16 @@ class AudiobookPlayerController extends ChangeNotifier {
         cumulative += dur?.inMilliseconds ?? 0;
         sources.add(AudioSource.file(f.path));
       }
-      await _player.setAudioSource(ConcatenatingAudioSource(children: sources));
+      try {
+        await _player.setAudioSource(
+          ConcatenatingAudioSource(children: sources),
+        ).timeout(const Duration(seconds: 60));
+      } catch (e, stack) {
+        ErrorLogService.instance.log('AudiobookController.setSource', e, stack);
+        debugPrint('[hibiki-audiobook] setAudioSource (multi) failed: $e');
+        _loadReady.complete();
+        rethrow;
+      }
     }
 
     // 恢复上次播放位置（页面重建场景下避免音频回到 0）。
