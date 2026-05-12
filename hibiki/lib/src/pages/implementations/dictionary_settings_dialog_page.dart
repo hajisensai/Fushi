@@ -804,15 +804,7 @@ class _DictCssEditorDialogState extends State<_DictCssEditorDialog> {
           child: Text(t.dialog_close),
           onPressed: () async {
             await _saveCurrentScope();
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(t.custom_dict_css_saved),
-                  duration: const Duration(seconds: 1),
-                ),
-              );
-              Navigator.pop(context);
-            }
+            if (context.mounted) Navigator.pop(context);
           },
         ),
       ],
