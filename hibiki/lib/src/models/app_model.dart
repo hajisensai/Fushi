@@ -1887,8 +1887,14 @@ class AppModel with ChangeNotifier {
     );
   }
 
-  /// Show the profiles menu (stub — profile system pending).
+  /// Show the profiles management page.
   Future<void> showProfilesMenu() async {
+    await Navigator.push(
+      navigatorKey.currentContext!,
+      MaterialPageRoute(
+        builder: (context) => const ProfileManagementPage(),
+      ),
+    );
     notifyListeners();
   }
 
