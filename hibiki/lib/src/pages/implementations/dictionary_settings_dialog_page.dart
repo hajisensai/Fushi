@@ -95,7 +95,7 @@ class _DictionaryDialogPageState extends BasePageState {
               buildManageAudioSources(),
               const Space.normal(),
               buildLocalAudioSwitch(),
-              buildLocalAudioDbPath(),
+              buildLocalAudioDbList(),
             ],
           ),
         ),
@@ -414,130 +414,168 @@ class _DictionaryDialogPageState extends BasePageState {
     );
   }
 
-  Widget buildLocalAudioDbPath() {
-    final currentPath = appModel.localAudioDbPath;
-    final displayName = appModel.localAudioDbDisplayName;
-    final displayPath = currentPath.isEmpty
-        ? t.local_audio_not_set
-        : displayName.isNotEmpty ? displayName : currentPath.split('/').last;
+  Widget buildLocalAudioDbList() {
+    final List<LocalAudioDbEntry> dbs = appModel.localAudioDbs;
 
-    return InkWell(
-      onTap: () async {
-        bool importDialogShown = false;
-
-        void showImportDialog() {
-          if (importDialogShown || !mounted) {
-            return;
-          }
-          importDialogShown = true;
-          showDialog(
-            context: context,
-            barrierDismissible: false,
-            builder: (_) => PopScope(
-              canPop: false,
-              child: AlertDialog(
-                content: Row(
-                  children: [
-                    const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                    const SizedBox(width: 16),
-                    Text(t.dialog_importing),
-                  ],
-                ),
-              ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (dbs.isEmpty)
+          Padding(
+            padding: Spacing.of(context).insets.vertical.small,
+            child: Text(
+              t.local_audio_not_set,
+              style: textTheme.bodySmall?.copyWith(color: inactiveTextColor),
             ),
-          );
-        }
+          ),
+        for (int index = 0; index < dbs.length; index++)
+          _buildDbTile(dbs, index),
+        const SizedBox(height: 4),
+        TextButton.icon(
+          icon: const Icon(Icons.add, size: 18),
+          label: Text(t.local_audio_add_db),
+          onPressed: _pickAndAddAudioDb,
+        ),
+      ],
+    );
+  }
 
-        try {
-          final result = await FilePicker.platform.pickFiles(
-            onFileLoading: (status) {
-              if (status == FilePickerStatus.picking) {
-                showImportDialog();
+  Widget _buildDbTile(List<LocalAudioDbEntry> dbs, int index) {
+    final LocalAudioDbEntry entry = dbs[index];
+    final String label = entry.displayName.isNotEmpty
+        ? entry.displayName
+        : entry.path.split('/').last;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 20,
+            child: Text(
+              '${index + 1}',
+              style: textTheme.bodySmall?.copyWith(color: inactiveTextColor),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          const SizedBox(width: 4),
+          Icon(Icons.storage, size: 14, color: activeTextColor),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              label,
+              style: textTheme.bodySmall,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (index > 0)
+            JidoujishoIconButton(
+              tooltip: '↑',
+              size: 16,
+              icon: Icons.arrow_upward,
+              onTap: () async {
+                await appModelNoUpdate.reorderLocalAudioDbs(index, index - 1);
+                setState(() {});
+              },
+            ),
+          if (index < dbs.length - 1)
+            JidoujishoIconButton(
+              tooltip: '↓',
+              size: 16,
+              icon: Icons.arrow_downward,
+              onTap: () async {
+                await appModelNoUpdate.reorderLocalAudioDbs(index, index + 2);
+                setState(() {});
+              },
+            ),
+          JidoujishoIconButton(
+            tooltip: t.dialog_delete,
+            size: 16,
+            icon: Icons.delete_outline,
+            onTap: () async {
+              final bool? confirmed = await showDialog<bool>(
+                context: context,
+                builder: (BuildContext ctx) => AlertDialog(
+                    title: Text(t.dialog_delete),
+                    content: Text(label),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: Text(t.dialog_cancel),
+                      ),
+                      FilledButton(
+                        onPressed: () => Navigator.pop(ctx, true),
+                        style: FilledButton.styleFrom(
+                          backgroundColor:
+                              Theme.of(context).colorScheme.errorContainer,
+                          foregroundColor:
+                              Theme.of(context).colorScheme.onErrorContainer,
+                        ),
+                        child: Text(t.dialog_delete),
+                      ),
+                    ],
+                  ),
+              );
+              if (confirmed == true && mounted) {
+                await appModelNoUpdate.removeLocalAudioDb(index);
+                setState(() {});
               }
             },
-          );
-          if (result != null && result.files.single.path != null && mounted) {
-            final file = result.files.single;
-            showImportDialog();
-            await appModelNoUpdate.setLocalAudioDbPath(
-              file.path!,
-              displayName: file.name,
-            );
-            if (mounted) {
-              setState(() {});
-            }
-          }
-        } finally {
-          if (importDialogShown && mounted) {
-            Navigator.of(context).pop();
-          }
-        }
-      },
-      child: Container(
-        padding: Spacing.of(context).insets.vertical.small,
-        width: double.infinity,
-        child: Row(
-          children: [
-            Icon(
-              Icons.storage,
-              size: textTheme.bodyMedium?.fontSize,
-              color: activeTextColor,
-            ),
-            const Space.small(),
-            Expanded(
-              child: Text(
-                displayPath,
-                style: textTheme.bodySmall?.copyWith(
-                  color: currentPath.isEmpty
-                      ? inactiveTextColor
-                      : activeTextColor,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            if (currentPath.isNotEmpty)
-              JidoujishoIconButton(
-                tooltip: t.dialog_delete,
-                size: 18,
-                icon: Icons.delete_outline,
-                onTap: () async {
-                  final confirmed = await showDialog<bool>(
-                    context: context,
-                    builder: (ctx) => AlertDialog(
-                      title: Text(t.dialog_delete),
-                      content: Text(displayPath),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(ctx, false),
-                          child: Text(t.dialog_cancel),
-                        ),
-                        FilledButton(
-                          onPressed: () => Navigator.pop(ctx, true),
-                          style: FilledButton.styleFrom(
-                            backgroundColor:
-                                Theme.of(context).colorScheme.errorContainer,
-                            foregroundColor:
-                                Theme.of(context).colorScheme.onErrorContainer,
-                          ),
-                          child: Text(t.dialog_delete),
-                        ),
-                      ],
-                    ),
-                  );
-                  if (confirmed != true || !mounted) return;
-                  await appModelNoUpdate.clearLocalAudioDb();
-                  if (mounted) setState(() {});
-                },
-              ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
+  }
+
+  Future<void> _pickAndAddAudioDb() async {
+    bool importDialogShown = false;
+
+    void showImportDialog() {
+      if (importDialogShown || !mounted) return;
+      importDialogShown = true;
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => PopScope(
+          canPop: false,
+          child: AlertDialog(
+            content: Row(
+              children: [
+                const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                const SizedBox(width: 16),
+                Text(t.dialog_importing),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    try {
+      final FilePickerResult? result = await FilePicker.platform.pickFiles(
+        onFileLoading: (FilePickerStatus status) {
+          if (status == FilePickerStatus.picking) showImportDialog();
+        },
+      );
+      if (result != null && result.files.single.path != null && mounted) {
+        final PlatformFile file = result.files.single;
+        showImportDialog();
+        await appModelNoUpdate.addLocalAudioDb(
+          file.path!,
+          displayName: file.name,
+        );
+        if (mounted) setState(() {});
+      }
+    } finally {
+      if (importDialogShown && mounted) {
+        Navigator.of(context).pop();
+      }
+    }
   }
 
   Widget buildManageAudioSources() {
