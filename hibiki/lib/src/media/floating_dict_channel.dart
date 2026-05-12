@@ -1,80 +1,10 @@
-import 'dart:convert';
-
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:hibiki/src/dictionary/dictionary_search_result.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
-
-typedef FloatingDictSearchHandler = Future<DictionarySearchResult?> Function(
-    String term);
-typedef FloatingDictAnkiHandler = Future<void> Function(
-    String word, String reading, String meaning);
 
 class FloatingDictChannel {
   FloatingDictChannel._();
 
   static const MethodChannel _channel = HibikiChannels.floatingDict;
-
-  static FloatingDictSearchHandler? _onSearch;
-  static FloatingDictAnkiHandler? _onAnkiExport;
-
-  static void setEventHandlers({
-    required FloatingDictSearchHandler onSearch,
-    required FloatingDictAnkiHandler onAnkiExport,
-  }) {
-    _onSearch = onSearch;
-    _onAnkiExport = onAnkiExport;
-    _channel.setMethodCallHandler(_handleNativeCall);
-  }
-
-  static void clearEventHandlers() {
-    _onSearch = null;
-    _onAnkiExport = null;
-    _channel.setMethodCallHandler(null);
-  }
-
-  static Future<void> _handleNativeCall(MethodCall call) async {
-    switch (call.method) {
-      case 'searchTerm':
-        final String term = call.arguments as String? ?? '';
-        debugPrint('[FloatingDict] searchTerm received: "$term", handler=${_onSearch != null}');
-        if (term.trim().isEmpty || _onSearch == null) return;
-        try {
-          final DictionarySearchResult? result = await _onSearch!(term);
-          debugPrint('[FloatingDict] search result: ${result?.entries.length ?? 0} entries');
-          if (result == null || result.entries.isEmpty) {
-            await _channel.invokeMethod<void>('searchResult', null);
-            return;
-          }
-          final List<Map<String, String>> entries = result.entries
-              .map((e) => <String, String>{
-                    'word': e.word,
-                    'reading': e.reading,
-                    'meaning': e.meaning,
-                  })
-              .toList();
-          final String json = jsonEncode(entries);
-          debugPrint('[FloatingDict] sending ${json.length} chars back');
-          await _channel.invokeMethod<void>('searchResult', json);
-        } catch (e, stack) {
-          debugPrint('[FloatingDict] search error: $e\n$stack');
-          await _channel.invokeMethod<void>('searchResult', null);
-        }
-        break;
-      case 'ankiExport':
-        final Map<dynamic, dynamic>? args =
-            call.arguments as Map<dynamic, dynamic>?;
-        if (args == null || _onAnkiExport == null) return;
-        await _onAnkiExport!(
-          args['word']?.toString() ?? '',
-          args['reading']?.toString() ?? '',
-          args['meaning']?.toString() ?? '',
-        );
-        break;
-      default:
-        break;
-    }
-  }
 
   static Future<bool> canDrawOverlays() async {
     final bool? result = await _channel.invokeMethod<bool>('canDrawOverlays');

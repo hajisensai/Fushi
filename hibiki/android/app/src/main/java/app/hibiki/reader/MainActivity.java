@@ -128,24 +128,6 @@ public class MainActivity extends AudioServiceActivity {
         });
     }
 
-    public static void notifyFloatingDictEvent(String method, Object arguments) {
-        android.util.Log.d("FloatingDict", "notifyEvent: " + method + " channel=" + (floatingDictChannel != null));
-        if (floatingDictChannel == null) return;
-        new Handler(Looper.getMainLooper()).post(() -> {
-            floatingDictChannel.invokeMethod(method, arguments);
-        });
-    }
-
-    public static void notifyFloatingDictAnki(String word, String reading, String meaning) {
-        if (floatingDictChannel == null) return;
-        java.util.HashMap<String, Object> args = new java.util.HashMap<>();
-        args.put("word", word);
-        args.put("reading", reading);
-        args.put("meaning", meaning);
-        new Handler(Looper.getMainLooper()).post(() -> {
-            floatingDictChannel.invokeMethod("ankiExport", args);
-        });
-    }
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
@@ -226,6 +208,7 @@ public class MainActivity extends AudioServiceActivity {
     @Override
     public void configureFlutterEngine(@NonNull FlutterEngine flutterEngine) {
         super.configureFlutterEngine(flutterEngine);
+        FloatingDictService.initEngineGroup(getApplicationContext());
 
         volumeKeyChannel = new MethodChannel(
                 flutterEngine.getDartExecutor().getBinaryMessenger(), VOLUME_KEY_CHANNEL);
@@ -475,7 +458,6 @@ public class MainActivity extends AudioServiceActivity {
                             DictAccessibilityService.class));
                     break;
                 }
-                // searchResult: now handled by overlay engine's own MethodChannel
                 default:
                     result.notImplemented();
             }
