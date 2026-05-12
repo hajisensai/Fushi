@@ -3,6 +3,7 @@ import 'package:spaces/spaces.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
+import 'package:hibiki/src/profile/profile_selector.dart';
 
 class DisplaySettingsPage extends BasePage {
   const DisplaySettingsPage({super.key});
@@ -25,6 +26,8 @@ class _DisplaySettingsPageState extends BasePageState {
           16, 8, 16, 8 + MediaQuery.of(context).padding.bottom,
         ),
         children: [
+          const ProfileSelector(),
+          const Divider(),
           _numberStepper(
             theme,
             label: t.ttu_font_size,
@@ -40,8 +43,8 @@ class _DisplaySettingsPageState extends BasePageState {
             label: t.ttu_line_height,
             value: _source.ttuLineHeight,
             step: 0.1,
-            min: 1.0,
-            max: 3.0,
+            min: 1,
+            max: 3,
             format: (v) => v.toStringAsFixed(2),
             onChanged: (v) => _update(
                 () => _source.setTtuLineHeight((v * 100).roundToDouble() / 100)),
@@ -250,8 +253,7 @@ class _DisplaySettingsPageState extends BasePageState {
   Widget _settingRow(
     ThemeData theme, {
     required String label,
-    String? hint,
-    required Widget child,
+    required Widget child, String? hint,
   }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),

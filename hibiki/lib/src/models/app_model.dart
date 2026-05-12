@@ -1405,6 +1405,16 @@ class AppModel with ChangeNotifier {
     }
   }
 
+  /// Reload the preference cache from the database, e.g. after a profile
+  /// switch has written new values.
+  Future<void> refreshPrefCache() async {
+    final allPrefs = await _database.getAllPrefs();
+    _prefCache
+      ..clear()
+      ..addAll(allPrefs);
+    notifyListeners();
+  }
+
   // ── sync pref helpers (backed by in-memory cache) ───────────────────
 
   dynamic _getPref(String key, {dynamic defaultValue}) {

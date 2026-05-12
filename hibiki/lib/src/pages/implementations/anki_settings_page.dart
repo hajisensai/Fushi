@@ -4,6 +4,7 @@ import 'package:hibiki/utils.dart';
 
 import 'package:hibiki/src/anki/anki_models.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
+import 'package:hibiki/src/profile/profile_selector.dart';
 
 class AnkiSettingsPage extends BasePage {
   const AnkiSettingsPage({super.key});
@@ -26,6 +27,8 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
           bottom: MediaQuery.of(context).padding.bottom + 16,
         ),
         children: [
+          const ProfileSelector(),
+          const Divider(),
           _buildFetchTile(uiState, vm),
           if (uiState.errorMessage != null)
             Padding(
@@ -66,7 +69,7 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
                     ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
               ),
               value: settings.allowDupes,
-              onChanged: (v) => vm.updateAllowDupes(v),
+              onChanged: vm.updateAllowDupes,
             ),
             SwitchListTile(
               title: Text(t.anki_compact_glossaries),
@@ -76,7 +79,7 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
                     ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
               ),
               value: settings.compactGlossaries,
-              onChanged: (v) => vm.updateCompactGlossaries(v),
+              onChanged: vm.updateCompactGlossaries,
             ),
           ],
         ],
@@ -112,7 +115,7 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
           labelText: t.anki_deck,
           border: const OutlineInputBorder(),
         ),
-        value: decks.any((d) => d.id == selectedId) ? selectedId : null,
+        initialValue: decks.any((d) => d.id == selectedId) ? selectedId : null,
         items: decks
             .map((d) => DropdownMenuItem(value: d.id, child: Text(d.name)))
             .toList(),
@@ -136,7 +139,7 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
           labelText: t.anki_note_type,
           border: const OutlineInputBorder(),
         ),
-        value:
+        initialValue:
             noteTypes.any((n) => n.id == selectedId) ? selectedId : null,
         items: noteTypes
             .map((n) => DropdownMenuItem(value: n.id, child: Text(n.name)))
@@ -179,7 +182,7 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
     String currentValue,
     AnkiViewModel vm,
   ) async {
-    final options = AnkiHandlebarOptions.coreOptions;
+    const options = AnkiHandlebarOptions.coreOptions;
     final controller = TextEditingController(text: currentValue);
 
     final result = await showDialog<String>(

@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/database/database.dart';
+import 'package:hibiki/src/media/sources/reader_hoshi_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/profile/profile_repository.dart';
 
@@ -136,6 +137,9 @@ final profileViewModelProvider =
   final repo = ref.watch(profileRepositoryProvider);
   void onApplied() {
     ref.invalidate(ankiViewModelProvider);
+    final appModel = ref.read(appProvider);
+    appModel.refreshPrefCache();
+    ReaderHoshiSource.instance.refreshPreferencesFromDb();
   }
   return ProfileViewModel(repo, onApplied);
 });

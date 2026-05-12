@@ -1,13 +1,11 @@
 import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:network_to_file_image/network_to_file_image.dart';
 import 'package:transparent_image/transparent_image.dart';
 import 'package:hibiki/media.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
@@ -137,6 +135,11 @@ abstract class MediaSource {
         }
       }
     }
+  }
+
+  /// Reload preferences from the database, e.g. after a profile switch.
+  Future<void> refreshPreferencesFromDb() async {
+    await _loadPreferencesFromDb();
   }
 
   /// Get the preference value for a certain parameter [key] for this source.
