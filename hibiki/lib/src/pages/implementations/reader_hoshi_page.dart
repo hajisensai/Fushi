@@ -24,6 +24,8 @@ import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
 import 'package:hibiki/src/media/sources/reader_hoshi_source.dart';
+import 'package:hibiki/src/profile/profile_repository.dart';
+import 'package:hibiki/src/profile/profile_view_model.dart';
 import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
 import 'package:hibiki/src/media/audiobook/favorite_sentence_repository.dart';
 import 'package:hibiki/src/media/audiobook/reading_time_tracker.dart';
@@ -145,8 +147,44 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _initBook();
   }
 
+  Future<void> _resolveAndApplyProfile(HibikiDatabase db) async {
+    try {
+      final ProfileRepository profileRepo = ref.read(profileRepositoryProvider);
+      final ProfileViewModel profileVm =
+          ref.read(profileViewModelProvider.notifier);
+
+      final String bookUid = ReaderHoshiSource.bookUidFor(widget.bookId);
+
+      // Determine media type: check for audiobook or srt binding.
+      String mediaType = 'epub';
+      final abRow = await db.getAudiobookByBookUid(bookUid);
+      if (abRow != null) {
+        mediaType = 'audiobook';
+      } else {
+        final srtRow = await db.getSrtBookByTtuBookId(widget.bookId);
+        if (srtRow != null) {
+          mediaType = 'video';
+        }
+      }
+
+      final int resolvedId = await profileRepo.resolveProfileId(
+        bookUid: bookUid,
+        mediaType: mediaType,
+      );
+      final int currentActiveId = await profileRepo.getActiveProfileId();
+      if (resolvedId != currentActiveId) {
+        await profileVm.switchProfile(resolvedId);
+      }
+    } catch (e, st) {
+      debugPrint('[ReaderHoshi] profile resolution failed (non-fatal): $e\n$st');
+    }
+  }
+
   Future<void> _initBook() async {
     final HibikiDatabase db = appModel.database;
+
+    await _resolveAndApplyProfile(db);
+
     _settings = ReaderSettings(db);
     await _settings!.ready;
 

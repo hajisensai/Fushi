@@ -38,6 +38,8 @@ import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
 import 'package:hibiki/src/epub/ttu_migration.dart';
 import 'package:hibiki/src/epub/ttu_migration_server.dart';
+import 'package:hibiki/src/profile/profile_repository.dart';
+import 'package:hibiki/src/anki/anki_repository.dart';
 
 /// A list of fields that the app will support at runtime.
 final List<Field> globalFields = List<Field>.unmodifiable(
@@ -1135,6 +1137,10 @@ class AppModel with ChangeNotifier {
 
       /// Load all preferences into memory for synchronous reads.
       _prefCache.addAll(await _database.getAllPrefs());
+
+      /// Ensure default profile exists on first launch.
+      final profileRepo = ProfileRepository(_database, AnkiRepository());
+      await profileRepo.ensureDefaultProfile();
 
       /// Load dictionary metadata cache.
       final dictRows = await _database.getAllDictionaryMetadata();

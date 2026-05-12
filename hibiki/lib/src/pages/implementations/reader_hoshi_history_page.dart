@@ -12,10 +12,11 @@ import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_model.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
-import 'package:hibiki/src/media/sources/reader_hoshi_source.dart';
 import 'package:hibiki/src/database/database.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/illustrations_viewer_page.dart';
+import 'package:hibiki/src/profile/profile_repository.dart';
+import 'package:hibiki/src/profile/profile_view_model.dart';
 import 'package:hibiki/utils.dart';
 
 class ReaderHoshiHistoryPage extends HistoryReaderPage {
@@ -160,7 +161,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     };
     final List<MediaItem> epubBooks = srtBookIds.isEmpty
         ? books
-        : books.where((MediaItem item) {
+        : books.where((item) {
             final int? id = _parseBookId(item.mediaIdentifier);
             return id == null || !srtBookIds.contains(id);
           }).toList();
@@ -644,6 +645,10 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
         onPressed: () => _openTagPicker(bookId),
         child: Text(t.tag_label),
       ),
+      TextButton(
+        onPressed: () => _openBookProfilePicker(item, bookId),
+        child: Text(t.profile_book_profile),
+      ),
     ];
   }
 
@@ -736,6 +741,23 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
       ref.invalidate(filteredBookIdsProvider);
       ref.invalidate(allTagsProvider);
     });
+  }
+
+  void _openBookProfilePicker(MediaItem item, int bookId) {
+    Navigator.pop(context);
+    final String bookUid = item.uniqueKey;
+    final ProfileRepository profileRepo = ref.read(profileRepositoryProvider);
+    final ProfileUiState profileState = ref.read(profileViewModelProvider);
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => _BookProfileDialog(
+        bookUid: bookUid,
+        profileRepo: profileRepo,
+        profiles: profileState.profiles,
+        activeProfileName: profileState.activeProfile?.name ?? '',
+      ),
+    );
   }
 }
 
@@ -924,7 +946,7 @@ class _BookDragTargetState extends State<_BookDragTarget> {
             widget.child,
             if (_isHovering)
               Positioned.fill(
-                child: Container(
+                child: DecoratedBox(
                   decoration: BoxDecoration(
                     color: Theme.of(context)
                         .colorScheme
@@ -948,6 +970,95 @@ class _BookDragTargetState extends State<_BookDragTarget> {
           ],
         );
       },
+    );
+  }
+}
+
+class _BookProfileDialog extends StatefulWidget {
+  const _BookProfileDialog({
+    required this.bookUid,
+    required this.profileRepo,
+    required this.profiles,
+    required this.activeProfileName,
+  });
+
+  final String bookUid;
+  final ProfileRepository profileRepo;
+  final List<ProfileRow> profiles;
+  final String activeProfileName;
+
+  @override
+  State<_BookProfileDialog> createState() => _BookProfileDialogState();
+}
+
+class _BookProfileDialogState extends State<_BookProfileDialog> {
+  int? _selectedProfileId;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCurrent();
+  }
+
+  Future<void> _loadCurrent() async {
+    final int? current =
+        await widget.profileRepo.getBookProfileId(widget.bookUid);
+    if (mounted) {
+      setState(() {
+        _selectedProfileId = current;
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _onChanged(int? profileId) async {
+    setState(() => _selectedProfileId = profileId);
+    if (profileId == null) {
+      await widget.profileRepo.removeBookProfile(widget.bookUid);
+    } else {
+      await widget.profileRepo.setBookProfile(widget.bookUid, profileId);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Translations.of(context);
+    return AlertDialog(
+      title: Text(t.profile_book_profile),
+      content: _loading
+          ? const SizedBox(
+              height: 48,
+              child: Center(child: CircularProgressIndicator()),
+            )
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                RadioListTile<int?>(
+                  title: Text(
+                    t.profile_follow_default_current(
+                      name: widget.activeProfileName,
+                    ),
+                  ),
+                  value: null,
+                  groupValue: _selectedProfileId,
+                  onChanged: _onChanged,
+                ),
+                for (final profile in widget.profiles)
+                  RadioListTile<int?>(
+                    title: Text(profile.name),
+                    value: profile.id,
+                    groupValue: _selectedProfileId,
+                    onChanged: _onChanged,
+                  ),
+              ],
+            ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(t.dialog_close),
+        ),
+      ],
     );
   }
 }

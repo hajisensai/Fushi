@@ -771,6 +771,7 @@
     "profile_default_name": "Default",
     "profile_follow_default": "Follow Default",
     "profile_follow_default_current": "Follow Default (current: ${name})",
+    "profile_book_profile": "Book Profile",
     "profile_cannot_delete_last": "Cannot delete the last profile",
     "profile_confirm_delete": "Delete profile \"${name}\"?",
     "profile_media_type_bindings": "Media Type Defaults",
