@@ -620,17 +620,25 @@ ImportResult import_stardict_from_zip(Zip& zip, const std::string& output_dir) {
 std::string sanitize_title(const std::string& raw) {
   std::string title;
   title.reserve(raw.size());
-  for (char c : raw) {
+  for (unsigned char c : raw) {
+    if (c < 0x20) continue;
     if (c == '/' || c == '\\' || c == ':' || c == '*' ||
         c == '?' || c == '"' || c == '<' || c == '>' || c == '|') {
       title += '_';
     } else {
-      title += c;
+      title += static_cast<char>(c);
     }
   }
   while (!title.empty() && (title.back() == ' ' || title.back() == '.')) title.pop_back();
   if (title.empty()) title = "unnamed_dictionary";
-  if (title.size() > 200) title.resize(200);
+  if (title.size() > 200) {
+    size_t chars = utf8::distance(title.begin(), title.end());
+    if (chars > 200) {
+      auto it = title.begin();
+      utf8::advance(it, 200, title.end());
+      title.erase(it, title.end());
+    }
+  }
   return title;
 }
 

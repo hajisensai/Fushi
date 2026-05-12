@@ -75,13 +75,9 @@ std::string parse_ifo_value(const std::string& content, const std::string& key) 
   return "";
 }
 
-std::string extract_typed_definition(const uint8_t* data, uint32_t size, char type_code) {
-  if (size == 0) return "";
-  if (type_code == 'm' || type_code == 'l' || type_code == 'g' ||
-      type_code == 't' || type_code == 'h' || type_code == 'x') {
-    return std::string(reinterpret_cast<const char*>(data), size);
-  }
-  return std::string(reinterpret_cast<const char*>(data), size);
+bool is_text_type(char c) {
+  return c == 'm' || c == 'l' || c == 'g' || c == 't' ||
+         c == 'x' || c == 'h' || c == 'k' || c == 'w' || c == 'y';
 }
 
 }  // namespace
@@ -147,32 +143,61 @@ StardictResult stardict_reader::parse_from_data(
 
     std::string definition;
     if (!sametypesequence.empty()) {
-      // All entries have the same type sequence — data has no per-entry type markers
-      definition = extract_typed_definition(dict_data + offset, entry_size, sametypesequence[0]);
+      // sametypesequence: no per-entry type markers, types given by the string
+      uint32_t dpos = 0;
+      for (size_t ti = 0; ti < sametypesequence.size() && dpos < entry_size; ti++) {
+        char type = sametypesequence[ti];
+        bool last_field = (ti + 1 == sametypesequence.size());
+        if (is_text_type(type)) {
+          if (last_field) {
+            // Last field consumes remaining bytes
+            if (!definition.empty()) definition += '\n';
+            definition.append(reinterpret_cast<const char*>(dict_data + offset + dpos),
+                              entry_size - dpos);
+            dpos = entry_size;
+          } else {
+            // Non-last text: null-terminated
+            const char* start = reinterpret_cast<const char*>(dict_data + offset + dpos);
+            size_t len = 0;
+            while (dpos + len < entry_size && dict_data[offset + dpos + len] != 0) len++;
+            if (!definition.empty()) definition += '\n';
+            definition.append(start, len);
+            dpos += (dpos + len < entry_size) ? len + 1 : len;
+          }
+        } else {
+          if (last_field) {
+            dpos = entry_size;
+          } else {
+            if (dpos + 4 > entry_size) break;
+            uint32_t bsize = (uint32_t(dict_data[offset + dpos]) << 24) |
+                             (uint32_t(dict_data[offset + dpos + 1]) << 16) |
+                             (uint32_t(dict_data[offset + dpos + 2]) << 8) |
+                             dict_data[offset + dpos + 3];
+            if (bsize > entry_size - dpos - 4) break;
+            dpos += 4 + bsize;
+          }
+        }
+      }
     } else {
-      // Each entry is prefixed with a type byte; extract text fields, skip binary ones
+      // No sametypesequence: each field prefixed with a type byte
       uint32_t dpos = 0;
       while (dpos < entry_size) {
         char type = static_cast<char>(dict_data[offset + dpos]);
         dpos++;
-        bool is_text = (type == 'm' || type == 'l' || type == 'g' ||
-                        type == 't' || type == 'x' || type == 'h' ||
-                        type == 'k' || type == 'w' || type == 'y');
-        if (is_text) {
-          // Text types: null-terminated
+        if (is_text_type(type)) {
           const char* start = reinterpret_cast<const char*>(dict_data + offset + dpos);
           size_t len = 0;
           while (dpos + len < entry_size && dict_data[offset + dpos + len] != 0) len++;
           if (!definition.empty()) definition += '\n';
           definition.append(start, len);
-          dpos += len + 1;
+          dpos += (dpos + len < entry_size) ? len + 1 : len;
         } else {
-          // Binary types (W, P, X uppercase): size-prefixed (BE32 + data)
           if (dpos + 4 > entry_size) break;
           uint32_t bsize = (uint32_t(dict_data[offset + dpos]) << 24) |
                            (uint32_t(dict_data[offset + dpos + 1]) << 16) |
                            (uint32_t(dict_data[offset + dpos + 2]) << 8) |
                            dict_data[offset + dpos + 3];
+          if (bsize > entry_size - dpos - 4) break;
           dpos += 4 + bsize;
         }
       }
