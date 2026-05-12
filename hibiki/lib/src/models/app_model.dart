@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui';
 
-import 'package:archive/archive.dart';
 import 'package:archive/archive_io.dart';
 
 import 'package:audio_service/audio_service.dart' as ag;
@@ -16,14 +15,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
-import 'package:flutter_charset_detector/flutter_charset_detector.dart';
 import 'package:flutter_exit_app/flutter_exit_app.dart';
-import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:drift/drift.dart';
 import 'package:hibiki/src/database/database.dart';
-import 'package:intl/intl.dart' as intl;
 import 'package:path/path.dart' as path;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
@@ -36,23 +32,13 @@ import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/src/dictionary/hoshidicts.dart';
 import 'package:hibiki/language.dart';
 import 'package:hibiki/media.dart';
-import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
-import 'package:hibiki/src/utils/misc/tts_channel.dart';
-import 'package:hibiki/src/dictionary/dictionary_utils.dart'
-    show importDictionaryViaHoshidicts;
-import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
-import 'package:hibiki/src/media/audiobook/reader_position_model.dart';
-import 'package:hibiki/src/media/audiobook/reading_statistic_model.dart';
-import 'package:hibiki/src/media/audiobook/srt_book_model.dart';
 import 'package:hibiki/src/epub/ttu_migration.dart';
 import 'package:hibiki/src/epub/ttu_migration_server.dart';
 import 'package:hibiki/src/media/floating_dict_channel.dart';
-import 'package:hibiki/i18n/strings.g.dart';
 
 /// A list of fields that the app will support at runtime.
 final List<Field> globalFields = List<Field>.unmodifiable(
@@ -90,8 +76,6 @@ final Map<String, Field> fieldsByKey = Map.unmodifiable(
 
 /// Represents a single local audio database entry with path and display name.
 class LocalAudioDbEntry {
-  final String path;
-  final String displayName;
 
   const LocalAudioDbEntry({required this.path, required this.displayName});
 
@@ -100,6 +84,8 @@ class LocalAudioDbEntry {
         path: json['path'] as String? ?? '',
         displayName: json['displayName'] as String? ?? '',
       );
+  final String path;
+  final String displayName;
 
   Map<String, dynamic> toJson() => {
         'path': path,
@@ -576,18 +562,18 @@ class AppModel with ChangeNotifier {
         centerTitle: false,
       ),
       switchTheme: SwitchThemeData(
-        thumbColor: MaterialStateColor.resolveWith((states) {
-          return states.contains(MaterialState.selected)
+        thumbColor: WidgetStateColor.resolveWith((states) {
+          return states.contains(WidgetState.selected)
               ? cs.primary
               : cs.onSurfaceVariant;
         }),
-        trackColor: MaterialStateColor.resolveWith((states) {
-          return states.contains(MaterialState.selected)
+        trackColor: WidgetStateColor.resolveWith((states) {
+          return states.contains(WidgetState.selected)
               ? cs.primaryContainer
               : cs.surfaceContainerHighest;
         }),
-        trackOutlineColor: MaterialStateColor.resolveWith((states) {
-          return states.contains(MaterialState.selected)
+        trackOutlineColor: WidgetStateColor.resolveWith((states) {
+          return states.contains(WidgetState.selected)
               ? Colors.transparent
               : cs.outline;
         }),
@@ -623,8 +609,8 @@ class AppModel with ChangeNotifier {
         ),
       ),
       scrollbarTheme: ScrollbarThemeData(
-        thickness: MaterialStateProperty.all(3),
-        thumbVisibility: MaterialStateProperty.all(true),
+        thickness: WidgetStateProperty.all(3),
+        thumbVisibility: WidgetStateProperty.all(true),
       ),
       sliderTheme: SliderThemeData(
         thumbColor: cs.primary,
@@ -656,18 +642,18 @@ class AppModel with ChangeNotifier {
         centerTitle: false,
       ),
       switchTheme: SwitchThemeData(
-        thumbColor: MaterialStateColor.resolveWith((states) {
-          return states.contains(MaterialState.selected)
+        thumbColor: WidgetStateColor.resolveWith((states) {
+          return states.contains(WidgetState.selected)
               ? cs.primary
               : cs.onSurfaceVariant;
         }),
-        trackColor: MaterialStateColor.resolveWith((states) {
-          return states.contains(MaterialState.selected)
+        trackColor: WidgetStateColor.resolveWith((states) {
+          return states.contains(WidgetState.selected)
               ? cs.primaryContainer
               : cs.surfaceContainerHighest;
         }),
-        trackOutlineColor: MaterialStateColor.resolveWith((states) {
-          return states.contains(MaterialState.selected)
+        trackOutlineColor: WidgetStateColor.resolveWith((states) {
+          return states.contains(WidgetState.selected)
               ? Colors.transparent
               : cs.outline;
         }),
@@ -703,7 +689,7 @@ class AppModel with ChangeNotifier {
         ),
       ),
       scrollbarTheme: ScrollbarThemeData(
-        thumbVisibility: MaterialStateProperty.all(true),
+        thumbVisibility: WidgetStateProperty.all(true),
       ),
       sliderTheme: SliderThemeData(
         thumbColor: cs.primary,
@@ -1884,7 +1870,6 @@ class AppModel with ChangeNotifier {
   /// app, so it is appropriately handled by the model.
   Future<void> showDictionaryMenu() async {
     await showAppDialog(
-      barrierDismissible: true,
       context: navigatorKey.currentContext!,
       builder: (context) => const DictionaryDialogPage(),
     );
@@ -1897,28 +1882,13 @@ class AppModel with ChangeNotifier {
   /// app, so it is appropriately handled by the model.
   Future<void> showLanguageMenu() async {
     await showAppDialog(
-      barrierDismissible: true,
       context: navigatorKey.currentContext!,
       builder: (context) => const LanguageDialogPage(),
     );
   }
 
-  /// Show the language menu. This should be callable from many parts of the
-  /// app, so it is appropriately handled by the model.
+  /// Show the profiles menu (stub — profile system pending).
   Future<void> showProfilesMenu() async {
-    List<String> models = await getModelList();
-    String initialModel = lastSelectedModel ?? models.first;
-
-    await Navigator.push(
-      navigatorKey.currentContext!,
-      MaterialPageRoute(
-        builder: (context) => ProfilesDialogPage(
-          models: models,
-          initialModel: initialModel,
-        ),
-      ),
-    );
-
     notifyListeners();
   }
 
@@ -2457,7 +2427,6 @@ class AppModel with ChangeNotifier {
     await requestAnkidroidPermissions();
 
     await showAppDialog(
-      barrierDismissible: true,
       context: _navigatorKey.currentContext!,
       builder: (context) => AlertDialog(
         title: Text(t.error_ankidroid_api),
@@ -2498,7 +2467,6 @@ class AppModel with ChangeNotifier {
       methodChannel.invokeMethod('addDefaultModel');
 
       await showAppDialog(
-        barrierDismissible: true,
         context: _navigatorKey.currentContext!,
         builder: (context) => AlertDialog(
           title: Text(t.info_standard_model),
@@ -3607,7 +3575,7 @@ class AppModel with ChangeNotifier {
   /// first source instead of a separate fallback path.
   List<String> get enabledAudioSources {
     final List<String> sources = audioSources
-        .where((String source) => source != WordAudioResolver.localAudioUrl)
+        .where((source) => source != WordAudioResolver.localAudioUrl)
         .toList(growable: false);
     if (!localAudioEnabled) return sources;
 
@@ -3649,12 +3617,12 @@ class AppModel with ChangeNotifier {
 
   Future<void> setLocalAudioDbs(List<LocalAudioDbEntry> dbs) async {
     await _setPref('local_audio_dbs',
-        jsonEncode(dbs.map((LocalAudioDbEntry e) => e.toJson()).toList()));
+        jsonEncode(dbs.map((e) => e.toJson()).toList()));
     // Clear legacy single-DB prefs after migration
     await _setPref('local_audio_db_path', '');
     await _setPref('local_audio_db_display_name', '');
     await TtsChannel.instance
-        .setLocalAudioDbs(dbs.map((LocalAudioDbEntry e) => e.path).toList());
+        .setLocalAudioDbs(dbs.map((e) => e.path).toList());
   }
 
   Future<void> addLocalAudioDb(String sourcePath,
@@ -3731,7 +3699,7 @@ class AppModel with ChangeNotifier {
     await _setPref('local_audio_enabled', !localAudioEnabled);
     if (localAudioEnabled) {
       final List<String> paths =
-          localAudioDbs.map((LocalAudioDbEntry e) => e.path).toList();
+          localAudioDbs.map((e) => e.path).toList();
       if (paths.isNotEmpty) {
         TtsChannel.instance.setLocalAudioDbs(paths);
       }
@@ -3792,14 +3760,14 @@ class AppModel with ChangeNotifier {
 
   void _setupFloatingDictHandlers() {
     FloatingDictChannel.setEventHandlers(
-      onSearch: (String term) async {
+      onSearch: (term) async {
         final DictionarySearchResult result = await searchDictionary(
           searchTerm: term,
           searchWithWildcards: false,
         );
         return result;
       },
-      onAnkiExport: (String word, String reading, String meaning) async {
+      onAnkiExport: (word, reading, meaning) async {
         debugPrint('[FloatingDict] Anki export: $word / $reading');
         Fluttertoast.showToast(
           msg: 'Anki export not yet implemented',

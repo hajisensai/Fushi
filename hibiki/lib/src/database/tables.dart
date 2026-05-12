@@ -24,26 +24,6 @@ class MediaItems extends Table {
   IntColumn get importedAt => integer().withDefault(const Constant(0))();
 }
 
-// ── anki_mappings ───────────────────────────────────────────────────
-@DataClassName('AnkiMappingRow')
-class AnkiMappings extends Table {
-  IntColumn get id => integer().autoIncrement()();
-  TextColumn get label => text().unique()();
-  TextColumn get model => text()();
-  TextColumn get exportFieldKeysJson => text()();
-  TextColumn get creatorFieldKeysJson => text()();
-  TextColumn get creatorCollapsedFieldKeysJson => text()();
-  IntColumn get order => integer()();
-  TextColumn get tagsJson => text()();
-  TextColumn get enhancementsJson => text()();
-  TextColumn get actionsJson => text()();
-  BoolColumn get exportMediaTags =>
-      boolean().withDefault(const Constant(true))();
-  BoolColumn get useBrTags => boolean().withDefault(const Constant(true))();
-  BoolColumn get prependDictionaryNames =>
-      boolean().withDefault(const Constant(true))();
-}
-
 // ── search_history_items ────────────────────────────────────────────
 @DataClassName('SearchHistoryItemRow')
 class SearchHistoryItems extends Table {
@@ -214,4 +194,51 @@ class BookTagMappings extends Table {
   List<Set<Column>> get uniqueKeys => [
         {bookId, tagId},
       ];
+}
+
+// ── profiles ────────────────────────────────────────────────────────
+@DataClassName('ProfileRow')
+class Profiles extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get name => text().unique()();
+  IntColumn get createdAt => integer()();
+  IntColumn get updatedAt => integer()();
+}
+
+// ── profile_settings ────────────────────────────────────────────────
+@DataClassName('ProfileSettingRow')
+class ProfileSettings extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  IntColumn get profileId =>
+      integer().references(Profiles, #id, onDelete: KeyAction.cascade)();
+  TextColumn get category => text()();
+  TextColumn get key => text()();
+  TextColumn get value => text()();
+
+  @override
+  List<Set<Column>> get uniqueKeys => [
+        {profileId, category, key},
+      ];
+}
+
+// ── media_type_profiles ─────────────────────────────────────────────
+@DataClassName('MediaTypeProfileRow')
+class MediaTypeProfiles extends Table {
+  TextColumn get mediaType => text()();
+  IntColumn get profileId =>
+      integer().references(Profiles, #id, onDelete: KeyAction.cascade)();
+
+  @override
+  Set<Column> get primaryKey => {mediaType};
+}
+
+// ── book_profiles ───────────────────────────────────────────────────
+@DataClassName('BookProfileRow')
+class BookProfiles extends Table {
+  TextColumn get bookUid => text()();
+  IntColumn get profileId =>
+      integer().references(Profiles, #id, onDelete: KeyAction.cascade)();
+
+  @override
+  Set<Column> get primaryKey => {bookUid};
 }

@@ -1,4 +1,4 @@
-// GENERATED CODE - DO NOT MODIFY BY HAND
+﻿// GENERATED CODE - DO NOT MODIFY BY HAND
 
 part of 'database.dart';
 
@@ -902,685 +902,6 @@ class MediaItemsCompanion extends UpdateCompanion<MediaItemRow> {
           ..write('canDelete: $canDelete, ')
           ..write('canEdit: $canEdit, ')
           ..write('importedAt: $importedAt')
-          ..write(')'))
-        .toString();
-  }
-}
-
-class $AnkiMappingsTable extends AnkiMappings
-    with TableInfo<$AnkiMappingsTable, AnkiMappingRow> {
-  @override
-  final GeneratedDatabase attachedDatabase;
-  final String? _alias;
-  $AnkiMappingsTable(this.attachedDatabase, [this._alias]);
-  static const VerificationMeta _idMeta = const VerificationMeta('id');
-  @override
-  late final GeneratedColumn<int> id = GeneratedColumn<int>(
-      'id', aliasedName, false,
-      hasAutoIncrement: true,
-      type: DriftSqlType.int,
-      requiredDuringInsert: false,
-      defaultConstraints:
-          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
-  static const VerificationMeta _labelMeta = const VerificationMeta('label');
-  @override
-  late final GeneratedColumn<String> label = GeneratedColumn<String>(
-      'label', aliasedName, false,
-      type: DriftSqlType.string,
-      requiredDuringInsert: true,
-      defaultConstraints: GeneratedColumn.constraintIsAlways('UNIQUE'));
-  static const VerificationMeta _modelMeta = const VerificationMeta('model');
-  @override
-  late final GeneratedColumn<String> model = GeneratedColumn<String>(
-      'model', aliasedName, false,
-      type: DriftSqlType.string, requiredDuringInsert: true);
-  static const VerificationMeta _exportFieldKeysJsonMeta =
-      const VerificationMeta('exportFieldKeysJson');
-  @override
-  late final GeneratedColumn<String> exportFieldKeysJson =
-      GeneratedColumn<String>('export_field_keys_json', aliasedName, false,
-          type: DriftSqlType.string, requiredDuringInsert: true);
-  static const VerificationMeta _creatorFieldKeysJsonMeta =
-      const VerificationMeta('creatorFieldKeysJson');
-  @override
-  late final GeneratedColumn<String> creatorFieldKeysJson =
-      GeneratedColumn<String>('creator_field_keys_json', aliasedName, false,
-          type: DriftSqlType.string, requiredDuringInsert: true);
-  static const VerificationMeta _creatorCollapsedFieldKeysJsonMeta =
-      const VerificationMeta('creatorCollapsedFieldKeysJson');
-  @override
-  late final GeneratedColumn<String> creatorCollapsedFieldKeysJson =
-      GeneratedColumn<String>(
-          'creator_collapsed_field_keys_json', aliasedName, false,
-          type: DriftSqlType.string, requiredDuringInsert: true);
-  static const VerificationMeta _orderMeta = const VerificationMeta('order');
-  @override
-  late final GeneratedColumn<int> order = GeneratedColumn<int>(
-      'order', aliasedName, false,
-      type: DriftSqlType.int, requiredDuringInsert: true);
-  static const VerificationMeta _tagsJsonMeta =
-      const VerificationMeta('tagsJson');
-  @override
-  late final GeneratedColumn<String> tagsJson = GeneratedColumn<String>(
-      'tags_json', aliasedName, false,
-      type: DriftSqlType.string, requiredDuringInsert: true);
-  static const VerificationMeta _enhancementsJsonMeta =
-      const VerificationMeta('enhancementsJson');
-  @override
-  late final GeneratedColumn<String> enhancementsJson = GeneratedColumn<String>(
-      'enhancements_json', aliasedName, false,
-      type: DriftSqlType.string, requiredDuringInsert: true);
-  static const VerificationMeta _actionsJsonMeta =
-      const VerificationMeta('actionsJson');
-  @override
-  late final GeneratedColumn<String> actionsJson = GeneratedColumn<String>(
-      'actions_json', aliasedName, false,
-      type: DriftSqlType.string, requiredDuringInsert: true);
-  static const VerificationMeta _exportMediaTagsMeta =
-      const VerificationMeta('exportMediaTags');
-  @override
-  late final GeneratedColumn<bool> exportMediaTags = GeneratedColumn<bool>(
-      'export_media_tags', aliasedName, false,
-      type: DriftSqlType.bool,
-      requiredDuringInsert: false,
-      defaultConstraints: GeneratedColumn.constraintIsAlways(
-          'CHECK ("export_media_tags" IN (0, 1))'),
-      defaultValue: const Constant(true));
-  static const VerificationMeta _useBrTagsMeta =
-      const VerificationMeta('useBrTags');
-  @override
-  late final GeneratedColumn<bool> useBrTags = GeneratedColumn<bool>(
-      'use_br_tags', aliasedName, false,
-      type: DriftSqlType.bool,
-      requiredDuringInsert: false,
-      defaultConstraints:
-          GeneratedColumn.constraintIsAlways('CHECK ("use_br_tags" IN (0, 1))'),
-      defaultValue: const Constant(true));
-  static const VerificationMeta _prependDictionaryNamesMeta =
-      const VerificationMeta('prependDictionaryNames');
-  @override
-  late final GeneratedColumn<bool> prependDictionaryNames =
-      GeneratedColumn<bool>('prepend_dictionary_names', aliasedName, false,
-          type: DriftSqlType.bool,
-          requiredDuringInsert: false,
-          defaultConstraints: GeneratedColumn.constraintIsAlways(
-              'CHECK ("prepend_dictionary_names" IN (0, 1))'),
-          defaultValue: const Constant(true));
-  @override
-  List<GeneratedColumn> get $columns => [
-        id,
-        label,
-        model,
-        exportFieldKeysJson,
-        creatorFieldKeysJson,
-        creatorCollapsedFieldKeysJson,
-        order,
-        tagsJson,
-        enhancementsJson,
-        actionsJson,
-        exportMediaTags,
-        useBrTags,
-        prependDictionaryNames
-      ];
-  @override
-  String get aliasedName => _alias ?? actualTableName;
-  @override
-  String get actualTableName => $name;
-  static const String $name = 'anki_mappings';
-  @override
-  VerificationContext validateIntegrity(Insertable<AnkiMappingRow> instance,
-      {bool isInserting = false}) {
-    final context = VerificationContext();
-    final data = instance.toColumns(true);
-    if (data.containsKey('id')) {
-      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
-    }
-    if (data.containsKey('label')) {
-      context.handle(
-          _labelMeta, label.isAcceptableOrUnknown(data['label']!, _labelMeta));
-    } else if (isInserting) {
-      context.missing(_labelMeta);
-    }
-    if (data.containsKey('model')) {
-      context.handle(
-          _modelMeta, model.isAcceptableOrUnknown(data['model']!, _modelMeta));
-    } else if (isInserting) {
-      context.missing(_modelMeta);
-    }
-    if (data.containsKey('export_field_keys_json')) {
-      context.handle(
-          _exportFieldKeysJsonMeta,
-          exportFieldKeysJson.isAcceptableOrUnknown(
-              data['export_field_keys_json']!, _exportFieldKeysJsonMeta));
-    } else if (isInserting) {
-      context.missing(_exportFieldKeysJsonMeta);
-    }
-    if (data.containsKey('creator_field_keys_json')) {
-      context.handle(
-          _creatorFieldKeysJsonMeta,
-          creatorFieldKeysJson.isAcceptableOrUnknown(
-              data['creator_field_keys_json']!, _creatorFieldKeysJsonMeta));
-    } else if (isInserting) {
-      context.missing(_creatorFieldKeysJsonMeta);
-    }
-    if (data.containsKey('creator_collapsed_field_keys_json')) {
-      context.handle(
-          _creatorCollapsedFieldKeysJsonMeta,
-          creatorCollapsedFieldKeysJson.isAcceptableOrUnknown(
-              data['creator_collapsed_field_keys_json']!,
-              _creatorCollapsedFieldKeysJsonMeta));
-    } else if (isInserting) {
-      context.missing(_creatorCollapsedFieldKeysJsonMeta);
-    }
-    if (data.containsKey('order')) {
-      context.handle(
-          _orderMeta, order.isAcceptableOrUnknown(data['order']!, _orderMeta));
-    } else if (isInserting) {
-      context.missing(_orderMeta);
-    }
-    if (data.containsKey('tags_json')) {
-      context.handle(_tagsJsonMeta,
-          tagsJson.isAcceptableOrUnknown(data['tags_json']!, _tagsJsonMeta));
-    } else if (isInserting) {
-      context.missing(_tagsJsonMeta);
-    }
-    if (data.containsKey('enhancements_json')) {
-      context.handle(
-          _enhancementsJsonMeta,
-          enhancementsJson.isAcceptableOrUnknown(
-              data['enhancements_json']!, _enhancementsJsonMeta));
-    } else if (isInserting) {
-      context.missing(_enhancementsJsonMeta);
-    }
-    if (data.containsKey('actions_json')) {
-      context.handle(
-          _actionsJsonMeta,
-          actionsJson.isAcceptableOrUnknown(
-              data['actions_json']!, _actionsJsonMeta));
-    } else if (isInserting) {
-      context.missing(_actionsJsonMeta);
-    }
-    if (data.containsKey('export_media_tags')) {
-      context.handle(
-          _exportMediaTagsMeta,
-          exportMediaTags.isAcceptableOrUnknown(
-              data['export_media_tags']!, _exportMediaTagsMeta));
-    }
-    if (data.containsKey('use_br_tags')) {
-      context.handle(
-          _useBrTagsMeta,
-          useBrTags.isAcceptableOrUnknown(
-              data['use_br_tags']!, _useBrTagsMeta));
-    }
-    if (data.containsKey('prepend_dictionary_names')) {
-      context.handle(
-          _prependDictionaryNamesMeta,
-          prependDictionaryNames.isAcceptableOrUnknown(
-              data['prepend_dictionary_names']!, _prependDictionaryNamesMeta));
-    }
-    return context;
-  }
-
-  @override
-  Set<GeneratedColumn> get $primaryKey => {id};
-  @override
-  AnkiMappingRow map(Map<String, dynamic> data, {String? tablePrefix}) {
-    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return AnkiMappingRow(
-      id: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
-      label: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}label'])!,
-      model: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}model'])!,
-      exportFieldKeysJson: attachedDatabase.typeMapping.read(
-          DriftSqlType.string,
-          data['${effectivePrefix}export_field_keys_json'])!,
-      creatorFieldKeysJson: attachedDatabase.typeMapping.read(
-          DriftSqlType.string,
-          data['${effectivePrefix}creator_field_keys_json'])!,
-      creatorCollapsedFieldKeysJson: attachedDatabase.typeMapping.read(
-          DriftSqlType.string,
-          data['${effectivePrefix}creator_collapsed_field_keys_json'])!,
-      order: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}order'])!,
-      tagsJson: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}tags_json'])!,
-      enhancementsJson: attachedDatabase.typeMapping.read(
-          DriftSqlType.string, data['${effectivePrefix}enhancements_json'])!,
-      actionsJson: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}actions_json'])!,
-      exportMediaTags: attachedDatabase.typeMapping.read(
-          DriftSqlType.bool, data['${effectivePrefix}export_media_tags'])!,
-      useBrTags: attachedDatabase.typeMapping
-          .read(DriftSqlType.bool, data['${effectivePrefix}use_br_tags'])!,
-      prependDictionaryNames: attachedDatabase.typeMapping.read(
-          DriftSqlType.bool,
-          data['${effectivePrefix}prepend_dictionary_names'])!,
-    );
-  }
-
-  @override
-  $AnkiMappingsTable createAlias(String alias) {
-    return $AnkiMappingsTable(attachedDatabase, alias);
-  }
-}
-
-class AnkiMappingRow extends DataClass implements Insertable<AnkiMappingRow> {
-  final int id;
-  final String label;
-  final String model;
-  final String exportFieldKeysJson;
-  final String creatorFieldKeysJson;
-  final String creatorCollapsedFieldKeysJson;
-  final int order;
-  final String tagsJson;
-  final String enhancementsJson;
-  final String actionsJson;
-  final bool exportMediaTags;
-  final bool useBrTags;
-  final bool prependDictionaryNames;
-  const AnkiMappingRow(
-      {required this.id,
-      required this.label,
-      required this.model,
-      required this.exportFieldKeysJson,
-      required this.creatorFieldKeysJson,
-      required this.creatorCollapsedFieldKeysJson,
-      required this.order,
-      required this.tagsJson,
-      required this.enhancementsJson,
-      required this.actionsJson,
-      required this.exportMediaTags,
-      required this.useBrTags,
-      required this.prependDictionaryNames});
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    map['id'] = Variable<int>(id);
-    map['label'] = Variable<String>(label);
-    map['model'] = Variable<String>(model);
-    map['export_field_keys_json'] = Variable<String>(exportFieldKeysJson);
-    map['creator_field_keys_json'] = Variable<String>(creatorFieldKeysJson);
-    map['creator_collapsed_field_keys_json'] =
-        Variable<String>(creatorCollapsedFieldKeysJson);
-    map['order'] = Variable<int>(order);
-    map['tags_json'] = Variable<String>(tagsJson);
-    map['enhancements_json'] = Variable<String>(enhancementsJson);
-    map['actions_json'] = Variable<String>(actionsJson);
-    map['export_media_tags'] = Variable<bool>(exportMediaTags);
-    map['use_br_tags'] = Variable<bool>(useBrTags);
-    map['prepend_dictionary_names'] = Variable<bool>(prependDictionaryNames);
-    return map;
-  }
-
-  AnkiMappingsCompanion toCompanion(bool nullToAbsent) {
-    return AnkiMappingsCompanion(
-      id: Value(id),
-      label: Value(label),
-      model: Value(model),
-      exportFieldKeysJson: Value(exportFieldKeysJson),
-      creatorFieldKeysJson: Value(creatorFieldKeysJson),
-      creatorCollapsedFieldKeysJson: Value(creatorCollapsedFieldKeysJson),
-      order: Value(order),
-      tagsJson: Value(tagsJson),
-      enhancementsJson: Value(enhancementsJson),
-      actionsJson: Value(actionsJson),
-      exportMediaTags: Value(exportMediaTags),
-      useBrTags: Value(useBrTags),
-      prependDictionaryNames: Value(prependDictionaryNames),
-    );
-  }
-
-  factory AnkiMappingRow.fromJson(Map<String, dynamic> json,
-      {ValueSerializer? serializer}) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return AnkiMappingRow(
-      id: serializer.fromJson<int>(json['id']),
-      label: serializer.fromJson<String>(json['label']),
-      model: serializer.fromJson<String>(json['model']),
-      exportFieldKeysJson:
-          serializer.fromJson<String>(json['exportFieldKeysJson']),
-      creatorFieldKeysJson:
-          serializer.fromJson<String>(json['creatorFieldKeysJson']),
-      creatorCollapsedFieldKeysJson:
-          serializer.fromJson<String>(json['creatorCollapsedFieldKeysJson']),
-      order: serializer.fromJson<int>(json['order']),
-      tagsJson: serializer.fromJson<String>(json['tagsJson']),
-      enhancementsJson: serializer.fromJson<String>(json['enhancementsJson']),
-      actionsJson: serializer.fromJson<String>(json['actionsJson']),
-      exportMediaTags: serializer.fromJson<bool>(json['exportMediaTags']),
-      useBrTags: serializer.fromJson<bool>(json['useBrTags']),
-      prependDictionaryNames:
-          serializer.fromJson<bool>(json['prependDictionaryNames']),
-    );
-  }
-  @override
-  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return <String, dynamic>{
-      'id': serializer.toJson<int>(id),
-      'label': serializer.toJson<String>(label),
-      'model': serializer.toJson<String>(model),
-      'exportFieldKeysJson': serializer.toJson<String>(exportFieldKeysJson),
-      'creatorFieldKeysJson': serializer.toJson<String>(creatorFieldKeysJson),
-      'creatorCollapsedFieldKeysJson':
-          serializer.toJson<String>(creatorCollapsedFieldKeysJson),
-      'order': serializer.toJson<int>(order),
-      'tagsJson': serializer.toJson<String>(tagsJson),
-      'enhancementsJson': serializer.toJson<String>(enhancementsJson),
-      'actionsJson': serializer.toJson<String>(actionsJson),
-      'exportMediaTags': serializer.toJson<bool>(exportMediaTags),
-      'useBrTags': serializer.toJson<bool>(useBrTags),
-      'prependDictionaryNames': serializer.toJson<bool>(prependDictionaryNames),
-    };
-  }
-
-  AnkiMappingRow copyWith(
-          {int? id,
-          String? label,
-          String? model,
-          String? exportFieldKeysJson,
-          String? creatorFieldKeysJson,
-          String? creatorCollapsedFieldKeysJson,
-          int? order,
-          String? tagsJson,
-          String? enhancementsJson,
-          String? actionsJson,
-          bool? exportMediaTags,
-          bool? useBrTags,
-          bool? prependDictionaryNames}) =>
-      AnkiMappingRow(
-        id: id ?? this.id,
-        label: label ?? this.label,
-        model: model ?? this.model,
-        exportFieldKeysJson: exportFieldKeysJson ?? this.exportFieldKeysJson,
-        creatorFieldKeysJson: creatorFieldKeysJson ?? this.creatorFieldKeysJson,
-        creatorCollapsedFieldKeysJson:
-            creatorCollapsedFieldKeysJson ?? this.creatorCollapsedFieldKeysJson,
-        order: order ?? this.order,
-        tagsJson: tagsJson ?? this.tagsJson,
-        enhancementsJson: enhancementsJson ?? this.enhancementsJson,
-        actionsJson: actionsJson ?? this.actionsJson,
-        exportMediaTags: exportMediaTags ?? this.exportMediaTags,
-        useBrTags: useBrTags ?? this.useBrTags,
-        prependDictionaryNames:
-            prependDictionaryNames ?? this.prependDictionaryNames,
-      );
-  AnkiMappingRow copyWithCompanion(AnkiMappingsCompanion data) {
-    return AnkiMappingRow(
-      id: data.id.present ? data.id.value : this.id,
-      label: data.label.present ? data.label.value : this.label,
-      model: data.model.present ? data.model.value : this.model,
-      exportFieldKeysJson: data.exportFieldKeysJson.present
-          ? data.exportFieldKeysJson.value
-          : this.exportFieldKeysJson,
-      creatorFieldKeysJson: data.creatorFieldKeysJson.present
-          ? data.creatorFieldKeysJson.value
-          : this.creatorFieldKeysJson,
-      creatorCollapsedFieldKeysJson: data.creatorCollapsedFieldKeysJson.present
-          ? data.creatorCollapsedFieldKeysJson.value
-          : this.creatorCollapsedFieldKeysJson,
-      order: data.order.present ? data.order.value : this.order,
-      tagsJson: data.tagsJson.present ? data.tagsJson.value : this.tagsJson,
-      enhancementsJson: data.enhancementsJson.present
-          ? data.enhancementsJson.value
-          : this.enhancementsJson,
-      actionsJson:
-          data.actionsJson.present ? data.actionsJson.value : this.actionsJson,
-      exportMediaTags: data.exportMediaTags.present
-          ? data.exportMediaTags.value
-          : this.exportMediaTags,
-      useBrTags: data.useBrTags.present ? data.useBrTags.value : this.useBrTags,
-      prependDictionaryNames: data.prependDictionaryNames.present
-          ? data.prependDictionaryNames.value
-          : this.prependDictionaryNames,
-    );
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('AnkiMappingRow(')
-          ..write('id: $id, ')
-          ..write('label: $label, ')
-          ..write('model: $model, ')
-          ..write('exportFieldKeysJson: $exportFieldKeysJson, ')
-          ..write('creatorFieldKeysJson: $creatorFieldKeysJson, ')
-          ..write(
-              'creatorCollapsedFieldKeysJson: $creatorCollapsedFieldKeysJson, ')
-          ..write('order: $order, ')
-          ..write('tagsJson: $tagsJson, ')
-          ..write('enhancementsJson: $enhancementsJson, ')
-          ..write('actionsJson: $actionsJson, ')
-          ..write('exportMediaTags: $exportMediaTags, ')
-          ..write('useBrTags: $useBrTags, ')
-          ..write('prependDictionaryNames: $prependDictionaryNames')
-          ..write(')'))
-        .toString();
-  }
-
-  @override
-  int get hashCode => Object.hash(
-      id,
-      label,
-      model,
-      exportFieldKeysJson,
-      creatorFieldKeysJson,
-      creatorCollapsedFieldKeysJson,
-      order,
-      tagsJson,
-      enhancementsJson,
-      actionsJson,
-      exportMediaTags,
-      useBrTags,
-      prependDictionaryNames);
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      (other is AnkiMappingRow &&
-          other.id == this.id &&
-          other.label == this.label &&
-          other.model == this.model &&
-          other.exportFieldKeysJson == this.exportFieldKeysJson &&
-          other.creatorFieldKeysJson == this.creatorFieldKeysJson &&
-          other.creatorCollapsedFieldKeysJson ==
-              this.creatorCollapsedFieldKeysJson &&
-          other.order == this.order &&
-          other.tagsJson == this.tagsJson &&
-          other.enhancementsJson == this.enhancementsJson &&
-          other.actionsJson == this.actionsJson &&
-          other.exportMediaTags == this.exportMediaTags &&
-          other.useBrTags == this.useBrTags &&
-          other.prependDictionaryNames == this.prependDictionaryNames);
-}
-
-class AnkiMappingsCompanion extends UpdateCompanion<AnkiMappingRow> {
-  final Value<int> id;
-  final Value<String> label;
-  final Value<String> model;
-  final Value<String> exportFieldKeysJson;
-  final Value<String> creatorFieldKeysJson;
-  final Value<String> creatorCollapsedFieldKeysJson;
-  final Value<int> order;
-  final Value<String> tagsJson;
-  final Value<String> enhancementsJson;
-  final Value<String> actionsJson;
-  final Value<bool> exportMediaTags;
-  final Value<bool> useBrTags;
-  final Value<bool> prependDictionaryNames;
-  const AnkiMappingsCompanion({
-    this.id = const Value.absent(),
-    this.label = const Value.absent(),
-    this.model = const Value.absent(),
-    this.exportFieldKeysJson = const Value.absent(),
-    this.creatorFieldKeysJson = const Value.absent(),
-    this.creatorCollapsedFieldKeysJson = const Value.absent(),
-    this.order = const Value.absent(),
-    this.tagsJson = const Value.absent(),
-    this.enhancementsJson = const Value.absent(),
-    this.actionsJson = const Value.absent(),
-    this.exportMediaTags = const Value.absent(),
-    this.useBrTags = const Value.absent(),
-    this.prependDictionaryNames = const Value.absent(),
-  });
-  AnkiMappingsCompanion.insert({
-    this.id = const Value.absent(),
-    required String label,
-    required String model,
-    required String exportFieldKeysJson,
-    required String creatorFieldKeysJson,
-    required String creatorCollapsedFieldKeysJson,
-    required int order,
-    required String tagsJson,
-    required String enhancementsJson,
-    required String actionsJson,
-    this.exportMediaTags = const Value.absent(),
-    this.useBrTags = const Value.absent(),
-    this.prependDictionaryNames = const Value.absent(),
-  })  : label = Value(label),
-        model = Value(model),
-        exportFieldKeysJson = Value(exportFieldKeysJson),
-        creatorFieldKeysJson = Value(creatorFieldKeysJson),
-        creatorCollapsedFieldKeysJson = Value(creatorCollapsedFieldKeysJson),
-        order = Value(order),
-        tagsJson = Value(tagsJson),
-        enhancementsJson = Value(enhancementsJson),
-        actionsJson = Value(actionsJson);
-  static Insertable<AnkiMappingRow> custom({
-    Expression<int>? id,
-    Expression<String>? label,
-    Expression<String>? model,
-    Expression<String>? exportFieldKeysJson,
-    Expression<String>? creatorFieldKeysJson,
-    Expression<String>? creatorCollapsedFieldKeysJson,
-    Expression<int>? order,
-    Expression<String>? tagsJson,
-    Expression<String>? enhancementsJson,
-    Expression<String>? actionsJson,
-    Expression<bool>? exportMediaTags,
-    Expression<bool>? useBrTags,
-    Expression<bool>? prependDictionaryNames,
-  }) {
-    return RawValuesInsertable({
-      if (id != null) 'id': id,
-      if (label != null) 'label': label,
-      if (model != null) 'model': model,
-      if (exportFieldKeysJson != null)
-        'export_field_keys_json': exportFieldKeysJson,
-      if (creatorFieldKeysJson != null)
-        'creator_field_keys_json': creatorFieldKeysJson,
-      if (creatorCollapsedFieldKeysJson != null)
-        'creator_collapsed_field_keys_json': creatorCollapsedFieldKeysJson,
-      if (order != null) 'order': order,
-      if (tagsJson != null) 'tags_json': tagsJson,
-      if (enhancementsJson != null) 'enhancements_json': enhancementsJson,
-      if (actionsJson != null) 'actions_json': actionsJson,
-      if (exportMediaTags != null) 'export_media_tags': exportMediaTags,
-      if (useBrTags != null) 'use_br_tags': useBrTags,
-      if (prependDictionaryNames != null)
-        'prepend_dictionary_names': prependDictionaryNames,
-    });
-  }
-
-  AnkiMappingsCompanion copyWith(
-      {Value<int>? id,
-      Value<String>? label,
-      Value<String>? model,
-      Value<String>? exportFieldKeysJson,
-      Value<String>? creatorFieldKeysJson,
-      Value<String>? creatorCollapsedFieldKeysJson,
-      Value<int>? order,
-      Value<String>? tagsJson,
-      Value<String>? enhancementsJson,
-      Value<String>? actionsJson,
-      Value<bool>? exportMediaTags,
-      Value<bool>? useBrTags,
-      Value<bool>? prependDictionaryNames}) {
-    return AnkiMappingsCompanion(
-      id: id ?? this.id,
-      label: label ?? this.label,
-      model: model ?? this.model,
-      exportFieldKeysJson: exportFieldKeysJson ?? this.exportFieldKeysJson,
-      creatorFieldKeysJson: creatorFieldKeysJson ?? this.creatorFieldKeysJson,
-      creatorCollapsedFieldKeysJson:
-          creatorCollapsedFieldKeysJson ?? this.creatorCollapsedFieldKeysJson,
-      order: order ?? this.order,
-      tagsJson: tagsJson ?? this.tagsJson,
-      enhancementsJson: enhancementsJson ?? this.enhancementsJson,
-      actionsJson: actionsJson ?? this.actionsJson,
-      exportMediaTags: exportMediaTags ?? this.exportMediaTags,
-      useBrTags: useBrTags ?? this.useBrTags,
-      prependDictionaryNames:
-          prependDictionaryNames ?? this.prependDictionaryNames,
-    );
-  }
-
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    if (id.present) {
-      map['id'] = Variable<int>(id.value);
-    }
-    if (label.present) {
-      map['label'] = Variable<String>(label.value);
-    }
-    if (model.present) {
-      map['model'] = Variable<String>(model.value);
-    }
-    if (exportFieldKeysJson.present) {
-      map['export_field_keys_json'] =
-          Variable<String>(exportFieldKeysJson.value);
-    }
-    if (creatorFieldKeysJson.present) {
-      map['creator_field_keys_json'] =
-          Variable<String>(creatorFieldKeysJson.value);
-    }
-    if (creatorCollapsedFieldKeysJson.present) {
-      map['creator_collapsed_field_keys_json'] =
-          Variable<String>(creatorCollapsedFieldKeysJson.value);
-    }
-    if (order.present) {
-      map['order'] = Variable<int>(order.value);
-    }
-    if (tagsJson.present) {
-      map['tags_json'] = Variable<String>(tagsJson.value);
-    }
-    if (enhancementsJson.present) {
-      map['enhancements_json'] = Variable<String>(enhancementsJson.value);
-    }
-    if (actionsJson.present) {
-      map['actions_json'] = Variable<String>(actionsJson.value);
-    }
-    if (exportMediaTags.present) {
-      map['export_media_tags'] = Variable<bool>(exportMediaTags.value);
-    }
-    if (useBrTags.present) {
-      map['use_br_tags'] = Variable<bool>(useBrTags.value);
-    }
-    if (prependDictionaryNames.present) {
-      map['prepend_dictionary_names'] =
-          Variable<bool>(prependDictionaryNames.value);
-    }
-    return map;
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('AnkiMappingsCompanion(')
-          ..write('id: $id, ')
-          ..write('label: $label, ')
-          ..write('model: $model, ')
-          ..write('exportFieldKeysJson: $exportFieldKeysJson, ')
-          ..write('creatorFieldKeysJson: $creatorFieldKeysJson, ')
-          ..write(
-              'creatorCollapsedFieldKeysJson: $creatorCollapsedFieldKeysJson, ')
-          ..write('order: $order, ')
-          ..write('tagsJson: $tagsJson, ')
-          ..write('enhancementsJson: $enhancementsJson, ')
-          ..write('actionsJson: $actionsJson, ')
-          ..write('exportMediaTags: $exportMediaTags, ')
-          ..write('useBrTags: $useBrTags, ')
-          ..write('prependDictionaryNames: $prependDictionaryNames')
           ..write(')'))
         .toString();
   }
@@ -6335,11 +5656,390 @@ class BookTagMappingsCompanion extends UpdateCompanion<BookTagMappingRow> {
   }
 }
 
+
+// 鈹€鈹€ $ProfilesTable 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+class $ProfilesTable extends Profiles
+    with TableInfo<$ProfilesTable, ProfileRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ProfilesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+      'name', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _createdAtMeta =
+      const VerificationMeta('createdAt');
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+      'created_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _updatedAtMeta =
+      const VerificationMeta('updatedAt');
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+      'updated_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns => [id, name, createdAt, updatedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'profiles';
+  @override
+  VerificationContext validateIntegrity(Insertable<ProfileRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+          _nameMeta, name.isAcceptableOrUnknown(data['name']!, _nameMeta));
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(_createdAtMeta, createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(_updatedAtMeta, updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta));
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [
+        {name},
+      ];
+  @override
+  ProfileRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ProfileRow(
+      id: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      name: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}name'])!,
+      createdAt: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}created_at'])!,
+      updatedAt: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}updated_at'])!,
+    );
+  }
+
+  @override
+  $ProfilesTable createAlias(String alias) {
+    return $ProfilesTable(attachedDatabase, alias);
+  }
+}
+
+class ProfileRow extends DataClass implements Insertable<ProfileRow> {
+  final int id;
+  final String name;
+  final int createdAt;
+  final int updatedAt;
+  const ProfileRow({required this.id, required this.name, required this.createdAt, required this.updatedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['name'] = Variable<String>(name);
+    map['created_at'] = Variable<int>(createdAt);
+    map['updated_at'] = Variable<int>(updatedAt);
+    return map;
+  }
+
+  ProfilesCompanion toCompanion(bool nullToAbsent) {
+    return ProfilesCompanion(id: Value(id), name: Value(name), createdAt: Value(createdAt), updatedAt: Value(updatedAt));
+  }
+
+  factory ProfileRow.fromJson(Map<String, dynamic> json, {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ProfileRow(id: serializer.fromJson<int>(json['id']), name: serializer.fromJson<String>(json['name']), createdAt: serializer.fromJson<int>(json['createdAt']), updatedAt: serializer.fromJson<int>(json['updatedAt']));
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{'id': serializer.toJson<int>(id), 'name': serializer.toJson<String>(name), 'createdAt': serializer.toJson<int>(createdAt), 'updatedAt': serializer.toJson<int>(updatedAt)};
+  }
+
+  ProfileRow copyWith({int? id, String? name, int? createdAt, int? updatedAt}) => ProfileRow(id: id ?? this.id, name: name ?? this.name, createdAt: createdAt ?? this.createdAt, updatedAt: updatedAt ?? this.updatedAt);
+  ProfileRow copyWithCompanion(ProfilesCompanion data) {
+    return ProfileRow(id: data.id.present ? data.id.value : this.id, name: data.name.present ? data.name.value : this.name, createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt, updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt);
+  }
+
+  @override
+  String toString() { return (StringBuffer('ProfileRow(')..write('id: $id, ')..write('name: $name, ')..write('createdAt: $createdAt, ')..write('updatedAt: $updatedAt')..write(')')).toString(); }
+  @override
+  int get hashCode => Object.hash(id, name, createdAt, updatedAt);
+  @override
+  bool operator ==(Object other) => identical(this, other) || (other is ProfileRow && other.id == this.id && other.name == this.name && other.createdAt == this.createdAt && other.updatedAt == this.updatedAt);
+}
+
+class ProfilesCompanion extends UpdateCompanion<ProfileRow> {
+  final Value<int> id;
+  final Value<String> name;
+  final Value<int> createdAt;
+  final Value<int> updatedAt;
+  const ProfilesCompanion({this.id = const Value.absent(), this.name = const Value.absent(), this.createdAt = const Value.absent(), this.updatedAt = const Value.absent()});
+  ProfilesCompanion.insert({this.id = const Value.absent(), required String name, required int createdAt, required int updatedAt}) : name = Value(name), createdAt = Value(createdAt), updatedAt = Value(updatedAt);
+  static Insertable<ProfileRow> custom({Expression<int>? id, Expression<String>? name, Expression<int>? createdAt, Expression<int>? updatedAt}) {
+    return RawValuesInsertable({if (id != null) 'id': id, if (name != null) 'name': name, if (createdAt != null) 'created_at': createdAt, if (updatedAt != null) 'updated_at': updatedAt});
+  }
+  ProfilesCompanion copyWith({Value<int>? id, Value<String>? name, Value<int>? createdAt, Value<int>? updatedAt}) {
+    return ProfilesCompanion(id: id ?? this.id, name: name ?? this.name, createdAt: createdAt ?? this.createdAt, updatedAt: updatedAt ?? this.updatedAt);
+  }
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) { map['id'] = Variable<int>(id.value); }
+    if (name.present) { map['name'] = Variable<String>(name.value); }
+    if (createdAt.present) { map['created_at'] = Variable<int>(createdAt.value); }
+    if (updatedAt.present) { map['updated_at'] = Variable<int>(updatedAt.value); }
+    return map;
+  }
+  @override
+  String toString() { return (StringBuffer('ProfilesCompanion(')..write('id: $id, ')..write('name: $name, ')..write('createdAt: $createdAt, ')..write('updatedAt: $updatedAt')..write(')')).toString(); }
+}
+
+// 鈹€鈹€ $ProfileSettingsTable 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+class $ProfileSettingsTable extends ProfileSettings with TableInfo<$ProfileSettingsTable, ProfileSettingRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ProfileSettingsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>('id', aliasedName, false, hasAutoIncrement: true, type: DriftSqlType.int, requiredDuringInsert: false, defaultConstraints: GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _profileIdMeta = const VerificationMeta('profileId');
+  @override
+  late final GeneratedColumn<int> profileId = GeneratedColumn<int>('profile_id', aliasedName, false, type: DriftSqlType.int, requiredDuringInsert: true, defaultConstraints: GeneratedColumn.constraintIsAlways('REFERENCES profiles (id) ON DELETE CASCADE'));
+  static const VerificationMeta _categoryMeta = const VerificationMeta('category');
+  @override
+  late final GeneratedColumn<String> category = GeneratedColumn<String>('category', aliasedName, false, type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _keyMeta = const VerificationMeta('key');
+  @override
+  late final GeneratedColumn<String> key = GeneratedColumn<String>('key', aliasedName, false, type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _valueMeta = const VerificationMeta('value');
+  @override
+  late final GeneratedColumn<String> value = GeneratedColumn<String>('value', aliasedName, false, type: DriftSqlType.string, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns => [id, profileId, category, key, value];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'profile_settings';
+  @override
+  VerificationContext validateIntegrity(Insertable<ProfileSettingRow> instance, {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) { context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta)); }
+    if (data.containsKey('profile_id')) { context.handle(_profileIdMeta, profileId.isAcceptableOrUnknown(data['profile_id']!, _profileIdMeta)); } else if (isInserting) { context.missing(_profileIdMeta); }
+    if (data.containsKey('category')) { context.handle(_categoryMeta, category.isAcceptableOrUnknown(data['category']!, _categoryMeta)); } else if (isInserting) { context.missing(_categoryMeta); }
+    if (data.containsKey('key')) { context.handle(_keyMeta, key.isAcceptableOrUnknown(data['key']!, _keyMeta)); } else if (isInserting) { context.missing(_keyMeta); }
+    if (data.containsKey('value')) { context.handle(_valueMeta, value.isAcceptableOrUnknown(data['value']!, _valueMeta)); } else if (isInserting) { context.missing(_valueMeta); }
+    return context;
+  }
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [{profileId, category, key}];
+  @override
+  ProfileSettingRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ProfileSettingRow(id: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}id'])!, profileId: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}profile_id'])!, category: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}category'])!, key: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}key'])!, value: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}value'])!);
+  }
+  @override
+  $ProfileSettingsTable createAlias(String alias) { return $ProfileSettingsTable(attachedDatabase, alias); }
+}
+
+class ProfileSettingRow extends DataClass implements Insertable<ProfileSettingRow> {
+  final int id; final int profileId; final String category; final String key; final String value;
+  const ProfileSettingRow({required this.id, required this.profileId, required this.category, required this.key, required this.value});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) { final map = <String, Expression>{}; map['id'] = Variable<int>(id); map['profile_id'] = Variable<int>(profileId); map['category'] = Variable<String>(category); map['key'] = Variable<String>(key); map['value'] = Variable<String>(value); return map; }
+  ProfileSettingsCompanion toCompanion(bool nullToAbsent) { return ProfileSettingsCompanion(id: Value(id), profileId: Value(profileId), category: Value(category), key: Value(key), value: Value(value)); }
+  factory ProfileSettingRow.fromJson(Map<String, dynamic> json, {ValueSerializer? serializer}) { serializer ??= driftRuntimeOptions.defaultSerializer; return ProfileSettingRow(id: serializer.fromJson<int>(json['id']), profileId: serializer.fromJson<int>(json['profileId']), category: serializer.fromJson<String>(json['category']), key: serializer.fromJson<String>(json['key']), value: serializer.fromJson<String>(json['value'])); }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) { serializer ??= driftRuntimeOptions.defaultSerializer; return <String, dynamic>{'id': serializer.toJson<int>(id), 'profileId': serializer.toJson<int>(profileId), 'category': serializer.toJson<String>(category), 'key': serializer.toJson<String>(key), 'value': serializer.toJson<String>(value)}; }
+  ProfileSettingRow copyWith({int? id, int? profileId, String? category, String? key, String? value}) => ProfileSettingRow(id: id ?? this.id, profileId: profileId ?? this.profileId, category: category ?? this.category, key: key ?? this.key, value: value ?? this.value);
+  ProfileSettingRow copyWithCompanion(ProfileSettingsCompanion data) { return ProfileSettingRow(id: data.id.present ? data.id.value : this.id, profileId: data.profileId.present ? data.profileId.value : this.profileId, category: data.category.present ? data.category.value : this.category, key: data.key.present ? data.key.value : this.key, value: data.value.present ? data.value.value : this.value); }
+  @override
+  String toString() { return (StringBuffer('ProfileSettingRow(')..write('id: $id, ')..write('profileId: $profileId, ')..write('category: $category, ')..write('key: $key, ')..write('value: $value')..write(')')).toString(); }
+  @override
+  int get hashCode => Object.hash(id, profileId, category, key, value);
+  @override
+  bool operator ==(Object other) => identical(this, other) || (other is ProfileSettingRow && other.id == this.id && other.profileId == this.profileId && other.category == this.category && other.key == this.key && other.value == this.value);
+}
+
+class ProfileSettingsCompanion extends UpdateCompanion<ProfileSettingRow> {
+  final Value<int> id; final Value<int> profileId; final Value<String> category; final Value<String> key; final Value<String> value;
+  const ProfileSettingsCompanion({this.id = const Value.absent(), this.profileId = const Value.absent(), this.category = const Value.absent(), this.key = const Value.absent(), this.value = const Value.absent()});
+  ProfileSettingsCompanion.insert({this.id = const Value.absent(), required int profileId, required String category, required String key, required String value}) : profileId = Value(profileId), category = Value(category), key = Value(key), value = Value(value);
+  static Insertable<ProfileSettingRow> custom({Expression<int>? id, Expression<int>? profileId, Expression<String>? category, Expression<String>? key, Expression<String>? value}) { return RawValuesInsertable({if (id != null) 'id': id, if (profileId != null) 'profile_id': profileId, if (category != null) 'category': category, if (key != null) 'key': key, if (value != null) 'value': value}); }
+  ProfileSettingsCompanion copyWith({Value<int>? id, Value<int>? profileId, Value<String>? category, Value<String>? key, Value<String>? value}) { return ProfileSettingsCompanion(id: id ?? this.id, profileId: profileId ?? this.profileId, category: category ?? this.category, key: key ?? this.key, value: value ?? this.value); }
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) { final map = <String, Expression>{}; if (id.present) { map['id'] = Variable<int>(id.value); } if (profileId.present) { map['profile_id'] = Variable<int>(profileId.value); } if (category.present) { map['category'] = Variable<String>(category.value); } if (key.present) { map['key'] = Variable<String>(key.value); } if (value.present) { map['value'] = Variable<String>(value.value); } return map; }
+  @override
+  String toString() { return (StringBuffer('ProfileSettingsCompanion(')..write('id: $id, ')..write('profileId: $profileId, ')..write('category: $category, ')..write('key: $key, ')..write('value: $value')..write(')')).toString(); }
+}
+
+// 鈹€鈹€ $MediaTypeProfilesTable 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+class $MediaTypeProfilesTable extends MediaTypeProfiles with TableInfo<$MediaTypeProfilesTable, MediaTypeProfileRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MediaTypeProfilesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _mediaTypeMeta = const VerificationMeta('mediaType');
+  @override
+  late final GeneratedColumn<String> mediaType = GeneratedColumn<String>('media_type', aliasedName, false, type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _profileIdMeta = const VerificationMeta('profileId');
+  @override
+  late final GeneratedColumn<int> profileId = GeneratedColumn<int>('profile_id', aliasedName, false, type: DriftSqlType.int, requiredDuringInsert: true, defaultConstraints: GeneratedColumn.constraintIsAlways('REFERENCES profiles (id) ON DELETE CASCADE'));
+  @override
+  List<GeneratedColumn> get $columns => [mediaType, profileId];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'media_type_profiles';
+  @override
+  VerificationContext validateIntegrity(Insertable<MediaTypeProfileRow> instance, {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('media_type')) { context.handle(_mediaTypeMeta, mediaType.isAcceptableOrUnknown(data['media_type']!, _mediaTypeMeta)); } else if (isInserting) { context.missing(_mediaTypeMeta); }
+    if (data.containsKey('profile_id')) { context.handle(_profileIdMeta, profileId.isAcceptableOrUnknown(data['profile_id']!, _profileIdMeta)); } else if (isInserting) { context.missing(_profileIdMeta); }
+    return context;
+  }
+  @override
+  Set<GeneratedColumn> get $primaryKey => {mediaType};
+  @override
+  MediaTypeProfileRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MediaTypeProfileRow(mediaType: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}media_type'])!, profileId: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}profile_id'])!);
+  }
+  @override
+  $MediaTypeProfilesTable createAlias(String alias) { return $MediaTypeProfilesTable(attachedDatabase, alias); }
+}
+
+class MediaTypeProfileRow extends DataClass implements Insertable<MediaTypeProfileRow> {
+  final String mediaType; final int profileId;
+  const MediaTypeProfileRow({required this.mediaType, required this.profileId});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) { final map = <String, Expression>{}; map['media_type'] = Variable<String>(mediaType); map['profile_id'] = Variable<int>(profileId); return map; }
+  MediaTypeProfilesCompanion toCompanion(bool nullToAbsent) { return MediaTypeProfilesCompanion(mediaType: Value(mediaType), profileId: Value(profileId)); }
+  factory MediaTypeProfileRow.fromJson(Map<String, dynamic> json, {ValueSerializer? serializer}) { serializer ??= driftRuntimeOptions.defaultSerializer; return MediaTypeProfileRow(mediaType: serializer.fromJson<String>(json['mediaType']), profileId: serializer.fromJson<int>(json['profileId'])); }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) { serializer ??= driftRuntimeOptions.defaultSerializer; return <String, dynamic>{'mediaType': serializer.toJson<String>(mediaType), 'profileId': serializer.toJson<int>(profileId)}; }
+  MediaTypeProfileRow copyWith({String? mediaType, int? profileId}) => MediaTypeProfileRow(mediaType: mediaType ?? this.mediaType, profileId: profileId ?? this.profileId);
+  MediaTypeProfileRow copyWithCompanion(MediaTypeProfilesCompanion data) { return MediaTypeProfileRow(mediaType: data.mediaType.present ? data.mediaType.value : this.mediaType, profileId: data.profileId.present ? data.profileId.value : this.profileId); }
+  @override
+  String toString() { return (StringBuffer('MediaTypeProfileRow(')..write('mediaType: $mediaType, ')..write('profileId: $profileId')..write(')')).toString(); }
+  @override
+  int get hashCode => Object.hash(mediaType, profileId);
+  @override
+  bool operator ==(Object other) => identical(this, other) || (other is MediaTypeProfileRow && other.mediaType == this.mediaType && other.profileId == this.profileId);
+}
+
+class MediaTypeProfilesCompanion extends UpdateCompanion<MediaTypeProfileRow> {
+  final Value<String> mediaType; final Value<int> profileId; final Value<int> rowid;
+  const MediaTypeProfilesCompanion({this.mediaType = const Value.absent(), this.profileId = const Value.absent(), this.rowid = const Value.absent()});
+  MediaTypeProfilesCompanion.insert({required String mediaType, required int profileId, this.rowid = const Value.absent()}) : mediaType = Value(mediaType), profileId = Value(profileId);
+  static Insertable<MediaTypeProfileRow> custom({Expression<String>? mediaType, Expression<int>? profileId, Expression<int>? rowid}) { return RawValuesInsertable({if (mediaType != null) 'media_type': mediaType, if (profileId != null) 'profile_id': profileId, if (rowid != null) 'rowid': rowid}); }
+  MediaTypeProfilesCompanion copyWith({Value<String>? mediaType, Value<int>? profileId, Value<int>? rowid}) { return MediaTypeProfilesCompanion(mediaType: mediaType ?? this.mediaType, profileId: profileId ?? this.profileId, rowid: rowid ?? this.rowid); }
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) { final map = <String, Expression>{}; if (mediaType.present) { map['media_type'] = Variable<String>(mediaType.value); } if (profileId.present) { map['profile_id'] = Variable<int>(profileId.value); } if (rowid.present) { map['rowid'] = Variable<int>(rowid.value); } return map; }
+  @override
+  String toString() { return (StringBuffer('MediaTypeProfilesCompanion(')..write('mediaType: $mediaType, ')..write('profileId: $profileId, ')..write('rowid: $rowid')..write(')')).toString(); }
+}
+
+// 鈹€鈹€ $BookProfilesTable 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+class $BookProfilesTable extends BookProfiles with TableInfo<$BookProfilesTable, BookProfileRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $BookProfilesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _bookUidMeta = const VerificationMeta('bookUid');
+  @override
+  late final GeneratedColumn<String> bookUid = GeneratedColumn<String>('book_uid', aliasedName, false, type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _profileIdMeta = const VerificationMeta('profileId');
+  @override
+  late final GeneratedColumn<int> profileId = GeneratedColumn<int>('profile_id', aliasedName, false, type: DriftSqlType.int, requiredDuringInsert: true, defaultConstraints: GeneratedColumn.constraintIsAlways('REFERENCES profiles (id) ON DELETE CASCADE'));
+  @override
+  List<GeneratedColumn> get $columns => [bookUid, profileId];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'book_profiles';
+  @override
+  VerificationContext validateIntegrity(Insertable<BookProfileRow> instance, {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('book_uid')) { context.handle(_bookUidMeta, bookUid.isAcceptableOrUnknown(data['book_uid']!, _bookUidMeta)); } else if (isInserting) { context.missing(_bookUidMeta); }
+    if (data.containsKey('profile_id')) { context.handle(_profileIdMeta, profileId.isAcceptableOrUnknown(data['profile_id']!, _profileIdMeta)); } else if (isInserting) { context.missing(_profileIdMeta); }
+    return context;
+  }
+  @override
+  Set<GeneratedColumn> get $primaryKey => {bookUid};
+  @override
+  BookProfileRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return BookProfileRow(bookUid: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}book_uid'])!, profileId: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}profile_id'])!);
+  }
+  @override
+  $BookProfilesTable createAlias(String alias) { return $BookProfilesTable(attachedDatabase, alias); }
+}
+
+class BookProfileRow extends DataClass implements Insertable<BookProfileRow> {
+  final String bookUid; final int profileId;
+  const BookProfileRow({required this.bookUid, required this.profileId});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) { final map = <String, Expression>{}; map['book_uid'] = Variable<String>(bookUid); map['profile_id'] = Variable<int>(profileId); return map; }
+  BookProfilesCompanion toCompanion(bool nullToAbsent) { return BookProfilesCompanion(bookUid: Value(bookUid), profileId: Value(profileId)); }
+  factory BookProfileRow.fromJson(Map<String, dynamic> json, {ValueSerializer? serializer}) { serializer ??= driftRuntimeOptions.defaultSerializer; return BookProfileRow(bookUid: serializer.fromJson<String>(json['bookUid']), profileId: serializer.fromJson<int>(json['profileId'])); }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) { serializer ??= driftRuntimeOptions.defaultSerializer; return <String, dynamic>{'bookUid': serializer.toJson<String>(bookUid), 'profileId': serializer.toJson<int>(profileId)}; }
+  BookProfileRow copyWith({String? bookUid, int? profileId}) => BookProfileRow(bookUid: bookUid ?? this.bookUid, profileId: profileId ?? this.profileId);
+  BookProfileRow copyWithCompanion(BookProfilesCompanion data) { return BookProfileRow(bookUid: data.bookUid.present ? data.bookUid.value : this.bookUid, profileId: data.profileId.present ? data.profileId.value : this.profileId); }
+  @override
+  String toString() { return (StringBuffer('BookProfileRow(')..write('bookUid: $bookUid, ')..write('profileId: $profileId')..write(')')).toString(); }
+  @override
+  int get hashCode => Object.hash(bookUid, profileId);
+  @override
+  bool operator ==(Object other) => identical(this, other) || (other is BookProfileRow && other.bookUid == this.bookUid && other.profileId == this.profileId);
+}
+
+class BookProfilesCompanion extends UpdateCompanion<BookProfileRow> {
+  final Value<String> bookUid; final Value<int> profileId; final Value<int> rowid;
+  const BookProfilesCompanion({this.bookUid = const Value.absent(), this.profileId = const Value.absent(), this.rowid = const Value.absent()});
+  BookProfilesCompanion.insert({required String bookUid, required int profileId, this.rowid = const Value.absent()}) : bookUid = Value(bookUid), profileId = Value(profileId);
+  static Insertable<BookProfileRow> custom({Expression<String>? bookUid, Expression<int>? profileId, Expression<int>? rowid}) { return RawValuesInsertable({if (bookUid != null) 'book_uid': bookUid, if (profileId != null) 'profile_id': profileId, if (rowid != null) 'rowid': rowid}); }
+  BookProfilesCompanion copyWith({Value<String>? bookUid, Value<int>? profileId, Value<int>? rowid}) { return BookProfilesCompanion(bookUid: bookUid ?? this.bookUid, profileId: profileId ?? this.profileId, rowid: rowid ?? this.rowid); }
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) { final map = <String, Expression>{}; if (bookUid.present) { map['book_uid'] = Variable<String>(bookUid.value); } if (profileId.present) { map['profile_id'] = Variable<int>(profileId.value); } if (rowid.present) { map['rowid'] = Variable<int>(rowid.value); } return map; }
+  @override
+  String toString() { return (StringBuffer('BookProfilesCompanion(')..write('bookUid: $bookUid, ')..write('profileId: $profileId, ')..write('rowid: $rowid')..write(')')).toString(); }
+}
 abstract class _$HibikiDatabase extends GeneratedDatabase {
   _$HibikiDatabase(QueryExecutor e) : super(e);
   $HibikiDatabaseManager get managers => $HibikiDatabaseManager(this);
   late final $MediaItemsTable mediaItems = $MediaItemsTable(this);
-  late final $AnkiMappingsTable ankiMappings = $AnkiMappingsTable(this);
   late final $SearchHistoryItemsTable searchHistoryItems =
       $SearchHistoryItemsTable(this);
   late final $AudiobooksTable audiobooks = $AudiobooksTable(this);
@@ -6359,13 +6059,17 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
   late final $EpubBooksTable epubBooks = $EpubBooksTable(this);
   late final $BookTagsTable bookTags = $BookTagsTable(this);
   late final $BookTagMappingsTable bookTagMappings = $BookTagMappingsTable(this);
+  late final $ProfilesTable profiles = $ProfilesTable(this);
+  late final $ProfileSettingsTable profileSettings = $ProfileSettingsTable(this);
+  late final $MediaTypeProfilesTable mediaTypeProfiles =
+      $MediaTypeProfilesTable(this);
+  late final $BookProfilesTable bookProfiles = $BookProfilesTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
   @override
   List<DatabaseSchemaEntity> get allSchemaEntities => [
         mediaItems,
-        ankiMappings,
         searchHistoryItems,
         audiobooks,
         audioCues,
@@ -6378,7 +6082,11 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
         dictionaryHistory,
         epubBooks,
         bookTags,
-        bookTagMappings
+        bookTagMappings,
+        profiles,
+        profileSettings,
+        mediaTypeProfiles,
+        bookProfiles
       ];
 }
 
@@ -6766,308 +6474,6 @@ typedef $$MediaItemsTableProcessedTableManager = ProcessedTableManager<
       BaseReferences<_$HibikiDatabase, $MediaItemsTable, MediaItemRow>
     ),
     MediaItemRow,
-    PrefetchHooks Function()>;
-typedef $$AnkiMappingsTableCreateCompanionBuilder = AnkiMappingsCompanion
-    Function({
-  Value<int> id,
-  required String label,
-  required String model,
-  required String exportFieldKeysJson,
-  required String creatorFieldKeysJson,
-  required String creatorCollapsedFieldKeysJson,
-  required int order,
-  required String tagsJson,
-  required String enhancementsJson,
-  required String actionsJson,
-  Value<bool> exportMediaTags,
-  Value<bool> useBrTags,
-  Value<bool> prependDictionaryNames,
-});
-typedef $$AnkiMappingsTableUpdateCompanionBuilder = AnkiMappingsCompanion
-    Function({
-  Value<int> id,
-  Value<String> label,
-  Value<String> model,
-  Value<String> exportFieldKeysJson,
-  Value<String> creatorFieldKeysJson,
-  Value<String> creatorCollapsedFieldKeysJson,
-  Value<int> order,
-  Value<String> tagsJson,
-  Value<String> enhancementsJson,
-  Value<String> actionsJson,
-  Value<bool> exportMediaTags,
-  Value<bool> useBrTags,
-  Value<bool> prependDictionaryNames,
-});
-
-class $$AnkiMappingsTableFilterComposer
-    extends Composer<_$HibikiDatabase, $AnkiMappingsTable> {
-  $$AnkiMappingsTableFilterComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnFilters<int> get id => $composableBuilder(
-      column: $table.id, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get label => $composableBuilder(
-      column: $table.label, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get model => $composableBuilder(
-      column: $table.model, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get exportFieldKeysJson => $composableBuilder(
-      column: $table.exportFieldKeysJson,
-      builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get creatorFieldKeysJson => $composableBuilder(
-      column: $table.creatorFieldKeysJson,
-      builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get creatorCollapsedFieldKeysJson => $composableBuilder(
-      column: $table.creatorCollapsedFieldKeysJson,
-      builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<int> get order => $composableBuilder(
-      column: $table.order, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get tagsJson => $composableBuilder(
-      column: $table.tagsJson, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get enhancementsJson => $composableBuilder(
-      column: $table.enhancementsJson,
-      builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get actionsJson => $composableBuilder(
-      column: $table.actionsJson, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<bool> get exportMediaTags => $composableBuilder(
-      column: $table.exportMediaTags,
-      builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<bool> get useBrTags => $composableBuilder(
-      column: $table.useBrTags, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<bool> get prependDictionaryNames => $composableBuilder(
-      column: $table.prependDictionaryNames,
-      builder: (column) => ColumnFilters(column));
-}
-
-class $$AnkiMappingsTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $AnkiMappingsTable> {
-  $$AnkiMappingsTableOrderingComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnOrderings<int> get id => $composableBuilder(
-      column: $table.id, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<String> get label => $composableBuilder(
-      column: $table.label, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<String> get model => $composableBuilder(
-      column: $table.model, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<String> get exportFieldKeysJson => $composableBuilder(
-      column: $table.exportFieldKeysJson,
-      builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<String> get creatorFieldKeysJson => $composableBuilder(
-      column: $table.creatorFieldKeysJson,
-      builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<String> get creatorCollapsedFieldKeysJson =>
-      $composableBuilder(
-          column: $table.creatorCollapsedFieldKeysJson,
-          builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<int> get order => $composableBuilder(
-      column: $table.order, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<String> get tagsJson => $composableBuilder(
-      column: $table.tagsJson, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<String> get enhancementsJson => $composableBuilder(
-      column: $table.enhancementsJson,
-      builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<String> get actionsJson => $composableBuilder(
-      column: $table.actionsJson, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<bool> get exportMediaTags => $composableBuilder(
-      column: $table.exportMediaTags,
-      builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<bool> get useBrTags => $composableBuilder(
-      column: $table.useBrTags, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<bool> get prependDictionaryNames => $composableBuilder(
-      column: $table.prependDictionaryNames,
-      builder: (column) => ColumnOrderings(column));
-}
-
-class $$AnkiMappingsTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $AnkiMappingsTable> {
-  $$AnkiMappingsTableAnnotationComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  GeneratedColumn<int> get id =>
-      $composableBuilder(column: $table.id, builder: (column) => column);
-
-  GeneratedColumn<String> get label =>
-      $composableBuilder(column: $table.label, builder: (column) => column);
-
-  GeneratedColumn<String> get model =>
-      $composableBuilder(column: $table.model, builder: (column) => column);
-
-  GeneratedColumn<String> get exportFieldKeysJson => $composableBuilder(
-      column: $table.exportFieldKeysJson, builder: (column) => column);
-
-  GeneratedColumn<String> get creatorFieldKeysJson => $composableBuilder(
-      column: $table.creatorFieldKeysJson, builder: (column) => column);
-
-  GeneratedColumn<String> get creatorCollapsedFieldKeysJson =>
-      $composableBuilder(
-          column: $table.creatorCollapsedFieldKeysJson,
-          builder: (column) => column);
-
-  GeneratedColumn<int> get order =>
-      $composableBuilder(column: $table.order, builder: (column) => column);
-
-  GeneratedColumn<String> get tagsJson =>
-      $composableBuilder(column: $table.tagsJson, builder: (column) => column);
-
-  GeneratedColumn<String> get enhancementsJson => $composableBuilder(
-      column: $table.enhancementsJson, builder: (column) => column);
-
-  GeneratedColumn<String> get actionsJson => $composableBuilder(
-      column: $table.actionsJson, builder: (column) => column);
-
-  GeneratedColumn<bool> get exportMediaTags => $composableBuilder(
-      column: $table.exportMediaTags, builder: (column) => column);
-
-  GeneratedColumn<bool> get useBrTags =>
-      $composableBuilder(column: $table.useBrTags, builder: (column) => column);
-
-  GeneratedColumn<bool> get prependDictionaryNames => $composableBuilder(
-      column: $table.prependDictionaryNames, builder: (column) => column);
-}
-
-class $$AnkiMappingsTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
-    $AnkiMappingsTable,
-    AnkiMappingRow,
-    $$AnkiMappingsTableFilterComposer,
-    $$AnkiMappingsTableOrderingComposer,
-    $$AnkiMappingsTableAnnotationComposer,
-    $$AnkiMappingsTableCreateCompanionBuilder,
-    $$AnkiMappingsTableUpdateCompanionBuilder,
-    (
-      AnkiMappingRow,
-      BaseReferences<_$HibikiDatabase, $AnkiMappingsTable, AnkiMappingRow>
-    ),
-    AnkiMappingRow,
-    PrefetchHooks Function()> {
-  $$AnkiMappingsTableTableManager(_$HibikiDatabase db, $AnkiMappingsTable table)
-      : super(TableManagerState(
-          db: db,
-          table: table,
-          createFilteringComposer: () =>
-              $$AnkiMappingsTableFilterComposer($db: db, $table: table),
-          createOrderingComposer: () =>
-              $$AnkiMappingsTableOrderingComposer($db: db, $table: table),
-          createComputedFieldComposer: () =>
-              $$AnkiMappingsTableAnnotationComposer($db: db, $table: table),
-          updateCompanionCallback: ({
-            Value<int> id = const Value.absent(),
-            Value<String> label = const Value.absent(),
-            Value<String> model = const Value.absent(),
-            Value<String> exportFieldKeysJson = const Value.absent(),
-            Value<String> creatorFieldKeysJson = const Value.absent(),
-            Value<String> creatorCollapsedFieldKeysJson = const Value.absent(),
-            Value<int> order = const Value.absent(),
-            Value<String> tagsJson = const Value.absent(),
-            Value<String> enhancementsJson = const Value.absent(),
-            Value<String> actionsJson = const Value.absent(),
-            Value<bool> exportMediaTags = const Value.absent(),
-            Value<bool> useBrTags = const Value.absent(),
-            Value<bool> prependDictionaryNames = const Value.absent(),
-          }) =>
-              AnkiMappingsCompanion(
-            id: id,
-            label: label,
-            model: model,
-            exportFieldKeysJson: exportFieldKeysJson,
-            creatorFieldKeysJson: creatorFieldKeysJson,
-            creatorCollapsedFieldKeysJson: creatorCollapsedFieldKeysJson,
-            order: order,
-            tagsJson: tagsJson,
-            enhancementsJson: enhancementsJson,
-            actionsJson: actionsJson,
-            exportMediaTags: exportMediaTags,
-            useBrTags: useBrTags,
-            prependDictionaryNames: prependDictionaryNames,
-          ),
-          createCompanionCallback: ({
-            Value<int> id = const Value.absent(),
-            required String label,
-            required String model,
-            required String exportFieldKeysJson,
-            required String creatorFieldKeysJson,
-            required String creatorCollapsedFieldKeysJson,
-            required int order,
-            required String tagsJson,
-            required String enhancementsJson,
-            required String actionsJson,
-            Value<bool> exportMediaTags = const Value.absent(),
-            Value<bool> useBrTags = const Value.absent(),
-            Value<bool> prependDictionaryNames = const Value.absent(),
-          }) =>
-              AnkiMappingsCompanion.insert(
-            id: id,
-            label: label,
-            model: model,
-            exportFieldKeysJson: exportFieldKeysJson,
-            creatorFieldKeysJson: creatorFieldKeysJson,
-            creatorCollapsedFieldKeysJson: creatorCollapsedFieldKeysJson,
-            order: order,
-            tagsJson: tagsJson,
-            enhancementsJson: enhancementsJson,
-            actionsJson: actionsJson,
-            exportMediaTags: exportMediaTags,
-            useBrTags: useBrTags,
-            prependDictionaryNames: prependDictionaryNames,
-          ),
-          withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
-              .toList(),
-          prefetchHooksCallback: null,
-        ));
-}
-
-typedef $$AnkiMappingsTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
-    $AnkiMappingsTable,
-    AnkiMappingRow,
-    $$AnkiMappingsTableFilterComposer,
-    $$AnkiMappingsTableOrderingComposer,
-    $$AnkiMappingsTableAnnotationComposer,
-    $$AnkiMappingsTableCreateCompanionBuilder,
-    $$AnkiMappingsTableUpdateCompanionBuilder,
-    (
-      AnkiMappingRow,
-      BaseReferences<_$HibikiDatabase, $AnkiMappingsTable, AnkiMappingRow>
-    ),
-    AnkiMappingRow,
     PrefetchHooks Function()>;
 typedef $$SearchHistoryItemsTableCreateCompanionBuilder
     = SearchHistoryItemsCompanion Function({
@@ -9522,13 +8928,568 @@ typedef $$BookTagMappingsTableProcessedTableManager = ProcessedTableManager<
     BookTagMappingRow,
     PrefetchHooks Function()>;
 
+// 鈹€鈹€ Profiles manager 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+typedef $$ProfilesTableCreateCompanionBuilder = ProfilesCompanion Function({
+  Value<int> id,
+  required String name,
+  required int createdAt,
+  required int updatedAt,
+});
+typedef $$ProfilesTableUpdateCompanionBuilder = ProfilesCompanion Function({
+  Value<int> id,
+  Value<String> name,
+  Value<int> createdAt,
+  Value<int> updatedAt,
+});
+
+class $$ProfilesTableFilterComposer
+    extends Composer<_$HibikiDatabase, $ProfilesTable> {
+  $$ProfilesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+  ColumnFilters<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnFilters(column));
+  ColumnFilters<int> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnFilters(column));
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$ProfilesTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $ProfilesTable> {
+  $$ProfilesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+  ColumnOrderings<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnOrderings(column));
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$ProfilesTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $ProfilesTable> {
+  $$ProfilesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$ProfilesTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $ProfilesTable,
+    ProfileRow,
+    $$ProfilesTableFilterComposer,
+    $$ProfilesTableOrderingComposer,
+    $$ProfilesTableAnnotationComposer,
+    $$ProfilesTableCreateCompanionBuilder,
+    $$ProfilesTableUpdateCompanionBuilder,
+    (ProfileRow, BaseReferences<_$HibikiDatabase, $ProfilesTable, ProfileRow>),
+    ProfileRow,
+    PrefetchHooks Function()> {
+  $$ProfilesTableTableManager(_$HibikiDatabase db, $ProfilesTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ProfilesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ProfilesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ProfilesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<String> name = const Value.absent(),
+            Value<int> createdAt = const Value.absent(),
+            Value<int> updatedAt = const Value.absent(),
+          }) =>
+              ProfilesCompanion(
+            id: id,
+            name: name,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required String name,
+            required int createdAt,
+            required int updatedAt,
+          }) =>
+              ProfilesCompanion.insert(
+            id: id,
+            name: name,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$ProfilesTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $ProfilesTable,
+    ProfileRow,
+    $$ProfilesTableFilterComposer,
+    $$ProfilesTableOrderingComposer,
+    $$ProfilesTableAnnotationComposer,
+    $$ProfilesTableCreateCompanionBuilder,
+    $$ProfilesTableUpdateCompanionBuilder,
+    (ProfileRow, BaseReferences<_$HibikiDatabase, $ProfilesTable, ProfileRow>),
+    ProfileRow,
+    PrefetchHooks Function()>;
+
+// 鈹€鈹€ ProfileSettings manager 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+typedef $$ProfileSettingsTableCreateCompanionBuilder
+    = ProfileSettingsCompanion Function({
+  Value<int> id,
+  required int profileId,
+  required String category,
+  required String key,
+  required String value,
+});
+typedef $$ProfileSettingsTableUpdateCompanionBuilder
+    = ProfileSettingsCompanion Function({
+  Value<int> id,
+  Value<int> profileId,
+  Value<String> category,
+  Value<String> key,
+  Value<String> value,
+});
+
+class $$ProfileSettingsTableFilterComposer
+    extends Composer<_$HibikiDatabase, $ProfileSettingsTable> {
+  $$ProfileSettingsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+  ColumnFilters<int> get profileId => $composableBuilder(
+      column: $table.profileId, builder: (column) => ColumnFilters(column));
+  ColumnFilters<String> get category => $composableBuilder(
+      column: $table.category, builder: (column) => ColumnFilters(column));
+  ColumnFilters<String> get key => $composableBuilder(
+      column: $table.key, builder: (column) => ColumnFilters(column));
+  ColumnFilters<String> get value => $composableBuilder(
+      column: $table.value, builder: (column) => ColumnFilters(column));
+}
+
+class $$ProfileSettingsTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $ProfileSettingsTable> {
+  $$ProfileSettingsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+  ColumnOrderings<int> get profileId => $composableBuilder(
+      column: $table.profileId, builder: (column) => ColumnOrderings(column));
+  ColumnOrderings<String> get category => $composableBuilder(
+      column: $table.category, builder: (column) => ColumnOrderings(column));
+  ColumnOrderings<String> get key => $composableBuilder(
+      column: $table.key, builder: (column) => ColumnOrderings(column));
+  ColumnOrderings<String> get value => $composableBuilder(
+      column: $table.value, builder: (column) => ColumnOrderings(column));
+}
+
+class $$ProfileSettingsTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $ProfileSettingsTable> {
+  $$ProfileSettingsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+  GeneratedColumn<int> get profileId =>
+      $composableBuilder(column: $table.profileId, builder: (column) => column);
+  GeneratedColumn<String> get category =>
+      $composableBuilder(column: $table.category, builder: (column) => column);
+  GeneratedColumn<String> get key =>
+      $composableBuilder(column: $table.key, builder: (column) => column);
+  GeneratedColumn<String> get value =>
+      $composableBuilder(column: $table.value, builder: (column) => column);
+}
+
+class $$ProfileSettingsTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $ProfileSettingsTable,
+    ProfileSettingRow,
+    $$ProfileSettingsTableFilterComposer,
+    $$ProfileSettingsTableOrderingComposer,
+    $$ProfileSettingsTableAnnotationComposer,
+    $$ProfileSettingsTableCreateCompanionBuilder,
+    $$ProfileSettingsTableUpdateCompanionBuilder,
+    (
+      ProfileSettingRow,
+      BaseReferences<_$HibikiDatabase, $ProfileSettingsTable, ProfileSettingRow>
+    ),
+    ProfileSettingRow,
+    PrefetchHooks Function()> {
+  $$ProfileSettingsTableTableManager(
+      _$HibikiDatabase db, $ProfileSettingsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ProfileSettingsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ProfileSettingsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ProfileSettingsTableAnnotationComposer(
+                  $db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<int> profileId = const Value.absent(),
+            Value<String> category = const Value.absent(),
+            Value<String> key = const Value.absent(),
+            Value<String> value = const Value.absent(),
+          }) =>
+              ProfileSettingsCompanion(
+            id: id,
+            profileId: profileId,
+            category: category,
+            key: key,
+            value: value,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required int profileId,
+            required String category,
+            required String key,
+            required String value,
+          }) =>
+              ProfileSettingsCompanion.insert(
+            id: id,
+            profileId: profileId,
+            category: category,
+            key: key,
+            value: value,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$ProfileSettingsTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $ProfileSettingsTable,
+    ProfileSettingRow,
+    $$ProfileSettingsTableFilterComposer,
+    $$ProfileSettingsTableOrderingComposer,
+    $$ProfileSettingsTableAnnotationComposer,
+    $$ProfileSettingsTableCreateCompanionBuilder,
+    $$ProfileSettingsTableUpdateCompanionBuilder,
+    (
+      ProfileSettingRow,
+      BaseReferences<_$HibikiDatabase, $ProfileSettingsTable, ProfileSettingRow>
+    ),
+    ProfileSettingRow,
+    PrefetchHooks Function()>;
+
+// 鈹€鈹€ MediaTypeProfiles manager 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+typedef $$MediaTypeProfilesTableCreateCompanionBuilder
+    = MediaTypeProfilesCompanion Function({
+  required String mediaType,
+  required int profileId,
+  Value<int> rowid,
+});
+typedef $$MediaTypeProfilesTableUpdateCompanionBuilder
+    = MediaTypeProfilesCompanion Function({
+  Value<String> mediaType,
+  Value<int> profileId,
+  Value<int> rowid,
+});
+
+class $$MediaTypeProfilesTableFilterComposer
+    extends Composer<_$HibikiDatabase, $MediaTypeProfilesTable> {
+  $$MediaTypeProfilesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get mediaType => $composableBuilder(
+      column: $table.mediaType, builder: (column) => ColumnFilters(column));
+  ColumnFilters<int> get profileId => $composableBuilder(
+      column: $table.profileId, builder: (column) => ColumnFilters(column));
+}
+
+class $$MediaTypeProfilesTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $MediaTypeProfilesTable> {
+  $$MediaTypeProfilesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get mediaType => $composableBuilder(
+      column: $table.mediaType, builder: (column) => ColumnOrderings(column));
+  ColumnOrderings<int> get profileId => $composableBuilder(
+      column: $table.profileId, builder: (column) => ColumnOrderings(column));
+}
+
+class $$MediaTypeProfilesTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $MediaTypeProfilesTable> {
+  $$MediaTypeProfilesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get mediaType =>
+      $composableBuilder(column: $table.mediaType, builder: (column) => column);
+  GeneratedColumn<int> get profileId =>
+      $composableBuilder(column: $table.profileId, builder: (column) => column);
+}
+
+class $$MediaTypeProfilesTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $MediaTypeProfilesTable,
+    MediaTypeProfileRow,
+    $$MediaTypeProfilesTableFilterComposer,
+    $$MediaTypeProfilesTableOrderingComposer,
+    $$MediaTypeProfilesTableAnnotationComposer,
+    $$MediaTypeProfilesTableCreateCompanionBuilder,
+    $$MediaTypeProfilesTableUpdateCompanionBuilder,
+    (
+      MediaTypeProfileRow,
+      BaseReferences<_$HibikiDatabase, $MediaTypeProfilesTable,
+          MediaTypeProfileRow>
+    ),
+    MediaTypeProfileRow,
+    PrefetchHooks Function()> {
+  $$MediaTypeProfilesTableTableManager(
+      _$HibikiDatabase db, $MediaTypeProfilesTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MediaTypeProfilesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MediaTypeProfilesTableOrderingComposer(
+                  $db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$MediaTypeProfilesTableAnnotationComposer(
+                  $db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> mediaType = const Value.absent(),
+            Value<int> profileId = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              MediaTypeProfilesCompanion(
+            mediaType: mediaType,
+            profileId: profileId,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String mediaType,
+            required int profileId,
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              MediaTypeProfilesCompanion.insert(
+            mediaType: mediaType,
+            profileId: profileId,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$MediaTypeProfilesTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $MediaTypeProfilesTable,
+    MediaTypeProfileRow,
+    $$MediaTypeProfilesTableFilterComposer,
+    $$MediaTypeProfilesTableOrderingComposer,
+    $$MediaTypeProfilesTableAnnotationComposer,
+    $$MediaTypeProfilesTableCreateCompanionBuilder,
+    $$MediaTypeProfilesTableUpdateCompanionBuilder,
+    (
+      MediaTypeProfileRow,
+      BaseReferences<_$HibikiDatabase, $MediaTypeProfilesTable,
+          MediaTypeProfileRow>
+    ),
+    MediaTypeProfileRow,
+    PrefetchHooks Function()>;
+
+// 鈹€鈹€ BookProfiles manager 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+typedef $$BookProfilesTableCreateCompanionBuilder = BookProfilesCompanion
+    Function({
+  required String bookUid,
+  required int profileId,
+  Value<int> rowid,
+});
+typedef $$BookProfilesTableUpdateCompanionBuilder = BookProfilesCompanion
+    Function({
+  Value<String> bookUid,
+  Value<int> profileId,
+  Value<int> rowid,
+});
+
+class $$BookProfilesTableFilterComposer
+    extends Composer<_$HibikiDatabase, $BookProfilesTable> {
+  $$BookProfilesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get bookUid => $composableBuilder(
+      column: $table.bookUid, builder: (column) => ColumnFilters(column));
+  ColumnFilters<int> get profileId => $composableBuilder(
+      column: $table.profileId, builder: (column) => ColumnFilters(column));
+}
+
+class $$BookProfilesTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $BookProfilesTable> {
+  $$BookProfilesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get bookUid => $composableBuilder(
+      column: $table.bookUid, builder: (column) => ColumnOrderings(column));
+  ColumnOrderings<int> get profileId => $composableBuilder(
+      column: $table.profileId, builder: (column) => ColumnOrderings(column));
+}
+
+class $$BookProfilesTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $BookProfilesTable> {
+  $$BookProfilesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get bookUid =>
+      $composableBuilder(column: $table.bookUid, builder: (column) => column);
+  GeneratedColumn<int> get profileId =>
+      $composableBuilder(column: $table.profileId, builder: (column) => column);
+}
+
+class $$BookProfilesTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $BookProfilesTable,
+    BookProfileRow,
+    $$BookProfilesTableFilterComposer,
+    $$BookProfilesTableOrderingComposer,
+    $$BookProfilesTableAnnotationComposer,
+    $$BookProfilesTableCreateCompanionBuilder,
+    $$BookProfilesTableUpdateCompanionBuilder,
+    (
+      BookProfileRow,
+      BaseReferences<_$HibikiDatabase, $BookProfilesTable, BookProfileRow>
+    ),
+    BookProfileRow,
+    PrefetchHooks Function()> {
+  $$BookProfilesTableTableManager(
+      _$HibikiDatabase db, $BookProfilesTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$BookProfilesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$BookProfilesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$BookProfilesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> bookUid = const Value.absent(),
+            Value<int> profileId = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              BookProfilesCompanion(
+            bookUid: bookUid,
+            profileId: profileId,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String bookUid,
+            required int profileId,
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              BookProfilesCompanion.insert(
+            bookUid: bookUid,
+            profileId: profileId,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$BookProfilesTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $BookProfilesTable,
+    BookProfileRow,
+    $$BookProfilesTableFilterComposer,
+    $$BookProfilesTableOrderingComposer,
+    $$BookProfilesTableAnnotationComposer,
+    $$BookProfilesTableCreateCompanionBuilder,
+    $$BookProfilesTableUpdateCompanionBuilder,
+    (
+      BookProfileRow,
+      BaseReferences<_$HibikiDatabase, $BookProfilesTable, BookProfileRow>
+    ),
+    BookProfileRow,
+    PrefetchHooks Function()>;
+
+
 class $HibikiDatabaseManager {
   final _$HibikiDatabase _db;
   $HibikiDatabaseManager(this._db);
   $$MediaItemsTableTableManager get mediaItems =>
       $$MediaItemsTableTableManager(_db, _db.mediaItems);
-  $$AnkiMappingsTableTableManager get ankiMappings =>
-      $$AnkiMappingsTableTableManager(_db, _db.ankiMappings);
   $$SearchHistoryItemsTableTableManager get searchHistoryItems =>
       $$SearchHistoryItemsTableTableManager(_db, _db.searchHistoryItems);
   $$AudiobooksTableTableManager get audiobooks =>
@@ -9555,4 +9516,12 @@ class $HibikiDatabaseManager {
       $$BookTagsTableTableManager(_db, _db.bookTags);
   $$BookTagMappingsTableTableManager get bookTagMappings =>
       $$BookTagMappingsTableTableManager(_db, _db.bookTagMappings);
+  $$ProfilesTableTableManager get profiles =>
+      $$ProfilesTableTableManager(_db, _db.profiles);
+  $$ProfileSettingsTableTableManager get profileSettings =>
+      $$ProfileSettingsTableTableManager(_db, _db.profileSettings);
+  $$MediaTypeProfilesTableTableManager get mediaTypeProfiles =>
+      $$MediaTypeProfilesTableTableManager(_db, _db.mediaTypeProfiles);
+  $$BookProfilesTableTableManager get bookProfiles =>
+      $$BookProfilesTableTableManager(_db, _db.bookProfiles);
 }

@@ -22,7 +22,6 @@ LazyDatabase _openDb(String dbDirectory) {
 
 @DriftDatabase(tables: [
   MediaItems,
-  AnkiMappings,
   SearchHistoryItems,
   Audiobooks,
   AudioCues,
@@ -36,13 +35,17 @@ LazyDatabase _openDb(String dbDirectory) {
   EpubBooks,
   BookTags,
   BookTagMappings,
+  Profiles,
+  ProfileSettings,
+  MediaTypeProfiles,
+  BookProfiles,
 ])
 class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase(String dbDirectory) : super(_openDb(dbDirectory));
   HibikiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 7;
+  int get schemaVersion => 8;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -68,6 +71,12 @@ class HibikiDatabase extends _$HibikiDatabase {
             await customStatement(
               'UPDATE book_tags SET sort_order = id WHERE sort_order = 0',
             );
+          }
+          if (from < 8) {
+            await m.createTable(profiles);
+            await m.createTable(profileSettings);
+            await m.createTable(mediaTypeProfiles);
+            await m.createTable(bookProfiles);
           }
         },
       );
@@ -157,34 +166,6 @@ class HibikiDatabase extends _$HibikiDatabase {
       await (delete(mediaItems)..where((t) => t.id.equals(r.id))).go();
     }
   }
-
-  // ── anki mappings ───────────────────────────────────────────────
-  Future<List<AnkiMappingRow>> getAllMappings() =>
-      (select(ankiMappings)..orderBy([(t) => OrderingTerm.asc(t.order)])).get();
-
-  Future<AnkiMappingRow?> getMappingByLabel(String label) =>
-      (select(ankiMappings)..where((t) => t.label.equals(label)))
-          .getSingleOrNull();
-
-  Future<void> upsertMapping(AnkiMappingsCompanion m) =>
-      into(ankiMappings).insert(
-        m,
-        onConflict: DoUpdate(
-          (old) => m,
-          target: [ankiMappings.label],
-        ),
-      );
-
-  Future<int> deleteMappingById(int id) =>
-      (delete(ankiMappings)..where((t) => t.id.equals(id))).go();
-
-  Future<void> replaceAllMappings(List<AnkiMappingsCompanion> mappings) =>
-      transaction(() async {
-        await delete(ankiMappings).go();
-        for (final m in mappings) {
-          await into(ankiMappings).insert(m);
-        }
-      });
 
   // ── search history ──────────────────────────────────────────────
   Future<List<SearchHistoryItemRow>> getAllSearchHistoryItems() =>
@@ -589,4 +570,98 @@ class HibikiDatabase extends _$HibikiDatabase {
     final row = await q.getSingle();
     return row.read(cnt)!;
   }
+
+  // ── profiles ──────────────────────────────────────────────────────
+  Future<List<ProfileRow>> getAllProfiles() =>
+      (select(profiles)..orderBy([(t) => OrderingTerm.asc(t.createdAt)])).get();
+
+  Future<ProfileRow?> getProfileById(int id) =>
+      (select(profiles)..where((t) => t.id.equals(id))).getSingleOrNull();
+
+  Future<int> insertProfile(ProfilesCompanion p) => into(profiles).insert(p);
+
+  Future<void> updateProfileName(int id, String name) =>
+      (update(profiles)..where((t) => t.id.equals(id))).write(
+        ProfilesCompanion(
+          name: Value(name),
+          updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
+        ),
+      );
+
+  Future<int> deleteProfile(int id) =>
+      (delete(profiles)..where((t) => t.id.equals(id))).go();
+
+  Future<int> countProfiles() async {
+    final cnt = countAll();
+    final q = selectOnly(profiles)..addColumns([cnt]);
+    final row = await q.getSingle();
+    return row.read(cnt)!;
+  }
+
+  // ── profile settings ─────────────────────────────────────────────
+  Future<List<ProfileSettingRow>> getProfileSettings(int profileId) =>
+      (select(profileSettings)..where((t) => t.profileId.equals(profileId)))
+          .get();
+
+  Future<void> upsertProfileSetting(ProfileSettingsCompanion s) =>
+      into(profileSettings).insert(
+        s,
+        onConflict: DoUpdate(
+          (old) => ProfileSettingsCompanion(value: s.value),
+          target: [
+            profileSettings.profileId,
+            profileSettings.category,
+            profileSettings.key,
+          ],
+        ),
+      );
+
+  Future<void> replaceProfileSettings(
+          int profileId, List<ProfileSettingsCompanion> settings) =>
+      transaction(() async {
+        await (delete(profileSettings)
+              ..where((t) => t.profileId.equals(profileId)))
+            .go();
+        for (final s in settings) {
+          await into(profileSettings).insert(s);
+        }
+      });
+
+  // ── media type profiles ──────────────────────────────────────────
+  Future<List<MediaTypeProfileRow>> getAllMediaTypeProfiles() =>
+      select(mediaTypeProfiles).get();
+
+  Future<MediaTypeProfileRow?> getMediaTypeProfile(String mediaType) =>
+      (select(mediaTypeProfiles)
+            ..where((t) => t.mediaType.equals(mediaType)))
+          .getSingleOrNull();
+
+  Future<void> setMediaTypeProfile(String mediaType, int profileId) =>
+      into(mediaTypeProfiles).insertOnConflictUpdate(
+        MediaTypeProfilesCompanion.insert(
+          mediaType: mediaType,
+          profileId: profileId,
+        ),
+      );
+
+  Future<int> deleteMediaTypeProfile(String mediaType) =>
+      (delete(mediaTypeProfiles)
+            ..where((t) => t.mediaType.equals(mediaType)))
+          .go();
+
+  // ── book profiles ────────────────────────────────────────────────
+  Future<BookProfileRow?> getBookProfile(String bookUid) =>
+      (select(bookProfiles)..where((t) => t.bookUid.equals(bookUid)))
+          .getSingleOrNull();
+
+  Future<void> setBookProfile(String bookUid, int profileId) =>
+      into(bookProfiles).insertOnConflictUpdate(
+        BookProfilesCompanion.insert(
+          bookUid: bookUid,
+          profileId: profileId,
+        ),
+      );
+
+  Future<int> deleteBookProfile(String bookUid) =>
+      (delete(bookProfiles)..where((t) => t.bookUid.equals(bookUid))).go();
 }
