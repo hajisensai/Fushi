@@ -72,6 +72,7 @@ class _DictionaryDialogPageState extends BasePageState {
             mainAxisSize: MainAxisSize.min,
             children: [
               _buildDictionaryManageRow(),
+              _buildCustomCssRow(),
               const Space.small(),
               const JidoujishoDivider(),
               const Space.small(),
@@ -118,6 +119,31 @@ class _DictionaryDialogPageState extends BasePageState {
             Icon(Icons.auto_stories, size: textTheme.bodyMedium?.fontSize),
             const SizedBox(width: 8),
             Text(t.dictionaries),
+            const Spacer(),
+            Icon(Icons.chevron_right,
+                size: 20,
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCustomCssRow() {
+    return InkWell(
+      onTap: () {
+        showAppDialog(
+          context: context,
+          builder: (_) => _DictCssEditorDialog(appModel: appModel),
+        );
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Row(
+          children: [
+            Icon(Icons.code, size: textTheme.bodyMedium?.fontSize),
+            const SizedBox(width: 8),
+            Text(t.custom_dict_css),
             const Spacer(),
             Icon(Icons.chevron_right,
                 size: 20,
@@ -665,5 +691,122 @@ class _AudioSourcesDialogState extends State<_AudioSourcesDialog> {
         _controller.clear();
       });
     }
+  }
+}
+
+class _DictCssEditorDialog extends StatefulWidget {
+  const _DictCssEditorDialog({required this.appModel});
+  final AppModel appModel;
+
+  @override
+  State<_DictCssEditorDialog> createState() => _DictCssEditorDialogState();
+}
+
+class _DictCssEditorDialogState extends State<_DictCssEditorDialog> {
+  static const _globalKey = '__global__';
+  late String _selectedScope;
+  late TextEditingController _cssController;
+  late List<String> _dictNames;
+
+  AppModel get appModel => widget.appModel;
+
+  @override
+  void initState() {
+    super.initState();
+    _dictNames = appModel.dictionaries.map((d) => d.name).toList();
+    _selectedScope = _globalKey;
+    _cssController = TextEditingController(text: appModel.globalDictCSS);
+  }
+
+  @override
+  void dispose() {
+    _cssController.dispose();
+    super.dispose();
+  }
+
+  void _onScopeChanged(String? scope) {
+    if (scope == null || scope == _selectedScope) return;
+    _saveCurrentScope();
+    _selectedScope = scope;
+    if (scope == _globalKey) {
+      _cssController.text = appModel.globalDictCSS;
+    } else {
+      _cssController.text = appModel.getCustomCSSForDict(scope);
+    }
+    setState(() {});
+  }
+
+  Future<void> _saveCurrentScope() async {
+    final css = _cssController.text;
+    if (_selectedScope == _globalKey) {
+      await appModel.setGlobalDictCSS(css);
+    } else {
+      await appModel.setCustomCSSForDict(_selectedScope, css);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(t.custom_dict_css),
+      content: SizedBox(
+        width: double.maxFinite,
+        height: 380,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            DropdownButton<String>(
+              value: _selectedScope,
+              isExpanded: true,
+              onChanged: _onScopeChanged,
+              items: [
+                DropdownMenuItem<String>(
+                  value: _globalKey,
+                  child: Text(t.custom_dict_css_global),
+                ),
+                ..._dictNames.map((name) => DropdownMenuItem<String>(
+                      value: name,
+                      child: Text(
+                        name,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    )),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: TextField(
+                controller: _cssController,
+                maxLines: null,
+                expands: true,
+                textAlignVertical: TextAlignVertical.top,
+                style: const TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 13,
+                ),
+                decoration: const InputDecoration(
+                  hintText: '.gloss-content { font-size: 14px; }',
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.all(8),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          child: Text(t.dialog_cancel),
+          onPressed: () => Navigator.pop(context),
+        ),
+        TextButton(
+          child: Text(t.dialog_save),
+          onPressed: () async {
+            await _saveCurrentScope();
+            if (context.mounted) Navigator.pop(context);
+          },
+        ),
+      ],
+    );
   }
 }
