@@ -239,6 +239,12 @@ window.hoshiSelection = {
       return null;
     }
     this.clearSelection();
+    var hitContent = hit.node.textContent;
+    if (hit.offset < hitContent.length && !this.isCodePointJapanese(hitContent.codePointAt(hit.offset))) {
+      while (hit.offset > 0 && !this.isScanBoundary(hitContent[hit.offset - 1])) {
+        hit.offset--;
+      }
+    }
     var container = this.findParagraph(hit.node) || document.body;
     var walker = this.createWalker(container);
     var text = '';
