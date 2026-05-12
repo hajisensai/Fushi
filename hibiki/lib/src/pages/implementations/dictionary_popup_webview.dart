@@ -164,6 +164,7 @@ class DictionaryPopupWebViewState
       window.collapsedDictionaryNames = $collapsedNamesJson;
       window.lookupEntries = $entriesJson;
       window.dictionaryStyles = $stylesJson;
+      window.customCSS = ${jsonEncode(appModel.customPopupCSS)};
       window.renderPopup();
       ${needsScrollCheck ? _scrollCheckJs : ""}
     ''');

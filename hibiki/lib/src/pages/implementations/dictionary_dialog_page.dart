@@ -60,6 +60,8 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
+                Flexible(child: _buildCustomCSSButton()),
+                const SizedBox(width: 8),
                 Flexible(child: buildClearButton()),
                 const SizedBox(width: 8),
                 Flexible(child: buildCloseButton()),
@@ -296,6 +298,52 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
         if (mounted) {
           Navigator.pop(context);
         }
+      },
+    );
+  }
+
+  Widget _buildCustomCSSButton() {
+    return TextButton(
+      child: const Text('CSS'),
+      onPressed: () {
+        final controller = TextEditingController(text: appModel.customPopupCSS);
+        showAppDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Custom CSS'),
+            content: SizedBox(
+              width: double.maxFinite,
+              height: 300,
+              child: TextField(
+                controller: controller,
+                maxLines: null,
+                expands: true,
+                style: const TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 13,
+                ),
+                decoration: const InputDecoration(
+                  hintText: '.expression { font-size: 30px; }',
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.all(8),
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                child: Text(t.dialog_cancel),
+                onPressed: () => Navigator.pop(context),
+              ),
+              TextButton(
+                child: Text(t.dialog_save),
+                onPressed: () async {
+                  await appModel.setCustomPopupCSS(controller.text);
+                  if (context.mounted) Navigator.pop(context);
+                },
+              ),
+            ],
+          ),
+        );
       },
     );
   }

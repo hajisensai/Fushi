@@ -3530,6 +3530,14 @@ class AppModel with ChangeNotifier {
     await _setPref('collapse_dictionaries', !collapseDictionaries);
   }
 
+  String get customPopupCSS {
+    return _getPref('custom_popup_css', defaultValue: '') as String;
+  }
+
+  Future<void> setCustomPopupCSS(String css) async {
+    await _setPref('custom_popup_css', css);
+  }
+
   /// Default audio source templates for word pronunciation.
   static const List<String> defaultAudioSources = [
     'https://hoshi-reader.manhhaoo-do.workers.dev/?term={term}&reading={reading}',
