@@ -3530,12 +3530,30 @@ class AppModel with ChangeNotifier {
     await _setPref('collapse_dictionaries', !collapseDictionaries);
   }
 
-  String get customPopupCSS {
-    return _getPref('custom_popup_css', defaultValue: '') as String;
+  Map<String, String> get customDictCSS {
+    final raw = _getPref('custom_dict_css', defaultValue: '') as String;
+    if (raw.isEmpty) return {};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        return decoded.map((k, v) => MapEntry(k.toString(), v.toString()));
+      }
+    } catch (_) {}
+    return {};
   }
 
-  Future<void> setCustomPopupCSS(String css) async {
-    await _setPref('custom_popup_css', css);
+  String getCustomCSSForDict(String dictName) {
+    return customDictCSS[dictName] ?? '';
+  }
+
+  Future<void> setCustomCSSForDict(String dictName, String css) async {
+    final map = customDictCSS;
+    if (css.isEmpty) {
+      map.remove(dictName);
+    } else {
+      map[dictName] = css;
+    }
+    await _setPref('custom_dict_css', jsonEncode(map));
   }
 
   /// Default audio source templates for word pronunciation.

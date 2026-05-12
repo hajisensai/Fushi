@@ -60,8 +60,6 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                Flexible(child: _buildCustomCSSButton()),
-                const SizedBox(width: 8),
                 Flexible(child: buildClearButton()),
                 const SizedBox(width: 8),
                 Flexible(child: buildCloseButton()),
@@ -302,49 +300,46 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
     );
   }
 
-  Widget _buildCustomCSSButton() {
-    return TextButton(
-      child: const Text('CSS'),
-      onPressed: () {
-        final controller = TextEditingController(text: appModel.customPopupCSS);
-        showAppDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Custom CSS'),
-            content: SizedBox(
-              width: double.maxFinite,
-              height: 300,
-              child: TextField(
-                controller: controller,
-                maxLines: null,
-                expands: true,
-                style: const TextStyle(
-                  fontFamily: 'monospace',
-                  fontSize: 13,
-                ),
-                decoration: const InputDecoration(
-                  hintText: '.expression { font-size: 30px; }',
-                  border: OutlineInputBorder(),
-                  contentPadding: EdgeInsets.all(8),
-                ),
-              ),
+  void _showCustomCSSDialog(String dictName) {
+    final controller = TextEditingController(
+      text: appModel.getCustomCSSForDict(dictName),
+    );
+    showAppDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Custom CSS — $dictName'),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 300,
+          child: TextField(
+            controller: controller,
+            maxLines: null,
+            expands: true,
+            style: const TextStyle(
+              fontFamily: 'monospace',
+              fontSize: 13,
             ),
-            actions: [
-              TextButton(
-                child: Text(t.dialog_cancel),
-                onPressed: () => Navigator.pop(context),
-              ),
-              TextButton(
-                child: Text(t.dialog_save),
-                onPressed: () async {
-                  await appModel.setCustomPopupCSS(controller.text);
-                  if (context.mounted) Navigator.pop(context);
-                },
-              ),
-            ],
+            decoration: const InputDecoration(
+              hintText: '.gloss-content { font-size: 14px; }',
+              border: OutlineInputBorder(),
+              contentPadding: EdgeInsets.all(8),
+            ),
           ),
-        );
-      },
+        ),
+        actions: [
+          TextButton(
+            child: Text(t.dialog_cancel),
+            onPressed: () => Navigator.pop(context),
+          ),
+          TextButton(
+            child: Text(t.dialog_save),
+            onPressed: () async {
+              await appModel.setCustomCSSForDict(dictName, controller.text);
+              if (context.mounted) Navigator.pop(context);
+            },
+          ),
+        ],
+      ),
     );
   }
 
@@ -684,6 +679,13 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
             notifier.value = !notifier.value;
             notifier.value = !notifier.value;
           }
+        },
+      ),
+      buildPopupItem(
+        label: 'Custom CSS',
+        icon: Icons.code,
+        action: () {
+          _showCustomCSSDialog(dictionary.name);
         },
       ),
       buildPopupItem(

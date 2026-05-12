@@ -665,8 +665,11 @@ function createDefinitionImage(data, dictionary, exporting = false) {
     
     if (typeof border === 'string') { imageContainer.style.border = border; }
     if (typeof borderRadius === 'string') { imageContainer.style.borderRadius = borderRadius; }
-    const useEmUnits = (hasPreferredWidth || hasPreferredHeight) && sizeUnits === 'em';
-    imageContainer.style.width = `${usedWidth}${useEmUnits ? 'em' : 'px'}`;
+    if (sizeUnits === 'em') {
+        imageContainer.style.width = `${usedWidth}em`;
+    } else {
+        imageContainer.style.width = `${usedWidth}px`;
+    }
     if (typeof title === 'string') {
         imageContainer.title = title;
     }
@@ -1574,10 +1577,13 @@ window.renderPopup = function() {
             document.body.scrollHeight);
     })();
 
-    if (window.customCSS) {
-        const customStyle = document.createElement('style');
-        customStyle.textContent = window.customCSS;
-        document.body.appendChild(customStyle);
+    if (window.customDictCSS && typeof window.customDictCSS === 'object') {
+        for (const [dictName, css] of Object.entries(window.customDictCSS)) {
+            if (!css) continue;
+            const style = document.createElement('style');
+            style.textContent = constructDictCss(css, dictName);
+            document.body.appendChild(style);
+        }
     }
 };
 

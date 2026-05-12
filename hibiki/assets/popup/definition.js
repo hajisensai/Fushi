@@ -223,8 +223,11 @@ function createDefinitionImage(data, dictionary, exporting) {
     aspectRatioSizer.style.paddingTop = `${invAspectRatio * 100}%`;
     if (typeof border === 'string') imageContainer.style.border = border;
     if (typeof borderRadius === 'string') imageContainer.style.borderRadius = borderRadius;
-    const useEmUnits = (hasPreferredWidth || hasPreferredHeight) && sizeUnits === 'em';
-    imageContainer.style.width = `${usedWidth}${useEmUnits ? 'em' : 'px'}`;
+    if (sizeUnits === 'em') {
+        imageContainer.style.width = `${usedWidth}em`;
+    } else {
+        imageContainer.style.width = `${usedWidth}px`;
+    }
     if (typeof title === 'string') imageContainer.title = title;
 
     const imageUrl = `image://?dictionary=${encodeURIComponent(dictionary)}&path=${encodeURIComponent(path)}`;
