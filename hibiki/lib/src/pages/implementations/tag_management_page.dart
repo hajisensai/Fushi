@@ -128,14 +128,14 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
     await _reload();
   }
 
-  Future<_TagEditResult?> _showTagEditDialog({
+  Future<TagEditResult?> _showTagEditDialog({
     required String title,
     required String initialName,
     required int initialColor,
   }) {
-    return showDialog<_TagEditResult>(
+    return showDialog<TagEditResult>(
       context: context,
-      builder: (ctx) => _TagEditDialog(
+      builder: (ctx) => TagEditDialog(
         title: title,
         initialName: initialName,
         initialColor: initialColor,
@@ -201,8 +201,8 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
   }
 }
 
-class _TagEditDialog extends StatefulWidget {
-  const _TagEditDialog({
+class TagEditDialog extends StatefulWidget {
+  const TagEditDialog({
     required this.title,
     required this.initialName,
     required this.initialColor,
@@ -212,10 +212,10 @@ class _TagEditDialog extends StatefulWidget {
   final int initialColor;
 
   @override
-  State<_TagEditDialog> createState() => _TagEditDialogState();
+  State<TagEditDialog> createState() => TagEditDialogState();
 }
 
-class _TagEditDialogState extends State<_TagEditDialog> {
+class TagEditDialogState extends State<TagEditDialog> {
   late final TextEditingController _nameController;
   late int _selectedColor;
 
@@ -293,7 +293,7 @@ class _TagEditDialogState extends State<_TagEditDialog> {
             }
             Navigator.pop(
               context,
-              _TagEditResult(name: name, color: _selectedColor),
+              TagEditResult(name: name, color: _selectedColor),
             );
           },
           child: Text(t.dialog_ok),
@@ -303,8 +303,8 @@ class _TagEditDialogState extends State<_TagEditDialog> {
   }
 }
 
-class _TagEditResult {
-  const _TagEditResult({required this.name, required this.color});
+class TagEditResult {
+  const TagEditResult({required this.name, required this.color});
   final String name;
   final int color;
 }

@@ -48,42 +48,18 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
   }
 
   Future<void> _quickCreateTag() async {
-    final nameController = TextEditingController();
-    String? name;
+    final result = await showDialog<TagEditResult>(
+      context: context,
+      builder: (ctx) => TagEditDialog(
+        title: t.tag_new,
+        initialName: '',
+        initialColor:
+            kTagPresetColors[_allTags.length % kTagPresetColors.length],
+      ),
+    );
+    if (result == null) return;
     try {
-      name = await showDialog<String>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: Text(t.tag_new),
-          content: TextField(
-            controller: nameController,
-            decoration: InputDecoration(
-              labelText: t.tag_name_hint,
-              border: const OutlineInputBorder(),
-            ),
-            autofocus: true,
-            onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(t.dialog_cancel),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, nameController.text.trim()),
-              child: Text(t.dialog_ok),
-            ),
-          ],
-        ),
-      );
-    } finally {
-      nameController.dispose();
-    }
-    if (name == null || name.isEmpty) return;
-    try {
-      final color =
-          kTagPresetColors[_allTags.length % kTagPresetColors.length];
-      final newId = await _db.createTag(name, color);
+      final newId = await _db.createTag(result.name, result.color);
       await _db.addTagToBook(widget.bookId, newId);
       await _load();
     } on SqliteException catch (e) {
