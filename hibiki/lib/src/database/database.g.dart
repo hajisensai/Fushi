@@ -5798,6 +5798,498 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
   }
 }
 
+class $BookTagsTable extends BookTags
+    with TableInfo<$BookTagsTable, BookTagRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $BookTagsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+      'name', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _colorValueMeta =
+      const VerificationMeta('colorValue');
+  @override
+  late final GeneratedColumn<int> colorValue = GeneratedColumn<int>(
+      'color_value', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const CustomExpression('2155905151'));
+  static const VerificationMeta _createdAtMeta =
+      const VerificationMeta('createdAt');
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+      'created_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns => [id, name, colorValue, createdAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'book_tags';
+  @override
+  VerificationContext validateIntegrity(Insertable<BookTagRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+          _nameMeta, name.isAcceptableOrUnknown(data['name']!, _nameMeta));
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('color_value')) {
+      context.handle(
+          _colorValueMeta,
+          colorValue.isAcceptableOrUnknown(
+              data['color_value']!, _colorValueMeta));
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+          _createdAtMeta,
+          createdAt.isAcceptableOrUnknown(
+              data['created_at']!, _createdAtMeta));
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [
+        {name},
+      ];
+  @override
+  BookTagRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return BookTagRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      name: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}name'])!,
+      colorValue: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}color_value'])!,
+      createdAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}created_at'])!,
+    );
+  }
+
+  @override
+  $BookTagsTable createAlias(String alias) {
+    return $BookTagsTable(attachedDatabase, alias);
+  }
+}
+
+class BookTagRow extends DataClass implements Insertable<BookTagRow> {
+  final int id;
+  final String name;
+  final int colorValue;
+  final int createdAt;
+  const BookTagRow(
+      {required this.id,
+      required this.name,
+      required this.colorValue,
+      required this.createdAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['name'] = Variable<String>(name);
+    map['color_value'] = Variable<int>(colorValue);
+    map['created_at'] = Variable<int>(createdAt);
+    return map;
+  }
+
+  BookTagsCompanion toCompanion(bool nullToAbsent) {
+    return BookTagsCompanion(
+      id: Value(id),
+      name: Value(name),
+      colorValue: Value(colorValue),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory BookTagRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return BookTagRow(
+      id: serializer.fromJson<int>(json['id']),
+      name: serializer.fromJson<String>(json['name']),
+      colorValue: serializer.fromJson<int>(json['colorValue']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'name': serializer.toJson<String>(name),
+      'colorValue': serializer.toJson<int>(colorValue),
+      'createdAt': serializer.toJson<int>(createdAt),
+    };
+  }
+
+  BookTagRow copyWith({int? id, String? name, int? colorValue, int? createdAt}) =>
+      BookTagRow(
+        id: id ?? this.id,
+        name: name ?? this.name,
+        colorValue: colorValue ?? this.colorValue,
+        createdAt: createdAt ?? this.createdAt,
+      );
+  BookTagRow copyWithCompanion(BookTagsCompanion data) {
+    return BookTagRow(
+      id: data.id.present ? data.id.value : this.id,
+      name: data.name.present ? data.name.value : this.name,
+      colorValue:
+          data.colorValue.present ? data.colorValue.value : this.colorValue,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('BookTagRow(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('colorValue: $colorValue, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, name, colorValue, createdAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is BookTagRow &&
+          other.id == this.id &&
+          other.name == this.name &&
+          other.colorValue == this.colorValue &&
+          other.createdAt == this.createdAt);
+}
+
+class BookTagsCompanion extends UpdateCompanion<BookTagRow> {
+  final Value<int> id;
+  final Value<String> name;
+  final Value<int> colorValue;
+  final Value<int> createdAt;
+  const BookTagsCompanion({
+    this.id = const Value.absent(),
+    this.name = const Value.absent(),
+    this.colorValue = const Value.absent(),
+    this.createdAt = const Value.absent(),
+  });
+  BookTagsCompanion.insert({
+    this.id = const Value.absent(),
+    required String name,
+    this.colorValue = const Value.absent(),
+    required int createdAt,
+  })  : name = Value(name),
+        createdAt = Value(createdAt);
+  static Insertable<BookTagRow> custom({
+    Expression<int>? id,
+    Expression<String>? name,
+    Expression<int>? colorValue,
+    Expression<int>? createdAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (name != null) 'name': name,
+      if (colorValue != null) 'color_value': colorValue,
+      if (createdAt != null) 'created_at': createdAt,
+    });
+  }
+
+  BookTagsCompanion copyWith(
+      {Value<int>? id,
+      Value<String>? name,
+      Value<int>? colorValue,
+      Value<int>? createdAt}) {
+    return BookTagsCompanion(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      colorValue: colorValue ?? this.colorValue,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (colorValue.present) {
+      map['color_value'] = Variable<int>(colorValue.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('BookTagsCompanion(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('colorValue: $colorValue, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $BookTagMappingsTable extends BookTagMappings
+    with TableInfo<$BookTagMappingsTable, BookTagMappingRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $BookTagMappingsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _bookIdMeta = const VerificationMeta('bookId');
+  @override
+  late final GeneratedColumn<int> bookId = GeneratedColumn<int>(
+      'book_id', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'REFERENCES epub_books (id) ON DELETE CASCADE'));
+  static const VerificationMeta _tagIdMeta = const VerificationMeta('tagId');
+  @override
+  late final GeneratedColumn<int> tagId = GeneratedColumn<int>(
+      'tag_id', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'REFERENCES book_tags (id) ON DELETE CASCADE'));
+  @override
+  List<GeneratedColumn> get $columns => [id, bookId, tagId];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'book_tag_mappings';
+  @override
+  VerificationContext validateIntegrity(Insertable<BookTagMappingRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('book_id')) {
+      context.handle(
+          _bookIdMeta,
+          bookId.isAcceptableOrUnknown(data['book_id']!, _bookIdMeta));
+    } else if (isInserting) {
+      context.missing(_bookIdMeta);
+    }
+    if (data.containsKey('tag_id')) {
+      context.handle(
+          _tagIdMeta,
+          tagId.isAcceptableOrUnknown(data['tag_id']!, _tagIdMeta));
+    } else if (isInserting) {
+      context.missing(_tagIdMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [
+        {bookId, tagId},
+      ];
+  @override
+  BookTagMappingRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return BookTagMappingRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      bookId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}book_id'])!,
+      tagId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}tag_id'])!,
+    );
+  }
+
+  @override
+  $BookTagMappingsTable createAlias(String alias) {
+    return $BookTagMappingsTable(attachedDatabase, alias);
+  }
+}
+
+class BookTagMappingRow extends DataClass
+    implements Insertable<BookTagMappingRow> {
+  final int id;
+  final int bookId;
+  final int tagId;
+  const BookTagMappingRow(
+      {required this.id, required this.bookId, required this.tagId});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['book_id'] = Variable<int>(bookId);
+    map['tag_id'] = Variable<int>(tagId);
+    return map;
+  }
+
+  BookTagMappingsCompanion toCompanion(bool nullToAbsent) {
+    return BookTagMappingsCompanion(
+      id: Value(id),
+      bookId: Value(bookId),
+      tagId: Value(tagId),
+    );
+  }
+
+  factory BookTagMappingRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return BookTagMappingRow(
+      id: serializer.fromJson<int>(json['id']),
+      bookId: serializer.fromJson<int>(json['bookId']),
+      tagId: serializer.fromJson<int>(json['tagId']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'bookId': serializer.toJson<int>(bookId),
+      'tagId': serializer.toJson<int>(tagId),
+    };
+  }
+
+  BookTagMappingRow copyWith({int? id, int? bookId, int? tagId}) =>
+      BookTagMappingRow(
+        id: id ?? this.id,
+        bookId: bookId ?? this.bookId,
+        tagId: tagId ?? this.tagId,
+      );
+  BookTagMappingRow copyWithCompanion(BookTagMappingsCompanion data) {
+    return BookTagMappingRow(
+      id: data.id.present ? data.id.value : this.id,
+      bookId: data.bookId.present ? data.bookId.value : this.bookId,
+      tagId: data.tagId.present ? data.tagId.value : this.tagId,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('BookTagMappingRow(')
+          ..write('id: $id, ')
+          ..write('bookId: $bookId, ')
+          ..write('tagId: $tagId')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, bookId, tagId);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is BookTagMappingRow &&
+          other.id == this.id &&
+          other.bookId == this.bookId &&
+          other.tagId == this.tagId);
+}
+
+class BookTagMappingsCompanion extends UpdateCompanion<BookTagMappingRow> {
+  final Value<int> id;
+  final Value<int> bookId;
+  final Value<int> tagId;
+  const BookTagMappingsCompanion({
+    this.id = const Value.absent(),
+    this.bookId = const Value.absent(),
+    this.tagId = const Value.absent(),
+  });
+  BookTagMappingsCompanion.insert({
+    this.id = const Value.absent(),
+    required int bookId,
+    required int tagId,
+  })  : bookId = Value(bookId),
+        tagId = Value(tagId);
+  static Insertable<BookTagMappingRow> custom({
+    Expression<int>? id,
+    Expression<int>? bookId,
+    Expression<int>? tagId,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (bookId != null) 'book_id': bookId,
+      if (tagId != null) 'tag_id': tagId,
+    });
+  }
+
+  BookTagMappingsCompanion copyWith(
+      {Value<int>? id, Value<int>? bookId, Value<int>? tagId}) {
+    return BookTagMappingsCompanion(
+      id: id ?? this.id,
+      bookId: bookId ?? this.bookId,
+      tagId: tagId ?? this.tagId,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (bookId.present) {
+      map['book_id'] = Variable<int>(bookId.value);
+    }
+    if (tagId.present) {
+      map['tag_id'] = Variable<int>(tagId.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('BookTagMappingsCompanion(')
+          ..write('id: $id, ')
+          ..write('bookId: $bookId, ')
+          ..write('tagId: $tagId')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$HibikiDatabase extends GeneratedDatabase {
   _$HibikiDatabase(QueryExecutor e) : super(e);
   $HibikiDatabaseManager get managers => $HibikiDatabaseManager(this);
@@ -5820,6 +6312,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
   late final $DictionaryHistoryTable dictionaryHistory =
       $DictionaryHistoryTable(this);
   late final $EpubBooksTable epubBooks = $EpubBooksTable(this);
+  late final $BookTagsTable bookTags = $BookTagsTable(this);
+  late final $BookTagMappingsTable bookTagMappings = $BookTagMappingsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -5837,7 +6331,9 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
         preferences,
         dictionaryMetadata,
         dictionaryHistory,
-        epubBooks
+        epubBooks,
+        bookTags,
+        bookTagMappings
       ];
 }
 
@@ -8691,6 +9187,296 @@ typedef $$EpubBooksTableProcessedTableManager = ProcessedTableManager<
     EpubBookRow,
     PrefetchHooks Function()>;
 
+typedef $$BookTagsTableCreateCompanionBuilder = BookTagsCompanion Function({
+  Value<int> id,
+  required String name,
+  Value<int> colorValue,
+  required int createdAt,
+});
+typedef $$BookTagsTableUpdateCompanionBuilder = BookTagsCompanion Function({
+  Value<int> id,
+  Value<String> name,
+  Value<int> colorValue,
+  Value<int> createdAt,
+});
+
+class $$BookTagsTableFilterComposer
+    extends Composer<_$HibikiDatabase, $BookTagsTable> {
+  $$BookTagsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get colorValue => $composableBuilder(
+      column: $table.colorValue, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$BookTagsTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $BookTagsTable> {
+  $$BookTagsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get colorValue => $composableBuilder(
+      column: $table.colorValue, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$BookTagsTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $BookTagsTable> {
+  $$BookTagsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<int> get colorValue =>
+      $composableBuilder(column: $table.colorValue, builder: (column) => column);
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+}
+
+class $$BookTagsTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $BookTagsTable,
+    BookTagRow,
+    $$BookTagsTableFilterComposer,
+    $$BookTagsTableOrderingComposer,
+    $$BookTagsTableAnnotationComposer,
+    $$BookTagsTableCreateCompanionBuilder,
+    $$BookTagsTableUpdateCompanionBuilder,
+    (
+      BookTagRow,
+      BaseReferences<_$HibikiDatabase, $BookTagsTable, BookTagRow>
+    ),
+    BookTagRow,
+    PrefetchHooks Function()> {
+  $$BookTagsTableTableManager(_$HibikiDatabase db, $BookTagsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$BookTagsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$BookTagsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$BookTagsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<String> name = const Value.absent(),
+            Value<int> colorValue = const Value.absent(),
+            Value<int> createdAt = const Value.absent(),
+          }) =>
+              BookTagsCompanion(
+            id: id,
+            name: name,
+            colorValue: colorValue,
+            createdAt: createdAt,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required String name,
+            Value<int> colorValue = const Value.absent(),
+            required int createdAt,
+          }) =>
+              BookTagsCompanion.insert(
+            id: id,
+            name: name,
+            colorValue: colorValue,
+            createdAt: createdAt,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$BookTagsTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $BookTagsTable,
+    BookTagRow,
+    $$BookTagsTableFilterComposer,
+    $$BookTagsTableOrderingComposer,
+    $$BookTagsTableAnnotationComposer,
+    $$BookTagsTableCreateCompanionBuilder,
+    $$BookTagsTableUpdateCompanionBuilder,
+    (
+      BookTagRow,
+      BaseReferences<_$HibikiDatabase, $BookTagsTable, BookTagRow>
+    ),
+    BookTagRow,
+    PrefetchHooks Function()>;
+
+typedef $$BookTagMappingsTableCreateCompanionBuilder =
+    BookTagMappingsCompanion Function({
+  Value<int> id,
+  required int bookId,
+  required int tagId,
+});
+typedef $$BookTagMappingsTableUpdateCompanionBuilder =
+    BookTagMappingsCompanion Function({
+  Value<int> id,
+  Value<int> bookId,
+  Value<int> tagId,
+});
+
+class $$BookTagMappingsTableFilterComposer
+    extends Composer<_$HibikiDatabase, $BookTagMappingsTable> {
+  $$BookTagMappingsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get bookId => $composableBuilder(
+      column: $table.bookId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get tagId => $composableBuilder(
+      column: $table.tagId, builder: (column) => ColumnFilters(column));
+}
+
+class $$BookTagMappingsTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $BookTagMappingsTable> {
+  $$BookTagMappingsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get bookId => $composableBuilder(
+      column: $table.bookId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get tagId => $composableBuilder(
+      column: $table.tagId, builder: (column) => ColumnOrderings(column));
+}
+
+class $$BookTagMappingsTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $BookTagMappingsTable> {
+  $$BookTagMappingsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<int> get bookId =>
+      $composableBuilder(column: $table.bookId, builder: (column) => column);
+
+  GeneratedColumn<int> get tagId =>
+      $composableBuilder(column: $table.tagId, builder: (column) => column);
+}
+
+class $$BookTagMappingsTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $BookTagMappingsTable,
+    BookTagMappingRow,
+    $$BookTagMappingsTableFilterComposer,
+    $$BookTagMappingsTableOrderingComposer,
+    $$BookTagMappingsTableAnnotationComposer,
+    $$BookTagMappingsTableCreateCompanionBuilder,
+    $$BookTagMappingsTableUpdateCompanionBuilder,
+    (
+      BookTagMappingRow,
+      BaseReferences<_$HibikiDatabase, $BookTagMappingsTable, BookTagMappingRow>
+    ),
+    BookTagMappingRow,
+    PrefetchHooks Function()> {
+  $$BookTagMappingsTableTableManager(
+      _$HibikiDatabase db, $BookTagMappingsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$BookTagMappingsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$BookTagMappingsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$BookTagMappingsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<int> bookId = const Value.absent(),
+            Value<int> tagId = const Value.absent(),
+          }) =>
+              BookTagMappingsCompanion(
+            id: id,
+            bookId: bookId,
+            tagId: tagId,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required int bookId,
+            required int tagId,
+          }) =>
+              BookTagMappingsCompanion.insert(
+            id: id,
+            bookId: bookId,
+            tagId: tagId,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$BookTagMappingsTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $BookTagMappingsTable,
+    BookTagMappingRow,
+    $$BookTagMappingsTableFilterComposer,
+    $$BookTagMappingsTableOrderingComposer,
+    $$BookTagMappingsTableAnnotationComposer,
+    $$BookTagMappingsTableCreateCompanionBuilder,
+    $$BookTagMappingsTableUpdateCompanionBuilder,
+    (
+      BookTagMappingRow,
+      BaseReferences<_$HibikiDatabase, $BookTagMappingsTable, BookTagMappingRow>
+    ),
+    BookTagMappingRow,
+    PrefetchHooks Function()>;
+
 class $HibikiDatabaseManager {
   final _$HibikiDatabase _db;
   $HibikiDatabaseManager(this._db);
@@ -8720,4 +9506,8 @@ class $HibikiDatabaseManager {
       $$DictionaryHistoryTableTableManager(_db, _db.dictionaryHistory);
   $$EpubBooksTableTableManager get epubBooks =>
       $$EpubBooksTableTableManager(_db, _db.epubBooks);
+  $$BookTagsTableTableManager get bookTags =>
+      $$BookTagsTableTableManager(_db, _db.bookTags);
+  $$BookTagMappingsTableTableManager get bookTagMappings =>
+      $$BookTagMappingsTableTableManager(_db, _db.bookTagMappings);
 }
