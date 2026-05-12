@@ -52,17 +52,17 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                buildImportFolderButton(),
+                Flexible(child: buildImportFolderButton()),
                 const SizedBox(width: 8),
-                buildImportButton(),
+                Flexible(child: buildImportButton()),
               ],
             ),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                buildClearButton(),
+                Flexible(child: buildClearButton()),
                 const SizedBox(width: 8),
-                buildCloseButton(),
+                Flexible(child: buildCloseButton()),
               ],
             ),
           ],
@@ -230,7 +230,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
 
   Widget buildImportButton() {
     return TextButton(
-      child: Text(t.dialog_import_dictionary),
+      child: Text(t.dialog_import_dictionary, overflow: TextOverflow.ellipsis, maxLines: 1),
       onPressed: _importDictionaryFiles,
     );
   }
@@ -239,7 +239,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
 
   Widget buildImportFolderButton() {
     return TextButton(
-      child: Text(t.dialog_import_folder),
+      child: Text(t.dialog_import_folder, overflow: TextOverflow.ellipsis, maxLines: 1),
       onPressed: () async {
         ValueNotifier<String> progressNotifier =
             ValueNotifier<String>(t.import_start);
