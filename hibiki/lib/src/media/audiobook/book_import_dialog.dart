@@ -64,12 +64,11 @@ class _BookImportDialogState extends State<BookImportDialog> {
 
   String? _epubPath;
   String? _subtitlePath;
-  String? _audioPath;
+  List<String> _audioPaths = [];
 
   // 原始文件名（file_picker 在 Android 上返回的 cache 路径文件名可能与原始不同）
   String? _epubName;
   String? _subtitleName;
-  String? _audioName;
 
   bool _importing = false;
   final ValueNotifier<double> _progress = ValueNotifier<double>(0.0);
@@ -282,9 +281,11 @@ class _BookImportDialogState extends State<BookImportDialog> {
             children: [
               Text(t.srt_import_pick_audio_files,
                   style: const TextStyle(fontSize: 13)),
-              if (_audioPath != null)
+              if (_audioPaths.isNotEmpty)
                 Text(
-                  _audioName ?? p.basename(_audioPath!),
+                  _audioPaths.length == 1
+                      ? p.basename(_audioPaths.first)
+                      : '${_audioPaths.length} files',
                   style: const TextStyle(fontSize: 11, color: Colors.grey),
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
@@ -292,12 +293,11 @@ class _BookImportDialogState extends State<BookImportDialog> {
             ],
           ),
         ),
-        if (_audioPath != null)
+        if (_audioPaths.isNotEmpty)
           IconButton(
             icon: const Icon(Icons.close, size: 18, color: Colors.grey),
             onPressed: () => setState(() {
-              _audioPath = null;
-              _audioName = null;
+              _audioPaths = [];
             }),
           ),
         IconButton(
@@ -373,15 +373,21 @@ class _BookImportDialogState extends State<BookImportDialog> {
   Future<void> _pickAudio() async {
     final FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.audio,
+      allowMultiple: true,
     );
-    final PlatformFile? file = result?.files.single;
-    final String? path = file?.path;
-    if (path == null || file == null || !mounted) return;
+    if (result == null || !mounted) return;
 
-    setState(() {
-      _audioPath = path;
-      _audioName = file.name;
-    });
+    final List<String> paths = result.files
+        .map((f) => f.path)
+        .whereType<String>()
+        .toList()
+      ..sort();
+
+    if (paths.isNotEmpty) {
+      setState(() {
+        _audioPaths = paths;
+      });
+    }
   }
 
   // ── 导入 ────────────────────────────────────────────────────────────────
@@ -396,7 +402,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
       Fluttertoast.showToast(msg: t.srt_import_missing_input);
       return;
     }
-    if (_epubPath != null && !_hasSubtitles && _audioPath != null) {
+    if (_epubPath != null && !_hasSubtitles && _audioPaths.isNotEmpty) {
       Fluttertoast.showToast(msg: t.srt_import_audio_needs_subtitle);
       return;
     }
@@ -413,7 +419,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
       final String? authorText =
           _authorCtrl.text.trim().isEmpty ? null : _authorCtrl.text.trim();
 
-      debugPrint('[hibiki-import] route: epub=$_epubPath sub=$_subtitlePath audio=$_audioPath');
+      debugPrint('[hibiki-import] route: epub=$_epubPath sub=$_subtitlePath audio=${_audioPaths.length} files');
       String? tail;
       if (_epubPath != null && _hasSubtitles) {
         debugPrint('[hibiki-import] → _importEpubWithAlignment');
@@ -491,9 +497,9 @@ class _BookImportDialogState extends State<BookImportDialog> {
     final String persistedSrt =
         await _persistFile(File(_subtitlePath!), persistDir);
 
-    String? persistedAudioPath;
-    if (_audioPath != null) {
-      persistedAudioPath = await _persistFile(File(_audioPath!), persistDir);
+    final List<String> persistedAudioPaths = [];
+    for (final String ap in _audioPaths) {
+      persistedAudioPaths.add(await _persistFile(File(ap), persistDir));
     }
 
     _reportProgress(0.9, t.import_step_saving);
@@ -503,8 +509,8 @@ class _BookImportDialogState extends State<BookImportDialog> {
       ..srtPath = persistedSrt
       ..importedAt = DateTime.now().millisecondsSinceEpoch
       ..ttuBookId = bookId;
-    if (persistedAudioPath != null) {
-      book.audioPaths = [persistedAudioPath];
+    if (persistedAudioPaths.isNotEmpty) {
+      book.audioPaths = persistedAudioPaths;
     }
     if (author != null) {
       book.author = author;
@@ -639,9 +645,9 @@ class _BookImportDialogState extends State<BookImportDialog> {
     final String persistedSrt =
         await _persistFile(File(_subtitlePath!), persistDir);
 
-    String? persistedAudioPath;
-    if (_audioPath != null) {
-      persistedAudioPath = await _persistFile(File(_audioPath!), persistDir);
+    final List<String> persistedAudioPaths = [];
+    for (final String ap in _audioPaths) {
+      persistedAudioPaths.add(await _persistFile(File(ap), persistDir));
     }
 
     _reportProgress(0.9, t.import_step_saving);
@@ -649,8 +655,8 @@ class _BookImportDialogState extends State<BookImportDialog> {
       ..bookUid = bookUid
       ..alignmentFormat = ext
       ..alignmentPath = persistedSrt;
-    if (persistedAudioPath != null) {
-      audiobook.audioPaths = [persistedAudioPath];
+    if (persistedAudioPaths.isNotEmpty) {
+      audiobook.audioPaths = persistedAudioPaths;
     }
     health.packInto(audiobook);
 
