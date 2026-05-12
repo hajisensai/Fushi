@@ -3556,6 +3556,14 @@ class AppModel with ChangeNotifier {
     await _setPref('custom_dict_css', jsonEncode(map));
   }
 
+  String get globalDictCSS {
+    return _getPref('global_dict_css', defaultValue: '') as String;
+  }
+
+  Future<void> setGlobalDictCSS(String css) async {
+    await _setPref('global_dict_css', css);
+  }
+
   /// Default audio source templates for word pronunciation.
   static const List<String> defaultAudioSources = [
     'https://hoshi-reader.manhhaoo-do.workers.dev/?term={term}&reading={reading}',
