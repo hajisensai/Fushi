@@ -381,7 +381,16 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
     final String trimmed = query.trim();
     if (trimmed.isEmpty) return;
 
-    if (_lastQuery == trimmed && overrideMaximumTerms == null) return;
+    if (_lastQuery == trimmed && overrideMaximumTerms == null) {
+      if (writeHistory && _result != null && _result!.entries.isNotEmpty) {
+        appModel.addToSearchHistory(
+          historyKey: mediaType.uniqueKey,
+          searchTerm: trimmed,
+        );
+        appModel.addToDictionaryHistory(result: _result!);
+      }
+      return;
+    }
     _lastQuery = trimmed;
     overrideMaximumTerms ??= appModel.maximumTerms;
 
