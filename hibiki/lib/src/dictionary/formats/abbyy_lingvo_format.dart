@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as path;
 
 import 'package:hibiki/dictionary.dart';
-import 'package:hibiki/i18n/strings.g.dart';
 
 /// A dictionary format for archives following the ABBYY Lingvo or DSL format
 /// compatible with GoldenDict.
@@ -67,76 +66,9 @@ Future<String> prepareNameAbbyyLingvoFormat(
   return name;
 }
 
-/// Stub matching [DictionaryFormat.prepareEntries].
 void _prepareEntriesAbbyyLingvoStub({
   required PrepareDictionaryParams params,
   required dynamic database,
 }) {
-  // No-op: hoshidicts only supports Yomitan format
-}
-
-/// Top-level function for use in compute. See [DictionaryFormat] for details.
-Future<void> prepareEntriesAbbyyLingvoFormat({
-  required PrepareDictionaryParams params,
-  required dynamic isar,
-}) async {
-  int count = 0;
-
-  String dictionaryFilePath =
-      path.join(params.resourceDirectory.path, 'dictionary.dsl');
-  File dictionaryFile = File(dictionaryFilePath);
-
-  String text = dictionaryFile
-      .readAsStringSync()
-      .replaceAll('<br>', '\n')
-      .replaceAll('[', '<')
-      .replaceAll(']', '>')
-      .replaceAll('{{', '<')
-      .replaceAll('}}', '>')
-      .replaceAll('<m0>', '')
-      .replaceAll('<m1>', ' ')
-      .replaceAll('<m2>', '  ')
-      .replaceAll('<m3>', '   ')
-      .replaceAll('\\<', '<')
-      .replaceAll('\\>', '>')
-      .replaceAll('<<', '')
-      .replaceAll('>>', '')
-      .replaceAll(RegExp('<[^<]+?>'), '');
-
-  List<String> lines = text.split('\n');
-
-  String term = '';
-
-  final buffer = StringBuffer();
-
-  for (String line in lines) {
-    if (line.startsWith('#')) {
-      continue;
-    }
-
-    if (line.characters.isNotEmpty &&
-        line.characters.first.codeUnits.first == 9) {
-      buffer.writeln(line);
-    } else {
-      String definition = buffer.toString();
-      buffer.clear();
-
-      if (term.isNotEmpty && definition.isNotEmpty) {
-        DictionaryEntry entry = DictionaryEntry(
-          dictionaryName: params.dictionary.name,
-          word: term,
-          meaning: definition,
-          popularity: 0,
-        );
-
-        isar.dictionaryEntrys.putSync(entry);
-
-        params.send(t.import_found_entry(count: count));
-
-        count++;
-      }
-
-      term = line.trim();
-    }
-  }
+  // Import handled by hoshidicts C++ importer (auto-detects DSL format)
 }
