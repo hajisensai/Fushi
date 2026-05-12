@@ -475,15 +475,7 @@ public class MainActivity extends AudioServiceActivity {
                             DictAccessibilityService.class));
                     break;
                 }
-                case "searchResult": {
-                    String json = (String) call.arguments;
-                    FloatingDictService svc = FloatingDictService.getInstance();
-                    if (svc != null) {
-                        svc.onSearchResult(json);
-                    }
-                    result.success(null);
-                    break;
-                }
+                // searchResult: now handled by overlay engine's own MethodChannel
                 default:
                     result.notImplemented();
             }
