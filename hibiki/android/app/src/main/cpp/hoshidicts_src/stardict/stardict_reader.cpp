@@ -38,14 +38,17 @@ std::vector<uint8_t> decompress_gz(const uint8_t* data, size_t size) {
   }
   if (flags & 0x08) {
     while (header_end < size && data[header_end] != 0) header_end++;
+    if (header_end >= size) return {};
     header_end++;
   }
   if (flags & 0x10) {
     while (header_end < size && data[header_end] != 0) header_end++;
+    if (header_end >= size) return {};
     header_end++;
   }
   if (flags & 0x02) header_end += 2;
 
+  if (header_end + 8 >= size) return {};
   size_t comp_size = size - header_end - 8;
   std::vector<uint8_t> result(uncompressed_size);
 
