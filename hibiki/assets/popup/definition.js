@@ -228,6 +228,7 @@ function createDefinitionImage(data, dictionary, exporting) {
         imageContainer.style.width = `${usedWidth}em`;
     } else if (!hasDimensions && isSvg) {
         imageContainer.style.width = '1em';
+        imageContainer.style.minWidth = '0';
     } else {
         imageContainer.style.width = `${usedWidth}px`;
     }
