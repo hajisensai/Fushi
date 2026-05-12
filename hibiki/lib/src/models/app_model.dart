@@ -560,12 +560,17 @@ class AppModel with ChangeNotifier {
         thumbColor: MaterialStateColor.resolveWith((states) {
           return states.contains(MaterialState.selected)
               ? cs.primary
-              : Colors.white;
+              : cs.onSurfaceVariant;
         }),
         trackColor: MaterialStateColor.resolveWith((states) {
           return states.contains(MaterialState.selected)
               ? cs.primaryContainer
-              : Colors.grey;
+              : cs.surfaceContainerHighest;
+        }),
+        trackOutlineColor: MaterialStateColor.resolveWith((states) {
+          return states.contains(MaterialState.selected)
+              ? Colors.transparent
+              : cs.outline;
         }),
       ),
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
@@ -635,17 +640,17 @@ class AppModel with ChangeNotifier {
         thumbColor: MaterialStateColor.resolveWith((states) {
           return states.contains(MaterialState.selected)
               ? cs.primary
-              : Colors.grey[400]!;
+              : cs.onSurfaceVariant;
         }),
         trackColor: MaterialStateColor.resolveWith((states) {
           return states.contains(MaterialState.selected)
               ? cs.primaryContainer
-              : Colors.grey[800]!;
+              : cs.surfaceContainerHighest;
         }),
         trackOutlineColor: MaterialStateColor.resolveWith((states) {
           return states.contains(MaterialState.selected)
               ? Colors.transparent
-              : Colors.grey[600]!;
+              : cs.outline;
         }),
       ),
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
