@@ -229,6 +229,7 @@ function createDefinitionImage(data, dictionary, exporting) {
     } else if (!hasDimensions && isSvg) {
         imageContainer.style.width = '1em';
         imageContainer.style.minWidth = '0';
+        imageContainer.style.fontSize = 'inherit';
     } else {
         imageContainer.style.width = `${usedWidth}px`;
     }

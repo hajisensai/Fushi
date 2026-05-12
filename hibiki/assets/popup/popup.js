@@ -671,6 +671,7 @@ function createDefinitionImage(data, dictionary, exporting = false) {
     } else if (!hasDimensions && isSvg) {
         imageContainer.style.width = '1em';
         imageContainer.style.minWidth = '0';
+        imageContainer.style.fontSize = 'inherit';
     } else {
         imageContainer.style.width = `${usedWidth}px`;
     }
@@ -1672,11 +1673,14 @@ window.renderPopup = function() {
         hideCopyToast();
 
         const target = (e.target?.nodeType === Node.TEXT_NODE ? e.target.parentElement : e.target);
+        console.log('[LONGPRESS] touchstart', target?.tagName, target?.className);
         if (target?.closest('.mine-button') || target?.closest('.audio-button')) return;
 
         longPressTimer = setTimeout(() => {
             longPressTimer = null;
-            if (!moved && selectWordAt(startX, startY)) {
+            const selected = !moved && selectWordAt(startX, startY);
+            console.log('[LONGPRESS] timer fired', { moved, selected, x: startX, y: startY });
+            if (selected) {
                 showCopyToast(startX, startY);
             }
         }, LONG_PRESS_MS);

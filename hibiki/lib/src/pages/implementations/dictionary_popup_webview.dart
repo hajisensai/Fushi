@@ -403,6 +403,8 @@ class DictionaryPopupWebViewState
         debugPrint('[PopupWebView] $msg');
         if (msg.startsWith('[IMG')) {
           ErrorLogService.instance.log('PopupImage', msg);
+        } else if (msg.startsWith('[LONGPRESS]')) {
+          ErrorLogService.instance.log('PopupLongPress', msg);
         }
       },
       onLoadResourceWithCustomScheme: (controller, request) async {
