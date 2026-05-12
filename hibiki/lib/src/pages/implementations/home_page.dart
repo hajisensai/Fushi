@@ -183,7 +183,6 @@ class _HomePageState extends BasePageState<HomePage>
   List<Widget> buildActions() {
     return [
       buildImportButton(),
-      buildTagFilterButton(),
       buildCollectionsButton(),
       buildStatisticsButton(),
     ];

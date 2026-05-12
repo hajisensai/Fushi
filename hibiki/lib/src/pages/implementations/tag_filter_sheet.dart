@@ -11,7 +11,28 @@ final filteredBookIdsProvider = FutureProvider<Set<int>?>((ref) async {
   final tagIds = ref.watch(selectedTagIdsProvider);
   if (tagIds.isEmpty) return null;
   final db = ref.watch(appProvider).database;
-  return db.getBookIdsForAnyTag(tagIds);
+  return db.getBookIdsForAllTags(tagIds);
+});
+
+final allTagsProvider = FutureProvider<List<BookTagRow>>((ref) async {
+  final db = ref.watch(appProvider).database;
+  return db.getAllTags();
+});
+
+final bookTagMapProvider =
+    FutureProvider<Map<int, List<BookTagRow>>>((ref) async {
+  final db = ref.watch(appProvider).database;
+  final tags = await db.getAllTags();
+  final mappings = await db.getAllBookTagMappings();
+  final tagById = {for (final t in tags) t.id: t};
+  final Map<int, List<BookTagRow>> result = {};
+  for (final m in mappings) {
+    final tag = tagById[m.tagId];
+    if (tag != null) {
+      result.putIfAbsent(m.bookId, () => []).add(tag);
+    }
+  }
+  return result;
 });
 
 class TagFilterSheet extends ConsumerStatefulWidget {

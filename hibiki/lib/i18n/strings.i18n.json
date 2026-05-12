@@ -901,6 +901,7 @@
   "tag_delete_confirm": "Delete tag \"$name\"? This will remove it from all books.",
   "tag_color": "Color",
   "tag_book_count": "$count books",
+  "tag_added_to_book": "Added tag \"$name\"",
   "miscellaneous_settings": "Miscellaneous",
   "app_icon_label": "App Icon",
   "icon_default": "Default",

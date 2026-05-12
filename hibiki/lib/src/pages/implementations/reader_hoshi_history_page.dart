@@ -13,6 +13,8 @@ import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_model.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
 import 'package:hibiki/src/media/sources/reader_hoshi_source.dart';
+import 'package:hibiki/src/database/database.dart';
+import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/illustrations_viewer_page.dart';
 import 'package:hibiki/utils.dart';
 
@@ -38,30 +40,107 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
         ref.watch(hoshiBooksProvider(appModel.targetLanguage));
     final AsyncValue<Set<int>?> filteredIds =
         ref.watch(filteredBookIdsProvider);
+    final allTags = ref.watch(allTagsProvider);
 
-    return books.when(
-      data: (bookList) {
-        final Set<int>? filterSet = filteredIds.valueOrNull;
-        final List<MediaItem> filtered;
-        if (filterSet == null) {
-          filtered = bookList;
-        } else {
-          filtered = bookList.where((item) {
-            final int? id = _parseBookId(item.mediaIdentifier);
-            return id != null && filterSet.contains(id);
-          }).toList();
-        }
-        return buildBody(filtered);
-      },
-      error: (error, stack) => buildError(
-        error: error,
-        stack: stack,
-        refresh: () {
-          ref.invalidate(hoshiBooksProvider(appModel.targetLanguage));
-        },
-      ),
-      loading: buildLoading,
+    return Column(
+      children: [
+        _buildTagBar(allTags.valueOrNull ?? const []),
+        Expanded(
+          child: books.when(
+            data: (bookList) {
+              final Set<int>? filterSet = filteredIds.valueOrNull;
+              final List<MediaItem> filtered;
+              if (filterSet == null) {
+                filtered = bookList;
+              } else {
+                filtered = bookList.where((item) {
+                  final int? id = _parseBookId(item.mediaIdentifier);
+                  return id != null && filterSet.contains(id);
+                }).toList();
+              }
+              return buildBody(filtered);
+            },
+            error: (error, stack) => buildError(
+              error: error,
+              stack: stack,
+              refresh: () {
+                ref.invalidate(hoshiBooksProvider(appModel.targetLanguage));
+              },
+            ),
+            loading: buildLoading,
+          ),
+        ),
+      ],
     );
+  }
+
+  Widget _buildTagBar(List<BookTagRow> allTags) {
+    if (allTags.isEmpty) return const SizedBox.shrink();
+    return _TagBarContent(
+      tags: allTags,
+      onToggleFilter: _toggleFilter,
+      onReorder: _reorderTags,
+    );
+  }
+
+  void _toggleFilter(int tagId) {
+    final current = Set<int>.from(ref.read(selectedTagIdsProvider));
+    if (current.contains(tagId)) {
+      current.remove(tagId);
+    } else {
+      current.add(tagId);
+    }
+    ref.read(selectedTagIdsProvider.notifier).state = current;
+  }
+
+  Future<void> _reorderTags(int oldIndex, int newIndex) async {
+    final tags = ref.read(allTagsProvider).valueOrNull;
+    if (tags == null) return;
+    final reordered = List<BookTagRow>.from(tags);
+    final item = reordered.removeAt(oldIndex);
+    reordered.insert(newIndex, item);
+    final orderedIds = reordered.map((t) => t.id).toList();
+    await ref.read(appProvider).database.reorderTags(orderedIds);
+    ref.invalidate(allTagsProvider);
+  }
+
+  Future<void> _addTagToBook(int bookId, BookTagRow tag) async {
+    await ref.read(appProvider).database.addTagToBook(bookId, tag.id);
+    ref.invalidate(bookTagMapProvider);
+    ref.invalidate(filteredBookIdsProvider);
+    if (mounted) {
+      Fluttertoast.showToast(msg: t.tag_added_to_book(name: tag.name));
+    }
+  }
+
+  List<Widget> _buildTagLabels(int bookId) {
+    final tagMap = ref.watch(bookTagMapProvider).valueOrNull;
+    if (tagMap == null) return const [];
+    final tags = tagMap[bookId];
+    if (tags == null || tags.isEmpty) return const [];
+    final display = tags.take(3).toList();
+    return display.map((tag) {
+      return Container(
+        margin: const EdgeInsets.only(right: 3, bottom: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+        decoration: BoxDecoration(
+          color: Color(tag.colorValue).withValues(alpha: 0.85),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Text(
+          tag.name,
+          style: TextStyle(
+            fontSize: 9,
+            color: ThemeData.estimateBrightnessForColor(Color(tag.colorValue)) ==
+                    Brightness.dark
+                ? Colors.white
+                : Colors.black,
+            fontWeight: FontWeight.w600,
+          ),
+          overflow: TextOverflow.ellipsis,
+        ),
+      );
+    }).toList();
   }
 
   Widget buildBody(List<MediaItem> books) {
@@ -396,6 +475,10 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
         final HealthKind healthKind =
             snapshot.data?.healthKind ?? HealthKind.notApplicable;
 
+        final int? bookId = _parseBookId(item.mediaIdentifier);
+        final tagLabels =
+            bookId != null ? _buildTagLabels(bookId) : const <Widget>[];
+
         return Stack(
           fit: StackFit.expand,
           children: [
@@ -429,6 +512,15 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
                       foreground: theme.colorScheme.onSurfaceVariant,
                     ),
             ),
+            if (tagLabels.isNotEmpty)
+              Positioned(
+                top: 4,
+                left: 4,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: tagLabels,
+                ),
+              ),
           ],
         );
       },
@@ -457,7 +549,8 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
 
   @override
   Widget buildMediaItem(MediaItem item) {
-    return _bookCardShell(
+    final int? bookId = _parseBookId(item.mediaIdentifier);
+    final card = _bookCardShell(
       onTap: () async {
         final MediaSource source = item.getMediaSource(appModel: appModel);
         await appModel.openMedia(
@@ -480,6 +573,12 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
         }
       },
       child: buildMediaItemContent(item),
+    );
+    if (bookId == null) return card;
+    return _BookDragTarget(
+      bookId: bookId,
+      onTagDropped: (tag) => _addTagToBook(bookId, tag),
+      child: card,
     );
   }
 
@@ -632,6 +731,223 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => TagPickerPage(bookId: bookId)),
+    ).then((_) {
+      ref.invalidate(bookTagMapProvider);
+      ref.invalidate(filteredBookIdsProvider);
+      ref.invalidate(allTagsProvider);
+    });
+  }
+}
+
+class _TagBarContent extends ConsumerStatefulWidget {
+  const _TagBarContent({
+    required this.tags,
+    required this.onToggleFilter,
+    required this.onReorder,
+  });
+  final List<BookTagRow> tags;
+  final void Function(int tagId) onToggleFilter;
+  final Future<void> Function(int oldIndex, int newIndex) onReorder;
+
+  @override
+  ConsumerState<_TagBarContent> createState() => _TagBarContentState();
+}
+
+class _TagBarContentState extends ConsumerState<_TagBarContent> {
+  @override
+  Widget build(BuildContext context) {
+    final selectedIds = ref.watch(selectedTagIdsProvider);
+    final theme = Theme.of(context);
+
+    return Container(
+      height: 44,
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
+          ),
+        ),
+      ),
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        itemCount: widget.tags.length + 1,
+        separatorBuilder: (_, __) => const SizedBox(width: 6),
+        itemBuilder: (context, index) {
+          if (index == widget.tags.length) {
+            return ActionChip(
+              avatar: Icon(Icons.settings,
+                  size: 16, color: theme.colorScheme.onSurfaceVariant),
+              label: Text(t.tag_manage),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const TagManagementPage()),
+                ).then((_) {
+                  ref.invalidate(allTagsProvider);
+                  ref.invalidate(bookTagMapProvider);
+                });
+              },
+            );
+          }
+          final tag = widget.tags[index];
+          final isSelected = selectedIds.contains(tag.id);
+          return LongPressDraggable<BookTagRow>(
+            data: tag,
+            feedback: Material(
+              elevation: 4,
+              borderRadius: BorderRadius.circular(16),
+              child: _TagChip(tag: tag, isSelected: true, isDimmed: false),
+            ),
+            childWhenDragging: Opacity(
+              opacity: 0.3,
+              child: _TagChip(tag: tag, isSelected: isSelected, isDimmed: false),
+            ),
+            child: DragTarget<BookTagRow>(
+              onWillAcceptWithDetails: (details) =>
+                  details.data.id != tag.id,
+              onAcceptWithDetails: (details) {
+                final draggedTag = details.data;
+                final oldIdx =
+                    widget.tags.indexWhere((t) => t.id == draggedTag.id);
+                final newIdx =
+                    widget.tags.indexWhere((t) => t.id == tag.id);
+                if (oldIdx != -1 && newIdx != -1) {
+                  widget.onReorder(oldIdx, newIdx);
+                }
+              },
+              builder: (context, candidateData, rejectedData) {
+                return GestureDetector(
+                  onTap: () => widget.onToggleFilter(tag.id),
+                  child: _TagChip(
+                    tag: tag,
+                    isSelected: isSelected,
+                    isDimmed: candidateData.isNotEmpty,
+                  ),
+                );
+              },
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _TagChip extends StatelessWidget {
+  const _TagChip({
+    required this.tag,
+    required this.isSelected,
+    required this.isDimmed,
+  });
+  final BookTagRow tag;
+  final bool isSelected;
+  final bool isDimmed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tagColor = Color(tag.colorValue);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: isSelected
+            ? tagColor.withValues(alpha: 0.2)
+            : theme.colorScheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isSelected ? tagColor : Colors.transparent,
+          width: 1.5,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(
+              color: tagColor,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 5),
+          Text(
+            tag.name,
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: isDimmed
+                  ? theme.colorScheme.onSurface.withValues(alpha: 0.4)
+                  : theme.colorScheme.onSurface,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BookDragTarget extends StatefulWidget {
+  const _BookDragTarget({
+    required this.bookId,
+    required this.onTagDropped,
+    required this.child,
+  });
+  final int bookId;
+  final void Function(BookTagRow tag) onTagDropped;
+  final Widget child;
+
+  @override
+  State<_BookDragTarget> createState() => _BookDragTargetState();
+}
+
+class _BookDragTargetState extends State<_BookDragTarget> {
+  bool _isHovering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return DragTarget<BookTagRow>(
+      onWillAcceptWithDetails: (_) => true,
+      onAcceptWithDetails: (details) {
+        setState(() => _isHovering = false);
+        widget.onTagDropped(details.data);
+      },
+      onMove: (_) {
+        if (!_isHovering) setState(() => _isHovering = true);
+      },
+      onLeave: (_) {
+        if (_isHovering) setState(() => _isHovering = false);
+      },
+      builder: (context, candidateData, rejectedData) {
+        return Stack(
+          children: [
+            widget.child,
+            if (_isHovering)
+              Positioned.fill(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .primary
+                        .withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.primary,
+                      width: 2,
+                    ),
+                  ),
+                  child: Center(
+                    child: Icon(
+                      Icons.add_circle_outline,
+                      color: Theme.of(context).colorScheme.primary,
+                      size: 32,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }

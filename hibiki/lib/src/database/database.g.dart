@@ -5826,6 +5826,14 @@ class $BookTagsTable extends BookTags
       type: DriftSqlType.int,
       requiredDuringInsert: false,
       defaultValue: const CustomExpression('2155905151'));
+  static const VerificationMeta _sortOrderMeta =
+      const VerificationMeta('sortOrder');
+  @override
+  late final GeneratedColumn<int> sortOrder = GeneratedColumn<int>(
+      'sort_order', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
   static const VerificationMeta _createdAtMeta =
       const VerificationMeta('createdAt');
   @override
@@ -5833,7 +5841,8 @@ class $BookTagsTable extends BookTags
       'created_at', aliasedName, false,
       type: DriftSqlType.int, requiredDuringInsert: true);
   @override
-  List<GeneratedColumn> get $columns => [id, name, colorValue, createdAt];
+  List<GeneratedColumn> get $columns =>
+      [id, name, colorValue, sortOrder, createdAt];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -5858,6 +5867,12 @@ class $BookTagsTable extends BookTags
           _colorValueMeta,
           colorValue.isAcceptableOrUnknown(
               data['color_value']!, _colorValueMeta));
+    }
+    if (data.containsKey('sort_order')) {
+      context.handle(
+          _sortOrderMeta,
+          sortOrder.isAcceptableOrUnknown(
+              data['sort_order']!, _sortOrderMeta));
     }
     if (data.containsKey('created_at')) {
       context.handle(
@@ -5886,6 +5901,8 @@ class $BookTagsTable extends BookTags
           .read(DriftSqlType.string, data['${effectivePrefix}name'])!,
       colorValue: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}color_value'])!,
+      sortOrder: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}sort_order'])!,
       createdAt: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}created_at'])!,
     );
@@ -5901,11 +5918,13 @@ class BookTagRow extends DataClass implements Insertable<BookTagRow> {
   final int id;
   final String name;
   final int colorValue;
+  final int sortOrder;
   final int createdAt;
   const BookTagRow(
       {required this.id,
       required this.name,
       required this.colorValue,
+      required this.sortOrder,
       required this.createdAt});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -5913,6 +5932,7 @@ class BookTagRow extends DataClass implements Insertable<BookTagRow> {
     map['id'] = Variable<int>(id);
     map['name'] = Variable<String>(name);
     map['color_value'] = Variable<int>(colorValue);
+    map['sort_order'] = Variable<int>(sortOrder);
     map['created_at'] = Variable<int>(createdAt);
     return map;
   }
@@ -5922,6 +5942,7 @@ class BookTagRow extends DataClass implements Insertable<BookTagRow> {
       id: Value(id),
       name: Value(name),
       colorValue: Value(colorValue),
+      sortOrder: Value(sortOrder),
       createdAt: Value(createdAt),
     );
   }
@@ -5933,6 +5954,7 @@ class BookTagRow extends DataClass implements Insertable<BookTagRow> {
       id: serializer.fromJson<int>(json['id']),
       name: serializer.fromJson<String>(json['name']),
       colorValue: serializer.fromJson<int>(json['colorValue']),
+      sortOrder: serializer.fromJson<int>(json['sortOrder']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
     );
   }
@@ -5943,15 +5965,22 @@ class BookTagRow extends DataClass implements Insertable<BookTagRow> {
       'id': serializer.toJson<int>(id),
       'name': serializer.toJson<String>(name),
       'colorValue': serializer.toJson<int>(colorValue),
+      'sortOrder': serializer.toJson<int>(sortOrder),
       'createdAt': serializer.toJson<int>(createdAt),
     };
   }
 
-  BookTagRow copyWith({int? id, String? name, int? colorValue, int? createdAt}) =>
+  BookTagRow copyWith(
+          {int? id,
+          String? name,
+          int? colorValue,
+          int? sortOrder,
+          int? createdAt}) =>
       BookTagRow(
         id: id ?? this.id,
         name: name ?? this.name,
         colorValue: colorValue ?? this.colorValue,
+        sortOrder: sortOrder ?? this.sortOrder,
         createdAt: createdAt ?? this.createdAt,
       );
   BookTagRow copyWithCompanion(BookTagsCompanion data) {
@@ -5960,7 +5989,10 @@ class BookTagRow extends DataClass implements Insertable<BookTagRow> {
       name: data.name.present ? data.name.value : this.name,
       colorValue:
           data.colorValue.present ? data.colorValue.value : this.colorValue,
-      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      sortOrder:
+          data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
+      createdAt:
+          data.createdAt.present ? data.createdAt.value : this.createdAt,
     );
   }
 
@@ -5970,13 +6002,14 @@ class BookTagRow extends DataClass implements Insertable<BookTagRow> {
           ..write('id: $id, ')
           ..write('name: $name, ')
           ..write('colorValue: $colorValue, ')
+          ..write('sortOrder: $sortOrder, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, name, colorValue, createdAt);
+  int get hashCode => Object.hash(id, name, colorValue, sortOrder, createdAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -5984,6 +6017,7 @@ class BookTagRow extends DataClass implements Insertable<BookTagRow> {
           other.id == this.id &&
           other.name == this.name &&
           other.colorValue == this.colorValue &&
+          other.sortOrder == this.sortOrder &&
           other.createdAt == this.createdAt);
 }
 
@@ -5991,17 +6025,20 @@ class BookTagsCompanion extends UpdateCompanion<BookTagRow> {
   final Value<int> id;
   final Value<String> name;
   final Value<int> colorValue;
+  final Value<int> sortOrder;
   final Value<int> createdAt;
   const BookTagsCompanion({
     this.id = const Value.absent(),
     this.name = const Value.absent(),
     this.colorValue = const Value.absent(),
+    this.sortOrder = const Value.absent(),
     this.createdAt = const Value.absent(),
   });
   BookTagsCompanion.insert({
     this.id = const Value.absent(),
     required String name,
     this.colorValue = const Value.absent(),
+    this.sortOrder = const Value.absent(),
     required int createdAt,
   })  : name = Value(name),
         createdAt = Value(createdAt);
@@ -6009,12 +6046,14 @@ class BookTagsCompanion extends UpdateCompanion<BookTagRow> {
     Expression<int>? id,
     Expression<String>? name,
     Expression<int>? colorValue,
+    Expression<int>? sortOrder,
     Expression<int>? createdAt,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (name != null) 'name': name,
       if (colorValue != null) 'color_value': colorValue,
+      if (sortOrder != null) 'sort_order': sortOrder,
       if (createdAt != null) 'created_at': createdAt,
     });
   }
@@ -6023,11 +6062,13 @@ class BookTagsCompanion extends UpdateCompanion<BookTagRow> {
       {Value<int>? id,
       Value<String>? name,
       Value<int>? colorValue,
+      Value<int>? sortOrder,
       Value<int>? createdAt}) {
     return BookTagsCompanion(
       id: id ?? this.id,
       name: name ?? this.name,
       colorValue: colorValue ?? this.colorValue,
+      sortOrder: sortOrder ?? this.sortOrder,
       createdAt: createdAt ?? this.createdAt,
     );
   }
@@ -6044,6 +6085,9 @@ class BookTagsCompanion extends UpdateCompanion<BookTagRow> {
     if (colorValue.present) {
       map['color_value'] = Variable<int>(colorValue.value);
     }
+    if (sortOrder.present) {
+      map['sort_order'] = Variable<int>(sortOrder.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<int>(createdAt.value);
     }
@@ -6056,6 +6100,7 @@ class BookTagsCompanion extends UpdateCompanion<BookTagRow> {
           ..write('id: $id, ')
           ..write('name: $name, ')
           ..write('colorValue: $colorValue, ')
+          ..write('sortOrder: $sortOrder, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
         .toString();

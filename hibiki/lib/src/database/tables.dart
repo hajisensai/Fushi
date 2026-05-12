@@ -197,6 +197,7 @@ class BookTags extends Table {
   TextColumn get name => text().unique()();
   IntColumn get colorValue =>
       integer().withDefault(const Constant(0xFF9E9E9E))();
+  IntColumn get sortOrder => integer().withDefault(const Constant(0))();
   IntColumn get createdAt => integer()();
 }
 

@@ -42,7 +42,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -62,6 +62,12 @@ class HibikiDatabase extends _$HibikiDatabase {
           if (from < 6) {
             await m.createTable(bookTags);
             await m.createTable(bookTagMappings);
+          }
+          if (from < 7) {
+            await m.addColumn(bookTags, bookTags.sortOrder);
+            await customStatement(
+              'UPDATE book_tags SET sort_order = id WHERE sort_order = 0',
+            );
           }
         },
       );
@@ -457,7 +463,12 @@ class HibikiDatabase extends _$HibikiDatabase {
 
   // ── book tags ───────────────────────────────────────────────────
   Future<List<BookTagRow>> getAllTags() =>
-      (select(bookTags)..orderBy([(t) => OrderingTerm.asc(t.createdAt)])).get();
+      (select(bookTags)
+            ..orderBy([
+              (t) => OrderingTerm.asc(t.sortOrder),
+              (t) => OrderingTerm.asc(t.createdAt),
+            ]))
+          .get();
 
   Future<List<BookTagRow>> getTagsForBook(int bookId) {
     final query = select(bookTags).join([
@@ -481,10 +492,16 @@ class HibikiDatabase extends _$HibikiDatabase {
   }
 
   Future<int> createTag(String name, int colorValue) async {
+    final maxQuery = selectOnly(bookTags)
+      ..addColumns([bookTags.sortOrder.max()]);
+    final maxRow = await maxQuery.getSingleOrNull();
+    final int nextOrder =
+        (maxRow?.read(bookTags.sortOrder.max()) ?? 0) + 1;
     return into(bookTags).insert(
       BookTagsCompanion.insert(
         name: name,
         colorValue: Value(colorValue),
+        sortOrder: Value(nextOrder),
         createdAt: DateTime.now().millisecondsSinceEpoch,
       ),
     );
@@ -539,6 +556,30 @@ class HibikiDatabase extends _$HibikiDatabase {
             ..where(
                 (t) => t.bookId.equals(bookId) & t.tagId.equals(tagId)))
           .go();
+
+  Future<Set<int>> getBookIdsForAllTags(Set<int> tagIds) async {
+    if (tagIds.isEmpty) return {};
+    final tagCount = tagIds.length;
+    final rows = await customSelect(
+      'SELECT book_id FROM book_tag_mappings '
+      'WHERE tag_id IN (${tagIds.join(",")}) '
+      'GROUP BY book_id '
+      'HAVING COUNT(DISTINCT tag_id) = ?',
+      variables: [Variable<int>(tagCount)],
+    ).get();
+    return rows.map((row) => row.read<int>('book_id')).toSet();
+  }
+
+  Future<List<BookTagMappingRow>> getAllBookTagMappings() =>
+      select(bookTagMappings).get();
+
+  Future<void> reorderTags(List<int> orderedTagIds) => transaction(() async {
+        for (int i = 0; i < orderedTagIds.length; i++) {
+          await (update(bookTags)
+                ..where((t) => t.id.equals(orderedTagIds[i])))
+              .write(BookTagsCompanion(sortOrder: Value(i)));
+        }
+      });
 
   Future<int> countBooksForTag(int tagId) async {
     final cnt = countAll();
