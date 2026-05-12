@@ -244,6 +244,67 @@ function createDefinitionImage(data, dictionary, exporting) {
 
 // --- Core structured content rendering (from popup.js) ---
 
+const INLINE_HTML_RE_DEF = /<(?:ruby|rt|rp|b|i|em|strong|span|sup|sub|br)\b[^>]*>/i;
+const URL_RE_DEF = /https?:\/\/[^\s<>　，、。！））)]+/g;
+const SAFE_TAGS_DEF = new Set(['ruby','rt','rp','b','i','em','strong','span','sup','sub','br','a']);
+
+function sanitizeInlineHtmlDef(html) {
+    const tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    tmp.querySelectorAll('script,style,iframe,object,embed,form,input,textarea,link').forEach(el => el.remove());
+    tmp.querySelectorAll('*').forEach(el => {
+        const tag = el.tagName.toLowerCase();
+        if (!SAFE_TAGS_DEF.has(tag)) {
+            el.replaceWith(...el.childNodes);
+            return;
+        }
+        [...el.attributes].forEach(attr => {
+            if (attr.name.startsWith('on') || attr.name === 'style' && /expression|javascript/i.test(attr.value)) {
+                el.removeAttribute(attr.name);
+            }
+        });
+    });
+    return tmp.innerHTML;
+}
+
+function linkifyUrlsDef(html) {
+    return html.replace(URL_RE_DEF, url => {
+        const escaped = url.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+        return `<a href="${escaped}">${url}</a>`;
+    });
+}
+
+function appendRichTextLineDef(parent, line) {
+    const hasHtml = INLINE_HTML_RE_DEF.test(line);
+    const hasUrl = URL_RE_DEF.test(line);
+    URL_RE_DEF.lastIndex = 0;
+    if (!hasHtml && !hasUrl) {
+        parent.appendChild(document.createTextNode(line));
+        return;
+    }
+    let html = hasHtml ? sanitizeInlineHtmlDef(line) : line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    if (hasUrl || URL_RE_DEF.test(html)) {
+        URL_RE_DEF.lastIndex = 0;
+        const tmp2 = document.createElement('div');
+        tmp2.innerHTML = html;
+        const walker = document.createTreeWalker(tmp2, NodeFilter.SHOW_TEXT);
+        const textNodes = [];
+        while (walker.nextNode()) textNodes.push(walker.currentNode);
+        textNodes.forEach(tn => {
+            if (URL_RE_DEF.test(tn.textContent)) {
+                URL_RE_DEF.lastIndex = 0;
+                const span = document.createElement('span');
+                span.innerHTML = linkifyUrlsDef(tn.textContent.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'));
+                tn.replaceWith(...span.childNodes);
+            }
+        });
+        html = tmp2.innerHTML;
+    }
+    const frag = document.createElement('span');
+    frag.innerHTML = html;
+    while (frag.firstChild) parent.appendChild(frag.firstChild);
+}
+
 function renderStructuredContent(parent, node, language, dictName, exporting) {
     if (typeof node === 'string') {
         node.split(/\r?\n/).forEach((line, i) => {
@@ -253,7 +314,7 @@ function renderStructuredContent(parent, node, language, dictName, exporting) {
                     const detected = getLanguageFromText(line, language);
                     if (detected) parent.setAttribute('lang', detected);
                 }
-                parent.appendChild(document.createTextNode(line));
+                appendRichTextLineDef(parent, line);
             }
         });
         return;
@@ -267,7 +328,7 @@ function renderStructuredContent(parent, node, language, dictName, exporting) {
             ul.classList.add('glossary-list');
             node.forEach(child => {
                 const li = document.createElement('li');
-                li.appendChild(document.createTextNode(child));
+                appendRichTextLineDef(li, child);
                 ul.appendChild(li);
             });
             parent.appendChild(ul);
