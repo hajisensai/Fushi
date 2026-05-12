@@ -1,9 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../i18n/strings.g.dart';
 import '../base_page.dart';
+
+const iconPresetKey = 'app_icon_preset';
+
+const iconAssetMap = <String, String>{
+  'default': 'assets/meta/icon.png',
+  'hibiki_full': 'assets/meta/launcher_icon_full.png',
+  'hibiki_minimal': 'assets/meta/launcher_icon_minimal.png',
+};
 
 const _iconChannel = MethodChannel('app.hibiki.reader/icon_switch');
 
@@ -49,6 +58,8 @@ class _MiscellaneousSettingsPageState
         {'alias': key},
       );
       if (ok == true && mounted) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(iconPresetKey, key);
         setState(() => _currentIcon = key);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(t.icon_switch_success)),

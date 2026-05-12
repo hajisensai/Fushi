@@ -8,6 +8,7 @@ import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
 import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
 import 'package:hibiki/src/media/sources/reader_hoshi_source.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:hibiki/utils.dart';
 
@@ -24,10 +25,12 @@ class _HomePageState extends BasePageState<HomePage>
   String get appVersion => appModel.packageInfo.version;
 
   int _currentTab = 0;
+  String _iconAsset = 'assets/meta/icon.png';
 
   @override
   void initState() {
     super.initState();
+    _loadIconPreset();
 
     WidgetsBinding.instance.addObserver(this);
     appModelNoUpdate.databaseCloseNotifier.addListener(refresh);
@@ -51,6 +54,14 @@ class _HomePageState extends BasePageState<HomePage>
         );
       }
     });
+  }
+
+  Future<void> _loadIconPreset() async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = prefs.getString(iconPresetKey) ?? 'default';
+    if (mounted) {
+      setState(() => _iconAsset = iconAssetMap[key] ?? 'assets/meta/icon.png');
+    }
   }
 
   void refresh() {
@@ -146,7 +157,7 @@ class _HomePageState extends BasePageState<HomePage>
       builder: (context, notifier, _) {
         return Padding(
           padding: Spacing.of(context).insets.onlyLeft.normal,
-          child: Image.asset('assets/meta/icon.png'),
+          child: Image.asset(_iconAsset),
         );
       },
     );
@@ -185,7 +196,10 @@ class _HomePageState extends BasePageState<HomePage>
         : Theme.of(context).colorScheme.onSurfaceVariant;
     return Expanded(
       child: InkWell(
-        onTap: () => setState(() => _currentTab = index),
+        onTap: () {
+          setState(() => _currentTab = index);
+          if (index == 0) _loadIconPreset();
+        },
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 12),
           child: Column(
