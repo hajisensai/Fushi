@@ -1,5 +1,6 @@
 import 'package:change_notifier_builder/change_notifier_builder.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:spaces/spaces.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
@@ -171,6 +172,7 @@ class _HomePageState extends BasePageState<HomePage>
   List<Widget> buildActions() {
     return [
       buildImportButton(),
+      buildTagFilterButton(),
       buildCollectionsButton(),
       buildStatisticsButton(),
     ];
@@ -233,6 +235,25 @@ class _HomePageState extends BasePageState<HomePage>
           ),
         );
         ref.invalidate(hoshiBooksProvider(appModel.targetLanguage));
+      },
+    );
+  }
+
+  Widget buildTagFilterButton() {
+    return Consumer(
+      builder: (context, ref, _) {
+        final selectedIds = ref.watch(selectedTagIdsProvider);
+        return JidoujishoIconButton(
+          tooltip: t.tag_filter,
+          icon: selectedIds.isEmpty ? Icons.filter_list : Icons.filter_list_off,
+          onTap: () {
+            showModalBottomSheet(
+              context: context,
+              isScrollControlled: true,
+              builder: (_) => const TagFilterSheet(),
+            );
+          },
+        );
       },
     );
   }
