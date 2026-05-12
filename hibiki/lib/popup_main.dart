@@ -98,12 +98,13 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       builder: _buildWithSpacing,
-      theme: appModel.overrideDictionaryTheme ??
-          ThemeData(
-            colorSchemeSeed: const Color(0xFF1F4959),
-            brightness:
-                appModel.isDarkMode ? Brightness.dark : Brightness.light,
-          ),
+      theme: appModel.overrideDictionaryTheme ?? appModel.theme,
+      darkTheme: appModel.overrideDictionaryTheme != null
+          ? null
+          : appModel.darkTheme,
+      themeMode: appModel.overrideDictionaryTheme != null
+          ? ThemeMode.light
+          : (appModel.isDarkMode ? ThemeMode.dark : ThemeMode.light),
       home: PopupDictionaryPage(
         key: ValueKey('$_searchTerm:$_searchGeneration'),
         searchTerm: _searchTerm,
