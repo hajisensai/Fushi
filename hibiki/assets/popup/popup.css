@@ -183,6 +183,10 @@ a {
     background-color: var(--gloss-image-background-color);
 }
 
+.gloss-image-link:not([data-appearance="monochrome"])>.gloss-image-container {
+    min-width: min(100%, 200px);
+}
+
 .gloss-image-link {
     cursor: inherit;
     color: var(--accent-color);
