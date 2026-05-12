@@ -1600,16 +1600,18 @@ window.renderPopup = function() {
             document.body.scrollHeight);
     })();
 
+    document.querySelectorAll('style.hoshi-custom-css').forEach(el => el.remove());
     if (window.globalDictCSS) {
         const style = document.createElement('style');
+        style.className = 'hoshi-custom-css';
         style.textContent = window.globalDictCSS;
         document.body.appendChild(style);
     }
-
     if (window.customDictCSS && typeof window.customDictCSS === 'object') {
         for (const [dictName, css] of Object.entries(window.customDictCSS)) {
             if (!css) continue;
             const style = document.createElement('style');
+            style.className = 'hoshi-custom-css';
             style.textContent = constructDictCss(css, dictName);
             document.body.appendChild(style);
         }
