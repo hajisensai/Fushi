@@ -617,10 +617,15 @@ function createDefinitionImage(data, dictionary, exporting = false) {
                        preferredWidth :
                        (hasPreferredHeight ? preferredHeight / invAspectRatio : width)
                        );
+    const effectiveSizeUnits = (
+                                typeof sizeUnits === 'string' ?
+                                sizeUnits :
+                                (hasDimensions ? 'em' : null)
+                                );
 
     console.log('[IMG]', path, JSON.stringify({
-        width, height, preferredWidth, preferredHeight,
-        usedWidth, hasDimensions, appearance, sizeUnits
+        width, height, preferredWidth, preferredHeight, usedWidth,
+        hasDimensions, appearance, sizeUnits: effectiveSizeUnits
     }));
 
     const node = document.createElement(exporting ? 'span' : 'a');
@@ -657,8 +662,8 @@ function createDefinitionImage(data, dictionary, exporting = false) {
     if (typeof verticalAlign === 'string') {
         node.dataset.verticalAlign = verticalAlign;
     }
-    if (typeof sizeUnits === 'string') {
-        node.dataset.sizeUnits = sizeUnits;
+    if (effectiveSizeUnits !== null) {
+        node.dataset.sizeUnits = effectiveSizeUnits;
     }
     
     aspectRatioSizer.style.paddingTop = `${invAspectRatio * 100}%`;
@@ -666,14 +671,16 @@ function createDefinitionImage(data, dictionary, exporting = false) {
     if (typeof border === 'string') { imageContainer.style.border = border; }
     if (typeof borderRadius === 'string') { imageContainer.style.borderRadius = borderRadius; }
     const isSvg = /\.svg$/i.test(path);
-    if (sizeUnits === 'em') {
+    if (effectiveSizeUnits === 'em') {
         imageContainer.style.width = `${usedWidth}em`;
     } else if (!hasDimensions && isSvg) {
         node.dataset.hasAspectRatio = 'false';
         imageContainer.style.width = 'auto';
+        imageContainer.style.minWidth = '1.2em';
         imageContainer.style.height = '1.2em';
         imageContainer.style.fontSize = 'inherit';
         imageContainer.style.lineHeight = '0';
+        imageContainer.style.overflow = 'visible';
         aspectRatioSizer.style.display = 'none';
     } else {
         imageContainer.style.width = `${usedWidth}px`;
@@ -716,7 +723,7 @@ function createDefinitionImage(data, dictionary, exporting = false) {
         if (filename) {
             image.alt = alt;
             image.src = filename;
-            if (sizeUnits === 'em') {
+            if (effectiveSizeUnits === 'em') {
                 const emSize = 14;
                 const scaleFactor = 2 * window.devicePixelRatio;
                 image.width = usedWidth * emSize * scaleFactor;
@@ -724,13 +731,13 @@ function createDefinitionImage(data, dictionary, exporting = false) {
                 image.width = usedWidth;
             }
             image.height = image.width * invAspectRatio;
-            applyImageStyles(node, imageContainer, aspectRatioSizer, imageBackground, image, filename, appearance, sizeUnits === 'em');
+            applyImageStyles(node, imageContainer, aspectRatioSizer, imageBackground, image, filename, appearance, effectiveSizeUnits === 'em');
         } else {
             image.textContent = alt;
         }
         imageContainer.appendChild(image);
     }
-    if (sizeUnits === 'em' && !exporting) {
+    if (effectiveSizeUnits === 'em' && !exporting) {
         node.style.maxWidth = 'none';
         imageContainer.style.maxWidth = 'none';
         const scrollWrapper = document.createElement('div');
@@ -1623,7 +1630,7 @@ window.renderPopup = function() {
     let longPressTimer = null;
     let startX = 0, startY = 0;
     let moved = false;
-    let touchStartTime = 0;
+    let fingerDown = false;
     window._longPressJustFired = false;
     const LONG_PRESS_MS = 400;
     const MOVE_THRESHOLD = 24;
@@ -1643,7 +1650,10 @@ window.renderPopup = function() {
                     window.flutter_inappwebview.callHandler('copyText', text)
                         .then((copied) => {
                             copyToast.textContent = copied ? 'Copied!' : 'Copy failed';
-                            setTimeout(() => { hideCopyToast(); }, 600);
+                            setTimeout(() => {
+                                hideCopyToast();
+                                clearLongPressHighlight();
+                            }, 600);
                         });
                 }
             });
@@ -1664,11 +1674,39 @@ window.renderPopup = function() {
     }
     window._hideCopyToast = hideCopyToast;
 
+    function firstTextDescendant(node) {
+        if (!node) return null;
+        if (node.nodeType === Node.TEXT_NODE && node.textContent?.trim()) {
+            return node;
+        }
+        for (const child of node.childNodes || []) {
+            const textNode = firstTextDescendant(child);
+            if (textNode) return textNode;
+        }
+        return null;
+    }
+
+    function clearLongPressHighlight() {
+        document.querySelectorAll('.longpress-highlight').forEach(span => {
+            const parent = span.parentNode;
+            while (span.firstChild) parent.insertBefore(span.firstChild, span);
+            parent.removeChild(span);
+            parent.normalize();
+        });
+    }
+
     function selectWordAt(x, y) {
+        clearLongPressHighlight();
         const range = document.caretRangeFromPoint(x, y);
-        if (!range || range.startContainer.nodeType !== Node.TEXT_NODE) return false;
-        const text = range.startContainer.textContent;
-        const offset = range.startOffset;
+        if (!range) return false;
+        const textNode = (
+                          range.startContainer.nodeType === Node.TEXT_NODE ?
+                          range.startContainer :
+                          firstTextDescendant(range.startContainer)
+                          );
+        if (!textNode) return false;
+        const text = textNode.textContent;
+        const offset = range.startContainer === textNode ? range.startOffset : 0;
         if (!text || offset >= text.length) return false;
 
         const CJK = /[　-鿿豈-﫿＀-￯]/;
@@ -1684,37 +1722,58 @@ window.renderPopup = function() {
         }
         if (start === end) return false;
 
+        const r = document.createRange();
+        r.setStart(textNode, start);
+        r.setEnd(textNode, end);
+        const highlight = document.createElement('span');
+        highlight.className = 'longpress-highlight';
+        r.surroundContents(highlight);
+
         const sel = window.getSelection();
         sel.removeAllRanges();
-        const r = document.createRange();
-        r.setStart(range.startContainer, start);
-        r.setEnd(range.startContainer, end);
-        sel.addRange(r);
+        const sr = document.createRange();
+        sr.selectNodeContents(highlight);
+        sel.addRange(sr);
         return true;
     }
 
     document.addEventListener('touchstart', (e) => {
         if (e.touches.length !== 1) return;
+        const t = e.touches[0];
         if (longPressTimer != null) {
+            const dx = Math.abs(t.clientX - startX);
+            const dy = Math.abs(t.clientY - startY);
+            const elapsed = Date.now() - touchStartTime;
+            if (dx <= MOVE_THRESHOLD && dy <= MOVE_THRESHOLD && elapsed < LONG_PRESS_MS) {
+                console.log('[LONGPRESS] duplicate touchstart ignored', { dx, dy, elapsed });
+                return;
+            }
             clearTimeout(longPressTimer);
             longPressTimer = null;
+            console.log('[LONGPRESS] touchstart reset', { dx, dy, elapsed });
         }
-        const t = e.touches[0];
         startX = t.clientX;
         startY = t.clientY;
         moved = false;
-        touchStartTime = Date.now();
+        fingerDown = true;
         window._longPressJustFired = false;
         hideCopyToast();
 
         const target = (e.target?.nodeType === Node.TEXT_NODE ? e.target.parentElement : e.target);
         console.log('[LONGPRESS] touchstart', target?.tagName, target?.className);
-        if (target?.closest('.mine-button') || target?.closest('.audio-button')) return;
+        if (target?.closest('.mine-button') || target?.closest('.audio-button')) {
+            console.log('[LONGPRESS] ignored control');
+            return;
+        }
 
         longPressTimer = setTimeout(() => {
             longPressTimer = null;
+            if (!fingerDown) {
+                console.log('[LONGPRESS] timer fired but finger lifted, skipping');
+                return;
+            }
             const selected = !moved && selectWordAt(startX, startY);
-            console.log('[LONGPRESS] timer fired', { moved, selected, x: startX, y: startY });
+            console.log('[LONGPRESS] timer fired', { moved, selected, fingerDown, x: startX, y: startY });
             if (selected) {
                 showCopyToast(startX, startY);
                 window._longPressJustFired = true;
@@ -1725,14 +1784,18 @@ window.renderPopup = function() {
     document.addEventListener('touchmove', (e) => {
         if (longPressTimer == null) return;
         const t = e.touches[0];
-        if (Math.abs(t.clientX - startX) > MOVE_THRESHOLD || Math.abs(t.clientY - startY) > MOVE_THRESHOLD) {
+        const dx = Math.abs(t.clientX - startX);
+        const dy = Math.abs(t.clientY - startY);
+        if (dx > MOVE_THRESHOLD || dy > MOVE_THRESHOLD) {
             moved = true;
             clearTimeout(longPressTimer);
             longPressTimer = null;
+            console.log('[LONGPRESS] touchmove cancel', { dx, dy });
         }
     }, { passive: true });
 
     document.addEventListener('touchend', () => {
+        fingerDown = false;
     }, { passive: true });
 })();
 

@@ -507,6 +507,11 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
     color: inherit;
 }
 
+.longpress-highlight {
+    background-color: var(--hoshi-primary-highlight, rgba(100, 140, 230, 0.35));
+    border-radius: 2px;
+}
+
 .copy-toast {
     position: fixed;
     background: rgba(0, 0, 0, 0.75);
