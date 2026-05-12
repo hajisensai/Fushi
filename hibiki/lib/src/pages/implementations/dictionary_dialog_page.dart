@@ -52,17 +52,17 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                buildImportFolderButton(),
+                Flexible(child: buildImportFolderButton()),
                 const SizedBox(width: 8),
-                buildImportButton(),
+                Flexible(child: buildImportButton()),
               ],
             ),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                buildClearButton(),
+                Flexible(child: buildClearButton()),
                 const SizedBox(width: 8),
-                buildCloseButton(),
+                Flexible(child: buildCloseButton()),
               ],
             ),
           ],
@@ -230,7 +230,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
 
   Widget buildImportButton() {
     return TextButton(
-      child: Text(t.dialog_import_dictionary),
+      child: Text(t.dialog_import_dictionary, overflow: TextOverflow.ellipsis, maxLines: 1),
       onPressed: _importDictionaryFiles,
     );
   }
@@ -239,7 +239,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
 
   Widget buildImportFolderButton() {
     return TextButton(
-      child: Text(t.dialog_import_folder),
+      child: Text(t.dialog_import_folder, overflow: TextOverflow.ellipsis, maxLines: 1),
       onPressed: () async {
         ValueNotifier<String> progressNotifier =
             ValueNotifier<String>(t.import_start);
@@ -297,6 +297,49 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
           Navigator.pop(context);
         }
       },
+    );
+  }
+
+  void _showCustomCSSDialog(String dictName) {
+    final controller = TextEditingController(
+      text: appModel.getCustomCSSForDict(dictName),
+    );
+    showAppDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Custom CSS — $dictName'),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 300,
+          child: TextField(
+            controller: controller,
+            maxLines: null,
+            expands: true,
+            style: const TextStyle(
+              fontFamily: 'monospace',
+              fontSize: 13,
+            ),
+            decoration: const InputDecoration(
+              hintText: '.gloss-content { font-size: 14px; }',
+              border: OutlineInputBorder(),
+              contentPadding: EdgeInsets.all(8),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            child: Text(t.dialog_cancel),
+            onPressed: () => Navigator.pop(context),
+          ),
+          TextButton(
+            child: Text(t.dialog_save),
+            onPressed: () async {
+              await appModel.setCustomCSSForDict(dictName, controller.text);
+              if (context.mounted) Navigator.pop(context);
+            },
+          ),
+        ],
+      ),
     );
   }
 
@@ -636,6 +679,13 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
             notifier.value = !notifier.value;
             notifier.value = !notifier.value;
           }
+        },
+      ),
+      buildPopupItem(
+        label: 'Custom CSS',
+        icon: Icons.code,
+        action: () {
+          _showCustomCSSDialog(dictionary.name);
         },
       ),
       buildPopupItem(

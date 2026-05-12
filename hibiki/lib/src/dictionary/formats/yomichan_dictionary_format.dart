@@ -28,7 +28,7 @@ class YomichanFormat extends DictionaryFormat {
   YomichanFormat._privateConstructor()
       : super(
           uniqueKey: 'yomichan',
-          name: 'Yomichan Dictionary',
+          name: 'Yomitan Dictionary',
           icon: Icons.auto_stories_rounded,
           allowedExtensions: const ['zip'],
           isTextFormat: false,

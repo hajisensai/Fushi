@@ -15,9 +15,19 @@ abstract final class AudiobookStorage {
     return dir;
   }
 
-  static Future<String> persistFile(File src, Directory persistDir) async {
+  static Future<String> persistFile(
+    File src,
+    Directory persistDir, {
+    int? dedupeIndex,
+  }) async {
     if (src.path.startsWith(persistDir.path)) return src.path;
-    final String dest = p.join(persistDir.path, p.basename(src.path));
+    String baseName = p.basename(src.path);
+    if (dedupeIndex != null) {
+      final String ext = p.extension(baseName);
+      final String stem = p.basenameWithoutExtension(baseName);
+      baseName = '$stem _$dedupeIndex$ext';
+    }
+    final String dest = p.join(persistDir.path, baseName);
     await src.copy(dest);
     debugPrint('[hibiki-import] persisted ${src.path} → $dest');
     return dest;
@@ -60,6 +70,19 @@ abstract final class AudiobookStorage {
     debugPrint('[hibiki-import] persisted ${src.path} → $dest '
         '(${(totalBytes / 1024 / 1024).toStringAsFixed(1)} MB)');
     return dest;
+  }
+
+  static Future<void> cleanAudioFiles(Directory persistDir) async {
+    if (!persistDir.existsSync()) return;
+    final List<String> audioExts = [
+      '.mp3', '.m4a', '.m4b', '.aac', '.ogg', '.opus', '.flac', '.wav', '.wma',
+    ];
+    for (final FileSystemEntity f in persistDir.listSync()) {
+      if (f is File &&
+          audioExts.contains(p.extension(f.path).toLowerCase())) {
+        await f.delete();
+      }
+    }
   }
 
   static Future<void> deletePersistDir(String bookUid) async {

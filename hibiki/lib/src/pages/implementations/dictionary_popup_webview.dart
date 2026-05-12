@@ -164,6 +164,8 @@ class DictionaryPopupWebViewState
       window.collapsedDictionaryNames = $collapsedNamesJson;
       window.lookupEntries = $entriesJson;
       window.dictionaryStyles = $stylesJson;
+      window.globalDictCSS = ${jsonEncode(appModel.globalDictCSS)};
+      window.customDictCSS = ${jsonEncode(appModel.customDictCSS)};
       window.renderPopup();
       ${needsScrollCheck ? _scrollCheckJs : ""}
     ''');
@@ -191,8 +193,10 @@ class DictionaryPopupWebViewState
         if (url.scheme == 'image' && HoshiDicts.isInitialized) {
           final dictName = url.queryParameters['dictionary'] ?? '';
           final mediaPath = url.queryParameters['path'] ?? '';
+          debugPrint('[PopupWebView] image request: dict=$dictName path=$mediaPath');
           if (dictName.isNotEmpty && mediaPath.isNotEmpty) {
             final data = HoshiDicts.instance.getMediaFile(dictName, mediaPath);
+            debugPrint('[PopupWebView] image response: ${data != null ? "${data.length} bytes" : "NULL"}');
             if (data != null) {
               return WebResourceResponse(
                 contentType: _mimeTypeForPath(mediaPath),
@@ -394,6 +398,20 @@ class DictionaryPopupWebViewState
       onLoadStop: (controller, url) {
         _ready = true;
         _pushResults();
+      },
+      onConsoleMessage: (controller, consoleMessage) {
+        final msg = consoleMessage.message;
+        debugPrint('[PopupWebView] $msg');
+        if (msg.startsWith('[IMG')) {
+          ErrorLogService.instance.log('PopupImage', msg);
+        } else if (msg.startsWith('[LONGPRESS]')) {
+          ErrorLogService.instance.log('PopupLongPress', msg);
+        }
+      },
+      onLoadResourceWithCustomScheme: (controller, request) async {
+        final url = request.url;
+        debugPrint('[PopupWebView] customScheme: ${url.scheme} ${url.toString().substring(0, (url.toString().length).clamp(0, 120))}');
+        return null;
       },
     );
   }

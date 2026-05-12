@@ -1,6 +1,7 @@
 import 'package:collection/collection.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:spaces/spaces.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
@@ -72,6 +73,7 @@ class _DictionaryDialogPageState extends BasePageState {
             mainAxisSize: MainAxisSize.min,
             children: [
               _buildDictionaryManageRow(),
+              _buildCustomCssRow(),
               const Space.small(),
               const JidoujishoDivider(),
               const Space.small(),
@@ -118,6 +120,31 @@ class _DictionaryDialogPageState extends BasePageState {
             Icon(Icons.auto_stories, size: textTheme.bodyMedium?.fontSize),
             const SizedBox(width: 8),
             Text(t.dictionaries),
+            const Spacer(),
+            Icon(Icons.chevron_right,
+                size: 20,
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCustomCssRow() {
+    return InkWell(
+      onTap: () {
+        showAppDialog(
+          context: context,
+          builder: (_) => const _DictCssEditorDialog(),
+        );
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Row(
+          children: [
+            Icon(Icons.code, size: textTheme.bodyMedium?.fontSize),
+            const SizedBox(width: 8),
+            Text(t.custom_dict_css),
             const Spacer(),
             Icon(Icons.chevron_right,
                 size: 20,
@@ -665,5 +692,122 @@ class _AudioSourcesDialogState extends State<_AudioSourcesDialog> {
         _controller.clear();
       });
     }
+  }
+}
+
+class _DictCssEditorDialog extends StatefulWidget {
+  const _DictCssEditorDialog();
+
+  @override
+  State<_DictCssEditorDialog> createState() => _DictCssEditorDialogState();
+}
+
+class _DictCssEditorDialogState extends State<_DictCssEditorDialog> {
+  late int _selectedIndex;
+  late TextEditingController _cssController;
+  late List<String> _dictNames;
+  late AppModel _appModel;
+
+  bool get _isGlobal => _selectedIndex == 0;
+  String get _currentDictName => _dictNames[_selectedIndex - 1];
+
+  @override
+  void initState() {
+    super.initState();
+    _appModel = ProviderScope.containerOf(context).read(appProvider);
+    _dictNames = _appModel.dictionaries.map((d) => d.name).toList();
+    _selectedIndex = 0;
+    _cssController = TextEditingController(text: _appModel.globalDictCSS);
+  }
+
+  @override
+  void dispose() {
+    _cssController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _onScopeChanged(int? index) async {
+    if (index == null || index == _selectedIndex) return;
+    await _saveCurrentScope();
+    _selectedIndex = index;
+    _cssController.text = _isGlobal
+        ? _appModel.globalDictCSS
+        : _appModel.getCustomCSSForDict(_currentDictName);
+    setState(() {});
+  }
+
+  Future<void> _saveCurrentScope() async {
+    final css = _cssController.text;
+    if (_isGlobal) {
+      await _appModel.setGlobalDictCSS(css);
+    } else {
+      await _appModel.setCustomCSSForDict(_currentDictName, css);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final maxHeight = MediaQuery.of(context).size.height * 0.55;
+
+    return AlertDialog(
+      title: Text(t.custom_dict_css),
+      content: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: double.maxFinite,
+          maxHeight: maxHeight,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            DropdownButton<int>(
+              value: _selectedIndex,
+              isExpanded: true,
+              onChanged: _onScopeChanged,
+              items: [
+                DropdownMenuItem<int>(
+                  value: 0,
+                  child: Text(t.custom_dict_css_global),
+                ),
+                for (int i = 0; i < _dictNames.length; i++)
+                  DropdownMenuItem<int>(
+                    value: i + 1,
+                    child: Text(
+                      _dictNames[i],
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: TextField(
+                controller: _cssController,
+                maxLines: null,
+                expands: true,
+                textAlignVertical: TextAlignVertical.top,
+                style: const TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 13,
+                ),
+                decoration: const InputDecoration(
+                  hintText: '.gloss-content { font-size: 14px; }',
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.all(8),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          child: Text(t.dialog_close),
+          onPressed: () async {
+            await _saveCurrentScope();
+            if (context.mounted) Navigator.pop(context);
+          },
+        ),
+      ],
+    );
   }
 }

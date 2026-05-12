@@ -637,6 +637,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       List<String>? persistedAudioPaths;
       String? persistedAudioRoot;
       if (_audioPaths != null && _audioPaths!.isNotEmpty) {
+        await AudiobookStorage.cleanAudioFiles(persistDir);
         persistedAudioPaths = <String>[];
         for (final String src in _audioPaths!) {
           final File srcFile = File(src);

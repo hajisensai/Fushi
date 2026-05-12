@@ -36,12 +36,33 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
   bool _allLoaded = false;
   Timer? _debounceTimer;
 
+  bool _historyWritten = false;
+
   @override
   void initState() {
     super.initState();
     appModelNoUpdate.dictionarySearchAgainNotifier.addListener(_searchAgain);
     appModelNoUpdate.dictionaryEntriesNotifier
         .addListener(_onDictionaryEntriesChanged);
+    _searchFocusNode.addListener(_onFocusChanged);
+  }
+
+  void _onFocusChanged() {
+    if (!_searchFocusNode.hasFocus) {
+      _commitHistory();
+    }
+  }
+
+  void _commitHistory() {
+    if (_historyWritten) return;
+    final trimmed = _controller.text.trim();
+    if (trimmed.isEmpty || _result == null || _result!.entries.isEmpty) return;
+    _historyWritten = true;
+    appModel.addToSearchHistory(
+      historyKey: mediaType.uniqueKey,
+      searchTerm: trimmed,
+    );
+    appModel.addToDictionaryHistory(result: _result!);
   }
 
   void _onDictionaryEntriesChanged() {
@@ -56,9 +77,11 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
 
   @override
   void dispose() {
+    _searchFocusNode.removeListener(_onFocusChanged);
     appModelNoUpdate.dictionarySearchAgainNotifier.removeListener(_searchAgain);
     appModelNoUpdate.dictionaryEntriesNotifier
         .removeListener(_onDictionaryEntriesChanged);
+    _commitHistory();
     _debounceTimer?.cancel();
     _searchFocusNode.dispose();
     _controller.dispose();
@@ -341,6 +364,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
 
   void _onQueryChanged(String query) {
     _debounceTimer?.cancel();
+    _historyWritten = false;
     if (query.isEmpty) {
       _clearSearch();
       return;
@@ -381,7 +405,17 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
     final String trimmed = query.trim();
     if (trimmed.isEmpty) return;
 
-    if (_lastQuery == trimmed && overrideMaximumTerms == null) return;
+    if (_lastQuery == trimmed && overrideMaximumTerms == null) {
+      if (writeHistory && !_historyWritten && _result != null && _result!.entries.isNotEmpty) {
+        _historyWritten = true;
+        appModel.addToSearchHistory(
+          historyKey: mediaType.uniqueKey,
+          searchTerm: trimmed,
+        );
+        appModel.addToDictionaryHistory(result: _result!);
+      }
+      return;
+    }
     _lastQuery = trimmed;
     overrideMaximumTerms ??= appModel.maximumTerms;
 
@@ -415,6 +449,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
         }
 
         if (writeHistory) {
+          _historyWritten = true;
           appModel.addToSearchHistory(
             historyKey: mediaType.uniqueKey,
             searchTerm: trimmed,

@@ -182,6 +182,12 @@ function createDefinitionImage(data, dictionary, exporting) {
     const hasDimensions = (hasPreferredWidth || hasPreferredHeight || typeof data.width === 'number' || typeof data.height === 'number');
     const invAspectRatio = (hasPreferredWidth && hasPreferredHeight ? preferredHeight / preferredWidth : height / width);
     const usedWidth = (hasPreferredWidth ? preferredWidth : (hasPreferredHeight ? preferredHeight / invAspectRatio : width));
+    const effectiveSizeUnits = (typeof sizeUnits === 'string' ? sizeUnits : (hasDimensions ? 'em' : null));
+
+    console.log('[IMG-def]', path, JSON.stringify({
+        width, height, preferredWidth, preferredHeight,
+        usedWidth, hasDimensions, appearance, sizeUnits: effectiveSizeUnits
+    }));
 
     const node = document.createElement('a');
     node.classList.add('gloss-image-link');
@@ -213,16 +219,31 @@ function createDefinitionImage(data, dictionary, exporting) {
     node.dataset.collapsed = typeof collapsed === 'boolean' ? `${collapsed}` : 'false';
     node.dataset.collapsible = typeof collapsible === 'boolean' ? `${collapsible}` : 'true';
     if (typeof verticalAlign === 'string') node.dataset.verticalAlign = verticalAlign;
-    if (typeof sizeUnits === 'string') node.dataset.sizeUnits = sizeUnits;
+    if (effectiveSizeUnits !== null) node.dataset.sizeUnits = effectiveSizeUnits;
 
     aspectRatioSizer.style.paddingTop = `${invAspectRatio * 100}%`;
     if (typeof border === 'string') imageContainer.style.border = border;
     if (typeof borderRadius === 'string') imageContainer.style.borderRadius = borderRadius;
-    imageContainer.style.width = `${usedWidth}em`;
+    const isSvg = /\.svg$/i.test(path);
+    if (effectiveSizeUnits === 'em') {
+        imageContainer.style.width = `${usedWidth}em`;
+    } else if (!hasDimensions && isSvg) {
+        node.dataset.hasAspectRatio = 'false';
+        imageContainer.style.width = 'auto';
+        imageContainer.style.minWidth = '1.2em';
+        imageContainer.style.height = '1.2em';
+        imageContainer.style.fontSize = 'inherit';
+        imageContainer.style.lineHeight = '0';
+        imageContainer.style.overflow = 'visible';
+        aspectRatioSizer.style.display = 'none';
+    } else {
+        imageContainer.style.width = `${usedWidth}px`;
+    }
     if (typeof title === 'string') imageContainer.title = title;
 
     const imageUrl = `image://?dictionary=${encodeURIComponent(dictionary)}&path=${encodeURIComponent(path)}`;
-    if (shouldRenderDefinitionImageToCanvas(path, appearance, usedWidth, invAspectRatio)) {
+    const inlineSvg = !hasDimensions && isSvg;
+    if (!inlineSvg && shouldRenderDefinitionImageToCanvas(path, appearance, usedWidth, invAspectRatio)) {
         imageContainer.appendChild(createDefinitionImageCanvas(imageUrl, nodeData?.alt || title || '', (canvas, sourceImage) => {
             renderDefinitionImageToCanvas(canvas, sourceImage, usedWidth, invAspectRatio, appearance);
         }));
@@ -230,7 +251,13 @@ function createDefinitionImage(data, dictionary, exporting) {
         const img = document.createElement('img');
         img.classList.add('gloss-image');
         img.alt = nodeData?.alt || title || '';
-        if (!hasDimensions) {
+        if (inlineSvg) {
+            img.style.height = '1.2em';
+            img.style.width = 'auto';
+            img.style.position = 'static';
+            img.style.display = 'inline-block';
+        }
+        if (!hasDimensions && !isSvg) {
             img.addEventListener('load', () => {
                 imageContainer.style.width = `${Math.min(img.naturalWidth, window.innerWidth - 20)}px`;
                 aspectRatioSizer.style.paddingTop = `${(img.naturalHeight / img.naturalWidth) * 100}%`;
@@ -238,6 +265,14 @@ function createDefinitionImage(data, dictionary, exporting) {
         }
         img.src = imageUrl;
         imageContainer.appendChild(img);
+    }
+    if (effectiveSizeUnits === 'em') {
+        node.style.maxWidth = 'none';
+        imageContainer.style.maxWidth = 'none';
+        const scrollWrapper = document.createElement('div');
+        scrollWrapper.className = 'gloss-image-scroll';
+        scrollWrapper.appendChild(node);
+        return scrollWrapper;
     }
     return node;
 }

@@ -63,6 +63,36 @@ body {
 
 .expression {
     font-size: 26px;
+    cursor: pointer;
+}
+
+.expression:active {
+    opacity: 0.6;
+}
+
+.kanji-breakdown {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 4px 0 2px;
+}
+
+.kanji-tag {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    height: 28px;
+    padding: 0 6px;
+    border-radius: 4px;
+    background: rgba(128, 128, 128, 0.15);
+    font-size: 16px;
+    cursor: pointer;
+    -webkit-user-select: none;
+}
+
+.kanji-tag:active {
+    opacity: 0.6;
 }
 
 .expression-scroll .expression {
@@ -178,6 +208,10 @@ a {
     background-color: var(--gloss-image-background-color);
 }
 
+.gloss-image-link:not([data-appearance="monochrome"])>.gloss-image-container {
+    min-width: min(100%, 200px);
+}
+
 .gloss-image-link {
     cursor: inherit;
     color: var(--accent-color);
@@ -244,6 +278,12 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
 
 .gloss-image-link[data-size-units=em] .gloss-image-container {
     font-size: 1em;
+}
+
+.gloss-image-scroll {
+    overflow-x: auto;
+    max-width: 100%;
+    -webkit-overflow-scrolling: touch;
 }
 
 .glossary-group {
@@ -465,6 +505,11 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
 ::selection {
     background-color: var(--hoshi-primary-highlight, rgba(100, 140, 230, 0.35));
     color: inherit;
+}
+
+.longpress-highlight {
+    background-color: var(--hoshi-primary-highlight, rgba(100, 140, 230, 0.35));
+    border-radius: 2px;
 }
 
 .copy-toast {

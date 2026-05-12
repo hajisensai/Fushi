@@ -3545,6 +3545,40 @@ class AppModel with ChangeNotifier {
     await _setPref('collapse_dictionaries', !collapseDictionaries);
   }
 
+  Map<String, String> get customDictCSS {
+    final raw = _getPref('custom_dict_css', defaultValue: '') as String;
+    if (raw.isEmpty) return {};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        return decoded.map((k, v) => MapEntry(k.toString(), v.toString()));
+      }
+    } catch (_) {}
+    return {};
+  }
+
+  String getCustomCSSForDict(String dictName) {
+    return customDictCSS[dictName] ?? '';
+  }
+
+  Future<void> setCustomCSSForDict(String dictName, String css) async {
+    final map = customDictCSS;
+    if (css.isEmpty) {
+      map.remove(dictName);
+    } else {
+      map[dictName] = css;
+    }
+    await _setPref('custom_dict_css', jsonEncode(map));
+  }
+
+  String get globalDictCSS {
+    return _getPref('global_dict_css', defaultValue: '') as String;
+  }
+
+  Future<void> setGlobalDictCSS(String css) async {
+    await _setPref('global_dict_css', css);
+  }
+
   /// Default audio source templates for word pronunciation.
   static const List<String> defaultAudioSources = [
     'https://hoshi-reader.manhhaoo-do.workers.dev/?term={term}&reading={reading}',
