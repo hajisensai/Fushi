@@ -2348,6 +2348,8 @@ class AppModel with ChangeNotifier {
 
     searchTerm = searchTerm.replaceAll('\n', ' ');
     searchTerm = _removeEmoji.clean(searchTerm, ' ', false);
+    searchTerm = searchTerm.replaceAll(
+        RegExp(r'^[\p{P}\p{S}]+|[\p{P}\p{S}]+$', unicode: true), '');
 
     /// Strip lone surrogates that may crash the search.
     RegExp loneSurrogate = RegExp(
