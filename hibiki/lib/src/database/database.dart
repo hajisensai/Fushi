@@ -456,4 +456,98 @@ class HibikiDatabase extends _$HibikiDatabase {
 
   Future<int> deleteEpubBook(int id) =>
       (delete(epubBooks)..where((t) => t.id.equals(id))).go();
+
+  // ── book tags ───────────────────────────────────────────────────
+  Future<List<BookTagRow>> getAllTags() =>
+      (select(bookTags)..orderBy([(t) => OrderingTerm.asc(t.createdAt)])).get();
+
+  Future<List<BookTagRow>> getTagsForBook(int bookId) {
+    final query = select(bookTags).join([
+      innerJoin(
+        bookTagMappings,
+        bookTagMappings.tagId.equalsExp(bookTags.id),
+      ),
+    ])
+      ..where(bookTagMappings.bookId.equals(bookId))
+      ..orderBy([OrderingTerm.asc(bookTags.createdAt)]);
+    return query.map((row) => row.readTable(bookTags)).get();
+  }
+
+  Future<Set<int>> getBookIdsForAnyTag(Set<int> tagIds) async {
+    if (tagIds.isEmpty) return {};
+    final query = selectOnly(bookTagMappings)
+      ..addColumns([bookTagMappings.bookId])
+      ..where(bookTagMappings.tagId.isIn(tagIds));
+    final rows = await query.get();
+    return rows.map((row) => row.read(bookTagMappings.bookId)!).toSet();
+  }
+
+  Future<int> createTag(String name, int colorValue) async {
+    return into(bookTags).insert(
+      BookTagsCompanion.insert(
+        name: name,
+        colorValue: Value(colorValue),
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+  }
+
+  Future<void> updateTag(int id, {String? name, int? colorValue}) =>
+      (update(bookTags)..where((t) => t.id.equals(id))).write(
+        BookTagsCompanion(
+          name: name != null ? Value(name) : const Value.absent(),
+          colorValue:
+              colorValue != null ? Value(colorValue) : const Value.absent(),
+        ),
+      );
+
+  Future<int> deleteTag(int id) =>
+      (delete(bookTags)..where((t) => t.id.equals(id))).go();
+
+  Future<void> setTagsForBook(int bookId, Set<int> tagIds) =>
+      transaction(() async {
+        final existing = await (select(bookTagMappings)
+              ..where((t) => t.bookId.equals(bookId)))
+            .get();
+        final existingTagIds = existing.map((e) => e.tagId).toSet();
+
+        final toRemove = existingTagIds.difference(tagIds);
+        final toAdd = tagIds.difference(existingTagIds);
+
+        for (final tagId in toRemove) {
+          await (delete(bookTagMappings)
+                ..where(
+                    (t) => t.bookId.equals(bookId) & t.tagId.equals(tagId)))
+              .go();
+        }
+        for (final tagId in toAdd) {
+          await into(bookTagMappings).insert(
+            BookTagMappingsCompanion.insert(
+              bookId: bookId,
+              tagId: tagId,
+            ),
+          );
+        }
+      });
+
+  Future<void> addTagToBook(int bookId, int tagId) =>
+      into(bookTagMappings).insert(
+        BookTagMappingsCompanion.insert(bookId: bookId, tagId: tagId),
+        mode: InsertMode.insertOrIgnore,
+      );
+
+  Future<void> removeTagFromBook(int bookId, int tagId) =>
+      (delete(bookTagMappings)
+            ..where(
+                (t) => t.bookId.equals(bookId) & t.tagId.equals(tagId)))
+          .go();
+
+  Future<int> countBooksForTag(int tagId) async {
+    final cnt = countAll();
+    final q = selectOnly(bookTagMappings)
+      ..where(bookTagMappings.tagId.equals(tagId))
+      ..addColumns([cnt]);
+    final row = await q.getSingle();
+    return row.read(cnt)!;
+  }
 }
