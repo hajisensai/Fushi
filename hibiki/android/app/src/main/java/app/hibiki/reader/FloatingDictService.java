@@ -6,11 +6,14 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.DisplayMetrics;
+import android.util.Log;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -18,6 +21,7 @@ import android.view.View;
 import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -31,7 +35,10 @@ import java.lang.ref.WeakReference;
 
 public class FloatingDictService extends BaseFloatingService {
 
+    private static final String TAG = "FloatingDict";
     private static final int NOTIFICATION_ID = 9528;
+    private static final int MIN_WIDTH_DP = 180;
+    private static final int MIN_HEIGHT_DP = 200;
 
     private EditText searchInput;
     private TextView resultView;
@@ -120,9 +127,13 @@ public class FloatingDictService extends BaseFloatingService {
 
     @Override
     protected WindowManager.LayoutParams createLayoutParams() {
+        SharedPreferences prefs = getSharedPreferences(getPreferencePrefix(), MODE_PRIVATE);
+        int w = prefs.getInt("sizeW", dpToPx(300));
+        int h = prefs.getInt("sizeH", dpToPx(400));
+        w = Math.max(dpToPx(MIN_WIDTH_DP), w);
+        h = Math.max(dpToPx(MIN_HEIGHT_DP), h);
         WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
-                dpToPx(300),
-                dpToPx(400),
+                w, h,
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                         ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
                         : WindowManager.LayoutParams.TYPE_PHONE,
@@ -148,6 +159,8 @@ public class FloatingDictService extends BaseFloatingService {
         int dp4 = dpToPx(4);
         int dp8 = dpToPx(8);
         int dp12 = dpToPx(12);
+
+        FrameLayout wrapper = new FrameLayout(this);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -254,12 +267,66 @@ public class FloatingDictService extends BaseFloatingService {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        return root;
+        wrapper.addView(root, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
+
+        // resize handle at bottom-right corner
+        int handleSize = dpToPx(24);
+        View resizeHandle = new View(this);
+        resizeHandle.setBackgroundColor(0x44FFFFFF);
+        FrameLayout.LayoutParams handleLp = new FrameLayout.LayoutParams(handleSize, handleSize);
+        handleLp.gravity = Gravity.BOTTOM | Gravity.END;
+        resizeHandle.setOnTouchListener(new View.OnTouchListener() {
+            private int initW, initH;
+            private float initTouchX, initTouchY;
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                switch (event.getAction()) {
+                    case MotionEvent.ACTION_DOWN:
+                        initW = layoutParams.width;
+                        initH = layoutParams.height;
+                        initTouchX = event.getRawX();
+                        initTouchY = event.getRawY();
+                        return true;
+                    case MotionEvent.ACTION_MOVE:
+                        int newW = initW + (int) (event.getRawX() - initTouchX);
+                        int newH = initH + (int) (event.getRawY() - initTouchY);
+                        DisplayMetrics dm = getResources().getDisplayMetrics();
+                        newW = Math.max(dpToPx(MIN_WIDTH_DP), Math.min(newW, dm.widthPixels));
+                        newH = Math.max(dpToPx(MIN_HEIGHT_DP), Math.min(newH, dm.heightPixels));
+                        layoutParams.width = newW;
+                        layoutParams.height = newH;
+                        windowManager.updateViewLayout(rootView, layoutParams);
+                        return true;
+                    case MotionEvent.ACTION_UP:
+                        savePosition();
+                        return true;
+                }
+                return false;
+            }
+        });
+        wrapper.addView(resizeHandle, handleLp);
+
+        return wrapper;
+    }
+
+    @Override
+    protected void savePosition() {
+        if (layoutParams == null) return;
+        getSharedPreferences(getPreferencePrefix(), MODE_PRIVATE)
+                .edit()
+                .putInt("posX", layoutParams.x)
+                .putInt("posY", layoutParams.y)
+                .putInt("sizeW", layoutParams.width)
+                .putInt("sizeH", layoutParams.height)
+                .apply();
     }
 
     @Override
     protected void setupDragListener() {
-        View titleBar = ((LinearLayout) rootView).getChildAt(0);
+        LinearLayout content = (LinearLayout) ((FrameLayout) rootView).getChildAt(0);
+        View titleBar = content.getChildAt(0);
         titleBar.setOnTouchListener(new View.OnTouchListener() {
             private int initialX, initialY;
             private float initialTouchX, initialTouchY;
@@ -326,11 +393,13 @@ public class FloatingDictService extends BaseFloatingService {
 
     private void triggerSearch(String term) {
         if (term == null || term.trim().isEmpty()) return;
+        Log.d(TAG, "triggerSearch: " + term);
         resultView.setText("Searching...");
         MainActivity.notifyFloatingDictEvent("searchTerm", term);
     }
 
     public void onSearchResult(String json) {
+        Log.d(TAG, "onSearchResult: " + (json == null ? "null" : json.length() + " chars"));
         new Handler(Looper.getMainLooper()).post(() -> {
             if (json == null) {
                 resultView.setText("No results found.");

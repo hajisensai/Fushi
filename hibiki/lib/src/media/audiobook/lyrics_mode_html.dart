@@ -188,9 +188,26 @@ document.addEventListener('touchend', function(e) {
   };
 })();
 
-// ── 初始定位 ──
+// ── 初始定位（跳过动画，等布局稳定后瞬移） ──
 if ($currentIndex >= 0 && $currentIndex < _cues.length) {
-  setCue($currentIndex);
+  _currentIdx = $currentIndex;
+  for (var i = 0; i < _cues.length; i++) {
+    _cues[i].classList.remove('current', 'near-1', 'near-2', 'near-3');
+    var dist = Math.abs(i - $currentIndex);
+    if (dist === 0) _cues[i].classList.add('current');
+    else if (dist === 1) _cues[i].classList.add('near-1');
+    else if (dist === 2) _cues[i].classList.add('near-2');
+    else if (dist === 3) _cues[i].classList.add('near-3');
+  }
+  requestAnimationFrame(function() {
+    requestAnimationFrame(function() {
+      var el = _cues[$currentIndex];
+      if (el) {
+        var y = el.offsetTop - (window.innerHeight / 2) + (el.offsetHeight / 2);
+        window.scrollTo(0, Math.max(0, y));
+      }
+    });
+  });
 }
 </script>
 </body>

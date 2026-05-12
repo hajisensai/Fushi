@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:hibiki/src/dictionary/dictionary_search_result.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
@@ -36,20 +37,29 @@ class FloatingDictChannel {
     switch (call.method) {
       case 'searchTerm':
         final String term = call.arguments as String? ?? '';
+        debugPrint('[FloatingDict] searchTerm received: "$term", handler=${_onSearch != null}');
         if (term.trim().isEmpty || _onSearch == null) return;
-        final DictionarySearchResult? result = await _onSearch!(term);
-        if (result == null || result.entries.isEmpty) {
+        try {
+          final DictionarySearchResult? result = await _onSearch!(term);
+          debugPrint('[FloatingDict] search result: ${result?.entries.length ?? 0} entries');
+          if (result == null || result.entries.isEmpty) {
+            await _channel.invokeMethod<void>('searchResult', null);
+            return;
+          }
+          final List<Map<String, String>> entries = result.entries
+              .map((e) => <String, String>{
+                    'word': e.word,
+                    'reading': e.reading,
+                    'meaning': e.meaning,
+                  })
+              .toList();
+          final String json = jsonEncode(entries);
+          debugPrint('[FloatingDict] sending ${json.length} chars back');
+          await _channel.invokeMethod<void>('searchResult', json);
+        } catch (e, stack) {
+          debugPrint('[FloatingDict] search error: $e\n$stack');
           await _channel.invokeMethod<void>('searchResult', null);
-          return;
         }
-        final List<Map<String, String>> entries = result.entries
-            .map((e) => <String, String>{
-                  'word': e.word,
-                  'reading': e.reading,
-                  'meaning': e.meaning,
-                })
-            .toList();
-        await _channel.invokeMethod<void>('searchResult', jsonEncode(entries));
         break;
       case 'ankiExport':
         final Map<dynamic, dynamic>? args =

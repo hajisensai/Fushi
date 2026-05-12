@@ -129,6 +129,7 @@ public class MainActivity extends AudioServiceActivity {
     }
 
     public static void notifyFloatingDictEvent(String method, Object arguments) {
+        android.util.Log.d("FloatingDict", "notifyEvent: " + method + " channel=" + (floatingDictChannel != null));
         if (floatingDictChannel == null) return;
         new Handler(Looper.getMainLooper()).post(() -> {
             floatingDictChannel.invokeMethod(method, arguments);
