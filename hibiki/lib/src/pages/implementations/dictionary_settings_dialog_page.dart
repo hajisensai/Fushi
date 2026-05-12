@@ -703,18 +703,20 @@ class _DictCssEditorDialog extends StatefulWidget {
 }
 
 class _DictCssEditorDialogState extends State<_DictCssEditorDialog> {
-  static const _globalKey = '__global__';
-  late String _selectedScope;
+  late int _selectedIndex;
   late TextEditingController _cssController;
   late List<String> _dictNames;
 
   AppModel get appModel => widget.appModel;
 
+  bool get _isGlobal => _selectedIndex == 0;
+  String get _currentDictName => _dictNames[_selectedIndex - 1];
+
   @override
   void initState() {
     super.initState();
     _dictNames = appModel.dictionaries.map((d) => d.name).toList();
-    _selectedScope = _globalKey;
+    _selectedIndex = 0;
     _cssController = TextEditingController(text: appModel.globalDictCSS);
   }
 
@@ -724,24 +726,22 @@ class _DictCssEditorDialogState extends State<_DictCssEditorDialog> {
     super.dispose();
   }
 
-  void _onScopeChanged(String? scope) {
-    if (scope == null || scope == _selectedScope) return;
-    _saveCurrentScope();
-    _selectedScope = scope;
-    if (scope == _globalKey) {
-      _cssController.text = appModel.globalDictCSS;
-    } else {
-      _cssController.text = appModel.getCustomCSSForDict(scope);
-    }
+  Future<void> _onScopeChanged(int? index) async {
+    if (index == null || index == _selectedIndex) return;
+    await _saveCurrentScope();
+    _selectedIndex = index;
+    _cssController.text = _isGlobal
+        ? appModel.globalDictCSS
+        : appModel.getCustomCSSForDict(_currentDictName);
     setState(() {});
   }
 
   Future<void> _saveCurrentScope() async {
     final css = _cssController.text;
-    if (_selectedScope == _globalKey) {
+    if (_isGlobal) {
       await appModel.setGlobalDictCSS(css);
     } else {
-      await appModel.setCustomCSSForDict(_selectedScope, css);
+      await appModel.setCustomCSSForDict(_currentDictName, css);
     }
   }
 
@@ -755,22 +755,23 @@ class _DictCssEditorDialogState extends State<_DictCssEditorDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            DropdownButton<String>(
-              value: _selectedScope,
+            DropdownButton<int>(
+              value: _selectedIndex,
               isExpanded: true,
               onChanged: _onScopeChanged,
               items: [
-                DropdownMenuItem<String>(
-                  value: _globalKey,
+                DropdownMenuItem<int>(
+                  value: 0,
                   child: Text(t.custom_dict_css_global),
                 ),
-                ..._dictNames.map((name) => DropdownMenuItem<String>(
-                      value: name,
-                      child: Text(
-                        name,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    )),
+                for (int i = 0; i < _dictNames.length; i++)
+                  DropdownMenuItem<int>(
+                    value: i + 1,
+                    child: Text(
+                      _dictNames[i],
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
               ],
             ),
             const SizedBox(height: 8),
@@ -796,11 +797,7 @@ class _DictCssEditorDialogState extends State<_DictCssEditorDialog> {
       ),
       actions: [
         TextButton(
-          child: Text(t.dialog_cancel),
-          onPressed: () => Navigator.pop(context),
-        ),
-        TextButton(
-          child: Text(t.dialog_save),
+          child: Text(t.dialog_close),
           onPressed: () async {
             await _saveCurrentScope();
             if (context.mounted) Navigator.pop(context);
