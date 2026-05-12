@@ -620,8 +620,7 @@ function createDefinitionImage(data, dictionary, exporting = false) {
 
     console.log('[IMG]', path, JSON.stringify({
         width, height, preferredWidth, preferredHeight,
-        usedWidth, hasDimensions, appearance, sizeUnits,
-        containerWidthEm: usedWidth + 'em'
+        usedWidth, hasDimensions, appearance, sizeUnits
     }));
 
     const node = document.createElement(exporting ? 'span' : 'a');
@@ -666,11 +665,12 @@ function createDefinitionImage(data, dictionary, exporting = false) {
     
     if (typeof border === 'string') { imageContainer.style.border = border; }
     if (typeof borderRadius === 'string') { imageContainer.style.borderRadius = borderRadius; }
-    imageContainer.style.width = `${usedWidth}em`;
+    const useEmUnits = (hasPreferredWidth || hasPreferredHeight) && sizeUnits === 'em';
+    imageContainer.style.width = `${usedWidth}${useEmUnits ? 'em' : 'px'}`;
     if (typeof title === 'string') {
         imageContainer.title = title;
     }
-    
+
     if (!exporting) {
         const imageUrl = `image://?dictionary=${encodeURIComponent(dictionary)}&path=${encodeURIComponent(path)}`;
         if (shouldRenderDefinitionImageToCanvas(path, appearance, usedWidth, invAspectRatio)) {
