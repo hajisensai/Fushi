@@ -14,6 +14,7 @@
 #include <fstream>
 #include <future>
 #include <memory>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -23,7 +24,11 @@
 #include "hash/bloom.hpp"
 #include "hash/hash.hpp"
 #include "json/yomitan_parser.hpp"
+#include "mdx/mdx_reader.hpp"
+#include "stardict/stardict_reader.hpp"
 #include "zip/zip.hpp"
+
+#include <utf8.h>
 
 namespace {
 struct Files {
@@ -453,16 +458,281 @@ size_t write_media(const std::string& path, const Zip& zip, const std::vector<in
   media_idx.write(index_buf.data(), static_cast<std::streamsize>(index_buf.size()));
   return media_count;
 }
-}
 
-ImportResult dictionary_importer::import(const std::string& zip_path, const std::string& output_dir, bool low_ram) {
-  ImportResult result;
-  try {
-    Zip zip;
-    if (!zip.open(zip_path)) {
-      throw std::runtime_error("failed to open zip");
+ProcessedFile process_simple_entries(const std::vector<SimpleEntry>& entries) {
+  ProcessedFile processed;
+  if (entries.empty()) {
+    return processed;
+  }
+
+  std::vector<char> compressed;
+  ZSTD_CCtx* cctx = ZSTD_createCCtx();
+  if (!cctx) {
+    return processed;
+  }
+
+  for (const auto& entry : entries) {
+    const std::string_view glossary = entry.definition;
+    uint64_t glossary_hash = XXH3_64bits(glossary.data(), glossary.size());
+    auto it = processed.glossaries.find(glossary_hash);
+    if (it == processed.glossaries.end()) {
+      const size_t bound = ZSTD_compressBound(glossary.size());
+      compressed.resize(bound);
+      const size_t compressed_size =
+          ZSTD_compressCCtx(cctx, compressed.data(), bound, glossary.data(), glossary.size(), 0);
+      if (ZSTD_isError(compressed_size)) {
+        ZSTD_freeCCtx(cctx);
+        throw std::runtime_error("failed to compress glossary");
+      }
+      compressed.resize(compressed_size);
+      processed.glossaries.emplace(glossary_hash, compressed);
     }
 
+    uint64_t offset = processed.data.size();
+    uint32_t blob_size = processed.glossaries[glossary_hash].size();
+    std::string_view expr = entry.headword;
+
+    write_val<uint8_t>(processed.data, 0);
+    write_val<uint16_t>(processed.data, expr.size());
+    write_str(processed.data, expr);
+    write_val<uint16_t>(processed.data, 0);  // reading_len = 0
+
+    uint64_t glossary_offset = processed.data.size();
+    write_val<uint64_t>(processed.data, 0);
+    write_val<uint32_t>(processed.data, blob_size);
+    processed.glossary_offsets.emplace_back(glossary_hash, glossary_offset);
+
+    write_val<uint8_t>(processed.data, 0);  // def_tags_len = 0
+    write_val<uint8_t>(processed.data, 0);  // rules_len = 0
+    write_val<uint8_t>(processed.data, 0);  // term_tags_len = 0
+
+    processed.offsets.emplace_back(XXH3_64bits(expr.data(), expr.size()), offset);
+    processed.count++;
+  }
+  ZSTD_freeCCtx(cctx);
+
+  return processed;
+}
+
+ImportResult import_mdx(const std::string& mdx_path, const std::string& output_dir) {
+  std::ifstream file(mdx_path, std::ios::binary | std::ios::ate);
+  if (!file.is_open()) {
+    return {.success = false, .errors = {"failed to open MDX file"}};
+  }
+
+  auto size = file.tellg();
+  file.seekg(0);
+  std::vector<uint8_t> data(size);
+  file.read(reinterpret_cast<char*>(data.data()), size);
+
+  MdxResult mdx;
+  try {
+    mdx = mdx_reader::parse(data.data(), data.size());
+  } catch (const std::exception& e) {
+    return {.success = false, .errors = {std::string("MDX parse error: ") + e.what()}};
+  }
+
+  std::string title = mdx.title;
+  if (title.empty()) {
+    title = std::filesystem::path(mdx_path).stem().string();
+  }
+
+  std::vector<SimpleEntry> entries;
+  entries.reserve(mdx.entries.size());
+  for (auto& e : mdx.entries) {
+    if (e.key.empty()) continue;
+    // REVIEW FIX I5: Skip @@@LINK= redirect entries - these are cross-references
+    // that point to other entries and should not be stored as definitions
+    if (e.definition.starts_with("@@@LINK=")) continue;
+    entries.push_back({std::move(e.key), std::move(e.definition)});
+  }
+
+  return dictionary_importer::write_simple_dict(title, entries, output_dir);
+}
+
+ImportResult import_mdx_from_zip(Zip& zip, const std::string& output_dir) {
+  for (size_t i = 0; i < zip.entries.size(); i++) {
+    const auto& name = zip.entries[i].name;
+    if (name.size() > 4 && name.substr(name.size() - 4) == ".mdx") {
+      std::string temp_dir = output_dir + "/_mdx_temp";
+      std::filesystem::create_directories(temp_dir);
+      std::string temp_path = temp_dir + "/" + std::filesystem::path(name).filename().string();
+      {
+        std::string content = zip.read(static_cast<int>(i));
+        std::ofstream out(temp_path, std::ios::binary);
+        out.write(content.data(), static_cast<std::streamsize>(content.size()));
+      }
+      auto result = import_mdx(temp_path, output_dir);
+      std::filesystem::remove_all(temp_dir);
+      return result;
+    }
+  }
+  return {.success = false, .errors = {"no .mdx file found in zip"}};
+}
+
+ImportResult import_stardict(const std::string& ifo_path, const std::string& output_dir) {
+  StardictResult sd;
+  try {
+    sd = stardict_reader::parse(ifo_path);
+  } catch (const std::exception& e) {
+    return {.success = false, .errors = {std::string("StarDict parse error: ") + e.what()}};
+  }
+
+  std::vector<SimpleEntry> entries;
+  entries.reserve(sd.entries.size());
+  for (auto& e : sd.entries) {
+    entries.push_back({std::move(e.word), std::move(e.definition)});
+  }
+
+  return dictionary_importer::write_simple_dict(sd.bookname, entries, output_dir);
+}
+
+ImportResult import_stardict_from_zip(Zip& zip, const std::string& output_dir) {
+  std::string temp_dir = output_dir + "/_stardict_temp";
+  std::filesystem::create_directories(temp_dir);
+  std::string ifo_path;
+
+  for (size_t i = 0; i < zip.entries.size(); i++) {
+    const auto& name = zip.entries[i].name;
+    if (name.empty() || name.back() == '/') continue;
+    std::string filename = std::filesystem::path(name).filename().string();
+    std::string ext = std::filesystem::path(filename).extension().string();
+    if (ext == ".ifo" || ext == ".idx" || ext == ".dict" || filename.ends_with(".dict.dz")) {
+      std::string out_path = temp_dir + "/" + filename;
+      std::string content = zip.read(static_cast<int>(i));
+      std::ofstream out(out_path, std::ios::binary);
+      out.write(content.data(), static_cast<std::streamsize>(content.size()));
+      if (ext == ".ifo") ifo_path = out_path;
+    }
+  }
+
+  if (ifo_path.empty()) {
+    std::filesystem::remove_all(temp_dir);
+    return {.success = false, .errors = {"no .ifo file found in zip"}};
+  }
+
+  auto result = import_stardict(ifo_path, output_dir);
+  std::filesystem::remove_all(temp_dir);
+  return result;
+}
+
+std::string read_dsl_file_as_utf8(const std::string& dsl_path) {
+  std::ifstream file(dsl_path, std::ios::binary | std::ios::ate);
+  if (!file.is_open()) return {};
+  auto size = file.tellg();
+  if (size < 2) return {};
+  file.seekg(0);
+  std::vector<uint8_t> raw(size);
+  file.read(reinterpret_cast<char*>(raw.data()), size);
+
+  // UTF-16 LE BOM: FF FE
+  if (raw.size() >= 2 && raw[0] == 0xFF && raw[1] == 0xFE) {
+    std::u16string u16;
+    for (size_t i = 2; i + 1 < raw.size(); i += 2) {
+      u16.push_back(uint16_t(raw[i]) | (uint16_t(raw[i + 1]) << 8));
+    }
+    std::string result;
+    utf8::utf16to8(u16.begin(), u16.end(), std::back_inserter(result));
+    return result;
+  }
+
+  // UTF-8 BOM: EF BB BF — skip it
+  size_t start = 0;
+  if (raw.size() >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF) {
+    start = 3;
+  }
+
+  return std::string(reinterpret_cast<char*>(raw.data() + start), raw.size() - start);
+}
+
+ImportResult import_dsl(const std::string& dsl_path, const std::string& output_dir) {
+  std::string content = read_dsl_file_as_utf8(dsl_path);
+  if (content.empty()) {
+    return {.success = false, .errors = {"failed to open or read DSL file"}};
+  }
+
+  std::string title;
+  std::vector<SimpleEntry> entries;
+  std::string current_headword;
+  std::string current_definition;
+
+  auto flush_entry = [&]() {
+    if (!current_headword.empty() && !current_definition.empty()) {
+      while (!current_definition.empty() &&
+             (current_definition.back() == '\n' || current_definition.back() == '\r' ||
+              current_definition.back() == ' ')) {
+        current_definition.pop_back();
+      }
+      entries.push_back({current_headword, current_definition});
+    }
+    current_headword.clear();
+    current_definition.clear();
+  };
+
+  std::istringstream stream(content);
+  std::string line;
+
+  while (std::getline(stream, line)) {
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    if (line.empty()) continue;
+
+    if (line[0] == '#') {
+      if (line.starts_with("#NAME")) {
+        title = line.substr(5);
+        while (!title.empty() && (title.front() == ' ' || title.front() == '\t' || title.front() == '"')) {
+          title.erase(title.begin());
+        }
+        while (!title.empty() && (title.back() == ' ' || title.back() == '\t' || title.back() == '"')) {
+          title.pop_back();
+        }
+      }
+      continue;
+    }
+
+    if (line[0] == '\t' || line[0] == ' ') {
+      size_t start = 0;
+      while (start < line.size() && (line[start] == '\t' || line[start] == ' ')) start++;
+      if (start < line.size()) {
+        if (!current_definition.empty()) current_definition += '\n';
+        current_definition += line.substr(start);
+      }
+    } else {
+      flush_entry();
+      current_headword = line;
+    }
+  }
+  flush_entry();
+
+  if (title.empty()) {
+    title = std::filesystem::path(dsl_path).stem().string();
+  }
+
+  // Strip basic DSL markup tags: [b], [/b], [i], [/i], [u], [/u], etc.
+  for (auto& e : entries) {
+    std::string& def = e.definition;
+    std::string cleaned;
+    cleaned.reserve(def.size());
+    size_t i = 0;
+    while (i < def.size()) {
+      if (def[i] == '[') {
+        size_t end = def.find(']', i);
+        if (end != std::string::npos) {
+          i = end + 1;
+          continue;
+        }
+      }
+      cleaned += def[i];
+      i++;
+    }
+    def = std::move(cleaned);
+  }
+
+  return dictionary_importer::write_simple_dict(title, entries, output_dir);
+}
+
+ImportResult import_yomitan(Zip& zip, const std::string& output_dir, bool low_ram) {
+  ImportResult result;
+  try {
     int index_idx = zip.find("index.json");
     if (index_idx < 0) {
       throw std::runtime_error("could not find index.json");
@@ -540,4 +810,141 @@ ImportResult dictionary_importer::import(const std::string& zip_path, const std:
   }
 
   return result;
+}
+
+}  // end anonymous namespace
+
+ImportResult dictionary_importer::write_simple_dict(const std::string& title, const std::vector<SimpleEntry>& entries,
+                                                    const std::string& output_dir, const std::string& styles_css) {
+  ImportResult result;
+  try {
+    result.title = title;
+    result.detected_type = "term";
+
+    std::filesystem::path dict_path = std::filesystem::path(output_dir) / title;
+    std::string path = dict_path.string();
+    std::filesystem::create_directories(dict_path);
+
+    Index index;
+    index.title = result.title;
+    index.format = 3;
+    if (glz::write_file_json(index, path + "/index.json", std::string{})) {
+      throw std::runtime_error("failed to write index.json");
+    }
+
+    if (!styles_css.empty()) {
+      std::ofstream styles_file(path + "/styles.css", std::ios::binary);
+      setup_stream_exceptions(styles_file);
+      styles_file.write(styles_css.data(), static_cast<std::streamsize>(styles_css.size()));
+    }
+
+    ProcessedFile processed = process_simple_entries(entries);
+    if (processed.data.empty()) {
+      throw std::runtime_error("empty dictionary");
+    }
+
+    ankerl::unordered_dense::map<uint64_t, uint64_t> glossaries;
+    std::ofstream blobs(path + "/blobs.bin", std::ios::binary);
+    setup_stream_exceptions(blobs);
+    uint64_t write_offset = 0;
+
+    // Write glossary blobs first
+    std::vector<char> glossary_buf;
+    for (auto& [hash, compressed] : processed.glossaries) {
+      auto [it, inserted] = glossaries.try_emplace(hash, write_offset);
+      if (inserted) {
+        write_bytes(glossary_buf, compressed.data(), compressed.size());
+        write_offset += compressed.size();
+      }
+    }
+    if (!glossary_buf.empty()) {
+      blobs.write(glossary_buf.data(), static_cast<std::streamsize>(glossary_buf.size()));
+    }
+
+    // Fix up glossary offsets in term data
+    for (auto& [hash, pos] : processed.glossary_offsets) {
+      uint64_t glossary_offset = glossaries[hash];
+      std::memcpy(processed.data.data() + pos, &glossary_offset, sizeof(uint64_t));
+    }
+
+    // Adjust term offsets to account for glossary blob region
+    std::vector<std::pair<uint64_t, uint64_t>> offsets;
+    for (auto& [hash, offset] : processed.offsets) {
+      offsets.emplace_back(hash, offset + write_offset);
+    }
+
+    blobs.write(processed.data.data(), static_cast<std::streamsize>(processed.data.size()));
+    write_offset += processed.data.size();
+    result.term_count = processed.count;
+
+    if (offsets.empty()) {
+      throw std::runtime_error("empty dictionary");
+    }
+
+    std::vector<std::pair<uint64_t, uint64_t>> hash_entries;
+    auto offset_buf = build_offset_index(offsets, write_offset, hash_entries);
+    std::vector<std::pair<uint64_t, uint64_t>>().swap(offsets);
+
+    auto hash_thread = std::async(std::launch::async, [&hash_entries, &path]() {
+      hash::linear table;
+      table.build_to_file(hash_entries, path + "/hash.table");
+      auto hashes = hash_entries | std::views::keys | std::ranges::to<std::vector>();
+      hash::bloom::build_to_file(hashes, path + "/bloom.filter");
+    });
+
+    blobs.write(offset_buf.data(), static_cast<std::streamsize>(offset_buf.size()));
+    hash_thread.get();
+
+    std::ofstream sui(path + "/.hoshidicts_1", std::ios::binary);
+    result.success = true;
+  } catch (const std::exception& e) {
+    result.success = false;
+    result.errors.emplace_back(e.what());
+  }
+
+  if (!result.success && !result.title.empty()) {
+    std::filesystem::remove_all(std::filesystem::path(output_dir) / result.title);
+  }
+
+  return result;
+}
+
+ImportResult dictionary_importer::import(const std::string& file_path, const std::string& output_dir, bool low_ram) {
+  std::string ext;
+  {
+    auto dot = file_path.rfind('.');
+    if (dot != std::string::npos) {
+      ext = file_path.substr(dot);
+      std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+    }
+  }
+
+  if (ext == ".mdx") return import_mdx(file_path, output_dir);
+  if (ext == ".dsl") return import_dsl(file_path, output_dir);
+  if (ext == ".ifo") return import_stardict(file_path, output_dir);
+
+  Zip zip;
+  if (!zip.open(file_path)) {
+    return {.success = false, .errors = {"unsupported format or failed to open file"}};
+  }
+
+  if (zip.find("index.json") >= 0) {
+    return import_yomitan(zip, output_dir, low_ram);
+  }
+
+  for (size_t i = 0; i < zip.entries.size(); i++) {
+    const auto& name = zip.entries[i].name;
+    if (name.size() > 4 && name.substr(name.size() - 4) == ".mdx") {
+      return import_mdx_from_zip(zip, output_dir);
+    }
+  }
+
+  for (size_t i = 0; i < zip.entries.size(); i++) {
+    const auto& name = zip.entries[i].name;
+    if (name.size() > 4 && name.substr(name.size() - 4) == ".ifo") {
+      return import_stardict_from_zip(zip, output_dir);
+    }
+  }
+
+  return {.success = false, .errors = {"unsupported dictionary format"}};
 }

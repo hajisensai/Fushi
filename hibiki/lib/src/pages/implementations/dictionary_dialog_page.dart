@@ -177,7 +177,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
 
     FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: const ['zip', 'dsl', 'mdx', 'css'],
+      allowedExtensions: const ['zip', 'dsl', 'mdx', 'ifo', 'css'],
       allowMultiple: true,
     );
     if (result == null || result.files.isEmpty) {

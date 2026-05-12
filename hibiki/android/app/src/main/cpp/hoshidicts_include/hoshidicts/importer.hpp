@@ -14,6 +14,13 @@ struct ImportResult {
   std::vector<std::string> errors;
 };
 
+struct SimpleEntry {
+  std::string headword;
+  std::string definition;
+};
+
 namespace dictionary_importer {
 ImportResult import(const std::string& zip_path, const std::string& output_dir, bool low_ram = false);
+ImportResult write_simple_dict(const std::string& title, const std::vector<SimpleEntry>& entries,
+                               const std::string& output_dir, const std::string& styles_css = "");
 };
