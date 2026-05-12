@@ -589,6 +589,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     setState(() => _importing = true);
     _reportProgress(0.0, '');
 
+    int grandTotal = 0;
     try {
       _reportProgress(0.1, t.import_step_parsing);
       final String ext =
@@ -607,15 +608,54 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       // 把音频和对齐文件复制到持久目录再存路径。
       final Directory persistDir = await _ensurePersistDir();
 
+      final List<File> filesToCopy = <File>[File(_alignmentPath!)];
+      if (_audioPaths != null && _audioPaths!.isNotEmpty) {
+        filesToCopy.addAll(_audioPaths!.map((p) => File(p)));
+      }
+
+      for (final File f in filesToCopy) {
+        if (!f.path.startsWith(persistDir.path)) {
+          grandTotal += await f.length();
+        }
+      }
+      int grandCopied = 0;
+
       final String persistedAlignment =
-          await _persistFile(File(_alignmentPath!), persistDir);
+          await AudiobookStorage.persistFileWithProgress(
+        File(_alignmentPath!),
+        persistDir,
+        onProgress: (int copied, int total) {
+          final double ratio = grandTotal > 0
+              ? (grandCopied + copied) / grandTotal
+              : 0.0;
+          _reportProgress(0.5 + ratio * 0.3,
+              t.import_step_copying_file(name: p.basename(_alignmentPath!)));
+        },
+      );
+      grandCopied += await File(_alignmentPath!).length();
 
       List<String>? persistedAudioPaths;
       String? persistedAudioRoot;
       if (_audioPaths != null && _audioPaths!.isNotEmpty) {
-        persistedAudioPaths = [];
+        persistedAudioPaths = <String>[];
         for (final String src in _audioPaths!) {
-          persistedAudioPaths.add(await _persistFile(File(src), persistDir));
+          final File srcFile = File(src);
+          final int fileLen = await srcFile.length();
+          final int capturedGrandCopied = grandCopied;
+          persistedAudioPaths.add(
+            await AudiobookStorage.persistFileWithProgress(
+              srcFile,
+              persistDir,
+              onProgress: (int copied, int total) {
+                final double ratio = grandTotal > 0
+                    ? (capturedGrandCopied + copied) / grandTotal
+                    : 0.0;
+                _reportProgress(0.5 + ratio * 0.3,
+                    t.import_step_copying_file(name: p.basename(src)));
+              },
+            ),
+          );
+          grandCopied += fileLen;
         }
       } else {
         persistedAudioRoot = _audioDir;
@@ -651,6 +691,27 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
             : '${t.audiobook_import_success} · $tail';
         Fluttertoast.showToast(msg: msg);
         Navigator.pop(context, true); // true = reload player
+      }
+    } on FileSystemException catch (e, stack) {
+      ErrorLogService.instance.log('AudiobookImport.doImport', e, stack);
+      debugPrint('AudiobookImportDialog import error (FS): $e');
+      if (mounted) {
+        final bool diskFull = e.osError?.errorCode == 28 ||
+            e.message.toLowerCase().contains('no space');
+        if (diskFull) {
+          Fluttertoast.showToast(
+            msg: t.audiobook_import_error_disk_full(
+              size: _formatBytes(grandTotal),
+            ),
+            toastLength: Toast.LENGTH_LONG,
+          );
+        } else {
+          Fluttertoast.showToast(
+            msg: t.audiobook_import_error_copy_failed(
+              name: e.path ?? '',
+            ),
+          );
+        }
       }
     } catch (e, stack) {
       ErrorLogService.instance.log('AudiobookImport.doImport', e, stack);
@@ -950,4 +1011,13 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
 
   Future<String> _persistFile(File src, Directory persistDir) =>
       AudiobookStorage.persistFile(src, persistDir);
+
+  static String _formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(0)} KB';
+    if (bytes < 1024 * 1024 * 1024) {
+      return '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB';
+    }
+    return '${(bytes / 1024 / 1024 / 1024).toStringAsFixed(2)} GB';
+  }
 }

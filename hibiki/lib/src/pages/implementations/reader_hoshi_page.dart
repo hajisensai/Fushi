@@ -412,15 +412,25 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       repo.readPositionMs(bookUid),
       repo.readImagePauseSec(bookUid),
     ]);
-    await controller.load(
-      audiobook: audiobook,
-      audioFiles: audioFiles,
-      initialFollowAudio: prefs[0] as bool,
-      initialDelayMs: prefs[1] as int,
-      initialSpeed: prefs[2] as double,
-      initialPositionMs: prefs[3] as int,
-      initialImagePauseSec: prefs[4] as int,
-    );
+    try {
+      await controller.load(
+        audiobook: audiobook,
+        audioFiles: audioFiles,
+        initialFollowAudio: prefs[0] as bool,
+        initialDelayMs: prefs[1] as int,
+        initialSpeed: prefs[2] as double,
+        initialPositionMs: prefs[3] as int,
+        initialImagePauseSec: prefs[4] as int,
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderHoshi.loadAudiobook', e, stack);
+      debugPrint('[ReaderHoshi] audiobook load failed: $e');
+      controller.dispose();
+      if (mounted) {
+        Fluttertoast.showToast(msg: t.audiobook_load_error);
+      }
+      return;
+    }
 
     if (!mounted) {
       controller.dispose();
@@ -482,13 +492,23 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       abRepo.readSpeed(srtBookUid),
       abRepo.readImagePauseSec(srtBookUid),
     ]);
-    await controller.load(
-      audiobook: syntheticAudiobook,
-      audioFiles: audioFiles,
-      initialDelayMs: prefs[0] as int,
-      initialSpeed: prefs[1] as double,
-      initialImagePauseSec: prefs[2] as int,
-    );
+    try {
+      await controller.load(
+        audiobook: syntheticAudiobook,
+        audioFiles: audioFiles,
+        initialDelayMs: prefs[0] as int,
+        initialSpeed: prefs[1] as double,
+        initialImagePauseSec: prefs[2] as int,
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderHoshi.loadSrtBook', e, stack);
+      debugPrint('[ReaderHoshi] srt book load failed: $e');
+      controller.dispose();
+      if (mounted) {
+        Fluttertoast.showToast(msg: t.audiobook_load_error);
+      }
+      return;
+    }
 
     if (!mounted) {
       controller.dispose();
