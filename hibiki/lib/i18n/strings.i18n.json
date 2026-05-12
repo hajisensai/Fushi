@@ -43,6 +43,8 @@
     "dictionary_section_kanji": "Kanji Dictionaries",
     "dictionary_section_frequency": "Frequency Dictionaries",
     "dictionary_section_pitch": "Pitch Dictionaries",
+    "custom_dict_css": "Custom CSS",
+    "custom_dict_css_global": "Global (all dictionaries)",
     "dialog_close": "CLOSE",
     "dialog_clear": "CLEAR",
     "dialog_clear_all_dictionaries": "Delete All Dictionaries",
