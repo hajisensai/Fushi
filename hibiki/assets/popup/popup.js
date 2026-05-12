@@ -670,7 +670,6 @@ function createDefinitionImage(data, dictionary, exporting = false) {
         imageContainer.style.width = `${usedWidth}em`;
     } else if (!hasDimensions && isSvg) {
         imageContainer.style.width = '1em';
-        imageContainer.style.minWidth = '0';
         imageContainer.style.fontSize = 'inherit';
     } else {
         imageContainer.style.width = `${usedWidth}px`;
@@ -693,6 +692,15 @@ function createDefinitionImage(data, dictionary, exporting = false) {
                 img.addEventListener('load', () => {
                     imageContainer.style.width = `${Math.min(img.naturalWidth, window.innerWidth - 20)}px`;
                     aspectRatioSizer.style.paddingTop = `${(img.naturalHeight / img.naturalWidth) * 100}%`;
+                }, {once: true});
+            }
+            if (!hasDimensions && isSvg) {
+                img.addEventListener('load', () => {
+                    if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+                        const ratio = img.naturalWidth / img.naturalHeight;
+                        imageContainer.style.width = `${ratio}em`;
+                        aspectRatioSizer.style.paddingTop = `${(1 / ratio) * 100}%`;
+                    }
                 }, {once: true});
             }
             img.src = imageUrl;
@@ -1597,8 +1605,10 @@ window.renderPopup = function() {
     let longPressTimer = null;
     let startX = 0, startY = 0;
     let moved = false;
+    let touchStartTime = 0;
+    window._longPressJustFired = false;
     const LONG_PRESS_MS = 400;
-    const MOVE_THRESHOLD = 10;
+    const MOVE_THRESHOLD = 24;
     let copyToast = null;
 
     function getCopyToast() {
@@ -1634,6 +1644,7 @@ window.renderPopup = function() {
     function hideCopyToast() {
         if (copyToast) copyToast.classList.remove('visible');
     }
+    window._hideCopyToast = hideCopyToast;
 
     function selectWordAt(x, y) {
         const range = document.caretRangeFromPoint(x, y);
@@ -1670,6 +1681,8 @@ window.renderPopup = function() {
         startX = t.clientX;
         startY = t.clientY;
         moved = false;
+        touchStartTime = Date.now();
+        window._longPressJustFired = false;
         hideCopyToast();
 
         const target = (e.target?.nodeType === Node.TEXT_NODE ? e.target.parentElement : e.target);
@@ -1682,6 +1695,7 @@ window.renderPopup = function() {
             console.log('[LONGPRESS] timer fired', { moved, selected, x: startX, y: startY });
             if (selected) {
                 showCopyToast(startX, startY);
+                window._longPressJustFired = true;
             }
         }, LONG_PRESS_MS);
     }, { passive: true });
@@ -1696,18 +1710,35 @@ window.renderPopup = function() {
         }
     }, { passive: true });
 
-    document.addEventListener('touchend', () => {
+    document.addEventListener('touchend', (e) => {
         if (longPressTimer != null) {
-            clearTimeout(longPressTimer);
-            longPressTimer = null;
+            const elapsed = Date.now() - touchStartTime;
+            if (elapsed >= LONG_PRESS_MS - 50) {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+                const selected = !moved && selectWordAt(startX, startY);
+                console.log('[LONGPRESS] touchend late fire', { moved, selected, elapsed });
+                if (selected) {
+                    showCopyToast(startX, startY);
+                    window._longPressJustFired = true;
+                }
+            } else {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+            }
         }
     }, { passive: true });
 })();
 
 document.addEventListener('click', (e) => {
+    if (window._longPressJustFired) {
+        window._longPressJustFired = false;
+        return;
+    }
     const sel = window.getSelection();
     if (sel && sel.toString().length > 0) {
         sel.removeAllRanges();
+        if (window._hideCopyToast) window._hideCopyToast();
         return;
     }
 

@@ -228,7 +228,6 @@ function createDefinitionImage(data, dictionary, exporting) {
         imageContainer.style.width = `${usedWidth}em`;
     } else if (!hasDimensions && isSvg) {
         imageContainer.style.width = '1em';
-        imageContainer.style.minWidth = '0';
         imageContainer.style.fontSize = 'inherit';
     } else {
         imageContainer.style.width = `${usedWidth}px`;
@@ -248,6 +247,15 @@ function createDefinitionImage(data, dictionary, exporting) {
             img.addEventListener('load', () => {
                 imageContainer.style.width = `${Math.min(img.naturalWidth, window.innerWidth - 20)}px`;
                 aspectRatioSizer.style.paddingTop = `${(img.naturalHeight / img.naturalWidth) * 100}%`;
+            }, { once: true });
+        }
+        if (!hasDimensions && isSvg) {
+            img.addEventListener('load', () => {
+                if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+                    const ratio = img.naturalWidth / img.naturalHeight;
+                    imageContainer.style.width = `${ratio}em`;
+                    aspectRatioSizer.style.paddingTop = `${(1 / ratio) * 100}%`;
+                }
             }, { once: true });
         }
         img.src = imageUrl;
