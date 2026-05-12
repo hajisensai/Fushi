@@ -497,9 +497,13 @@ class _BookImportDialogState extends State<BookImportDialog> {
     final String persistedSrt =
         await _persistFile(File(_subtitlePath!), persistDir);
 
+    await AudiobookStorage.cleanAudioFiles(persistDir);
     final List<String> persistedAudioPaths = [];
-    for (final String ap in _audioPaths) {
-      persistedAudioPaths.add(await _persistFile(File(ap), persistDir));
+    for (int i = 0; i < _audioPaths.length; i++) {
+      persistedAudioPaths.add(
+        await AudiobookStorage.persistFile(
+          File(_audioPaths[i]), persistDir, dedupeIndex: i),
+      );
     }
 
     _reportProgress(0.9, t.import_step_saving);
@@ -645,9 +649,13 @@ class _BookImportDialogState extends State<BookImportDialog> {
     final String persistedSrt =
         await _persistFile(File(_subtitlePath!), persistDir);
 
+    await AudiobookStorage.cleanAudioFiles(persistDir);
     final List<String> persistedAudioPaths = [];
-    for (final String ap in _audioPaths) {
-      persistedAudioPaths.add(await _persistFile(File(ap), persistDir));
+    for (int i = 0; i < _audioPaths.length; i++) {
+      persistedAudioPaths.add(
+        await AudiobookStorage.persistFile(
+          File(_audioPaths[i]), persistDir, dedupeIndex: i),
+      );
     }
 
     _reportProgress(0.9, t.import_step_saving);

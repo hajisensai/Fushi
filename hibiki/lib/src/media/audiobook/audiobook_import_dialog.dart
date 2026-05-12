@@ -613,9 +613,13 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       List<String>? persistedAudioPaths;
       String? persistedAudioRoot;
       if (_audioPaths != null && _audioPaths!.isNotEmpty) {
+        await AudiobookStorage.cleanAudioFiles(persistDir);
         persistedAudioPaths = [];
-        for (final String src in _audioPaths!) {
-          persistedAudioPaths.add(await _persistFile(File(src), persistDir));
+        for (int i = 0; i < _audioPaths!.length; i++) {
+          persistedAudioPaths.add(
+            await AudiobookStorage.persistFile(
+              File(_audioPaths![i]), persistDir, dedupeIndex: i),
+          );
         }
       } else {
         persistedAudioRoot = _audioDir;
