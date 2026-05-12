@@ -3708,6 +3708,21 @@ class AppModel with ChangeNotifier {
     return dbs.isNotEmpty ? dbs.first.displayName : '';
   }
 
+  @Deprecated('Use addLocalAudioDb instead')
+  Future<void> setLocalAudioDbPath(String sourcePath,
+      {required String displayName}) async {
+    await clearLocalAudioDb();
+    await addLocalAudioDb(sourcePath, displayName: displayName);
+  }
+
+  @Deprecated('Use removeLocalAudioDb instead')
+  Future<void> clearLocalAudioDb() async {
+    final List<LocalAudioDbEntry> dbs = localAudioDbs;
+    for (int i = dbs.length - 1; i >= 0; i--) {
+      await removeLocalAudioDb(i);
+    }
+  }
+
   bool get localAudioEnabled {
     return _getPref('local_audio_enabled', defaultValue: false);
   }
