@@ -12,7 +12,6 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/database/database.dart';
 import 'package:hibiki/src/epub/epub_storage.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
 import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
@@ -20,7 +19,6 @@ import 'package:hibiki/src/media/audiobook/reader_position_repository.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
 import 'package:hibiki/utils.dart';
-import 'package:hibiki/src/utils/misc/tts_channel.dart';
 
 final hoshiBooksProvider =
     FutureProvider.family<List<MediaItem>, Language>((ref, language) {
@@ -268,7 +266,7 @@ class ReaderHoshiSource extends ReaderMediaSource {
         }
       }
       final int totalChars =
-          sectionChars.fold<int>(0, (int a, int b) => a + b);
+          sectionChars.fold<int>(0, (a, b) => a + b);
       if (totalChars > 0) {
         duration = totalChars;
       }
@@ -286,7 +284,7 @@ class ReaderHoshiSource extends ReaderMediaSource {
 
       String? imageUrl;
       if (book.coverPath != null && book.coverPath!.isNotEmpty) {
-        final String absPath = p.join(book.extractDir, book.coverPath!);
+        final String absPath = p.join(book.extractDir, book.coverPath);
         if (File(absPath).existsSync()) {
           imageUrl = Uri.file(absPath).toString();
         }
@@ -302,7 +300,6 @@ class ReaderHoshiSource extends ReaderMediaSource {
         mediaIdentifier: mediaIdentifierFor(book.id),
         title: book.title,
         imageUrl: imageUrl,
-        base64Image: null,
         mediaTypeIdentifier: mediaType.uniqueKey,
         mediaSourceIdentifier: uniqueKey,
         position: position,
@@ -390,6 +387,17 @@ class ReaderHoshiSource extends ReaderMediaSource {
     await setPreference<int>(
       key: 'volume_page_turning_speed',
       value: speed,
+    );
+  }
+
+  bool get volumeKeySentenceNavEnabled =>
+      getPreference<bool>(
+          key: 'volume_key_sentence_nav_enabled', defaultValue: true);
+
+  void toggleVolumeKeySentenceNavEnabled() async {
+    await setPreference<bool>(
+      key: 'volume_key_sentence_nav_enabled',
+      value: !volumeKeySentenceNavEnabled,
     );
   }
 

@@ -13,7 +13,6 @@ import 'package:hibiki/src/media/audiobook/favorite_sentence_repository.dart';
 import 'package:hibiki/src/media/sources/reader_hoshi_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/custom_theme_page.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/utils.dart';
 
 /// 有声书播放控制条（紧凑型，固定于阅读器底部）。
@@ -119,7 +118,7 @@ class AudiobookFollowAudioButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return ValueListenableBuilder<bool>(
       valueListenable: controller.followAudio,
-      builder: (BuildContext context, bool on, _) {
+      builder: (context, on, _) {
         final ColorScheme colors = Theme.of(context).colorScheme;
         return IconButton(
           icon: Icon(on ? Icons.link : Icons.link_off),
@@ -178,16 +177,11 @@ ChoiceChip buildReaderThemeChip({
 }
 
 class AudiobookSettingsSheet extends StatefulWidget {
-  AudiobookSettingsSheet({
+  const AudiobookSettingsSheet({
     required this.controller,
     required this.toc,
     required this.readerProgress,
-    this.pageProgress,
-    required this.onJumpSection,
-    required this.onBookmark,
-    required this.onExitReader,
-    required this.webViewController,
-    required this.appModel,
+    required this.onJumpSection, required this.onBookmark, required this.onExitReader, required this.webViewController, required this.appModel, this.pageProgress,
     this.onThemeChanged,
     this.bookmarks = const [],
     this.onJumpToBookmark,
@@ -381,7 +375,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
 
     return PopScope(
       canPop: _subPage == null,
-      onPopInvokedWithResult: (bool didPop, _) {
+      onPopInvokedWithResult: (didPop, _) {
         if (!didPop) {
           setState(() => _subPage = null);
         }
@@ -597,7 +591,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
 
   Widget _buildSearchSection(ThemeData theme) {
     return StatefulBuilder(
-      builder: (BuildContext ctx, StateSetter setLocal) {
+      builder: (ctx, setLocal) {
         Future<void> doSearch() async {
           final String query = _searchController.text.trim();
           if (query.isEmpty) return;
@@ -677,14 +671,14 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                 child: ListView.builder(
                   shrinkWrap: true,
                   itemCount: _searchResults.length,
-                  itemBuilder: (_, int i) {
+                  itemBuilder: (_, i) {
                     final BookSearchResult r = _searchResults[i];
                     final String query = _searchController.text.trim();
                     final int rawIdx = r.sectionIndex;
                     final List<TtuTocEntry> toc = widget.toc;
                     final TtuTocEntry? tocEntry =
                         toc.cast<TtuTocEntry?>().firstWhere(
-                              (TtuTocEntry? e) => e!.index == rawIdx,
+                              (e) => e!.index == rawIdx,
                               orElse: () => null,
                             );
                     final String chapterLabel =
@@ -834,7 +828,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
             child: ListView.builder(
               shrinkWrap: true,
               itemCount: widget.toc.length,
-              itemBuilder: (BuildContext ctx, int i) {
+              itemBuilder: (ctx, i) {
                 final TtuTocEntry e = widget.toc[i];
                 final bool isCurrent = currentIdx == i;
                 final bool isChild = e.parent != null;
@@ -891,7 +885,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
             child: ListView.builder(
               shrinkWrap: true,
               itemCount: _bookmarks.length,
-              itemBuilder: (BuildContext ctx, int i) {
+              itemBuilder: (ctx, i) {
                 final Bookmark bm = _bookmarks[i];
                 final String pageInfo =
                     bm.pageInChapter != null && bm.totalPagesInChapter != null
@@ -950,9 +944,8 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
             Expanded(
               child: Slider(
                 value: ctrl.volume,
-                min: 0.0,
-                max: 2.0,
-                onChanged: (double v) {
+                max: 2,
+                onChanged: (v) {
                   ctrl.setVolume(v);
                   setState(() {});
                 },
@@ -968,7 +961,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
   Widget _buildSpeedSection(ThemeData theme, AudiobookPlayerController ctrl) {
     return ListenableBuilder(
       listenable: ctrl,
-      builder: (BuildContext context, _) {
+      builder: (context, _) {
         final double current = ctrl.speed;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -987,7 +980,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                   icon: const Icon(Icons.restart_alt, size: 18),
                   onPressed: (current - 1.0).abs() < 0.001
                       ? null
-                      : () => ctrl.setSpeed(1.0),
+                      : () => ctrl.setSpeed(1),
                   visualDensity: VisualDensity.compact,
                   padding: const EdgeInsets.only(left: 4),
                   constraints: const BoxConstraints(),
@@ -1002,9 +995,9 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                   child: Slider(
                     value: current.clamp(0.25, 4.0),
                     min: 0.25,
-                    max: 4.0,
+                    max: 4,
                     divisions: 75,
-                    onChanged: (double v) {
+                    onChanged: (v) {
                       final double rounded = (v * 20).roundToDouble() / 20;
                       ctrl.setSpeed(rounded);
                     },
@@ -1030,7 +1023,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
   Widget _buildDelaySection(ThemeData theme, AudiobookPlayerController ctrl) {
     return ValueListenableBuilder<int>(
       valueListenable: ctrl.delayMs,
-      builder: (BuildContext ctx, int ms, _) {
+      builder: (ctx, ms, _) {
         return Row(
           children: [
             Expanded(
@@ -1077,7 +1070,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
       ThemeData theme, AudiobookPlayerController ctrl) {
     return ValueListenableBuilder<int>(
       valueListenable: ctrl.imagePauseSec,
-      builder: (BuildContext ctx, int sec, _) {
+      builder: (ctx, sec, _) {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1093,13 +1086,13 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
             SegmentedButton<int>(
               showSelectedIcon: false,
               segments: _imagePauseOptions
-                  .map((int s) => ButtonSegment<int>(
+                  .map((s) => ButtonSegment<int>(
                         value: s,
                         label: Text(s == 0 ? t.image_pause_off : '${s}s'),
                       ))
                   .toList(),
               selected: <int>{sec},
-              onSelectionChanged: (Set<int> sel) {
+              onSelectionChanged: (sel) {
                 ctrl.setImagePauseSec(sel.first);
               },
               style: _segmentedStyle(theme),
@@ -1139,6 +1132,8 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
       }),
       sw(t.invert_volume_buttons, _src.volumePageTurningInverted,
           _src.toggleVolumePageTurningInverted),
+      sw(t.volume_key_sentence_nav, _src.volumeKeySentenceNavEnabled,
+          _src.toggleVolumeKeySentenceNavEnabled),
       sw(t.invert_swipe_direction, _src.invertSwipeDirection,
           _src.toggleInvertSwipeDirection),
       sw(t.keep_screen_awake, _src.keepScreenAwake, () async {
@@ -1161,7 +1156,6 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               child: Slider(
                 value: _src.dismissSwipeSensitivity,
                 min: 0.1,
-                max: 1.0,
                 divisions: 9,
                 label: _src.dismissSwipeSensitivity.toStringAsFixed(1),
                 onChanged: (v) {
@@ -1505,7 +1499,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           hint: t.ttu_text_justify_hint,
           child: Switch(
             value: _src.ttuEnableTextJustification,
-            onChanged: (bool v) {
+            onChanged: (v) {
               _src.setTtuEnableTextJustification(v);
               setState(() {});
               _updateSetting('enableTextJustification', v);
@@ -1518,7 +1512,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           hint: t.ttu_vert_kerning_hint,
           child: Switch(
             value: _src.ttuEnableVerticalFontKerning,
-            onChanged: (bool v) {
+            onChanged: (v) {
               _src.setTtuEnableVerticalFontKerning(v);
               setState(() {});
               _updateSetting('enableVerticalFontKerning', v);
@@ -1531,7 +1525,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           hint: t.ttu_font_vpal_hint,
           child: Switch(
             value: _src.ttuEnableFontVPAL,
-            onChanged: (bool v) {
+            onChanged: (v) {
               _src.setTtuEnableFontVPAL(v);
               setState(() {});
               _updateSetting('enableFontVPAL', v);
@@ -1544,7 +1538,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           hint: t.ttu_reader_styles_hint,
           child: Switch(
             value: _src.ttuPrioritizeReaderStyles,
-            onChanged: (bool v) {
+            onChanged: (v) {
               _src.setTtuPrioritizeReaderStyles(v);
               setState(() {});
               _updateSetting('prioritizeReaderStyles', v);
@@ -1573,7 +1567,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                   value: 'vertical-rl', label: Text(t.ttu_vertical)),
             ],
             selected: <String>{s.writingMode},
-            onSelectionChanged: (Set<String> sel) {
+            onSelectionChanged: (sel) {
               s.writingMode = sel.first;
               setState(() {});
               _updateSetting('writingMode', sel.first);
@@ -1593,7 +1587,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                   value: 'continuous', label: Text(t.ttu_scroll)),
             ],
             selected: <String>{s.viewMode},
-            onSelectionChanged: (Set<String> sel) {
+            onSelectionChanged: (sel) {
               s.viewMode = sel.first;
               setState(() {});
               _updateSetting('viewMode', sel.first);
@@ -1614,7 +1608,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                   value: 'upright', label: Text(t.ttu_orient_upright)),
             ],
             selected: <String>{_src.ttuVerticalTextOrientation},
-            onSelectionChanged: (Set<String> sel) {
+            onSelectionChanged: (sel) {
               _src.setTtuVerticalTextOrientation(sel.first);
               setState(() {});
               _updateSetting('verticalTextOrientation', sel.first);
@@ -1640,7 +1634,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                   value: 'toggle', label: Text(t.ttu_furigana_toggle)),
             ],
             selected: <String>{_src.ttuFuriganaMode},
-            onSelectionChanged: (Set<String> sel) {
+            onSelectionChanged: (sel) {
               if (sel.isEmpty) {
                 return;
               }
@@ -1659,13 +1653,13 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           spacing: 6,
           runSpacing: 6,
           children: [
-            ...TtuReaderSettings.availableThemes.map((String themeKey) {
+            ...TtuReaderSettings.availableThemes.map((themeKey) {
               final bool selected = s.theme == themeKey;
               return buildReaderThemeChip(
                 context: context,
                 label: TtuReaderSettings.themeLabels[themeKey] ?? themeKey,
                 selected: selected,
-                onSelected: (bool on) async {
+                onSelected: (on) async {
                   if (!on) return;
                   s.theme = themeKey;
                   setState(() {});
@@ -1686,7 +1680,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               context: context,
               label: t.custom_theme,
               selected: s.theme == 'custom-theme',
-              onSelected: (bool _) {
+              onSelected: (_) {
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (_) => const CustomThemePage()),
@@ -1705,7 +1699,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
   }
 
   Widget _settingRow(ThemeData theme,
-      {required String label, String? hint, required Widget child}) {
+      {required String label, required Widget child, String? hint}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -1817,7 +1811,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
             child: ListView.builder(
               shrinkWrap: true,
               itemCount: _favorites.length,
-              itemBuilder: (BuildContext ctx, int i) {
+              itemBuilder: (ctx, i) {
                 final FavoriteSentence fav = _favorites[i];
                 return ListTile(
                   dense: true,
@@ -1965,8 +1959,6 @@ class _RepeatIconButton extends StatefulWidget {
   const _RepeatIconButton({
     required this.icon,
     required this.onPressed,
-    this.initialDelay = const Duration(milliseconds: 400),
-    this.repeatInterval = const Duration(milliseconds: 80),
   });
 
   final Widget icon;

@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:hibiki/i18n/strings.g.dart';
@@ -52,8 +51,7 @@ import 'package:wakelock/wakelock.dart';
 
 class ReaderHoshiPage extends BaseSourcePage {
   const ReaderHoshiPage({
-    super.item,
-    required this.bookId,
+    required this.bookId, super.item,
     this.initialBookmarkJump,
     super.key,
   });
@@ -78,7 +76,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   bool _hasEverLoaded = false;
   bool _restoreInFlight = false;
   bool _isNavigatingToChapter = false;
-  double _initialProgress = 0.0;
+  double _initialProgress = 0;
   String? _initialFragment;
 
   double _stableTopInset = 0;
@@ -124,7 +122,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   bool _showChrome = true;
   double _lastSyncedWidth = 0;
   double _lastSyncedHeight = 0;
-  double _displayedProgress = 0.0;
+  double _displayedProgress = 0;
 
   final FocusNode _focusNode = FocusNode();
 
@@ -175,12 +173,12 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     }
 
     final List<String> hrefs =
-        _book!.chapters.map((EpubChapter ch) => ch.href).toList();
+        _book!.chapters.map((ch) => ch.href).toList();
     debugPrint('[ReaderHoshi] chapter hrefs: $hrefs');
 
     _chapterCharCounts = List<int>.generate(
       _book!.chapters.length,
-      (int i) => _book!.chapterPlainText(i).length,
+      (i) => _book!.chapterPlainText(i).length,
     );
     int cumulative = 0;
     _chapterCumulativeChars = <int>[];
@@ -251,11 +249,19 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
     final ReaderHoshiSource src = ReaderHoshiSource.instance;
     final bool inverted = src.volumePageTurningInverted;
-
     final bool goForward = inverted ? isUp : !isUp;
-    _paginate(goForward
-        ? ReaderNavigationDirection.forward
-        : ReaderNavigationDirection.backward);
+
+    if (_audiobookController != null && src.volumeKeySentenceNavEnabled) {
+      if (goForward) {
+        _audiobookController!.skipToNextCue();
+      } else {
+        _audiobookController!.skipToPrevCue();
+      }
+    } else {
+      _paginate(goForward
+          ? ReaderNavigationDirection.forward
+          : ReaderNavigationDirection.backward);
+    }
 
     final int speedMs = src.volumePageTurningSpeed;
     if (speedMs > 0) {
@@ -319,12 +325,12 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   EpubBook _buildLegacyBook(String extractDir) {
     final List<FileSystemEntity> htmlFiles = Directory(extractDir)
         .listSync(recursive: true)
-        .where((FileSystemEntity e) {
+        .where((e) {
       if (e is! File) return false;
       final String ext = p.extension(e.path).toLowerCase();
       return ext == '.html' || ext == '.xhtml' || ext == '.htm';
     }).toList()
-      ..sort((FileSystemEntity a, FileSystemEntity b) =>
+      ..sort((a, b) =>
           _naturalCompare(a.path, b.path));
 
     final List<EpubChapter> chapters = <EpubChapter>[];
@@ -437,19 +443,19 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       return;
     }
 
-    controller.onPositionWrite = (String uid, int posMs) {
+    controller.onPositionWrite = (uid, posMs) {
       repo.updatePositionMs(bookUid: uid, positionMs: posMs);
     };
-    controller.onDelayPersist = (int ms) async {
+    controller.onDelayPersist = (ms) async {
       await repo.updateDelayMs(bookUid: bookUid, ms: ms);
     };
-    controller.onSpeedPersist = (double speed) async {
+    controller.onSpeedPersist = (speed) async {
       await repo.updateSpeed(bookUid: bookUid, speed: speed);
     };
-    controller.onImagePausePersist = (int sec) async {
+    controller.onImagePausePersist = (sec) async {
       await repo.updateImagePauseSec(bookUid: bookUid, sec: sec);
     };
-    controller.onFollowAudioPersist = (bool value) async {
+    controller.onFollowAudioPersist = (value) async {
       await repo.updateFollowAudio(bookUid: bookUid, value: value);
     };
     controller.getCurrentReaderSection = () => _currentChapter;
@@ -515,13 +521,13 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       return;
     }
 
-    controller.onDelayPersist = (int ms) async {
+    controller.onDelayPersist = (ms) async {
       await abRepo.updateDelayMs(bookUid: srtBookUid, ms: ms);
     };
-    controller.onSpeedPersist = (double speed) async {
+    controller.onSpeedPersist = (speed) async {
       await abRepo.updateSpeed(bookUid: srtBookUid, speed: speed);
     };
-    controller.onImagePausePersist = (int sec) async {
+    controller.onImagePausePersist = (sec) async {
       await abRepo.updateImagePauseSec(bookUid: srtBookUid, sec: sec);
     };
     controller.getCurrentReaderSection = () => _currentChapter;
@@ -553,7 +559,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       final Directory dir = Directory(audioRoot);
       if (!await dir.exists()) return <File>[];
       final List<FileSystemEntity> entries = await dir.list().toList();
-      final List<File> files = entries.whereType<File>().where((File f) {
+      final List<File> files = entries.whereType<File>().where((f) {
         final String ext = f.path.toLowerCase();
         return ext.endsWith('.mp3') ||
             ext.endsWith('.m4a') ||
@@ -562,7 +568,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
             ext.endsWith('.wav') ||
             ext.endsWith('.mp4');
       }).toList()
-        ..sort((File a, File b) => a.path.compareTo(b.path));
+        ..sort((a, b) => a.path.compareTo(b.path));
       return files;
     }
     return <File>[];
@@ -653,7 +659,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       onKeyEvent: _handleKeyEvent,
       child: PopScope(
         canPop: false,
-        onPopInvokedWithResult: (bool didPop, dynamic result) async {
+        onPopInvokedWithResult: (didPop, dynamic result) async {
           if (didPop) return;
           final bool allow = await onWillPop();
           if (allow && mounted) Navigator.of(context).pop();
@@ -755,7 +761,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       final String raw = path.substring('/fonts/'.length);
       final String fontPath = Uri.decodeComponent(raw);
       final Set<String> allowedPaths = (_settings?.customFonts ?? <Map<String, dynamic>>[])
-          .map((Map<String, dynamic> e) => e['path'] as String?)
+          .map((e) => e['path'] as String?)
           .whereType<String>()
           .toSet();
       if (!allowedPaths.contains(fontPath)) {
@@ -814,7 +820,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       );
       const String hideUntilReady =
           '<style id="hoshi-cloak">body{visibility:hidden!important}</style>';
-      final RegExp headPattern = RegExp(r'<head[^>]*>', caseSensitive: false);
+      final RegExp headPattern = RegExp('<head[^>]*>', caseSensitive: false);
       final RegExpMatch? headMatch = headPattern.firstMatch(html);
       if (headMatch != null) {
         html = '${html.substring(0, headMatch.end)}\n$hideUntilReady\n$styleTag${html.substring(headMatch.end)}';
@@ -963,7 +969,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   Widget _buildWebView() {
     return InAppWebView(
-      initialUrlRequest: null,
       initialUserScripts: UnmodifiableListView<UserScript>(<UserScript>[
         UserScript(
           source:
@@ -972,8 +977,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         ),
       ]),
       initialSettings: InAppWebViewSettings(
-        allowFileAccessFromFileURLs: false,
-        allowUniversalAccessFromFileURLs: false,
         mediaPlaybackRequiresUserGesture: false,
         verticalScrollBarEnabled: false,
         horizontalScrollBarEnabled: false,
@@ -988,13 +991,13 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         mixedContentMode: MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
         useShouldOverrideUrlLoading: true,
       ),
-      onWebViewCreated: (InAppWebViewController controller) {
+      onWebViewCreated: (controller) {
         _controller = controller;
         _loadChapterDirectly(_currentChapter);
 
         controller.addJavaScriptHandler(
           handlerName: 'onTextSelected',
-          callback: (List<dynamic> args) async {
+          callback: (args) async {
             if (args.isEmpty) return;
             try {
               final Map<String, dynamic> payload =
@@ -1014,7 +1017,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
         controller.addJavaScriptHandler(
           handlerName: 'onTap',
-          callback: (List<dynamic> args) {
+          callback: (args) {
             if (args.length < 2) return;
             if (!_showChrome) {
               _toggleChrome();
@@ -1038,7 +1041,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
         controller.addJavaScriptHandler(
           handlerName: 'onSwipe',
-          callback: (List<dynamic> args) {
+          callback: (args) {
             if (args.isEmpty || _lyricsMode) return;
             final String dir = args[0] as String;
             final bool invert =
@@ -1057,7 +1060,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
         controller.addJavaScriptHandler(
           handlerName: 'onBoundarySwipe',
-          callback: (List<dynamic> args) {
+          callback: (args) {
             if (args.isEmpty || _lyricsMode) return;
             final String dir = args[0] as String;
             if (dir == 'forward') {
@@ -1075,7 +1078,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
         controller.addJavaScriptHandler(
           handlerName: 'onImageTap',
-          callback: (List<dynamic> args) {
+          callback: (args) {
             if (args.isEmpty) return;
             _openImageViewer(args[0] as String);
           },
@@ -1083,7 +1086,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
         controller.addJavaScriptHandler(
           handlerName: 'onLyricsCueTap',
-          callback: (List<dynamic> args) {
+          callback: (args) {
             if (args.isEmpty || _audiobookController == null) return;
             final int index = (args[0] as num).toInt();
             if (index >= 0 && index < _lyricsCueList.length) {
@@ -1093,11 +1096,11 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         );
       },
       shouldInterceptRequest:
-          (InAppWebViewController controller, WebResourceRequest request) async {
+          (controller, request) async {
         return _interceptRequest(request.url);
       },
       shouldOverrideUrlLoading:
-          (InAppWebViewController controller, NavigationAction action) async {
+          (controller, action) async {
         final String url = action.request.url?.toString() ?? '';
         if (_isNavigatingToChapter) {
           return NavigationActionPolicy.ALLOW;
@@ -1110,7 +1113,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         }
         return NavigationActionPolicy.CANCEL;
       },
-      onLoadStop: (InAppWebViewController controller, WebUri? url) async {
+      onLoadStop: (controller, url) async {
         _isNavigatingToChapter = false;
         if (_lyricsMode) {
           if (!_readerContentReady) {
@@ -1147,8 +1150,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         _lastSyncedWidth = MediaQuery.of(context).size.width;
       },
       onReceivedError:
-          (InAppWebViewController controller, WebResourceRequest request,
-              WebResourceError error) {
+          (controller, request,
+              error) {
         if (request.isForMainFrame ?? false) {
           debugPrint('[ReaderHoshi] onReceivedError: ${error.description}');
           _isNavigatingToChapter = false;
@@ -1160,7 +1163,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         }
       },
       onConsoleMessage:
-          (InAppWebViewController controller, ConsoleMessage msg) {
+          (controller, msg) {
         debugPrint('[WebView] ${msg.message}');
       },
     );
@@ -1172,7 +1175,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         FavoriteSentenceRepository(appModel.database);
     final List<FavoriteSentence> all = await repo.getAll();
     final List<FavoriteSentence> chapterFavs = all
-        .where((FavoriteSentence s) =>
+        .where((s) =>
             s.ttuBookId == widget.bookId &&
             s.sectionIndex == _currentChapter)
         .toList();
@@ -1295,12 +1298,11 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       backgroundColor: colorToCss(bg),
       textColor: colorToCss(fg),
       accentColor: colorToCss(accent),
-      fontSize: (_settings?.fontSize ?? 20).toDouble(),
+      fontSize: _settings?.fontSize ?? 20,
     );
 
     await _controller!.loadData(
       data: html,
-      mimeType: 'text/html',
       encoding: 'utf-8',
       baseUrl: WebUri('https://hoshi.local/lyrics'),
     );
@@ -1349,7 +1351,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       final SasayakiFragment? frag =
           SasayakiMatchCodec.tryDecode(cue.textFragmentId);
       if (frag != null && frag.sectionIndex != _currentChapter) {
-        AudiobookBridge.highlight(_controller!, cue: null);
+        AudiobookBridge.highlight(_controller!);
         return;
       }
     }
@@ -1433,7 +1435,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
     String? coverPath;
     if (_book?.coverHref != null && _extractDir != null) {
-      final File coverFile = File(p.join(_extractDir!, _book!.coverHref!));
+      final File coverFile = File(p.join(_extractDir!, _book!.coverHref));
       if (coverFile.existsSync()) coverPath = coverFile.path;
     }
 
@@ -1506,7 +1508,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         await repo.cuesForBook(_audiobookBookUid!);
     _cachedAllCues = allCues;
     _cachedSasayaki = allCues.any(
-      (AudioCue c) =>
+      (c) =>
           SasayakiMatchCodec.tryDecode(c.textFragmentId) != null,
     );
 
@@ -2033,7 +2035,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           onTap: () => Navigator.pop(context),
           child: InteractiveViewer(
             minScale: 0.5,
-            maxScale: 5.0,
+            maxScale: 5,
             child: Center(
               child: Image.memory(bytes, fit: BoxFit.contain),
             ),
@@ -2068,7 +2070,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _playStreamSub = appModel.playStream.listen((_) {
       ctrl.togglePlayPause();
     });
-    _seekStreamSub = appModel.seekStream.listen((Duration pos) {
+    _seekStreamSub = appModel.seekStream.listen((pos) {
       ctrl.seekMs(pos.inMilliseconds);
     });
     _skipNextSub = appModel.skipNextStream.listen((_) {
@@ -2084,7 +2086,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (handler == null) return;
     Uri? artUri;
     if (_book?.coverHref != null && _extractDir != null) {
-      final File coverFile = File(p.join(_extractDir!, _book!.coverHref!));
+      final File coverFile = File(p.join(_extractDir!, _book!.coverHref));
       if (coverFile.existsSync()) {
         artUri = coverFile.uri;
       }
@@ -2245,7 +2247,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final AudiobookPlayerController ctrl = _audiobookController!;
     return ListenableBuilder(
       listenable: ctrl,
-      builder: (BuildContext context, Widget? _) {
+      builder: (context, _) {
         return Positioned(
           left: 0,
           right: 0,
@@ -2324,7 +2326,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
     await showDialog<void>(
       context: context,
-      builder: (BuildContext ctx) => AudiobookImportDialog(
+      builder: (ctx) => AudiobookImportDialog(
         bookUid: bookUid,
         repo: repo,
         ttuBookId: widget.bookId,
@@ -2381,7 +2383,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     List<Bookmark> bookmarks = await bmRepo.getBookmarks(bookId);
     final List<FavoriteSentence> allFavorites = await favRepo.getAll();
     final List<FavoriteSentence> favorites = allFavorites
-        .where((FavoriteSentence f) => f.ttuBookId == bookId)
+        .where((f) => f.ttuBookId == bookId)
         .toList();
 
     if (!mounted) return;
@@ -2389,12 +2391,12 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      builder: (BuildContext ctx) {
+      builder: (ctx) {
         return AudiobookSettingsSheet(
           controller: _audiobookController,
           toc: toc,
           readerProgress: (_currentChapter + 1, _book!.chapters.length),
-          onJumpSection: (int index) async {
+          onJumpSection: (index) async {
             _navigateToChapter(index);
           },
           onBookmark: () async {
@@ -2409,7 +2411,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           showFloatingLyric: appModel.showFloatingLyric,
           onToggleFloatingLyric: _toggleFloatingLyric,
           floatingLyricFontSize: appModel.floatingLyricFontSize,
-          onFloatingLyricFontSizeChanged: (double v) async {
+          onFloatingLyricFontSizeChanged: (v) async {
             await appModel.setFloatingLyricFontSize(v);
             final Color bg = _themeBackgroundColor();
             final Color fg = _themeTextColor();
@@ -2430,11 +2432,11 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
                   _progressTotalChars != null
               ? (_progressCurrentChars!, _progressTotalChars!)
               : null,
-          onJumpToCharOffset: (int globalOffset) async {
+          onJumpToCharOffset: (globalOffset) async {
             _jumpToGlobalCharOffset(globalOffset);
           },
           bookmarks: bookmarks,
-          onJumpToBookmark: (Bookmark bm) async {
+          onJumpToBookmark: (bm) async {
             if (bm.sectionIndex != _currentChapter) {
               await _navigateToChapterAndWait(bm.sectionIndex);
             }
@@ -2444,17 +2446,17 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
                   'window.hoshiReader && window.hoshiReader.restoreProgress($progress);',
             );
           },
-          onDeleteBookmark: (int index) async {
+          onDeleteBookmark: (index) async {
             await bmRepo.removeBookmark(bookId, index);
             bookmarks = await bmRepo.getBookmarks(bookId);
           },
           favoriteSentences: favorites,
-          onDeleteFavorite: (int index) async {
+          onDeleteFavorite: (index) async {
             if (index >= 0 && index < favorites.length) {
               await favRepo.removeById(favorites[index].id);
             }
           },
-          onJumpToFavorite: (FavoriteSentence fav) async {
+          onJumpToFavorite: (fav) async {
             if (fav.sectionIndex == null) return;
             if (fav.sectionIndex != _currentChapter) {
               await _navigateToChapterAndWait(fav.sectionIndex!);
@@ -2469,7 +2471,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           },
           onPlayFavorite: _audiobookController == null
               ? null
-              : (FavoriteSentence fav) async {
+              : (fav) async {
                   if (fav.normCharOffset == null ||
                       fav.sectionIndex == null) {
                     return;
@@ -2622,7 +2624,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (toc.isEmpty) {
       return List<TtuTocEntry>.generate(
         _book!.chapters.length,
-        (int i) => TtuTocEntry(index: i, label: 'Chapter ${i + 1}'),
+        (i) => TtuTocEntry(index: i, label: 'Chapter ${i + 1}'),
       );
     }
     final List<TtuTocEntry> result = <TtuTocEntry>[];
@@ -2839,7 +2841,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       if (sentenceRange != null) {
         final List<FavoriteSentence> all = await repo.getAll();
         final List<FavoriteSentence> chapterFavs = all
-            .where((FavoriteSentence s) =>
+            .where((s) =>
                 s.ttuBookId == widget.bookId &&
                 s.sectionIndex == _currentChapter)
             .toList();
@@ -2872,7 +2874,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (sentenceRange != null) {
       final List<FavoriteSentence> all = await repo.getAll();
       final List<FavoriteSentence> chapterFavs = all
-          .where((FavoriteSentence s) =>
+          .where((s) =>
               s.ttuBookId == widget.bookId &&
               s.sectionIndex == _currentChapter)
           .toList();
@@ -2935,7 +2937,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
                   ctrl.isPlaying ? Icons.pause : Icons.play_arrow,
                   size: 24,
                 ),
-                onPressed: () => ctrl.togglePlayPause(),
+                onPressed: ctrl.togglePlayPause,
                 visualDensity: VisualDensity.compact,
               ),
               const SizedBox(width: 8),
@@ -2958,14 +2960,14 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
     if (!hasAudio) {
       return Builder(
-        builder: (BuildContext context) =>
+        builder: (context) =>
             buildRow(Theme.of(context)),
       );
     }
 
     return ListenableBuilder(
       listenable: ctrl,
-      builder: (BuildContext context, _) {
+      builder: (context, _) {
         return buildRow(Theme.of(context));
       },
     );

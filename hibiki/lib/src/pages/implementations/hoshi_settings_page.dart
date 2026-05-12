@@ -199,6 +199,14 @@ List<Widget> _buildReaderOnlySwitches(VoidCallback rebuild,
       },
     ),
     _buildSwitch(
+      label: t.volume_key_sentence_nav,
+      value: _source.volumeKeySentenceNavEnabled,
+      onChanged: (_) {
+        _source.toggleVolumeKeySentenceNavEnabled();
+        rebuild();
+      },
+    ),
+    _buildSwitch(
       label: t.invert_swipe_direction,
       value: _source.invertSwipeDirection,
       onChanged: (_) {
@@ -237,7 +245,6 @@ List<Widget> _buildReaderOnlySwitches(VoidCallback rebuild,
             child: Slider(
               value: _source.dismissSwipeSensitivity,
               min: 0.1,
-              max: 1.0,
               divisions: 9,
               label: _source.dismissSwipeSensitivity.toStringAsFixed(1),
               onChanged: (v) {
