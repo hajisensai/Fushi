@@ -505,6 +505,18 @@ class _HoshiSettingsContentState extends BasePageState {
         ),
         _categoryTile(
           context,
+          icon: Icons.audiotrack,
+          label: t.audiobook_settings,
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => const _AudiobookSettingsPage()),
+            ).then((_) => setState(() {}));
+          },
+        ),
+        _categoryTile(
+          context,
           icon: Icons.system_update,
           label: t.section_update,
           onTap: () {
@@ -621,6 +633,100 @@ class _ReaderBehaviorSettingsPageState extends BasePageState {
           const Space.small(),
           const JidoujishoDivider(),
           _buildPageTurningSpeed(() => setState(() {})),
+        ],
+      ),
+    );
+  }
+}
+
+class _AudiobookSettingsPage extends BasePage {
+  const _AudiobookSettingsPage();
+
+  @override
+  BasePageState createState() => _AudiobookSettingsPageState();
+}
+
+class _AudiobookSettingsPageState extends BasePageState {
+  @override
+  Widget build(BuildContext context) {
+    final ReaderHoshiSource src = ReaderHoshiSource.instance;
+    return Scaffold(
+      appBar: AppBar(title: Text(t.audiobook_settings)),
+      body: ListView(
+        padding: EdgeInsets.fromLTRB(
+          16, 8, 16, 8 + MediaQuery.of(context).padding.bottom,
+        ),
+        children: [
+          _buildSwitch(
+            label: t.show_media_notification,
+            value: appModel.showMediaNotification,
+            onChanged: (_) {
+              appModel.toggleShowMediaNotification();
+              setState(() {});
+            },
+          ),
+          _buildSwitch(
+            label: t.show_floating_lyric,
+            value: appModel.showFloatingLyric,
+            onChanged: (_) async {
+              await appModel.setShowFloatingLyric(!appModel.showFloatingLyric);
+              setState(() {});
+            },
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              children: [
+                Expanded(child: Text(t.floating_lyric_font_size)),
+                IconButton(
+                  icon: const Icon(Icons.remove, size: 18),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () async {
+                    final double v =
+                        (appModel.floatingLyricFontSize - 1).clamp(8, 64);
+                    await appModel.setFloatingLyricFontSize(v);
+                    setState(() {});
+                  },
+                ),
+                SizedBox(
+                  width: 36,
+                  child: Text(
+                    appModel.floatingLyricFontSize.round().toString(),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.add, size: 18),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () async {
+                    final double v =
+                        (appModel.floatingLyricFontSize + 1).clamp(8, 64);
+                    await appModel.setFloatingLyricFontSize(v);
+                    setState(() {});
+                  },
+                ),
+              ],
+            ),
+          ),
+          _buildSwitch(
+            label: t.show_floating_dict,
+            value: appModel.showFloatingDict,
+            onChanged: (_) async {
+              await appModel.setShowFloatingDict(!appModel.showFloatingDict);
+              setState(() {});
+            },
+          ),
+          const Space.small(),
+          const JidoujishoDivider(),
+          const Space.small(),
+          _buildSwitch(
+            label: t.auto_read_on_lookup,
+            value: src.autoReadOnLookup,
+            onChanged: (_) {
+              src.toggleAutoReadOnLookup();
+              setState(() {});
+            },
+          ),
         ],
       ),
     );
