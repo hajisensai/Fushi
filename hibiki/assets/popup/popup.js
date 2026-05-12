@@ -1252,6 +1252,39 @@ function createAudioButton(expression, reading, entryIndex) {
     return button;
 }
 
+function createKanjiBreakdown(expression) {
+    const seen = new Set();
+    const kanjiChars = [];
+    for (const ch of expression) {
+        if (KANJI_PATTERN.test(ch) && !seen.has(ch)) {
+            seen.add(ch);
+            kanjiChars.push(ch);
+        }
+    }
+    if (kanjiChars.length === 0) return null;
+
+    const row = el('div', { className: 'kanji-breakdown' });
+    for (const ch of kanjiChars) {
+        const tag = el('span', {
+            className: 'kanji-tag',
+            textContent: ch,
+        });
+        tag.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const rect = tag.getBoundingClientRect();
+            window.flutter_inappwebview.callHandler('onLinkClick', ch, {
+                x: rect.left,
+                y: rect.top,
+                width: rect.width,
+                height: rect.height
+            });
+        });
+        row.appendChild(tag);
+    }
+    return row;
+}
+
 function createEntryHeader(entry, idx) {
     const { expression, reading, matched, frequencies, pitches, rules } = entry;
     const header = el('div', { className: 'entry-header' });
@@ -1495,6 +1528,11 @@ window.renderPopup = function() {
 
             const entryDiv = el('div', { className: 'entry' });
             entryDiv.appendChild(createEntryHeader(entry, idx));
+
+            const kanjiRow = createKanjiBreakdown(entry.expression);
+            if (kanjiRow) {
+                entryDiv.appendChild(kanjiRow);
+            }
 
             const deinflection = createDeinflectionSection(entry);
             if (deinflection) {

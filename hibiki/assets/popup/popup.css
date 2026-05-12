@@ -70,6 +70,31 @@ body {
     opacity: 0.6;
 }
 
+.kanji-breakdown {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 4px 0 2px;
+}
+
+.kanji-tag {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    height: 28px;
+    padding: 0 6px;
+    border-radius: 4px;
+    background: rgba(128, 128, 128, 0.15);
+    font-size: 16px;
+    cursor: pointer;
+    -webkit-user-select: none;
+}
+
+.kanji-tag:active {
+    opacity: 0.6;
+}
+
 .expression-scroll .expression {
     display: inline-block;
     white-space: nowrap;
