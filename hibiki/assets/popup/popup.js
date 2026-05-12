@@ -1600,6 +1600,12 @@ window.renderPopup = function() {
             document.body.scrollHeight);
     })();
 
+    if (window.globalDictCSS) {
+        const style = document.createElement('style');
+        style.textContent = window.globalDictCSS;
+        document.body.appendChild(style);
+    }
+
     if (window.customDictCSS && typeof window.customDictCSS === 'object') {
         for (const [dictName, css] of Object.entries(window.customDictCSS)) {
             if (!css) continue;
