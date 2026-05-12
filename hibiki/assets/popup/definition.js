@@ -227,15 +227,20 @@ function createDefinitionImage(data, dictionary, exporting) {
     if (sizeUnits === 'em') {
         imageContainer.style.width = `${usedWidth}em`;
     } else if (!hasDimensions && isSvg) {
-        imageContainer.style.width = '1em';
+        node.dataset.hasAspectRatio = 'false';
+        imageContainer.style.width = 'auto';
+        imageContainer.style.height = '1.2em';
         imageContainer.style.fontSize = 'inherit';
+        imageContainer.style.lineHeight = '0';
+        aspectRatioSizer.style.display = 'none';
     } else {
         imageContainer.style.width = `${usedWidth}px`;
     }
     if (typeof title === 'string') imageContainer.title = title;
 
     const imageUrl = `image://?dictionary=${encodeURIComponent(dictionary)}&path=${encodeURIComponent(path)}`;
-    if (shouldRenderDefinitionImageToCanvas(path, appearance, usedWidth, invAspectRatio)) {
+    const inlineSvg = !hasDimensions && isSvg;
+    if (!inlineSvg && shouldRenderDefinitionImageToCanvas(path, appearance, usedWidth, invAspectRatio)) {
         imageContainer.appendChild(createDefinitionImageCanvas(imageUrl, nodeData?.alt || title || '', (canvas, sourceImage) => {
             renderDefinitionImageToCanvas(canvas, sourceImage, usedWidth, invAspectRatio, appearance);
         }));
@@ -243,23 +248,28 @@ function createDefinitionImage(data, dictionary, exporting) {
         const img = document.createElement('img');
         img.classList.add('gloss-image');
         img.alt = nodeData?.alt || title || '';
+        if (inlineSvg) {
+            img.style.height = '1.2em';
+            img.style.width = 'auto';
+            img.style.position = 'static';
+            img.style.display = 'inline-block';
+        }
         if (!hasDimensions && !isSvg) {
             img.addEventListener('load', () => {
                 imageContainer.style.width = `${Math.min(img.naturalWidth, window.innerWidth - 20)}px`;
                 aspectRatioSizer.style.paddingTop = `${(img.naturalHeight / img.naturalWidth) * 100}%`;
             }, { once: true });
         }
-        if (!hasDimensions && isSvg) {
-            img.addEventListener('load', () => {
-                if (img.naturalWidth > 0 && img.naturalHeight > 0) {
-                    const ratio = img.naturalWidth / img.naturalHeight;
-                    imageContainer.style.width = `${ratio}em`;
-                    aspectRatioSizer.style.paddingTop = `${(1 / ratio) * 100}%`;
-                }
-            }, { once: true });
-        }
         img.src = imageUrl;
         imageContainer.appendChild(img);
+    }
+    if (sizeUnits === 'em') {
+        node.style.maxWidth = 'none';
+        imageContainer.style.maxWidth = 'none';
+        const scrollWrapper = document.createElement('div');
+        scrollWrapper.className = 'gloss-image-scroll';
+        scrollWrapper.appendChild(node);
+        return scrollWrapper;
     }
     return node;
 }

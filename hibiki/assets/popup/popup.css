@@ -280,6 +280,12 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
     font-size: 1em;
 }
 
+.gloss-image-scroll {
+    overflow-x: auto;
+    max-width: 100%;
+    -webkit-overflow-scrolling: touch;
+}
+
 .glossary-group {
     position: relative;
     margin-top: 5px;
