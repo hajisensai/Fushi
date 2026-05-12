@@ -34,13 +34,15 @@ LazyDatabase _openDb(String dbDirectory) {
   DictionaryMetadata,
   DictionaryHistory,
   EpubBooks,
+  BookTags,
+  BookTagMappings,
 ])
 class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase(String dbDirectory) : super(_openDb(dbDirectory));
   HibikiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -56,6 +58,10 @@ class HibikiDatabase extends _$HibikiDatabase {
           }
           if (from < 5) {
             await m.createTable(epubBooks);
+          }
+          if (from < 6) {
+            await m.createTable(bookTags);
+            await m.createTable(bookTagMappings);
           }
         },
       );

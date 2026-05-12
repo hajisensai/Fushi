@@ -189,3 +189,28 @@ class EpubBooks extends Table {
   TextColumn get sourceMetadata => text().nullable()();
   IntColumn get importedAt => integer()();
 }
+
+// ── book_tags ──────────────────────────────────────────────────────
+@DataClassName('BookTagRow')
+class BookTags extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get name => text().unique()();
+  IntColumn get colorValue =>
+      integer().withDefault(const Constant(0xFF9E9E9E))();
+  IntColumn get createdAt => integer()();
+}
+
+// ── book_tag_mappings ─────────────────────────────────────────────
+@DataClassName('BookTagMappingRow')
+class BookTagMappings extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  IntColumn get bookId => integer()
+      .references(EpubBooks, #id, onDelete: KeyAction.cascade)();
+  IntColumn get tagId => integer()
+      .references(BookTags, #id, onDelete: KeyAction.cascade)();
+
+  @override
+  List<Set<Column>> get uniqueKeys => [
+        {bookId, tagId},
+      ];
+}
