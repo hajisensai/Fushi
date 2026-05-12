@@ -52,6 +52,7 @@ public class MainActivity extends AudioServiceActivity {
     private static final String FLOATING_DICT_CHANNEL = "app.hibiki.reader/floating_dict";
     private static final String SPLASH_CHANNEL = "app.hibiki.reader/splash";
     private static final String LIFECYCLE_CHANNEL = "app.hibiki.reader/lifecycle";
+    private static final String ICON_CHANNEL = "app.hibiki.reader/icon_switch";
     private static final String SPLASH_PREFS = "hibiki_splash";
     private static final int SAF_PICK_DIR_REQUEST = 1001;
     private static MethodChannel floatingLyricChannel;
@@ -533,6 +534,33 @@ public class MainActivity extends AudioServiceActivity {
                     result.success(null);
                 } else {
                     result.notImplemented();
+                }
+            });
+
+        new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), ICON_CHANNEL)
+            .setMethodCallHandler((call, result) -> {
+                switch (call.method) {
+                    case "getCurrentIcon":
+                        result.success(IconSwitchHelper.getCurrentIcon(this));
+                        break;
+                    case "switchPresetIcon": {
+                        String alias = call.argument("alias");
+                        boolean ok = IconSwitchHelper.switchPresetIcon(this, alias);
+                        result.success(ok);
+                        break;
+                    }
+                    case "createCustomShortcut": {
+                        byte[] imageBytes = call.argument("imageBytes");
+                        boolean ok = IconSwitchHelper.createCustomShortcut(this, imageBytes);
+                        result.success(ok);
+                        break;
+                    }
+                    case "isCustomShortcutSupported":
+                        result.success(IconSwitchHelper.isCustomShortcutSupported(this));
+                        break;
+                    default:
+                        result.notImplemented();
+                        break;
                 }
             });
     }

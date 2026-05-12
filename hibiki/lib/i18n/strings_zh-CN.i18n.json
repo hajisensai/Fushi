@@ -835,5 +835,17 @@
     "creator_action_play_audio": "播放音频",
     "creator_action_share": "分享",
     "favorite_removed": "句子已取消收藏。",
-    "no_sentence_selected": "未选择句子"
+    "no_sentence_selected": "未选择句子",
+    "miscellaneous_settings": "杂项",
+    "app_icon_label": "应用图标",
+    "icon_default": "默认",
+    "icon_full": "插画",
+    "icon_minimal": "极简",
+    "icon_custom": "自选",
+    "icon_custom_hint": "自选图片将创建桌面快捷方式，需手动移除旧图标",
+    "icon_custom_confirm_title": "创建快捷方式",
+    "icon_custom_confirm_body": "将在桌面创建新的快捷方式，是否继续？",
+    "icon_switch_success": "图标已切换，桌面将在几秒后刷新",
+    "icon_shortcut_created": "快捷方式已创建",
+    "icon_shortcut_unsupported": "当前设备不支持创建自定义快捷方式"
 }

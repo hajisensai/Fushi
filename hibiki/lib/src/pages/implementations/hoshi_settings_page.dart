@@ -537,6 +537,18 @@ class _HoshiSettingsContentState extends BasePageState {
               ).then((_) => setState(() {}));
             },
           ),
+        _categoryTile(
+          context,
+          icon: Icons.widgets_outlined,
+          label: t.miscellaneous_settings,
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => const MiscellaneousSettingsPage()),
+            );
+          },
+        ),
       ],
     );
   }

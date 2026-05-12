@@ -893,5 +893,17 @@
   "tag_name_duplicate": "A tag with this name already exists",
   "tag_delete_confirm": "Delete tag \"{name}\"? This will remove it from all books.",
   "tag_color": "Color",
-  "tag_book_count": "{count} books"
+  "tag_book_count": "{count} books",
+  "miscellaneous_settings": "Miscellaneous",
+  "app_icon_label": "App Icon",
+  "icon_default": "Default",
+  "icon_full": "Illustrated",
+  "icon_minimal": "Minimal",
+  "icon_custom": "Custom",
+  "icon_custom_hint": "Custom image creates a home screen shortcut. Remove the old icon manually.",
+  "icon_custom_confirm_title": "Create Shortcut",
+  "icon_custom_confirm_body": "This will create a new shortcut on your home screen. Continue?",
+  "icon_switch_success": "Icon switched. Home screen will refresh shortly.",
+  "icon_shortcut_created": "Shortcut created",
+  "icon_shortcut_unsupported": "Custom shortcuts are not supported on this device"
 }

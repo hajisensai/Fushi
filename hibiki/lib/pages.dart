@@ -39,6 +39,7 @@ export 'src/pages/implementations/tag_management_page.dart';
 export 'src/pages/implementations/tag_picker_page.dart';
 export 'src/pages/implementations/anki_settings_page.dart';
 export 'src/pages/implementations/display_settings_page.dart';
+export 'src/pages/implementations/miscellaneous_settings_page.dart';
 
 export 'src/pages/base_page.dart';
 export 'src/pages/base_history_page.dart';
