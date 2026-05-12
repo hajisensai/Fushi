@@ -49,31 +49,36 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
 
   Future<void> _quickCreateTag() async {
     final nameController = TextEditingController();
-    final name = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(t.tag_new),
-        content: TextField(
-          controller: nameController,
-          decoration: InputDecoration(
-            labelText: t.tag_name_hint,
-            border: const OutlineInputBorder(),
+    String? name;
+    try {
+      name = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(t.tag_new),
+          content: TextField(
+            controller: nameController,
+            decoration: InputDecoration(
+              labelText: t.tag_name_hint,
+              border: const OutlineInputBorder(),
+            ),
+            autofocus: true,
+            onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
           ),
-          autofocus: true,
-          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(t.dialog_cancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, nameController.text.trim()),
+              child: Text(t.dialog_ok),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(t.dialog_cancel),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, nameController.text.trim()),
-            child: Text(t.dialog_ok),
-          ),
-        ],
-      ),
-    );
+      );
+    } finally {
+      nameController.dispose();
+    }
     if (name == null || name.isEmpty) return;
     try {
       final color =

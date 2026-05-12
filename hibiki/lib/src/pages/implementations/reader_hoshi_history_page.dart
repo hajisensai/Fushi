@@ -89,15 +89,57 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     final bool hasActiveFilter =
         ref.read(selectedTagIdsProvider).isNotEmpty;
     if (epubBooks.isEmpty && srtBooks.isEmpty) {
-      if (hasActiveFilter) {
-        return Center(
-          child: JidoujishoPlaceholderMessage(
-            icon: Icons.filter_list_off,
-            message: t.tag_no_books_for_filter,
+      return hasActiveFilter
+          ? Center(
+              child: JidoujishoPlaceholderMessage(
+                icon: Icons.filter_list_off,
+                message: t.tag_no_books_for_filter,
+              ),
+            )
+          : buildPlaceholder();
+    }
+    if (hasActiveFilter && epubBooks.isEmpty) {
+      return RawScrollbar(
+        thumbVisibility: true,
+        thickness: 3,
+        controller: mediaType.scrollController,
+        child: CustomScrollView(
+          controller: mediaType.scrollController,
+          physics: const AlwaysScrollableScrollPhysics(
+            parent: BouncingScrollPhysics(),
           ),
-        );
-      }
-      return buildPlaceholder();
+          slivers: [
+            const SliverToBoxAdapter(child: SizedBox(height: 8)),
+            if (srtBooks.isNotEmpty) ...[
+              SliverToBoxAdapter(
+                  child: _buildSectionHeader(t.srt_books_section)),
+              SliverPadding(
+                padding: EdgeInsets.zero,
+                sliver: SliverGrid.builder(
+                  gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: 150,
+                    childAspectRatio: mediaSource.aspectRatio,
+                  ),
+                  itemCount: srtBooks.length,
+                  itemBuilder: (_, i) => _buildSrtCard(srtBooks[i]),
+                ),
+              ),
+            ],
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  t.tag_no_books_for_filter,
+                  textAlign: TextAlign.center,
+                  style: textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
     }
     return RawScrollbar(
       thumbVisibility: true,
