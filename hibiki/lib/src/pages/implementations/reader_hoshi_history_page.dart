@@ -36,9 +36,23 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
   Widget build(BuildContext context) {
     final AsyncValue<List<MediaItem>> books =
         ref.watch(hoshiBooksProvider(appModel.targetLanguage));
+    final AsyncValue<Set<int>?> filteredIds =
+        ref.watch(filteredBookIdsProvider);
 
     return books.when(
-      data: buildBody,
+      data: (bookList) {
+        final Set<int>? filterSet = filteredIds.valueOrNull;
+        final List<MediaItem> filtered;
+        if (filterSet == null) {
+          filtered = bookList;
+        } else {
+          filtered = bookList.where((item) {
+            final int? id = _parseBookId(item.mediaIdentifier);
+            return id != null && filterSet.contains(id);
+          }).toList();
+        }
+        return buildBody(filtered);
+      },
       error: (error, stack) => buildError(
         error: error,
         stack: stack,
@@ -72,7 +86,17 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
             return id == null || !srtBookIds.contains(id);
           }).toList();
 
+    final bool hasActiveFilter =
+        ref.read(selectedTagIdsProvider).isNotEmpty;
     if (epubBooks.isEmpty && srtBooks.isEmpty) {
+      if (hasActiveFilter) {
+        return Center(
+          child: JidoujishoPlaceholderMessage(
+            icon: Icons.filter_list_off,
+            message: t.tag_no_books_for_filter,
+          ),
+        );
+      }
       return buildPlaceholder();
     }
     return RawScrollbar(
@@ -475,6 +499,10 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
         onPressed: () => _openAudiobookImport(item, bookId),
         child: Text(t.audiobook_import),
       ),
+      TextButton(
+        onPressed: () => _openTagPicker(bookId),
+        child: Text(t.tag_label),
+      ),
     ];
   }
 
@@ -555,6 +583,14 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     if (mounted) {
       setState(() {});
     }
+  }
+
+  void _openTagPicker(int bookId) {
+    Navigator.pop(context);
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => TagPickerPage(bookId: bookId)),
+    );
   }
 }
 
