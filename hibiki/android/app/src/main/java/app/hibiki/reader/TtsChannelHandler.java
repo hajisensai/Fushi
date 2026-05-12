@@ -13,7 +13,9 @@ import androidx.annotation.NonNull;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -32,8 +34,8 @@ public class TtsChannelHandler {
     private TextToSpeech tts;
     private boolean ttsReady = false;
     private MediaPlayer mediaPlayer;
-    private volatile SQLiteDatabase localAudioDb;
-    private String localAudioDbPath;
+    private final List<SQLiteDatabase> localAudioDbs = new ArrayList<>();
+    private final List<String> localAudioDbPaths = new ArrayList<>();
     private final Object dbLock = new Object();
     private final ExecutorService ioExecutor = Executors.newFixedThreadPool(2);
     private final ExecutorService dbSetupExecutor = Executors.newSingleThreadExecutor();
@@ -93,7 +95,7 @@ public class TtsChannelHandler {
             dbSetupExecutor.awaitTermination(12, TimeUnit.SECONDS);
         } catch (InterruptedException ignored) {}
         synchronized (dbLock) {
-            closeAudioDbLocked();
+            closeAllAudioDbsLocked();
         }
         ioExecutor.shutdownNow();
         if (mediaPlayer != null) {
@@ -217,46 +219,53 @@ public class TtsChannelHandler {
     }
 
     private void handleSetLocalAudioDb(MethodCall call, MethodChannel.Result result) {
-        String dbPath = call.argument("path");
+        List<String> dbPaths = call.argument("paths");
+        if (dbPaths == null) dbPaths = new ArrayList<>();
+        final List<String> paths = dbPaths;
+
         dbSetupExecutor.execute(() -> {
             synchronized (dbLock) {
-                closeAudioDbLocked();
-                localAudioDbPath = dbPath;
-                if (dbPath != null && !dbPath.isEmpty()) {
+                closeAllAudioDbsLocked();
+
+                for (String dbPath : paths) {
+                    if (dbPath == null || dbPath.isEmpty()) continue;
                     try {
                         File dbFile = new File(dbPath);
-                        if (dbFile.exists()) {
-                            localAudioDb = SQLiteDatabase.openDatabase(
-                                dbPath, null,
-                                SQLiteDatabase.OPEN_READWRITE | SQLiteDatabase.NO_LOCALIZED_COLLATORS);
-                            if (!localAudioDb.enableWriteAheadLogging()) {
-                                android.util.Log.w("hibiki-audio",
-                                    "WAL mode failed, queries may block during index creation");
-                            }
-                            final SQLiteDatabase db = localAudioDb;
-                            indexFuture = ioExecutor.submit(() -> {
-                                try {
-                                    if (db.isOpen()) {
-                                        db.execSQL(
-                                            "CREATE INDEX IF NOT EXISTS idx_entries_expr_read ON entries(expression, reading)");
-                                        db.execSQL(
-                                            "CREATE INDEX IF NOT EXISTS idx_android_file_source ON android(file, source)");
-                                    }
-                                } catch (Exception e) {
-                                    android.util.Log.w("hibiki-audio", "Index creation skipped", e);
-                                }
-                            });
-                            activity.runOnUiThread(() -> result.success(true));
-                        } else {
-                            activity.runOnUiThread(() -> result.success(false));
+                        if (!dbFile.exists()) {
+                            android.util.Log.w("hibiki-audio",
+                                "DB not found, skipping: " + dbPath);
+                            continue;
                         }
+                        SQLiteDatabase db = SQLiteDatabase.openDatabase(
+                            dbPath, null,
+                            SQLiteDatabase.OPEN_READWRITE
+                                | SQLiteDatabase.NO_LOCALIZED_COLLATORS);
+                        db.enableWriteAheadLogging();
+                        localAudioDbPaths.add(dbPath);
+                        localAudioDbs.add(db);
                     } catch (Exception e) {
-                        android.util.Log.e("hibiki-audio", "Failed to open local audio db", e);
-                        activity.runOnUiThread(() -> result.success(false));
+                        android.util.Log.e("hibiki-audio",
+                            "Failed to open DB: " + dbPath, e);
                     }
-                } else {
-                    activity.runOnUiThread(() -> result.success(true));
                 }
+
+                final List<SQLiteDatabase> snapshot = new ArrayList<>(localAudioDbs);
+                indexFuture = ioExecutor.submit(() -> {
+                    for (SQLiteDatabase db : snapshot) {
+                        try {
+                            if (db.isOpen()) {
+                                db.execSQL(
+                                    "CREATE INDEX IF NOT EXISTS idx_entries_expr_read ON entries(expression, reading)");
+                                db.execSQL(
+                                    "CREATE INDEX IF NOT EXISTS idx_android_file_source ON android(file, source)");
+                            }
+                        } catch (Exception e) {
+                            android.util.Log.w("hibiki-audio",
+                                "Index creation skipped", e);
+                        }
+                    }
+                });
+                activity.runOnUiThread(() -> result.success(true));
             }
         });
     }
@@ -264,44 +273,46 @@ public class TtsChannelHandler {
     private void handleQueryLocalAudio(MethodCall call, MethodChannel.Result result) {
         String expression = call.argument("expression");
         String reading = call.argument("reading");
-        if (localAudioDb == null || expression == null) {
+        if (localAudioDbs.isEmpty() || expression == null) {
             result.success(null);
             return;
         }
         ioExecutor.execute(() -> {
             synchronized (dbLock) {
-                SQLiteDatabase db = localAudioDb;
-                if (db == null || !db.isOpen()) {
-                    new Handler(Looper.getMainLooper()).post(() -> result.success(null));
-                    return;
-                }
-                Cursor cursor = null;
-                try {
-                    cursor = db.rawQuery(
-                        "SELECT file, source FROM entries WHERE expression = ? AND reading = ? LIMIT 1",
-                        new String[]{expression, reading != null ? reading : ""});
-                    if (cursor == null || !cursor.moveToFirst()) {
-                        if (cursor != null) cursor.close();
+                for (int i = 0; i < localAudioDbs.size(); i++) {
+                    SQLiteDatabase db = localAudioDbs.get(i);
+                    if (db == null || !db.isOpen()) continue;
+                    Cursor cursor = null;
+                    try {
                         cursor = db.rawQuery(
-                            "SELECT file, source FROM entries WHERE expression = ? LIMIT 1",
-                            new String[]{expression});
+                            "SELECT file, source FROM entries WHERE expression = ? AND reading = ? LIMIT 1",
+                            new String[]{expression, reading != null ? reading : ""});
+                        if (cursor == null || !cursor.moveToFirst()) {
+                            if (cursor != null) cursor.close();
+                            cursor = db.rawQuery(
+                                "SELECT file, source FROM entries WHERE expression = ? LIMIT 1",
+                                new String[]{expression});
+                        }
+                        if (cursor != null && cursor.moveToFirst()) {
+                            String file = cursor.getString(0);
+                            String source = cursor.getString(1);
+                            final int dbIndex = i;
+                            Map<String, Object> info = new HashMap<>();
+                            info.put("file", file);
+                            info.put("source", source);
+                            info.put("dbIndex", dbIndex);
+                            new Handler(Looper.getMainLooper()).post(
+                                () -> result.success(info));
+                            return;
+                        }
+                    } catch (Exception e) {
+                        android.util.Log.w("hibiki-audio",
+                            "queryLocalAudio failed on DB " + i, e);
+                    } finally {
+                        if (cursor != null) cursor.close();
                     }
-                    if (cursor != null && cursor.moveToFirst()) {
-                        String file = cursor.getString(0);
-                        String source = cursor.getString(1);
-                        Map<String, String> info = new HashMap<>();
-                        info.put("file", file);
-                        info.put("source", source);
-                        new Handler(Looper.getMainLooper()).post(() -> result.success(info));
-                    } else {
-                        new Handler(Looper.getMainLooper()).post(() -> result.success(null));
-                    }
-                } catch (Exception e) {
-                    android.util.Log.w("hibiki-audio", "queryLocalAudio failed", e);
-                    new Handler(Looper.getMainLooper()).post(() -> result.success(null));
-                } finally {
-                    if (cursor != null) cursor.close();
                 }
+                new Handler(Looper.getMainLooper()).post(() -> result.success(null));
             }
         });
     }
@@ -309,14 +320,20 @@ public class TtsChannelHandler {
     private void handleExtractLocalAudio(MethodCall call, MethodChannel.Result result) {
         String fileArg = call.argument("file");
         String sourceArg = call.argument("source");
-        if (localAudioDb == null || fileArg == null || sourceArg == null) {
+        Integer dbIndexArg = call.argument("dbIndex");
+        if (localAudioDbs.isEmpty() || fileArg == null || sourceArg == null) {
             result.success(null);
             return;
         }
+        final int dbIndex = (dbIndexArg != null) ? dbIndexArg : 0;
         final File cacheDir = activity.getCacheDir();
         ioExecutor.execute(() -> {
             synchronized (dbLock) {
-                SQLiteDatabase db = localAudioDb;
+                if (dbIndex < 0 || dbIndex >= localAudioDbs.size()) {
+                    new Handler(Looper.getMainLooper()).post(() -> result.success(null));
+                    return;
+                }
+                SQLiteDatabase db = localAudioDbs.get(dbIndex);
                 if (db == null || !db.isOpen()) {
                     new Handler(Looper.getMainLooper()).post(() -> result.success(null));
                     return;
@@ -462,16 +479,19 @@ public class TtsChannelHandler {
         }
     }
 
-    private void closeAudioDbLocked() {
+    private void closeAllAudioDbsLocked() {
         if (indexFuture != null) {
             try {
                 indexFuture.get(10, TimeUnit.SECONDS);
             } catch (Exception ignored) {}
             indexFuture = null;
         }
-        if (localAudioDb != null) {
-            localAudioDb.close();
-            localAudioDb = null;
+        for (SQLiteDatabase db : localAudioDbs) {
+            if (db != null && db.isOpen()) {
+                db.close();
+            }
         }
+        localAudioDbs.clear();
+        localAudioDbPaths.clear();
     }
 }
