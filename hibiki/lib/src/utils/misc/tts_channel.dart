@@ -35,27 +35,33 @@ class TtsChannel {
     }
   }
 
-  /// Set the path to a local audio SQLite database (android.db from Yomitan).
-  Future<bool> setLocalAudioDb(String path) async {
+  /// Set the paths to local audio SQLite databases (android.db from Yomitan).
+  Future<bool> setLocalAudioDbs(List<String> paths) async {
     try {
-      final result = await _channel.invokeMethod('setLocalAudioDb', {'path': path});
+      final result = await _channel.invokeMethod('setLocalAudioDb', {
+        'paths': paths,
+      });
       return result == true;
     } catch (e, stack) {
-      ErrorLogService.instance.log('TtsChannel.setLocalAudioDb', e, stack);
+      ErrorLogService.instance.log('TtsChannel.setLocalAudioDbs', e, stack);
       return false;
     }
   }
 
+  /// Convenience wrapper for a single database path.
+  Future<bool> setLocalAudioDb(String path) =>
+      setLocalAudioDbs(path.isEmpty ? [] : [path]);
+
   /// Query the local audio database for a word's pronunciation.
-  /// Returns {file, source} metadata if found, or null.
-  Future<Map<String, String>?> queryLocalAudio(String expression, String reading) async {
+  /// Returns {file, source, dbIndex} metadata if found, or null.
+  Future<Map<String, dynamic>?> queryLocalAudio(String expression, String reading) async {
     try {
       final result = await _channel.invokeMethod('queryLocalAudio', {
         'expression': expression,
         'reading': reading,
       });
       if (result == null) return null;
-      return Map<String, String>.from(result as Map);
+      return Map<String, dynamic>.from(result as Map);
     } catch (e, stack) {
       ErrorLogService.instance.log('TtsChannel.queryLocalAudio', e, stack);
       return null;
@@ -64,11 +70,13 @@ class TtsChannel {
 
   /// Extract audio blob from local DB and write to temp file.
   /// Returns the temp file path, or null on failure.
-  Future<String?> extractLocalAudio(String file, String source) async {
+  Future<String?> extractLocalAudio(String file, String source,
+      {int dbIndex = 0}) async {
     try {
       final result = await _channel.invokeMethod('extractLocalAudio', {
         'file': file,
         'source': source,
+        'dbIndex': dbIndex,
       });
       return result as String?;
     } catch (e, stack) {

@@ -3,10 +3,10 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
-typedef LocalAudioQuery = Future<Map<String, String>?> Function(
+typedef LocalAudioQuery = Future<Map<String, dynamic>?> Function(
     String expression, String reading);
 typedef LocalAudioExtractor = Future<String?> Function(
-    String file, String source);
+    String file, String source, {int dbIndex});
 typedef AudioSourceListFetcher = Future<List<String>> Function(String url);
 
 class WordAudioResolver {
@@ -49,15 +49,16 @@ class WordAudioResolver {
   }
 
   Future<String?> _resolveLocal(String expression, String reading) async {
-    final Map<String, String>? info =
+    final Map<String, dynamic>? info =
         await queryLocalAudio(expression, reading);
     if (info == null) return null;
 
-    final String? file = info['file'];
-    final String? source = info['source'];
+    final String? file = info['file'] as String?;
+    final String? source = info['source'] as String?;
     if (file == null || source == null) return null;
 
-    return extractLocalAudio(file, source);
+    final int dbIndex = (info['dbIndex'] as int?) ?? 0;
+    return extractLocalAudio(file, source, dbIndex: dbIndex);
   }
 
   static String expandTemplate({

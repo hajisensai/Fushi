@@ -114,7 +114,8 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
             return null;
           }
         },
-        extractLocalAudio: TtsChannel.instance.extractLocalAudio,
+        extractLocalAudio: (String file, String source, {int dbIndex = 0}) =>
+            TtsChannel.instance.extractLocalAudio(file, source, dbIndex: dbIndex),
       );
       final String? url = await resolver.resolve(
         expression: expression,

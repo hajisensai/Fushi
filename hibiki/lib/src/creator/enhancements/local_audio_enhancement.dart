@@ -59,8 +59,13 @@ class LocalAudioEnhancement extends AudioEnhancement {
             .queryLocalAudio(term, reading)
             .timeout(const Duration(milliseconds: 500));
         if (info != null) {
+          final int dbIndex = (info['dbIndex'] as int?) ?? 0;
           final path = await TtsChannel.instance
-              .extractLocalAudio(info['file']!, info['source']!);
+              .extractLocalAudio(
+                info['file']! as String,
+                info['source']! as String,
+                dbIndex: dbIndex,
+              );
           if (path != null && path.isNotEmpty) {
             final file = File(path);
             if (file.existsSync()) return file;

@@ -168,7 +168,8 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
             return null;
           }
         },
-        extractLocalAudio: TtsChannel.instance.extractLocalAudio,
+        extractLocalAudio: (String file, String source, {int dbIndex = 0}) =>
+            TtsChannel.instance.extractLocalAudio(file, source, dbIndex: dbIndex),
       );
       final String? url = await resolver.resolve(
         expression: expression,

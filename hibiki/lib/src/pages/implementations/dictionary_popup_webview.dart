@@ -92,7 +92,8 @@ class DictionaryPopupWebViewState
           return null;
         }
       },
-      extractLocalAudio: TtsChannel.instance.extractLocalAudio,
+      extractLocalAudio: (String file, String source, {int dbIndex = 0}) =>
+          TtsChannel.instance.extractLocalAudio(file, source, dbIndex: dbIndex),
     );
     return resolver.resolve(
       expression: expression,
@@ -355,8 +356,13 @@ class DictionaryPopupWebViewState
             final info =
                 await TtsChannel.instance.queryLocalAudio(expression, reading);
             if (info == null) return null;
+            final int dbIndex = (info['dbIndex'] as int?) ?? 0;
             final path = await TtsChannel.instance
-                .extractLocalAudio(info['file']!, info['source']!);
+                .extractLocalAudio(
+                  info['file']! as String,
+                  info['source']! as String,
+                  dbIndex: dbIndex,
+                );
             return path;
           },
         );
@@ -406,6 +412,8 @@ class DictionaryPopupWebViewState
           ErrorLogService.instance.log('PopupImage', msg);
         } else if (msg.startsWith('[LONGPRESS]')) {
           ErrorLogService.instance.log('PopupLongPress', msg);
+        } else if (msg.startsWith('[RENDER_CONTENT]') || msg.startsWith('[RICHTEXT]') || msg.startsWith('[GLOSS_SECTION]')) {
+          ErrorLogService.instance.log('PopupDebug', msg);
         }
       },
       onLoadResourceWithCustomScheme: (controller, request) async {
