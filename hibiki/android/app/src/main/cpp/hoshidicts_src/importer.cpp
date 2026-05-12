@@ -616,6 +616,23 @@ ImportResult import_stardict_from_zip(Zip& zip, const std::string& output_dir) {
   return result;
 }
 
+std::string sanitize_title(const std::string& raw) {
+  std::string title;
+  title.reserve(raw.size());
+  for (char c : raw) {
+    if (c == '/' || c == '\\' || c == ':' || c == '*' ||
+        c == '?' || c == '"' || c == '<' || c == '>' || c == '|') {
+      title += '_';
+    } else {
+      title += c;
+    }
+  }
+  while (!title.empty() && (title.back() == ' ' || title.back() == '.')) title.pop_back();
+  if (title.empty()) title = "unnamed_dictionary";
+  if (title.size() > 200) title.resize(200);
+  return title;
+}
+
 std::string read_dsl_file_as_utf8(const std::string& dsl_path) {
   std::ifstream file(dsl_path, std::ios::binary | std::ios::ate);
   if (!file.is_open()) return {};
@@ -818,10 +835,10 @@ ImportResult dictionary_importer::write_simple_dict(const std::string& title, co
                                                     const std::string& output_dir, const std::string& styles_css) {
   ImportResult result;
   try {
-    result.title = title;
+    result.title = sanitize_title(title);
     result.detected_type = "term";
 
-    std::filesystem::path dict_path = std::filesystem::path(output_dir) / title;
+    std::filesystem::path dict_path = std::filesystem::path(output_dir) / result.title;
     std::string path = dict_path.string();
     std::filesystem::create_directories(dict_path);
 
