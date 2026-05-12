@@ -790,7 +790,7 @@ class _DictCssEditorDialogState extends State<_DictCssEditorDialog> {
                   fontSize: 13,
                 ),
                 decoration: const InputDecoration(
-                  hintText: '.gloss-content { font-size: 14px; }',
+                  hintText: '.glossary-content { font-size: 18px; }',
                   border: OutlineInputBorder(),
                   contentPadding: EdgeInsets.all(8),
                 ),
