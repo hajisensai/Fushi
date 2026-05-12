@@ -40,6 +40,24 @@ class UpdateChecker {
     });
   }
 
+  static Future<void> _cleanupOldApks(String currentVersion) async {
+    try {
+      final cacheDir = await getTemporaryDirectory();
+      final prefix = 'hibiki-';
+      for (final f in cacheDir.listSync()) {
+        if (f is! File || !f.path.endsWith('.apk')) continue;
+        final name = f.uri.pathSegments.last;
+        if (!name.startsWith(prefix)) continue;
+        final apkVersion = name.substring(prefix.length, name.length - 4);
+        if (!_isNewer(apkVersion, currentVersion)) {
+          try {
+            f.deleteSync();
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+  }
+
   static Future<void> _check(
     BuildContext context,
     String currentVersion, {
@@ -49,6 +67,7 @@ class UpdateChecker {
   }) async {
     if (neverRemind && !autoInstall) return;
     try {
+      await _cleanupOldApks(currentVersion);
       final client = HttpClient();
       client.connectionTimeout = const Duration(seconds: 10);
 
