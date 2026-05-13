@@ -13,10 +13,6 @@ class LoadingPage extends BasePage {
 }
 
 class _LoadingPageState extends BasePageState<LoadingPage> {
-  @override
-  void initState() {
-    super.initState();
-  }
 
   @override
   Widget build(BuildContext context) {

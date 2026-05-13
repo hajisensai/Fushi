@@ -3,13 +3,11 @@ import 'dart:io';
 import 'package:change_notifier_builder/change_notifier_builder.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:spaces/spaces.dart';
 import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/utils.dart';
 import 'package:collection/collection.dart';
 
@@ -230,8 +228,8 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
 
   Widget buildImportButton() {
     return TextButton(
-      child: Text(t.dialog_import_dictionary, overflow: TextOverflow.ellipsis, maxLines: 1),
       onPressed: _importDictionaryFiles,
+      child: Text(t.dialog_import_dictionary, overflow: TextOverflow.ellipsis, maxLines: 1),
     );
   }
 
@@ -462,7 +460,6 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
     return ReorderableListView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      buildDefaultDragHandles: true,
       itemCount: dictionaries.length,
       itemBuilder: (context, index) {
         Dictionary dictionary = dictionaries[index];

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:transparent_image/transparent_image.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
-import 'package:hibiki/src/pages/implementations/media_item_edit_dialog_page.dart';
 import 'package:hibiki/utils.dart';
 
 /// The content of the dialog used upon long-pressing a [MediaItem].
@@ -32,10 +31,6 @@ class MediaItemDialogPage extends BasePage {
 class _MediaItemDialogPageState extends BasePageState<MediaItemDialogPage> {
   MediaSource get mediaSource => widget.item.getMediaSource(appModel: appModel);
 
-  @override
-  void initState() {
-    super.initState();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -124,7 +119,6 @@ class _MediaItemDialogPageState extends BasePageState<MediaItemDialogPage> {
 
   void executeEdit() async {
     await showAppDialog(
-      barrierDismissible: true,
       context: context,
       builder: (context) => MediaItemEditDialogPage(item: widget.item),
     );

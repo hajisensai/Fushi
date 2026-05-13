@@ -196,8 +196,10 @@ class DictionaryPopupWebViewState
               final data = HoshiDicts.instance.getMediaFile(dictName, mediaPath);
               debugPrint('[PopupWebView] image response: ${data != null ? "${data.length} bytes" : "NULL"}');
               if (data != null) {
+                final mime = _mimeTypeForPath(mediaPath);
                 return WebResourceResponse(
-                  contentType: _mimeTypeForPath(mediaPath),
+                  contentType: mime,
+                  contentEncoding: mime.startsWith('text/') ? 'utf-8' : null,
                   statusCode: 200,
                   reasonPhrase: 'OK',
                   data: data,

@@ -42,9 +42,9 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
   final List<_StackEntry> _stack = [];
   bool _isClosing = false;
 
-  static const double _padding = 6.0;
-  static const double _maxWidth = 360.0;
-  static const double _maxHeight = 480.0;
+  static const double _padding = 6;
+  static const double _maxWidth = 360;
+  static const double _maxHeight = 480;
 
   late final TextEditingController _searchController;
   final FocusNode _searchFocusNode = FocusNode();
@@ -104,7 +104,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
   Future<void> _autoReadWord(String expression, String reading) async {
     try {
       final WordAudioResolver resolver = WordAudioResolver(
-        queryLocalAudio: (String expression, String reading) async {
+        queryLocalAudio: (expression, reading) async {
           if (!appModel.localAudioEnabled) return null;
           try {
             return await TtsChannel.instance
@@ -114,8 +114,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
             return null;
           }
         },
-        extractLocalAudio: (String file, String source, {int dbIndex = 0}) =>
-            TtsChannel.instance.extractLocalAudio(file, source, dbIndex: dbIndex),
+        extractLocalAudio: TtsChannel.instance.extractLocalAudio,
       );
       final String? url = await resolver.resolve(
         expression: expression,
@@ -150,7 +149,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
   void _onSearchSubmit(String text) {
     if (text.trim().isEmpty) return;
     _searchFocusNode.unfocus();
-    setState(() => _stack.clear());
+    setState(_stack.clear);
     _pushSearch(text.trim(), Rect.zero);
   }
 
@@ -165,9 +164,6 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
     return calcPopupPosition(
       selectionRect: absRect,
       screen: screen,
-      padding: _padding,
-      maxWidth: _maxWidth,
-      maxHeight: _maxHeight,
     );
   }
 
@@ -222,7 +218,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
       decoration: BoxDecoration(
         color: fillColor,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: borderColor, width: 1),
+        border: Border.all(color: borderColor),
       ),
       child: Row(
         children: [

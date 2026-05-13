@@ -4,7 +4,6 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:hibiki/src/epub/epub_storage.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/utils.dart';
 
 class IllustrationsViewerPage extends StatefulWidget {
@@ -228,7 +227,7 @@ class _FullScreenGalleryState extends State<_FullScreenGallery> {
         itemBuilder: (context, index) {
           return InteractiveViewer(
             minScale: 0.5,
-            maxScale: 4.0,
+            maxScale: 4,
             child: Center(
               child: Image.memory(
                 widget.images[index],

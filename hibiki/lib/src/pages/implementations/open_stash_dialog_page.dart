@@ -29,10 +29,6 @@ class _OpenStashDialogPage extends BasePageState<OpenStashDialogPage> {
 
   final ValueNotifier<int?> _selectionNotifier = ValueNotifier<int?>(null);
 
-  @override
-  void initState() {
-    super.initState();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -181,7 +177,6 @@ class _OpenStashDialogPage extends BasePageState<OpenStashDialogPage> {
 
   void executeClear() async {
     await showAppDialog(
-      barrierDismissible: true,
       context: context,
       builder: (context) => AlertDialog(
         title: Text(t.stash_clear_title),

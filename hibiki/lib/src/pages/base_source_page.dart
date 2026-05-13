@@ -157,7 +157,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
       debugPrint(
           '[hibiki-autoread] "$expression" reading="$reading" sources=${sources.length}');
       final WordAudioResolver resolver = WordAudioResolver(
-        queryLocalAudio: (String expression, String reading) async {
+        queryLocalAudio: (expression, reading) async {
           try {
             return await TtsChannel.instance
                 .queryLocalAudio(expression, reading)
@@ -168,8 +168,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
             return null;
           }
         },
-        extractLocalAudio: (String file, String source, {int dbIndex = 0}) =>
-            TtsChannel.instance.extractLocalAudio(file, source, dbIndex: dbIndex),
+        extractLocalAudio: TtsChannel.instance.extractLocalAudio,
       );
       final String? url = await resolver.resolve(
         expression: expression,
@@ -256,11 +255,11 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
       top: pos.top,
       width: pos.width,
       height: pos.height,
-      child: Container(
+      child: DecoratedBox(
         decoration: BoxDecoration(
           color: fillColor,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: borderColor, width: 1),
+          border: Border.all(color: borderColor),
         ),
         child: Column(
           children: [

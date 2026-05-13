@@ -36,10 +36,6 @@ class _MediaItemEditDialogPageState
   final TextEditingController _coverOverrideController =
       TextEditingController(text: '-');
 
-  @override
-  void initState() {
-    super.initState();
-  }
 
   @override
   Widget build(BuildContext context) {

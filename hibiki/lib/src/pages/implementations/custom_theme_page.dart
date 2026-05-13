@@ -395,7 +395,7 @@ class _CustomThemePageState extends BasePageState {
             preview: _buildPrimaryPreview(cs),
             hintStyle: hintStyle,
             enabled: _usePrimaryColor,
-            onEnabledChanged: (bool value) {
+            onEnabledChanged: (value) {
               setState(() {
                 _usePrimaryColor = value;
                 if (value) {
@@ -406,7 +406,7 @@ class _CustomThemePageState extends BasePageState {
               });
             },
             color: _primaryColor!,
-            onChanged: (Color color) => setState(() => _primaryColor = color),
+            onChanged: (color) => setState(() => _primaryColor = color),
             enableAlpha: false,
           ),
           // ── 阅读器颜色 ──
@@ -456,7 +456,7 @@ class _CustomThemePageState extends BasePageState {
             preview: _buildLinkPreview(cs),
             hintStyle: hintStyle,
             enabled: _useLinkColor,
-            onEnabledChanged: (bool value) {
+            onEnabledChanged: (value) {
               setState(() {
                 _useLinkColor = value;
                 if (value) {
@@ -467,7 +467,7 @@ class _CustomThemePageState extends BasePageState {
               });
             },
             color: _linkColor!,
-            onChanged: (Color color) => setState(() => _linkColor = color),
+            onChanged: (color) => setState(() => _linkColor = color),
             enableAlpha: false,
           ),
           const SizedBox(height: 12),
@@ -495,7 +495,7 @@ class _CustomThemePageState extends BasePageState {
                 preview: _buildSecondaryPreview(cs),
                 hintStyle: hintStyle,
                 enabled: _useSecondaryColor,
-                onEnabledChanged: (bool value) {
+                onEnabledChanged: (value) {
                   setState(() {
                     _useSecondaryColor = value;
                     if (value) {
@@ -506,7 +506,7 @@ class _CustomThemePageState extends BasePageState {
                   });
                 },
                 color: _secondaryColor!,
-                onChanged: (Color color) =>
+                onChanged: (color) =>
                     setState(() => _secondaryColor = color),
                 enableAlpha: false,
               ),
@@ -517,7 +517,7 @@ class _CustomThemePageState extends BasePageState {
                 preview: _buildTertiaryPreview(cs),
                 hintStyle: hintStyle,
                 enabled: _useTertiaryColor,
-                onEnabledChanged: (bool value) {
+                onEnabledChanged: (value) {
                   setState(() {
                     _useTertiaryColor = value;
                     if (value) {
@@ -528,7 +528,7 @@ class _CustomThemePageState extends BasePageState {
                   });
                 },
                 color: _tertiaryColor!,
-                onChanged: (Color color) =>
+                onChanged: (color) =>
                     setState(() => _tertiaryColor = color),
                 enableAlpha: false,
               ),
@@ -539,7 +539,7 @@ class _CustomThemePageState extends BasePageState {
                 preview: _buildContainerPreview(cs),
                 hintStyle: hintStyle,
                 enabled: _useContainerColor,
-                onEnabledChanged: (bool value) {
+                onEnabledChanged: (value) {
                   setState(() {
                     _useContainerColor = value;
                     if (value) {
@@ -550,7 +550,7 @@ class _CustomThemePageState extends BasePageState {
                   });
                 },
                 color: _containerColor!,
-                onChanged: (Color color) =>
+                onChanged: (color) =>
                     setState(() => _containerColor = color),
                 enableAlpha: false,
               ),
@@ -960,14 +960,9 @@ class _CustomThemePageState extends BasePageState {
 
   Widget _buildOptionalColorPicker({
     required String label,
-    String? description,
+    required bool enabled, required ValueChanged<bool> onEnabledChanged, required Color color, required ValueChanged<Color> onChanged, required bool enableAlpha, String? description,
     Widget? preview,
     TextStyle? hintStyle,
-    required bool enabled,
-    required ValueChanged<bool> onEnabledChanged,
-    required Color color,
-    required ValueChanged<Color> onChanged,
-    required bool enableAlpha,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

@@ -85,7 +85,7 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
 
   Future<void> _exportToAnki(Map<String, String> fields) async {
     final repo = ref.read(ankiRepositoryProvider);
-    final miningContext = AnkiMiningContext(sentence: '');
+    const miningContext = AnkiMiningContext(sentence: '');
     final result = await repo.mineEntry(
       rawPayloadJson: jsonEncode(fields),
       context: miningContext,
@@ -114,13 +114,12 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: Container(
+      body: DecoratedBox(
         decoration: BoxDecoration(
           color: bgColor,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
             color: isDark ? Colors.white24 : Colors.black12,
-            width: 1,
           ),
         ),
         child: Column(
@@ -144,7 +143,7 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
         });
       },
       onPanEnd: (_) {
-        widget.channel.invokeMethod('dragEnd', null);
+        widget.channel.invokeMethod('dragEnd');
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -167,7 +166,7 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
                     size: 16,
                     color: isDark ? Colors.white : Colors.black54),
                 padding: EdgeInsets.zero,
-                onPressed: () => widget.channel.invokeMethod('close', null),
+                onPressed: () => widget.channel.invokeMethod('close'),
               ),
             ),
           ],
@@ -261,7 +260,7 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
           });
         },
         onPanEnd: (_) {
-          widget.channel.invokeMethod('dragEnd', null);
+          widget.channel.invokeMethod('dragEnd');
         },
         child: Container(
           width: 20,

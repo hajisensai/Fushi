@@ -3,17 +3,10 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/dictionary.dart';
-import 'package:hibiki/src/dictionary/hoshidicts.dart';
-import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/utils.dart';
 
 class _GroupedEntry {
-  final String expression;
-  final String reading;
-  final String matched;
-  final List<Map<String, String>> deinflectionTrace;
-  final List<_GlossaryItem> glossaries;
 
   _GroupedEntry({
     required this.expression,
@@ -22,24 +15,28 @@ class _GroupedEntry {
     required this.deinflectionTrace,
     required this.glossaries,
   });
+  final String expression;
+  final String reading;
+  final String matched;
+  final List<Map<String, String>> deinflectionTrace;
+  final List<_GlossaryItem> glossaries;
 }
 
 class _GlossaryItem {
-  final String dictionary;
-  final String content;
-  final String definitionTags;
 
   _GlossaryItem({
     required this.dictionary,
     required this.content,
     required this.definitionTags,
   });
+  final String dictionary;
+  final String content;
+  final String definitionTags;
 }
 
 class DictionaryPopupNative extends ConsumerStatefulWidget {
   const DictionaryPopupNative({
-    super.key,
-    required this.result,
+    required this.result, super.key,
     this.onTextSelected,
     this.onMineEntry,
   });
@@ -352,7 +349,7 @@ class _FuriganaText extends StatelessWidget {
   }
 
   List<Widget> _buildFuriganaSegments(String expr, String read) {
-    final kanjiPattern = RegExp(r'[一-鿿㐀-䶿豈-﫿々]+');
+    final kanjiPattern = RegExp('[一-鿿㐀-䶿豈-﫿々]+');
     final matches = kanjiPattern.allMatches(expr).toList();
 
     if (matches.isEmpty) {

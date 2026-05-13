@@ -2217,21 +2217,27 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   }
 
   Future<void> _handleFloatingLyricLookup(String text, int charIndex) async {
+    debugPrint('[floating-lyric] lookup called: text="${text.length} chars" index=$charIndex');
     if (text.isEmpty) return;
     final int safeIndex = charIndex.clamp(0, text.length - 1);
     final int end = (safeIndex + 20).clamp(0, text.length);
     final String searchTerm = text.substring(safeIndex, end);
+    debugPrint('[floating-lyric] searchTerm="$searchTerm"');
     if (searchTerm.isEmpty) return;
 
     await FloatingLyricChannel.highlight(start: safeIndex, length: 1);
 
     final bool dictRunning = await FloatingDictChannel.isShowing();
+    debugPrint('[floating-lyric] dictRunning=$dictRunning');
     if (!dictRunning) {
       final bool started = await FloatingDictChannel.show();
+      debugPrint('[floating-lyric] dict started=$started');
       if (!started) return;
-      await Future<void>.delayed(const Duration(milliseconds: 500));
+      await Future<void>.delayed(const Duration(milliseconds: 800));
     }
+    debugPrint('[floating-lyric] calling FloatingDictChannel.searchTerm("$searchTerm")');
     await FloatingDictChannel.searchTerm(searchTerm);
+    debugPrint('[floating-lyric] searchTerm call completed');
   }
 
   void _syncFloatingLyric(AudiobookPlayerController ctrl) {

@@ -526,7 +526,6 @@ class _RecursiveDictionaryPageState
     final Rect pos = calcPopupPosition(
       selectionRect: entry.selectionRect,
       screen: screen,
-      padding: 6,
       maxWidth: appModel.popupMaxWidth,
       maxHeight: 360,
     );

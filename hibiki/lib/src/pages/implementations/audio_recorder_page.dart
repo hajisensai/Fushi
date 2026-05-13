@@ -41,10 +41,6 @@ class _AudioRecorderDialogPageState
   bool _isRecording = false;
   bool _initialised = false;
 
-  @override
-  void initState() {
-    super.initState();
-  }
 
   @override
   Widget build(BuildContext context) {

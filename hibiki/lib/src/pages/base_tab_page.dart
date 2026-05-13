@@ -75,7 +75,6 @@ abstract class BaseTabPageState<T extends BaseTabPage> extends BasePageState {
         icon: mediaSource.icon,
         onTap: () async {
           await showAppDialog(
-            barrierDismissible: true,
             context: context,
             builder: (context) => MediaSourcePickerDialogPage(
               mediaType: mediaType,

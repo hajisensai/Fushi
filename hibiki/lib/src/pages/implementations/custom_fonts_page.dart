@@ -1,14 +1,11 @@
 import 'dart:io';
 
 import 'package:archive/archive_io.dart';
-import 'package:hibiki/i18n/strings.g.dart';
 import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:hibiki/media.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/utils.dart';
@@ -17,11 +14,6 @@ import 'package:path/path.dart' as p;
 const _fontExtensions = {'.ttf', '.otf', '.ttc', '.woff', '.woff2'};
 
 class _RecommendedFont {
-  final String name;
-  final String nameJa;
-  final List<String> urls;
-  final String license;
-  final String description;
   _RecommendedFont({
     required this.name,
     required this.nameJa,
@@ -29,6 +21,11 @@ class _RecommendedFont {
     required this.license,
     required this.description,
   });
+  final String name;
+  final String nameJa;
+  final List<String> urls;
+  final String license;
+  final String description;
 }
 
 // Google Fonts API 为主，jsDelivr CDN（中国可访问）为备选。
@@ -186,8 +183,8 @@ Future<List<String>> _getSystemFonts() async {
 // ── 系统字体选择页 ────────────────────────────────────────────────────────────
 
 class _SystemFontPickerPage extends StatefulWidget {
-  final Set<String> alreadyAdded;
   const _SystemFontPickerPage({required this.alreadyAdded});
+  final Set<String> alreadyAdded;
 
   @override
   State<_SystemFontPickerPage> createState() => _SystemFontPickerPageState();
@@ -394,16 +391,22 @@ class _CustomFontsPageState extends BasePageState {
         if (header[0] == 0x00 &&
             header[1] == 0x01 &&
             header[2] == 0x00 &&
-            header[3] == 0x00) return '.ttf';
+            header[3] == 0x00) {
+          return '.ttf';
+        }
         if (header[0] == 0x4F &&
             header[1] == 0x54 &&
             header[2] == 0x54 &&
-            header[3] == 0x4F) return '.otf';
+            header[3] == 0x4F) {
+          return '.otf';
+        }
         // TTC
         if (header[0] == 0x74 &&
             header[1] == 0x74 &&
             header[2] == 0x63 &&
-            header[3] == 0x66) return '.ttc';
+            header[3] == 0x66) {
+          return '.ttc';
+        }
         return null;
       } finally {
         await raf.close();
@@ -670,9 +673,9 @@ class _CustomFontsPageState extends BasePageState {
         title: Text(t.custom_fonts_import_url),
         content: TextField(
           controller: urlController,
-          decoration: InputDecoration(
+          decoration: const InputDecoration(
             hintText: 'https://example.com/fonts.zip',
-            border: const OutlineInputBorder(),
+            border: OutlineInputBorder(),
           ),
           keyboardType: TextInputType.url,
           autofocus: true,
@@ -881,8 +884,8 @@ class _CustomFontsPageState extends BasePageState {
 }
 
 class _RecommendedFontsPage extends StatelessWidget {
-  final Set<String> alreadyAdded;
   const _RecommendedFontsPage({required this.alreadyAdded});
+  final Set<String> alreadyAdded;
 
   @override
   Widget build(BuildContext context) {
@@ -935,13 +938,7 @@ class _RecommendedFontsPage extends StatelessWidget {
 
 class _FontTile extends StatelessWidget {
   const _FontTile({
-    super.key,
-    required this.name,
-    required this.isFile,
-    required this.enabled,
-    required this.index,
-    required this.onToggle,
-    required this.onDelete,
+    required this.name, required this.isFile, required this.enabled, required this.index, required this.onToggle, required this.onDelete, super.key,
   });
 
   final String name;

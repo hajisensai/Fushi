@@ -155,8 +155,10 @@ class _DictionaryHtmlWidgetState extends ConsumerState<DictionaryHtmlWidget> {
                 final data =
                     HoshiDicts.instance.getMediaFile(dictName, mediaPath);
                 if (data != null) {
+                  final mime = _mimeTypeForPath(mediaPath);
                   return WebResourceResponse(
-                    contentType: _mimeTypeForPath(mediaPath),
+                    contentType: mime,
+                    contentEncoding: mime.startsWith('text/') ? 'utf-8' : null,
                     statusCode: 200,
                     reasonPhrase: 'OK',
                     data: data,

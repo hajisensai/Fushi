@@ -307,7 +307,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       if (ttuId == null || ttuId <= 0) return;
       final repo = BookmarkRepository(db);
       final bookmarks = await repo.getBookmarks(ttuId);
-      final idx = bookmarks.indexWhere((Bookmark b) =>
+      final idx = bookmarks.indexWhere((b) =>
           b.sectionIndex == item.sectionIndex &&
           b.normCharOffset == item.normCharOffset &&
           b.createdAt == item.createdAt);

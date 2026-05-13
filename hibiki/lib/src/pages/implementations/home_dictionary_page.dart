@@ -522,7 +522,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
     try {
       final sources = appModel.enabledAudioSources;
       final WordAudioResolver resolver = WordAudioResolver(
-        queryLocalAudio: (String expression, String reading) async {
+        queryLocalAudio: (expression, reading) async {
           try {
             return await TtsChannel.instance
                 .queryLocalAudio(expression, reading)
@@ -620,7 +620,6 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
     final Rect pos = calcPopupPosition(
       selectionRect: entry.selectionRect,
       screen: screen,
-      padding: 6,
       maxWidth: appModel.popupMaxWidth,
       maxHeight: 360,
     );
