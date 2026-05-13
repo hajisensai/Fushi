@@ -920,6 +920,7 @@
   "tag_color": "Color",
   "tag_book_count": "$count books",
   "tag_added_to_book": "Added tag \"$name\"",
+  "tag_already_on_book": "\"$name\" already added",
   "miscellaneous_settings": "Miscellaneous",
   "app_icon_label": "App Icon",
   "icon_default": "Default",

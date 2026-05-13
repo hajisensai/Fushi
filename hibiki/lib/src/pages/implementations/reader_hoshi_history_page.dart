@@ -106,6 +106,12 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
   }
 
   Future<void> _addTagToBook(int bookId, BookTagRow tag) async {
+    final existing = ref.read(bookTagMapProvider).valueOrNull;
+    final alreadyHas = existing?[bookId]?.any((t) => t.id == tag.id) ?? false;
+    if (alreadyHas) {
+      Fluttertoast.showToast(msg: t.tag_already_on_book(name: tag.name));
+      return;
+    }
     await ref.read(appProvider).database.addTagToBook(bookId, tag.id);
     ref.invalidate(bookTagMapProvider);
     ref.invalidate(filteredBookIdsProvider);
@@ -797,20 +803,24 @@ class _TagBarContentState extends ConsumerState<_TagBarContent> {
         separatorBuilder: (_, __) => const SizedBox(width: 6),
         itemBuilder: (context, index) {
           if (index == widget.tags.length) {
-            return ActionChip(
-              avatar: Icon(Icons.settings,
-                  size: 16, color: theme.colorScheme.onSurfaceVariant),
-              label: Text(t.tag_manage),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) => const TagManagementPage()),
-                ).then((_) {
-                  ref.invalidate(allTagsProvider);
-                  ref.invalidate(bookTagMapProvider);
-                });
-              },
+            return SizedBox(
+              width: 32,
+              height: 32,
+              child: IconButton(
+                padding: EdgeInsets.zero,
+                icon: Icon(Icons.settings,
+                    size: 18, color: theme.colorScheme.onSurfaceVariant),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const TagManagementPage()),
+                  ).then((_) {
+                    ref.invalidate(allTagsProvider);
+                    ref.invalidate(bookTagMapProvider);
+                  });
+                },
+              ),
             );
           }
           final tag = widget.tags[index];
