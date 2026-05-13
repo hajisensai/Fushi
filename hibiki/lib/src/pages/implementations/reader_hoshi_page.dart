@@ -42,6 +42,7 @@ import 'package:hibiki/src/reader/reader_selection_scripts.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/utils/misc/jidoujisho_text_selection.dart';
 import 'package:hibiki/src/media/audiobook/floating_lyric_channel.dart';
+import 'package:hibiki/src/dictionary/dictionary_search_result.dart';
 import 'package:hibiki/src/media/floating_dict_channel.dart';
 import 'package:hibiki/src/anki/anki_models.dart';
 import 'package:hibiki/src/anki/anki_repository.dart';
@@ -2242,36 +2243,46 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         FloatingLyricChannel.clearEventHandlers();
         await appModel.setShowFloatingLyric(false);
       },
-      onLockChanged: (bool locked) {
-        debugPrint('[floating-lyric] lock state changed: $locked');
-      },
+      onLockChanged: (bool locked) {},
     );
   }
 
   Future<void> _handleFloatingLyricLookup(String text, int charIndex) async {
-    debugPrint(
-        '[floating-lyric] lookup called: text="${text.length} chars" index=$charIndex');
     if (text.isEmpty) return;
     final int safeIndex = charIndex.clamp(0, text.length - 1);
     final int end = (safeIndex + 20).clamp(0, text.length);
     final String searchTerm = text.substring(safeIndex, end);
-    debugPrint('[floating-lyric] searchTerm="$searchTerm"');
     if (searchTerm.isEmpty) return;
 
     await FloatingLyricChannel.highlight(start: safeIndex, length: 1);
 
     final bool dictRunning = await FloatingDictChannel.isShowing();
-    debugPrint('[floating-lyric] dictRunning=$dictRunning');
     if (!dictRunning) {
       final bool started = await FloatingDictChannel.show();
-      debugPrint('[floating-lyric] dict started=$started');
       if (!started) return;
       await Future<void>.delayed(const Duration(milliseconds: 800));
     }
-    debugPrint(
-        '[floating-lyric] calling FloatingDictChannel.searchTerm("$searchTerm")');
-    await FloatingDictChannel.searchTerm(searchTerm);
-    debugPrint('[floating-lyric] searchTerm call completed');
+
+    await FloatingDictChannel.setSearchText(searchTerm);
+
+    final DictionarySearchResult result = await appModel.searchDictionary(
+      searchTerm: searchTerm,
+      searchWithWildcards: false,
+    );
+
+    if (result.entries.isEmpty) {
+      await FloatingDictChannel.sendSearchResult(null);
+      return;
+    }
+
+    final List<Map<String, String>> entries = result.entries
+        .map((e) => <String, String>{
+              'word': e.word,
+              'reading': e.reading,
+              'meaning': e.meaning,
+            })
+        .toList();
+    await FloatingDictChannel.sendSearchResult(jsonEncode(entries));
   }
 
   void _syncFloatingLyric(AudiobookPlayerController ctrl) {

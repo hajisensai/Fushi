@@ -396,6 +396,11 @@ public class FloatingDictService extends BaseFloatingService {
         startForeground(NOTIFICATION_ID, buildNotification());
     }
 
+    public void setSearchText(String text) {
+        if (text == null) return;
+        new Handler(Looper.getMainLooper()).post(() -> searchInput.setText(text));
+    }
+
     public void onTextSelected(String text) {
         if (text == null || text.trim().isEmpty()) return;
         new Handler(Looper.getMainLooper()).post(() -> {

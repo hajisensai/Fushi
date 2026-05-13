@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 
@@ -47,7 +46,6 @@ class FloatingLyricChannel {
   }
 
   static Future<void> _handleNativeCall(MethodCall call) async {
-    debugPrint('[floating-lyric-channel] native call: ${call.method} args=${call.arguments}');
     switch (call.method) {
       case 'lookupText':
         final Object? args = call.arguments;
@@ -62,7 +60,6 @@ class FloatingLyricChannel {
             index = indexValue.toInt();
           }
         }
-        debugPrint('[floating-lyric-channel] lookupText: text="${text.length} chars" index=$index handler=${_onLookupText != null}');
         if (text.trim().isNotEmpty) {
           _onLookupText?.call(text, index);
         }

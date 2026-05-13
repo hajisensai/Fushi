@@ -92,4 +92,12 @@ class FloatingDictChannel {
   static Future<void> searchTerm(String term) async {
     await _channel.invokeMethod<void>('searchTerm', term);
   }
+
+  static Future<void> setSearchText(String text) async {
+    await _channel.invokeMethod<void>('setSearchText', text);
+  }
+
+  static Future<void> sendSearchResult(String? json) async {
+    await _channel.invokeMethod<void>('searchResult', json);
+  }
 }

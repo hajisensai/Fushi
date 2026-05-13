@@ -471,6 +471,15 @@ public class MainActivity extends AudioServiceActivity {
                     result.success(null);
                     break;
                 }
+                case "setSearchText": {
+                    String text = (String) call.arguments;
+                    FloatingDictService svc = FloatingDictService.getInstance();
+                    if (svc != null && text != null) {
+                        svc.setSearchText(text.trim());
+                    }
+                    result.success(null);
+                    break;
+                }
                 case "searchResult": {
                     String json = (String) call.arguments;
                     FloatingDictService svc = FloatingDictService.getInstance();
