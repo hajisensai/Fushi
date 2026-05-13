@@ -198,8 +198,6 @@ class AudiobookSettingsSheet extends StatefulWidget {
     this.onToggleFloatingLyric,
     this.floatingLyricFontSize = 20,
     this.onFloatingLyricFontSizeChanged,
-    this.showFloatingDict = false,
-    this.onToggleFloatingDict,
     this.onSearchJump,
     this.onJumpToCharOffset,
     this.charProgress,
@@ -233,8 +231,6 @@ class AudiobookSettingsSheet extends StatefulWidget {
   final Future<bool> Function()? onToggleFloatingLyric;
   final double floatingLyricFontSize;
   final ValueChanged<double>? onFloatingLyricFontSizeChanged;
-  final bool showFloatingDict;
-  final Future<bool> Function()? onToggleFloatingDict;
   final Future<void> Function(int sectionIndex, int charOffset)? onSearchJump;
   final Future<void> Function(int globalCharOffset)? onJumpToCharOffset;
   final (int current, int total)? charProgress;
@@ -266,8 +262,6 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
   late bool _localShowFloatingLyric = widget.showFloatingLyric;
   late bool _localShowMediaNotification = widget.showMediaNotification;
   late double _localFloatingLyricFontSize = widget.floatingLyricFontSize;
-  late bool _localShowFloatingDict = widget.showFloatingDict;
-
   @override
   void initState() {
     super.initState();
@@ -1279,37 +1273,6 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               ),
             ],
           ),
-        ),
-        Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(t.show_floating_dict,
-                      style: theme.textTheme.bodyMedium),
-                  Text(
-                    t.floating_dict_hint,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Switch(
-              value: _localShowFloatingDict,
-              onChanged: (_) async {
-                final bool ok =
-                    await widget.onToggleFloatingDict?.call() ?? false;
-                if (ok && mounted) {
-                  setState(() {
-                    _localShowFloatingDict = !_localShowFloatingDict;
-                  });
-                }
-              },
-            ),
-          ],
         ),
       ],
     );

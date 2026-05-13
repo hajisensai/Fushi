@@ -2217,18 +2217,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     return true;
   }
 
-  Future<bool> _toggleFloatingDict() async {
-    final bool current = appModel.showFloatingDict;
-    if (!current) {
-      final bool shown = await FloatingDictChannel.show();
-      if (!shown) return false;
-      await appModel.setShowFloatingDict(true);
-    } else {
-      await FloatingDictChannel.hide();
-      await appModel.setShowFloatingDict(false);
-    }
-    return true;
-  }
+
 
   void _setupFloatingLyricHandlers() {
     FloatingLyricChannel.setEventHandlers(
@@ -2484,8 +2473,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
                       .value,
             );
           },
-          showFloatingDict: appModel.showFloatingDict,
-          onToggleFloatingDict: _toggleFloatingDict,
           showMediaNotification: appModel.showMediaNotification,
           onToggleMediaNotification: _toggleMediaNotification,
           charProgress:

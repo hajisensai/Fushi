@@ -31,6 +31,7 @@ public class PopupDictActivity extends FlutterActivity {
     private AnkiChannelHandler ankiChannelHandler;
     private TtsChannelHandler ttsChannelHandler;
     private String pendingProcessText;
+    private int pendingCharIndex = -1;
 
     @Nullable
     @Override
@@ -47,6 +48,7 @@ public class PopupDictActivity extends FlutterActivity {
     protected void onCreate(Bundle savedInstanceState) {
         configureWebViewDataDirectory();
         pendingProcessText = extractProcessText(getIntent());
+        pendingCharIndex = getIntent().getIntExtra("charIndex", -1);
         ensureCachedEngine(this);
 
         ankiChannelHandler = new AnkiChannelHandler(this);
@@ -61,10 +63,15 @@ public class PopupDictActivity extends FlutterActivity {
     protected void onNewIntent(@NonNull Intent intent) {
         super.onNewIntent(intent);
         String text = extractProcessText(intent);
+        int charIdx = intent.getIntExtra("charIndex", -1);
         if (text != null) {
             pendingProcessText = text;
+            pendingCharIndex = charIdx;
             if (popupChannel != null) {
-                popupChannel.invokeMethod("onNewProcessText", text);
+                java.util.HashMap<String, Object> args = new java.util.HashMap<>();
+                args.put("text", text);
+                args.put("charIndex", charIdx);
+                popupChannel.invokeMethod("onNewProcessText", args);
             }
         }
     }
@@ -78,9 +85,13 @@ public class PopupDictActivity extends FlutterActivity {
             flutterEngine.getDartExecutor().getBinaryMessenger(), POPUP_CHANNEL);
         popupChannel.setMethodCallHandler((call, result) -> {
             switch (call.method) {
-                case "getInitialProcessText":
-                    result.success(pendingProcessText);
+                case "getInitialProcessText": {
+                    java.util.HashMap<String, Object> data = new java.util.HashMap<>();
+                    data.put("text", pendingProcessText);
+                    data.put("charIndex", pendingCharIndex);
+                    result.success(data);
                     break;
+                }
                 case "finishPopup":
                     result.success(null);
                     finish();
@@ -100,7 +111,10 @@ public class PopupDictActivity extends FlutterActivity {
                 )
             );
         } else if (pendingProcessText != null) {
-            popupChannel.invokeMethod("onNewProcessText", pendingProcessText);
+            java.util.HashMap<String, Object> args = new java.util.HashMap<>();
+            args.put("text", pendingProcessText);
+            args.put("charIndex", pendingCharIndex);
+            popupChannel.invokeMethod("onNewProcessText", args);
         }
     }
 
@@ -138,8 +152,6 @@ public class PopupDictActivity extends FlutterActivity {
         params.width = width;
         params.height = height;
         params.gravity = Gravity.CENTER;
-        params.flags |= WindowManager.LayoutParams.FLAG_DIM_BEHIND;
-        params.dimAmount = 0.5f;
         getWindow().setAttributes(params);
     }
 
