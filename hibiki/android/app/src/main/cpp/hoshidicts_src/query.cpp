@@ -28,7 +28,7 @@ struct BlobReader {
   BlobReader(const uint8_t* data, size_t size) : ptr(data), end(data + size) {}
 
   template <typename T>
-  T read() {
+  [[nodiscard]] T read() {
     if (ptr + sizeof(T) > end) {
       ptr = end;
       return T{};
@@ -39,7 +39,7 @@ struct BlobReader {
     return val;
   }
 
-  std::string_view read_str(uint32_t len) {
+  [[nodiscard]] std::string_view read_str(uint32_t len) {
     if (ptr + len > end || ptr + len < ptr) {
       ptr = end;
       return {};
@@ -49,7 +49,7 @@ struct BlobReader {
     return result;
   }
 
-  bool has(size_t n) const { return ptr + n <= end; }
+  [[nodiscard]] bool has(size_t n) const { return ptr + n <= end; }
 };
 
 }
@@ -406,6 +406,11 @@ MediaFileView DictionaryQuery::get_media_file_view(const std::string& dict_name,
     BlobReader idx_hdr(data->media_index.data, data->media_index.size);
     auto count = idx_hdr.read<uint32_t>();
 
+    const size_t idx_entry_end = sizeof(uint32_t) + static_cast<size_t>(count) * sizeof(uint64_t);
+    if (idx_entry_end > data->media_index.size) {
+      return {};
+    }
+
     size_t left = 0;
     size_t right = count;
     while (left < right) {
@@ -413,6 +418,9 @@ MediaFileView DictionaryQuery::get_media_file_view(const std::string& dict_name,
       uint64_t record_offset;
       std::memcpy(&record_offset, data->media_index.data + sizeof(uint32_t) + mid * sizeof(uint64_t), sizeof(uint64_t));
 
+      if (record_offset >= data->media.size) {
+        return {};
+      }
       BlobReader rec(data->media.data + record_offset, data->media.size - record_offset);
       auto path_size = rec.read<uint16_t>();
       std::string_view indexed_path = rec.read_str(path_size);
