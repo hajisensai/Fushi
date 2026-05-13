@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:html/parser.dart' as html_parser;
+
 import 'package:hibiki/src/database/database.dart';
 import 'package:hibiki/src/epub/epub_storage.dart';
 import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
@@ -91,10 +93,18 @@ class TtuMigration {
         final String chaptersJson = jsonEncode(
           List<Map<String, Object>>.generate(
             actualChapters,
-            (i) => <String, Object>{
-              'id': 'section-$i',
-              'href': 'section_$i.html',
-              'mediaType': 'text/html',
+            (int i) {
+              final File sectionFile =
+                  File(p.join(extractDir, 'section_$i.html'));
+              final int chars = sectionFile.existsSync()
+                  ? _countPlainTextChars(sectionFile.readAsStringSync())
+                  : 0;
+              return <String, Object>{
+                'id': 'section-$i',
+                'href': 'section_$i.html',
+                'mediaType': 'text/html',
+                'characters': chars,
+              };
             },
           ),
         );
@@ -323,7 +333,7 @@ class TtuMigration {
 
       final String filePath = p.join(blobDir, safeKey);
       final String canonPath = p.canonicalize(filePath);
-      if (!canonPath.startsWith(canonBlobDir)) {
+      if (!p.isWithin(canonBlobDir, canonPath)) {
         debugPrint('[ttu-migration] path traversal blocked: ${entry.key}');
         continue;
       }
@@ -474,6 +484,13 @@ class TtuMigration {
     }
 
     return remediated;
+  }
+
+  static int _countPlainTextChars(String html) {
+    final doc = html_parser.parse(html);
+    doc.body?.querySelectorAll('rt, rp, rtc').forEach((el) => el.remove());
+    final String raw = doc.body?.text ?? '';
+    return raw.replaceAll(RegExp(r'\s+'), ' ').trim().length;
   }
 }
 

@@ -832,7 +832,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
     final String epubPath = Uri.decodeComponent(path.substring('/epub/'.length));
     final String filePath = p.canonicalize(p.join(_extractDir!, epubPath));
-    if (!filePath.startsWith(p.canonicalize(_extractDir!))) {
+    if (!p.isWithin(p.canonicalize(_extractDir!), filePath)) {
       return _forbidden('path traversal blocked: $epubPath');
     }
     final File file = File(filePath);

@@ -31,7 +31,7 @@ abstract final class AudiobookStorage {
       baseName = '$stem _$dedupeIndex$ext';
     }
     final String dest = p.join(persistDir.path, baseName);
-    if (!p.canonicalize(dest).startsWith(p.canonicalize(persistDir.path))) {
+    if (!p.isWithin(p.canonicalize(persistDir.path), p.canonicalize(dest))) {
       throw ArgumentError('Path traversal detected: $dest');
     }
     await src.copy(dest);
@@ -50,7 +50,7 @@ abstract final class AudiobookStorage {
       throw ArgumentError('Invalid filename: $baseName');
     }
     final String dest = p.join(persistDir.path, baseName);
-    if (!p.canonicalize(dest).startsWith(p.canonicalize(persistDir.path))) {
+    if (!p.isWithin(p.canonicalize(persistDir.path), p.canonicalize(dest))) {
       throw ArgumentError('Path traversal detected: $dest');
     }
     final int totalBytes = await src.length();

@@ -65,9 +65,11 @@ class EpubParser {
     final List<EpubTocItem> toc =
         _parseToc(opfXml, manifest, opfDir, extractDir);
 
+    final String canonExtract = p.canonicalize(extractDir);
     final Map<String, EpubResource> resources = <String, EpubResource>{};
     for (final _ManifestItem item in manifest.values) {
-      final String absPath = p.join(opfDir, item.href);
+      final String absPath = p.canonicalize(p.join(opfDir, item.href));
+      if (!p.isWithin(canonExtract, absPath)) continue;
       final String relPath =
           p.relative(absPath, from: extractDir).replaceAll('\\', '/');
       resources[normalizeHref(relPath)] = EpubResource(
@@ -97,7 +99,7 @@ class EpubParser {
     final String canonicalBase = p.canonicalize(extractDir);
     for (final ArchiveFile file in archive) {
       final String filePath = p.canonicalize(p.join(extractDir, file.name));
-      if (!filePath.startsWith(canonicalBase)) continue;
+      if (!p.isWithin(canonicalBase, filePath)) continue;
       if (file.isFile) {
         final File outFile = File(filePath);
         outFile.parent.createSync(recursive: true);
@@ -158,7 +160,11 @@ class EpubParser {
       if (item == null) continue;
       if (!_isHtmlMediaType(item.mediaType)) continue;
 
-      final String absPath = p.join(opfDir, item.href);
+      final String absPath = p.canonicalize(p.join(opfDir, item.href));
+      if (!p.isWithin(p.canonicalize(extractDir), absPath)) {
+        index++;
+        continue;
+      }
       final File file = File(absPath);
       if (!file.existsSync()) {
         index++;
@@ -249,7 +255,9 @@ class EpubParser {
     // EPUB 3: nav document
     for (final _ManifestItem item in manifest.values) {
       if (item.properties != null && item.properties!.contains('nav')) {
-        final File navFile = File(p.join(opfDir, item.href));
+        final String navPath = p.canonicalize(p.join(opfDir, item.href));
+        if (!p.isWithin(p.canonicalize(extractDir), navPath)) continue;
+        final File navFile = File(navPath);
         if (navFile.existsSync()) {
           final List<EpubTocItem> toc = _parseNavDoc(
             navFile.readAsStringSync(),
@@ -265,7 +273,9 @@ class EpubParser {
       final String? tocId = spine.getAttribute('toc');
       if (tocId != null && manifest.containsKey(tocId)) {
         final _ManifestItem ncxItem = manifest[tocId]!;
-        final File ncxFile = File(p.join(opfDir, ncxItem.href));
+        final String ncxPath = p.canonicalize(p.join(opfDir, ncxItem.href));
+        if (!p.isWithin(p.canonicalize(extractDir), ncxPath)) return <EpubTocItem>[];
+        final File ncxFile = File(ncxPath);
         if (ncxFile.existsSync()) {
           return _parseNcx(
             ncxFile.readAsStringSync(),
