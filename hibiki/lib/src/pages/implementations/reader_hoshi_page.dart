@@ -853,6 +853,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
             : null,
         customFg:
             appModel.appThemeKey == 'custom-theme' ? _customThemeTextCss : null,
+        selectionColor: _colorToCssRgba(appModel.customThemeSelectionColor),
+        sasayakiColor: _colorToCssRgba(appModel.customThemeSasayakiColor),
+        linkColor: _colorToCssRgba(appModel.customThemeLinkColor),
       );
       const String hideUntilReady =
           '<style id="hoshi-cloak">body{visibility:hidden!important}</style>';
@@ -2811,6 +2814,14 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   String? get _customThemeTextCss {
     final Color c = _themeTextColor();
     return 'rgba(${c.red},${c.green},${c.blue},${(c.alpha / 255).toStringAsFixed(2)})';
+  }
+
+  static String? _colorToCssRgba(Color? c) {
+    if (c == null) return null;
+    final int r = (c.r * 255.0).round().clamp(0, 255);
+    final int g = (c.g * 255.0).round().clamp(0, 255);
+    final int b = (c.b * 255.0).round().clamp(0, 255);
+    return 'rgba($r,$g,$b,${c.a.toStringAsFixed(2)})';
   }
 
   String? get _customHighlightCss {
