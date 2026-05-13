@@ -50,6 +50,19 @@ class HibikiDatabase extends _$HibikiDatabase {
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
+        beforeOpen: (details) async {
+          if (details.wasCreated) {
+            await customStatement(
+              'CREATE INDEX IF NOT EXISTS idx_profile_settings_profile ON profile_settings (profile_id)',
+            );
+            await customStatement(
+              'CREATE INDEX IF NOT EXISTS idx_media_type_profiles_profile ON media_type_profiles (profile_id)',
+            );
+            await customStatement(
+              'CREATE INDEX IF NOT EXISTS idx_book_profiles_profile ON book_profiles (profile_id)',
+            );
+          }
+        },
         onUpgrade: (m, from, to) async {
           if (from < 2) {
             await m.addColumn(dictionaryMetadata, dictionaryMetadata.type);

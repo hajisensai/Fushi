@@ -905,7 +905,7 @@ const SAFE_TAGS = new Set(['ruby','rt','rp','b','i','em','strong','span','sup','
 function sanitizeHtml(html) {
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, 'text/html');
-    doc.querySelectorAll('script,iframe,object,embed,form,meta,link,style').forEach(el => el.remove());
+    doc.querySelectorAll('script,iframe,object,embed,form,meta,link,style,svg,math').forEach(el => el.remove());
     doc.querySelectorAll('*').forEach(el => {
         for (const attr of [...el.attributes]) {
             if (attr.name.startsWith('on') || attr.name === 'srcdoc' ||
