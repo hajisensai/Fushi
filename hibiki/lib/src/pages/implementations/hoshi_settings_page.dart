@@ -843,8 +843,8 @@ class _PopupMaxWidthSliderState extends State<_PopupMaxWidthSlider> {
             child: Slider(
               value: _value,
               min: 250,
-              max: 600,
-              divisions: 35,
+              max: 1000,
+              divisions: 75,
               onChanged: (v) {
                 setState(() => _value = v);
               },
