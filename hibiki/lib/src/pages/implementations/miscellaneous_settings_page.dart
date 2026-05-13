@@ -3,8 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../../i18n/strings.g.dart';
-import '../base_page.dart';
+import 'package:hibiki/i18n/strings.g.dart';
+import 'package:hibiki/src/pages/base_page.dart';
+import 'package:hibiki/utils.dart';
 
 const iconPresetKey = 'app_icon_preset';
 
@@ -119,6 +120,18 @@ class _MiscellaneousSettingsPageState
           16, 8, 16, 8 + MediaQuery.of(context).padding.bottom,
         ),
         children: [
+          SwitchListTile(
+            dense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+            title: Text(t.debug_log_toggle),
+            value: DebugLogService.instance.enabled,
+            onChanged: (v) async {
+              await DebugLogService.instance.setEnabled(v);
+              setState(() {});
+            },
+          ),
+          const Divider(),
+          const SizedBox(height: 8),
           Text(t.app_icon_label, style: textTheme.titleMedium),
           const SizedBox(height: 12),
           _buildIconGrid(),
@@ -236,7 +249,6 @@ class _MiscellaneousSettingsPageState
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
                 color: theme.colorScheme.outlineVariant,
-                width: 1,
               ),
             ),
             child: Icon(
@@ -259,13 +271,13 @@ class _MiscellaneousSettingsPageState
 }
 
 class _IconOption {
-  final String key;
-  final String label;
-  final String asset;
 
   const _IconOption({
     required this.key,
     required this.label,
     required this.asset,
   });
+  final String key;
+  final String label;
+  final String asset;
 }

@@ -653,6 +653,8 @@
     "update_never_remind": "不再提醒",
     "update_auto_install": "自動安裝更新",
     "update_beta_channel": "接收測試版更新",
+    "update_debug_channel": "接收除錯版更新",
+    "update_debug_channel_warning": "⚠ 除錯版本不穩定，可能包含破壞性變更。一般使用者請勿開啟。",
     "debug_log_toggle": "啟用偵錯日誌",
     "disable_dialog_scrim": "關閉彈窗背景遮罩（墨水屏）",
     "native_dictionary_popup": "原生辭典彈窗（墨水屏）",

@@ -1423,7 +1423,12 @@ class AppModel with ChangeNotifier {
 
   dynamic _getPref(String key, {dynamic defaultValue}) {
     final raw = _prefCache[key];
-    if (raw == null) return defaultValue;
+    if (raw == null) {
+      if (defaultValue != null) {
+        _setPref(key, defaultValue);
+      }
+      return defaultValue;
+    }
     if (defaultValue is int) return int.tryParse(raw) ?? defaultValue;
     if (defaultValue is double) return double.tryParse(raw) ?? defaultValue;
     if (defaultValue is bool) return raw == 'true';
@@ -3803,6 +3808,15 @@ class AppModel with ChangeNotifier {
 
   Future<void> setUpdateBetaChannel(bool value) async {
     await _setPref('update_beta_channel', value);
+    notifyListeners();
+  }
+
+  bool get updateDebugChannel {
+    return _getPref('update_debug_channel', defaultValue: false);
+  }
+
+  Future<void> setUpdateDebugChannel(bool value) async {
+    await _setPref('update_debug_channel', value);
     notifyListeners();
   }
 

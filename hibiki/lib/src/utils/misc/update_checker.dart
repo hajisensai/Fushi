@@ -4,14 +4,12 @@ import 'dart:io';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/utils.dart';
 
@@ -31,19 +29,20 @@ class UpdateChecker {
     bool neverRemind = false,
     bool autoInstall = false,
     bool betaChannel = false,
+    bool debugChannel = false,
   }) {
     SchedulerBinding.instance.addPostFrameCallback((_) {
       _check(context, currentVersion,
           neverRemind: neverRemind,
           autoInstall: autoInstall,
-          betaChannel: betaChannel);
+          betaChannel: betaChannel || debugChannel);
     });
   }
 
   static Future<void> _cleanupOldApks(String currentVersion) async {
     try {
       final cacheDir = await getTemporaryDirectory();
-      final prefix = 'hibiki-';
+      const prefix = 'hibiki-';
       for (final f in cacheDir.listSync()) {
         if (f is! File || !f.path.endsWith('.apk')) continue;
         final name = f.uri.pathSegments.last;
@@ -112,7 +111,7 @@ class UpdateChecker {
         final url = assetMap['browser_download_url'] as String?;
         if (url == null) continue;
 
-        if (abiTags.any((abi) => name.contains(abi))) {
+        if (abiTags.any(name.contains)) {
           apkUrl = url;
           break;
         }
@@ -443,10 +442,6 @@ class UpdateChecker {
 }
 
 class _DownloadOverlay extends StatelessWidget {
-  final ValueNotifier<double> progress;
-  final ValueNotifier<String> status;
-  final VoidCallback onHide;
-  final bool disableScrim;
 
   const _DownloadOverlay({
     required this.progress,
@@ -454,6 +449,10 @@ class _DownloadOverlay extends StatelessWidget {
     required this.onHide,
     this.disableScrim = false,
   });
+  final ValueNotifier<double> progress;
+  final ValueNotifier<String> status;
+  final VoidCallback onHide;
+  final bool disableScrim;
 
   @override
   Widget build(BuildContext context) {

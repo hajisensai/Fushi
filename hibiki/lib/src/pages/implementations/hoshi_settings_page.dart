@@ -529,6 +529,18 @@ class _HoshiSettingsContentState extends BasePageState {
         ),
         _categoryTile(
           context,
+          icon: Icons.widgets_outlined,
+          label: t.miscellaneous_settings,
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => const MiscellaneousSettingsPage()),
+            );
+          },
+        ),
+        _categoryTile(
+          context,
           icon: Icons.bug_report,
           label: t.error_log_label(n: ErrorLogService.instance.entries.length),
           onTap: () {
@@ -550,18 +562,6 @@ class _HoshiSettingsContentState extends BasePageState {
               ).then((_) => setState(() {}));
             },
           ),
-        _categoryTile(
-          context,
-          icon: Icons.widgets_outlined,
-          label: t.miscellaneous_settings,
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                  builder: (_) => const MiscellaneousSettingsPage()),
-            );
-          },
-        ),
       ],
     );
   }
@@ -618,6 +618,18 @@ class _ReaderBehaviorSettingsPageState extends BasePageState {
               ).then((_) => setState(() {}));
             },
           ),
+          _buildTapRow(
+            context: context,
+            icon: Icons.audiotrack,
+            label: t.audiobook_settings,
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const _AudiobookSettingsPage()),
+              ).then((_) => setState(() {}));
+            },
+          ),
           const Space.small(),
           const JidoujishoDivider(),
           const Space.small(),
@@ -634,21 +646,6 @@ class _ReaderBehaviorSettingsPageState extends BasePageState {
           const Space.small(),
           const JidoujishoDivider(),
           _buildPageTurningSpeed(() => setState(() {})),
-          const Space.small(),
-          const JidoujishoDivider(),
-          const Space.small(),
-          _buildTapRow(
-            context: context,
-            icon: Icons.audiotrack,
-            label: t.audiobook_settings,
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => const _AudiobookSettingsPage()),
-              ).then((_) => setState(() {}));
-            },
-          ),
         ],
       ),
     );
@@ -775,10 +772,30 @@ class _UpdateSettingsPageState extends BasePageState {
           ),
           const Divider(),
           _buildSwitch(
-            label: t.debug_log_toggle,
-            value: DebugLogService.instance.enabled,
+            label: t.update_debug_channel,
+            value: appModel.updateDebugChannel,
             onChanged: (v) async {
-              await DebugLogService.instance.setEnabled(v);
+              if (v) {
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: Text(t.update_debug_channel),
+                    content: Text(t.update_debug_channel_warning),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: Text(t.dialog_cancel),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: Text(t.dialog_done),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirmed != true) return;
+              }
+              appModel.setUpdateDebugChannel(v);
               setState(() {});
             },
           ),
