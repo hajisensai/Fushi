@@ -335,11 +335,6 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
         theme: isDark ? ThemeData.dark() : null,
         home: Scaffold(
           backgroundColor: _savedSplashColor,
-          body: Center(
-            child: CircularProgressIndicator(
-              color: isDark ? Colors.white70 : null,
-            ),
-          ),
         ),
       );
     }
