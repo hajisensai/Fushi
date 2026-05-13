@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -191,15 +192,27 @@ class DictionaryPopupWebViewState
           final mediaPath = url.queryParameters['path'] ?? '';
           debugPrint('[PopupWebView] image request: dict=$dictName path=$mediaPath');
           if (dictName.isNotEmpty && mediaPath.isNotEmpty) {
-            final data = HoshiDicts.instance.getMediaFile(dictName, mediaPath);
-            debugPrint('[PopupWebView] image response: ${data != null ? "${data.length} bytes" : "NULL"}');
-            if (data != null) {
-              return WebResourceResponse(
-                contentType: _mimeTypeForPath(mediaPath),
-                data: data,
-              );
+            try {
+              final data = HoshiDicts.instance.getMediaFile(dictName, mediaPath);
+              debugPrint('[PopupWebView] image response: ${data != null ? "${data.length} bytes" : "NULL"}');
+              if (data != null) {
+                return WebResourceResponse(
+                  contentType: _mimeTypeForPath(mediaPath),
+                  statusCode: 200,
+                  reasonPhrase: 'OK',
+                  data: data,
+                );
+              }
+            } catch (e) {
+              debugPrint('[PopupWebView] image error: $e');
             }
           }
+          return WebResourceResponse(
+            contentType: 'text/plain',
+            statusCode: 404,
+            reasonPhrase: 'Not Found',
+            data: Uint8List(0),
+          );
         }
         if (url.scheme == 'dictmedia' && HoshiDicts.isInitialized) {
           final dictName = url.queryParameters['dictionary'] ?? '';
@@ -209,6 +222,8 @@ class DictionaryPopupWebViewState
             if (data != null) {
               return WebResourceResponse(
                 contentType: 'text/css',
+                statusCode: 200,
+                reasonPhrase: 'OK',
                 data: data,
               );
             }

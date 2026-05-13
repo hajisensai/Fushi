@@ -706,12 +706,17 @@ function createDefinitionImage(data, dictionary, exporting = false) {
                 img.style.position = 'static';
                 img.style.display = 'inline-block';
             }
-            if (!hasDimensions && !isSvg) {
-                img.addEventListener('load', () => {
+            img.addEventListener('load', () => {
+                console.log('[IMG_LOAD]', path, img.naturalWidth + 'x' + img.naturalHeight);
+                if (!hasDimensions && !isSvg) {
                     imageContainer.style.width = `${Math.min(img.naturalWidth, window.innerWidth - 20)}px`;
                     aspectRatioSizer.style.paddingTop = `${(img.naturalHeight / img.naturalWidth) * 100}%`;
-                }, {once: true});
-            }
+                }
+            }, {once: true});
+            img.addEventListener('error', (e) => {
+                console.log('[IMG_ERROR]', path, imageUrl);
+                imageContainer.style.display = 'none';
+            }, {once: true});
             img.src = imageUrl;
             imageContainer.appendChild(img);
         }

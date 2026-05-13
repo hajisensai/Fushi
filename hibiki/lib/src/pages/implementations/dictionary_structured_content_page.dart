@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -143,7 +144,6 @@ class _DictionaryHtmlWidgetState extends ConsumerState<DictionaryHtmlWidget> {
           disableVerticalScroll: true,
           disableHorizontalScroll: true,
           useShouldInterceptRequest: true,
-          useHybridComposition: true,
         ),
         shouldInterceptRequest: (controller, request) async {
           final url = request.url;
@@ -151,15 +151,27 @@ class _DictionaryHtmlWidgetState extends ConsumerState<DictionaryHtmlWidget> {
             final dictName = url.queryParameters['dictionary'] ?? '';
             final mediaPath = url.queryParameters['path'] ?? '';
             if (dictName.isNotEmpty && mediaPath.isNotEmpty) {
-              final data =
-                  HoshiDicts.instance.getMediaFile(dictName, mediaPath);
-              if (data != null) {
-                return WebResourceResponse(
-                  contentType: _mimeTypeForPath(mediaPath),
-                  data: data,
-                );
+              try {
+                final data =
+                    HoshiDicts.instance.getMediaFile(dictName, mediaPath);
+                if (data != null) {
+                  return WebResourceResponse(
+                    contentType: _mimeTypeForPath(mediaPath),
+                    statusCode: 200,
+                    reasonPhrase: 'OK',
+                    data: data,
+                  );
+                }
+              } catch (e) {
+                debugPrint('[StructuredContent] image error: $e');
               }
             }
+            return WebResourceResponse(
+              contentType: 'text/plain',
+              statusCode: 404,
+              reasonPhrase: 'Not Found',
+              data: Uint8List(0),
+            );
           }
           if (url.scheme == 'dictmedia' && HoshiDicts.isInitialized) {
             final dictName = url.queryParameters['dictionary'] ?? '';
@@ -170,6 +182,8 @@ class _DictionaryHtmlWidgetState extends ConsumerState<DictionaryHtmlWidget> {
               if (data != null) {
                 return WebResourceResponse(
                   contentType: 'text/css',
+                  statusCode: 200,
+                  reasonPhrase: 'OK',
                   data: data,
                 );
               }
@@ -179,7 +193,7 @@ class _DictionaryHtmlWidgetState extends ConsumerState<DictionaryHtmlWidget> {
         },
         contextMenu: ContextMenu(
           settings: ContextMenuSettings(
-            hideDefaultSystemContextMenuItems: false,
+            
           ),
           menuItems: [
             ContextMenuItem(
@@ -336,10 +350,6 @@ class DictionarySelectionDelegate
     return result ?? super.handleSelectWord(event);
   }
 
-  @override
-  SelectionResult dispatchSelectionEvent(SelectionEvent event) {
-    return super.dispatchSelectionEvent(event);
-  }
 
   SelectionEvent? _lastEvent;
   JidoujishoTextSelection? _guessSelection;
