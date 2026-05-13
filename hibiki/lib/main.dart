@@ -16,6 +16,8 @@ import 'package:hibiki/pages.dart';
 import 'package:hibiki/popup_main.dart' as popup_entrypoint;
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/utils.dart';
+import 'package:hibiki/src/utils/components/jidoujisho_text_selection_controls.dart';
+import 'package:share_plus/share_plus.dart';
 
 Color? _savedSplashColor;
 
@@ -318,6 +320,15 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
                       color: isDark ? Colors.white70 : Colors.black87,
                     ),
                     textAlign: TextAlign.center,
+                    selectionControls: JidoujishoTextSelectionControls(
+                      searchAction: null,
+                      stashAction: (_) {},
+                      shareAction: (text) => Share.share(text),
+                      allowCopy: true,
+                      allowCut: false,
+                      allowPaste: false,
+                      allowSelectAll: true,
+                    ),
                   ),
                 ],
               ),
