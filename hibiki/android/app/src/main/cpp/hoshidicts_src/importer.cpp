@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <fstream>
 #include <future>
+#include <limits>
 #include <memory>
 #include <sstream>
 #include <stdexcept>
@@ -28,6 +29,7 @@
 #include "stardict/stardict_reader.hpp"
 #include "zip/zip.hpp"
 
+#include <android/log.h>
 #include <utf8.h>
 
 namespace {
@@ -231,6 +233,17 @@ ProcessedFile process_term_bank(const std::string& content) {
     std::string_view expr = term.expression;
     std::string_view reading = term.reading.empty() ? expr : term.reading;
     std::string_view definition_tags = term.definition_tags.value_or("");
+
+    if (expr.size() > std::numeric_limits<uint16_t>::max()) {
+      __android_log_print(ANDROID_LOG_WARN, "hoshidicts",
+                          "expression too long (%zu bytes), skipping entry", expr.size());
+      continue;
+    }
+    if (reading.size() > std::numeric_limits<uint16_t>::max()) {
+      __android_log_print(ANDROID_LOG_WARN, "hoshidicts",
+                          "reading too long (%zu bytes), skipping entry", reading.size());
+      continue;
+    }
 
     write_val<uint8_t>(processed.data, 0);
     write_val<uint16_t>(processed.data, expr.size());
@@ -491,6 +504,12 @@ ProcessedFile process_simple_entries(const std::vector<SimpleEntry>& entries) {
     uint64_t offset = processed.data.size();
     uint32_t blob_size = processed.glossaries[glossary_hash].size();
     std::string_view expr = entry.headword;
+
+    if (expr.size() > std::numeric_limits<uint16_t>::max()) {
+      __android_log_print(ANDROID_LOG_WARN, "hoshidicts",
+                          "expression too long (%zu bytes), skipping entry", expr.size());
+      continue;
+    }
 
     write_val<uint8_t>(processed.data, 0);
     write_val<uint16_t>(processed.data, expr.size());
