@@ -24,6 +24,26 @@ class MediaItems extends Table {
   IntColumn get importedAt => integer().withDefault(const Constant(0))();
 }
 
+// ── anki_mappings ──────────────────────────────────────────────────
+@DataClassName('AnkiMappingRow')
+class AnkiMappings extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get label => text().unique()();
+  TextColumn get model => text()();
+  TextColumn get exportFieldKeysJson => text()();
+  TextColumn get creatorFieldKeysJson => text()();
+  TextColumn get creatorCollapsedFieldKeysJson => text()();
+  IntColumn get order => integer()();
+  TextColumn get tagsJson => text()();
+  TextColumn get enhancementsJson => text()();
+  TextColumn get actionsJson => text()();
+  BoolColumn get exportMediaTags =>
+      boolean().withDefault(const Constant(true))();
+  BoolColumn get useBrTags => boolean().withDefault(const Constant(true))();
+  BoolColumn get prependDictionaryNames =>
+      boolean().withDefault(const Constant(true))();
+}
+
 // ── search_history_items ────────────────────────────────────────────
 @DataClassName('SearchHistoryItemRow')
 class SearchHistoryItems extends Table {

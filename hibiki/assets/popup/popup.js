@@ -889,7 +889,7 @@ async function mineEntry(expression, reading, frequencies, pitches, rules, match
 }
 
 const INLINE_HTML_RE = /<(?:ruby|rt|rp|b|i|em|strong|span|sup|sub|br)\b[^>]*>/i;
-const URL_RE = /https?:\/\/[^\s<>　，、。！））)]+/g;
+const URL_RE = /(?:https?:\/\/|(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+(?:com|org|net|edu|gov|io|dev|app|jp|uk|de|fr|info|me|co)\/)[^\s<>　，、。！））)]+/gi;
 const SAFE_TAGS = new Set(['ruby','rt','rp','b','i','em','strong','span','sup','sub','br','a']);
 
 function sanitizeInlineHtml(html) {
@@ -913,8 +913,9 @@ function sanitizeInlineHtml(html) {
 
 function linkifyUrls(html) {
     return html.replace(URL_RE, url => {
-        const escaped = url.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
-        return `<a href="${escaped}">${url}</a>`;
+        const href = /^https?:\/\//i.test(url) ? url : 'https://' + url;
+        const escapedHref = href.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+        return `<a href="${escapedHref}">${url}</a>`;
     });
 }
 
@@ -943,6 +944,9 @@ function appendRichTextLine(parent, line) {
             }
         });
         html = tmp2.innerHTML;
+    }
+    if (hasHtml) {
+        console.log('[RICHTEXT_HTML] input=' + line.substring(0, 150) + ' | sanitized=' + html.substring(0, 150));
     }
     const frag = document.createElement('span');
     frag.innerHTML = html;

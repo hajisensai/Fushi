@@ -9,13 +9,11 @@ import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/src/dictionary/hoshidicts.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/utils.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class DictionaryPopupWebView extends ConsumerStatefulWidget {
   const DictionaryPopupWebView({
-    super.key,
-    required this.result,
+    required this.result, super.key,
     this.onTextSelected,
     this.onLinkClick,
     this.onTapOutside,
@@ -82,7 +80,7 @@ class DictionaryPopupWebViewState
   Future<String?> _resolveWordAudio(String expression, String reading) async {
     final appModel = ref.read(appProvider);
     final WordAudioResolver resolver = WordAudioResolver(
-      queryLocalAudio: (String expression, String reading) async {
+      queryLocalAudio: (expression, reading) async {
         if (!appModel.localAudioEnabled) return null;
         try {
           return await TtsChannel.instance
@@ -92,8 +90,7 @@ class DictionaryPopupWebViewState
           return null;
         }
       },
-      extractLocalAudio: (String file, String source, {int dbIndex = 0}) =>
-          TtsChannel.instance.extractLocalAudio(file, source, dbIndex: dbIndex),
+      extractLocalAudio: TtsChannel.instance.extractLocalAudio,
     );
     return resolver.resolve(
       expression: expression,
@@ -182,11 +179,9 @@ class DictionaryPopupWebViewState
       initialSettings: InAppWebViewSettings(
         transparentBackground: true,
         supportZoom: false,
-        verticalScrollBarEnabled: true,
         horizontalScrollBarEnabled: false,
         allowFileAccessFromFileURLs: true,
         allowUniversalAccessFromFileURLs: true,
-        useHybridComposition: true,
         useShouldInterceptRequest: true,
       ),
       shouldInterceptRequest: (controller, request) async {
@@ -253,7 +248,7 @@ class DictionaryPopupWebViewState
                 (args[0] as Map)
                     .map((k, v) => MapEntry(k.toString(), v.toString())),
               );
-              return await widget.onMineEntry!(fields);
+              return widget.onMineEntry!(fields);
             }
             return false;
           },
@@ -269,7 +264,7 @@ class DictionaryPopupWebViewState
               final expression = data['expression']?.toString() ?? '';
               final reading = data['reading']?.toString() ?? '';
               if (expression.isEmpty) return false;
-              return await widget.onDuplicateCheck!(expression, reading);
+              return widget.onDuplicateCheck!(expression, reading);
             }
             return false;
           },
@@ -389,13 +384,13 @@ class DictionaryPopupWebViewState
             }
             if (url.isNotEmpty && url.startsWith('file://')) {
               final filePath = url.replaceFirst('file://', '');
-              return await TtsChannel.instance.playFile(filePath);
+              return TtsChannel.instance.playFile(filePath);
             }
             if (url.isNotEmpty && url.startsWith('/')) {
-              return await TtsChannel.instance.playFile(url);
+              return TtsChannel.instance.playFile(url);
             }
             if (url.isNotEmpty && url.startsWith('http')) {
-              return await TtsChannel.instance.playUrl(url);
+              return TtsChannel.instance.playUrl(url);
             }
             return false;
           },
@@ -412,13 +407,13 @@ class DictionaryPopupWebViewState
           ErrorLogService.instance.log('PopupImage', msg);
         } else if (msg.startsWith('[LONGPRESS]')) {
           ErrorLogService.instance.log('PopupLongPress', msg);
-        } else if (msg.startsWith('[RENDER_CONTENT]') || msg.startsWith('[RICHTEXT]') || msg.startsWith('[GLOSS_SECTION]')) {
+        } else if (msg.startsWith('[RENDER_CONTENT]') || msg.startsWith('[RICHTEXT]') || msg.startsWith('[GLOSS_SECTION]') || msg.startsWith('[RICHTEXT_HTML]')) {
           ErrorLogService.instance.log('PopupDebug', msg);
         }
       },
       onLoadResourceWithCustomScheme: (controller, request) async {
         final url = request.url;
-        debugPrint('[PopupWebView] customScheme: ${url.scheme} ${url.toString().substring(0, (url.toString().length).clamp(0, 120))}');
+        debugPrint('[PopupWebView] customScheme: ${url.scheme} ${url.toString().substring(0, url.toString().length.clamp(0, 120))}');
         return null;
       },
     );
@@ -431,9 +426,9 @@ class DictionaryPopupWebViewState
       final key = '${entry.word}\n${entry.reading}';
       if (!grouped.containsKey(key)) {
         Map<String, dynamic>? extraData;
-        if (entry.extra != null && entry.extra!.isNotEmpty) {
+        if (entry.extra.isNotEmpty) {
           try {
-            extraData = jsonDecode(entry.extra!) as Map<String, dynamic>;
+            extraData = jsonDecode(entry.extra) as Map<String, dynamic>;
           } catch (e, stack) {
             ErrorLogService.instance.log('DictPopupWebview.extraData', e, stack);
           }
@@ -481,9 +476,9 @@ class DictionaryPopupWebViewState
   }
 
   static String _getExtraField(DictionaryEntry entry, String field) {
-    if (entry.extra == null || entry.extra!.isEmpty) return '';
+    if (entry.extra.isEmpty) return '';
     try {
-      final data = jsonDecode(entry.extra!) as Map<String, dynamic>;
+      final data = jsonDecode(entry.extra) as Map<String, dynamic>;
       return data[field]?.toString() ?? '';
     } catch (e, stack) {
       ErrorLogService.instance.log('DictPopupWebview.getExtraField', e, stack);
@@ -496,7 +491,7 @@ class DictionaryPopupWebViewState
     if (extraData == null || !extraData.containsKey('frequencies')) return [];
     final freqs = extraData['frequencies'] as List<dynamic>? ?? [];
     return freqs.map((f) {
-      final values = (f['values'] as List<dynamic>? ?? []);
+      final values = f['values'] as List<dynamic>? ?? [];
       return {
         'dictionary': f['dictName'] ?? '',
         'frequencies': values

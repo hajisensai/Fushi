@@ -1,4 +1,4 @@
-﻿// GENERATED CODE - DO NOT MODIFY BY HAND
+// GENERATED CODE - DO NOT MODIFY BY HAND
 
 part of 'database.dart';
 
@@ -907,6 +907,687 @@ class MediaItemsCompanion extends UpdateCompanion<MediaItemRow> {
   }
 }
 
+
+class $AnkiMappingsTable extends AnkiMappings
+    with TableInfo<$AnkiMappingsTable, AnkiMappingRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $AnkiMappingsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _labelMeta = const VerificationMeta('label');
+  @override
+  late final GeneratedColumn<String> label = GeneratedColumn<String>(
+      'label', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways('UNIQUE'));
+  static const VerificationMeta _modelMeta = const VerificationMeta('model');
+  @override
+  late final GeneratedColumn<String> model = GeneratedColumn<String>(
+      'model', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _exportFieldKeysJsonMeta =
+      const VerificationMeta('exportFieldKeysJson');
+  @override
+  late final GeneratedColumn<String> exportFieldKeysJson =
+      GeneratedColumn<String>('export_field_keys_json', aliasedName, false,
+          type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _creatorFieldKeysJsonMeta =
+      const VerificationMeta('creatorFieldKeysJson');
+  @override
+  late final GeneratedColumn<String> creatorFieldKeysJson =
+      GeneratedColumn<String>('creator_field_keys_json', aliasedName, false,
+          type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _creatorCollapsedFieldKeysJsonMeta =
+      const VerificationMeta('creatorCollapsedFieldKeysJson');
+  @override
+  late final GeneratedColumn<String> creatorCollapsedFieldKeysJson =
+      GeneratedColumn<String>(
+          'creator_collapsed_field_keys_json', aliasedName, false,
+          type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _orderMeta = const VerificationMeta('order');
+  @override
+  late final GeneratedColumn<int> order = GeneratedColumn<int>(
+      'order', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _tagsJsonMeta =
+      const VerificationMeta('tagsJson');
+  @override
+  late final GeneratedColumn<String> tagsJson = GeneratedColumn<String>(
+      'tags_json', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _enhancementsJsonMeta =
+      const VerificationMeta('enhancementsJson');
+  @override
+  late final GeneratedColumn<String> enhancementsJson = GeneratedColumn<String>(
+      'enhancements_json', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _actionsJsonMeta =
+      const VerificationMeta('actionsJson');
+  @override
+  late final GeneratedColumn<String> actionsJson = GeneratedColumn<String>(
+      'actions_json', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _exportMediaTagsMeta =
+      const VerificationMeta('exportMediaTags');
+  @override
+  late final GeneratedColumn<bool> exportMediaTags = GeneratedColumn<bool>(
+      'export_media_tags', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: false,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'CHECK ("export_media_tags" IN (0, 1))'),
+      defaultValue: const Constant(true));
+  static const VerificationMeta _useBrTagsMeta =
+      const VerificationMeta('useBrTags');
+  @override
+  late final GeneratedColumn<bool> useBrTags = GeneratedColumn<bool>(
+      'use_br_tags', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("use_br_tags" IN (0, 1))'),
+      defaultValue: const Constant(true));
+  static const VerificationMeta _prependDictionaryNamesMeta =
+      const VerificationMeta('prependDictionaryNames');
+  @override
+  late final GeneratedColumn<bool> prependDictionaryNames =
+      GeneratedColumn<bool>('prepend_dictionary_names', aliasedName, false,
+          type: DriftSqlType.bool,
+          requiredDuringInsert: false,
+          defaultConstraints: GeneratedColumn.constraintIsAlways(
+              'CHECK ("prepend_dictionary_names" IN (0, 1))'),
+          defaultValue: const Constant(true));
+  @override
+  List<GeneratedColumn> get $columns => [
+        id,
+        label,
+        model,
+        exportFieldKeysJson,
+        creatorFieldKeysJson,
+        creatorCollapsedFieldKeysJson,
+        order,
+        tagsJson,
+        enhancementsJson,
+        actionsJson,
+        exportMediaTags,
+        useBrTags,
+        prependDictionaryNames
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'anki_mappings';
+  @override
+  VerificationContext validateIntegrity(Insertable<AnkiMappingRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('label')) {
+      context.handle(
+          _labelMeta, label.isAcceptableOrUnknown(data['label']!, _labelMeta));
+    } else if (isInserting) {
+      context.missing(_labelMeta);
+    }
+    if (data.containsKey('model')) {
+      context.handle(
+          _modelMeta, model.isAcceptableOrUnknown(data['model']!, _modelMeta));
+    } else if (isInserting) {
+      context.missing(_modelMeta);
+    }
+    if (data.containsKey('export_field_keys_json')) {
+      context.handle(
+          _exportFieldKeysJsonMeta,
+          exportFieldKeysJson.isAcceptableOrUnknown(
+              data['export_field_keys_json']!, _exportFieldKeysJsonMeta));
+    } else if (isInserting) {
+      context.missing(_exportFieldKeysJsonMeta);
+    }
+    if (data.containsKey('creator_field_keys_json')) {
+      context.handle(
+          _creatorFieldKeysJsonMeta,
+          creatorFieldKeysJson.isAcceptableOrUnknown(
+              data['creator_field_keys_json']!, _creatorFieldKeysJsonMeta));
+    } else if (isInserting) {
+      context.missing(_creatorFieldKeysJsonMeta);
+    }
+    if (data.containsKey('creator_collapsed_field_keys_json')) {
+      context.handle(
+          _creatorCollapsedFieldKeysJsonMeta,
+          creatorCollapsedFieldKeysJson.isAcceptableOrUnknown(
+              data['creator_collapsed_field_keys_json']!,
+              _creatorCollapsedFieldKeysJsonMeta));
+    } else if (isInserting) {
+      context.missing(_creatorCollapsedFieldKeysJsonMeta);
+    }
+    if (data.containsKey('order')) {
+      context.handle(
+          _orderMeta, order.isAcceptableOrUnknown(data['order']!, _orderMeta));
+    } else if (isInserting) {
+      context.missing(_orderMeta);
+    }
+    if (data.containsKey('tags_json')) {
+      context.handle(_tagsJsonMeta,
+          tagsJson.isAcceptableOrUnknown(data['tags_json']!, _tagsJsonMeta));
+    } else if (isInserting) {
+      context.missing(_tagsJsonMeta);
+    }
+    if (data.containsKey('enhancements_json')) {
+      context.handle(
+          _enhancementsJsonMeta,
+          enhancementsJson.isAcceptableOrUnknown(
+              data['enhancements_json']!, _enhancementsJsonMeta));
+    } else if (isInserting) {
+      context.missing(_enhancementsJsonMeta);
+    }
+    if (data.containsKey('actions_json')) {
+      context.handle(
+          _actionsJsonMeta,
+          actionsJson.isAcceptableOrUnknown(
+              data['actions_json']!, _actionsJsonMeta));
+    } else if (isInserting) {
+      context.missing(_actionsJsonMeta);
+    }
+    if (data.containsKey('export_media_tags')) {
+      context.handle(
+          _exportMediaTagsMeta,
+          exportMediaTags.isAcceptableOrUnknown(
+              data['export_media_tags']!, _exportMediaTagsMeta));
+    }
+    if (data.containsKey('use_br_tags')) {
+      context.handle(
+          _useBrTagsMeta,
+          useBrTags.isAcceptableOrUnknown(
+              data['use_br_tags']!, _useBrTagsMeta));
+    }
+    if (data.containsKey('prepend_dictionary_names')) {
+      context.handle(
+          _prependDictionaryNamesMeta,
+          prependDictionaryNames.isAcceptableOrUnknown(
+              data['prepend_dictionary_names']!, _prependDictionaryNamesMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  AnkiMappingRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return AnkiMappingRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      label: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}label'])!,
+      model: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}model'])!,
+      exportFieldKeysJson: attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}export_field_keys_json'])!,
+      creatorFieldKeysJson: attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}creator_field_keys_json'])!,
+      creatorCollapsedFieldKeysJson: attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}creator_collapsed_field_keys_json'])!,
+      order: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}order'])!,
+      tagsJson: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}tags_json'])!,
+      enhancementsJson: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}enhancements_json'])!,
+      actionsJson: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}actions_json'])!,
+      exportMediaTags: attachedDatabase.typeMapping.read(
+          DriftSqlType.bool, data['${effectivePrefix}export_media_tags'])!,
+      useBrTags: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}use_br_tags'])!,
+      prependDictionaryNames: attachedDatabase.typeMapping.read(
+          DriftSqlType.bool,
+          data['${effectivePrefix}prepend_dictionary_names'])!,
+    );
+  }
+
+  @override
+  $AnkiMappingsTable createAlias(String alias) {
+    return $AnkiMappingsTable(attachedDatabase, alias);
+  }
+}
+
+class AnkiMappingRow extends DataClass implements Insertable<AnkiMappingRow> {
+  final int id;
+  final String label;
+  final String model;
+  final String exportFieldKeysJson;
+  final String creatorFieldKeysJson;
+  final String creatorCollapsedFieldKeysJson;
+  final int order;
+  final String tagsJson;
+  final String enhancementsJson;
+  final String actionsJson;
+  final bool exportMediaTags;
+  final bool useBrTags;
+  final bool prependDictionaryNames;
+  const AnkiMappingRow(
+      {required this.id,
+      required this.label,
+      required this.model,
+      required this.exportFieldKeysJson,
+      required this.creatorFieldKeysJson,
+      required this.creatorCollapsedFieldKeysJson,
+      required this.order,
+      required this.tagsJson,
+      required this.enhancementsJson,
+      required this.actionsJson,
+      required this.exportMediaTags,
+      required this.useBrTags,
+      required this.prependDictionaryNames});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['label'] = Variable<String>(label);
+    map['model'] = Variable<String>(model);
+    map['export_field_keys_json'] = Variable<String>(exportFieldKeysJson);
+    map['creator_field_keys_json'] = Variable<String>(creatorFieldKeysJson);
+    map['creator_collapsed_field_keys_json'] =
+        Variable<String>(creatorCollapsedFieldKeysJson);
+    map['order'] = Variable<int>(order);
+    map['tags_json'] = Variable<String>(tagsJson);
+    map['enhancements_json'] = Variable<String>(enhancementsJson);
+    map['actions_json'] = Variable<String>(actionsJson);
+    map['export_media_tags'] = Variable<bool>(exportMediaTags);
+    map['use_br_tags'] = Variable<bool>(useBrTags);
+    map['prepend_dictionary_names'] = Variable<bool>(prependDictionaryNames);
+    return map;
+  }
+
+  AnkiMappingsCompanion toCompanion(bool nullToAbsent) {
+    return AnkiMappingsCompanion(
+      id: Value(id),
+      label: Value(label),
+      model: Value(model),
+      exportFieldKeysJson: Value(exportFieldKeysJson),
+      creatorFieldKeysJson: Value(creatorFieldKeysJson),
+      creatorCollapsedFieldKeysJson: Value(creatorCollapsedFieldKeysJson),
+      order: Value(order),
+      tagsJson: Value(tagsJson),
+      enhancementsJson: Value(enhancementsJson),
+      actionsJson: Value(actionsJson),
+      exportMediaTags: Value(exportMediaTags),
+      useBrTags: Value(useBrTags),
+      prependDictionaryNames: Value(prependDictionaryNames),
+    );
+  }
+
+  factory AnkiMappingRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return AnkiMappingRow(
+      id: serializer.fromJson<int>(json['id']),
+      label: serializer.fromJson<String>(json['label']),
+      model: serializer.fromJson<String>(json['model']),
+      exportFieldKeysJson:
+          serializer.fromJson<String>(json['exportFieldKeysJson']),
+      creatorFieldKeysJson:
+          serializer.fromJson<String>(json['creatorFieldKeysJson']),
+      creatorCollapsedFieldKeysJson:
+          serializer.fromJson<String>(json['creatorCollapsedFieldKeysJson']),
+      order: serializer.fromJson<int>(json['order']),
+      tagsJson: serializer.fromJson<String>(json['tagsJson']),
+      enhancementsJson: serializer.fromJson<String>(json['enhancementsJson']),
+      actionsJson: serializer.fromJson<String>(json['actionsJson']),
+      exportMediaTags: serializer.fromJson<bool>(json['exportMediaTags']),
+      useBrTags: serializer.fromJson<bool>(json['useBrTags']),
+      prependDictionaryNames:
+          serializer.fromJson<bool>(json['prependDictionaryNames']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'label': serializer.toJson<String>(label),
+      'model': serializer.toJson<String>(model),
+      'exportFieldKeysJson': serializer.toJson<String>(exportFieldKeysJson),
+      'creatorFieldKeysJson': serializer.toJson<String>(creatorFieldKeysJson),
+      'creatorCollapsedFieldKeysJson':
+          serializer.toJson<String>(creatorCollapsedFieldKeysJson),
+      'order': serializer.toJson<int>(order),
+      'tagsJson': serializer.toJson<String>(tagsJson),
+      'enhancementsJson': serializer.toJson<String>(enhancementsJson),
+      'actionsJson': serializer.toJson<String>(actionsJson),
+      'exportMediaTags': serializer.toJson<bool>(exportMediaTags),
+      'useBrTags': serializer.toJson<bool>(useBrTags),
+      'prependDictionaryNames': serializer.toJson<bool>(prependDictionaryNames),
+    };
+  }
+
+  AnkiMappingRow copyWith(
+          {int? id,
+          String? label,
+          String? model,
+          String? exportFieldKeysJson,
+          String? creatorFieldKeysJson,
+          String? creatorCollapsedFieldKeysJson,
+          int? order,
+          String? tagsJson,
+          String? enhancementsJson,
+          String? actionsJson,
+          bool? exportMediaTags,
+          bool? useBrTags,
+          bool? prependDictionaryNames}) =>
+      AnkiMappingRow(
+        id: id ?? this.id,
+        label: label ?? this.label,
+        model: model ?? this.model,
+        exportFieldKeysJson: exportFieldKeysJson ?? this.exportFieldKeysJson,
+        creatorFieldKeysJson: creatorFieldKeysJson ?? this.creatorFieldKeysJson,
+        creatorCollapsedFieldKeysJson:
+            creatorCollapsedFieldKeysJson ?? this.creatorCollapsedFieldKeysJson,
+        order: order ?? this.order,
+        tagsJson: tagsJson ?? this.tagsJson,
+        enhancementsJson: enhancementsJson ?? this.enhancementsJson,
+        actionsJson: actionsJson ?? this.actionsJson,
+        exportMediaTags: exportMediaTags ?? this.exportMediaTags,
+        useBrTags: useBrTags ?? this.useBrTags,
+        prependDictionaryNames:
+            prependDictionaryNames ?? this.prependDictionaryNames,
+      );
+  AnkiMappingRow copyWithCompanion(AnkiMappingsCompanion data) {
+    return AnkiMappingRow(
+      id: data.id.present ? data.id.value : this.id,
+      label: data.label.present ? data.label.value : this.label,
+      model: data.model.present ? data.model.value : this.model,
+      exportFieldKeysJson: data.exportFieldKeysJson.present
+          ? data.exportFieldKeysJson.value
+          : this.exportFieldKeysJson,
+      creatorFieldKeysJson: data.creatorFieldKeysJson.present
+          ? data.creatorFieldKeysJson.value
+          : this.creatorFieldKeysJson,
+      creatorCollapsedFieldKeysJson: data.creatorCollapsedFieldKeysJson.present
+          ? data.creatorCollapsedFieldKeysJson.value
+          : this.creatorCollapsedFieldKeysJson,
+      order: data.order.present ? data.order.value : this.order,
+      tagsJson: data.tagsJson.present ? data.tagsJson.value : this.tagsJson,
+      enhancementsJson: data.enhancementsJson.present
+          ? data.enhancementsJson.value
+          : this.enhancementsJson,
+      actionsJson:
+          data.actionsJson.present ? data.actionsJson.value : this.actionsJson,
+      exportMediaTags: data.exportMediaTags.present
+          ? data.exportMediaTags.value
+          : this.exportMediaTags,
+      useBrTags: data.useBrTags.present ? data.useBrTags.value : this.useBrTags,
+      prependDictionaryNames: data.prependDictionaryNames.present
+          ? data.prependDictionaryNames.value
+          : this.prependDictionaryNames,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('AnkiMappingRow(')
+          ..write('id: $id, ')
+          ..write('label: $label, ')
+          ..write('model: $model, ')
+          ..write('exportFieldKeysJson: $exportFieldKeysJson, ')
+          ..write('creatorFieldKeysJson: $creatorFieldKeysJson, ')
+          ..write(
+              'creatorCollapsedFieldKeysJson: $creatorCollapsedFieldKeysJson, ')
+          ..write('order: $order, ')
+          ..write('tagsJson: $tagsJson, ')
+          ..write('enhancementsJson: $enhancementsJson, ')
+          ..write('actionsJson: $actionsJson, ')
+          ..write('exportMediaTags: $exportMediaTags, ')
+          ..write('useBrTags: $useBrTags, ')
+          ..write('prependDictionaryNames: $prependDictionaryNames')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+      id,
+      label,
+      model,
+      exportFieldKeysJson,
+      creatorFieldKeysJson,
+      creatorCollapsedFieldKeysJson,
+      order,
+      tagsJson,
+      enhancementsJson,
+      actionsJson,
+      exportMediaTags,
+      useBrTags,
+      prependDictionaryNames);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is AnkiMappingRow &&
+          other.id == this.id &&
+          other.label == this.label &&
+          other.model == this.model &&
+          other.exportFieldKeysJson == this.exportFieldKeysJson &&
+          other.creatorFieldKeysJson == this.creatorFieldKeysJson &&
+          other.creatorCollapsedFieldKeysJson ==
+              this.creatorCollapsedFieldKeysJson &&
+          other.order == this.order &&
+          other.tagsJson == this.tagsJson &&
+          other.enhancementsJson == this.enhancementsJson &&
+          other.actionsJson == this.actionsJson &&
+          other.exportMediaTags == this.exportMediaTags &&
+          other.useBrTags == this.useBrTags &&
+          other.prependDictionaryNames == this.prependDictionaryNames);
+}
+
+class AnkiMappingsCompanion extends UpdateCompanion<AnkiMappingRow> {
+  final Value<int> id;
+  final Value<String> label;
+  final Value<String> model;
+  final Value<String> exportFieldKeysJson;
+  final Value<String> creatorFieldKeysJson;
+  final Value<String> creatorCollapsedFieldKeysJson;
+  final Value<int> order;
+  final Value<String> tagsJson;
+  final Value<String> enhancementsJson;
+  final Value<String> actionsJson;
+  final Value<bool> exportMediaTags;
+  final Value<bool> useBrTags;
+  final Value<bool> prependDictionaryNames;
+  const AnkiMappingsCompanion({
+    this.id = const Value.absent(),
+    this.label = const Value.absent(),
+    this.model = const Value.absent(),
+    this.exportFieldKeysJson = const Value.absent(),
+    this.creatorFieldKeysJson = const Value.absent(),
+    this.creatorCollapsedFieldKeysJson = const Value.absent(),
+    this.order = const Value.absent(),
+    this.tagsJson = const Value.absent(),
+    this.enhancementsJson = const Value.absent(),
+    this.actionsJson = const Value.absent(),
+    this.exportMediaTags = const Value.absent(),
+    this.useBrTags = const Value.absent(),
+    this.prependDictionaryNames = const Value.absent(),
+  });
+  AnkiMappingsCompanion.insert({
+    this.id = const Value.absent(),
+    required String label,
+    required String model,
+    required String exportFieldKeysJson,
+    required String creatorFieldKeysJson,
+    required String creatorCollapsedFieldKeysJson,
+    required int order,
+    required String tagsJson,
+    required String enhancementsJson,
+    required String actionsJson,
+    this.exportMediaTags = const Value.absent(),
+    this.useBrTags = const Value.absent(),
+    this.prependDictionaryNames = const Value.absent(),
+  })  : label = Value(label),
+        model = Value(model),
+        exportFieldKeysJson = Value(exportFieldKeysJson),
+        creatorFieldKeysJson = Value(creatorFieldKeysJson),
+        creatorCollapsedFieldKeysJson = Value(creatorCollapsedFieldKeysJson),
+        order = Value(order),
+        tagsJson = Value(tagsJson),
+        enhancementsJson = Value(enhancementsJson),
+        actionsJson = Value(actionsJson);
+  static Insertable<AnkiMappingRow> custom({
+    Expression<int>? id,
+    Expression<String>? label,
+    Expression<String>? model,
+    Expression<String>? exportFieldKeysJson,
+    Expression<String>? creatorFieldKeysJson,
+    Expression<String>? creatorCollapsedFieldKeysJson,
+    Expression<int>? order,
+    Expression<String>? tagsJson,
+    Expression<String>? enhancementsJson,
+    Expression<String>? actionsJson,
+    Expression<bool>? exportMediaTags,
+    Expression<bool>? useBrTags,
+    Expression<bool>? prependDictionaryNames,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (label != null) 'label': label,
+      if (model != null) 'model': model,
+      if (exportFieldKeysJson != null)
+        'export_field_keys_json': exportFieldKeysJson,
+      if (creatorFieldKeysJson != null)
+        'creator_field_keys_json': creatorFieldKeysJson,
+      if (creatorCollapsedFieldKeysJson != null)
+        'creator_collapsed_field_keys_json': creatorCollapsedFieldKeysJson,
+      if (order != null) 'order': order,
+      if (tagsJson != null) 'tags_json': tagsJson,
+      if (enhancementsJson != null) 'enhancements_json': enhancementsJson,
+      if (actionsJson != null) 'actions_json': actionsJson,
+      if (exportMediaTags != null) 'export_media_tags': exportMediaTags,
+      if (useBrTags != null) 'use_br_tags': useBrTags,
+      if (prependDictionaryNames != null)
+        'prepend_dictionary_names': prependDictionaryNames,
+    });
+  }
+
+  AnkiMappingsCompanion copyWith(
+      {Value<int>? id,
+      Value<String>? label,
+      Value<String>? model,
+      Value<String>? exportFieldKeysJson,
+      Value<String>? creatorFieldKeysJson,
+      Value<String>? creatorCollapsedFieldKeysJson,
+      Value<int>? order,
+      Value<String>? tagsJson,
+      Value<String>? enhancementsJson,
+      Value<String>? actionsJson,
+      Value<bool>? exportMediaTags,
+      Value<bool>? useBrTags,
+      Value<bool>? prependDictionaryNames}) {
+    return AnkiMappingsCompanion(
+      id: id ?? this.id,
+      label: label ?? this.label,
+      model: model ?? this.model,
+      exportFieldKeysJson: exportFieldKeysJson ?? this.exportFieldKeysJson,
+      creatorFieldKeysJson: creatorFieldKeysJson ?? this.creatorFieldKeysJson,
+      creatorCollapsedFieldKeysJson:
+          creatorCollapsedFieldKeysJson ?? this.creatorCollapsedFieldKeysJson,
+      order: order ?? this.order,
+      tagsJson: tagsJson ?? this.tagsJson,
+      enhancementsJson: enhancementsJson ?? this.enhancementsJson,
+      actionsJson: actionsJson ?? this.actionsJson,
+      exportMediaTags: exportMediaTags ?? this.exportMediaTags,
+      useBrTags: useBrTags ?? this.useBrTags,
+      prependDictionaryNames:
+          prependDictionaryNames ?? this.prependDictionaryNames,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (label.present) {
+      map['label'] = Variable<String>(label.value);
+    }
+    if (model.present) {
+      map['model'] = Variable<String>(model.value);
+    }
+    if (exportFieldKeysJson.present) {
+      map['export_field_keys_json'] =
+          Variable<String>(exportFieldKeysJson.value);
+    }
+    if (creatorFieldKeysJson.present) {
+      map['creator_field_keys_json'] =
+          Variable<String>(creatorFieldKeysJson.value);
+    }
+    if (creatorCollapsedFieldKeysJson.present) {
+      map['creator_collapsed_field_keys_json'] =
+          Variable<String>(creatorCollapsedFieldKeysJson.value);
+    }
+    if (order.present) {
+      map['order'] = Variable<int>(order.value);
+    }
+    if (tagsJson.present) {
+      map['tags_json'] = Variable<String>(tagsJson.value);
+    }
+    if (enhancementsJson.present) {
+      map['enhancements_json'] = Variable<String>(enhancementsJson.value);
+    }
+    if (actionsJson.present) {
+      map['actions_json'] = Variable<String>(actionsJson.value);
+    }
+    if (exportMediaTags.present) {
+      map['export_media_tags'] = Variable<bool>(exportMediaTags.value);
+    }
+    if (useBrTags.present) {
+      map['use_br_tags'] = Variable<bool>(useBrTags.value);
+    }
+    if (prependDictionaryNames.present) {
+      map['prepend_dictionary_names'] =
+          Variable<bool>(prependDictionaryNames.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('AnkiMappingsCompanion(')
+          ..write('id: $id, ')
+          ..write('label: $label, ')
+          ..write('model: $model, ')
+          ..write('exportFieldKeysJson: $exportFieldKeysJson, ')
+          ..write('creatorFieldKeysJson: $creatorFieldKeysJson, ')
+          ..write(
+              'creatorCollapsedFieldKeysJson: $creatorCollapsedFieldKeysJson, ')
+          ..write('order: $order, ')
+          ..write('tagsJson: $tagsJson, ')
+          ..write('enhancementsJson: $enhancementsJson, ')
+          ..write('actionsJson: $actionsJson, ')
+          ..write('exportMediaTags: $exportMediaTags, ')
+          ..write('useBrTags: $useBrTags, ')
+          ..write('prependDictionaryNames: $prependDictionaryNames')
+          ..write(')'))
+        .toString();
+  }
+}
+
+
 class $SearchHistoryItemsTable extends SearchHistoryItems
     with TableInfo<$SearchHistoryItemsTable, SearchHistoryItemRow> {
   @override
@@ -1178,6 +1859,7 @@ class SearchHistoryItemsCompanion
         .toString();
   }
 }
+
 
 class $AudiobooksTable extends Audiobooks
     with TableInfo<$AudiobooksTable, AudiobookRow> {
@@ -6040,6 +6722,7 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
   _$HibikiDatabase(QueryExecutor e) : super(e);
   $HibikiDatabaseManager get managers => $HibikiDatabaseManager(this);
   late final $MediaItemsTable mediaItems = $MediaItemsTable(this);
+  late final $AnkiMappingsTable ankiMappings = $AnkiMappingsTable(this);
   late final $SearchHistoryItemsTable searchHistoryItems =
       $SearchHistoryItemsTable(this);
   late final $AudiobooksTable audiobooks = $AudiobooksTable(this);
@@ -6070,6 +6753,7 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
   @override
   List<DatabaseSchemaEntity> get allSchemaEntities => [
         mediaItems,
+        ankiMappings,
         searchHistoryItems,
         audiobooks,
         audioCues,

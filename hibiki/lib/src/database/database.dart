@@ -4,7 +4,7 @@ import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:path/path.dart' as p;
 
-import 'tables.dart';
+import 'package:hibiki/src/database/tables.dart';
 
 part 'database.g.dart';
 
@@ -22,6 +22,7 @@ LazyDatabase _openDb(String dbDirectory) {
 
 @DriftDatabase(tables: [
   MediaItems,
+  AnkiMappings,
   SearchHistoryItems,
   Audiobooks,
   AudioCues,

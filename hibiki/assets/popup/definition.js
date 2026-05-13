@@ -280,7 +280,7 @@ function createDefinitionImage(data, dictionary, exporting) {
 // --- Core structured content rendering (from popup.js) ---
 
 const INLINE_HTML_RE_DEF = /<(?:ruby|rt|rp|b|i|em|strong|span|sup|sub|br)\b[^>]*>/i;
-const URL_RE_DEF = /https?:\/\/[^\s<>　，、。！））)]+/g;
+const URL_RE_DEF = /(?:https?:\/\/|(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+(?:com|org|net|edu|gov|io|dev|app|jp|uk|de|fr|info|me|co)\/)[^\s<>　，、。！））)]+/gi;
 const SAFE_TAGS_DEF = new Set(['ruby','rt','rp','b','i','em','strong','span','sup','sub','br','a']);
 
 function sanitizeInlineHtmlDef(html) {
@@ -304,8 +304,9 @@ function sanitizeInlineHtmlDef(html) {
 
 function linkifyUrlsDef(html) {
     return html.replace(URL_RE_DEF, url => {
-        const escaped = url.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
-        return `<a href="${escaped}">${url}</a>`;
+        const href = /^https?:\/\//i.test(url) ? url : 'https://' + url;
+        const escapedHref = href.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+        return `<a href="${escapedHref}">${url}</a>`;
     });
 }
 
