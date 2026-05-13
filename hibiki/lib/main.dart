@@ -321,8 +321,6 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
                     ),
                     textAlign: TextAlign.center,
                     selectionControls: JidoujishoTextSelectionControls(
-                      searchAction: null,
-                      stashAction: (_) {},
                       shareAction: (text) => Share.share(text),
                       allowCopy: true,
                       allowCut: false,

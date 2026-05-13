@@ -82,8 +82,6 @@ class _DebugLogPageState extends State<DebugLogPage> {
           _log,
           style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
           selectionControls: JidoujishoTextSelectionControls(
-            searchAction: null,
-            stashAction: (_) {},
             shareAction: (text) => Share.share(text),
             allowCopy: true,
             allowCut: false,

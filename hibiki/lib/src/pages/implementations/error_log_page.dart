@@ -61,8 +61,6 @@ class ErrorLogPage extends StatelessWidget {
           log,
           style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
           selectionControls: JidoujishoTextSelectionControls(
-            searchAction: null,
-            stashAction: (_) {},
             shareAction: (text) => Share.share(text),
             allowCopy: true,
             allowCut: false,

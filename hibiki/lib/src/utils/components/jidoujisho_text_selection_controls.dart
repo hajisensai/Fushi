@@ -7,15 +7,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:hibiki/utils.dart';
 
-/// Used for handling text selection.
-typedef OffsetValue = void Function(int start, int end);
-
-/// Defined on [SelectableText] objects to allow for a custom action when
-/// selecting text.
 class JidoujishoTextSelectionControls extends MaterialTextSelectionControls {
-  /// Define text selection controls with custom behaviour.
   JidoujishoTextSelectionControls({
-    required this.stashAction,
+    this.stashAction,
     required this.shareAction,
     required this.allowCopy,
     required this.allowCut,
@@ -23,56 +17,31 @@ class JidoujishoTextSelectionControls extends MaterialTextSelectionControls {
     required this.allowSelectAll,
     this.searchAction,
     this.handleColor,
-    this.creatorAction,
-    this.sentenceAction,
   });
 
-  /// Allows the text handles to be customized.
   final Color? handleColor;
 
   final TextSelectionControls _controls = Platform.isIOS
       ? cupertinoTextSelectionControls
       : materialTextSelectionControls;
 
-  /// Behaviour for the creator action.
-  final Function(JidoujishoTextSelection)? sentenceAction;
-
-  /// Behaviour for the creator action.
-  final Function(String)? creatorAction;
-
-  /// Behaviour for the search action.
   final Function(String)? searchAction;
-
-  /// Behaviour for the share action.
   final Function(String) shareAction;
+  final Function(String)? stashAction;
 
-  /// Behaviour for the stash action.
-  final Function(String) stashAction;
-
-  /// Whether or not to allow copying.
   final bool allowCopy;
-
-  /// Whether or not to allow cutting.
   final bool allowCut;
-
-  /// Whether or not to allow pasting.
   final bool allowPaste;
-
-  /// Whether or not to allow selecting all.
   final bool allowSelectAll;
 
   static const double _kToolbarContentDistanceBelow = 20;
   static const double _kToolbarContentDistance = 8;
 
-  /// Wrap the given handle builder with the needed theme data for
-  /// each platform to modify the color.
   Widget _wrapWithThemeData(Widget Function(BuildContext) builder) =>
       Platform.isIOS
-          // ios handle uses the CupertinoTheme primary color, so override that.
           ? CupertinoTheme(
               data: CupertinoThemeData(primaryColor: handleColor),
               child: Builder(builder: builder))
-          // material handle uses the selection handle color, so override that.
           : TextSelectionTheme(
               data: TextSelectionThemeData(selectionHandleColor: handleColor),
               child: Builder(builder: builder));
@@ -94,7 +63,6 @@ class JidoujishoTextSelectionControls extends MaterialTextSelectionControls {
     return _controls.getHandleSize(textLineHeight);
   }
 
-  /// Builder for material-style copy/paste text selection toolbar.
   @override
   Widget buildToolbar(
     BuildContext context,
@@ -130,61 +98,20 @@ class JidoujishoTextSelectionControls extends MaterialTextSelectionControls {
       rawBelowY.clamp(topPad, bottomPad),
     );
 
-    return JidoujishoSelectionToolbar(
+    String selectedText() => delegate.textEditingValue.selection
+        .textInside(delegate.textEditingValue.text);
+
+    return _JidoujishoSelectionToolbar(
       anchorAbove: anchorAbove,
       anchorBelow: anchorBelow,
       clipboardStatus: clipboardStatus,
-      creatorAction: (creatorAction != null)
-          ? () {
-              creatorAction?.call(
-                delegate.textEditingValue.selection
-                    .textInside(delegate.textEditingValue.text),
-              );
-
-              delegate.hideToolbar();
-            }
-          : null,
-      sentenceAction: (sentenceAction != null)
-          ? () {
-              sentenceAction?.call(
-                JidoujishoTextSelection(
-                  text: delegate.textEditingValue.text,
-                  range: TextRange(
-                    start: delegate.textEditingValue.selection.start,
-                    end: delegate.textEditingValue.selection.end,
-                  ),
-                ),
-              );
-
-              delegate.hideToolbar();
-            }
-          : null,
       searchAction: (searchAction != null)
-          ? () {
-              searchAction?.call(
-                delegate.textEditingValue.selection
-                    .textInside(delegate.textEditingValue.text),
-              );
-
-              delegate.hideToolbar();
-            }
+          ? () { searchAction?.call(selectedText()); delegate.hideToolbar(); }
           : null,
-      stashAction: () {
-        stashAction(
-          delegate.textEditingValue.selection
-              .textInside(delegate.textEditingValue.text),
-        );
-
-        delegate.hideToolbar();
-      },
-      shareAction: () {
-        shareAction(
-          delegate.textEditingValue.selection
-              .textInside(delegate.textEditingValue.text),
-        );
-
-        delegate.hideToolbar();
-      },
+      stashAction: (stashAction != null)
+          ? () { stashAction?.call(selectedText()); delegate.hideToolbar(); }
+          : null,
+      shareAction: () { shareAction(selectedText()); delegate.hideToolbar(); },
       handleCopy:
           canCopy(delegate) && allowCopy ? () => handleCopy(delegate) : null,
       handleCut:
@@ -198,72 +125,40 @@ class JidoujishoTextSelectionControls extends MaterialTextSelectionControls {
   }
 }
 
-/// A toolbar that allows a custom button to be shown when selecting text.
-class JidoujishoSelectionToolbar extends StatefulWidget {
-  /// Define a toolbar with clipboard details and custom behaviour.
-  const JidoujishoSelectionToolbar({
+class _JidoujishoSelectionToolbar extends StatefulWidget {
+  const _JidoujishoSelectionToolbar({
     required this.anchorAbove,
     required this.anchorBelow,
     required this.clipboardStatus,
-    required this.creatorAction,
     required this.searchAction,
-    required this.sentenceAction,
-    required this.stashAction,
+    this.stashAction,
     required this.shareAction,
     required this.handleCopy,
     required this.handleCut,
     required this.handlePaste,
     required this.handleSelectAll,
-    super.key,
   });
 
-  /// Positioning details for the toolbar.
   final Offset anchorAbove;
-
-  /// Positioning details for the toolbar.
   final Offset anchorBelow;
-
-  /// Current details on the clipboard.
   final ValueListenable<ClipboardStatus>? clipboardStatus;
-
-  /// Behaviour for the custom action.
-  final Function()? searchAction;
-
-  /// Behaviour for the custom action.
-  final Function()? sentenceAction;
-
-  /// Behaviour for the stash action.
-  final Function() stashAction;
-
-  /// Behaviour for the share action.
-  final Function() shareAction;
-
-  /// Behaviour for the creator action.
-  final Function()? creatorAction;
-
-  /// Behaviour for copying.
+  final VoidCallback? searchAction;
+  final VoidCallback? stashAction;
+  final VoidCallback shareAction;
   final VoidCallback? handleCopy;
-
-  /// Behaviour for cutting.
   final VoidCallback? handleCut;
-
-  /// Behaviour for pasting.
   final VoidCallback? handlePaste;
-
-  /// Behaviour for selecting all.
   final VoidCallback? handleSelectAll;
 
   @override
-  State<JidoujishoSelectionToolbar> createState() =>
+  State<_JidoujishoSelectionToolbar> createState() =>
       _JidoujishoSelectionToolbarState();
 }
 
 class _JidoujishoSelectionToolbarState
-    extends State<JidoujishoSelectionToolbar> {
+    extends State<_JidoujishoSelectionToolbar> {
   void _onChangedClipboardStatus() {
-    setState(() {
-      // Inform the widget that the value of clipboardStatus has changed.
-    });
+    setState(() {});
   }
 
   @override
@@ -273,7 +168,7 @@ class _JidoujishoSelectionToolbarState
   }
 
   @override
-  void didUpdateWidget(JidoujishoSelectionToolbar oldWidget) {
+  void didUpdateWidget(_JidoujishoSelectionToolbar oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.clipboardStatus != oldWidget.clipboardStatus) {
       widget.clipboardStatus?.addListener(_onChangedClipboardStatus);
@@ -290,59 +185,26 @@ class _JidoujishoSelectionToolbarState
   @override
   Widget build(BuildContext context) {
     assert(debugCheckHasMaterialLocalizations(context), 'Must have i18n');
-    final MaterialLocalizations localizations =
-        MaterialLocalizations.of(context);
+    final MaterialLocalizations loc = MaterialLocalizations.of(context);
 
-    final List<_TextSelectionToolbarItemData> primaryItems =
-        <_TextSelectionToolbarItemData>[
+    final List<_ItemData> primaryItems = <_ItemData>[
       if (widget.handleCopy != null)
-        _TextSelectionToolbarItemData(
-          label: localizations.copyButtonLabel,
-          onPressed: widget.handleCopy,
-        ),
+        _ItemData(label: loc.copyButtonLabel, onPressed: widget.handleCopy),
       if (widget.searchAction != null)
-        _TextSelectionToolbarItemData(
-          onPressed: widget.searchAction,
-          label: t.search,
-        ),
+        _ItemData(label: t.search, onPressed: widget.searchAction),
+      if (widget.stashAction != null)
+        _ItemData(label: t.stash, onPressed: widget.stashAction),
     ];
 
-    final List<_TextSelectionToolbarItemData> overflowItems =
-        <_TextSelectionToolbarItemData>[
+    final List<_ItemData> overflowItems = <_ItemData>[
       if (widget.handleSelectAll != null)
-        _TextSelectionToolbarItemData(
-          label: localizations.selectAllButtonLabel,
-          onPressed: widget.handleSelectAll,
-        ),
-      _TextSelectionToolbarItemData(
-        onPressed: widget.stashAction,
-        label: t.stash,
-      ),
-      _TextSelectionToolbarItemData(
-        onPressed: widget.shareAction,
-        label: t.share,
-      ),
+        _ItemData(label: loc.selectAllButtonLabel, onPressed: widget.handleSelectAll),
+      _ItemData(label: t.share, onPressed: widget.shareAction),
       if (widget.handleCut != null)
-        _TextSelectionToolbarItemData(
-          label: localizations.cutButtonLabel,
-          onPressed: widget.handleCut,
-        ),
+        _ItemData(label: loc.cutButtonLabel, onPressed: widget.handleCut),
       if (widget.handlePaste != null &&
           widget.clipboardStatus?.value == ClipboardStatus.pasteable)
-        _TextSelectionToolbarItemData(
-          label: localizations.pasteButtonLabel,
-          onPressed: widget.handlePaste,
-        ),
-      if (widget.sentenceAction != null)
-        _TextSelectionToolbarItemData(
-          onPressed: widget.sentenceAction,
-          label: t.cloze,
-        ),
-      if (widget.creatorAction != null)
-        _TextSelectionToolbarItemData(
-          onPressed: widget.creatorAction,
-          label: t.creator,
-        ),
+        _ItemData(label: loc.pasteButtonLabel, onPressed: widget.handlePaste),
     ];
 
     final int totalCount = primaryItems.length + (overflowItems.isNotEmpty ? 1 : 0);
@@ -350,9 +212,7 @@ class _JidoujishoSelectionToolbarState
     return TextSelectionToolbar(
       anchorAbove: widget.anchorAbove,
       anchorBelow: widget.anchorBelow,
-      toolbarBuilder: (context, child) {
-        return Card(child: child);
-      },
+      toolbarBuilder: (context, child) => Card(child: child),
       children: [
         ...primaryItems.map((item) {
           return TextSelectionToolbarTextButton(
@@ -363,45 +223,23 @@ class _JidoujishoSelectionToolbarState
           );
         }),
         if (overflowItems.isNotEmpty)
-          _OverflowMenuButton(items: overflowItems),
+          PopupMenuButton<int>(
+            padding: EdgeInsets.zero,
+            icon: const Icon(Icons.more_vert, size: 20),
+            constraints: const BoxConstraints(minHeight: 36),
+            onSelected: (i) => overflowItems[i].onPressed?.call(),
+            itemBuilder: (_) => [
+              for (int i = 0; i < overflowItems.length; i++)
+                PopupMenuItem<int>(value: i, child: Text(overflowItems[i].label)),
+            ],
+          ),
       ],
     );
   }
 }
 
-class _OverflowMenuButton extends StatelessWidget {
-  const _OverflowMenuButton({required this.items});
-
-  final List<_TextSelectionToolbarItemData> items;
-
-  @override
-  Widget build(BuildContext context) {
-    return PopupMenuButton<int>(
-      padding: EdgeInsets.zero,
-      icon: const Icon(Icons.more_vert, size: 20),
-      constraints: const BoxConstraints(minHeight: 36),
-      onSelected: (index) {
-        items[index].onPressed?.call();
-      },
-      itemBuilder: (context) {
-        return [
-          for (int i = 0; i < items.length; i++)
-            PopupMenuItem<int>(
-              value: i,
-              child: Text(items[i].label),
-            ),
-        ];
-      },
-    );
-  }
-}
-
-class _TextSelectionToolbarItemData {
-  const _TextSelectionToolbarItemData({
-    required this.label,
-    this.onPressed,
-  });
-
+class _ItemData {
+  const _ItemData({required this.label, this.onPressed});
   final String label;
   final VoidCallback? onPressed;
 }
