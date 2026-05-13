@@ -102,17 +102,19 @@ class ProfileRepository {
       }
     }
 
-    // Write profile prefs and delete stale ones
-    final currentPrefs = await _db.getAllPrefs();
-    for (final key in currentPrefs.keys) {
-      if (ProfileKeys.isExcludedPref(key)) continue;
-      if (!prefMap.containsKey(key)) {
-        await _db.deletePref(key);
+    // Wrap DB writes in transaction for consistency
+    await _db.transaction(() async {
+      final currentPrefs = await _db.getAllPrefs();
+      for (final key in currentPrefs.keys) {
+        if (ProfileKeys.isExcludedPref(key)) continue;
+        if (!prefMap.containsKey(key)) {
+          await _db.deletePref(key);
+        }
       }
-    }
-    for (final entry in prefMap.entries) {
-      await _db.setPref(entry.key, entry.value);
-    }
+      for (final entry in prefMap.entries) {
+        await _db.setPref(entry.key, entry.value);
+      }
+    });
 
     // Anki settings (SharedPreferences)
     if (ankiMap.isNotEmpty) {
