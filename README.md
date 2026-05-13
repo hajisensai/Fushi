@@ -7,7 +7,7 @@
   <a href="https://hdjsadgfwtg.github.io/hibiki/"><b>GitHub Pages</b></a>
 </p>
 
-<p align="center">Android 日语沉浸式阅读器</p>
+<p align="center">Android 多语言沉浸式阅读器</p>
 <p align="center">EPUB · 词典 · Anki · 有声书同步</p>
 
 <p align="center">
@@ -18,7 +18,7 @@
 
 ## 简介
 
-**hibiki** 是一款面向日语学习者的 Android 阅读应用。
+**hibiki** 是一款支持 17 种语言的 Android 沉浸式阅读应用。
 
 ## 功能
 
@@ -33,7 +33,7 @@
 - 导入 [Yomitan](https://github.com/yomidevs/yomitan) 格式词典（原 Yomichan）
 - 支持音调标注与词频信息
 - 多词典并行查询、搜索历史
-- Ve 词形还原
+- Ve 词形还原 
 
 ### Anki 制卡
 - 一键导出至 [AnkiDroid](https://github.com/ankidroid/Anki-Android)

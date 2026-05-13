@@ -179,7 +179,10 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
     String currentValue,
     AnkiViewModel vm,
   ) async {
-    const options = AnkiHandlebarOptions.coreOptions;
+    final dictionaryNames =
+        appModel.termDictionaries.map((d) => d.name).toList();
+    final options =
+        AnkiHandlebarOptions.forTermDictionaries(dictionaryNames);
     final controller = TextEditingController(text: currentValue);
 
     final result = await showDialog<String>(
