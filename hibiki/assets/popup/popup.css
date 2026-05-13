@@ -507,29 +507,6 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
     color: inherit;
 }
 
-.longpress-highlight {
-    background-color: var(--hoshi-primary-highlight, rgba(100, 140, 230, 0.35));
-    border-radius: 2px;
-}
-
-.copy-toast {
-    position: fixed;
-    background: rgba(0, 0, 0, 0.75);
-    color: #fff;
-    font-size: 13px;
-    padding: 5px 14px;
-    border-radius: 16px;
-    z-index: 9999;
-    pointer-events: auto;
-    -webkit-user-select: none;
-    opacity: 0;
-    transition: opacity 0.15s;
-}
-
-.copy-toast.visible {
-    opacity: 1;
-}
-
 html[data-theme="light"],
 html[data-theme="light"] body {
     --background-color: #fff;
