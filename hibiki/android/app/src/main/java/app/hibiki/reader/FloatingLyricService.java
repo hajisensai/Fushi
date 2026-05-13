@@ -76,21 +76,6 @@ public class FloatingLyricService extends BaseFloatingService {
         root.setGravity(Gravity.CENTER_HORIZONTAL);
         root.setPadding(dpToPx(DP_PAD_H), dpToPx(DP_PAD_V), dpToPx(DP_PAD_H), dpToPx(DP_PAD_V));
 
-        android.graphics.drawable.GradientDrawable rootBg =
-                new android.graphics.drawable.GradientDrawable();
-        rootBg.setCornerRadius(dpToPx(12));
-        rootBg.setColor(bgColor);
-        root.setBackground(rootBg);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            root.setOutlineProvider(new android.view.ViewOutlineProvider() {
-                @Override
-                public void getOutline(View view, android.graphics.Outline outline) {
-                    outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), dpToPx(12));
-                }
-            });
-            root.setClipToOutline(true);
-        }
-
         LinearLayout controls = new LinearLayout(this);
         controls.setOrientation(LinearLayout.HORIZONTAL);
         controls.setGravity(Gravity.CENTER);
@@ -116,7 +101,6 @@ public class FloatingLyricService extends BaseFloatingService {
         lyricText.setGravity(Gravity.CENTER_HORIZONTAL);
         lyricText.setTypeface(Typeface.DEFAULT);
         lyricText.setText(currentText);
-        lyricText.setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(8));
         root.addView(lyricText, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -227,11 +211,6 @@ public class FloatingLyricService extends BaseFloatingService {
         layoutParams.x = 0;
         layoutParams.y = savedY;
 
-        int screenWidth = getResources().getDisplayMetrics().widthPixels;
-        if (screenWidth > 0) {
-            layoutParams.horizontalMargin = (float) dpToPx(8) * 2 / screenWidth;
-        }
-
         setupDragListener();
         windowManager.addView(rootView, layoutParams);
     }
@@ -276,13 +255,6 @@ public class FloatingLyricService extends BaseFloatingService {
     public void setLocked(boolean locked) {
         isLocked = locked;
         applyLockButton();
-        int vis = locked ? View.GONE : View.VISIBLE;
-        if (previousButton != null) previousButton.setVisibility(vis);
-        if (playPauseButton != null) playPauseButton.setVisibility(vis);
-        if (nextButton != null) nextButton.setVisibility(vis);
-        if (windowManager != null && rootView != null && layoutParams != null) {
-            rootView.post(() -> windowManager.updateViewLayout(rootView, layoutParams));
-        }
     }
 
     public void setPlaybackState(boolean playing) {
@@ -312,19 +284,7 @@ public class FloatingLyricService extends BaseFloatingService {
         btn.setMinimumWidth(dpToPx(DP_BTN_MIN_W));
         btn.setMinimumHeight(dpToPx(DP_BTN_MIN_H));
         btn.setScaleType(ImageView.ScaleType.CENTER);
-        android.graphics.drawable.GradientDrawable btnBg =
-                new android.graphics.drawable.GradientDrawable();
-        btnBg.setCornerRadius(dpToPx(8));
-        btnBg.setColor(buttonBgColor);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            android.content.res.ColorStateList rippleColor =
-                    android.content.res.ColorStateList.valueOf(0x40FFFFFF);
-            android.graphics.drawable.RippleDrawable ripple =
-                    new android.graphics.drawable.RippleDrawable(rippleColor, btnBg, null);
-            btn.setBackground(ripple);
-        } else {
-            btn.setBackground(btnBg);
-        }
+        btn.setBackgroundColor(buttonBgColor);
         tintIcon(btn, buttonTextColor);
         btn.setOnClickListener(v -> onControlClick(action));
 
@@ -348,11 +308,25 @@ public class FloatingLyricService extends BaseFloatingService {
                 || localY < 0 || localY > lyricText.getHeight()) return;
 
         int index = getCharIndexAt(localX, localY);
+
+        // Notify Flutter for highlight
         java.util.HashMap<String, Object> args = new java.util.HashMap<>();
         args.put("text", currentText);
         args.put("index", index);
         MainActivity.notifyFloatingLyricEvent("lookupText", args);
-        bringAppToFront();
+
+        // Forward to floating dict if running
+        FloatingDictService dict = FloatingDictService.getInstance();
+        if (dict != null) {
+            int safeIndex = Math.min(index, currentText.length());
+            int end = Math.min(safeIndex + 20, currentText.length());
+            if (end > safeIndex) {
+                String searchTerm = currentText.substring(safeIndex, end);
+                if (!searchTerm.trim().isEmpty()) {
+                    dict.onTextSelected(searchTerm);
+                }
+            }
+        }
     }
 
     private int getCharIndexAt(float x, float y) {
@@ -385,7 +359,7 @@ public class FloatingLyricService extends BaseFloatingService {
     // ── Control callbacks ──
 
     private void onControlClick(String action) {
-        if (isLocked && !"toggleLock".equals(action) && !"close".equals(action)) return;
+        if (isLocked && !"toggleLock".equals(action)) return;
         if ("close".equals(action)) {
             MainActivity.notifyFloatingLyricEvent("close", null);
             stopSelf();
@@ -424,12 +398,7 @@ public class FloatingLyricService extends BaseFloatingService {
         if (lyricText == null || rootView == null) return;
         lyricText.setTextSize(TypedValue.COMPLEX_UNIT_SP, fontSize);
         lyricText.setTextColor(textColor);
-        android.graphics.drawable.Drawable bg = rootView.getBackground();
-        if (bg instanceof android.graphics.drawable.GradientDrawable) {
-            ((android.graphics.drawable.GradientDrawable) bg).setColor(bgColor);
-        } else {
-            rootView.setBackgroundColor(bgColor);
-        }
+        rootView.setBackgroundColor(bgColor);
         applyButtonStyle(previousButton);
         applyButtonStyle(nextButton);
         applyButtonStyle(closeButton);
@@ -440,7 +409,7 @@ public class FloatingLyricService extends BaseFloatingService {
 
     private void applyButtonStyle(ImageButton btn) {
         if (btn == null) return;
-        setButtonBgColor(btn, buttonBgColor);
+        btn.setBackgroundColor(buttonBgColor);
         tintIcon(btn, buttonTextColor);
     }
 
@@ -450,7 +419,7 @@ public class FloatingLyricService extends BaseFloatingService {
                 isLocked ? R.drawable.ic_floating_lock_open : R.drawable.ic_floating_lock);
         lockButton.setContentDescription(isLocked ? unlockLabel : lockLabel);
         tintIcon(lockButton, isLocked ? activeColor : buttonTextColor);
-        setButtonBgColor(lockButton, buttonBgColor);
+        lockButton.setBackgroundColor(buttonBgColor);
     }
 
     private void applyPlayPauseButton() {
@@ -459,7 +428,7 @@ public class FloatingLyricService extends BaseFloatingService {
                 isPlaying ? R.drawable.ic_floating_pause : R.drawable.ic_floating_play);
         playPauseButton.setContentDescription(playPauseLabel);
         tintIcon(playPauseButton, isPlaying ? activeColor : buttonTextColor);
-        setButtonBgColor(playPauseButton, buttonBgColor);
+        playPauseButton.setBackgroundColor(buttonBgColor);
     }
 
     private void applyControlLabels() {
@@ -472,39 +441,9 @@ public class FloatingLyricService extends BaseFloatingService {
 
     // ── Utilities ──
 
-    private void setButtonBgColor(ImageButton btn, int color) {
-        if (btn == null) return;
-        android.graphics.drawable.Drawable bg = btn.getBackground();
-        android.graphics.drawable.GradientDrawable shape = null;
-        if (bg instanceof android.graphics.drawable.RippleDrawable) {
-            android.graphics.drawable.RippleDrawable ripple =
-                    (android.graphics.drawable.RippleDrawable) bg;
-            android.graphics.drawable.Drawable inner = ripple.getDrawable(0);
-            if (inner instanceof android.graphics.drawable.GradientDrawable) {
-                shape = (android.graphics.drawable.GradientDrawable) inner;
-            }
-        } else if (bg instanceof android.graphics.drawable.GradientDrawable) {
-            shape = (android.graphics.drawable.GradientDrawable) bg;
-        }
-        if (shape != null) {
-            shape.setColor(color);
-        } else {
-            btn.setBackgroundColor(color);
-        }
-    }
-
     private void tintIcon(ImageButton btn, int color) {
         Drawable d = btn.getDrawable();
         if (d != null) d.mutate().setTint(color);
-    }
-
-    private void bringAppToFront() {
-        Intent intent = getPackageManager().getLaunchIntentForPackage(getPackageName());
-        if (intent == null) return;
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
-                | Intent.FLAG_ACTIVITY_SINGLE_TOP
-                | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        startActivity(intent);
     }
 
     private static String extractLabel(Map<String, Object> labels, String key, String fallback) {

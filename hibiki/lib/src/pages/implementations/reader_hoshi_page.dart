@@ -2216,36 +2216,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   }
 
   Future<void> _handleFloatingLyricLookup(String text, int charIndex) async {
-    final String searchTerm = _extractSearchTerm(text, charIndex);
-    if (searchTerm.isEmpty) return;
-
-    final Size screenSize = MediaQuery.of(context).size;
-    final Rect selectionRect = Rect.fromCenter(
-      center: Offset(screenSize.width / 2, screenSize.height / 3),
-      width: 1,
-      height: 1,
-    );
-
-    _lookupCue = _audiobookController?.currentCue;
-
-    final int highlightCount = await searchDictionaryResult(
-      searchTerm: searchTerm,
-      selectionRect: selectionRect,
-    );
-
-    if (highlightCount > 0) {
-      await FloatingLyricChannel.highlight(
-        start: charIndex,
-        length: highlightCount,
-      );
-    }
-  }
-
-  String _extractSearchTerm(String text, int charIndex) {
-    if (text.isEmpty) return '';
+    if (text.isEmpty) return;
     final int safeIndex = charIndex.clamp(0, text.length - 1);
-    final int end = (safeIndex + 20).clamp(0, text.length);
-    return text.substring(safeIndex, end);
+    await FloatingLyricChannel.highlight(start: safeIndex, length: 1);
   }
 
   void _syncFloatingLyric(AudiobookPlayerController ctrl) {
