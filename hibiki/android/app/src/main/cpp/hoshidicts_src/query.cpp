@@ -21,32 +21,37 @@
 
 namespace {
 
-// Thread-local pointer to one-past-end of the current blob being parsed.
-// Set before entering any blob-walk loop; checked by read_val and read_str.
-thread_local const uint8_t* blob_end_ = nullptr;
+struct BlobReader {
+  const uint8_t* ptr;
+  const uint8_t* end;
 
-template <typename T>
-T read_val(const uint8_t*& addr) {
-  if (blob_end_ && addr + sizeof(T) > blob_end_) {
-    addr = blob_end_;
-    return T{};
-  }
-  T val;
-  std::memcpy(&val, addr, sizeof(T));
-  addr += sizeof(T);
-  return val;
-}
+  BlobReader(const uint8_t* data, size_t size) : ptr(data), end(data + size) {}
 
-std::string_view read_str(const uint8_t*& addr, uint32_t len) {
-  // Guard against integer overflow in addr + len and out-of-bounds access.
-  if (blob_end_ && (addr + len > blob_end_ || addr + len < addr)) {
-    addr = blob_end_;
-    return {};
+  template <typename T>
+  T read() {
+    if (ptr + sizeof(T) > end) {
+      ptr = end;
+      return T{};
+    }
+    T val;
+    std::memcpy(&val, ptr, sizeof(T));
+    ptr += sizeof(T);
+    return val;
   }
-  std::string_view result(reinterpret_cast<const char*>(addr), len);
-  addr += len;
-  return result;
-}
+
+  std::string_view read_str(uint32_t len) {
+    if (ptr + len > end || ptr + len < ptr) {
+      ptr = end;
+      return {};
+    }
+    std::string_view result(reinterpret_cast<const char*>(ptr), len);
+    ptr += len;
+    return result;
+  }
+
+  bool has(size_t n) const { return ptr + n <= end; }
+};
+
 }
 
 struct DictionaryQuery::DictionaryData {
@@ -156,47 +161,45 @@ std::vector<TermResult> DictionaryQuery::query_raw(const std::string& expression
     if (offset_addr + sizeof(uint32_t) > data->blobs.size) {
       continue;
     }
-    blob_end_ = data->blobs.data + data->blobs.size;
-    const uint8_t* index_addr = data->blobs.data + offset_addr;
+    BlobReader idx(data->blobs.data + offset_addr, data->blobs.size - offset_addr);
 
-    auto count = read_val<uint32_t>(index_addr);
+    auto count = idx.read<uint32_t>();
     for (uint32_t i = 0; i < count; i++) {
-      if (index_addr + sizeof(uint64_t) > blob_end_) {
+      if (!idx.has(sizeof(uint64_t))) {
         break;
       }
-      auto offset = read_val<uint64_t>(index_addr);
+      auto offset = idx.read<uint64_t>();
       if (offset + 1 > data->blobs.size) {
         continue;
       }
-      const uint8_t* blob_addr = data->blobs.data + offset;
+      BlobReader blob(data->blobs.data + offset, data->blobs.size - offset);
 
-      // first byte encodes term (0) or meta (1) entry
-      auto type = read_val<uint8_t>(blob_addr);
+      auto type = blob.read<uint8_t>();
       if (type != 0) {
         continue;
       }
 
-      auto expr_len = read_val<uint16_t>(blob_addr);
-      std::string_view expr = read_str(blob_addr, expr_len);
+      auto expr_len = blob.read<uint16_t>();
+      std::string_view expr = blob.read_str(expr_len);
 
-      auto reading_len = read_val<uint16_t>(blob_addr);
-      std::string_view reading = read_str(blob_addr, reading_len);
+      auto reading_len = blob.read<uint16_t>();
+      std::string_view reading = blob.read_str(reading_len);
 
       if (expr != expression && reading != expression) {
         continue;
       }
 
-      auto glossary_offset = read_val<uint64_t>(blob_addr);
-      auto glossary_size = read_val<uint32_t>(blob_addr);
+      auto glossary_offset = blob.read<uint64_t>();
+      auto glossary_size = blob.read<uint32_t>();
 
-      auto def_tags_size = read_val<uint8_t>(blob_addr);
-      std::string_view definition_tags = read_str(blob_addr, def_tags_size);
+      auto def_tags_size = blob.read<uint8_t>();
+      std::string_view definition_tags = blob.read_str(def_tags_size);
 
-      auto rules_size = read_val<uint8_t>(blob_addr);
-      std::string_view rules = read_str(blob_addr, rules_size);
+      auto rules_size = blob.read<uint8_t>();
+      std::string_view rules = blob.read_str(rules_size);
 
-      auto term_tag_size = read_val<uint8_t>(blob_addr);
-      std::string_view term_tags = read_str(blob_addr, term_tag_size);
+      auto term_tag_size = blob.read<uint8_t>();
+      std::string_view term_tags = blob.read_str(term_tag_size);
 
       GlossaryEntry entry;
       entry.dict_name = name;
@@ -241,40 +244,39 @@ void DictionaryQuery::query_freq(std::vector<TermResult>& terms) const {
       if (offset_addr + sizeof(uint32_t) > data->blobs.size) {
         continue;
       }
-      blob_end_ = data->blobs.data + data->blobs.size;
-      const uint8_t* index_addr = data->blobs.data + offset_addr;
-      auto count = read_val<uint32_t>(index_addr);
+      BlobReader idx(data->blobs.data + offset_addr, data->blobs.size - offset_addr);
+      auto count = idx.read<uint32_t>();
 
       std::vector<Frequency> frequencies;
       for (uint32_t i = 0; i < count; i++) {
-        if (index_addr + sizeof(uint64_t) > blob_end_) {
+        if (!idx.has(sizeof(uint64_t))) {
           break;
         }
-        auto offset = read_val<uint64_t>(index_addr);
+        auto offset = idx.read<uint64_t>();
         if (offset + 1 > data->blobs.size) {
           continue;
         }
-        const uint8_t* blob_addr = data->blobs.data + offset;
+        BlobReader blob(data->blobs.data + offset, data->blobs.size - offset);
 
-        auto type = read_val<uint8_t>(blob_addr);
+        auto type = blob.read<uint8_t>();
         if (type != 1) {
           continue;
         }
 
-        auto expr_len = read_val<uint16_t>(blob_addr);
-        std::string_view expr = read_str(blob_addr, expr_len);
+        auto expr_len = blob.read<uint16_t>();
+        std::string_view expr = blob.read_str(expr_len);
         if (expr != term.expression) {
           continue;
         }
 
-        auto mode_len = read_val<uint8_t>(blob_addr);
-        std::string_view mode = read_str(blob_addr, mode_len);
+        auto mode_len = blob.read<uint8_t>();
+        std::string_view mode = blob.read_str(mode_len);
         if (mode != "freq") {
           continue;
         }
 
-        auto freq_data_size = read_val<uint32_t>(blob_addr);
-        std::string_view freq_data = read_str(blob_addr, freq_data_size);
+        auto freq_data_size = blob.read<uint32_t>();
+        std::string_view freq_data = blob.read_str(freq_data_size);
 
         ParsedFrequency parsed;
         if (yomitan_parser::parse_frequency(freq_data, parsed)) {
@@ -302,40 +304,39 @@ void DictionaryQuery::query_pitch(std::vector<TermResult>& terms) const {
       if (offset_addr + sizeof(uint32_t) > data->blobs.size) {
         continue;
       }
-      blob_end_ = data->blobs.data + data->blobs.size;
-      const uint8_t* index_addr = data->blobs.data + offset_addr;
-      auto count = read_val<uint32_t>(index_addr);
+      BlobReader idx(data->blobs.data + offset_addr, data->blobs.size - offset_addr);
+      auto count = idx.read<uint32_t>();
 
       std::vector<int> pitch_positions;
       for (uint32_t i = 0; i < count; i++) {
-        if (index_addr + sizeof(uint64_t) > blob_end_) {
+        if (!idx.has(sizeof(uint64_t))) {
           break;
         }
-        auto offset = read_val<uint64_t>(index_addr);
+        auto offset = idx.read<uint64_t>();
         if (offset + 1 > data->blobs.size) {
           continue;
         }
-        const uint8_t* blob_addr = data->blobs.data + offset;
+        BlobReader blob(data->blobs.data + offset, data->blobs.size - offset);
 
-        auto type = read_val<uint8_t>(blob_addr);
+        auto type = blob.read<uint8_t>();
         if (type != 1) {
           continue;
         }
 
-        auto expr_len = read_val<uint16_t>(blob_addr);
-        std::string_view expr = read_str(blob_addr, expr_len);
+        auto expr_len = blob.read<uint16_t>();
+        std::string_view expr = blob.read_str(expr_len);
         if (expr != term.expression) {
           continue;
         }
 
-        auto mode_len = read_val<uint8_t>(blob_addr);
-        std::string_view mode = read_str(blob_addr, mode_len);
+        auto mode_len = blob.read<uint8_t>();
+        std::string_view mode = blob.read_str(mode_len);
         if (mode != "pitch") {
           continue;
         }
 
-        auto pitch_data_size = read_val<uint32_t>(blob_addr);
-        std::string_view pitch_data = read_str(blob_addr, pitch_data_size);
+        auto pitch_data_size = blob.read<uint32_t>();
+        std::string_view pitch_data = blob.read_str(pitch_data_size);
 
         ParsedPitch parsed;
         if (yomitan_parser::parse_pitch(pitch_data, parsed)) {
@@ -402,9 +403,8 @@ MediaFileView DictionaryQuery::get_media_file_view(const std::string& dict_name,
       return {};
     }
 
-    blob_end_ = data->media_index.data + data->media_index.size;
-    const uint8_t* ptr = data->media_index.data;
-    auto count = read_val<uint32_t>(ptr);
+    BlobReader idx_hdr(data->media_index.data, data->media_index.size);
+    auto count = idx_hdr.read<uint32_t>();
 
     size_t left = 0;
     size_t right = count;
@@ -413,17 +413,16 @@ MediaFileView DictionaryQuery::get_media_file_view(const std::string& dict_name,
       uint64_t record_offset;
       std::memcpy(&record_offset, data->media_index.data + sizeof(uint32_t) + mid * sizeof(uint64_t), sizeof(uint64_t));
 
-      blob_end_ = data->media.data + data->media.size;
-      const uint8_t* record = data->media.data + record_offset;
-      auto path_size = read_val<uint16_t>(record);
-      std::string_view indexed_path = read_str(record, path_size);
+      BlobReader rec(data->media.data + record_offset, data->media.size - record_offset);
+      auto path_size = rec.read<uint16_t>();
+      std::string_view indexed_path = rec.read_str(path_size);
       if (indexed_path < media_path) {
         left = mid + 1;
       } else if (indexed_path > media_path) {
         right = mid;
       } else {
-        auto blob_size = read_val<uint32_t>(record);
-        const char* blob_data = reinterpret_cast<const char*>(record);
+        auto blob_size = rec.read<uint32_t>();
+        const char* blob_data = reinterpret_cast<const char*>(rec.ptr);
         return {.data=blob_data, .size=blob_size};
       }
     }
