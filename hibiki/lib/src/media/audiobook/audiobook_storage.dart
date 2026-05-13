@@ -22,12 +22,18 @@ abstract final class AudiobookStorage {
   }) async {
     if (src.path.startsWith(persistDir.path)) return src.path;
     String baseName = p.basename(src.path);
+    if (baseName.contains('..')) {
+      throw ArgumentError('Invalid filename: $baseName');
+    }
     if (dedupeIndex != null) {
       final String ext = p.extension(baseName);
       final String stem = p.basenameWithoutExtension(baseName);
       baseName = '$stem _$dedupeIndex$ext';
     }
     final String dest = p.join(persistDir.path, baseName);
+    if (!p.canonicalize(dest).startsWith(p.canonicalize(persistDir.path))) {
+      throw ArgumentError('Path traversal detected: $dest');
+    }
     await src.copy(dest);
     debugPrint('[hibiki-import] persisted ${src.path} → $dest');
     return dest;
@@ -39,24 +45,32 @@ abstract final class AudiobookStorage {
     void Function(int copied, int total)? onProgress,
   }) async {
     if (src.path.startsWith(persistDir.path)) return src.path;
-    final String dest = p.join(persistDir.path, p.basename(src.path));
+    final String baseName = p.basename(src.path);
+    if (baseName.contains('..')) {
+      throw ArgumentError('Invalid filename: $baseName');
+    }
+    final String dest = p.join(persistDir.path, baseName);
+    if (!p.canonicalize(dest).startsWith(p.canonicalize(persistDir.path))) {
+      throw ArgumentError('Path traversal detected: $dest');
+    }
     final int totalBytes = await src.length();
 
-    final IOSink sink = File(dest).openWrite();
-    int copied = 0;
+    IOSink? sink;
     try {
+      sink = File(dest).openWrite();
+      int copied = 0;
       await for (final List<int> chunk in src.openRead()) {
         sink.add(chunk);
         copied += chunk.length;
         onProgress?.call(copied, totalBytes);
       }
       await sink.flush();
-      await sink.close();
     } catch (e) {
-      await sink.close();
       final File destFile = File(dest);
       if (destFile.existsSync()) destFile.deleteSync();
       rethrow;
+    } finally {
+      await sink?.close();
     }
 
     final int destLen = await File(dest).length();
