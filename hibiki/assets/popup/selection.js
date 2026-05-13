@@ -1,3 +1,18 @@
+const CJK_IDEOGRAPH_RANGES = [
+    [0x4e00, 0x9fff], [0x3400, 0x4dbf], [0x20000, 0x2a6df],
+    [0x2a700, 0x2b73f], [0x2b740, 0x2b81f], [0x2b820, 0x2ceaf],
+    [0x2ceb0, 0x2ebef], [0x30000, 0x3134f], [0x31350, 0x323af],
+    [0x2ebf0, 0x2ee5f], [0xf900, 0xfaff], [0x2f800, 0x2fa1f],
+];
+const JAPANESE_RANGES = [
+    [0x3040, 0x309f], [0x30a0, 0x30ff],
+    ...CJK_IDEOGRAPH_RANGES,
+    [0xff66, 0xff9f], [0x30fb, 0x30fc], [0xff61, 0xff65], [0x3000, 0x303f],
+    [0xff10, 0xff19], [0xff21, 0xff3a], [0xff41, 0xff5a],
+    [0xff01, 0xff0f], [0xff1a, 0xff1f], [0xff3b, 0xff3f],
+    [0xff5b, 0xff60], [0xffe0, 0xffee],
+];
+
 window.hoshiSelection = {
     selection: null,
     highlightWrappers: [],
@@ -5,6 +20,10 @@ window.hoshiSelection = {
     sentenceDelimiters: '。！？.!?\n\r',
     trailingSentenceChars: '。、！？…‥」』）)】〉》〕｝}］]',
     brackets: {'「':'」', '『': '』', '（':'）', '(':')', '【':'】', '〈':'〉', '《':'》', '〔':'〕', '｛':'｝', '{':'}', '［':'］', '[':']'},
+
+    isCodePointJapanese(codePoint) {
+        return JAPANESE_RANGES.some(r => codePoint >= r[0] && codePoint <= r[1]);
+    },
 
     isScanBoundary(char) {
         return /^[\s　]$/.test(char) || this.scanDelimiters.includes(char);
@@ -224,6 +243,13 @@ window.hoshiSelection = {
         }
 
         this.clearSelection();
+
+        const hitContent = hit.node.textContent;
+        if (hit.offset < hitContent.length && !this.isCodePointJapanese(hitContent.codePointAt(hit.offset))) {
+            while (hit.offset > 0 && !this.isScanBoundary(hitContent[hit.offset - 1])) {
+                hit.offset--;
+            }
+        }
 
         const container = this.findParagraph(hit.node) || document.body;
         const walker = this.createWalker(container);
