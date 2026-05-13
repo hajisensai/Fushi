@@ -486,6 +486,59 @@ class TtuMigration {
     return remediated;
   }
 
+  /// Backfill `characters` count in chaptersJson for all epub_books
+  /// that are missing it. Reads HTML from extractDir on disk.
+  static Future<int> remediateMissingCharacters(HibikiDatabase db) async {
+    final List<EpubBookRow> books = await db.getAllEpubBooks();
+    int remediated = 0;
+
+    for (final EpubBookRow book in books) {
+      if (book.chaptersJson.isEmpty) continue;
+
+      try {
+        final List<dynamic> chapters =
+            jsonDecode(book.chaptersJson) as List<dynamic>;
+        if (chapters.isEmpty) continue;
+
+        final Map<String, dynamic> first = chapters[0] as Map<String, dynamic>;
+        if (first.containsKey('characters')) continue;
+
+        final List<Map<String, Object>> updated = <Map<String, Object>>[];
+        for (final dynamic ch in chapters) {
+          final Map<String, dynamic> map = ch as Map<String, dynamic>;
+          final String href = map['href'] as String? ?? '';
+          int chars = 0;
+          if (href.isNotEmpty) {
+            final File file = File(p.join(book.extractDir, href));
+            if (file.existsSync()) {
+              chars = _countPlainTextChars(file.readAsStringSync());
+            }
+          }
+          updated.add(<String, Object>{
+            'id': map['id'] as String? ?? '',
+            'href': href,
+            'mediaType': map['mediaType'] as String? ?? 'text/html',
+            'characters': chars,
+          });
+        }
+
+        await (db.update(db.epubBooks)
+              ..where((tbl) => tbl.id.equals(book.id)))
+            .write(EpubBooksCompanion(
+                chaptersJson: Value(jsonEncode(updated))));
+        remediated++;
+      } catch (e, stack) {
+        ErrorLogService.instance
+            .log('TtuMigration.remediateChars', e, stack);
+      }
+    }
+
+    if (remediated > 0) {
+      debugPrint('[epub-remediate] backfilled characters for $remediated books');
+    }
+    return remediated;
+  }
+
   static int _countPlainTextChars(String html) {
     final doc = html_parser.parse(html);
     doc.body?.querySelectorAll('rt, rp, rtc').forEach((el) => el.remove());

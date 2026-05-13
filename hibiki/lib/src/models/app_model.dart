@@ -1279,6 +1279,12 @@ class AppModel with ChangeNotifier {
         if (tocCount > 0) {
           debugPrint('[Hibiki] ttu TOC remediation: $tocCount books fixed');
         }
+        final int charCount = await TtuMigration.remediateMissingCharacters(
+          _database,
+        );
+        if (charCount > 0) {
+          debugPrint('[Hibiki] characters remediation: $charCount books fixed');
+        }
       } catch (e, stack) {
         ErrorLogService.instance.log('AppModel.ttuMigration', e, stack);
         debugPrint('[Hibiki] ttu migration failed (non-fatal): $e');
@@ -1322,7 +1328,8 @@ class AppModel with ChangeNotifier {
 
   Future<void> initialiseForDictionaryPopup() async {
     if (_isInitialised) {
-      debugPrint('[Hibiki-popup] init: already initialised, skipping');
+      debugPrint('[Hibiki-popup] init: already initialised, refreshing prefs');
+      await refreshPrefCache();
       await _bindLocalAudioDbForNativeHandler();
       return;
     }
