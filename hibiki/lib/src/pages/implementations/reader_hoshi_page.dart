@@ -2138,8 +2138,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   // ── Floating Lyric ─────────────────────────────────────────────────
 
-  Future<void> _showFloatingLyricOverlay() async {
-    await FloatingLyricChannel.show();
+  Future<void> _applyFloatingLyricStyle() async {
     final Color bg = _themeBackgroundColor();
     final Color fg = _themeTextColor();
     final bool dark = _isReaderThemeDark;
@@ -2148,7 +2147,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       textColor: fg.value,
       bgColor: bg.withAlpha(dark ? 230 : 220).value,
       buttonTextColor: fg.value,
-      buttonBgColor: (dark ? const Color(0x33FFFFFF) : const Color(0x1A000000)).value,
+      buttonBgColor:
+          (dark ? const Color(0x33FFFFFF) : const Color(0x1A000000)).value,
     );
     await FloatingLyricChannel.updateLabels(
       previous: t.floating_lyric_previous,
@@ -2158,6 +2158,11 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       unlock: t.floating_lyric_unlock,
       close: t.floating_lyric_close,
     );
+  }
+
+  Future<void> _showFloatingLyricOverlay() async {
+    await FloatingLyricChannel.show();
+    await _applyFloatingLyricStyle();
     _setupFloatingLyricHandlers();
   }
 
@@ -2166,24 +2171,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (!current) {
       final bool shown = await FloatingLyricChannel.show();
       if (!shown) return false;
-      final Color bg = _themeBackgroundColor();
-      final Color fg = _themeTextColor();
-      final bool dark = _isReaderThemeDark;
-      await FloatingLyricChannel.updateStyle(
-        fontSize: appModel.floatingLyricFontSize,
-        textColor: fg.value,
-        bgColor: bg.withAlpha(dark ? 230 : 220).value,
-        buttonTextColor: fg.value,
-        buttonBgColor: (dark ? const Color(0x33FFFFFF) : const Color(0x1A000000)).value,
-      );
-      await FloatingLyricChannel.updateLabels(
-        previous: t.floating_lyric_previous,
-        playPause: t.floating_lyric_play_pause,
-        next: t.floating_lyric_next,
-        lock: t.floating_lyric_lock,
-        unlock: t.floating_lyric_unlock,
-        close: t.floating_lyric_close,
-      );
+      await _applyFloatingLyricStyle();
       await appModel.setShowFloatingLyric(true);
       _setupFloatingLyricHandlers();
       if (_audiobookController != null) {
