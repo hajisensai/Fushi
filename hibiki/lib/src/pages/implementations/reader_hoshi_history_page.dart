@@ -68,7 +68,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
                 ref.invalidate(hoshiBooksProvider(appModel.targetLanguage));
               },
             ),
-            loading: buildLoading,
+            loading: () => const SizedBox.shrink(),
           ),
         ),
       ],
