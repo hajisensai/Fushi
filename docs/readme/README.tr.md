@@ -22,20 +22,176 @@
 
 ## Özellikler
 
-**EPUB Okuyucu** — WebView üzerinden entegre [ttu Ebook Reader](https://github.com/ttu-ttu/ebook-reader). Dokunarak sözlükte arama, özel yazı tipleri, açık/koyu tema, okuma istatistikleri, sürekli kaydırma veya sayfalı mod.
+### EPUB Okuyucu
+- EPUB oluşturma için gömülü [ttu Ebook Reader](https://github.com/ttu-ttu/ebook-reader) (WebView)
+- Dokunarak sözlükte arama, seçim yaparak analiz
+- Özel yazı tipleri, temalar (açık/koyu)
+- Okuma istatistikleri ve yer imleri
+- Sürekli kaydırma / sayfalı mod
 
-**Sözlük** — Ton vurgusu ve frekans verili [Yomitan](https://github.com/yomidevs/yomitan) biçiminde sözlük içe aktarma. Çoklu sözlükte paralel arama, arama geçmişi, Ve çekim geri dönüşümü.
+### Sözlük
+- [Yomitan](https://github.com/yomidevs/yomitan) biçiminde sözlük içe aktarma (eski adı Yomichan)
+- Ton vurgusu ve frekans verisi desteği
+- Çoklu sözlükte paralel arama, arama geçmişi
+- Ve çekim geri dönüşümü
 
-**Anki Kartları** — [AnkiDroid](https://github.com/ankidroid/Anki-Android)'a tek dokunuşla dışa aktarma; otomatik bağlam cümleleri, ses kaydı, ekran görüntüsü kırpma, çoklu dışa aktarma profilleri ve hızlı eylemler.
+### Anki Kartları
+- [AnkiDroid](https://github.com/ankidroid/Anki-Android)'a tek dokunuşla dışa aktarma
+- Otomatik bağlam cümlesi doldurma
+- Ses kaydı, ekran görüntüsü kırpma
+- Çoklu dışa aktarma profilleri, özel alan eşleştirme
+- Hızlı eylemler (Quick Actions) ile tek adımda kart oluşturma
 
-**Sesli kitap senkronizasyonu (Sasayaki)** — SRT / LRC / VTT / ASS altyazılarını EPUB metniyle hizalama, senkronize vurgulama ve otomatik sayfa çevirme.
+### Sesli kitap senkronizasyonu (Sasayaki)
+- Altyazı biçimleri: SRT / LRC / VTT / ASS
+- Altyazı metnini EPUB içeriği ile otomatik hizalama
+- Senkronize vurgulama, ses ile senkronize sayfa çevirme
+- Oynatma kontrolleri (ilerleme, atlama, hız)
 
-**Diğer** — 17 arayüz dili, çoklu kullanıcı profili, gizli mod, diğer uygulamalardan metin paylaşarak arama.
+### Diğer
+- 17 arayüz dili
+- Çoklu kullanıcı profili
+- Gizli mod
+- Diğer uygulamalardan metin paylaşarak arama
 
-## Gereksinimler
+## Desteklenen diller
 
-- Android 8.0+ (API 26)
+Arayüz aşağıdaki dilleri destekler:
+
+| Dil | Kod |
+|---|---|
+| English | `en` |
+| 简体中文 | `zh-CN` |
+| 繁體中文 | `zh-HK` |
+| 日本語 | `ja` |
+| 한국어 | `ko` |
+| Español | `es` |
+| Français | `fr` |
+| Deutsch | `de` |
+| Português (Brasil) | `pt-BR` |
+| Русский | `ru` |
+| Tiếng Việt | `vi` |
+| ภาษาไทย | `th` |
+| Bahasa Indonesia | `id` |
+| Italiano | `it` |
+| Nederlands | `nl` |
+| Türkçe | `tr` |
+| العربية | `ar` |
+
+## Teknoloji yığını
+
+| Katman | Teknoloji |
+|---|---|
+| Çerçeve | Flutter 3.41.6 / Dart 3.11.4 |
+| Okuyucu | ttu Ebook Reader (WebView, [fork](https://github.com/hdjsadgfwtg/ttu-fork)) |
+| Depolama | Isar + Drift (SQLite) + hoshidicts (C++ FFI sözlük motoru) |
+| NLP | Ve (çekim geri dönüşümü) |
+| Kartlar | AnkiDroid API |
+| Uluslararasılaştırma | Slang |
+| Minimum sürüm | Android 8.0 (API 26) |
+
+## Derleme
+
+```bash
+cd hibiki/hibiki
+flutter pub get
+flutter build apk --release --target-platform android-arm64 --split-per-abi
+```
+
+> **İlk derlemeden önce pub cache yamaları uygulanmalıdır.** Pub cache temizlenir veya yeniden `pub get` çalıştırılırsa, tüm yamalar yeniden uygulanmalıdır. Ayrıntılar için aşağıdaki [Bağımlılıklar ve yamalar](#bağımlılıklar-ve-yamalar) bölümüne bakın.
+
+## Bağımlılıklar ve yamalar
+
+Bu proje Flutter 3.41.6'ya kilitlenmiştir. Bazı upstream bağımlılıkları henüz uyumlu değildir ve pub cache'teki kaynak koduna manuel yama uygulanması gerekmektedir.
+
+<details>
+<summary><b>Flutter API değişiklik yamaları</b></summary>
+
+| Paket | Değişiklikler |
+|---|---|
+| `network_to_file_image` 4.0.1 | `load` → `loadImage`; `DecoderCallback` → `ImageDecoderCallback`; `hashValues` → `Object.hash`; `instantiateImageCodec` → `ImmutableBuffer` + `ImageDescriptor`; kaldırılan `imageCache.putIfAbsent` değiştirildi |
+| `flutter_blurhash` 0.7.0 | Aynı: `loadImage` / `hashValues` / `ImmutableBuffer` |
+| `RubyText` (git) | `MediaQuery.boldTextOverride` → `boldTextOf` |
+| `material_floating_search_bar` (git) | `headline6` → `titleLarge`; `subtitle1` → `titleMedium` |
+| `win32` 4.1.4 | `UnmodifiableUint8ListView` → `Uint8List` |
+| `carousel_slider` 4.2.1 | Ad çatışmasını önlemek için dahili import'a `hide CarouselController` eklendi |
+| `fading_edge_scrollview` 3.0.0 | `PageView.controller` nullable düzeltmesi |
+
+</details>
+
+<details>
+<summary><b>v1 Embedding kaldırma yamaları</b></summary>
+
+Flutter 3.41.6, v1 embedding API'sini (`PluginRegistry.Registrar`) tamamen kaldırmıştır. Aşağıdaki eklentilerin ilgili referanslarının silinmesi gerekmektedir:
+
+`flutter_plugin_android_lifecycle` · `file_picker` · `flutter_inappwebview` · `fluttertoast` · `image_picker_android` · `mecab_dart` · `permission_handler_android` · `url_launcher_android` · `path_provider_android` · `sqflite` · `record_mp3_plus`
+
+</details>
+
+<details>
+<summary><b>Gradle / Kotlin yamaları</b></summary>
+
+| Hedef | Değişiklikler |
+|---|---|
+| `android/build.gradle` afterEvaluate | Alt projelere `compileSdkVersion 34` zorlanması; `-Werror` kaldırılması |
+| `audio_session` 0.1.14 | `-Werror`, `-Xlint:deprecation` kaldırılması |
+| `package_info_plus` 4.0.2 | Kotlin null safety düzeltmesi |
+| `receive_intent` (git) | Kotlin null safety düzeltmesi |
+
+</details>
+
+<details>
+<summary><b>Git bağımlılıkları</b></summary>
+
+| Paket | Kaynak |
+|---|---|
+| `blurrycontainer` | [arianneorpilla/blurry_container](https://github.com/arianneorpilla/blurry_container/) |
+| `filesystem_picker` | [arianneorpilla/filesystem_picker](https://github.com/arianneorpilla/filesystem_picker) |
+| `flutter_inappwebview` | [arianneorpilla/flutter_inappwebview](https://github.com/arianneorpilla/flutter_inappwebview) |
+| `material_floating_search_bar` | [arianneorpilla/material_floating_search_bar](https://github.com/arianneorpilla/material_floating_search_bar) |
+| `ruby_text` | [arianneorpilla/RubyText](https://github.com/arianneorpilla/RubyText) |
+| `spaces` | [arianneorpilla/spaces](https://github.com/arianneorpilla/spaces) |
+| `ve_dart` | [arianneorpilla/ve_dart](https://github.com/arianneorpilla/ve_dart) |
+| `receive_intent` | [arianneorpilla/receive_intent](https://github.com/arianneorpilla/receive_intent) |
+| `wakelock` | [diegotori/wakelock](https://github.com/diegotori/wakelock) |
+
+</details>
+
+## Proje yapısı
+
+```
+hibiki/
+├── hibiki/                  # Flutter uygulama ana dizini
+│   ├── lib/
+│   │   ├── i18n/            # Uluslararasılaştırma (17 dil)
+│   │   ├── src/
+│   │   │   ├── pages/       # Sayfalar (kitaplık, okuyucu, sözlük, ayarlar vb.)
+│   │   │   ├── media/       # Sesli kitap köprüleme, altyazı ayrıştırma
+│   │   │   ├── dictionary/  # Sözlük arama motoru
+│   │   │   ├── models/      # Veri modelleri ve durum yönetimi
+│   │   │   └── language/    # Dil soyutlama katmanı
+│   │   └── main.dart
+│   ├── assets/
+│   │   └── ttu-ebook-reader/ # ttu fork derleme çıktıları
+│   └── android/
+│       └── app/src/main/cpp/ # hoshidicts C++ sözlük motoru
+├── docs/                    # Geliştirme dokümantasyonu
+└── chisa/                   # jidoujisho eski sürüm referansı
+```
+
+## Teşekkürler
+
+| Proje | Açıklama |
+|---|---|
+| [jidoujisho](https://github.com/arianneorpilla/jidoujisho) | Japonca sürükleyici öğrenme aracı |
+| [Hoshi Reader Android](https://github.com/HuangAntimony/Hoshi-Reader-Android) | Android Japonca okuyucu |
+| [hoshidicts](https://github.com/Manhhao/hoshidicts) | C++ sözlük motoru |
+| [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) | iOS Japonca okuyucu |
+| [Sasayaki](https://github.com/Manhhao/Hoshi-Reader/blob/develop/SASAYAKI.md) | Sesli kitap senkronizasyon şeması |
+| [ttu Ebook Reader](https://github.com/ttu-ttu/ebook-reader) | EPUB oluşturma motoru |
+| [kamperemu/ebook-reader](https://github.com/kamperemu/ebook-reader) | ttu topluluk bakım sürümü (SvelteKit v2), hibiki fork'unun upstream temeli |
+| [Yomitan](https://github.com/yomidevs/yomitan) | Sözlük biçimi kaynağı |
 
 ## Lisans
 
-[GNU General Public License v3.0](LICENSE)
+[GNU General Public License v3.0](../../LICENSE)

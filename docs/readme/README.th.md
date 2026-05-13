@@ -16,26 +16,182 @@
 
 ---
 
-## เกี่ยวกับ
+## แนะนำ
 
 **hibiki** เป็นแอปอ่านหนังสือบน Android สำหรับผู้เรียนภาษาญี่ปุ่น
 
 ## คุณสมบัติ
 
-**ตัวอ่าน EPUB** — ฝัง [ttu Ebook Reader](https://github.com/ttu-ttu/ebook-reader) ผ่าน WebView แตะเพื่อค้นหาในพจนานุกรม ฟอนต์กำหนดเอง ธีมสว่าง/มืด สถิติการอ่าน เลื่อนต่อเนื่องหรือแบ่งหน้า
+### การอ่าน EPUB
+- ฝังตัวอ่าน [ttu Ebook Reader](https://github.com/ttu-ttu/ebook-reader) แสดงผล EPUB ผ่าน WebView
+- แตะเพื่อค้นหาคำศัพท์ เลือกข้อความเพื่อวิเคราะห์
+- ฟอนต์กำหนดเอง ธีม (สว่าง/มืด)
+- สถิติการอ่านและบุ๊กมาร์ก
+- โหมดเลื่อนต่อเนื่อง / แบ่งหน้า
 
-**พจนานุกรม** — นำเข้าพจนานุกรมรูปแบบ [Yomitan](https://github.com/yomidevs/yomitan) พร้อมสำเนียงและข้อมูลความถี่ ค้นหาพร้อมกันหลายพจนานุกรม ประวัติการค้นหา การผันกลับด้วย Ve
+### พจนานุกรม
+- นำเข้าพจนานุกรมรูปแบบ [Yomitan](https://github.com/yomidevs/yomitan) (เดิม Yomichan)
+- ข้อมูลสำเนียงและความถี่ของคำ
+- ค้นหาพร้อมกันหลายพจนานุกรม ประวัติการค้นหา
+- การผันกลับด้วย Ve
 
-**บัตรคำ Anki** — ส่งออกด้วยการแตะครั้งเดียวไปยัง [AnkiDroid](https://github.com/ankidroid/Anki-Android) พร้อมประโยคบริบทอัตโนมัติ บันทึกเสียง ครอปภาพหน้าจอ โปรไฟล์ส่งออกหลายแบบ และการดำเนินการด่วน
+### บัตรคำ Anki
+- ส่งออกด้วยการแตะครั้งเดียวไปยัง [AnkiDroid](https://github.com/ankidroid/Anki-Android)
+- เติมประโยคบริบทอัตโนมัติ
+- รองรับบันทึกเสียง ครอปภาพหน้าจอ
+- โปรไฟล์ส่งออกหลายแบบ แมปฟิลด์กำหนดเอง
+- การดำเนินการด่วน (Quick Actions) สร้างบัตรคำขั้นตอนเดียว
 
-**ซิงค์หนังสือเสียง (Sasayaki)** — จับคู่ซับไตเติ้ล SRT / LRC / VTT / ASS กับข้อความ EPUB ไฮไลต์ตามเสียงและเลื่อนหน้าอัตโนมัติ
+### ซิงค์หนังสือเสียง (Sasayaki)
+- รูปแบบซับไตเติ้ล: SRT / LRC / VTT / ASS
+- จับคู่ซับไตเติ้ลกับข้อความ EPUB โดยอัตโนมัติ
+- ไฮไลต์ตามเสียงอ่าน เลื่อนหน้าซิงค์กับเสียง
+- แถบควบคุมการเล่น (ความคืบหน้า ข้ามไป ความเร็ว)
 
-**อื่นๆ** — 17 ภาษาสำหรับ UI โปรไฟล์ผู้ใช้หลายรายการ โหมดไม่ระบุตัวตน แชร์ข้อความจากแอปอื่นเพื่อค้นหา
+### อื่นๆ
+- 17 ภาษาสำหรับอินเทอร์เฟซ
+- โปรไฟล์ผู้ใช้หลายรายการ
+- โหมดไม่ระบุตัวตน
+- แชร์ข้อความจากแอปอื่นเพื่อค้นหาคำศัพท์
 
-## ความต้องการ
+## ภาษาที่รองรับ
 
-- Android 8.0 ขึ้นไป (API 26)
+อินเทอร์เฟซรองรับภาษาต่อไปนี้:
+
+| ภาษา | รหัส |
+|---|---|
+| English | `en` |
+| 简体中文 | `zh-CN` |
+| 繁體中文 | `zh-HK` |
+| 日本語 | `ja` |
+| 한국어 | `ko` |
+| Español | `es` |
+| Français | `fr` |
+| Deutsch | `de` |
+| Português (Brasil) | `pt-BR` |
+| Русский | `ru` |
+| Tiếng Việt | `vi` |
+| ภาษาไทย | `th` |
+| Bahasa Indonesia | `id` |
+| Italiano | `it` |
+| Nederlands | `nl` |
+| Türkçe | `tr` |
+| العربية | `ar` |
+
+## สแตกเทคโนโลยี
+
+| ชั้น | เทคโนโลยี |
+|---|---|
+| เฟรมเวิร์ก | Flutter 3.41.6 / Dart 3.11.4 |
+| ตัวอ่าน | ttu Ebook Reader (WebView, [fork](https://github.com/hdjsadgfwtg/ttu-fork)) |
+| จัดเก็บข้อมูล | Isar + Drift (SQLite) + hoshidicts (เอนจินพจนานุกรม C++ FFI) |
+| NLP | Ve (การผันกลับ) |
+| สร้างบัตรคำ | AnkiDroid API |
+| สากลานุวัตน์ | Slang |
+| เวอร์ชันขั้นต่ำ | Android 8.0 (API 26) |
+
+## การสร้าง
+
+```bash
+cd hibiki/hibiki
+flutter pub get
+flutter build apk --release --target-platform android-arm64 --split-per-abi
+```
+
+> **ต้องแพตช์ pub cache ก่อนสร้างครั้งแรก** หาก pub cache ถูกล้างหรือรัน `pub get` ใหม่ จะต้องนำแพตช์ทั้งหมดมาใช้ใหม่ ดูรายละเอียดที่ [การพึ่งพาและแพตช์](#การพึ่งพาและแพตช์) ด้านล่าง
+
+## การพึ่งพาและแพตช์
+
+โปรเจกต์นี้ล็อกเวอร์ชัน Flutter 3.41.6 การพึ่งพาต้นทางบางส่วนยังไม่รองรับและต้องแพตช์ซอร์สโค้ดใน pub cache ด้วยตนเอง
+
+<details>
+<summary><b>แพตช์การเปลี่ยนแปลง Flutter API</b></summary>
+
+| แพ็กเกจ | การเปลี่ยนแปลง |
+|---|---|
+| `network_to_file_image` 4.0.1 | `load` → `loadImage`; `DecoderCallback` → `ImageDecoderCallback`; `hashValues` → `Object.hash`; `instantiateImageCodec` → `ImmutableBuffer` + `ImageDescriptor`; แทนที่ `imageCache.putIfAbsent` ที่ถูกลบ |
+| `flutter_blurhash` 0.7.0 | เช่นเดียวกัน `loadImage` / `hashValues` / `ImmutableBuffer` |
+| `RubyText` (git) | `MediaQuery.boldTextOverride` → `boldTextOf` |
+| `material_floating_search_bar` (git) | `headline6` → `titleLarge`; `subtitle1` → `titleMedium` |
+| `win32` 4.1.4 | `UnmodifiableUint8ListView` → `Uint8List` |
+| `carousel_slider` 4.2.1 | เพิ่ม `hide CarouselController` ใน import ภายในเพื่อหลีกเลี่ยงชื่อซ้ำ |
+| `fading_edge_scrollview` 3.0.0 | แก้ไข `PageView.controller` nullable |
+
+</details>
+
+<details>
+<summary><b>แพตช์ลบ v1 Embedding</b></summary>
+
+Flutter 3.41.6 ลบ v1 embedding API (`PluginRegistry.Registrar`) ออกทั้งหมด ปลั๊กอินต่อไปนี้ต้องลบการอ้างอิงที่เกี่ยวข้อง:
+
+`flutter_plugin_android_lifecycle` · `file_picker` · `flutter_inappwebview` · `fluttertoast` · `image_picker_android` · `mecab_dart` · `permission_handler_android` · `url_launcher_android` · `path_provider_android` · `sqflite` · `record_mp3_plus`
+
+</details>
+
+<details>
+<summary><b>แพตช์ Gradle / Kotlin</b></summary>
+
+| เป้าหมาย | การเปลี่ยนแปลง |
+|---|---|
+| `android/build.gradle` afterEvaluate | บังคับ `compileSdkVersion 34` ในโปรเจกต์ย่อย; ลบ `-Werror` |
+| `audio_session` 0.1.14 | ลบ `-Werror`, `-Xlint:deprecation` |
+| `package_info_plus` 4.0.2 | แก้ไข Kotlin null safety |
+| `receive_intent` (git) | แก้ไข Kotlin null safety |
+
+</details>
+
+<details>
+<summary><b>การพึ่งพา Git</b></summary>
+
+| แพ็กเกจ | แหล่งที่มา |
+|---|---|
+| `blurrycontainer` | [arianneorpilla/blurry_container](https://github.com/arianneorpilla/blurry_container/) |
+| `filesystem_picker` | [arianneorpilla/filesystem_picker](https://github.com/arianneorpilla/filesystem_picker) |
+| `flutter_inappwebview` | [arianneorpilla/flutter_inappwebview](https://github.com/arianneorpilla/flutter_inappwebview) |
+| `material_floating_search_bar` | [arianneorpilla/material_floating_search_bar](https://github.com/arianneorpilla/material_floating_search_bar) |
+| `ruby_text` | [arianneorpilla/RubyText](https://github.com/arianneorpilla/RubyText) |
+| `spaces` | [arianneorpilla/spaces](https://github.com/arianneorpilla/spaces) |
+| `ve_dart` | [arianneorpilla/ve_dart](https://github.com/arianneorpilla/ve_dart) |
+| `receive_intent` | [arianneorpilla/receive_intent](https://github.com/arianneorpilla/receive_intent) |
+| `wakelock` | [diegotori/wakelock](https://github.com/diegotori/wakelock) |
+
+</details>
+
+## โครงสร้างโปรเจกต์
+
+```
+hibiki/
+├── hibiki/                  # ไดเรกทอรีหลักของแอป Flutter
+│   ├── lib/
+│   │   ├── i18n/            # สากลานุวัตน์ (17 ภาษา)
+│   │   ├── src/
+│   │   │   ├── pages/       # หน้า (ชั้นหนังสือ, ตัวอ่าน, พจนานุกรม, การตั้งค่า ฯลฯ)
+│   │   │   ├── media/       # บริดจ์หนังสือเสียง, แยกวิเคราะห์ซับไตเติ้ล
+│   │   │   ├── dictionary/  # เอนจินค้นหาพจนานุกรม
+│   │   │   ├── models/      # โมเดลข้อมูลและการจัดการสถานะ
+│   │   │   └── language/    # ชั้นนามธรรมภาษา
+│   │   └── main.dart
+│   ├── assets/
+│   │   └── ttu-ebook-reader/ # ผลผลิตจากการสร้าง ttu fork
+│   └── android/
+│       └── app/src/main/cpp/ # เอนจินพจนานุกรม C++ hoshidicts
+├── docs/                    # เอกสารการพัฒนา
+└── chisa/                   # อ้างอิง jidoujisho เวอร์ชันเก่า
+```
+
+## กิตติกรรมประกาศ
+
+| โปรเจกต์ | คำอธิบาย |
+|---|---|
+| [jidoujisho](https://github.com/arianneorpilla/jidoujisho) | เครื่องมือเรียนภาษาญี่ปุ่นแบบดื่มด่ำ |
+| [Hoshi Reader Android](https://github.com/HuangAntimony/Hoshi-Reader-Android) | แอปอ่านภาษาญี่ปุ่นสำหรับ Android |
+| [hoshidicts](https://github.com/Manhhao/hoshidicts) | เอนจินพจนานุกรม C++ |
+| [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) | แอปอ่านภาษาญี่ปุ่นสำหรับ iOS |
+| [Sasayaki](https://github.com/Manhhao/Hoshi-Reader/blob/develop/SASAYAKI.md) | โซลูชันซิงค์หนังสือเสียง |
+| [ttu Ebook Reader](https://github.com/ttu-ttu/ebook-reader) | เอนจินแสดงผล EPUB |
+| [kamperemu/ebook-reader](https://github.com/kamperemu/ebook-reader) | เวอร์ชันชุมชนของ ttu (SvelteKit v2) ต้นทางของ hibiki fork |
+| [Yomitan](https://github.com/yomidevs/yomitan) | แหล่งที่มารูปแบบพจนานุกรม |
 
 ## สัญญาอนุญาต
 
-[GNU General Public License v3.0](LICENSE)
+[GNU General Public License v3.0](../../LICENSE)

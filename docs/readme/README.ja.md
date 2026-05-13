@@ -22,20 +22,176 @@
 
 ## 機能
 
-**EPUB リーダー** — [ttu Ebook Reader](https://github.com/ttu-ttu/ebook-reader) を WebView で内蔵。タップで辞書引き、カスタムフォント、ライト/ダークテーマ、読書統計、連続スクロールまたはページめくりモード。
+### EPUB リーダー
+- [ttu Ebook Reader](https://github.com/ttu-ttu/ebook-reader) を内蔵し EPUB を描画（WebView）
+- タップで辞書引き、選択で解析
+- カスタムフォント、テーマ（ライト／ダーク）
+- 読書統計とブックマーク
+- 連続スクロール／ページ送りの 2 モード
 
-**辞書** — [Yomitan](https://github.com/yomidevs/yomitan) 形式の辞書をインポート。アクセント・頻度情報対応、複数辞書の並列検索、検索履歴、Ve 活用形変換。
+### 辞書
+- [Yomitan](https://github.com/yomidevs/yomitan) 形式の辞書をインポート（旧 Yomichan）
+- アクセント表示と語彙頻度情報に対応
+- 複数辞書の並列検索、検索履歴
+- Ve による活用形の原形復元
 
-**Anki カード作成** — [AnkiDroid](https://github.com/ankidroid/Anki-Android) へワンタップエクスポート。文脈文の自動入力、録音、スクリーンショットのトリミング、複数エクスポートプロファイル、クイックアクション。
+### Anki カード作成
+- [AnkiDroid](https://github.com/ankidroid/Anki-Android) へワンタップエクスポート
+- 文脈文の自動入力
+- 録音・スクリーンショットのトリミングに対応
+- 複数エクスポートプロファイル、カスタムフィールドマッピング
+- クイックアクションでワンステップ作成
 
-**オーディオブック同期（Sasayaki）** — SRT / LRC / VTT / ASS 字幕を EPUB テキストに整列し、ハイライト追従と同期ページめくりを実現。
+### オーディオブック同期（Sasayaki）
+- 字幕形式：SRT / LRC / VTT / ASS
+- 字幕テキストを EPUB 本文に自動整列
+- 追従ハイライト、音声同期ページ送り
+- 再生コントロールバー（進捗、シーク、倍速）
 
-**その他** — 17 の UI 言語、複数ユーザープロファイル、シークレットモード、他のアプリからテキスト共有して検索。
+### その他
+- 17 種類のインターフェース言語
+- 複数ユーザープロファイル
+- シークレットモード
+- 他のアプリからテキストを共有して直接辞書引き
 
-## 動作要件
+## 対応言語
 
-- Android 8.0 以上（API 26）
+インターフェースは以下の言語をサポートしています：
+
+| 言語 | コード |
+|---|---|
+| English | `en` |
+| 简体中文 | `zh-CN` |
+| 繁體中文 | `zh-HK` |
+| 日本語 | `ja` |
+| 한국어 | `ko` |
+| Español | `es` |
+| Français | `fr` |
+| Deutsch | `de` |
+| Português (Brasil) | `pt-BR` |
+| Русский | `ru` |
+| Tiếng Việt | `vi` |
+| ภาษาไทย | `th` |
+| Bahasa Indonesia | `id` |
+| Italiano | `it` |
+| Nederlands | `nl` |
+| Türkçe | `tr` |
+| العربية | `ar` |
+
+## 技術スタック
+
+| レイヤー | 技術 |
+|---|---|
+| フレームワーク | Flutter 3.41.6 / Dart 3.11.4 |
+| リーダー | ttu Ebook Reader（WebView、[fork](https://github.com/hdjsadgfwtg/ttu-fork)） |
+| ストレージ | Isar + Drift (SQLite) + hoshidicts (C++ FFI 辞書エンジン) |
+| NLP | Ve（活用形の原形復元） |
+| カード作成 | AnkiDroid API |
+| 国際化 | Slang |
+| 最低バージョン | Android 8.0（API 26） |
+
+## ビルド
+
+```bash
+cd hibiki/hibiki
+flutter pub get
+flutter build apk --release --target-platform android-arm64 --split-per-abi
+```
+
+> **初回ビルド前に pub cache パッチの適用が必要です。** pub cache がクリアされるか `pub get` を再実行した場合、すべてのパッチを再適用する必要があります。詳細は下記の[依存関係とパッチ](#依存関係とパッチ)を参照してください。
+
+## 依存関係とパッチ
+
+本プロジェクトは Flutter 3.41.6 に固定されています。一部の上流依存パッケージが未対応のため、pub cache 内のソースコードを手動でパッチする必要があります。
+
+<details>
+<summary><b>Flutter API 変更パッチ</b></summary>
+
+| パッケージ | 変更内容 |
+|---|---|
+| `network_to_file_image` 4.0.1 | `load` → `loadImage`；`DecoderCallback` → `ImageDecoderCallback`；`hashValues` → `Object.hash`；`instantiateImageCodec` → `ImmutableBuffer` + `ImageDescriptor`；削除された `imageCache.putIfAbsent` を置換 |
+| `flutter_blurhash` 0.7.0 | 同上の `loadImage` / `hashValues` / `ImmutableBuffer` 変更 |
+| `RubyText` (git) | `MediaQuery.boldTextOverride` → `boldTextOf` |
+| `material_floating_search_bar` (git) | `headline6` → `titleLarge`；`subtitle1` → `titleMedium` |
+| `win32` 4.1.4 | `UnmodifiableUint8ListView` → `Uint8List` |
+| `carousel_slider` 4.2.1 | 内部 import に `hide CarouselController` を追加し命名衝突を回避 |
+| `fading_edge_scrollview` 3.0.0 | `PageView.controller` の nullable 修正 |
+
+</details>
+
+<details>
+<summary><b>v1 Embedding 削除パッチ</b></summary>
+
+Flutter 3.41.6 では v1 embedding API（`PluginRegistry.Registrar`）が完全に削除されました。以下のプラグインから関連する参照を削除する必要があります：
+
+`flutter_plugin_android_lifecycle` · `file_picker` · `flutter_inappwebview` · `fluttertoast` · `image_picker_android` · `mecab_dart` · `permission_handler_android` · `url_launcher_android` · `path_provider_android` · `sqflite` · `record_mp3_plus`
+
+</details>
+
+<details>
+<summary><b>Gradle / Kotlin パッチ</b></summary>
+
+| 対象 | 変更内容 |
+|---|---|
+| `android/build.gradle` afterEvaluate | サブプロジェクトに `compileSdkVersion 34` を強制；`-Werror` を削除 |
+| `audio_session` 0.1.14 | `-Werror`、`-Xlint:deprecation` を削除 |
+| `package_info_plus` 4.0.2 | Kotlin null 安全の修正 |
+| `receive_intent` (git) | Kotlin null 安全の修正 |
+
+</details>
+
+<details>
+<summary><b>Git 依存パッケージ</b></summary>
+
+| パッケージ | ソース |
+|---|---|
+| `blurrycontainer` | [arianneorpilla/blurry_container](https://github.com/arianneorpilla/blurry_container/) |
+| `filesystem_picker` | [arianneorpilla/filesystem_picker](https://github.com/arianneorpilla/filesystem_picker) |
+| `flutter_inappwebview` | [arianneorpilla/flutter_inappwebview](https://github.com/arianneorpilla/flutter_inappwebview) |
+| `material_floating_search_bar` | [arianneorpilla/material_floating_search_bar](https://github.com/arianneorpilla/material_floating_search_bar) |
+| `ruby_text` | [arianneorpilla/RubyText](https://github.com/arianneorpilla/RubyText) |
+| `spaces` | [arianneorpilla/spaces](https://github.com/arianneorpilla/spaces) |
+| `ve_dart` | [arianneorpilla/ve_dart](https://github.com/arianneorpilla/ve_dart) |
+| `receive_intent` | [arianneorpilla/receive_intent](https://github.com/arianneorpilla/receive_intent) |
+| `wakelock` | [diegotori/wakelock](https://github.com/diegotori/wakelock) |
+
+</details>
+
+## プロジェクト構成
+
+```
+hibiki/
+├── hibiki/                  # Flutter アプリのメインディレクトリ
+│   ├── lib/
+│   │   ├── i18n/            # 国際化（17 言語）
+│   │   ├── src/
+│   │   │   ├── pages/       # ページ（本棚、リーダー、辞書、設定など）
+│   │   │   ├── media/       # オーディオブックブリッジ、字幕パース
+│   │   │   ├── dictionary/  # 辞書検索エンジン
+│   │   │   ├── models/      # データモデルと状態管理
+│   │   │   └── language/    # 言語抽象化レイヤー
+│   │   └── main.dart
+│   ├── assets/
+│   │   └── ttu-ebook-reader/ # ttu fork ビルド成果物
+│   └── android/
+│       └── app/src/main/cpp/ # hoshidicts C++ 辞書エンジン
+├── docs/                    # 開発ドキュメント
+└── chisa/                   # jidoujisho 初期バージョンの参考
+```
+
+## 謝辞
+
+| プロジェクト | 説明 |
+|---|---|
+| [jidoujisho](https://github.com/arianneorpilla/jidoujisho) | 日本語イマーシブ学習ツール |
+| [Hoshi Reader Android](https://github.com/HuangAntimony/Hoshi-Reader-Android) | Android 日本語リーダー |
+| [hoshidicts](https://github.com/Manhhao/hoshidicts) | C++ 辞書エンジン |
+| [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) | iOS 日本語リーダー |
+| [Sasayaki](https://github.com/Manhhao/Hoshi-Reader/blob/develop/SASAYAKI.md) | オーディオブック同期ソリューション |
+| [ttu Ebook Reader](https://github.com/ttu-ttu/ebook-reader) | EPUB レンダリングエンジン |
+| [kamperemu/ebook-reader](https://github.com/kamperemu/ebook-reader) | ttu コミュニティメンテナンス版（SvelteKit v2）、hibiki fork の上流ベース |
+| [Yomitan](https://github.com/yomidevs/yomitan) | 辞書フォーマットのソース |
 
 ## ライセンス
 
-[GNU General Public License v3.0](LICENSE)
+[GNU General Public License v3.0](../../LICENSE)

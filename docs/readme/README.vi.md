@@ -22,20 +22,176 @@
 
 ## Tính năng
 
-**Đọc EPUB** — Tích hợp [ttu Ebook Reader](https://github.com/ttu-ttu/ebook-reader) qua WebView. Chạm để tra từ điển, phông chữ tùy chỉnh, giao diện sáng/tối, thống kê đọc, cuộn liên tục hoặc chế độ phân trang.
+### Đọc EPUB
+- Tích hợp [ttu Ebook Reader](https://github.com/ttu-ttu/ebook-reader) để hiển thị EPUB (WebView)
+- Chạm để tra từ điển, chọn để phân tích
+- Phông chữ tùy chỉnh, giao diện (sáng/tối)
+- Thống kê đọc và đánh dấu trang
+- Cuộn liên tục / chế độ phân trang
 
-**Từ điển** — Nhập từ điển định dạng [Yomitan](https://github.com/yomidevs/yomitan) với thanh điệu và dữ liệu tần suất. Tra cứu song song nhiều từ điển, lịch sử tìm kiếm, chuyển đổi dạng Ve.
+### Từ điển
+- Nhập từ điển định dạng [Yomitan](https://github.com/yomidevs/yomitan) (trước đây là Yomichan)
+- Hỗ trợ thanh điệu và dữ liệu tần suất
+- Tra cứu song song nhiều từ điển, lịch sử tìm kiếm
+- Chuyển đổi dạng Ve
 
-**Thẻ Anki** — Xuất một chạm sang [AnkiDroid](https://github.com/ankidroid/Anki-Android) với câu ngữ cảnh tự động, ghi âm, cắt ảnh chụp màn hình, nhiều hồ sơ xuất và thao tác nhanh.
+### Thẻ Anki
+- Xuất một chạm sang [AnkiDroid](https://github.com/ankidroid/Anki-Android)
+- Tự động điền câu ngữ cảnh
+- Ghi âm, cắt ảnh chụp màn hình
+- Nhiều hồ sơ xuất, ánh xạ trường tùy chỉnh
+- Thao tác nhanh (Quick Actions) để tạo thẻ trong một bước
 
-**Đồng bộ sách nói (Sasayaki)** — Căn chỉnh phụ đề SRT / LRC / VTT / ASS với văn bản EPUB, đánh dấu đồng bộ và lật trang tự động.
+### Đồng bộ sách nói (Sasayaki)
+- Định dạng phụ đề: SRT / LRC / VTT / ASS
+- Tự động căn chỉnh văn bản phụ đề với nội dung EPUB
+- Đánh dấu đồng bộ, lật trang đồng bộ với âm thanh
+- Điều khiển phát lại (tiến trình, tua, tốc độ)
 
-**Khác** — 17 ngôn ngữ giao diện, nhiều hồ sơ người dùng, chế độ ẩn danh, chia sẻ văn bản từ ứng dụng khác để tra cứu.
+### Khác
+- 17 ngôn ngữ giao diện
+- Nhiều hồ sơ người dùng
+- Chế độ ẩn danh
+- Chia sẻ văn bản từ ứng dụng khác để tra cứu
 
-## Yêu cầu
+## Ngôn ngữ hỗ trợ
 
-- Android 8.0+ (API 26)
+Giao diện hỗ trợ các ngôn ngữ sau:
+
+| Ngôn ngữ | Mã |
+|---|---|
+| English | `en` |
+| 简体中文 | `zh-CN` |
+| 繁體中文 | `zh-HK` |
+| 日本語 | `ja` |
+| 한국어 | `ko` |
+| Español | `es` |
+| Français | `fr` |
+| Deutsch | `de` |
+| Português (Brasil) | `pt-BR` |
+| Русский | `ru` |
+| Tiếng Việt | `vi` |
+| ภาษาไทย | `th` |
+| Bahasa Indonesia | `id` |
+| Italiano | `it` |
+| Nederlands | `nl` |
+| Türkçe | `tr` |
+| العربية | `ar` |
+
+## Công nghệ sử dụng
+
+| Tầng | Công nghệ |
+|---|---|
+| Framework | Flutter 3.41.6 / Dart 3.11.4 |
+| Trình đọc | ttu Ebook Reader (WebView, [fork](https://github.com/hdjsadgfwtg/ttu-fork)) |
+| Lưu trữ | Isar + Drift (SQLite) + hoshidicts (engine từ điển C++ FFI) |
+| NLP | Ve (chuyển đổi dạng) |
+| Thẻ ghi nhớ | AnkiDroid API |
+| Quốc tế hóa | Slang |
+| Phiên bản tối thiểu | Android 8.0 (API 26) |
+
+## Biên dịch
+
+```bash
+cd hibiki/hibiki
+flutter pub get
+flutter build apk --release --target-platform android-arm64 --split-per-abi
+```
+
+> **Trước khi biên dịch lần đầu cần áp dụng các bản vá pub cache.** Nếu pub cache bị xóa hoặc chạy lại `pub get`, tất cả các bản vá cần được áp dụng lại. Xem [Phụ thuộc và bản vá](#phụ-thuộc-và-bản-vá) bên dưới.
+
+## Phụ thuộc và bản vá
+
+Dự án này được khóa ở Flutter 3.41.6. Một số phụ thuộc upstream chưa tương thích và cần vá thủ công mã nguồn trong pub cache.
+
+<details>
+<summary><b>Bản vá thay đổi API Flutter</b></summary>
+
+| Gói | Thay đổi |
+|---|---|
+| `network_to_file_image` 4.0.1 | `load` → `loadImage`; `DecoderCallback` → `ImageDecoderCallback`; `hashValues` → `Object.hash`; `instantiateImageCodec` → `ImmutableBuffer` + `ImageDescriptor`; thay thế `imageCache.putIfAbsent` đã bị xóa |
+| `flutter_blurhash` 0.7.0 | Tương tự: `loadImage` / `hashValues` / `ImmutableBuffer` |
+| `RubyText` (git) | `MediaQuery.boldTextOverride` → `boldTextOf` |
+| `material_floating_search_bar` (git) | `headline6` → `titleLarge`; `subtitle1` → `titleMedium` |
+| `win32` 4.1.4 | `UnmodifiableUint8ListView` → `Uint8List` |
+| `carousel_slider` 4.2.1 | Thêm `hide CarouselController` vào import nội bộ để tránh xung đột tên |
+| `fading_edge_scrollview` 3.0.0 | Sửa nullable cho `PageView.controller` |
+
+</details>
+
+<details>
+<summary><b>Bản vá xóa v1 Embedding</b></summary>
+
+Flutter 3.41.6 đã xóa hoàn toàn API v1 embedding (`PluginRegistry.Registrar`). Các plugin sau cần xóa các tham chiếu liên quan:
+
+`flutter_plugin_android_lifecycle` · `file_picker` · `flutter_inappwebview` · `fluttertoast` · `image_picker_android` · `mecab_dart` · `permission_handler_android` · `url_launcher_android` · `path_provider_android` · `sqflite` · `record_mp3_plus`
+
+</details>
+
+<details>
+<summary><b>Bản vá Gradle / Kotlin</b></summary>
+
+| Mục tiêu | Thay đổi |
+|---|---|
+| `android/build.gradle` afterEvaluate | Ép buộc `compileSdkVersion 34` cho các dự án con; xóa `-Werror` |
+| `audio_session` 0.1.14 | Xóa `-Werror`, `-Xlint:deprecation` |
+| `package_info_plus` 4.0.2 | Sửa Kotlin null safety |
+| `receive_intent` (git) | Sửa Kotlin null safety |
+
+</details>
+
+<details>
+<summary><b>Phụ thuộc Git</b></summary>
+
+| Gói | Nguồn |
+|---|---|
+| `blurrycontainer` | [arianneorpilla/blurry_container](https://github.com/arianneorpilla/blurry_container/) |
+| `filesystem_picker` | [arianneorpilla/filesystem_picker](https://github.com/arianneorpilla/filesystem_picker) |
+| `flutter_inappwebview` | [arianneorpilla/flutter_inappwebview](https://github.com/arianneorpilla/flutter_inappwebview) |
+| `material_floating_search_bar` | [arianneorpilla/material_floating_search_bar](https://github.com/arianneorpilla/material_floating_search_bar) |
+| `ruby_text` | [arianneorpilla/RubyText](https://github.com/arianneorpilla/RubyText) |
+| `spaces` | [arianneorpilla/spaces](https://github.com/arianneorpilla/spaces) |
+| `ve_dart` | [arianneorpilla/ve_dart](https://github.com/arianneorpilla/ve_dart) |
+| `receive_intent` | [arianneorpilla/receive_intent](https://github.com/arianneorpilla/receive_intent) |
+| `wakelock` | [diegotori/wakelock](https://github.com/diegotori/wakelock) |
+
+</details>
+
+## Cấu trúc dự án
+
+```
+hibiki/
+├── hibiki/                  # Thư mục chính ứng dụng Flutter
+│   ├── lib/
+│   │   ├── i18n/            # Quốc tế hóa (17 ngôn ngữ)
+│   │   ├── src/
+│   │   │   ├── pages/       # Trang (kệ sách, trình đọc, từ điển, cài đặt, v.v.)
+│   │   │   ├── media/       # Cầu nối sách nói, phân tích phụ đề
+│   │   │   ├── dictionary/  # Engine tra cứu từ điển
+│   │   │   ├── models/      # Mô hình dữ liệu và quản lý trạng thái
+│   │   │   └── language/    # Tầng trừu tượng ngôn ngữ
+│   │   └── main.dart
+│   ├── assets/
+│   │   └── ttu-ebook-reader/ # Sản phẩm biên dịch fork ttu
+│   └── android/
+│       └── app/src/main/cpp/ # Engine từ điển C++ hoshidicts
+├── docs/                    # Tài liệu phát triển
+└── chisa/                   # Tham chiếu phiên bản cũ jidoujisho
+```
+
+## Lời cảm ơn
+
+| Dự án | Mô tả |
+|---|---|
+| [jidoujisho](https://github.com/arianneorpilla/jidoujisho) | Công cụ học tiếng Nhật chuyên sâu |
+| [Hoshi Reader Android](https://github.com/HuangAntimony/Hoshi-Reader-Android) | Trình đọc tiếng Nhật cho Android |
+| [hoshidicts](https://github.com/Manhhao/hoshidicts) | Engine từ điển C++ |
+| [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) | Trình đọc tiếng Nhật cho iOS |
+| [Sasayaki](https://github.com/Manhhao/Hoshi-Reader/blob/develop/SASAYAKI.md) | Phương án đồng bộ sách nói |
+| [ttu Ebook Reader](https://github.com/ttu-ttu/ebook-reader) | Engine hiển thị EPUB |
+| [kamperemu/ebook-reader](https://github.com/kamperemu/ebook-reader) | Phiên bản ttu do cộng đồng duy trì (SvelteKit v2), nền tảng upstream của fork hibiki |
+| [Yomitan](https://github.com/yomidevs/yomitan) | Nguồn định dạng từ điển |
 
 ## Giấy phép
 
-[GNU General Public License v3.0](LICENSE)
+[GNU General Public License v3.0](../../LICENSE)
