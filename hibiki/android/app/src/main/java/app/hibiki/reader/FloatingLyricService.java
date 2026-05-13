@@ -76,6 +76,21 @@ public class FloatingLyricService extends BaseFloatingService {
         root.setGravity(Gravity.CENTER_HORIZONTAL);
         root.setPadding(dpToPx(DP_PAD_H), dpToPx(DP_PAD_V), dpToPx(DP_PAD_H), dpToPx(DP_PAD_V));
 
+        android.graphics.drawable.GradientDrawable rootBg =
+                new android.graphics.drawable.GradientDrawable();
+        rootBg.setCornerRadius(dpToPx(12));
+        rootBg.setColor(bgColor);
+        root.setBackground(rootBg);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            root.setOutlineProvider(new android.view.ViewOutlineProvider() {
+                @Override
+                public void getOutline(View view, android.graphics.Outline outline) {
+                    outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), dpToPx(12));
+                }
+            });
+            root.setClipToOutline(true);
+        }
+
         LinearLayout controls = new LinearLayout(this);
         controls.setOrientation(LinearLayout.HORIZONTAL);
         controls.setGravity(Gravity.CENTER);
@@ -101,6 +116,7 @@ public class FloatingLyricService extends BaseFloatingService {
         lyricText.setGravity(Gravity.CENTER_HORIZONTAL);
         lyricText.setTypeface(Typeface.DEFAULT);
         lyricText.setText(currentText);
+        lyricText.setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(8));
         root.addView(lyricText, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -211,6 +227,11 @@ public class FloatingLyricService extends BaseFloatingService {
         layoutParams.x = 0;
         layoutParams.y = savedY;
 
+        int screenWidth = getResources().getDisplayMetrics().widthPixels;
+        if (screenWidth > 0) {
+            layoutParams.horizontalMargin = (float) dpToPx(8) * 2 / screenWidth;
+        }
+
         setupDragListener();
         windowManager.addView(rootView, layoutParams);
     }
@@ -284,7 +305,19 @@ public class FloatingLyricService extends BaseFloatingService {
         btn.setMinimumWidth(dpToPx(DP_BTN_MIN_W));
         btn.setMinimumHeight(dpToPx(DP_BTN_MIN_H));
         btn.setScaleType(ImageView.ScaleType.CENTER);
-        btn.setBackgroundColor(buttonBgColor);
+        android.graphics.drawable.GradientDrawable btnBg =
+                new android.graphics.drawable.GradientDrawable();
+        btnBg.setCornerRadius(dpToPx(8));
+        btnBg.setColor(buttonBgColor);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            android.content.res.ColorStateList rippleColor =
+                    android.content.res.ColorStateList.valueOf(0x40FFFFFF);
+            android.graphics.drawable.RippleDrawable ripple =
+                    new android.graphics.drawable.RippleDrawable(rippleColor, btnBg, null);
+            btn.setBackground(ripple);
+        } else {
+            btn.setBackground(btnBg);
+        }
         tintIcon(btn, buttonTextColor);
         btn.setOnClickListener(v -> onControlClick(action));
 
@@ -384,7 +417,12 @@ public class FloatingLyricService extends BaseFloatingService {
         if (lyricText == null || rootView == null) return;
         lyricText.setTextSize(TypedValue.COMPLEX_UNIT_SP, fontSize);
         lyricText.setTextColor(textColor);
-        rootView.setBackgroundColor(bgColor);
+        android.graphics.drawable.Drawable bg = rootView.getBackground();
+        if (bg instanceof android.graphics.drawable.GradientDrawable) {
+            ((android.graphics.drawable.GradientDrawable) bg).setColor(bgColor);
+        } else {
+            rootView.setBackgroundColor(bgColor);
+        }
         applyButtonStyle(previousButton);
         applyButtonStyle(nextButton);
         applyButtonStyle(closeButton);
@@ -395,7 +433,7 @@ public class FloatingLyricService extends BaseFloatingService {
 
     private void applyButtonStyle(ImageButton btn) {
         if (btn == null) return;
-        btn.setBackgroundColor(buttonBgColor);
+        setButtonBgColor(btn, buttonBgColor);
         tintIcon(btn, buttonTextColor);
     }
 
@@ -405,7 +443,7 @@ public class FloatingLyricService extends BaseFloatingService {
                 isLocked ? R.drawable.ic_floating_lock_open : R.drawable.ic_floating_lock);
         lockButton.setContentDescription(isLocked ? unlockLabel : lockLabel);
         tintIcon(lockButton, isLocked ? activeColor : buttonTextColor);
-        lockButton.setBackgroundColor(buttonBgColor);
+        setButtonBgColor(lockButton, buttonBgColor);
     }
 
     private void applyPlayPauseButton() {
@@ -414,7 +452,7 @@ public class FloatingLyricService extends BaseFloatingService {
                 isPlaying ? R.drawable.ic_floating_pause : R.drawable.ic_floating_play);
         playPauseButton.setContentDescription(playPauseLabel);
         tintIcon(playPauseButton, isPlaying ? activeColor : buttonTextColor);
-        playPauseButton.setBackgroundColor(buttonBgColor);
+        setButtonBgColor(playPauseButton, buttonBgColor);
     }
 
     private void applyControlLabels() {
@@ -426,6 +464,27 @@ public class FloatingLyricService extends BaseFloatingService {
     }
 
     // ── Utilities ──
+
+    private void setButtonBgColor(ImageButton btn, int color) {
+        if (btn == null) return;
+        android.graphics.drawable.Drawable bg = btn.getBackground();
+        android.graphics.drawable.GradientDrawable shape = null;
+        if (bg instanceof android.graphics.drawable.RippleDrawable) {
+            android.graphics.drawable.RippleDrawable ripple =
+                    (android.graphics.drawable.RippleDrawable) bg;
+            android.graphics.drawable.Drawable inner = ripple.getDrawable(0);
+            if (inner instanceof android.graphics.drawable.GradientDrawable) {
+                shape = (android.graphics.drawable.GradientDrawable) inner;
+            }
+        } else if (bg instanceof android.graphics.drawable.GradientDrawable) {
+            shape = (android.graphics.drawable.GradientDrawable) bg;
+        }
+        if (shape != null) {
+            shape.setColor(color);
+        } else {
+            btn.setBackgroundColor(color);
+        }
+    }
 
     private void tintIcon(ImageButton btn, int color) {
         Drawable d = btn.getDrawable();
