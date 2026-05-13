@@ -2,47 +2,53 @@ package app.hibiki.reader;
 
 import android.app.Notification;
 import android.app.PendingIntent;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
-import android.content.SharedPreferences;
+import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
-import android.util.DisplayMetrics;
-import android.util.Log;
+import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
-import android.widget.FrameLayout;
+import android.view.inputmethod.EditorInfo;
+import android.widget.EditText;
+import android.widget.ImageButton;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 import java.lang.ref.WeakReference;
-import java.util.Map;
-
-import io.flutter.FlutterInjector;
-import io.flutter.embedding.android.FlutterTextureView;
-import io.flutter.embedding.engine.FlutterEngine;
-import io.flutter.embedding.engine.FlutterEngineGroup;
-import io.flutter.embedding.engine.dart.DartExecutor;
-import io.flutter.embedding.engine.loader.FlutterLoader;
-import io.flutter.plugin.common.MethodChannel;
 
 public class FloatingDictService extends BaseFloatingService {
 
-    private static final String TAG = "FloatingDict";
     private static final int NOTIFICATION_ID = 9528;
-    private static final int MIN_WIDTH_DP = 180;
-    private static final int MIN_HEIGHT_DP = 200;
-    private static final String OVERLAY_CHANNEL = "app.hibiki.reader/floating_overlay";
 
-    private FlutterEngine overlayEngine;
-    private FlutterTextureView flutterView;
-    private MethodChannel overlayChannel;
+    private EditText searchInput;
+    private TextView resultView;
+    private ScrollView resultScroll;
+    private ImageButton ankiButton;
 
-    private String lastSelectedText = "";
+    private ClipboardManager clipboardManager;
+    private ClipboardManager.OnPrimaryClipChangedListener clipListener;
+    private String lastClipText = "";
+    private boolean monitoringEnabled = true;
+
+    private String currentWord = "";
+    private String currentReading = "";
+    private String currentMeaning = "";
 
     private static WeakReference<FloatingDictService> instanceRef;
-    private static FlutterEngineGroup engineGroup;
+    private static io.flutter.embedding.engine.FlutterEngineGroup engineGroup;
 
     public static FloatingDictService getInstance() {
         return instanceRef != null ? instanceRef.get() : null;
@@ -50,102 +56,26 @@ public class FloatingDictService extends BaseFloatingService {
 
     public static void initEngineGroup(Context appContext) {
         if (engineGroup == null) {
-            engineGroup = new FlutterEngineGroup(appContext);
+            engineGroup = new io.flutter.embedding.engine.FlutterEngineGroup(appContext);
         }
     }
 
     @Override
     public void onCreate() {
-        instanceRef = new WeakReference<>(this);
-        initEngineGroup(getApplicationContext());
-        createOverlayEngine();
-        setupOverlayChannel();
         super.onCreate();
+        instanceRef = new WeakReference<>(this);
+        clipboardManager = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        clipListener = this::onClipboardChanged;
+        clipboardManager.addPrimaryClipChangedListener(clipListener);
     }
 
     @Override
     public void onDestroy() {
         instanceRef = null;
-        if (overlayChannel != null) {
-            overlayChannel.setMethodCallHandler(null);
-            overlayChannel = null;
-        }
-        if (flutterView != null) {
-            flutterView.detachFromRenderer();
-            flutterView = null;
-        }
-        if (overlayEngine != null) {
-            overlayEngine.destroy();
-            overlayEngine = null;
+        if (clipboardManager != null && clipListener != null) {
+            clipboardManager.removePrimaryClipChangedListener(clipListener);
         }
         super.onDestroy();
-    }
-
-    private void createOverlayEngine() {
-        FlutterLoader loader = FlutterInjector.instance().flutterLoader();
-        loader.startInitialization(getApplicationContext());
-        loader.ensureInitializationComplete(getApplicationContext(), null);
-
-        DartExecutor.DartEntrypoint entrypoint = new DartExecutor.DartEntrypoint(
-                loader.findAppBundlePath(), "floatingDictMain");
-
-        overlayEngine = engineGroup.createAndRunEngine(
-                getApplicationContext(), entrypoint);
-        FloatingDictPluginRegistrant.registerWith(overlayEngine);
-    }
-
-    private void setupOverlayChannel() {
-        overlayChannel = new MethodChannel(
-                overlayEngine.getDartExecutor().getBinaryMessenger(),
-                OVERLAY_CHANNEL);
-        overlayChannel.setMethodCallHandler((call, result) -> {
-            switch (call.method) {
-                case "drag": {
-                    Map<?, ?> args = (Map<?, ?>) call.arguments;
-                    double dx = ((Number) args.get("dx")).doubleValue();
-                    double dy = ((Number) args.get("dy")).doubleValue();
-                    DisplayMetrics dm = getResources().getDisplayMetrics();
-                    layoutParams.x = Math.max(-layoutParams.width / 2,
-                            Math.min(layoutParams.x + (int) dx, dm.widthPixels - layoutParams.width / 2));
-                    layoutParams.y = Math.max(-layoutParams.height / 4,
-                            Math.min(layoutParams.y + (int) dy, dm.heightPixels - layoutParams.height / 4));
-                    windowManager.updateViewLayout(rootView, layoutParams);
-                    result.success(null);
-                    break;
-                }
-                case "resize": {
-                    Map<?, ?> args = (Map<?, ?>) call.arguments;
-                    double dw = ((Number) args.get("dw")).doubleValue();
-                    double dh = ((Number) args.get("dh")).doubleValue();
-                    DisplayMetrics dm = getResources().getDisplayMetrics();
-                    int newW = Math.max(dpToPx(MIN_WIDTH_DP),
-                            Math.min(layoutParams.width + (int) dw, dm.widthPixels));
-                    int newH = Math.max(dpToPx(MIN_HEIGHT_DP),
-                            Math.min(layoutParams.height + (int) dh, dm.heightPixels));
-                    updateLayoutSize(newW, newH);
-                    result.success(null);
-                    break;
-                }
-                case "close": {
-                    stopSelf();
-                    result.success(null);
-                    break;
-                }
-                case "dragEnd": {
-                    savePosition();
-                    result.success(null);
-                    break;
-                }
-                case "setFocusable": {
-                    boolean focusable = (boolean) call.arguments;
-                    setFocusable(focusable);
-                    result.success(null);
-                    break;
-                }
-                default:
-                    result.notImplemented();
-            }
-        });
     }
 
     @Override
@@ -162,6 +92,11 @@ public class FloatingDictService extends BaseFloatingService {
 
     @Override
     protected Notification buildNotification() {
+        Intent toggleIntent = new Intent(this, FloatingDictService.class);
+        toggleIntent.putExtra("action", "toggle_monitoring");
+        PendingIntent togglePending = PendingIntent.getService(this, 0,
+                toggleIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+
         Intent closeIntent = new Intent(this, FloatingDictService.class);
         closeIntent.putExtra("action", "close");
         PendingIntent closePending = PendingIntent.getService(this, 1,
@@ -174,11 +109,17 @@ public class FloatingDictService extends BaseFloatingService {
             builder = new Notification.Builder(this);
         }
 
+        String monitorLabel = monitoringEnabled ? "Pause" : "Resume";
+
         return builder
                 .setContentTitle("Hibiki Dictionary")
-                .setContentText("Select text in any app to look up")
+                .setContentText(monitoringEnabled
+                        ? "Clipboard monitoring active"
+                        : "Clipboard monitoring paused")
                 .setSmallIcon(R.drawable.ic_stat_hibiki)
                 .setOngoing(true)
+                .addAction(new Notification.Action.Builder(
+                        null, monitorLabel, togglePending).build())
                 .addAction(new Notification.Action.Builder(
                         null, "Close", closePending).build())
                 .build();
@@ -186,13 +127,9 @@ public class FloatingDictService extends BaseFloatingService {
 
     @Override
     protected WindowManager.LayoutParams createLayoutParams() {
-        SharedPreferences prefs = getSharedPreferences(getPreferencePrefix(), MODE_PRIVATE);
-        int w = prefs.getInt("sizeW", dpToPx(300));
-        int h = prefs.getInt("sizeH", dpToPx(400));
-        w = Math.max(dpToPx(MIN_WIDTH_DP), w);
-        h = Math.max(dpToPx(MIN_HEIGHT_DP), h);
         WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
-                w, h,
+                dpToPx(300),
+                dpToPx(400),
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                         ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
                         : WindowManager.LayoutParams.TYPE_PHONE,
@@ -215,53 +152,247 @@ public class FloatingDictService extends BaseFloatingService {
 
     @Override
     protected View createContentView() {
-        flutterView = new FlutterTextureView(this);
-        flutterView.setOpaque(false);
-        flutterView.attachToRenderer(overlayEngine.getRenderer());
+        int dp4 = dpToPx(4);
+        int dp8 = dpToPx(8);
+        int dp12 = dpToPx(12);
 
-        FrameLayout wrapper = new FrameLayout(this);
-        wrapper.addView(flutterView, new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT));
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(0xF01E1E2E);
+        root.setPadding(dp8, dp4, dp8, dp4);
 
-        return wrapper;
-    }
+        LinearLayout titleBar = new LinearLayout(this);
+        titleBar.setOrientation(LinearLayout.HORIZONTAL);
+        titleBar.setGravity(Gravity.CENTER_VERTICAL);
+        titleBar.setPadding(dp4, dp4, dp4, dp4);
 
-    @Override
-    protected void savePosition() {
-        if (layoutParams == null) return;
-        getSharedPreferences(getPreferencePrefix(), MODE_PRIVATE)
-                .edit()
-                .putInt("posX", layoutParams.x)
-                .putInt("posY", layoutParams.y)
-                .putInt("sizeW", layoutParams.width)
-                .putInt("sizeH", layoutParams.height)
-                .apply();
+        TextView title = new TextView(this);
+        title.setText("Dictionary");
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        titleBar.addView(title, titleLp);
+
+        ImageButton closeButton = new ImageButton(this);
+        closeButton.setImageResource(R.drawable.ic_floating_close);
+        closeButton.setBackgroundColor(Color.TRANSPARENT);
+        closeButton.getDrawable().mutate().setTint(Color.WHITE);
+        closeButton.setOnClickListener(v -> stopSelf());
+        titleBar.addView(closeButton, new LinearLayout.LayoutParams(
+                dpToPx(32), dpToPx(32)));
+
+        root.addView(titleBar, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        LinearLayout searchBar = new LinearLayout(this);
+        searchBar.setOrientation(LinearLayout.HORIZONTAL);
+        searchBar.setGravity(Gravity.CENTER_VERTICAL);
+        searchBar.setPadding(dp4, 0, dp4, dp4);
+
+        searchInput = new EditText(this);
+        searchInput.setHint("Search...");
+        searchInput.setTextColor(Color.WHITE);
+        searchInput.setHintTextColor(0x80FFFFFF);
+        searchInput.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        searchInput.setSingleLine(true);
+        searchInput.setBackgroundColor(0x33FFFFFF);
+        searchInput.setPadding(dp8, dp4, dp8, dp4);
+        searchInput.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
+        searchInput.setOnFocusChangeListener((v, hasFocus) -> {
+            setFocusable(hasFocus);
+        });
+        searchInput.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId == EditorInfo.IME_ACTION_SEARCH) {
+                triggerSearch(searchInput.getText().toString());
+                searchInput.clearFocus();
+                setFocusable(false);
+                return true;
+            }
+            return false;
+        });
+
+        LinearLayout.LayoutParams inputLp = new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        searchBar.addView(searchInput, inputLp);
+
+        ImageButton searchButton = new ImageButton(this);
+        searchButton.setImageResource(android.R.drawable.ic_menu_search);
+        searchButton.setBackgroundColor(Color.TRANSPARENT);
+        searchButton.getDrawable().mutate().setTint(Color.WHITE);
+        searchButton.setOnClickListener(v ->
+                triggerSearch(searchInput.getText().toString()));
+        searchBar.addView(searchButton, new LinearLayout.LayoutParams(
+                dpToPx(36), dpToPx(36)));
+
+        root.addView(searchBar, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        resultScroll = new ScrollView(this);
+        resultView = new TextView(this);
+        resultView.setTextColor(Color.WHITE);
+        resultView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        resultView.setPadding(dp8, dp8, dp8, dp8);
+        resultScroll.addView(resultView);
+
+        LinearLayout.LayoutParams scrollLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
+        root.addView(resultScroll, scrollLp);
+
+        LinearLayout bottomBar = new LinearLayout(this);
+        bottomBar.setOrientation(LinearLayout.HORIZONTAL);
+        bottomBar.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        bottomBar.setPadding(dp4, dp4, dp4, dp4);
+
+        ankiButton = new ImageButton(this);
+        ankiButton.setImageResource(android.R.drawable.ic_input_add);
+        ankiButton.setBackgroundColor(0x33FFFFFF);
+        ankiButton.getDrawable().mutate().setTint(Color.WHITE);
+        ankiButton.setContentDescription("Anki");
+        ankiButton.setPadding(dp12, dp4, dp12, dp4);
+        ankiButton.setOnClickListener(v -> exportToAnki());
+        bottomBar.addView(ankiButton, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                dpToPx(36)));
+
+        root.addView(bottomBar, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        return root;
     }
 
     @Override
     protected void setupDragListener() {
-        // Drag handled by Flutter side via MethodChannel — no Java touch listener needed
+        View titleBar = ((LinearLayout) rootView).getChildAt(0);
+        titleBar.setOnTouchListener(new View.OnTouchListener() {
+            private int initialX, initialY;
+            private float initialTouchX, initialTouchY;
+            private boolean isDragging = false;
+
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                switch (event.getAction()) {
+                    case MotionEvent.ACTION_DOWN:
+                        initialX = layoutParams.x;
+                        initialY = layoutParams.y;
+                        initialTouchX = event.getRawX();
+                        initialTouchY = event.getRawY();
+                        isDragging = false;
+                        return true;
+                    case MotionEvent.ACTION_MOVE:
+                        float dx = event.getRawX() - initialTouchX;
+                        float dy = event.getRawY() - initialTouchY;
+                        if (Math.abs(dx) > 10 || Math.abs(dy) > 10)
+                            isDragging = true;
+                        if (isDragging) {
+                            layoutParams.x = initialX + (int) dx;
+                            layoutParams.y = initialY + (int) dy;
+                            windowManager.updateViewLayout(rootView, layoutParams);
+                        }
+                        return true;
+                    case MotionEvent.ACTION_UP:
+                        if (isDragging) savePosition();
+                        return true;
+                }
+                return false;
+            }
+        });
     }
 
     @Override
     protected void onServiceCommand(Intent intent) {
         String action = intent.getStringExtra("action");
-        if ("close".equals(action)) {
+        if ("toggle_monitoring".equals(action)) {
+            monitoringEnabled = !monitoringEnabled;
+            startForeground(NOTIFICATION_ID, buildNotification());
+        } else if ("close".equals(action)) {
             stopSelf();
+        } else if ("setClipboardMonitoring".equals(action)) {
+            monitoringEnabled = intent.getBooleanExtra("enabled", true);
+            startForeground(NOTIFICATION_ID, buildNotification());
         }
     }
 
-    public void onTextSelected(String text) {
-        if (text == null || text.trim().isEmpty()) return;
-        String trimmed = text.trim();
-        if (trimmed.equals(lastSelectedText)) return;
-        lastSelectedText = trimmed;
-        Log.d(TAG, "onTextSelected: " + trimmed);
+    private void onClipboardChanged() {
+        if (!monitoringEnabled) return;
+        ClipData clip = clipboardManager.getPrimaryClip();
+        if (clip == null || clip.getItemCount() == 0) return;
+        CharSequence text = clip.getItemAt(0).getText();
+        if (text == null) return;
+        String trimmed = text.toString().trim();
+        if (trimmed.isEmpty() || trimmed.equals(lastClipText)) return;
+        lastClipText = trimmed;
         new Handler(Looper.getMainLooper()).post(() -> {
-            if (overlayChannel != null) {
-                overlayChannel.invokeMethod("searchTerm", trimmed);
+            searchInput.setText(trimmed);
+            triggerSearch(trimmed);
+        });
+    }
+
+    private void triggerSearch(String term) {
+        if (term == null || term.trim().isEmpty()) return;
+        resultView.setText("Searching...");
+        MainActivity.notifyFloatingDictEvent("searchTerm", term);
+    }
+
+    public void onSearchResult(String json) {
+        new Handler(Looper.getMainLooper()).post(() -> {
+            if (json == null) {
+                resultView.setText("No results found.");
+                currentWord = "";
+                currentReading = "";
+                currentMeaning = "";
+                return;
+            }
+            try {
+                JSONArray entries = new JSONArray(json);
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < entries.length(); i++) {
+                    JSONObject entry = entries.getJSONObject(i);
+                    String word = entry.optString("word", "");
+                    String reading = entry.optString("reading", "");
+                    String meaning = entry.optString("meaning", "");
+
+                    if (i == 0) {
+                        currentWord = word;
+                        currentReading = reading;
+                        currentMeaning = meaning;
+                    }
+
+                    if (!word.isEmpty()) {
+                        sb.append(word);
+                        if (!reading.isEmpty()) {
+                            sb.append(" 【").append(reading).append("】");
+                        }
+                        sb.append("\n");
+                    }
+                    if (!meaning.isEmpty()) {
+                        sb.append(meaning);
+                    }
+                    if (i < entries.length() - 1) {
+                        sb.append("\n\n─────────\n\n");
+                    }
+                }
+                resultView.setText(sb.toString());
+                resultScroll.scrollTo(0, 0);
+            } catch (Exception e) {
+                resultView.setText("Error parsing results.");
             }
         });
+    }
+
+    private void exportToAnki() {
+        if (currentWord.isEmpty()) {
+            Toast.makeText(this, "No word to export", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        MainActivity.notifyFloatingDictAnki(currentWord, currentReading, currentMeaning);
+    }
+
+    public void setClipboardMonitoring(boolean enabled) {
+        monitoringEnabled = enabled;
+        startForeground(NOTIFICATION_ID, buildNotification());
     }
 }

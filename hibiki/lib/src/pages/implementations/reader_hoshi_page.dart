@@ -1079,7 +1079,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
         controller.addJavaScriptHandler(
           handlerName: 'onSwipe',
-          callback: (args) {
+          callback: (List<dynamic> args) {
             if (args.isEmpty || _lyricsMode) return;
             final String dir = args[0] as String;
             final bool invert =
@@ -1098,7 +1098,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
         controller.addJavaScriptHandler(
           handlerName: 'onBoundarySwipe',
-          callback: (args) {
+          callback: (List<dynamic> args) {
             if (args.isEmpty || _lyricsMode) return;
             final String dir = args[0] as String;
             if (dir == 'forward') {
@@ -1124,7 +1124,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
         controller.addJavaScriptHandler(
           handlerName: 'onLyricsCueTap',
-          callback: (args) {
+          callback: (List<dynamic> args) {
             if (args.isEmpty || _audiobookController == null) return;
             final int index = (args[0] as num).toInt();
             if (index >= 0 && index < _lyricsCueList.length) {
@@ -1336,11 +1336,12 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       backgroundColor: colorToCss(bg),
       textColor: colorToCss(fg),
       accentColor: colorToCss(accent),
-      fontSize: _settings?.fontSize ?? 20,
+      fontSize: (_settings?.fontSize ?? 20).toDouble(),
     );
 
     await _controller!.loadData(
       data: html,
+      mimeType: 'text/html',
       encoding: 'utf-8',
       baseUrl: WebUri('https://hoshi.local/lyrics'),
     );
@@ -2196,6 +2197,18 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     return true;
   }
 
+  Future<bool> _toggleFloatingDict() async {
+    final bool current = appModel.showFloatingDict;
+    if (!current) {
+      final bool shown = await FloatingDictChannel.show();
+      if (!shown) return false;
+      await appModel.setShowFloatingDict(true);
+    } else {
+      await FloatingDictChannel.hide();
+      await appModel.setShowFloatingDict(false);
+    }
+    return true;
+  }
 
   void _setupFloatingLyricHandlers() {
     FloatingLyricChannel.setEventHandlers(
@@ -2478,6 +2491,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
               buttonBgColor: (dark ? const Color(0x33FFFFFF) : const Color(0x1A000000)).value,
             );
           },
+          showFloatingDict: appModel.showFloatingDict,
+          onToggleFloatingDict: _toggleFloatingDict,
           showMediaNotification: appModel.showMediaNotification,
           onToggleMediaNotification: _toggleMediaNotification,
           charProgress: _progressCurrentChars != null &&

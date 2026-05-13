@@ -431,6 +431,16 @@ public class FloatingLyricService extends BaseFloatingService {
         if (d != null) d.mutate().setTint(color);
     }
 
+    private void bringAppToFront() {
+        Intent intent = getPackageManager().getLaunchIntentForPackage(getPackageName());
+        if (intent == null) return;
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                | Intent.FLAG_ACTIVITY_SINGLE_TOP
+                | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        startActivity(intent);
+    }
+
+
     private static String extractLabel(Map<String, Object> labels, String key, String fallback) {
         if (labels == null) return fallback;
         Object value = labels.get(key);

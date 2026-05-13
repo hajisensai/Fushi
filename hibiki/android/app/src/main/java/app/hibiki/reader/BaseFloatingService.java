@@ -142,15 +142,6 @@ public abstract class BaseFloatingService extends Service {
                 .apply();
     }
 
-    protected void updateLayoutSize(int w, int h) {
-        if (layoutParams == null || rootView == null) return;
-        layoutParams.width = w;
-        layoutParams.height = h;
-        windowManager.updateViewLayout(rootView, layoutParams);
-        savePosition();
-    }
-
-
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(

@@ -625,7 +625,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
           await AudiobookStorage.persistFileWithProgress(
         File(_alignmentPath!),
         persistDir,
-        onProgress: (copied, total) {
+        onProgress: (int copied, int total) {
           final double ratio = grandTotal > 0
               ? (grandCopied + copied) / grandTotal
               : 0.0;
@@ -648,7 +648,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
             await AudiobookStorage.persistFileWithProgress(
               srcFile,
               persistDir,
-              onProgress: (copied, total) {
+              onProgress: (int copied, int total) {
                 final double ratio = grandTotal > 0
                     ? (capturedGrandCopied + copied) / grandTotal
                     : 0.0;

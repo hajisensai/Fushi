@@ -128,6 +128,23 @@ public class MainActivity extends AudioServiceActivity {
         });
     }
 
+    public static void notifyFloatingDictEvent(String method, Object arguments) {
+        if (floatingDictChannel == null) return;
+        new Handler(Looper.getMainLooper()).post(() -> {
+            floatingDictChannel.invokeMethod(method, arguments);
+        });
+    }
+
+    public static void notifyFloatingDictAnki(String word, String reading, String meaning) {
+        if (floatingDictChannel == null) return;
+        java.util.HashMap<String, Object> args = new java.util.HashMap<>();
+        args.put("word", word);
+        args.put("reading", reading);
+        args.put("meaning", meaning);
+        new Handler(Looper.getMainLooper()).post(() -> {
+            floatingDictChannel.invokeMethod("ankiExport", args);
+        });
+    }
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
@@ -445,26 +462,22 @@ public class MainActivity extends AudioServiceActivity {
                     result.success(Settings.canDrawOverlays(context));
                     break;
                 }
-                case "openAccessibilitySettings": {
-                    Intent accIntent = new Intent(
-                            android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS);
-                    accIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    startActivity(accIntent);
-                    result.success(null);
-                    break;
-                }
-                case "searchTerm": {
-                    String text = call.argument("text");
+                case "setClipboardMonitoring": {
+                    Boolean enabled = (Boolean) call.arguments;
                     FloatingDictService svc = FloatingDictService.getInstance();
-                    if (svc != null && text != null && !text.trim().isEmpty()) {
-                        svc.onTextSelected(text.trim());
+                    if (svc != null) {
+                        svc.setClipboardMonitoring(enabled != null && enabled);
                     }
                     result.success(null);
                     break;
                 }
-                case "isAccessibilityEnabled": {
-                    result.success(isAccessibilityServiceEnabled(context,
-                            DictAccessibilityService.class));
+                case "searchResult": {
+                    String json = (String) call.arguments;
+                    FloatingDictService svc = FloatingDictService.getInstance();
+                    if (svc != null) {
+                        svc.onSearchResult(json);
+                    }
+                    result.success(null);
                     break;
                 }
                 default:

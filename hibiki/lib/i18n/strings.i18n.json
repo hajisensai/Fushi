@@ -604,7 +604,7 @@
     "show_floating_lyric": "Floating lyric overlay",
     "floating_lyric_hint": "Show current sentence over other apps.",
     "show_floating_dict": "Floating dictionary",
-    "floating_dict_hint": "Auto-detect text selection via Accessibility.",
+    "floating_dict_hint": "Monitor clipboard for dictionary lookup.",
     "follow_audio_on_tooltip": "Follow audio: ON",
     "follow_audio_off_tooltip": "Follow audio: OFF",
     "reading_progress": "Reading Progress",

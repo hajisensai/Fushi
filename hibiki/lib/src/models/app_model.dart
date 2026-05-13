@@ -40,6 +40,8 @@ import 'package:hibiki/src/epub/ttu_migration.dart';
 import 'package:hibiki/src/epub/ttu_migration_server.dart';
 import 'package:hibiki/src/profile/profile_repository.dart';
 import 'package:hibiki/src/anki/anki_repository.dart';
+import 'package:hibiki/src/media/floating_dict_channel.dart';
+import 'package:hibiki/i18n/strings.g.dart';
 
 /// A list of fields that the app will support at runtime.
 final List<Field> globalFields = List<Field>.unmodifiable(
@@ -1306,6 +1308,7 @@ class AppModel with ChangeNotifier {
 
       debugPrint('[Hibiki] init: DONE');
       _isInitialised = true;
+      _setupFloatingDictHandlers();
       if (showFloatingDict) setShowFloatingDict(false);
       _persistSplashColor();
       notifyListeners();
@@ -3783,6 +3786,24 @@ class AppModel with ChangeNotifier {
     notifyListeners();
   }
 
+  void _setupFloatingDictHandlers() {
+    FloatingDictChannel.setEventHandlers(
+      onSearch: (String term) async {
+        final DictionarySearchResult result = await searchDictionary(
+          searchTerm: term,
+          searchWithWildcards: false,
+        );
+        return result;
+      },
+      onAnkiExport: (String word, String reading, String meaning) async {
+        debugPrint('[FloatingDict] Anki export: $word / $reading');
+        Fluttertoast.showToast(
+          msg: 'Anki export not yet implemented',
+          toastLength: Toast.LENGTH_SHORT,
+        );
+      },
+    );
+  }
 
   bool get updateNeverRemind {
     return _getPref('update_never_remind', defaultValue: false);
