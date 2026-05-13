@@ -500,18 +500,6 @@ class _HoshiSettingsContentState extends BasePageState {
           contentPadding: const EdgeInsets.symmetric(horizontal: 4),
           leading: const Icon(Icons.person, size: 22),
           title: const ProfileSelector(),
-          trailing: IconButton(
-            icon: const Icon(Icons.settings, size: 20),
-            tooltip: t.profile_management,
-            visualDensity: VisualDensity.compact,
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => const ProfileManagementPage()),
-              );
-            },
-          ),
         ),
         _categoryTile(
           context,
