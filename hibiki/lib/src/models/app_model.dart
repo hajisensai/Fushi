@@ -80,19 +80,32 @@ final Map<String, Field> fieldsByKey = Map.unmodifiable(
 /// Represents a single local audio database entry with path and display name.
 class LocalAudioDbEntry {
 
-  const LocalAudioDbEntry({required this.path, required this.displayName});
+  const LocalAudioDbEntry({
+    required this.path,
+    required this.displayName,
+    this.enabled = true,
+  });
 
   factory LocalAudioDbEntry.fromJson(Map<String, dynamic> json) =>
       LocalAudioDbEntry(
         path: json['path'] as String? ?? '',
         displayName: json['displayName'] as String? ?? '',
+        enabled: json['enabled'] as bool? ?? true,
       );
   final String path;
   final String displayName;
+  final bool enabled;
+
+  LocalAudioDbEntry copyWith({bool? enabled}) => LocalAudioDbEntry(
+        path: path,
+        displayName: displayName,
+        enabled: enabled ?? this.enabled,
+      );
 
   Map<String, dynamic> toJson() => {
         'path': path,
         'displayName': displayName,
+        'enabled': enabled,
       };
 }
 
@@ -1473,6 +1486,7 @@ class AppModel with ChangeNotifier {
 
     final List<String> validPaths = <String>[];
     for (final LocalAudioDbEntry entry in dbs) {
+      if (!entry.enabled) continue;
       if (await File(entry.path).exists()) {
         validPaths.add(entry.path);
       } else {
@@ -3656,8 +3670,16 @@ class AppModel with ChangeNotifier {
     // Clear legacy single-DB prefs after migration
     await _setPref('local_audio_db_path', '');
     await _setPref('local_audio_db_display_name', '');
-    await TtsChannel.instance
-        .setLocalAudioDbs(dbs.map((e) => e.path).toList());
+    await TtsChannel.instance.setLocalAudioDbs(
+        dbs.where((e) => e.enabled).map((e) => e.path).toList());
+  }
+
+  Future<void> toggleLocalAudioDbEnabled(int index) async {
+    final List<LocalAudioDbEntry> dbs =
+        List<LocalAudioDbEntry>.of(localAudioDbs);
+    if (index < 0 || index >= dbs.length) return;
+    dbs[index] = dbs[index].copyWith(enabled: !dbs[index].enabled);
+    await setLocalAudioDbs(dbs);
   }
 
   Future<void> addLocalAudioDb(String sourcePath,
@@ -3733,8 +3755,10 @@ class AppModel with ChangeNotifier {
   void toggleLocalAudio() async {
     await _setPref('local_audio_enabled', !localAudioEnabled);
     if (localAudioEnabled) {
-      final List<String> paths =
-          localAudioDbs.map((e) => e.path).toList();
+      final List<String> paths = localAudioDbs
+          .where((e) => e.enabled)
+          .map((e) => e.path)
+          .toList();
       if (paths.isNotEmpty) {
         TtsChannel.instance.setLocalAudioDbs(paths);
       }

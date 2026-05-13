@@ -445,6 +445,7 @@ class _DictionaryDialogPageState extends BasePageState {
     final String label = entry.displayName.isNotEmpty
         ? entry.displayName
         : entry.path.split('/').last;
+    final bool enabled = entry.enabled;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -459,16 +460,30 @@ class _DictionaryDialogPageState extends BasePageState {
             ),
           ),
           const SizedBox(width: 6),
-          Icon(Icons.storage,
-              size: textTheme.bodyMedium?.fontSize, color: activeTextColor),
+          Icon(
+            enabled ? Icons.storage : Icons.block,
+            size: textTheme.bodyMedium?.fontSize,
+            color: enabled ? activeTextColor : inactiveTextColor,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               label,
-              style: textTheme.bodyMedium,
+              style: textTheme.bodyMedium?.copyWith(
+                color: enabled ? null : inactiveTextColor,
+              ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
+          ),
+          JidoujishoIconButton(
+            tooltip: enabled ? t.options_hide : t.options_show,
+            size: 18,
+            icon: enabled ? Icons.check_circle_outline : Icons.block,
+            onTap: () async {
+              await appModelNoUpdate.toggleLocalAudioDbEnabled(index);
+              setState(() {});
+            },
           ),
           if (index > 0)
             JidoujishoIconButton(
