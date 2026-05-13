@@ -93,7 +93,7 @@ class TtuMigration {
         final String chaptersJson = jsonEncode(
           List<Map<String, Object>>.generate(
             actualChapters,
-            (int i) {
+            (i) {
               final File sectionFile =
                   File(p.join(extractDir, 'section_$i.html'));
               final int chars = sectionFile.existsSync()

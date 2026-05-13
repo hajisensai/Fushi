@@ -35,10 +35,13 @@ class EpubImporter {
 
       final String chaptersJson = jsonEncode(
         book.chapters
-            .map((ch) => <String, Object>{
-                  'id': ch.id,
-                  'href': ch.href,
-                  'mediaType': ch.mediaType,
+            .asMap()
+            .entries
+            .map((entry) => <String, Object>{
+                  'id': entry.value.id,
+                  'href': entry.value.href,
+                  'mediaType': entry.value.mediaType,
+                  'characters': book.chapterPlainText(entry.key).length,
                 })
             .toList(),
       );
