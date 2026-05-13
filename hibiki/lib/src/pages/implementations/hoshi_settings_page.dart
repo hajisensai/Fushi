@@ -4,6 +4,7 @@ import 'package:wakelock/wakelock.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/src/media/floating_dict_channel.dart';
 import 'package:hibiki/utils.dart';
 
 // ─── Shared setting-item builders ────────────────────────────────────────────
@@ -514,7 +515,14 @@ class _HoshiSettingsContentState extends BasePageState {
           label: t.show_floating_dict,
           value: appModel.showFloatingDict,
           onChanged: (_) async {
-            await appModel.setShowFloatingDict(!appModel.showFloatingDict);
+            if (!appModel.showFloatingDict) {
+              final bool shown = await FloatingDictChannel.show();
+              if (!shown) return;
+              await appModel.setShowFloatingDict(true);
+            } else {
+              await FloatingDictChannel.hide();
+              await appModel.setShowFloatingDict(false);
+            }
             setState(() {});
           },
         ),
