@@ -2199,6 +2199,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         FloatingLyricChannel.clearEventHandlers();
         await appModel.setShowFloatingLyric(false);
       },
+      onLockChanged: (bool locked) {
+        debugPrint('[floating-lyric] lock state changed: $locked');
+      },
     );
   }
 

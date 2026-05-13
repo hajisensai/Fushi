@@ -3,6 +3,7 @@ import 'package:hibiki/src/utils/misc/channel_constants.dart';
 
 typedef FloatingLyricLookupHandler = void Function(String text, int index);
 typedef FloatingLyricControlHandler = void Function();
+typedef FloatingLyricLockHandler = void Function(bool locked);
 
 /// Android floating subtitle overlay channel.
 class FloatingLyricChannel {
@@ -15,6 +16,7 @@ class FloatingLyricChannel {
   static FloatingLyricControlHandler? _onPlayPause;
   static FloatingLyricControlHandler? _onNextCue;
   static FloatingLyricControlHandler? _onClose;
+  static FloatingLyricLockHandler? _onLockChanged;
 
   static void setEventHandlers({
     FloatingLyricLookupHandler? onLookupText,
@@ -22,12 +24,14 @@ class FloatingLyricChannel {
     FloatingLyricControlHandler? onPlayPause,
     FloatingLyricControlHandler? onNextCue,
     FloatingLyricControlHandler? onClose,
+    FloatingLyricLockHandler? onLockChanged,
   }) {
     _onLookupText = onLookupText;
     _onPreviousCue = onPreviousCue;
     _onPlayPause = onPlayPause;
     _onNextCue = onNextCue;
     _onClose = onClose;
+    _onLockChanged = onLockChanged;
     _channel.setMethodCallHandler(_handleNativeCall);
   }
 
@@ -37,6 +41,7 @@ class FloatingLyricChannel {
     _onPlayPause = null;
     _onNextCue = null;
     _onClose = null;
+    _onLockChanged = null;
     _channel.setMethodCallHandler(null);
   }
 
@@ -70,6 +75,13 @@ class FloatingLyricChannel {
         break;
       case 'close':
         _onClose?.call();
+        break;
+      case 'lockChanged':
+        final Object? args = call.arguments;
+        if (args is Map) {
+          final bool locked = args['locked'] == true;
+          _onLockChanged?.call(locked);
+        }
         break;
       default:
         break;

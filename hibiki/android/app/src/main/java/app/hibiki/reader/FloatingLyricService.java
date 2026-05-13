@@ -351,6 +351,9 @@ public class FloatingLyricService extends BaseFloatingService {
             stopSelf();
         } else if ("toggleLock".equals(action)) {
             setLocked(!isLocked);
+            java.util.HashMap<String, Object> args = new java.util.HashMap<>();
+            args.put("locked", isLocked);
+            MainActivity.notifyFloatingLyricEvent("lockChanged", args);
         } else {
             MainActivity.notifyFloatingLyricEvent(action, null);
         }
