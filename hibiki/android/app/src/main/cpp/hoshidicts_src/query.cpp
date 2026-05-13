@@ -18,8 +18,17 @@
 #include "memory/memory.hpp"
 
 namespace {
+
+// Thread-local pointer to one-past-end of the current blob being parsed.
+// Set before entering any blob-walk loop; checked by read_val and read_str.
+thread_local const uint8_t* blob_end_ = nullptr;
+
 template <typename T>
 T read_val(const uint8_t*& addr) {
+  if (blob_end_ && addr + sizeof(T) > blob_end_) {
+    addr = blob_end_;
+    return T{};
+  }
   T val;
   std::memcpy(&val, addr, sizeof(T));
   addr += sizeof(T);
@@ -27,6 +36,11 @@ T read_val(const uint8_t*& addr) {
 }
 
 std::string_view read_str(const uint8_t*& addr, uint32_t len) {
+  // Guard against integer overflow in addr + len and out-of-bounds access.
+  if (blob_end_ && (addr + len > blob_end_ || addr + len < addr)) {
+    addr = blob_end_;
+    return {};
+  }
   std::string_view result(reinterpret_cast<const char*>(addr), len);
   addr += len;
   return result;
@@ -137,11 +151,21 @@ std::vector<TermResult> DictionaryQuery::query_raw(const std::string& expression
     if (offset_addr == 0) {
       continue;
     }
+    if (offset_addr + sizeof(uint32_t) > data->blobs.size) {
+      continue;
+    }
+    blob_end_ = data->blobs.data + data->blobs.size;
     const uint8_t* index_addr = data->blobs.data + offset_addr;
 
     auto count = read_val<uint32_t>(index_addr);
     for (uint32_t i = 0; i < count; i++) {
+      if (index_addr + sizeof(uint64_t) > blob_end_) {
+        break;
+      }
       auto offset = read_val<uint64_t>(index_addr);
+      if (offset + 1 > data->blobs.size) {
+        continue;
+      }
       const uint8_t* blob_addr = data->blobs.data + offset;
 
       // first byte encodes term (0) or meta (1) entry
@@ -212,12 +236,22 @@ void DictionaryQuery::query_freq(std::vector<TermResult>& terms) const {
       if (offset_addr == 0) {
         continue;
       }
+      if (offset_addr + sizeof(uint32_t) > data->blobs.size) {
+        continue;
+      }
+      blob_end_ = data->blobs.data + data->blobs.size;
       const uint8_t* index_addr = data->blobs.data + offset_addr;
       auto count = read_val<uint32_t>(index_addr);
 
       std::vector<Frequency> frequencies;
       for (uint32_t i = 0; i < count; i++) {
+        if (index_addr + sizeof(uint64_t) > blob_end_) {
+          break;
+        }
         auto offset = read_val<uint64_t>(index_addr);
+        if (offset + 1 > data->blobs.size) {
+          continue;
+        }
         const uint8_t* blob_addr = data->blobs.data + offset;
 
         auto type = read_val<uint8_t>(blob_addr);
@@ -263,12 +297,22 @@ void DictionaryQuery::query_pitch(std::vector<TermResult>& terms) const {
       if (offset_addr == 0) {
         continue;
       }
+      if (offset_addr + sizeof(uint32_t) > data->blobs.size) {
+        continue;
+      }
+      blob_end_ = data->blobs.data + data->blobs.size;
       const uint8_t* index_addr = data->blobs.data + offset_addr;
       auto count = read_val<uint32_t>(index_addr);
 
       std::vector<int> pitch_positions;
       for (uint32_t i = 0; i < count; i++) {
+        if (index_addr + sizeof(uint64_t) > blob_end_) {
+          break;
+        }
         auto offset = read_val<uint64_t>(index_addr);
+        if (offset + 1 > data->blobs.size) {
+          continue;
+        }
         const uint8_t* blob_addr = data->blobs.data + offset;
 
         auto type = read_val<uint8_t>(blob_addr);
