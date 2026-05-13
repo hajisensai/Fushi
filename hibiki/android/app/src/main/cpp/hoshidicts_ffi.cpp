@@ -3,7 +3,6 @@
 #include <string>
 #include <vector>
 #include <pthread.h>
-
 #include "hoshidicts/deinflector.hpp"
 #include "hoshidicts/importer.hpp"
 #include "hoshidicts/lookup.hpp"

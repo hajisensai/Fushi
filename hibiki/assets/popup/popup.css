@@ -418,12 +418,12 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
 
 .category-section {
     margin-top: 4px;
-    -webkit-user-select: none;
 }
 
 .category-label {
     font-size: 11px;
     display: block;
+    -webkit-user-select: none;
 }
 
 .category-name {
@@ -529,3 +529,4 @@ html[data-theme="dark"] body {
 html[data-theme="dark"] .overlay {
     background: #222;
 }
+

@@ -402,6 +402,7 @@ MediaFileView DictionaryQuery::get_media_file_view(const std::string& dict_name,
       return {};
     }
 
+    blob_end_ = data->media_index.data + data->media_index.size;
     const uint8_t* ptr = data->media_index.data;
     auto count = read_val<uint32_t>(ptr);
 
@@ -412,6 +413,7 @@ MediaFileView DictionaryQuery::get_media_file_view(const std::string& dict_name,
       uint64_t record_offset;
       std::memcpy(&record_offset, data->media_index.data + sizeof(uint32_t) + mid * sizeof(uint64_t), sizeof(uint64_t));
 
+      blob_end_ = data->media.data + data->media.size;
       const uint8_t* record = data->media.data + record_offset;
       auto path_size = read_val<uint16_t>(record);
       std::string_view indexed_path = read_str(record, path_size);

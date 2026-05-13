@@ -5,7 +5,6 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/dictionary.dart';
@@ -194,11 +193,9 @@ class DictionaryPopupWebViewState
         if (url.scheme == 'image' && HoshiDicts.isInitialized) {
           final dictName = url.queryParameters['dictionary'] ?? '';
           final mediaPath = url.queryParameters['path'] ?? '';
-          debugPrint('[PopupWebView] image request: dict=$dictName path=$mediaPath');
           if (dictName.isNotEmpty && mediaPath.isNotEmpty) {
             try {
               final data = HoshiDicts.instance.getMediaFile(dictName, mediaPath);
-              debugPrint('[PopupWebView] image response: ${data != null ? "${data.length} bytes" : "NULL"}');
               if (data != null) {
                 final mime = _mimeTypeForPath(mediaPath);
                 return WebResourceResponse(
@@ -319,21 +316,6 @@ class DictionaryPopupWebViewState
             if (args.isNotEmpty) {
               await _openExternalLink(args[0].toString());
             }
-          },
-        );
-
-        controller.addJavaScriptHandler(
-          handlerName: 'copyText',
-          callback: (args) async {
-            if (args.isEmpty) {
-              return false;
-            }
-            final text = args[0].toString();
-            if (text.isEmpty) {
-              return false;
-            }
-            await Clipboard.setData(ClipboardData(text: text));
-            return true;
           },
         );
 
