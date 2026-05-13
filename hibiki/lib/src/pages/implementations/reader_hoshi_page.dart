@@ -1010,7 +1010,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     return InAppWebView(
       contextMenu: ContextMenu(
         settings: ContextMenuSettings(
-          hideDefaultSystemContextMenuItems: true,
+          hideDefaultSystemContextMenuItems: false,
         ),
         menuItems: [
           ContextMenuItem(
