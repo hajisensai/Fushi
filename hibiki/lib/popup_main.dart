@@ -9,6 +9,15 @@ import 'package:hibiki/src/pages/implementations/popup_dictionary_page.dart';
 import 'package:hibiki/src/utils/misc/popup_channel.dart';
 import 'package:spaces/spaces.dart';
 
+String _extractWord(AppModel appModel, String text, int charIndex) {
+  if (charIndex < 0 || !appModel.isInitialised) return text;
+  final String word = appModel.targetLanguage.wordFromIndex(
+    text: text,
+    index: charIndex,
+  );
+  return word.isNotEmpty ? word : text;
+}
+
 @pragma('vm:entry-point')
 void popupMain() {
   runZonedGuarded<Future<void>>(() async {
@@ -19,12 +28,17 @@ void popupMain() {
     final container = ProviderContainer();
     final appModel = container.read(appProvider);
 
-    final initialText = await PopupChannel.instance.getInitialProcessText();
+    final initialData = await PopupChannel.instance.getInitialProcessText();
+    final String rawText = initialData.text ?? '';
+    final int charIndex = initialData.charIndex;
 
     runApp(
       UncontrolledProviderScope(
         container: container,
-        child: PopupDictApp(initialText: initialText ?? ''),
+        child: PopupDictApp(
+          initialText: rawText,
+          initialCharIndex: charIndex,
+        ),
       ),
     );
 
@@ -35,8 +49,13 @@ void popupMain() {
 }
 
 class PopupDictApp extends ConsumerStatefulWidget {
-  const PopupDictApp({required this.initialText, super.key});
+  const PopupDictApp({
+    required this.initialText,
+    this.initialCharIndex = -1,
+    super.key,
+  });
   final String initialText;
+  final int initialCharIndex;
 
   @override
   ConsumerState<PopupDictApp> createState() => _PopupDictAppState();
@@ -45,17 +64,27 @@ class PopupDictApp extends ConsumerStatefulWidget {
 class _PopupDictAppState extends ConsumerState<PopupDictApp> {
   late String _searchTerm;
   int _searchGeneration = 0;
+  bool _pendingWordExtraction = false;
+  int _pendingCharIndex = -1;
 
   @override
   void initState() {
     super.initState();
     _searchTerm = widget.initialText;
+    if (widget.initialCharIndex >= 0) {
+      _pendingWordExtraction = true;
+      _pendingCharIndex = widget.initialCharIndex;
+    }
 
     PopupChannel.instance.init(
       initialText: widget.initialText,
-      onNewProcessText: (text) {
+      onNewProcessText: (String text, int charIndex) async {
+        final appModel = ref.read(appProvider);
+        await appModel.refreshPrefCache();
+        if (!mounted) return;
+        final String resolved = _extractWord(appModel, text, charIndex);
         setState(() {
-          _searchTerm = text;
+          _searchTerm = resolved;
           _searchGeneration++;
         });
       },
@@ -94,6 +123,21 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
           ),
         ),
       );
+    }
+
+    if (_pendingWordExtraction) {
+      _pendingWordExtraction = false;
+      final String resolved =
+          _extractWord(appModel, _searchTerm, _pendingCharIndex);
+      if (resolved != _searchTerm) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          setState(() {
+            _searchTerm = resolved;
+            _searchGeneration++;
+          });
+        });
+      }
     }
 
     return MaterialApp(

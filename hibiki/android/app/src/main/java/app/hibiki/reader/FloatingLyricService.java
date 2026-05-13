@@ -308,13 +308,10 @@ public class FloatingLyricService extends BaseFloatingService {
                 || localY < 0 || localY > lyricText.getHeight()) return;
 
         int index = getCharIndexAt(localX, localY);
-        int safeIndex = Math.max(0, Math.min(index, currentText.length() - 1));
-        int end = Math.min(safeIndex + 20, currentText.length());
-        String searchTerm = currentText.substring(safeIndex, end).trim();
-        if (searchTerm.isEmpty()) return;
 
         Intent intent = new Intent(this, PopupDictActivity.class);
-        intent.putExtra(Intent.EXTRA_PROCESS_TEXT, searchTerm);
+        intent.putExtra(Intent.EXTRA_PROCESS_TEXT, currentText);
+        intent.putExtra("charIndex", index);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         startActivity(intent);
     }
