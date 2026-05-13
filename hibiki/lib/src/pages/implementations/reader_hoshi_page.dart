@@ -850,11 +850,12 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     }
 
     if ((mime == 'text/html' || mime.contains('xhtml')) && _settings != null) {
+      _settings!.setTheme(appModel.appThemeKey);
       String html = utf8.decode(data);
       final String styleTag = ReaderContentStyles.styleTag(
         settings: _settings!,
-        customBg: _settings!.theme == 'custom-theme' ? _readerBackgroundHex : null,
-        customFg: _settings!.theme == 'custom-theme' ? _customThemeTextCss : null,
+        customBg: appModel.appThemeKey == 'custom-theme' ? _readerBackgroundHex : null,
+        customFg: appModel.appThemeKey == 'custom-theme' ? _customThemeTextCss : null,
       );
       const String hideUntilReady =
           '<style id="hoshi-cloak">body{visibility:hidden!important}</style>';
@@ -967,7 +968,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       } else {
         window.flutter_inappwebview.callHandler('onSwipe', 'right');
       }
-    } else if (absDx < 20 && absDy < 20) {
+    } else if (absDx < 20 && absDy < 20 && elapsed < 500) {
       var target = document.elementFromPoint(t.clientX, t.clientY);
       if (target && target.tagName === 'IMG' && target.src) {
         window.flutter_inappwebview.callHandler('onImageTap', target.src);
@@ -1007,6 +1008,53 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   Widget _buildWebView() {
     return InAppWebView(
+      contextMenu: ContextMenu(
+        settings: ContextMenuSettings(
+          hideDefaultSystemContextMenuItems: true,
+        ),
+        menuItems: [
+          ContextMenuItem(
+            id: 1,
+            title: t.copy,
+            action: () async {
+              final text = await _controller?.getSelectedText();
+              if (text != null && text.isNotEmpty) {
+                await Clipboard.setData(ClipboardData(text: text));
+                Fluttertoast.showToast(msg: t.copy);
+              }
+            },
+          ),
+          ContextMenuItem(
+            id: 2,
+            title: t.search,
+            action: () async {
+              final text = await _controller?.getSelectedText();
+              if (text == null || text.isEmpty) return;
+              final size = MediaQuery.of(context).size;
+              final rect = Rect.fromCenter(
+                center: Offset(size.width / 2, size.height / 3),
+                width: 1,
+                height: 1,
+              );
+              await searchDictionaryResult(
+                searchTerm: text,
+                selectionRect: rect,
+              );
+            },
+          ),
+          ContextMenuItem(
+            id: 3,
+            title: t.share,
+            action: () async {
+              final text = await _controller?.getSelectedText();
+              if (text != null && text.isNotEmpty) {
+                await Clipboard.setData(ClipboardData(text: text));
+                Fluttertoast.showToast(msg: t.share);
+              }
+            },
+          ),
+        ],
+      ),
       initialUserScripts: UnmodifiableListView<UserScript>(<UserScript>[
         UserScript(
           source:
@@ -2739,7 +2787,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   // ── Top Progress Bar ──────────────────────────────────────────────
 
   Color _infoTextColor() {
-    final String theme = _settings?.theme ?? 'light-theme';
+    final String theme = appModel.appThemeKey;
     switch (theme) {
       case 'gray-theme':
       case 'dark-theme':
@@ -2779,7 +2827,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   // ── Theme Colors ──────────────────────────────────────────────────
 
   Color _themeBackgroundColor() {
-    final String theme = _settings?.theme ?? 'light-theme';
+    final String theme = appModel.appThemeKey;
     switch (theme) {
       case 'ecru-theme':
         return const Color(0xFFF7F6EB);
@@ -2800,7 +2848,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   }
 
   Color _themeTextColor() {
-    final String theme = _settings?.theme ?? 'light-theme';
+    final String theme = appModel.appThemeKey;
     switch (theme) {
       case 'gray-theme':
       case 'black-theme':
@@ -2818,7 +2866,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   }
 
   bool get _isReaderThemeDark {
-    final String theme = _settings?.theme ?? 'light-theme';
+    final String theme = appModel.appThemeKey;
     if (theme == 'custom-theme') return appModel.customThemeDark;
     return theme == 'gray-theme' ||
         theme == 'dark-theme' ||
@@ -2836,7 +2884,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   }
 
   String? get _customHighlightCss {
-    if (_settings?.theme != 'custom-theme') return null;
+    if (appModel.appThemeKey != 'custom-theme') return null;
     final Color? c = appModel.customThemePrimaryColor;
     if (c == null) return null;
     return 'rgba(${c.red},${c.green},${c.blue},0.34)';
