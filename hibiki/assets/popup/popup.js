@@ -425,7 +425,7 @@ function constructSingleGlossaryHtml(entryIndex) {
                 renderStructuredContent(tempDiv, JSON.parse(g.content), null, dictName, true);
             } catch {
                 if (/<[a-z][\s\S]*>/i.test(g.content)) {
-                    tempDiv.innerHTML = g.content.replace(/<link[^>]*>/gi, '');
+                    tempDiv.innerHTML = sanitizeHtml(g.content);
                 } else {
                     renderStructuredContent(tempDiv, g.content, null, dictName, true);
                 }
@@ -475,7 +475,7 @@ function constructGlossaryHtml(entryIndex) {
                 renderStructuredContent(tempDiv, JSON.parse(g.content), null, dictName, true);
             } catch {
                 if (/<[a-z][\s\S]*>/i.test(g.content)) {
-                    tempDiv.innerHTML = g.content.replace(/<link[^>]*>/gi, '');
+                    tempDiv.innerHTML = sanitizeHtml(g.content);
                 } else {
                     renderStructuredContent(tempDiv, g.content, null, dictName, true);
                 }
@@ -902,10 +902,25 @@ const INLINE_HTML_RE = /<(?:ruby|rt|rp|b|i|em|strong|span|sup|sub|br)\b[^>]*>/i;
 const URL_RE = /(?:https?:\/\/|(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+(?:com|org|net|edu|gov|io|dev|app|jp|uk|de|fr|info|me|co)\/)[^\s<>　，、。！））)]+/gi;
 const SAFE_TAGS = new Set(['ruby','rt','rp','b','i','em','strong','span','sup','sub','br','a']);
 
+function sanitizeHtml(html) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    doc.querySelectorAll('script,iframe,object,embed,form,meta,link,style').forEach(el => el.remove());
+    doc.querySelectorAll('*').forEach(el => {
+        for (const attr of [...el.attributes]) {
+            if (attr.name.startsWith('on') || attr.name === 'srcdoc' ||
+                (attr.name === 'href' && /^\s*(javascript|data):/i.test(attr.value)) ||
+                (attr.name === 'src' && /^\s*(javascript|data):/i.test(attr.value))) {
+                el.removeAttribute(attr.name);
+            }
+        }
+    });
+    return doc.body.innerHTML;
+}
+
 function sanitizeInlineHtml(html) {
     const tmp = document.createElement('div');
-    tmp.innerHTML = html;
-    tmp.querySelectorAll('script,style,iframe,object,embed,form,input,textarea,link').forEach(el => el.remove());
+    tmp.innerHTML = sanitizeHtml(html);
     tmp.querySelectorAll('*').forEach(el => {
         const tag = el.tagName.toLowerCase();
         if (!SAFE_TAGS.has(tag)) {
@@ -924,8 +939,10 @@ function sanitizeInlineHtml(html) {
 function linkifyUrls(html) {
     return html.replace(URL_RE, url => {
         const href = /^https?:\/\//i.test(url) ? url : 'https://' + url;
+        if (/^\s*(javascript|data|vbscript):/i.test(href)) return url;
         const escapedHref = href.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
-        return `<a href="${escapedHref}">${url}</a>`;
+        const escapedText = url.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return `<a href="${escapedHref}">${escapedText}</a>`;
     });
 }
 
