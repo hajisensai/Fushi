@@ -16,13 +16,15 @@ class AudiobookBridge {
 
   // ── JS / CSS ────────────────────────────────────────────────────────────────
 
-  static String _buildCss(Color primaryColor) {
-    final int r = (primaryColor.r * 255.0).round().clamp(0, 255);
-    final int g = (primaryColor.g * 255.0).round().clamp(0, 255);
-    final int b = (primaryColor.b * 255.0).round().clamp(0, 255);
+  static String _buildCss(Color highlightColor) {
+    final int r = (highlightColor.r * 255.0).round().clamp(0, 255);
+    final int g = (highlightColor.g * 255.0).round().clamp(0, 255);
+    final int b = (highlightColor.b * 255.0).round().clamp(0, 255);
+    final double a = highlightColor.a;
+    final double hoverA = (a * 0.4).clamp(0.0, 1.0);
     return '''
 .hoshi-active {
-  background: rgba($r, $g, $b, 0.35);
+  background: rgba($r, $g, $b, $a);
   border-radius: 2px;
   transition: background 0.15s ease;
 }
@@ -30,7 +32,7 @@ class AudiobookBridge {
   cursor: pointer;
 }
 [data-hoshi-sid]:hover, [data-cue-id]:hover {
-  background: rgba($r, $g, $b, 0.15);
+  background: rgba($r, $g, $b, $hoverA);
   border-radius: 2px;
 }
 ''';
