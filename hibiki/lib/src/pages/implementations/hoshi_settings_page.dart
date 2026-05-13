@@ -510,16 +510,12 @@ class _HoshiSettingsContentState extends BasePageState {
             ).then((_) => setState(() {}));
           },
         ),
-        _categoryTile(
-          context,
-          icon: Icons.audiotrack,
-          label: t.audiobook_settings,
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                  builder: (_) => const _AudiobookSettingsPage()),
-            ).then((_) => setState(() {}));
+        _buildSwitch(
+          label: t.show_floating_dict,
+          value: appModel.showFloatingDict,
+          onChanged: (_) async {
+            await appModel.setShowFloatingDict(!appModel.showFloatingDict);
+            setState(() {});
           },
         ),
         _categoryTile(
@@ -640,30 +636,9 @@ class _ReaderBehaviorSettingsPageState extends BasePageState {
           const Space.small(),
           const JidoujishoDivider(),
           _buildPageTurningSpeed(() => setState(() {})),
-        ],
-      ),
-    );
-  }
-}
-
-class _AudiobookSettingsPage extends BasePage {
-  const _AudiobookSettingsPage();
-
-  @override
-  BasePageState createState() => _AudiobookSettingsPageState();
-}
-
-class _AudiobookSettingsPageState extends BasePageState {
-  @override
-  Widget build(BuildContext context) {
-    final ReaderHoshiSource src = ReaderHoshiSource.instance;
-    return Scaffold(
-      appBar: AppBar(title: Text(t.audiobook_settings)),
-      body: ListView(
-        padding: EdgeInsets.fromLTRB(
-          16, 8, 16, 8 + MediaQuery.of(context).padding.bottom,
-        ),
-        children: [
+          const Space.small(),
+          const JidoujishoDivider(),
+          const Space.small(),
           _buildSwitch(
             label: t.show_media_notification,
             value: appModel.showMediaNotification,
@@ -714,25 +689,6 @@ class _AudiobookSettingsPageState extends BasePageState {
                 ),
               ],
             ),
-          ),
-          _buildSwitch(
-            label: t.show_floating_dict,
-            value: appModel.showFloatingDict,
-            onChanged: (_) async {
-              await appModel.setShowFloatingDict(!appModel.showFloatingDict);
-              setState(() {});
-            },
-          ),
-          const Space.small(),
-          const JidoujishoDivider(),
-          const Space.small(),
-          _buildSwitch(
-            label: t.auto_read_on_lookup,
-            value: src.autoReadOnLookup,
-            onChanged: (_) {
-              src.toggleAutoReadOnLookup();
-              setState(() {});
-            },
           ),
         ],
       ),
