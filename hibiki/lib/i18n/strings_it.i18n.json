@@ -840,5 +840,13 @@
     "color_sasayaki": "Evidenziazione Sasayaki",
     "color_sasayaki_desc": "Evidenziazione sincronizzazione sottotitoli audiolibro",
     "invert_swipe_direction": "Inverti direzione scorrimento per voltare pagina",
-    "tap_empty_hide_chrome": "Tocca un'area vuota per nascondere i controlli"
+    "tap_empty_hide_chrome": "Tocca un'area vuota per nascondere i controlli",
+  "debug_log_title": "Registro di debug ($count)",
+  "custom_css_title": "CSS personalizzato — $name",
+  "untitled_book": "Libro $id",
+  "auto_chapter": "Capitolo $n",
+  "floating_dict_title": "Dizionario",
+  "no_results_found": "Nessun risultato trovato.",
+  "preview_switch": "Interruttore",
+  "preview_badge": "Distintivo"
 }

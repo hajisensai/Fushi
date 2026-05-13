@@ -840,5 +840,13 @@
     "color_sasayaki": "Surlignage Sasayaki",
     "color_sasayaki_desc": "Surlignage de synchronisation des sous-titres du livre audio",
     "invert_swipe_direction": "Inverser la direction du balayage pour tourner les pages",
-    "tap_empty_hide_chrome": "Appuyez sur une zone vide pour masquer les contrôles"
+    "tap_empty_hide_chrome": "Appuyez sur une zone vide pour masquer les contrôles",
+  "debug_log_title": "Journal de débogage ($count)",
+  "custom_css_title": "CSS personnalisé — $name",
+  "untitled_book": "Livre $id",
+  "auto_chapter": "Chapitre $n",
+  "floating_dict_title": "Dictionnaire",
+  "no_results_found": "Aucun résultat trouvé.",
+  "preview_switch": "Interrupteur",
+  "preview_badge": "Badge"
 }

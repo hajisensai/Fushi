@@ -840,5 +840,13 @@
     "color_sasayaki": "Tô sáng Sasayaki",
     "color_sasayaki_desc": "Tô sáng đồng bộ phụ đề sách nói",
     "invert_swipe_direction": "Đảo ngược hướng vuốt lật trang",
-    "tap_empty_hide_chrome": "Chạm vùng trống để ẩn thanh điều khiển"
+    "tap_empty_hide_chrome": "Chạm vùng trống để ẩn thanh điều khiển",
+  "debug_log_title": "Nhật ký gỡ lỗi ($count)",
+  "custom_css_title": "CSS tùy chỉnh — $name",
+  "untitled_book": "Sách $id",
+  "auto_chapter": "Chương $n",
+  "floating_dict_title": "Từ điển",
+  "no_results_found": "Không tìm thấy kết quả.",
+  "preview_switch": "Công tắc",
+  "preview_badge": "Huy hiệu"
 }

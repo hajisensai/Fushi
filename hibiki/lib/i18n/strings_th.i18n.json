@@ -840,5 +840,13 @@
     "color_sasayaki": "ไฮไลท์ Sasayaki",
     "color_sasayaki_desc": "ไฮไลท์การซิงค์คำบรรยายหนังสือเสียง",
     "invert_swipe_direction": "กลับทิศทางการปัดเปลี่ยนหน้า",
-    "tap_empty_hide_chrome": "แตะพื้นที่ว่างเพื่อซ่อนแถบควบคุม"
+    "tap_empty_hide_chrome": "แตะพื้นที่ว่างเพื่อซ่อนแถบควบคุม",
+  "debug_log_title": "บันทึกการดีบัก ($count)",
+  "custom_css_title": "CSS กำหนดเอง — $name",
+  "untitled_book": "หนังสือ $id",
+  "auto_chapter": "บทที่ $n",
+  "floating_dict_title": "พจนานุกรม",
+  "no_results_found": "ไม่พบผลลัพธ์",
+  "preview_switch": "สวิตช์",
+  "preview_badge": "ป้าย"
 }

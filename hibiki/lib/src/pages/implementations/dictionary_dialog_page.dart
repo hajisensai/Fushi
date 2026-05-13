@@ -305,7 +305,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
     showAppDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Custom CSS — $dictName'),
+        title: Text(t.custom_css_title(name: dictName)),
         content: SizedBox(
           width: double.maxFinite,
           height: 300,

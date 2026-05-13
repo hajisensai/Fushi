@@ -840,5 +840,13 @@
     "color_sasayaki": "Sasayaki vurgusu",
     "color_sasayaki_desc": "Sesli kitap altyazı senkronizasyon vurgusu",
     "invert_swipe_direction": "Kaydırma yönünü tersine çevir",
-    "tap_empty_hide_chrome": "Kontrolleri gizlemek için boş alana dokunun"
+    "tap_empty_hide_chrome": "Kontrolleri gizlemek için boş alana dokunun",
+  "debug_log_title": "Hata ayıklama günlüğü ($count)",
+  "custom_css_title": "Özel CSS — $name",
+  "untitled_book": "Kitap $id",
+  "auto_chapter": "Bölüm $n",
+  "floating_dict_title": "Sözlük",
+  "no_results_found": "Sonuç bulunamadı.",
+  "preview_switch": "Anahtar",
+  "preview_badge": "Rozet"
 }

@@ -840,5 +840,13 @@
     "color_sasayaki": "사사야키 하이라이트",
     "color_sasayaki_desc": "오디오북 자막 동기화 하이라이트",
     "invert_swipe_direction": "스와이프 페이지 넘김 방향 반전",
-    "tap_empty_hide_chrome": "빈 영역을 탭하여 컨트롤 숨기기"
+    "tap_empty_hide_chrome": "빈 영역을 탭하여 컨트롤 숨기기",
+  "debug_log_title": "디버그 로그 ($count)",
+  "custom_css_title": "사용자 CSS — $name",
+  "untitled_book": "도서 $id",
+  "auto_chapter": "$n장",
+  "floating_dict_title": "사전",
+  "no_results_found": "결과를 찾을 수 없습니다.",
+  "preview_switch": "스위치",
+  "preview_badge": "배지"
 }

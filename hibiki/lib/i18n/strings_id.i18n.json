@@ -840,5 +840,13 @@
     "color_sasayaki": "Sorotan Sasayaki",
     "color_sasayaki_desc": "Sorotan sinkronisasi subtitle buku audio",
     "invert_swipe_direction": "Balik arah geser untuk membalik halaman",
-    "tap_empty_hide_chrome": "Ketuk area kosong untuk menyembunyikan kontrol"
+    "tap_empty_hide_chrome": "Ketuk area kosong untuk menyembunyikan kontrol",
+  "debug_log_title": "Log debug ($count)",
+  "custom_css_title": "CSS kustom — $name",
+  "untitled_book": "Buku $id",
+  "auto_chapter": "Bab $n",
+  "floating_dict_title": "Kamus",
+  "no_results_found": "Tidak ditemukan hasil.",
+  "preview_switch": "Sakelar",
+  "preview_badge": "Lencana"
 }

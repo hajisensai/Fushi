@@ -88,4 +88,8 @@ class FloatingDictChannel {
   static Future<void> setClipboardMonitoring({required bool enabled}) async {
     await _channel.invokeMethod<void>('setClipboardMonitoring', enabled);
   }
+
+  static Future<void> searchTerm(String term) async {
+    await _channel.invokeMethod<void>('searchTerm', term);
+  }
 }

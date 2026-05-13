@@ -710,7 +710,7 @@ class _CustomThemePageState extends BasePageState {
                   ),
                 ),
                 const SizedBox(width: 8),
-                Text('Switch',
+                Text(t.preview_switch,
                     style: TextStyle(color: cs.onSurface, fontSize: 12)),
                 const SizedBox(width: 16),
                 Container(
@@ -720,7 +720,7 @@ class _CustomThemePageState extends BasePageState {
                     color: cs.secondaryContainer,
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Text('Badge',
+                  child: Text(t.preview_badge,
                       style: TextStyle(
                           color: cs.onSecondaryContainer, fontSize: 11)),
                 ),

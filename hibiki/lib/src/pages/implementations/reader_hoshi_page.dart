@@ -384,7 +384,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     }
 
     return EpubBook(
-      title: 'Book ${widget.bookId}',
+      title: t.untitled_book(id: widget.bookId),
       chapters: chapters,
       rootDirectory: extractDir,
     );
@@ -2691,7 +2691,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (toc.isEmpty) {
       return List<TtuTocEntry>.generate(
         _book!.chapters.length,
-        (i) => TtuTocEntry(index: i, label: 'Chapter ${i + 1}'),
+        (i) => TtuTocEntry(index: i, label: t.auto_chapter(n: i + 1)),
       );
     }
     final List<TtuTocEntry> result = <TtuTocEntry>[];

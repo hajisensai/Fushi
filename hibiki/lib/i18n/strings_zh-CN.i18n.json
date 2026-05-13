@@ -854,5 +854,13 @@
     "icon_custom_confirm_body": "将在桌面创建新的快捷方式，是否继续？",
     "icon_switch_success": "图标已切换，桌面将在几秒后刷新",
     "icon_shortcut_created": "快捷方式已创建",
-    "icon_shortcut_unsupported": "当前设备不支持创建自定义快捷方式"
+    "icon_shortcut_unsupported": "当前设备不支持创建自定义快捷方式",
+  "debug_log_title": "调试日志 ($count)",
+  "custom_css_title": "自定义 CSS — $name",
+  "untitled_book": "书籍 $id",
+  "auto_chapter": "第 $n 章",
+  "floating_dict_title": "词典",
+  "no_results_found": "未找到结果。",
+  "preview_switch": "开关",
+  "preview_badge": "标签"
 }

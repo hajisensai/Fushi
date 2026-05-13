@@ -840,5 +840,13 @@
     "color_sasayaki": "Sasayaki-Hervorhebung",
     "color_sasayaki_desc": "Untertitel-Synchronisierung des Hörbuchs",
     "invert_swipe_direction": "Wischrichtung zum Blättern umkehren",
-    "tap_empty_hide_chrome": "Auf leeren Bereich tippen, um Steuerung auszublenden"
+    "tap_empty_hide_chrome": "Auf leeren Bereich tippen, um Steuerung auszublenden",
+  "debug_log_title": "Debug-Protokoll ($count)",
+  "custom_css_title": "Benutzerdefiniertes CSS — $name",
+  "untitled_book": "Buch $id",
+  "auto_chapter": "Kapitel $n",
+  "floating_dict_title": "Wörterbuch",
+  "no_results_found": "Keine Ergebnisse gefunden.",
+  "preview_switch": "Schalter",
+  "preview_badge": "Abzeichen"
 }

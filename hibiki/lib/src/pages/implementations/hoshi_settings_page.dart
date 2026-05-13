@@ -574,7 +574,7 @@ class _HoshiSettingsContentState extends BasePageState {
           _categoryTile(
             context,
             icon: Icons.terminal,
-            label: 'Debug Log (${DebugLogService.instance.entries.length})',
+            label: t.debug_log_title(count: DebugLogService.instance.entries.length),
             onTap: () {
               Navigator.push(
                 context,

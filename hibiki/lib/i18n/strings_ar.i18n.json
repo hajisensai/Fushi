@@ -840,5 +840,13 @@
     "color_sasayaki": "تمييز Sasayaki",
     "color_sasayaki_desc": "تمييز مزامنة ترجمة الكتاب المسموع",
     "invert_swipe_direction": "عكس اتجاه التمرير لقلب الصفحات",
-    "tap_empty_hide_chrome": "انقر على المنطقة الفارغة لإخفاء عناصر التحكم"
+    "tap_empty_hide_chrome": "انقر على المنطقة الفارغة لإخفاء عناصر التحكم",
+  "debug_log_title": "سجل التصحيح ($count)",
+  "custom_css_title": "CSS مخصص — $name",
+  "untitled_book": "كتاب $id",
+  "auto_chapter": "الفصل $n",
+  "floating_dict_title": "القاموس",
+  "no_results_found": "لم يتم العثور على نتائج.",
+  "preview_switch": "مفتاح",
+  "preview_badge": "شارة"
 }

@@ -842,5 +842,13 @@
     "color_link": "連結顏色",
     "color_link_desc": "閱讀器超連結顏色",
     "color_sasayaki": "Sasayaki 醒目標示",
-    "color_sasayaki_desc": "有聲書字幕同步醒目標示"
+    "color_sasayaki_desc": "有聲書字幕同步醒目標示",
+  "debug_log_title": "除錯日誌 ($count)",
+  "custom_css_title": "自訂 CSS — $name",
+  "untitled_book": "書籍 $id",
+  "auto_chapter": "第 $n 章",
+  "floating_dict_title": "辭典",
+  "no_results_found": "未找到結果。",
+  "preview_switch": "開關",
+  "preview_badge": "標籤"
 }

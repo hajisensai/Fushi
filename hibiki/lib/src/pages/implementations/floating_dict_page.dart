@@ -108,9 +108,8 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bgColor =
-        isDark ? const Color(0xF01E1E2E) : const Color(0xF0F5F5F5);
+    final cs = Theme.of(context).colorScheme;
+    final bgColor = cs.surfaceContainerHigh.withValues(alpha: 0.94);
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -119,22 +118,23 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
           color: bgColor,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-            color: isDark ? Colors.white24 : Colors.black12,
+            color: cs.outlineVariant.withValues(alpha: 0.3),
           ),
         ),
         child: Column(
           children: [
-            _buildTitleBar(isDark),
-            _buildSearchBar(isDark),
+            _buildTitleBar(),
+            _buildSearchBar(),
             Expanded(child: _buildResults()),
-            _buildResizeHandle(isDark),
+            _buildResizeHandle(),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildTitleBar(bool isDark) {
+  Widget _buildTitleBar() {
+    final cs = Theme.of(context).colorScheme;
     return GestureDetector(
       onPanUpdate: (details) {
         widget.channel.invokeMethod('drag', {
@@ -151,9 +151,9 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
           children: [
             Expanded(
               child: Text(
-                'Dictionary',
+                t.floating_dict_title,
                 style: TextStyle(
-                  color: isDark ? Colors.white : Colors.black87,
+                  color: cs.onSurface,
                   fontSize: 14,
                 ),
               ),
@@ -164,7 +164,7 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
               child: IconButton(
                 icon: Icon(Icons.close,
                     size: 16,
-                    color: isDark ? Colors.white : Colors.black54),
+                    color: cs.onSurfaceVariant),
                 padding: EdgeInsets.zero,
                 onPressed: () => widget.channel.invokeMethod('close'),
               ),
@@ -175,9 +175,10 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
     );
   }
 
-  Widget _buildSearchBar(bool isDark) {
-    final textColor = isDark ? Colors.white : Colors.black;
-    final hintColor = isDark ? Colors.white54 : Colors.black45;
+  Widget _buildSearchBar() {
+    final cs = Theme.of(context).colorScheme;
+    final textColor = cs.onSurface;
+    final hintColor = cs.onSurfaceVariant;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -189,15 +190,13 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
               focusNode: _searchFocusNode,
               style: TextStyle(color: textColor, fontSize: 14),
               decoration: InputDecoration(
-                hintText: 'Search...',
+                hintText: t.search_ellipsis,
                 hintStyle: TextStyle(color: hintColor, fontSize: 14),
                 isDense: true,
                 contentPadding:
                     const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                 filled: true,
-                fillColor: isDark
-                    ? Colors.white10
-                    : Colors.black.withValues(alpha: 0.05),
+                fillColor: cs.surfaceContainerHighest.withValues(alpha: 0.5),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(6),
                   borderSide: BorderSide.none,
@@ -232,12 +231,12 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
       );
     }
     if (_result == null || _result!.entries.isEmpty) {
-      final isDark = Theme.of(context).brightness == Brightness.dark;
+      final cs = Theme.of(context).colorScheme;
       return Center(
         child: Text(
-          _lastSearch.isEmpty ? '' : 'No results found.',
+          _lastSearch.isEmpty ? '' : t.no_results_found,
           style: TextStyle(
-            color: isDark ? Colors.white54 : Colors.black45,
+            color: cs.onSurfaceVariant,
             fontSize: 13,
           ),
         ),
@@ -249,7 +248,8 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
     );
   }
 
-  Widget _buildResizeHandle(bool isDark) {
+  Widget _buildResizeHandle() {
+    final cs = Theme.of(context).colorScheme;
     return Align(
       alignment: Alignment.bottomRight,
       child: GestureDetector(
@@ -269,7 +269,7 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
           child: Icon(
             Icons.drag_handle,
             size: 14,
-            color: isDark ? Colors.white38 : Colors.black26,
+            color: cs.outlineVariant,
           ),
         ),
       ),

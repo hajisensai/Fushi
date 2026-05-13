@@ -840,5 +840,13 @@
     "color_sasayaki": "Подсветка Sasayaki",
     "color_sasayaki_desc": "Подсветка синхронизации субтитров аудиокниги",
     "invert_swipe_direction": "Инвертировать направление свайпа для перелистывания",
-    "tap_empty_hide_chrome": "Нажмите на пустую область, чтобы скрыть панели управления"
+    "tap_empty_hide_chrome": "Нажмите на пустую область, чтобы скрыть панели управления",
+  "debug_log_title": "Журнал отладки ($count)",
+  "custom_css_title": "Пользовательский CSS — $name",
+  "untitled_book": "Книга $id",
+  "auto_chapter": "Глава $n",
+  "floating_dict_title": "Словарь",
+  "no_results_found": "Ничего не найдено.",
+  "preview_switch": "Переключатель",
+  "preview_badge": "Значок"
 }

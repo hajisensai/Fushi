@@ -840,5 +840,13 @@
     "color_link": "リンクの色",
     "color_link_desc": "リーダーのハイパーリンク色",
     "color_sasayaki": "ささやきハイライト",
-    "color_sasayaki_desc": "オーディオブック字幕同期ハイライト"
+    "color_sasayaki_desc": "オーディオブック字幕同期ハイライト",
+  "debug_log_title": "デバッグログ ($count)",
+  "custom_css_title": "カスタム CSS — $name",
+  "untitled_book": "ブック $id",
+  "auto_chapter": "第${n}章",
+  "floating_dict_title": "辞書",
+  "no_results_found": "結果が見つかりません。",
+  "preview_switch": "スイッチ",
+  "preview_badge": "バッジ"
 }

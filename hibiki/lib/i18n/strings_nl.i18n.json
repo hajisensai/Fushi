@@ -840,5 +840,13 @@
     "color_sasayaki": "Sasayaki-markering",
     "color_sasayaki_desc": "Markering van ondertitelsynchronisatie van het luisterboek",
     "invert_swipe_direction": "Veegrichting voor bladeren omdraaien",
-    "tap_empty_hide_chrome": "Tik op een leeg gebied om bedieningselementen te verbergen"
+    "tap_empty_hide_chrome": "Tik op een leeg gebied om bedieningselementen te verbergen",
+  "debug_log_title": "Debug-log ($count)",
+  "custom_css_title": "Aangepaste CSS — $name",
+  "untitled_book": "Boek $id",
+  "auto_chapter": "Hoofdstuk $n",
+  "floating_dict_title": "Woordenboek",
+  "no_results_found": "Geen resultaten gevonden.",
+  "preview_switch": "Schakelaar",
+  "preview_badge": "Badge"
 }

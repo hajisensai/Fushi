@@ -602,9 +602,9 @@ class AppModel with ChangeNotifier {
         horizontalTitleGap: 0,
       ),
       inputDecorationTheme: InputDecorationTheme(
-        enabledBorder: const UnderlineInputBorder(
+        enabledBorder: UnderlineInputBorder(
           borderSide: BorderSide(
-            color: Colors.black54,
+            color: cs.outline,
           ),
         ),
         focusedBorder: UnderlineInputBorder(
@@ -618,7 +618,7 @@ class AppModel with ChangeNotifier {
       sliderTheme: SliderThemeData(
         thumbColor: cs.primary,
         activeTrackColor: cs.primary,
-        inactiveTrackColor: Colors.grey,
+        inactiveTrackColor: cs.outlineVariant,
         trackShape: const RectangularSliderTrackShape(),
         trackHeight: 2,
         thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
@@ -682,9 +682,9 @@ class AppModel with ChangeNotifier {
         horizontalTitleGap: 0,
       ),
       inputDecorationTheme: InputDecorationTheme(
-        enabledBorder: const UnderlineInputBorder(
+        enabledBorder: UnderlineInputBorder(
           borderSide: BorderSide(
-            color: Colors.white70,
+            color: cs.outline,
           ),
         ),
         focusedBorder: UnderlineInputBorder(
@@ -697,7 +697,7 @@ class AppModel with ChangeNotifier {
       sliderTheme: SliderThemeData(
         thumbColor: cs.primary,
         activeTrackColor: cs.primary,
-        inactiveTrackColor: Colors.grey,
+        inactiveTrackColor: cs.outlineVariant,
         trackShape: const RectangularSliderTrackShape(),
         trackHeight: 2,
         thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),

@@ -27,11 +27,11 @@ class _DebugLogPageState extends State<DebugLogPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Debug Log ($count)'),
+        title: Text(t.debug_log_title(count: count)),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
+            tooltip: t.stat_refresh,
             onPressed: () => setState(() {
               _log = DebugLogService.instance.getFullLog();
             }),
