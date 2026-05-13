@@ -1959,6 +1959,8 @@ class _RepeatIconButton extends StatefulWidget {
   const _RepeatIconButton({
     required this.icon,
     required this.onPressed,
+    this.initialDelay = const Duration(milliseconds: 500),
+    this.repeatInterval = const Duration(milliseconds: 100),
   });
 
   final Widget icon;
