@@ -5,7 +5,11 @@ EpubBook _bookWithHtml(String html) {
   return EpubBook(
     title: 'test',
     chapters: <EpubChapter>[
-      EpubChapter(id: 'ch1', href: 'ch1.xhtml', mediaType: 'application/xhtml+xml', html: html),
+      EpubChapter(
+          id: 'ch1',
+          href: 'ch1.xhtml',
+          mediaType: 'application/xhtml+xml',
+          html: html),
     ],
   );
 }

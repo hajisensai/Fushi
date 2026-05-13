@@ -20,7 +20,9 @@ abstract final class AudiobookStorage {
     Directory persistDir, {
     int? dedupeIndex,
   }) async {
-    if (src.path.startsWith(persistDir.path)) return src.path;
+    if (p.isWithin(p.canonicalize(persistDir.path), p.canonicalize(src.path))) {
+      return src.path;
+    }
     String baseName = p.basename(src.path);
     if (baseName.contains('..')) {
       throw ArgumentError('Invalid filename: $baseName');
@@ -44,7 +46,9 @@ abstract final class AudiobookStorage {
     Directory persistDir, {
     void Function(int copied, int total)? onProgress,
   }) async {
-    if (src.path.startsWith(persistDir.path)) return src.path;
+    if (p.isWithin(p.canonicalize(persistDir.path), p.canonicalize(src.path))) {
+      return src.path;
+    }
     final String baseName = p.basename(src.path);
     if (baseName.contains('..')) {
       throw ArgumentError('Invalid filename: $baseName');
@@ -89,16 +93,22 @@ abstract final class AudiobookStorage {
   static Future<void> cleanAudioFiles(Directory persistDir) async {
     if (!persistDir.existsSync()) return;
     final List<String> audioExts = [
-      '.mp3', '.m4a', '.m4b', '.aac', '.ogg', '.opus', '.flac', '.wav', '.wma',
+      '.mp3',
+      '.m4a',
+      '.m4b',
+      '.aac',
+      '.ogg',
+      '.opus',
+      '.flac',
+      '.wav',
+      '.wma',
     ];
     for (final FileSystemEntity f in persistDir.listSync()) {
-      if (f is File &&
-          audioExts.contains(p.extension(f.path).toLowerCase())) {
+      if (f is File && audioExts.contains(p.extension(f.path).toLowerCase())) {
         await f.delete();
       }
     }
   }
-
 
   static Future<void> deletePersistDir(String bookUid) async {
     final Directory docs = await getApplicationDocumentsDirectory();

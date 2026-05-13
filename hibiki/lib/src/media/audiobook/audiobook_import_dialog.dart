@@ -1,7 +1,8 @@
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:hibiki/src/media/audiobook/book_import_dialog.dart' show BookImportDialog;
+import 'package:hibiki/src/media/audiobook/book_import_dialog.dart'
+    show BookImportDialog;
 import 'package:path/path.dart' as p;
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
@@ -50,8 +51,8 @@ class AudiobookImportDialog extends StatefulWidget {
 
 class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
   // ── 音频来源 ── 两者互斥，最后选的那个生效 ─────────────────────────────────
-  String? _audioDir;          // folder 模式
-  List<String>? _audioPaths;  // files 模式
+  String? _audioDir; // folder 模式
+  List<String>? _audioPaths; // files 模式
 
   String? _alignmentPath;
   String? _alignmentName;
@@ -198,13 +199,15 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
   }
 
   Widget _buildAttachedView(Audiobook ab) {
-    final String audioLabel = (ab.audioPaths != null && ab.audioPaths!.isNotEmpty)
-        ? t.srt_import_files_selected(n: ab.audioPaths!.length)
-        : (ab.audioRoot ?? '');
+    final String audioLabel =
+        (ab.audioPaths != null && ab.audioPaths!.isNotEmpty)
+            ? t.srt_import_files_selected(n: ab.audioPaths!.length)
+            : (ab.audioRoot ?? '');
     return FutureBuilder<AudiobookHealth>(
       future: widget.repo.resolveHealth(ab),
       builder: (context, snapshot) {
-        final AudiobookHealth health = snapshot.data ?? AudiobookHealth.fromAudiobook(ab);
+        final AudiobookHealth health =
+            snapshot.data ?? AudiobookHealth.fromAudiobook(ab);
         final Widget? healthRow = _buildHealthRow(health);
         final bool canReMatch = _canReMatch(ab, health);
         return Column(
@@ -339,8 +342,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
           const SizedBox(height: 8),
           SasayakiThresholdSlider(
             value: _similarityThreshold,
-            onChanged: (v) =>
-                setState(() => _similarityThreshold = v),
+            onChanged: (v) => setState(() => _similarityThreshold = v),
           ),
         ],
         if (_importing) ...[
@@ -459,11 +461,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       );
       if (result == null || !mounted) return;
 
-      final List<String> paths = result.files
-          .map((f) => f.path)
-          .whereType<String>()
-          .toList()
-        ..sort();
+      final List<String> paths =
+          result.files.map((f) => f.path).whereType<String>().toList()..sort();
 
       if (paths.isNotEmpty) {
         setState(() {
@@ -585,7 +584,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       return;
     }
 
-    debugPrint('[hibiki-audiobook] doImport bookUid.len=${widget.bookUid.length} '
+    debugPrint(
+        '[hibiki-audiobook] doImport bookUid.len=${widget.bookUid.length} '
         'hash=${widget.bookUid.hashCode} uid=${widget.bookUid}');
     setState(() => _importing = true);
     _reportProgress(0, '');
@@ -593,8 +593,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     int grandTotal = 0;
     try {
       _reportProgress(0.1, t.import_step_parsing);
-      final String ext =
-          _alignmentPath!.split('.').last.toLowerCase();
+      final String ext = _alignmentPath!.split('.').last.toLowerCase();
       const Set<String> cueFormats = {'smil', 'srt', 'lrc', 'vtt', 'ass'};
       final String format = cueFormats.contains(ext) ? ext : 'json';
 
@@ -615,7 +614,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       }
 
       for (final File f in filesToCopy) {
-        if (!f.path.startsWith(persistDir.path)) {
+        if (!p.isWithin(
+            p.canonicalize(persistDir.path), p.canonicalize(f.path))) {
           grandTotal += await f.length();
         }
       }
@@ -626,9 +626,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
         File(_alignmentPath!),
         persistDir,
         onProgress: (int copied, int total) {
-          final double ratio = grandTotal > 0
-              ? (grandCopied + copied) / grandTotal
-              : 0.0;
+          final double ratio =
+              grandTotal > 0 ? (grandCopied + copied) / grandTotal : 0.0;
           _reportProgress(0.5 + ratio * 0.3,
               t.import_step_copying_file(name: p.basename(_alignmentPath!)));
         },
@@ -872,8 +871,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       for (final AudioCue c in allCues) {
         byChapter.putIfAbsent(c.chapterHref, () => []).add(c);
       }
-      for (final MapEntry<String, List<AudioCue>> entry
-          in byChapter.entries) {
+      for (final MapEntry<String, List<AudioCue>> entry in byChapter.entries) {
         await widget.repo.saveCues(
           bookUid: widget.bookUid,
           chapterHref: entry.key,
@@ -886,11 +884,10 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       );
     } else {
       // SMIL：单文件对应单章节，文件名（去扩展）推断 chapterHref
-      final String fileName = _alignmentPath!
-          .split(Platform.pathSeparator)
-          .last;
-      final String chapterHref =
-          fileName.replaceAll(RegExp(r'\.smil$', caseSensitive: false), '.xhtml');
+      final String fileName =
+          _alignmentPath!.split(Platform.pathSeparator).last;
+      final String chapterHref = fileName.replaceAll(
+          RegExp(r'\.smil$', caseSensitive: false), '.xhtml');
 
       final List<AudioCue> cues = await SmilParser.parse(
         smilFile: alignFile,

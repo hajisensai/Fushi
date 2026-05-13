@@ -5,7 +5,8 @@ void main() {
   group('p.isWithin rejects sibling prefix collisions', () {
     test('sibling directory with same prefix is rejected', () {
       final String base = p.join('C:', 'data', 'books', '12');
-      final String evil = p.join('C:', 'data', 'books', '12_evil', 'payload.txt');
+      final String evil =
+          p.join('C:', 'data', 'books', '12_evil', 'payload.txt');
       expect(p.isWithin(base, evil), isFalse);
     });
 
@@ -17,7 +18,8 @@ void main() {
 
     test('parent traversal via .. is rejected', () {
       final String base = p.join('C:', 'data', 'books', '12');
-      final String traversal = p.canonicalize(p.join(base, '..', '13', 'secret.txt'));
+      final String traversal =
+          p.canonicalize(p.join(base, '..', '13', 'secret.txt'));
       expect(p.isWithin(base, traversal), isFalse);
     });
 

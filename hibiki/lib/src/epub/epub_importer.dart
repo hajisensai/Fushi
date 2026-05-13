@@ -57,15 +57,20 @@ class EpubImporter {
             )
           : null;
 
-      final String resolvedTitle = book.title == p.basenameWithoutExtension(extractDir)
-          ? p.basenameWithoutExtension(fileName)
-          : book.title;
+      final String resolvedTitle =
+          book.title == p.basenameWithoutExtension(extractDir)
+              ? p.basenameWithoutExtension(fileName)
+              : book.title;
 
       insertedBookId = await db.into(db.epubBooks).insert(
             EpubBooksCompanion.insert(
               title: resolvedTitle,
-              author: book.author != null ? Value(book.author) : const Value.absent(),
-              coverPath: book.coverHref != null ? Value(book.coverHref) : const Value.absent(),
+              author: book.author != null
+                  ? Value(book.author)
+                  : const Value.absent(),
+              coverPath: book.coverHref != null
+                  ? Value(book.coverHref)
+                  : const Value.absent(),
               epubPath: fileName,
               extractDir: extractDir,
               chapterCount: book.chapters.length,
@@ -84,11 +89,13 @@ class EpubImporter {
             try {
               srcDir.renameSync(realDir);
             } catch (e) {
-              ErrorLogService.instance.log('EpubImporter.rename', e, StackTrace.current);
+              ErrorLogService.instance
+                  .log('EpubImporter.rename', e, StackTrace.current);
               rethrow;
             }
           }
-          await (db.update(db.epubBooks)..where((tbl) => tbl.id.equals(insertedBookId!)))
+          await (db.update(db.epubBooks)
+                ..where((tbl) => tbl.id.equals(insertedBookId!)))
               .write(EpubBooksCompanion(extractDir: Value(realDir)));
         }
       }

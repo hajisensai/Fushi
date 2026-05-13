@@ -5,8 +5,18 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test('chaptersJson entries must include characters field', () {
     final List<Map<String, Object>> chapters = [
-      {'id': 'ch1', 'href': 'ch1.html', 'mediaType': 'application/xhtml+xml', 'characters': 1500},
-      {'id': 'ch2', 'href': 'ch2.html', 'mediaType': 'application/xhtml+xml', 'characters': 2300},
+      {
+        'id': 'ch1',
+        'href': 'ch1.html',
+        'mediaType': 'application/xhtml+xml',
+        'characters': 1500
+      },
+      {
+        'id': 'ch2',
+        'href': 'ch2.html',
+        'mediaType': 'application/xhtml+xml',
+        'characters': 2300
+      },
     ];
     final String json = jsonEncode(chapters);
     final List<dynamic> decoded = jsonDecode(json) as List<dynamic>;
@@ -22,8 +32,18 @@ void main() {
 
   test('reader_hoshi_source reads characters correctly when present', () {
     final String chaptersJson = jsonEncode([
-      {'id': 'ch1', 'href': 'ch1.html', 'mediaType': 'text/html', 'characters': 500},
-      {'id': 'ch2', 'href': 'ch2.html', 'mediaType': 'text/html', 'characters': 800},
+      {
+        'id': 'ch1',
+        'href': 'ch1.html',
+        'mediaType': 'text/html',
+        'characters': 500
+      },
+      {
+        'id': 'ch2',
+        'href': 'ch2.html',
+        'mediaType': 'text/html',
+        'characters': 800
+      },
     ]);
 
     final List<dynamic> chapters = jsonDecode(chaptersJson) as List<dynamic>;
@@ -36,7 +56,8 @@ void main() {
     expect(sectionChars.fold<int>(0, (int a, int b) => a + b), 1300);
   });
 
-  test('reader_hoshi_source handles missing characters gracefully (old data)', () {
+  test('reader_hoshi_source handles missing characters gracefully (old data)',
+      () {
     final String chaptersJson = jsonEncode([
       {'id': 'ch1', 'href': 'ch1.html', 'mediaType': 'text/html'},
       {'id': 'ch2', 'href': 'ch2.html', 'mediaType': 'text/html'},

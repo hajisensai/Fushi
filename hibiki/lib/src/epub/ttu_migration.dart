@@ -30,8 +30,7 @@ class TtuMigration {
     if (cachedIdsJson != null) {
       allIds = (jsonDecode(cachedIdsJson) as List<dynamic>).cast<int>();
     } else {
-      final List<int>? ids =
-          await TtuIdbReader.readAllBookIds(ttuServerPort);
+      final List<int>? ids = await TtuIdbReader.readAllBookIds(ttuServerPort);
       if (ids == null) {
         debugPrint('[ttu-migration] IDB read failed, will retry next launch');
         return 0;
@@ -69,8 +68,7 @@ class TtuMigration {
         }
 
         final String extractDir = await EpubStorage.bookDirectory(ttuId);
-        final List<dynamic> sections =
-            bookData['sections'] as List<dynamic>;
+        final List<dynamic> sections = bookData['sections'] as List<dynamic>;
         String elementHtml = bookData['elementHtml'] as String;
 
         final dynamic rawBlobs = bookData['blobsBase64'];
@@ -119,9 +117,8 @@ class TtuMigration {
                 extractDir: extractDir,
                 chapterCount: actualChapters,
                 chaptersJson: chaptersJson,
-                tocJson: tocJson != null
-                    ? Value(tocJson)
-                    : const Value.absent(),
+                tocJson:
+                    tocJson != null ? Value(tocJson) : const Value.absent(),
                 importedAt: DateTime.now().millisecondsSinceEpoch,
               ),
               mode: InsertMode.insertOrIgnore,
@@ -129,7 +126,9 @@ class TtuMigration {
 
         await _migrateReadingProgress(db, ttuId, bookData, actualChapters);
         await _migrateBookmarks(
-          db, ttuId, bookData,
+          db,
+          ttuId,
+          bookData,
           bookData['title'] as String? ?? t.untitled,
         );
 
@@ -161,15 +160,13 @@ class TtuMigration {
 
     final List<_SectionSpan> spans = <_SectionSpan>[];
     for (int i = 0; i < sections.length; i++) {
-      final Map<String, dynamic> sec =
-          sections[i] as Map<String, dynamic>;
+      final Map<String, dynamic> sec = sections[i] as Map<String, dynamic>;
       final String ref = sec['reference'] as String? ?? '';
       if (ref.isEmpty) {
         spans.add(const _SectionSpan(start: -1, end: -1));
         continue;
       }
-      final RegExp pattern =
-          RegExp('id=["\']${RegExp.escape(ref)}["\']');
+      final RegExp pattern = RegExp('id=["\']${RegExp.escape(ref)}["\']');
       final RegExpMatch? match = pattern.firstMatch(elementHtml);
       if (match == null) {
         spans.add(const _SectionSpan(start: -1, end: -1));
@@ -239,9 +236,8 @@ class TtuMigration {
     final int lastSection = bookData['lastSectionIndex'] as int? ?? -1;
     if (progress <= 0 && lastSection < 0) return;
 
-    final int section = lastSection >= 0 && lastSection < chapterCount
-        ? lastSection
-        : 0;
+    final int section =
+        lastSection >= 0 && lastSection < chapterCount ? lastSection : 0;
     final int normOffset = (progress * 10000).round().clamp(0, 10000);
 
     final ReaderPositionRepository repo = ReaderPositionRepository(db);
@@ -297,8 +293,7 @@ class TtuMigration {
     final num progress = raw['progress'] as num? ?? 0;
     if (exploredChars <= 0 && progress <= 0) return null;
 
-    final int sectionIndex =
-        (raw['lastSectionIndex'] as num?)?.toInt() ?? 0;
+    final int sectionIndex = (raw['lastSectionIndex'] as num?)?.toInt() ?? 0;
     final int normOffset = (progress * 10000).round().clamp(0, 10000);
 
     return Bookmark(
@@ -384,8 +379,7 @@ class TtuMigration {
       final EpubBookRow? existing = await db.getEpubBook(ttuId);
       if (existing == null) continue;
 
-      final Directory blobDir =
-          Directory(p.join(existing.extractDir, 'blobs'));
+      final Directory blobDir = Directory(p.join(existing.extractDir, 'blobs'));
       if (blobDir.existsSync()) {
         await prefs.setBool(blobFlag, true);
         continue;
@@ -408,8 +402,7 @@ class TtuMigration {
         final int written = await _writeBlobs(existing.extractDir, rawBlobs);
         final String rewrittenHtml =
             _rewriteBlobRefs(bookData['elementHtml'] as String);
-        final List<dynamic> sections =
-            bookData['sections'] as List<dynamic>;
+        final List<dynamic> sections = bookData['sections'] as List<dynamic>;
         _writeSectionFiles(existing.extractDir, rewrittenHtml, sections);
 
         await prefs.setBool(blobFlag, true);
@@ -427,8 +420,7 @@ class TtuMigration {
   static String? _buildTocJson(List<dynamic> sections, int actualChapters) {
     final List<Map<String, String?>> entries = <Map<String, String?>>[];
     for (int i = 0; i < sections.length && i < actualChapters; i++) {
-      final Map<String, dynamic> sec =
-          sections[i] as Map<String, dynamic>;
+      final Map<String, dynamic> sec = sections[i] as Map<String, dynamic>;
       final String label = sec['label'] as String? ?? '';
       final String parentChapter = sec['parentChapter'] as String? ?? '';
       if (label.isEmpty || parentChapter.isNotEmpty) continue;
@@ -465,14 +457,11 @@ class TtuMigration {
         );
         if (bookData == null) continue;
 
-        final List<dynamic> sections =
-            bookData['sections'] as List<dynamic>;
-        final String? tocJson =
-            _buildTocJson(sections, existing.chapterCount);
+        final List<dynamic> sections = bookData['sections'] as List<dynamic>;
+        final String? tocJson = _buildTocJson(sections, existing.chapterCount);
         if (tocJson == null) continue;
 
-        await (db.update(db.epubBooks)
-              ..where((tbl) => tbl.id.equals(ttuId)))
+        await (db.update(db.epubBooks)..where((tbl) => tbl.id.equals(ttuId)))
             .write(EpubBooksCompanion(tocJson: Value(tocJson)));
 
         remediated++;
@@ -509,9 +498,13 @@ class TtuMigration {
           final String href = map['href'] as String? ?? '';
           int chars = 0;
           if (href.isNotEmpty) {
-            final File file = File(p.join(book.extractDir, href));
-            if (file.existsSync()) {
-              chars = _countPlainTextChars(file.readAsStringSync());
+            final String filePath =
+                p.canonicalize(p.join(book.extractDir, href));
+            if (p.isWithin(p.canonicalize(book.extractDir), filePath)) {
+              final File file = File(filePath);
+              if (file.existsSync()) {
+                chars = _countPlainTextChars(file.readAsStringSync());
+              }
             }
           }
           updated.add(<String, Object>{
@@ -522,19 +515,18 @@ class TtuMigration {
           });
         }
 
-        await (db.update(db.epubBooks)
-              ..where((tbl) => tbl.id.equals(book.id)))
-            .write(EpubBooksCompanion(
-                chaptersJson: Value(jsonEncode(updated))));
+        await (db.update(db.epubBooks)..where((tbl) => tbl.id.equals(book.id)))
+            .write(
+                EpubBooksCompanion(chaptersJson: Value(jsonEncode(updated))));
         remediated++;
       } catch (e, stack) {
-        ErrorLogService.instance
-            .log('TtuMigration.remediateChars', e, stack);
+        ErrorLogService.instance.log('TtuMigration.remediateChars', e, stack);
       }
     }
 
     if (remediated > 0) {
-      debugPrint('[epub-remediate] backfilled characters for $remediated books');
+      debugPrint(
+          '[epub-remediate] backfilled characters for $remediated books');
     }
     return remediated;
   }

@@ -32,7 +32,8 @@ class EpubParser {
     final File containerFile =
         File(p.join(extractDir, 'META-INF', 'container.xml'));
     if (!containerFile.existsSync()) {
-      throw const FormatException('Invalid EPUB: missing META-INF/container.xml');
+      throw const FormatException(
+          'Invalid EPUB: missing META-INF/container.xml');
     }
     final XmlDocument containerXml =
         XmlDocument.parse(containerFile.readAsStringSync());
@@ -56,8 +57,8 @@ class EpubParser {
       throw const FormatException('EPUB spine contains no readable chapters');
     }
 
-    final String title =
-        _parseMetadata(opfXml, 'title') ?? p.basenameWithoutExtension(extractDir);
+    final String title = _parseMetadata(opfXml, 'title') ??
+        p.basenameWithoutExtension(extractDir);
     final String? author = _parseMetadata(opfXml, 'creator');
     final String? language = _parseMetadata(opfXml, 'language');
     final String? coverHref =
@@ -274,7 +275,8 @@ class EpubParser {
       if (tocId != null && manifest.containsKey(tocId)) {
         final _ManifestItem ncxItem = manifest[tocId]!;
         final String ncxPath = p.canonicalize(p.join(opfDir, ncxItem.href));
-        if (!p.isWithin(p.canonicalize(extractDir), ncxPath)) return <EpubTocItem>[];
+        if (!p.isWithin(p.canonicalize(extractDir), ncxPath))
+          return <EpubTocItem>[];
         final File ncxFile = File(ncxPath);
         if (ncxFile.existsSync()) {
           return _parseNcx(
@@ -297,8 +299,8 @@ class EpubParser {
     try {
       final XmlDocument doc = XmlDocument.parse(navHtml);
       for (final XmlElement nav in doc.findAllElements('nav')) {
-        final String? epubType = nav.getAttribute('type') ??
-            nav.getAttribute('epub:type');
+        final String? epubType =
+            nav.getAttribute('type') ?? nav.getAttribute('epub:type');
         if (epubType == 'toc') {
           final XmlElement? ol = nav.getElement('ol');
           if (ol != null) {
