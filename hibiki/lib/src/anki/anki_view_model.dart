@@ -5,15 +5,15 @@ import 'package:hibiki/src/anki/anki_repository.dart';
 import 'package:hibiki/src/anki/lapis_preset.dart';
 
 class AnkiUiState {
-  final AnkiSettings settings;
-  final bool isFetching;
-  final String? errorMessage;
 
   const AnkiUiState({
     this.settings = const AnkiSettings(),
     this.isFetching = false,
     this.errorMessage,
   });
+  final AnkiSettings settings;
+  final bool isFetching;
+  final String? errorMessage;
 
   List<AnkiDeck> get availableDecks => settings.availableDecks;
   List<AnkiNoteType> get availableNoteTypes => settings.availableNoteTypes;
@@ -34,11 +34,11 @@ class AnkiUiState {
 }
 
 class AnkiViewModel extends StateNotifier<AnkiUiState> {
-  final AnkiRepository _repository;
 
   AnkiViewModel(this._repository) : super(const AnkiUiState()) {
     _loadSettings();
   }
+  final AnkiRepository _repository;
 
   Future<void> _loadSettings() async {
     final settings = await _repository.loadSettings();

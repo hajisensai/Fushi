@@ -372,7 +372,7 @@ class AnkiRepository {
           ? noteTypes.firstWhereOrNull(
               (t) => t.name == current.selectedNoteTypeName)
           : null) ??
-      noteTypes.firstWhereOrNull((t) => LapisPreset.matches(t)) ??
+      noteTypes.firstWhereOrNull(LapisPreset.matches) ??
       noteTypes.first;
 
   Map<String, String> _fieldMappingsAfterFetch(
@@ -412,14 +412,14 @@ sealed class AnkiFetchResult {
 }
 
 class AnkiFetchSuccess extends AnkiFetchResult {
+  const AnkiFetchSuccess({required this.decks, required this.noteTypes});
   final List<AnkiDeck> decks;
   final List<AnkiNoteType> noteTypes;
-  const AnkiFetchSuccess({required this.decks, required this.noteTypes});
 }
 
 class AnkiFetchError extends AnkiFetchResult {
-  final String message;
   const AnkiFetchError(this.message);
+  final String message;
 }
 
 enum MineResult { success, duplicate, notConfigured, error }

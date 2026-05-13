@@ -4,21 +4,18 @@ import 'package:collection/collection.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
 class AnkiDeck {
-  final int id;
-  final String name;
 
   const AnkiDeck({required this.id, required this.name});
 
   factory AnkiDeck.fromJson(Map<String, dynamic> json) =>
       AnkiDeck(id: json['id'] as int, name: json['name'] as String);
+  final int id;
+  final String name;
 
   Map<String, dynamic> toJson() => {'id': id, 'name': name};
 }
 
 class AnkiNoteType {
-  final int id;
-  final String name;
-  final List<String> fields;
 
   const AnkiNoteType({
     required this.id,
@@ -31,22 +28,14 @@ class AnkiNoteType {
         name: json['name'] as String,
         fields: List<String>.from(json['fields'] as List),
       );
+  final int id;
+  final String name;
+  final List<String> fields;
 
   Map<String, dynamic> toJson() => {'id': id, 'name': name, 'fields': fields};
 }
 
 class AnkiSettings {
-  final int? selectedDeckId;
-  final String? selectedDeckName;
-  final int? selectedNoteTypeId;
-  final String? selectedNoteTypeName;
-  final List<AnkiDeck> availableDecks;
-  final List<AnkiNoteType> availableNoteTypes;
-  final Map<String, String> fieldMappings;
-  final String tags;
-  final bool allowDupes;
-  final bool compactGlossaries;
-  final bool embedMedia;
 
   const AnkiSettings({
     this.selectedDeckId,
@@ -61,6 +50,38 @@ class AnkiSettings {
     this.compactGlossaries = false,
     this.embedMedia = true,
   });
+
+  factory AnkiSettings.fromJson(Map<String, dynamic> json) => AnkiSettings(
+        selectedDeckId: json['selectedDeckId'] as int?,
+        selectedDeckName: json['selectedDeckName'] as String?,
+        selectedNoteTypeId: json['selectedNoteTypeId'] as int?,
+        selectedNoteTypeName: json['selectedNoteTypeName'] as String?,
+        availableDecks: (json['availableDecks'] as List?)
+                ?.map((e) => AnkiDeck.fromJson(e as Map<String, dynamic>))
+                .toList() ??
+            [],
+        availableNoteTypes: (json['availableNoteTypes'] as List?)
+                ?.map((e) => AnkiNoteType.fromJson(e as Map<String, dynamic>))
+                .toList() ??
+            [],
+        fieldMappings:
+            Map<String, String>.from(json['fieldMappings'] as Map? ?? {}),
+        tags: json['tags'] as String? ?? '',
+        allowDupes: json['allowDupes'] as bool? ?? false,
+        compactGlossaries: json['compactGlossaries'] as bool? ?? false,
+        embedMedia: json['embedMedia'] as bool? ?? true,
+      );
+  final int? selectedDeckId;
+  final String? selectedDeckName;
+  final int? selectedNoteTypeId;
+  final String? selectedNoteTypeName;
+  final List<AnkiDeck> availableDecks;
+  final List<AnkiNoteType> availableNoteTypes;
+  final Map<String, String> fieldMappings;
+  final String tags;
+  final bool allowDupes;
+  final bool compactGlossaries;
+  final bool embedMedia;
 
   bool get isConfigured => selectedDeckId != null && selectedNoteTypeId != null;
 
@@ -98,27 +119,6 @@ class AnkiSettings {
         embedMedia: embedMedia ?? this.embedMedia,
       );
 
-  factory AnkiSettings.fromJson(Map<String, dynamic> json) => AnkiSettings(
-        selectedDeckId: json['selectedDeckId'] as int?,
-        selectedDeckName: json['selectedDeckName'] as String?,
-        selectedNoteTypeId: json['selectedNoteTypeId'] as int?,
-        selectedNoteTypeName: json['selectedNoteTypeName'] as String?,
-        availableDecks: (json['availableDecks'] as List?)
-                ?.map((e) => AnkiDeck.fromJson(e as Map<String, dynamic>))
-                .toList() ??
-            [],
-        availableNoteTypes: (json['availableNoteTypes'] as List?)
-                ?.map((e) => AnkiNoteType.fromJson(e as Map<String, dynamic>))
-                .toList() ??
-            [],
-        fieldMappings:
-            Map<String, String>.from(json['fieldMappings'] as Map? ?? {}),
-        tags: json['tags'] as String? ?? '',
-        allowDupes: json['allowDupes'] as bool? ?? false,
-        compactGlossaries: json['compactGlossaries'] as bool? ?? false,
-        embedMedia: json['embedMedia'] as bool? ?? true,
-      );
-
   Map<String, dynamic> toJson() => {
         'selectedDeckId': selectedDeckId,
         'selectedDeckName': selectedDeckName,
@@ -136,21 +136,6 @@ class AnkiSettings {
 }
 
 class AnkiMiningPayload {
-  final String expression;
-  final String reading;
-  final String matched;
-  final String furiganaPlain;
-  final String frequenciesHtml;
-  final String freqHarmonicRank;
-  final String glossary;
-  final String glossaryFirst;
-  final Map<String, String> singleGlossaries;
-  final String pitchPositions;
-  final String pitchCategories;
-  final String popupSelectionText;
-  final String audio;
-  final String selectedDictionary;
-  final List<DictionaryMedia> dictionaryMedia;
 
   const AnkiMiningPayload({
     required this.expression,
@@ -217,12 +202,24 @@ class AnkiMiningPayload {
       dictionaryMedia: dictionaryMedia,
     );
   }
+  final String expression;
+  final String reading;
+  final String matched;
+  final String furiganaPlain;
+  final String frequenciesHtml;
+  final String freqHarmonicRank;
+  final String glossary;
+  final String glossaryFirst;
+  final Map<String, String> singleGlossaries;
+  final String pitchPositions;
+  final String pitchCategories;
+  final String popupSelectionText;
+  final String audio;
+  final String selectedDictionary;
+  final List<DictionaryMedia> dictionaryMedia;
 }
 
 class DictionaryMedia {
-  final String dictionary;
-  final String path;
-  final String filename;
 
   const DictionaryMedia({
     required this.dictionary,
@@ -236,14 +233,12 @@ class DictionaryMedia {
         path: json['path'] as String? ?? '',
         filename: json['filename'] as String? ?? '',
       );
+  final String dictionary;
+  final String path;
+  final String filename;
 }
 
 class AnkiMiningContext {
-  final String sentence;
-  final String? documentTitle;
-  final String? coverPath;
-  final String? sasayakiAudioPath;
-  final int? sentenceOffset;
 
   const AnkiMiningContext({
     required this.sentence,
@@ -252,6 +247,11 @@ class AnkiMiningContext {
     this.sasayakiAudioPath,
     this.sentenceOffset,
   });
+  final String sentence;
+  final String? documentTitle;
+  final String? coverPath;
+  final String? sasayakiAudioPath;
+  final int? sentenceOffset;
 }
 
 class AnkiHandlebarRenderer {
