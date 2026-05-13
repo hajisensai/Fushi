@@ -74,7 +74,7 @@ class EpubImporter {
 
       // Rename temp directory to actual book ID directory
       if (insertedBookId != tempId) {
-        final String realDir = await EpubStorage.bookDirectory(insertedBookId);
+        final String realDir = await EpubStorage.bookPath(insertedBookId);
         if (realDir != extractDir) {
           final Directory srcDir = Directory(extractDir);
           if (srcDir.existsSync()) {
@@ -100,7 +100,7 @@ class EpubImporter {
         } catch (e, stack) {
           ErrorLogService.instance.log('EpubImporter.rollbackDelete', e, stack);
         }
-        final String realDir = await EpubStorage.bookDirectory(insertedBookId);
+        final String realDir = await EpubStorage.bookPath(insertedBookId);
         _tryDeleteDir(realDir);
       }
       _tryDeleteDir(extractDir);

@@ -30,6 +30,12 @@ class EpubStorage {
     return dir;
   }
 
+  /// Path for a specific book — does NOT create the directory.
+  static Future<String> bookPath(int bookId) async {
+    final String base = await baseDirectory();
+    return p.join(base, bookId.toString());
+  }
+
   /// Delete a book's extracted directory.
   static Future<void> deleteBook(int bookId) async {
     final String base = await baseDirectory();
