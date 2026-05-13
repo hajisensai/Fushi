@@ -2,7 +2,6 @@ import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/language.dart';
-import 'package:hibiki/models.dart';
 
 /// Language implementation of the English language.
 class EnglishLanguage extends Language {

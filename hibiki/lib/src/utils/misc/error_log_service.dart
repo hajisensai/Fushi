@@ -3,10 +3,6 @@ import 'package:hibiki/i18n/strings.g.dart';
 import 'package:path_provider/path_provider.dart';
 
 class ErrorLogEntry {
-  final DateTime timestamp;
-  final String source;
-  final String error;
-  final String? stackTrace;
 
   ErrorLogEntry({
     required this.timestamp,
@@ -14,6 +10,10 @@ class ErrorLogEntry {
     required this.error,
     this.stackTrace,
   });
+  final DateTime timestamp;
+  final String source;
+  final String error;
+  final String? stackTrace;
 
   String format() {
     final buf = StringBuffer()

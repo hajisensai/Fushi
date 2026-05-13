@@ -623,11 +623,6 @@ function createDefinitionImage(data, dictionary, exporting = false) {
                                 (hasDimensions ? 'em' : null)
                                 );
 
-    console.log('[IMG]', path, JSON.stringify({
-        width, height, preferredWidth, preferredHeight, usedWidth,
-        hasDimensions, appearance, sizeUnits: effectiveSizeUnits
-    }));
-
     const node = document.createElement(exporting ? 'span' : 'a');
     node.classList.add('gloss-image-link');
     if (!exporting) {
@@ -671,6 +666,7 @@ function createDefinitionImage(data, dictionary, exporting = false) {
     if (typeof border === 'string') { imageContainer.style.border = border; }
     if (typeof borderRadius === 'string') { imageContainer.style.borderRadius = borderRadius; }
     const isSvg = /\.svg$/i.test(path);
+    console.log('[IMG_CREATE]', path, 'dims=' + hasDimensions, 'svg=' + isSvg, usedWidth + 'x' + (usedWidth * invAspectRatio) + (effectiveSizeUnits || 'px'));
     if (effectiveSizeUnits === 'em') {
         imageContainer.style.width = `${usedWidth}em`;
     } else if (!hasDimensions && isSvg) {
@@ -707,16 +703,25 @@ function createDefinitionImage(data, dictionary, exporting = false) {
                 img.style.display = 'inline-block';
             }
             img.addEventListener('load', () => {
-                console.log('[IMG_LOAD]', path, img.naturalWidth + 'x' + img.naturalHeight);
                 if (!hasDimensions && !isSvg) {
                     imageContainer.style.width = `${Math.min(img.naturalWidth, window.innerWidth - 20)}px`;
                     aspectRatioSizer.style.paddingTop = `${(img.naturalHeight / img.naturalWidth) * 100}%`;
                 }
+                const r = img.getBoundingClientRect();
+                const cr = imageContainer.getBoundingClientRect();
+                const cs = getComputedStyle(img);
+                console.log('[IMG_RENDER]', path,
+                    'natural=' + img.naturalWidth + 'x' + img.naturalHeight,
+                    'rect=' + Math.round(r.width) + 'x' + Math.round(r.height),
+                    'container=' + Math.round(cr.width) + 'x' + Math.round(cr.height),
+                    'vis=' + cs.visibility, 'op=' + cs.opacity, 'disp=' + cs.display,
+                    'pos=' + cs.position, 'clip=' + cs.overflow);
             }, {once: true});
             img.addEventListener('error', (e) => {
                 console.log('[IMG_ERROR]', path, imageUrl);
                 imageContainer.style.display = 'none';
             }, {once: true});
+            img.style.border = '2px solid red';
             img.src = imageUrl;
             imageContainer.appendChild(img);
         }

@@ -476,7 +476,6 @@ DictionarySearchResult buildResultFromLookup({
         reading: r.term.reading,
         meaning: g.glossary,
         extra: buildLookupEntryExtra(r, g),
-        popularity: 0,
       ));
     }
   }
@@ -496,7 +495,6 @@ Future<DictionarySearchResult?> prepareSearchResultsStandard(
     final results = hoshi.lookup(
       params.searchTerm,
       maxResults: params.maximumDictionarySearchResults,
-      scanLength: defaultDictionaryLookupScanLength,
     );
     if (results.isEmpty) return null;
     return buildResultFromLookup(
@@ -519,7 +517,6 @@ DictionarySearchResult? prepareSearchResultsDirectStandard({
   final results = HoshiDicts.instance.lookup(
     searchTerm,
     maxResults: maximumDictionarySearchResults,
-    scanLength: defaultDictionaryLookupScanLength,
   );
   if (results.isEmpty) return null;
   return buildResultFromLookup(

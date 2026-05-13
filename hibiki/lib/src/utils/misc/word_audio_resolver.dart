@@ -86,8 +86,8 @@ class WordAudioResolver {
 
       return sources
           .whereType<Map>()
-          .map((Map source) => source['url']?.toString() ?? '')
-          .where((String value) => value.isNotEmpty)
+          .map((source) => source['url']?.toString() ?? '')
+          .where((value) => value.isNotEmpty)
           .toList(growable: false);
     } catch (e, stack) {
       ErrorLogService.instance.log('WordAudioResolver.resolve', e, stack);

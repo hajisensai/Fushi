@@ -308,7 +308,6 @@ public class FloatingLyricService extends BaseFloatingService {
                 || localY < 0 || localY > lyricText.getHeight()) return;
 
         int index = getCharIndexAt(localX, localY);
-
         java.util.HashMap<String, Object> args = new java.util.HashMap<>();
         args.put("text", currentText);
         args.put("index", index);

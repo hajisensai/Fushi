@@ -1,7 +1,5 @@
 import 'dart:async';
-import 'dart:math';
 
-import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:kana_kit/kana_kit.dart';
 import 'package:ruby_text/ruby_text.dart';
@@ -61,7 +59,6 @@ class JapaneseLanguage extends Language {
     final results = HoshiDicts.instance.lookup(
       searchTerm,
       maxResults: maximumDictionarySearchResults,
-      scanLength: defaultDictionaryLookupScanLength,
     );
 
     if (results.isEmpty) return null;

@@ -1,4 +1,3 @@
-import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -32,7 +31,7 @@ void main() {
       String? lookupText;
       int? lookupIndex;
       FloatingLyricChannel.setEventHandlers(
-        onLookupText: (String text, int index) {
+        onLookupText: (text, index) {
           lookupText = text;
           lookupIndex = index;
         },
@@ -77,7 +76,7 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(
         const MethodChannel(channelName),
-        (MethodCall call) async {
+        (call) async {
           capturedCall = call;
           return null;
         },
@@ -97,7 +96,7 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(
         const MethodChannel(channelName),
-        (MethodCall call) async {
+        (call) async {
           capturedCall = call;
           return null;
         },
@@ -128,7 +127,7 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(
         const MethodChannel(channelName),
-        (MethodCall call) async {
+        (call) async {
           capturedCall = call;
           return null;
         },
@@ -147,7 +146,7 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(
         const MethodChannel(channelName),
-        (MethodCall call) async {
+        (call) async {
           capturedCall = call;
           return null;
         },

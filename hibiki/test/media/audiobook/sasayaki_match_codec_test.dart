@@ -111,8 +111,8 @@ void main() {
 
     test('长度不一致抛 ArgumentError', () {
       final List<AudioCue> cues = <AudioCue>[mkCue(0)];
-      final MatchResult result = const MatchResult(
-        matches: const <CueMatch>[],
+      const MatchResult result = MatchResult(
+        matches: <CueMatch>[],
         totalCues: 0,
         matchedCues: 0,
       );

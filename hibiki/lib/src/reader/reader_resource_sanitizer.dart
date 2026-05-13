@@ -7,7 +7,7 @@ class ReaderResourceSanitizer {
   );
 
   static String sanitizeCss(String css) {
-    return css.replaceAllMapped(_epubPropertyPattern, (Match m) {
+    return css.replaceAllMapped(_epubPropertyPattern, (m) {
       final String indent = m.group(1)!;
       final String property = m.group(2)!.trim();
       final String value = m.group(3)!.trim();

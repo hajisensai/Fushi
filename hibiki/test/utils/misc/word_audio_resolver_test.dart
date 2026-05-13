@@ -7,7 +7,7 @@ void main() {
         () async {
       final resolver = WordAudioResolver(
         queryLocalAudio: (_, __) async => null,
-        extractLocalAudio: (_, __, {int dbIndex = 0}) async => null,
+        extractLocalAudio: (_, __, {dbIndex = 0}) async => null,
         fetchAudioSourceList: (_) async => const <String>[],
       );
 
@@ -27,7 +27,7 @@ void main() {
           'file': 'audio/right.mp3',
           'source': 'forvo',
         },
-        extractLocalAudio: (_, __, {int dbIndex = 0}) async =>
+        extractLocalAudio: (_, __, {dbIndex = 0}) async =>
             '/tmp/local_audio.mp3',
         fetchAudioSourceList: (url) async {
           requestedSources.add(url);
@@ -53,7 +53,7 @@ void main() {
       String? requestedUrl;
       final resolver = WordAudioResolver(
         queryLocalAudio: (_, __) async => null,
-        extractLocalAudio: (_, __, {int dbIndex = 0}) async => null,
+        extractLocalAudio: (_, __, {dbIndex = 0}) async => null,
         fetchAudioSourceList: (url) async {
           requestedUrl = url;
           return const <String>['https://cdn.test/audio.mp3'];

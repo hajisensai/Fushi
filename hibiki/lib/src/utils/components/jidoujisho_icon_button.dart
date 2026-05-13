@@ -109,7 +109,6 @@ class _JidoujishoIconButtonState extends State<JidoujishoIconButton> {
           maxWidth: Spacing.of(context).spaces.extraBig,
           maxHeight: Spacing.of(context).spaces.extraBig,
         ),
-        tooltip: null,
         icon: Icon(
           widget.icon,
           color: enabled ? enabledColor : disabledColor,

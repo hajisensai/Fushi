@@ -286,7 +286,7 @@ class ReaderPaginationScripts {
 
   // ── Shared init logic (viewport + SVG + images) ────────────────────
 
-  static const String _sharedInitViewport = r'''
+  static const String _sharedInitViewport = '''
   var viewport = document.querySelector('meta[name="viewport"]');
   if (viewport) { viewport.remove(); }
   var newViewport = document.createElement('meta');
@@ -320,7 +320,7 @@ class ReaderPaginationScripts {
   });
 ''';
 
-  static const String _sharedInitBoot = r'''
+  static const String _sharedInitBoot = '''
 window.addEventListener('load', function() {
   window.hoshiReader.initialize();
 });

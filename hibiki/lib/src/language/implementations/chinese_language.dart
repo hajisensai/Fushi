@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/language.dart';
-import 'package:hibiki/models.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/dictionary/hoshidicts.dart';
 

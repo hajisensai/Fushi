@@ -31,14 +31,13 @@ void main() {
       ttuBookId: 42,
       sectionIndex: 3,
       normCharOffset: 200,
-      ttuCharOffset: null,
     );
     pos = await repo.findByTtuBookId(42);
     expect(pos, isNotNull);
     expect(pos!.sectionIndex, equals(3));
-    expect(pos!.normCharOffset, equals(200),
+    expect(pos.normCharOffset, equals(200),
         reason: 'normCharOffset should update');
-    expect(pos!.ttuCharOffset, equals(500),
+    expect(pos.ttuCharOffset, equals(500),
         reason: 'same-section null save may preserve ttuCharOffset');
   });
 
@@ -54,7 +53,6 @@ void main() {
       ttuBookId: 42,
       sectionIndex: 4,
       normCharOffset: 200,
-      ttuCharOffset: null,
     );
     final pos = await repo.findByTtuBookId(42);
     expect(pos, isNotNull);

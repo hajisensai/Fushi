@@ -10,7 +10,6 @@ import 'package:receive_intent/receive_intent.dart' as intents;
 import 'package:stack_trace/stack_trace.dart';
 import 'package:spaces/spaces.dart';
 import 'package:wakelock/wakelock.dart';
-import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/dictionary/hoshidicts.dart';
 import 'package:hibiki/pages.dart';

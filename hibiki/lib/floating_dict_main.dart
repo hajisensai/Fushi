@@ -19,7 +19,7 @@ void floatingDictMain() {
     runApp(
       UncontrolledProviderScope(
         container: container,
-        child: FloatingDictApp(channel: _overlayChannel),
+        child: const FloatingDictApp(channel: _overlayChannel),
       ),
     );
 
@@ -70,9 +70,9 @@ class _FloatingDictAppState extends ConsumerState<FloatingDictApp> {
     final appModel = ref.watch(appProvider);
 
     if (!appModel.isInitialised) {
-      return MaterialApp(
+      return const MaterialApp(
         debugShowCheckedModeBanner: false,
-        home: const ColoredBox(color: Colors.transparent),
+        home: ColoredBox(color: Colors.transparent),
       );
     }
 
