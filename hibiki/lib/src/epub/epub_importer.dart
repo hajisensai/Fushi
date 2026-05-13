@@ -78,7 +78,12 @@ class EpubImporter {
         if (realDir != extractDir) {
           final Directory srcDir = Directory(extractDir);
           if (srcDir.existsSync()) {
-            srcDir.renameSync(realDir);
+            try {
+              srcDir.renameSync(realDir);
+            } catch (e) {
+              ErrorLogService.instance.log('EpubImporter.rename', e, StackTrace.current);
+              rethrow;
+            }
           }
           await (db.update(db.epubBooks)..where((tbl) => tbl.id.equals(insertedBookId!)))
               .write(EpubBooksCompanion(extractDir: Value(realDir)));
