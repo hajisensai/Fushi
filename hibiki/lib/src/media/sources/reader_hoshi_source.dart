@@ -665,8 +665,9 @@ class ReaderHoshiSource extends ReaderMediaSource {
     final List<String> families = <String>[];
     final List<String> faces = <String>[];
     for (final Map<String, dynamic> e in enabled) {
-      final String name = e['name'] as String;
-      final String normalizedName = normalizedFontFamilyName(name);
+      final String? rawName = e['name'] as String?;
+      if (rawName == null || rawName.isEmpty) continue;
+      final String normalizedName = normalizedFontFamilyName(rawName);
       families.add(cssFontFamilyName(normalizedName));
       final String? path = e['path'] as String?;
       if (path != null) {
