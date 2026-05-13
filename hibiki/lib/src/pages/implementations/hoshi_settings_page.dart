@@ -16,11 +16,16 @@ Widget _buildSwitch({
   required bool value,
   required ValueChanged<bool> onChanged,
   String? hint,
+  IconData? icon,
 }) {
   return Padding(
     padding: const EdgeInsets.symmetric(vertical: 2),
     child: Row(
       children: [
+        if (icon != null) ...[
+          Icon(icon, size: 20),
+          const SizedBox(width: 8),
+        ],
         Expanded(
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -509,21 +514,6 @@ class _HoshiSettingsContentState extends BasePageState {
               MaterialPageRoute(
                   builder: (_) => const _ReaderBehaviorSettingsPage()),
             ).then((_) => setState(() {}));
-          },
-        ),
-        _buildSwitch(
-          label: t.show_floating_dict,
-          value: appModel.showFloatingDict,
-          onChanged: (_) async {
-            if (!appModel.showFloatingDict) {
-              final bool shown = await FloatingDictChannel.show();
-              if (!shown) return;
-              await appModel.setShowFloatingDict(true);
-            } else {
-              await FloatingDictChannel.hide();
-              await appModel.setShowFloatingDict(false);
-            }
-            setState(() {});
           },
         ),
         _categoryTile(
