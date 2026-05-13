@@ -1015,17 +1015,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         menuItems: [
           ContextMenuItem(
             id: 1,
-            title: t.copy,
-            action: () async {
-              final text = await _controller?.getSelectedText();
-              if (text != null && text.isNotEmpty) {
-                await Clipboard.setData(ClipboardData(text: text));
-                Fluttertoast.showToast(msg: t.copy);
-              }
-            },
-          ),
-          ContextMenuItem(
-            id: 2,
             title: t.search,
             action: () async {
               final text = await _controller?.getSelectedText();
@@ -1040,17 +1029,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
                 searchTerm: text,
                 selectionRect: rect,
               );
-            },
-          ),
-          ContextMenuItem(
-            id: 3,
-            title: t.share,
-            action: () async {
-              final text = await _controller?.getSelectedText();
-              if (text != null && text.isNotEmpty) {
-                await Clipboard.setData(ClipboardData(text: text));
-                Fluttertoast.showToast(msg: t.share);
-              }
             },
           ),
         ],
