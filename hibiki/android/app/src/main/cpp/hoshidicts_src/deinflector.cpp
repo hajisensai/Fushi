@@ -143,8 +143,11 @@ void Deinflector::load_transforms_json(const std::string& json) {
 
   // Expand sub-conditions (iterative fixed-point)
   bool changed = true;
-  while (changed) {
+  int iterations = 0;
+  static constexpr int kMaxExpansionIterations = 100;
+  while (changed && iterations < kMaxExpansionIterations) {
     changed = false;
+    ++iterations;
     for (const auto& [key, cond] : descriptor.conditions) {
       if (cond.subConditions.empty()) continue;
       std::string qualified = lang + ":" + key;
@@ -157,6 +160,9 @@ void Deinflector::load_transforms_json(const std::string& json) {
         changed = true;
       }
     }
+  }
+  if (iterations >= kMaxExpansionIterations) {
+    LOGW("language '%s': sub-condition expansion hit iteration limit, possible cycle", lang.c_str());
   }
 
   // Bare POS tag → accumulated bits from all languages. |= means if two
