@@ -444,18 +444,9 @@ class EpubSrtMatcher {
         }
         continue;
       }
-      // 模糊兜底：在全书扫描找最佳相似位置（滚动窗口）
-      final _SlidingDiceResult r = _slidingDice(
-        needle: nc,
-        haystack: big,
-        start: 0,
-        end: big.length,
-      );
-      if (r.score >= similarityThreshold && r.pos >= 0) {
-        if (minStart == null || r.pos < minStart) {
-          minStart = r.pos;
-        }
-      }
+      // 精确失败 → 跳过这条 cue，不做全书模糊扫描。
+      // 设计取舍：避免 O(big.length) 滚动窗口；首条若差 1 字，
+      // 由主循环的局部模糊通道在窗口内兜底。
     }
     return minStart ?? 0;
   }
