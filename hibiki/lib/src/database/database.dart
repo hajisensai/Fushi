@@ -46,7 +46,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 8;
+  int get schemaVersion => 9;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -78,6 +78,17 @@ class HibikiDatabase extends _$HibikiDatabase {
             await m.createTable(profileSettings);
             await m.createTable(mediaTypeProfiles);
             await m.createTable(bookProfiles);
+          }
+          if (from < 9) {
+            await customStatement(
+              'CREATE INDEX IF NOT EXISTS idx_profile_settings_profile ON profile_settings (profile_id)',
+            );
+            await customStatement(
+              'CREATE INDEX IF NOT EXISTS idx_media_type_profiles_profile ON media_type_profiles (profile_id)',
+            );
+            await customStatement(
+              'CREATE INDEX IF NOT EXISTS idx_book_profiles_profile ON book_profiles (profile_id)',
+            );
           }
         },
       );
