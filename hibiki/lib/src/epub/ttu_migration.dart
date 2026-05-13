@@ -347,8 +347,8 @@ class TtuMigration {
   /// 替换为：blobs/KEY（sanitize 后的 key）
   static String _rewriteBlobRefs(String html) {
     return html.replaceAllMapped(
-      RegExp(r'data:image/gif;ttu:([^;]+);base64,[A-Za-z0-9+/=]+'),
-      (Match m) => 'blobs/${_sanitizeBlobKey(m[1]!)}',
+      RegExp('data:image/gif;ttu:([^;]+);base64,[A-Za-z0-9+/=]+'),
+      (m) => 'blobs/${_sanitizeBlobKey(m[1]!)}',
     );
   }
 

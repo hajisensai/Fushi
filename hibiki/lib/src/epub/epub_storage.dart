@@ -54,7 +54,7 @@ class EpubStorage {
     return baseDir
         .listSync()
         .whereType<Directory>()
-        .map((Directory d) => int.tryParse(p.basename(d.path)))
+        .map((d) => int.tryParse(p.basename(d.path)))
         .whereType<int>()
         .toList();
   }

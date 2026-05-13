@@ -59,7 +59,7 @@ class EpubBook {
   static void _removeRubyAnnotations(html_dom.Element? root) {
     if (root == null) return;
     root.querySelectorAll('rt, rp, rtc').forEach(
-      (html_dom.Element el) => el.remove(),
+      (el) => el.remove(),
     );
   }
 
@@ -126,7 +126,7 @@ class EpubResource {
 String normalizeHref(String href) => href
     .trim()
     .replaceAll('\\', '/')
-    .replaceFirst(RegExp(r'^/'), '')
+    .replaceFirst(RegExp('^/'), '')
     .split('#')
     .first
     .split('?')

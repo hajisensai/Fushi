@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
@@ -36,7 +35,7 @@ class EpubImporter {
 
       final String chaptersJson = jsonEncode(
         book.chapters
-            .map((EpubChapter ch) => <String, Object>{
+            .map((ch) => <String, Object>{
                   'id': ch.id,
                   'href': ch.href,
                   'mediaType': ch.mediaType,
@@ -47,7 +46,7 @@ class EpubImporter {
       final String? tocJson = book.toc.isNotEmpty
           ? jsonEncode(
               book.toc
-                  .map((EpubTocItem e) => <String, Object?>{
+                  .map((e) => <String, Object?>{
                         'title': e.label,
                         'href': e.href,
                       })
@@ -62,8 +61,8 @@ class EpubImporter {
       insertedBookId = await db.into(db.epubBooks).insert(
             EpubBooksCompanion.insert(
               title: resolvedTitle,
-              author: book.author != null ? Value(book.author!) : const Value.absent(),
-              coverPath: book.coverHref != null ? Value(book.coverHref!) : const Value.absent(),
+              author: book.author != null ? Value(book.author) : const Value.absent(),
+              coverPath: book.coverHref != null ? Value(book.coverHref) : const Value.absent(),
               epubPath: fileName,
               extractDir: extractDir,
               chapterCount: book.chapters.length,

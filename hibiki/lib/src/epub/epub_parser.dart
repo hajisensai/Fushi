@@ -32,13 +32,13 @@ class EpubParser {
     final File containerFile =
         File(p.join(extractDir, 'META-INF', 'container.xml'));
     if (!containerFile.existsSync()) {
-      throw FormatException('Invalid EPUB: missing META-INF/container.xml');
+      throw const FormatException('Invalid EPUB: missing META-INF/container.xml');
     }
     final XmlDocument containerXml =
         XmlDocument.parse(containerFile.readAsStringSync());
     final String? rootfilePath = _findRootfilePath(containerXml);
     if (rootfilePath == null) {
-      throw FormatException('Invalid EPUB: no rootfile in container.xml');
+      throw const FormatException('Invalid EPUB: no rootfile in container.xml');
     }
 
     final File opfFile = File(p.join(extractDir, rootfilePath));
@@ -53,7 +53,7 @@ class EpubParser {
     final List<EpubChapter> chapters =
         _parseSpine(opfXml, manifest, opfDir, extractDir);
     if (chapters.isEmpty) {
-      throw FormatException('EPUB spine contains no readable chapters');
+      throw const FormatException('EPUB spine contains no readable chapters');
     }
 
     final String title =
@@ -402,7 +402,7 @@ class EpubParser {
     String extractDir,
   ) {
     final String cleaned =
-        rawHref.trim().replaceAll('\\', '/').replaceFirst(RegExp(r'^/'), '');
+        rawHref.trim().replaceAll('\\', '/').replaceFirst(RegExp('^/'), '');
     if (cleaned.isEmpty) return null;
 
     final String fragment =
