@@ -497,13 +497,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
   }) {
     if (dictionary.isHidden(appModel.targetLanguage)) {
       return Icon(
-        Icons.visibility_off,
-        size: textTheme.titleLarge?.fontSize,
-        color: theme.unselectedWidgetColor,
-      );
-    } else if (dictionary.isCollapsed(appModel.targetLanguage)) {
-      return Icon(
-        Icons.close_fullscreen,
+        Icons.block,
         size: textTheme.titleLarge?.fontSize,
         color: theme.unselectedWidgetColor,
       );
@@ -647,28 +641,12 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
   List<PopupMenuItem<VoidCallback>> getMenuItems(Dictionary dictionary) {
     return [
       buildPopupItem(
-        label: dictionary.isCollapsed(appModel.targetLanguage)
-            ? t.options_expand
-            : t.options_collapse,
-        icon: dictionary.isCollapsed(appModel.targetLanguage)
-            ? Icons.open_in_full
-            : Icons.close_fullscreen,
-        action: () {
-          appModel.toggleDictionaryCollapsed(dictionary);
-          final notifier = _notifiersByDictionary[dictionary];
-          if (notifier != null) {
-            notifier.value = !notifier.value;
-            notifier.value = !notifier.value;
-          }
-        },
-      ),
-      buildPopupItem(
         label: dictionary.isHidden(appModel.targetLanguage)
             ? t.options_show
             : t.options_hide,
-        icon: dictionary.isCollapsed(appModel.targetLanguage)
-            ? Icons.visibility
-            : Icons.visibility_off,
+        icon: dictionary.isHidden(appModel.targetLanguage)
+            ? Icons.check_circle_outline
+            : Icons.block,
         action: () {
           appModel.toggleDictionaryHidden(dictionary);
           final notifier = _notifiersByDictionary[dictionary];

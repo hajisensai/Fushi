@@ -85,9 +85,6 @@ class _DictionaryResultPageState extends BasePageState<DictionaryResultPage> {
     Map<String, bool> dictionaryNamesByHidden = Map<String, bool>.fromEntries(
         dictionaries
             .map((e) => MapEntry(e.name, e.isHidden(appModel.targetLanguage))));
-    Map<String, bool> dictionaryNamesByCollapsed =
-        Map<String, bool>.fromEntries(dictionaries.map(
-            (e) => MapEntry(e.name, e.isCollapsed(appModel.targetLanguage))));
     Map<String, int> dictionaryNamesByOrder = Map<String, int>.fromEntries(
         dictionaries.map((e) => MapEntry(e.name, e.order)));
 
@@ -96,10 +93,7 @@ class _DictionaryResultPageState extends BasePageState<DictionaryResultPage> {
       for (DictionaryEntry entry in groupedEntries[termKey]!) {
         expandableControllersByTermKey[termKey]?.putIfAbsent(
           entry.dictionaryName,
-          () => ExpandableController(
-            initialExpanded:
-                !(dictionaryNamesByCollapsed[entry.dictionaryName] ?? false),
-          ),
+          () => ExpandableController(initialExpanded: true),
         );
       }
     }

@@ -68,8 +68,8 @@ void main() {
     );
 
     try {
-      final raw = await HibikiChannels.splash
-          .invokeMethod<int>('getSplashColor');
+      final raw =
+          await HibikiChannels.splash.invokeMethod<int>('getSplashColor');
       if (raw != null && raw != 0) _savedSplashColor = Color(raw);
     } catch (e) {
       debugPrint('[Hibiki] getSplashColor failed: $e');
@@ -291,44 +291,47 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
       final isDark = brightness == Brightness.dark;
-      return MaterialApp(
-        debugShowCheckedModeBanner: false,
-        theme: isDark ? ThemeData.dark() : null,
-        home: Scaffold(
-          backgroundColor: _savedSplashColor,
-          body: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.error_outline, size: 48, color: Colors.red),
-                  const SizedBox(height: 16),
-                  Text(
-                    t.initialization_failed,
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: isDark ? Colors.white : Colors.black,
+      return TranslationProvider(
+        child: MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: isDark ? ThemeData.dark() : null,
+          home: Scaffold(
+            backgroundColor: _savedSplashColor,
+            body: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.error_outline,
+                        size: 48, color: Colors.red),
+                    const SizedBox(height: 16),
+                    Text(
+                      t.initialization_failed,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.white : Colors.black,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  SelectableText(
-                    appModel.initError!,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: isDark ? Colors.white70 : Colors.black87,
+                    const SizedBox(height: 12),
+                    SelectableText(
+                      appModel.initError!,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isDark ? Colors.white70 : Colors.black87,
+                      ),
+                      textAlign: TextAlign.center,
+                      selectionControls: JidoujishoTextSelectionControls(
+                        shareAction: (text) => Share.share(text),
+                        allowCopy: true,
+                        allowCut: false,
+                        allowPaste: false,
+                        allowSelectAll: true,
+                      ),
                     ),
-                    textAlign: TextAlign.center,
-                    selectionControls: JidoujishoTextSelectionControls(
-                      shareAction: (text) => Share.share(text),
-                      allowCopy: true,
-                      allowCut: false,
-                      allowPaste: false,
-                      allowSelectAll: true,
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -339,11 +342,13 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
       final isDark = brightness == Brightness.dark;
-      return MaterialApp(
-        debugShowCheckedModeBanner: false,
-        theme: isDark ? ThemeData.dark() : null,
-        home: Scaffold(
-          backgroundColor: _savedSplashColor,
+      return TranslationProvider(
+        child: MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: isDark ? ThemeData.dark() : null,
+          home: Scaffold(
+            backgroundColor: _savedSplashColor,
+          ),
         ),
       );
     }
@@ -356,27 +361,29 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
       });
     }
 
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      navigatorKey: appModel.navigatorKey,
-      home: home,
-      locale: locale,
-      localizationsDelegates: const [
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-      supportedLocales: appModel.locales.values,
-      themeMode: themeMode,
-      theme: appModel.theme,
-      darkTheme: appModel.darkTheme,
-      // This is responsible for the initialising the global spacing across
-      // the entire project, making use of the [spaces] package.
-      builder: (context, child) => Spacing(
-        dataBuilder: (context) {
-          return SpacingData.generate(10);
-        },
-        child: child!,
+    return TranslationProvider(
+      child: MaterialApp(
+        debugShowCheckedModeBanner: false,
+        navigatorKey: appModel.navigatorKey,
+        home: home,
+        locale: locale,
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        supportedLocales: appModel.locales.values,
+        themeMode: themeMode,
+        theme: appModel.theme,
+        darkTheme: appModel.darkTheme,
+        // This is responsible for the initialising the global spacing across
+        // the entire project, making use of the [spaces] package.
+        builder: (context, child) => Spacing(
+          dataBuilder: (context) {
+            return SpacingData.generate(10);
+          },
+          child: child!,
+        ),
       ),
     );
   }

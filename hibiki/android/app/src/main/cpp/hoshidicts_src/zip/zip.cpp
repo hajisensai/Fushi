@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <limits>
 
 #include "../memory/memory.hpp"
 
@@ -13,6 +14,17 @@ T read_at(const uint8_t* base, size_t offset) {
   T val;
   std::memcpy(&val, base + offset, sizeof(T));
   return val;
+}
+
+bool in_bounds(size_t size, size_t offset, size_t length) {
+  return offset <= size && length <= size - offset;
+}
+
+bool has_entry_payload(const memory::mapped_file& file, const ZipEntry& e) {
+  const size_t payload_size = e.compression_method == 0
+                                  ? e.uncompressed_size
+                                  : e.compressed_size;
+  return in_bounds(file.size, e.data_offset, payload_size);
 }
 }
 
@@ -39,8 +51,15 @@ int Zip::find(const std::string& name) const {
 }
 
 std::string Zip::read(int index) const {
+  if (index < 0 || static_cast<size_t>(index) >= entries.size()) {
+    return "";
+  }
+
   const auto& e = entries[index];
   if (e.uncompressed_size == 0) {
+    return "";
+  }
+  if (!has_entry_payload(file, e)) {
     return "";
   }
 
@@ -63,12 +82,19 @@ std::string Zip::read(int index) const {
 }
 
 std::optional<Zip::MediaResult> Zip::read_media(int index) const {
+  if (index < 0 || static_cast<size_t>(index) >= entries.size()) {
+    return std::nullopt;
+  }
+
   const auto& e = entries[index];
   MediaResult out;
   out.path = e.name;
   out.blob.resize(e.uncompressed_size);
   if (e.uncompressed_size == 0) {
     return out;
+  }
+  if (!has_entry_payload(file, e)) {
+    return std::nullopt;
   }
 
   const auto* src = file.data + e.data_offset;
@@ -97,6 +123,9 @@ bool Zip::parse_central_directory() {
   while (eocd > 0 && read_at<uint32_t>(base, eocd) != 0x06054b50) {
     eocd--;
   }
+  if (read_at<uint32_t>(base, eocd) != 0x06054b50) {
+    return false;
+  }
 
   uint64_t total_entries = read_at<uint16_t>(base, eocd + 10);
   uint64_t cd_offset = read_at<uint32_t>(base, eocd + 16);
@@ -109,11 +138,18 @@ bool Zip::parse_central_directory() {
     }
   }
 
+  if (cd_offset > std::numeric_limits<size_t>::max()) {
+    return false;
+  }
+  if (total_entries > file.size / 46) {
+    return false;
+  }
+
   entries.reserve(total_entries);
   size_t pos = cd_offset;
 
   for (uint64_t i = 0; i < total_entries; ++i) {
-    if (pos + 46 > file.size) {
+    if (!in_bounds(file.size, pos, 46)) {
       return false;
     }
     if (read_at<uint32_t>(base, pos) != 0x02014b50) {
@@ -130,14 +166,39 @@ bool Zip::parse_central_directory() {
     auto comment_len = read_at<uint16_t>(base, pos + 32);
 
     auto lfh_offset = read_at<uint32_t>(base, pos + 42);
+    const size_t entry_size = 46 + static_cast<size_t>(name_len) + extra_len +
+                              comment_len;
+    if (!in_bounds(file.size, pos, entry_size)) {
+      return false;
+    }
+    if (e.compressed_size == std::numeric_limits<uint32_t>::max() ||
+        e.uncompressed_size == std::numeric_limits<uint32_t>::max() ||
+        lfh_offset == std::numeric_limits<uint32_t>::max()) {
+      return false;
+    }
+
     e.name.assign(reinterpret_cast<const char*>(base + pos + 46), name_len);
+
+    if (!in_bounds(file.size, lfh_offset, 30)) {
+      return false;
+    }
+    if (read_at<uint32_t>(base, lfh_offset) != 0x04034b50) {
+      return false;
+    }
 
     auto lfh_name_len = read_at<uint16_t>(base, lfh_offset + 26);
     auto lfh_extra_len = read_at<uint16_t>(base, lfh_offset + 28);
     e.data_offset = lfh_offset + 30 + lfh_name_len + lfh_extra_len;
+    if (!in_bounds(file.size, lfh_offset,
+                   30 + static_cast<size_t>(lfh_name_len) + lfh_extra_len)) {
+      return false;
+    }
+    if (!has_entry_payload(file, e)) {
+      return false;
+    }
 
     entries.push_back(std::move(e));
-    pos += 46 + name_len + extra_len + comment_len;
+    pos += entry_size;
   }
 
   return true;
