@@ -96,11 +96,17 @@ class _ProfileManagementPageState
               IconButton(
                 icon: const Icon(Icons.copy, size: 20),
                 tooltip: t.profile_copy,
+                visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                padding: EdgeInsets.zero,
                 onPressed: () => _showCopyDialog(vm, p.id, p.name),
               ),
               IconButton(
                 icon: const Icon(Icons.edit, size: 20),
                 tooltip: t.profile_rename,
+                visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                padding: EdgeInsets.zero,
                 onPressed: () => _showRenameDialog(vm, p.id, p.name),
               ),
               if (!isOnly)
@@ -111,6 +117,9 @@ class _ProfileManagementPageState
                     color: theme.colorScheme.error,
                   ),
                   tooltip: t.profile_delete,
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                  padding: EdgeInsets.zero,
                   onPressed: () => _showDeleteDialog(vm, p.id, p.name),
                 ),
             ],
@@ -143,7 +152,7 @@ class _ProfileManagementPageState
           for (final p in uiState.profiles)
             DropdownMenuItem<int?>(value: p.id, child: Text(p.name)),
         ],
-        onChanged: (int? id) => vm.setMediaTypeBinding(mediaType, id),
+        onChanged: (id) => vm.setMediaTypeBinding(mediaType, id),
       ),
     );
   }
@@ -279,8 +288,8 @@ class _ProfileManagementPageState
 }
 
 class _SectionHeader extends StatelessWidget {
-  final String title;
   const _SectionHeader(this.title);
+  final String title;
 
   @override
   Widget build(BuildContext context) {
