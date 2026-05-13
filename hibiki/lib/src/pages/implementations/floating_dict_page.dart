@@ -37,11 +37,19 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
 
   AppModel get appModel => ref.read(appProvider);
 
+  Future<void> _invoke(String method, [dynamic args]) async {
+    try {
+      await widget.channel.invokeMethod(method, args);
+    } catch (e) {
+      debugPrint('[floating-dict] $method failed: $e');
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     _searchFocusNode.addListener(() {
-      widget.channel.invokeMethod('setFocusable', _searchFocusNode.hasFocus);
+      _invoke('setFocusable', _searchFocusNode.hasFocus);
     });
   }
 
@@ -137,13 +145,13 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
     final cs = Theme.of(context).colorScheme;
     return GestureDetector(
       onPanUpdate: (details) {
-        widget.channel.invokeMethod('drag', {
+        _invoke('drag', {
           'dx': details.delta.dx,
           'dy': details.delta.dy,
         });
       },
       onPanEnd: (_) {
-        widget.channel.invokeMethod('dragEnd');
+        _invoke('dragEnd');
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -166,7 +174,7 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
                     size: 16,
                     color: cs.onSurfaceVariant),
                 padding: EdgeInsets.zero,
-                onPressed: () => widget.channel.invokeMethod('close'),
+                onPressed: () => _invoke('close'),
               ),
             ),
           ],
@@ -254,13 +262,13 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
       alignment: Alignment.bottomRight,
       child: GestureDetector(
         onPanUpdate: (details) {
-          widget.channel.invokeMethod('resize', {
+          _invoke('resize', {
             'dw': details.delta.dx,
             'dh': details.delta.dy,
           });
         },
         onPanEnd: (_) {
-          widget.channel.invokeMethod('dragEnd');
+          _invoke('dragEnd');
         },
         child: Container(
           width: 20,
