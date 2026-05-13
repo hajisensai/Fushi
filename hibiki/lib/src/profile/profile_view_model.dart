@@ -7,10 +7,6 @@ import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/profile/profile_repository.dart';
 
 class ProfileUiState {
-  final List<ProfileRow> profiles;
-  final int activeProfileId;
-  final Map<String, int> mediaTypeBindings;
-  final bool isLoading;
 
   const ProfileUiState({
     this.profiles = const [],
@@ -18,6 +14,10 @@ class ProfileUiState {
     this.mediaTypeBindings = const {},
     this.isLoading = false,
   });
+  final List<ProfileRow> profiles;
+  final int activeProfileId;
+  final Map<String, int> mediaTypeBindings;
+  final bool isLoading;
 
   ProfileRow? get activeProfile {
     for (final p in profiles) {
@@ -41,13 +41,13 @@ class ProfileUiState {
 }
 
 class ProfileViewModel extends StateNotifier<ProfileUiState> {
-  final ProfileRepository _repo;
-  final void Function() _onProfileApplied;
 
   ProfileViewModel(this._repo, this._onProfileApplied)
       : super(const ProfileUiState()) {
     _load();
   }
+  final ProfileRepository _repo;
+  final void Function() _onProfileApplied;
 
   Future<void> _load() async {
     state = state.copyWith(isLoading: true);

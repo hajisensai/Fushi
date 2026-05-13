@@ -3,10 +3,10 @@ import 'package:hibiki/src/database/database.dart';
 import 'package:hibiki/src/profile/profile_keys.dart';
 
 class ProfileRepository {
-  final HibikiDatabase _db;
-  final AnkiRepository _ankiRepo;
 
   ProfileRepository(this._db, this._ankiRepo);
+  final HibikiDatabase _db;
+  final AnkiRepository _ankiRepo;
 
   Future<List<ProfileRow>> getAllProfiles() => _db.getAllProfiles();
 
@@ -54,6 +54,7 @@ class ProfileRepository {
   Future<void> snapshotCurrentSettings(int profileId) async {
     final entries = <ProfileSettingsCompanion>[];
 
+    // Anki settings (SharedPreferences)
     final ankiSettings = await _ankiRepo.loadSettings();
     final ankiMap = ProfileKeys.ankiSettingsToMap(ankiSettings);
     for (final entry in ankiMap.entries) {
@@ -65,28 +66,16 @@ class ProfileRepository {
       ));
     }
 
-    for (final key in ProfileKeys.dictionaryKeys) {
-      final raw = await _db.getPref(key);
-      if (raw != null) {
-        entries.add(ProfileSettingsCompanion.insert(
-          profileId: profileId,
-          category: ProfileKeys.categoryDictionary,
-          key: key,
-          value: raw,
-        ));
-      }
-    }
-
-    for (final key in ProfileKeys.readerKeys) {
-      final raw = await _db.getPref('src:reader_ttu:$key');
-      if (raw != null) {
-        entries.add(ProfileSettingsCompanion.insert(
-          profileId: profileId,
-          category: ProfileKeys.categoryReader,
-          key: key,
-          value: raw,
-        ));
-      }
+    // ALL Drift prefs (excluding app-state keys)
+    final allPrefs = await _db.getAllPrefs();
+    for (final entry in allPrefs.entries) {
+      if (ProfileKeys.isExcludedPref(entry.key)) continue;
+      entries.add(ProfileSettingsCompanion.insert(
+        profileId: profileId,
+        category: ProfileKeys.categoryPref,
+        key: entry.key,
+        value: entry.value,
+      ));
     }
 
     await _db.replaceProfileSettings(profileId, entries);
@@ -96,17 +85,36 @@ class ProfileRepository {
     final rows = await _db.getProfileSettings(profileId);
 
     final ankiMap = <String, String>{};
+    final prefMap = <String, String>{};
     for (final row in rows) {
       switch (row.category) {
         case ProfileKeys.categoryAnki:
           ankiMap[row.key] = row.value;
+        case ProfileKeys.categoryPref:
+          prefMap[row.key] = row.value;
+        // Legacy categories from old snapshots
         case ProfileKeys.categoryDictionary:
-          await _db.setPref(row.key, row.value);
+          prefMap[row.key] = row.value;
         case ProfileKeys.categoryReader:
-          await _db.setPref('src:reader_ttu:${row.key}', row.value);
+          prefMap['src:reader_ttu:${row.key}'] = row.value;
+        default:
+          break;
       }
     }
 
+    // Write profile prefs and delete stale ones
+    final currentPrefs = await _db.getAllPrefs();
+    for (final key in currentPrefs.keys) {
+      if (ProfileKeys.isExcludedPref(key)) continue;
+      if (!prefMap.containsKey(key)) {
+        await _db.deletePref(key);
+      }
+    }
+    for (final entry in prefMap.entries) {
+      await _db.setPref(entry.key, entry.value);
+    }
+
+    // Anki settings (SharedPreferences)
     if (ankiMap.isNotEmpty) {
       final current = await _ankiRepo.loadSettings();
       final updated = ProfileKeys.mapToAnkiSettings(ankiMap, current);

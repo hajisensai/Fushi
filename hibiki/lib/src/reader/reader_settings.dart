@@ -57,6 +57,7 @@ class ReaderSettings {
     final dynamic value = _cache[key];
     if (value is T) return value;
     if (T == double && value is int) return value.toDouble() as T;
+    _set<T>(key, defaultValue);
     return defaultValue;
   }
 

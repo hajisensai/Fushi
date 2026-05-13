@@ -147,6 +147,7 @@ abstract class MediaSource {
     final value = _preferences[key];
     if (value is T) return value;
     if (T == double && value is int) return value.toDouble() as T;
+    setPreference(key: key, value: defaultValue);
     return defaultValue;
   }
 

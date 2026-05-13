@@ -6,56 +6,38 @@ class ProfileKeys {
   ProfileKeys._();
 
   static const String categoryAnki = 'anki';
+  static const String categoryPref = 'pref';
+
+  // Legacy categories (pre-v2 snapshots stored dictionary/reader separately)
   static const String categoryDictionary = 'dictionary';
   static const String categoryReader = 'reader';
 
-  static const List<String> ankiKeys = [
-    'selectedDeckId',
-    'selectedDeckName',
-    'selectedNoteTypeId',
-    'selectedNoteTypeName',
-    'fieldMappings',
-    'tags',
-    'allowDupes',
-    'compactGlossaries',
-    'embedMedia',
+  static const Set<String> _excludedPrefKeys = {
+    'active_profile_id',
+    'first_time_setup',
+    'current_home_tab_index',
+    'app_locale',
+    'last_selected_deck',
+    'last_selected_dictionary_format',
+    'last_selected_model',
+    'update_never_remind',
+    'update_auto_install',
+    'update_beta_channel',
+  };
+
+  static const List<String> _excludedPrefPrefixes = [
+    'current_source/',
+    'audio_index/',
   ];
 
-  static const List<String> dictionaryKeys = [
-    'auto_search',
-    'auto_search_debounce_delay',
-    'dictionary_entry_font_size',
-    'maximum_terms',
-    'collapse_dictionaries',
-    'deduplicate_pitch_accents',
-    'harmonic_frequency',
-    'auto_add_book_name_to_tags',
-    'popup_max_width',
-    'custom_dict_css',
-    'global_dict_css',
-    'local_audio_enabled',
-    'local_audio_db_path',
-    'local_audio_db_display_name',
-  ];
-
-  static const List<String> readerKeys = [
-    'ttu_font_size',
-    'ttu_line_height',
-    'ttu_text_indentation',
-    'ttu_writing_mode',
-    'ttu_view_mode',
-    'ttu_page_columns',
-    'ttu_margin_top',
-    'ttu_margin_bottom',
-    'ttu_margin_left',
-    'ttu_margin_right',
-    'ttu_vert_kerning',
-    'ttu_font_vpal',
-    'ttu_vert_text_orient',
-    'ttu_text_justify',
-    'ttu_reader_styles',
-    'ttu_furigana_mode',
-  ];
+  static bool isExcludedPref(String key) {
+    if (_excludedPrefKeys.contains(key)) return true;
+    for (final prefix in _excludedPrefPrefixes) {
+      if (key.startsWith(prefix)) return true;
+    }
+    if (key.endsWith('/last_picked_file')) return true;
+    return false;
+  }
 
   static Map<String, String> ankiSettingsToMap(AnkiSettings s) => {
         'selectedDeckId': s.selectedDeckId?.toString() ?? '',
@@ -76,28 +58,26 @@ class ProfileKeys {
     int? parseInt(String? v) =>
         v == null || v.isEmpty ? null : int.tryParse(v);
 
-    return current.copyWith(
-      selectedDeckId: parseInt(m['selectedDeckId']) ?? current.selectedDeckId,
-      selectedDeckName:
-          m['selectedDeckName']?.isNotEmpty == true
-              ? m['selectedDeckName']
-              : current.selectedDeckName,
-      selectedNoteTypeId:
-          parseInt(m['selectedNoteTypeId']) ?? current.selectedNoteTypeId,
-      selectedNoteTypeName:
-          m['selectedNoteTypeName']?.isNotEmpty == true
-              ? m['selectedNoteTypeName']
-              : current.selectedNoteTypeName,
+    return AnkiSettings(
+      selectedDeckId: parseInt(m['selectedDeckId']),
+      selectedDeckName: m['selectedDeckName']?.isNotEmpty == true
+          ? m['selectedDeckName']
+          : null,
+      selectedNoteTypeId: parseInt(m['selectedNoteTypeId']),
+      selectedNoteTypeName: m['selectedNoteTypeName']?.isNotEmpty == true
+          ? m['selectedNoteTypeName']
+          : null,
+      availableDecks: current.availableDecks,
+      availableNoteTypes: current.availableNoteTypes,
       fieldMappings: m.containsKey('fieldMappings')
-          ? Map<String, String>.from(
-              jsonDecode(m['fieldMappings']!) as Map)
-          : current.fieldMappings,
-      tags: m['tags'] ?? current.tags,
+          ? Map<String, String>.from(jsonDecode(m['fieldMappings']!) as Map)
+          : const {},
+      tags: m['tags'] ?? '',
       allowDupes: m['allowDupes'] == 'true',
       compactGlossaries: m['compactGlossaries'] == 'true',
       embedMedia: m.containsKey('embedMedia')
           ? m['embedMedia'] == 'true'
-          : current.embedMedia,
+          : true,
     );
   }
 }
