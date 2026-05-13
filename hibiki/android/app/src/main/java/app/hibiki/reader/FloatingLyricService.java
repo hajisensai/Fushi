@@ -276,6 +276,13 @@ public class FloatingLyricService extends BaseFloatingService {
     public void setLocked(boolean locked) {
         isLocked = locked;
         applyLockButton();
+        int vis = locked ? View.GONE : View.VISIBLE;
+        if (previousButton != null) previousButton.setVisibility(vis);
+        if (playPauseButton != null) playPauseButton.setVisibility(vis);
+        if (nextButton != null) nextButton.setVisibility(vis);
+        if (windowManager != null && rootView != null && layoutParams != null) {
+            rootView.post(() -> windowManager.updateViewLayout(rootView, layoutParams));
+        }
     }
 
     public void setPlaybackState(boolean playing) {
@@ -378,7 +385,7 @@ public class FloatingLyricService extends BaseFloatingService {
     // ── Control callbacks ──
 
     private void onControlClick(String action) {
-        if (isLocked && !"toggleLock".equals(action)) return;
+        if (isLocked && !"toggleLock".equals(action) && !"close".equals(action)) return;
         if ("close".equals(action)) {
             MainActivity.notifyFloatingLyricEvent("close", null);
             stopSelf();
