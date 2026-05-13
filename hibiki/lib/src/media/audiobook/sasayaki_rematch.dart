@@ -304,7 +304,7 @@ class SasayakiRematch {
       );
       await repo.updateHealthOverlay(bookUid: ab.bookUid, health: health);
       Fluttertoast.showToast(
-        msg: 'Sasayaki $pct% (window=$searchWindow)',
+        msg: t.sasayaki_rematch_result(pct: pct, window: searchWindow),
       );
     } catch (e, st) {
       debugPrint('[hibiki-audiobook] SasayakiRematch failed: $e\n$st');

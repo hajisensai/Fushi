@@ -848,5 +848,16 @@
   "floating_dict_title": "Sözlük",
   "no_results_found": "Sonuç bulunamadı.",
   "preview_switch": "Anahtar",
-  "preview_badge": "Rozet"
+  "preview_badge": "Rozet",
+  "font_source_file": "Yazı tipi dosyası",
+  "font_source_system": "Sistem yazı tipi",
+  "book_directory_not_found": "Kitap dizini bulunamadı",
+  "image_page_counter": "$current / $total",
+  "no_debug_logs": "Hata ayıklama günlüğü yok",
+  "init_error_message": "Başlatma hatası: $error",
+  "anki_export_not_implemented": "Anki dışa aktarma henüz uygulanmadı",
+  "sasayaki_rematch_result": "Sasayaki $pct% (pencere=$window)",
+  "sasayaki_health_label": "Sasayaki $pct$detail",
+  "untitled": "Başlıksız",
+  "section_epub": "EPUB"
 }

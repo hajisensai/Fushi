@@ -3798,7 +3798,7 @@ class AppModel with ChangeNotifier {
       onAnkiExport: (String word, String reading, String meaning) async {
         debugPrint('[FloatingDict] Anki export: $word / $reading');
         Fluttertoast.showToast(
-          msg: 'Anki export not yet implemented',
+          msg: t.anki_export_not_implemented,
           toastLength: Toast.LENGTH_SHORT,
         );
       },

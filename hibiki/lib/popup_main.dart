@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/models.dart';
+import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/pages/implementations/popup_dictionary_page.dart';
 import 'package:hibiki/src/utils/misc/popup_channel.dart';
 import 'package:spaces/spaces.dart';
@@ -71,7 +72,7 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
         builder: _buildWithSpacing,
         home: Scaffold(
           backgroundColor: Colors.transparent,
-          body: Center(child: Text('Init error: ${appModel.initError}')),
+          body: Center(child: Text(t.init_error_message(error: appModel.initError!))),
         ),
       );
     }

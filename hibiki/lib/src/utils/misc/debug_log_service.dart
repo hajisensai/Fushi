@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:hibiki/utils.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class DebugLogService {
@@ -49,7 +50,7 @@ class DebugLogService {
   }
 
   String getFullLog() {
-    if (_entries.isEmpty) return 'No debug logs';
+    if (_entries.isEmpty) return t.no_debug_logs;
     final StringBuffer buf = StringBuffer();
     for (final DebugLogEntry e in _entries.reversed) {
       buf.writeln('[${e.timestamp.hour.toString().padLeft(2, '0')}:'

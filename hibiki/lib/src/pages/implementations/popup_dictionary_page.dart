@@ -206,12 +206,11 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
   }
 
   Widget _buildSearchBar(bool isDark) {
-    final fillColor = isDark ? const Color(0xFF1E1E1E) : Colors.white;
-    final borderColor = isDark
-        ? Colors.white.withValues(alpha: 0.15)
-        : Colors.black.withValues(alpha: 0.18);
-    final textColor = isDark ? Colors.white : Colors.black;
-    final hintColor = isDark ? Colors.white54 : Colors.black45;
+    final colorScheme = Theme.of(context).colorScheme;
+    final fillColor = colorScheme.surfaceContainerHigh;
+    final borderColor = colorScheme.outlineVariant.withValues(alpha: 0.5);
+    final textColor = colorScheme.onSurface;
+    final hintColor = colorScheme.onSurfaceVariant;
 
     return Container(
       margin: EdgeInsets.zero,

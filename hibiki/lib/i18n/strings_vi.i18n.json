@@ -848,5 +848,16 @@
   "floating_dict_title": "Từ điển",
   "no_results_found": "Không tìm thấy kết quả.",
   "preview_switch": "Công tắc",
-  "preview_badge": "Huy hiệu"
+  "preview_badge": "Huy hiệu",
+  "font_source_file": "Tệp phông chữ",
+  "font_source_system": "Phông hệ thống",
+  "book_directory_not_found": "Không tìm thấy thư mục sách",
+  "image_page_counter": "$current / $total",
+  "no_debug_logs": "Không có nhật ký gỡ lỗi",
+  "init_error_message": "Lỗi khởi tạo: $error",
+  "anki_export_not_implemented": "Xuất Anki chưa được triển khai",
+  "sasayaki_rematch_result": "Sasayaki $pct% (cửa sổ=$window)",
+  "sasayaki_health_label": "Sasayaki $pct$detail",
+  "untitled": "Chưa đặt tên",
+  "section_epub": "EPUB"
 }

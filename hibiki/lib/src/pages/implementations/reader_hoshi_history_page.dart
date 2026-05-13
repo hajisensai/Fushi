@@ -254,7 +254,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
           ],
           if (epubBooks.isNotEmpty) ...[
             if (srtBooks.isNotEmpty)
-              SliverToBoxAdapter(child: _buildSectionHeader('EPUB')),
+              SliverToBoxAdapter(child: _buildSectionHeader(t.section_epub)),
             SliverGrid.builder(
               gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
                 maxCrossAxisExtent: 150,
@@ -360,10 +360,10 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
       return Align(
         alignment: Alignment.bottomCenter,
         child: Container(
-          height: constraints.maxHeight * 0.32,
+          height: constraints.maxHeight * 0.38,
           width: double.infinity,
           alignment: Alignment.bottomCenter,
-          padding: const EdgeInsets.fromLTRB(6, 10, 6, 8),
+          padding: const EdgeInsets.fromLTRB(6, 4, 6, 6),
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topCenter,

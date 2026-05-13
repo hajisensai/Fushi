@@ -976,7 +976,7 @@ class _FontTile extends StatelessWidget {
           ),
         ),
         subtitle: Text(
-          isFile ? 'Font File' : 'System Font',
+          isFile ? t.font_source_file : t.font_source_system,
           style: Theme.of(context).textTheme.bodySmall,
         ),
         trailing: Row(

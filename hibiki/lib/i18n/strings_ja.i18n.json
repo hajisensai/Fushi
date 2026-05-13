@@ -848,5 +848,16 @@
   "floating_dict_title": "辞書",
   "no_results_found": "結果が見つかりません。",
   "preview_switch": "スイッチ",
-  "preview_badge": "バッジ"
+  "preview_badge": "バッジ",
+  "font_source_file": "フォントファイル",
+  "font_source_system": "システムフォント",
+  "book_directory_not_found": "書籍ディレクトリが見つかりません",
+  "image_page_counter": "$current / $total",
+  "no_debug_logs": "デバッグログなし",
+  "init_error_message": "初期化エラー: $error",
+  "anki_export_not_implemented": "Ankiエクスポートは未実装です",
+  "sasayaki_rematch_result": "Sasayaki $pct% (ウィンドウ=$window)",
+  "sasayaki_health_label": "Sasayaki $pct$detail",
+  "untitled": "無題",
+  "section_epub": "EPUB"
 }

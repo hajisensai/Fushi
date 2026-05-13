@@ -848,5 +848,16 @@
   "floating_dict_title": "القاموس",
   "no_results_found": "لم يتم العثور على نتائج.",
   "preview_switch": "مفتاح",
-  "preview_badge": "شارة"
+  "preview_badge": "شارة",
+  "font_source_file": "ملف خط",
+  "font_source_system": "خط النظام",
+  "book_directory_not_found": "لم يتم العثور على دليل الكتاب",
+  "image_page_counter": "$current / $total",
+  "no_debug_logs": "لا توجد سجلات تصحيح",
+  "init_error_message": "خطأ في التهيئة: $error",
+  "anki_export_not_implemented": "تصدير Anki غير مُنفَّذ بعد",
+  "sasayaki_rematch_result": "Sasayaki $pct% (نافذة=$window)",
+  "sasayaki_health_label": "Sasayaki $pct$detail",
+  "untitled": "بدون عنوان",
+  "section_epub": "EPUB"
 }

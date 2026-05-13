@@ -848,5 +848,16 @@
   "floating_dict_title": "Dictionnaire",
   "no_results_found": "Aucun résultat trouvé.",
   "preview_switch": "Interrupteur",
-  "preview_badge": "Badge"
+  "preview_badge": "Badge",
+  "font_source_file": "Fichier de police",
+  "font_source_system": "Police système",
+  "book_directory_not_found": "Répertoire du livre introuvable",
+  "image_page_counter": "$current / $total",
+  "no_debug_logs": "Aucun journal de débogage",
+  "init_error_message": "Erreur d'initialisation : $error",
+  "anki_export_not_implemented": "Export Anki non encore implémenté",
+  "sasayaki_rematch_result": "Sasayaki $pct% (fenêtre=$window)",
+  "sasayaki_health_label": "Sasayaki $pct$detail",
+  "untitled": "Sans titre",
+  "section_epub": "EPUB"
 }

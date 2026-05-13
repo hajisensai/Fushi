@@ -848,5 +848,16 @@
   "floating_dict_title": "Словарь",
   "no_results_found": "Ничего не найдено.",
   "preview_switch": "Переключатель",
-  "preview_badge": "Значок"
+  "preview_badge": "Значок",
+  "font_source_file": "Файл шрифта",
+  "font_source_system": "Системный шрифт",
+  "book_directory_not_found": "Каталог книги не найден",
+  "image_page_counter": "$current / $total",
+  "no_debug_logs": "Нет журналов отладки",
+  "init_error_message": "Ошибка инициализации: $error",
+  "anki_export_not_implemented": "Экспорт в Anki ещё не реализован",
+  "sasayaki_rematch_result": "Sasayaki $pct% (окно=$window)",
+  "sasayaki_health_label": "Sasayaki $pct$detail",
+  "untitled": "Без названия",
+  "section_epub": "EPUB"
 }

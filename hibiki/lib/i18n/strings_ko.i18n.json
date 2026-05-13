@@ -848,5 +848,16 @@
   "floating_dict_title": "사전",
   "no_results_found": "결과를 찾을 수 없습니다.",
   "preview_switch": "스위치",
-  "preview_badge": "배지"
+  "preview_badge": "배지",
+  "font_source_file": "폰트 파일",
+  "font_source_system": "시스템 폰트",
+  "book_directory_not_found": "도서 디렉토리를 찾을 수 없습니다",
+  "image_page_counter": "$current / $total",
+  "no_debug_logs": "디버그 로그 없음",
+  "init_error_message": "초기화 오류: $error",
+  "anki_export_not_implemented": "Anki 내보내기 미구현",
+  "sasayaki_rematch_result": "Sasayaki $pct% (윈도우=$window)",
+  "sasayaki_health_label": "Sasayaki $pct$detail",
+  "untitled": "제목 없음",
+  "section_epub": "EPUB"
 }

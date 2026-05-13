@@ -44,7 +44,7 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
       if (!dir.existsSync()) {
         if (mounted) {
           setState(() {
-            _error = 'Book directory not found';
+            _error = t.book_directory_not_found;
             _loading = false;
           });
         }
@@ -218,7 +218,7 @@ class _FullScreenGalleryState extends State<_FullScreenGallery> {
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        title: Text('${_currentIndex + 1} / ${widget.images.length}'),
+        title: Text(t.image_page_counter(current: _currentIndex + 1, total: widget.images.length)),
       ),
       body: PageView.builder(
         controller: _pageController,

@@ -273,15 +273,15 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       case HealthKind.ok:
         icon = Icons.check_circle;
         color = Colors.green;
-        label = 'Sasayaki $pctStr%$tail';
+        label = t.sasayaki_health_label(pct: '$pctStr%', detail: tail);
       case HealthKind.partial:
         icon = Icons.warning_amber;
         color = Colors.amber;
-        label = 'Sasayaki $pctStr%$tail';
+        label = t.sasayaki_health_label(pct: '$pctStr%', detail: tail);
       case HealthKind.failed:
         icon = Icons.error_outline;
         color = Colors.red;
-        label = 'Sasayaki $pctStr%$tail';
+        label = t.sasayaki_health_label(pct: '$pctStr%', detail: tail);
       case HealthKind.running:
       case HealthKind.unrun:
       case HealthKind.notApplicable:

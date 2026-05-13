@@ -62,11 +62,9 @@ class DictionaryPopupLayer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fillColor =
-        overrideFillColor ?? (isDark ? Colors.black : Colors.white);
-    final borderColor = isDark
-        ? Colors.white.withValues(alpha: 0.15)
-        : Colors.black.withValues(alpha: 0.18);
+    final colorScheme = Theme.of(context).colorScheme;
+    final fillColor = overrideFillColor ?? colorScheme.surface;
+    final borderColor = colorScheme.outlineVariant.withValues(alpha: 0.5);
 
     return SwipeDismissWrapper(
       sensitivity: ReaderHoshiSource.instance.dismissSwipeSensitivity,

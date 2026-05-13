@@ -848,5 +848,16 @@
   "floating_dict_title": "พจนานุกรม",
   "no_results_found": "ไม่พบผลลัพธ์",
   "preview_switch": "สวิตช์",
-  "preview_badge": "ป้าย"
+  "preview_badge": "ป้าย",
+  "font_source_file": "ไฟล์ฟอนต์",
+  "font_source_system": "ฟอนต์ระบบ",
+  "book_directory_not_found": "ไม่พบไดเรกทอรีหนังสือ",
+  "image_page_counter": "$current / $total",
+  "no_debug_logs": "ไม่มีบันทึกการดีบัก",
+  "init_error_message": "ข้อผิดพลาดในการเริ่มต้น: $error",
+  "anki_export_not_implemented": "ยังไม่ได้ใช้งานการส่งออก Anki",
+  "sasayaki_rematch_result": "Sasayaki $pct% (หน้าต่าง=$window)",
+  "sasayaki_health_label": "Sasayaki $pct$detail",
+  "untitled": "ไม่มีชื่อ",
+  "section_epub": "EPUB"
 }

@@ -679,7 +679,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
         },
       ),
       buildPopupItem(
-        label: 'Custom CSS',
+        label: t.custom_dict_css,
         icon: Icons.code,
         action: () {
           _showCustomCSSDialog(dictionary.name);

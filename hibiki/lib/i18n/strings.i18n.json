@@ -941,5 +941,16 @@
   "floating_dict_title": "Dictionary",
   "no_results_found": "No results found.",
   "preview_switch": "Switch",
-  "preview_badge": "Badge"
+  "preview_badge": "Badge",
+  "font_source_file": "Font File",
+  "font_source_system": "System Font",
+  "book_directory_not_found": "Book directory not found",
+  "image_page_counter": "$current / $total",
+  "no_debug_logs": "No debug logs",
+  "init_error_message": "Init error: $error",
+  "anki_export_not_implemented": "Anki export not yet implemented",
+  "sasayaki_rematch_result": "Sasayaki $pct% (window=$window)",
+  "sasayaki_health_label": "Sasayaki $pct$detail",
+  "untitled": "Untitled",
+  "section_epub": "EPUB"
 }

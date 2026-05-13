@@ -138,6 +138,8 @@ public class PopupDictActivity extends FlutterActivity {
         params.width = width;
         params.height = height;
         params.gravity = Gravity.CENTER;
+        params.flags |= WindowManager.LayoutParams.FLAG_DIM_BEHIND;
+        params.dimAmount = 0.5f;
         getWindow().setAttributes(params);
     }
 

@@ -1721,13 +1721,16 @@ window.renderPopup = function() {
 document.addEventListener('click', (e) => {
     const sel = window.getSelection();
     if (sel && sel.toString().length > 0) {
+        console.log('[CLICK] clearing existing selection');
         sel.removeAllRanges();
         return;
     }
 
     const target = e.target?.nodeType === Node.TEXT_NODE ? e.target.parentElement : e.target;
+    console.log('[CLICK] target:', target?.tagName, target?.className, 'gc:', !!target?.closest('.glossary-content'), 'gg:', !!target?.closest('.glossary-group'));
     if (target?.closest('.mine-button') || target?.closest('.audio-button')) return;
     if (!target?.closest('.glossary-content') && !target?.closest('.entry-header') && !target?.closest('.entry-tags') && !target?.closest('.glossary-group')) {
+        console.log('[CLICK] tapOutside');
         window.flutter_inappwebview.callHandler('tapOutside');
         return;
     }
@@ -1735,7 +1738,9 @@ document.addEventListener('click', (e) => {
     if (target?.closest('.glossary-content')) {
         if (target?.closest('summary')) return;
         if (target?.closest('a[href]')) return;
+        console.log('[CLICK] selectText at', e.clientX, e.clientY);
         const selected = window.hoshiSelection?.selectText(e.clientX, e.clientY, 20);
+        console.log('[CLICK] selectText result:', selected);
         if (!selected) {
             return;
         }

@@ -862,5 +862,16 @@
   "floating_dict_title": "词典",
   "no_results_found": "未找到结果。",
   "preview_switch": "开关",
-  "preview_badge": "标签"
+  "preview_badge": "标签",
+  "font_source_file": "字体文件",
+  "font_source_system": "系统字体",
+  "book_directory_not_found": "找不到书籍目录",
+  "image_page_counter": "$current / $total",
+  "no_debug_logs": "无调试日志",
+  "init_error_message": "初始化错误: $error",
+  "anki_export_not_implemented": "Anki 导出尚未实现",
+  "sasayaki_rematch_result": "Sasayaki $pct% (窗口=$window)",
+  "sasayaki_health_label": "Sasayaki $pct$detail",
+  "untitled": "无标题",
+  "section_epub": "EPUB"
 }

@@ -142,14 +142,11 @@ class DictionaryPopupWebViewState
     final double ta = onSurface.a;
     final String textRgba = 'rgba($tr, $tg, $tb, ${ta.toStringAsFixed(2)})';
 
-    final Color? bgOverride = appModel.overrideDictionaryColor;
-    String bgCssOverride = '';
-    if (bgOverride != null) {
-      final int br = (bgOverride.r * 255.0).round().clamp(0, 255);
-      final int bg = (bgOverride.g * 255.0).round().clamp(0, 255);
-      final int bb = (bgOverride.b * 255.0).round().clamp(0, 255);
-      bgCssOverride = "document.documentElement.style.setProperty('--background-color', 'rgb($br, $bg, $bb)');";
-    }
+    final Color bgColor = appModel.overrideDictionaryColor ?? theme.colorScheme.surface;
+    final int br = (bgColor.r * 255.0).round().clamp(0, 255);
+    final int bg = (bgColor.g * 255.0).round().clamp(0, 255);
+    final int bb = (bgColor.b * 255.0).round().clamp(0, 255);
+    final String bgCssOverride = "document.documentElement.style.setProperty('--background-color', 'rgb($br, $bg, $bb)');";
 
     final bool needsScrollCheck = widget.onScrolledToBottom != null;
     _controller!.evaluateJavascript(source: '''

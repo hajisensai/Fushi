@@ -12,6 +12,7 @@ import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
 import 'package:hibiki/src/media/audiobook/reader_position_repository.dart';
 import 'package:hibiki/src/media/audiobook/ttu_idb_reader.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:hibiki/utils.dart';
 
 class TtuMigration {
   static const String _idsKey = 'ttu_migration_book_ids';
@@ -103,7 +104,7 @@ class TtuMigration {
         await db.into(db.epubBooks).insert(
               EpubBooksCompanion.insert(
                 id: Value(ttuId),
-                title: bookData['title'] as String? ?? 'Untitled',
+                title: bookData['title'] as String? ?? t.untitled,
                 epubPath: '',
                 extractDir: extractDir,
                 chapterCount: actualChapters,
@@ -119,7 +120,7 @@ class TtuMigration {
         await _migrateReadingProgress(db, ttuId, bookData, actualChapters);
         await _migrateBookmarks(
           db, ttuId, bookData,
-          bookData['title'] as String? ?? 'Untitled',
+          bookData['title'] as String? ?? t.untitled,
         );
 
         await prefs.setBool(flagKey, true);
