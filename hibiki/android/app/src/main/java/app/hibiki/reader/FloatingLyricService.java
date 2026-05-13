@@ -309,24 +309,10 @@ public class FloatingLyricService extends BaseFloatingService {
 
         int index = getCharIndexAt(localX, localY);
 
-        // Notify Flutter for highlight
         java.util.HashMap<String, Object> args = new java.util.HashMap<>();
         args.put("text", currentText);
         args.put("index", index);
         MainActivity.notifyFloatingLyricEvent("lookupText", args);
-
-        // Forward to floating dict if running
-        FloatingDictService dict = FloatingDictService.getInstance();
-        if (dict != null) {
-            int safeIndex = Math.min(index, currentText.length());
-            int end = Math.min(safeIndex + 20, currentText.length());
-            if (end > safeIndex) {
-                String searchTerm = currentText.substring(safeIndex, end);
-                if (!searchTerm.trim().isEmpty()) {
-                    dict.onTextSelected(searchTerm);
-                }
-            }
-        }
     }
 
     private int getCharIndexAt(float x, float y) {

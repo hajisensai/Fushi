@@ -42,6 +42,7 @@ import 'package:hibiki/src/reader/reader_selection_scripts.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/utils/misc/jidoujisho_text_selection.dart';
 import 'package:hibiki/src/media/audiobook/floating_lyric_channel.dart';
+import 'package:hibiki/src/media/floating_dict_channel.dart';
 import 'package:hibiki/src/anki/anki_models.dart';
 import 'package:hibiki/src/anki/anki_repository.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
@@ -2218,7 +2219,19 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   Future<void> _handleFloatingLyricLookup(String text, int charIndex) async {
     if (text.isEmpty) return;
     final int safeIndex = charIndex.clamp(0, text.length - 1);
+    final int end = (safeIndex + 20).clamp(0, text.length);
+    final String searchTerm = text.substring(safeIndex, end);
+    if (searchTerm.isEmpty) return;
+
     await FloatingLyricChannel.highlight(start: safeIndex, length: 1);
+
+    final bool dictRunning = await FloatingDictChannel.isShowing();
+    if (!dictRunning) {
+      final bool started = await FloatingDictChannel.show();
+      if (!started) return;
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    }
+    await FloatingDictChannel.searchTerm(searchTerm);
   }
 
   void _syncFloatingLyric(AudiobookPlayerController ctrl) {

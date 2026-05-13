@@ -453,6 +453,15 @@ public class MainActivity extends AudioServiceActivity {
                     result.success(null);
                     break;
                 }
+                case "searchTerm": {
+                    String text = call.argument("text");
+                    FloatingDictService svc = FloatingDictService.getInstance();
+                    if (svc != null && text != null && !text.trim().isEmpty()) {
+                        svc.onTextSelected(text.trim());
+                    }
+                    result.success(null);
+                    break;
+                }
                 case "isAccessibilityEnabled": {
                     result.success(isAccessibilityServiceEnabled(context,
                             DictAccessibilityService.class));

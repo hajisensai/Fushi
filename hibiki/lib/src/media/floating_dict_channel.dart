@@ -29,6 +29,10 @@ class FloatingDictChannel {
     await _channel.invokeMethod<void>('openAccessibilitySettings');
   }
 
+  static Future<void> searchTerm(String text) async {
+    await _channel.invokeMethod<void>('searchTerm', {'text': text});
+  }
+
   static Future<bool> isAccessibilityEnabled() async {
     final bool? result =
         await _channel.invokeMethod<bool>('isAccessibilityEnabled');
