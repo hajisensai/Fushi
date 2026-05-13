@@ -700,6 +700,7 @@
     "floating_lyric_lock": "Bloquear",
     "floating_lyric_unlock": "Desbloquear",
     "floating_lyric_close": "Fechar",
+    "floating_lyric_permission_hint": "Ative a permissão \"Exibir sobre outros apps\" e tente novamente",
     "floating_lyric_font_size": "Tamanho da fonte da legenda flutuante",
     "audio_panel_title": "Arquivos de áudio",
     "audio_panel_auto": "Automático",

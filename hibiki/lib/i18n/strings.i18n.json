@@ -834,6 +834,7 @@
   "floating_lyric_lock": "Lock",
   "floating_lyric_unlock": "Unlock",
   "floating_lyric_close": "Close",
+  "floating_lyric_permission_hint": "Please enable \"Display over other apps\" permission and try again",
   "floating_lyric_font_size": "Floating subtitle font size",
   "initialization_failed": "Initialisation failed",
   "book_search": "Search in Book",

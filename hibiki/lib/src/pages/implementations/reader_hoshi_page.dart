@@ -2170,7 +2170,17 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final bool current = appModel.showFloatingLyric;
     if (!current) {
       final bool shown = await FloatingLyricChannel.show();
-      if (!shown) return false;
+      if (!shown) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(t.floating_lyric_permission_hint),
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+        return false;
+      }
       await _applyFloatingLyricStyle();
       await appModel.setShowFloatingLyric(true);
       _setupFloatingLyricHandlers();

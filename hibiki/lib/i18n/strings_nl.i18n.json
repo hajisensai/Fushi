@@ -700,6 +700,7 @@
     "floating_lyric_lock": "Vergrendelen",
     "floating_lyric_unlock": "Ontgrendelen",
     "floating_lyric_close": "Sluiten",
+    "floating_lyric_permission_hint": "Schakel de machtiging \"Weergeven boven andere apps\" in en probeer opnieuw",
     "floating_lyric_font_size": "Lettergrootte zwevende ondertitel",
     "audio_panel_title": "Audiobestanden",
     "audio_panel_auto": "Automatisch",

@@ -700,6 +700,7 @@
     "floating_lyric_lock": "ล็อก",
     "floating_lyric_unlock": "ปลดล็อก",
     "floating_lyric_close": "ปิด",
+    "floating_lyric_permission_hint": "กรุณาเปิดสิทธิ์ \"แสดงทับแอปอื่น\" แล้วลองอีกครั้ง",
     "floating_lyric_font_size": "ขนาดตัวอักษรซับไตเติลลอย",
     "audio_panel_title": "ไฟล์เสียง",
     "audio_panel_auto": "อัตโนมัติ",

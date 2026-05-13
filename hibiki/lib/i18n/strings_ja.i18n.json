@@ -712,6 +712,7 @@
     "floating_lyric_lock": "ロック",
     "floating_lyric_unlock": "ロック解除",
     "floating_lyric_close": "閉じる",
+    "floating_lyric_permission_hint": "「他のアプリの上に表示」権限を有効にしてもう一度お試しください",
     "floating_lyric_font_size": "フローティング字幕の文字サイズ",
     "book_search": "書籍内検索",
     "book_search_hint": "検索テキストを入力…",

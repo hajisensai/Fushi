@@ -710,6 +710,7 @@
     "floating_lyric_lock": "鎖定",
     "floating_lyric_unlock": "解鎖",
     "floating_lyric_close": "關閉",
+    "floating_lyric_permission_hint": "請開啟「顯示在其他應用程式上層」權限後重試",
     "floating_lyric_font_size": "懸浮字幕字號",
     "show_floating_lyric": "懸浮字幕",
     "floating_lyric_hint": "在其他應用程式上方顯示目前句子。",

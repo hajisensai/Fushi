@@ -710,6 +710,7 @@
     "floating_lyric_lock": "قفل",
     "floating_lyric_unlock": "فتح القفل",
     "floating_lyric_close": "إغلاق",
+    "floating_lyric_permission_hint": "يرجى تفعيل إذن \"العرض فوق التطبيقات الأخرى\" والمحاولة مرة أخرى",
     "floating_lyric_font_size": "حجم خط الترجمة العائمة",
     "book_search": "بحث في الكتاب",
     "book_search_hint": "أدخل نص البحث…",

@@ -767,6 +767,7 @@
     "floating_lyric_lock": "锁定",
     "floating_lyric_unlock": "解锁",
     "floating_lyric_close": "关闭",
+    "floating_lyric_permission_hint": "请开启「显示在其他应用上层」权限后重试",
     "floating_lyric_font_size": "悬浮字幕字号",
     "show_floating_lyric": "悬浮字幕",
     "floating_lyric_hint": "在其他应用上方显示当前句子。",
