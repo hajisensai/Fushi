@@ -3,6 +3,8 @@
 #include <ankerl/unordered_dense.h>
 #include <zstd.h>
 
+#include <android/log.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -357,6 +359,13 @@ std::string DictionaryQuery::decompress_glossary(const void* data, size_t size) 
 
   unsigned long long decompressed_size = ZSTD_getFrameContentSize(data, size);
   if (decompressed_size == ZSTD_CONTENTSIZE_ERROR || decompressed_size == ZSTD_CONTENTSIZE_UNKNOWN) {
+    return "";
+  }
+
+  static constexpr size_t kMaxGlossarySize = 64 * 1024 * 1024;  // 64 MB
+  if (decompressed_size > kMaxGlossarySize) {
+    __android_log_print(ANDROID_LOG_WARN, "hoshidicts",
+                        "glossary decompressed size %llu exceeds limit", decompressed_size);
     return "";
   }
 

@@ -139,7 +139,7 @@ StardictResult stardict_reader::parse_from_data(
                           (uint32_t(idx_data[pos + 2]) << 8) | idx_data[pos + 3];
     pos += 4;
 
-    if (offset + entry_size > dict_size) continue;
+    if (entry_size > dict_size || offset > dict_size - entry_size) continue;
 
     std::string definition;
     if (!sametypesequence.empty()) {
@@ -151,6 +151,7 @@ StardictResult stardict_reader::parse_from_data(
         if (is_text_type(type)) {
           if (last_field) {
             // Last field consumes remaining bytes
+            if (dpos > entry_size) break;
             if (!definition.empty()) definition += '\n';
             definition.append(reinterpret_cast<const char*>(dict_data + offset + dpos),
                               entry_size - dpos);
