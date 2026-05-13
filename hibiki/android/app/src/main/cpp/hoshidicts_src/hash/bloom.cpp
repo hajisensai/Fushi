@@ -14,8 +14,18 @@ constexpr uint64_t num_hashes = 7;
 }
 
 void bloom::load(const uint8_t* ptr) {
-  uint64_t num_bits = *reinterpret_cast<const uint64_t*>(ptr);
-  num_hashes_ = *reinterpret_cast<const uint64_t*>(ptr + sizeof(uint64_t));
+  uint64_t num_bits;
+  std::memcpy(&num_bits, ptr, sizeof(uint64_t));
+  uint64_t num_hashes;
+  std::memcpy(&num_hashes, ptr + sizeof(uint64_t), sizeof(uint64_t));
+
+  if (num_bits == 0 || (num_bits & (num_bits - 1)) != 0) {
+    num_hashes_ = 0;
+    mask_ = 0;
+    bits_ = nullptr;
+    return;
+  }
+  num_hashes_ = num_hashes;
   mask_ = num_bits - 1;
   bits_ = reinterpret_cast<const uint64_t*>(ptr + 2 * sizeof(uint64_t));
 }

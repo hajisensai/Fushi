@@ -10,6 +10,7 @@ class bloom {
   void load(const uint8_t* ptr);
 
   bool contains(uint64_t h) const {
+    if (!bits_ || num_hashes_ == 0) return true;  // pass-through if bloom invalid
     auto h1 = static_cast<uint32_t>(h);
     auto h2 = static_cast<uint32_t>(h >> 32);
     for (uint64_t k = 0; k < num_hashes_; k++) {
