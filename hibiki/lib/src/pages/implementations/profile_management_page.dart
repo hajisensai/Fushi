@@ -195,7 +195,7 @@ class _ProfileManagementPageState
     int sourceId,
     String sourceName,
   ) async {
-    final controller = TextEditingController(text: '$sourceName (copy)');
+    final controller = TextEditingController(text: '$sourceName ${t.profile_copy_suffix}');
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(

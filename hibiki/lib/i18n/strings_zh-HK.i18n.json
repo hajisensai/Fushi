@@ -868,6 +868,7 @@
   "custom_dict_css": "自訂 CSS",
   "custom_dict_css_global": "全域（所有辭典）",
   "dialog_ok": "確定",
+  "profile_copy_suffix": "（副本）",
   "floating_dict_hint": "監聽剪貼簿以進行辭典查詢。",
   "import_step_copying_file": "正在複製 ${name}…",
   "lyrics_mode": "歌詞模式",

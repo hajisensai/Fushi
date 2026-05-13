@@ -866,6 +866,7 @@
   "custom_dict_css": "Пользовательский CSS",
   "custom_dict_css_global": "Глобальный (все словари)",
   "dialog_ok": "ОК",
+  "profile_copy_suffix": "(копия)",
   "floating_dict_hint": "Отслеживать буфер обмена для поиска в словаре.",
   "import_step_copying_file": "Копирование ${name}…",
   "lyrics_mode": "Режим текста песни",

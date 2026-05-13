@@ -866,6 +866,7 @@
   "custom_dict_css": "CSS Kustom",
   "custom_dict_css_global": "Global (semua kamus)",
   "dialog_ok": "OK",
+  "profile_copy_suffix": "(salinan)",
   "floating_dict_hint": "Pantau clipboard untuk pencarian kamus.",
   "import_step_copying_file": "Menyalin ${name}…",
   "lyrics_mode": "Mode lirik",

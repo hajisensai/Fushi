@@ -905,6 +905,7 @@
   "creator_action_play_audio": "Play Audio",
   "creator_action_share": "Share",
   "dialog_ok": "OK",
+  "profile_copy_suffix": "(copy)",
   "tag_filter": "Filter by Tag",
   "tag_filter_title": "Tag Filter",
   "tag_manage": "Manage Tags",

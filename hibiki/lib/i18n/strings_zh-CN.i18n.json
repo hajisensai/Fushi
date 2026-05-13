@@ -880,6 +880,7 @@
   "custom_dict_css": "自定义 CSS",
   "custom_dict_css_global": "全局（所有词典）",
   "dialog_ok": "确定",
+  "profile_copy_suffix": "（副本）",
   "floating_dict_hint": "监听剪贴板以触发词典查询。",
   "import_step_copying_file": "正在复制 ${name}…",
   "lyrics_mode": "歌词模式",

@@ -866,6 +866,7 @@
   "custom_dict_css": "カスタム CSS",
   "custom_dict_css_global": "グローバル（全辞書）",
   "dialog_ok": "OK",
+  "profile_copy_suffix": "（コピー）",
   "floating_dict_hint": "クリップボードを監視して辞書を引きます。",
   "import_step_copying_file": "${name} をコピー中…",
   "lyrics_mode": "歌詞モード",

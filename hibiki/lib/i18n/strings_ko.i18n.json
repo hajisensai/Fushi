@@ -866,6 +866,7 @@
   "custom_dict_css": "사용자 CSS",
   "custom_dict_css_global": "전체 (모든 사전)",
   "dialog_ok": "확인",
+  "profile_copy_suffix": "(사본)",
   "floating_dict_hint": "클립보드를 감시하여 사전을 검색합니다.",
   "import_step_copying_file": "${name} 복사 중…",
   "lyrics_mode": "가사 모드",

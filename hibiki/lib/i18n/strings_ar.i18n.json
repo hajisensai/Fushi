@@ -866,6 +866,7 @@
   "custom_dict_css": "CSS مخصص",
   "custom_dict_css_global": "عام (جميع القواميس)",
   "dialog_ok": "موافق",
+  "profile_copy_suffix": "(نسخة)",
   "floating_dict_hint": "مراقبة الحافظة للبحث في القاموس.",
   "import_step_copying_file": "نسخ ${name}…",
   "lyrics_mode": "وضع الكلمات",

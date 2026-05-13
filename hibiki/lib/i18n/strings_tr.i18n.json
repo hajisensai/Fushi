@@ -866,6 +866,7 @@
   "custom_dict_css": "Özel CSS",
   "custom_dict_css_global": "Genel (tüm sözlükler)",
   "dialog_ok": "Tamam",
+  "profile_copy_suffix": "(kopya)",
   "floating_dict_hint": "Sözlük araması için panoyu izle.",
   "import_step_copying_file": "${name} kopyalanıyor…",
   "lyrics_mode": "Şarkı sözü modu",

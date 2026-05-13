@@ -866,6 +866,7 @@
   "custom_dict_css": "CSS tùy chỉnh",
   "custom_dict_css_global": "Toàn cục (tất cả từ điển)",
   "dialog_ok": "OK",
+  "profile_copy_suffix": "(bản sao)",
   "floating_dict_hint": "Theo dõi clipboard để tra từ điển.",
   "import_step_copying_file": "Đang sao chép ${name}…",
   "lyrics_mode": "Chế độ lời bài hát",

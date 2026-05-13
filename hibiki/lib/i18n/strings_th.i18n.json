@@ -866,6 +866,7 @@
   "custom_dict_css": "CSS กำหนดเอง",
   "custom_dict_css_global": "ส่วนกลาง (พจนานุกรมทั้งหมด)",
   "dialog_ok": "ตกลง",
+  "profile_copy_suffix": "(สำเนา)",
   "floating_dict_hint": "ติดตามคลิปบอร์ดเพื่อค้นหาในพจนานุกรม",
   "import_step_copying_file": "กำลังคัดลอก ${name}…",
   "lyrics_mode": "โหมดเนื้อเพลง",

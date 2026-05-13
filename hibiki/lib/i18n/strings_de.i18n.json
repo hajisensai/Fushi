@@ -866,6 +866,7 @@
   "custom_dict_css": "Benutzerdefiniertes CSS",
   "custom_dict_css_global": "Global (alle Wörterbücher)",
   "dialog_ok": "OK",
+  "profile_copy_suffix": "(Kopie)",
   "floating_dict_hint": "Zwischenablage auf Wörterbuchabfragen überwachen.",
   "import_step_copying_file": "${name} wird kopiert…",
   "lyrics_mode": "Liedtext-Modus",

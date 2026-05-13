@@ -866,6 +866,7 @@
   "custom_dict_css": "CSS personalizado",
   "custom_dict_css_global": "Global (todos los diccionarios)",
   "dialog_ok": "Aceptar",
+  "profile_copy_suffix": "(copia)",
   "floating_dict_hint": "Supervisar el portapapeles para consultas del diccionario.",
   "import_step_copying_file": "Copiando ${name}…",
   "lyrics_mode": "Modo letra",
