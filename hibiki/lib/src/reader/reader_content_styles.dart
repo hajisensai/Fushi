@@ -51,7 +51,7 @@ class ReaderContentStyles {
     String? sasayakiColor,
     String? linkColor,
   }) {
-    final ({String textColor, String backgroundColor}) colors =
+    final _ThemeColors colors =
         _themeColors(settings.theme, customBg: customBg, customFg: customFg);
 
     final String resolvedFontFaces;
@@ -163,7 +163,7 @@ $pageBreakCss
 @media (prefers-color-scheme: dark) { :root { --hoshi-system-text-color: #fff; } }
 :root {
   --hoshi-sasayaki-text-color: ${colors.textColor};
-  --hoshi-sasayaki-background-color: ${sasayakiColor ?? 'rgba(135, 206, 235, 0.4)'};
+  --hoshi-sasayaki-background-color: ${sasayakiColor ?? colors.sasayakiColor};
 }
 html {
   /* block-container property: constrain line-box height so ruby/furigana won't expand it */
@@ -207,7 +207,7 @@ ruby > rt, ruby > rp {
   user-select: none;
 }
 .hoshi-dict-highlight {
-  background-color: ${selectionColor ?? 'rgba(160, 160, 160, 0.4)'} !important;
+  background-color: ${selectionColor ?? colors.selectionColor} !important;
   color: inherit;
 }
 .hoshi-sasayaki-cue {
@@ -218,7 +218,7 @@ ruby > rt, ruby > rp {
   background-color: var(--hoshi-sasayaki-background-color) !important;
 }
 a {
-  color: ${linkColor ?? 'rgba(66, 108, 245, 1)'}$readerStylePriority;
+  color: ${linkColor ?? colors.linkColor}$readerStylePriority;
 }
 ''';
   }
@@ -226,7 +226,7 @@ a {
   static String _paginatedLayoutCss({
     required ReaderSettings settings,
     required bool isVertical,
-    required ({String textColor, String backgroundColor}) colors,
+    required _ThemeColors colors,
     required String resolvedFontFamily,
     required String textSpacingCss,
     required String paddingCss,
@@ -272,7 +272,7 @@ body {
   static String _continuousLayoutCss({
     required ReaderSettings settings,
     required bool isVertical,
-    required ({String textColor, String backgroundColor}) colors,
+    required _ThemeColors colors,
     required String resolvedFontFamily,
     required String textSpacingCss,
     required String paddingCss,
@@ -344,44 +344,72 @@ body.show-all-rt rt {
     }
   }
 
-  static ({String textColor, String backgroundColor}) _themeColors(
+  static _ThemeColors _themeColors(
       String theme, {String? customBg, String? customFg}) {
     switch (theme) {
       case 'ecru-theme':
-        return (
+        return const _ThemeColors(
           textColor: 'rgba(0, 0, 0, 0.87)',
           backgroundColor: '#f7f6eb',
+          selectionColor: 'rgba(194, 178, 128, 0.35)',
+          sasayakiColor: 'rgba(168, 198, 140, 0.40)',
+          linkColor: '#7a6232',
         );
       case 'water-theme':
-        return (
+        return const _ThemeColors(
           textColor: 'rgba(0, 0, 0, 0.87)',
           backgroundColor: '#dfecf4',
+          selectionColor: 'rgba(130, 170, 210, 0.35)',
+          sasayakiColor: 'rgba(100, 180, 220, 0.40)',
+          linkColor: '#3a5fad',
         );
       case 'gray-theme':
-        return (
+        return const _ThemeColors(
           textColor: 'rgba(255, 255, 255, 0.87)',
           backgroundColor: '#23272a',
+          selectionColor: 'rgba(100, 140, 180, 0.35)',
+          sasayakiColor: 'rgba(80, 150, 200, 0.35)',
+          linkColor: '#6fa8dc',
         );
       case 'dark-theme':
-        return (
+        return const _ThemeColors(
           textColor: 'rgba(255, 255, 255, 0.6)',
           backgroundColor: '#121212',
+          selectionColor: 'rgba(110, 120, 150, 0.35)',
+          sasayakiColor: 'rgba(70, 130, 180, 0.35)',
+          linkColor: '#7aacdf',
         );
       case 'black-theme':
-        return (
+        return const _ThemeColors(
           textColor: 'rgba(255, 255, 255, 0.87)',
           backgroundColor: '#000',
+          selectionColor: 'rgba(90, 100, 130, 0.40)',
+          sasayakiColor: 'rgba(60, 120, 170, 0.40)',
+          linkColor: '#5b9bd5',
         );
       case 'custom-theme':
-        return (
+        return _ThemeColors(
           textColor: customFg ?? 'rgba(0, 0, 0, 0.87)',
           backgroundColor: customBg ?? '#fff',
         );
       default:
-        return (
-          textColor: 'rgba(0, 0, 0, 0.87)',
-          backgroundColor: '#fff',
-        );
+        return const _ThemeColors();
     }
   }
+}
+
+class _ThemeColors {
+  const _ThemeColors({
+    this.textColor = 'rgba(0, 0, 0, 0.87)',
+    this.backgroundColor = '#fff',
+    this.selectionColor = 'rgba(160, 160, 160, 0.40)',
+    this.sasayakiColor = 'rgba(135, 206, 235, 0.40)',
+    this.linkColor = '#426cf5',
+  });
+
+  final String textColor;
+  final String backgroundColor;
+  final String selectionColor;
+  final String sasayakiColor;
+  final String linkColor;
 }
