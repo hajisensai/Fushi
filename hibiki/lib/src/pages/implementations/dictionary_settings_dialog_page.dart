@@ -5,7 +5,7 @@ import 'package:spaces/spaces.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
-import 'package:hibiki/src/profile/profile_selector.dart';
+
 
 /// The content of the dialog used for managing dictionary settings.
 class DictionarySettingsDialogPage extends BasePage {
@@ -72,8 +72,6 @@ class _DictionaryDialogPageState extends BasePageState {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const ProfileSelector(),
-              const Divider(),
               _buildDictionaryManageRow(),
               _buildCustomCssRow(),
               const Space.small(),
