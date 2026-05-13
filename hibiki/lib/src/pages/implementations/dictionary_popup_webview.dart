@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -173,6 +175,11 @@ class DictionaryPopupWebViewState
   @override
   Widget build(BuildContext context) {
     return InAppWebView(
+      gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+        Factory<LongPressGestureRecognizer>(() => LongPressGestureRecognizer()),
+        Factory<VerticalDragGestureRecognizer>(
+            () => VerticalDragGestureRecognizer()),
+      },
       initialUrlRequest: URLRequest(
         url: WebUri(
             'file:///android_asset/flutter_assets/assets/popup/popup.html'),
