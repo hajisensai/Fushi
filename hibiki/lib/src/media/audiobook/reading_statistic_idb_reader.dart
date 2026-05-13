@@ -3,9 +3,10 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:hibiki/src/media/audiobook/ttu_idb_reader.dart' show TtuIdbReader;
 
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
-import 'reading_statistic_model.dart';
+import 'package:hibiki/src/media/audiobook/reading_statistic_model.dart';
 
 /// 从 ttu IndexedDB `books` 库的 `statistic` object store 批量读取统计记录。
 ///
@@ -15,7 +16,7 @@ class ReadingStatisticIdbReader {
     required int serverPort,
     Duration timeout = const Duration(seconds: 15),
   }) async {
-    const String js = r'''
+    const String js = '''
 (async function() {
   try {
     const db = await new Promise((resolve, reject) => {
@@ -63,8 +64,6 @@ class ReadingStatisticIdbReader {
       initialSettings: InAppWebViewSettings(
         allowFileAccessFromFileURLs: true,
         allowUniversalAccessFromFileURLs: true,
-        databaseEnabled: true,
-        domStorageEnabled: true,
       ),
       onLoadStop: (controller, url) async {
         if (jsDispatched) return;

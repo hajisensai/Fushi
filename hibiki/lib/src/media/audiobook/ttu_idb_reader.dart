@@ -119,8 +119,6 @@ class TtuIdbReader {
       initialSettings: InAppWebViewSettings(
         allowFileAccessFromFileURLs: true,
         allowUniversalAccessFromFileURLs: true,
-        databaseEnabled: true,
-        domStorageEnabled: true,
       ),
       onLoadStop: (controller, url) async {
         if (jsDispatched) return;
@@ -180,8 +178,7 @@ class TtuIdbReader {
         url: WebUri('http://localhost:$serverPort/_hibiki_idb.html'),
       ),
       initialSettings: InAppWebViewSettings(
-        databaseEnabled: true,
-        domStorageEnabled: true,
+        
       ),
       onLoadStop: (controller, url) async {
         if (jsDispatched) return;
@@ -400,13 +397,12 @@ class TtuIdbReader {
         url: WebUri('http://localhost:$serverPort/_hibiki_idb.html'),
       ),
       initialSettings: InAppWebViewSettings(
-        databaseEnabled: true,
-        domStorageEnabled: true,
+        
       ),
-      onWebViewCreated: (InAppWebViewController controller) {
+      onWebViewCreated: (controller) {
         controller.addJavaScriptHandler(
           handlerName: 'migResult',
-          callback: (List<dynamic> args) {
+          callback: (args) {
             if (completer.isCompleted) return;
             if (args.isEmpty || args[0] == null) {
               completer.complete(null);
@@ -417,7 +413,7 @@ class TtuIdbReader {
         );
         controller.addJavaScriptHandler(
           handlerName: 'migError',
-          callback: (List<dynamic> args) {
+          callback: (args) {
             if (completer.isCompleted) return;
             debugPrint(
               'TtuIdbReader.readBookForMigration error: '

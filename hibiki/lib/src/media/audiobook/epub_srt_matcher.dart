@@ -202,10 +202,10 @@ class EpubSrtMatcher {
             sectionIndex: secIdx,
             normCharStart: found - idx.sectionNormStarts[secIdx],
             normCharEnd: matchEnd - idx.sectionNormStarts[secIdx],
-            score: 1.0,
+            score: 1,
           ));
           _logHit(matched, cue, nc, big, found, matchEnd, secIdx,
-              idx.sectionNormStarts[secIdx], 1.0, ci == cues.length - 1);
+              idx.sectionNormStarts[secIdx], 1, ci == cues.length - 1);
           cursor = matchEnd;
           matched++;
           consecutiveMisses = 0;
@@ -214,7 +214,7 @@ class EpubSrtMatcher {
       }
 
       // --- 模糊通道：滚动窗口 Dice 系数，O(window) 而非 O(window×len) ---
-      double bestSim = 0.0;
+      double bestSim = 0;
       int bestPos = -1;
       int bestLen = nc.length;
 
@@ -305,7 +305,7 @@ class EpubSrtMatcher {
     required int start,
     required int end,
   }) {
-    double bestSim = 0.0;
+    double bestSim = 0;
     int bestPos = -1;
     int bestLen = needle.length;
 

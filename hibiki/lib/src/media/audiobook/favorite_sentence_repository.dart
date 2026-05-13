@@ -3,11 +3,24 @@ import 'dart:convert';
 import 'package:hibiki/src/database/database.dart';
 
 class FavoriteSentence {
+
+  factory FavoriteSentence.fromJson(Map<String, dynamic> json) =>
+      FavoriteSentence(
+        id: json['id'] as String?,
+        text: json['text'] as String,
+        bookTitle: json['bookTitle'] as String,
+        chapterLabel: json['chapterLabel'] as String?,
+        createdAt: DateTime.parse(json['createdAt'] as String),
+        ttuBookId: json['ttuBookId'] as int?,
+        sectionIndex: json['sectionIndex'] as int?,
+        normCharOffset: json['normCharOffset'] as int?,
+        normCharLength: json['normCharLength'] as int?,
+        color: json['color'] as String?,
+      );
   FavoriteSentence({
     required this.text,
     required this.bookTitle,
-    this.chapterLabel,
-    required this.createdAt,
+    required this.createdAt, this.chapterLabel,
     this.ttuBookId,
     this.sectionIndex,
     this.normCharOffset,
@@ -39,20 +52,6 @@ class FavoriteSentence {
         if (normCharLength != null) 'normCharLength': normCharLength,
         if (color != null) 'color': color,
       };
-
-  factory FavoriteSentence.fromJson(Map<String, dynamic> json) =>
-      FavoriteSentence(
-        id: json['id'] as String?,
-        text: json['text'] as String,
-        bookTitle: json['bookTitle'] as String,
-        chapterLabel: json['chapterLabel'] as String?,
-        createdAt: DateTime.parse(json['createdAt'] as String),
-        ttuBookId: json['ttuBookId'] as int?,
-        sectionIndex: json['sectionIndex'] as int?,
-        normCharOffset: json['normCharOffset'] as int?,
-        normCharLength: json['normCharLength'] as int?,
-        color: json['color'] as String?,
-      );
 }
 
 class FavoriteSentenceRepository {
@@ -74,7 +73,7 @@ class FavoriteSentenceRepository {
 
   Future<void> add(FavoriteSentence sentence) async {
     final sentences = await getAll();
-    if (sentences.any((FavoriteSentence s) => _contentMatch(s, sentence))) {
+    if (sentences.any((s) => _contentMatch(s, sentence))) {
       return;
     }
     sentences.insert(0, sentence);
@@ -91,7 +90,7 @@ class FavoriteSentenceRepository {
     required int? normCharOffset,
   }) async {
     final sentences = await getAll();
-    return sentences.any((FavoriteSentence s) =>
+    return sentences.any((s) =>
         s.text == text &&
         s.ttuBookId == ttuBookId &&
         s.sectionIndex == sectionIndex &&
@@ -105,14 +104,14 @@ class FavoriteSentenceRepository {
     required int? normCharOffset,
   }) async {
     final sentences = await getAll();
-    sentences.removeWhere((FavoriteSentence s) =>
+    sentences.removeWhere((s) =>
         s.text == text &&
         s.ttuBookId == ttuBookId &&
         s.sectionIndex == sectionIndex &&
         s.normCharOffset == normCharOffset);
     await _db.setPref(
       _key,
-      jsonEncode(sentences.map((FavoriteSentence s) => s.toJson()).toList()),
+      jsonEncode(sentences.map((s) => s.toJson()).toList()),
     );
   }
 
@@ -134,10 +133,10 @@ class FavoriteSentenceRepository {
 
   Future<void> removeById(String id) async {
     final sentences = await getAll();
-    sentences.removeWhere((FavoriteSentence s) => s.id == id);
+    sentences.removeWhere((s) => s.id == id);
     await _db.setPref(
       _key,
-      jsonEncode(sentences.map((FavoriteSentence s) => s.toJson()).toList()),
+      jsonEncode(sentences.map((s) => s.toJson()).toList()),
     );
   }
 }

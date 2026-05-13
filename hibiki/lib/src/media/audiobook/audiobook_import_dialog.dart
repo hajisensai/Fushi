@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:hibiki/src/media/audiobook/book_import_dialog.dart' show BookImportDialog;
 import 'package:path/path.dart' as p;
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
@@ -56,7 +57,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
   String? _alignmentName;
   bool _importing = false;
   bool _pickerActive = false;
-  final ValueNotifier<double> _progress = ValueNotifier<double>(0.0);
+  final ValueNotifier<double> _progress = ValueNotifier<double>(0);
   final ValueNotifier<String> _progressMsg = ValueNotifier<String>('');
 
   /// 已有记录但缺音频源 → 进入"补音频"模式，显示导入表单而非只读视图。
@@ -153,7 +154,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
         width: double.maxFinite,
         child: showImportForm
             ? SingleChildScrollView(child: _buildImportForm())
-            : _buildAttachedView(existing!),
+            : _buildAttachedView(existing),
       ),
       actions: showImportForm
           ? [
@@ -190,7 +191,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
               _destructiveFilledButton(
                 context: context,
                 label: t.audiobook_remove,
-                onPressed: () => _removeAudiobook(existing!),
+                onPressed: () => _removeAudiobook(existing),
               ),
             ],
     );
@@ -331,14 +332,14 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
           const SizedBox(height: 12),
           SasayakiWindowSlider(
             value: _searchWindow,
-            onChanged: (int v) => setState(() => _searchWindow = v),
+            onChanged: (v) => setState(() => _searchWindow = v),
             onAutoTap: _canAutoProbe ? _handleAutoProbe : null,
             autoBusy: _autoProbing,
           ),
           const SizedBox(height: 8),
           SasayakiThresholdSlider(
             value: _similarityThreshold,
-            onChanged: (double v) =>
+            onChanged: (v) =>
                 setState(() => _similarityThreshold = v),
           ),
         ],
@@ -532,7 +533,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       final EpubBook book = EpubParser.parseFromExtracted(extractDir);
       return List<EpubSection>.generate(
         book.chapters.length,
-        (int i) => EpubSection(
+        (i) => EpubSection(
           index: i,
           href: book.chapters[i].href,
           text: book.chapterPlainText(i),
@@ -587,7 +588,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     debugPrint('[hibiki-audiobook] doImport bookUid.len=${widget.bookUid.length} '
         'hash=${widget.bookUid.hashCode} uid=${widget.bookUid}');
     setState(() => _importing = true);
-    _reportProgress(0.0, '');
+    _reportProgress(0, '');
 
     int grandTotal = 0;
     try {
@@ -610,7 +611,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
 
       final List<File> filesToCopy = <File>[File(_alignmentPath!)];
       if (_audioPaths != null && _audioPaths!.isNotEmpty) {
-        filesToCopy.addAll(_audioPaths!.map((p) => File(p)));
+        filesToCopy.addAll(_audioPaths!.map(File.new));
       }
 
       for (final File f in filesToCopy) {
@@ -624,7 +625,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
           await AudiobookStorage.persistFileWithProgress(
         File(_alignmentPath!),
         persistDir,
-        onProgress: (int copied, int total) {
+        onProgress: (copied, total) {
           final double ratio = grandTotal > 0
               ? (grandCopied + copied) / grandTotal
               : 0.0;
@@ -647,7 +648,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
             await AudiobookStorage.persistFileWithProgress(
               srcFile,
               persistDir,
-              onProgress: (int copied, int total) {
+              onProgress: (copied, total) {
                 final double ratio = grandTotal > 0
                     ? (capturedGrandCopied + copied) / grandTotal
                     : 0.0;
@@ -683,7 +684,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
         bookUid: widget.bookUid,
         health: health,
       );
-      _reportProgress(1.0, t.import_step_done);
+      _reportProgress(1, t.import_step_done);
 
       if (mounted) {
         final String? tail = _summarizeHealth(health);
@@ -741,7 +742,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       ab: ab,
       repo: widget.repo,
       ttuBookId: ttuId,
-      onRunningChanged: (bool running) {
+      onRunningChanged: (running) {
         if (mounted) setState(() => _importing = running);
       },
     );
@@ -773,7 +774,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       final EpubBook epubBook = EpubParser.parseFromExtracted(extractDir);
       final List<EpubSection> sections = List<EpubSection>.generate(
         epubBook.chapters.length,
-        (int i) => EpubSection(
+        (i) => EpubSection(
           index: i,
           href: epubBook.chapters[i].href,
           text: epubBook.chapterPlainText(i),

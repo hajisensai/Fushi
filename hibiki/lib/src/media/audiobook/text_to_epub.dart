@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:hibiki/src/epub/epub_importer.dart' show EpubImporter;
 import 'package:hibiki/src/media/audiobook/text_file_io.dart';
 
 /// Converts plain text files (TXT, HTML, MD, etc.) into valid EPUB 3 bytes
@@ -86,7 +87,7 @@ class TextToEpub {
     if (html.length <= kMaxCharsPerChapter) return [html];
 
     // Split at paragraph boundaries
-    final parts = html.split(RegExp(r'(?=<p[ >])'));
+    final parts = html.split(RegExp('(?=<p[ >])'));
     final List<String> chapters = [];
     final buf = StringBuffer();
     for (final part in parts) {
@@ -163,8 +164,8 @@ class TextToEpub {
     if (bodyMatch != null) return bodyMatch.group(1)!.trim();
     // If no body tags, use as-is but strip doctype/html/head
     return html
-        .replaceAll(RegExp(r'<!DOCTYPE[^>]*>', caseSensitive: false), '')
-        .replaceAll(RegExp(r'</?html[^>]*>', caseSensitive: false), '')
+        .replaceAll(RegExp('<!DOCTYPE[^>]*>', caseSensitive: false), '')
+        .replaceAll(RegExp('</?html[^>]*>', caseSensitive: false), '')
         .replaceAll(RegExp(r'<head[^>]*>[\s\S]*?</head>', caseSensitive: false), '')
         .trim();
   }

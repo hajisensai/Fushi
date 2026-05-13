@@ -95,7 +95,7 @@ class AudiobookRepository {
   static const String _kPositionMsKeyPrefix = 'audiobook_pos_';
 
   Future<int> readPositionMs(String bookUid) async {
-    return await _db.getPrefTyped('$_kPositionMsKeyPrefix$bookUid', 0);
+    return _db.getPrefTyped('$_kPositionMsKeyPrefix$bookUid', 0);
   }
 
   Future<void> updatePositionMs({
@@ -113,7 +113,7 @@ class AudiobookRepository {
   static const String _kHealthOverlayKeyPrefix = 'audiobook_health_overlay_';
 
   Future<bool> readFollowAudio(String bookUid) async {
-    return await _db.getPrefTyped(
+    return _db.getPrefTyped(
         '$_kFollowAudioKeyPrefix$bookUid', true);
   }
 
@@ -124,7 +124,7 @@ class AudiobookRepository {
       _db.setPrefTyped('$_kFollowAudioKeyPrefix$bookUid', value);
 
   Future<int> readDelayMs(String bookUid) async {
-    return await _db.getPrefTyped('$_kDelayMsKeyPrefix$bookUid', 0);
+    return _db.getPrefTyped('$_kDelayMsKeyPrefix$bookUid', 0);
   }
 
   Future<void> updateDelayMs({
@@ -148,7 +148,7 @@ class AudiobookRepository {
   // ── image pause ─────────────────────────────────────────────────
 
   Future<int> readImagePauseSec(String bookUid) async {
-    return await _db.getPrefTyped(
+    return _db.getPrefTyped(
         '$_kImagePauseSecKeyPrefix$bookUid', 0);
   }
 

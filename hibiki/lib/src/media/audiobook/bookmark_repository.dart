@@ -3,6 +3,17 @@ import 'dart:convert';
 import 'package:hibiki/src/database/database.dart';
 
 class Bookmark {
+
+  factory Bookmark.fromJson(Map<String, dynamic> json) => Bookmark(
+        sectionIndex: json['sectionIndex'] as int,
+        normCharOffset: json['normCharOffset'] as int,
+        label: json['label'] as String,
+        createdAt: DateTime.parse(json['createdAt'] as String),
+        ttuBookId: json['ttuBookId'] as int?,
+        bookTitle: json['bookTitle'] as String?,
+        pageInChapter: json['pageInChapter'] as int?,
+        totalPagesInChapter: json['totalPagesInChapter'] as int?,
+      );
   Bookmark({
     required this.sectionIndex,
     required this.normCharOffset,
@@ -34,17 +45,6 @@ class Bookmark {
         if (totalPagesInChapter != null)
           'totalPagesInChapter': totalPagesInChapter,
       };
-
-  factory Bookmark.fromJson(Map<String, dynamic> json) => Bookmark(
-        sectionIndex: json['sectionIndex'] as int,
-        normCharOffset: json['normCharOffset'] as int,
-        label: json['label'] as String,
-        createdAt: DateTime.parse(json['createdAt'] as String),
-        ttuBookId: json['ttuBookId'] as int?,
-        bookTitle: json['bookTitle'] as String?,
-        pageInChapter: json['pageInChapter'] as int?,
-        totalPagesInChapter: json['totalPagesInChapter'] as int?,
-      );
 }
 
 class BookmarkRepository {

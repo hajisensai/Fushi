@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart' show AudiobookImportDialog;
 
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_health.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
@@ -115,9 +115,9 @@ class SasayakiRematch {
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (BuildContext sheetCtx) {
+      builder: (sheetCtx) {
         return StatefulBuilder(
-          builder: (BuildContext ctx, StateSetter setSheet) {
+          builder: (ctx, setSheet) {
             Future<void> handleAuto() async {
               setSheet(() => autoBusy = true);
               try {
@@ -151,14 +151,14 @@ class SasayakiRematch {
                   children: [
                     SasayakiWindowSlider(
                       value: window,
-                      onChanged: (int v) => setSheet(() => window = v),
+                      onChanged: (v) => setSheet(() => window = v),
                       onAutoTap: handleAuto,
                       autoBusy: autoBusy,
                     ),
                     const SizedBox(height: 12),
                     SasayakiThresholdSlider(
                       value: threshold,
-                      onChanged: (double v) =>
+                      onChanged: (v) =>
                           setSheet(() => threshold = v),
                     ),
                     const SizedBox(height: 16),
@@ -237,7 +237,7 @@ class SasayakiRematch {
       final EpubBook book = EpubParser.parseFromExtracted(extractDir);
       return List<EpubSection>.generate(
         book.chapters.length,
-        (int i) => EpubSection(
+        (i) => EpubSection(
           index: i,
           href: book.chapters[i].href,
           text: book.chapterPlainText(i),
@@ -268,7 +268,7 @@ class SasayakiRematch {
       final EpubBook book = EpubParser.parseFromExtracted(extractDir);
       final List<EpubSection> sections = List<EpubSection>.generate(
         book.chapters.length,
-        (int i) => EpubSection(
+        (i) => EpubSection(
           index: i,
           href: book.chapters[i].href,
           text: book.chapterPlainText(i),
@@ -365,7 +365,7 @@ class SasayakiWindowSlider extends StatelessWidget {
                 value: value.toDouble(),
                 label: '$value',
                 onChanged:
-                    autoBusy ? null : (double v) => onChanged(v.round()),
+                    autoBusy ? null : (v) => onChanged(v.round()),
               ),
             ),
             SizedBox(
@@ -379,7 +379,6 @@ class SasayakiWindowSlider extends StatelessWidget {
           ],
         ),
         Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Expanded(
               child: Text(
@@ -440,11 +439,10 @@ class SasayakiThresholdSlider extends StatelessWidget {
             Expanded(
               child: Slider(
                 min: 0.1,
-                max: 1.0,
                 divisions: 9,
                 value: value,
                 label: value.toStringAsFixed(1),
-                onChanged: (double v) =>
+                onChanged: (v) =>
                     onChanged(double.parse(v.toStringAsFixed(1))),
               ),
             ),

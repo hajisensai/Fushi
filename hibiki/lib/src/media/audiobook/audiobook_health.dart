@@ -38,28 +38,6 @@ enum HealthKind {
 /// 在内存里用它，落到 Isar 时拆成 [Audiobook.healthKindRaw] / matchRatePct /
 /// healthMeasuredAt / healthReason 四个字段（见 [packInto] / [fromAudiobook]）。
 class AudiobookHealth {
-  const AudiobookHealth({
-    required this.kind,
-    this.ratePct,
-    this.reason,
-    required this.measuredAt,
-  });
-
-  final HealthKind kind;
-
-  /// 0..100。仅当 [kind] ∈ {ok, partial, failed} 时有意义；其他取值为 null
-  /// 或被调用方忽略。
-  final int? ratePct;
-
-  /// 给人看的理由；ok 时可以为 null。
-  final String? reason;
-
-  final DateTime measuredAt;
-
-  /// 匹配率 ≥ 该阈值视为 [HealthKind.ok]。来自上游 Sasayaki 的经验值——
-  /// 低于 80% 一般就得让用户调 search window 或换 alignment，此时 UI 必须
-  /// 能醒目提醒。
-  static const int okThreshold = 80;
 
   /// 从匹配率百分比直接分档。nul/负数/0 →  failed；≥ 阈值 → ok；其余
   /// → partial。
@@ -117,6 +95,27 @@ class AudiobookHealth {
       measuredAt: DateTime.fromMillisecondsSinceEpoch(0),
     );
   }
+  const AudiobookHealth({
+    required this.kind,
+    required this.measuredAt, this.ratePct,
+    this.reason,
+  });
+
+  final HealthKind kind;
+
+  /// 0..100。仅当 [kind] ∈ {ok, partial, failed} 时有意义；其他取值为 null
+  /// 或被调用方忽略。
+  final int? ratePct;
+
+  /// 给人看的理由；ok 时可以为 null。
+  final String? reason;
+
+  final DateTime measuredAt;
+
+  /// 匹配率 ≥ 该阈值视为 [HealthKind.ok]。来自上游 Sasayaki 的经验值——
+  /// 低于 80% 一般就得让用户调 search window 或换 alignment，此时 UI 必须
+  /// 能醒目提醒。
+  static const int okThreshold = 80;
 
   /// 把字段拆进 [Audiobook]（供 `audiobook_repository.updateHealth` 使用）。
   void packInto(Audiobook ab) {
@@ -137,7 +136,7 @@ class AudiobookHealth {
       return AudiobookHealth.unrun();
     }
     final HealthKind kind = HealthKind.values.firstWhere(
-      (HealthKind k) => k.name == raw,
+      (k) => k.name == raw,
       orElse: () => HealthKind.unrun,
     );
     final int? rawPct = ab.matchRatePct;

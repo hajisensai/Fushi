@@ -7,7 +7,7 @@ class HighlightBridge {
   HighlightBridge._();
 
   // language=javascript
-  static const String _js = r'''
+  static const String _js = '''
 (function() {
   if (window.__hibikiHighlightsInstalled) return;
   window.__hibikiHighlightsInstalled = true;
@@ -227,9 +227,9 @@ class HighlightBridge {
     String? customHighlightCss,
   }) async {
     final List<Map<String, dynamic>> payload = highlights
-        .where((FavoriteSentence h) =>
+        .where((h) =>
             h.normCharOffset != null && h.normCharLength != null)
-        .map((FavoriteSentence h) => <String, dynamic>{
+        .map((h) => <String, dynamic>{
               'id': h.id,
               'offset': h.normCharOffset,
               'length': h.normCharLength,

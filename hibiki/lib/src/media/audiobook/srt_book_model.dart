@@ -1,3 +1,5 @@
+import 'package:hibiki/src/media/audiobook/audiobook_model.dart' show AudioCue;
+
 /// 独立 SRT 有声书元数据。
 ///
 /// 不依赖 EPUB，由 SRT 字幕文件 + 音频目录共同构成一本"书"。

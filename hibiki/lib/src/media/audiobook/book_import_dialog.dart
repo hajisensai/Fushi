@@ -22,7 +22,6 @@ import 'package:hibiki/src/media/audiobook/lrc_parser.dart';
 import 'package:hibiki/src/media/audiobook/srt_parser.dart';
 import 'package:hibiki/src/media/audiobook/text_to_epub.dart';
 import 'package:hibiki/src/database/database.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/epub/epub_book.dart';
 import 'package:hibiki/src/epub/epub_importer.dart';
 import 'package:hibiki/src/epub/epub_parser.dart';
@@ -71,7 +70,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
   String? _subtitleName;
 
   bool _importing = false;
-  final ValueNotifier<double> _progress = ValueNotifier<double>(0.0);
+  final ValueNotifier<double> _progress = ValueNotifier<double>(0);
   final ValueNotifier<String> _progressMsg = ValueNotifier<String>('');
 
   bool _autoWindow = true;
@@ -168,23 +167,23 @@ class _BookImportDialogState extends State<BookImportDialog> {
             title: Text(t.auto_select_search_window),
             subtitle: Text(
               t.auto_select_search_window_hint,
-              style: TextStyle(fontSize: 11),
+              style: const TextStyle(fontSize: 11),
             ),
             value: _autoWindow,
             onChanged:
-                _importing ? null : (bool v) => setState(() => _autoWindow = v),
+                _importing ? null : (v) => setState(() => _autoWindow = v),
           ),
           if (!_autoWindow)
             SasayakiWindowSlider(
               value: _searchWindow,
-              onChanged: (int v) => setState(() => _searchWindow = v),
+              onChanged: (v) => setState(() => _searchWindow = v),
             ),
           if (!_autoWindow)
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: SasayakiThresholdSlider(
                 value: _similarityThreshold,
-                onChanged: (double v) =>
+                onChanged: (v) =>
                     setState(() => _similarityThreshold = v),
               ),
             ),
@@ -413,7 +412,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
     }
 
     setState(() => _importing = true);
-    _reportProgress(0.0, '');
+    _reportProgress(0, '');
 
     try {
       final String? authorText =
@@ -525,7 +524,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
 
     await widget.repo.save(book);
     await widget.repo.saveCues(uid: uid, cues: cues);
-    _reportProgress(1.0, t.import_step_done);
+    _reportProgress(1, t.import_step_done);
   }
 
   Future<void> _importEpubOnly({required String title}) async {
@@ -549,7 +548,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
       bytes: bytes,
       fileName: filename,
     );
-    _reportProgress(1.0, t.import_step_done);
+    _reportProgress(1, t.import_step_done);
   }
 
   Future<String?> _importEpubWithAlignment({required String title}) async {
@@ -581,7 +580,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
       final EpubBook epubBook = EpubParser.parseFromExtracted(extractDir);
       sections = List<EpubSection>.generate(
         epubBook.chapters.length,
-        (int i) => EpubSection(
+        (i) => EpubSection(
           index: i,
           href: epubBook.chapters[i].href,
           text: epubBook.chapterPlainText(i),
@@ -619,14 +618,12 @@ class _BookImportDialogState extends State<BookImportDialog> {
           matchResult = probe.bestResult;
         }
       }
-      if (matchResult == null) {
-        matchResult = await EpubCueMatcher.matchInIsolate(
+      matchResult ??= await EpubCueMatcher.matchInIsolate(
           sections: sections,
           cues: cues,
           searchWindow: chosenWindow,
           similarityThreshold: _similarityThreshold,
         );
-      }
       SasayakiMatchCodec.applyToCues(cues: cues, result: matchResult);
       final int pct = (matchResult.matchRate * 100).round();
       health = AudiobookHealth.fromRatePct(
@@ -678,7 +675,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
       bookUid: bookUid,
       health: health,
     );
-    _reportProgress(1.0, t.import_step_done);
+    _reportProgress(1, t.import_step_done);
 
     return _summarizeHealth(health);
   }

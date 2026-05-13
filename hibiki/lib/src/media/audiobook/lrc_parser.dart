@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
+import 'package:hibiki/src/media/audiobook/srt_book_repository.dart' show SrtBookRepository;
 import 'package:hibiki/src/media/audiobook/srt_parser.dart';
 import 'package:hibiki/src/media/audiobook/text_file_io.dart';
 
@@ -35,7 +36,7 @@ class LrcParser {
       RegExp(r'\[(\d+(?::\d{2})+[.,]\d{1,3})\]');
 
   /// 增强 LRC 词级时间标签：`<MM:SS.xx>`，解析时剥离。
-  static final RegExp _wordTag = RegExp(r'<[^>]+>');
+  static final RegExp _wordTag = RegExp('<[^>]+>');
 
   /// 元数据标签：`[letters:anything]`（tag 全为字母）。
   static final RegExp _metaTag = RegExp(r'^\[([a-zA-Z]+):[^\]]*\]$');

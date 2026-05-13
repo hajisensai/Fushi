@@ -995,7 +995,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     );
     await clip.setSpeed(_player.speed);
 
-    clip.playerStateStream.listen((PlayerState state) {
+    clip.playerStateStream.listen((state) {
       if (state.processingState == ProcessingState.completed) {
         stopClip();
       }

@@ -63,7 +63,7 @@ window.__hoshiHighlight = function(selector, reveal) {
   /// `__hoshiIsSkippable` 保留 — 归一化偏移计算需要它。
   /// 删除了 `__hoshiLoadSasayakiRefs`（不再依赖 ttu IndexedDB）。
   /// cue 应用改为调用 `window.hoshiReader.applySasayakiCues()`。
-  static const String _sasayakiFn = r'''
+  static const String _sasayakiFn = '''
 window.__hoshiIsSkippable = function(c) {
   if (c >= 0x30 && c <= 0x39) return false;
   if (c >= 0x41 && c <= 0x5A) return false;
@@ -136,7 +136,7 @@ window.__hoshiHighlightSasayakiCueById = function(key, reveal) {
 ''';
 
   /// 章节导航 — 通过 flutter_inappwebview.callHandler 请求 Dart 侧跳章。
-  static const String _chapterNavFn = r'''
+  static const String _chapterNavFn = '''
 window.__sasayakiAutoNav = window.__sasayakiAutoNav || false;
 
 window.__sasayakiRequestNav = async function(n) {
@@ -154,7 +154,7 @@ window.__sasayakiRequestNav = async function(n) {
 ''';
 
   /// 图片进入视口检测 — IntersectionObserver 监测 <img> / <svg>，回调 Flutter。
-  static const String _imagePauseFn = r'''
+  static const String _imagePauseFn = '''
 (function() {
   if (window.__hoshiImageObserver) return;
   var cooldown = false;
@@ -571,6 +571,15 @@ class AudiobookClickEvent {
 }
 
 class BookSearchResult {
+
+  factory BookSearchResult.fromMap(Map<String, dynamic> m) {
+    return BookSearchResult(
+      sectionIndex: (m['sectionIndex'] as num).toInt(),
+      charOffset: (m['charOffset'] as num).toInt(),
+      context: m['context'] as String? ?? '',
+      matchStart: (m['matchStart'] as num?)?.toInt() ?? 0,
+    );
+  }
   const BookSearchResult({
     required this.sectionIndex,
     required this.charOffset,
@@ -582,13 +591,4 @@ class BookSearchResult {
   final int charOffset;
   final String context;
   final int matchStart;
-
-  factory BookSearchResult.fromMap(Map<String, dynamic> m) {
-    return BookSearchResult(
-      sectionIndex: (m['sectionIndex'] as num).toInt(),
-      charOffset: (m['charOffset'] as num).toInt(),
-      context: m['context'] as String? ?? '',
-      matchStart: (m['matchStart'] as num?)?.toInt() ?? 0,
-    );
-  }
 }

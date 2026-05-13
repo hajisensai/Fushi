@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart' show AudiobookBridge;
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/text_file_io.dart';
 
@@ -142,7 +143,7 @@ class SrtParser {
   /// 仅移除标签本身，保留标签内的文本内容。
   /// 例如：`<i>こんにちは</i>` → `こんにちは`。
   static String _stripHtml(String text) {
-    return text.replaceAll(RegExp(r'<[^>]+>'), '').trim();
+    return text.replaceAll(RegExp('<[^>]+>'), '').trim();
   }
 
   /// 将 SRT 时间码 `HH:MM:SS,mmm`（逗号分隔毫秒）转换为毫秒整数。
