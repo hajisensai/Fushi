@@ -639,6 +639,41 @@ class _ReaderBehaviorSettingsPageState extends BasePageState {
           const Space.small(),
           const JidoujishoDivider(),
           const Space.small(),
+          _buildTapRow(
+            context: context,
+            icon: Icons.audiotrack,
+            label: t.audiobook_settings,
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const _AudiobookSettingsPage()),
+              ).then((_) => setState(() {}));
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AudiobookSettingsPage extends BasePage {
+  const _AudiobookSettingsPage();
+
+  @override
+  BasePageState createState() => _AudiobookSettingsPageState();
+}
+
+class _AudiobookSettingsPageState extends BasePageState {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(t.audiobook_settings)),
+      body: ListView(
+        padding: EdgeInsets.fromLTRB(
+          16, 8, 16, 8 + MediaQuery.of(context).padding.bottom,
+        ),
+        children: [
           _buildSwitch(
             label: t.show_media_notification,
             value: appModel.showMediaNotification,
