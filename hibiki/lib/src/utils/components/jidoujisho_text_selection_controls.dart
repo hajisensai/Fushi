@@ -293,31 +293,39 @@ class _JidoujishoSelectionToolbarState
     final MaterialLocalizations localizations =
         MaterialLocalizations.of(context);
 
-    final List<_TextSelectionToolbarItemData> itemDatas =
+    final List<_TextSelectionToolbarItemData> primaryItems =
         <_TextSelectionToolbarItemData>[
-      if (widget.sentenceAction != null)
+      if (widget.handleCopy != null)
         _TextSelectionToolbarItemData(
-          onPressed: widget.sentenceAction,
-          label: t.cloze,
+          label: localizations.copyButtonLabel,
+          onPressed: widget.handleCopy,
         ),
       if (widget.searchAction != null)
         _TextSelectionToolbarItemData(
           onPressed: widget.searchAction,
           label: t.search,
         ),
+    ];
+
+    final List<_TextSelectionToolbarItemData> overflowItems =
+        <_TextSelectionToolbarItemData>[
+      if (widget.handleSelectAll != null)
+        _TextSelectionToolbarItemData(
+          label: localizations.selectAllButtonLabel,
+          onPressed: widget.handleSelectAll,
+        ),
       _TextSelectionToolbarItemData(
         onPressed: widget.stashAction,
         label: t.stash,
+      ),
+      _TextSelectionToolbarItemData(
+        onPressed: widget.shareAction,
+        label: t.share,
       ),
       if (widget.handleCut != null)
         _TextSelectionToolbarItemData(
           label: localizations.cutButtonLabel,
           onPressed: widget.handleCut,
-        ),
-      if (widget.handleCopy != null)
-        _TextSelectionToolbarItemData(
-          label: localizations.copyButtonLabel,
-          onPressed: widget.handleCopy,
         ),
       if (widget.handlePaste != null &&
           widget.clipboardStatus?.value == ClipboardStatus.pasteable)
@@ -325,15 +333,11 @@ class _JidoujishoSelectionToolbarState
           label: localizations.pasteButtonLabel,
           onPressed: widget.handlePaste,
         ),
-      if (widget.handleSelectAll != null)
+      if (widget.sentenceAction != null)
         _TextSelectionToolbarItemData(
-          label: localizations.selectAllButtonLabel,
-          onPressed: widget.handleSelectAll,
+          onPressed: widget.sentenceAction,
+          label: t.cloze,
         ),
-      _TextSelectionToolbarItemData(
-        onPressed: widget.shareAction,
-        label: t.share,
-      ),
       if (widget.creatorAction != null)
         _TextSelectionToolbarItemData(
           onPressed: widget.creatorAction,
@@ -341,6 +345,7 @@ class _JidoujishoSelectionToolbarState
         ),
     ];
 
+    final int totalCount = primaryItems.length + (overflowItems.isNotEmpty ? 1 : 0);
     int childIndex = 0;
     return TextSelectionToolbar(
       anchorAbove: widget.anchorAbove,
@@ -348,14 +353,45 @@ class _JidoujishoSelectionToolbarState
       toolbarBuilder: (context, child) {
         return Card(child: child);
       },
-      children: itemDatas.map((itemData) {
-        return TextSelectionToolbarTextButton(
-          padding: TextSelectionToolbarTextButton.getPadding(
-              childIndex++, itemDatas.length),
-          onPressed: itemData.onPressed,
-          child: Text(itemData.label),
-        );
-      }).toList(),
+      children: [
+        ...primaryItems.map((item) {
+          return TextSelectionToolbarTextButton(
+            padding: TextSelectionToolbarTextButton.getPadding(
+                childIndex++, totalCount),
+            onPressed: item.onPressed,
+            child: Text(item.label),
+          );
+        }),
+        if (overflowItems.isNotEmpty)
+          _OverflowMenuButton(items: overflowItems),
+      ],
+    );
+  }
+}
+
+class _OverflowMenuButton extends StatelessWidget {
+  const _OverflowMenuButton({required this.items});
+
+  final List<_TextSelectionToolbarItemData> items;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<int>(
+      padding: EdgeInsets.zero,
+      icon: const Icon(Icons.more_vert, size: 20),
+      constraints: const BoxConstraints(minHeight: 36),
+      onSelected: (index) {
+        items[index].onPressed?.call();
+      },
+      itemBuilder: (context) {
+        return [
+          for (int i = 0; i < items.length; i++)
+            PopupMenuItem<int>(
+              value: i,
+              child: Text(items[i].label),
+            ),
+        ];
+      },
     );
   }
 }
