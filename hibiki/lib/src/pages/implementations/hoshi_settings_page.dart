@@ -5,6 +5,7 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/media/floating_dict_channel.dart';
+import 'package:hibiki/src/pages/implementations/profile_management_page.dart';
 import 'package:hibiki/utils.dart';
 
 // ─── Shared setting-item builders ────────────────────────────────────────────
@@ -493,6 +494,18 @@ class _HoshiSettingsContentState extends BasePageState {
         const Space.small(),
         const JidoujishoDivider(),
         const Space.small(),
+        _categoryTile(
+          context,
+          icon: Icons.person,
+          label: t.profile_management,
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => const ProfileManagementPage()),
+            );
+          },
+        ),
         _categoryTile(
           context,
           icon: Icons.style,
