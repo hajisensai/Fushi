@@ -42,10 +42,6 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
   final List<_StackEntry> _stack = [];
   bool _isClosing = false;
 
-  static const double _padding = 6;
-  static const double _maxWidth = 360;
-  static const double _maxHeight = 480;
-
   late final TextEditingController _searchController;
   final FocusNode _searchFocusNode = FocusNode();
 
@@ -186,69 +182,76 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: SafeArea(
-          child: Column(
-            children: [
-              _buildSearchBar(isDark),
-              Expanded(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final screen =
-                        Size(constraints.maxWidth, constraints.maxHeight);
-                    return _buildStack(context, screen);
-                  },
-                ),
-              ),
-            ],
-          ),
+          child: _buildOuterContainer(isDark),
         ),
+      ),
+    );
+  }
+
+  Widget _buildOuterContainer(bool isDark) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final fillColor =
+        appModel.overrideDictionaryColor ?? colorScheme.surface;
+    final borderColor = colorScheme.outlineVariant.withValues(alpha: 0.5);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: fillColor,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: borderColor),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          _buildSearchBar(isDark),
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final screen =
+                    Size(constraints.maxWidth, constraints.maxHeight);
+                return _buildStack(context, screen);
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildSearchBar(bool isDark) {
     final colorScheme = Theme.of(context).colorScheme;
-    final fillColor = colorScheme.surfaceContainerHigh;
-    final borderColor = colorScheme.outlineVariant.withValues(alpha: 0.5);
     final textColor = colorScheme.onSurface;
     final hintColor = colorScheme.onSurfaceVariant;
 
-    return Container(
-      margin: EdgeInsets.zero,
-      decoration: BoxDecoration(
-        color: fillColor,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: borderColor),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: _searchController,
-              focusNode: _searchFocusNode,
-              style: TextStyle(color: textColor, fontSize: 14),
-              decoration: InputDecoration(
-                hintText: t.search,
-                hintStyle: TextStyle(color: hintColor, fontSize: 14),
-                isDense: true,
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                border: InputBorder.none,
-              ),
-              textInputAction: TextInputAction.search,
-              onSubmitted: _onSearchSubmit,
+    return Row(
+      children: [
+        Expanded(
+          child: TextField(
+            controller: _searchController,
+            focusNode: _searchFocusNode,
+            style: TextStyle(color: textColor, fontSize: 14),
+            decoration: InputDecoration(
+              hintText: t.search,
+              hintStyle: TextStyle(color: hintColor, fontSize: 14),
+              isDense: true,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              border: InputBorder.none,
             ),
+            textInputAction: TextInputAction.search,
+            onSubmitted: _onSearchSubmit,
           ),
-          SizedBox(
-            width: 36,
-            height: 36,
-            child: IconButton(
-              icon: Icon(Icons.search, color: hintColor, size: 20),
-              padding: EdgeInsets.zero,
-              onPressed: () => _onSearchSubmit(_searchController.text),
-            ),
+        ),
+        SizedBox(
+          width: 36,
+          height: 36,
+          child: IconButton(
+            icon: Icon(Icons.search, color: hintColor, size: 20),
+            padding: EdgeInsets.zero,
+            onPressed: () => _onSearchSubmit(_searchController.text),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -279,7 +282,8 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
         isSearching: entry.isSearching,
         webViewKey: entry.webViewKey,
         isDark: isDark,
-        overrideFillColor: appModel.overrideDictionaryColor,
+        showBorder: index > 0,
+        overrideFillColor: index == 0 ? Colors.transparent : appModel.overrideDictionaryColor,
         onDismiss: () {
           if (index == 0) {
             _close();

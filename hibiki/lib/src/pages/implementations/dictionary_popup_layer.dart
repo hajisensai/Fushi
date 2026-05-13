@@ -42,6 +42,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.overlayWidget,
     this.isDark = false,
     this.overrideFillColor,
+    this.showBorder = true,
     super.key,
   });
 
@@ -59,6 +60,7 @@ class DictionaryPopupLayer extends StatelessWidget {
   final Widget? overlayWidget;
   final bool isDark;
   final Color? overrideFillColor;
+  final bool showBorder;
 
   @override
   Widget build(BuildContext context) {
@@ -72,10 +74,10 @@ class DictionaryPopupLayer extends StatelessWidget {
       child: Container(
         decoration: BoxDecoration(
           color: fillColor,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: borderColor),
+          borderRadius: showBorder ? BorderRadius.circular(8) : null,
+          border: showBorder ? Border.all(color: borderColor) : null,
         ),
-        clipBehavior: Clip.antiAlias,
+        clipBehavior: showBorder ? Clip.antiAlias : Clip.none,
         child: _buildContent(),
       ),
     );

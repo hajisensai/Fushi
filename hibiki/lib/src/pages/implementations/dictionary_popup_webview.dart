@@ -134,8 +134,7 @@ class DictionaryPopupWebViewState
     final int tr = (onSurface.r * 255.0).round().clamp(0, 255);
     final int tg = (onSurface.g * 255.0).round().clamp(0, 255);
     final int tb = (onSurface.b * 255.0).round().clamp(0, 255);
-    final double ta = onSurface.a;
-    final String textRgba = 'rgba($tr, $tg, $tb, ${ta.toStringAsFixed(2)})';
+    final String textRgba = 'rgb($tr, $tg, $tb)';
 
     final Color bgColor = appModel.overrideDictionaryColor ?? theme.colorScheme.surface;
     final int br = (bgColor.r * 255.0).round().clamp(0, 255);
