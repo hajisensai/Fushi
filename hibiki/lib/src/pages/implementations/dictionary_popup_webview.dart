@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:hibiki/i18n/strings.g.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/src/dictionary/hoshidicts.dart';
@@ -170,7 +171,25 @@ class DictionaryPopupWebViewState
 
   @override
   Widget build(BuildContext context) {
+    final t = Translations.of(context);
     return InAppWebView(
+      contextMenu: ContextMenu(
+        settings: ContextMenuSettings(
+          hideDefaultSystemContextMenuItems: false,
+        ),
+        menuItems: [
+          ContextMenuItem(
+            id: 1,
+            title: t.search,
+            action: () async {
+              final text = await _controller?.getSelectedText();
+              if (text != null && text.isNotEmpty) {
+                widget.onTextSelected?.call(text, Rect.zero);
+              }
+            },
+          ),
+        ],
+      ),
       gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
         Factory<LongPressGestureRecognizer>(() => LongPressGestureRecognizer()),
         Factory<VerticalDragGestureRecognizer>(

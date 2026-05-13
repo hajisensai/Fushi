@@ -696,9 +696,7 @@ class _JidoujishoSelectableTextState extends State<JidoujishoSelectableText>
 
   /// Toggle the toolbar when a selection handle is tapped.
   void _handleSelectionHandleTapped() {
-    if (_controller.selection.isCollapsed) {
-      _editableText!.toggleToolbar();
-    }
+    _editableText!.toggleToolbar();
   }
 
   bool _shouldShowSelectionHandles(SelectionChangedCause? cause) {

@@ -195,7 +195,7 @@ class _DictionaryHtmlWidgetState extends ConsumerState<DictionaryHtmlWidget> {
         },
         contextMenu: ContextMenu(
           settings: ContextMenuSettings(
-            
+            hideDefaultSystemContextMenuItems: false,
           ),
           menuItems: [
             ContextMenuItem(
