@@ -42,7 +42,6 @@ import 'package:hibiki/src/reader/reader_selection_scripts.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/utils/misc/jidoujisho_text_selection.dart';
 import 'package:hibiki/src/media/audiobook/floating_lyric_channel.dart';
-import 'package:hibiki/src/dictionary/dictionary_search_result.dart';
 import 'package:hibiki/src/media/floating_dict_channel.dart';
 import 'package:hibiki/src/anki/anki_models.dart';
 import 'package:hibiki/src/anki/anki_repository.dart';
@@ -1593,8 +1592,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   Future<void> _injectAudiobookBridge() async {
     if (_controller == null || _audiobookController == null) return;
 
-    final Color primary = Theme.of(context).colorScheme.primary;
-    await AudiobookBridge.inject(_controller!, primaryColor: primary);
+    final Color highlightColor =
+        appModel.customThemeSasayakiColor ?? const Color(0x6687CEEB);
+    await AudiobookBridge.inject(_controller!, primaryColor: highlightColor);
 
     final List<AudioCue>? allCues = _cachedAllCues;
     if (allCues == null) return;
@@ -2232,9 +2232,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   void _setupFloatingLyricHandlers() {
     FloatingLyricChannel.setEventHandlers(
-      onLookupText: (String text, int index) {
-        _handleFloatingLyricLookup(text, index);
-      },
       onPlayPause: () => _audiobookController?.togglePlayPause(),
       onPreviousCue: () => _audiobookController?.skipToPrevCue(),
       onNextCue: () => _audiobookController?.skipToNextCue(),
@@ -2245,44 +2242,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       },
       onLockChanged: (bool locked) {},
     );
-  }
-
-  Future<void> _handleFloatingLyricLookup(String text, int charIndex) async {
-    if (text.isEmpty) return;
-    final int safeIndex = charIndex.clamp(0, text.length - 1);
-    final int end = (safeIndex + 20).clamp(0, text.length);
-    final String searchTerm = text.substring(safeIndex, end);
-    if (searchTerm.isEmpty) return;
-
-    await FloatingLyricChannel.highlight(start: safeIndex, length: 1);
-
-    final bool dictRunning = await FloatingDictChannel.isShowing();
-    if (!dictRunning) {
-      final bool started = await FloatingDictChannel.show();
-      if (!started) return;
-      await Future<void>.delayed(const Duration(milliseconds: 800));
-    }
-
-    await FloatingDictChannel.setSearchText(searchTerm);
-
-    final DictionarySearchResult result = await appModel.searchDictionary(
-      searchTerm: searchTerm,
-      searchWithWildcards: false,
-    );
-
-    if (result.entries.isEmpty) {
-      await FloatingDictChannel.sendSearchResult(null);
-      return;
-    }
-
-    final List<Map<String, String>> entries = result.entries
-        .map((e) => <String, String>{
-              'word': e.word,
-              'reading': e.reading,
-              'meaning': e.meaning,
-            })
-        .toList();
-    await FloatingDictChannel.sendSearchResult(jsonEncode(entries));
   }
 
   void _syncFloatingLyric(AudiobookPlayerController ctrl) {
