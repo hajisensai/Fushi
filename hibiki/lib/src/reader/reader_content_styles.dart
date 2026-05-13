@@ -162,7 +162,7 @@ $pageBreakCss
 @media (prefers-color-scheme: light) { :root { --hoshi-system-text-color: #000; } }
 @media (prefers-color-scheme: dark) { :root { --hoshi-system-text-color: #fff; } }
 :root {
-  --hoshi-sasayaki-text-color: #000;
+  --hoshi-sasayaki-text-color: ${colors.textColor};
   --hoshi-sasayaki-background-color: ${sasayakiColor ?? 'rgba(135, 206, 235, 0.4)'};
 }
 html {

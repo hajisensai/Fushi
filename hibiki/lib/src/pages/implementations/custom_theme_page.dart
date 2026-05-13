@@ -650,7 +650,9 @@ class _CustomThemePageState extends BasePageState {
                     padding:
                         const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
-                      color: cs.primary.withValues(alpha: 0.34),
+                      color: _useSasayakiColor
+                          ? _sasayakiColor
+                          : const Color(0x6687CEEB),
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
