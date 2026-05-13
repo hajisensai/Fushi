@@ -434,8 +434,8 @@ class _DictionaryDialogPageState extends BasePageState {
           _buildDbTile(dbs, index),
         const SizedBox(height: 4),
         TextButton.icon(
-          icon: const Icon(Icons.add, size: 18),
-          label: Text(t.local_audio_add_db),
+          icon: Icon(Icons.add, size: textTheme.bodyMedium?.fontSize),
+          label: Text(t.local_audio_add_db, style: textTheme.bodyMedium),
           onPressed: _pickAndAddAudioDb,
         ),
       ],
@@ -449,24 +449,25 @@ class _DictionaryDialogPageState extends BasePageState {
         : entry.path.split('/').last;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
           SizedBox(
-            width: 20,
+            width: 24,
             child: Text(
               '${index + 1}',
-              style: textTheme.bodySmall?.copyWith(color: inactiveTextColor),
+              style: textTheme.bodyMedium?.copyWith(color: inactiveTextColor),
               textAlign: TextAlign.center,
             ),
           ),
-          const SizedBox(width: 4),
-          Icon(Icons.storage, size: 14, color: activeTextColor),
           const SizedBox(width: 6),
+          Icon(Icons.storage,
+              size: textTheme.bodyMedium?.fontSize, color: activeTextColor),
+          const SizedBox(width: 8),
           Expanded(
             child: Text(
               label,
-              style: textTheme.bodySmall,
+              style: textTheme.bodyMedium,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -474,7 +475,7 @@ class _DictionaryDialogPageState extends BasePageState {
           if (index > 0)
             JidoujishoIconButton(
               tooltip: '↑',
-              size: 16,
+              size: 18,
               icon: Icons.arrow_upward,
               onTap: () async {
                 await appModelNoUpdate.reorderLocalAudioDbs(index, index - 1);
@@ -484,7 +485,7 @@ class _DictionaryDialogPageState extends BasePageState {
           if (index < dbs.length - 1)
             JidoujishoIconButton(
               tooltip: '↓',
-              size: 16,
+              size: 18,
               icon: Icons.arrow_downward,
               onTap: () async {
                 await appModelNoUpdate.reorderLocalAudioDbs(index, index + 2);
@@ -493,7 +494,7 @@ class _DictionaryDialogPageState extends BasePageState {
             ),
           JidoujishoIconButton(
             tooltip: t.dialog_delete,
-            size: 16,
+            size: 18,
             icon: Icons.delete_outline,
             onTap: () async {
               final bool? confirmed = await showDialog<bool>(
