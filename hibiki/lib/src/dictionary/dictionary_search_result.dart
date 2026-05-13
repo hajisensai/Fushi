@@ -3,6 +3,17 @@ import 'dart:convert';
 import 'package:hibiki/dictionary.dart';
 
 class DictionarySearchResult {
+
+  factory DictionarySearchResult.fromJson(String json) {
+    final map = Map<String, dynamic>.from(jsonDecode(json));
+    final entriesJson = List<String>.from(map['entries'] ?? []);
+    return DictionarySearchResult(
+      searchTerm: map['searchTerm'] as String,
+      bestLength: map['bestLength'] as int? ?? 0,
+      scrollPosition: map['scrollPosition'] as int? ?? 0,
+      entries: entriesJson.map(DictionaryEntry.fromJson).toList(),
+    );
+  }
   DictionarySearchResult({
     required this.searchTerm,
     this.entries = const [],
@@ -22,16 +33,5 @@ class DictionarySearchResult {
       'scrollPosition': scrollPosition,
       'entries': entries.map((e) => e.toJson()).toList(),
     });
-  }
-
-  factory DictionarySearchResult.fromJson(String json) {
-    final map = Map<String, dynamic>.from(jsonDecode(json));
-    final entriesJson = List<String>.from(map['entries'] ?? []);
-    return DictionarySearchResult(
-      searchTerm: map['searchTerm'] as String,
-      bestLength: map['bestLength'] as int? ?? 0,
-      scrollPosition: map['scrollPosition'] as int? ?? 0,
-      entries: entriesJson.map((e) => DictionaryEntry.fromJson(e)).toList(),
-    );
   }
 }

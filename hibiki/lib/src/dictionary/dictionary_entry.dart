@@ -1,6 +1,18 @@
 import 'dart:convert';
 
 class DictionaryEntry {
+
+  factory DictionaryEntry.fromJson(String json) {
+    final map = Map<String, dynamic>.from(jsonDecode(json));
+    return DictionaryEntry(
+      dictionaryName: map['dictionaryName'] as String? ?? '',
+      word: map['word'] as String? ?? '',
+      reading: map['reading'] as String? ?? '',
+      meaning: map['meaning'] as String? ?? '',
+      extra: (map['extra'] ?? '').toString(),
+      popularity: (map['popularity'] as num?)?.toDouble() ?? 0,
+    );
+  }
   DictionaryEntry({
     this.id,
     this.dictionaryName = '',
@@ -38,18 +50,6 @@ class DictionaryEntry {
       'extra': extra,
       'popularity': popularity,
     });
-  }
-
-  factory DictionaryEntry.fromJson(String json) {
-    final map = Map<String, dynamic>.from(jsonDecode(json));
-    return DictionaryEntry(
-      dictionaryName: map['dictionaryName'] as String? ?? '',
-      word: map['word'] as String? ?? '',
-      reading: map['reading'] as String? ?? '',
-      meaning: map['meaning'] as String? ?? '',
-      extra: (map['extra'] ?? '').toString(),
-      popularity: (map['popularity'] as num?)?.toDouble() ?? 0,
-    );
   }
 
   @override

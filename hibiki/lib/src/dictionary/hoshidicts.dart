@@ -7,15 +7,11 @@ import 'package:flutter/services.dart' show rootBundle;
 
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
-import 'hoshidicts_ffi_bindings.dart';
+import 'package:hibiki/src/dictionary/hoshidicts_ffi_bindings.dart';
 
 // ── Dart data classes ───────────────────────────────────────────────
 
 class HoshiGlossaryEntry {
-  final String dictName;
-  final String glossary;
-  final String definitionTags;
-  final String termTags;
 
   const HoshiGlossaryEntry({
     required this.dictName,
@@ -23,33 +19,31 @@ class HoshiGlossaryEntry {
     required this.definitionTags,
     required this.termTags,
   });
+  final String dictName;
+  final String glossary;
+  final String definitionTags;
+  final String termTags;
 }
 
 class HoshiFrequency {
+  const HoshiFrequency({required this.value, required this.displayValue});
   final int value;
   final String displayValue;
-  const HoshiFrequency({required this.value, required this.displayValue});
 }
 
 class HoshiFrequencyEntry {
+  const HoshiFrequencyEntry({required this.dictName, required this.frequencies});
   final String dictName;
   final List<HoshiFrequency> frequencies;
-  const HoshiFrequencyEntry({required this.dictName, required this.frequencies});
 }
 
 class HoshiPitchEntry {
+  const HoshiPitchEntry({required this.dictName, required this.pitchPositions});
   final String dictName;
   final List<int> pitchPositions;
-  const HoshiPitchEntry({required this.dictName, required this.pitchPositions});
 }
 
 class HoshiTermResult {
-  final String expression;
-  final String reading;
-  final String rules;
-  final List<HoshiGlossaryEntry> glossaries;
-  final List<HoshiFrequencyEntry> frequencies;
-  final List<HoshiPitchEntry> pitches;
 
   const HoshiTermResult({
     required this.expression,
@@ -59,20 +53,21 @@ class HoshiTermResult {
     required this.frequencies,
     required this.pitches,
   });
+  final String expression;
+  final String reading;
+  final String rules;
+  final List<HoshiGlossaryEntry> glossaries;
+  final List<HoshiFrequencyEntry> frequencies;
+  final List<HoshiPitchEntry> pitches;
 }
 
 class HoshiTransformGroup {
+  const HoshiTransformGroup({required this.name, required this.description});
   final String name;
   final String description;
-  const HoshiTransformGroup({required this.name, required this.description});
 }
 
 class HoshiLookupResult {
-  final String matched;
-  final String deinflected;
-  final List<HoshiTransformGroup> trace;
-  final HoshiTermResult term;
-  final int preprocessorSteps;
 
   const HoshiLookupResult({
     required this.matched,
@@ -81,17 +76,14 @@ class HoshiLookupResult {
     required this.term,
     required this.preprocessorSteps,
   });
+  final String matched;
+  final String deinflected;
+  final List<HoshiTransformGroup> trace;
+  final HoshiTermResult term;
+  final int preprocessorSteps;
 }
 
 class HoshiImportResult {
-  final bool success;
-  final String title;
-  final int termCount;
-  final int metaCount;
-  final int tagCount;
-  final int mediaCount;
-  final String detectedType;
-  final String error;
 
   const HoshiImportResult({
     required this.success,
@@ -103,12 +95,20 @@ class HoshiImportResult {
     required this.detectedType,
     required this.error,
   });
+  final bool success;
+  final String title;
+  final int termCount;
+  final int metaCount;
+  final int tagCount;
+  final int mediaCount;
+  final String detectedType;
+  final String error;
 }
 
 class HoshiDictStyle {
+  const HoshiDictStyle({required this.dictName, required this.styles});
   final String dictName;
   final String styles;
-  const HoshiDictStyle({required this.dictName, required this.styles});
 }
 
 // ── conversion helpers ──────────────────────────────────────────────
@@ -167,6 +167,13 @@ HoshiTermResult _convertTerm(FfiTermResult ffi) {
 // ── main wrapper class ──────────────────────────────────────────────
 
 class HoshiDicts {
+
+  // ── lifecycle ──────────────────────────────────────────────────
+
+  HoshiDicts() {
+    _bindings ??= HoshidictsFfiBindings();
+    _handle = _bindings!.create();
+  }
   static HoshidictsFfiBindings? _bindings;
   Pointer<Void>? _handle;
 
@@ -228,9 +235,15 @@ class HoshiDicts {
     _instance?.dispose();
     final h = HoshiDicts();
     h._loadCachedTransforms();
-    for (final p in termPaths) h.addTermDict(p);
-    for (final p in freqPaths) h.addFreqDict(p);
-    for (final p in pitchPaths) h.addPitchDict(p);
+    for (final p in termPaths) {
+      h.addTermDict(p);
+    }
+    for (final p in freqPaths) {
+      h.addFreqDict(p);
+    }
+    for (final p in pitchPaths) {
+      h.addPitchDict(p);
+    }
     _instance = h;
     _rebuildStylesCache();
   }
@@ -254,13 +267,6 @@ class HoshiDicts {
     _stylesCache = {
       for (final s in _instance!.getStyles()) s.dictName: s.styles,
     };
-  }
-
-  // ── lifecycle ──────────────────────────────────────────────────
-
-  HoshiDicts() {
-    _bindings ??= HoshidictsFfiBindings();
-    _handle = _bindings!.create();
   }
 
   void dispose() {

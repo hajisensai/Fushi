@@ -5,6 +5,24 @@ import 'package:hibiki/language.dart';
 enum DictionaryType { term, frequency, pitch, kanji }
 
 class Dictionary {
+
+  factory Dictionary.fromJson(String json) {
+    final map = Map<String, dynamic>.from(jsonDecode(json));
+    return Dictionary(
+      name: map['name'] as String,
+      formatKey: map['formatKey'] as String,
+      order: map['order'] as int,
+      type: DictionaryType.values.firstWhere(
+        (e) => e.name == (map['type'] as String?),
+        orElse: () => DictionaryType.term,
+      ),
+      metadata: Map<String, String>.from(
+        jsonDecode(map['metadata'] as String? ?? '{}'),
+      ),
+      hiddenLanguages: List<String>.from(map['hiddenLanguages'] ?? []),
+      collapsedLanguages: List<String>.from(map['collapsedLanguages'] ?? []),
+    );
+  }
   Dictionary({
     required this.name,
     required this.formatKey,
@@ -41,24 +59,6 @@ class Dictionary {
       'hiddenLanguages': hiddenLanguages,
       'collapsedLanguages': collapsedLanguages,
     });
-  }
-
-  factory Dictionary.fromJson(String json) {
-    final map = Map<String, dynamic>.from(jsonDecode(json));
-    return Dictionary(
-      name: map['name'] as String,
-      formatKey: map['formatKey'] as String,
-      order: map['order'] as int,
-      type: DictionaryType.values.firstWhere(
-        (e) => e.name == (map['type'] as String?),
-        orElse: () => DictionaryType.term,
-      ),
-      metadata: Map<String, String>.from(
-        jsonDecode(map['metadata'] as String? ?? '{}'),
-      ),
-      hiddenLanguages: List<String>.from(map['hiddenLanguages'] ?? []),
-      collapsedLanguages: List<String>.from(map['collapsedLanguages'] ?? []),
-    );
   }
 
   @override

@@ -89,7 +89,6 @@ void prepareEntriesMigakuFormat({
         word: term,
         reading: reading,
         meaning: definition,
-        popularity: 0,
       );
 
       isar.dictionaryEntrys.putSync(entry);
