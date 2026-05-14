@@ -1,15 +1,11 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/media.dart';
+import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
-import 'package:hibiki/src/anki/anki_models.dart';
-import 'package:hibiki/src/anki/anki_repository.dart';
-import 'package:hibiki/src/anki/anki_view_model.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki/utils.dart';
 
@@ -21,7 +17,14 @@ class HomeDictionaryPage extends BaseTabPage {
   BaseTabPageState<BaseTabPage> createState() => _HomeDictionaryPageState();
 }
 
-class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
+class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
+    with DictionaryPageMixin {
+  @override
+  AppModel get mixinAppModel => appModel;
+
+  @override
+  ThemeData get mixinTheme => theme;
+
   @override
   MediaType get mediaType => DictionaryMediaType.instance;
 
@@ -29,7 +32,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
   final FocusNode _searchFocusNode = FocusNode();
 
   DictionarySearchResult? _result;
-  final List<_NestedPopupEntry> _popupStack = [];
+  final List<NestedPopupEntry> _popupStack = [];
 
   bool _isSearching = false;
   String _lastQuery = '';
@@ -459,7 +462,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
             if (ReaderHoshiSource.instance.autoReadOnLookup) {
               final entry = _result!.entries.first;
               if (entry.word.isNotEmpty) {
-                _autoReadWord(entry.word, entry.reading);
+                autoReadWord(entry.word, entry.reading);
               }
             }
           }
@@ -495,11 +498,8 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
               onLinkClick: (query, localRect) {
                 _pushNestedPopup(query, localRect, replaceStack: true);
               },
-              onMineEntry: _onMineEntry,
-              onDuplicateCheck: (expression, reading) async {
-                final repo = ref.read(ankiRepositoryProvider);
-                return repo.isDuplicate(expression, reading);
-              },
+              onMineEntry: onMineEntry,
+              onDuplicateCheck: checkDuplicate,
               onScrolledToBottom: _allLoaded ? null : _loadMore,
             ),
             if (_popupStack.isNotEmpty)
@@ -518,183 +518,32 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
     );
   }
 
-  Future<void> _autoReadWord(String expression, String reading) async {
-    try {
-      final sources = appModel.enabledAudioSources;
-      final WordAudioResolver resolver = WordAudioResolver(
-        queryLocalAudio: (expression, reading) async {
-          try {
-            return await TtsChannel.instance
-                .queryLocalAudio(expression, reading)
-                .timeout(const Duration(milliseconds: 500));
-          } on TimeoutException {
-            return null;
-          }
-        },
-        extractLocalAudio: TtsChannel.instance.extractLocalAudio,
-      );
-      final String? url = await resolver.resolve(
-        expression: expression,
-        reading: reading,
-        sources: sources,
-      );
-      if (url == null || url.isEmpty) return;
-
-      if (url.startsWith('file://')) {
-        await TtsChannel.instance.playFile(url.replaceFirst('file://', ''));
-      } else if (url.startsWith('/')) {
-        await TtsChannel.instance.playFile(url);
-      } else if (url.startsWith('http')) {
-        await TtsChannel.instance.playUrl(url);
-      }
-    } catch (e, st) {
-      debugPrint('[hibiki-autoread] error: $e\n$st');
-    }
-  }
-
   Future<void> _pushNestedPopup(
     String query,
     Rect selectionRect, {
     bool replaceStack = false,
-  }) async {
-    final String trimmed = query.trim();
-    if (trimmed.isEmpty) return;
-
-    final entry = _NestedPopupEntry(
-      query: trimmed,
-      selectionRect: _fallbackSelectionRect(selectionRect),
+  }) {
+    return pushNestedPopup(
+      query: query,
+      selectionRect: selectionRect,
+      popupStack: _popupStack,
+      replaceStack: replaceStack,
+      autoRead: true,
     );
-    setState(() {
-      if (replaceStack) _popupStack.clear();
-      _popupStack.add(entry);
-    });
-
-    try {
-      entry.result = await appModel.searchDictionary(
-        searchTerm: trimmed,
-        searchWithWildcards: true,
-        overrideMaximumTerms: appModel.maximumTerms,
-      );
-    } finally {
-      if (mounted && _popupStack.contains(entry)) {
-        setState(() => entry.isSearching = false);
-      }
-    }
-
-    if (!mounted || !_popupStack.contains(entry)) return;
-    final DictionarySearchResult? result = entry.result;
-    if (result != null && result.entries.isNotEmpty) {
-      appModel.addToSearchHistory(
-        historyKey: DictionaryMediaType.instance.uniqueKey,
-        searchTerm: trimmed,
-      );
-      appModel.addToDictionaryHistory(result: result);
-      if (ReaderHoshiSource.instance.autoReadOnLookup &&
-          result.entries.isNotEmpty) {
-        final entry = result.entries.first;
-        if (entry.word.isNotEmpty) {
-          _autoReadWord(entry.word, entry.reading);
-        }
-      }
-    }
-  }
-
-  Rect _fallbackSelectionRect(Rect rect) {
-    if (rect != Rect.zero) return rect;
-    return const Rect.fromLTWH(12, 12, 1, 1);
   }
 
   void _popNestedPopupAt(int index) {
-    if (index < 0 || index >= _popupStack.length) return;
-    setState(() {
-      if (index == 0) {
-        _popupStack.clear();
-      } else {
-        _popupStack.removeRange(index, _popupStack.length);
-      }
-    });
+    popNestedPopupAt(index, _popupStack);
   }
 
   Widget _buildNestedPopupLayer(int index, Size screen) {
-    final _NestedPopupEntry entry = _popupStack[index];
-    final Rect pos = calcPopupPosition(
-      selectionRect: entry.selectionRect,
+    return buildNestedPopupLayer(
+      index: index,
       screen: screen,
-      maxWidth: appModel.popupMaxWidth,
-      maxHeight: 360,
+      popupStack: _popupStack,
+      onPush: (text, rect) => _pushNestedPopup(text, rect),
+      onPop: _popNestedPopupAt,
     );
-    final bool isDark = theme.brightness == Brightness.dark;
-
-    return Positioned(
-      left: pos.left,
-      top: pos.top,
-      width: pos.width,
-      height: pos.height,
-      child: DictionaryPopupLayer(
-        result: entry.result,
-        isSearching: entry.isSearching,
-        webViewKey: entry.webViewKey,
-        isDark: isDark,
-        overrideFillColor: appModel.overrideDictionaryColor,
-        onDismiss: () => _popNestedPopupAt(index),
-        onTapOutside: () => _popNestedPopupAt(0),
-        onTextSelected: (text, localRect) {
-          final Rect childRect = localRect == Rect.zero
-              ? entry.selectionRect
-              : localRect.shift(Offset(pos.left, pos.top));
-          setState(() {
-            _popupStack.removeRange(index + 1, _popupStack.length);
-          });
-          _pushNestedPopup(text, childRect);
-        },
-        onLinkClick: (query, localRect) {
-          final Rect childRect = localRect == Rect.zero
-              ? entry.selectionRect
-              : localRect.shift(Offset(pos.left, pos.top));
-          setState(() {
-            _popupStack.removeRange(index + 1, _popupStack.length);
-          });
-          _pushNestedPopup(query, childRect);
-        },
-        onMineEntry: _onMineEntry,
-        onDuplicateCheck: (expression, reading) async {
-          final repo = ref.read(ankiRepositoryProvider);
-          return repo.isDuplicate(expression, reading);
-        },
-      ),
-    );
-  }
-
-  // ── Anki mining ────────────────────────────────────────────────────
-
-  Future<bool> _onMineEntry(Map<String, String> fields) async {
-    final repo = ref.read(ankiRepositoryProvider);
-    final miningContext = AnkiMiningContext(
-      sentence: fields['sentence'] ?? '',
-    );
-    final result = await repo.mineEntry(
-      rawPayloadJson: jsonEncode(fields),
-      context: miningContext,
-    );
-    switch (result) {
-      case MineResult.success:
-        final settings = await repo.loadSettings();
-        Fluttertoast.showToast(
-          msg: t.card_exported(deck: settings.selectedDeckName ?? ''),
-          toastLength: Toast.LENGTH_SHORT,
-          gravity: ToastGravity.BOTTOM,
-        );
-        return true;
-      case MineResult.duplicate:
-        Fluttertoast.showToast(msg: t.card_duplicate);
-        return false;
-      case MineResult.notConfigured:
-        Fluttertoast.showToast(msg: t.card_export_not_configured);
-        return false;
-      case MineResult.error:
-        Fluttertoast.showToast(msg: t.card_export_failed);
-        return false;
-    }
   }
 
   // ── dialogs ────────────────────────────────────────────────────────
@@ -729,16 +578,3 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState {
   }
 }
 
-class _NestedPopupEntry {
-  _NestedPopupEntry({
-    required this.query,
-    required this.selectionRect,
-  });
-
-  final String query;
-  final Rect selectionRect;
-  DictionarySearchResult? result;
-  bool isSearching = true;
-  final GlobalKey<DictionaryPopupWebViewState> webViewKey =
-      GlobalKey<DictionaryPopupWebViewState>();
-}
