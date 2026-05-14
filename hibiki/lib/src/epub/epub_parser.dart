@@ -11,7 +11,7 @@ import 'package:hibiki/src/utils/misc/error_log_service.dart';
 /// Pure Dart EPUB parser — no native FFI, no WebView, no IndexedDB.
 ///
 /// Two entry points:
-/// - [parse]: takes raw ZIP bytes, extracts to [extractDir], returns [EpubBook].
+/// - [parse]: takes raw ZIP bytes, extracts to `extractDir`, returns [EpubBook].
 /// - [parseFromExtracted]: re-parses an already-extracted directory (e.g. after
 ///   app restart, when the book is already on disk).
 class EpubParser {
@@ -70,7 +70,9 @@ class EpubParser {
     final Map<String, EpubResource> resources = <String, EpubResource>{};
     for (final _ManifestItem item in manifest.values) {
       final String absPath = p.canonicalize(p.join(opfDir, item.href));
-      if (!p.isWithin(canonExtract, absPath)) continue;
+      if (!p.isWithin(canonExtract, absPath)) {
+        continue;
+      }
       final String relPath =
           p.relative(absPath, from: extractDir).replaceAll('\\', '/');
       resources[normalizeHref(relPath)] = EpubResource(
@@ -95,20 +97,82 @@ class EpubParser {
 
   static void _extractArchive(Archive archive, String extractDir) {
     final Directory dir = Directory(extractDir);
-    if (!dir.existsSync()) dir.createSync(recursive: true);
+    if (!dir.existsSync()) {
+      dir.createSync(recursive: true);
+    }
 
     final String canonicalBase = p.canonicalize(extractDir);
+    final Set<String> archiveDirectories =
+        _archiveDirectoryPaths(archive, extractDir, canonicalBase);
     for (final ArchiveFile file in archive) {
-      final String filePath = p.canonicalize(p.join(extractDir, file.name));
-      if (!p.isWithin(canonicalBase, filePath)) continue;
-      if (file.isFile) {
+      final String? filePath =
+          _safeArchivePath(extractDir, canonicalBase, file.name);
+      if (filePath == null) {
+        continue;
+      }
+      if (file.isFile && !archiveDirectories.contains(filePath)) {
         final File outFile = File(filePath);
         outFile.parent.createSync(recursive: true);
         outFile.writeAsBytesSync(file.content as List<int>);
       } else {
-        Directory(filePath).createSync(recursive: true);
+        _ensureDirectory(filePath);
       }
     }
+  }
+
+  static Set<String> _archiveDirectoryPaths(
+    Archive archive,
+    String extractDir,
+    String canonicalBase,
+  ) {
+    final Set<String> directories = <String>{};
+    for (final ArchiveFile file in archive) {
+      final String? filePath =
+          _safeArchivePath(extractDir, canonicalBase, file.name);
+      if (filePath == null) {
+        continue;
+      }
+      if (!file.isFile) {
+        directories.add(filePath);
+      }
+      _addParentDirectories(directories, filePath, canonicalBase);
+    }
+    return directories;
+  }
+
+  static String? _safeArchivePath(
+    String extractDir,
+    String canonicalBase,
+    String name,
+  ) {
+    final String filePath = p.canonicalize(p.join(extractDir, name));
+    if (!p.isWithin(canonicalBase, filePath)) {
+      return null;
+    }
+    return filePath;
+  }
+
+  static void _addParentDirectories(
+    Set<String> directories,
+    String filePath,
+    String canonicalBase,
+  ) {
+    String parent = p.dirname(filePath);
+    while (p.isWithin(canonicalBase, parent)) {
+      directories.add(parent);
+      final String next = p.dirname(parent);
+      if (next == parent) {
+        return;
+      }
+      parent = next;
+    }
+  }
+
+  static void _ensureDirectory(String path) {
+    if (FileSystemEntity.typeSync(path) == FileSystemEntityType.file) {
+      File(path).deleteSync();
+    }
+    Directory(path).createSync(recursive: true);
   }
 
   // ── container.xml ──────────────────────────────────────────────────────────
@@ -116,7 +180,9 @@ class EpubParser {
   static String? _findRootfilePath(XmlDocument container) {
     for (final XmlElement el in container.findAllElements('rootfile')) {
       final String? fullPath = el.getAttribute('full-path');
-      if (fullPath != null && fullPath.isNotEmpty) return fullPath;
+      if (fullPath != null && fullPath.isNotEmpty) {
+        return fullPath;
+      }
     }
     return null;
   }
@@ -133,7 +199,9 @@ class EpubParser {
       final String? id = item.getAttribute('id');
       final String? href = item.getAttribute('href');
       final String? mediaType = item.getAttribute('media-type');
-      if (id == null || href == null || mediaType == null) continue;
+      if (id == null || href == null || mediaType == null) {
+        continue;
+      }
       result[id] = _ManifestItem(
         id: id,
         href: Uri.decodeFull(href),
@@ -156,10 +224,16 @@ class EpubParser {
     int index = 0;
     for (final XmlElement itemref in opf.findAllElements('itemref')) {
       final String? idref = itemref.getAttribute('idref');
-      if (idref == null) continue;
+      if (idref == null) {
+        continue;
+      }
       final _ManifestItem? item = manifest[idref];
-      if (item == null) continue;
-      if (!_isHtmlMediaType(item.mediaType)) continue;
+      if (item == null) {
+        continue;
+      }
+      if (!_isHtmlMediaType(item.mediaType)) {
+        continue;
+      }
 
       final String absPath = p.canonicalize(p.join(opfDir, item.href));
       if (!p.isWithin(p.canonicalize(extractDir), absPath)) {
@@ -197,7 +271,9 @@ class EpubParser {
     for (final XmlElement el
         in opf.findAllElements(localName, namespace: '*')) {
       final String text = el.innerText.trim();
-      if (text.isNotEmpty) return text;
+      if (text.isNotEmpty) {
+        return text;
+      }
     }
     return null;
   }
@@ -257,7 +333,9 @@ class EpubParser {
     for (final _ManifestItem item in manifest.values) {
       if (item.properties != null && item.properties!.contains('nav')) {
         final String navPath = p.canonicalize(p.join(opfDir, item.href));
-        if (!p.isWithin(p.canonicalize(extractDir), navPath)) continue;
+        if (!p.isWithin(p.canonicalize(extractDir), navPath)) {
+          continue;
+        }
         final File navFile = File(navPath);
         if (navFile.existsSync()) {
           final List<EpubTocItem> toc = _parseNavDoc(
@@ -265,7 +343,9 @@ class EpubParser {
             p.dirname(navFile.path),
             extractDir,
           );
-          if (toc.isNotEmpty) return toc;
+          if (toc.isNotEmpty) {
+            return toc;
+          }
         }
       }
     }
@@ -275,8 +355,9 @@ class EpubParser {
       if (tocId != null && manifest.containsKey(tocId)) {
         final _ManifestItem ncxItem = manifest[tocId]!;
         final String ncxPath = p.canonicalize(p.join(opfDir, ncxItem.href));
-        if (!p.isWithin(p.canonicalize(extractDir), ncxPath))
+        if (!p.isWithin(p.canonicalize(extractDir), ncxPath)) {
           return <EpubTocItem>[];
+        }
         final File ncxFile = File(ncxPath);
         if (ncxFile.existsSync()) {
           return _parseNcx(
@@ -322,7 +403,9 @@ class EpubParser {
   ) {
     final List<EpubTocItem> items = <EpubTocItem>[];
     for (final XmlElement li in ol.childElements) {
-      if (li.name.local != 'li') continue;
+      if (li.name.local != 'li') {
+        continue;
+      }
       String? label;
       String? href;
       List<EpubTocItem> children = <EpubTocItem>[];
@@ -361,7 +444,9 @@ class EpubParser {
     try {
       final XmlDocument doc = XmlDocument.parse(ncxContent);
       final Iterable<XmlElement> navMaps = doc.findAllElements('navMap');
-      if (navMaps.isEmpty) return <EpubTocItem>[];
+      if (navMaps.isEmpty) {
+        return <EpubTocItem>[];
+      }
       return _parseNavPoints(navMaps.first, ncxDir, extractDir);
     } catch (e, stack) {
       ErrorLogService.instance.log('EpubParser.parseNcx', e, stack);
@@ -376,14 +461,18 @@ class EpubParser {
   ) {
     final List<EpubTocItem> items = <EpubTocItem>[];
     for (final XmlElement navPoint in parent.childElements) {
-      if (navPoint.name.local != 'navPoint') continue;
+      if (navPoint.name.local != 'navPoint') {
+        continue;
+      }
 
       String label = '';
       String? href;
       for (final XmlElement child in navPoint.childElements) {
         if (child.name.local == 'navLabel') {
           final XmlElement? text = child.getElement('text');
-          if (text != null) label = text.innerText.trim();
+          if (text != null) {
+            label = text.innerText.trim();
+          }
         } else if (child.name.local == 'content') {
           final String? src = child.getAttribute('src');
           if (src != null) {
@@ -415,12 +504,16 @@ class EpubParser {
   ) {
     final String cleaned =
         rawHref.trim().replaceAll('\\', '/').replaceFirst(RegExp('^/'), '');
-    if (cleaned.isEmpty) return null;
+    if (cleaned.isEmpty) {
+      return null;
+    }
 
     final String fragment =
         cleaned.contains('#') ? cleaned.substring(cleaned.indexOf('#')) : '';
     final String base = cleaned.split('#').first.split('?').first;
-    if (base.isEmpty) return fragment.isEmpty ? null : fragment;
+    if (base.isEmpty) {
+      return fragment.isEmpty ? null : fragment;
+    }
 
     final String absPath = p.join(baseDir, base);
     final String relPath =
