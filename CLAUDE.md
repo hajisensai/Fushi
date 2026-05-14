@@ -51,6 +51,28 @@
 - 字幕格式（SRT/LRC/VTT/ASS）统一走 EPUB 渲染，不做字幕列表 UI
 - **ttu WebView 的 DOM / 原生 UI / JS API 在 `/d/ttu-fork/` 改源码 + 重 build，不在 hibiki 侧注 CSS/JS 强改**（见上节）
 
+## 持续审查规则
+
+- 用户要求审查项目、继续审查、风险审计或类似任务时，默认进入持续审查模式；不要只在聊天里输出一次性总结。
+- 持续审查报告写入 `docs/reviews/YYYY-MM-DD-project-review.md`。如果目录不存在，先创建 `docs/reviews/`。
+- 每一轮审查都追加到同一个报告文件，不覆盖历史内容。每轮至少包含：
+  - `Scope`: 本轮检查的文件、路径、提交范围或用户路径。
+  - `Findings`: 按 `HBK-AUDIT-XXX` 编号列出问题；每个问题必须包含 `severity`、`status`、相关文件/行号、根因、影响、修复建议和验证方式。
+  - `Next Scope`: 下一轮继续审查的范围。
+- 审查顺序默认按风险走，而不是按提交或文件名散步：数据库/迁移 -> 启动初始化 -> 阅读器状态 -> 字典导入/native FFI -> 音频 cue -> WebView/缓存 -> UI 假状态。
+- 审查阶段只写报告和修复建议，不改业务代码；除非用户明确要求“开始修”“逐条修”或等价指令。
+- 如果审查或手工验证发现已复现回归，必须同步更新 `docs/REGRESSION_BUGS.md`，并把截图、UI XML、logcat 或 bounds 证据放到 `.codex-test/` 后在报告中引用。
+- 报告结论必须区分“代码路径审查发现的风险”“已经复现的 bug”“已验证通过的修复”。没有跑过验证时，不要写成已通过。
+
+## 提交规则
+
+- 每次完成代码、文档、测试或审查报告修改后，默认提交本轮改动。
+- 提交前必须先运行与改动匹配的最小验证；如果验证因环境、工具链或既有无关错误阻塞，必须在最终回复和提交说明中明确说明。
+- 提交前必须检查 `git status --short`，只 stage 本轮相关文件；工作区已有的无关改动不得纳入提交。
+- 提交前运行 `git diff --cached --check`。
+- 提交信息要简洁说明真实改动，例如 `docs: add continuous review rules` 或 `fix(reader): preserve restore position`。
+- 提交后再次检查 `git status --short`，并在回复中说明本次提交哈希和仍然存在的无关未提交改动。
+
 ## 已知坑
 
 - Isar 已停止维护，暂继续使用；`build_runner 2.4.4` 与当前 Flutter / Dart 不兼容，`.g.dart` 需手写或用独立脚本生成
