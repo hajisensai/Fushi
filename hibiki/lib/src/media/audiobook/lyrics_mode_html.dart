@@ -135,6 +135,9 @@ document.getElementById('lc').addEventListener('click', function(e) {
   if (!el) return;
   var idx = parseInt(el.getAttribute('data-cue-index'), 10);
   if (isNaN(idx)) return;
+  if (window.hoshiSelection) {
+    window.hoshiSelection.selectText(e.clientX, e.clientY, 400);
+  }
   if (window.flutter_inappwebview) {
     window.flutter_inappwebview.callHandler('onLyricsCueTap', idx);
   }

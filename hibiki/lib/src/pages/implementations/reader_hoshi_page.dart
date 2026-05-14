@@ -1186,6 +1186,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
               _hasEverLoaded = true;
             });
           }
+          _onCueChanged();
           return;
         }
         final int chapterSnapshot = _currentChapter;
@@ -1323,6 +1324,11 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     ReaderHoshiSource.instance.setLyricsMode(entering);
 
     if (entering) {
+      final List<AudioCue> allCues =
+          _audiobookController!.allBookCuesSnapshot;
+      if (allCues.isNotEmpty) {
+        _audiobookController!.setChapterCues(allCues);
+      }
       _lyricsEntryChapter = _currentChapter;
       await _loadLyricsPage();
     } else {
