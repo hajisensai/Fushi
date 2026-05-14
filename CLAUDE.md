@@ -20,7 +20,7 @@
 - 存储：Isar（词典、阅读进度、SrtBook / Audiobook / AudioCue 等）+ Hive（部分偏好）
 - NLP：MeCab + Ve（分词 + deinflection）
 - 制卡：AnkiDroid API（AnkiConnect 为后续可选）
-- 平台最低：Android 8.0（API 26）
+- 平台最低：Android 7.0（API 24）
 
 ## 关键文件（当前仓库，非 jidoujisho 原位置）
 

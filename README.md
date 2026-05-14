@@ -88,17 +88,18 @@
 | NLP | Ve（词形还原） |
 | 制卡 | AnkiDroid API |
 | 国际化 | Slang |
-| 最低版本 | Android 8.0（API 26） |
+| 最低版本 | Android 7.0（API 24） |
 
 ## 构建
 
 ```bash
 cd hibiki/hibiki
 flutter pub get
+bash ../ci/apply-patches.sh
 flutter build apk --release --target-platform android-arm64 --split-per-abi
 ```
 
-> **首次构建前需打 pub cache 补丁。** 若 pub cache 被清除或重新 `pub get`，所有补丁需重新应用。详见下方[依赖与补丁](#依赖与补丁)。
+> **补丁说明：** `ci/apply-patches.sh` 会将 `ci/patches/` 下的修改覆盖到实际 pub cache。每次清除 pub cache 或重新 `flutter pub get` 后必须重新执行。脚本找不到任何补丁目标时会失败，而不是假装成功。
 
 ## 依赖与补丁
 
@@ -195,4 +196,3 @@ hibiki/
 ## 许可证
 
 [GNU General Public License v3.0](LICENSE)
-
