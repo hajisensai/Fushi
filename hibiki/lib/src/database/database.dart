@@ -15,6 +15,7 @@ LazyDatabase _openDb(String dbDirectory) {
       file,
       setup: (db) {
         db.execute('PRAGMA journal_mode=WAL');
+        db.execute('PRAGMA foreign_keys = ON');
       },
     );
   });
@@ -46,7 +47,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 9;
+  int get schemaVersion => 10;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -65,13 +66,17 @@ class HibikiDatabase extends _$HibikiDatabase {
         },
         onUpgrade: (m, from, to) async {
           if (from < 2) {
-            await m.addColumn(dictionaryMetadata, dictionaryMetadata.type);
+            if (!await _columnExists('dictionary_metadata', 'type')) {
+              await m.addColumn(dictionaryMetadata, dictionaryMetadata.type);
+            }
           }
           if (from < 3) {
             await m.createTable(readingHourlyLogs);
           }
           if (from < 4) {
-            await m.addColumn(readerPositions, readerPositions.ttuCharOffset);
+            if (!await _columnExists('reader_positions', 'ttu_char_offset')) {
+              await m.addColumn(readerPositions, readerPositions.ttuCharOffset);
+            }
           }
           if (from < 5) {
             await m.createTable(epubBooks);
@@ -81,7 +86,9 @@ class HibikiDatabase extends _$HibikiDatabase {
             await m.createTable(bookTagMappings);
           }
           if (from < 7) {
-            await m.addColumn(bookTags, bookTags.sortOrder);
+            if (!await _columnExists('book_tags', 'sort_order')) {
+              await m.addColumn(bookTags, bookTags.sortOrder);
+            }
             await customStatement(
               'UPDATE book_tags SET sort_order = id WHERE sort_order = 0',
             );
@@ -103,8 +110,35 @@ class HibikiDatabase extends _$HibikiDatabase {
               'CREATE INDEX IF NOT EXISTS idx_book_profiles_profile ON book_profiles (profile_id)',
             );
           }
+          if (from < 10) {
+            await customStatement(
+              'DELETE FROM book_tag_mappings '
+              'WHERE book_id NOT IN (SELECT id FROM epub_books)',
+            );
+            await customStatement(
+              'DELETE FROM book_tag_mappings '
+              'WHERE tag_id NOT IN (SELECT id FROM book_tags)',
+            );
+            await customStatement(
+              'DELETE FROM profile_settings '
+              'WHERE profile_id NOT IN (SELECT id FROM profiles)',
+            );
+            await customStatement(
+              'DELETE FROM media_type_profiles '
+              'WHERE profile_id NOT IN (SELECT id FROM profiles)',
+            );
+            await customStatement(
+              'DELETE FROM book_profiles '
+              'WHERE profile_id NOT IN (SELECT id FROM profiles)',
+            );
+          }
         },
       );
+
+  Future<bool> _columnExists(String tableName, String columnName) async {
+    final rows = await customSelect('PRAGMA table_info($tableName)').get();
+    return rows.any((row) => row.read<String>('name') == columnName);
+  }
 
   // ── preferences helpers ─────────────────────────────────────────
   Future<String?> getPref(String key) async {
