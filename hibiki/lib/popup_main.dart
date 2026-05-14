@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/utils.dart';
+import 'package:hibiki/src/dictionary/hoshidicts.dart';
 import 'package:hibiki/src/pages/implementations/popup_dictionary_page.dart';
 import 'package:hibiki/src/utils/misc/popup_channel.dart';
 import 'package:spaces/spaces.dart';
@@ -24,6 +25,8 @@ void popupMain() {
     WidgetsFlutterBinding.ensureInitialized();
 
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+
+    await HoshiDicts.preloadTransforms();
 
     final container = ProviderContainer();
     final appModel = container.read(appProvider);
