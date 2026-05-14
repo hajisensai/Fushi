@@ -987,17 +987,17 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                 Text('0.25', style: theme.textTheme.bodySmall),
                 Expanded(
                   child: Slider(
-                    value: current.clamp(0.25, 4.0),
+                    value: current.clamp(0.25, 3.0),
                     min: 0.25,
-                    max: 4,
-                    divisions: 75,
+                    max: 3,
+                    divisions: 55,
                     onChanged: (v) {
                       final double rounded = (v * 20).roundToDouble() / 20;
                       ctrl.setSpeed(rounded);
                     },
                   ),
                 ),
-                Text('4.0', style: theme.textTheme.bodySmall),
+                Text('3.0', style: theme.textTheme.bodySmall),
               ],
             ),
           ],
