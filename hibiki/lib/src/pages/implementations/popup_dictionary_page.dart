@@ -1,29 +1,13 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:hibiki/dictionary.dart';
-import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
-import 'package:hibiki/src/anki/anki_models.dart';
-import 'package:hibiki/src/anki/anki_repository.dart';
-import 'package:hibiki/src/anki/anki_view_model.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki/src/utils/misc/popup_channel.dart';
 import 'package:hibiki/utils.dart';
-
-class _StackEntry {
-  _StackEntry({required this.query, required this.selectionRect});
-  final String query;
-  final Rect selectionRect;
-  DictionarySearchResult? result;
-  bool isSearching = true;
-  final GlobalKey<DictionaryPopupWebViewState> webViewKey =
-      GlobalKey<DictionaryPopupWebViewState>();
-}
 
 class PopupDictionaryPage extends ConsumerStatefulWidget {
   const PopupDictionaryPage({
@@ -38,14 +22,21 @@ class PopupDictionaryPage extends ConsumerStatefulWidget {
       _PopupDictionaryPageState();
 }
 
-class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
-  final List<_StackEntry> _stack = [];
+class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
+    with DictionaryPageMixin {
+  final List<NestedPopupEntry> _stack = [];
   bool _isClosing = false;
 
   late final TextEditingController _searchController;
   final FocusNode _searchFocusNode = FocusNode();
 
   AppModel get appModel => ref.read(appProvider);
+
+  @override
+  AppModel get mixinAppModel => appModel;
+
+  @override
+  ThemeData get mixinTheme => Theme.of(context);
 
   @override
   void initState() {
@@ -64,76 +55,18 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
     super.dispose();
   }
 
-  Future<void> _pushSearch(String query, Rect selectionRect) async {
-    if (query.trim().isEmpty) return;
-
-    final entry = _StackEntry(query: query, selectionRect: selectionRect);
-    setState(() => _stack.add(entry));
-
-    try {
-      entry.result = await appModel.searchDictionary(
-        searchTerm: query,
-        searchWithWildcards: true,
-        overrideMaximumTerms: appModel.maximumTerms,
-      );
-    } finally {
-      if (mounted && _stack.contains(entry)) {
-        setState(() => entry.isSearching = false);
-      }
-    }
-
-    if (!mounted || !_stack.contains(entry)) return;
-
-    if (entry.result != null && entry.result!.entries.isNotEmpty) {
-      appModel.addToSearchHistory(
-        historyKey: DictionaryMediaType.instance.uniqueKey,
-        searchTerm: query,
-      );
-      appModel.addToDictionaryHistory(result: entry.result!);
-      if (ReaderHoshiSource.instance.autoReadOnLookup) {
-        final first = entry.result!.entries.first;
-        await _autoReadWord(first.word, first.reading);
-      }
-    }
-  }
-
-  Future<void> _autoReadWord(String expression, String reading) async {
-    try {
-      final WordAudioResolver resolver = WordAudioResolver(
-        queryLocalAudio: (expression, reading) async {
-          if (!appModel.localAudioEnabled) return null;
-          try {
-            return await TtsChannel.instance
-                .queryLocalAudio(expression, reading)
-                .timeout(const Duration(milliseconds: 500));
-          } on TimeoutException {
-            return null;
-          }
-        },
-        extractLocalAudio: TtsChannel.instance.extractLocalAudio,
-      );
-      final String? url = await resolver.resolve(
-        expression: expression,
-        reading: reading,
-        sources: appModel.enabledAudioSources,
-      );
-      if (url == null || url.isEmpty) return;
-
-      if (url.startsWith('file://')) {
-        await TtsChannel.instance.playFile(url.replaceFirst('file://', ''));
-      } else if (url.startsWith('/')) {
-        await TtsChannel.instance.playFile(url);
-      } else if (url.startsWith('http')) {
-        await TtsChannel.instance.playUrl(url);
-      }
-    } catch (e, st) {
-      debugPrint('[hibiki-popup-audio] auto-read failed: $e\n$st');
-    }
+  Future<void> _pushSearch(String query, Rect selectionRect) {
+    return pushNestedPopup(
+      query: query,
+      selectionRect: selectionRect,
+      popupStack: _stack,
+      autoRead: true,
+    );
   }
 
   void _popAt(int index) {
     if (index <= 0) return;
-    setState(() => _stack.removeRange(index, _stack.length));
+    popNestedPopupAt(index, _stack);
   }
 
   Future<void> _close() async {
@@ -147,20 +80,6 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
     _searchFocusNode.unfocus();
     setState(_stack.clear);
     _pushSearch(text.trim(), Rect.zero);
-  }
-
-  Rect _layerPosition(int index, Size screen) {
-    if (index == 0) {
-      return Rect.fromLTWH(0, 0, screen.width, screen.height);
-    }
-    final entry = _stack[index];
-    final parentPos = _layerPosition(index - 1, screen);
-    final absRect =
-        entry.selectionRect.shift(Offset(parentPos.left, parentPos.top));
-    return calcPopupPosition(
-      selectionRect: absRect,
-      screen: screen,
-    );
   }
 
   @override
@@ -266,87 +185,45 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage> {
   }
 
   Widget _buildLayer(BuildContext context, int index, Size screen) {
-    final entry = _stack[index];
-    final pos = _layerPosition(index, screen);
+    if (index > 0) {
+      return buildNestedPopupLayer(
+        index: index,
+        screen: screen,
+        popupStack: _stack,
+        onPush: (text, rect) => _pushSearch(text, rect),
+        onPop: _popAt,
+      );
+    }
+
+    // index == 0: full-size base layer (popup-specific)
+    final entry = _stack[0];
     final isDark =
         (appModel.overrideDictionaryTheme ?? Theme.of(context)).brightness ==
             Brightness.dark;
-
-    return Positioned(
-      left: pos.left,
-      top: pos.top,
-      width: pos.width,
-      height: pos.height,
+    return Positioned.fill(
       child: DictionaryPopupLayer(
         result: entry.result,
         isSearching: entry.isSearching,
         webViewKey: entry.webViewKey,
         isDark: isDark,
-        showBorder: index > 0,
-        overrideFillColor: index == 0 ? Colors.transparent : appModel.overrideDictionaryColor,
-        onDismiss: () {
-          if (index == 0) {
-            _close();
-          } else {
-            _popAt(index);
-          }
-        },
+        showBorder: false,
+        overrideFillColor: Colors.transparent,
+        onDismiss: _close,
         onTextSelected: (text, localRect) {
-          if (_stack.length > index + 1) {
-            setState(() => _stack.removeRange(index + 1, _stack.length));
+          if (_stack.length > 1) {
+            setState(() => _stack.removeRange(1, _stack.length));
           }
-          final parentPos = _layerPosition(index, screen);
-          final childRect = localRect == Rect.zero
-              ? entry.selectionRect
-              : localRect.shift(Offset(parentPos.left, parentPos.top));
-          _pushSearch(text, childRect);
+          _pushSearch(text, localRect);
         },
         onLinkClick: (query, localRect) {
-          if (_stack.length > index + 1) {
-            setState(() => _stack.removeRange(index + 1, _stack.length));
+          if (_stack.length > 1) {
+            setState(() => _stack.removeRange(1, _stack.length));
           }
-          final parentPos = _layerPosition(index, screen);
-          final childRect = localRect == Rect.zero
-              ? entry.selectionRect
-              : localRect.shift(Offset(parentPos.left, parentPos.top));
-          _pushSearch(query, childRect);
+          _pushSearch(query, localRect);
         },
-        onMineEntry: _onMineEntry,
-        onDuplicateCheck: (expression, reading) async {
-          final repo = ref.read(ankiRepositoryProvider);
-          return repo.isDuplicate(expression, reading);
-        },
+        onMineEntry: onMineEntry,
+        onDuplicateCheck: checkDuplicate,
       ),
     );
-  }
-
-  Future<bool> _onMineEntry(Map<String, String> fields) async {
-    final repo = ref.read(ankiRepositoryProvider);
-    final miningContext = AnkiMiningContext(
-      sentence: fields['sentence'] ?? '',
-    );
-    final result = await repo.mineEntry(
-      rawPayloadJson: jsonEncode(fields),
-      context: miningContext,
-    );
-    switch (result) {
-      case MineResult.success:
-        final settings = await repo.loadSettings();
-        Fluttertoast.showToast(
-          msg: t.card_exported(deck: settings.selectedDeckName ?? ''),
-          toastLength: Toast.LENGTH_SHORT,
-          gravity: ToastGravity.BOTTOM,
-        );
-        return true;
-      case MineResult.duplicate:
-        Fluttertoast.showToast(msg: t.card_duplicate);
-        return false;
-      case MineResult.notConfigured:
-        Fluttertoast.showToast(msg: t.card_export_not_configured);
-        return false;
-      case MineResult.error:
-        Fluttertoast.showToast(msg: t.card_export_failed);
-        return false;
-    }
   }
 }
