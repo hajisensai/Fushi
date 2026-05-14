@@ -1,17 +1,13 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:spaces/spaces.dart';
 import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/media.dart';
+import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
-import 'package:hibiki/src/anki/anki_models.dart';
-import 'package:hibiki/src/anki/anki_repository.dart';
-import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/media/types/dictionary_media_type.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki/utils.dart';
 
@@ -40,12 +36,19 @@ class RecursiveDictionaryPage extends BasePage {
 }
 
 class _RecursiveDictionaryPageState
-    extends BasePageState<RecursiveDictionaryPage> {
+    extends BasePageState<RecursiveDictionaryPage>
+    with DictionaryPageMixin {
+  @override
+  AppModel get mixinAppModel => appModelNoUpdate;
+
+  @override
+  ThemeData get mixinTheme => appModel.overrideDictionaryTheme ?? theme;
+
   final TextEditingController _controller = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
 
   DictionarySearchResult? _result;
-  final List<_NestedPopupEntry> _popupStack = [];
+  final List<NestedPopupEntry> _popupStack = [];
 
   bool _isSearching = false;
   Timer? _debounceTimer;
@@ -103,7 +106,7 @@ class _RecursiveDictionaryPageState
             return;
           }
           if (_popupStack.isNotEmpty) {
-            popNestedPopupAt(_popupStack.length - 1);
+            _popNestedPopupAt(_popupStack.length - 1);
           } else if (widget.killOnPop) {
             appModel.moveToBack();
           }
@@ -320,72 +323,21 @@ class _RecursiveDictionaryPageState
     updateCurrentQueryFromLookup(searchTerm);
   }
 
-  Future<void> pushNestedPopup(
+  Future<void> _pushNestedPopup(
     String query,
     Rect selectionRect, {
     bool replaceStack = false,
-  }) async {
-    final String trimmed = query.trim();
-    if (trimmed.isEmpty) {
-      return;
-    }
-
-    final entry = _NestedPopupEntry(
-      query: trimmed,
-      selectionRect: _fallbackSelectionRect(selectionRect),
+  }) {
+    return pushNestedPopup(
+      query: query,
+      selectionRect: selectionRect,
+      popupStack: _popupStack,
+      replaceStack: replaceStack,
     );
-    setState(() {
-      if (replaceStack) {
-        _popupStack.clear();
-      }
-      _popupStack.add(entry);
-    });
-
-    try {
-      entry.result = await appModel.searchDictionary(
-        searchTerm: trimmed,
-        searchWithWildcards: true,
-        overrideMaximumTerms: appModel.maximumTerms,
-      );
-    } finally {
-      if (mounted && _popupStack.contains(entry)) {
-        setState(() {
-          entry.isSearching = false;
-        });
-      }
-    }
-
-    if (!mounted || !_popupStack.contains(entry)) {
-      return;
-    }
-    final DictionarySearchResult? result = entry.result;
-    if (result != null && result.entries.isNotEmpty) {
-      appModel.addToSearchHistory(
-        historyKey: DictionaryMediaType.instance.uniqueKey,
-        searchTerm: trimmed,
-      );
-      appModel.addToDictionaryHistory(result: result);
-    }
   }
 
-  Rect _fallbackSelectionRect(Rect rect) {
-    if (rect != Rect.zero) {
-      return rect;
-    }
-    return const Rect.fromLTWH(12, 12, 1, 1);
-  }
-
-  void popNestedPopupAt(int index) {
-    if (index < 0 || index >= _popupStack.length) {
-      return;
-    }
-    setState(() {
-      if (index == 0) {
-        _popupStack.clear();
-      } else {
-        _popupStack.removeRange(index, _popupStack.length);
-      }
-    });
+  void _popNestedPopupAt(int index) {
+    popNestedPopupAt(index, _popupStack);
   }
 
   Future<void> openTextSegmentationForQuery() async {
@@ -490,16 +442,13 @@ class _RecursiveDictionaryPageState
                   child: DictionaryPopupWebView(
                     result: _result!,
                     onTextSelected: (text, localRect) {
-                      pushNestedPopup(text, localRect, replaceStack: true);
+                      _pushNestedPopup(text, localRect, replaceStack: true);
                     },
                     onLinkClick: (query, localRect) {
-                      pushNestedPopup(query, localRect, replaceStack: true);
+                      _pushNestedPopup(query, localRect, replaceStack: true);
                     },
-                    onMineEntry: _onMineEntry,
-                    onDuplicateCheck: (expression, reading) async {
-                      final repo = ref.read(ankiRepositoryProvider);
-                      return repo.isDuplicate(expression, reading);
-                    },
+                    onMineEntry: onMineEntry,
+                    onDuplicateCheck: checkDuplicate,
                   ),
                 ),
                 if (footerWidget != null) footerWidget!,
@@ -509,98 +458,26 @@ class _RecursiveDictionaryPageState
               Positioned.fill(
                 child: GestureDetector(
                   behavior: HitTestBehavior.translucent,
-                  onTap: () => popNestedPopupAt(0),
+                  onTap: () => _popNestedPopupAt(0),
                   child: Container(color: Colors.transparent),
                 ),
               ),
             for (int i = 0; i < _popupStack.length; i++)
-              buildNestedPopupLayer(i, screen),
+              _buildNestedPopupLayer(i, screen),
           ],
         );
       },
     );
   }
 
-  Widget buildNestedPopupLayer(int index, Size screen) {
-    final _NestedPopupEntry entry = _popupStack[index];
-    final Rect pos = calcPopupPosition(
-      selectionRect: entry.selectionRect,
+  Widget _buildNestedPopupLayer(int index, Size screen) {
+    return buildNestedPopupLayer(
+      index: index,
       screen: screen,
-      maxWidth: appModel.popupMaxWidth,
-      maxHeight: 360,
+      popupStack: _popupStack,
+      onPush: _pushNestedPopup,
+      onPop: _popNestedPopupAt,
     );
-    final bool isDark =
-        (appModel.overrideDictionaryTheme ?? theme).brightness ==
-            Brightness.dark;
-
-    return Positioned(
-      left: pos.left,
-      top: pos.top,
-      width: pos.width,
-      height: pos.height,
-      child: DictionaryPopupLayer(
-        result: entry.result,
-        isSearching: entry.isSearching,
-        webViewKey: entry.webViewKey,
-        isDark: isDark,
-        overrideFillColor: appModel.overrideDictionaryColor,
-        onDismiss: () => popNestedPopupAt(index),
-        onTapOutside: () => popNestedPopupAt(0),
-        onTextSelected: (text, localRect) {
-          final Rect childRect = localRect == Rect.zero
-              ? entry.selectionRect
-              : localRect.shift(Offset(pos.left, pos.top));
-          setState(() {
-            _popupStack.removeRange(index + 1, _popupStack.length);
-          });
-          pushNestedPopup(text, childRect);
-        },
-        onLinkClick: (query, localRect) {
-          final Rect childRect = localRect == Rect.zero
-              ? entry.selectionRect
-              : localRect.shift(Offset(pos.left, pos.top));
-          setState(() {
-            _popupStack.removeRange(index + 1, _popupStack.length);
-          });
-          pushNestedPopup(query, childRect);
-        },
-        onMineEntry: _onMineEntry,
-        onDuplicateCheck: (expression, reading) async {
-          final repo = ref.read(ankiRepositoryProvider);
-          return repo.isDuplicate(expression, reading);
-        },
-      ),
-    );
-  }
-
-  Future<bool> _onMineEntry(Map<String, String> fields) async {
-    final repo = ref.read(ankiRepositoryProvider);
-    final miningContext = AnkiMiningContext(
-      sentence: fields['sentence'] ?? '',
-    );
-    final result = await repo.mineEntry(
-      rawPayloadJson: jsonEncode(fields),
-      context: miningContext,
-    );
-    switch (result) {
-      case MineResult.success:
-        final settings = await repo.loadSettings();
-        Fluttertoast.showToast(
-          msg: t.card_exported(deck: settings.selectedDeckName ?? ''),
-          toastLength: Toast.LENGTH_SHORT,
-          gravity: ToastGravity.BOTTOM,
-        );
-        return true;
-      case MineResult.duplicate:
-        Fluttertoast.showToast(msg: t.card_duplicate);
-        return false;
-      case MineResult.notConfigured:
-        Fluttertoast.showToast(msg: t.card_export_not_configured);
-        return false;
-      case MineResult.error:
-        Fluttertoast.showToast(msg: t.card_export_failed);
-        return false;
-    }
   }
 
   Widget? get footerWidget {
@@ -679,16 +556,3 @@ class _RecursiveDictionaryPageState
   }
 }
 
-class _NestedPopupEntry {
-  _NestedPopupEntry({
-    required this.query,
-    required this.selectionRect,
-  });
-
-  final String query;
-  final Rect selectionRect;
-  DictionarySearchResult? result;
-  bool isSearching = true;
-  final GlobalKey<DictionaryPopupWebViewState> webViewKey =
-      GlobalKey<DictionaryPopupWebViewState>();
-}
