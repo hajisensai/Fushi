@@ -1,8 +1,11 @@
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fluttertoast/fluttertoast.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:transparent_image/transparent_image.dart';
 import 'package:spaces/spaces.dart';
 import 'package:hibiki/media.dart';
@@ -14,6 +17,8 @@ import 'package:hibiki/src/media/audiobook/srt_book_model.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
 import 'package:hibiki/src/database/database.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/epub/epub_storage.dart';
+import 'package:hibiki/src/pages/implementations/book_css_editor_page.dart';
 import 'package:hibiki/src/pages/implementations/illustrations_viewer_page.dart';
 import 'package:hibiki/src/profile/profile_repository.dart';
 import 'package:hibiki/src/profile/profile_view_model.dart';
@@ -286,7 +291,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
   Widget _buildSrtCard(SrtBook book) {
     return _bookCardShell(
       onTap: () => _openSrtBook(book),
-      onLongPress: () => _confirmDeleteSrtBook(book),
+      onLongPress: () => _showSrtBookDialog(book),
       child: Stack(
         fit: StackFit.expand,
         children: [
@@ -428,6 +433,65 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
         ),
       ),
     );
+  }
+
+  Future<void> _showSrtBookDialog(SrtBook book) async {
+    await showAppDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(book.title),
+        content: book.coverPath != null && File(book.coverPath!).existsSync()
+            ? Image.file(File(book.coverPath!),
+                height: 120, fit: BoxFit.contain)
+            : null,
+        actions: [
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await _pickSrtBookCover(book);
+            },
+            child: Text(t.srt_import_pick_cover),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await _confirmDeleteSrtBook(book);
+            },
+            child: Text(t.dialog_delete,
+                style: const TextStyle(color: Colors.red)),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _openSrtBook(book);
+            },
+            child: Text(t.dialog_read),
+          ),
+        ],
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _pickSrtBookCover(SrtBook book) async {
+    final FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+    );
+    if (result == null || !mounted) return;
+    final String? pickedPath = result.files.first.path;
+    if (pickedPath == null) return;
+
+    final Directory docsDir = await getApplicationDocumentsDirectory();
+    final String persistDir =
+        p.join(docsDir.path, 'audiobooks', book.uid);
+    await Directory(persistDir).create(recursive: true);
+    final String ext = p.extension(pickedPath);
+    final String dest = p.join(persistDir, 'cover$ext');
+    await File(pickedPath).copy(dest);
+
+    book.coverPath = dest;
+    await SrtBookRepository(appModel.database).save(book);
+    if (mounted) setState(() {});
   }
 
   Future<void> _confirmDeleteSrtBook(SrtBook book) async {
@@ -655,6 +719,10 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
         onPressed: () => _openBookProfilePicker(item, bookId),
         child: Text(t.profile_book_profile),
       ),
+      TextButton(
+        onPressed: () => _openCssEditor(bookId),
+        child: Text(t.book_css_editor_edit_css),
+      ),
     ];
   }
 
@@ -747,6 +815,27 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
       ref.invalidate(filteredBookIdsProvider);
       ref.invalidate(allTagsProvider);
     });
+  }
+
+  Future<void> _openCssEditor(int bookId) async {
+    final bool exists = await EpubStorage.bookExists(bookId);
+    if (!exists) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(t.book_css_editor_no_extract_dir)),
+        );
+      }
+      return;
+    }
+    final String extractDir = await EpubStorage.bookPath(bookId);
+    if (mounted) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute<void>(
+          builder: (_) => BookCssEditorPage(extractDir: extractDir),
+        ),
+      );
+    }
   }
 
   void _openBookProfilePicker(MediaItem item, int bookId) {
