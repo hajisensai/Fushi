@@ -75,7 +75,8 @@ void main() {
       final repo = BookCssRepository(tmpDir.path);
       final files = repo.discoverCssFiles();
 
-      expect(files.map((f) => f.relativePath).toList(), ['a/a.css', 'm/m.css', 'z/z.css']);
+      expect(files.map((f) => f.relativePath).toList(),
+          ['a/a.css', 'm/m.css', 'z/z.css']);
     });
   });
 
@@ -87,7 +88,8 @@ void main() {
       final repo = BookCssRepository(tmpDir.path);
       final files = repo.discoverCssFiles();
 
-      expect(files.map((f) => f.displayTitle).toSet(), {'fonts.css', 'style.css'});
+      expect(
+          files.map((f) => f.displayTitle).toSet(), {'fonts.css', 'style.css'});
     });
 
     test('duplicate basenames get parent prefix', () {
@@ -237,9 +239,12 @@ void main() {
       final repo = BookCssRepository(tmpDir.path);
       repo.resetAll();
 
-      expect(File(p.join(tmpDir.path, 'a.css')).readAsStringSync(), 'original-a');
-      expect(File(p.join(tmpDir.path, 'b.css')).readAsStringSync(), 'untouched-b');
-      expect(File(p.join(tmpDir.path, 'c.css')).readAsStringSync(), 'original-c');
+      expect(
+          File(p.join(tmpDir.path, 'a.css')).readAsStringSync(), 'original-a');
+      expect(
+          File(p.join(tmpDir.path, 'b.css')).readAsStringSync(), 'untouched-b');
+      expect(
+          File(p.join(tmpDir.path, 'c.css')).readAsStringSync(), 'original-c');
       expect(File(p.join(tmpDir.path, 'a.css.original')).existsSync(), isFalse);
       expect(File(p.join(tmpDir.path, 'c.css.original')).existsSync(), isFalse);
     });
@@ -247,7 +252,8 @@ void main() {
 }
 
 void _createFile(Directory root, String relativePath, String content) {
-  final File file = File(p.join(root.path, relativePath.replaceAll('/', p.separator)));
+  final File file =
+      File(p.join(root.path, relativePath.replaceAll('/', p.separator)));
   file.parent.createSync(recursive: true);
   file.writeAsStringSync(content);
 }

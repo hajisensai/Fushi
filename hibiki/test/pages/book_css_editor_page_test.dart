@@ -72,7 +72,8 @@ void main() {
       await tester.pumpAndSettle();
 
       // First chip should still be selected (editor still shows modified text)
-      final TextField tf = tester.widget<TextField>(find.byType(TextField).first);
+      final TextField tf =
+          tester.widget<TextField>(find.byType(TextField).first);
       expect(tf.controller!.text, 'modified');
     },
   );
@@ -101,11 +102,14 @@ void main() {
       await tester.pumpAndSettle();
 
       // Editor should be back to disk content
-      final TextField tf = tester.widget<TextField>(find.byType(TextField).first);
+      final TextField tf =
+          tester.widget<TextField>(find.byType(TextField).first);
       expect(tf.controller!.text, 'original content');
 
       // No .original file should exist on disk
-      expect(File('${tmpDir.path}${p.separator}style.css.original').existsSync(), isFalse);
+      expect(
+          File('${tmpDir.path}${p.separator}style.css.original').existsSync(),
+          isFalse);
     },
   );
 }

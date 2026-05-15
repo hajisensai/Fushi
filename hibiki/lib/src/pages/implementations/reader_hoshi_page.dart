@@ -115,6 +115,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   int _lyricsEntryChapter = 0;
   List<AudioCue> _lyricsCueList = const [];
 
+  bool _pausedForLookup = false;
+
   ReadingTimeTracker? _readingTimeTracker;
 
   StreamSubscription<void>? _playStreamSub;
@@ -868,18 +870,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
     if ((mime == 'text/html' || mime.contains('xhtml')) && _settings != null) {
       String html = utf8.decode(data);
-      final String styleTag = ReaderContentStyles.styleTag(
-        settings: _settings!,
-        themeOverride: appModel.appThemeKey,
-        customBg: appModel.appThemeKey == 'custom-theme'
-            ? _readerBackgroundHex
-            : null,
-        customFg:
-            appModel.appThemeKey == 'custom-theme' ? _customThemeTextCss : null,
-        selectionColor: _colorToCssRgba(appModel.customThemeSelectionColor),
-        sasayakiColor: _colorToCssRgba(appModel.customThemeSasayakiColor),
-        linkColor: _colorToCssRgba(appModel.customThemeLinkColor),
-      );
+      final String styleTag = _buildStyleTag();
       const String hideUntilReady =
           '<style id="hoshi-cloak">body{visibility:hidden!important}</style>';
       final RegExp headPattern = RegExp('<head[^>]*>', caseSensitive: false);
@@ -904,6 +895,54 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       },
       data: data,
     );
+  }
+
+  String _buildStyleTag() {
+    return '<style id="hoshi-reader-style">\n${ReaderContentStyles.css(
+      settings: _settings!,
+      themeOverride: appModel.appThemeKey,
+      customBg:
+          appModel.appThemeKey == 'custom-theme' ? _readerBackgroundHex : null,
+      customFg:
+          appModel.appThemeKey == 'custom-theme' ? _customThemeTextCss : null,
+      selectionColor: _colorToCssRgba(appModel.customThemeSelectionColor),
+      sasayakiColor: _colorToCssRgba(appModel.customThemeSasayakiColor),
+      linkColor: _colorToCssRgba(appModel.customThemeLinkColor),
+    )}\n</style>';
+  }
+
+  Future<void> _applyStylesLive() async {
+    if (_controller == null || _settings == null) return;
+    await _syncSettingsFromHive();
+    final String css = ReaderContentStyles.css(
+      settings: _settings!,
+      themeOverride: appModel.appThemeKey,
+      customBg:
+          appModel.appThemeKey == 'custom-theme' ? _readerBackgroundHex : null,
+      customFg:
+          appModel.appThemeKey == 'custom-theme' ? _customThemeTextCss : null,
+      selectionColor: _colorToCssRgba(appModel.customThemeSelectionColor),
+      sasayakiColor: _colorToCssRgba(appModel.customThemeSasayakiColor),
+      linkColor: _colorToCssRgba(appModel.customThemeLinkColor),
+    );
+    final String escaped = css
+        .replaceAll('\\', '\\\\')
+        .replaceAll('`', '\\`')
+        .replaceAll('\$', '\\\$');
+    await _controller!.evaluateJavascript(
+      source: '''
+(function(){
+  var el = document.getElementById('hoshi-reader-style');
+  if (!el) {
+    el = document.createElement('style');
+    el.id = 'hoshi-reader-style';
+    document.head.appendChild(el);
+  }
+  el.textContent = `$escaped`;
+})();
+''',
+    );
+    setState(() {});
   }
 
   static bool _isValidFontData(Uint8List data) {
@@ -1241,6 +1280,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       onReceivedError: (controller, request, error) {
         if (request.isForMainFrame ?? false) {
           debugPrint('[ReaderHoshi] onReceivedError: ${error.description}');
+          if (_restoreExpectedGeneration != _navigateGeneration) return;
           _isNavigatingToChapter = false;
           _restoreInFlight = false;
           if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
@@ -1725,15 +1765,16 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   Future<bool> _navigateToChapterAndWait(int index) async {
     await _navigateToChapter(index);
     final bool success = await _restoreCompleter?.future.timeout(
-      const Duration(seconds: 10),
-      onTimeout: () {
-        debugPrint('[ReaderHoshi] _navigateToChapterAndWait timed out');
-        _isNavigatingToChapter = false;
-        _restoreCompleter = null;
-        _restoreInFlight = false;
-        return false;
-      },
-    ) ?? false;
+          const Duration(seconds: 10),
+          onTimeout: () {
+            debugPrint('[ReaderHoshi] _navigateToChapterAndWait timed out');
+            _isNavigatingToChapter = false;
+            _restoreCompleter = null;
+            _restoreInFlight = false;
+            return false;
+          },
+        ) ??
+        false;
     return success && _currentChapter == index;
   }
 
@@ -1807,9 +1848,24 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     );
   }
 
+  @override
+  void onAllPopupsDismissed() {
+    if (_pausedForLookup) {
+      _pausedForLookup = false;
+      _audiobookController?.play();
+    }
+  }
+
   Future<void> _handleTextSelected(ReaderSelectionData data) async {
     if (data.text.isEmpty) {
       return;
+    }
+
+    if (ReaderHoshiSource.instance.pauseOnLookup &&
+        _audiobookController != null &&
+        _audiobookController!.isPlaying) {
+      _audiobookController!.pause();
+      _pausedForLookup = true;
     }
 
     final Rect selectionRect = data.rect != null
@@ -2497,6 +2553,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           webViewController: _controller!,
           appModel: appModel,
           isHoshiReader: true,
+          onStyleChanged: _applyStylesLive,
+          lyricsMode: _lyricsMode,
+          onToggleLyricsMode: _toggleLyricsMode,
           showFloatingLyric: appModel.showFloatingLyric,
           onToggleFloatingLyric: _toggleFloatingLyric,
           floatingLyricFontSize: appModel.floatingLyricFontSize,

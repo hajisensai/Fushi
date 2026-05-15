@@ -12,6 +12,7 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_health.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_storage.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_model.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
@@ -143,10 +144,11 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
           tag.name,
           style: TextStyle(
             fontSize: 9,
-            color: ThemeData.estimateBrightnessForColor(Color(tag.colorValue)) ==
-                    Brightness.dark
-                ? Colors.white
-                : Colors.black,
+            color:
+                ThemeData.estimateBrightnessForColor(Color(tag.colorValue)) ==
+                        Brightness.dark
+                    ? Colors.white
+                    : Colors.black,
             fontWeight: FontWeight.w600,
           ),
           overflow: TextOverflow.ellipsis,
@@ -177,8 +179,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
             return id == null || !srtBookIds.contains(id);
           }).toList();
 
-    final bool hasActiveFilter =
-        ref.read(selectedTagIdsProvider).isNotEmpty;
+    final bool hasActiveFilter = ref.read(selectedTagIdsProvider).isNotEmpty;
     if (epubBooks.isEmpty && srtBooks.isEmpty) {
       return hasActiveFilter
           ? Center(
@@ -420,10 +421,10 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
         builder: (_) => ReaderHoshiPage(
           bookId: book.ttuBookId,
           item: MediaItem(
-            mediaIdentifier: ReaderHoshiSource.mediaIdentifierFor(book.ttuBookId),
+            mediaIdentifier:
+                ReaderHoshiSource.mediaIdentifierFor(book.ttuBookId),
             title: book.title,
-            mediaTypeIdentifier:
-                ReaderHoshiSource.instance.mediaType.uniqueKey,
+            mediaTypeIdentifier: ReaderHoshiSource.instance.mediaType.uniqueKey,
             mediaSourceIdentifier: ReaderHoshiSource.instance.uniqueKey,
             position: 0,
             duration: 1,
@@ -481,12 +482,10 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     final String? pickedPath = result.files.first.path;
     if (pickedPath == null) return;
 
-    final Directory docsDir = await getApplicationDocumentsDirectory();
-    final String persistDir =
-        p.join(docsDir.path, 'audiobooks', book.uid);
-    await Directory(persistDir).create(recursive: true);
+    final Directory persistDir =
+        await AudiobookStorage.ensurePersistDir(book.uid);
     final String ext = p.extension(pickedPath);
-    final String dest = p.join(persistDir, 'cover$ext');
+    final String dest = p.join(persistDir.path, 'cover$ext');
     await File(pickedPath).copy(dest);
 
     book.coverPath = dest;
@@ -923,17 +922,16 @@ class _TagBarContentState extends ConsumerState<_TagBarContent> {
             ),
             childWhenDragging: Opacity(
               opacity: 0.3,
-              child: _TagChip(tag: tag, isSelected: isSelected, isDimmed: false),
+              child:
+                  _TagChip(tag: tag, isSelected: isSelected, isDimmed: false),
             ),
             child: DragTarget<BookTagRow>(
-              onWillAcceptWithDetails: (details) =>
-                  details.data.id != tag.id,
+              onWillAcceptWithDetails: (details) => details.data.id != tag.id,
               onAcceptWithDetails: (details) {
                 final draggedTag = details.data;
                 final oldIdx =
                     widget.tags.indexWhere((t) => t.id == draggedTag.id);
-                final newIdx =
-                    widget.tags.indexWhere((t) => t.id == tag.id);
+                final newIdx = widget.tags.indexWhere((t) => t.id == tag.id);
                 if (oldIdx != -1 && newIdx != -1) {
                   widget.onReorder(oldIdx, newIdx);
                 }

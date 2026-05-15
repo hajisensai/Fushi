@@ -514,6 +514,7 @@
     "srt_import_pick_epub": "Pick EPUB",
     "srt_import_pick_audio_dir": "Pick Audio Directory",
     "srt_import_pick_audio_files": "Pick Audio Files",
+    "srt_import_pick_cover": "Cover Image",
     "srt_import_files_selected": "$n files selected",
     "srt_import_title_hint": "Book title",
     "srt_import_author_hint": "Author (optional)",

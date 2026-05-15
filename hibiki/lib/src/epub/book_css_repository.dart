@@ -33,14 +33,11 @@ class BookCssRepository {
     final Directory dir = Directory(extractDir);
     if (!dir.existsSync()) return const [];
 
-    final List<File> cssFiles = dir
-        .listSync(recursive: true)
-        .whereType<File>()
-        .where((f) {
-          final String ext = p.extension(f.path).toLowerCase();
-          return ext == '.css' && !f.path.endsWith('.original');
-        })
-        .toList();
+    final List<File> cssFiles =
+        dir.listSync(recursive: true).whereType<File>().where((f) {
+      final String ext = p.extension(f.path).toLowerCase();
+      return ext == '.css' && !f.path.endsWith('.original');
+    }).toList();
 
     final List<String> relativePaths = cssFiles.map((f) {
       return p.relative(f.path, from: extractDir).replaceAll(r'\', '/');

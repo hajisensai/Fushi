@@ -69,8 +69,7 @@ class _BookCssEditorPageState extends State<BookCssEditorPage> {
   String _tabLabel(int index) {
     final String title = _entries[index].displayTitle;
     final bool modified =
-        _entries[index].isDifferentFromOriginal() ||
-        _hasUnsavedChanges(index);
+        _entries[index].isDifferentFromOriginal() || _hasUnsavedChanges(index);
     return modified ? '* $title' : title;
   }
 
@@ -177,7 +176,8 @@ class _BookCssEditorPageState extends State<BookCssEditorPage> {
   Future<void> _doResetAll() async {
     final bool hasAnyBackup = _entries.any((e) => e.hasOriginal);
     final bool hasAnyEditorChanges = List.generate(
-      _entries.length, (i) => _hasUnsavedChanges(i),
+      _entries.length,
+      (i) => _hasUnsavedChanges(i),
     ).any((v) => v);
     if (!hasAnyBackup && !hasAnyEditorChanges) return;
 
