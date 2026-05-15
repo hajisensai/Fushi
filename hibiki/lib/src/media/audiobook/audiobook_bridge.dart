@@ -481,30 +481,37 @@ class _SearchParams {
 List<BookSearchResult> _searchIsolate(_SearchParams params) {
   final String query = params.query;
   final String needle = query.toLowerCase();
-  const int contextRadius = 20;
+  const int contextRadius = 30;
   const int maxResults = 500;
+  final RegExp collapseWs = RegExp(r'\s+');
 
   final List<BookSearchResult> results = <BookSearchResult>[];
 
   for (int i = 0; i < params.chapterHtmls.length; i++) {
-    final String text = _chapterPlainText(params.chapterHtmls[i]);
-    final String haystack = text.toLowerCase();
+    final String domText = _chapterDomText(params.chapterHtmls[i]);
+    final String haystack = domText.toLowerCase();
     int start = 0;
     while (true) {
       final int idx = haystack.indexOf(needle, start);
       if (idx < 0) break;
 
-      final int ctxStart = (idx - contextRadius).clamp(0, text.length);
+      final int ctxStart = (idx - contextRadius).clamp(0, domText.length);
       final int ctxEnd =
-          (idx + query.length + contextRadius).clamp(0, text.length);
-      final String context = text.substring(ctxStart, ctxEnd);
-      final int matchStart = idx - ctxStart;
+          (idx + query.length + contextRadius).clamp(0, domText.length);
+      final String rawCtx = domText.substring(ctxStart, ctxEnd);
+      final String rawMatch = domText.substring(idx, idx + query.length);
+
+      // Fold whitespace in context for display, recalculate matchStart.
+      final String context = rawCtx.replaceAll(collapseWs, ' ');
+      final String matchWord = rawMatch.replaceAll(collapseWs, ' ');
+      final int matchStart =
+          context.toLowerCase().indexOf(matchWord.toLowerCase());
 
       results.add(BookSearchResult(
         sectionIndex: i,
         charOffset: idx,
         context: context,
-        matchStart: matchStart,
+        matchStart: matchStart >= 0 ? matchStart : 0,
       ));
 
       if (results.length >= maxResults) return results;
@@ -515,13 +522,28 @@ List<BookSearchResult> _searchIsolate(_SearchParams params) {
   return results;
 }
 
-String _chapterPlainText(String html) {
+/// Extract text matching JS TreeWalker output: concatenate text nodes,
+/// skip rt/rp content, NO whitespace folding. This produces the same
+/// coordinate space as JS scrollToSearchMatch().
+String _chapterDomText(String html) {
   final html_dom.Document doc = html_parser.parse(html);
   final html_dom.Element? body = doc.body;
   if (body == null) return '';
-  body.querySelectorAll('rt, rp, rtc').forEach((el) => el.remove());
-  final String raw = body.text;
-  return raw.replaceAll(RegExp(r'\s+'), ' ').trim();
+  final StringBuffer buf = StringBuffer();
+  _collectTextNodes(body, buf);
+  return buf.toString();
+}
+
+void _collectTextNodes(html_dom.Node node, StringBuffer buf) {
+  if (node is html_dom.Element) {
+    final String tag = node.localName ?? '';
+    if (tag == 'rt' || tag == 'rp') return;
+    for (final html_dom.Node child in node.nodes) {
+      _collectTextNodes(child, buf);
+    }
+  } else if (node is html_dom.Text) {
+    buf.write(node.text);
+  }
 }
 
 // ── 数据类 ───────────────────────────────────────────────────────────────────

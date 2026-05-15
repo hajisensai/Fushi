@@ -238,7 +238,8 @@ class AudiobookSettingsSheet extends StatefulWidget {
   final Future<bool> Function()? onToggleFloatingLyric;
   final double floatingLyricFontSize;
   final ValueChanged<double>? onFloatingLyricFontSizeChanged;
-  final Future<void> Function(BookSearchResult result, String query)? onSearchJump;
+  final Future<void> Function(BookSearchResult result, String query)?
+      onSearchJump;
   final Future<void> Function(int globalCharOffset)? onJumpToCharOffset;
   final (int current, int total)? charProgress;
   final VoidCallback? onPageMarginChanged;
@@ -598,10 +599,9 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
     if (query.isEmpty) return;
     setState(() => _isSearching = true);
     try {
-      final List<BookSearchResult> results =
-          widget.epubBook != null
-              ? await AudiobookBridge.searchBook(widget.epubBook!, query)
-              : const <BookSearchResult>[];
+      final List<BookSearchResult> results = widget.epubBook != null
+          ? await AudiobookBridge.searchBook(widget.epubBook!, query)
+          : const <BookSearchResult>[];
       if (!mounted) return;
       setState(() {
         _searchResults = results;
@@ -620,129 +620,128 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
 
   Widget _buildSearchSection(ThemeData theme) {
     return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(t.book_search, style: theme.textTheme.titleMedium),
+        const SizedBox(height: 8),
+        Row(
           children: [
-            Text(t.book_search, style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _searchController,
-                    decoration: InputDecoration(
-                      hintText: t.book_search_hint,
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 10,
-                      ),
-                      border: const OutlineInputBorder(),
-                    ),
-                    style: theme.textTheme.bodyMedium,
-                    onSubmitted: (_) => _doSearch(),
+            Expanded(
+              child: TextField(
+                controller: _searchController,
+                decoration: InputDecoration(
+                  hintText: t.book_search_hint,
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
                   ),
+                  border: const OutlineInputBorder(),
                 ),
-                const SizedBox(width: 8),
-                SizedBox(
-                  height: 40,
-                  child: FilledButton.tonal(
-                    onPressed: _isSearching ? null : _doSearch,
-                    style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    child: _isSearching
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.search, size: 20),
-                  ),
-                ),
-              ],
+                style: theme.textTheme.bodyMedium,
+                onSubmitted: (_) => _doSearch(),
+              ),
             ),
-            if (_searchResults.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(
-                t.book_search_results(n: _searchResults.length),
-                style: theme.textTheme.bodySmall,
-              ),
-              const SizedBox(height: 4),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 280),
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: _searchResults.length,
-                  itemBuilder: (_, i) {
-                    final BookSearchResult r = _searchResults[i];
-                    final String query = _searchController.text.trim();
-                    final int rawIdx = r.sectionIndex;
-                    final List<TtuTocEntry> toc = widget.toc;
-                    final TtuTocEntry? tocEntry =
-                        toc.cast<TtuTocEntry?>().firstWhere(
-                              (e) => e!.index == rawIdx,
-                              orElse: () => null,
-                            );
-                    final String chapterLabel =
-                        tocEntry?.label ?? t.go_to_chapter(n: rawIdx + 1);
-
-                    final String before = r.context.substring(0, r.matchStart);
-                    final int matchEnd = (r.matchStart + query.length)
-                        .clamp(0, r.context.length);
-                    final String match =
-                        r.context.substring(r.matchStart, matchEnd);
-                    final String after = r.context.substring(matchEnd);
-
-                    return ListTile(
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(
-                        chapterLabel,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.primary,
-                        ),
-                      ),
-                      subtitle: Text.rich(
-                        TextSpan(
-                          children: [
-                            TextSpan(text: before),
-                            TextSpan(
-                              text: match,
-                              style: TextStyle(
-                                backgroundColor:
-                                    theme.colorScheme.primaryContainer,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            TextSpan(text: after),
-                          ],
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall,
-                      ),
-                      onTap: () async {
-                        final String q = _searchController.text.trim();
-                        Navigator.pop(context);
-                        await widget.onSearchJump?.call(r, q);
-                      },
-                    );
-                  },
+            const SizedBox(width: 8),
+            SizedBox(
+              height: 40,
+              child: FilledButton.tonal(
+                onPressed: _isSearching ? null : _doSearch,
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  visualDensity: VisualDensity.compact,
                 ),
+                child: _isSearching
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.search, size: 20),
               ),
-            ] else if (!_isSearching &&
-                _searchController.text.trim().isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(
-                t.book_search_no_results,
-                style: theme.textTheme.bodySmall,
-              ),
-            ],
+            ),
           ],
-        );
+        ),
+        if (_searchResults.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            t.book_search_results(n: _searchResults.length),
+            style: theme.textTheme.bodySmall,
+          ),
+          const SizedBox(height: 4),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 280),
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: _searchResults.length,
+              itemBuilder: (_, i) {
+                final BookSearchResult r = _searchResults[i];
+                final String query = _searchController.text.trim();
+                final int rawIdx = r.sectionIndex;
+                final List<TtuTocEntry> toc = widget.toc;
+                final TtuTocEntry? tocEntry =
+                    toc.cast<TtuTocEntry?>().firstWhere(
+                          (e) => e!.index == rawIdx,
+                          orElse: () => null,
+                        );
+                final String chapterLabel =
+                    tocEntry?.label ?? t.go_to_chapter(n: rawIdx + 1);
+
+                final String before = r.context.substring(0, r.matchStart);
+                final int matchEnd =
+                    (r.matchStart + query.length).clamp(0, r.context.length);
+                final String match =
+                    r.context.substring(r.matchStart, matchEnd);
+                final String after = r.context.substring(matchEnd);
+
+                return ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(
+                    chapterLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                  subtitle: Text.rich(
+                    TextSpan(
+                      children: [
+                        TextSpan(text: before),
+                        TextSpan(
+                          text: match,
+                          style: TextStyle(
+                            backgroundColor: theme.colorScheme.primaryContainer,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        TextSpan(text: after),
+                      ],
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall,
+                  ),
+                  onTap: () async {
+                    final String q = _searchController.text.trim();
+                    Navigator.pop(context);
+                    await widget.onSearchJump?.call(r, q);
+                  },
+                );
+              },
+            ),
+          ),
+        ] else if (!_isSearching &&
+            _searchController.text.trim().isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            t.book_search_no_results,
+            style: theme.textTheme.bodySmall,
+          ),
+        ],
+      ],
+    );
   }
 
   Widget _buildCharJumpSection(ThemeData theme) {
