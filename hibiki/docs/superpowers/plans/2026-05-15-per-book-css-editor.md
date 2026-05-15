@@ -565,9 +565,11 @@ git status --short
 **Files:**
 - Create: `hibiki/lib/src/pages/implementations/book_css_editor_page.dart`
 
-This is the main editor page. It receives `extractDir` (already validated), creates a `BookCssRepository`, and renders Tab editor with save/reset.
+This is the main editor page. It receives `extractDir` (already validated), creates a `BookCssRepository`, and renders a Tab editor with save/reset.
 
-**Tab guard design:** We maintain an explicit `_selectedIndex` as the source of truth, separate from `TabController.index`. `TabBarView` swipe is disabled (`physics: NeverScrollableScrollPhysics()`). All tab switches go through `_attemptSwitchTab(newIndex)`, which guards unsaved changes and only updates `_selectedIndex` + `_tabController.index` on success.
+**Tab guard design:** No `TabController` / `TabBar` / `TabBarView`. Those auto-sync on tap and cause visual flash before async guards resolve. Instead we use custom `ChoiceChip` tab row + `IndexedStack`. `_selectedIndex` is the sole state; `_attemptSwitchTab` is the sole mutation path. Zero automatic behavior.
+
+**Reset Current design:** Works in two cases: (1) has `.original` → restore from backup + discard editor; (2) no `.original` but has unsaved editor changes → discard editor back to disk content. Button is a no-op only when the file is unmodified AND the editor matches disk.
 
 - [ ] **Step 1: Create BookCssEditorPage**
 
@@ -587,11 +589,9 @@ class BookCssEditorPage extends StatefulWidget {
   State<BookCssEditorPage> createState() => _BookCssEditorPageState();
 }
 
-class _BookCssEditorPageState extends State<BookCssEditorPage>
-    with TickerProviderStateMixin {
+class _BookCssEditorPageState extends State<BookCssEditorPage> {
   late BookCssRepository _repo;
   List<CssFileEntry> _entries = [];
-  TabController? _tabController;
   int _selectedIndex = 0;
 
   final Map<int, TextEditingController> _textControllers = {};
@@ -607,32 +607,28 @@ class _BookCssEditorPageState extends State<BookCssEditorPage>
   void _reload() {
     _entries = _repo.discoverCssFiles();
     for (final controller in _textControllers.values) {
+      controller.removeListener(_onTextChanged);
       controller.dispose();
     }
     _textControllers.clear();
     _diskContent.clear();
+    _selectedIndex = 0;
 
-    _tabController?.dispose();
-    if (_entries.isNotEmpty) {
-      _selectedIndex = 0;
-      _tabController = TabController(length: _entries.length, vsync: this);
-      for (int i = 0; i < _entries.length; i++) {
-        final String content = _repo.readCss(_entries[i]);
-        _diskContent[i] = content;
-        final controller = TextEditingController(text: content);
-        controller.addListener(_onTextChanged);
-        _textControllers[i] = controller;
-      }
-    } else {
-      _tabController = null;
+    for (int i = 0; i < _entries.length; i++) {
+      final String content = _repo.readCss(_entries[i]);
+      _diskContent[i] = content;
+      final TextEditingController controller =
+          TextEditingController(text: content);
+      controller.addListener(_onTextChanged);
+      _textControllers[i] = controller;
     }
     if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
-    _tabController?.dispose();
     for (final c in _textControllers.values) {
+      c.removeListener(_onTextChanged);
       c.dispose();
     }
     super.dispose();
@@ -645,28 +641,29 @@ class _BookCssEditorPageState extends State<BookCssEditorPage>
   }
 
   void _onTextChanged() {
-    setState(() {}); // rebuild tab labels to reflect * indicator
+    setState(() {});
   }
 
   String _tabLabel(int index) {
     final String title = _entries[index].displayTitle;
-    final bool modified = _entries[index].isDifferentFromOriginal() ||
+    final bool modified =
+        _entries[index].isDifferentFromOriginal() ||
         _hasUnsavedChanges(index);
     return modified ? '* $title' : title;
+  }
+
+  bool _currentTabCanReset() {
+    return _entries[_selectedIndex].hasOriginal ||
+        _hasUnsavedChanges(_selectedIndex);
   }
 
   Future<void> _attemptSwitchTab(int newIndex) async {
     if (newIndex == _selectedIndex) return;
     if (_hasUnsavedChanges(_selectedIndex)) {
       final bool ok = await _guardUnsaved(_selectedIndex);
-      if (!ok) {
-        _tabController!.animateTo(_selectedIndex);
-        return;
-      }
+      if (!ok) return;
     }
-    _selectedIndex = newIndex;
-    _tabController!.animateTo(newIndex);
-    setState(() {});
+    setState(() => _selectedIndex = newIndex);
   }
 
   Future<bool> _guardUnsaved(int index) async {
@@ -716,7 +713,10 @@ class _BookCssEditorPageState extends State<BookCssEditorPage>
   }
 
   Future<void> _doResetCurrent() async {
-    if (!_entries[_selectedIndex].hasOriginal) return;
+    final int idx = _selectedIndex;
+    final bool hasBackup = _entries[idx].hasOriginal;
+    final bool hasEditorChanges = _hasUnsavedChanges(idx);
+    if (!hasBackup && !hasEditorChanges) return;
 
     final bool? confirmed = await showDialog<bool>(
       context: context,
@@ -737,10 +737,12 @@ class _BookCssEditorPageState extends State<BookCssEditorPage>
     );
     if (confirmed != true) return;
 
-    _repo.resetFile(_entries[_selectedIndex]);
-    final String restored = _repo.readCss(_entries[_selectedIndex]);
-    _diskContent[_selectedIndex] = restored;
-    _textControllers[_selectedIndex]!.text = restored;
+    if (hasBackup) {
+      _repo.resetFile(_entries[idx]);
+    }
+    final String restored = _repo.readCss(_entries[idx]);
+    _diskContent[idx] = restored;
+    _textControllers[idx]!.text = restored;
     _entries = _repo.discoverCssFiles();
     setState(() {});
     if (mounted) {
@@ -751,8 +753,11 @@ class _BookCssEditorPageState extends State<BookCssEditorPage>
   }
 
   Future<void> _doResetAll() async {
-    final bool hasAny = _entries.any((e) => e.hasOriginal);
-    if (!hasAny) return;
+    final bool hasAnyBackup = _entries.any((e) => e.hasOriginal);
+    final bool hasAnyEditorChanges = List.generate(
+      _entries.length, (i) => _hasUnsavedChanges(i),
+    ).any((v) => v);
+    if (!hasAnyBackup && !hasAnyEditorChanges) return;
 
     final bool? confirmed = await showDialog<bool>(
       context: context,
@@ -809,18 +814,28 @@ class _BookCssEditorPageState extends State<BookCssEditorPage>
               child: Text(t.book_css_editor_reset_all),
             ),
           ],
-          bottom: TabBar(
-            controller: _tabController,
-            isScrollable: true,
-            onTap: _attemptSwitchTab,
-            tabs: List.generate(_entries.length, (i) {
-              return Tab(text: _tabLabel(i));
-            }),
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(48),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Row(
+                children: List.generate(_entries.length, (i) {
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ChoiceChip(
+                      label: Text(_tabLabel(i)),
+                      selected: i == _selectedIndex,
+                      onSelected: (_) => _attemptSwitchTab(i),
+                    ),
+                  );
+                }),
+              ),
+            ),
           ),
         ),
-        body: TabBarView(
-          controller: _tabController,
-          physics: const NeverScrollableScrollPhysics(),
+        body: IndexedStack(
+          index: _selectedIndex,
           children: List.generate(_entries.length, (i) {
             return Padding(
               padding: const EdgeInsets.all(8.0),
@@ -846,7 +861,7 @@ class _BookCssEditorPageState extends State<BookCssEditorPage>
           child: Row(
             children: [
               OutlinedButton(
-                onPressed: _doResetCurrent,
+                onPressed: _currentTabCanReset() ? _doResetCurrent : null,
                 child: Text(t.book_css_editor_reset_current),
               ),
               const Spacer(),
@@ -863,12 +878,14 @@ class _BookCssEditorPageState extends State<BookCssEditorPage>
 }
 ```
 
-**Key design decisions in this code:**
-- `_selectedIndex` is the sole source of truth for "which tab the user is on"
-- `TabBarView` swipe is disabled via `NeverScrollableScrollPhysics()` — all navigation goes through `_attemptSwitchTab`
-- `_attemptSwitchTab` guards unsaved changes first, then updates both `_selectedIndex` and `_tabController.index`
-- On cancel, `_tabController.animateTo(_selectedIndex)` snaps back to the real position
-- `_onTabChange` listener is removed entirely — no empty method, no split responsibility
+**Why no TabController/TabBar/TabBarView:**
+- `TabBar.onTap` fires AFTER `TabController` has already animated to the new index. There is no way to intercept the switch before it happens visually. An async guard dialog would show while the user already sees the new tab content. On cancel, the tab flashes back.
+- With custom `ChoiceChip` row + `IndexedStack`, `_selectedIndex` is the sole state. `_attemptSwitchTab` runs the guard BEFORE updating `_selectedIndex`. If cancelled, nothing moves. Zero flash.
+- `IndexedStack` preserves all children's state (scroll position, focus) which is what we want for a multi-tab text editor.
+- No `TickerProviderStateMixin` needed.
+
+**Why Reset Current handles unsaved editor changes too:**
+- `_doResetCurrent` activates when `hasOriginal || hasUnsavedChanges`. If only editor changes (no backup), it discards the editor back to disk content. If backup exists, it restores from `.original` AND updates the editor. The button is disabled (null `onPressed`) when neither condition is true.
 
 - [ ] **Step 2: Run analyze**
 

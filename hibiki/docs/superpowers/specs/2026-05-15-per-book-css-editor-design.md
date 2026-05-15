@@ -53,23 +53,24 @@ class CssFileEntry {
 ```
 ┌─────────────────────────────────┐
 │ ← 编辑书籍 CSS      [重置全部] │  AppBar
-├──────────┬──────┬───────────────┤
-│*Styles/  │fonts │page          │  TabBar（最短唯一后缀，* = 与原始不同）
-│ style    │      │              │
-├──────────┴──────┴───────────────┤
+├─────────────────────────────────┤
+│ [*Styles/style] [fonts] [page]  │  ChoiceChip 横向滚动行
+├─────────────────────────────────┤
 │                                 │
 │  CSS 代码文本框                 │  TextField (monospace, maxLines)
-│  （可滚动编辑）                 │
+│  （可滚动编辑）                 │  IndexedStack 保持各 Tab 状态
 │                                 │
 ├─────────────────────────────────┤
 │ [重置当前]           [保存]     │  BottomBar
 └─────────────────────────────────┘
 ```
 
+不使用 `TabBar` / `TabBarView` / `TabController`——它们在 `onTap` 时自动切换，无法在异步 guard 前拦截，导致视觉闪烁。改用 `ChoiceChip` + `IndexedStack`，`_selectedIndex` 为唯一状态，切换前必须通过 `_attemptSwitchTab` 守卫。
+
 - `TextField` 使用等宽字体
-- Tab 标题 `*` 表示「当前内容与 .original 不同」，通过内容比较得出
-- 「重置当前」：仅重置当前 Tab 的 CSS 文件
-- 「重置全部」：重置所有有 `.original` 备份的文件
+- Tab 标题 `*` 表示「当前内容与 .original 不同 或 有未保存编辑」，实时更新（TextEditingController listener）
+- 「重置当前」：回到原始状态。有 `.original` → 恢复备份 + 丢弃编辑；无 `.original` 但有未保存编辑 → 丢弃编辑回到磁盘内容。两者都不满足时按钮置灰。
+- 「重置全部」：重置所有有 `.original` 备份的文件，并丢弃所有 Tab 的未保存编辑
 - 「保存」：保存当前 Tab 的修改
 
 ### 安全写入
