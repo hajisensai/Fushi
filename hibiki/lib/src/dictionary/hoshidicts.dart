@@ -442,18 +442,18 @@ class HoshiDicts {
     final mp = mediaPath.toNativeUtf8();
     try {
       final r = _bindings!.getMedia(_handle!, dn, mp);
-      Uint8List? bytes;
-      if (r.size > 0 && r.data != nullptr) {
-        bytes = Uint8List.fromList(r.data.asTypedList(r.size));
-      }
       final rPtr = calloc<FfiMediaFile>();
       rPtr.ref = r;
       try {
-        _bindings!.freeMedia(rPtr);
+        Uint8List? bytes;
+        if (r.size > 0 && r.data != nullptr) {
+          bytes = Uint8List.fromList(r.data.asTypedList(r.size));
+        }
+        return bytes;
       } finally {
+        _bindings!.freeMedia(rPtr);
         calloc.free(rPtr);
       }
-      return bytes;
     } finally {
       calloc.free(dn);
       calloc.free(mp);
