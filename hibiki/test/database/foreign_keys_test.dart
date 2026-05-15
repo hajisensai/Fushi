@@ -193,7 +193,7 @@ void main() {
     await db.customSelect('SELECT sort_order FROM book_tags').get();
     final row = await db.customSelect('PRAGMA user_version').getSingle();
 
-    expect(row.read<int>('user_version'), 10);
+    expect(row.read<int>('user_version'), 11);
   });
 
   test('migration tolerates legacy database with existing reader offset column',
@@ -203,16 +203,17 @@ void main() {
     await db.customSelect('SELECT ttu_char_offset FROM reader_positions').get();
     final row = await db.customSelect('PRAGMA user_version').getSingle();
 
-    expect(row.read<int>('user_version'), 10);
+    expect(row.read<int>('user_version'), 11);
   });
 
-  test('migration tolerates legacy database with existing dictionary type column',
+  test(
+      'migration tolerates legacy database with existing dictionary type column',
       () async {
     final db = await _openLegacyDbWithExistingDictionaryType();
 
     await db.customSelect('SELECT type FROM dictionary_metadata').get();
     final row = await db.customSelect('PRAGMA user_version').getSingle();
 
-    expect(row.read<int>('user_version'), 10);
+    expect(row.read<int>('user_version'), 11);
   });
 }

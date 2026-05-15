@@ -41,6 +41,7 @@ import 'package:hibiki/src/epub/ttu_migration_server.dart';
 import 'package:hibiki/src/profile/profile_repository.dart';
 import 'package:hibiki/src/anki/anki_repository.dart';
 import 'package:hibiki/src/media/floating_dict_channel.dart';
+import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 
 /// A list of fields that the app will support at runtime.
@@ -79,7 +80,6 @@ final Map<String, Field> fieldsByKey = Map.unmodifiable(
 
 /// Represents a single local audio database entry with path and display name.
 class LocalAudioDbEntry {
-
   const LocalAudioDbEntry({
     required this.path,
     required this.displayName,
@@ -437,8 +437,8 @@ class AppModel with ChangeNotifier {
           hiddenLanguages: d.hiddenLanguages,
           collapsedLanguages: d.collapsedLanguages,
         );
-        _database
-            .upsertDictionaryMeta(_dictionaryToCompanion(_dictionariesCache[i]));
+        _database.upsertDictionaryMeta(
+            _dictionaryToCompanion(_dictionariesCache[i]));
         debugPrint('[Hibiki] migrated dict type: ${d.name} → ${detected.name}');
       } catch (e, stack) {
         ErrorLogService.instance.log('AppModel.dictTypeMigration', e, stack);
@@ -1259,6 +1259,9 @@ class AppModel with ChangeNotifier {
 
       debugPrint('[Hibiki] init: media sources');
       MediaSource.setDatabase(_database);
+      final readerSettings = ReaderSettings(_database);
+      await readerSettings.ready;
+      ReaderHoshiSource.readerSettings = readerSettings;
 
       /// Ready all media sources for use.
       for (MediaType type in mediaTypes.values) {
@@ -1269,8 +1272,7 @@ class AppModel with ChangeNotifier {
 
       debugPrint('[Hibiki] init: ttu → EpubBooks migration');
       try {
-        final migServer =
-            await TtuMigrationServer.start(targetLanguage);
+        final migServer = await TtuMigrationServer.start(targetLanguage);
         final int migCount = await TtuMigration.migrateIfNeeded(
           _database,
           migServer.boundPort!,
@@ -1459,7 +1461,8 @@ class AppModel with ChangeNotifier {
       try {
         return List<String>.from(jsonDecode(raw));
       } catch (e, stack) {
-        ErrorLogService.instance.log('AppModel.getPreference.jsonList', e, stack);
+        ErrorLogService.instance
+            .log('AppModel.getPreference.jsonList', e, stack);
         return defaultValue;
       }
     }
@@ -3475,6 +3478,26 @@ class AppModel with ChangeNotifier {
     HoshiDicts.disposeInstance();
   }
 
+  @override
+  void dispose() {
+    dictionaryEntriesNotifier.dispose();
+    dictionarySearchAgainNotifier.dispose();
+    dictionaryMenuNotifier.dispose();
+    incognitoNotifier.dispose();
+    databaseCloseNotifier.dispose();
+    _currentMediaPauseController.close();
+    _cardCreatorRecursiveSearchStreamController.close();
+    _playPauseHeadsetActionStreamController.close();
+    _creatorActiveController.close();
+    _playStreamController.close();
+    _seekStreamController.close();
+    _rewindStreamController.close();
+    _fastForwardStreamController.close();
+    _skipNextStreamController.close();
+    _skipPreviousStreamController.close();
+    super.dispose();
+  }
+
   static const _lifecycleChannel = HibikiChannels.lifecycle;
 
   Future<void> moveToBack() async {
@@ -3644,8 +3667,7 @@ class AppModel with ChangeNotifier {
     final String raw = _getPref('local_audio_dbs', defaultValue: '');
     if (raw.isEmpty) {
       // Migrate old single-DB preference
-      final String oldPath =
-          _getPref('local_audio_db_path', defaultValue: '');
+      final String oldPath = _getPref('local_audio_db_path', defaultValue: '');
       if (oldPath.isNotEmpty) {
         final String oldName =
             _getPref('local_audio_db_display_name', defaultValue: '');
@@ -3665,8 +3687,8 @@ class AppModel with ChangeNotifier {
   }
 
   Future<void> setLocalAudioDbs(List<LocalAudioDbEntry> dbs) async {
-    await _setPref('local_audio_dbs',
-        jsonEncode(dbs.map((e) => e.toJson()).toList()));
+    await _setPref(
+        'local_audio_dbs', jsonEncode(dbs.map((e) => e.toJson()).toList()));
     // Clear legacy single-DB prefs after migration
     await _setPref('local_audio_db_path', '');
     await _setPref('local_audio_db_display_name', '');
@@ -3755,10 +3777,8 @@ class AppModel with ChangeNotifier {
   void toggleLocalAudio() async {
     await _setPref('local_audio_enabled', !localAudioEnabled);
     if (localAudioEnabled) {
-      final List<String> paths = localAudioDbs
-          .where((e) => e.enabled)
-          .map((e) => e.path)
-          .toList();
+      final List<String> paths =
+          localAudioDbs.where((e) => e.enabled).map((e) => e.path).toList();
       if (paths.isNotEmpty) {
         TtsChannel.instance.setLocalAudioDbs(paths);
       }

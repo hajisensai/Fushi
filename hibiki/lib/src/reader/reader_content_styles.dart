@@ -65,7 +65,7 @@ class ReaderContentStyles {
       resolvedFontFaces = fontFaces;
       resolvedFontFamily = '$fontFamily, serif';
     } else {
-      final ({String fontFamily, String fontFaces}) custom =
+    final ({String fontFamily, String fontFaces}) custom =
           settings.buildCustomFontCss();
       resolvedFontFaces = custom.fontFaces;
       resolvedFontFamily = custom.fontFamily.isNotEmpty
@@ -237,6 +237,9 @@ ruby > rt, ruby > rp {
 ::highlight(hoshi-sasayaki) {
   color: var(--hoshi-sasayaki-text-color);
   background-color: var(--hoshi-sasayaki-background-color);
+}
+::highlight(hoshi-search) {
+  background-color: rgba(255, 200, 0, 0.45);
 }
 .hoshi-sasayaki-cue {
   background-color: transparent;

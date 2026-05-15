@@ -109,6 +109,21 @@ class ReaderPositions extends Table {
   IntColumn get updatedAt => integer()();
 }
 
+// ── bookmarks ─────────────────────────────────────────────────────
+@DataClassName('BookmarkRow')
+class Bookmarks extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  IntColumn get ttuBookId =>
+      integer().references(EpubBooks, #id, onDelete: KeyAction.cascade)();
+  IntColumn get sectionIndex => integer()();
+  IntColumn get normCharOffset => integer()();
+  TextColumn get label => text()();
+  IntColumn get createdAt => integer()();
+  TextColumn get bookTitle => text().nullable()();
+  IntColumn get pageInChapter => integer().nullable()();
+  IntColumn get totalPagesInChapter => integer().nullable()();
+}
+
 // ── reading_statistics ──────────────────────────────────────────────
 @DataClassName('ReadingStatisticRow')
 class ReadingStatistics extends Table {
@@ -205,10 +220,10 @@ class BookTags extends Table {
 @DataClassName('BookTagMappingRow')
 class BookTagMappings extends Table {
   IntColumn get id => integer().autoIncrement()();
-  IntColumn get bookId => integer()
-      .references(EpubBooks, #id, onDelete: KeyAction.cascade)();
-  IntColumn get tagId => integer()
-      .references(BookTags, #id, onDelete: KeyAction.cascade)();
+  IntColumn get bookId =>
+      integer().references(EpubBooks, #id, onDelete: KeyAction.cascade)();
+  IntColumn get tagId =>
+      integer().references(BookTags, #id, onDelete: KeyAction.cascade)();
 
   @override
   List<Set<Column>> get uniqueKeys => [

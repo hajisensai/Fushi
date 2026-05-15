@@ -5,16 +5,12 @@ import 'dart:isolate';
 import 'package:archive/archive.dart' as archive;
 import 'package:archive/archive_io.dart' as archive_io;
 import 'package:async_zip/async_zip.dart';
-import 'package:beautiful_soup_dart/beautiful_soup.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:html/dom.dart' as dom;
-import 'package:list_counter/list_counter.dart';
 import 'package:path/path.dart' as path;
 import 'package:recase/recase.dart';
 import 'package:hibiki/dictionary.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
-import 'package:hibiki/utils.dart';
 
 /// A dictionary format for archives following the latest Yomichan bank schema.
 /// Example dictionaries for this format may be downloaded from the Yomichan
@@ -42,48 +38,6 @@ class YomichanFormat extends DictionaryFormat {
   static YomichanFormat get instance => _instance;
 
   static final YomichanFormat _instance = YomichanFormat._privateConstructor();
-
-  /// If true, uses the [customDefinitionWidget] instead.
-  @override
-  bool shouldUseCustomDefinitionWidget(String definition) {
-    try {
-      jsonDecode(definition);
-      return true;
-    } catch (e, stack) {
-      ErrorLogService.instance.log('YomichanFormat.shouldUseCustomWidget', e, stack);
-      return false;
-    }
-  }
-
-  @override
-  String getCustomDefinitionText(String meaning) {
-    final node =
-        StructuredContent.processContent(jsonDecode(meaning))?.toNode();
-    if (node == null) {
-      return '';
-    }
-
-    final document = dom.Document.html('');
-    document.body?.append(node);
-    for (final e in document.querySelectorAll('li')) {
-      final css = e.bs4.findParent('ul')?.attributes['style'] ?? '';
-      final text = e.text;
-      final name = css
-              .split(';')
-              .firstWhere((e) => e.contains('list-style-type'))
-              .split(':')
-              .lastOrNull ??
-          'square';
-
-      final counterStyle = CounterStyleRegistry.lookup(name);
-      final counter = counterStyle.generateMarkerContent(0);
-      e.text = '$counter $text';
-    }
-    document.querySelectorAll('table').map((e) => e.remove());
-    final html = document.body?.innerHtml ?? '';
-
-    return BeautifulSoup(html).getText(separator: '\n');
-  }
 
   /// Recursively get HTML for a structured content definition.
   static String getStructuredContentHtml(dynamic content) {
@@ -209,4 +163,3 @@ void _prepareEntriesYomichanStub({
 }) {
   // No-op: hoshidicts C++ handles import directly via HoshiDicts.importDictionary
 }
-

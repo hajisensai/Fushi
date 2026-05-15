@@ -18,6 +18,7 @@ import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
 import 'package:hibiki/src/media/audiobook/reader_position_repository.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
 import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
+import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/utils.dart';
 
 final hoshiBooksProvider =
@@ -54,8 +55,7 @@ class ReaderHoshiSource extends ReaderMediaSource {
 
   static String epubUrl(String href) => 'https://$kHost/epub/$href';
 
-  static String fontUrl(String path) =>
-      'https://$kHost/fonts/${Uri.encodeComponent(path)}';
+  static String fontUrl(String path) => ReaderCustomFontCss.fontUrl(path);
 
   static int? parseBookId(String identifier) {
     final Uri? uri = Uri.tryParse(identifier);
@@ -72,23 +72,7 @@ class ReaderHoshiSource extends ReaderMediaSource {
 
   @override
   Future<void> prepareResources() async {
-    final double? first = getPreference<double?>(
-        key: 'ttu_first_dimension_margin', defaultValue: null);
-    final double? second = getPreference<double?>(
-        key: 'ttu_second_dimension_margin', defaultValue: null);
-    if (first != null || second != null) {
-      final bool hasNew = getPreference<double?>(
-              key: 'ttu_margin_top', defaultValue: null) !=
-          null;
-      if (!hasNew) {
-        final double tb = first ?? 0;
-        final double lr = second ?? 0;
-        await setPreference<double>(key: 'ttu_margin_top', value: tb);
-        await setPreference<double>(key: 'ttu_margin_bottom', value: tb);
-        await setPreference<double>(key: 'ttu_margin_left', value: lr);
-        await setPreference<double>(key: 'ttu_margin_right', value: lr);
-      }
-    }
+    await readerSettings?.ready;
   }
 
   // ── Sasayaki sentence audio ─────────────────────────────────────────
@@ -166,8 +150,7 @@ class ReaderHoshiSource extends ReaderMediaSource {
     );
   }
 
-  static int _extractBookId(String identifier) =>
-      parseBookId(identifier) ?? 0;
+  static int _extractBookId(String identifier) => parseBookId(identifier) ?? 0;
 
   @override
   List<Widget> getActions({
@@ -176,10 +159,8 @@ class ReaderHoshiSource extends ReaderMediaSource {
     required AppModel appModel,
   }) {
     return [
-      buildBookImportButton(
-          context: context, ref: ref, appModel: appModel),
-      buildTweaksButton(
-          context: context, ref: ref, appModel: appModel),
+      buildBookImportButton(context: context, ref: ref, appModel: appModel),
+      buildTweaksButton(context: context, ref: ref, appModel: appModel),
     ];
   }
 
@@ -262,11 +243,11 @@ class ReaderHoshiSource extends ReaderMediaSource {
                   0)
               .toList();
         } catch (e, stack) {
-          ErrorLogService.instance.log('ReaderHoshiSource.sectionChars', e, stack);
+          ErrorLogService.instance
+              .log('ReaderHoshiSource.sectionChars', e, stack);
         }
       }
-      final int totalChars =
-          sectionChars.fold<int>(0, (a, b) => a + b);
+      final int totalChars = sectionChars.fold<int>(0, (a, b) => a + b);
       if (totalChars > 0) {
         duration = totalChars;
       }
@@ -306,8 +287,7 @@ class ReaderHoshiSource extends ReaderMediaSource {
         duration: duration,
         canDelete: false,
         canEdit: true,
-        sourceMetadata:
-            totalChars > 0 ? jsonEncode(sectionChars) : null,
+        sourceMetadata: totalChars > 0 ? jsonEncode(sectionChars) : null,
       ));
     }
     return items;
@@ -332,8 +312,7 @@ class ReaderHoshiSource extends ReaderMediaSource {
         await srtRepo.delete(srt.uid);
       }
 
-      await (db.delete(db.epubBooks)
-            ..where((tbl) => tbl.id.equals(bookId)))
+      await (db.delete(db.epubBooks)..where((tbl) => tbl.id.equals(bookId)))
           .go();
       await EpubStorage.deleteBook(bookId);
       return true;
@@ -346,6 +325,8 @@ class ReaderHoshiSource extends ReaderMediaSource {
 
   // ── Settings (same keys as ReaderTtuSource for seamless migration) ──
 
+  static ReaderSettings? readerSettings;
+
   int portForLanguage(Language language) {
     if (language is JapaneseLanguage) {
       return 52059;
@@ -356,9 +337,8 @@ class ReaderHoshiSource extends ReaderMediaSource {
     throw UnimplementedError();
   }
 
-  bool get volumePageTurningEnabled =>
-      getPreference<bool>(
-          key: 'volume_page_turning_enabled', defaultValue: true);
+  bool get volumePageTurningEnabled => getPreference<bool>(
+      key: 'volume_page_turning_enabled', defaultValue: true);
 
   void toggleVolumePageTurningEnabled() async {
     await setPreference<bool>(
@@ -367,9 +347,8 @@ class ReaderHoshiSource extends ReaderMediaSource {
     );
   }
 
-  bool get volumePageTurningInverted =>
-      getPreference<bool>(
-          key: 'volume_page_turning_inverted', defaultValue: false);
+  bool get volumePageTurningInverted => getPreference<bool>(
+      key: 'volume_page_turning_inverted', defaultValue: false);
 
   void toggleVolumePageTurningInverted() async {
     await setPreference<bool>(
@@ -379,20 +358,26 @@ class ReaderHoshiSource extends ReaderMediaSource {
   }
 
   int get volumePageTurningSpeed =>
+      readerSettings?.volumePageTurningSpeed ??
       getPreference<int>(
-          key: 'volume_page_turning_speed',
-          defaultValue: defaultScrollingSpeed);
+        key: 'volume_page_turning_speed',
+        defaultValue: defaultScrollingSpeed,
+      );
 
   void setVolumePageTurningSpeed(int speed) async {
+    final ReaderSettings? settings = readerSettings;
+    if (settings != null) {
+      await settings.setVolumePageTurningSpeed(speed);
+      return;
+    }
     await setPreference<int>(
       key: 'volume_page_turning_speed',
       value: speed,
     );
   }
 
-  bool get volumeKeySentenceNavEnabled =>
-      getPreference<bool>(
-          key: 'volume_key_sentence_nav_enabled', defaultValue: true);
+  bool get volumeKeySentenceNavEnabled => getPreference<bool>(
+      key: 'volume_key_sentence_nav_enabled', defaultValue: true);
 
   void toggleVolumeKeySentenceNavEnabled() async {
     await setPreference<bool>(
@@ -402,10 +387,18 @@ class ReaderHoshiSource extends ReaderMediaSource {
   }
 
   bool get invertSwipeDirection =>
+      readerSettings?.invertSwipeDirection ??
       getPreference<bool>(
-          key: 'invert_swipe_direction', defaultValue: true);
+        key: 'invert_swipe_direction',
+        defaultValue: true,
+      );
 
   void toggleInvertSwipeDirection() async {
+    final ReaderSettings? settings = readerSettings;
+    if (settings != null) {
+      await settings.toggleInvertSwipeDirection();
+      return;
+    }
     await setPreference<bool>(
       key: 'invert_swipe_direction',
       value: !invertSwipeDirection,
@@ -413,9 +406,15 @@ class ReaderHoshiSource extends ReaderMediaSource {
   }
 
   bool get autoReadOnLookup =>
+      readerSettings?.autoReadOnLookup ??
       getPreference<bool>(key: 'auto_read_on_lookup', defaultValue: true);
 
   void toggleAutoReadOnLookup() async {
+    final ReaderSettings? settings = readerSettings;
+    if (settings != null) {
+      await settings.toggleAutoReadOnLookup();
+      return;
+    }
     await setPreference<bool>(
       key: 'auto_read_on_lookup',
       value: !autoReadOnLookup,
@@ -423,10 +422,18 @@ class ReaderHoshiSource extends ReaderMediaSource {
   }
 
   double get dismissSwipeSensitivity =>
+      readerSettings?.dismissSwipeSensitivity ??
       getPreference<double>(
-          key: 'dismiss_swipe_sensitivity', defaultValue: 0.6);
+        key: 'dismiss_swipe_sensitivity',
+        defaultValue: 0.6,
+      );
 
   Future<void> setDismissSwipeSensitivity(double value) async {
+    final ReaderSettings? settings = readerSettings;
+    if (settings != null) {
+      await settings.setDismissSwipeSensitivity(value);
+      return;
+    }
     await setPreference<double>(
       key: 'dismiss_swipe_sensitivity',
       value: value,
@@ -434,9 +441,15 @@ class ReaderHoshiSource extends ReaderMediaSource {
   }
 
   bool get highlightOnTap =>
+      readerSettings?.highlightOnTap ??
       getPreference<bool>(key: 'highlight_on_tap', defaultValue: true);
 
   void toggleHighlightOnTap() async {
+    final ReaderSettings? settings = readerSettings;
+    if (settings != null) {
+      await settings.toggleHighlightOnTap();
+      return;
+    }
     await setPreference<bool>(
       key: 'highlight_on_tap',
       value: !highlightOnTap,
@@ -444,9 +457,15 @@ class ReaderHoshiSource extends ReaderMediaSource {
   }
 
   bool get keepScreenAwake =>
+      readerSettings?.keepScreenAwake ??
       getPreference<bool>(key: 'keep_screen_awake', defaultValue: true);
 
   void toggleKeepScreenAwake() async {
+    final ReaderSettings? settings = readerSettings;
+    if (settings != null) {
+      await settings.toggleKeepScreenAwake();
+      return;
+    }
     await setPreference<bool>(
       key: 'keep_screen_awake',
       value: !keepScreenAwake,
@@ -461,9 +480,15 @@ class ReaderHoshiSource extends ReaderMediaSource {
   }
 
   bool get tapEmptyToHideChrome =>
+      readerSettings?.tapEmptyToHideChrome ??
       getPreference<bool>(key: 'tap_empty_hide_chrome', defaultValue: false);
 
   void toggleTapEmptyToHideChrome() async {
+    final ReaderSettings? settings = readerSettings;
+    if (settings != null) {
+      await settings.toggleTapEmptyToHideChrome();
+      return;
+    }
     await setPreference<bool>(
       key: 'tap_empty_hide_chrome',
       value: !tapEmptyToHideChrome,
@@ -473,34 +498,54 @@ class ReaderHoshiSource extends ReaderMediaSource {
   // ── ttu 阅读器设置 ─────────────────────────────────────────────────
 
   double get ttuFontSize =>
+      readerSettings?.fontSize ??
       getPreference<double>(key: 'ttu_font_size', defaultValue: 20);
   Future<void> setTtuFontSize(double v) =>
+      readerSettings?.setFontSize(v) ??
       setPreference<double>(key: 'ttu_font_size', value: v);
 
   double get ttuLineHeight =>
+      readerSettings?.lineHeight ??
       getPreference<double>(key: 'ttu_line_height', defaultValue: 1.65);
   Future<void> setTtuLineHeight(double v) =>
+      readerSettings?.setLineHeight(v) ??
       setPreference<double>(key: 'ttu_line_height', value: v);
 
   String get ttuWritingMode =>
+      readerSettings?.writingMode ??
       getPreference<String>(
-          key: 'ttu_writing_mode', defaultValue: 'vertical-rl');
+        key: 'ttu_writing_mode',
+        defaultValue: 'vertical-rl',
+      );
   Future<void> setTtuWritingMode(String v) =>
+      readerSettings?.setWritingMode(v) ??
       setPreference<String>(key: 'ttu_writing_mode', value: v);
 
   String get ttuViewMode =>
+      readerSettings?.viewMode ??
       getPreference<String>(
-          key: 'ttu_view_mode', defaultValue: 'paginated');
+        key: 'ttu_view_mode',
+        defaultValue: 'paginated',
+      );
   Future<void> setTtuViewMode(String v) =>
+      readerSettings?.setViewMode(v) ??
       setPreference<String>(key: 'ttu_view_mode', value: v);
 
   String get ttuTheme =>
+      readerSettings?.theme ??
       getPreference<String>(
-          key: 'ttu_theme', defaultValue: 'light-theme');
+        key: 'ttu_theme',
+        defaultValue: 'light-theme',
+      );
   Future<void> setTtuTheme(String v) =>
+      readerSettings?.setTheme(v) ??
       setPreference<String>(key: 'ttu_theme', value: v);
 
   String get ttuFuriganaMode {
+    final ReaderSettings? settings = readerSettings;
+    if (settings != null) {
+      return settings.furiganaMode;
+    }
     final dynamic legacy =
         getPreference<bool?>(key: 'ttu_hide_furigana', defaultValue: null);
     if (legacy != null) {
@@ -520,78 +565,108 @@ class ReaderHoshiSource extends ReaderMediaSource {
     );
   }
 
-  Future<void> setTtuFuriganaMode(String v) => setPreference<String>(
-      key: 'ttu_furigana_mode', value: normalizeFuriganaMode(v));
+  Future<void> setTtuFuriganaMode(String v) =>
+      readerSettings?.setFuriganaMode(v) ??
+      setPreference<String>(
+        key: 'ttu_furigana_mode',
+        value: normalizeFuriganaMode(v),
+      );
 
   double get ttuTextIndentation =>
+      readerSettings?.textIndentation ??
       getPreference<double>(key: 'ttu_text_indentation', defaultValue: 0);
   Future<void> setTtuTextIndentation(double v) =>
+      readerSettings?.setTextIndentation(v) ??
       setPreference<double>(key: 'ttu_text_indentation', value: v);
 
   double get ttuMarginTop =>
+      readerSettings?.marginTop ??
       getPreference<double>(key: 'ttu_margin_top', defaultValue: 0);
   Future<void> setTtuMarginTop(double v) =>
+      readerSettings?.setMarginTop(v) ??
       setPreference<double>(key: 'ttu_margin_top', value: v);
 
   double get ttuMarginBottom =>
+      readerSettings?.marginBottom ??
       getPreference<double>(key: 'ttu_margin_bottom', defaultValue: 0);
   Future<void> setTtuMarginBottom(double v) =>
+      readerSettings?.setMarginBottom(v) ??
       setPreference<double>(key: 'ttu_margin_bottom', value: v);
 
   double get ttuMarginLeft =>
+      readerSettings?.marginLeft ??
       getPreference<double>(key: 'ttu_margin_left', defaultValue: 0);
   Future<void> setTtuMarginLeft(double v) =>
+      readerSettings?.setMarginLeft(v) ??
       setPreference<double>(key: 'ttu_margin_left', value: v);
 
   double get ttuMarginRight =>
+      readerSettings?.marginRight ??
       getPreference<double>(key: 'ttu_margin_right', defaultValue: 0);
   Future<void> setTtuMarginRight(double v) =>
+      readerSettings?.setMarginRight(v) ??
       setPreference<double>(key: 'ttu_margin_right', value: v);
 
   int get ttuPageColumns =>
+      readerSettings?.pageColumns ??
       getPreference<int>(key: 'ttu_page_columns', defaultValue: 0);
   Future<void> setTtuPageColumns(int v) =>
+      readerSettings?.setPageColumns(v) ??
       setPreference<int>(key: 'ttu_page_columns', value: v);
 
   bool get ttuEnableVerticalFontKerning =>
+      readerSettings?.enableVerticalFontKerning ??
       getPreference<bool>(key: 'ttu_vert_kerning', defaultValue: false);
   Future<void> setTtuEnableVerticalFontKerning(bool v) =>
+      readerSettings?.setEnableVerticalFontKerning(v) ??
       setPreference<bool>(key: 'ttu_vert_kerning', value: v);
 
   bool get ttuEnableFontVPAL =>
+      readerSettings?.enableFontVPAL ??
       getPreference<bool>(key: 'ttu_font_vpal', defaultValue: false);
   Future<void> setTtuEnableFontVPAL(bool v) =>
+      readerSettings?.setEnableFontVPAL(v) ??
       setPreference<bool>(key: 'ttu_font_vpal', value: v);
 
   String get ttuVerticalTextOrientation =>
+      readerSettings?.verticalTextOrientation ??
       getPreference<String>(
-          key: 'ttu_vert_text_orient', defaultValue: 'mixed');
+        key: 'ttu_vert_text_orient',
+        defaultValue: 'mixed',
+      );
   Future<void> setTtuVerticalTextOrientation(String v) =>
+      readerSettings?.setVerticalTextOrientation(v) ??
       setPreference<String>(key: 'ttu_vert_text_orient', value: v);
 
   bool get ttuEnableTextJustification =>
+      readerSettings?.enableTextJustification ??
       getPreference<bool>(key: 'ttu_text_justify', defaultValue: false);
   Future<void> setTtuEnableTextJustification(bool v) =>
+      readerSettings?.setEnableTextJustification(v) ??
       setPreference<bool>(key: 'ttu_text_justify', value: v);
 
   bool get ttuPrioritizeReaderStyles =>
+      readerSettings?.prioritizeReaderStyles ??
       getPreference<bool>(key: 'ttu_reader_styles', defaultValue: false);
   Future<void> setTtuPrioritizeReaderStyles(bool v) =>
+      readerSettings?.setPrioritizeReaderStyles(v) ??
       setPreference<bool>(key: 'ttu_reader_styles', value: v);
 
   String get _legacyFuriganaStyle =>
-      getPreference<String>(
-              key: 'ttu_furigana_style', defaultValue: 'partial')
+      getPreference<String>(key: 'ttu_furigana_style', defaultValue: 'partial')
           .toLowerCase();
 
   // ── Custom fonts ────────────────────────────────────────────────────
 
   List<Map<String, dynamic>> get customFonts {
+    final ReaderSettings? settings = readerSettings;
+    if (settings != null) {
+      return settings.customFonts;
+    }
     final String raw =
         getPreference<String>(key: 'custom_fonts', defaultValue: '[]');
     try {
-      return (jsonDecode(raw) as List<dynamic>)
-          .cast<Map<String, dynamic>>();
+      return (jsonDecode(raw) as List<dynamic>).cast<Map<String, dynamic>>();
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderHoshiSource.customFonts', e, stack);
       return <Map<String, dynamic>>[];
@@ -599,9 +674,15 @@ class ReaderHoshiSource extends ReaderMediaSource {
   }
 
   Future<void> setCustomFonts(List<Map<String, dynamic>> fonts) =>
+      readerSettings?.setCustomFonts(fonts) ??
       setPreference<String>(key: 'custom_fonts', value: jsonEncode(fonts));
 
   Future<void> addCustomFont({required String name, String? path}) async {
+    final ReaderSettings? settings = readerSettings;
+    if (settings != null) {
+      await settings.addCustomFont(name: name, path: path);
+      return;
+    }
     final List<Map<String, dynamic>> list = customFonts;
     list.add(<String, dynamic>{
       'name': name,
@@ -612,6 +693,29 @@ class ReaderHoshiSource extends ReaderMediaSource {
   }
 
   Future<void> removeCustomFont(int index) async {
+    final ReaderSettings? settings = readerSettings;
+    if (settings != null) {
+      final List<Map<String, dynamic>> list = settings.customFonts;
+      if (index < 0 || index >= list.length) {
+        return;
+      }
+      final String? filePath = list[index]['path'] as String?;
+      if (filePath != null) {
+        try {
+          final File f = File(filePath);
+          if (await f.exists()) {
+            await f.delete();
+          }
+        } catch (e, stack) {
+          ErrorLogService.instance
+              .log('ReaderHoshiSource.deleteFont', e, stack);
+          debugPrint(
+              '[Hibiki] failed to delete custom font file $filePath: $e');
+        }
+      }
+      await settings.removeCustomFont(index);
+      return;
+    }
     final List<Map<String, dynamic>> list = customFonts;
     if (index < 0 || index >= list.length) {
       return;
@@ -626,24 +730,32 @@ class ReaderHoshiSource extends ReaderMediaSource {
         }
       } catch (e, stack) {
         ErrorLogService.instance.log('ReaderHoshiSource.deleteFont', e, stack);
-        debugPrint(
-            '[Hibiki] failed to delete custom font file $filePath: $e');
+        debugPrint('[Hibiki] failed to delete custom font file $filePath: $e');
       }
     }
     await setCustomFonts(list);
   }
 
   Future<void> toggleCustomFont(int index) async {
+    final ReaderSettings? settings = readerSettings;
+    if (settings != null) {
+      await settings.toggleCustomFont(index);
+      return;
+    }
     final List<Map<String, dynamic>> list = customFonts;
     if (index < 0 || index >= list.length) {
       return;
     }
-    list[index]['enabled'] =
-        !(list[index]['enabled'] as bool? ?? true);
+    list[index]['enabled'] = !(list[index]['enabled'] as bool? ?? true);
     await setCustomFonts(list);
   }
 
   Future<void> reorderCustomFonts(int oldIndex, int newIndex) async {
+    final ReaderSettings? settings = readerSettings;
+    if (settings != null) {
+      await settings.reorderCustomFonts(oldIndex, newIndex);
+      return;
+    }
     final List<Map<String, dynamic>> list = customFonts;
     if (newIndex > oldIndex) {
       newIndex--;
@@ -658,46 +770,34 @@ class ReaderHoshiSource extends ReaderMediaSource {
   }
 
   static ({String fontFamily, String fontFaces}) customFontCssForEntries(
-    Iterable<Map<String, dynamic>> fonts,
-  ) {
-    final Iterable<Map<String, dynamic>> enabled =
-        fonts.where((e) => e['enabled'] as bool? ?? true);
-    final List<String> families = <String>[];
-    final List<String> faces = <String>[];
-    for (final Map<String, dynamic> e in enabled) {
-      final String? rawName = e['name'] as String?;
-      if (rawName == null || rawName.isEmpty) continue;
-      final String normalizedName = normalizedFontFamilyName(rawName);
-      families.add(cssFontFamilyName(normalizedName));
-      final String? path = e['path'] as String?;
-      if (path != null) {
-        final String uri = fontUrl(path);
-        faces.add(
-          '@font-face { font-family: ${cssFontFamilyName(normalizedName)}; '
-          'src: url("$uri"); font-display: swap; }',
-        );
-      }
-    }
-    return (
-      fontFamily: families.join(', '),
-      fontFaces: faces.join('\n'),
-    );
-  }
+    Iterable<Map<String, dynamic>> fonts, {
+    Iterable<String> allowedDirectories = const <String>[],
+  }) =>
+      ReaderSettings.customFontCssForEntries(
+        fonts,
+        allowedDirectories: allowedDirectories,
+      );
 
   static String normalizedFontFamilyName(String name) {
-    return name.replaceAll('_', ' ').trim();
+    return ReaderCustomFontCss.normalizedFontFamilyName(name);
   }
 
   static String cssFontFamilyName(String name) {
-    final String normalized = normalizedFontFamilyName(name);
-    final String escaped =
-        normalized.replaceAll('\\', r'\\').replaceAll('"', r'\"');
-    return '"$escaped"';
+    return ReaderCustomFontCss.cssFontFamilyName(name);
   }
 
   static String cssFontFamilyList(Iterable<String> names) {
     return names.map(cssFontFamilyName).join(', ');
   }
+
+  static String? safeCustomFontPath(
+    String fontPath, {
+    Iterable<String> allowedRoots = const <String>[],
+  }) =>
+      ReaderCustomFontCss.safeFontPath(
+        fontPath,
+        allowedRoots: allowedRoots,
+      );
 
   // ── Furigana helpers ────────────────────────────────────────────────
 

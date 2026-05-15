@@ -2,8 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/database/database.dart';
-import 'package:hibiki/src/media/sources/reader_hoshi_source.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:path/path.dart' as p;
 
 /// All reader display/behavior settings, decoupled from the media source.
 ///
@@ -30,27 +30,27 @@ class ReaderSettings {
       final String shortKey = entry.key.substring(_prefix.length);
       _cache[shortKey] = _parseValue(entry.value);
     }
-    _migrateMargins();
+    await _migrateMargins();
   }
 
-  void _migrateMargins() {
+  Future<void> _migrateMargins() async {
     final double? first = _cache['ttu_first_dimension_margin'] as double?;
     final double? second = _cache['ttu_second_dimension_margin'] as double?;
     if (first == null && second == null) return;
     if (!_cache.containsKey('ttu_margin_top')) {
       final double topBottom = first ?? 0;
       final double leftRight = second ?? 0;
-      _set<double>('ttu_margin_top', topBottom);
-      _set<double>('ttu_margin_bottom', topBottom);
-      _set<double>('ttu_margin_left', leftRight);
-      _set<double>('ttu_margin_right', leftRight);
+      await _set<double>('ttu_margin_top', topBottom);
+      await _set<double>('ttu_margin_bottom', topBottom);
+      await _set<double>('ttu_margin_left', leftRight);
+      await _set<double>('ttu_margin_right', leftRight);
     }
     _cache.remove('ttu_first_dimension_margin');
     _cache.remove('ttu_second_dimension_margin');
     _cache.remove('ttu_second_dimension_max');
-    _db.deletePref('${_prefix}ttu_first_dimension_margin');
-    _db.deletePref('${_prefix}ttu_second_dimension_margin');
-    _db.deletePref('${_prefix}ttu_second_dimension_max');
+    await _db.deletePref('${_prefix}ttu_first_dimension_margin');
+    await _db.deletePref('${_prefix}ttu_second_dimension_margin');
+    await _db.deletePref('${_prefix}ttu_second_dimension_max');
   }
 
   T _get<T>(String key, T defaultValue) {
@@ -89,10 +89,8 @@ class ReaderSettings {
   double get lineHeight => _get<double>('ttu_line_height', 1.65);
   Future<void> setLineHeight(double v) => _set<double>('ttu_line_height', v);
 
-  String get writingMode =>
-      _get<String>('ttu_writing_mode', 'vertical-rl');
-  Future<void> setWritingMode(String v) =>
-      _set<String>('ttu_writing_mode', v);
+  String get writingMode => _get<String>('ttu_writing_mode', 'vertical-rl');
+  Future<void> setWritingMode(String v) => _set<String>('ttu_writing_mode', v);
 
   String get viewMode => _get<String>('ttu_view_mode', 'paginated');
   Future<void> setViewMode(String v) => _set<String>('ttu_view_mode', v);
@@ -106,8 +104,8 @@ class ReaderSettings {
     final dynamic raw = _cache['ttu_hide_furigana'];
     final bool? legacy = raw is bool ? raw : null;
     if (legacy != null) {
-      final String oldStyle = _get<String>('ttu_furigana_style', 'partial')
-          .toLowerCase();
+      final String oldStyle =
+          _get<String>('ttu_furigana_style', 'partial').toLowerCase();
       final String mode = legacy ? 'hide' : 'show';
       final String merged = normalizeFuriganaMode(
         (legacy && (oldStyle == 'partial' || oldStyle == 'toggle'))
@@ -128,8 +126,7 @@ class ReaderSettings {
   Future<void> setFuriganaMode(String v) =>
       _set<String>('ttu_furigana_mode', normalizeFuriganaMode(v));
 
-  double get textIndentation =>
-      _get<double>('ttu_text_indentation', 0);
+  double get textIndentation => _get<double>('ttu_text_indentation', 0);
   Future<void> setTextIndentation(double v) =>
       _set<double>('ttu_text_indentation', v);
 
@@ -144,33 +141,28 @@ class ReaderSettings {
   Future<void> setMarginLeft(double v) => _set<double>('ttu_margin_left', v);
 
   double get marginRight => _get<double>('ttu_margin_right', 0);
-  Future<void> setMarginRight(double v) =>
-      _set<double>('ttu_margin_right', v);
+  Future<void> setMarginRight(double v) => _set<double>('ttu_margin_right', v);
 
   int get pageColumns => _get<int>('ttu_page_columns', 0);
   Future<void> setPageColumns(int v) => _set<int>('ttu_page_columns', v);
 
-  bool get enableVerticalFontKerning =>
-      _get<bool>('ttu_vert_kerning', false);
+  bool get enableVerticalFontKerning => _get<bool>('ttu_vert_kerning', false);
   Future<void> setEnableVerticalFontKerning(bool v) =>
       _set<bool>('ttu_vert_kerning', v);
 
   bool get enableFontVPAL => _get<bool>('ttu_font_vpal', false);
-  Future<void> setEnableFontVPAL(bool v) =>
-      _set<bool>('ttu_font_vpal', v);
+  Future<void> setEnableFontVPAL(bool v) => _set<bool>('ttu_font_vpal', v);
 
   String get verticalTextOrientation =>
       _get<String>('ttu_vert_text_orient', 'mixed');
   Future<void> setVerticalTextOrientation(String v) =>
       _set<String>('ttu_vert_text_orient', v);
 
-  bool get enableTextJustification =>
-      _get<bool>('ttu_text_justify', false);
+  bool get enableTextJustification => _get<bool>('ttu_text_justify', false);
   Future<void> setEnableTextJustification(bool v) =>
       _set<bool>('ttu_text_justify', v);
 
-  bool get prioritizeReaderStyles =>
-      _get<bool>('ttu_reader_styles', false);
+  bool get prioritizeReaderStyles => _get<bool>('ttu_reader_styles', false);
   Future<void> setPrioritizeReaderStyles(bool v) =>
       _set<bool>('ttu_reader_styles', v);
 
@@ -193,18 +185,15 @@ class ReaderSettings {
   Future<void> toggleKeepScreenAwake() =>
       _set<bool>('keep_screen_awake', !keepScreenAwake);
 
-  bool get tapEmptyToHideChrome =>
-      _get<bool>('tap_empty_hide_chrome', false);
+  bool get tapEmptyToHideChrome => _get<bool>('tap_empty_hide_chrome', false);
   Future<void> toggleTapEmptyToHideChrome() =>
       _set<bool>('tap_empty_hide_chrome', !tapEmptyToHideChrome);
 
-  bool get invertSwipeDirection =>
-      _get<bool>('invert_swipe_direction', true);
+  bool get invertSwipeDirection => _get<bool>('invert_swipe_direction', true);
   Future<void> toggleInvertSwipeDirection() =>
       _set<bool>('invert_swipe_direction', !invertSwipeDirection);
 
-  int get volumePageTurningSpeed =>
-      _get<int>('volume_page_turning_speed', 100);
+  int get volumePageTurningSpeed => _get<int>('volume_page_turning_speed', 100);
   Future<void> setVolumePageTurningSpeed(int v) =>
       _set<int>('volume_page_turning_speed', v);
 
@@ -213,8 +202,7 @@ class ReaderSettings {
   List<Map<String, dynamic>> get customFonts {
     final String raw = _get<String>('custom_fonts', '[]');
     try {
-      return (jsonDecode(raw) as List<dynamic>)
-          .cast<Map<String, dynamic>>();
+      return (jsonDecode(raw) as List<dynamic>).cast<Map<String, dynamic>>();
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderSettings.customFonts', e, stack);
       return <Map<String, dynamic>>[];
@@ -223,11 +211,152 @@ class ReaderSettings {
 
   /// CSS font-family string and @font-face declarations for enabled fonts.
   ({String fontFamily, String fontFaces}) buildCustomFontCss() =>
-      ReaderHoshiSource.customFontCssForEntries(customFonts);
+      customFontCssForEntries(customFonts);
 
   static String normalizeFuriganaMode(String mode) =>
-      ReaderHoshiSource.normalizeFuriganaMode(mode);
+      switch (mode.toLowerCase()) {
+        'show' || 'hide' || 'partial' || 'toggle' => mode.toLowerCase(),
+        _ => 'show',
+      };
 
   static String furiganaModeToStyle(String mode) =>
-      ReaderHoshiSource.furiganaModeToStyle(mode);
+      switch (normalizeFuriganaMode(mode)) {
+        'hide' => 'Hide',
+        'partial' => 'Partial',
+        'toggle' => 'Toggle',
+        _ => 'Show',
+      };
+
+  static ({String fontFamily, String fontFaces}) customFontCssForEntries(
+    Iterable<Map<String, dynamic>> fonts, {
+    Iterable<String> allowedDirectories = const <String>[],
+  }) {
+    return ReaderCustomFontCss.build(
+      fonts,
+      allowedDirectories: allowedDirectories,
+    );
+  }
+
+  Future<void> setCustomFonts(List<Map<String, dynamic>> fonts) =>
+      _set<String>('custom_fonts', jsonEncode(fonts));
+
+  Future<void> addCustomFont({required String name, String? path}) async {
+    final List<Map<String, dynamic>> list =
+        List<Map<String, dynamic>>.from(customFonts);
+    list.add(<String, dynamic>{
+      'name': name,
+      'path': path,
+      'enabled': true,
+    });
+    await setCustomFonts(list);
+  }
+
+  Future<void> removeCustomFont(int index) async {
+    final List<Map<String, dynamic>> list =
+        List<Map<String, dynamic>>.from(customFonts);
+    if (index < 0 || index >= list.length) {
+      return;
+    }
+    list.removeAt(index);
+    await setCustomFonts(list);
+  }
+
+  Future<void> toggleCustomFont(int index) async {
+    final List<Map<String, dynamic>> list =
+        List<Map<String, dynamic>>.from(customFonts);
+    if (index < 0 || index >= list.length) {
+      return;
+    }
+    list[index]['enabled'] = !(list[index]['enabled'] as bool? ?? true);
+    await setCustomFonts(list);
+  }
+
+  Future<void> reorderCustomFonts(int oldIndex, int newIndex) async {
+    final List<Map<String, dynamic>> list =
+        List<Map<String, dynamic>>.from(customFonts);
+    if (newIndex > oldIndex) {
+      newIndex--;
+    }
+    if (oldIndex < 0 ||
+        oldIndex >= list.length ||
+        newIndex < 0 ||
+        newIndex > list.length) {
+      return;
+    }
+    final Map<String, dynamic> item = list.removeAt(oldIndex);
+    list.insert(newIndex, item);
+    await setCustomFonts(list);
+  }
+}
+
+class ReaderCustomFontCss {
+  static ({String fontFamily, String fontFaces}) build(
+    Iterable<Map<String, dynamic>> fonts, {
+    Iterable<String> allowedDirectories = const <String>[],
+  }) {
+    final Set<String> allowedRoots = allowedDirectories
+        .where((String path) => path.isNotEmpty)
+        .map(p.canonicalize)
+        .toSet();
+    final Iterable<Map<String, dynamic>> enabled =
+        fonts.where((e) => e['enabled'] as bool? ?? true);
+    final List<String> families = <String>[];
+    final List<String> faces = <String>[];
+    for (final Map<String, dynamic> e in enabled) {
+      final String? rawName = e['name'] as String?;
+      if (rawName == null || rawName.isEmpty) continue;
+      final String normalizedName = normalizedFontFamilyName(rawName);
+      final String? fontPath = e['path'] as String?;
+      if (fontPath == null) {
+        families.add(cssFontFamilyName(normalizedName));
+        continue;
+      }
+      final String? safePath =
+          safeFontPath(fontPath, allowedRoots: allowedRoots);
+      if (safePath == null) {
+        continue;
+      }
+      families.add(cssFontFamilyName(normalizedName));
+      final String uri = fontUrl(safePath);
+      faces.add(
+        '@font-face { font-family: ${cssFontFamilyName(normalizedName)}; '
+        'src: url("$uri"); font-display: swap; }',
+      );
+    }
+    return (
+      fontFamily: families.join(', '),
+      fontFaces: faces.join('\n'),
+    );
+  }
+
+  static String normalizedFontFamilyName(String name) {
+    return name.replaceAll('_', ' ').trim();
+  }
+
+  static String cssFontFamilyName(String name) {
+    final String normalized = normalizedFontFamilyName(name);
+    final String escaped =
+        normalized.replaceAll('\\', r'\\').replaceAll('"', r'\"');
+    return '"$escaped"';
+  }
+
+  static String? safeFontPath(
+    String fontPath, {
+    Iterable<String> allowedRoots = const <String>[],
+  }) {
+    final String canonicalPath = p.canonicalize(fontPath);
+    final List<String> roots = allowedRoots
+        .where((String root) => root.isNotEmpty)
+        .map(p.canonicalize)
+        .toList();
+    if (roots.isNotEmpty &&
+        !roots.any((String root) =>
+            canonicalPath == root || p.isWithin(root, canonicalPath))) {
+      return null;
+    }
+    return canonicalPath;
+  }
+
+  static String fontUrl(String path) =>
+      'https://hoshi.local/fonts/${Uri.encodeComponent(path)}';
 }

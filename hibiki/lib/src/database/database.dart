@@ -241,39 +241,44 @@ class HibikiDatabase extends _$HibikiDatabase {
               ..addColumns([bookmarks.id.count()]))
             .map((row) => row.read(bookmarks.id.count()) ?? 0)
             .getSingle();
-        if (existing > 0) continue;
-        List<dynamic> list;
-        try {
-          list = jsonDecode(entry.value) as List<dynamic>;
-        } catch (_) {
-          continue;
-        }
-        for (final dynamic raw in list) {
-          if (raw is! Map<String, dynamic>) continue;
-          final int sectionIndex = raw['sectionIndex'] as int? ?? 0;
-          final int normCharOffset = raw['normCharOffset'] as int? ?? 0;
-          final String label = raw['label'] as String? ?? '';
-          final DateTime createdAt = DateTime.tryParse(
-                raw['createdAt'] as String? ?? '',
-              ) ??
-              DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
-          final int rowBookId = raw['ttuBookId'] as int? ?? ttuBookId;
-          await customStatement(
-            'INSERT OR IGNORE INTO bookmarks '
-            '(ttu_book_id, section_index, norm_char_offset, label, '
-            'created_at, book_title, page_in_chapter, total_pages_in_chapter) '
-            'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-            [
-              rowBookId,
-              sectionIndex,
-              normCharOffset,
-              label,
-              createdAt.millisecondsSinceEpoch,
-              raw['bookTitle'] as String?,
-              raw['pageInChapter'] as int?,
-              raw['totalPagesInChapter'] as int?,
-            ],
-          );
+        if (existing == 0) {
+          List<dynamic> list;
+          try {
+            list = jsonDecode(entry.value) as List<dynamic>;
+          } catch (_) {
+            await customStatement(
+              'DELETE FROM preferences WHERE key = ?',
+              [entry.key],
+            );
+            continue;
+          }
+          for (final dynamic raw in list) {
+            if (raw is! Map<String, dynamic>) continue;
+            final int sectionIndex = raw['sectionIndex'] as int? ?? 0;
+            final int normCharOffset = raw['normCharOffset'] as int? ?? 0;
+            final String label = raw['label'] as String? ?? '';
+            final DateTime createdAt = DateTime.tryParse(
+                  raw['createdAt'] as String? ?? '',
+                ) ??
+                DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+            final int rowBookId = raw['ttuBookId'] as int? ?? ttuBookId;
+            await customStatement(
+              'INSERT OR IGNORE INTO bookmarks '
+              '(ttu_book_id, section_index, norm_char_offset, label, '
+              'created_at, book_title, page_in_chapter, total_pages_in_chapter) '
+              'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+              [
+                rowBookId,
+                sectionIndex,
+                normCharOffset,
+                label,
+                createdAt.millisecondsSinceEpoch,
+                raw['bookTitle'] as String?,
+                raw['pageInChapter'] as int?,
+                raw['totalPagesInChapter'] as int?,
+              ],
+            );
+          }
         }
         await customStatement(
           'DELETE FROM preferences WHERE key = ?',

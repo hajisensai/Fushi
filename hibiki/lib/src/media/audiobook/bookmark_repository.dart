@@ -129,29 +129,31 @@ class BookmarkRepository {
           ..addColumns([_db.bookmarks.id.count()]))
         .map((row) => row.read(_db.bookmarks.id.count()) ?? 0)
         .getSingle();
-    if (existing > 0) return;
-    final List<dynamic> list;
-    try {
-      list = jsonDecode(raw) as List<dynamic>;
-    } catch (_) {
-      return;
-    }
-    for (final dynamic e in list) {
-      if (e is! Map<String, dynamic>) continue;
-      final bookmark = Bookmark.fromJson(e);
-      await addBookmark(
-        ttuBookId,
-        Bookmark(
-          sectionIndex: bookmark.sectionIndex,
-          normCharOffset: bookmark.normCharOffset,
-          label: bookmark.label,
-          createdAt: bookmark.createdAt,
-          ttuBookId: bookmark.ttuBookId ?? ttuBookId,
-          pageInChapter: bookmark.pageInChapter,
-          totalPagesInChapter: bookmark.totalPagesInChapter,
-          bookTitle: bookmark.bookTitle,
-        ),
-      );
+    if (existing == 0) {
+      final List<dynamic> list;
+      try {
+        list = jsonDecode(raw) as List<dynamic>;
+      } catch (_) {
+        await _db.deletePref(_key(ttuBookId));
+        return;
+      }
+      for (final dynamic e in list) {
+        if (e is! Map<String, dynamic>) continue;
+        final bookmark = Bookmark.fromJson(e);
+        await addBookmark(
+          ttuBookId,
+          Bookmark(
+            sectionIndex: bookmark.sectionIndex,
+            normCharOffset: bookmark.normCharOffset,
+            label: bookmark.label,
+            createdAt: bookmark.createdAt,
+            ttuBookId: bookmark.ttuBookId ?? ttuBookId,
+            pageInChapter: bookmark.pageInChapter,
+            totalPagesInChapter: bookmark.totalPagesInChapter,
+            bookTitle: bookmark.bookTitle,
+          ),
+        );
+      }
     }
     await _db.deletePref(_key(ttuBookId));
   }
