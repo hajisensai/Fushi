@@ -57,7 +57,7 @@ class LanguageUtils {
 
   static const KanaKit _kanaKit = KanaKit();
 
-  static const Map<DictionaryEntry, List<RubyTextData>> _furiganaCache = {};
+  static final Map<DictionaryEntry, List<RubyTextData>> _furiganaCache = {};
 
   /// Get whether or not a code point is within the ranges. Assumes [ranges]
   /// is a two element list of integers.

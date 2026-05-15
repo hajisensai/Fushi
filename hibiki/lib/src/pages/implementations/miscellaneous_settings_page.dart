@@ -59,10 +59,12 @@ class _MiscellaneousSettingsPageState
         {'alias': key},
       );
       if (ok == true && mounted) {
+        final messenger = ScaffoldMessenger.of(context);
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString(iconPresetKey, key);
+        if (!mounted) return;
         setState(() => _currentIcon = key);
-        ScaffoldMessenger.of(context).showSnackBar(
+        messenger.showSnackBar(
           SnackBar(content: Text(t.icon_switch_success)),
         );
       }

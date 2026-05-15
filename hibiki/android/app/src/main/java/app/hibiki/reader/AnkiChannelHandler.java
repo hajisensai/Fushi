@@ -55,7 +55,10 @@ public class AnkiChannelHandler {
 
                 switch (call.method) {
                     case "addNote":
-                        if (fields == null || fields.isEmpty()) {
+                        if (model == null || deck == null) {
+                            result.error("MISSING_ARG",
+                                "model and deck are required", null);
+                        } else if (fields == null || fields.isEmpty()) {
                             result.error("INVALID_FIELDS",
                                 "fields is null or empty", null);
                         } else {
@@ -68,9 +71,11 @@ public class AnkiChannelHandler {
                         }
                         break;
                     case "checkForDuplicates":
-                        if (ankiDroid.shouldRequestPermission()) {
+                        if (models == null || key == null) {
+                            result.error("MISSING_ARG",
+                                "models and key are required", null);
+                        } else if (ankiDroid.shouldRequestPermission()) {
                             result.success(false);
-                            return;
                         } else {
                             new Handler(Looper.getMainLooper()).post(() ->
                                 result.success(checkForDuplicates(models, key, reading, readingFieldIndices)));
@@ -87,7 +92,10 @@ public class AnkiChannelHandler {
                         }
                         break;
                     case "getFieldList":
-                        if (requirePermission(result)) {
+                        if (model == null) {
+                            result.error("MISSING_ARG",
+                                "model is required", null);
+                        } else if (requirePermission(result)) {
                             Long mid = ankiDroid.findModelIdByName(model, 1);
                             if (mid == null) {
                                 result.error("MODEL_NOT_FOUND",
@@ -108,6 +116,11 @@ public class AnkiChannelHandler {
                         result.success(true);
                         break;
                     case "addFileToMedia":
+                        if (filename == null || preferredName == null) {
+                            result.error("MISSING_ARG",
+                                "filename and preferredName are required", null);
+                            break;
+                        }
                         File file = new File(filename);
                         Uri fileUri = FileProvider.getUriForFile(
                             activity, BuildConfig.APPLICATION_ID + ".provider", file);
@@ -121,8 +134,13 @@ public class AnkiChannelHandler {
                         ContentResolver contentResolver = activity.getContentResolver();
                         Uri returnUri = contentResolver.insert(
                             FlashCardsContract.AnkiMedia.CONTENT_URI, contentValues);
-                        result.success(
-                            new File(returnUri.getPath()).toString().substring(1));
+                        if (returnUri == null || returnUri.getPath() == null) {
+                            result.error("MEDIA_INSERT_FAILED",
+                                "AnkiDroid media insert returned null", null);
+                        } else {
+                            result.success(
+                                new File(returnUri.getPath()).toString().substring(1));
+                        }
                         break;
                     default:
                         result.notImplemented();

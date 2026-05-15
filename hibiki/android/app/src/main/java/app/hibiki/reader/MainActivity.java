@@ -251,6 +251,15 @@ public class MainActivity extends AudioServiceActivity {
                             result.error("INVALID_ARG", "destPath required", null);
                             return;
                         }
+                        // Only one SAF picker can be pending at a time because
+                        // startActivityForResult uses a single request code.
+                        // Reject concurrent requests to avoid silently dropping
+                        // the previous caller's result.
+                        if (pendingSafResult != null) {
+                            result.error("BUSY",
+                                "A SAF directory pick is already in progress", null);
+                            return;
+                        }
                         pendingSafResult = result;
                         pendingSafDestPath = destPath;
                         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
@@ -295,10 +304,22 @@ public class MainActivity extends AudioServiceActivity {
                 SharedPreferences prefs = getSharedPreferences(SPLASH_PREFS, MODE_PRIVATE);
                 switch (call.method) {
                     case "setSplashColor": {
-                        Map<String, Object> args = (Map<String, Object>) call.arguments;
-                        Number colorNumber = (Number) args.get("color");
-                        int color = colorNumber.intValue();
-                        boolean isDark = (boolean) args.get("isDark");
+                        Object rawArgs = call.arguments;
+                        if (!(rawArgs instanceof Map)) {
+                            result.error("INVALID_ARG",
+                                "setSplashColor requires a Map argument", null);
+                            break;
+                        }
+                        Map<?, ?> args = (Map<?, ?>) rawArgs;
+                        Object colorObj = args.get("color");
+                        Object isDarkObj = args.get("isDark");
+                        if (!(colorObj instanceof Number) || !(isDarkObj instanceof Boolean)) {
+                            result.error("INVALID_ARG",
+                                "color (Number) and isDark (Boolean) are required", null);
+                            break;
+                        }
+                        int color = ((Number) colorObj).intValue();
+                        boolean isDark = (Boolean) isDarkObj;
                         prefs.edit()
                              .putInt("bg_color", color)
                              .putBoolean("is_dark", isDark)
@@ -463,25 +484,27 @@ public class MainActivity extends AudioServiceActivity {
                     break;
                 }
                 case "setClipboardMonitoring": {
-                    Boolean enabled = (Boolean) call.arguments;
+                    Object enabledObj = call.arguments;
+                    boolean enabled = enabledObj instanceof Boolean && (Boolean) enabledObj;
                     FloatingDictService svc = FloatingDictService.getInstance();
                     if (svc != null) {
-                        svc.setClipboardMonitoring(enabled != null && enabled);
+                        svc.setClipboardMonitoring(enabled);
                     }
                     result.success(null);
                     break;
                 }
                 case "setSearchText": {
-                    String text = (String) call.arguments;
+                    Object textObj = call.arguments;
                     FloatingDictService svc = FloatingDictService.getInstance();
-                    if (svc != null && text != null) {
-                        svc.setSearchText(text.trim());
+                    if (svc != null && textObj instanceof String) {
+                        svc.setSearchText(((String) textObj).trim());
                     }
                     result.success(null);
                     break;
                 }
                 case "searchResult": {
-                    String json = (String) call.arguments;
+                    Object jsonObj = call.arguments;
+                    String json = jsonObj instanceof String ? (String) jsonObj : null;
                     FloatingDictService svc = FloatingDictService.getInstance();
                     if (svc != null) {
                         svc.onSearchResult(json);

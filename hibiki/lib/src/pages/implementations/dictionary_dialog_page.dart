@@ -22,6 +22,18 @@ class DictionaryDialogPage extends BasePage {
 
 class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
   int? _selectedOrder;
+  final ScrollController _contentScrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _contentScrollController.dispose();
+    for (final notifier in _notifiersByDictionary.values) {
+      notifier.dispose();
+    }
+    _notifiersByDictionary.clear();
+    _formatNotifier.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -372,20 +384,18 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
         freqDicts.isEmpty &&
         pitchDicts.isEmpty &&
         kanjiDicts.isEmpty;
-    ScrollController contentController = ScrollController();
-
     return SizedBox(
       width: double.maxFinite,
       child: RawScrollbar(
         thickness: 3,
         thumbVisibility: true,
-        controller: contentController,
+        controller: _contentScrollController,
         child: Padding(
-          padding: contentController.hasClients
+          padding: _contentScrollController.hasClients
               ? Spacing.of(context).insets.onlyRight.normal
               : EdgeInsets.zero,
           child: SingleChildScrollView(
-            controller: contentController,
+            controller: _contentScrollController,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [

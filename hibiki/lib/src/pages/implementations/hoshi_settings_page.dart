@@ -395,6 +395,14 @@ class HoshiSettingsDialogPage extends BasePage {
 }
 
 class _HoshiSettingsDialogPageState extends BasePageState {
+  final ScrollController _contentScrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _contentScrollController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
@@ -421,15 +429,14 @@ class _HoshiSettingsDialogPageState extends BasePageState {
   }
 
   Widget _buildContent() {
-    final controller = ScrollController();
     return SizedBox(
       width: double.maxFinite,
       child: RawScrollbar(
         thickness: 3,
         thumbVisibility: true,
-        controller: controller,
+        controller: _contentScrollController,
         child: SingleChildScrollView(
-          controller: controller,
+          controller: _contentScrollController,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [

@@ -26,6 +26,12 @@ abstract class BaseMediaSearchBarState<T extends BaseMediaSearchBar>
   Duration get searchDelay;
 
   @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return FloatingSearchBar(
       isScrollControlled: true,

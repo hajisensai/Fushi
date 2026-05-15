@@ -203,6 +203,8 @@ class AppModel with ChangeNotifier {
   late final GlobalKey<NavigatorState> _navigatorKey =
       GlobalKey<NavigatorState>();
 
+  BuildContext? get _ctx => _navigatorKey.currentContext;
+
   /// Used to get the versioning metadata of the app. See [initialise].
   RouteObserver<PageRoute> get routeObserver => _routeObserver;
   final RouteObserver<PageRoute> _routeObserver = RouteObserver<PageRoute>();
@@ -2229,8 +2231,11 @@ class AppModel with ChangeNotifier {
             result.error.isNotEmpty ? result.error : t.import_failed);
       }
 
-      final name = result.title.trim();
-      if (name.isEmpty) {
+      final name = path.basename(result.title.trim()).replaceAll(
+            RegExp(r'[/\\]'),
+            '_',
+          );
+      if (name.isEmpty || name == '.' || name == '..') {
         throw Exception('Dictionary title is empty');
       }
 
@@ -2253,6 +2258,10 @@ class AppModel with ChangeNotifier {
       final innerDataDir = Directory(path.join(tempOutputDir.path, name));
       final finalResourceDirectory =
           Directory(path.join(dictionaryResourceDirectory.path, name));
+      if (!path.isWithin(dictionaryResourceDirectory.path,
+          finalResourceDirectory.path)) {
+        throw Exception('Invalid dictionary title: path traversal detected');
+      }
       if (finalResourceDirectory.existsSync()) {
         finalResourceDirectory.deleteSync(recursive: true);
       }

@@ -598,7 +598,10 @@ class _CustomFontsPageState extends BasePageState {
       }
 
       if (downloadedUrl == null) {
-        throw lastError ?? StateError('All sources failed');
+        final Object err = lastError ?? Exception('All sources failed');
+        if (err is Exception) throw err;
+        if (err is Error) throw err;
+        throw Exception(err.toString());
       }
 
       if (mounted) Navigator.pop(context);

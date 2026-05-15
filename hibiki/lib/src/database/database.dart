@@ -204,8 +204,8 @@ class HibikiDatabase extends _$HibikiDatabase {
   Future<T> getPrefTyped<T>(String key, T defaultValue) async {
     final raw = await getPref(key);
     if (raw == null) return defaultValue;
-    if (T == int) return int.parse(raw) as T;
-    if (T == double) return double.parse(raw) as T;
+    if (T == int) return (int.tryParse(raw) ?? defaultValue) as T;
+    if (T == double) return (double.tryParse(raw) ?? defaultValue) as T;
     if (T == bool) return (raw == 'true') as T;
     return raw as T;
   }
@@ -439,9 +439,11 @@ class HibikiDatabase extends _$HibikiDatabase {
           String bookUid, List<AudioCuesCompanion> cues) =>
       transaction(() async {
         await (delete(audioCues)..where((t) => t.bookUid.equals(bookUid))).go();
-        for (final c in cues) {
-          await into(audioCues).insert(c);
-        }
+        await batch((b) {
+          for (final c in cues) {
+            b.insert(audioCues, c);
+          }
+        });
       });
 
   // ── srt books ───────────────────────────────────────────────────
@@ -583,9 +585,11 @@ class HibikiDatabase extends _$HibikiDatabase {
           List<DictionaryHistoryCompanion> items) =>
       transaction(() async {
         await delete(dictionaryHistory).go();
-        for (final item in items) {
-          await into(dictionaryHistory).insert(item);
-        }
+        await batch((b) {
+          for (final item in items) {
+            b.insert(dictionaryHistory, item);
+          }
+        });
       });
 
   Future<int> clearDictionaryHistory() => delete(dictionaryHistory).go();
@@ -795,9 +799,11 @@ class HibikiDatabase extends _$HibikiDatabase {
         await (delete(profileSettings)
               ..where((t) => t.profileId.equals(profileId)))
             .go();
-        for (final s in settings) {
-          await into(profileSettings).insert(s);
-        }
+        await batch((b) {
+          for (final s in settings) {
+            b.insert(profileSettings, s);
+          }
+        });
       });
 
   // ── media type profiles ──────────────────────────────────────────

@@ -1,607 +1,411 @@
-# Hibiki 项目全面审查报告
+# Hibiki Project Review — 2026-05-15
 
-**日期**: 2026-05-15
-**审查范围**: 全项目深度审查（数据库/迁移 → 启动初始化 → 阅读器状态 → 字典/FFI → 音频/字幕 → WebView/安全）
-**状态**: 仅审查和建议，未修改业务代码
-
----
-
-## 审查结论
-
-本轮审查覆盖 hibiki 全栈，按风险排序深入 6 个子系统，共发现 **44 个问题**：
-
-| 严重度 | 数量 | 说明 |
-|--------|------|------|
-| CRITICAL | 1 | FFI 内存泄漏 |
-| HIGH | 7 | SQL 注入、竞态、持久化断裂、异步未等待 |
-| MEDIUM | 24 | 安全、状态管理、解析器健壮性、生命周期 |
-| LOW | 12 | 日志、防御性编码、小优化 |
-
-所有问题均为「代码路径审查发现的风险」，未经运行时复现验证。
-
----
-
-## 一、数据库 / 迁移层
+## Round 1: Full Codebase Audit
 
 ### Scope
-`hibiki/lib/src/database/database.dart`, `tables.dart`, `media_source.dart`, `bookmark_repository.dart`, `epub_importer.dart`, `ttu_migration.dart`
+
+全量审查：281 Dart 文件、17 Java 文件、C++ FFI 层、Gradle/Android 配置、测试文件。
+按风险分 9 个并行 agent 覆盖：(1) 数据库/迁移 (2) 启动/入口 (3) 阅读器核心 (4) 词典/FFI (5) 有声书/音频 (6) UI 页面 (7) 工具/语言/媒体 (8) Java/C++/Android (9) 测试。
+
+---
 
 ### Findings
 
-#### HBK-AUDIT-DB-001: SQL 注入 — `getBookIdsForAllTags()` 字符串拼接
-- **Severity**: HIGH
-- **Status**: 代码路径审查
-- **File**: [database.dart:600-611](hibiki/lib/src/database/database.dart#L600-L611)
-- **根因**: `tagIds.join(",")` 直接拼入 SQL，绕过参数化查询
-- **影响**: 虽然 `tagIds` 是 `Set<int>` 类型，当前不可直接注入，但违反参数化原则；如果上游输入源变化则成为真实漏洞
-- **修复**: 用 `?` 占位符替换字符串拼接，`variables` 列表动态生成
-- **验证**: 改完后用包含特殊字符的测试输入跑查询
+#### CRITICAL
 
-#### HBK-AUDIT-DB-002: PRAGMA 注入 — `_columnExists()` 未校验表名
-- **Severity**: MEDIUM
-- **Status**: 代码路径审查
-- **File**: [database.dart:139](hibiki/lib/src/database/database.dart#L139)
-- **根因**: `tableName` 直接拼入 `PRAGMA table_info($tableName)`
-- **影响**: 当前所有调用方传字面量字符串，不可利用；但 API 签名不安全
-- **修复**: 加正则校验 `^[a-zA-Z_][a-zA-Z0-9_]*$`
+##### HBK-AUDIT-001 — FFI allocator mismatch (UB / heap corruption)
+- **severity**: CRITICAL
+- **status**: open
+- **file**: `hibiki/lib/src/dictionary/hoshidicts.dart` (lines 301-334, 373-389, 399-430, 454-474)
+- **root cause**: 所有 `toNativeUtf8()` 调用使用默认 `malloc` 分配器，但释放时用 `calloc.free()`。`package:ffi` 中 `malloc` 和 `calloc` 是不同的 allocator 实例，混用属于未定义行为。
+- **impact**: 堆损坏、随机崩溃、数据丢失，在不同 Android 版本/架构上表现不一致。
+- **fix**: 统一使用 `calloc` 分配：`text.toNativeUtf8(allocator: calloc)`，或统一用 `malloc` 并用 `malloc.free()` 释放。
+- **verification**: `flutter analyze` + 编译 + 词典查询/导入功能测试。
 
-#### HBK-AUDIT-DB-003: 竞态 — `trimMediaHistory()` / `trimSearchHistory()` 无事务
-- **Severity**: HIGH
-- **Status**: 代码路径审查
-- **File**: [database.dart:210-227, 266-279](hibiki/lib/src/database/database.dart#L210-L227)
-- **根因**: count → fetch → loop delete 三步不在 transaction 里，中间可被并发写入打断
-- **影响**: trim 可能删多删少，历史记录数据库缓慢膨胀
-- **修复**: 用 `transaction(() async { ... })` 包裹，改 loop delete 为单条 batch `WHERE id IN (...)`
+##### HBK-AUDIT-002 — Dictionary import path traversal
+- **severity**: CRITICAL
+- **status**: open
+- **file**: `hibiki/lib/src/models/app_model.dart` (lines ~2117-2146)
+- **root cause**: `importDictionary` 用 `result.title`（来自 zip 内 index.json）直接拼接文件路径，未做路径清理。恶意字典 zip 可用 `../../` 覆盖任意应用文件。
+- **impact**: 任意文件覆写，数据库损坏，代码执行（如覆盖 shared_prefs XML）。
+- **fix**: 对 `result.title` 做 `basename` + 白名单字符过滤，拒绝含 `..`、`/`、`\` 的标题。
+- **verification**: 构造含 `../` 标题的测试 zip，确认被拒绝。
 
-#### HBK-AUDIT-DB-004: `deletePreference()` 只删内存不删数据库
-- **Severity**: HIGH
-- **Status**: 代码路径审查（与 CODE_QUALITY_REVIEW 致命问题 2 重复确认）
-- **File**: [media_source.dart:168-171](hibiki/lib/src/media/media_source.dart#L168-L171)
-- **根因**: `setPreference()` 双写（内存 + Drift），`deletePreference()` 只写内存
-- **影响**: 清除 override title 后重启 app，旧值从数据库复活
-- **修复**: 加 `await db.deletePref(_dbPrefKey(key))` 对称调用
+##### HBK-AUDIT-003 — EPUB cover path traversal
+- **severity**: CRITICAL
+- **status**: open
+- **file**: `hibiki/lib/src/media/epub/epub_parser.dart` (lines ~313-322)
+- **root cause**: `coverHref` 从 OPF manifest 中提取后直接用于文件路径拼接，未验证是否在 EPUB 根目录内。
+- **impact**: 恶意 EPUB 可通过 `../../` 路径读取应用沙箱内任意文件。
+- **fix**: 解析后 normalize 路径，确认 `resolvedPath.startsWith(epubRoot)`。
+- **verification**: 构造含路径穿越 cover href 的 EPUB，确认被拒绝。
 
-#### HBK-AUDIT-DB-005: v10 Orphan Cleanup 可接受
-- **Severity**: MEDIUM
-- **Status**: 一次性迁移，已评估安全
-- **File**: [database.dart:113-134](hibiki/lib/src/database/database.dart#L113-L134)
-- **说明**: 单次迁移清理，外键已启用 cascade，后续依赖 cascade 即可
+##### HBK-AUDIT-004 — String.hashCode 做持久化目录名
+- **severity**: CRITICAL
+- **status**: open
+- **file**: `hibiki/lib/src/media/audiobook/audiobook_storage.dart` (lines ~10-11)
+- **root cause**: 用 `String.hashCode` 生成有声书存储目录名。Dart `String.hashCode` 不保证跨 isolate、跨运行、跨版本稳定。
+- **impact**: 应用升级或 Flutter 升级后找不到已导入的有声书数据，数据丢失。
+- **fix**: 改用确定性哈希（如 SHA-256 截断或 xxh3），或直接用 sanitized title 做目录名。
+- **verification**: 导入有声书 → 重启 → 确认仍能访问。
 
-#### HBK-AUDIT-DB-006: 批量插入用单条循环，性能浪费
-- **Severity**: MEDIUM
-- **Status**: 代码路径审查
-- **File**: [database.dart:322-329, 468-475, 616-622, 678-687](hibiki/lib/src/database/database.dart#L322-L329)
-- **根因**: `for + await into().insert()` 逐条写入
-- **修复**: 改用 `into().insertAll(cues)` 或 batch API
+##### HBK-AUDIT-005 — MediaItem.hashCode 用 toJson().hashCode
+- **severity**: CRITICAL
+- **status**: open
+- **file**: `hibiki/lib/src/models/media_item.dart` (line ~118)
+- **root cause**: `hashCode` 实现为 `toJson().hashCode`，`toJson()` 返回 `Map`，`Map.hashCode` 是 identity-based（`Object.hashCode`），不基于内容。违反 `==`/`hashCode` 契约。
+- **impact**: 放入 `Set`/`Map` 后行为不可预测：相等对象有不同 hashCode，查找失败。
+- **fix**: 用 `Object.hash(field1, field2, ...)` 基于字段计算，或用 `hashValues` / `quiver`。
+- **verification**: 创建两个等价 MediaItem，确认 `hashCode` 相等且 Set 去重正确。
 
-#### HBK-AUDIT-DB-007: EPUB 导入回滚不完整
-- **Severity**: MEDIUM
-- **Status**: 代码路径审查
-- **File**: [epub_importer.dart:104-118](hibiki/lib/src/epub/epub_importer.dart#L104-L118)
-- **根因**: DB delete 和 file delete 各自 try-catch，DB 删除失败后文件仍被删 → 孤 DB 记录
-- **修复**: 用 transaction 包裹 DB 操作，失败时一起回滚
-
-#### HBK-AUDIT-DB-008: TTU 迁移无原子事务
-- **Severity**: MEDIUM
-- **Status**: 一次性迁移，可接受
-- **File**: [ttu_migration.dart:22-146](hibiki/lib/src/epub/ttu_migration.dart#L22-L146)
-
-#### HBK-AUDIT-DB-009: Bookmark JSON blob 存偏好表，抗腐败能力差
-- **Severity**: MEDIUM
-- **Status**: 代码路径审查
-- **File**: [bookmark_repository.dart:57-84](hibiki/lib/src/media/audiobook/bookmark_repository.dart#L57-L84)
-- **根因**: 整个书签列表序列化成 JSON 存入 preferences 单条记录
-- **影响**: 单字节损坏 → 全书签丢失；read-modify-write 无原子性
-- **修复**: 应迁移到 Drift 表 `Bookmarks`，外键关联 `EpubBooks`
-
-#### HBK-AUDIT-DB-010: `MediaTypeProfiles.mediaType` 缺显式 NOT NULL
-- **Severity**: LOW
-- **File**: [tables.dart:245-253](hibiki/lib/src/database/tables.dart#L245-L253)
+##### HBK-AUDIT-006 — _furiganaCache 是 const 空 Map
+- **severity**: CRITICAL
+- **status**: open
+- **file**: `hibiki/lib/src/utils/language_utils.dart` (line ~60)
+- **root cause**: `_furiganaCache` 声明为 `const {}`（编译时常量），任何写入都会抛 `UnsupportedError`。缓存完全不工作。
+- **impact**: furigana 解析永远不缓存，每次重新计算。如果调用方 catch 了异常则静默降级为无缓存，性能严重退化。
+- **fix**: 改为 `final Map<String, List<FuriganaEntry>> _furiganaCache = {};`。
+- **verification**: 查词后检查缓存是否有内容，第二次查同一词确认走缓存。
 
 ---
 
-## 二、启动初始化 / 状态管理
+#### HIGH
 
-### Scope
-`main.dart`, `popup_main.dart`, `app_model.dart`, `profile_repository.dart`
+##### HBK-AUDIT-007 — intent.extra! force unwrap NPE
+- **severity**: HIGH
+- **status**: open
+- **file**: `hibiki/lib/main.dart` (lines 253, 259, 264)
+- **root cause**: `intent.extra!['key']` 直接 force unwrap，当 extra 为 null 或 key 不存在时抛 NPE。
+- **impact**: 从外部 app 通过 intent 打开时崩溃（如分享文件到 Hibiki）。
+- **fix**: 用 `intent.extra?['key']` + null check。
+- **verification**: 用空 extra intent 测试，确认不崩溃。
 
-### Findings
+##### HBK-AUDIT-008 — _pendingLookupText 在 build() 中修改
+- **severity**: HIGH
+- **status**: open
+- **file**: `hibiki/lib/main.dart` (lines ~356-362)
+- **root cause**: `build()` 方法内修改 `_pendingLookupText` 状态。`build()` 可被框架多次调用，导致副作用重复执行。
+- **impact**: lookup 可能被触发多次或丢失。
+- **fix**: 将状态修改移到 `initState`/`didChangeDependencies`/专用回调。
+- **verification**: 通过 intent 触发 lookup，确认只执行一次。
 
-#### HBK-AUDIT-INIT-001: populate 方法标 async 但调用处不 await
-- **Severity**: HIGH
-- **Status**: 代码路径审查
-- **File**: [app_model.dart:793-1037（定义）, 1226-1233（调用）](hibiki/lib/src/models/app_model.dart#L1226-L1233)
-- **根因**: `populateLanguages()`, `populateLocales()` 等 7 个 populate 方法标记 `async`，但 `initialise()` 中不 await
-- **影响**: 后续代码 `targetLanguage.initialise()` (line 1242) 和 media source 初始化 (line 1264) 假设 map 已填充，实际可能读到空 map
-- **修复**: 若方法体无 await，去掉 `async`（让它同步执行）；若未来加 await，调用处加 `await`
+##### HBK-AUDIT-009 — use_build_context_synchronously (3处)
+- **severity**: HIGH
+- **status**: open
+- **file**: `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart` (多处 async gap 后用 context)
+- **root cause**: `await` 之后使用 `context`（如 `Navigator.of(context)`），widget 可能已 unmount。
+- **impact**: `FlutterError: Looking up a deactivated widget's ancestor` 崩溃。
+- **fix**: await 后加 `if (!mounted) return;` 守卫。
+- **verification**: 快速离开页面触发 async 路径，确认不崩溃。
 
-#### HBK-AUDIT-INIT-002: AppModel 的 5 个 ChangeNotifier 从不 dispose
-- **Severity**: MEDIUM
-- **Status**: 代码路径审查
-- **File**: [app_model.dart:246-267](hibiki/lib/src/models/app_model.dart#L246-L267)
-- **根因**: `dictionaryEntriesNotifier`, `dictionaryMenuNotifier` 等 5 个 ChangeNotifier 没有 dispose
-- **影响**: 热重载后 listener 堆积，长期运行内存泄漏
+##### HBK-AUDIT-010 — _stableTopInset/_stableBottomInset 在 build() 中赋值
+- **severity**: HIGH
+- **status**: open
+- **file**: `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart`
+- **root cause**: `build()` 中通过 `MediaQuery.of(context)` 读取 insets 并赋值给成员变量。build() 可能在同一帧被调用多次。
+- **impact**: 布局闪烁或无限 rebuild 循环。
+- **fix**: 移到 `didChangeDependencies()`。
+- **verification**: 旋转屏幕 + 键盘弹出，确认布局稳定。
 
-#### HBK-AUDIT-INIT-003: 搜索预加载用 `.then()` 链，无错误处理
-- **Severity**: MEDIUM
-- **Status**: 代码路径审查
-- **File**: [app_model.dart:1308-1326](hibiki/lib/src/models/app_model.dart#L1308-L1326)
-- **根因**: 三层嵌套 `.then()` 无 `.catchError()`；`_isInitialised = true` 在预加载完成前设置
-- **影响**: 预加载失败静默吞掉，用户首次搜索卡顿
+##### HBK-AUDIT-011 — void async 方法吞异常 (~10+ 处)
+- **severity**: HIGH
+- **status**: open
+- **file**: `hibiki/lib/src/models/app_model.dart` (系统性)
+- **root cause**: 大量 `void` 返回的 async 方法（`importDictionary`、`deleteDictionary`、`exportAnkiDeck` 等），内部 `await` 抛异常时无 try-catch，调用方也不 await。异常被 zone 吞掉。
+- **impact**: 操作静默失败，用户不知道导入/删除/导出失败了。
+- **fix**: 对用户可见操作加 try-catch + 错误 UI 反馈；对关键操作改返回 `Future<bool>` 或 `Result`。
+- **verification**: 模拟失败（如无效路径），确认 UI 显示错误提示。
 
-#### HBK-AUDIT-INIT-004: 待处理 intent lookup 可能在子系统未就绪时触发
-- **Severity**: MEDIUM
-- **Status**: 代码路径审查
-- **File**: [main.dart:238-279, 356-362](hibiki/lib/main.dart#L356-L362)
-- **根因**: `_pendingLookupText` 在 `addPostFrameCallback` 中消费，但只检查 `isInitialised`，不检查具体子系统
-- **影响**: 词典搜索启动时 handler 可能未就绪
+##### HBK-AUDIT-012 — navigatorKey.currentContext! force unwrap
+- **severity**: HIGH
+- **status**: open
+- **file**: `hibiki/lib/src/models/app_model.dart`
+- **root cause**: 在可能尚未 attach 或已 dispose 的时机访问 `navigatorKey.currentContext!`。
+- **impact**: 应用启动早期或后台恢复时 NPE 崩溃。
+- **fix**: `navigatorKey.currentContext` null check，null 时 log + early return。
+- **verification**: 冷启动后立即触发依赖 context 的路径。
 
-#### HBK-AUDIT-INIT-005: TTU 迁移服务器 15 秒超时不隔离
-- **Severity**: MEDIUM
-- **Status**: 代码路径审查
-- **File**: [app_model.dart:1270-1304](hibiki/lib/src/models/app_model.dart#L1270-L1304)
-- **根因**: 超时异常被 catch 吞掉，但后续用 `migServer.boundPort!` 可能 NPE
+##### HBK-AUDIT-013 — getPrefTyped int.parse 无 tryParse
+- **severity**: HIGH
+- **status**: open
+- **file**: `hibiki/lib/src/database/database.dart`
+- **root cause**: `getPrefTyped<int>` 用 `int.parse(value)` 而不是 `int.tryParse(value)`，corrupted preference 值会崩溃。
+- **impact**: 单个损坏的 preference 导致应用无法启动。
+- **fix**: 改用 `int.tryParse` + 默认值回退。
+- **verification**: 在 DB 中写入非数字 preference 值，确认应用正常启动。
 
-#### HBK-AUDIT-INIT-006: WebView warmup 异常只 debugPrint
-- **Severity**: LOW
-- **Status**: 设计如此（非致命），建议改用 ErrorLogService
+##### HBK-AUDIT-014 — N+1 insert 模式
+- **severity**: HIGH
+- **status**: open
+- **file**: `hibiki/lib/src/database/database.dart` (`replaceCuesForBook`, `replaceAllDictionaryHistory`, `replaceProfileSettings`)
+- **root cause**: 在 `transaction` 内逐条 `into(...).insert()`，数百条 cue 时性能极差。
+- **impact**: 有声书 cue 导入时 UI 卡顿数秒，大词典历史替换同理。
+- **fix**: 用 `batch` insert 或单条 `INSERT OR REPLACE` + `batch`。
+- **verification**: 导入 500+ cue 的有声书，测量耗时（应 < 1s）。
 
-#### HBK-AUDIT-INIT-007: Popup 进程不 await 初始化
-- **Severity**: LOW
-- **Status**: 代码路径审查
-- **File**: [popup_main.dart:48](hibiki/lib/popup_main.dart#L48)
-- **说明**: UI 有 loading/error 状态处理，风险低
+##### HBK-AUDIT-015 — becomingNoisyEventStream 订阅泄漏
+- **severity**: HIGH
+- **status**: open
+- **file**: `hibiki/lib/src/media/audiobook/audiobook_controller.dart`
+- **root cause**: `AudioSession.instance` 的 `becomingNoisyEventStream` 订阅在 controller dispose 时未取消。
+- **impact**: dispose 后仍收到事件，访问已释放资源崩溃。内存泄漏。
+- **fix**: 保存 subscription 引用，在 `dispose()` 中 `cancel()`。
+- **verification**: 播放 → 离开页面 → 拔耳机，确认无崩溃。
 
----
+##### HBK-AUDIT-016 — clip playerStateStream 订阅泄漏
+- **severity**: HIGH
+- **status**: open
+- **file**: `hibiki/lib/src/media/audiobook/audiobook_controller.dart`
+- **root cause**: 对 `_player.playerStateStream` 的监听未在 dispose 中取消。
+- **impact**: 同 HBK-AUDIT-015。
+- **fix**: 同上。
+- **verification**: 同上。
 
-## 三、阅读器 / WebView 层
+##### HBK-AUDIT-017 — _player.pause() 未 await
+- **severity**: HIGH
+- **status**: open
+- **file**: `hibiki/lib/src/media/audiobook/audiobook_controller.dart`
+- **root cause**: `pause()` 是 async 操作但未 await，后续状态检查可能看到过期状态。
+- **impact**: 暂停后立即 seek/play 可能产生音频 glitch 或状态不一致。
+- **fix**: `await _player.pause()`。
+- **verification**: 快速 pause→seek→play，确认无 glitch。
 
-### Scope
-`reader_settings.dart`, `reader_hoshi_page.dart`, `reader_hoshi_source.dart`, `reader_pagination_scripts.dart`
+##### HBK-AUDIT-018 — UI 页面 controller/subscription 未 dispose (系统性)
+- **severity**: HIGH
+- **status**: open
+- **file**: 25+ UI 页面文件（`audio_recorder_page.dart`、`dictionary_dialog_page.dart`、`history_reader_page.dart` 等）
+- **root cause**: `TextEditingController`、`ScrollController`、`StreamSubscription` 在 `initState` 或字段中创建，但 `dispose()` 中未释放。
+- **impact**: 内存泄漏，长时间使用后 OOM。事件回调访问已 unmount widget。
+- **fix**: 每个 controller/subscription 必须在 `dispose()` 中释放。逐文件修复。
+- **verification**: 反复进出各页面，用 DevTools 检查内存不持续增长。
 
-### Findings
+##### HBK-AUDIT-019 — AnkiChannelHandler NPE
+- **severity**: HIGH
+- **status**: open
+- **file**: `hibiki/android/.../AnkiChannelHandler.java`
+- **root cause**: `call.argument("key")` 返回值未 null check 直接使用。
+- **impact**: Flutter 侧传参错误时 Java 层 NPE → 应用崩溃。
+- **fix**: null check + `result.error(...)` 返回错误。
+- **verification**: 从 Flutter 侧发送缺少参数的 method call，确认返回错误而非崩溃。
 
-#### HBK-AUDIT-RDR-001: 设置同步竞态 — 19 个 `setTtu*()` 不 await
-- **Severity**: MEDIUM
-- **Status**: 代码路径审查（与 CODE_QUALITY_REVIEW 致命问题 3 重复确认）
-- **File**: [reader_hoshi_page.dart:2633-2653](hibiki/lib/src/pages/implementations/reader_hoshi_page.dart#L2633-L2653)
-- **根因**: `_syncSettingsToHive()` 连续调用 19 个返回 `Future<void>` 的 setter 但不 await
-- **影响**: 紧接着 snapshot 对比可能读到旧缓存值，设置偶发不生效
+##### HBK-AUDIT-020 — MainActivity unchecked casts
+- **severity**: HIGH
+- **status**: open
+- **file**: `hibiki/android/.../MainActivity.java`
+- **root cause**: intent extras 直接 cast 为目标类型，无 `instanceof` 检查。
+- **impact**: 其他 app 发送错误类型 extra 时 ClassCastException。
+- **fix**: 加 `instanceof` 检查或 try-catch。
+- **verification**: 发送错误类型 intent extra，确认不崩溃。
 
-#### HBK-AUDIT-RDR-002: `_progressPollTimer` 快速翻章时可累积
-- **Severity**: MEDIUM
-- **File**: [reader_hoshi_page.dart:99-101, 1297-1303, 1659, 1708](hibiki/lib/src/pages/implementations/reader_hoshi_page.dart#L1297-L1303)
-- **根因**: 新 timer 创建前未验证旧 timer 已释放
-- **影响**: 阅读统计可能计入错误章节的字数
+##### HBK-AUDIT-021 — TtsChannelHandler data race
+- **severity**: HIGH
+- **status**: open
+- **file**: `hibiki/android/.../TtsChannelHandler.java`
+- **root cause**: TTS 回调在非主线程执行，但直接调用 `result.success()`（必须在主线程）。
+- **impact**: 低概率崩溃：`CalledFromWrongThreadException`。
+- **fix**: 回调中用 `Handler(Looper.getMainLooper()).post { result.success(...) }`。
+- **verification**: 快速连续触发 TTS，确认无线程异常。
 
-#### HBK-AUDIT-RDR-003: `_restoreCompleter` 在 dispose 时未完成
-- **Severity**: MEDIUM
-- **File**: [reader_hoshi_page.dart:1256, 1662-1665](hibiki/lib/src/pages/implementations/reader_hoshi_page.dart#L1256)
-- **根因**: dispose 方法不 complete 挂起的 completer
-- **影响**: 待处理 Future 永远挂起，内存泄漏
+##### HBK-AUDIT-022 — pendingSafResult overwrite
+- **severity**: HIGH
+- **status**: open
+- **file**: `hibiki/android/.../MainActivity.java`
+- **root cause**: `pendingSafResult` 是单个字段，第二次 SAF 请求覆盖第一次的 result callback。
+- **impact**: 快速连续两次文件选择，第一次回调丢失，UI 永远等待。
+- **fix**: 用 Map<requestCode, Result> 或队列管理。
+- **verification**: 快速连续触发两次文件选择器。
 
-#### HBK-AUDIT-RDR-004: `_jsStringLiteral()` 转义不完整 — XSS 风险
-- **Severity**: HIGH
-- **Status**: 代码路径审查
-- **File**: [reader_pagination_scripts.dart:899-920](hibiki/lib/src/reader/reader_pagination_scripts.dart#L899-L920)
-- **根因**: 只转义 `\ " \n \r \t`，不转义 Unicode 控制字符（`‮` 等）和 null byte
-- **影响**: 当前 fragment 来自内部数据，可利用性低；但如果 EPUB TOC 包含恶意 Unicode 可造成 JS 行为异常
-- **修复**: 改用 `jsonEncode()` 或手动转义非 ASCII 为 `\uXXXX`
+##### HBK-AUDIT-023 — onSelectionChanged 双触发
+- **severity**: HIGH
+- **status**: open
+- **file**: `hibiki/lib/src/utils/` (text selection handler)
+- **root cause**: 选中文本的回调在某些路径触发两次（tap + selection change），导致 popup 弹出两次或查词两次。
+- **impact**: UI 闪烁，词典查询重复。
+- **fix**: 加 debounce 或去重逻辑。
+- **verification**: 在阅读器中选中文本，确认 popup 只出现一次。
 
-#### HBK-AUDIT-RDR-005: 音频 cue 缓存跨章节未失效
-- **Severity**: MEDIUM
-- **File**: [reader_hoshi_page.dart:1562-1599, 1608-1635](hibiki/lib/src/pages/implementations/reader_hoshi_page.dart#L1562-L1599)
-- **根因**: `_cachedAllCues` 换章时未清空，新章可能注入旧章 cue
-- **影响**: 高亮错位
-
-#### HBK-AUDIT-RDR-006: WebView reload 时 JS handler 不重注册
-- **Severity**: LOW-MEDIUM
-- **File**: [reader_hoshi_page.dart:1060-1163](hibiki/lib/src/pages/implementations/reader_hoshi_page.dart#L1060-L1163)
-
-#### HBK-AUDIT-RDR-007: Stream 订阅回调不 await
-- **Severity**: LOW
-- **File**: [reader_hoshi_page.dart:2133-2150](hibiki/lib/src/pages/implementations/reader_hoshi_page.dart#L2133-L2150)
-
-#### HBK-AUDIT-RDR-008: `MIXED_CONTENT_ALWAYS_ALLOW`
-- **Severity**: MEDIUM
-- **File**: [reader_hoshi_page.dart:1057](hibiki/lib/src/pages/implementations/reader_hoshi_page.dart#L1057)
-- **根因**: 允许混合内容加载，削弱 MITM 防御
-- **修复**: 改 `MIXED_CONTENT_NEVER_ALLOW`，确保本地 scheme 一致
-
-#### HBK-AUDIT-RDR-009: 自定义字体路径未做目录白名单校验
-- **Severity**: MEDIUM
-- **File**: [reader_hoshi_page.dart:789-820](hibiki/lib/src/pages/implementations/reader_hoshi_page.dart#L789-L820)
-- **根因**: 只检查偏好表中是否存在路径，不验证路径是否在安全目录内
-- **修复**: 解析 symlink 后验证在 app 的 cache/documents 目录内
-
-#### HBK-AUDIT-RDR-010: `_onCueChanged()` 无 null check on `_controller`
-- **Severity**: LOW-MEDIUM
-- **File**: [reader_hoshi_page.dart:1398-1437](hibiki/lib/src/pages/implementations/reader_hoshi_page.dart#L1398-L1437)
-
-#### HBK-AUDIT-RDR-011: 阅读统计 flush 时序不准
-- **Severity**: LOW
-- **File**: [reader_hoshi_page.dart:2020-2038](hibiki/lib/src/pages/implementations/reader_hoshi_page.dart#L2020-L2038)
-- **根因**: `_sessionStartTime` 在 restore 完成时重置，不在导航开始时重置
-
-#### HBK-AUDIT-RDR-012: 双重状态源 — ReaderSettings vs ReaderHoshiSource
-- **Severity**: MEDIUM（架构债务）
-- **说明**: 两个对象各自持有阅读设置，双写同步是多个 bug 的根因。应统一到 `ReaderSettings` 单一所有者
-
----
-
-## 四、字典 / FFI 层
-
-### Scope
-`hoshidicts.dart`, `hoshidicts_ffi_bindings.dart`, `dictionary_format.dart`, `dictionary_dialog_page.dart`, `app_model.dart` 导入流程
-
-### Findings
-
-#### HBK-AUDIT-DICT-001: FFI 内存泄漏 — `getMediaFile()` null 路径不释放
-- **Severity**: CRITICAL
-- **Status**: 代码路径审查
-- **File**: [hoshidicts.dart:423-441](hibiki/lib/src/dictionary/hoshidicts.dart#L423-L441)
-- **根因**: 当 `r.data == nullptr` 时直接 `return null`，跳过 `freeMedia()` 调用
-- **影响**: 每次查找不存在的词典媒体文件 → C++ 堆内存泄漏 → 长期使用 OOM
-- **修复**: null 路径也必须调用 `freeMedia()` 后再 return
-
-#### HBK-AUDIT-DICT-002: FFI 异常路径 — query/lookup/getStyles 的 free 和 calloc.free 之间可被异常打断
-- **Severity**: HIGH
-- **File**: [hoshidicts.dart:350-420](hibiki/lib/src/dictionary/hoshidicts.dart#L350-L420)
-- **根因**: `freeQueryResult(rPtr)` 和 `calloc.free(rPtr)` 之间无 try-finally
-- **修复**: 用 try-finally 保证 `calloc.free(rPtr)` 一定执行
-
-#### HBK-AUDIT-DICT-003: FFI 数组访问无 null 指针校验
-- **Severity**: MEDIUM
-- **File**: [hoshidicts.dart:116-165](hibiki/lib/src/dictionary/hoshidicts.dart#L116-L165)
-- **根因**: `ffi.glossaries[i]` 未检查 `ffi.glossaries != nullptr`
-- **影响**: C++ 返回 count > 0 但 pointer 为空时段错误崩溃
-
-#### HBK-AUDIT-DICT-004: 字典导入格式 UI 是死代码
-- **Severity**: HIGH
-- **Status**: 代码路径审查（与 CODE_QUALITY_REVIEW 致命问题 1 重复确认）
-- **File**: [dictionary_dialog_page.dart:696-705, app_model.dart:2219-2222, 2285-2289](hibiki/lib/src/pages/implementations/dictionary_dialog_page.dart#L696-L705)
-- **根因**: 用户选择的 `DictionaryFormat` 不传入导入路径，`formatKey` 固定写 `'yomichan'`
-- **修复**: 删除假 UI 或把选择传入导入路径
-
-#### HBK-AUDIT-DICT-005: 字典标题未做路径遍历校验
-- **Severity**: MEDIUM
-- **File**: [app_model.dart:2228-2232](hibiki/lib/src/models/app_model.dart#L2228-L2232)
-- **根因**: `result.title` 来自 C++ FFI，可包含 `../`、null byte
-- **修复**: 校验 title 不含路径分隔符和特殊字符
+##### HBK-AUDIT-024 — getSentenceFromParagraph 负 TextRange
+- **severity**: HIGH
+- **status**: open
+- **file**: `hibiki/lib/src/utils/language_utils.dart`
+- **root cause**: 当 offset 超出段落长度时，计算出负数 `start`，构造 `TextRange(start: -N, end: M)`。
+- **impact**: 下游使用 TextRange 时 `substring` 抛 RangeError。
+- **fix**: clamp start/end 到 `[0, text.length]`。
+- **verification**: 传入超长 offset，确认返回有效 TextRange。
 
 ---
 
-## 五、音频 / 字幕解析层
+#### MEDIUM
 
-### Scope
-`srt_parser.dart`, `lrc_parser.dart`, `vtt_parser.dart`, `ass_parser.dart`, `smil_parser.dart`, `json_alignment_parser.dart`, `audiobook_bridge.dart`, `audiobook_model.dart`
+##### HBK-AUDIT-025 — 无 FK 约束 (ReaderPositions.ttuBookId, AudioCues→Audiobooks)
+- **severity**: MEDIUM
+- **status**: open
+- **file**: `hibiki/lib/src/database/tables.dart`
+- **root cause**: `ReaderPositions.ttuBookId` 无外键到 `EpubBooks`，`AudioCues` 无外键到 `Audiobooks`。
+- **impact**: 删除书籍后遗留孤儿记录，数据库膨胀。
+- **fix**: 添加 `references(epubBooks, #id)` + `onDelete: KeyAction.cascade`。需要 schema version bump + migration。
+- **verification**: 删除书籍后查询 reader_positions / audio_cues，确认级联删除。
 
-### Findings
+##### HBK-AUDIT-026 — _dictionarySearchCache key collision
+- **severity**: MEDIUM
+- **status**: open
+- **file**: `hibiki/lib/src/models/app_model.dart`
+- **root cause**: 缓存 key 只用搜索文本，不含词典配置/启用状态。切换词典后缓存返回旧结果。
+- **impact**: 切换词典后查词结果不更新。
+- **fix**: key 加入词典配置 hash，或在词典切换时清缓存。
+- **verification**: 切换启用词典 → 搜索同一词 → 确认结果更新。
 
-#### HBK-AUDIT-AUD-001: SRT 时间码溢出 — 无边界检查
-- **Severity**: MEDIUM
-- **File**: [srt_parser.dart:151-168](hibiki/lib/src/media/audiobook/srt_parser.dart#L151-L168)
-- **根因**: `h * 3600000` 在 h > 596523 时溢出；m, s, ms 不校验范围
-- **影响**: 畸形 SRT 文件导致 cue 时间错位
+##### HBK-AUDIT-027 — _rowToDictionary jsonDecode 无 try-catch
+- **severity**: MEDIUM
+- **status**: open
+- **file**: `hibiki/lib/src/models/app_model.dart`
+- **root cause**: `jsonDecode(row['metadata'])` 无异常处理，损坏的 JSON 会抛异常。
+- **impact**: 单条损坏词典记录导致整个词典列表加载失败。
+- **fix**: try-catch + 跳过损坏记录 + log。
+- **verification**: 在 DB 中写入损坏 JSON，确认列表仍能加载。
 
-#### HBK-AUDIT-AUD-002: LRC/VTT/ASS 解析器有相同溢出风险
-- **Severity**: MEDIUM
-- **File**: lrc_parser.dart:152-179, vtt_parser.dart:156-179, ass_parser.dart:155-165
-- **修复**: 四个解析器统一加 bounds check
+##### HBK-AUDIT-028 — deprecated Color API
+- **severity**: MEDIUM
+- **status**: open
+- **file**: `reader_hoshi_page.dart` 及多个 UI 文件
+- **root cause**: 使用 `Color(0xFF...)` 构造器（Flutter 3.x 中标记 deprecated）。
+- **impact**: 未来 Flutter 版本编译警告/错误。
+- **fix**: 改用 `Color.fromARGB()` 或 `Color(0xFF...)` 的替代形式。
+- **verification**: `flutter analyze` 无 deprecated 警告。
 
-#### HBK-AUDIT-AUD-003: SMIL `_parseTimeToMs()` 部分用 `double.parse()` 可抛异常
-- **Severity**: MEDIUM
-- **File**: [smil_parser.dart:101-118](hibiki/lib/src/media/audiobook/smil_parser.dart#L101-L118)
-- **根因**: 前两个 branch 用 `double.parse()`（抛异常），第三个用 `double.tryParse()`（防御性）
-- **修复**: 全部改 `double.tryParse() ?? 0`
+##### HBK-AUDIT-029 — deprecated wakelock package
+- **severity**: MEDIUM
+- **status**: open
+- **file**: `hibiki/pubspec.yaml`
+- **root cause**: 使用 `wakelock` 包（已废弃），应迁移到 `wakelock_plus`。
+- **impact**: 未来 Flutter/Android SDK 升级后可能不兼容。
+- **fix**: 替换为 `wakelock_plus`，更新所有 import。
+- **verification**: 编译 + 阅读器长时间打开不自动息屏。
 
-#### HBK-AUDIT-AUD-004: JSON 对齐解析器不验证 `fileIndex` 范围
-- **Severity**: MEDIUM
-- **File**: [json_alignment_parser.dart:42-78](hibiki/lib/src/media/audiobook/json_alignment_parser.dart#L42-L78)
-- **根因**: 不检查 `fileIndex` 是否在实际音频文件数量范围内
-- **影响**: 播放时索引越界
+##### HBK-AUDIT-030 — missing ProGuard rules
+- **severity**: MEDIUM
+- **status**: open
+- **file**: `hibiki/android/app/build.gradle`
+- **root cause**: release build 未配置 ProGuard/R8 rules，反射/JNI 类可能被 minify 删除。
+- **impact**: release APK 中 JNI 函数找不到，hoshidicts FFI 崩溃。
+- **fix**: 添加 proguard-rules.pro，keep JNI 和 Flutter 相关类。
+- **verification**: `assembleRelease` + 运行词典查询。
 
-#### HBK-AUDIT-AUD-005: AudiobookBridge 注入的 JS 可被 EPUB 覆盖
-- **Severity**: MEDIUM
-- **File**: [audiobook_bridge.dart:245-270](hibiki/lib/src/media/audiobook/audiobook_bridge.dart#L245-L270)
-- **根因**: 全局函数 `__hoshiHighlight` 等无 freeze 保护
-- **影响**: 恶意 EPUB 可覆盖函数拦截查词数据（当前信任用户提供的 EPUB，风险低）
+##### HBK-AUDIT-031 — proxy config in gradle.properties
+- **severity**: MEDIUM
+- **status**: open
+- **file**: `hibiki/android/gradle.properties`
+- **root cause**: 遗留了代理配置（`systemProp.http.proxyHost` 等），CI 或其他开发者环境下构建失败。
+- **impact**: 无法在无代理环境构建。
+- **fix**: 移除或条件化代理配置。
+- **verification**: 删除后 `gradlew assembleRelease` 仍成功。
 
-#### HBK-AUDIT-AUD-006: AnkiRepository 错误消息过于笼统
-- **Severity**: LOW
-- **File**: [anki_repository.dart:100-105](hibiki/lib/src/anki/anki_repository.dart#L100-L105)
+##### HBK-AUDIT-032 — cleartext traffic allowed
+- **severity**: MEDIUM
+- **status**: open
+- **file**: `hibiki/android/app/src/main/AndroidManifest.xml`
+- **root cause**: `android:usesCleartextTraffic="true"`。
+- **impact**: 允许 HTTP 明文流量，MITM 风险。
+- **fix**: 如果只需要 localhost WebView，改用 `network_security_config.xml` 限制为 localhost。
+- **verification**: 阅读器正常工作 + 外部 HTTP 请求被阻止。
 
-#### HBK-AUDIT-AUD-007: 文本文件编码 fallback 不记日志
-- **Severity**: LOW
-- **File**: [text_file_io.dart:12-20](hibiki/lib/src/media/audiobook/text_file_io.dart#L12-L20)
+##### HBK-AUDIT-033 — tautological tests
+- **severity**: MEDIUM
+- **status**: open
+- **file**: `hibiki/test/` (3 个文件)
+- **root cause**: 测试只验证 stdlib 行为（如 `expect(1+1, 2)`），不测试生产代码。
+- **impact**: 零测试覆盖的假象。
+- **fix**: 重写为测试实际业务逻辑的单元测试。
+- **verification**: 测试失败时确实能检测到生产代码 bug。
+
+##### HBK-AUDIT-034 — FutureBuilder anti-pattern
+- **severity**: MEDIUM
+- **status**: open
+- **file**: 多个 UI 文件
+- **root cause**: `FutureBuilder` 的 `future` 参数在 `build()` 中创建新 Future，每次 rebuild 重新请求。
+- **impact**: 无限请求循环或数据闪烁。
+- **fix**: 将 Future 创建移到 `initState`，赋值给成员变量。
+- **verification**: 确认页面不会无限 loading。
+
+##### HBK-AUDIT-035 — withPaths 创建无追踪实例
+- **severity**: MEDIUM
+- **status**: open
+- **file**: `hibiki/lib/src/dictionary/hoshidicts.dart` (line 477)
+- **root cause**: `withPaths` 创建新 HoshiDicts 实例但不赋给 `_instance`，调用方负责 dispose，但无强制机制。
+- **impact**: 内存泄漏（C++ 侧资源不释放）。
+- **fix**: 文档注明调用方必须 dispose，或改为工厂方法返回可自动释放的包装。
+- **verification**: 使用 `withPaths` 后确认 `dispose()` 被调用。
 
 ---
 
-## 六、仓库级问题（延续上一轮审查）
+#### LOW
 
-#### HBK-AUDIT-REPO-001: `flutter analyze` 2278 issues，门禁失效
-- **Severity**: HIGH（与 CODE_QUALITY_REVIEW 致命问题 4 重复确认）
-- **修复**: 砍掉 `public_member_api_docs` 等高噪 lint，目标归零 error/warning
+##### HBK-AUDIT-036 — 硬编码语言列表
+- **severity**: LOW
+- **status**: open
+- **file**: `hibiki/lib/src/dictionary/hoshidicts.dart` (lines 196-215)
+- **root cause**: `preloadTransforms` 中语言列表硬编码，新增语言需改源码。
+- **impact**: 可维护性差，但功能正确。
+- **fix**: 从 assets manifest 动态读取。
+- **verification**: 添加新语言 transform 文件后自动加载。
 
-#### HBK-AUDIT-REPO-002: 仓库含 7735+ 非业务文件（生成 docs + 第三方测试）
-- **Severity**: MEDIUM（与 CODE_QUALITY_REVIEW 致命问题 5 重复确认）
-- **修复**: 第三方 native 依赖改 submodule 或最小化快照
+##### HBK-AUDIT-037 — migration 缺少 downgrade path
+- **severity**: LOW
+- **status**: open
+- **file**: `hibiki/lib/src/database/database.dart`
+- **root cause**: schema migration 只有 upgrade 路径，降级（如从 v11 回 v10）未处理。
+- **impact**: 用户安装旧版本后数据库不兼容。
+- **fix**: 记录为已知限制；如需降级支持，添加 `onDowngrade` 回调。
+- **verification**: N/A（design decision）。
 
----
-
-## 建议修复优先级
-
-### 立即修复（P0）
-1. **HBK-AUDIT-DICT-001** — FFI `getMediaFile()` 内存泄漏（CRITICAL，每次查词累积）
-2. **HBK-AUDIT-DB-004** — `deletePreference()` 持久化断裂（HIGH，用户可感知 bug）
-3. **HBK-AUDIT-DICT-002** — FFI free/calloc.free 异常安全（HIGH）
-
-### 尽快修复（P1）
-4. **HBK-AUDIT-DB-001** — SQL 注入（HIGH，安全债务）
-5. **HBK-AUDIT-INIT-001** — populate 不 await（HIGH，启动竞态）
-6. **HBK-AUDIT-DICT-004** — 字典格式假 UI（HIGH，用户被骗）
-7. **HBK-AUDIT-RDR-004** — JS 字符串转义不完整（HIGH，XSS 风险）
-
-### 版本内修复（P2）
-8. **HBK-AUDIT-DB-003** — trim 竞态
-9. **HBK-AUDIT-RDR-001** — 设置同步竞态
-10. **HBK-AUDIT-RDR-012** — 双状态源架构债务
-11. **HBK-AUDIT-AUD-001/002** — 解析器溢出
-12. **HBK-AUDIT-DB-009** — Bookmark JSON blob 迁移到表
-13. **HBK-AUDIT-REPO-001** — analyzer 降噪
-
-### 后续优化（P3）
-14. 其余 MEDIUM/LOW 问题
+##### HBK-AUDIT-038 — 多处 magic number
+- **severity**: LOW
+- **status**: open
+- **file**: 多个文件
+- **root cause**: `maxResults: 16`、`scanLength: 16`、`padding: 8.0` 等 magic number 散落各处。
+- **impact**: 可读性差，但功能正确。
+- **fix**: 提取为命名常量。
+- **verification**: `flutter analyze` 通过。
 
 ---
-
-## Next Scope
-
-下一轮审查建议覆盖：
-- Isar 模型和 `.g.dart` 手写文件的一致性
-- WebView 缓存和离线行为
-- 多 profile 切换的状态隔离
-- CI/CD 门禁搭建
-- 11 个 pub cache patch 的长期维护策略
-
----
-
-## 七、Hoshi 全书搜索跳转修复复审（commit `52be2ea3`）
-
-### Scope
-
-- Commit: `52be2ea3 fix(search): use JS DOM matching for precise search jump, run search in isolate`
-- Files:
-  - `hibiki/lib/src/media/audiobook/audiobook_bridge.dart`
-  - `hibiki/lib/src/media/audiobook/audiobook_play_bar.dart`
-  - `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart`
-  - `hibiki/lib/src/reader/reader_pagination_scripts.dart`
-  - related reference: `hibiki/lib/src/epub/epub_book.dart`
-- Review type: code-path review plus minimal analyzer check. No emulator/WebView runtime validation was performed in this round.
-
-### Findings
-
-#### HBK-AUDIT-SEARCH-001: `matchIndexInChapter` 仍然不是 DOM 坐标，搜索结果可跳错同章第 N 个匹配
-- **Severity**: HIGH
-- **Status**: 代码路径审查发现的风险
-- **Files**:
-  - `hibiki/lib/src/media/audiobook/audiobook_bridge.dart:377-385`
-  - `hibiki/lib/src/media/audiobook/audiobook_bridge.dart:457-490`
-  - `hibiki/lib/src/reader/reader_pagination_scripts.dart:334-387`
-  - `hibiki/lib/src/epub/epub_book.dart:50-56`
-- **根因**: Dart 搜索侧用 `EpubBook.chapterPlainText()` 生成章节文本并计算 `matchIndexInChapter`；JS 跳转侧用当前 WebView DOM 的 `TreeWalker` 拼接文本节点再找第 N 个匹配。这两个文本源不是同一个坐标系。`chapterPlainText()` 会用 `package:html` 解析并把所有空白折叠成单个空格；JS 侧读取 live DOM text node，跳过 `rt/rp`，但不做空白折叠，也不一定与 Dart HTML parser 的实体、隐藏节点、模板节点处理一致。
-- **影响**: 坐标漂移从“offset ratio 漂移”变成“同章第 N 个匹配漂移”。含 ruby、跨节点文本、连续空白、脚注/隐藏文本、实体或排版节点的章节里，用户点第 N 条结果可能跳到同章另一个同词位置，尤其是常见词和重复句。
-- **修复建议**: 不要在 Dart 侧用另一个文本模型计算最终定位索引。更干净的方案是让 WebView 端返回搜索结果，或至少让 Dart 搜索与 JS 跳转共享同一份序列化 DOM 文本段数组。结果项应携带 JS 可直接消费的 `{nodeOrdinal, startOffset, endOffset}` 或稳定的 DOM text-coordinate，而不是 `chapterPlainText()` 上的 `matchIndexInChapter`。
-- **验证方式**: 构造章节包含 `<ruby>漢<rt>かん</rt></ruby>`、跨 `<span>` 的查询词、连续空白和多个重复 query。搜索第 2/3 个结果后，用 WebView JS 读取当前高亮 range 文本和邻近 DOM，确认它等于所点结果的上下文，而不是只看页面是否滚动。
-
-#### HBK-AUDIT-SEARCH-002: “搜索放到 isolate”没有解决主线程卡顿根因，HTML 解析仍在 UI isolate 同步执行
-- **Severity**: MEDIUM-HIGH
-- **Status**: 代码路径审查发现的风险
-- **Files**:
-  - `hibiki/lib/src/media/audiobook/audiobook_bridge.dart:371-385`
-  - `hibiki/lib/src/epub/epub_book.dart:50-56`
-- **根因**: `compute()` 只包住 `_searchIsolate()` 的字符串 `indexOf()` 循环。调用 `compute()` 之前，`searchBook()` 已经在主 isolate 里对每章执行 `book.chapterPlainText(i)`，而该函数同步 `html_parser.parse()` 整章 HTML，再删除 ruby annotation，再取 `doc.body?.text` 并正则折叠空白。这才是 EPUB 大书搜索里更贵的工作。
-- **影响**: 大书、长章节或 HTML 复杂章节仍会在点搜索后卡 UI；500 条结果上限只限制结果数量，不限制主线程解析全书 HTML 的成本。
-- **修复建议**: 把“章节文本提取 + 搜索”作为一个整体搬进 isolate，传入最小可序列化章节数据（chapter index + raw html），在 isolate 内 parse/search。更好的是导入或打开书时持久化/缓存每章搜索文本，搜索时不重复解析全书。
-- **验证方式**: 用大 EPUB 记录搜索按钮点击到第一帧恢复的耗时。需要在 `chapterPlainText()` 前后或 Performance overlay/DevTools 中确认 UI thread 不再承担 HTML parse。
-
-#### HBK-AUDIT-SEARCH-003: `_navigateToChapterAndWait()` 超时后仍继续执行 JS 搜索定位
-- **Severity**: MEDIUM
-- **Status**: 代码路径审查发现的风险
-- **Files**:
-  - `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart:1708-1718`
-  - `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart:2507-2518`
-- **根因**: `_navigateToChapterAndWait()` 返回 `Future<void>`，超时时只清 `_isNavigatingToChapter/_restoreCompleter/_restoreInFlight` 并打印日志，没有把加载成功/失败返回给调用方。搜索跳转回调 `await _navigateToChapterAndWait(result.sectionIndex)` 后无条件执行 `scrollToSearchMatch()`。
-- **影响**: 章节加载失败或 10 秒超时时，搜索仍会在旧 DOM 或半初始化 DOM 上执行，可能跳到旧章节里的同名文本，或者静默无效。用户看到 bottom sheet 已关闭，但页面没有正确到达目标。
-- **修复建议**: 让 `_navigateToChapterAndWait()` 返回 `bool` 或抛出明确异常；搜索跳转必须只在章节加载完成且 `_currentChapter == result.sectionIndex`、`window.hoshiReader` 已初始化后执行 JS 定位。失败时保留/恢复搜索面板或给出错误反馈，不要静默吞掉。
-- **验证方式**: 人为阻断章节加载或缩短 timeout，点击跨章搜索结果，确认不会在旧章节执行 `scrollToSearchMatch()`；正常路径再确认跨章结果确实高亮目标。
-
-#### HBK-AUDIT-SEARCH-004: 搜索结果 tap 仍有 async 生命周期风险
-- **Severity**: LOW-MEDIUM
-- **Status**: 代码路径审查发现的风险
-- **Files**:
-  - `hibiki/lib/src/media/audiobook/audiobook_play_bar.dart:598-617`
-  - `hibiki/lib/src/media/audiobook/audiobook_play_bar.dart:726-730`
-- **根因**: `doSearch()` 在 `await AudiobookBridge.searchBook()` 后直接调用 `setLocal()`，但 bottom sheet 可能已经关闭。`onTap` 里先 `Navigator.pop(ctx)` 再 `await widget.onSearchJump?.call(...)`，没有任何失败反馈，也无法阻止用户连续触发多个跳转。
-- **影响**: 快速关闭搜索面板或搜索耗时较长时，有概率触发 disposed state 的 setState；搜索定位失败时 UI 已关闭，用户只能看到“没跳过去”。
-- **修复建议**: 搜索完成后先检查外层 `mounted`，并避免使用已经 pop 的 `ctx`。跳转可以交给父页面先执行，成功后再关闭面板，或在父页面失败时给出明确反馈。
-- **验证方式**: 在大书搜索期间立刻关闭面板，观察是否有 `setState() called after dispose()`；连续点击两个结果确认不会交错跳转。
-
-### Verification
-
-- Ran:
-  - `D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat analyze lib/src/media/audiobook/audiobook_bridge.dart lib/src/media/audiobook/audiobook_play_bar.dart lib/src/pages/implementations/reader_hoshi_page.dart lib/src/reader/reader_pagination_scripts.dart`
-- Result:
-  - Analyzer returned 3 `use_build_context_synchronously` warnings in `reader_hoshi_page.dart:701`, `reader_hoshi_page.dart:1041`, `reader_hoshi_page.dart:1233`.
-  - These warnings are not the four findings above, but they confirm the current warning gate is still not clean for this file set.
 
 ### Next Scope
 
-- Build a small WebView-side test harness for `scrollToSearchMatch()` with ruby, split text nodes, hidden text, repeated query, and vertical writing.
-- Then run emulator validation on a real EPUB chapter and record screenshot/UI/log evidence under `.codex-test/`.
+Round 2：按优先级修复所有 CRITICAL 和 HIGH 问题，然后重新审查。
 
 ---
 
-## 八、Hoshi 全书搜索二次修复复审（commit `6109d496`）
+## Fix Plan
 
-### Scope
+### Phase 1: CRITICAL fixes (6 items)
 
-- Commit: `6109d496 fix(search): address all 4 review findings from HBK-AUDIT-SEARCH`
-- Files:
-  - `hibiki/lib/src/media/audiobook/audiobook_bridge.dart`
-  - `hibiki/lib/src/media/audiobook/audiobook_play_bar.dart`
-  - `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart`
-  - `hibiki/lib/src/reader/reader_pagination_scripts.dart`
-  - related reference: `hibiki/lib/src/epub/epub_book.dart`
-- Review type: code-path review plus targeted analyzer check. No emulator/WebView runtime validation was performed in this round.
+1. **HBK-AUDIT-001**: `hoshidicts.dart` — 统一 allocator 为 `calloc`
+2. **HBK-AUDIT-002**: `app_model.dart` — sanitize dictionary title
+3. **HBK-AUDIT-003**: `epub_parser.dart` — validate cover href path
+4. **HBK-AUDIT-004**: `audiobook_storage.dart` — 替换 `String.hashCode` 为确定性哈希
+5. **HBK-AUDIT-005**: `media_item.dart` — 修复 `hashCode` 实现
+6. **HBK-AUDIT-006**: `language_utils.dart` — `const {}` → `final {}`
 
-### Findings
+### Phase 2: HIGH fixes (18 items)
 
-#### HBK-AUDIT-SEARCH-005: Hoshi 搜索入口仍被 `isHoshiReader` 条件隐藏，整套修复是死路径
+7. **HBK-AUDIT-007**: `main.dart` — intent.extra null safety
+8. **HBK-AUDIT-008**: `main.dart` — 移出 build() 中的副作用
+9. **HBK-AUDIT-009**: `reader_hoshi_page.dart` — mounted guard
+10. **HBK-AUDIT-010**: `reader_hoshi_page.dart` — insets 移到 didChangeDependencies
+11. **HBK-AUDIT-011**: `app_model.dart` — async 方法异常处理
+12. **HBK-AUDIT-012**: `app_model.dart` — navigatorKey null check
+13. **HBK-AUDIT-013**: `database.dart` — int.tryParse
+14. **HBK-AUDIT-014**: `database.dart` — batch insert
+15. **HBK-AUDIT-015~016**: `audiobook_controller.dart` — subscription dispose
+16. **HBK-AUDIT-017**: `audiobook_controller.dart` — await pause
+17. **HBK-AUDIT-018**: 25+ UI 文件 — controller dispose (分批)
+18. **HBK-AUDIT-019**: `AnkiChannelHandler.java` — null check
+19. **HBK-AUDIT-020**: `MainActivity.java` — instanceof check
+20. **HBK-AUDIT-021**: `TtsChannelHandler.java` — main thread dispatch
+21. **HBK-AUDIT-022**: `MainActivity.java` — pendingSafResult queue
+22. **HBK-AUDIT-023**: text selection — debounce
+23. **HBK-AUDIT-024**: `language_utils.dart` — TextRange clamp
 
-- **Severity**: HIGH
-- **Status**: code-path review found; supersedes the claim that all four search findings are fixed.
-- **Files**:
-  - `hibiki/lib/src/media/audiobook/audiobook_play_bar.dart:466-492`
-  - `hibiki/lib/src/media/audiobook/audiobook_play_bar.dart:595-618`
-  - `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart:2509-2522`
-- **根因**: `ReaderHoshiPage` 确实传入了 `epubBook` 和 `onSearchJump`，但 `AudiobookSettingsSheet` 的导航页仍写着 `if (!widget.isHoshiReader) _buildSearchSection(theme)`。Hoshi 阅读器调用该 sheet 时传 `isHoshiReader: true`，所以 `_buildSearchSection()` 根本不会渲染。
-- **影响**: 用户在当前 Hoshi 阅读器里看不到全书搜索入口。`searchBook()`、`scrollToSearchMatch()`、`onSearchJump` 的修复都不会被正常 UI 触发。这个问题比坐标精度还基础：功能不可达。
-- **修复建议**: 搜索入口的条件应绑定真实能力，而不是旧 TTU/Hoshi 分支名。最简单的数据模型是 `if (widget.epubBook != null && widget.onSearchJump != null) _buildSearchSection(theme)`；旧 TTU 如果没有 `epubBook/onSearchJump` 就自然不显示。别用 `isHoshiReader` 这种历史兼容标志控制新功能入口。
-- **验证方式**: 打开 Hoshi 阅读器的设置 sheet -> 导航页，确认出现“全书搜索”；输入查询后点结果，确认会进入 `onSearchJump` 并执行 WebView 定位。
+### Phase 3: MEDIUM fixes (11 items)
 
-#### HBK-AUDIT-SEARCH-006: `hintOffset` 仍然不是 DOM 坐标，001 只是从“第 N 个”改成“猜最近”
-
-- **Severity**: HIGH
-- **Status**: partially fixed; root coordinate-system mismatch remains.
-- **Files**:
-  - `hibiki/lib/src/media/audiobook/audiobook_bridge.dart:459-503`
-  - `hibiki/lib/src/reader/reader_pagination_scripts.dart:334-392`
-  - `hibiki/lib/src/epub/epub_book.dart:50-56`
-- **根因**: Dart isolate 里的 `_chapterPlainText()` 仍会 `body.text` 后把所有空白折叠成一个空格，并删除 `rt/rp/rtc`；JS `scrollToSearchMatch()` 则拼接 live DOM text node，不折叠空白，且 `isFurigana()` 只跳过 `rt/rp`。`result.charOffset` 是 Dart 文本坐标，JS 把它当 DOM 拼接文本坐标来算距离。
-- **影响**: 重复短词、章节前半段有大量换行/缩进/隐藏节点/ruby 差异时，最近匹配会选错。这个失败不会报错，只会把用户带到同章另一个相同 query，属于最难发现的错跳。
-- **修复建议**: 不要继续在两个文本模型之间传裸 offset。要么搜索和定位都在 WebView DOM 坐标里完成，要么 isolate 产出与 JS 完全相同的 text segments，并把 `{segmentIndex, startOffset, endOffset}` 传给 JS。当前 `hintOffset` 只能当临时启发式，不是根因修复。
-- **验证方式**: 构造章节：开头大量换行缩进、多处相同短 query、`<ruby>`、跨 `<span>` 文本节点。点第二/第三条结果后，用 JS 读 `CSS.highlights.get('hoshi-search')` 的 range 上下文，必须与列表上下文一致。
-
-#### HBK-AUDIT-SEARCH-007: `_navigateToChapterAndWait()` 仍会把 load error 当成功
-
-- **Severity**: MEDIUM
-- **Status**: timeout path improved, error path still wrong.
-- **Files**:
-  - `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart:1235-1244`
-  - `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart:1688-1722`
-  - `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart:2509-2522`
-- **根因**: `_navigateToChapterAndWait()` 现在只在 timeout 时把 `success = false`，但 `_navigateToChapter()` 的 `loadUrl` catch 和 WebView `onReceivedError` 都只是 complete `_restoreCompleter` 并清状态，没有把失败信息传给等待者。等待者随后看到 `success == true && _currentChapter == index`，仍可能继续执行搜索定位 JS。
-- **影响**: 网络/资源拦截/章节 URL 错误等主 frame 加载失败时，搜索仍可能在错误或半初始化 DOM 上运行。003 的 timeout 分支修了，但“章节加载失败后不执行 JS”的契约还没修完整。
-- **修复建议**: 给章节导航建立显式结果状态，而不是用 completer 完成代表成功。可用 `Completer<bool>` 或 `_pendingChapterLoadFailed`，`onRestoreComplete` 才完成 `true`，`onReceivedError` / `_loadChapterDirectly` catch 完成 `false`。搜索跳转只接受 true。
-- **验证方式**: 人为让目标章节主 frame 加载失败，点击跨章搜索结果，确认不会调用 `scrollToSearchMatch()`，并且 UI 给出失败反馈或保留可重试状态。
-
-#### HBK-AUDIT-SEARCH-008: `StatefulBuilder` 的局部生命周期仍未被保护
-
-- **Severity**: LOW-MEDIUM
-- **Status**: partially fixed.
-- **Files**:
-  - `hibiki/lib/src/media/audiobook/audiobook_play_bar.dart:595-618`
-  - `hibiki/lib/src/media/audiobook/audiobook_play_bar.dart:728-731`
-- **根因**: `doSearch()` 只检查了外层 `_AudiobookSettingsSheetState.mounted`。但 `_buildSearchSection()` 是 `StatefulBuilder`，当用户切换子页面、返回上级、或局部 widget 被移除时，外层 State 仍 mounted，闭包里的 `setLocal()` 仍可能指向已移除的局部 element。`onTap` 仍是先 `Navigator.pop(ctx)` 再 await 跳转，失败反馈也被切断。
-- **影响**: 搜索过程中切换页面/关闭局部视图仍可能触发 `setState() called after dispose()` 或静默丢失状态。搜索跳转失败仍没有用户可见结果。
-- **修复建议**: 避免把异步搜索状态放在 `StatefulBuilder` 闭包里。把搜索状态提升到 `_AudiobookSettingsSheetState`，统一用 `setState` + `mounted` 管理；或引入独立 `StatefulWidget`，用它自己的 `mounted` 检查。跳转应先 await 结果，成功后再关闭面板，失败时留在搜索页。
-- **验证方式**: 在大书搜索 pending 时切换到其他设置页、返回上级、关闭 sheet，确认无 lifecycle 异常；模拟跳转失败时确认用户仍能重试。
-
-### Fixed / Improved
-
-- `HBK-AUDIT-SEARCH-002` 的主线程 HTML parse 问题基本修对：`searchBook()` 现在传 raw chapter HTML 到 `compute()`，`_chapterPlainText()` 在 isolate 内执行。
-- `HBK-AUDIT-SEARCH-003` 的 timeout 分支已有改善：跨章搜索跳转会在 `_navigateToChapterAndWait()` 返回 false 时中止。但 error path 仍见 `HBK-AUDIT-SEARCH-007`。
-
-### Verification
-
-- Ran:
-  - `D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat analyze lib/src/media/audiobook/audiobook_bridge.dart lib/src/media/audiobook/audiobook_play_bar.dart lib/src/pages/implementations/reader_hoshi_page.dart lib/src/reader/reader_pagination_scripts.dart`
-- Result:
-  - Analyzer returned 3 warnings:
-    - `reader_hoshi_page.dart:701:46 use_build_context_synchronously`
-    - `reader_hoshi_page.dart:1041:42 use_build_context_synchronously`
-    - `reader_hoshi_page.dart:1233:42 use_build_context_synchronously`
-  - No new compile error was observed in this targeted file set, but warning gate remains non-clean.
-
-### Next Scope
-
-- First fix reachability: make Hoshi search UI visible based on `epubBook/onSearchJump`.
-- Then replace the search result coordinate contract with DOM text segments or WebView-side search results.
-- Finally add a small JS/Dart test harness for repeated query + whitespace + ruby cases before emulator validation.
-
----
-
-## 九、Hoshi 全书搜索最终修复复审（commits `e8a43594`, `f534c16a`）
-
-### Scope
-
-- Commits:
-  - `e8a43594 fix(search): complete Completer<bool> migration and remove StatefulBuilder`
-  - `f534c16a fix(search): align Dart rtc handling with JS isFurigana + format`
-- Files:
-  - `hibiki/lib/src/media/audiobook/audiobook_bridge.dart`
-  - `hibiki/lib/src/media/audiobook/audiobook_play_bar.dart`
-  - `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart`
-  - related reference: `hibiki/lib/src/reader/reader_pagination_scripts.dart`
-- Review type: code-path review plus targeted analyzer check. No emulator/WebView runtime validation was performed in this round.
-
-### Closure Check
-
-- `HBK-AUDIT-SEARCH-005`: code-path fixed. Search UI visibility now depends on `epubBook != null && onSearchJump != null`, not `!isHoshiReader`.
-- `HBK-AUDIT-SEARCH-006`: materially improved. Dart search now builds a DOM-like text stream and no longer drops `rtc`, aligning with JS `isFurigana()` for `rt/rp`. However the contract is still not test-locked, and the UI/query binding issue below can still feed the wrong query into the otherwise aligned coordinate.
-- `HBK-AUDIT-SEARCH-007`: partially fixed. `Completer<bool>` now distinguishes normal restore, load error, interrupted navigation, and timeout. A navigation-generation/token gap remains below.
-- `HBK-AUDIT-SEARCH-008`: code-path fixed for the reported `StatefulBuilder` disposed-state issue. Search state is now owned by `_AudiobookSettingsSheetState`.
-
-### Findings
-
-#### HBK-AUDIT-SEARCH-009: 搜索结果没有绑定产生它的 query，异步乱序或编辑输入会错跳
-
-- **Severity**: HIGH
-- **Status**: code-path review found after the 005-008 fix set.
-- **Files**:
-  - `hibiki/lib/src/media/audiobook/audiobook_play_bar.dart:597-609`
-  - `hibiki/lib/src/media/audiobook/audiobook_play_bar.dart:676-694`
-  - `hibiki/lib/src/media/audiobook/audiobook_play_bar.dart:726-729`
-  - `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart:2509-2522`
-- **根因**: `_doSearch()` 捕获了当时的 `query` 去生成 `BookSearchResult`，但结果对象没有保存 query 或 search generation。渲染结果和点击跳转时又重新读取 `_searchController.text.trim()`。如果用户在搜索完成后改了输入框，或者连续触发两次搜索导致较慢的旧搜索后返回，`_searchResults`、`matchStart/charOffset` 和点击时传给 `scrollToSearchMatch()` 的 query 就可能来自不同搜索。
-- **影响**: UI 可能用新 query 的长度去截取旧 context，造成错误高亮；点击结果时更严重，会把旧结果的 `charOffset` 搭配新 query 传给 JS。JS 会在 DOM 里找新 query 并选离旧 offset 最近的位置，结果是错跳但不报错。这个问题会直接抵消 `f534c16a` 做的 DOM 坐标对齐。
-- **修复建议**: 把查询字符串纳入结果状态。至少保存 `_searchResultsQuery`，渲染和点击都使用它；更稳的是引入 `_searchGeneration`，每次 `_doSearch()` 递增，await 返回后只接受当前 generation 的结果。`BookSearchResult` 也可以携带 `query`，让 offset 与 query 成为不可拆的同一份数据。
-- **验证方式**: 搜索 `猫`，结果出现后把输入改成 `犬` 再点旧结果，确认传入 JS 的仍是 `猫`；连续快速搜索两个词，让前一个搜索慢返回，确认旧结果不会覆盖新结果。
-
-#### HBK-AUDIT-SEARCH-010: 章节导航结果没有 generation token，迟到的旧 restore 回调可误完成新导航
-
-- **Severity**: MEDIUM-HIGH
-- **Status**: code-path review found after `Completer<bool>` migration.
-- **Files**:
-  - `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart:1275-1285`
-  - `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart:1680-1720`
-  - `hibiki/lib/src/reader/reader_pagination_scripts.dart:149-153`
-  - `hibiki/lib/src/reader/reader_pagination_scripts.dart:688-697`
-- **根因**: `_restoreCompleter` 现在有 bool 语义，这是进步；但 `onRestoreComplete` 仍是不带章节 index / navigation token 的全局回调。JS 侧 `restoreProgress()` 会在 `requestAnimationFrame` 后异步调用 `notifyRestoreComplete()`。如果用户快速发起第二次章节导航，第一次页面迟到的 `onRestoreComplete` 可能完成第二次新建的 `_restoreCompleter`，因为 Dart 侧无法判断这个回调属于哪次 load。
-- **影响**: `_navigateToChapterAndWait()` 可能提前返回 true，随后搜索定位 JS 在新章节尚未完成 reader setup 时执行。结果可能是定位失败、旧 DOM 定位、或者偶现的跨章错跳。`Completer<bool>` 修了失败值，但没有修“完成事件属于哪次导航”的身份问题。
-- **修复建议**: 给导航/restore 加 generation。Dart 每次 `_navigateToChapter()` 递增 token，把 token 注入 `_buildReaderSetupScript()` 或通过 JS 全局保存；`notifyRestoreComplete(token)` 回传 token，Dart 只完成当前 token 的 completer。至少也要在 `_onRestoreComplete` 里校验预期章节和当前 loaded URL，而不是只看 `_currentChapter` 字段。
-- **验证方式**: 快速点击两个跨章搜索结果或连续触发章节跳转，记录每次 `loadUrl`、`onLoadStop`、`notifyRestoreComplete` 的 token，确认旧 token 不能完成新 completer。
-
-### Fixed / Improved
-
-- `e8a43594` 对 `HBK-AUDIT-SEARCH-005/008` 的方向是对的：搜索入口恢复可达，搜索状态提升到父 State 后移除了 `StatefulBuilder` 局部生命周期风险。
-- `e8a43594` 对 `HBK-AUDIT-SEARCH-007` 做了实质改进：load error / timeout / interrupted navigation 现在会通过 `false` 传播到搜索跳转调用方。
-- `f534c16a` 修正了 reviewer 提到的 `rtc` 坐标不对齐：Dart `_collectTextNodes()` 跳过 `rt/rp`，不再跳过 `rtc`，与 JS `isFurigana()` 当前行为一致。
-
-### Verification
-
-- Ran:
-  - `D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat analyze lib/src/media/audiobook/audiobook_bridge.dart lib/src/media/audiobook/audiobook_play_bar.dart lib/src/pages/implementations/reader_hoshi_page.dart lib/src/reader/reader_pagination_scripts.dart`
-- Result:
-  - Analyzer returned 3 warnings:
-    - `reader_hoshi_page.dart:701:46 use_build_context_synchronously`
-    - `reader_hoshi_page.dart:1041:42 use_build_context_synchronously`
-    - `reader_hoshi_page.dart:1233:42 use_build_context_synchronously`
-  - No compile error was observed in this targeted file set.
-
-### Next Scope
-
-- Bind search results to their query and generation before doing emulator validation.
-- Add a navigation restore token before relying on `_navigateToChapterAndWait()` for correctness under fast repeated jumps.
-- Add focused tests for `rt/rp/rtc`, whitespace, repeated query, and stale-query click behavior.
+24-34: FK constraints, cache key, jsonDecode safety, deprecated APIs, ProGuard, proxy cleanup, cleartext config, tests, FutureBuilder, withPaths tracking.

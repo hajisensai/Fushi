@@ -298,7 +298,7 @@ class HoshiDicts {
 
   // ── dict loading ────────────────────────────────────────────────
   void addTermDict(String path) {
-    final p = path.toNativeUtf8();
+    final p = path.toNativeUtf8(allocator: calloc);
     try {
       _bindings!.addTermDict(_handle!, p);
     } finally {
@@ -307,7 +307,7 @@ class HoshiDicts {
   }
 
   void addFreqDict(String path) {
-    final p = path.toNativeUtf8();
+    final p = path.toNativeUtf8(allocator: calloc);
     try {
       _bindings!.addFreqDict(_handle!, p);
     } finally {
@@ -316,7 +316,7 @@ class HoshiDicts {
   }
 
   void addPitchDict(String path) {
-    final p = path.toNativeUtf8();
+    final p = path.toNativeUtf8(allocator: calloc);
     try {
       _bindings!.addPitchDict(_handle!, p);
     } finally {
@@ -325,7 +325,7 @@ class HoshiDicts {
   }
 
   void loadTransforms(String json) {
-    final p = json.toNativeUtf8();
+    final p = json.toNativeUtf8(allocator: calloc);
     try {
       _bindings!.loadTransforms(_handle!, p);
     } finally {
@@ -340,8 +340,8 @@ class HoshiDicts {
       String zipPath, String outputDir) async {
     return Isolate.run(() {
       _bindings ??= HoshidictsFfiBindings();
-      final zp = zipPath.toNativeUtf8();
-      final od = outputDir.toNativeUtf8();
+      final zp = zipPath.toNativeUtf8(allocator: calloc);
+      final od = outputDir.toNativeUtf8(allocator: calloc);
       try {
         final r = _bindings!.import_(zp, od);
         final rPtr = calloc<FfiImportResult>();
@@ -370,7 +370,7 @@ class HoshiDicts {
 
   // ── query ───────────────────────────────────────────────────────
   List<HoshiTermResult> query(String expression) {
-    final ep = expression.toNativeUtf8();
+    final ep = expression.toNativeUtf8(allocator: calloc);
     try {
       final r = _bindings!.query(_handle!, ep);
       final rPtr = calloc<FfiQueryResult>();
@@ -396,7 +396,7 @@ class HoshiDicts {
     int maxResults = 16,
     int scanLength = 16,
   }) {
-    final tp = text.toNativeUtf8();
+    final tp = text.toNativeUtf8(allocator: calloc);
     try {
       final r = _bindings!.lookup(_handle!, tp, maxResults, scanLength);
       final rPtr = calloc<FfiLookupResults>();
@@ -452,8 +452,8 @@ class HoshiDicts {
 
   // ── media ───────────────────────────────────────────────────────
   Uint8List? getMediaFile(String dictName, String mediaPath) {
-    final dn = dictName.toNativeUtf8();
-    final mp = mediaPath.toNativeUtf8();
+    final dn = dictName.toNativeUtf8(allocator: calloc);
+    final mp = mediaPath.toNativeUtf8(allocator: calloc);
     try {
       final r = _bindings!.getMedia(_handle!, dn, mp);
       final rPtr = calloc<FfiMediaFile>();

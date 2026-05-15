@@ -37,6 +37,13 @@ class _MediaItemEditDialogPageState
       TextEditingController(text: '-');
 
   @override
+  void dispose() {
+    _nameOverrideController.dispose();
+    _coverOverrideController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     if (_defaultImageProvider == null) {
       String? overrideTitle =

@@ -26,6 +26,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   final AudioPlayer _player = AudioPlayer();
   StreamSubscription<Duration>? _positionSub;
   StreamSubscription<bool>? _playingSub;
+  StreamSubscription<void>? _noisySub;
 
   List<File> _audioFiles = [];
 
@@ -193,7 +194,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     final int sec = imagePauseSec.value;
     if (sec <= 0 || !_player.playing) return;
     _imagePauseTimer?.cancel();
-    _player.pause();
+    unawaited(_player.pause());
     _imagePauseTimer = Timer(Duration(seconds: sec), () {
       _imagePauseTimer = null;
       if (!_player.playing) {
@@ -630,7 +631,7 @@ class AudiobookPlayerController extends ChangeNotifier {
         androidWillPauseWhenDucked: false,
       ),
     );
-    session.becomingNoisyEventStream.listen((_) {
+    _noisySub = session.becomingNoisyEventStream.listen((_) {
       _player.pause();
     });
   }
@@ -667,9 +668,9 @@ class AudiobookPlayerController extends ChangeNotifier {
       final int? returnTo = _returnToGlobalMs;
       _stopAtGlobalMs = null;
       _returnToGlobalMs = null;
-      _player.pause();
+      unawaited(_player.pause());
       if (returnTo != null) {
-        _player.seek(Duration(milliseconds: returnTo));
+        unawaited(_player.seek(Duration(milliseconds: returnTo)));
       }
       notifyListeners();
       return;
@@ -999,6 +1000,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     _imagePauseTimer?.cancel();
     _positionSub?.cancel();
     _playingSub?.cancel();
+    _noisySub?.cancel();
     followAudio.dispose();
     delayMs.dispose();
     imagePauseSec.dispose();

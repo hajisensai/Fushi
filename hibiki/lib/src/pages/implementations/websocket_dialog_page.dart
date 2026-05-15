@@ -24,12 +24,20 @@ class WebsocketDialogPage extends BasePage {
 
 class _WebsocketDialogPageState extends BasePageState<WebsocketDialogPage> {
   late final TextEditingController _addressController;
+  final ScrollController _contentScrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
 
     _addressController = TextEditingController(text: widget.address);
+  }
+
+  @override
+  void dispose() {
+    _contentScrollController.dispose();
+    _addressController.dispose();
+    super.dispose();
   }
 
   @override
@@ -55,13 +63,12 @@ class _WebsocketDialogPageState extends BasePageState<WebsocketDialogPage> {
   List<Widget> get actions => [buildConnectButton()];
 
   Widget buildContent() {
-    ScrollController scrollController = ScrollController();
     return RawScrollbar(
       thickness: 3,
       thumbVisibility: true,
-      controller: scrollController,
+      controller: _contentScrollController,
       child: SingleChildScrollView(
-        controller: scrollController,
+        controller: _contentScrollController,
         child: SizedBox(
           width: MediaQuery.of(context).size.width * (1 / 3),
           child: Column(

@@ -250,20 +250,35 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
         });
         return;
       case 'android.intent.action.SEND':
-        String? data = intent.extra!['android.intent.extra.TEXT'];
+        final String? data =
+            intent.extra?['android.intent.extra.TEXT'] as String?;
         if (data != null && data.trim().isNotEmpty) {
           textContextMenuAction(data);
         }
         break;
       case 'android.intent.action.PROCESS_TEXT':
-        String data = intent.extra!['android.intent.extra.PROCESS_TEXT'];
-        textContextMenuAction(data);
+        final String? data =
+            intent.extra?['android.intent.extra.PROCESS_TEXT'] as String?;
+        if (data != null && data.trim().isNotEmpty) {
+          textContextMenuAction(data);
+        }
         return;
       case 'android.intent.action.WEB_SEARCH':
-        String data = intent.extra!['query'];
-        textContextMenuAction(data);
+        final String? data = intent.extra?['query'] as String?;
+        if (data != null && data.trim().isNotEmpty) {
+          textContextMenuAction(data);
+        }
         return;
     }
+  }
+
+  void _flushPendingLookup() {
+    if (_pendingLookupText == null || !appModel.isInitialised) return;
+    final text = _pendingLookupText!;
+    _pendingLookupText = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      textContextMenuAction(text);
+    });
   }
 
   void textContextMenuAction(String data) {
@@ -353,13 +368,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
       );
     }
 
-    if (_pendingLookupText != null) {
-      final text = _pendingLookupText!;
-      _pendingLookupText = null;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        textContextMenuAction(text);
-      });
-    }
+    _flushPendingLookup();
 
     return TranslationProvider(
       child: MaterialApp(

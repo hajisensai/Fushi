@@ -30,6 +30,13 @@ class _OpenStashDialogPage extends BasePageState<OpenStashDialogPage> {
   final ValueNotifier<int?> _selectionNotifier = ValueNotifier<int?>(null);
 
   @override
+  void dispose() {
+    _scrollController.dispose();
+    _selectionNotifier.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return AlertDialog(
       contentPadding: MediaQuery.of(context).orientation == Orientation.portrait

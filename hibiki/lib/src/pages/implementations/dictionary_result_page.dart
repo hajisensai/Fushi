@@ -61,14 +61,29 @@ class _DictionaryResultPageState extends BasePageState<DictionaryResultPage> {
   @override
   void initState() {
     super.initState();
+    _ownsScrollController = widget.scrollController == null;
     _scrollController = widget.scrollController ?? ScrollController();
   }
 
   late ScrollController _scrollController;
+  late bool _ownsScrollController;
 
   /// Group entries by (word, reading) key for expandable controllers.
   Map<String, Map<String, ExpandableController>>
       expandableControllersByTermKey = {};
+
+  @override
+  void dispose() {
+    if (_ownsScrollController) {
+      _scrollController.dispose();
+    }
+    for (final controllers in expandableControllersByTermKey.values) {
+      for (final controller in controllers.values) {
+        controller.dispose();
+      }
+    }
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {

@@ -12,6 +12,14 @@ class LanguageDialogPage extends BasePage {
 }
 
 class _LanguageDialogPageState extends BasePageState<LanguageDialogPage> {
+  final ScrollController _contentScrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _contentScrollController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
@@ -31,16 +39,14 @@ class _LanguageDialogPageState extends BasePageState<LanguageDialogPage> {
   }
 
   Widget buildContent() {
-    ScrollController contentController = ScrollController();
-
     return SizedBox(
       width: double.maxFinite,
       child: RawScrollbar(
         thumbVisibility: true,
         thickness: 3,
-        controller: contentController,
+        controller: _contentScrollController,
         child: SingleChildScrollView(
-          controller: contentController,
+          controller: _contentScrollController,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,

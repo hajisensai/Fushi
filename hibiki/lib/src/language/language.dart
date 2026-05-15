@@ -153,9 +153,11 @@ abstract class Language {
       }
     }
 
+    final int rawStart = sentenceLength - currentIndex + startOffset;
+    final int rawEnd = sentenceLength - currentIndex + endOffset;
     TextRange range = TextRange(
-      start: sentenceLength - currentIndex + startOffset,
-      end: sentenceLength - currentIndex + endOffset,
+      start: rawStart.clamp(0, sentenceToReturn.length),
+      end: rawEnd.clamp(0, sentenceToReturn.length),
     );
     return JidoujishoTextSelection(
       text: sentenceToReturn,

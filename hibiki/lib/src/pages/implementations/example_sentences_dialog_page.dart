@@ -44,6 +44,15 @@ class _ExampleSentencesDialogPageState
   }
 
   @override
+  void dispose() {
+    _scrollController.dispose();
+    for (final notifier in _valuesSelected.values) {
+      notifier.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return AlertDialog(
       contentPadding: MediaQuery.of(context).orientation == Orientation.portrait

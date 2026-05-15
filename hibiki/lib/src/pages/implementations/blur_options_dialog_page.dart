@@ -19,6 +19,7 @@ class _BlurOptionsDialogPageState extends BasePageState<BlurOptionsDialogPage> {
   late BlurOptions _blurOptions;
   late Color _pendingColor;
   late TextEditingController _blurrinessController;
+  final ScrollController _contentScrollController = ScrollController();
 
   @override
   void initState() {
@@ -27,6 +28,13 @@ class _BlurOptionsDialogPageState extends BasePageState<BlurOptionsDialogPage> {
     _pendingColor = _blurOptions.color;
     _blurrinessController =
         TextEditingController(text: _blurOptions.blurRadius.toString());
+  }
+
+  @override
+  void dispose() {
+    _contentScrollController.dispose();
+    _blurrinessController.dispose();
+    super.dispose();
   }
 
   @override
@@ -50,15 +58,14 @@ class _BlurOptionsDialogPageState extends BasePageState<BlurOptionsDialogPage> {
   }
 
   Widget buildContent() {
-    ScrollController scrollController = ScrollController();
     return RawScrollbar(
       thickness: 3,
       thumbVisibility: true,
-      controller: scrollController,
+      controller: _contentScrollController,
       child: Padding(
         padding: Spacing.of(context).insets.onlyRight.normal,
         child: SingleChildScrollView(
-          controller: scrollController,
+          controller: _contentScrollController,
           child: SizedBox(
             width: MediaQuery.of(context).size.width * (3 / 4),
             child: Column(

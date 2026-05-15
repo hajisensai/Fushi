@@ -42,6 +42,16 @@ class _AudioRecorderDialogPageState
   bool _initialised = false;
 
   @override
+  void dispose() {
+    _audioPlayer.dispose();
+    _scrollController.dispose();
+    _positionNotifier.dispose();
+    _durationNotifier.dispose();
+    _playerStateNotifier.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return AlertDialog(
       contentPadding: Spacing.of(context).insets.all.small,

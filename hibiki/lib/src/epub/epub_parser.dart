@@ -315,7 +315,10 @@ class EpubParser {
     String opfDir,
     String extractDir,
   ) {
-    final String absPath = p.join(opfDir, item.href);
+    final String absPath = p.canonicalize(p.join(opfDir, item.href));
+    if (!p.isWithin(p.canonicalize(extractDir), absPath)) {
+      return null;
+    }
     final String relPath =
         p.relative(absPath, from: extractDir).replaceAll('\\', '/');
     return normalizeHref(relPath);

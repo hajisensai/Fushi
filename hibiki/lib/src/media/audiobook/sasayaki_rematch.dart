@@ -63,6 +63,7 @@ class SasayakiRematch {
       return null;
     }
     final AudiobookHealth? overlay = await repo.readHealthOverlay(ab.bookUid);
+    if (!context.mounted) return null;
     final _MatchParams? picked = await _pickMatchParams(
       context: context,
       previousReason: overlay?.reason,

@@ -29,6 +29,7 @@ class LyricsDialogPage extends BasePage {
 class _LyricsDialogPageState extends BasePageState<LyricsDialogPage> {
   late final TextEditingController _titleController;
   late final TextEditingController _artistController;
+  final ScrollController _contentScrollController = ScrollController();
 
   @override
   void initState() {
@@ -36,6 +37,14 @@ class _LyricsDialogPageState extends BasePageState<LyricsDialogPage> {
 
     _titleController = TextEditingController(text: widget.title);
     _artistController = TextEditingController(text: widget.artist);
+  }
+
+  @override
+  void dispose() {
+    _contentScrollController.dispose();
+    _titleController.dispose();
+    _artistController.dispose();
+    super.dispose();
   }
 
   @override
@@ -61,13 +70,12 @@ class _LyricsDialogPageState extends BasePageState<LyricsDialogPage> {
   List<Widget> get actions => [buildSearchButton()];
 
   Widget buildContent() {
-    ScrollController scrollController = ScrollController();
     return RawScrollbar(
       thickness: 3,
       thumbVisibility: true,
-      controller: scrollController,
+      controller: _contentScrollController,
       child: SingleChildScrollView(
-        controller: scrollController,
+        controller: _contentScrollController,
         child: SizedBox(
           width: MediaQuery.of(context).size.width * (1 / 3),
           child: Column(

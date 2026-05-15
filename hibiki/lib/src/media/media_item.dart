@@ -116,7 +116,7 @@ class MediaItem {
       other is MediaItem && other.uniqueKey == uniqueKey;
 
   @override
-  int get hashCode => toJson().hashCode;
+  int get hashCode => uniqueKey.hashCode;
 
   @override
   String toString() {

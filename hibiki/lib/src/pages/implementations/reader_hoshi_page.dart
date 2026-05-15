@@ -687,13 +687,18 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     }
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final EdgeInsets vp = MediaQuery.of(context).viewPadding;
+    _stableTopInset = vp.top;
+    _stableBottomInset = vp.bottom;
+  }
+
   // ── UI Build ──────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    final EdgeInsets vp = MediaQuery.of(context).viewPadding;
-    _stableTopInset = vp.top;
-    _stableBottomInset = vp.bottom;
 
     final Color bgColor = _themeBackgroundColor();
 
@@ -705,8 +710,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         canPop: false,
         onPopInvokedWithResult: (didPop, dynamic result) async {
           if (didPop) return;
+          final nav = Navigator.of(context);
           final bool allow = await onWillPop();
-          if (allow && mounted) Navigator.of(context).pop();
+          if (allow && mounted) nav.pop();
         },
         child: Scaffold(
           backgroundColor: bgColor,
@@ -1083,6 +1089,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
             action: () async {
               final text = await _controller?.getSelectedText();
               if (text == null || text.isEmpty) return;
+              if (!mounted) return;
               final size = MediaQuery.of(context).size;
               final rect = Rect.fromCenter(
                 center: Offset(size.width / 2, size.height / 3),
@@ -1275,6 +1282,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         }
         await HighlightBridge.inject(controller);
         await _applyChapterHighlights();
+        if (!mounted) return;
         _lastSyncedWidth = MediaQuery.of(context).size.width;
       },
       onReceivedError: (controller, request, error) {

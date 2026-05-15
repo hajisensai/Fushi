@@ -19,6 +19,7 @@ class _DictionaryDialogPageState extends BasePageState {
   late TextEditingController _debounceDelayController;
   late TextEditingController _dictionaryFontSizeController;
   late TextEditingController _maximumTermsController;
+  final ScrollController _contentScrollController = ScrollController();
 
   @override
   void initState() {
@@ -31,6 +32,15 @@ class _DictionaryDialogPageState extends BasePageState {
 
     _maximumTermsController =
         TextEditingController(text: appModelNoUpdate.maximumTerms.toString());
+  }
+
+  @override
+  void dispose() {
+    _contentScrollController.dispose();
+    _debounceDelayController.dispose();
+    _dictionaryFontSizeController.dispose();
+    _maximumTermsController.dispose();
+    super.dispose();
   }
 
   @override
@@ -56,16 +66,14 @@ class _DictionaryDialogPageState extends BasePageState {
   }
 
   Widget buildContent() {
-    ScrollController contentController = ScrollController();
-
     return SizedBox(
       width: double.maxFinite,
       child: RawScrollbar(
         thickness: 3,
         thumbVisibility: true,
-        controller: contentController,
+        controller: _contentScrollController,
         child: SingleChildScrollView(
-          controller: contentController,
+          controller: _contentScrollController,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [

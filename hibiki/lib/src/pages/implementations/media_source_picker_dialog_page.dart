@@ -21,6 +21,14 @@ class MediaSourcePickerDialogPage extends BasePage {
 class _MediaSourcePickerDialogPageState
     extends BasePageState<MediaSourcePickerDialogPage> {
   final ScrollController _scrollController = ScrollController();
+  final ScrollController _contentScrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _contentScrollController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -33,7 +41,6 @@ class _MediaSourcePickerDialogPageState
   }
 
   Widget buildContent() {
-    ScrollController contentController = ScrollController();
     List<MediaSource> mediaSources =
         appModel.mediaSources[widget.mediaType]!.values.toList();
 
@@ -42,9 +49,9 @@ class _MediaSourcePickerDialogPageState
       child: RawScrollbar(
         thumbVisibility: true,
         thickness: 3,
-        controller: contentController,
+        controller: _contentScrollController,
         child: SingleChildScrollView(
-          controller: contentController,
+          controller: _contentScrollController,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [

@@ -47,8 +47,9 @@ class ReaderPaginationScripts {
     if (result == null) return null;
     if (result is double) return result;
     if (result is num) return result.toDouble();
-    if (result is String)
+    if (result is String) {
       return double.tryParse(result.trim().replaceAll('"', ''));
+    }
     return null;
   }
 

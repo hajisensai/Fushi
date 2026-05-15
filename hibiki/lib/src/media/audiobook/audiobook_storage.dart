@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -5,10 +6,25 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 abstract final class AudiobookStorage {
+  static String _stableHash(String input) {
+    final List<int> bytes = utf8.encode(input);
+    int h = 0x811c9dc5;
+    for (final int b in bytes) {
+      h ^= b;
+      h = (h * 0x01000193) & 0xFFFFFFFF;
+    }
+    return h.toRadixString(16).padLeft(8, '0');
+  }
+
   static Future<Directory> ensurePersistDir(String bookUid) async {
     final Directory docs = await getApplicationDocumentsDirectory();
-    final String hash = bookUid.hashCode.toRadixString(16);
+    final String hash = _stableHash(bookUid);
+    final Directory oldDir = Directory(
+        p.join(docs.path, 'audiobooks', bookUid.hashCode.toRadixString(16)));
     final Directory dir = Directory(p.join(docs.path, 'audiobooks', hash));
+    if (!dir.existsSync() && oldDir.existsSync()) {
+      oldDir.renameSync(dir.path);
+    }
     if (!dir.existsSync()) {
       dir.createSync(recursive: true);
     }
@@ -115,7 +131,7 @@ abstract final class AudiobookStorage {
 
   static Future<void> deletePersistDir(String bookUid) async {
     final Directory docs = await getApplicationDocumentsDirectory();
-    final String hash = bookUid.hashCode.toRadixString(16);
+    final String hash = _stableHash(bookUid);
     final Directory dir = Directory(p.join(docs.path, 'audiobooks', hash));
     if (dir.existsSync()) {
       await dir.delete(recursive: true);

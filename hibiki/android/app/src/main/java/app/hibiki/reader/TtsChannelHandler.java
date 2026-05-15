@@ -22,6 +22,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import io.flutter.embedding.engine.FlutterEngine;
 import io.flutter.plugin.common.MethodCall;
@@ -137,22 +138,33 @@ public class TtsChannelHandler {
             Locale loc = parts.length >= 2 ? new Locale(parts[0], parts[1]) : new Locale(parts[0]);
             tts.setLanguage(loc);
         }
+        // Guard against double-invocation: the listener callback runs on a TTS
+        // background thread, and synthesizeToFile may fail synchronously below.
+        // Without this guard, both paths could call result.success().
+        final AtomicBoolean resultSent = new AtomicBoolean(false);
+        final Handler mainHandler = new Handler(Looper.getMainLooper());
         tts.setOnUtteranceProgressListener(new android.speech.tts.UtteranceProgressListener() {
             @Override public void onStart(String utteranceId) {}
             @Override public void onDone(String utteranceId) {
                 tts.setOnUtteranceProgressListener(null);
-                new Handler(Looper.getMainLooper()).post(() -> result.success(outputPath));
+                if (resultSent.compareAndSet(false, true)) {
+                    mainHandler.post(() -> result.success(outputPath));
+                }
             }
             @Override public void onError(String utteranceId) {
                 tts.setOnUtteranceProgressListener(null);
-                new Handler(Looper.getMainLooper()).post(() -> result.success(null));
+                if (resultSent.compareAndSet(false, true)) {
+                    mainHandler.post(() -> result.success(null));
+                }
             }
         });
         File outFile = new File(outputPath);
         int r = tts.synthesizeToFile(text, null, outFile, "hibiki_tts_file");
         if (r != TextToSpeech.SUCCESS) {
             tts.setOnUtteranceProgressListener(null);
-            result.success(null);
+            if (resultSent.compareAndSet(false, true)) {
+                result.success(null);
+            }
         }
     }
 
