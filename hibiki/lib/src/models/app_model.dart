@@ -2355,7 +2355,6 @@ class AppModel with ChangeNotifier {
       clearDictionaryResultsCache();
 
       await clearDictionaryHistory();
-      _dictionariesCache.clear();
       await _database.clearAllDictionaryMeta();
 
       if (dictionaryResourceDirectory.existsSync()) {
@@ -2363,10 +2362,12 @@ class AppModel with ChangeNotifier {
         dictionaryResourceDirectory.createSync(recursive: true);
       }
 
-      dictionarySearchAgainNotifier.notifyListeners();
+      _dictionariesCache.clear();
     } catch (e, stack) {
       ErrorLogService.instance.log('deleteDictionaries', e, stack);
       Fluttertoast.showToast(msg: 'Failed to delete dictionaries');
+    } finally {
+      dictionarySearchAgainNotifier.notifyListeners();
     }
   }
 
@@ -2375,9 +2376,6 @@ class AppModel with ChangeNotifier {
       clearDictionaryResultsCache();
 
       await clearDictionaryHistory();
-
-      _dictionariesCache.removeWhere((d) => d.name == dictionary.name);
-      _rebuildDictPathsCache();
       await _database.deleteDictionaryMeta(dictionary.name);
 
       final directory = Directory(
@@ -2387,10 +2385,13 @@ class AppModel with ChangeNotifier {
         directory.deleteSync(recursive: true);
       }
 
-      dictionarySearchAgainNotifier.notifyListeners();
+      _dictionariesCache.removeWhere((d) => d.name == dictionary.name);
+      _rebuildDictPathsCache();
     } catch (e, stack) {
       ErrorLogService.instance.log('deleteDictionary', e, stack);
       Fluttertoast.showToast(msg: 'Failed to delete dictionary');
+    } finally {
+      dictionarySearchAgainNotifier.notifyListeners();
     }
   }
 
