@@ -49,7 +49,7 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
 
   @override
   void dispose() {
-    _repo.snapshotCurrentSettings(state.activeProfileId);
+    _repo.snapshotCurrentSettings(state.activeProfileId).catchError((_) {});
     super.dispose();
   }
   final ProfileRepository _repo;

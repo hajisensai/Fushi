@@ -191,6 +191,7 @@ class ProfileRepository {
     final valid = existing.any((p) => p.id == activeId);
     if (!valid) {
       await setActiveProfileId(existing.first.id);
+      await applyProfile(existing.first.id);
     }
   }
 }

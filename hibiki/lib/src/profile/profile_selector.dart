@@ -8,16 +8,11 @@ import 'package:hibiki/src/pages/implementations/profile_management_page.dart';
 ///
 /// Shows the active profile in a dropdown with a button to open the
 /// full management page.
-class ProfileSelector extends ConsumerStatefulWidget {
+class ProfileSelector extends ConsumerWidget {
   const ProfileSelector({super.key});
 
   @override
-  ConsumerState<ProfileSelector> createState() => _ProfileSelectorState();
-}
-
-class _ProfileSelectorState extends ConsumerState<ProfileSelector> {
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final uiState = ref.watch(profileViewModelProvider);
     final vm = ref.read(profileViewModelProvider.notifier);
     final theme = Theme.of(context);
@@ -25,6 +20,10 @@ class _ProfileSelectorState extends ConsumerState<ProfileSelector> {
     if (uiState.isLoading || uiState.profiles.isEmpty) {
       return const SizedBox.shrink();
     }
+
+    final validId = uiState.profiles.any((p) => p.id == uiState.activeProfileId)
+        ? uiState.activeProfileId
+        : uiState.profiles.first.id;
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -35,7 +34,7 @@ class _ProfileSelectorState extends ConsumerState<ProfileSelector> {
         ),
         Flexible(
           child: DropdownButton<int>(
-            value: uiState.activeProfileId,
+            value: validId,
             underline: const SizedBox.shrink(),
             isDense: true,
             items: [
@@ -43,7 +42,7 @@ class _ProfileSelectorState extends ConsumerState<ProfileSelector> {
                 DropdownMenuItem(value: p.id, child: Text(p.name)),
             ],
             onChanged: (id) {
-              if (id != null && id != uiState.activeProfileId) {
+              if (id != null && id != validId) {
                 vm.switchProfile(id);
               }
             },
