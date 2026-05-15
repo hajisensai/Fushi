@@ -1,8 +1,6 @@
-
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki/dictionary.dart';
 import 'package:flutter/widgets.dart';
+import 'package:hibiki/dictionary.dart';
 
 abstract class DictionaryFormat {
   DictionaryFormat({
@@ -35,20 +33,4 @@ abstract class DictionaryFormat {
     required PrepareDictionaryParams params,
     required dynamic database,
   }) prepareEntries;
-
-  Widget customDefinitionWidget({
-    required BuildContext context,
-    required WidgetRef ref,
-    required String definition,
-  }) {
-    return const SizedBox.shrink();
-  }
-
-  String getCustomDefinitionText(String meaning) {
-    return meaning;
-  }
-
-  bool shouldUseCustomDefinitionWidget(String definition) {
-    return false;
-  }
 }

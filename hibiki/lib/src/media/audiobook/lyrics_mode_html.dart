@@ -72,6 +72,15 @@ body { font-family: "Noto Serif JP", "Noto Sans JP", serif; }
 .cue.near-1 { opacity: 0.55; font-size: ${(fontSize * 1.15).round()}px; }
 .cue.near-2 { opacity: 0.35; font-size: ${(fontSize * 1.05).round()}px; }
 .cue.near-3 { opacity: 0.25; }
+::highlight(hoshi-selection) {
+  background-color: $accentColor;
+  color: inherit;
+}
+.hoshi-dict-highlight {
+  background-color: $accentColor !important;
+  color: inherit;
+  border-radius: 2px;
+}
 </style>
 </head>
 <body>
@@ -171,7 +180,7 @@ document.addEventListener('touchend', function(e) {
 (function() {
   var origSelectText = window.hoshiSelection.selectText;
   window.hoshiSelection.selectText = function(x, y, maxLen) {
-    origSelectText.call(window.hoshiSelection, x, y, maxLen);
+    var selected = origSelectText.call(window.hoshiSelection, x, y, maxLen);
     var sel = window.getSelection();
     if (sel && sel.anchorNode) {
       var cueEl = sel.anchorNode.nodeType === 1
@@ -188,6 +197,7 @@ document.addEventListener('touchend', function(e) {
         window.__lyricsCueContext = null;
       }
     }
+    return selected;
   };
 })();
 

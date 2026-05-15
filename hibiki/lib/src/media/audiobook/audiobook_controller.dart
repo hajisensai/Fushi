@@ -83,10 +83,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   int get allBookCueIdx {
     final AudioCue? cue = _currentCue;
     if (cue == null || _allBookCues.isEmpty) return -1;
-    for (int i = 0; i < _allBookCues.length; i++) {
-      if (_allBookCues[i].textFragmentId == cue.textFragmentId) return i;
-    }
-    return -1;
+    return _allBookCueIndex(allBookCues: _allBookCues, currentCue: cue);
   }
 
   // ── PR8b: Follow audio ────────────────────────────────────────────────────
@@ -206,7 +203,6 @@ class AudiobookPlayerController extends ChangeNotifier {
     });
     notifyListeners();
   }
-
 
   /// 是否正在播放。
   bool get isPlaying => _player.playing;
@@ -911,6 +907,32 @@ class AudiobookPlayerController extends ChangeNotifier {
     return idx + 1;
   }
 
+  static int _allBookCueIndex({
+    required List<AudioCue> allBookCues,
+    required AudioCue currentCue,
+  }) {
+    for (int i = 0; i < allBookCues.length; i++) {
+      if (_isSameCue(allBookCues[i], currentCue)) return i;
+    }
+    return -1;
+  }
+
+  static bool _isSameCue(AudioCue a, AudioCue b) {
+    if (identical(a, b)) return true;
+    final int? aId = a.id;
+    final int? bId = b.id;
+    if (aId != null && bId != null) return aId == bId;
+    if (a.bookUid == b.bookUid &&
+        a.chapterHref == b.chapterHref &&
+        a.sentenceIndex == b.sentenceIndex &&
+        a.audioFileIndex == b.audioFileIndex &&
+        a.startMs == b.startMs &&
+        a.endMs == b.endMs) {
+      return true;
+    }
+    return a.textFragmentId.isNotEmpty && a.textFragmentId == b.textFragmentId;
+  }
+
   @visibleForTesting
   static int? globalMsForCueForTesting({
     required int audioFileIndex,
@@ -934,6 +956,17 @@ class AudiobookPlayerController extends ChangeNotifier {
       cues: cues,
       currentCueIndex: currentCueIndex,
       positionMs: positionMs,
+    );
+  }
+
+  @visibleForTesting
+  static int allBookCueIndexForTesting({
+    required List<AudioCue> allBookCues,
+    required AudioCue currentCue,
+  }) {
+    return _allBookCueIndex(
+      allBookCues: allBookCues,
+      currentCue: currentCue,
     );
   }
 

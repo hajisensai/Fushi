@@ -43,15 +43,36 @@ void main() {
 
       expect(nextIndex, 3);
     });
+
+    test('all-book cue lookup does not collapse duplicate selectors', () {
+      final List<AudioCue> cues = [
+        _cue(0, id: 1, fragmentId: ''),
+        _cue(1000, id: 2, fragmentId: ''),
+        _cue(2000, id: 3, fragmentId: ''),
+      ];
+      final AudioCue current = _cue(1000, id: 2, fragmentId: '');
+
+      final int index = AudiobookPlayerController.allBookCueIndexForTesting(
+        allBookCues: cues,
+        currentCue: current,
+      );
+
+      expect(index, 1);
+    });
   });
 }
 
-AudioCue _cue(int startMs) {
+AudioCue _cue(
+  int startMs, {
+  int? id,
+  String? fragmentId,
+}) {
   return AudioCue()
+    ..id = id
     ..bookUid = 'book'
     ..chapterHref = 'chapter'
     ..sentenceIndex = startMs ~/ 1000
-    ..textFragmentId = 'cue-$startMs'
+    ..textFragmentId = fragmentId ?? 'cue-$startMs'
     ..text = 'cue $startMs'
     ..startMs = startMs
     ..endMs = startMs + 500
