@@ -11,6 +11,7 @@ class HighlightBridge {
 (function() {
   if (window.__hibikiHighlightsInstalled) return;
   window.__hibikiHighlightsInstalled = true;
+  window.__hoshiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
 
   var BASE_COLORS = {
     yellow: [255,220,0],
@@ -21,6 +22,7 @@ class HighlightBridge {
   };
   window.__hibikiHighlightBg = '#ffffff';
   window.__hibikiCustomHighlightColor = null;
+  window.__hibikiHighlightRangeMap = {};
 
   function _luminance(hex) {
     var h = hex.replace('#','');
@@ -76,6 +78,74 @@ class HighlightBridge {
     return false;
   }
 
+  function _buildOffsetMap() {
+    var root = _root();
+    var walker = _walker(root);
+    var map = [];
+    var normCount = 0;
+    var node;
+    while ((node = walker.nextNode()) != null) {
+      var txt = node.textContent || '';
+      for (var i = 0; i < txt.length; i++) {
+        if (!_skip(txt.charCodeAt(i))) {
+          map.push({ node: node, rawIdx: i, normIdx: normCount });
+          normCount++;
+        }
+      }
+    }
+    return map;
+  }
+
+  function _buildGroups(map, offset, length) {
+    var segments = [];
+    for (var m = 0; m < map.length; m++) {
+      if (map[m].normIdx >= offset && map[m].normIdx < offset + length) {
+        segments.push(map[m]);
+      }
+    }
+    var groups = [];
+    var cur = null;
+    for (var s = 0; s < segments.length; s++) {
+      if (!cur || cur.node !== segments[s].node) {
+        cur = { node: segments[s].node, start: segments[s].rawIdx, end: segments[s].rawIdx + 1 };
+        groups.push(cur);
+      } else {
+        cur.end = segments[s].rawIdx + 1;
+      }
+    }
+    return groups;
+  }
+
+  var ALL_COLORS = ['yellow','green','blue','pink','purple'];
+
+  function _rebuildCssHighlights() {
+    var colorGroups = {};
+    var rangeMap = window.__hibikiHighlightRangeMap;
+    for (var id in rangeMap) {
+      var entry = rangeMap[id];
+      var color = entry.color || 'yellow';
+      if (!colorGroups[color]) colorGroups[color] = [];
+      for (var i = 0; i < entry.ranges.length; i++) {
+        colorGroups[color].push(entry.ranges[i]);
+      }
+    }
+    for (var ci = 0; ci < ALL_COLORS.length; ci++) {
+      var c = ALL_COLORS[ci];
+      var hlName = 'hoshi-hl-' + c;
+      var ranges = colorGroups[c];
+      if (ranges && ranges.length) {
+        CSS.highlights.set(hlName, new Highlight(...ranges));
+      } else {
+        CSS.highlights.delete(hlName);
+      }
+    }
+    var root = document.documentElement;
+    for (var ci2 = 0; ci2 < ALL_COLORS.length; ci2++) {
+      var cn = ALL_COLORS[ci2];
+      root.style.setProperty('--hoshi-hl-' + cn, _hlColor(cn));
+    }
+  }
+
   // ── 从 selection 计算 normCharOffset + length ──
   window.__hibikiGetSelectionNormRange = function() {
     var sel = window.getSelection();
@@ -118,82 +188,83 @@ class HighlightBridge {
 
   // ── 应用高亮 ──
   window.__hibikiApplyHighlights = function(highlightsJson) {
-    document.querySelectorAll('[data-highlight-id]').forEach(function(el) {
-      var parent = el.parentNode;
-      while (el.firstChild) parent.insertBefore(el.firstChild, el);
-      parent.removeChild(el);
-    });
-    var root = _root();
-    root.normalize();
-
-    if (!highlightsJson || highlightsJson.length === 0) return;
-
-    // 先按 offset 升序排列
-    var sorted = highlightsJson.slice().sort(function(a, b) {
-      return a.offset - b.offset;
-    });
-
-    // 建 offset map
-    var walker = _walker(root);
-    var map = [];
-    var normCount = 0;
-    var node;
-    while ((node = walker.nextNode()) != null) {
-      var txt = node.textContent || '';
-      for (var i = 0; i < txt.length; i++) {
-        if (!_skip(txt.charCodeAt(i))) {
-          map.push({ node: node, rawIdx: i, normIdx: normCount });
-          normCount++;
+    if (window.__hoshiCssHighlightsSupported) {
+      window.__hibikiHighlightRangeMap = {};
+      if (!highlightsJson || highlightsJson.length === 0) {
+        for (var i = 0; i < ALL_COLORS.length; i++) {
+          CSS.highlights.delete('hoshi-hl-' + ALL_COLORS[i]);
+        }
+        return;
+      }
+      var map = _buildOffsetMap();
+      for (var h = 0; h < highlightsJson.length; h++) {
+        var hl = highlightsJson[h];
+        var groups = _buildGroups(map, hl.offset, hl.length);
+        var ranges = [];
+        for (var g = 0; g < groups.length; g++) {
+          try {
+            var r = document.createRange();
+            r.setStart(groups[g].node, groups[g].start);
+            r.setEnd(groups[g].node, groups[g].end);
+            ranges.push(r);
+          } catch (e) {}
+        }
+        if (ranges.length) {
+          window.__hibikiHighlightRangeMap[hl.id] = {
+            color: hl.color || 'yellow',
+            ranges: ranges
+          };
         }
       }
-    }
-
-    // 倒序 wrap 以避免 offset 失效
-    for (var h = sorted.length - 1; h >= 0; h--) {
-      var hl = sorted[h];
-      var segments = [];
-      for (var m = 0; m < map.length; m++) {
-        if (map[m].normIdx >= hl.offset && map[m].normIdx < hl.offset + hl.length) {
-          segments.push(map[m]);
+      _rebuildCssHighlights();
+    } else {
+      document.querySelectorAll('[data-highlight-id]').forEach(function(el) {
+        var parent = el.parentNode;
+        while (el.firstChild) parent.insertBefore(el.firstChild, el);
+        parent.removeChild(el);
+      });
+      var root = _root();
+      root.normalize();
+      if (!highlightsJson || highlightsJson.length === 0) return;
+      var sorted = highlightsJson.slice().sort(function(a, b) {
+        return a.offset - b.offset;
+      });
+      var map = _buildOffsetMap();
+      for (var h = sorted.length - 1; h >= 0; h--) {
+        var hl = sorted[h];
+        var groups = _buildGroups(map, hl.offset, hl.length);
+        if (groups.length === 0) continue;
+        var color = _hlColor(hl.color || 'yellow');
+        for (var g = groups.length - 1; g >= 0; g--) {
+          try {
+            var r = document.createRange();
+            r.setStart(groups[g].node, groups[g].start);
+            r.setEnd(groups[g].node, groups[g].end);
+            var span = document.createElement('span');
+            span.setAttribute('data-highlight-id', hl.id);
+            span.style.backgroundColor = color;
+            span.style.borderRadius = '2px';
+            r.surroundContents(span);
+          } catch (e) {}
         }
-      }
-      if (segments.length === 0) continue;
-
-      var color = _hlColor(hl.color || 'yellow');
-      var groups = [];
-      var cur = null;
-      for (var s = 0; s < segments.length; s++) {
-        if (!cur || cur.node !== segments[s].node) {
-          cur = { node: segments[s].node, start: segments[s].rawIdx, end: segments[s].rawIdx + 1 };
-          groups.push(cur);
-        } else {
-          cur.end = segments[s].rawIdx + 1;
-        }
-      }
-      for (var g = groups.length - 1; g >= 0; g--) {
-        try {
-          var r = document.createRange();
-          r.setStart(groups[g].node, groups[g].start);
-          r.setEnd(groups[g].node, groups[g].end);
-          var span = document.createElement('span');
-          span.setAttribute('data-highlight-id', hl.id);
-          span.style.backgroundColor = color;
-          span.style.borderRadius = '2px';
-          r.surroundContents(span);
-        } catch (e) {}
       }
     }
   };
 
   // ── 移除单条高亮 ──
   window.__hibikiRemoveHighlight = function(id) {
-    var els = document.querySelectorAll('[data-highlight-id="' + id + '"]');
-    els.forEach(function(el) {
-      var parent = el.parentNode;
-      while (el.firstChild) parent.insertBefore(el.firstChild, el);
-      parent.removeChild(el);
-      parent.normalize();
-    });
+    if (window.__hoshiCssHighlightsSupported) {
+      delete window.__hibikiHighlightRangeMap[id];
+      _rebuildCssHighlights();
+    } else {
+      var els = document.querySelectorAll('[data-highlight-id="' + id + '"]');
+      els.forEach(function(el) {
+        var parent = el.parentNode;
+        while (el.firstChild) parent.insertBefore(el.firstChild, el);
+        parent.removeChild(el);
+        parent.normalize();
+      });
+    }
   };
 })();
 ''';

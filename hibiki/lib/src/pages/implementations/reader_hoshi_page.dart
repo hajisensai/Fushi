@@ -1246,7 +1246,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           backgroundHex: _readerBackgroundHex,
           customHighlightCss: _customHighlightCss);
       await _controller!.evaluateJavascript(
-        source: 'window.hoshiReader && window.hoshiReader.buildNodeOffsets();',
+        source:
+            'if (!window.__hoshiCssHighlightsSupported) { window.hoshiReader && window.hoshiReader.buildNodeOffsets(); }',
       );
     }
   }
@@ -2918,7 +2919,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
             customHighlightCss: _customHighlightCss);
         await _controller!.evaluateJavascript(
           source:
-              'window.hoshiReader && window.hoshiReader.buildNodeOffsets();',
+              'if (!window.__hoshiCssHighlightsSupported) { window.hoshiReader && window.hoshiReader.buildNodeOffsets(); }',
         );
       }
       Fluttertoast.showToast(msg: t.favorite_removed);
@@ -2949,7 +2950,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           backgroundHex: _readerBackgroundHex,
           customHighlightCss: _customHighlightCss);
       await _controller!.evaluateJavascript(
-        source: 'window.hoshiReader && window.hoshiReader.buildNodeOffsets();',
+        source:
+            'if (!window.__hoshiCssHighlightsSupported) { window.hoshiReader && window.hoshiReader.buildNodeOffsets(); }',
       );
     }
     Fluttertoast.showToast(msg: t.favorite_added);
