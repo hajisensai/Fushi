@@ -34,8 +34,6 @@ CustomSchemeResponse? dictionaryMediaCustomSchemeResponse(Uri url) {
 }
 
 _DictionaryMediaResponse? _dictionaryMediaResponse(Uri url) {
-  if (!HoshiDicts.isInitialized) return null;
-
   if (url.scheme == 'image') {
     final String dictName = url.queryParameters['dictionary'] ?? '';
     final String mediaPath = _normalizeMediaPath(
@@ -44,6 +42,7 @@ _DictionaryMediaResponse? _dictionaryMediaResponse(Uri url) {
     if (dictName.isEmpty || mediaPath.isEmpty) {
       return _DictionaryMediaResponse.notFound();
     }
+    if (!HoshiDicts.isInitialized) return _DictionaryMediaResponse.notFound();
 
     try {
       final Uint8List? data = HoshiDicts.instance.getMediaFile(
@@ -71,6 +70,7 @@ _DictionaryMediaResponse? _dictionaryMediaResponse(Uri url) {
     if (dictName.isEmpty || mediaPath.isEmpty) {
       return _DictionaryMediaResponse.notFound();
     }
+    if (!HoshiDicts.isInitialized) return _DictionaryMediaResponse.notFound();
 
     final Uint8List? data = HoshiDicts.instance.getMediaFile(
       dictName,

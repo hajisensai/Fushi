@@ -14,7 +14,8 @@ void main() {
       expect(response.data, isEmpty);
     });
 
-    test('returns 404 for malformed dictmedia scheme before dictionary init', () {
+    test('returns 404 for malformed dictmedia scheme before dictionary init',
+        () {
       final response = dictionaryMediaWebResourceResponse(
         Uri.parse('dictmedia://styles.css'),
       );
