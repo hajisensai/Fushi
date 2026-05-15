@@ -180,10 +180,17 @@ class ProfileRepository {
 
   Future<void> ensureDefaultProfile() async {
     final existing = await _db.getAllProfiles();
-    if (existing.isNotEmpty) return;
+    if (existing.isEmpty) {
+      final id = await createProfile('Default');
+      await setActiveProfileId(id);
+      await snapshotCurrentSettings(id);
+      return;
+    }
 
-    final id = await createProfile('Default');
-    await setActiveProfileId(id);
-    await snapshotCurrentSettings(id);
+    final activeId = await getActiveProfileId();
+    final valid = existing.any((p) => p.id == activeId);
+    if (!valid) {
+      await setActiveProfileId(existing.first.id);
+    }
   }
 }

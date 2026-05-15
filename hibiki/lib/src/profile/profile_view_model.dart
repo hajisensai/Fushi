@@ -46,6 +46,12 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
       : super(const ProfileUiState()) {
     _load();
   }
+
+  @override
+  void dispose() {
+    _repo.snapshotCurrentSettings(state.activeProfileId);
+    super.dispose();
+  }
   final ProfileRepository _repo;
   final void Function() _onProfileApplied;
 
@@ -84,6 +90,9 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
   }
 
   Future<void> copyProfile(int sourceId, String newName) async {
+    if (sourceId == state.activeProfileId) {
+      await _repo.snapshotCurrentSettings(sourceId);
+    }
     await _repo.copyProfile(sourceId, newName);
     state = state.copyWith(
       profiles: await _repo.getAllProfiles(),
@@ -96,11 +105,12 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
   }
 
   Future<void> deleteProfile(int id) async {
+    final previousActiveId = state.activeProfileId;
     await _repo.deleteProfile(id);
     final profiles = await _repo.getAllProfiles();
     final activeId = await _repo.getActiveProfileId();
     state = state.copyWith(profiles: profiles, activeProfileId: activeId);
-    if (state.activeProfileId != id) {
+    if (activeId != previousActiveId) {
       _onProfileApplied();
     }
   }

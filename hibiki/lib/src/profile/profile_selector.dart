@@ -16,20 +16,6 @@ class ProfileSelector extends ConsumerStatefulWidget {
 }
 
 class _ProfileSelectorState extends ConsumerState<ProfileSelector> {
-  ProfileViewModel? _vm;
-
-  @override
-  void initState() {
-    super.initState();
-    _vm = ref.read(profileViewModelProvider.notifier);
-  }
-
-  @override
-  void dispose() {
-    _vm?.saveCurrentSettingsToActiveProfile();
-    super.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
     final uiState = ref.watch(profileViewModelProvider);
