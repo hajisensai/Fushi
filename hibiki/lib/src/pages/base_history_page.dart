@@ -34,7 +34,6 @@ abstract class BaseHistoryPageState<T extends BaseHistoryPage>
   /// Whether or not to allow edit and delete.
   bool get isHistory => true;
 
-
   @override
   Widget build(BuildContext context);
 

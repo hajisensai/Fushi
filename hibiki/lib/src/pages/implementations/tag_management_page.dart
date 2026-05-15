@@ -202,7 +202,11 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
 }
 
 class TagEditDialog extends StatefulWidget {
-  const TagEditDialog({required this.title, required this.initialName, required this.initialColor, super.key,
+  const TagEditDialog({
+    required this.title,
+    required this.initialName,
+    required this.initialColor,
+    super.key,
   });
   final String title;
   final String initialName;

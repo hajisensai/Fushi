@@ -61,8 +61,8 @@ class DictionaryTermPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     List<DictionaryEntry> visibleEntries = entries
-        .where(
-            (entry) => !(dictionaryNamesByHidden[entry.dictionaryName] ?? false))
+        .where((entry) =>
+            !(dictionaryNamesByHidden[entry.dictionaryName] ?? false))
         .toList();
 
     visibleEntries.sort((a, b) =>
@@ -113,7 +113,8 @@ class DictionaryTermPage extends ConsumerWidget {
                       ? visibleEntries.length + 1
                       : visibleEntries.length,
                   (context, index) {
-                    if (index == visibleEntries.length && footerWidget != null) {
+                    if (index == visibleEntries.length &&
+                        footerWidget != null) {
                       return footerWidget;
                     }
 
@@ -170,8 +171,7 @@ class _DictionaryTermActionsRowState
         onVisibilityChanged: (info) {
           visibilityInfo = info;
           if (info.visibleFraction > 0) {
-            ref.watch(visibleOnceProvider(widget.entry).notifier).state =
-                true;
+            ref.watch(visibleOnceProvider(widget.entry).notifier).state = true;
           }
         },
         child: buildRow(

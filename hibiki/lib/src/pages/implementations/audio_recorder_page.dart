@@ -41,7 +41,6 @@ class _AudioRecorderDialogPageState
   bool _isRecording = false;
   bool _initialised = false;
 
-
   @override
   Widget build(BuildContext context) {
     return AlertDialog(

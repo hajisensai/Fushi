@@ -21,7 +21,8 @@ class ClearFieldEnhancement extends Enhancement {
   static const String key = 'clear_field';
 
   @override
-  String getLocalisedLabel(AppModel appModel) => t.creator_enhancement_clear_field;
+  String getLocalisedLabel(AppModel appModel) =>
+      t.creator_enhancement_clear_field;
 
   @override
   Future<void> enhanceCreatorParams({

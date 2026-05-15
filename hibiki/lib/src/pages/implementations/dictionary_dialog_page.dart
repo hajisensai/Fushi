@@ -229,7 +229,8 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
   Widget buildImportButton() {
     return TextButton(
       onPressed: _importDictionaryFiles,
-      child: Text(t.dialog_import_dictionary, overflow: TextOverflow.ellipsis, maxLines: 1),
+      child: Text(t.dialog_import_dictionary,
+          overflow: TextOverflow.ellipsis, maxLines: 1),
     );
   }
 
@@ -237,7 +238,8 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
 
   Widget buildImportFolderButton() {
     return TextButton(
-      child: Text(t.dialog_import_folder, overflow: TextOverflow.ellipsis, maxLines: 1),
+      child: Text(t.dialog_import_folder,
+          overflow: TextOverflow.ellipsis, maxLines: 1),
       onPressed: () async {
         ValueNotifier<String> progressNotifier =
             ValueNotifier<String>(t.import_start);
@@ -281,7 +283,8 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
             },
           );
         } catch (e, stack) {
-          ErrorLogService.instance.log('DictionaryDialog.folderImport', e, stack);
+          ErrorLogService.instance
+              .log('DictionaryDialog.folderImport', e, stack);
           debugPrint('[Dictionary Import] folder import error: $e');
           progressNotifier.value = '$e';
           await Future.delayed(const Duration(seconds: 3));

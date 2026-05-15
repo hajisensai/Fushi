@@ -264,7 +264,7 @@ class TtuMigration {
     if (bmRaw is Map<String, dynamic>) {
       final Bookmark? bm = _tryParseBookmark(bmRaw, ttuId, bookTitle);
       if (bm != null) {
-        await repo.addBookmark(ttuId, bm);
+        await repo.importLegacyBookmark(ttuId, bm);
         debugPrint('[ttu-migration] book $ttuId: migrated 1 bookmark');
       }
     } else if (bmRaw is List) {
@@ -273,7 +273,7 @@ class TtuMigration {
         if (entry is Map<String, dynamic>) {
           final Bookmark? bm = _tryParseBookmark(entry, ttuId, bookTitle);
           if (bm != null) {
-            await repo.addBookmark(ttuId, bm);
+            await repo.importLegacyBookmark(ttuId, bm);
             count++;
           }
         }

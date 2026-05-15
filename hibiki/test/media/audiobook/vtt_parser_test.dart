@@ -47,8 +47,8 @@ WEBVTT
       );
 
       expect(cues.length, 1);
-      expect(cues[0].startMs, 90500);  // 1m30.5s
-      expect(cues[0].endMs, 135000);   // 2m15s
+      expect(cues[0].startMs, 90500); // 1m30.5s
+      expect(cues[0].endMs, 135000); // 2m15s
     });
 
     test('时间行后位置指令被忽略', () {
@@ -104,8 +104,7 @@ WEBVTT
 
     test('带 UTF-8 BOM 的内容正常解析', () {
       final List<AudioCue> cues = VttParser.parseString(
-        content:
-            '\uFEFFWEBVTT\n\n00:00:01.000 --> 00:00:02.000\nBOM テスト\n',
+        content: '\uFEFFWEBVTT\n\n00:00:01.000 --> 00:00:02.000\nBOM テスト\n',
         bookUid: 'test/book.vtt',
       );
 

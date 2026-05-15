@@ -7,7 +7,6 @@ import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/utils.dart';
 
 class _GroupedEntry {
-
   _GroupedEntry({
     required this.expression,
     required this.reading,
@@ -23,7 +22,6 @@ class _GroupedEntry {
 }
 
 class _GlossaryItem {
-
   _GlossaryItem({
     required this.dictionary,
     required this.content,
@@ -36,7 +34,8 @@ class _GlossaryItem {
 
 class DictionaryPopupNative extends ConsumerStatefulWidget {
   const DictionaryPopupNative({
-    required this.result, super.key,
+    required this.result,
+    super.key,
     this.onTextSelected,
     this.onMineEntry,
   });
@@ -50,8 +49,7 @@ class DictionaryPopupNative extends ConsumerStatefulWidget {
       _DictionaryPopupNativeState();
 }
 
-class _DictionaryPopupNativeState
-    extends ConsumerState<DictionaryPopupNative> {
+class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
   List<_GroupedEntry> _grouped = [];
 
   @override
@@ -116,15 +114,16 @@ class _DictionaryPopupNativeState
           final data = jsonDecode(entry.extra) as Map<String, dynamic>;
           defTags = data['definitionTags']?.toString() ?? '';
         } catch (e, stack) {
-          ErrorLogService.instance.log('DictPopupNative.definitionTags', e, stack);
+          ErrorLogService.instance
+              .log('DictPopupNative.definitionTags', e, stack);
         }
       }
 
       grouped[key]!.glossaries.add(_GlossaryItem(
-        dictionary: entry.dictionaryName,
-        content: contentText,
-        definitionTags: defTags,
-      ));
+            dictionary: entry.dictionaryName,
+            content: contentText,
+            definitionTags: defTags,
+          ));
     }
 
     return grouped.values.toList();
@@ -152,7 +151,8 @@ class _DictionaryPopupNativeState
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final textColor = isDark ? Colors.white : Colors.black;
     final subColor = isDark ? Colors.white70 : Colors.black54;
-    final tagBg = isDark ? Colors.white12 : Colors.black.withValues(alpha: 0.08);
+    final tagBg =
+        isDark ? Colors.white12 : Colors.black.withValues(alpha: 0.08);
 
     if (_grouped.isEmpty) {
       return const SizedBox.shrink();

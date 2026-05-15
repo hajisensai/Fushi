@@ -5,8 +5,8 @@ import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
 typedef LocalAudioQuery = Future<Map<String, dynamic>?> Function(
     String expression, String reading);
-typedef LocalAudioExtractor = Future<String?> Function(
-    String file, String source, {int dbIndex});
+typedef LocalAudioExtractor = Future<String?>
+    Function(String file, String source, {int dbIndex});
 typedef AudioSourceListFetcher = Future<List<String>> Function(String url);
 
 class WordAudioResolver {

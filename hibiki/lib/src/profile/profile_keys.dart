@@ -55,8 +55,7 @@ class ProfileKeys {
     Map<String, String> m,
     AnkiSettings current,
   ) {
-    int? parseInt(String? v) =>
-        v == null || v.isEmpty ? null : int.tryParse(v);
+    int? parseInt(String? v) => v == null || v.isEmpty ? null : int.tryParse(v);
 
     return AnkiSettings(
       selectedDeckId: parseInt(m['selectedDeckId']),
@@ -75,9 +74,8 @@ class ProfileKeys {
       tags: m['tags'] ?? '',
       allowDupes: m['allowDupes'] == 'true',
       compactGlossaries: m['compactGlossaries'] == 'true',
-      embedMedia: m.containsKey('embedMedia')
-          ? m['embedMedia'] == 'true'
-          : true,
+      embedMedia:
+          m.containsKey('embedMedia') ? m['embedMedia'] == 'true' : true,
     );
   }
 }

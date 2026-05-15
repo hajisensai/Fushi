@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart' show AudiobookImportDialog;
+import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart'
+    show AudiobookImportDialog;
 
 import 'package:hibiki/src/media/audiobook/audiobook_health.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
@@ -20,7 +21,12 @@ class SasayakiRematch {
   const SasayakiRematch._();
 
   /// 只有 SRT/LRC/VTT/ASS 走 matcher；SMIL/JSON 有硬时间码锚点，与 window 无关。
-  static const Set<String> supportedFormats = <String>{'srt', 'lrc', 'vtt', 'ass'};
+  static const Set<String> supportedFormats = <String>{
+    'srt',
+    'lrc',
+    'vtt',
+    'ass'
+  };
 
   /// 硬时间码格式，matcher 无能为力，直接排除。
   static const Set<String> nonMatcherFormats = <String>{'smil', 'json'};
@@ -158,17 +164,15 @@ class SasayakiRematch {
                     const SizedBox(height: 12),
                     SasayakiThresholdSlider(
                       value: threshold,
-                      onChanged: (v) =>
-                          setSheet(() => threshold = v),
+                      onChanged: (v) => setSheet(() => threshold = v),
                     ),
                     const SizedBox(height: 16),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
                         TextButton(
-                          onPressed: autoBusy
-                              ? null
-                              : () => Navigator.pop(sheetCtx),
+                          onPressed:
+                              autoBusy ? null : () => Navigator.pop(sheetCtx),
                           child: Text(t.cancel),
                         ),
                         const SizedBox(width: 8),
@@ -219,7 +223,8 @@ class SasayakiRematch {
         return null;
       }
       final int pct = (best.value * 100).round();
-      Fluttertoast.showToast(msg: t.sasayaki_auto_picked(window: best.key, pct: pct));
+      Fluttertoast.showToast(
+          msg: t.sasayaki_auto_picked(window: best.key, pct: pct));
       return best.key;
     } catch (e, st) {
       debugPrint('[hibiki-audiobook] autoProbe failed: $e\n$st');
@@ -232,8 +237,7 @@ class SasayakiRematch {
     required int ttuBookId,
   }) async {
     try {
-      final String extractDir =
-          await EpubStorage.bookDirectory(ttuBookId);
+      final String extractDir = await EpubStorage.bookDirectory(ttuBookId);
       final EpubBook book = EpubParser.parseFromExtracted(extractDir);
       return List<EpubSection>.generate(
         book.chapters.length,
@@ -263,8 +267,7 @@ class SasayakiRematch {
         Fluttertoast.showToast(msg: t.sasayaki_no_stored_cues);
         return;
       }
-      final String extractDir =
-          await EpubStorage.bookDirectory(ttuBookId);
+      final String extractDir = await EpubStorage.bookDirectory(ttuBookId);
       final EpubBook book = EpubParser.parseFromExtracted(extractDir);
       final List<EpubSection> sections = List<EpubSection>.generate(
         book.chapters.length,
@@ -364,8 +367,7 @@ class SasayakiWindowSlider extends StatelessWidget {
                 divisions: divisions,
                 value: value.toDouble(),
                 label: '$value',
-                onChanged:
-                    autoBusy ? null : (v) => onChanged(v.round()),
+                onChanged: autoBusy ? null : (v) => onChanged(v.round()),
               ),
             ),
             SizedBox(
@@ -398,7 +400,8 @@ class SasayakiWindowSlider extends StatelessWidget {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.auto_awesome, size: 16),
-                label: Text(autoBusy ? t.sasayaki_matching : t.sasayaki_auto_match),
+                label: Text(
+                    autoBusy ? t.sasayaki_matching : t.sasayaki_auto_match),
               ),
           ],
         ),
@@ -425,7 +428,8 @@ class SasayakiThresholdSlider extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(t.sasayaki_similarity_threshold, style: theme.textTheme.titleMedium),
+        Text(t.sasayaki_similarity_threshold,
+            style: theme.textTheme.titleMedium),
         const SizedBox(height: 4),
         Text(
           t.sasayaki_threshold_hint,
@@ -442,8 +446,7 @@ class SasayakiThresholdSlider extends StatelessWidget {
                 divisions: 9,
                 value: value,
                 label: value.toStringAsFixed(1),
-                onChanged: (v) =>
-                    onChanged(double.parse(v.toStringAsFixed(1))),
+                onChanged: (v) => onChanged(double.parse(v.toStringAsFixed(1))),
               ),
             ),
             SizedBox(
@@ -457,7 +460,8 @@ class SasayakiThresholdSlider extends StatelessWidget {
           ],
         ),
         Text(
-          t.sasayaki_default_value(n: EpubSrtMatcher.defaultSimilarityThreshold),
+          t.sasayaki_default_value(
+              n: EpubSrtMatcher.defaultSimilarityThreshold),
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),

@@ -1,5 +1,6 @@
 import 'package:hibiki/src/database/database.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_health.dart' show HealthKind;
+import 'package:hibiki/src/media/audiobook/audiobook_health.dart'
+    show HealthKind;
 
 /// 有声书元数据。一本 EPUB 可挂载 0..1 个有声书。
 class Audiobook {

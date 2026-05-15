@@ -57,7 +57,8 @@ class CuesToEpub {
     zip.addDeflated(
       'OEBPS/content.opf',
       utf8.encode(
-        _contentOpf(title: title, author: author, chapterCount: chapters.length),
+        _contentOpf(
+            title: title, author: author, chapterCount: chapters.length),
       ),
     );
     zip.addDeflated(
@@ -102,8 +103,7 @@ class CuesToEpub {
 
     for (final AudioCue cue in cues) {
       final bool tooManyCues = current.length >= kMaxCuesPerChapter;
-      final bool tooLong =
-          (cue.endMs - chapterStartMs) > kMaxChapterDurationMs;
+      final bool tooLong = (cue.endMs - chapterStartMs) > kMaxChapterDurationMs;
 
       if (current.isNotEmpty && (tooManyCues || tooLong)) {
         chapters.add(current);
@@ -170,8 +170,7 @@ class CuesToEpub {
     final StringBuffer manifest = StringBuffer();
     final StringBuffer spine = StringBuffer();
     for (int i = 1; i <= chapterCount; i++) {
-      manifest.write(
-          '    <item id="chapter-$i" href="chapter-$i.xhtml"'
+      manifest.write('    <item id="chapter-$i" href="chapter-$i.xhtml"'
           ' media-type="application/xhtml+xml"/>\n');
       spine.write('    <itemref idref="chapter-$i"/>\n');
     }
@@ -257,9 +256,8 @@ class CuesToEpub {
     required int totalChapters,
     required List<AudioCue> cues,
   }) {
-    final String chapterLabel = totalChapters > 1
-        ? 'Chapter ${chapterIndex + 1}'
-        : bookTitle;
+    final String chapterLabel =
+        totalChapters > 1 ? 'Chapter ${chapterIndex + 1}' : bookTitle;
 
     final List<List<AudioCue>> paragraphs = _groupParagraphs(cues);
     final StringBuffer body = StringBuffer();
@@ -313,11 +311,11 @@ class CuesToEpub {
 class _EpubZip {
   final List<_ZipEntry> _entries = [];
 
-  void addStored(String name, List<int> data) =>
-      _entries.add(_ZipEntry(name: name, data: Uint8List.fromList(data), store: true));
+  void addStored(String name, List<int> data) => _entries
+      .add(_ZipEntry(name: name, data: Uint8List.fromList(data), store: true));
 
-  void addDeflated(String name, List<int> data) =>
-      _entries.add(_ZipEntry(name: name, data: Uint8List.fromList(data), store: false));
+  void addDeflated(String name, List<int> data) => _entries
+      .add(_ZipEntry(name: name, data: Uint8List.fromList(data), store: false));
 
   Uint8List build() {
     final buf = BytesBuilder(copy: false);

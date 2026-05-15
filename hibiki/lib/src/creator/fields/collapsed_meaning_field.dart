@@ -28,7 +28,8 @@ class CollapsedMeaningField extends Field {
   static const String key = 'collapsed_meaning';
 
   @override
-  String getLocalisedLabel(AppModel appModel) => t.creator_field_collapsed_meaning;
+  String getLocalisedLabel(AppModel appModel) =>
+      t.creator_field_collapsed_meaning;
 
   @override
   String? onCreatorOpenAction({
@@ -40,9 +41,6 @@ class CollapsedMeaningField extends Field {
     required String? dictionaryName,
   }) {
     return MeaningField.flattenMeanings(
-        appModel: appModel,
-        entries: [entry],
-        prependDictionaryNames:
-            false);
+        appModel: appModel, entries: [entry], prependDictionaryNames: false);
   }
 }

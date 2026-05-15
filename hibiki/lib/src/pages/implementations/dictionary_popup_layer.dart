@@ -36,7 +36,13 @@ Rect calcPopupPosition({
 class DictionaryPopupLayer extends StatelessWidget {
   const DictionaryPopupLayer({
     required this.result,
-    required this.webViewKey, required this.onDismiss, required this.onTextSelected, required this.onLinkClick, required this.onMineEntry, required this.onDuplicateCheck, this.isSearching = false,
+    required this.webViewKey,
+    required this.onDismiss,
+    required this.onTextSelected,
+    required this.onLinkClick,
+    required this.onMineEntry,
+    required this.onDuplicateCheck,
+    this.isSearching = false,
     this.onTapOutside,
     this.headerWidget,
     this.overlayWidget,

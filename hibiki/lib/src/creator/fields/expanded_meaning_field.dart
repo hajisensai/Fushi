@@ -27,7 +27,8 @@ class ExpandedMeaningField extends Field {
   static const String key = 'expanded_meaning';
 
   @override
-  String getLocalisedLabel(AppModel appModel) => t.creator_field_expanded_meaning;
+  String getLocalisedLabel(AppModel appModel) =>
+      t.creator_field_expanded_meaning;
 
   @override
   String? onCreatorOpenAction({
@@ -39,9 +40,6 @@ class ExpandedMeaningField extends Field {
     required String? dictionaryName,
   }) {
     return MeaningField.flattenMeanings(
-        appModel: appModel,
-        entries: [entry],
-        prependDictionaryNames:
-            false);
+        appModel: appModel, entries: [entry], prependDictionaryNames: false);
   }
 }

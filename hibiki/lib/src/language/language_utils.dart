@@ -139,6 +139,7 @@ class LanguageUtils {
       }
     } catch (e, stack) {
       ErrorLogService.instance.log('LanguageUtils.rubySegments', e, stack);
+
       /// This is the fallback upon failure.
       return [RubyTextData(term, ruby: reading)];
     }

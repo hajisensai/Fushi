@@ -35,8 +35,8 @@ class SrtBookRepository {
       title: Value(book.title),
       author: Value(book.author),
       audioRoot: Value(book.audioRoot),
-      audioPathsJson: Value(
-          book.audioPaths != null ? jsonEncode(book.audioPaths) : null),
+      audioPathsJson:
+          Value(book.audioPaths != null ? jsonEncode(book.audioPaths) : null),
       srtPath: Value(book.srtPath),
       coverPath: Value(book.coverPath),
       importedAt: Value(book.importedAt),
@@ -63,8 +63,7 @@ class SrtBookRepository {
     required String uid,
     required List<AudioCue> cues,
   }) async {
-    await _db.replaceCuesForBook(
-        uid, cues.map(AudioCue.toCompanion).toList());
+    await _db.replaceCuesForBook(uid, cues.map(AudioCue.toCompanion).toList());
   }
 
   static SrtBook _rowToModel(SrtBookRow r) {

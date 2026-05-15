@@ -23,7 +23,8 @@ class SearchDictionaryEnhancement extends Enhancement {
   static const String key = 'search_dictionary';
 
   @override
-  String getLocalisedLabel(AppModel appModel) => t.creator_enhancement_search_dictionary;
+  String getLocalisedLabel(AppModel appModel) =>
+      t.creator_enhancement_search_dictionary;
 
   @override
   Future<void> enhanceCreatorParams({

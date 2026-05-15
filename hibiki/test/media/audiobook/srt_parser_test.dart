@@ -61,8 +61,7 @@ void main() {
 
     test('带 UTF-8 BOM 的内容正常解析', () {
       final List<AudioCue> cues = SrtParser.parseString(
-        content:
-            '\uFEFF1\n00:00:01,000 --> 00:00:02,000\nBOM テスト\n',
+        content: '\uFEFF1\n00:00:01,000 --> 00:00:02,000\nBOM テスト\n',
         bookUid: 'test/book.srt',
       );
 
@@ -145,8 +144,8 @@ void main() {
       );
 
       expect(cues.length, 1);
-      expect(cues[0].startMs, 1100);   // 1,1  → 00:00:01.100
-      expect(cues[0].endMs, 2120);     // 2,12 → 00:00:02.120
+      expect(cues[0].startMs, 1100); // 1,1  → 00:00:01.100
+      expect(cues[0].endMs, 2120); // 2,12 → 00:00:02.120
     });
   });
 }

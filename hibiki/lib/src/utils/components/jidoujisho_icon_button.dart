@@ -105,38 +105,38 @@ class _JidoujishoIconButtonState extends State<JidoujishoIconButton> {
         label: widget.tooltip,
         button: true,
         child: IconButton(
-        constraints: BoxConstraints(
-          maxWidth: Spacing.of(context).spaces.extraBig,
-          maxHeight: Spacing.of(context).spaces.extraBig,
-        ),
-        icon: Icon(
-          widget.icon,
-          color: enabled ? enabledColor : disabledColor,
-          size: widget.size,
-        ),
-        onPressed: enabled
-            ? () async {
-                if (widget.busy) {
-                  if (enabled) {
-                    enabled = false;
-                    if (mounted) {
-                      setState(() {});
-                    }
-                    try {
-                      await widget.onTap?.call();
-                    } finally {
-                      enabled = true;
+          constraints: BoxConstraints(
+            maxWidth: Spacing.of(context).spaces.extraBig,
+            maxHeight: Spacing.of(context).spaces.extraBig,
+          ),
+          icon: Icon(
+            widget.icon,
+            color: enabled ? enabledColor : disabledColor,
+            size: widget.size,
+          ),
+          onPressed: enabled
+              ? () async {
+                  if (widget.busy) {
+                    if (enabled) {
+                      enabled = false;
                       if (mounted) {
                         setState(() {});
                       }
+                      try {
+                        await widget.onTap?.call();
+                      } finally {
+                        enabled = true;
+                        if (mounted) {
+                          setState(() {});
+                        }
+                      }
                     }
+                  } else {
+                    await widget.onTap?.call();
                   }
-                } else {
-                  await widget.onTap?.call();
                 }
-              }
-            : null,
-      ),
+              : null,
+        ),
       );
     }
 

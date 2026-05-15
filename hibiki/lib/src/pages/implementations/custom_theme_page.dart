@@ -115,8 +115,7 @@ class _CustomThemePageState extends BasePageState {
 
   void _holdScroll(BuildContext innerContext) {
     _pickerScrollHold?.cancel();
-    _pickerScrollHold =
-        Scrollable.maybeOf(innerContext)?.position.hold(() {});
+    _pickerScrollHold = Scrollable.maybeOf(innerContext)?.position.hold(() {});
   }
 
   void _releaseScroll() {
@@ -166,8 +165,7 @@ class _CustomThemePageState extends BasePageState {
       code += ':sk$sasayakiHex';
     }
     if (_useLinkColor && _linkColor != null) {
-      final linkHex =
-          _linkColor!.toARGB32().toRadixString(16).padLeft(8, '0');
+      final linkHex = _linkColor!.toARGB32().toRadixString(16).padLeft(8, '0');
       code += ':lk$linkHex';
     }
     return code;
@@ -506,8 +504,7 @@ class _CustomThemePageState extends BasePageState {
                   });
                 },
                 color: _secondaryColor!,
-                onChanged: (color) =>
-                    setState(() => _secondaryColor = color),
+                onChanged: (color) => setState(() => _secondaryColor = color),
                 enableAlpha: false,
               ),
               const SizedBox(height: 12),
@@ -528,8 +525,7 @@ class _CustomThemePageState extends BasePageState {
                   });
                 },
                 color: _tertiaryColor!,
-                onChanged: (color) =>
-                    setState(() => _tertiaryColor = color),
+                onChanged: (color) => setState(() => _tertiaryColor = color),
                 enableAlpha: false,
               ),
               const SizedBox(height: 12),
@@ -550,8 +546,7 @@ class _CustomThemePageState extends BasePageState {
                   });
                 },
                 color: _containerColor!,
-                onChanged: (color) =>
-                    setState(() => _containerColor = color),
+                onChanged: (color) => setState(() => _containerColor = color),
                 enableAlpha: false,
               ),
             ],
@@ -590,8 +585,7 @@ class _CustomThemePageState extends BasePageState {
 
   Widget _buildPreviewCard(ColorScheme cs) {
     final Color textColor = _useFontColor ? _fontColor! : cs.onSurface;
-    final Color bgColor =
-        _useBgColor ? _bgColor! : cs.surfaceContainerLow;
+    final Color bgColor = _useBgColor ? _bgColor! : cs.surfaceContainerLow;
 
     return Card(
       color: cs.surface,
@@ -614,8 +608,7 @@ class _CustomThemePageState extends BasePageState {
                 const SizedBox(width: 8),
                 _swatch(cs.tertiary, t.color_tertiary, cs.onSurface),
                 const SizedBox(width: 8),
-                _swatch(
-                    cs.primaryContainer, t.color_container, cs.onSurface),
+                _swatch(cs.primaryContainer, t.color_container, cs.onSurface),
               ],
             ),
             const SizedBox(height: 12),
@@ -754,8 +747,7 @@ class _CustomThemePageState extends BasePageState {
         color: bg,
         borderRadius: BorderRadius.circular(6),
       ),
-      child: Text('あいうえお',
-          style: TextStyle(color: fc, fontSize: 13)),
+      child: Text('あいうえお', style: TextStyle(color: fc, fontSize: 13)),
     );
   }
 
@@ -804,15 +796,17 @@ class _CustomThemePageState extends BasePageState {
             color: primary.withValues(alpha: 0.34),
             borderRadius: BorderRadius.circular(4),
           ),
-          child: Text('♪ ハイライト',
-              style: TextStyle(color: fc, fontSize: 12)),
+          child: Text('♪ ハイライト', style: TextStyle(color: fc, fontSize: 12)),
         ),
         const SizedBox(width: 8),
         Container(
           width: 32,
           height: 18,
           decoration: BoxDecoration(
-            color: (_useContainerColor ? _containerColor : _generatedScheme.primaryContainer) ?? cs.primaryContainer,
+            color: (_useContainerColor
+                    ? _containerColor
+                    : _generatedScheme.primaryContainer) ??
+                cs.primaryContainer,
             borderRadius: BorderRadius.circular(9),
           ),
           alignment: Alignment.centerRight,
@@ -890,9 +884,8 @@ class _CustomThemePageState extends BasePageState {
   Widget _buildSasayakiPreview(ColorScheme cs) {
     final Color fc = _useFontColor ? _fontColor! : cs.onSurface;
     final Color bg = _useBgColor ? _bgColor! : cs.surfaceContainerLow;
-    final Color sas = _useSasayakiColor
-        ? _sasayakiColor!
-        : const Color(0x6687CEEB);
+    final Color sas =
+        _useSasayakiColor ? _sasayakiColor! : const Color(0x6687CEEB);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -939,8 +932,8 @@ class _CustomThemePageState extends BasePageState {
       builder: (layoutContext, constraints) {
         final pickerWidth = constraints.maxWidth
             .clamp(0.0, MediaQuery.of(layoutContext).size.width - 64);
-        final isLandscape = MediaQuery.of(layoutContext).orientation ==
-            Orientation.landscape;
+        final isLandscape =
+            MediaQuery.of(layoutContext).orientation == Orientation.landscape;
         return Listener(
           onPointerDown: (_) => _holdScroll(layoutContext),
           onPointerUp: (_) => _releaseScroll(),
@@ -962,7 +955,12 @@ class _CustomThemePageState extends BasePageState {
 
   Widget _buildOptionalColorPicker({
     required String label,
-    required bool enabled, required ValueChanged<bool> onEnabledChanged, required Color color, required ValueChanged<Color> onChanged, required bool enableAlpha, String? description,
+    required bool enabled,
+    required ValueChanged<bool> onEnabledChanged,
+    required Color color,
+    required ValueChanged<Color> onChanged,
+    required bool enableAlpha,
+    String? description,
     Widget? preview,
     TextStyle? hintStyle,
   }) {

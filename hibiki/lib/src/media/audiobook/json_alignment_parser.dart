@@ -82,9 +82,7 @@ class JsonAlignmentParser {
     required List<AudioCue> allCues,
     required String chapterHref,
   }) {
-    return allCues
-        .where((c) => c.chapterHref == chapterHref)
-        .toList()
+    return allCues.where((c) => c.chapterHref == chapterHref).toList()
       ..sort((a, b) => a.sentenceIndex.compareTo(b.sentenceIndex));
   }
 

@@ -108,8 +108,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
 
   Widget _buildOuterContainer(bool isDark) {
     final colorScheme = Theme.of(context).colorScheme;
-    final fillColor =
-        appModel.overrideDictionaryColor ?? colorScheme.surface;
+    final fillColor = appModel.overrideDictionaryColor ?? colorScheme.surface;
     final borderColor = colorScheme.outlineVariant.withValues(alpha: 0.5);
 
     return Container(

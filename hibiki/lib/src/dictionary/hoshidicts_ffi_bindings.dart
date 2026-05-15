@@ -116,8 +116,7 @@ typedef _DestroyDart = void Function(Pointer<Void> handle);
 
 typedef _AddDictNative = Void Function(
     Pointer<Void> handle, Pointer<Utf8> path);
-typedef _AddDictDart = void Function(
-    Pointer<Void> handle, Pointer<Utf8> path);
+typedef _AddDictDart = void Function(Pointer<Void> handle, Pointer<Utf8> path);
 
 typedef _LoadTransformsDart = void Function(
     Pointer<Void> handle, Pointer<Utf8> json);
@@ -144,44 +143,51 @@ typedef _FreeMediaDart = void Function(Pointer<FfiMediaFile> r);
 // ── bindings class ──────────────────────────────────────────────────
 
 class HoshidictsFfiBindings {
-
   HoshidictsFfiBindings() {
     _lib = Platform.isAndroid
         ? DynamicLibrary.open('libhoshidicts_ffi.so')
         : throw UnsupportedError('hoshidicts only supports Android');
 
-    import_ = _lib
-        .lookupFunction<FfiImportResult Function(Pointer<Utf8>, Pointer<Utf8>), _ImportDart>('hoshidicts_import');
-    freeImportResult = _lib.lookupFunction<Void Function(Pointer<FfiImportResult>),
+    import_ = _lib.lookupFunction<
+        FfiImportResult Function(Pointer<Utf8>, Pointer<Utf8>),
+        _ImportDart>('hoshidicts_import');
+    freeImportResult = _lib.lookupFunction<
+        Void Function(Pointer<FfiImportResult>),
         _FreeImportResultDart>('hoshidicts_free_import_result');
-    create =
-        _lib.lookupFunction<Pointer<Void> Function(), _CreateDart>('hoshidicts_create');
-    destroy =
-        _lib.lookupFunction<Void Function(Pointer<Void>), _DestroyDart>('hoshidicts_destroy');
+    create = _lib.lookupFunction<Pointer<Void> Function(), _CreateDart>(
+        'hoshidicts_create');
+    destroy = _lib.lookupFunction<Void Function(Pointer<Void>), _DestroyDart>(
+        'hoshidicts_destroy');
     addTermDict = _lib.lookupFunction<_AddDictNative, _AddDictDart>(
         'hoshidicts_add_term_dict');
     addFreqDict = _lib.lookupFunction<_AddDictNative, _AddDictDart>(
         'hoshidicts_add_freq_dict');
     addPitchDict = _lib.lookupFunction<_AddDictNative, _AddDictDart>(
         'hoshidicts_add_pitch_dict');
-    loadTransforms = _lib.lookupFunction<Void Function(Pointer<Void>, Pointer<Utf8>),
+    loadTransforms = _lib.lookupFunction<
+        Void Function(Pointer<Void>, Pointer<Utf8>),
         _LoadTransformsDart>('hoshidicts_load_transforms');
-    query =
-        _lib.lookupFunction<FfiQueryResult Function(Pointer<Void>, Pointer<Utf8>), _QueryDart>('hoshidicts_query');
-    freeQueryResult = _lib.lookupFunction<Void Function(Pointer<FfiQueryResult>),
+    query = _lib.lookupFunction<
+        FfiQueryResult Function(Pointer<Void>, Pointer<Utf8>),
+        _QueryDart>('hoshidicts_query');
+    freeQueryResult = _lib.lookupFunction<
+        Void Function(Pointer<FfiQueryResult>),
         _FreeQueryResultDart>('hoshidicts_free_query_result');
-    lookup =
-        _lib.lookupFunction<FfiLookupResults Function(Pointer<Void>, Pointer<Utf8>, Int32, Int32), _LookupDart>('hoshidicts_lookup');
-    freeLookupResults = _lib.lookupFunction<Void Function(Pointer<FfiLookupResults>),
+    lookup = _lib.lookupFunction<
+        FfiLookupResults Function(Pointer<Void>, Pointer<Utf8>, Int32, Int32),
+        _LookupDart>('hoshidicts_lookup');
+    freeLookupResults = _lib.lookupFunction<
+        Void Function(Pointer<FfiLookupResults>),
         _FreeLookupResultsDart>('hoshidicts_free_lookup_results');
-    getStyles = _lib
-        .lookupFunction<FfiDictStyles Function(Pointer<Void>), _GetStylesDart>('hoshidicts_get_styles');
-    freeStyles = _lib
-        .lookupFunction<Void Function(Pointer<FfiDictStyles>), _FreeStylesDart>('hoshidicts_free_styles');
-    getMedia = _lib
-        .lookupFunction<FfiMediaFile Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>), _GetMediaDart>('hoshidicts_get_media');
-    freeMedia = _lib
-        .lookupFunction<Void Function(Pointer<FfiMediaFile>), _FreeMediaDart>('hoshidicts_free_media');
+    getStyles = _lib.lookupFunction<FfiDictStyles Function(Pointer<Void>),
+        _GetStylesDart>('hoshidicts_get_styles');
+    freeStyles = _lib.lookupFunction<Void Function(Pointer<FfiDictStyles>),
+        _FreeStylesDart>('hoshidicts_free_styles');
+    getMedia = _lib.lookupFunction<
+        FfiMediaFile Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>),
+        _GetMediaDart>('hoshidicts_get_media');
+    freeMedia = _lib.lookupFunction<Void Function(Pointer<FfiMediaFile>),
+        _FreeMediaDart>('hoshidicts_free_media');
   }
   late final DynamicLibrary _lib;
 

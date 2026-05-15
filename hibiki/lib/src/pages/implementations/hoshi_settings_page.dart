@@ -4,8 +4,6 @@ import 'package:wakelock/wakelock.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
-import 'package:hibiki/src/media/floating_dict_channel.dart';
-import 'package:hibiki/src/pages/implementations/profile_management_page.dart';
 import 'package:hibiki/src/profile/profile_selector.dart';
 import 'package:hibiki/utils.dart';
 
@@ -562,7 +560,8 @@ class _HoshiSettingsContentState extends BasePageState {
           _categoryTile(
             context,
             icon: Icons.terminal,
-            label: t.debug_log_title(count: DebugLogService.instance.entries.length),
+            label: t.debug_log_title(
+                count: DebugLogService.instance.entries.length),
             onTap: () {
               Navigator.push(
                 context,
@@ -621,8 +620,7 @@ class _ReaderBehaviorSettingsPageState extends BasePageState {
             onTap: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(
-                    builder: (_) => const DisplaySettingsPage()),
+                MaterialPageRoute(builder: (_) => const DisplaySettingsPage()),
               ).then((_) => setState(() {}));
             },
           ),
@@ -674,7 +672,10 @@ class _AudiobookSettingsPageState extends BasePageState {
       appBar: AppBar(title: Text(t.audiobook_settings)),
       body: ListView(
         padding: EdgeInsets.fromLTRB(
-          16, 8, 16, 8 + MediaQuery.of(context).padding.bottom,
+          16,
+          8,
+          16,
+          8 + MediaQuery.of(context).padding.bottom,
         ),
         children: [
           _buildSwitch(

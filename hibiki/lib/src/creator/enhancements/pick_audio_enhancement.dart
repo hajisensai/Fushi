@@ -25,7 +25,8 @@ class PickAudioEnhancement extends AudioEnhancement {
   static const String key = 'pick_audio';
 
   @override
-  String getLocalisedLabel(AppModel appModel) => t.creator_enhancement_pick_audio;
+  String getLocalisedLabel(AppModel appModel) =>
+      t.creator_enhancement_pick_audio;
 
   @override
   Future<void> enhanceCreatorParams({

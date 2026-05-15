@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:spaces/spaces.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/profile/profile_selector.dart';
 
@@ -14,6 +15,18 @@ class DisplaySettingsPage extends BasePage {
 
 class _DisplaySettingsPageState extends BasePageState {
   ReaderHoshiSource get _source => ReaderHoshiSource.instance;
+  ReaderSettings? _settings;
+
+  @override
+  void initState() {
+    super.initState();
+    _settings =
+        ReaderHoshiSource.readerSettings ?? ReaderSettings(appModel.database);
+    ReaderHoshiSource.readerSettings = _settings;
+    _settings!.ready.then((_) {
+      if (mounted) setState(() {});
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -23,7 +36,10 @@ class _DisplaySettingsPageState extends BasePageState {
       appBar: AppBar(title: Text(t.display_settings)),
       body: ListView(
         padding: EdgeInsets.fromLTRB(
-          16, 8, 16, 8 + MediaQuery.of(context).padding.bottom,
+          16,
+          8,
+          16,
+          8 + MediaQuery.of(context).padding.bottom,
         ),
         children: [
           const ProfileSelector(),
@@ -46,8 +62,8 @@ class _DisplaySettingsPageState extends BasePageState {
             min: 1,
             max: 3,
             format: (v) => v.toStringAsFixed(2),
-            onChanged: (v) => _update(
-                () => _source.setTtuLineHeight((v * 100).roundToDouble() / 100)),
+            onChanged: (v) => _update(() =>
+                _source.setTtuLineHeight((v * 100).roundToDouble() / 100)),
           ),
           _numberStepper(
             theme,
@@ -137,10 +153,8 @@ class _DisplaySettingsPageState extends BasePageState {
             child: SegmentedButton<String>(
               showSelectedIcon: false,
               segments: [
-                ButtonSegment(
-                    value: 'paginated', label: Text(t.ttu_paginated)),
-                ButtonSegment(
-                    value: 'continuous', label: Text(t.ttu_scroll)),
+                ButtonSegment(value: 'paginated', label: Text(t.ttu_paginated)),
+                ButtonSegment(value: 'continuous', label: Text(t.ttu_scroll)),
               ],
               selected: {_source.ttuViewMode},
               onSelectionChanged: (sel) =>
@@ -161,8 +175,8 @@ class _DisplaySettingsPageState extends BasePageState {
                       value: 'upright', label: Text(t.ttu_orient_upright)),
                 ],
                 selected: {_source.ttuVerticalTextOrientation},
-                onSelectionChanged: (sel) =>
-                    _update(() => _source.setTtuVerticalTextOrientation(sel.first)),
+                onSelectionChanged: (sel) => _update(
+                    () => _source.setTtuVerticalTextOrientation(sel.first)),
                 style: _segmentedStyle(theme),
               ),
             ),
@@ -186,8 +200,7 @@ class _DisplaySettingsPageState extends BasePageState {
                           value: 'partial',
                           label: Text(t.ttu_furigana_partial)),
                       ButtonSegment(
-                          value: 'toggle',
-                          label: Text(t.ttu_furigana_toggle)),
+                          value: 'toggle', label: Text(t.ttu_furigana_toggle)),
                     ],
                     selected: {_source.ttuFuriganaMode},
                     onSelectionChanged: (sel) {
@@ -228,7 +241,8 @@ class _DisplaySettingsPageState extends BasePageState {
               label: t.ttu_font_vpal,
               child: Switch(
                 value: _source.ttuEnableFontVPAL,
-                onChanged: (v) => _update(() => _source.setTtuEnableFontVPAL(v)),
+                onChanged: (v) =>
+                    _update(() => _source.setTtuEnableFontVPAL(v)),
               ),
             ),
           _settingRow(
@@ -253,7 +267,8 @@ class _DisplaySettingsPageState extends BasePageState {
   Widget _settingRow(
     ThemeData theme, {
     required String label,
-    required Widget child, String? hint,
+    required Widget child,
+    String? hint,
   }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),

@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:hibiki/dictionary.dart';
 
 class DictionarySearchResult {
-
   factory DictionarySearchResult.fromJson(String json) {
     final map = Map<String, dynamic>.from(jsonDecode(json));
     final entriesJson = List<String>.from(map['entries'] ?? []);

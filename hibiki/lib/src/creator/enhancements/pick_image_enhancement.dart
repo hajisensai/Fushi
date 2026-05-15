@@ -27,7 +27,8 @@ class PickImageEnhancement extends ImageEnhancement {
   static const String key = 'pick_image';
 
   @override
-  String getLocalisedLabel(AppModel appModel) => t.creator_enhancement_pick_image;
+  String getLocalisedLabel(AppModel appModel) =>
+      t.creator_enhancement_pick_image;
 
   @override
   Future<void> enhanceCreatorParams({

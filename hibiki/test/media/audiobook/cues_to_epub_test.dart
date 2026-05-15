@@ -82,8 +82,7 @@ class _ZipReader {
     throw StateError('EOCD signature not found — not a valid ZIP');
   }
 
-  int _u16(int offset) =>
-      _b[offset] | (_b[offset + 1] << 8);
+  int _u16(int offset) => _b[offset] | (_b[offset + 1] << 8);
 
   int _u32(int offset) =>
       _b[offset] |
@@ -91,7 +90,6 @@ class _ZipReader {
       (_b[offset + 2] << 16) |
       (_b[offset + 3] << 24);
 }
-
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -174,7 +172,8 @@ void main() {
         tmpDir,
         cues: [_cue(idx: 0, startMs: 0, endMs: 1000, text: 'テスト')],
       );
-      expect(zip['META-INF/container.xml'], contains('full-path="OEBPS/content.opf"'));
+      expect(zip['META-INF/container.xml'],
+          contains('full-path="OEBPS/content.opf"'));
     });
 
     test('出力ファイルが実際に作成される', () async {
@@ -200,7 +199,8 @@ void main() {
         author: '夏目漱石',
       );
       expect(zip['OEBPS/content.opf'], contains('<dc:title>猫の本</dc:title>'));
-      expect(zip['OEBPS/content.opf'], contains('<dc:creator>夏目漱石</dc:creator>'));
+      expect(
+          zip['OEBPS/content.opf'], contains('<dc:creator>夏目漱石</dc:creator>'));
     });
 
     test('著者省略時は dc:creator タグがない', () async {
@@ -330,7 +330,11 @@ void main() {
       const tenMinMs = CuesToEpub.kMaxChapterDurationMs;
       final cues = [
         _cue(idx: 0, startMs: 0, endMs: tenMinMs - 1000, text: 'A'),
-        _cue(idx: 1, startMs: tenMinMs + 1000, endMs: tenMinMs + 2000, text: 'B'),
+        _cue(
+            idx: 1,
+            startMs: tenMinMs + 1000,
+            endMs: tenMinMs + 2000,
+            text: 'B'),
       ];
       final zip = await _generateAndRead(tmpDir, cues: cues);
       expect(zip['OEBPS/chapter-2.xhtml'], isNotNull);
@@ -371,7 +375,8 @@ void main() {
         cues: [_cue(idx: 0, startMs: 0, endMs: 1000, text: 'テスト')],
         title: 'A & B',
       );
-      expect(zip['OEBPS/content.opf'], contains('<dc:title>A &amp; B</dc:title>'));
+      expect(
+          zip['OEBPS/content.opf'], contains('<dc:title>A &amp; B</dc:title>'));
     });
   });
 
@@ -398,5 +403,4 @@ void main() {
       expect(xhtml, contains('data-end="2.000"'));
     });
   });
-
 }

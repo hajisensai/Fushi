@@ -37,7 +37,8 @@ class JidoujishoTextSelectionControls extends MaterialTextSelectionControls {
   static const double _kToolbarContentDistanceBelow = 20;
   static const double _kToolbarContentDistance = 8;
 
-  Widget _wrapWithThemeData(Widget Function(BuildContext) builder) =>
+  Widget _wrapWithThemeData(
+          Widget Function(BuildContext) builder) =>
       Platform.isIOS
           ? CupertinoTheme(
               data: CupertinoThemeData(primaryColor: handleColor),
@@ -106,12 +107,21 @@ class JidoujishoTextSelectionControls extends MaterialTextSelectionControls {
       anchorBelow: anchorBelow,
       clipboardStatus: clipboardStatus,
       searchAction: (searchAction != null)
-          ? () { searchAction?.call(selectedText()); delegate.hideToolbar(); }
+          ? () {
+              searchAction?.call(selectedText());
+              delegate.hideToolbar();
+            }
           : null,
       stashAction: (stashAction != null)
-          ? () { stashAction?.call(selectedText()); delegate.hideToolbar(); }
+          ? () {
+              stashAction?.call(selectedText());
+              delegate.hideToolbar();
+            }
           : null,
-      shareAction: () { shareAction(selectedText()); delegate.hideToolbar(); },
+      shareAction: () {
+        shareAction(selectedText());
+        delegate.hideToolbar();
+      },
       handleCopy:
           canCopy(delegate) && allowCopy ? () => handleCopy(delegate) : null,
       handleCut:
@@ -198,7 +208,8 @@ class _JidoujishoSelectionToolbarState
 
     final List<_ItemData> overflowItems = <_ItemData>[
       if (widget.handleSelectAll != null)
-        _ItemData(label: loc.selectAllButtonLabel, onPressed: widget.handleSelectAll),
+        _ItemData(
+            label: loc.selectAllButtonLabel, onPressed: widget.handleSelectAll),
       _ItemData(label: t.share, onPressed: widget.shareAction),
       if (widget.handleCut != null)
         _ItemData(label: loc.cutButtonLabel, onPressed: widget.handleCut),
@@ -207,7 +218,8 @@ class _JidoujishoSelectionToolbarState
         _ItemData(label: loc.pasteButtonLabel, onPressed: widget.handlePaste),
     ];
 
-    final int totalCount = primaryItems.length + (overflowItems.isNotEmpty ? 1 : 0);
+    final int totalCount =
+        primaryItems.length + (overflowItems.isNotEmpty ? 1 : 0);
     int childIndex = 0;
     return TextSelectionToolbar(
       anchorAbove: widget.anchorAbove,
@@ -230,7 +242,8 @@ class _JidoujishoSelectionToolbarState
             onSelected: (i) => overflowItems[i].onPressed?.call(),
             itemBuilder: (_) => [
               for (int i = 0; i < overflowItems.length; i++)
-                PopupMenuItem<int>(value: i, child: Text(overflowItems[i].label)),
+                PopupMenuItem<int>(
+                    value: i, child: Text(overflowItems[i].label)),
             ],
           ),
       ],

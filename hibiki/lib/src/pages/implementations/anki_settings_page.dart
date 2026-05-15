@@ -181,8 +181,7 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
   ) async {
     final dictionaryNames =
         appModel.termDictionaries.map((d) => d.name).toList();
-    final options =
-        AnkiHandlebarOptions.forTermDictionaries(dictionaryNames);
+    final options = AnkiHandlebarOptions.forTermDictionaries(dictionaryNames);
     final controller = TextEditingController(text: currentValue);
 
     final result = await showDialog<String>(

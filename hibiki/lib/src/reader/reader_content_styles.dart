@@ -54,10 +54,8 @@ class ReaderContentStyles {
     String? linkColor,
     String? themeOverride,
   }) {
-    final _ThemeColors colors = _themeColors(
-        themeOverride ?? settings.theme,
-        customBg: customBg,
-        customFg: customFg);
+    final _ThemeColors colors = _themeColors(themeOverride ?? settings.theme,
+        customBg: customBg, customFg: customFg);
 
     final String resolvedFontFaces;
     final String resolvedFontFamily;
@@ -65,7 +63,7 @@ class ReaderContentStyles {
       resolvedFontFaces = fontFaces;
       resolvedFontFamily = '$fontFamily, serif';
     } else {
-    final ({String fontFamily, String fontFaces}) custom =
+      final ({String fontFamily, String fontFaces}) custom =
           settings.buildCustomFontCss();
       resolvedFontFaces = custom.fontFaces;
       resolvedFontFamily = custom.fontFamily.isNotEmpty
@@ -86,7 +84,8 @@ class ReaderContentStyles {
     final String bottomPaddingCss =
         'calc(${mb}vh + ${settings.fontSize.round()}px)';
 
-    final String textSpacingCss = 'line-height: ${settings.lineHeight} !important;';
+    final String textSpacingCss =
+        'line-height: ${settings.lineHeight} !important;';
 
     final String gridCss = settings.enableTextJustification
         ? ''
@@ -107,9 +106,10 @@ p {
         ? 'text-indent: ${settings.textIndentation}em !important;'
         : '';
 
-    final String vertKerningCss = settings.enableVerticalFontKerning && isVertical
-        ? 'font-kerning: normal !important;'
-        : '';
+    final String vertKerningCss =
+        settings.enableVerticalFontKerning && isVertical
+            ? 'font-kerning: normal !important;'
+            : '';
 
     final String vpalCss = settings.enableFontVPAL && isVertical
         ? "font-feature-settings: 'vpal' 1 !important;"
@@ -124,7 +124,8 @@ p {
         : '';
 
     const String imageMaxWidth = ReaderLayoutDefaults.imageMaxWidthFallbackCss;
-    const String imageMaxHeight = ReaderLayoutDefaults.imageMaxHeightFallbackCss;
+    const String imageMaxHeight =
+        ReaderLayoutDefaults.imageMaxHeightFallbackCss;
 
     final String layoutCss = settings.isContinuousMode
         ? _continuousLayoutCss(
@@ -314,8 +315,7 @@ body {
     required String vpalCss,
     required String textOrientCss,
   }) {
-    final String hiddenOverflowAxis =
-        isVertical ? 'overflow-y' : 'overflow-x';
+    final String hiddenOverflowAxis = isVertical ? 'overflow-y' : 'overflow-x';
     final String viewportConstraintCss = isVertical
         ? 'height: var(--hoshi-continuous-height, 100vh) !important;'
         : '''
@@ -375,8 +375,8 @@ body.show-all-rt rt {
     }
   }
 
-  static _ThemeColors _themeColors(
-      String theme, {String? customBg, String? customFg}) {
+  static _ThemeColors _themeColors(String theme,
+      {String? customBg, String? customFg}) {
     switch (theme) {
       case 'ecru-theme':
         return const _ThemeColors(

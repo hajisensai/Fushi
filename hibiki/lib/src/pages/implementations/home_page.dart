@@ -106,7 +106,8 @@ class _HomePageState extends BasePageState<HomePage>
             color: Theme.of(context).colorScheme.surface,
             border: const Border(),
           ),
-          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewPadding.bottom),
+          padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewPadding.bottom),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [

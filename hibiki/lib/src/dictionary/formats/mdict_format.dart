@@ -35,8 +35,7 @@ File? _findFileByExtension(Directory dir, String ext) {
   return null;
 }
 
-Future<void> prepareDirectoryMdictFormat(
-    PrepareDirectoryParams params) async {
+Future<void> prepareDirectoryMdictFormat(PrepareDirectoryParams params) async {
   final ext = path.extension(params.file.path).toLowerCase();
 
   if (ext == '.zip') {
@@ -46,8 +45,8 @@ Future<void> prepareDirectoryMdictFormat(
     );
   } else if (ext == '.mdx') {
     params.resourceDirectory.createSync(recursive: true);
-    params.file
-        .copySync(path.join(params.resourceDirectory.path, path.basename(params.file.path)));
+    params.file.copySync(path.join(
+        params.resourceDirectory.path, path.basename(params.file.path)));
   }
 
   final mdxFile = _findFileByExtension(params.resourceDirectory, '.mdx');

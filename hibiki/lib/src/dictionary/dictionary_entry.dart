@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 class DictionaryEntry {
-
   factory DictionaryEntry.fromJson(String json) {
     final map = Map<String, dynamic>.from(jsonDecode(json));
     return DictionaryEntry(

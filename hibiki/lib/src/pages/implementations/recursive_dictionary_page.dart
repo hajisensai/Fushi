@@ -36,8 +36,7 @@ class RecursiveDictionaryPage extends BasePage {
 }
 
 class _RecursiveDictionaryPageState
-    extends BasePageState<RecursiveDictionaryPage>
-    with DictionaryPageMixin {
+    extends BasePageState<RecursiveDictionaryPage> with DictionaryPageMixin {
   @override
   AppModel get mixinAppModel => appModelNoUpdate;
 
@@ -555,4 +554,3 @@ class _RecursiveDictionaryPageState
     );
   }
 }
-

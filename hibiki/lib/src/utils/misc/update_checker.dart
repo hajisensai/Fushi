@@ -100,9 +100,8 @@ class UpdateChecker {
         debugPrint('[Hibiki] failed to get device ABI info: $e');
       }
 
-      final abiTags = supportedAbis
-          .map((abi) => abi.replaceAll('_', '-'))
-          .toList();
+      final abiTags =
+          supportedAbis.map((abi) => abi.replaceAll('_', '-')).toList();
 
       for (final asset in assets) {
         final assetMap = asset as Map<String, dynamic>;
@@ -252,8 +251,8 @@ class UpdateChecker {
                       );
                     }
                   },
-                  styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(ctx))
-                      .copyWith(
+                  styleSheet:
+                      MarkdownStyleSheet.fromTheme(Theme.of(ctx)).copyWith(
                     p: Theme.of(ctx).textTheme.bodySmall,
                   ),
                 ),
@@ -308,8 +307,8 @@ class UpdateChecker {
                       );
                     }
                   },
-                  styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(ctx))
-                      .copyWith(
+                  styleSheet:
+                      MarkdownStyleSheet.fromTheme(Theme.of(ctx)).copyWith(
                     p: Theme.of(ctx).textTheme.bodySmall,
                   ),
                 ),
@@ -345,9 +344,8 @@ class UpdateChecker {
     final progress = ValueNotifier<double>(0);
     final status = ValueNotifier<String>(t.update_downloading);
     final overlayVisible = ValueNotifier<bool>(true);
-    final noScrim = ProviderScope.containerOf(context)
-        .read(appProvider)
-        .disableDialogScrim;
+    final noScrim =
+        ProviderScope.containerOf(context).read(appProvider).disableDialogScrim;
 
     late final OverlayEntry overlay;
     overlay = OverlayEntry(
@@ -405,7 +403,8 @@ class UpdateChecker {
         'path': apkFile.path,
       });
     } catch (e, stack) {
-      ErrorLogService.instance.log('UpdateChecker.downloadAndInstall', e, stack);
+      ErrorLogService.instance
+          .log('UpdateChecker.downloadAndInstall', e, stack);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('${t.update_download_failed}: $e')),
@@ -442,7 +441,6 @@ class UpdateChecker {
 }
 
 class _DownloadOverlay extends StatelessWidget {
-
   const _DownloadOverlay({
     required this.progress,
     required this.status,

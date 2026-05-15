@@ -8,9 +8,8 @@ Future<T?> showAppDialog<T>({
   bool barrierDismissible = true,
   Color? barrierColor,
 }) {
-  final noScrim = ProviderScope.containerOf(context)
-      .read(appProvider)
-      .disableDialogScrim;
+  final noScrim =
+      ProviderScope.containerOf(context).read(appProvider).disableDialogScrim;
   return showDialog<T>(
     context: context,
     builder: builder,

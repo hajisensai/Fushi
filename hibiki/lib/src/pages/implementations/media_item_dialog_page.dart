@@ -31,7 +31,6 @@ class MediaItemDialogPage extends BasePage {
 class _MediaItemDialogPageState extends BasePageState<MediaItemDialogPage> {
   MediaSource get mediaSource => widget.item.getMediaSource(appModel: appModel);
 
-
   @override
   Widget build(BuildContext context) {
     return AlertDialog(

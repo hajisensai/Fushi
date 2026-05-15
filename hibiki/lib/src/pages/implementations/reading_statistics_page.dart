@@ -112,8 +112,8 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       }
 
       // 每日
-      final day = dailyMap.putIfAbsent(
-          s.dateKey, () => _DayData(dateKey: s.dateKey));
+      final day =
+          dailyMap.putIfAbsent(s.dateKey, () => _DayData(dateKey: s.dateKey));
       day.chars += s.charactersRead;
       day.ms += s.readingTimeMs;
 
@@ -225,10 +225,10 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
           Row(
             children: [
               Expanded(
-                  child: _summaryCard(t.stat_this_month, _monthChars, _monthMs)),
+                  child:
+                      _summaryCard(t.stat_this_month, _monthChars, _monthMs)),
               const SizedBox(width: 12),
-              Expanded(
-                  child: _summaryCard(t.stat_all_time, _allChars, _allMs)),
+              Expanded(child: _summaryCard(t.stat_all_time, _allChars, _allMs)),
             ],
           ),
         ],
@@ -300,7 +300,8 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(t.stat_last_30_days, style: Theme.of(context).textTheme.titleMedium),
+          Text(t.stat_last_30_days,
+              style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 12),
           SizedBox(
             height: 160,
@@ -309,8 +310,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
               painter: _BarChartPainter(
                 data: _dailyData,
                 barColor: Theme.of(context).colorScheme.primary,
-                labelColor:
-                    Theme.of(context).colorScheme.onSurfaceVariant,
+                labelColor: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
           ),
@@ -346,8 +346,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
                     value: fraction,
                     minHeight: 8,
                     backgroundColor: colorScheme.surfaceContainerHighest,
-                    valueColor:
-                        AlwaysStoppedAnimation(colorScheme.primary),
+                    valueColor: AlwaysStoppedAnimation(colorScheme.primary),
                   ),
                 ),
               ),

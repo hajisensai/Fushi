@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:hibiki/src/database/database.dart';
 
 class FavoriteSentence {
-
   factory FavoriteSentence.fromJson(Map<String, dynamic> json) =>
       FavoriteSentence(
         id: json['id'] as String?,
@@ -20,7 +19,8 @@ class FavoriteSentence {
   FavoriteSentence({
     required this.text,
     required this.bookTitle,
-    required this.createdAt, this.chapterLabel,
+    required this.createdAt,
+    this.chapterLabel,
     this.ttuBookId,
     this.sectionIndex,
     this.normCharOffset,

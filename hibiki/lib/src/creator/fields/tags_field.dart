@@ -44,9 +44,7 @@ class TagsField extends Field {
       if (item != null) {
         // Sanitise: Anki tags are space-delimited, so replace spaces with
         // underscores to keep the title as a single tag.
-        final bookTag = item.title
-            .replaceAll(' ', '_')
-            .replaceAll('\t', '_');
+        final bookTag = item.title.replaceAll(' ', '_').replaceAll('\t', '_');
         if (bookTag.isNotEmpty) {
           if (base.isEmpty) {
             base = bookTag;

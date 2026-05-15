@@ -157,9 +157,8 @@ class EpubSrtMatcher {
         'threshold=$similarityThreshold');
     for (int si = 0; si < sections.length; si++) {
       final int s0 = idx.sectionNormStarts[si];
-      final int s1 = (si + 1 < sections.length)
-          ? idx.sectionNormStarts[si + 1]
-          : totalLen;
+      final int s1 =
+          (si + 1 < sections.length) ? idx.sectionNormStarts[si + 1] : totalLen;
       debugPrint('[sasayaki] matcher.section[$si] href="${sections[si].href}" '
           'normStart=$s0 normLen=${s1 - s0}');
     }
@@ -195,8 +194,7 @@ class EpubSrtMatcher {
         final int found = big.indexOf(nc, cursor);
         if (found >= 0 && found + nc.length <= windowEnd) {
           final int matchEnd = found + nc.length;
-          final int secIdx =
-              _sectionForOffset(idx.sectionNormStarts, found);
+          final int secIdx = _sectionForOffset(idx.sectionNormStarts, found);
           results.add(CueMatch(
             cueSentenceIndex: cue.sentenceIndex,
             sectionIndex: secIdx,
@@ -234,8 +232,7 @@ class EpubSrtMatcher {
 
       if (bestSim >= similarityThreshold && bestPos >= 0) {
         final int matchEnd = bestPos + bestLen;
-        final int secIdx =
-            _sectionForOffset(idx.sectionNormStarts, bestPos);
+        final int secIdx = _sectionForOffset(idx.sectionNormStarts, bestPos);
         results.add(CueMatch(
           cueSentenceIndex: cue.sentenceIndex,
           sectionIndex: secIdx,
@@ -244,8 +241,7 @@ class EpubSrtMatcher {
           score: bestSim,
         ));
         _logHit(matched, cue, nc, big, bestPos, matchEnd, secIdx,
-            idx.sectionNormStarts[secIdx], bestSim,
-            ci == cues.length - 1);
+            idx.sectionNormStarts[secIdx], bestSim, ci == cues.length - 1);
         cursor = matchEnd;
         matched++;
         consecutiveMisses = 0;
@@ -378,7 +374,8 @@ class EpubSrtMatcher {
         final int outIdx = pos - 1;
         final int outKey = tn == 1
             ? haystack.codeUnitAt(outIdx)
-            : (haystack.codeUnitAt(outIdx) << 16) | haystack.codeUnitAt(outIdx + 1);
+            : (haystack.codeUnitAt(outIdx) << 16) |
+                haystack.codeUnitAt(outIdx + 1);
         final int outOldCount = cGrams[outKey]!;
         final int outNCount = effectiveNGrams[outKey] ?? 0;
         // If this gram was contributing to matches, check if removing reduces it.
@@ -395,7 +392,8 @@ class EpubSrtMatcher {
         final int inIdx = pos + tryLen - tn;
         final int inKey = tn == 1
             ? haystack.codeUnitAt(inIdx)
-            : (haystack.codeUnitAt(inIdx) << 16) | haystack.codeUnitAt(inIdx + 1);
+            : (haystack.codeUnitAt(inIdx) << 16) |
+                haystack.codeUnitAt(inIdx + 1);
         final int inOldCount = cGrams[inKey] ?? 0;
         final int inNCount = effectiveNGrams[inKey] ?? 0;
         // If adding this gram brings the candidate count to within needle range.

@@ -5,7 +5,6 @@ import 'package:hibiki/language.dart';
 enum DictionaryType { term, frequency, pitch, kanji }
 
 class Dictionary {
-
   factory Dictionary.fromJson(String json) {
     final map = Map<String, dynamic>.from(jsonDecode(json));
     return Dictionary(
@@ -68,5 +67,6 @@ class Dictionary {
   int get hashCode => name.hashCode;
 
   @override
-  String toString() => 'Dictionary(name: $name, format: $formatKey, type: ${type.name})';
+  String toString() =>
+      'Dictionary(name: $name, format: $formatKey, type: ${type.name})';
 }

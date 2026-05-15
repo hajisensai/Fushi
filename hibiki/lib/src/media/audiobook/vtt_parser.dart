@@ -103,10 +103,8 @@ class VttParser {
         continue;
       }
 
-      final String rawText = lines
-          .skip(timeLineIdx + 1)
-          .where((l) => l.isNotEmpty)
-          .join(' ');
+      final String rawText =
+          lines.skip(timeLineIdx + 1).where((l) => l.isNotEmpty).join(' ');
       final String text = _stripTags(rawText);
       if (text.isEmpty) {
         continue;
@@ -164,7 +162,9 @@ class VttParser {
       final int fm = int.parse(full.group(2)!);
       final int fs = int.parse(full.group(3)!);
       if (fm >= 60 || fs >= 60) return null;
-      return fh * 3600000 + fm * 60000 + fs * 1000 +
+      return fh * 3600000 +
+          fm * 60000 +
+          fs * 1000 +
           int.parse(full.group(4)!.padRight(3, '0'));
     }
 
@@ -175,7 +175,8 @@ class VttParser {
       final int sm = int.parse(short.group(1)!);
       final int ss = int.parse(short.group(2)!);
       if (ss >= 60) return null;
-      return sm * 60000 + ss * 1000 +
+      return sm * 60000 +
+          ss * 1000 +
           int.parse(short.group(3)!.padRight(3, '0'));
     }
 

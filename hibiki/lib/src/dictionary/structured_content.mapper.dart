@@ -120,27 +120,22 @@ mixin StructuredContentTextNodeMappable {
   String toJson() {
     return StructuredContentTextNodeMapper.ensureInitialized()
         .encodeJson<StructuredContentTextNode>(
-          this as StructuredContentTextNode,
-        );
+      this as StructuredContentTextNode,
+    );
   }
 
   Map<String, dynamic> toMap() {
     return StructuredContentTextNodeMapper.ensureInitialized()
         .encodeMap<StructuredContentTextNode>(
-          this as StructuredContentTextNode,
-        );
+      this as StructuredContentTextNode,
+    );
   }
 
-  StructuredContentTextNodeCopyWith<
-    StructuredContentTextNode,
-    StructuredContentTextNode,
-    StructuredContentTextNode
-  >
-  get copyWith =>
-      _StructuredContentTextNodeCopyWithImpl<
-        StructuredContentTextNode,
-        StructuredContentTextNode
-      >(this as StructuredContentTextNode, $identity, $identity);
+  StructuredContentTextNodeCopyWith<StructuredContentTextNode,
+          StructuredContentTextNode, StructuredContentTextNode>
+      get copyWith => _StructuredContentTextNodeCopyWithImpl<
+              StructuredContentTextNode, StructuredContentTextNode>(
+          this as StructuredContentTextNode, $identity, $identity);
   @override
   String toString() {
     return StructuredContentTextNodeMapper.ensureInitialized().stringifyValue(
@@ -167,17 +162,16 @@ mixin StructuredContentTextNodeMappable {
 extension StructuredContentTextNodeValueCopy<$R, $Out>
     on ObjectCopyWith<$R, StructuredContentTextNode, $Out> {
   StructuredContentTextNodeCopyWith<$R, StructuredContentTextNode, $Out>
-  get $asStructuredContentTextNode => $base.as(
-    (v, t, t2) => _StructuredContentTextNodeCopyWithImpl<$R, $Out>(v, t, t2),
-  );
+      get $asStructuredContentTextNode => $base.as(
+            (v, t, t2) =>
+                _StructuredContentTextNodeCopyWithImpl<$R, $Out>(v, t, t2),
+          );
 }
 
 abstract class StructuredContentTextNodeCopyWith<
-  $R,
-  $In extends StructuredContentTextNode,
-  $Out
->
-    implements ClassCopyWith<$R, $In, $Out> {
+    $R,
+    $In extends StructuredContentTextNode,
+    $Out> implements ClassCopyWith<$R, $In, $Out> {
   $R call({String? text});
   StructuredContentTextNodeCopyWith<$R2, $In, $Out2> $chain<$R2, $Out2>(
     Then<$Out2, $R2> t,
@@ -202,8 +196,8 @@ class _StructuredContentTextNodeCopyWithImpl<$R, $Out>
 
   @override
   StructuredContentTextNodeCopyWith<$R2, StructuredContentTextNode, $Out2>
-  $chain<$R2, $Out2>(Then<$Out2, $R2> t) =>
-      _StructuredContentTextNodeCopyWithImpl<$R2, $Out2>($value, $cast, t);
+      $chain<$R2, $Out2>(Then<$Out2, $R2> t) =>
+          _StructuredContentTextNodeCopyWithImpl<$R2, $Out2>($value, $cast, t);
 }
 
 class StructuredContentChildContentMapper
@@ -228,11 +222,11 @@ class StructuredContentChildContentMapper
   static List<StructuredContent> _$children(StructuredContentChildContent v) =>
       v.children;
   static const Field<StructuredContentChildContent, List<StructuredContent>>
-  _f$children = Field('children', _$children);
+      _f$children = Field('children', _$children);
   static StructuredContent? _$content(StructuredContentChildContent v) =>
       v.content;
   static const Field<StructuredContentChildContent, StructuredContent>
-  _f$content = Field('content', _$content, hook: ContentHook());
+      _f$content = Field('content', _$content, hook: ContentHook());
 
   @override
   final MappableFields<StructuredContentChildContent> fields = const {
@@ -268,27 +262,22 @@ mixin StructuredContentChildContentMappable {
   String toJson() {
     return StructuredContentChildContentMapper.ensureInitialized()
         .encodeJson<StructuredContentChildContent>(
-          this as StructuredContentChildContent,
-        );
+      this as StructuredContentChildContent,
+    );
   }
 
   Map<String, dynamic> toMap() {
     return StructuredContentChildContentMapper.ensureInitialized()
         .encodeMap<StructuredContentChildContent>(
-          this as StructuredContentChildContent,
-        );
+      this as StructuredContentChildContent,
+    );
   }
 
-  StructuredContentChildContentCopyWith<
-    StructuredContentChildContent,
-    StructuredContentChildContent,
-    StructuredContentChildContent
-  >
-  get copyWith =>
-      _StructuredContentChildContentCopyWithImpl<
-        StructuredContentChildContent,
-        StructuredContentChildContent
-      >(this as StructuredContentChildContent, $identity, $identity);
+  StructuredContentChildContentCopyWith<StructuredContentChildContent,
+          StructuredContentChildContent, StructuredContentChildContent>
+      get copyWith => _StructuredContentChildContentCopyWithImpl<
+              StructuredContentChildContent, StructuredContentChildContent>(
+          this as StructuredContentChildContent, $identity, $identity);
   @override
   String toString() {
     return StructuredContentChildContentMapper.ensureInitialized()
@@ -314,24 +303,18 @@ mixin StructuredContentChildContentMappable {
 extension StructuredContentChildContentValueCopy<$R, $Out>
     on ObjectCopyWith<$R, StructuredContentChildContent, $Out> {
   StructuredContentChildContentCopyWith<$R, StructuredContentChildContent, $Out>
-  get $asStructuredContentChildContent => $base.as(
-    (v, t, t2) =>
-        _StructuredContentChildContentCopyWithImpl<$R, $Out>(v, t, t2),
-  );
+      get $asStructuredContentChildContent => $base.as(
+            (v, t, t2) =>
+                _StructuredContentChildContentCopyWithImpl<$R, $Out>(v, t, t2),
+          );
 }
 
 abstract class StructuredContentChildContentCopyWith<
-  $R,
-  $In extends StructuredContentChildContent,
-  $Out
->
-    implements ClassCopyWith<$R, $In, $Out> {
-  ListCopyWith<
     $R,
-    StructuredContent,
-    ObjectCopyWith<$R, StructuredContent, StructuredContent>
-  >
-  get children;
+    $In extends StructuredContentChildContent,
+    $Out> implements ClassCopyWith<$R, $In, $Out> {
+  ListCopyWith<$R, StructuredContent,
+      ObjectCopyWith<$R, StructuredContent, StructuredContent>> get children;
   $R call({List<StructuredContent>? children});
   StructuredContentChildContentCopyWith<$R2, $In, $Out2> $chain<$R2, $Out2>(
     Then<$Out2, $R2> t,
@@ -341,11 +324,8 @@ abstract class StructuredContentChildContentCopyWith<
 class _StructuredContentChildContentCopyWithImpl<$R, $Out>
     extends ClassCopyWithBase<$R, StructuredContentChildContent, $Out>
     implements
-        StructuredContentChildContentCopyWith<
-          $R,
-          StructuredContentChildContent,
-          $Out
-        > {
+        StructuredContentChildContentCopyWith<$R, StructuredContentChildContent,
+            $Out> {
   _StructuredContentChildContentCopyWithImpl(
     super.value,
     super.then,
@@ -356,16 +336,13 @@ class _StructuredContentChildContentCopyWithImpl<$R, $Out>
   late final ClassMapperBase<StructuredContentChildContent> $mapper =
       StructuredContentChildContentMapper.ensureInitialized();
   @override
-  ListCopyWith<
-    $R,
-    StructuredContent,
-    ObjectCopyWith<$R, StructuredContent, StructuredContent>
-  >
-  get children => ListCopyWith(
-    $value.children,
-    (v, t) => ObjectCopyWith(v, $identity, t),
-    (v) => call(children: v),
-  );
+  ListCopyWith<$R, StructuredContent,
+          ObjectCopyWith<$R, StructuredContent, StructuredContent>>
+      get children => ListCopyWith(
+            $value.children,
+            (v, t) => ObjectCopyWith(v, $identity, t),
+            (v) => call(children: v),
+          );
   @override
   $R call({List<StructuredContent>? children}) =>
       $apply(FieldCopyWithData({if (children != null) #children: children}));
@@ -376,12 +353,9 @@ class _StructuredContentChildContentCopyWithImpl<$R, $Out>
       );
 
   @override
-  StructuredContentChildContentCopyWith<
-    $R2,
-    StructuredContentChildContent,
-    $Out2
-  >
-  $chain<$R2, $Out2>(Then<$Out2, $R2> t) =>
+  StructuredContentChildContentCopyWith<$R2, StructuredContentChildContent,
+      $Out2> $chain<$R2, $Out2>(
+          Then<$Out2, $R2> t) =>
       _StructuredContentChildContentCopyWithImpl<$R2, $Out2>($value, $cast, t);
 }
 
@@ -441,27 +415,22 @@ mixin StructuredContentLineBreakMappable {
   String toJson() {
     return StructuredContentLineBreakMapper.ensureInitialized()
         .encodeJson<StructuredContentLineBreak>(
-          this as StructuredContentLineBreak,
-        );
+      this as StructuredContentLineBreak,
+    );
   }
 
   Map<String, dynamic> toMap() {
     return StructuredContentLineBreakMapper.ensureInitialized()
         .encodeMap<StructuredContentLineBreak>(
-          this as StructuredContentLineBreak,
-        );
+      this as StructuredContentLineBreak,
+    );
   }
 
-  StructuredContentLineBreakCopyWith<
-    StructuredContentLineBreak,
-    StructuredContentLineBreak,
-    StructuredContentLineBreak
-  >
-  get copyWith =>
-      _StructuredContentLineBreakCopyWithImpl<
-        StructuredContentLineBreak,
-        StructuredContentLineBreak
-      >(this as StructuredContentLineBreak, $identity, $identity);
+  StructuredContentLineBreakCopyWith<StructuredContentLineBreak,
+          StructuredContentLineBreak, StructuredContentLineBreak>
+      get copyWith => _StructuredContentLineBreakCopyWithImpl<
+              StructuredContentLineBreak, StructuredContentLineBreak>(
+          this as StructuredContentLineBreak, $identity, $identity);
   @override
   String toString() {
     return StructuredContentLineBreakMapper.ensureInitialized().stringifyValue(
@@ -488,17 +457,16 @@ mixin StructuredContentLineBreakMappable {
 extension StructuredContentLineBreakValueCopy<$R, $Out>
     on ObjectCopyWith<$R, StructuredContentLineBreak, $Out> {
   StructuredContentLineBreakCopyWith<$R, StructuredContentLineBreak, $Out>
-  get $asStructuredContentLineBreak => $base.as(
-    (v, t, t2) => _StructuredContentLineBreakCopyWithImpl<$R, $Out>(v, t, t2),
-  );
+      get $asStructuredContentLineBreak => $base.as(
+            (v, t, t2) =>
+                _StructuredContentLineBreakCopyWithImpl<$R, $Out>(v, t, t2),
+          );
 }
 
 abstract class StructuredContentLineBreakCopyWith<
-  $R,
-  $In extends StructuredContentLineBreak,
-  $Out
->
-    implements ClassCopyWith<$R, $In, $Out> {
+    $R,
+    $In extends StructuredContentLineBreak,
+    $Out> implements ClassCopyWith<$R, $In, $Out> {
   $R call();
   StructuredContentLineBreakCopyWith<$R2, $In, $Out2> $chain<$R2, $Out2>(
     Then<$Out2, $R2> t,
@@ -508,11 +476,8 @@ abstract class StructuredContentLineBreakCopyWith<
 class _StructuredContentLineBreakCopyWithImpl<$R, $Out>
     extends ClassCopyWithBase<$R, StructuredContentLineBreak, $Out>
     implements
-        StructuredContentLineBreakCopyWith<
-          $R,
-          StructuredContentLineBreak,
-          $Out
-        > {
+        StructuredContentLineBreakCopyWith<$R, StructuredContentLineBreak,
+            $Out> {
   _StructuredContentLineBreakCopyWithImpl(super.value, super.then, super.then2);
 
   @override
@@ -526,8 +491,8 @@ class _StructuredContentLineBreakCopyWithImpl<$R, $Out>
 
   @override
   StructuredContentLineBreakCopyWith<$R2, StructuredContentLineBreak, $Out2>
-  $chain<$R2, $Out2>(Then<$Out2, $R2> t) =>
-      _StructuredContentLineBreakCopyWithImpl<$R2, $Out2>($value, $cast, t);
+      $chain<$R2, $Out2>(Then<$Out2, $R2> t) =>
+          _StructuredContentLineBreakCopyWithImpl<$R2, $Out2>($value, $cast, t);
 }
 
 class StructuredContentImageMapper
@@ -700,16 +665,11 @@ mixin StructuredContentImageMappable {
         .encodeMap<StructuredContentImage>(this as StructuredContentImage);
   }
 
-  StructuredContentImageCopyWith<
-    StructuredContentImage,
-    StructuredContentImage,
-    StructuredContentImage
-  >
-  get copyWith =>
-      _StructuredContentImageCopyWithImpl<
-        StructuredContentImage,
-        StructuredContentImage
-      >(this as StructuredContentImage, $identity, $identity);
+  StructuredContentImageCopyWith<StructuredContentImage, StructuredContentImage,
+          StructuredContentImage>
+      get copyWith => _StructuredContentImageCopyWithImpl<
+              StructuredContentImage, StructuredContentImage>(
+          this as StructuredContentImage, $identity, $identity);
   @override
   String toString() {
     return StructuredContentImageMapper.ensureInitialized().stringifyValue(
@@ -736,17 +696,16 @@ mixin StructuredContentImageMappable {
 extension StructuredContentImageValueCopy<$R, $Out>
     on ObjectCopyWith<$R, StructuredContentImage, $Out> {
   StructuredContentImageCopyWith<$R, StructuredContentImage, $Out>
-  get $asStructuredContentImage => $base.as(
-    (v, t, t2) => _StructuredContentImageCopyWithImpl<$R, $Out>(v, t, t2),
-  );
+      get $asStructuredContentImage => $base.as(
+            (v, t, t2) =>
+                _StructuredContentImageCopyWithImpl<$R, $Out>(v, t, t2),
+          );
 }
 
 abstract class StructuredContentImageCopyWith<
-  $R,
-  $In extends StructuredContentImage,
-  $Out
->
-    implements ClassCopyWith<$R, $In, $Out> {
+    $R,
+    $In extends StructuredContentImage,
+    $Out> implements ClassCopyWith<$R, $In, $Out> {
   $R call({
     String? path,
     double? width,
@@ -791,44 +750,45 @@ class _StructuredContentImageCopyWithImpl<$R, $Out>
     bool? collapsible,
     Object? verticalAlign = $none,
     Object? sizeUnits = $none,
-  }) => $apply(
-    FieldCopyWithData({
-      if (path != null) #path: path,
-      if (width != $none) #width: width,
-      if (height != $none) #height: height,
-      if (title != $none) #title: title,
-      if (description != $none) #description: description,
-      if (pixelated != null) #pixelated: pixelated,
-      if (imageRendering != null) #imageRendering: imageRendering,
-      if (appearance != null) #appearance: appearance,
-      if (background != null) #background: background,
-      if (collapsed != null) #collapsed: collapsed,
-      if (collapsible != null) #collapsible: collapsible,
-      if (verticalAlign != $none) #verticalAlign: verticalAlign,
-      if (sizeUnits != $none) #sizeUnits: sizeUnits,
-    }),
-  );
+  }) =>
+      $apply(
+        FieldCopyWithData({
+          if (path != null) #path: path,
+          if (width != $none) #width: width,
+          if (height != $none) #height: height,
+          if (title != $none) #title: title,
+          if (description != $none) #description: description,
+          if (pixelated != null) #pixelated: pixelated,
+          if (imageRendering != null) #imageRendering: imageRendering,
+          if (appearance != null) #appearance: appearance,
+          if (background != null) #background: background,
+          if (collapsed != null) #collapsed: collapsed,
+          if (collapsible != null) #collapsible: collapsible,
+          if (verticalAlign != $none) #verticalAlign: verticalAlign,
+          if (sizeUnits != $none) #sizeUnits: sizeUnits,
+        }),
+      );
   @override
   StructuredContentImage $make(CopyWithData data) => StructuredContentImage(
-    path: data.get(#path, or: $value.path),
-    width: data.get(#width, or: $value.width),
-    height: data.get(#height, or: $value.height),
-    title: data.get(#title, or: $value.title),
-    description: data.get(#description, or: $value.description),
-    pixelated: data.get(#pixelated, or: $value.pixelated),
-    imageRendering: data.get(#imageRendering, or: $value.imageRendering),
-    appearance: data.get(#appearance, or: $value.appearance),
-    background: data.get(#background, or: $value.background),
-    collapsed: data.get(#collapsed, or: $value.collapsed),
-    collapsible: data.get(#collapsible, or: $value.collapsible),
-    verticalAlign: data.get(#verticalAlign, or: $value.verticalAlign),
-    sizeUnits: data.get(#sizeUnits, or: $value.sizeUnits),
-  );
+        path: data.get(#path, or: $value.path),
+        width: data.get(#width, or: $value.width),
+        height: data.get(#height, or: $value.height),
+        title: data.get(#title, or: $value.title),
+        description: data.get(#description, or: $value.description),
+        pixelated: data.get(#pixelated, or: $value.pixelated),
+        imageRendering: data.get(#imageRendering, or: $value.imageRendering),
+        appearance: data.get(#appearance, or: $value.appearance),
+        background: data.get(#background, or: $value.background),
+        collapsed: data.get(#collapsed, or: $value.collapsed),
+        collapsible: data.get(#collapsible, or: $value.collapsible),
+        verticalAlign: data.get(#verticalAlign, or: $value.verticalAlign),
+        sizeUnits: data.get(#sizeUnits, or: $value.sizeUnits),
+      );
 
   @override
   StructuredContentImageCopyWith<$R2, StructuredContentImage, $Out2>
-  $chain<$R2, $Out2>(Then<$Out2, $R2> t) =>
-      _StructuredContentImageCopyWithImpl<$R2, $Out2>($value, $cast, t);
+      $chain<$R2, $Out2>(Then<$Out2, $R2> t) =>
+          _StructuredContentImageCopyWithImpl<$R2, $Out2>($value, $cast, t);
 }
 
 class StructuredContentLinkMapper
@@ -909,16 +869,10 @@ mixin StructuredContentLinkMappable {
         .encodeMap<StructuredContentLink>(this as StructuredContentLink);
   }
 
-  StructuredContentLinkCopyWith<
-    StructuredContentLink,
-    StructuredContentLink,
-    StructuredContentLink
-  >
-  get copyWith =>
-      _StructuredContentLinkCopyWithImpl<
-        StructuredContentLink,
-        StructuredContentLink
-      >(this as StructuredContentLink, $identity, $identity);
+  StructuredContentLinkCopyWith<StructuredContentLink, StructuredContentLink,
+      StructuredContentLink> get copyWith => _StructuredContentLinkCopyWithImpl<
+          StructuredContentLink, StructuredContentLink>(
+      this as StructuredContentLink, $identity, $identity);
   @override
   String toString() {
     return StructuredContentLinkMapper.ensureInitialized().stringifyValue(
@@ -945,17 +899,16 @@ mixin StructuredContentLinkMappable {
 extension StructuredContentLinkValueCopy<$R, $Out>
     on ObjectCopyWith<$R, StructuredContentLink, $Out> {
   StructuredContentLinkCopyWith<$R, StructuredContentLink, $Out>
-  get $asStructuredContentLink => $base.as(
-    (v, t, t2) => _StructuredContentLinkCopyWithImpl<$R, $Out>(v, t, t2),
-  );
+      get $asStructuredContentLink => $base.as(
+            (v, t, t2) =>
+                _StructuredContentLinkCopyWithImpl<$R, $Out>(v, t, t2),
+          );
 }
 
 abstract class StructuredContentLinkCopyWith<
-  $R,
-  $In extends StructuredContentLink,
-  $Out
->
-    implements ClassCopyWith<$R, $In, $Out> {
+    $R,
+    $In extends StructuredContentLink,
+    $Out> implements ClassCopyWith<$R, $In, $Out> {
   $R call({String? href, StructuredContent? content, String? lang});
   StructuredContentLinkCopyWith<$R2, $In, $Out2> $chain<$R2, $Out2>(
     Then<$Out2, $R2> t,
@@ -981,15 +934,15 @@ class _StructuredContentLinkCopyWithImpl<$R, $Out>
       );
   @override
   StructuredContentLink $make(CopyWithData data) => StructuredContentLink(
-    href: data.get(#href, or: $value.href),
-    content: data.get(#content, or: $value.content),
-    lang: data.get(#lang, or: $value.lang),
-  );
+        href: data.get(#href, or: $value.href),
+        content: data.get(#content, or: $value.content),
+        lang: data.get(#lang, or: $value.lang),
+      );
 
   @override
   StructuredContentLinkCopyWith<$R2, StructuredContentLink, $Out2>
-  $chain<$R2, $Out2>(Then<$Out2, $R2> t) =>
-      _StructuredContentLinkCopyWithImpl<$R2, $Out2>($value, $cast, t);
+      $chain<$R2, $Out2>(Then<$Out2, $R2> t) =>
+          _StructuredContentLinkCopyWithImpl<$R2, $Out2>($value, $cast, t);
 }
 
 class StructuredContentContainerMapper
@@ -1071,27 +1024,22 @@ mixin StructuredContentContainerMappable {
   String toJson() {
     return StructuredContentContainerMapper.ensureInitialized()
         .encodeJson<StructuredContentContainer>(
-          this as StructuredContentContainer,
-        );
+      this as StructuredContentContainer,
+    );
   }
 
   Map<String, dynamic> toMap() {
     return StructuredContentContainerMapper.ensureInitialized()
         .encodeMap<StructuredContentContainer>(
-          this as StructuredContentContainer,
-        );
+      this as StructuredContentContainer,
+    );
   }
 
-  StructuredContentContainerCopyWith<
-    StructuredContentContainer,
-    StructuredContentContainer,
-    StructuredContentContainer
-  >
-  get copyWith =>
-      _StructuredContentContainerCopyWithImpl<
-        StructuredContentContainer,
-        StructuredContentContainer
-      >(this as StructuredContentContainer, $identity, $identity);
+  StructuredContentContainerCopyWith<StructuredContentContainer,
+          StructuredContentContainer, StructuredContentContainer>
+      get copyWith => _StructuredContentContainerCopyWithImpl<
+              StructuredContentContainer, StructuredContentContainer>(
+          this as StructuredContentContainer, $identity, $identity);
   @override
   String toString() {
     return StructuredContentContainerMapper.ensureInitialized().stringifyValue(
@@ -1118,17 +1066,16 @@ mixin StructuredContentContainerMappable {
 extension StructuredContentContainerValueCopy<$R, $Out>
     on ObjectCopyWith<$R, StructuredContentContainer, $Out> {
   StructuredContentContainerCopyWith<$R, StructuredContentContainer, $Out>
-  get $asStructuredContentContainer => $base.as(
-    (v, t, t2) => _StructuredContentContainerCopyWithImpl<$R, $Out>(v, t, t2),
-  );
+      get $asStructuredContentContainer => $base.as(
+            (v, t, t2) =>
+                _StructuredContentContainerCopyWithImpl<$R, $Out>(v, t, t2),
+          );
 }
 
 abstract class StructuredContentContainerCopyWith<
-  $R,
-  $In extends StructuredContentContainer,
-  $Out
->
-    implements ClassCopyWith<$R, $In, $Out> {
+    $R,
+    $In extends StructuredContentContainer,
+    $Out> implements ClassCopyWith<$R, $In, $Out> {
   MapCopyWith<$R, String, String, ObjectCopyWith<$R, String, String>>? get data;
   $R call({
     String? tag,
@@ -1144,11 +1091,8 @@ abstract class StructuredContentContainerCopyWith<
 class _StructuredContentContainerCopyWithImpl<$R, $Out>
     extends ClassCopyWithBase<$R, StructuredContentContainer, $Out>
     implements
-        StructuredContentContainerCopyWith<
-          $R,
-          StructuredContentContainer,
-          $Out
-        > {
+        StructuredContentContainerCopyWith<$R, StructuredContentContainer,
+            $Out> {
   _StructuredContentContainerCopyWithImpl(super.value, super.then, super.then2);
 
   @override
@@ -1156,27 +1100,28 @@ class _StructuredContentContainerCopyWithImpl<$R, $Out>
       StructuredContentContainerMapper.ensureInitialized();
   @override
   MapCopyWith<$R, String, String, ObjectCopyWith<$R, String, String>>?
-  get data => $value.data != null
-      ? MapCopyWith(
-          $value.data!,
-          (v, t) => ObjectCopyWith(v, $identity, t),
-          (v) => call(data: v),
-        )
-      : null;
+      get data => $value.data != null
+          ? MapCopyWith(
+              $value.data!,
+              (v, t) => ObjectCopyWith(v, $identity, t),
+              (v) => call(data: v),
+            )
+          : null;
   @override
   $R call({
     String? tag,
     Object? content = $none,
     Object? data = $none,
     Object? lang = $none,
-  }) => $apply(
-    FieldCopyWithData({
-      if (tag != null) #tag: tag,
-      if (content != $none) #content: content,
-      if (data != $none) #data: data,
-      if (lang != $none) #lang: lang,
-    }),
-  );
+  }) =>
+      $apply(
+        FieldCopyWithData({
+          if (tag != null) #tag: tag,
+          if (content != $none) #content: content,
+          if (data != $none) #data: data,
+          if (lang != $none) #lang: lang,
+        }),
+      );
   @override
   StructuredContentContainer $make(CopyWithData data) =>
       StructuredContentContainer(
@@ -1188,8 +1133,8 @@ class _StructuredContentContainerCopyWithImpl<$R, $Out>
 
   @override
   StructuredContentContainerCopyWith<$R2, StructuredContentContainer, $Out2>
-  $chain<$R2, $Out2>(Then<$Out2, $R2> t) =>
-      _StructuredContentContainerCopyWithImpl<$R2, $Out2>($value, $cast, t);
+      $chain<$R2, $Out2>(Then<$Out2, $R2> t) =>
+          _StructuredContentContainerCopyWithImpl<$R2, $Out2>($value, $cast, t);
 }
 
 class StructuredContentStyledContainerMapper
@@ -1220,15 +1165,15 @@ class StructuredContentStyledContainerMapper
   static StructuredContent? _$content(StructuredContentStyledContainer v) =>
       v.content;
   static const Field<StructuredContentStyledContainer, StructuredContent>
-  _f$content = Field('content', _$content, opt: true, hook: ContentHook());
+      _f$content = Field('content', _$content, opt: true, hook: ContentHook());
   static StructuredContentStyle? _$style(StructuredContentStyledContainer v) =>
       v.style;
   static const Field<StructuredContentStyledContainer, StructuredContentStyle>
-  _f$style = Field('style', _$style, opt: true);
+      _f$style = Field('style', _$style, opt: true);
   static Map<String, String>? _$data(StructuredContentStyledContainer v) =>
       v.data;
   static const Field<StructuredContentStyledContainer, Map<String, String>>
-  _f$data = Field('data', _$data, opt: true);
+      _f$data = Field('data', _$data, opt: true);
   static String? _$lang(StructuredContentStyledContainer v) => v.lang;
   static const Field<StructuredContentStyledContainer, String> _f$lang = Field(
     'lang',
@@ -1281,27 +1226,23 @@ mixin StructuredContentStyledContainerMappable {
   String toJson() {
     return StructuredContentStyledContainerMapper.ensureInitialized()
         .encodeJson<StructuredContentStyledContainer>(
-          this as StructuredContentStyledContainer,
-        );
+      this as StructuredContentStyledContainer,
+    );
   }
 
   Map<String, dynamic> toMap() {
     return StructuredContentStyledContainerMapper.ensureInitialized()
         .encodeMap<StructuredContentStyledContainer>(
-          this as StructuredContentStyledContainer,
-        );
+      this as StructuredContentStyledContainer,
+    );
   }
 
-  StructuredContentStyledContainerCopyWith<
-    StructuredContentStyledContainer,
-    StructuredContentStyledContainer,
-    StructuredContentStyledContainer
-  >
-  get copyWith =>
-      _StructuredContentStyledContainerCopyWithImpl<
-        StructuredContentStyledContainer,
-        StructuredContentStyledContainer
-      >(this as StructuredContentStyledContainer, $identity, $identity);
+  StructuredContentStyledContainerCopyWith<StructuredContentStyledContainer,
+          StructuredContentStyledContainer, StructuredContentStyledContainer>
+      get copyWith => _StructuredContentStyledContainerCopyWithImpl<
+              StructuredContentStyledContainer,
+              StructuredContentStyledContainer>(
+          this as StructuredContentStyledContainer, $identity, $identity);
   @override
   String toString() {
     return StructuredContentStyledContainerMapper.ensureInitialized()
@@ -1324,29 +1265,21 @@ mixin StructuredContentStyledContainerMappable {
 
 extension StructuredContentStyledContainerValueCopy<$R, $Out>
     on ObjectCopyWith<$R, StructuredContentStyledContainer, $Out> {
-  StructuredContentStyledContainerCopyWith<
-    $R,
-    StructuredContentStyledContainer,
-    $Out
-  >
-  get $asStructuredContentStyledContainer => $base.as(
-    (v, t, t2) =>
-        _StructuredContentStyledContainerCopyWithImpl<$R, $Out>(v, t, t2),
-  );
+  StructuredContentStyledContainerCopyWith<$R,
+          StructuredContentStyledContainer, $Out>
+      get $asStructuredContentStyledContainer => $base.as(
+            (v, t, t2) =>
+                _StructuredContentStyledContainerCopyWithImpl<$R, $Out>(
+                    v, t, t2),
+          );
 }
 
 abstract class StructuredContentStyledContainerCopyWith<
-  $R,
-  $In extends StructuredContentStyledContainer,
-  $Out
->
-    implements ClassCopyWith<$R, $In, $Out> {
-  StructuredContentStyleCopyWith<
     $R,
-    StructuredContentStyle,
-    StructuredContentStyle
-  >?
-  get style;
+    $In extends StructuredContentStyledContainer,
+    $Out> implements ClassCopyWith<$R, $In, $Out> {
+  StructuredContentStyleCopyWith<$R, StructuredContentStyle,
+      StructuredContentStyle>? get style;
   MapCopyWith<$R, String, String, ObjectCopyWith<$R, String, String>>? get data;
   $R call({
     String? tag,
@@ -1363,11 +1296,8 @@ abstract class StructuredContentStyledContainerCopyWith<
 class _StructuredContentStyledContainerCopyWithImpl<$R, $Out>
     extends ClassCopyWithBase<$R, StructuredContentStyledContainer, $Out>
     implements
-        StructuredContentStyledContainerCopyWith<
-          $R,
-          StructuredContentStyledContainer,
-          $Out
-        > {
+        StructuredContentStyledContainerCopyWith<$R,
+            StructuredContentStyledContainer, $Out> {
   _StructuredContentStyledContainerCopyWithImpl(
     super.value,
     super.then,
@@ -1378,21 +1308,18 @@ class _StructuredContentStyledContainerCopyWithImpl<$R, $Out>
   late final ClassMapperBase<StructuredContentStyledContainer> $mapper =
       StructuredContentStyledContainerMapper.ensureInitialized();
   @override
-  StructuredContentStyleCopyWith<
-    $R,
-    StructuredContentStyle,
-    StructuredContentStyle
-  >?
-  get style => $value.style?.copyWith.$chain((v) => call(style: v));
+  StructuredContentStyleCopyWith<$R, StructuredContentStyle,
+          StructuredContentStyle>?
+      get style => $value.style?.copyWith.$chain((v) => call(style: v));
   @override
   MapCopyWith<$R, String, String, ObjectCopyWith<$R, String, String>>?
-  get data => $value.data != null
-      ? MapCopyWith(
-          $value.data!,
-          (v, t) => ObjectCopyWith(v, $identity, t),
-          (v) => call(data: v),
-        )
-      : null;
+      get data => $value.data != null
+          ? MapCopyWith(
+              $value.data!,
+              (v, t) => ObjectCopyWith(v, $identity, t),
+              (v) => call(data: v),
+            )
+          : null;
   @override
   $R call({
     String? tag,
@@ -1400,15 +1327,16 @@ class _StructuredContentStyledContainerCopyWithImpl<$R, $Out>
     Object? style = $none,
     Object? data = $none,
     Object? lang = $none,
-  }) => $apply(
-    FieldCopyWithData({
-      if (tag != null) #tag: tag,
-      if (content != $none) #content: content,
-      if (style != $none) #style: style,
-      if (data != $none) #data: data,
-      if (lang != $none) #lang: lang,
-    }),
-  );
+  }) =>
+      $apply(
+        FieldCopyWithData({
+          if (tag != null) #tag: tag,
+          if (content != $none) #content: content,
+          if (style != $none) #style: style,
+          if (data != $none) #data: data,
+          if (lang != $none) #lang: lang,
+        }),
+      );
   @override
   StructuredContentStyledContainer $make(CopyWithData data) =>
       StructuredContentStyledContainer(
@@ -1420,12 +1348,9 @@ class _StructuredContentStyledContainerCopyWithImpl<$R, $Out>
       );
 
   @override
-  StructuredContentStyledContainerCopyWith<
-    $R2,
-    StructuredContentStyledContainer,
-    $Out2
-  >
-  $chain<$R2, $Out2>(Then<$Out2, $R2> t) =>
+  StructuredContentStyledContainerCopyWith<$R2,
+      StructuredContentStyledContainer, $Out2> $chain<$R2, $Out2>(
+          Then<$Out2, $R2> t) =>
       _StructuredContentStyledContainerCopyWithImpl<$R2, $Out2>(
         $value,
         $cast,
@@ -1472,7 +1397,7 @@ class StructuredContentStyleMapper
   static List<String> _$textDecorationLine(StructuredContentStyle v) =>
       v.textDecorationLine;
   static const Field<StructuredContentStyle, List<String>>
-  _f$textDecorationLine = Field(
+      _f$textDecorationLine = Field(
     'textDecorationLine',
     _$textDecorationLine,
     opt: true,
@@ -1583,16 +1508,11 @@ mixin StructuredContentStyleMappable {
         .encodeMap<StructuredContentStyle>(this as StructuredContentStyle);
   }
 
-  StructuredContentStyleCopyWith<
-    StructuredContentStyle,
-    StructuredContentStyle,
-    StructuredContentStyle
-  >
-  get copyWith =>
-      _StructuredContentStyleCopyWithImpl<
-        StructuredContentStyle,
-        StructuredContentStyle
-      >(this as StructuredContentStyle, $identity, $identity);
+  StructuredContentStyleCopyWith<StructuredContentStyle, StructuredContentStyle,
+          StructuredContentStyle>
+      get copyWith => _StructuredContentStyleCopyWithImpl<
+              StructuredContentStyle, StructuredContentStyle>(
+          this as StructuredContentStyle, $identity, $identity);
   @override
   String toString() {
     return StructuredContentStyleMapper.ensureInitialized().stringifyValue(
@@ -1619,19 +1539,18 @@ mixin StructuredContentStyleMappable {
 extension StructuredContentStyleValueCopy<$R, $Out>
     on ObjectCopyWith<$R, StructuredContentStyle, $Out> {
   StructuredContentStyleCopyWith<$R, StructuredContentStyle, $Out>
-  get $asStructuredContentStyle => $base.as(
-    (v, t, t2) => _StructuredContentStyleCopyWithImpl<$R, $Out>(v, t, t2),
-  );
+      get $asStructuredContentStyle => $base.as(
+            (v, t, t2) =>
+                _StructuredContentStyleCopyWithImpl<$R, $Out>(v, t, t2),
+          );
 }
 
 abstract class StructuredContentStyleCopyWith<
-  $R,
-  $In extends StructuredContentStyle,
-  $Out
->
-    implements ClassCopyWith<$R, $In, $Out> {
+    $R,
+    $In extends StructuredContentStyle,
+    $Out> implements ClassCopyWith<$R, $In, $Out> {
   ListCopyWith<$R, String, ObjectCopyWith<$R, String, String>>
-  get textDecorationLine;
+      get textDecorationLine;
   $R call({
     String? fontStyle,
     String? fontWeight,
@@ -1661,11 +1580,11 @@ class _StructuredContentStyleCopyWithImpl<$R, $Out>
       StructuredContentStyleMapper.ensureInitialized();
   @override
   ListCopyWith<$R, String, ObjectCopyWith<$R, String, String>>
-  get textDecorationLine => ListCopyWith(
-    $value.textDecorationLine,
-    (v, t) => ObjectCopyWith(v, $identity, t),
-    (v) => call(textDecorationLine: v),
-  );
+      get textDecorationLine => ListCopyWith(
+            $value.textDecorationLine,
+            (v, t) => ObjectCopyWith(v, $identity, t),
+            (v) => call(textDecorationLine: v),
+          );
   @override
   $R call({
     String? fontStyle,
@@ -1679,43 +1598,45 @@ class _StructuredContentStyleCopyWithImpl<$R, $Out>
     double? marginRight,
     double? marginBottom,
     String? listStyleType,
-  }) => $apply(
-    FieldCopyWithData({
-      if (fontStyle != null) #fontStyle: fontStyle,
-      if (fontWeight != null) #fontWeight: fontWeight,
-      if (fontSize != null) #fontSize: fontSize,
-      if (textDecorationLine != null) #textDecorationLine: textDecorationLine,
-      if (verticalAlign != null) #verticalAlign: verticalAlign,
-      if (textAlign != null) #textAlign: textAlign,
-      if (marginTop != null) #marginTop: marginTop,
-      if (marginLeft != null) #marginLeft: marginLeft,
-      if (marginRight != null) #marginRight: marginRight,
-      if (marginBottom != null) #marginBottom: marginBottom,
-      if (listStyleType != null) #listStyleType: listStyleType,
-    }),
-  );
+  }) =>
+      $apply(
+        FieldCopyWithData({
+          if (fontStyle != null) #fontStyle: fontStyle,
+          if (fontWeight != null) #fontWeight: fontWeight,
+          if (fontSize != null) #fontSize: fontSize,
+          if (textDecorationLine != null)
+            #textDecorationLine: textDecorationLine,
+          if (verticalAlign != null) #verticalAlign: verticalAlign,
+          if (textAlign != null) #textAlign: textAlign,
+          if (marginTop != null) #marginTop: marginTop,
+          if (marginLeft != null) #marginLeft: marginLeft,
+          if (marginRight != null) #marginRight: marginRight,
+          if (marginBottom != null) #marginBottom: marginBottom,
+          if (listStyleType != null) #listStyleType: listStyleType,
+        }),
+      );
   @override
   StructuredContentStyle $make(CopyWithData data) => StructuredContentStyle(
-    fontStyle: data.get(#fontStyle, or: $value.fontStyle),
-    fontWeight: data.get(#fontWeight, or: $value.fontWeight),
-    fontSize: data.get(#fontSize, or: $value.fontSize),
-    textDecorationLine: data.get(
-      #textDecorationLine,
-      or: $value.textDecorationLine,
-    ),
-    verticalAlign: data.get(#verticalAlign, or: $value.verticalAlign),
-    textAlign: data.get(#textAlign, or: $value.textAlign),
-    marginTop: data.get(#marginTop, or: $value.marginTop),
-    marginLeft: data.get(#marginLeft, or: $value.marginLeft),
-    marginRight: data.get(#marginRight, or: $value.marginRight),
-    marginBottom: data.get(#marginBottom, or: $value.marginBottom),
-    listStyleType: data.get(#listStyleType, or: $value.listStyleType),
-  );
+        fontStyle: data.get(#fontStyle, or: $value.fontStyle),
+        fontWeight: data.get(#fontWeight, or: $value.fontWeight),
+        fontSize: data.get(#fontSize, or: $value.fontSize),
+        textDecorationLine: data.get(
+          #textDecorationLine,
+          or: $value.textDecorationLine,
+        ),
+        verticalAlign: data.get(#verticalAlign, or: $value.verticalAlign),
+        textAlign: data.get(#textAlign, or: $value.textAlign),
+        marginTop: data.get(#marginTop, or: $value.marginTop),
+        marginLeft: data.get(#marginLeft, or: $value.marginLeft),
+        marginRight: data.get(#marginRight, or: $value.marginRight),
+        marginBottom: data.get(#marginBottom, or: $value.marginBottom),
+        listStyleType: data.get(#listStyleType, or: $value.listStyleType),
+      );
 
   @override
   StructuredContentStyleCopyWith<$R2, StructuredContentStyle, $Out2>
-  $chain<$R2, $Out2>(Then<$Out2, $R2> t) =>
-      _StructuredContentStyleCopyWithImpl<$R2, $Out2>($value, $cast, t);
+      $chain<$R2, $Out2>(Then<$Out2, $R2> t) =>
+          _StructuredContentStyleCopyWithImpl<$R2, $Out2>($value, $cast, t);
 }
 
 class StructuredContentTableElementMapper
@@ -1746,14 +1667,14 @@ class StructuredContentTableElementMapper
   static StructuredContent? _$content(StructuredContentTableElement v) =>
       v.content;
   static const Field<StructuredContentTableElement, StructuredContent>
-  _f$content = Field('content', _$content, opt: true, hook: ContentHook());
+      _f$content = Field('content', _$content, opt: true, hook: ContentHook());
   static StructuredContentStyle? _$style(StructuredContentTableElement v) =>
       v.style;
   static const Field<StructuredContentTableElement, StructuredContentStyle>
-  _f$style = Field('style', _$style, opt: true);
+      _f$style = Field('style', _$style, opt: true);
   static Map<String, String>? _$data(StructuredContentTableElement v) => v.data;
   static const Field<StructuredContentTableElement, Map<String, String>>
-  _f$data = Field('data', _$data, opt: true);
+      _f$data = Field('data', _$data, opt: true);
   static int? _$colSpan(StructuredContentTableElement v) => v.colSpan;
   static const Field<StructuredContentTableElement, int> _f$colSpan = Field(
     'colSpan',
@@ -1820,27 +1741,22 @@ mixin StructuredContentTableElementMappable {
   String toJson() {
     return StructuredContentTableElementMapper.ensureInitialized()
         .encodeJson<StructuredContentTableElement>(
-          this as StructuredContentTableElement,
-        );
+      this as StructuredContentTableElement,
+    );
   }
 
   Map<String, dynamic> toMap() {
     return StructuredContentTableElementMapper.ensureInitialized()
         .encodeMap<StructuredContentTableElement>(
-          this as StructuredContentTableElement,
-        );
+      this as StructuredContentTableElement,
+    );
   }
 
-  StructuredContentTableElementCopyWith<
-    StructuredContentTableElement,
-    StructuredContentTableElement,
-    StructuredContentTableElement
-  >
-  get copyWith =>
-      _StructuredContentTableElementCopyWithImpl<
-        StructuredContentTableElement,
-        StructuredContentTableElement
-      >(this as StructuredContentTableElement, $identity, $identity);
+  StructuredContentTableElementCopyWith<StructuredContentTableElement,
+          StructuredContentTableElement, StructuredContentTableElement>
+      get copyWith => _StructuredContentTableElementCopyWithImpl<
+              StructuredContentTableElement, StructuredContentTableElement>(
+          this as StructuredContentTableElement, $identity, $identity);
   @override
   String toString() {
     return StructuredContentTableElementMapper.ensureInitialized()
@@ -1866,24 +1782,18 @@ mixin StructuredContentTableElementMappable {
 extension StructuredContentTableElementValueCopy<$R, $Out>
     on ObjectCopyWith<$R, StructuredContentTableElement, $Out> {
   StructuredContentTableElementCopyWith<$R, StructuredContentTableElement, $Out>
-  get $asStructuredContentTableElement => $base.as(
-    (v, t, t2) =>
-        _StructuredContentTableElementCopyWithImpl<$R, $Out>(v, t, t2),
-  );
+      get $asStructuredContentTableElement => $base.as(
+            (v, t, t2) =>
+                _StructuredContentTableElementCopyWithImpl<$R, $Out>(v, t, t2),
+          );
 }
 
 abstract class StructuredContentTableElementCopyWith<
-  $R,
-  $In extends StructuredContentTableElement,
-  $Out
->
-    implements ClassCopyWith<$R, $In, $Out> {
-  StructuredContentStyleCopyWith<
     $R,
-    StructuredContentStyle,
-    StructuredContentStyle
-  >?
-  get style;
+    $In extends StructuredContentTableElement,
+    $Out> implements ClassCopyWith<$R, $In, $Out> {
+  StructuredContentStyleCopyWith<$R, StructuredContentStyle,
+      StructuredContentStyle>? get style;
   MapCopyWith<$R, String, String, ObjectCopyWith<$R, String, String>>? get data;
   $R call({
     String? tag,
@@ -1902,11 +1812,8 @@ abstract class StructuredContentTableElementCopyWith<
 class _StructuredContentTableElementCopyWithImpl<$R, $Out>
     extends ClassCopyWithBase<$R, StructuredContentTableElement, $Out>
     implements
-        StructuredContentTableElementCopyWith<
-          $R,
-          StructuredContentTableElement,
-          $Out
-        > {
+        StructuredContentTableElementCopyWith<$R, StructuredContentTableElement,
+            $Out> {
   _StructuredContentTableElementCopyWithImpl(
     super.value,
     super.then,
@@ -1917,21 +1824,18 @@ class _StructuredContentTableElementCopyWithImpl<$R, $Out>
   late final ClassMapperBase<StructuredContentTableElement> $mapper =
       StructuredContentTableElementMapper.ensureInitialized();
   @override
-  StructuredContentStyleCopyWith<
-    $R,
-    StructuredContentStyle,
-    StructuredContentStyle
-  >?
-  get style => $value.style?.copyWith.$chain((v) => call(style: v));
+  StructuredContentStyleCopyWith<$R, StructuredContentStyle,
+          StructuredContentStyle>?
+      get style => $value.style?.copyWith.$chain((v) => call(style: v));
   @override
   MapCopyWith<$R, String, String, ObjectCopyWith<$R, String, String>>?
-  get data => $value.data != null
-      ? MapCopyWith(
-          $value.data!,
-          (v, t) => ObjectCopyWith(v, $identity, t),
-          (v) => call(data: v),
-        )
-      : null;
+      get data => $value.data != null
+          ? MapCopyWith(
+              $value.data!,
+              (v, t) => ObjectCopyWith(v, $identity, t),
+              (v) => call(data: v),
+            )
+          : null;
   @override
   $R call({
     String? tag,
@@ -1941,17 +1845,18 @@ class _StructuredContentTableElementCopyWithImpl<$R, $Out>
     Object? colSpan = $none,
     Object? rowSpan = $none,
     Object? lang = $none,
-  }) => $apply(
-    FieldCopyWithData({
-      if (tag != null) #tag: tag,
-      if (content != $none) #content: content,
-      if (style != $none) #style: style,
-      if (data != $none) #data: data,
-      if (colSpan != $none) #colSpan: colSpan,
-      if (rowSpan != $none) #rowSpan: rowSpan,
-      if (lang != $none) #lang: lang,
-    }),
-  );
+  }) =>
+      $apply(
+        FieldCopyWithData({
+          if (tag != null) #tag: tag,
+          if (content != $none) #content: content,
+          if (style != $none) #style: style,
+          if (data != $none) #data: data,
+          if (colSpan != $none) #colSpan: colSpan,
+          if (rowSpan != $none) #rowSpan: rowSpan,
+          if (lang != $none) #lang: lang,
+        }),
+      );
   @override
   StructuredContentTableElement $make(CopyWithData data) =>
       StructuredContentTableElement(
@@ -1965,12 +1870,8 @@ class _StructuredContentTableElementCopyWithImpl<$R, $Out>
       );
 
   @override
-  StructuredContentTableElementCopyWith<
-    $R2,
-    StructuredContentTableElement,
-    $Out2
-  >
-  $chain<$R2, $Out2>(Then<$Out2, $R2> t) =>
+  StructuredContentTableElementCopyWith<$R2, StructuredContentTableElement,
+      $Out2> $chain<$R2, $Out2>(
+          Then<$Out2, $R2> t) =>
       _StructuredContentTableElementCopyWithImpl<$R2, $Out2>($value, $cast, t);
 }
-

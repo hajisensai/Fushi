@@ -6,7 +6,6 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 
-
 /// The content of the dialog used for managing dictionary settings.
 class DictionarySettingsDialogPage extends BasePage {
   /// Create an instance of this page.
@@ -21,7 +20,6 @@ class _DictionaryDialogPageState extends BasePageState {
   late TextEditingController _dictionaryFontSizeController;
   late TextEditingController _maximumTermsController;
 
-
   @override
   void initState() {
     super.initState();
@@ -34,7 +32,6 @@ class _DictionaryDialogPageState extends BasePageState {
     _maximumTermsController =
         TextEditingController(text: appModelNoUpdate.maximumTerms.toString());
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -347,7 +344,6 @@ class _DictionaryDialogPageState extends BasePageState {
     );
   }
 
-
   Widget buildMaximumTermsField() {
     return TextField(
       onChanged: (value) {
@@ -513,25 +509,25 @@ class _DictionaryDialogPageState extends BasePageState {
               final bool? confirmed = await showDialog<bool>(
                 context: context,
                 builder: (ctx) => AlertDialog(
-                    title: Text(t.dialog_delete),
-                    content: Text(label),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(ctx, false),
-                        child: Text(t.dialog_cancel),
+                  title: Text(t.dialog_delete),
+                  content: Text(label),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: Text(t.dialog_cancel),
+                    ),
+                    FilledButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      style: FilledButton.styleFrom(
+                        backgroundColor:
+                            Theme.of(context).colorScheme.errorContainer,
+                        foregroundColor:
+                            Theme.of(context).colorScheme.onErrorContainer,
                       ),
-                      FilledButton(
-                        onPressed: () => Navigator.pop(ctx, true),
-                        style: FilledButton.styleFrom(
-                          backgroundColor:
-                              Theme.of(context).colorScheme.errorContainer,
-                          foregroundColor:
-                              Theme.of(context).colorScheme.onErrorContainer,
-                        ),
-                        child: Text(t.dialog_delete),
-                      ),
-                    ],
-                  ),
+                      child: Text(t.dialog_delete),
+                    ),
+                  ],
+                ),
               );
               if (confirmed == true && mounted) {
                 await appModelNoUpdate.removeLocalAudioDb(index);
@@ -559,10 +555,10 @@ class _DictionaryDialogPageState extends BasePageState {
             content: Row(
               children: [
                 const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
                 const SizedBox(width: 16),
                 Text(t.dialog_importing),
               ],
@@ -635,7 +631,6 @@ class _DictionaryDialogPageState extends BasePageState {
       ),
     );
   }
-
 }
 
 class _AudioSourcesDialog extends StatefulWidget {

@@ -4,7 +4,6 @@ import 'package:collection/collection.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
 class AnkiDeck {
-
   const AnkiDeck({required this.id, required this.name});
 
   factory AnkiDeck.fromJson(Map<String, dynamic> json) =>
@@ -16,7 +15,6 @@ class AnkiDeck {
 }
 
 class AnkiNoteType {
-
   const AnkiNoteType({
     required this.id,
     required this.name,
@@ -36,7 +34,6 @@ class AnkiNoteType {
 }
 
 class AnkiSettings {
-
   const AnkiSettings({
     this.selectedDeckId,
     this.selectedDeckName,
@@ -136,7 +133,6 @@ class AnkiSettings {
 }
 
 class AnkiMiningPayload {
-
   const AnkiMiningPayload({
     required this.expression,
     this.reading = '',
@@ -162,7 +158,8 @@ class AnkiMiningPayload {
       try {
         singleGlossaries = Map<String, String>.from(jsonDecode(sgRaw) as Map);
       } catch (e, stack) {
-        ErrorLogService.instance.log('AnkiMiningPayload.singleGlossaries', e, stack);
+        ErrorLogService.instance
+            .log('AnkiMiningPayload.singleGlossaries', e, stack);
       }
     } else if (sgRaw is Map) {
       singleGlossaries = Map<String, String>.from(sgRaw);
@@ -176,7 +173,8 @@ class AnkiMiningPayload {
             .map((e) => DictionaryMedia.fromJson(e as Map<String, dynamic>))
             .toList();
       } catch (e, stack) {
-        ErrorLogService.instance.log('AnkiMiningPayload.dictionaryMedia', e, stack);
+        ErrorLogService.instance
+            .log('AnkiMiningPayload.dictionaryMedia', e, stack);
       }
     } else if (dmRaw is List) {
       dictionaryMedia = dmRaw
@@ -220,7 +218,6 @@ class AnkiMiningPayload {
 }
 
 class DictionaryMedia {
-
   const DictionaryMedia({
     required this.dictionary,
     required this.path,
@@ -239,7 +236,6 @@ class DictionaryMedia {
 }
 
 class AnkiMiningContext {
-
   const AnkiMiningContext({
     required this.sentence,
     this.documentTitle,
@@ -411,15 +407,13 @@ String mimeTypeForPath(String path) {
 }
 
 String ankiInlineMediaReference(String addMediaResult) {
-  final imageSrc =
-      RegExp(r'''<img\s+[^>]*src=["']([^"']+)["'][^>]*>''')
-          .firstMatch(addMediaResult);
+  final imageSrc = RegExp(r'''<img\s+[^>]*src=["']([^"']+)["'][^>]*>''')
+      .firstMatch(addMediaResult);
   if (imageSrc != null) {
     final src = imageSrc.group(1);
     if (src != null && src.isNotEmpty) return src;
   }
-  final soundFile =
-      RegExp(r'\[sound:([^\]]+)\]').firstMatch(addMediaResult);
+  final soundFile = RegExp(r'\[sound:([^\]]+)\]').firstMatch(addMediaResult);
   if (soundFile != null) {
     final file = soundFile.group(1);
     if (file != null) return file;
@@ -434,8 +428,7 @@ String normalizeAnkiDictionaryHtml(String value) {
   return value + _ankiGaijiImageStyle;
 }
 
-const _ankiGaijiImageStyle =
-    '<style>'
+const _ankiGaijiImageStyle = '<style>'
     '.yomitan-glossary [data-sc-img][data-sc-class="gaiji"]'
     '{display:inline!important;white-space:nowrap!important;vertical-align:baseline!important}'
     '.yomitan-glossary [data-sc-img][data-sc-class="gaiji"] .gloss-image-link'

@@ -1,7 +1,8 @@
 import 'dart:io';
 
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
-import 'package:hibiki/src/media/audiobook/srt_book_repository.dart' show SrtBookRepository;
+import 'package:hibiki/src/media/audiobook/srt_book_repository.dart'
+    show SrtBookRepository;
 import 'package:hibiki/src/media/audiobook/srt_parser.dart';
 import 'package:hibiki/src/media/audiobook/text_file_io.dart';
 
@@ -32,8 +33,7 @@ class LrcParser {
   static const String defaultChapter = SrtParser.defaultChapter;
 
   /// 时间标签正则：`[MM:SS.xx]`、`[MM:SS.xxx]`、`[HH:MM:SS.xx]` 等。
-  static final RegExp _timedTag =
-      RegExp(r'\[(\d+(?::\d{2})+[.,]\d{1,3})\]');
+  static final RegExp _timedTag = RegExp(r'\[(\d+(?::\d{2})+[.,]\d{1,3})\]');
 
   /// 增强 LRC 词级时间标签：`<MM:SS.xx>`，解析时剥离。
   static final RegExp _wordTag = RegExp('<[^>]+>');
@@ -77,10 +77,8 @@ class LrcParser {
     final String stripped =
         content.startsWith('\uFEFF') ? content.substring(1) : content;
 
-    final List<String> lines = stripped
-        .replaceAll('\r\n', '\n')
-        .replaceAll('\r', '\n')
-        .split('\n');
+    final List<String> lines =
+        stripped.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n');
 
     // 第一步：收集所有 (startMs, text) 原始对
     final List<(int, String)> rawCues = [];
@@ -93,8 +91,7 @@ class LrcParser {
       if (_metaTag.hasMatch(trimmed)) continue;
 
       // 找出本行全部时间标签
-      final Iterable<RegExpMatch> tagMatches =
-          _timedTag.allMatches(trimmed);
+      final Iterable<RegExpMatch> tagMatches = _timedTag.allMatches(trimmed);
       if (tagMatches.isEmpty) continue;
 
       // 将所有时间标签从行中移除，剩余部分即为文本
@@ -115,8 +112,8 @@ class LrcParser {
     if (rawCues.isEmpty) return [];
 
     // 第二步：按 startMs 排序
-    rawCues.sort((final (int, String) a, final (int, String) b) =>
-        a.$1.compareTo(b.$1));
+    rawCues.sort(
+        (final (int, String) a, final (int, String) b) => a.$1.compareTo(b.$1));
 
     // 第三步：计算 endMs，构造 AudioCue 列表
     final List<AudioCue> cues = [];
@@ -154,8 +151,7 @@ class LrcParser {
     final String normalized = timecode.replaceAll(',', '.');
 
     // 尝试 HH:MM:SS.xxx
-    final RegExp fullRe =
-        RegExp(r'^(\d+):(\d{2}):(\d{2})\.(\d{1,3})$');
+    final RegExp fullRe = RegExp(r'^(\d+):(\d{2}):(\d{2})\.(\d{1,3})$');
     final RegExpMatch? fullMatch = fullRe.firstMatch(normalized);
     if (fullMatch != null) {
       final int h = int.parse(fullMatch.group(1)!);

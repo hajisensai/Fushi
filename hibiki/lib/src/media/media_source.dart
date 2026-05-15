@@ -217,7 +217,8 @@ abstract class MediaSource {
 
   /// The widget to show when this source is launched. An optional [MediaItem]
   /// can be supplied as a launch parameter.
-  BaseSourcePage buildLaunchPage({MediaItem? item, Bookmark? initialBookmarkJump});
+  BaseSourcePage buildLaunchPage(
+      {MediaItem? item, Bookmark? initialBookmarkJump});
 
   /// If this is not null, this action is executed when the user taps on the
   /// search bar. Sources that do not have a search action should have this

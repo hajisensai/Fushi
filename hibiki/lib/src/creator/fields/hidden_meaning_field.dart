@@ -39,9 +39,6 @@ class HiddenMeaningField extends Field {
     required String? dictionaryName,
   }) {
     return MeaningField.flattenMeanings(
-        appModel: appModel,
-        entries: [entry],
-        prependDictionaryNames:
-            false);
+        appModel: appModel, entries: [entry], prependDictionaryNames: false);
   }
 }

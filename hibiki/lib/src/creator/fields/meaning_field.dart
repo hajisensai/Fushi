@@ -71,8 +71,7 @@ class MeaningField extends Field {
     return flattenMeanings(
       appModel: appModel,
       entries: [entry],
-      prependDictionaryNames:
-          false,
+      prependDictionaryNames: false,
     );
   }
 }

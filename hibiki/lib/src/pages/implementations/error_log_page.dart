@@ -55,7 +55,10 @@ class ErrorLogPage extends StatelessWidget {
       ),
       body: SingleChildScrollView(
         padding: EdgeInsets.fromLTRB(
-          12, 12, 12, 12 + MediaQuery.of(context).padding.bottom,
+          12,
+          12,
+          12,
+          12 + MediaQuery.of(context).padding.bottom,
         ),
         child: SelectableText(
           log,

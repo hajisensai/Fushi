@@ -38,7 +38,6 @@ enum HealthKind {
 /// 在内存里用它，落到 Isar 时拆成 [Audiobook.healthKindRaw] / matchRatePct /
 /// healthMeasuredAt / healthReason 四个字段（见 [packInto] / [fromAudiobook]）。
 class AudiobookHealth {
-
   /// 从匹配率百分比直接分档。nul/负数/0 →  failed；≥ 阈值 → ok；其余
   /// → partial。
   factory AudiobookHealth.fromRatePct({
@@ -71,7 +70,8 @@ class AudiobookHealth {
     );
   }
 
-  factory AudiobookHealth.notApplicable({String? reason, DateTime? measuredAt}) {
+  factory AudiobookHealth.notApplicable(
+      {String? reason, DateTime? measuredAt}) {
     return AudiobookHealth(
       kind: HealthKind.notApplicable,
       reason: reason,
@@ -79,7 +79,8 @@ class AudiobookHealth {
     );
   }
 
-  factory AudiobookHealth.failed({required String reason, DateTime? measuredAt}) {
+  factory AudiobookHealth.failed(
+      {required String reason, DateTime? measuredAt}) {
     return AudiobookHealth(
       kind: HealthKind.failed,
       ratePct: 0,
@@ -97,7 +98,8 @@ class AudiobookHealth {
   }
   const AudiobookHealth({
     required this.kind,
-    required this.measuredAt, this.ratePct,
+    required this.measuredAt,
+    this.ratePct,
     this.reason,
   });
 
@@ -140,15 +142,13 @@ class AudiobookHealth {
       orElse: () => HealthKind.unrun,
     );
     final int? rawPct = ab.matchRatePct;
-    final int? pct = (rawPct == null || rawPct < 0 || rawPct > 100)
-        ? null
-        : rawPct;
+    final int? pct =
+        (rawPct == null || rawPct < 0 || rawPct > 100) ? null : rawPct;
     return AudiobookHealth(
       kind: kind,
       ratePct: pct,
       reason: ab.healthReason,
-      measuredAt: ab.healthMeasuredAt ??
-          DateTime.fromMillisecondsSinceEpoch(0),
+      measuredAt: ab.healthMeasuredAt ?? DateTime.fromMillisecondsSinceEpoch(0),
     );
   }
 }

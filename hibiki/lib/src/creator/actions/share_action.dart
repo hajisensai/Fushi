@@ -43,8 +43,7 @@ class ShareAction extends QuickAction {
       MeaningField.flattenMeanings(
         appModel: appModel,
         entries: [entry],
-        prependDictionaryNames:
-            false,
+        prependDictionaryNames: false,
       ),
     );
 

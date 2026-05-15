@@ -290,13 +290,11 @@ class HighlightBridge {
     InAppWebViewController controller,
   ) async {
     final Object? raw = await controller.evaluateJavascript(
-      source:
-          '(function(){try{var r=window.__hibikiGetSelectionNormRange();'
+      source: '(function(){try{var r=window.__hibikiGetSelectionNormRange();'
           'return r?JSON.stringify(r):"null";}catch(e){return "null";}})();',
     );
     if (raw is! String || raw.isEmpty || raw == 'null') return null;
-    final Map<String, dynamic> json =
-        jsonDecode(raw) as Map<String, dynamic>;
+    final Map<String, dynamic> json = jsonDecode(raw) as Map<String, dynamic>;
     final int? offset = (json['offset'] as num?)?.toInt();
     final int? length = (json['length'] as num?)?.toInt();
     final String? text = json['text'] as String?;
@@ -311,8 +309,7 @@ class HighlightBridge {
     String? customHighlightCss,
   }) async {
     final List<Map<String, dynamic>> payload = highlights
-        .where((h) =>
-            h.normCharOffset != null && h.normCharLength != null)
+        .where((h) => h.normCharOffset != null && h.normCharLength != null)
         .map((h) => <String, dynamic>{
               'id': h.id,
               'offset': h.normCharOffset,
@@ -322,12 +319,10 @@ class HighlightBridge {
         .toList();
     final String json = jsonEncode(payload);
     final String escapedBg = jsonEncode(backgroundHex);
-    final String escapedCustom = customHighlightCss != null
-        ? jsonEncode(customHighlightCss)
-        : 'null';
+    final String escapedCustom =
+        customHighlightCss != null ? jsonEncode(customHighlightCss) : 'null';
     await controller.evaluateJavascript(
-      source:
-          'window.__hibikiHighlightBg=$escapedBg;'
+      source: 'window.__hibikiHighlightBg=$escapedBg;'
           'window.__hibikiCustomHighlightColor=$escapedCustom;'
           'window.__hibikiApplyHighlights && window.__hibikiApplyHighlights($json);',
     );

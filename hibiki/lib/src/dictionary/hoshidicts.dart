@@ -12,7 +12,6 @@ import 'package:hibiki/src/dictionary/hoshidicts_ffi_bindings.dart';
 // ── Dart data classes ───────────────────────────────────────────────
 
 class HoshiGlossaryEntry {
-
   const HoshiGlossaryEntry({
     required this.dictName,
     required this.glossary,
@@ -32,7 +31,8 @@ class HoshiFrequency {
 }
 
 class HoshiFrequencyEntry {
-  const HoshiFrequencyEntry({required this.dictName, required this.frequencies});
+  const HoshiFrequencyEntry(
+      {required this.dictName, required this.frequencies});
   final String dictName;
   final List<HoshiFrequency> frequencies;
 }
@@ -44,7 +44,6 @@ class HoshiPitchEntry {
 }
 
 class HoshiTermResult {
-
   const HoshiTermResult({
     required this.expression,
     required this.reading,
@@ -68,7 +67,6 @@ class HoshiTransformGroup {
 }
 
 class HoshiLookupResult {
-
   const HoshiLookupResult({
     required this.matched,
     required this.deinflected,
@@ -84,7 +82,6 @@ class HoshiLookupResult {
 }
 
 class HoshiImportResult {
-
   const HoshiImportResult({
     required this.success,
     required this.title,
@@ -173,7 +170,6 @@ HoshiTermResult _convertTerm(FfiTermResult ffi) {
 // ── main wrapper class ──────────────────────────────────────────────
 
 class HoshiDicts {
-
   // ── lifecycle ──────────────────────────────────────────────────
 
   HoshiDicts() {
@@ -198,16 +194,34 @@ class HoshiDicts {
 
   static Future<void> preloadTransforms() async {
     const languages = [
-      'ar', 'de', 'el', 'en', 'eo', 'es', 'eu', 'fr',
-      'ga', 'grc', 'ja', 'ka', 'ko', 'la', 'sga', 'sq', 'tl', 'yi',
+      'ar',
+      'de',
+      'el',
+      'en',
+      'eo',
+      'es',
+      'eu',
+      'fr',
+      'ga',
+      'grc',
+      'ja',
+      'ka',
+      'ko',
+      'la',
+      'sga',
+      'sq',
+      'tl',
+      'yi',
     ];
     final jsons = <String>[];
     for (final lang in languages) {
       try {
-        final json = await rootBundle.loadString('assets/transforms/$lang.json');
+        final json =
+            await rootBundle.loadString('assets/transforms/$lang.json');
         jsons.add(json);
       } catch (e, stack) {
-        ErrorLogService.instance.log('HoshiDicts.preloadTransforms($lang)', e, stack);
+        ErrorLogService.instance
+            .log('HoshiDicts.preloadTransforms($lang)', e, stack);
       }
     }
     _cachedTransformJsons = jsons;

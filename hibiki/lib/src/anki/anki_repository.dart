@@ -27,7 +27,8 @@ class AnkiRepository {
           return AnkiSettings.fromJson(
               jsonDecode(migrated) as Map<String, dynamic>);
         } catch (e, stack) {
-          ErrorLogService.instance.log('AnkiRepository.loadSettings.legacy', e, stack);
+          ErrorLogService.instance
+              .log('AnkiRepository.loadSettings.legacy', e, stack);
         }
       }
       return const AnkiSettings();
@@ -83,8 +84,7 @@ class AnkiRepository {
 
       final updated = await updateSettings((current) {
         final selectedDeck = _selectDeckAfterFetch(decks, current);
-        final selectedNoteType =
-            _selectNoteTypeAfterFetch(noteTypes, current);
+        final selectedNoteType = _selectNoteTypeAfterFetch(noteTypes, current);
         return current.copyWith(
           selectedDeckId: selectedDeck.id,
           selectedDeckName: selectedDeck.name,
@@ -129,11 +129,11 @@ class AnkiRepository {
 
     final AnkiMiningPayload payload;
     try {
-      final json =
-          Map<String, dynamic>.from(jsonDecode(rawPayloadJson) as Map);
+      final json = Map<String, dynamic>.from(jsonDecode(rawPayloadJson) as Map);
       payload = AnkiMiningPayload.fromJson(json);
     } catch (e, stack) {
-      ErrorLogService.instance.log('AnkiRepository.mineEntry.parsePayload', e, stack);
+      ErrorLogService.instance
+          .log('AnkiRepository.mineEntry.parsePayload', e, stack);
       return MineResult.error;
     }
 
@@ -149,11 +149,9 @@ class AnkiRepository {
       sentenceOffset: context.sentenceOffset,
     );
 
-    final rawAudio = payload.audio.isNotEmpty
-        ? await _addRemoteAudio(payload.audio)
-        : null;
-    final processedAudio =
-        rawAudio != null ? '[sound:$rawAudio]' : '';
+    final rawAudio =
+        payload.audio.isNotEmpty ? await _addRemoteAudio(payload.audio) : null;
+    final processedAudio = rawAudio != null ? '[sound:$rawAudio]' : '';
 
     final mediaPayload = AnkiMiningPayload(
       expression: payload.expression,
@@ -183,8 +181,8 @@ class AnkiRepository {
 
     final fields = <String, String>{};
     for (final entry in settings.fieldMappings.entries) {
-      var value = AnkiHandlebarRenderer.render(
-          entry.value, mediaPayload, mediaContext);
+      var value =
+          AnkiHandlebarRenderer.render(entry.value, mediaPayload, mediaContext);
       for (final mediaEntry in dictionaryMediaTags.entries) {
         value = value.replaceAll(mediaEntry.key, mediaEntry.value);
       }
@@ -202,8 +200,7 @@ class AnkiRepository {
         final readingIdx =
             _findReadingFieldIndex(noteType, settings.fieldMappings);
         try {
-          final isDupe =
-              await _channel.invokeMethod('checkForDuplicates', {
+          final isDupe = await _channel.invokeMethod('checkForDuplicates', {
             'models': [noteType.name],
             'key': firstFieldValue,
             'reading': payload.reading,
@@ -211,16 +208,15 @@ class AnkiRepository {
           });
           if (isDupe == true) return MineResult.duplicate;
         } catch (e, stack) {
-          ErrorLogService.instance.log('AnkiRepository.mineEntry.dupeCheck', e, stack);
+          ErrorLogService.instance
+              .log('AnkiRepository.mineEntry.dupeCheck', e, stack);
         }
       }
     }
 
     final fieldArray = noteType.fields.map((f) => fields[f] ?? '').toList();
-    final tags = settings.tags
-        .split(RegExp(r'\s+'))
-        .where((t) => t.isNotEmpty)
-        .toList();
+    final tags =
+        settings.tags.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
 
     try {
       await _channel.invokeMethod('addNote', <String, dynamic>{
@@ -231,7 +227,8 @@ class AnkiRepository {
       });
       return MineResult.success;
     } on PlatformException catch (e, stack) {
-      ErrorLogService.instance.log('AnkiRepository.mineEntry.addNote', e, stack);
+      ErrorLogService.instance
+          .log('AnkiRepository.mineEntry.addNote', e, stack);
       debugPrint('Failed to add note: ${e.message}');
       return MineResult.error;
     }
@@ -241,11 +238,9 @@ class AnkiRepository {
     final settings = await loadSettings();
     final noteType = settings.selectedNoteType;
     if (noteType == null) return false;
-    final readingIdx =
-        _findReadingFieldIndex(noteType, settings.fieldMappings);
+    final readingIdx = _findReadingFieldIndex(noteType, settings.fieldMappings);
     try {
-      final result =
-          await _channel.invokeMethod('checkForDuplicates', {
+      final result = await _channel.invokeMethod('checkForDuplicates', {
         'models': [noteType.name],
         'key': expression,
         'reading': reading,
@@ -263,7 +258,9 @@ class AnkiRepository {
         path,
         'hibiki_cover_${File(path).uri.pathSegments.last}',
         mimeTypeForPath(path));
-    return raw != null ? '<img src="${const HtmlEscape().convert(raw)}">' : null;
+    return raw != null
+        ? '<img src="${const HtmlEscape().convert(raw)}">'
+        : null;
   }
 
   Future<String?> _addSasayakiAudio(String path) async {
@@ -288,8 +285,7 @@ class AnkiRepository {
               await response.fold<List<int>>([], (a, b) => a..addAll(b));
           final cacheDir = await _mediaCacheDir();
           final urlHash = url.hashCode.toUnsigned(32).toRadixString(16);
-          audioFile =
-              File('${cacheDir.path}/hibiki_audio_$urlHash.mp3');
+          audioFile = File('${cacheDir.path}/hibiki_audio_$urlHash.mp3');
           await audioFile.writeAsBytes(bytes);
         } finally {
           client.close();
@@ -316,7 +312,8 @@ class AnkiRepository {
           await _addMediaFile(file.path, filename, mimeTypeForPath(media.path));
       return result != null ? ankiInlineMediaReference(result) : null;
     } catch (e, stack) {
-      ErrorLogService.instance.log('AnkiRepository._addDictionaryMedia', e, stack);
+      ErrorLogService.instance
+          .log('AnkiRepository._addDictionaryMedia', e, stack);
       debugPrint('Failed to add dictionary media: $e');
       return null;
     }
@@ -354,8 +351,7 @@ class AnkiRepository {
     return -1;
   }
 
-  AnkiDeck _selectDeckAfterFetch(
-          List<AnkiDeck> decks, AnkiSettings current) =>
+  AnkiDeck _selectDeckAfterFetch(List<AnkiDeck> decks, AnkiSettings current) =>
       decks.firstWhereOrNull((d) => d.id == current.selectedDeckId) ??
       (current.selectedDeckName != null
           ? decks.firstWhereOrNull((d) => d.name == current.selectedDeckName)
@@ -366,11 +362,10 @@ class AnkiRepository {
 
   AnkiNoteType _selectNoteTypeAfterFetch(
           List<AnkiNoteType> noteTypes, AnkiSettings current) =>
-      noteTypes
-          .firstWhereOrNull((t) => t.id == current.selectedNoteTypeId) ??
+      noteTypes.firstWhereOrNull((t) => t.id == current.selectedNoteTypeId) ??
       (current.selectedNoteTypeName != null
-          ? noteTypes.firstWhereOrNull(
-              (t) => t.name == current.selectedNoteTypeName)
+          ? noteTypes
+              .firstWhereOrNull((t) => t.name == current.selectedNoteTypeName)
           : null) ??
       noteTypes.firstWhereOrNull(LapisPreset.matches) ??
       noteTypes.first;

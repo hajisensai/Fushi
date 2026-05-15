@@ -5,7 +5,6 @@ import 'package:hibiki/src/anki/anki_repository.dart';
 import 'package:hibiki/src/anki/lapis_preset.dart';
 
 class AnkiUiState {
-
   const AnkiUiState({
     this.settings = const AnkiSettings(),
     this.isFetching = false,
@@ -34,7 +33,6 @@ class AnkiUiState {
 }
 
 class AnkiViewModel extends StateNotifier<AnkiUiState> {
-
   AnkiViewModel(this._repository) : super(const AnkiUiState()) {
     _loadSettings();
   }

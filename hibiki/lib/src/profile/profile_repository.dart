@@ -3,7 +3,6 @@ import 'package:hibiki/src/database/database.dart';
 import 'package:hibiki/src/profile/profile_keys.dart';
 
 class ProfileRepository {
-
   ProfileRepository(this._db, this._ankiRepo);
   final HibikiDatabase _db;
   final AnkiRepository _ankiRepo;

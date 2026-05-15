@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/utils.dart';
 import 'package:path/path.dart' as p;
@@ -30,129 +31,129 @@ class _RecommendedFont {
 
 // Google Fonts API 为主，jsDelivr CDN（中国可访问）为备选。
 List<_RecommendedFont> get _recommendedFonts => [
-  // ── 推荐首选 ──
-  _RecommendedFont(
-    name: 'Klee One',
-    nameJa: 'クレー One',
-    urls: [
-      'https://fonts.google.com/download?family=Klee+One',
-      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/kleeone/KleeOne-Regular.ttf',
-    ],
-    license: 'OFL 1.1',
-    description: t.font_desc_klee_one,
-  ),
-  // ── CJK 覆盖（日中韩通用，不会缺字） ──
-  _RecommendedFont(
-    name: 'Noto Sans JP',
-    nameJa: 'Noto Sans 日本語',
-    urls: [
-      'https://fonts.google.com/download?family=Noto+Sans+JP',
-      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosansjp/NotoSansJP%5Bwght%5D.ttf',
-    ],
-    license: 'OFL 1.1',
-    description: t.font_desc_noto_sans_jp,
-  ),
-  _RecommendedFont(
-    name: 'Noto Serif JP',
-    nameJa: 'Noto Serif 日本語',
-    urls: [
-      'https://fonts.google.com/download?family=Noto+Serif+JP',
-      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notoserifjp/NotoSerifJP%5Bwght%5D.ttf',
-    ],
-    license: 'OFL 1.1',
-    description: t.font_desc_noto_serif_jp,
-  ),
-  _RecommendedFont(
-    name: 'Noto Sans SC',
-    nameJa: 'Noto Sans 简体中文',
-    urls: [
-      'https://fonts.google.com/download?family=Noto+Sans+SC',
-      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf',
-    ],
-    license: 'OFL 1.1',
-    description: t.font_desc_noto_sans_sc,
-  ),
-  _RecommendedFont(
-    name: 'Noto Serif SC',
-    nameJa: 'Noto Serif 简体中文',
-    urls: [
-      'https://fonts.google.com/download?family=Noto+Serif+SC',
-    ],
-    license: 'OFL 1.1',
-    description: t.font_desc_noto_serif_sc,
-  ),
-  _RecommendedFont(
-    name: 'Noto Sans TC',
-    nameJa: 'Noto Sans 繁體中文',
-    urls: [
-      'https://fonts.google.com/download?family=Noto+Sans+TC',
-      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanstc/NotoSansTC%5Bwght%5D.ttf',
-    ],
-    license: 'OFL 1.1',
-    description: t.font_desc_noto_sans_tc,
-  ),
-  // ── 日语特色字体（风格独特，建议搭配 Noto Sans JP 做回退） ──
-  _RecommendedFont(
-    name: 'Shippori Mincho',
-    nameJa: 'しっぽり明朝',
-    urls: [
-      'https://fonts.google.com/download?family=Shippori+Mincho',
-      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/shipporimincho/ShipporiMincho-Regular.ttf',
-    ],
-    license: 'OFL 1.1',
-    description: t.font_desc_shippori_mincho,
-  ),
-  _RecommendedFont(
-    name: 'Zen Old Mincho',
-    nameJa: '禅オールド明朝',
-    urls: [
-      'https://fonts.google.com/download?family=Zen+Old+Mincho',
-      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zenoldmincho/ZenOldMincho-Regular.ttf',
-    ],
-    license: 'OFL 1.1',
-    description: t.font_desc_zen_old_mincho,
-  ),
-  _RecommendedFont(
-    name: 'Zen Maru Gothic',
-    nameJa: '禅丸ゴシック',
-    urls: [
-      'https://fonts.google.com/download?family=Zen+Maru+Gothic',
-      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zenmarugothic/ZenMaruGothic-Regular.ttf',
-    ],
-    license: 'OFL 1.1',
-    description: t.font_desc_zen_maru_gothic,
-  ),
-  _RecommendedFont(
-    name: 'M PLUS Rounded 1c',
-    nameJa: 'M PLUS Rounded 1c',
-    urls: [
-      'https://fonts.google.com/download?family=M+PLUS+Rounded+1c',
-      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/mplusrounded1c/MPLUSRounded1c-Regular.ttf',
-    ],
-    license: 'OFL 1.1',
-    description: t.font_desc_mplus_rounded_1c,
-  ),
-  _RecommendedFont(
-    name: 'Hina Mincho',
-    nameJa: 'ひな明朝',
-    urls: [
-      'https://fonts.google.com/download?family=Hina+Mincho',
-      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/hinamincho/HinaMincho-Regular.ttf',
-    ],
-    license: 'OFL 1.1',
-    description: t.font_desc_hina_mincho,
-  ),
-  _RecommendedFont(
-    name: 'Zen Kaku Gothic New',
-    nameJa: '禅角ゴシック New',
-    urls: [
-      'https://fonts.google.com/download?family=Zen+Kaku+Gothic+New',
-      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zenkakugothicnew/ZenKakuGothicNew-Regular.ttf',
-    ],
-    license: 'OFL 1.1',
-    description: t.font_desc_zen_kaku_gothic_new,
-  ),
-];
+      // ── 推荐首选 ──
+      _RecommendedFont(
+        name: 'Klee One',
+        nameJa: 'クレー One',
+        urls: [
+          'https://fonts.google.com/download?family=Klee+One',
+          'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/kleeone/KleeOne-Regular.ttf',
+        ],
+        license: 'OFL 1.1',
+        description: t.font_desc_klee_one,
+      ),
+      // ── CJK 覆盖（日中韩通用，不会缺字） ──
+      _RecommendedFont(
+        name: 'Noto Sans JP',
+        nameJa: 'Noto Sans 日本語',
+        urls: [
+          'https://fonts.google.com/download?family=Noto+Sans+JP',
+          'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosansjp/NotoSansJP%5Bwght%5D.ttf',
+        ],
+        license: 'OFL 1.1',
+        description: t.font_desc_noto_sans_jp,
+      ),
+      _RecommendedFont(
+        name: 'Noto Serif JP',
+        nameJa: 'Noto Serif 日本語',
+        urls: [
+          'https://fonts.google.com/download?family=Noto+Serif+JP',
+          'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notoserifjp/NotoSerifJP%5Bwght%5D.ttf',
+        ],
+        license: 'OFL 1.1',
+        description: t.font_desc_noto_serif_jp,
+      ),
+      _RecommendedFont(
+        name: 'Noto Sans SC',
+        nameJa: 'Noto Sans 简体中文',
+        urls: [
+          'https://fonts.google.com/download?family=Noto+Sans+SC',
+          'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf',
+        ],
+        license: 'OFL 1.1',
+        description: t.font_desc_noto_sans_sc,
+      ),
+      _RecommendedFont(
+        name: 'Noto Serif SC',
+        nameJa: 'Noto Serif 简体中文',
+        urls: [
+          'https://fonts.google.com/download?family=Noto+Serif+SC',
+        ],
+        license: 'OFL 1.1',
+        description: t.font_desc_noto_serif_sc,
+      ),
+      _RecommendedFont(
+        name: 'Noto Sans TC',
+        nameJa: 'Noto Sans 繁體中文',
+        urls: [
+          'https://fonts.google.com/download?family=Noto+Sans+TC',
+          'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanstc/NotoSansTC%5Bwght%5D.ttf',
+        ],
+        license: 'OFL 1.1',
+        description: t.font_desc_noto_sans_tc,
+      ),
+      // ── 日语特色字体（风格独特，建议搭配 Noto Sans JP 做回退） ──
+      _RecommendedFont(
+        name: 'Shippori Mincho',
+        nameJa: 'しっぽり明朝',
+        urls: [
+          'https://fonts.google.com/download?family=Shippori+Mincho',
+          'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/shipporimincho/ShipporiMincho-Regular.ttf',
+        ],
+        license: 'OFL 1.1',
+        description: t.font_desc_shippori_mincho,
+      ),
+      _RecommendedFont(
+        name: 'Zen Old Mincho',
+        nameJa: '禅オールド明朝',
+        urls: [
+          'https://fonts.google.com/download?family=Zen+Old+Mincho',
+          'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zenoldmincho/ZenOldMincho-Regular.ttf',
+        ],
+        license: 'OFL 1.1',
+        description: t.font_desc_zen_old_mincho,
+      ),
+      _RecommendedFont(
+        name: 'Zen Maru Gothic',
+        nameJa: '禅丸ゴシック',
+        urls: [
+          'https://fonts.google.com/download?family=Zen+Maru+Gothic',
+          'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zenmarugothic/ZenMaruGothic-Regular.ttf',
+        ],
+        license: 'OFL 1.1',
+        description: t.font_desc_zen_maru_gothic,
+      ),
+      _RecommendedFont(
+        name: 'M PLUS Rounded 1c',
+        nameJa: 'M PLUS Rounded 1c',
+        urls: [
+          'https://fonts.google.com/download?family=M+PLUS+Rounded+1c',
+          'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/mplusrounded1c/MPLUSRounded1c-Regular.ttf',
+        ],
+        license: 'OFL 1.1',
+        description: t.font_desc_mplus_rounded_1c,
+      ),
+      _RecommendedFont(
+        name: 'Hina Mincho',
+        nameJa: 'ひな明朝',
+        urls: [
+          'https://fonts.google.com/download?family=Hina+Mincho',
+          'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/hinamincho/HinaMincho-Regular.ttf',
+        ],
+        license: 'OFL 1.1',
+        description: t.font_desc_hina_mincho,
+      ),
+      _RecommendedFont(
+        name: 'Zen Kaku Gothic New',
+        nameJa: '禅角ゴシック New',
+        urls: [
+          'https://fonts.google.com/download?family=Zen+Kaku+Gothic+New',
+          'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zenkakugothicnew/ZenKakuGothicNew-Regular.ttf',
+        ],
+        license: 'OFL 1.1',
+        description: t.font_desc_zen_kaku_gothic_new,
+      ),
+    ];
 
 bool _isFontFile(String path) {
   return _fontExtensions.contains(p.extension(path).toLowerCase());
@@ -292,18 +293,26 @@ class CustomFontsPage extends BasePage {
 }
 
 class _CustomFontsPageState extends BasePageState {
-  ReaderHoshiSource get _source => ReaderHoshiSource.instance;
+  ReaderSettings? _settings;
 
   List<Map<String, dynamic>> _fonts = [];
 
   @override
   void initState() {
     super.initState();
-    _fonts = _source.customFonts;
+    _settings =
+        ReaderHoshiSource.readerSettings ?? ReaderSettings(appModel.database);
+    ReaderHoshiSource.readerSettings = _settings;
+    _settings!.ready.then((_) {
+      if (!mounted) return;
+      setState(() {
+        _fonts = _settings!.customFonts;
+      });
+    });
   }
 
   Future<void> _save() async {
-    await _source.setCustomFonts(_fonts);
+    await _settings!.setCustomFonts(_fonts);
   }
 
   Directory get _fontsDir {
@@ -570,8 +579,10 @@ class _CustomFontsPageState extends BasePageState {
           if (await tempFile.exists() &&
               !await _isZipFile(tempFile) &&
               !await _isValidFontFile(tempFile)) {
-            debugPrint('[hibiki-fonts] source ${i + 1} returned non-font data, skipping');
-            lastError = Exception('Downloaded file is not a valid font or archive');
+            debugPrint(
+                '[hibiki-fonts] source ${i + 1} returned non-font data, skipping');
+            lastError =
+                Exception('Downloaded file is not a valid font or archive');
             await tempFile.delete();
             continue;
           }
@@ -587,7 +598,7 @@ class _CustomFontsPageState extends BasePageState {
       }
 
       if (downloadedUrl == null) {
-        throw lastError ?? Exception('All sources failed');
+        throw lastError ?? StateError('All sources failed');
       }
 
       if (mounted) Navigator.pop(context);
@@ -938,7 +949,13 @@ class _RecommendedFontsPage extends StatelessWidget {
 
 class _FontTile extends StatelessWidget {
   const _FontTile({
-    required this.name, required this.isFile, required this.enabled, required this.index, required this.onToggle, required this.onDelete, super.key,
+    required this.name,
+    required this.isFile,
+    required this.enabled,
+    required this.index,
+    required this.onToggle,
+    required this.onDelete,
+    super.key,
   });
 
   final String name;

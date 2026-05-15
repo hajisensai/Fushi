@@ -53,7 +53,8 @@ class TtsChannel {
 
   /// Query the local audio database for a word's pronunciation.
   /// Returns {file, source, dbIndex} metadata if found, or null.
-  Future<Map<String, dynamic>?> queryLocalAudio(String expression, String reading) async {
+  Future<Map<String, dynamic>?> queryLocalAudio(
+      String expression, String reading) async {
     try {
       final result = await _channel.invokeMethod('queryLocalAudio', {
         'expression': expression,
@@ -87,7 +88,8 @@ class TtsChannel {
   /// Play a local file path via MediaPlayer.
   Future<bool> playFile(String filePath) async {
     try {
-      final result = await _channel.invokeMethod('playFile', {'path': filePath});
+      final result =
+          await _channel.invokeMethod('playFile', {'path': filePath});
       return result == true;
     } catch (e, stack) {
       ErrorLogService.instance.log('TtsChannel.playFile', e, stack);
@@ -119,7 +121,8 @@ class TtsChannel {
 
   /// Synthesize [text] to a WAV file at [outputPath] using Android TTS.
   /// Returns the output path on success, null on failure.
-  Future<String?> ttsToFile(String text, String outputPath, {String locale = 'ja-JP'}) async {
+  Future<String?> ttsToFile(String text, String outputPath,
+      {String locale = 'ja-JP'}) async {
     try {
       final result = await _channel.invokeMethod('ttsToFile', {
         'text': text,

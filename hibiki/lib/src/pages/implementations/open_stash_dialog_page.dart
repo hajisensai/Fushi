@@ -29,7 +29,6 @@ class _OpenStashDialogPage extends BasePageState<OpenStashDialogPage> {
 
   final ValueNotifier<int?> _selectionNotifier = ValueNotifier<int?>(null);
 
-
   @override
   Widget build(BuildContext context) {
     return AlertDialog(

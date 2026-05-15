@@ -177,9 +177,7 @@ class TtuIdbReader {
       initialUrlRequest: URLRequest(
         url: WebUri('http://localhost:$serverPort/_hibiki_idb.html'),
       ),
-      initialSettings: InAppWebViewSettings(
-        
-      ),
+      initialSettings: InAppWebViewSettings(),
       onLoadStop: (controller, url) async {
         if (jsDispatched) return;
         jsDispatched = true;
@@ -230,8 +228,7 @@ class TtuIdbReader {
               );
               break;
             case 'ttu_keys_err':
-              debugPrint(
-                  'TtuIdbReader.readAllBookIds error: ${msg['error']}');
+              debugPrint('TtuIdbReader.readAllBookIds error: ${msg['error']}');
               completer.complete(null);
               break;
           }
@@ -396,9 +393,7 @@ class TtuIdbReader {
       initialUrlRequest: URLRequest(
         url: WebUri('http://localhost:$serverPort/_hibiki_idb.html'),
       ),
-      initialSettings: InAppWebViewSettings(
-        
-      ),
+      initialSettings: InAppWebViewSettings(),
       onWebViewCreated: (controller) {
         controller.addJavaScriptHandler(
           handlerName: 'migResult',

@@ -104,9 +104,8 @@ class _MiscellaneousSettingsPageState
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(ok == true
-            ? t.icon_shortcut_created
-            : t.icon_shortcut_unsupported),
+        content: Text(
+            ok == true ? t.icon_shortcut_created : t.icon_shortcut_unsupported),
       ),
     );
   }
@@ -117,7 +116,10 @@ class _MiscellaneousSettingsPageState
       appBar: AppBar(title: Text(t.miscellaneous_settings)),
       body: ListView(
         padding: EdgeInsets.fromLTRB(
-          16, 8, 16, 8 + MediaQuery.of(context).padding.bottom,
+          16,
+          8,
+          16,
+          8 + MediaQuery.of(context).padding.bottom,
         ),
         children: [
           SwitchListTile(
@@ -271,7 +273,6 @@ class _MiscellaneousSettingsPageState
 }
 
 class _IconOption {
-
   const _IconOption({
     required this.key,
     required this.label,

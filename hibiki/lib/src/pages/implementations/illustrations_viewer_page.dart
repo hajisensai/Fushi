@@ -33,13 +33,18 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
   }
 
   static const Set<String> _imageExtensions = {
-    '.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg',
+    '.jpg',
+    '.jpeg',
+    '.png',
+    '.gif',
+    '.webp',
+    '.bmp',
+    '.svg',
   };
 
   Future<void> _extractImages() async {
     try {
-      final String extractDir =
-          await EpubStorage.bookDirectory(widget.bookId);
+      final String extractDir = await EpubStorage.bookDirectory(widget.bookId);
       final Directory dir = Directory(extractDir);
       if (!dir.existsSync()) {
         if (mounted) {
@@ -51,14 +56,11 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
         return;
       }
 
-      final List<File> imageFiles = dir
-          .listSync(recursive: true)
-          .whereType<File>()
-          .where((f) {
-            final String ext = p.extension(f.path).toLowerCase();
-            return _imageExtensions.contains(ext);
-          })
-          .toList();
+      final List<File> imageFiles =
+          dir.listSync(recursive: true).whereType<File>().where((f) {
+        final String ext = p.extension(f.path).toLowerCase();
+        return _imageExtensions.contains(ext);
+      }).toList();
 
       for (final File file in imageFiles) {
         if (!mounted) {
@@ -70,7 +72,8 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
             setState(() => _images.add(bytes));
           }
         } catch (e, stack) {
-          ErrorLogService.instance.log('IllustrationsViewer.readImage', e, stack);
+          ErrorLogService.instance
+              .log('IllustrationsViewer.readImage', e, stack);
           debugPrint('[Hibiki] illustration read failed: $e');
         }
       }
@@ -136,8 +139,7 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
 
     return Column(
       children: [
-        if (_loading)
-          const LinearProgressIndicator(),
+        if (_loading) const LinearProgressIndicator(),
         Expanded(
           child: GridView.builder(
             padding: const EdgeInsets.all(8),
@@ -218,7 +220,8 @@ class _FullScreenGalleryState extends State<_FullScreenGallery> {
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        title: Text(t.image_page_counter(current: _currentIndex + 1, total: widget.images.length)),
+        title: Text(t.image_page_counter(
+            current: _currentIndex + 1, total: widget.images.length)),
       ),
       body: PageView.builder(
         controller: _pageController,

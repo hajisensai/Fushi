@@ -3,7 +3,8 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:hibiki/src/media/audiobook/ttu_idb_reader.dart' show TtuIdbReader;
+import 'package:hibiki/src/media/audiobook/ttu_idb_reader.dart'
+    show TtuIdbReader;
 
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/media/audiobook/reading_statistic_model.dart';
@@ -84,7 +85,8 @@ class ReadingStatisticIdbReader {
                 ..title = m['title'] as String? ?? ''
                 ..dateKey = m['dateKey'] as String? ?? ''
                 ..charactersRead = (m['charactersRead'] as num?)?.toInt() ?? 0
-                ..readingTimeMs = ((m['readingTime'] as num?)?.toInt() ?? 0) * 1000
+                ..readingTimeMs =
+                    ((m['readingTime'] as num?)?.toInt() ?? 0) * 1000
                 ..lastStatisticModified =
                     (m['lastStatisticModified'] as num?)?.toInt() ?? 0;
               return stat;
@@ -96,7 +98,8 @@ class ReadingStatisticIdbReader {
             );
           }
         } catch (e, stack) {
-          ErrorLogService.instance.log('ReadingStatisticIdbReader.consoleDecode', e, stack);
+          ErrorLogService.instance
+              .log('ReadingStatisticIdbReader.consoleDecode', e, stack);
           debugPrint('ReadingStatisticIdbReader console decode error: $e');
         }
       },

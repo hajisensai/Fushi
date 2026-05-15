@@ -31,9 +31,8 @@ class AudiobookRepository {
     final map = <int, Audiobook>{};
     for (final row in rows) {
       final raw = row.bookUid;
-      final toParse = raw.contains('/')
-          ? raw.substring(raw.indexOf('/') + 1)
-          : raw;
+      final toParse =
+          raw.contains('/') ? raw.substring(raw.indexOf('/') + 1) : raw;
       final uri = Uri.tryParse(toParse);
       final id = int.tryParse(uri?.queryParameters['id'] ?? '');
       if (id != null && id > 0) {
@@ -113,8 +112,7 @@ class AudiobookRepository {
   static const String _kHealthOverlayKeyPrefix = 'audiobook_health_overlay_';
 
   Future<bool> readFollowAudio(String bookUid) async {
-    return _db.getPrefTyped(
-        '$_kFollowAudioKeyPrefix$bookUid', true);
+    return _db.getPrefTyped('$_kFollowAudioKeyPrefix$bookUid', true);
   }
 
   Future<void> updateFollowAudio({
@@ -148,8 +146,7 @@ class AudiobookRepository {
   // ── image pause ─────────────────────────────────────────────────
 
   Future<int> readImagePauseSec(String bookUid) async {
-    return _db.getPrefTyped(
-        '$_kImagePauseSecKeyPrefix$bookUid', 0);
+    return _db.getPrefTyped('$_kImagePauseSecKeyPrefix$bookUid', 0);
   }
 
   Future<void> updateImagePauseSec({
@@ -182,7 +179,8 @@ class AudiobookRepository {
             : DateTime.now(),
       );
     } catch (e, stack) {
-      ErrorLogService.instance.log('AudiobookRepository.healthOverlay', e, stack);
+      ErrorLogService.instance
+          .log('AudiobookRepository.healthOverlay', e, stack);
       debugPrint('[hibiki-audiobook] readHealthOverlay parse failed: $e');
       return null;
     }
@@ -231,8 +229,8 @@ class AudiobookRepository {
     return AudiobooksCompanion(
       bookUid: Value(ab.bookUid),
       audioRoot: Value(ab.audioRoot),
-      audioPathsJson: Value(
-          ab.audioPaths != null ? jsonEncode(ab.audioPaths) : null),
+      audioPathsJson:
+          Value(ab.audioPaths != null ? jsonEncode(ab.audioPaths) : null),
       alignmentFormat: Value(ab.alignmentFormat),
       alignmentPath: Value(ab.alignmentPath),
       healthKindRaw: Value(ab.healthKindRaw),
@@ -242,5 +240,4 @@ class AudiobookRepository {
       followAudio: Value(ab.followAudio),
     );
   }
-
 }

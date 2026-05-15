@@ -13,7 +13,6 @@ class LoadingPage extends BasePage {
 }
 
 class _LoadingPageState extends BasePageState<LoadingPage> {
-
   @override
   Widget build(BuildContext context) {
     return WillPopScope(

@@ -39,8 +39,8 @@ class ReadingTimeTracker {
     _tickStart = now;
 
     if (start.hour != now.hour || start.day != now.day) {
-      final boundary = DateTime(
-          start.year, start.month, start.day, start.hour + 1);
+      final boundary =
+          DateTime(start.year, start.month, start.day, start.hour + 1);
       final firstMs = boundary.difference(start).inMilliseconds;
       final secondMs = now.difference(boundary).inMilliseconds;
       if (firstMs > 0) {

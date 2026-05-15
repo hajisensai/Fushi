@@ -7,8 +7,7 @@ class ReaderSelectionScripts {
   static String highlightInvocation(int count) =>
       'window.hoshiSelection.highlightSelection($count)';
 
-  static String clearInvocation() =>
-      'window.hoshiSelection.clearSelection()';
+  static String clearInvocation() => 'window.hoshiSelection.clearSelection()';
 
   static bool didSelectNothing(String? result) {
     if (result == null) return true;

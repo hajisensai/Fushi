@@ -20,7 +20,8 @@ class OpenStashEnhancement extends Enhancement {
   static const String key = 'open_stash';
 
   @override
-  String getLocalisedLabel(AppModel appModel) => t.creator_enhancement_open_stash;
+  String getLocalisedLabel(AppModel appModel) =>
+      t.creator_enhancement_open_stash;
 
   @override
   Future<void> enhanceCreatorParams({

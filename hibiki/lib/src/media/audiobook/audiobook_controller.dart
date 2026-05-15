@@ -262,9 +262,11 @@ class AudiobookPlayerController extends ChangeNotifier {
 
     if (audioFiles.length == 1) {
       try {
-        await _player.setAudioSource(
-          AudioSource.file(audioFiles.first.path),
-        ).timeout(const Duration(seconds: 60));
+        await _player
+            .setAudioSource(
+              AudioSource.file(audioFiles.first.path),
+            )
+            .timeout(const Duration(seconds: 60));
       } catch (e, stack) {
         ErrorLogService.instance.log('AudiobookController.setSource', e, stack);
         debugPrint('[hibiki-audiobook] setAudioSource failed: $e');
@@ -284,9 +286,11 @@ class AudiobookPlayerController extends ChangeNotifier {
         sources.add(AudioSource.file(f.path));
       }
       try {
-        await _player.setAudioSource(
-          ConcatenatingAudioSource(children: sources),
-        ).timeout(const Duration(seconds: 60));
+        await _player
+            .setAudioSource(
+              ConcatenatingAudioSource(children: sources),
+            )
+            .timeout(const Duration(seconds: 60));
       } catch (e, stack) {
         ErrorLogService.instance.log('AudiobookController.setSource', e, stack);
         debugPrint('[hibiki-audiobook] setAudioSource (multi) failed: $e');
@@ -313,7 +317,8 @@ class AudiobookPlayerController extends ChangeNotifier {
         await _player.setSpeed(initialSpeed);
       } catch (e, stack) {
         ErrorLogService.instance.log('AudiobookController.setSpeed', e, stack);
-        debugPrint('[hibiki-audiobook] initial setSpeed $initialSpeed failed: $e');
+        debugPrint(
+            '[hibiki-audiobook] initial setSpeed $initialSpeed failed: $e');
       }
     }
 
@@ -425,8 +430,8 @@ class AudiobookPlayerController extends ChangeNotifier {
 
   /// 快进 / 快退（秒）。
   Future<void> seekRelative(int deltaSeconds) async {
-    final int newMs =
-        (position.inMilliseconds + deltaSeconds * 1000).clamp(0, duration.inMilliseconds);
+    final int newMs = (position.inMilliseconds + deltaSeconds * 1000)
+        .clamp(0, duration.inMilliseconds);
     await seekMs(newMs);
   }
 
@@ -486,7 +491,8 @@ class AudiobookPlayerController extends ChangeNotifier {
     _returnToGlobalMs = _player.position.inMilliseconds;
     _stopAtGlobalMs = endGlobal;
 
-    await _player.seek(Duration(milliseconds: startGlobal.clamp(0, dur.inMilliseconds)));
+    await _player
+        .seek(Duration(milliseconds: startGlobal.clamp(0, dur.inMilliseconds)));
     _chapterTransition = false;
     final int idx = _chapterCues.indexOf(cue);
     if (idx >= 0) {
@@ -752,7 +758,8 @@ class AudiobookPlayerController extends ChangeNotifier {
     final int cueSec = frag.sectionIndex;
     final int currentSec = getCurrentReaderSection?.call() ?? -1;
     // ignore: avoid_print
-    print('[hibiki-crossChapter] cueSec=$cueSec currentSec=$currentSec follow=${followAudio.value} played=$_hasPlayedOnce');
+    print(
+        '[hibiki-crossChapter] cueSec=$cueSec currentSec=$currentSec follow=${followAudio.value} played=$_hasPlayedOnce');
     if (currentSec < 0) return;
     if (cueSec == currentSec) return;
     if (!followAudio.value) return;
@@ -1002,7 +1009,8 @@ class AudiobookPlayerController extends ChangeNotifier {
   }
 
   Future<void> playRange(AudioPlaybackRange range) async {
-    if (range.audioFileIndex < 0 || range.audioFileIndex >= _audioFiles.length) {
+    if (range.audioFileIndex < 0 ||
+        range.audioFileIndex >= _audioFiles.length) {
       return;
     }
     if (range.endMs <= range.startMs) {

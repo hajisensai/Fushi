@@ -1,6 +1,7 @@
 import 'dart:io';
 
-import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart' show AudiobookBridge;
+import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart'
+    show AudiobookBridge;
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/text_file_io.dart';
 
@@ -87,10 +88,8 @@ class SrtParser {
 
       // 时间行之后的所有行合并为文本（多行字幕 → 空格连接），并剥离 HTML 标签
       final int timeLineIndex = lines.indexOf(timeLine);
-      final String rawText = lines
-          .skip(timeLineIndex + 1)
-          .where((l) => l.isNotEmpty)
-          .join(' ');
+      final String rawText =
+          lines.skip(timeLineIndex + 1).where((l) => l.isNotEmpty).join(' ');
       final String text = _stripHtml(rawText);
 
       if (text.isEmpty) {
@@ -152,8 +151,7 @@ class SrtParser {
     // 统一分隔符：将 ',' 替换为 '.'
     final String normalized = timecode.replaceAll(',', '.');
     // 格式：HH:MM:SS.mmm
-    final RegExp re =
-        RegExp(r'^(\d+):(\d{2}):(\d{2})\.(\d{1,3})$');
+    final RegExp re = RegExp(r'^(\d+):(\d{2}):(\d{2})\.(\d{1,3})$');
     final RegExpMatch? match = re.firstMatch(normalized);
     if (match == null) {
       return null;

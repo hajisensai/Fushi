@@ -62,10 +62,8 @@ class AssParser {
     final String stripped =
         content.startsWith('\uFEFF') ? content.substring(1) : content;
 
-    final List<String> lines = stripped
-        .replaceAll('\r\n', '\n')
-        .replaceAll('\r', '\n')
-        .split('\n');
+    final List<String> lines =
+        stripped.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n');
 
     bool inEvents = false;
     int startCol = -1;
@@ -106,8 +104,7 @@ class AssParser {
 
       // 解析 Dialogue 行
       if (trimmed.startsWith('Dialogue:') && startCol >= 0 && textCol >= 0) {
-        final String data =
-            trimmed.substring('Dialogue:'.length).trim();
+        final String data = trimmed.substring('Dialogue:'.length).trim();
 
         // 以逗号拆分；Text 列之后的内容（含逗号）整体取出
         final List<String> parts = data.split(',');
@@ -162,7 +159,9 @@ class AssParser {
     final int am = int.parse(m.group(2)!);
     final int as_ = int.parse(m.group(3)!);
     if (am >= 60 || as_ >= 60) return null;
-    return ah * 3600000 + am * 60000 + as_ * 1000 +
+    return ah * 3600000 +
+        am * 60000 +
+        as_ * 1000 +
         int.parse(m.group(4)!) * 10; // 厘秒 → 毫秒
   }
 

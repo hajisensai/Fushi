@@ -3,7 +3,6 @@ import 'package:hibiki/i18n/strings.g.dart';
 import 'package:path_provider/path_provider.dart';
 
 class ErrorLogEntry {
-
   ErrorLogEntry({
     required this.timestamp,
     required this.source,

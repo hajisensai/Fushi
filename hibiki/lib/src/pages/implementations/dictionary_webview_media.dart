@@ -24,7 +24,7 @@ WebResourceResponse? dictionaryMediaWebResourceResponse(Uri url) {
 
 CustomSchemeResponse? dictionaryMediaCustomSchemeResponse(Uri url) {
   final _DictionaryMediaResponse? response = _dictionaryMediaResponse(url);
-  if (response == null || response.statusCode != 200) return null;
+  if (response == null) return null;
 
   return CustomSchemeResponse(
     data: response.data,

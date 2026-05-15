@@ -56,8 +56,7 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
   @override
   void didUpdateWidget(FloatingDictPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.pendingSearch != null &&
-        widget.pendingSearch != _lastSearch) {
+    if (widget.pendingSearch != null && widget.pendingSearch != _lastSearch) {
       _searchController.text = widget.pendingSearch!;
       _doSearch(widget.pendingSearch!);
       widget.onSearchConsumed?.call();
@@ -170,9 +169,7 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
               width: 28,
               height: 28,
               child: IconButton(
-                icon: Icon(Icons.close,
-                    size: 16,
-                    color: cs.onSurfaceVariant),
+                icon: Icon(Icons.close, size: 16, color: cs.onSurfaceVariant),
                 padding: EdgeInsets.zero,
                 onPressed: () => _invoke('close'),
               ),

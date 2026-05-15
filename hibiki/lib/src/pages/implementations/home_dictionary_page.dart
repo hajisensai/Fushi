@@ -409,7 +409,10 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     if (trimmed.isEmpty) return;
 
     if (_lastQuery == trimmed && overrideMaximumTerms == null) {
-      if (writeHistory && !_historyWritten && _result != null && _result!.entries.isNotEmpty) {
+      if (writeHistory &&
+          !_historyWritten &&
+          _result != null &&
+          _result!.entries.isNotEmpty) {
         _historyWritten = true;
         appModel.addToSearchHistory(
           historyKey: mediaType.uniqueKey,
@@ -442,8 +445,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
       );
     } finally {
       if (_result != null && trimmed == _controller.text) {
-        final bool allLoaded =
-            _result!.entries.length < overrideMaximumTerms;
+        final bool allLoaded = _result!.entries.length < overrideMaximumTerms;
         if (mounted) {
           setState(() {
             _isSearching = false;
@@ -577,4 +579,3 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     );
   }
 }
-

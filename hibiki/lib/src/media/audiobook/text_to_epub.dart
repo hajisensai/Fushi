@@ -11,8 +11,19 @@ class TextToEpub {
   static const int kMaxCharsPerChapter = 30000;
 
   static const Set<String> supportedExtensions = {
-    'txt', 'html', 'htm', 'xhtml', 'md', 'markdown',
-    'rst', 'org', 'csv', 'tsv', 'log', 'json', 'xml',
+    'txt',
+    'html',
+    'htm',
+    'xhtml',
+    'md',
+    'markdown',
+    'rst',
+    'org',
+    'csv',
+    'tsv',
+    'log',
+    'json',
+    'xml',
   };
 
   static bool isSupported(String path) {
@@ -166,7 +177,8 @@ class TextToEpub {
     return html
         .replaceAll(RegExp('<!DOCTYPE[^>]*>', caseSensitive: false), '')
         .replaceAll(RegExp('</?html[^>]*>', caseSensitive: false), '')
-        .replaceAll(RegExp(r'<head[^>]*>[\s\S]*?</head>', caseSensitive: false), '')
+        .replaceAll(
+            RegExp(r'<head[^>]*>[\s\S]*?</head>', caseSensitive: false), '')
         .trim();
   }
 
@@ -197,8 +209,7 @@ class TextToEpub {
     final manifest = StringBuffer();
     final spine = StringBuffer();
     for (int i = 1; i <= chapterCount; i++) {
-      manifest.write(
-          '    <item id="chapter-$i" href="chapter-$i.xhtml"'
+      manifest.write('    <item id="chapter-$i" href="chapter-$i.xhtml"'
           ' media-type="application/xhtml+xml"/>\n');
       spine.write('    <itemref idref="chapter-$i"/>\n');
     }
@@ -306,11 +317,11 @@ class TextToEpub {
 class _EpubZip {
   final List<_ZipEntry> _entries = [];
 
-  void addStored(String name, List<int> data) =>
-      _entries.add(_ZipEntry(name: name, data: Uint8List.fromList(data), store: true));
+  void addStored(String name, List<int> data) => _entries
+      .add(_ZipEntry(name: name, data: Uint8List.fromList(data), store: true));
 
-  void addDeflated(String name, List<int> data) =>
-      _entries.add(_ZipEntry(name: name, data: Uint8List.fromList(data), store: false));
+  void addDeflated(String name, List<int> data) => _entries
+      .add(_ZipEntry(name: name, data: Uint8List.fromList(data), store: false));
 
   Uint8List build() {
     final buf = BytesBuilder(copy: false);
@@ -327,7 +338,8 @@ class _EpubZip {
         compressed = entry.data;
         method = 0;
       } else {
-        compressed = Uint8List.fromList(ZLibCodec(raw: true).encode(entry.data));
+        compressed =
+            Uint8List.fromList(ZLibCodec(raw: true).encode(entry.data));
         method = 8;
       }
 

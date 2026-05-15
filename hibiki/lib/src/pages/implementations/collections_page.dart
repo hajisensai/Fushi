@@ -45,6 +45,7 @@ class _CollectionItem {
     this.sectionIndex,
     this.normCharOffset,
     this.normCharLength,
+    this.bookmarkId,
     this.favoriteId,
   });
 
@@ -58,6 +59,7 @@ class _CollectionItem {
   final int? sectionIndex;
   final int? normCharOffset;
   final int? normCharLength;
+  final int? bookmarkId;
   final String? favoriteId;
 }
 
@@ -114,6 +116,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         label: bm.label,
         sectionIndex: bm.sectionIndex,
         normCharOffset: bm.normCharOffset,
+        bookmarkId: bm.id,
       ));
     }
 
@@ -201,8 +204,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     final int? ttuId = item.ttuBookId;
     if (ttuId == null || ttuId <= 0) return;
 
-    final String title =
-        _bookTitleMap[ttuId] ?? item.bookTitle ?? '';
+    final String title = _bookTitleMap[ttuId] ?? item.bookTitle ?? '';
 
     final MediaItem mediaItem = buildCollectionReaderMediaItem(
       ttuId: ttuId,
@@ -306,13 +308,16 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       final ttuId = item.ttuBookId;
       if (ttuId == null || ttuId <= 0) return;
       final repo = BookmarkRepository(db);
-      final bookmarks = await repo.getBookmarks(ttuId);
-      final idx = bookmarks.indexWhere((b) =>
-          b.sectionIndex == item.sectionIndex &&
-          b.normCharOffset == item.normCharOffset &&
-          b.createdAt == item.createdAt);
-      if (idx >= 0) {
-        await repo.removeBookmark(ttuId, idx);
+      final bookmarkId = item.bookmarkId;
+      if (bookmarkId != null) {
+        await repo.removeBookmarkById(bookmarkId);
+      } else {
+        await repo.removeBookmarkMatching(
+          ttuId,
+          sectionIndex: item.sectionIndex ?? 0,
+          normCharOffset: item.normCharOffset ?? 0,
+          createdAt: item.createdAt,
+        );
       }
     } else {
       final id = item.favoriteId;
@@ -388,26 +393,28 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       ),
       confirmDismiss: (_) async {
         return await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            content: Text(isBookmark
-                ? '${t.collection_bookmark}: ${item.label ?? ""}'
-                : item.text ?? ''),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: Text(t.dialog_close),
+              context: context,
+              builder: (ctx) => AlertDialog(
+                content: Text(isBookmark
+                    ? '${t.collection_bookmark}: ${item.label ?? ""}'
+                    : item.text ?? ''),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: Text(t.dialog_close),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: Text(
+                      t.dialog_delete,
+                      style:
+                          TextStyle(color: Theme.of(context).colorScheme.error),
+                    ),
+                  ),
+                ],
               ),
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: Text(
-                  t.dialog_delete,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
-                ),
-              ),
-            ],
-          ),
-        ) ?? false;
+            ) ??
+            false;
       },
       onDismissed: (_) => _deleteItem(item),
       child: ListTile(

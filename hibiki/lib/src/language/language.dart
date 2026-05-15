@@ -350,12 +350,8 @@ abstract class Language {
     if (isSpaceDelimited) {
       RegExp regex = RegExp('[ ]');
 
-      int numberOfWords = result?.entries
-              .firstOrNull
-              ?.word
-              .splitWithDelim(regex)
-              .length ??
-          1;
+      int numberOfWords =
+          result?.entries.firstOrNull?.word.splitWithDelim(regex).length ?? 1;
       List<String> searchTermWords = searchTerm.splitWithDelim(regex);
       return searchTermWords.sublist(0, numberOfWords).join().length;
     } else {

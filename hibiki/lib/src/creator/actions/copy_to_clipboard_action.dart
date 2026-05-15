@@ -22,7 +22,8 @@ class CopyToClipboardAction extends QuickAction {
   static const String key = 'copy_to_clipboard';
 
   @override
-  String getLocalisedLabel(AppModel appModel) => t.creator_action_copy_to_clipboard;
+  String getLocalisedLabel(AppModel appModel) =>
+      t.creator_action_copy_to_clipboard;
 
   @override
   Future<void> executeAction({

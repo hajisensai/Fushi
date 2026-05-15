@@ -7,7 +7,6 @@ import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/profile/profile_repository.dart';
 
 class ProfileUiState {
-
   const ProfileUiState({
     this.profiles = const [],
     this.activeProfileId = -1,
@@ -41,7 +40,6 @@ class ProfileUiState {
 }
 
 class ProfileViewModel extends StateNotifier<ProfileUiState> {
-
   ProfileViewModel(this._repo, this._onProfileApplied)
       : super(const ProfileUiState()) {
     _load();
@@ -52,6 +50,7 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
     _repo.snapshotCurrentSettings(state.activeProfileId).catchError((_) {});
     super.dispose();
   }
+
   final ProfileRepository _repo;
   final void Function() _onProfileApplied;
 
@@ -151,5 +150,6 @@ final profileViewModelProvider =
     appModel.refreshPrefCache();
     ReaderHoshiSource.instance.refreshPreferencesFromDb();
   }
+
   return ProfileViewModel(repo, onApplied);
 });

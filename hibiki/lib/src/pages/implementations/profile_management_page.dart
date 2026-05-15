@@ -13,8 +13,7 @@ class ProfileManagementPage extends BasePage {
       _ProfileManagementPageState();
 }
 
-class _ProfileManagementPageState
-    extends BasePageState<ProfileManagementPage> {
+class _ProfileManagementPageState extends BasePageState<ProfileManagementPage> {
   @override
   Widget build(BuildContext context) {
     final uiState = ref.watch(profileViewModelProvider);
@@ -118,7 +117,8 @@ class _ProfileManagementPageState
                   ),
                   tooltip: t.profile_delete,
                   visualDensity: VisualDensity.compact,
-                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                  constraints:
+                      const BoxConstraints(minWidth: 36, minHeight: 36),
                   padding: EdgeInsets.zero,
                   onPressed: () => _showDeleteDialog(vm, p.id, p.name),
                 ),
@@ -195,7 +195,8 @@ class _ProfileManagementPageState
     int sourceId,
     String sourceName,
   ) async {
-    final controller = TextEditingController(text: '$sourceName ${t.profile_copy_suffix}');
+    final controller =
+        TextEditingController(text: '$sourceName ${t.profile_copy_suffix}');
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(

@@ -27,7 +27,8 @@ class CropImageEnhancement extends ImageEnhancement {
   static const String key = 'crop_image';
 
   @override
-  String getLocalisedLabel(AppModel appModel) => t.creator_enhancement_crop_image;
+  String getLocalisedLabel(AppModel appModel) =>
+      t.creator_enhancement_crop_image;
 
   @override
   Future<void> enhanceCreatorParams({

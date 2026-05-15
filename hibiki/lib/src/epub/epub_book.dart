@@ -49,8 +49,7 @@ class EpubBook {
   /// Used by EpubSrtMatcher and sasayaki rematch for audiobook alignment.
   String chapterPlainText(int index) {
     if (index < 0 || index >= chapters.length) return '';
-    final html_dom.Document doc =
-        html_parser.parse(chapters[index].html);
+    final html_dom.Document doc = html_parser.parse(chapters[index].html);
     _removeRubyAnnotations(doc.body);
     final String raw = doc.body?.text ?? '';
     return raw.replaceAll(RegExp(r'\s+'), ' ').trim();
@@ -59,8 +58,8 @@ class EpubBook {
   static void _removeRubyAnnotations(html_dom.Element? root) {
     if (root == null) return;
     root.querySelectorAll('rt, rp, rtc').forEach(
-      (el) => el.remove(),
-    );
+          (el) => el.remove(),
+        );
   }
 
   ({int chapterIndex, String? fragment})? resolveInternalLink(String url) {
@@ -69,7 +68,8 @@ class EpubBook {
     if (uri.host != ReaderHoshiSource.kHost) return null;
     if (!uri.path.startsWith('/epub/')) return null;
 
-    final String epubPath = Uri.decodeComponent(uri.path.substring('/epub/'.length));
+    final String epubPath =
+        Uri.decodeComponent(uri.path.substring('/epub/'.length));
     final String? fragment = uri.fragment.isNotEmpty ? uri.fragment : null;
 
     for (int i = 0; i < chapters.length; i++) {

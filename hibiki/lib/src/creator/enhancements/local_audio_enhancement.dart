@@ -22,7 +22,8 @@ class LocalAudioEnhancement extends AudioEnhancement {
   static const String key = 'local_audio';
 
   @override
-  String getLocalisedLabel(AppModel appModel) => t.creator_enhancement_local_audio;
+  String getLocalisedLabel(AppModel appModel) =>
+      t.creator_enhancement_local_audio;
 
   @override
   Future<void> enhanceCreatorParams({
@@ -34,7 +35,8 @@ class LocalAudioEnhancement extends AudioEnhancement {
   }) async {
     final audioField = field as AudioExportField;
 
-    String term = creatorModel.getFieldController(TermField.instance).text.trim();
+    String term =
+        creatorModel.getFieldController(TermField.instance).text.trim();
     String reading =
         creatorModel.getFieldController(ReadingField.instance).text.trim();
 
@@ -60,12 +62,11 @@ class LocalAudioEnhancement extends AudioEnhancement {
             .timeout(const Duration(milliseconds: 500));
         if (info != null) {
           final int dbIndex = (info['dbIndex'] as int?) ?? 0;
-          final path = await TtsChannel.instance
-              .extractLocalAudio(
-                info['file']! as String,
-                info['source']! as String,
-                dbIndex: dbIndex,
-              );
+          final path = await TtsChannel.instance.extractLocalAudio(
+            info['file']! as String,
+            info['source']! as String,
+            dbIndex: dbIndex,
+          );
           if (path != null && path.isNotEmpty) {
             final file = File(path);
             if (file.existsSync()) return file;
