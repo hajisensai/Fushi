@@ -116,6 +116,14 @@ void write_bytes(std::vector<char>& out, const void* data, size_t n) {
   std::memcpy(out.data() + old_size, data, n);
 }
 
+std::string normalize_media_path(std::string path) {
+  std::ranges::replace(path, '\\', '/');
+  while (!path.empty() && path.front() == '/') {
+    path.erase(path.begin());
+  }
+  return path;
+}
+
 void radix_sort(std::vector<std::pair<uint64_t, uint64_t>>& offsets) {
   if (offsets.size() < 2) {
     return;
@@ -449,6 +457,7 @@ size_t write_media(const std::string& path, const Zip& zip, const std::vector<in
     }
 
     uint32_t record_start = write_pos;
+    media_file->path = normalize_media_path(std::move(media_file->path));
     buf.clear();
     write_val<uint16_t>(buf, media_file->path.size());
     write_str(buf, media_file->path);

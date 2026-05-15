@@ -5,6 +5,7 @@
 
 #include <android/log.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -12,6 +13,7 @@
 #include <fstream>
 #include <memory>
 #include <ranges>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -51,6 +53,14 @@ struct BlobReader {
 
   [[nodiscard]] bool has(size_t n) const { return ptr + n <= end; }
 };
+
+std::string normalize_media_path(std::string path) {
+  std::ranges::replace(path, '\\', '/');
+  while (!path.empty() && path.front() == '/') {
+    path.erase(path.begin());
+  }
+  return path;
+}
 
 }
 
@@ -390,10 +400,14 @@ void DictionaryQuery::materialize(TermResult& term) const {
 
 std::vector<char> DictionaryQuery::get_media_file(const std::string& dict_name, const std::string& media_path) const {
   auto view = get_media_file_view(dict_name, media_path);
+  if (view.data == nullptr || view.size == 0) {
+    return {};
+  }
   return {view.data, view.data + view.size};
 }
 
 MediaFileView DictionaryQuery::get_media_file_view(const std::string& dict_name, const std::string& media_path) const {
+  const std::string normalized_media_path = normalize_media_path(media_path);
   for (const auto& [name, styles, data] : term_dicts_) {
     if (name != dict_name) {
       continue;
@@ -411,27 +425,47 @@ MediaFileView DictionaryQuery::get_media_file_view(const std::string& dict_name,
       return {};
     }
 
-    size_t left = 0;
-    size_t right = count;
-    while (left < right) {
-      const size_t mid = left + (right - left) / 2;
-      uint64_t record_offset;
-      std::memcpy(&record_offset, data->media_index.data + sizeof(uint32_t) + mid * sizeof(uint64_t), sizeof(uint64_t));
+    auto find_by_indexed_path = [&](std::string_view requested_path) -> MediaFileView {
+      size_t left = 0;
+      size_t right = count;
+      while (left < right) {
+        const size_t mid = left + (right - left) / 2;
+        uint64_t record_offset;
+        std::memcpy(&record_offset, data->media_index.data + sizeof(uint32_t) + mid * sizeof(uint64_t), sizeof(uint64_t));
 
-      if (record_offset >= data->media.size) {
-        return {};
+        if (record_offset >= data->media.size) {
+          return {};
+        }
+        BlobReader rec(data->media.data + record_offset, data->media.size - record_offset);
+        auto path_size = rec.read<uint16_t>();
+        std::string_view indexed_path = rec.read_str(path_size);
+        if (indexed_path < requested_path) {
+          left = mid + 1;
+        } else if (indexed_path > requested_path) {
+          right = mid;
+        } else {
+          auto blob_size = rec.read<uint32_t>();
+          if (!rec.has(blob_size)) {
+            return {};
+          }
+          const char* blob_data = reinterpret_cast<const char*>(rec.ptr);
+          return {.data = blob_data, .size = blob_size};
+        }
       }
-      BlobReader rec(data->media.data + record_offset, data->media.size - record_offset);
-      auto path_size = rec.read<uint16_t>();
-      std::string_view indexed_path = rec.read_str(path_size);
-      if (indexed_path < media_path) {
-        left = mid + 1;
-      } else if (indexed_path > media_path) {
-        right = mid;
-      } else {
-        auto blob_size = rec.read<uint32_t>();
-        const char* blob_data = reinterpret_cast<const char*>(rec.ptr);
-        return {.data=blob_data, .size=blob_size};
+      return {};
+    };
+
+    MediaFileView view = find_by_indexed_path(normalized_media_path);
+    if (view.data != nullptr) {
+      return view;
+    }
+
+    std::string legacy_media_path = normalized_media_path;
+    std::ranges::replace(legacy_media_path, '/', '\\');
+    if (legacy_media_path != normalized_media_path) {
+      view = find_by_indexed_path(legacy_media_path);
+      if (view.data != nullptr) {
+        return view;
       }
     }
     return {};

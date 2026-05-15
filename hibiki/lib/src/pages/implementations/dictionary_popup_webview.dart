@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -11,12 +10,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/src/dictionary/hoshidicts.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_webview_media.dart';
 import 'package:hibiki/utils.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class DictionaryPopupWebView extends ConsumerStatefulWidget {
   const DictionaryPopupWebView({
-    required this.result, super.key,
+    required this.result,
+    super.key,
     this.onTextSelected,
     this.onLinkClick,
     this.onTapOutside,
@@ -136,11 +137,13 @@ class DictionaryPopupWebViewState
     final int tb = (onSurface.b * 255.0).round().clamp(0, 255);
     final String textRgba = 'rgb($tr, $tg, $tb)';
 
-    final Color bgColor = appModel.overrideDictionaryColor ?? theme.colorScheme.surface;
+    final Color bgColor =
+        appModel.overrideDictionaryColor ?? theme.colorScheme.surface;
     final int br = (bgColor.r * 255.0).round().clamp(0, 255);
     final int bg = (bgColor.g * 255.0).round().clamp(0, 255);
     final int bb = (bgColor.b * 255.0).round().clamp(0, 255);
-    final String bgCssOverride = "document.documentElement.style.setProperty('--background-color', 'rgb($br, $bg, $bb)');";
+    final String bgCssOverride =
+        "document.documentElement.style.setProperty('--background-color', 'rgb($br, $bg, $bb)');";
 
     final bool needsScrollCheck = widget.onScrolledToBottom != null;
     _controller!.evaluateJavascript(source: '''
@@ -200,52 +203,10 @@ class DictionaryPopupWebViewState
         allowFileAccessFromFileURLs: true,
         allowUniversalAccessFromFileURLs: true,
         useShouldInterceptRequest: true,
+        resourceCustomSchemes: dictionaryMediaCustomSchemes,
       ),
       shouldInterceptRequest: (controller, request) async {
-        final url = request.url;
-        if (url.scheme == 'image' && HoshiDicts.isInitialized) {
-          final dictName = url.queryParameters['dictionary'] ?? '';
-          final mediaPath = url.queryParameters['path'] ?? '';
-          if (dictName.isNotEmpty && mediaPath.isNotEmpty) {
-            try {
-              final data = HoshiDicts.instance.getMediaFile(dictName, mediaPath);
-              if (data != null) {
-                final mime = _mimeTypeForPath(mediaPath);
-                return WebResourceResponse(
-                  contentType: mime,
-                  contentEncoding: mime.startsWith('text/') ? 'utf-8' : null,
-                  statusCode: 200,
-                  reasonPhrase: 'OK',
-                  data: data,
-                );
-              }
-            } catch (e) {
-              debugPrint('[PopupWebView] image error: $e');
-            }
-          }
-          return WebResourceResponse(
-            contentType: 'text/plain',
-            statusCode: 404,
-            reasonPhrase: 'Not Found',
-            data: Uint8List(0),
-          );
-        }
-        if (url.scheme == 'dictmedia' && HoshiDicts.isInitialized) {
-          final dictName = url.queryParameters['dictionary'] ?? '';
-          final mediaPath = Uri.decodeComponent(url.host);
-          if (dictName.isNotEmpty && mediaPath.isNotEmpty) {
-            final data = HoshiDicts.instance.getMediaFile(dictName, mediaPath);
-            if (data != null) {
-              return WebResourceResponse(
-                contentType: 'text/css',
-                statusCode: 200,
-                reasonPhrase: 'OK',
-                data: data,
-              );
-            }
-          }
-        }
-        return null;
+        return dictionaryMediaWebResourceResponse(request.url);
       },
       onWebViewCreated: (controller) {
         _controller = controller;
@@ -368,12 +329,11 @@ class DictionaryPopupWebViewState
                 await TtsChannel.instance.queryLocalAudio(expression, reading);
             if (info == null) return null;
             final int dbIndex = (info['dbIndex'] as int?) ?? 0;
-            final path = await TtsChannel.instance
-                .extractLocalAudio(
-                  info['file']! as String,
-                  info['source']! as String,
-                  dbIndex: dbIndex,
-                );
+            final path = await TtsChannel.instance.extractLocalAudio(
+              info['file']! as String,
+              info['source']! as String,
+              dbIndex: dbIndex,
+            );
             return path;
           },
         );
@@ -423,14 +383,15 @@ class DictionaryPopupWebViewState
           ErrorLogService.instance.log('PopupImage', msg);
         } else if (msg.startsWith('[LONGPRESS]')) {
           ErrorLogService.instance.log('PopupLongPress', msg);
-        } else if (msg.startsWith('[RENDER_CONTENT]') || msg.startsWith('[RICHTEXT]') || msg.startsWith('[GLOSS_SECTION]') || msg.startsWith('[RICHTEXT_HTML]')) {
+        } else if (msg.startsWith('[RENDER_CONTENT]') ||
+            msg.startsWith('[RICHTEXT]') ||
+            msg.startsWith('[GLOSS_SECTION]') ||
+            msg.startsWith('[RICHTEXT_HTML]')) {
           ErrorLogService.instance.log('PopupDebug', msg);
         }
       },
       onLoadResourceWithCustomScheme: (controller, request) async {
-        final url = request.url;
-        debugPrint('[PopupWebView] customScheme: ${url.scheme} ${url.toString().substring(0, url.toString().length.clamp(0, 120))}');
-        return null;
+        return dictionaryMediaCustomSchemeResponse(request.url);
       },
     );
   }
@@ -446,7 +407,8 @@ class DictionaryPopupWebViewState
           try {
             extraData = jsonDecode(entry.extra) as Map<String, dynamic>;
           } catch (e, stack) {
-            ErrorLogService.instance.log('DictPopupWebview.extraData', e, stack);
+            ErrorLogService.instance
+                .log('DictPopupWebview.extraData', e, stack);
           }
         }
 
@@ -530,25 +492,6 @@ class DictionaryPopupWebViewState
         'pitchPositions': p['positions'] ?? [],
       };
     }).toList();
-  }
-
-  static String _mimeTypeForPath(String path) {
-    final ext = path.split('.').last.toLowerCase();
-    switch (ext) {
-      case 'png':
-        return 'image/png';
-      case 'jpg':
-      case 'jpeg':
-        return 'image/jpeg';
-      case 'gif':
-        return 'image/gif';
-      case 'webp':
-        return 'image/webp';
-      case 'svg':
-        return 'image/svg+xml';
-      default:
-        return 'application/octet-stream';
-    }
   }
 
   static Future<void> _openExternalLink(String url) async {

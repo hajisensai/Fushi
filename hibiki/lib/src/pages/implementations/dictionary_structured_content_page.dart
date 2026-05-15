@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -8,8 +7,8 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as path;
 import 'package:hibiki/dictionary.dart';
-import 'package:hibiki/src/dictionary/hoshidicts.dart';
 import 'package:hibiki/models.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_webview_media.dart';
 import 'package:hibiki/utils.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -144,54 +143,10 @@ class _DictionaryHtmlWidgetState extends ConsumerState<DictionaryHtmlWidget> {
           disableVerticalScroll: true,
           disableHorizontalScroll: true,
           useShouldInterceptRequest: true,
+          resourceCustomSchemes: dictionaryMediaCustomSchemes,
         ),
         shouldInterceptRequest: (controller, request) async {
-          final url = request.url;
-          if (url.scheme == 'image' && HoshiDicts.isInitialized) {
-            final dictName = url.queryParameters['dictionary'] ?? '';
-            final mediaPath = url.queryParameters['path'] ?? '';
-            if (dictName.isNotEmpty && mediaPath.isNotEmpty) {
-              try {
-                final data =
-                    HoshiDicts.instance.getMediaFile(dictName, mediaPath);
-                if (data != null) {
-                  final mime = _mimeTypeForPath(mediaPath);
-                  return WebResourceResponse(
-                    contentType: mime,
-                    contentEncoding: mime.startsWith('text/') ? 'utf-8' : null,
-                    statusCode: 200,
-                    reasonPhrase: 'OK',
-                    data: data,
-                  );
-                }
-              } catch (e) {
-                debugPrint('[StructuredContent] image error: $e');
-              }
-            }
-            return WebResourceResponse(
-              contentType: 'text/plain',
-              statusCode: 404,
-              reasonPhrase: 'Not Found',
-              data: Uint8List(0),
-            );
-          }
-          if (url.scheme == 'dictmedia' && HoshiDicts.isInitialized) {
-            final dictName = url.queryParameters['dictionary'] ?? '';
-            final mediaPath = Uri.decodeComponent(url.host);
-            if (dictName.isNotEmpty && mediaPath.isNotEmpty) {
-              final data =
-                  HoshiDicts.instance.getMediaFile(dictName, mediaPath);
-              if (data != null) {
-                return WebResourceResponse(
-                  contentType: 'text/css',
-                  statusCode: 200,
-                  reasonPhrase: 'OK',
-                  data: data,
-                );
-              }
-            }
-          }
-          return null;
+          return dictionaryMediaWebResourceResponse(request.url);
         },
         contextMenu: ContextMenu(
           settings: ContextMenuSettings(
@@ -270,27 +225,11 @@ class _DictionaryHtmlWidgetState extends ConsumerState<DictionaryHtmlWidget> {
           _ready = true;
           _pushContent();
         },
+        onLoadResourceWithCustomScheme: (controller, request) async {
+          return dictionaryMediaCustomSchemeResponse(request.url);
+        },
       ),
     );
-  }
-
-  static String _mimeTypeForPath(String path) {
-    final ext = path.split('.').last.toLowerCase();
-    switch (ext) {
-      case 'png':
-        return 'image/png';
-      case 'jpg':
-      case 'jpeg':
-        return 'image/jpeg';
-      case 'gif':
-        return 'image/gif';
-      case 'webp':
-        return 'image/webp';
-      case 'svg':
-        return 'image/svg+xml';
-      default:
-        return 'application/octet-stream';
-    }
   }
 
   static Future<void> _openExternalLink(String url) async {
@@ -351,7 +290,6 @@ class DictionarySelectionDelegate
 
     return result ?? super.handleSelectWord(event);
   }
-
 
   SelectionEvent? _lastEvent;
   JidoujishoTextSelection? _guessSelection;
