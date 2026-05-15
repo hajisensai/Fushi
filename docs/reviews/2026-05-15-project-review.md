@@ -529,3 +529,79 @@
 - First fix reachability: make Hoshi search UI visible based on `epubBook/onSearchJump`.
 - Then replace the search result coordinate contract with DOM text segments or WebView-side search results.
 - Finally add a small JS/Dart test harness for repeated query + whitespace + ruby cases before emulator validation.
+
+---
+
+## 九、Hoshi 全书搜索最终修复复审（commits `e8a43594`, `f534c16a`）
+
+### Scope
+
+- Commits:
+  - `e8a43594 fix(search): complete Completer<bool> migration and remove StatefulBuilder`
+  - `f534c16a fix(search): align Dart rtc handling with JS isFurigana + format`
+- Files:
+  - `hibiki/lib/src/media/audiobook/audiobook_bridge.dart`
+  - `hibiki/lib/src/media/audiobook/audiobook_play_bar.dart`
+  - `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart`
+  - related reference: `hibiki/lib/src/reader/reader_pagination_scripts.dart`
+- Review type: code-path review plus targeted analyzer check. No emulator/WebView runtime validation was performed in this round.
+
+### Closure Check
+
+- `HBK-AUDIT-SEARCH-005`: code-path fixed. Search UI visibility now depends on `epubBook != null && onSearchJump != null`, not `!isHoshiReader`.
+- `HBK-AUDIT-SEARCH-006`: materially improved. Dart search now builds a DOM-like text stream and no longer drops `rtc`, aligning with JS `isFurigana()` for `rt/rp`. However the contract is still not test-locked, and the UI/query binding issue below can still feed the wrong query into the otherwise aligned coordinate.
+- `HBK-AUDIT-SEARCH-007`: partially fixed. `Completer<bool>` now distinguishes normal restore, load error, interrupted navigation, and timeout. A navigation-generation/token gap remains below.
+- `HBK-AUDIT-SEARCH-008`: code-path fixed for the reported `StatefulBuilder` disposed-state issue. Search state is now owned by `_AudiobookSettingsSheetState`.
+
+### Findings
+
+#### HBK-AUDIT-SEARCH-009: 搜索结果没有绑定产生它的 query，异步乱序或编辑输入会错跳
+
+- **Severity**: HIGH
+- **Status**: code-path review found after the 005-008 fix set.
+- **Files**:
+  - `hibiki/lib/src/media/audiobook/audiobook_play_bar.dart:597-609`
+  - `hibiki/lib/src/media/audiobook/audiobook_play_bar.dart:676-694`
+  - `hibiki/lib/src/media/audiobook/audiobook_play_bar.dart:726-729`
+  - `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart:2509-2522`
+- **根因**: `_doSearch()` 捕获了当时的 `query` 去生成 `BookSearchResult`，但结果对象没有保存 query 或 search generation。渲染结果和点击跳转时又重新读取 `_searchController.text.trim()`。如果用户在搜索完成后改了输入框，或者连续触发两次搜索导致较慢的旧搜索后返回，`_searchResults`、`matchStart/charOffset` 和点击时传给 `scrollToSearchMatch()` 的 query 就可能来自不同搜索。
+- **影响**: UI 可能用新 query 的长度去截取旧 context，造成错误高亮；点击结果时更严重，会把旧结果的 `charOffset` 搭配新 query 传给 JS。JS 会在 DOM 里找新 query 并选离旧 offset 最近的位置，结果是错跳但不报错。这个问题会直接抵消 `f534c16a` 做的 DOM 坐标对齐。
+- **修复建议**: 把查询字符串纳入结果状态。至少保存 `_searchResultsQuery`，渲染和点击都使用它；更稳的是引入 `_searchGeneration`，每次 `_doSearch()` 递增，await 返回后只接受当前 generation 的结果。`BookSearchResult` 也可以携带 `query`，让 offset 与 query 成为不可拆的同一份数据。
+- **验证方式**: 搜索 `猫`，结果出现后把输入改成 `犬` 再点旧结果，确认传入 JS 的仍是 `猫`；连续快速搜索两个词，让前一个搜索慢返回，确认旧结果不会覆盖新结果。
+
+#### HBK-AUDIT-SEARCH-010: 章节导航结果没有 generation token，迟到的旧 restore 回调可误完成新导航
+
+- **Severity**: MEDIUM-HIGH
+- **Status**: code-path review found after `Completer<bool>` migration.
+- **Files**:
+  - `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart:1275-1285`
+  - `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart:1680-1720`
+  - `hibiki/lib/src/reader/reader_pagination_scripts.dart:149-153`
+  - `hibiki/lib/src/reader/reader_pagination_scripts.dart:688-697`
+- **根因**: `_restoreCompleter` 现在有 bool 语义，这是进步；但 `onRestoreComplete` 仍是不带章节 index / navigation token 的全局回调。JS 侧 `restoreProgress()` 会在 `requestAnimationFrame` 后异步调用 `notifyRestoreComplete()`。如果用户快速发起第二次章节导航，第一次页面迟到的 `onRestoreComplete` 可能完成第二次新建的 `_restoreCompleter`，因为 Dart 侧无法判断这个回调属于哪次 load。
+- **影响**: `_navigateToChapterAndWait()` 可能提前返回 true，随后搜索定位 JS 在新章节尚未完成 reader setup 时执行。结果可能是定位失败、旧 DOM 定位、或者偶现的跨章错跳。`Completer<bool>` 修了失败值，但没有修“完成事件属于哪次导航”的身份问题。
+- **修复建议**: 给导航/restore 加 generation。Dart 每次 `_navigateToChapter()` 递增 token，把 token 注入 `_buildReaderSetupScript()` 或通过 JS 全局保存；`notifyRestoreComplete(token)` 回传 token，Dart 只完成当前 token 的 completer。至少也要在 `_onRestoreComplete` 里校验预期章节和当前 loaded URL，而不是只看 `_currentChapter` 字段。
+- **验证方式**: 快速点击两个跨章搜索结果或连续触发章节跳转，记录每次 `loadUrl`、`onLoadStop`、`notifyRestoreComplete` 的 token，确认旧 token 不能完成新 completer。
+
+### Fixed / Improved
+
+- `e8a43594` 对 `HBK-AUDIT-SEARCH-005/008` 的方向是对的：搜索入口恢复可达，搜索状态提升到父 State 后移除了 `StatefulBuilder` 局部生命周期风险。
+- `e8a43594` 对 `HBK-AUDIT-SEARCH-007` 做了实质改进：load error / timeout / interrupted navigation 现在会通过 `false` 传播到搜索跳转调用方。
+- `f534c16a` 修正了 reviewer 提到的 `rtc` 坐标不对齐：Dart `_collectTextNodes()` 跳过 `rt/rp`，不再跳过 `rtc`，与 JS `isFurigana()` 当前行为一致。
+
+### Verification
+
+- Ran:
+  - `D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat analyze lib/src/media/audiobook/audiobook_bridge.dart lib/src/media/audiobook/audiobook_play_bar.dart lib/src/pages/implementations/reader_hoshi_page.dart lib/src/reader/reader_pagination_scripts.dart`
+- Result:
+  - Analyzer returned 3 warnings:
+    - `reader_hoshi_page.dart:701:46 use_build_context_synchronously`
+    - `reader_hoshi_page.dart:1041:42 use_build_context_synchronously`
+    - `reader_hoshi_page.dart:1233:42 use_build_context_synchronously`
+  - No compile error was observed in this targeted file set.
+
+### Next Scope
+
+- Bind search results to their query and generation before doing emulator validation.
+- Add a navigation restore token before relying on `_navigateToChapterAndWait()` for correctness under fast repeated jumps.
+- Add focused tests for `rt/rp/rtc`, whitespace, repeated query, and stale-query click behavior.
