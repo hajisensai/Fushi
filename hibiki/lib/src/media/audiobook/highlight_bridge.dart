@@ -220,7 +220,7 @@ class HighlightBridge {
             r.setStart(groups[g].node, groups[g].start);
             r.setEnd(groups[g].node, groups[g].end);
             ranges.push(r);
-          } catch (e) {}
+          } catch (e) { console.warn('[hoshi-hl] range error:', e); }
         }
         if (ranges.length) {
           window.__hibikiHighlightRangeMap[hl.id] = {
@@ -258,7 +258,7 @@ class HighlightBridge {
             span.style.backgroundColor = color;
             span.style.borderRadius = '2px';
             r.surroundContents(span);
-          } catch (e) {}
+          } catch (e) { console.warn('[hoshi-hl] wrap error:', e); }
         }
       }
     }

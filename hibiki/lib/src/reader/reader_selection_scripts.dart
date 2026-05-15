@@ -398,7 +398,7 @@ window.hoshiSelection = {
       parent.normalize();
     }
     this.highlightWrappers = [];
-    if (window.hoshiReader && window.hoshiReader.buildNodeOffsets) {
+    if (!window.__hoshiCssHighlightsSupported && window.hoshiReader && window.hoshiReader.buildNodeOffsets) {
       window.hoshiReader.buildNodeOffsets();
     }
   },
