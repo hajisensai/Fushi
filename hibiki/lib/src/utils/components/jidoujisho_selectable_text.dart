@@ -671,7 +671,6 @@ class _JidoujishoSelectableTextState extends State<JidoujishoSelectableText>
     }
 
     widget.controller?.selection = selection;
-    widget.onSelectionChanged?.call(selection, cause);
 
     if (widget.onSelectionChanged != null &&
         _lastSeenTextSelection != selection) {

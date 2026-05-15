@@ -272,15 +272,6 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
     }
   }
 
-  void _flushPendingLookup() {
-    if (_pendingLookupText == null || !appModel.isInitialised) return;
-    final text = _pendingLookupText!;
-    _pendingLookupText = null;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      textContextMenuAction(text);
-    });
-  }
-
   void textContextMenuAction(String data) {
     if (data.trim().isEmpty) return;
     if (!appModel.isInitialised) {
@@ -368,7 +359,13 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
       );
     }
 
-    _flushPendingLookup();
+    if (_pendingLookupText != null && appModel.isInitialised) {
+      final text = _pendingLookupText!;
+      _pendingLookupText = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        textContextMenuAction(text);
+      });
+    }
 
     return TranslationProvider(
       child: MaterialApp(

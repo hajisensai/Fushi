@@ -1917,8 +1917,10 @@ class AppModel with ChangeNotifier {
   /// Show the dictionary menu. This should be callable from many parts of the
   /// app, so it is appropriately handled by the model.
   Future<void> showDictionaryMenu() async {
+    final ctx = _ctx;
+    if (ctx == null) return;
     await showAppDialog(
-      context: navigatorKey.currentContext!,
+      context: ctx,
       builder: (context) => const DictionaryDialogPage(),
     );
 
@@ -1929,16 +1931,20 @@ class AppModel with ChangeNotifier {
   /// Show the language menu. This should be callable from many parts of the
   /// app, so it is appropriately handled by the model.
   Future<void> showLanguageMenu() async {
+    final ctx = _ctx;
+    if (ctx == null) return;
     await showAppDialog(
-      context: navigatorKey.currentContext!,
+      context: ctx,
       builder: (context) => const LanguageDialogPage(),
     );
   }
 
   /// Show the profiles management page.
   Future<void> showProfilesMenu() async {
+    final ctx = _ctx;
+    if (ctx == null) return;
     await Navigator.push(
-      navigatorKey.currentContext!,
+      ctx,
       MaterialPageRoute(
         builder: (context) => const ProfileManagementPage(),
       ),
@@ -2345,37 +2351,47 @@ class AppModel with ChangeNotifier {
   }
 
   Future<void> deleteDictionaries() async {
-    clearDictionaryResultsCache();
+    try {
+      clearDictionaryResultsCache();
 
-    await clearDictionaryHistory();
-    _dictionariesCache.clear();
-    await _database.clearAllDictionaryMeta();
+      await clearDictionaryHistory();
+      _dictionariesCache.clear();
+      await _database.clearAllDictionaryMeta();
 
-    if (dictionaryResourceDirectory.existsSync()) {
-      dictionaryResourceDirectory.deleteSync(recursive: true);
-      dictionaryResourceDirectory.createSync(recursive: true);
+      if (dictionaryResourceDirectory.existsSync()) {
+        dictionaryResourceDirectory.deleteSync(recursive: true);
+        dictionaryResourceDirectory.createSync(recursive: true);
+      }
+
+      dictionarySearchAgainNotifier.notifyListeners();
+    } catch (e, stack) {
+      ErrorLogService.instance.log('deleteDictionaries', e, stack);
+      Fluttertoast.showToast(msg: 'Failed to delete dictionaries');
     }
-
-    dictionarySearchAgainNotifier.notifyListeners();
   }
 
   Future<void> deleteDictionary(Dictionary dictionary) async {
-    clearDictionaryResultsCache();
+    try {
+      clearDictionaryResultsCache();
 
-    await clearDictionaryHistory();
+      await clearDictionaryHistory();
 
-    _dictionariesCache.removeWhere((d) => d.name == dictionary.name);
-    _rebuildDictPathsCache();
-    await _database.deleteDictionaryMeta(dictionary.name);
+      _dictionariesCache.removeWhere((d) => d.name == dictionary.name);
+      _rebuildDictPathsCache();
+      await _database.deleteDictionaryMeta(dictionary.name);
 
-    final directory =
-        Directory(path.join(dictionaryResourceDirectory.path, dictionary.name));
+      final directory = Directory(
+          path.join(dictionaryResourceDirectory.path, dictionary.name));
 
-    if (directory.existsSync()) {
-      directory.deleteSync(recursive: true);
+      if (directory.existsSync()) {
+        directory.deleteSync(recursive: true);
+      }
+
+      dictionarySearchAgainNotifier.notifyListeners();
+    } catch (e, stack) {
+      ErrorLogService.instance.log('deleteDictionary', e, stack);
+      Fluttertoast.showToast(msg: 'Failed to delete dictionary');
     }
-
-    dictionarySearchAgainNotifier.notifyListeners();
   }
 
   /// Used for caching search results. Cleared when a dictionary is added or
@@ -2486,9 +2502,10 @@ class AppModel with ChangeNotifier {
   /// fails.
   Future<void> showAnkidroidApiMessage() async {
     await requestAnkidroidPermissions();
-
+    final ctx = _ctx;
+    if (ctx == null || !ctx.mounted) return;
     await showAppDialog(
-      context: _navigatorKey.currentContext!,
+      context: ctx,
       builder: (context) => AlertDialog(
         title: Text(t.error_ankidroid_api),
         content: Text(
@@ -2526,9 +2543,10 @@ class AppModel with ChangeNotifier {
     List<String> models = await getModelList();
     if (!models.contains('Lapis')) {
       methodChannel.invokeMethod('addDefaultModel');
-
+      final ctx = _ctx;
+      if (ctx == null || !ctx.mounted) return;
       await showAppDialog(
-        context: _navigatorKey.currentContext!,
+        context: ctx,
         builder: (context) => AlertDialog(
           title: Text(t.info_standard_model),
           content: Text(
@@ -2686,9 +2704,11 @@ class AppModel with ChangeNotifier {
       addMediaItem(item);
     }
 
+    final ctx = _ctx;
+    if (ctx == null || !ctx.mounted) return;
     if (pushReplacement) {
       await Navigator.pushReplacement(
-        _navigatorKey.currentContext!,
+        ctx,
         MaterialPageRoute(
           builder: (context) => mediaSource.buildLaunchPage(
               item: item, initialBookmarkJump: initialBookmarkJump),
@@ -2696,7 +2716,7 @@ class AppModel with ChangeNotifier {
       );
     } else {
       await Navigator.push(
-        _navigatorKey.currentContext!,
+        ctx,
         MaterialPageRoute(
           builder: (context) => mediaSource.buildLaunchPage(
               item: item, initialBookmarkJump: initialBookmarkJump),
@@ -2745,8 +2765,10 @@ class AppModel with ChangeNotifier {
     required Function(String) onSelect,
     required Function(String) onSearch,
   }) async {
+    final ctx = _ctx;
+    if (ctx == null) return;
     await showAppDialog(
-      context: _navigatorKey.currentContext!,
+      context: ctx,
       builder: (context) => OpenStashDialogPage(
         onSelect: onSelect,
         onSearch: onSearch,
@@ -2765,9 +2787,10 @@ class AppModel with ChangeNotifier {
     if (searchTerm.trim().isEmpty) {
       return;
     }
-
+    final ctx = _ctx;
+    if (ctx == null) return;
     await Navigator.push(
-      _navigatorKey.currentContext!,
+      ctx,
       PageRouteBuilder(
         pageBuilder: (context, animation1, animation2) =>
             RecursiveDictionaryPage(
@@ -2804,9 +2827,10 @@ class AppModel with ChangeNotifier {
     }
 
     segmentedText ??= targetLanguage.textToWords(sourceText);
-
+    final ctx = _ctx;
+    if (ctx == null) return;
     await showAppDialog(
-      context: _navigatorKey.currentContext!,
+      context: ctx,
       builder: (context) => TextSegmentationDialogPage(
         sourceText: sourceText,
         segmentedText: segmentedText!,
@@ -2822,8 +2846,10 @@ class AppModel with ChangeNotifier {
     required Function(List<String>) onSelect,
     Function(List<String>)? onAppend,
   }) async {
+    final ctx = _ctx;
+    if (ctx == null) return;
     await showAppDialog(
-      context: _navigatorKey.currentContext!,
+      context: ctx,
       builder: (context) => ExampleSentencesDialogPage(
         exampleSentences: exampleSentences,
         onSelect: onSelect,
