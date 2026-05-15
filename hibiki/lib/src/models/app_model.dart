@@ -2352,8 +2352,6 @@ class AppModel with ChangeNotifier {
 
   Future<void> deleteDictionaries() async {
     try {
-      clearDictionaryResultsCache();
-
       await clearDictionaryHistory();
       await _database.clearAllDictionaryMeta();
 
@@ -2363,6 +2361,7 @@ class AppModel with ChangeNotifier {
       }
 
       _dictionariesCache.clear();
+      clearDictionaryResultsCache();
     } catch (e, stack) {
       ErrorLogService.instance.log('deleteDictionaries', e, stack);
       Fluttertoast.showToast(msg: 'Failed to delete dictionaries');
@@ -2373,8 +2372,6 @@ class AppModel with ChangeNotifier {
 
   Future<void> deleteDictionary(Dictionary dictionary) async {
     try {
-      clearDictionaryResultsCache();
-
       await clearDictionaryHistory();
       await _database.deleteDictionaryMeta(dictionary.name);
 
@@ -2387,6 +2384,7 @@ class AppModel with ChangeNotifier {
 
       _dictionariesCache.removeWhere((d) => d.name == dictionary.name);
       _rebuildDictPathsCache();
+      clearDictionaryResultsCache();
     } catch (e, stack) {
       ErrorLogService.instance.log('deleteDictionary', e, stack);
       Fluttertoast.showToast(msg: 'Failed to delete dictionary');
@@ -3016,8 +3014,8 @@ class AppModel with ChangeNotifier {
   /// dictionary is deleted, otherwise history data cannot be viewed without
   /// the necessary dictionary metadata.
   Future<void> clearDictionaryHistory() async {
-    _dictionaryHistoryResults.clear();
     await _database.clearDictionaryHistory();
+    _dictionaryHistoryResults.clear();
 
     dictionaryEntriesNotifier.notifyListeners();
   }
