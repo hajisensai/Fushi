@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
@@ -29,6 +30,7 @@ LazyDatabase _openDb(String dbDirectory) {
   AudioCues,
   SrtBooks,
   ReaderPositions,
+  Bookmarks,
   ReadingStatistics,
   ReadingHourlyLogs,
   Preferences,
@@ -47,7 +49,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 10;
+  int get schemaVersion => 11;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -132,6 +134,30 @@ class HibikiDatabase extends _$HibikiDatabase {
               'WHERE profile_id NOT IN (SELECT id FROM profiles)',
             );
           }
+          if (from < 11) {
+            await m.createTable(bookmarks);
+            await customStatement(
+              'CREATE INDEX IF NOT EXISTS idx_bookmarks_ttu_book_id_created '
+              'ON bookmarks (ttu_book_id, created_at DESC)',
+            );
+            await migrateLegacyBookmarkPreferences();
+          }
+        },
+        onCreate: (m) async {
+          await m.createAll();
+          await customStatement(
+            'CREATE INDEX IF NOT EXISTS idx_profile_settings_profile ON profile_settings (profile_id)',
+          );
+          await customStatement(
+            'CREATE INDEX IF NOT EXISTS idx_media_type_profiles_profile ON media_type_profiles (profile_id)',
+          );
+          await customStatement(
+            'CREATE INDEX IF NOT EXISTS idx_book_profiles_profile ON book_profiles (profile_id)',
+          );
+          await customStatement(
+            'CREATE INDEX IF NOT EXISTS idx_bookmarks_ttu_book_id_created '
+            'ON bookmarks (ttu_book_id, created_at DESC)',
+          );
         },
       );
 
@@ -139,13 +165,27 @@ class HibikiDatabase extends _$HibikiDatabase {
 
   Future<bool> _columnExists(String tableName, String columnName) async {
     if (!_identifierRe.hasMatch(tableName)) {
-      throw ArgumentError.value(tableName, 'tableName', 'not a valid identifier');
+      throw ArgumentError.value(
+          tableName, 'tableName', 'not a valid identifier');
     }
     if (!_identifierRe.hasMatch(columnName)) {
-      throw ArgumentError.value(columnName, 'columnName', 'not a valid identifier');
+      throw ArgumentError.value(
+          columnName, 'columnName', 'not a valid identifier');
     }
     final rows = await customSelect('PRAGMA table_info($tableName)').get();
     return rows.any((row) => row.read<String>('name') == columnName);
+  }
+
+  Future<bool> _tableExists(String tableName) async {
+    if (!_identifierRe.hasMatch(tableName)) {
+      throw ArgumentError.value(
+          tableName, 'tableName', 'not a valid identifier');
+    }
+    final rows = await customSelect(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+      variables: [Variable<String>(tableName)],
+    ).get();
+    return rows.isNotEmpty;
   }
 
   // ── preferences helpers ─────────────────────────────────────────
@@ -180,6 +220,67 @@ class HibikiDatabase extends _$HibikiDatabase {
   Future<Map<String, String>> getAllPrefs() async {
     final rows = await select(preferences).get();
     return Map.fromEntries(rows.map((r) => MapEntry(r.key, r.value)));
+  }
+
+  Future<void> migrateLegacyBookmarkPreferences() async {
+    if (!await _tableExists('preferences')) {
+      return;
+    }
+    if (!await _tableExists('bookmarks')) {
+      return;
+    }
+    final Map<String, String> allPrefs = await getAllPrefs();
+    await transaction(() async {
+      for (final MapEntry<String, String> entry in allPrefs.entries) {
+        if (!entry.key.startsWith('bookmarks_')) continue;
+        final int? ttuBookId =
+            int.tryParse(entry.key.substring('bookmarks_'.length));
+        if (ttuBookId == null || entry.value.isEmpty) continue;
+        final int existing = await (selectOnly(bookmarks)
+              ..where(bookmarks.ttuBookId.equals(ttuBookId))
+              ..addColumns([bookmarks.id.count()]))
+            .map((row) => row.read(bookmarks.id.count()) ?? 0)
+            .getSingle();
+        if (existing > 0) continue;
+        List<dynamic> list;
+        try {
+          list = jsonDecode(entry.value) as List<dynamic>;
+        } catch (_) {
+          continue;
+        }
+        for (final dynamic raw in list) {
+          if (raw is! Map<String, dynamic>) continue;
+          final int sectionIndex = raw['sectionIndex'] as int? ?? 0;
+          final int normCharOffset = raw['normCharOffset'] as int? ?? 0;
+          final String label = raw['label'] as String? ?? '';
+          final DateTime createdAt = DateTime.tryParse(
+                raw['createdAt'] as String? ?? '',
+              ) ??
+              DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+          final int rowBookId = raw['ttuBookId'] as int? ?? ttuBookId;
+          await customStatement(
+            'INSERT OR IGNORE INTO bookmarks '
+            '(ttu_book_id, section_index, norm_char_offset, label, '
+            'created_at, book_title, page_in_chapter, total_pages_in_chapter) '
+            'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [
+              rowBookId,
+              sectionIndex,
+              normCharOffset,
+              label,
+              createdAt.millisecondsSinceEpoch,
+              raw['bookTitle'] as String?,
+              raw['pageInChapter'] as int?,
+              raw['totalPagesInChapter'] as int?,
+            ],
+          );
+        }
+        await customStatement(
+          'DELETE FROM preferences WHERE key = ?',
+          [entry.key],
+        );
+      }
+    });
   }
 
   // ── media items ─────────────────────────────────────────────────
@@ -398,8 +499,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   }) =>
       transaction(() async {
         final existing = await (select(readingStatistics)
-              ..where(
-                  (t) => t.title.equals(title) & t.dateKey.equals(dateKey)))
+              ..where((t) => t.title.equals(title) & t.dateKey.equals(dateKey)))
             .getSingleOrNull();
         if (existing != null) {
           await (update(readingStatistics)
@@ -407,8 +507,7 @@ class HibikiDatabase extends _$HibikiDatabase {
               .write(ReadingStatisticsCompanion(
             charactersRead: Value(existing.charactersRead + charsRead),
             readingTimeMs: Value(existing.readingTimeMs + timeMs),
-            lastStatisticModified:
-                Value(DateTime.now().millisecondsSinceEpoch),
+            lastStatisticModified: Value(DateTime.now().millisecondsSinceEpoch),
           ));
         } else {
           await into(readingStatistics).insert(
@@ -512,13 +611,12 @@ class HibikiDatabase extends _$HibikiDatabase {
       (delete(epubBooks)..where((t) => t.id.equals(id))).go();
 
   // ── book tags ───────────────────────────────────────────────────
-  Future<List<BookTagRow>> getAllTags() =>
-      (select(bookTags)
-            ..orderBy([
-              (t) => OrderingTerm.asc(t.sortOrder),
-              (t) => OrderingTerm.asc(t.createdAt),
-            ]))
-          .get();
+  Future<List<BookTagRow>> getAllTags() => (select(bookTags)
+        ..orderBy([
+          (t) => OrderingTerm.asc(t.sortOrder),
+          (t) => OrderingTerm.asc(t.createdAt),
+        ]))
+      .get();
 
   Future<List<BookTagRow>> getTagsForBook(int bookId) {
     final query = select(bookTags).join([
@@ -545,8 +643,7 @@ class HibikiDatabase extends _$HibikiDatabase {
     final maxQuery = selectOnly(bookTags)
       ..addColumns([bookTags.sortOrder.max()]);
     final maxRow = await maxQuery.getSingleOrNull();
-    final int nextOrder =
-        (maxRow?.read(bookTags.sortOrder.max()) ?? 0) + 1;
+    final int nextOrder = (maxRow?.read(bookTags.sortOrder.max()) ?? 0) + 1;
     return into(bookTags).insert(
       BookTagsCompanion.insert(
         name: name,
@@ -581,8 +678,7 @@ class HibikiDatabase extends _$HibikiDatabase {
 
         for (final tagId in toRemove) {
           await (delete(bookTagMappings)
-                ..where(
-                    (t) => t.bookId.equals(bookId) & t.tagId.equals(tagId)))
+                ..where((t) => t.bookId.equals(bookId) & t.tagId.equals(tagId)))
               .go();
         }
         for (final tagId in toAdd) {
@@ -603,8 +699,7 @@ class HibikiDatabase extends _$HibikiDatabase {
 
   Future<void> removeTagFromBook(int bookId, int tagId) =>
       (delete(bookTagMappings)
-            ..where(
-                (t) => t.bookId.equals(bookId) & t.tagId.equals(tagId)))
+            ..where((t) => t.bookId.equals(bookId) & t.tagId.equals(tagId)))
           .go();
 
   Future<Set<int>> getBookIdsForAllTags(Set<int> tagIds) async {
@@ -630,8 +725,7 @@ class HibikiDatabase extends _$HibikiDatabase {
 
   Future<void> reorderTags(List<int> orderedTagIds) => transaction(() async {
         for (int i = 0; i < orderedTagIds.length; i++) {
-          await (update(bookTags)
-                ..where((t) => t.id.equals(orderedTagIds[i])))
+          await (update(bookTags)..where((t) => t.id.equals(orderedTagIds[i])))
               .write(BookTagsCompanion(sortOrder: Value(i)));
         }
       });
@@ -706,8 +800,7 @@ class HibikiDatabase extends _$HibikiDatabase {
       select(mediaTypeProfiles).get();
 
   Future<MediaTypeProfileRow?> getMediaTypeProfile(String mediaType) =>
-      (select(mediaTypeProfiles)
-            ..where((t) => t.mediaType.equals(mediaType)))
+      (select(mediaTypeProfiles)..where((t) => t.mediaType.equals(mediaType)))
           .getSingleOrNull();
 
   Future<void> setMediaTypeProfile(String mediaType, int profileId) =>
@@ -719,8 +812,7 @@ class HibikiDatabase extends _$HibikiDatabase {
       );
 
   Future<int> deleteMediaTypeProfile(String mediaType) =>
-      (delete(mediaTypeProfiles)
-            ..where((t) => t.mediaType.equals(mediaType)))
+      (delete(mediaTypeProfiles)..where((t) => t.mediaType.equals(mediaType)))
           .go();
 
   // ── book profiles ────────────────────────────────────────────────
