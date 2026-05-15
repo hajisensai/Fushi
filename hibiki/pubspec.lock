@@ -362,6 +362,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.1.2"
+  dbus:
+    dependency: transitive
+    description:
+      name: dbus
+      sha256: d0c98dcd4f5169878b6cf8f6e0a52403a9dff371a3e2f019697accbf6f44a270
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.7.12"
   dependency_validator:
     dependency: "direct dev"
     description:
@@ -1720,48 +1728,22 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "15.1.0"
-  wakelock:
+  wakelock_plus:
     dependency: "direct main"
     description:
-      path: wakelock
-      ref: "40464c75e908f57f458597ef4912f5273ab89b1a"
-      resolved-ref: "40464c75e908f57f458597ef4912f5273ab89b1a"
-      url: "https://github.com/diegotori/wakelock"
-    source: git
-    version: "0.6.2"
-  wakelock_macos:
-    dependency: transitive
-    description:
-      name: wakelock_macos
-      sha256: "047c6be2f88cb6b76d02553bca5a3a3b95323b15d30867eca53a19a0a319d4cd"
+      name: wakelock_plus
+      sha256: f268ca2116db22e57577fb99d52515a24bdc1d570f12ac18bb762361d43b043d
       url: "https://pub.dev"
     source: hosted
-    version: "0.4.0"
-  wakelock_platform_interface:
+    version: "1.1.4"
+  wakelock_plus_platform_interface:
     dependency: transitive
     description:
-      name: wakelock_platform_interface
-      sha256: "1f4aeb81fb592b863da83d2d0f7b8196067451e4df91046c26b54a403f9de621"
+      name: wakelock_plus_platform_interface
+      sha256: "582f2f7aecc7376332d961a0dd1efa9378ce117657e0ade55d9ff72699a55e82"
       url: "https://pub.dev"
     source: hosted
-    version: "0.3.0"
-  wakelock_web:
-    dependency: transitive
-    description:
-      name: wakelock_web
-      sha256: "1b256b811ee3f0834888efddfe03da8d18d0819317f20f6193e2922b41a501b5"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.4.0"
-  wakelock_windows:
-    dependency: "direct overridden"
-    description:
-      path: wakelock_windows
-      ref: "40464c75e908f57f458597ef4912f5273ab89b1a"
-      resolved-ref: "40464c75e908f57f458597ef4912f5273ab89b1a"
-      url: "https://github.com/diegotori/wakelock"
-    source: git
-    version: "0.2.2"
+    version: "1.2.0"
   watcher:
     dependency: transitive
     description:

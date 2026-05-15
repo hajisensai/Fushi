@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:spaces/spaces.dart';
-import 'package:wakelock/wakelock.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
@@ -226,9 +226,9 @@ List<Widget> _buildReaderOnlySwitches(VoidCallback rebuild,
       onChanged: (_) async {
         _source.toggleKeepScreenAwake();
         if (_source.keepScreenAwake) {
-          await Wakelock.enable();
+          await WakelockPlus.enable();
         } else {
-          await Wakelock.disable();
+          await WakelockPlus.disable();
         }
         rebuild();
       },

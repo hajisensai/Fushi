@@ -488,8 +488,7 @@ Future<DictionarySearchResult?> prepareSearchResultsStandard(
     DictionarySearchParams params) async {
   if (params.dictionaryPaths.isEmpty) return null;
 
-  final hoshi = HoshiDicts.withPaths(params.dictionaryPaths);
-  try {
+  return HoshiDicts.withPaths(params.dictionaryPaths, (hoshi) {
     final results = hoshi.lookup(
       params.searchTerm,
       maxResults: params.maximumDictionarySearchResults,
@@ -500,9 +499,7 @@ Future<DictionarySearchResult?> prepareSearchResultsStandard(
       results: results,
       maximumTerms: params.maximumDictionaryTermsInResult,
     );
-  } finally {
-    hoshi.dispose();
-  }
+  });
 }
 
 DictionarySearchResult? prepareSearchResultsDirectStandard({

@@ -1,3 +1,4 @@
+import 'dart:convert' show jsonDecode;
 import 'dart:ffi';
 import 'dart:isolate';
 import 'dart:typed_data';
@@ -193,26 +194,16 @@ class HoshiDicts {
   static List<String>? _cachedTransformJsons;
 
   static Future<void> preloadTransforms() async {
-    const languages = [
-      'ar',
-      'de',
-      'el',
-      'en',
-      'eo',
-      'es',
-      'eu',
-      'fr',
-      'ga',
-      'grc',
-      'ja',
-      'ka',
-      'ko',
-      'la',
-      'sga',
-      'sq',
-      'tl',
-      'yi',
-    ];
+    final List<String> languages;
+    try {
+      final manifest =
+          await rootBundle.loadString('assets/transforms/manifest.json');
+      languages = List<String>.from(jsonDecode(manifest) as List);
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('HoshiDicts.preloadTransforms(manifest)', e, stack);
+      return;
+    }
     final jsons = <String>[];
     for (final lang in languages) {
       try {
@@ -390,11 +381,14 @@ class HoshiDicts {
     }
   }
 
+  static const int defaultMaxResults = 16;
+  static const int defaultScanLength = 16;
+
   // ── lookup (with deinflection) ──────────────────────────────────
   List<HoshiLookupResult> lookup(
     String text, {
-    int maxResults = 16,
-    int scanLength = 16,
+    int maxResults = defaultMaxResults,
+    int scanLength = defaultScanLength,
   }) {
     final tp = text.toNativeUtf8(allocator: calloc);
     try {
@@ -474,7 +468,7 @@ class HoshiDicts {
     }
   }
 
-  static HoshiDicts withPaths(List<String> paths) {
+  static T withPaths<T>(List<String> paths, T Function(HoshiDicts h) action) {
     final h = HoshiDicts();
     h._loadCachedTransforms();
     for (final p in paths) {
@@ -482,6 +476,10 @@ class HoshiDicts {
       h.addFreqDict(p);
       h.addPitchDict(p);
     }
-    return h;
+    try {
+      return action(h);
+    } finally {
+      h.dispose();
+    }
   }
 }

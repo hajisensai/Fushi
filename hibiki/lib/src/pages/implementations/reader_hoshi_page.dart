@@ -48,7 +48,7 @@ import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/misc/tts_channel.dart';
 import 'package:hibiki/src/utils/misc/volume_key_channel.dart';
-import 'package:wakelock/wakelock.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 class ReaderHoshiPage extends BaseSourcePage {
   const ReaderHoshiPage({
@@ -257,7 +257,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     }
 
     if (_settings!.keepScreenAwake) {
-      Wakelock.enable();
+      WakelockPlus.enable();
     }
 
     final ReaderHoshiSource src = ReaderHoshiSource.instance;
@@ -645,7 +645,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       FloatingLyricChannel.hide();
     }
     appModel.audioHandler?.clearNotification();
-    Wakelock.disable();
+    WakelockPlus.disable();
     super.dispose();
   }
 

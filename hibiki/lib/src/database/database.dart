@@ -49,7 +49,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 11;
+  int get schemaVersion => 12;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -67,6 +67,15 @@ class HibikiDatabase extends _$HibikiDatabase {
           }
         },
         onUpgrade: (m, from, to) async {
+          if (from > to) {
+            for (final table in allTables) {
+              await customStatement(
+                'DROP TABLE IF EXISTS "${table.actualTableName}"',
+              );
+            }
+            await m.createAll();
+            return;
+          }
           if (from < 2) {
             if (!await _columnExists('dictionary_metadata', 'type')) {
               await m.addColumn(dictionaryMetadata, dictionaryMetadata.type);
@@ -141,6 +150,46 @@ class HibikiDatabase extends _$HibikiDatabase {
               'ON bookmarks (ttu_book_id, created_at DESC)',
             );
             await migrateLegacyBookmarkPreferences();
+          }
+          if (from < 12) {
+            Future<bool> tableExists(String name) async {
+              final row = await customSelect(
+                'SELECT COUNT(*) AS c FROM sqlite_master '
+                "WHERE type='table' AND name=?",
+                variables: [Variable.withString(name)],
+              ).getSingle();
+              return row.read<int>('c') > 0;
+            }
+
+            if (await tableExists('reader_positions') &&
+                await tableExists('epub_books')) {
+              await customStatement(
+                'DELETE FROM reader_positions '
+                'WHERE ttu_book_id NOT IN (SELECT id FROM epub_books)',
+              );
+            }
+            if (await tableExists('audio_cues') &&
+                await tableExists('audiobooks')) {
+              await customStatement(
+                'DELETE FROM audio_cues '
+                'WHERE book_uid NOT IN (SELECT book_uid FROM audiobooks)',
+              );
+            }
+            if (await tableExists('srt_books') &&
+                await tableExists('epub_books')) {
+              await customStatement(
+                'DELETE FROM srt_books '
+                'WHERE ttu_book_id > 0 '
+                'AND ttu_book_id NOT IN (SELECT id FROM epub_books)',
+              );
+            }
+            if (await tableExists('bookmarks') &&
+                await tableExists('epub_books')) {
+              await customStatement(
+                'DELETE FROM bookmarks '
+                'WHERE ttu_book_id NOT IN (SELECT id FROM epub_books)',
+              );
+            }
           }
         },
         onCreate: (m) async {
@@ -405,8 +454,10 @@ class HibikiDatabase extends _$HibikiDatabase {
       into(audiobooks).insert(ab,
           onConflict: DoUpdate((_) => ab, target: [audiobooks.bookUid]));
 
-  Future<int> deleteAudiobookByBookUid(String bookUid) =>
-      (delete(audiobooks)..where((t) => t.bookUid.equals(bookUid))).go();
+  Future<int> deleteAudiobookByBookUid(String bookUid) async {
+    await (delete(audioCues)..where((t) => t.bookUid.equals(bookUid))).go();
+    return (delete(audiobooks)..where((t) => t.bookUid.equals(bookUid))).go();
+  }
 
   // ── audio cues ──────────────────────────────────────────────────
   Future<List<AudioCueRow>> getCuesForChapter(
@@ -616,8 +667,12 @@ class HibikiDatabase extends _$HibikiDatabase {
       (update(epubBooks)..where((t) => t.id.equals(bookId)))
           .write(EpubBooksCompanion(epubPath: Value(epubPath)));
 
-  Future<int> deleteEpubBook(int id) =>
-      (delete(epubBooks)..where((t) => t.id.equals(id))).go();
+  Future<int> deleteEpubBook(int id) async {
+    await (delete(readerPositions)..where((t) => t.ttuBookId.equals(id))).go();
+    await (delete(bookmarks)..where((t) => t.ttuBookId.equals(id))).go();
+    await (delete(srtBooks)..where((t) => t.ttuBookId.equals(id))).go();
+    return (delete(epubBooks)..where((t) => t.id.equals(id))).go();
+  }
 
   // ── book tags ───────────────────────────────────────────────────
   Future<List<BookTagRow>> getAllTags() => (select(bookTags)

@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:wakelock/wakelock.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fluttertoast/fluttertoast.dart';
@@ -1148,9 +1148,9 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
       sw(t.keep_screen_awake, _src.keepScreenAwake, () async {
         _src.toggleKeepScreenAwake();
         if (_src.keepScreenAwake) {
-          await Wakelock.enable();
+          await WakelockPlus.enable();
         } else {
-          await Wakelock.disable();
+          await WakelockPlus.disable();
         }
       }),
       sw(t.auto_read_on_lookup, _src.autoReadOnLookup,
