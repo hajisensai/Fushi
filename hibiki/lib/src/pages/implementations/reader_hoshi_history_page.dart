@@ -439,30 +439,44 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
-  Future<void> _showSrtBookDialog(SrtBook book) async {
-    await showAppDialog(
-      context: context,
-      builder: (_) => MediaItemDialogPage(
-        item: _srtBookMediaItem(book),
-        isHistory: false,
-        extraActions: (_) => [
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              await _pickSrtBookCover(book);
-            },
-            child: Text(t.srt_import_pick_cover),
-          ),
-          _destructiveConfirmButton(
-            label: t.dialog_delete,
-            onPressed: () async {
-              Navigator.pop(context);
-              await _confirmDeleteSrtBook(book);
-            },
-          ),
-        ],
+  List<Widget> _srtExtraActions(BuildContext dialogContext, SrtBook book) {
+    return [
+      TextButton(
+        onPressed: () async {
+          Navigator.pop(dialogContext);
+          await _pickSrtBookCover(book);
+        },
+        child: Text(t.srt_import_pick_cover),
       ),
-    );
+      _destructiveConfirmButton(
+        label: t.dialog_delete,
+        onPressed: () async {
+          Navigator.pop(dialogContext);
+          await _confirmDeleteSrtBook(book);
+        },
+      ),
+    ];
+  }
+
+  Future<void> _showSrtBookDialog(SrtBook book) async {
+    if (book.ttuBookId <= 0) {
+      await showAppDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(book.title),
+          actions: _srtExtraActions(ctx, book),
+        ),
+      );
+    } else {
+      await showAppDialog(
+        context: context,
+        builder: (ctx) => MediaItemDialogPage(
+          item: _srtBookMediaItem(book),
+          isHistory: false,
+          extraActions: (_) => _srtExtraActions(ctx, book),
+        ),
+      );
+    }
     if (mounted) setState(() {});
   }
 
