@@ -6,7 +6,7 @@
 
 ## 入口
 
-`ReaderHoshiHistoryPage.extraActions()` 新增「编辑书籍 CSS」动作，与现有 EPUB 专用动作（有声书导入、插图等）放在一起。通过 `ReaderHoshiSource.parseBookId()` 解析 bookId，用 `EpubStorage.bookExists()` 验证 extract 目录存在后才显示按钮。不修改通用 `MediaItemDialogPage`。
+`ReaderHoshiHistoryPage.extraActions()` 新增「编辑书籍 CSS」动作，与现有 EPUB 专用动作（有声书导入、插图等）放在一起。按钮在 `bookId != null` 时始终显示（`extraActions()` 是同步方法，无法调用异步 `bookExists()`）。点击时异步调用 `EpubStorage.bookExists()` 校验，目录不存在则 toast 提示。通过 `EpubStorage.bookPath()` 定位 extractDir（不用 `bookDirectory()` 以避免创建空目录）。不修改通用 `MediaItemDialogPage`。
 
 ## 数据模型
 
@@ -44,7 +44,7 @@ class CssFileEntry {
 
 ## extractDir 获取
 
-通过 `ReaderHoshiSource.parseBookId()` 拿 bookId，再用 `EpubStorage.bookPath()` 定位目录。**不使用 `EpubStorage.bookDirectory()`**——它会创建目录，坏 bookId 会创建空目录。用 `EpubStorage.bookExists()` 做前置检查。
+通过 `ReaderHoshiSource.parseBookId()` 拿 bookId，再用 `EpubStorage.bookPath()` 定位目录。**不使用 `EpubStorage.bookDirectory()`**——它会创建目录，坏 bookId 会创建空目录。点击按钮时用 `EpubStorage.bookExists()` 异步校验。
 
 ## UI 结构
 
@@ -99,17 +99,23 @@ class CssFileEntry {
 
 ## 国际化
 
-所有用户可见文案走 Slang（`t.*`），需要新增的 key：
+所有用户可见文案走 Slang（`t.*`），使用 flat key（与项目现有风格一致）：
 
-- `t.bookCssEditor.title` — 页面标题
-- `t.bookCssEditor.resetCurrent` — 重置当前
-- `t.bookCssEditor.resetAll` — 重置全部
-- `t.bookCssEditor.save` — 保存
-- `t.bookCssEditor.noCssFiles` — 空状态提示
-- `t.bookCssEditor.unsavedChanges` — 未保存修改弹窗标题
-- `t.bookCssEditor.unsavedChangesMessage` — 未保存修改弹窗内容
-- `t.bookCssEditor.confirmReset` — 重置确认弹窗
-- `t.bookCssEditor.editCss` — 长按菜单按钮文案
+- `t.book_css_editor_title` — 页面标题
+- `t.book_css_editor_edit_css` — 长按菜单按钮文案
+- `t.book_css_editor_reset_current` — 重置当前
+- `t.book_css_editor_reset_all` — 重置全部
+- `t.book_css_editor_save` — 保存
+- `t.book_css_editor_no_css_files` — 空状态提示
+- `t.book_css_editor_unsaved_changes` — 未保存修改弹窗标题
+- `t.book_css_editor_unsaved_changes_message` — 未保存修改弹窗内容
+- `t.book_css_editor_confirm_reset` — 重置确认弹窗
+- `t.book_css_editor_confirm_reset_all` — 重置全部确认弹窗
+- `t.book_css_editor_discard` — 丢弃
+- `t.book_css_editor_cancel` — 取消
+- `t.book_css_editor_saved` — 保存成功提示
+- `t.book_css_editor_reset_done` — 重置成功提示
+- `t.book_css_editor_no_extract_dir` — 提取目录不存在提示
 
 ## 文件清单
 
@@ -121,13 +127,13 @@ class CssFileEntry {
 | 修改文件 | 改动 |
 |----------|------|
 | `reader_hoshi_history_page.dart` | `extraActions()` 新增「编辑书籍 CSS」按钮 |
-| `*.i18n.json` | 新增 `bookCssEditor` 命名空间下的 Slang key |
+| `strings.i18n.json` | 新增 `book_css_editor_*` flat key（其他 locale 文件由 Slang fallback 自动覆盖，不需手动修改） |
 
 ## 边界情况
 
 - EPUB 没有 CSS 文件：显示空状态提示
 - CSS 文件编码：统一 UTF-8 读写（与现有 sanitize 逻辑一致）
-- extractDir 不存在：`bookExists()` 返回 false，不显示按钮
+- extractDir 不存在：点击按钮时 `bookExists()` 返回 false，toast 提示
 - Tab basename 撞名：用最短唯一后缀
 - 保存内容恢复为原始：自动删除 `.original`，状态回归未修改
 

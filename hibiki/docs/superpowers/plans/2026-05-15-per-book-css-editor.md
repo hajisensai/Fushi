@@ -265,7 +265,7 @@ void _createFile(Directory root, String relativePath, String content) {
 - [ ] **Step 3: Run tests to verify they pass**
 
 ```powershell
-cd hibiki
+Set-Location D:\APP\vs_claude_code\hibiki\hibiki
 D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test/epub/book_css_repository_test.dart -v
 ```
 
@@ -274,8 +274,12 @@ Expected: All tests PASS.
 - [ ] **Step 4: Commit**
 
 ```powershell
+Set-Location D:\APP\vs_claude_code\hibiki
+git status --short
 git add hibiki/lib/src/epub/book_css_repository.dart hibiki/test/epub/book_css_repository_test.dart
+git diff --cached --check
 git commit -m "feat(css-editor): add BookCssRepository with discovery and display-title dedup"
+git status --short
 ```
 
 ---
@@ -477,7 +481,7 @@ Append these test groups to `book_css_repository_test.dart`:
 - [ ] **Step 3: Run tests**
 
 ```powershell
-cd hibiki
+Set-Location D:\APP\vs_claude_code\hibiki\hibiki
 D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test/epub/book_css_repository_test.dart -v
 ```
 
@@ -486,8 +490,12 @@ Expected: All tests PASS.
 - [ ] **Step 4: Commit**
 
 ```powershell
+Set-Location D:\APP\vs_claude_code\hibiki
+git status --short
 git add hibiki/lib/src/epub/book_css_repository.dart hibiki/test/epub/book_css_repository_test.dart
+git diff --cached --check
 git commit -m "feat(css-editor): add read, safe-write, backup, and reset to BookCssRepository"
+git status --short
 ```
 
 ---
@@ -496,6 +504,8 @@ git commit -m "feat(css-editor): add read, safe-write, backup, and reset to Book
 
 **Files:**
 - Modify: `hibiki/lib/i18n/strings.i18n.json`
+
+All commands below assume: Flutter/Dart commands run from `D:\APP\vs_claude_code\hibiki\hibiki`, git commands run from `D:\APP\vs_claude_code\hibiki`.
 
 - [ ] **Step 1: Add i18n keys to strings.i18n.json**
 
@@ -512,7 +522,6 @@ Add these flat keys (insert near the existing `custom_dict_css` keys around line
     "book_css_editor_unsaved_changes_message": "You have unsaved changes. What would you like to do?",
     "book_css_editor_confirm_reset": "Reset this file to its original content?",
     "book_css_editor_confirm_reset_all": "Reset all modified CSS files to their original content?",
-    "book_css_editor_save_button": "Save",
     "book_css_editor_discard": "Discard",
     "book_css_editor_cancel": "Cancel",
     "book_css_editor_saved": "CSS saved.",
@@ -523,7 +532,7 @@ Add these flat keys (insert near the existing `custom_dict_css` keys around line
 - [ ] **Step 2: Regenerate Slang**
 
 ```powershell
-cd hibiki
+Set-Location D:\APP\vs_claude_code\hibiki\hibiki
 D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat run slang
 ```
 
@@ -532,7 +541,7 @@ This regenerates `lib/i18n/strings.g.dart` with the new keys.
 - [ ] **Step 3: Verify generation succeeded**
 
 ```powershell
-cd hibiki
+Set-Location D:\APP\vs_claude_code\hibiki\hibiki
 D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat analyze lib/i18n/strings.g.dart
 ```
 
@@ -541,8 +550,12 @@ Expected: No errors (warnings about other files are OK).
 - [ ] **Step 4: Commit**
 
 ```powershell
+Set-Location D:\APP\vs_claude_code\hibiki
+git status --short
 git add hibiki/lib/i18n/strings.i18n.json hibiki/lib/i18n/strings.g.dart
+git diff --cached --check
 git commit -m "feat(css-editor): add i18n keys for book CSS editor"
+git status --short
 ```
 
 ---
@@ -553,6 +566,8 @@ git commit -m "feat(css-editor): add i18n keys for book CSS editor"
 - Create: `hibiki/lib/src/pages/implementations/book_css_editor_page.dart`
 
 This is the main editor page. It receives `extractDir` (already validated), creates a `BookCssRepository`, and renders Tab editor with save/reset.
+
+**Tab guard design:** We maintain an explicit `_selectedIndex` as the source of truth, separate from `TabController.index`. `TabBarView` swipe is disabled (`physics: NeverScrollableScrollPhysics()`). All tab switches go through `_attemptSwitchTab(newIndex)`, which guards unsaved changes and only updates `_selectedIndex` + `_tabController.index` on success.
 
 - [ ] **Step 1: Create BookCssEditorPage**
 
@@ -577,6 +592,7 @@ class _BookCssEditorPageState extends State<BookCssEditorPage>
   late BookCssRepository _repo;
   List<CssFileEntry> _entries = [];
   TabController? _tabController;
+  int _selectedIndex = 0;
 
   final Map<int, TextEditingController> _textControllers = {};
   final Map<int, String> _diskContent = {};
@@ -598,8 +614,8 @@ class _BookCssEditorPageState extends State<BookCssEditorPage>
 
     _tabController?.dispose();
     if (_entries.isNotEmpty) {
+      _selectedIndex = 0;
       _tabController = TabController(length: _entries.length, vsync: this);
-      _tabController!.addListener(_onTabChange);
       for (int i = 0; i < _entries.length; i++) {
         final String content = _repo.readCss(_entries[i]);
         _diskContent[i] = content;
@@ -613,7 +629,6 @@ class _BookCssEditorPageState extends State<BookCssEditorPage>
 
   @override
   void dispose() {
-    _tabController?.removeListener(_onTabChange);
     _tabController?.dispose();
     for (final c in _textControllers.values) {
       c.dispose();
@@ -627,28 +642,31 @@ class _BookCssEditorPageState extends State<BookCssEditorPage>
     return disk != null && editor != null && disk != editor;
   }
 
-  bool _isModifiedFromOriginal(int index) {
-    return _entries[index].isDifferentFromOriginal();
-  }
-
   String _tabLabel(int index) {
     final String title = _entries[index].displayTitle;
-    final bool modified = _isModifiedFromOriginal(index) ||
+    final bool modified = _entries[index].isDifferentFromOriginal() ||
         _hasUnsavedChanges(index);
     return modified ? '* $title' : title;
   }
 
-  int get _currentIndex => _tabController?.index ?? 0;
-
-  Future<void> _onTabChange() async {
-    // Tab change listener handles unsaved changes via _guardUnsaved
-    // called in the tab's onTap callback below.
+  Future<void> _attemptSwitchTab(int newIndex) async {
+    if (newIndex == _selectedIndex) return;
+    if (_hasUnsavedChanges(_selectedIndex)) {
+      final bool ok = await _guardUnsaved(_selectedIndex);
+      if (!ok) {
+        _tabController!.animateTo(_selectedIndex);
+        return;
+      }
+    }
+    _selectedIndex = newIndex;
+    _tabController!.animateTo(newIndex);
+    setState(() {});
   }
 
   Future<bool> _guardUnsaved(int index) async {
     if (!_hasUnsavedChanges(index)) return true;
 
-    final result = await showDialog<String>(
+    final String? result = await showDialog<String>(
       context: context,
       builder: (_) => AlertDialog(
         title: Text(t.book_css_editor_unsaved_changes),
@@ -664,7 +682,7 @@ class _BookCssEditorPageState extends State<BookCssEditorPage>
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, 'save'),
-            child: Text(t.book_css_editor_save_button),
+            child: Text(t.book_css_editor_save),
           ),
         ],
       ),
@@ -677,14 +695,14 @@ class _BookCssEditorPageState extends State<BookCssEditorPage>
       _textControllers[index]!.text = _diskContent[index]!;
       return true;
     }
-    return false; // cancel
+    return false;
   }
 
   void _doSave(int index) {
     final String content = _textControllers[index]!.text;
     _repo.saveCss(_entries[index], content);
     _diskContent[index] = content;
-    _entries = _repo.discoverCssFiles(); // refresh .original state
+    _entries = _repo.discoverCssFiles();
     setState(() {});
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(t.book_css_editor_saved)),
@@ -692,8 +710,7 @@ class _BookCssEditorPageState extends State<BookCssEditorPage>
   }
 
   Future<void> _doResetCurrent() async {
-    final int idx = _currentIndex;
-    if (!_entries[idx].hasOriginal) return;
+    if (!_entries[_selectedIndex].hasOriginal) return;
 
     final bool? confirmed = await showDialog<bool>(
       context: context,
@@ -714,10 +731,10 @@ class _BookCssEditorPageState extends State<BookCssEditorPage>
     );
     if (confirmed != true) return;
 
-    _repo.resetFile(_entries[idx]);
-    final String restored = _repo.readCss(_entries[idx]);
-    _diskContent[idx] = restored;
-    _textControllers[idx]!.text = restored;
+    _repo.resetFile(_entries[_selectedIndex]);
+    final String restored = _repo.readCss(_entries[_selectedIndex]);
+    _diskContent[_selectedIndex] = restored;
+    _textControllers[_selectedIndex]!.text = restored;
     _entries = _repo.discoverCssFiles();
     setState(() {});
     if (mounted) {
@@ -772,7 +789,7 @@ class _BookCssEditorPageState extends State<BookCssEditorPage>
       canPop: false,
       onPopInvokedWithResult: (bool didPop, _) async {
         if (didPop) return;
-        final bool canLeave = await _guardUnsaved(_currentIndex);
+        final bool canLeave = await _guardUnsaved(_selectedIndex);
         if (canLeave && context.mounted) {
           Navigator.of(context).pop();
         }
@@ -789,19 +806,7 @@ class _BookCssEditorPageState extends State<BookCssEditorPage>
           bottom: TabBar(
             controller: _tabController,
             isScrollable: true,
-            onTap: (int newIndex) async {
-              final int previousIndex = _currentIndex;
-              if (previousIndex == newIndex) return;
-              // We need to guard before the tab switches.
-              // TabBar.onTap fires before the controller animates.
-              if (_hasUnsavedChanges(previousIndex)) {
-                final bool ok = await _guardUnsaved(previousIndex);
-                if (!ok) {
-                  // Revert tab selection
-                  _tabController!.animateTo(previousIndex);
-                }
-              }
-            },
+            onTap: _attemptSwitchTab,
             tabs: List.generate(_entries.length, (i) {
               return Tab(text: _tabLabel(i));
             }),
@@ -809,6 +814,7 @@ class _BookCssEditorPageState extends State<BookCssEditorPage>
         ),
         body: TabBarView(
           controller: _tabController,
+          physics: const NeverScrollableScrollPhysics(),
           children: List.generate(_entries.length, (i) {
             return Padding(
               padding: const EdgeInsets.all(8.0),
@@ -821,9 +827,9 @@ class _BookCssEditorPageState extends State<BookCssEditorPage>
                   fontFamily: 'monospace',
                   fontSize: 13,
                 ),
-                decoration: InputDecoration(
+                decoration: const InputDecoration(
                   border: OutlineInputBorder(),
-                  contentPadding: const EdgeInsets.all(12),
+                  contentPadding: EdgeInsets.all(12),
                 ),
               ),
             );
@@ -839,8 +845,8 @@ class _BookCssEditorPageState extends State<BookCssEditorPage>
               ),
               const Spacer(),
               FilledButton(
-                onPressed: () => _doSave(_currentIndex),
-                child: Text(t.book_css_editor_save_button),
+                onPressed: () => _doSave(_selectedIndex),
+                child: Text(t.book_css_editor_save),
               ),
             ],
           ),
@@ -851,10 +857,17 @@ class _BookCssEditorPageState extends State<BookCssEditorPage>
 }
 ```
 
+**Key design decisions in this code:**
+- `_selectedIndex` is the sole source of truth for "which tab the user is on"
+- `TabBarView` swipe is disabled via `NeverScrollableScrollPhysics()` — all navigation goes through `_attemptSwitchTab`
+- `_attemptSwitchTab` guards unsaved changes first, then updates both `_selectedIndex` and `_tabController.index`
+- On cancel, `_tabController.animateTo(_selectedIndex)` snaps back to the real position
+- `_onTabChange` listener is removed entirely — no empty method, no split responsibility
+
 - [ ] **Step 2: Run analyze**
 
 ```powershell
-cd hibiki
+Set-Location D:\APP\vs_claude_code\hibiki\hibiki
 D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat analyze lib/src/pages/implementations/book_css_editor_page.dart
 ```
 
@@ -863,8 +876,12 @@ Expected: No errors.
 - [ ] **Step 3: Commit**
 
 ```powershell
+Set-Location D:\APP\vs_claude_code\hibiki
+git status --short
 git add hibiki/lib/src/pages/implementations/book_css_editor_page.dart
+git diff --cached --check
 git commit -m "feat(css-editor): add BookCssEditorPage with tab editor, save, reset, unsaved guards"
+git status --short
 ```
 
 ---
@@ -925,7 +942,7 @@ Add this method to the `_ReaderHoshiHistoryPageState` class (near the other `_op
 - [ ] **Step 3: Run analyze**
 
 ```powershell
-cd hibiki
+Set-Location D:\APP\vs_claude_code\hibiki\hibiki
 D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat analyze lib/src/pages/implementations/reader_hoshi_history_page.dart
 ```
 
@@ -934,61 +951,102 @@ Expected: No errors.
 - [ ] **Step 4: Commit**
 
 ```powershell
+Set-Location D:\APP\vs_claude_code\hibiki
+git status --short
 git add hibiki/lib/src/pages/implementations/reader_hoshi_history_page.dart
+git diff --cached --check
 git commit -m "feat(css-editor): wire Edit CSS button into bookshelf long-press menu"
+git status --short
 ```
 
 ---
 
 ### Task 6: Full Verification
 
+All commands below assume: Flutter/Dart commands run from `D:\APP\vs_claude_code\hibiki\hibiki`, git commands run from `D:\APP\vs_claude_code\hibiki`.
+
 - [ ] **Step 1: Run dart format**
 
 ```powershell
-cd hibiki
+Set-Location D:\APP\vs_claude_code\hibiki\hibiki
 D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat format .
 ```
 
 - [ ] **Step 2: Run flutter test (full suite)**
 
 ```powershell
-cd hibiki
+Set-Location D:\APP\vs_claude_code\hibiki\hibiki
 D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test
 ```
 
 Expected: All tests pass, including the new `book_css_repository_test.dart`.
 
-- [ ] **Step 3: Build release APK**
+- [ ] **Step 3: Build arm64 release APK (production verification)**
 
 ```powershell
-cd hibiki
+Set-Location D:\APP\vs_claude_code\hibiki\hibiki
 D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat build apk --release --split-per-abi --target-platform android-arm64
 ```
 
-Expected: Build succeeds.
+Expected: Build succeeds. This verifies the release build compiles.
 
-- [ ] **Step 4: Install on emulator and smoke-test**
+- [ ] **Step 4: Build x86_64 release APK (emulator verification)**
 
 ```powershell
-D:\android\platform-tools\adb.exe -s emulator-5556 install -r hibiki\build\app\outputs\flutter-apk\app-x86_64-release.apk
+Set-Location D:\APP\vs_claude_code\hibiki\hibiki
+D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat build apk --release --split-per-abi --target-platform android-x64
 ```
 
-Manual verification:
+Expected: Build succeeds. This produces the APK installable on emulator-5556.
+
+- [ ] **Step 5: Install on emulator and smoke-test**
+
+```powershell
+D:\android\platform-tools\adb.exe -s emulator-5556 install -r D:\APP\vs_claude_code\hibiki\hibiki\build\app\outputs\flutter-apk\app-x86_64-release.apk
+```
+
+Manual verification checklist:
 1. Open app → book shelf → long-press a book → see "Edit CSS" button
-2. Tap "Edit CSS" → CSS editor opens with tabs
-3. Edit some CSS → tap Save → snackbar shows
-4. Close and reopen → edit persists
-5. Reset Current → content reverts
-6. Verify `*` indicator on tabs tracks modification state
+2. Tap "Edit CSS" → CSS editor opens with tabs showing CSS file names
+3. Verify Tab titles use shortest unique suffix (no ambiguous basenames)
+4. Edit some CSS text → tab label gets `*` prefix
+5. Tap Save → snackbar "CSS saved." appears, `*` stays (content differs from original)
+6. Close editor and reopen → edit persists on disk
+7. Tap Reset Current → confirm dialog → content reverts, `*` disappears
+8. Edit again → try switching Tab → unsaved changes dialog appears
+9. Choose Cancel → stays on current tab (tab does NOT switch)
+10. Choose Discard → switches to new tab, old tab's edits are gone
+11. Edit → press back button → unsaved changes dialog appears
+12. Verify Reset All resets all modified files
 
-- [ ] **Step 5: Final commit (format fixes if any)**
+- [ ] **Step 6: Commit format fixes (if any)**
+
+Only stage files that were changed by this feature. Do NOT use `git add -A`.
 
 ```powershell
-git add -A
-git commit -m "style: format per-book CSS editor files"
+Set-Location D:\APP\vs_claude_code\hibiki
+git status --short
 ```
+
+If `dart format` changed any of our files:
+
+```powershell
+git add hibiki/lib/src/epub/book_css_repository.dart hibiki/lib/src/pages/implementations/book_css_editor_page.dart hibiki/lib/src/pages/implementations/reader_hoshi_history_page.dart hibiki/test/epub/book_css_repository_test.dart
+git diff --cached --check
+git commit -m "style: format per-book CSS editor files"
+git status --short
+```
+
+If no format changes, skip this step.
 
 ---
+
+## Command Conventions
+
+- **Flutter/Dart commands**: Run from `D:\APP\vs_claude_code\hibiki\hibiki` (the Flutter app root)
+- **Git commands**: Run from `D:\APP\vs_claude_code\hibiki` (the repo root)
+- **Every commit**: Must be preceded by `git status --short` (verify only our files staged) and `git diff --cached --check`; followed by `git status --short` (confirm clean commit, note remaining unrelated changes)
+- **Never use `git add -A`** or `git add .` — only stage specific files from this feature
 
 ## Async Caveat for extraActions()
 
@@ -999,5 +1057,5 @@ git commit -m "style: format per-book CSS editor files"
 - No database schema changes
 - No WebView/`_interceptRequest` changes
 - No changes to `ReaderResourceSanitizer`
-- No non-English i18n files (Slang generates stubs for other locales automatically)
+- Only `strings.i18n.json` is modified — other locale files (`strings_ja.i18n.json`, etc.) are not touched; Slang falls back to the English base key when a translation is missing
 - No widget tests for `BookCssEditorPage` (repository tests cover the logic; UI is a standard TabBar + TextField composition)
