@@ -357,18 +357,18 @@ class HoshiDicts {
     final ep = expression.toNativeUtf8();
     try {
       final r = _bindings!.query(_handle!, ep);
-      final results = <HoshiTermResult>[];
-      for (int i = 0; i < r.count; i++) {
-        results.add(_convertTerm(r.terms[i]));
-      }
       final rPtr = calloc<FfiQueryResult>();
       rPtr.ref = r;
       try {
-        _bindings!.freeQueryResult(rPtr);
+        final results = <HoshiTermResult>[];
+        for (int i = 0; i < r.count; i++) {
+          results.add(_convertTerm(r.terms[i]));
+        }
+        return results;
       } finally {
+        _bindings!.freeQueryResult(rPtr);
         calloc.free(rPtr);
       }
-      return results;
     } finally {
       calloc.free(ep);
     }
@@ -383,32 +383,32 @@ class HoshiDicts {
     final tp = text.toNativeUtf8();
     try {
       final r = _bindings!.lookup(_handle!, tp, maxResults, scanLength);
-      final results = <HoshiLookupResult>[];
-      for (int i = 0; i < r.count; i++) {
-        final src = r.results[i];
-        final trace = <HoshiTransformGroup>[];
-        for (int j = 0; j < src.traceCount; j++) {
-          trace.add(HoshiTransformGroup(
-            name: src.trace[j].name.toDartString(),
-            description: src.trace[j].description.toDartString(),
-          ));
-        }
-        results.add(HoshiLookupResult(
-          matched: src.matched.toDartString(),
-          deinflected: src.deinflected.toDartString(),
-          trace: trace,
-          term: _convertTerm(src.term),
-          preprocessorSteps: src.preprocessorSteps,
-        ));
-      }
       final rPtr = calloc<FfiLookupResults>();
       rPtr.ref = r;
       try {
-        _bindings!.freeLookupResults(rPtr);
+        final results = <HoshiLookupResult>[];
+        for (int i = 0; i < r.count; i++) {
+          final src = r.results[i];
+          final trace = <HoshiTransformGroup>[];
+          for (int j = 0; j < src.traceCount; j++) {
+            trace.add(HoshiTransformGroup(
+              name: src.trace[j].name.toDartString(),
+              description: src.trace[j].description.toDartString(),
+            ));
+          }
+          results.add(HoshiLookupResult(
+            matched: src.matched.toDartString(),
+            deinflected: src.deinflected.toDartString(),
+            trace: trace,
+            term: _convertTerm(src.term),
+            preprocessorSteps: src.preprocessorSteps,
+          ));
+        }
+        return results;
       } finally {
+        _bindings!.freeLookupResults(rPtr);
         calloc.free(rPtr);
       }
-      return results;
     } finally {
       calloc.free(tp);
     }
@@ -417,21 +417,21 @@ class HoshiDicts {
   // ── styles ──────────────────────────────────────────────────────
   List<HoshiDictStyle> getStyles() {
     final r = _bindings!.getStyles(_handle!);
-    final styles = <HoshiDictStyle>[];
-    for (int i = 0; i < r.count; i++) {
-      styles.add(HoshiDictStyle(
-        dictName: r.items[i].dictName.toDartString(),
-        styles: r.items[i].styles.toDartString(),
-      ));
-    }
     final rPtr = calloc<FfiDictStyles>();
     rPtr.ref = r;
     try {
-      _bindings!.freeStyles(rPtr);
+      final styles = <HoshiDictStyle>[];
+      for (int i = 0; i < r.count; i++) {
+        styles.add(HoshiDictStyle(
+          dictName: r.items[i].dictName.toDartString(),
+          styles: r.items[i].styles.toDartString(),
+        ));
+      }
+      return styles;
     } finally {
+      _bindings!.freeStyles(rPtr);
       calloc.free(rPtr);
     }
-    return styles;
   }
 
   // ── media ───────────────────────────────────────────────────────

@@ -844,7 +844,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     }
 
     if ((mime == 'text/html' || mime.contains('xhtml')) && _settings != null) {
-      _settings!.setTheme(appModel.appThemeKey);
+      _settings!.updateCache('ttu_theme', appModel.appThemeKey);
       String html = utf8.decode(data);
       final String styleTag = ReaderContentStyles.styleTag(
         settings: _settings!,

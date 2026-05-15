@@ -76,8 +76,9 @@ class SmilParser {
           ? '#${textSrc.split('#').last}'
           : textSrc;
 
-      final int startMs = _parseTimeToMs(clipBegin ?? '0');
-      final int endMs = _parseTimeToMs(clipEnd ?? '0');
+      final int? startMs = _parseTimeToMs(clipBegin ?? '0');
+      final int? endMs = _parseTimeToMs(clipEnd ?? '0');
+      if (startMs == null || endMs == null) continue;
       final int fileIndex = audioFileMap?[audioSrc] ?? 0;
 
       final AudioCue cue = AudioCue()
@@ -98,20 +99,26 @@ class SmilParser {
   }
 
   /// 将 SMIL 时间字符串（hh:mm:ss.sss 或 ss.sss）转换为毫秒。
-  static int _parseTimeToMs(String time) {
+  /// 无法解析时返回 null，调用方应跳过该 cue。
+  static int? _parseTimeToMs(String time) {
     final List<String> parts = time.split(':');
-    double seconds = 0;
+    double? seconds;
 
     if (parts.length == 3) {
-      seconds = (double.tryParse(parts[0]) ?? 0) * 3600 +
-          (double.tryParse(parts[1]) ?? 0) * 60 +
-          (double.tryParse(parts[2]) ?? 0);
+      final double? h = double.tryParse(parts[0]);
+      final double? m = double.tryParse(parts[1]);
+      final double? s = double.tryParse(parts[2]);
+      if (h == null || m == null || s == null) return null;
+      seconds = h * 3600 + m * 60 + s;
     } else if (parts.length == 2) {
-      seconds = (double.tryParse(parts[0]) ?? 0) * 60 +
-          (double.tryParse(parts[1]) ?? 0);
+      final double? m = double.tryParse(parts[0]);
+      final double? s = double.tryParse(parts[1]);
+      if (m == null || s == null) return null;
+      seconds = m * 60 + s;
     } else {
-      seconds = double.tryParse(parts[0]) ?? 0;
+      seconds = double.tryParse(parts[0]);
     }
+    if (seconds == null) return null;
     return (seconds * 1000).round();
   }
 }

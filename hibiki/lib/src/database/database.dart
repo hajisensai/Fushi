@@ -135,9 +135,15 @@ class HibikiDatabase extends _$HibikiDatabase {
         },
       );
 
+  static final RegExp _identifierRe = RegExp(r'^[a-zA-Z_]\w*$');
+
   Future<bool> _columnExists(String tableName, String columnName) async {
-    assert(RegExp(r'^[a-zA-Z_]\w*$').hasMatch(tableName), 'Invalid table name');
-    assert(RegExp(r'^[a-zA-Z_]\w*$').hasMatch(columnName), 'Invalid column name');
+    if (!_identifierRe.hasMatch(tableName)) {
+      throw ArgumentError.value(tableName, 'tableName', 'not a valid identifier');
+    }
+    if (!_identifierRe.hasMatch(columnName)) {
+      throw ArgumentError.value(columnName, 'columnName', 'not a valid identifier');
+    }
     final rows = await customSelect('PRAGMA table_info($tableName)').get();
     return rows.any((row) => row.read<String>('name') == columnName);
   }
