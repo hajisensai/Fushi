@@ -40,6 +40,20 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
   @override
   ReaderHoshiSource get mediaSource => ReaderHoshiSource.instance;
 
+  Future<List<SrtBook>>? _srtBooksFuture;
+  final Map<String, Future<_AudiobookInfo>> _audiobookInfoCache = {};
+
+  void _refreshSrtBooks() {
+    _srtBooksFuture = SrtBookRepository(appModel.database).listAll();
+    _audiobookInfoCache.clear();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshSrtBooks();
+  }
+
   @override
   Widget build(BuildContext context) {
     final AsyncValue<List<MediaItem>> books =
@@ -70,6 +84,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
               error: error,
               stack: stack,
               refresh: () {
+                _refreshSrtBooks();
                 ref.invalidate(hoshiBooksProvider(appModel.targetLanguage));
               },
             ),
@@ -158,7 +173,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
 
   Widget buildBody(List<MediaItem> books) {
     return FutureBuilder<List<SrtBook>>(
-      future: SrtBookRepository(appModel.database).listAll(),
+      future: _srtBooksFuture,
       builder: (context, srtSnapshot) {
         final List<SrtBook> srtBooks = srtSnapshot.data ?? const [];
         return _buildBodyWithSrtBooks(books, srtBooks);
@@ -527,6 +542,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     }
     await SrtBookRepository(appModel.database).delete(book.uid);
     if (mounted) {
+      _refreshSrtBooks();
       ref.invalidate(hoshiBooksProvider(appModel.targetLanguage));
       setState(() {});
     }
@@ -545,7 +561,8 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
   @override
   Widget buildMediaItemContent(MediaItem item) {
     return FutureBuilder<_AudiobookInfo>(
-      future: _loadAudiobookInfo(item.uniqueKey),
+      future: _audiobookInfoCache.putIfAbsent(
+          item.uniqueKey, () => _loadAudiobookInfo(item.uniqueKey)),
       builder: (context, snapshot) {
         final bool hasAudiobook = snapshot.data?.hasAudiobook ?? false;
         final HealthKind healthKind =
@@ -775,6 +792,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
       Fluttertoast.showToast(msg: t.epub_delete_error);
       return;
     }
+    _refreshSrtBooks();
     ref.invalidate(hoshiBooksProvider(appModel.targetLanguage));
     setState(() {});
   }

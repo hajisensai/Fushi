@@ -66,6 +66,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
 
   Audiobook? _existing;
   bool _existingLoaded = false;
+  Future<AudiobookHealth>? _healthFuture;
 
   int _searchWindow = EpubSrtMatcher.defaultSearchWindow;
   double _similarityThreshold = EpubSrtMatcher.defaultSimilarityThreshold;
@@ -120,9 +121,12 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     setState(() {
       _existing = existing;
       _existingLoaded = true;
-      if (existing != null && !_existingHasAudio(existing)) {
-        _patchingAudio = true;
-        _alignmentPath = existing.alignmentPath;
+      if (existing != null) {
+        _healthFuture = widget.repo.resolveHealth(existing);
+        if (!_existingHasAudio(existing)) {
+          _patchingAudio = true;
+          _alignmentPath = existing.alignmentPath;
+        }
       }
     });
   }
@@ -204,7 +208,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
             ? t.srt_import_files_selected(n: ab.audioPaths!.length)
             : (ab.audioRoot ?? '');
     return FutureBuilder<AudiobookHealth>(
-      future: widget.repo.resolveHealth(ab),
+      future: _healthFuture,
       builder: (context, snapshot) {
         final AudiobookHealth health =
             snapshot.data ?? AudiobookHealth.fromAudiobook(ab);

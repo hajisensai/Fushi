@@ -1506,6 +1506,31 @@ class AppModel with ChangeNotifier {
   // ── model / Drift row conversion helpers ──────────────────────────
 
   static Dictionary _rowToDictionary(DictionaryMetaRow r) {
+    Map<String, String> metadata;
+    List<String> hiddenLanguages;
+    List<String> collapsedLanguages;
+    try {
+      metadata = Map<String, String>.from(jsonDecode(r.metadataJson));
+    } catch (e, stack) {
+      ErrorLogService.instance.log('_rowToDictionary.metadata', e, stack);
+      metadata = {};
+    }
+    try {
+      hiddenLanguages =
+          List<String>.from(jsonDecode(r.hiddenLanguagesJson));
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('_rowToDictionary.hiddenLanguages', e, stack);
+      hiddenLanguages = [];
+    }
+    try {
+      collapsedLanguages =
+          List<String>.from(jsonDecode(r.collapsedLanguagesJson));
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('_rowToDictionary.collapsedLanguages', e, stack);
+      collapsedLanguages = [];
+    }
     return Dictionary(
       name: r.name,
       formatKey: r.formatKey,
@@ -1514,10 +1539,9 @@ class AppModel with ChangeNotifier {
         (e) => e.name == r.type,
         orElse: () => DictionaryType.term,
       ),
-      metadata: Map<String, String>.from(jsonDecode(r.metadataJson)),
-      hiddenLanguages: List<String>.from(jsonDecode(r.hiddenLanguagesJson)),
-      collapsedLanguages:
-          List<String>.from(jsonDecode(r.collapsedLanguagesJson)),
+      metadata: metadata,
+      hiddenLanguages: hiddenLanguages,
+      collapsedLanguages: collapsedLanguages,
     );
   }
 
@@ -2411,17 +2435,11 @@ class AppModel with ChangeNotifier {
     int? overrideMaximumTerms,
     bool useCache = true,
   }) async {
-    if (_dictionarySearchCache['$searchTerm/$overrideMaximumTerms'] != null &&
-        useCache) {
-      return _dictionarySearchCache['$searchTerm/$overrideMaximumTerms']!;
-    }
-
     searchTerm = searchTerm.replaceAll('\n', ' ');
     searchTerm = _removeEmoji.clean(searchTerm, ' ', false);
     searchTerm = searchTerm.replaceAll(
         RegExp(r'^[\p{P}\p{S}]+|[\p{P}\p{S}]+$', unicode: true), '');
 
-    /// Strip lone surrogates that may crash the search.
     RegExp loneSurrogate = RegExp(
       '[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]',
     );
@@ -2431,6 +2449,14 @@ class AppModel with ChangeNotifier {
       return DictionarySearchResult(searchTerm: searchTerm);
     }
 
+    final int effectiveMaxTerms = overrideMaximumTerms ?? maximumTerms;
+    final String cacheKey =
+        '$searchTerm/$effectiveMaxTerms/$maximumDictionarySearchResults';
+
+    if (useCache && _dictionarySearchCache.containsKey(cacheKey)) {
+      return _dictionarySearchCache[cacheKey]!;
+    }
+
     if (!HoshiDicts.isInitialized) {
       return DictionarySearchResult(searchTerm: searchTerm);
     }
@@ -2438,11 +2464,11 @@ class AppModel with ChangeNotifier {
     final result = targetLanguage.prepareSearchResultsDirect(
       searchTerm: searchTerm,
       maximumDictionarySearchResults: maximumDictionarySearchResults,
-      maximumDictionaryTermsInResult: overrideMaximumTerms ?? maximumTerms,
+      maximumDictionaryTermsInResult: effectiveMaxTerms,
     );
 
     if (result != null && result.entries.isNotEmpty) {
-      _dictionarySearchCache['$searchTerm/$overrideMaximumTerms'] = result;
+      _dictionarySearchCache[cacheKey] = result;
       return result;
     } else {
       return DictionarySearchResult(searchTerm: searchTerm);
