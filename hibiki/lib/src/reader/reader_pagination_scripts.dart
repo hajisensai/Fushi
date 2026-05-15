@@ -71,6 +71,7 @@ class ReaderPaginationScripts {
 
   static const String _sharedJs = r'''
   cueWrappers: new Map(),
+  cueRangesMap: new Map(),
   activeCueId: null,
   ttuRegexNegated: /[^0-9A-Za-z○◯々-〇〻ぁ-ゖゝ-ゟァ-ヺー-ヿ０-９Ａ-Ｚａ-ｚｦ-ﾝ\u{2E80}-\u{2EFF}\u{2F00}-\u{2FDF}\u{3400}-\u{4DBF}\u{4E00}-\u{9FFF}\u{F900}-\u{FAFF}\u{20000}-\u{2A6DF}\u{2A700}-\u{2EBE0}\u{2F800}-\u{2FA1F}\u{30000}-\u{323AF}]+/gimu,
   ttuRegex: /[0-9A-Za-z○◯々-〇〻ぁ-ゖゝ-ゟァ-ヺー-ヿ０-９Ａ-Ｚａ-ｚｦ-ﾝ\u{2E80}-\u{2EFF}\u{2F00}-\u{2FDF}\u{3400}-\u{4DBF}\u{4E00}-\u{9FFF}\u{F900}-\u{FAFF}\u{20000}-\u{2A6DF}\u{2A700}-\u{2EBE0}\u{2F800}-\u{2FA1F}\u{30000}-\u{323AF}]/iu,
@@ -227,50 +228,90 @@ class ReaderPaginationScripts {
   applySasayakiCues: function(cues) {
     if (window.hoshiSelection) window.hoshiSelection.clearSelection();
     this.resetSasayakiCues();
-    var cueRanges = this.collectSasayakiCueRanges(cues);
-    var range = document.createRange();
-    for (var i = cueRanges.length - 1; i >= 0; i--) {
-      var id = cueRanges[i].id;
-      var ranges = cueRanges[i].ranges;
-      if (!ranges.length) continue;
-      var wrappers = [];
-      for (var j = ranges.length - 1; j >= 0; j--) {
-        var segment = ranges[j];
-        range.setStart(segment.node, segment.start);
-        range.setEnd(segment.node, segment.end);
-        var wrapper = document.createElement('span');
-        wrapper.className = 'hoshi-sasayaki-cue';
-        wrapper.appendChild(range.extractContents());
-        range.insertNode(wrapper);
-        wrappers.push(wrapper);
+    var cueSegments = this.collectSasayakiCueRanges(cues);
+    if (window.__hoshiCssHighlightsSupported) {
+      for (var i = 0; i < cueSegments.length; i++) {
+        var id = cueSegments[i].id;
+        var segments = cueSegments[i].ranges;
+        if (!segments.length) continue;
+        var ranges = [];
+        for (var j = 0; j < segments.length; j++) {
+          try {
+            var r = document.createRange();
+            r.setStart(segments[j].node, segments[j].start);
+            r.setEnd(segments[j].node, segments[j].end);
+            ranges.push(r);
+          } catch (e) {}
+        }
+        if (ranges.length) this.cueRangesMap.set(id, ranges);
       }
-      wrappers.reverse();
-      this.cueWrappers.set(id, wrappers);
+    } else {
+      var range = document.createRange();
+      for (var i = cueSegments.length - 1; i >= 0; i--) {
+        var id = cueSegments[i].id;
+        var segments = cueSegments[i].ranges;
+        if (!segments.length) continue;
+        var wrappers = [];
+        for (var j = segments.length - 1; j >= 0; j--) {
+          range.setStart(segments[j].node, segments[j].start);
+          range.setEnd(segments[j].node, segments[j].end);
+          var wrapper = document.createElement('span');
+          wrapper.className = 'hoshi-sasayaki-cue';
+          wrapper.appendChild(range.extractContents());
+          range.insertNode(wrapper);
+          wrappers.push(wrapper);
+        }
+        wrappers.reverse();
+        this.cueWrappers.set(id, wrappers);
+      }
+      this.buildNodeOffsets();
     }
-    this.buildNodeOffsets();
   },
   highlightSasayakiCue: function(cueId, reveal) {
     this.clearSasayakiCue();
-    var wrappers = this.cueWrappers.get(cueId);
-    if (!wrappers || !wrappers.length) return null;
-    this.activeCueId = cueId;
-    wrappers.forEach(function(wrapper) { wrapper.classList.add('hoshi-sasayaki-active'); });
-    if (reveal && this.revealElement(wrappers[0])) {
-      return this.calculateProgress();
+    if (window.__hoshiCssHighlightsSupported) {
+      var ranges = this.cueRangesMap.get(cueId);
+      if (!ranges || !ranges.length) return null;
+      this.activeCueId = cueId;
+      CSS.highlights.set('hoshi-sasayaki', new Highlight(...ranges));
+      if (reveal && ranges[0]) {
+        if (this.scrollToRange) {
+          if (this.scrollToRange(ranges[0])) return this.calculateProgress();
+        } else if (this.scrollToTarget) {
+          if (this.scrollToTarget(ranges[0])) return this.calculateProgress();
+        }
+      }
+    } else {
+      var wrappers = this.cueWrappers.get(cueId);
+      if (!wrappers || !wrappers.length) return null;
+      this.activeCueId = cueId;
+      wrappers.forEach(function(wrapper) { wrapper.classList.add('hoshi-sasayaki-active'); });
+      if (reveal && this.revealElement(wrappers[0])) {
+        return this.calculateProgress();
+      }
     }
     return null;
   },
   clearSasayakiCue: function() {
     if (!this.activeCueId) return;
-    var wrappers = this.cueWrappers.get(this.activeCueId) || [];
-    wrappers.forEach(function(wrapper) { wrapper.classList.remove('hoshi-sasayaki-active'); });
+    if (window.__hoshiCssHighlightsSupported) {
+      CSS.highlights.delete('hoshi-sasayaki');
+    } else {
+      var wrappers = this.cueWrappers.get(this.activeCueId) || [];
+      wrappers.forEach(function(wrapper) { wrapper.classList.remove('hoshi-sasayaki-active'); });
+    }
     this.activeCueId = null;
   },
   resetSasayakiCues: function() {
     if (window.hoshiSelection) window.hoshiSelection.clearSelection();
-    var self = this;
-    this.cueWrappers.forEach(function(wrappers) { self.unwrap(wrappers); });
-    this.cueWrappers.clear();
+    if (window.__hoshiCssHighlightsSupported) {
+      CSS.highlights.delete('hoshi-sasayaki');
+      this.cueRangesMap.clear();
+    } else {
+      var self = this;
+      this.cueWrappers.forEach(function(wrappers) { self.unwrap(wrappers); });
+      this.cueWrappers.clear();
+    }
     this.activeCueId = null;
   },
   unwrap: function(wrappers) {
@@ -355,6 +396,7 @@ if (document.readyState === 'complete') {
     final String initImages = _sharedInitImages();
 
     return '''<script>
+window.__hoshiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
 window.hoshiReader = {
   pageHeight: 0,
   pageWidth: 0,
@@ -717,6 +759,7 @@ $_sharedInitBoot
     final String initImages = _sharedInitImages();
 
     return '''<script>
+window.__hoshiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
 window.hoshiReader = {
 $_sharedJs
   scrollToChapterStart: function() {

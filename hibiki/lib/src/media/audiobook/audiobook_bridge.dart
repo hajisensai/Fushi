@@ -93,13 +93,10 @@ window.__hoshiIsSkippable = function(c) {
   return true;
 };
 
-window.__hoshiSasayakiCueMap = window.__hoshiSasayakiCueMap || null;
-
 window.__hoshiClearSasayakiApplied = function() {
   if (window.hoshiReader && typeof window.hoshiReader.clearSasayakiCue === 'function') {
     window.hoshiReader.clearSasayakiCue();
   }
-  window.__hoshiSasayakiCueMap = null;
 };
 
 window.__hoshiApplySasayakiCues = function(sectionIndex, cuesJson) {
@@ -116,24 +113,7 @@ window.__hoshiHighlightSasayakiCueById = function(key, reveal) {
     window.hoshiReader.highlightSasayakiCue(key, reveal);
     return true;
   }
-  var prev = document.querySelectorAll('.hoshi-sasayaki-cue.hoshi-active');
-  for (var pi = 0; pi < prev.length; pi++) {
-    prev[pi].classList.remove('hoshi-active');
-  }
-  var map = window.__hoshiSasayakiCueMap;
-  var wrappers = map ? map.get(key) : null;
-  if (!wrappers || wrappers.length === 0) return false;
-  for (var wi = 0; wi < wrappers.length; wi++) {
-    wrappers[wi].classList.add('hoshi-active');
-  }
-  if (reveal && wrappers[0]) {
-    if (window.hoshiReader && window.hoshiReader.scrollToTarget) {
-      window.hoshiReader.scrollToTarget(wrappers[0]);
-    } else {
-      wrappers[0].scrollIntoView({block: 'center', behavior: 'instant'});
-    }
-  }
-  return true;
+  return false;
 };
 ''';
 
