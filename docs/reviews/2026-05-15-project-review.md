@@ -363,3 +363,79 @@
 - 多 profile 切换的状态隔离
 - CI/CD 门禁搭建
 - 11 个 pub cache patch 的长期维护策略
+
+---
+
+## 七、Hoshi 全书搜索跳转修复复审（commit `52be2ea3`）
+
+### Scope
+
+- Commit: `52be2ea3 fix(search): use JS DOM matching for precise search jump, run search in isolate`
+- Files:
+  - `hibiki/lib/src/media/audiobook/audiobook_bridge.dart`
+  - `hibiki/lib/src/media/audiobook/audiobook_play_bar.dart`
+  - `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart`
+  - `hibiki/lib/src/reader/reader_pagination_scripts.dart`
+  - related reference: `hibiki/lib/src/epub/epub_book.dart`
+- Review type: code-path review plus minimal analyzer check. No emulator/WebView runtime validation was performed in this round.
+
+### Findings
+
+#### HBK-AUDIT-SEARCH-001: `matchIndexInChapter` 仍然不是 DOM 坐标，搜索结果可跳错同章第 N 个匹配
+- **Severity**: HIGH
+- **Status**: 代码路径审查发现的风险
+- **Files**:
+  - `hibiki/lib/src/media/audiobook/audiobook_bridge.dart:377-385`
+  - `hibiki/lib/src/media/audiobook/audiobook_bridge.dart:457-490`
+  - `hibiki/lib/src/reader/reader_pagination_scripts.dart:334-387`
+  - `hibiki/lib/src/epub/epub_book.dart:50-56`
+- **根因**: Dart 搜索侧用 `EpubBook.chapterPlainText()` 生成章节文本并计算 `matchIndexInChapter`；JS 跳转侧用当前 WebView DOM 的 `TreeWalker` 拼接文本节点再找第 N 个匹配。这两个文本源不是同一个坐标系。`chapterPlainText()` 会用 `package:html` 解析并把所有空白折叠成单个空格；JS 侧读取 live DOM text node，跳过 `rt/rp`，但不做空白折叠，也不一定与 Dart HTML parser 的实体、隐藏节点、模板节点处理一致。
+- **影响**: 坐标漂移从“offset ratio 漂移”变成“同章第 N 个匹配漂移”。含 ruby、跨节点文本、连续空白、脚注/隐藏文本、实体或排版节点的章节里，用户点第 N 条结果可能跳到同章另一个同词位置，尤其是常见词和重复句。
+- **修复建议**: 不要在 Dart 侧用另一个文本模型计算最终定位索引。更干净的方案是让 WebView 端返回搜索结果，或至少让 Dart 搜索与 JS 跳转共享同一份序列化 DOM 文本段数组。结果项应携带 JS 可直接消费的 `{nodeOrdinal, startOffset, endOffset}` 或稳定的 DOM text-coordinate，而不是 `chapterPlainText()` 上的 `matchIndexInChapter`。
+- **验证方式**: 构造章节包含 `<ruby>漢<rt>かん</rt></ruby>`、跨 `<span>` 的查询词、连续空白和多个重复 query。搜索第 2/3 个结果后，用 WebView JS 读取当前高亮 range 文本和邻近 DOM，确认它等于所点结果的上下文，而不是只看页面是否滚动。
+
+#### HBK-AUDIT-SEARCH-002: “搜索放到 isolate”没有解决主线程卡顿根因，HTML 解析仍在 UI isolate 同步执行
+- **Severity**: MEDIUM-HIGH
+- **Status**: 代码路径审查发现的风险
+- **Files**:
+  - `hibiki/lib/src/media/audiobook/audiobook_bridge.dart:371-385`
+  - `hibiki/lib/src/epub/epub_book.dart:50-56`
+- **根因**: `compute()` 只包住 `_searchIsolate()` 的字符串 `indexOf()` 循环。调用 `compute()` 之前，`searchBook()` 已经在主 isolate 里对每章执行 `book.chapterPlainText(i)`，而该函数同步 `html_parser.parse()` 整章 HTML，再删除 ruby annotation，再取 `doc.body?.text` 并正则折叠空白。这才是 EPUB 大书搜索里更贵的工作。
+- **影响**: 大书、长章节或 HTML 复杂章节仍会在点搜索后卡 UI；500 条结果上限只限制结果数量，不限制主线程解析全书 HTML 的成本。
+- **修复建议**: 把“章节文本提取 + 搜索”作为一个整体搬进 isolate，传入最小可序列化章节数据（chapter index + raw html），在 isolate 内 parse/search。更好的是导入或打开书时持久化/缓存每章搜索文本，搜索时不重复解析全书。
+- **验证方式**: 用大 EPUB 记录搜索按钮点击到第一帧恢复的耗时。需要在 `chapterPlainText()` 前后或 Performance overlay/DevTools 中确认 UI thread 不再承担 HTML parse。
+
+#### HBK-AUDIT-SEARCH-003: `_navigateToChapterAndWait()` 超时后仍继续执行 JS 搜索定位
+- **Severity**: MEDIUM
+- **Status**: 代码路径审查发现的风险
+- **Files**:
+  - `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart:1708-1718`
+  - `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart:2507-2518`
+- **根因**: `_navigateToChapterAndWait()` 返回 `Future<void>`，超时时只清 `_isNavigatingToChapter/_restoreCompleter/_restoreInFlight` 并打印日志，没有把加载成功/失败返回给调用方。搜索跳转回调 `await _navigateToChapterAndWait(result.sectionIndex)` 后无条件执行 `scrollToSearchMatch()`。
+- **影响**: 章节加载失败或 10 秒超时时，搜索仍会在旧 DOM 或半初始化 DOM 上执行，可能跳到旧章节里的同名文本，或者静默无效。用户看到 bottom sheet 已关闭，但页面没有正确到达目标。
+- **修复建议**: 让 `_navigateToChapterAndWait()` 返回 `bool` 或抛出明确异常；搜索跳转必须只在章节加载完成且 `_currentChapter == result.sectionIndex`、`window.hoshiReader` 已初始化后执行 JS 定位。失败时保留/恢复搜索面板或给出错误反馈，不要静默吞掉。
+- **验证方式**: 人为阻断章节加载或缩短 timeout，点击跨章搜索结果，确认不会在旧章节执行 `scrollToSearchMatch()`；正常路径再确认跨章结果确实高亮目标。
+
+#### HBK-AUDIT-SEARCH-004: 搜索结果 tap 仍有 async 生命周期风险
+- **Severity**: LOW-MEDIUM
+- **Status**: 代码路径审查发现的风险
+- **Files**:
+  - `hibiki/lib/src/media/audiobook/audiobook_play_bar.dart:598-617`
+  - `hibiki/lib/src/media/audiobook/audiobook_play_bar.dart:726-730`
+- **根因**: `doSearch()` 在 `await AudiobookBridge.searchBook()` 后直接调用 `setLocal()`，但 bottom sheet 可能已经关闭。`onTap` 里先 `Navigator.pop(ctx)` 再 `await widget.onSearchJump?.call(...)`，没有任何失败反馈，也无法阻止用户连续触发多个跳转。
+- **影响**: 快速关闭搜索面板或搜索耗时较长时，有概率触发 disposed state 的 setState；搜索定位失败时 UI 已关闭，用户只能看到“没跳过去”。
+- **修复建议**: 搜索完成后先检查外层 `mounted`，并避免使用已经 pop 的 `ctx`。跳转可以交给父页面先执行，成功后再关闭面板，或在父页面失败时给出明确反馈。
+- **验证方式**: 在大书搜索期间立刻关闭面板，观察是否有 `setState() called after dispose()`；连续点击两个结果确认不会交错跳转。
+
+### Verification
+
+- Ran:
+  - `D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat analyze lib/src/media/audiobook/audiobook_bridge.dart lib/src/media/audiobook/audiobook_play_bar.dart lib/src/pages/implementations/reader_hoshi_page.dart lib/src/reader/reader_pagination_scripts.dart`
+- Result:
+  - Analyzer returned 3 `use_build_context_synchronously` warnings in `reader_hoshi_page.dart:701`, `reader_hoshi_page.dart:1041`, `reader_hoshi_page.dart:1233`.
+  - These warnings are not the four findings above, but they confirm the current warning gate is still not clean for this file set.
+
+### Next Scope
+
+- Build a small WebView-side test harness for `scrollToSearchMatch()` with ruby, split text nodes, hidden text, repeated query, and vertical writing.
+- Then run emulator validation on a real EPUB chapter and record screenshot/UI/log evidence under `.codex-test/`.
