@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:intl/intl.dart';
+import 'package:hibiki/src/epub/epub_book.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_controller.dart';
 import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
@@ -181,7 +182,12 @@ class AudiobookSettingsSheet extends StatefulWidget {
     required this.controller,
     required this.toc,
     required this.readerProgress,
-    required this.onJumpSection, required this.onBookmark, required this.onExitReader, required this.webViewController, required this.appModel, this.pageProgress,
+    required this.onJumpSection,
+    required this.onBookmark,
+    required this.onExitReader,
+    required this.webViewController,
+    required this.appModel,
+    this.pageProgress,
     this.onThemeChanged,
     this.bookmarks = const [],
     this.onJumpToBookmark,
@@ -203,6 +209,7 @@ class AudiobookSettingsSheet extends StatefulWidget {
     this.charProgress,
     this.onPageMarginChanged,
     this.isHoshiReader = false,
+    this.epubBook,
     super.key,
   });
 
@@ -218,7 +225,7 @@ class AudiobookSettingsSheet extends StatefulWidget {
   final Future<void> Function()? onThemeChanged;
   final List<Bookmark> bookmarks;
   final Future<void> Function(Bookmark bookmark)? onJumpToBookmark;
-  final Future<void> Function(int index)? onDeleteBookmark;
+  final Future<void> Function(Bookmark bookmark)? onDeleteBookmark;
   final List<FavoriteSentence> favoriteSentences;
   final Future<void> Function(int index)? onDeleteFavorite;
   final Future<void> Function(FavoriteSentence fav)? onJumpToFavorite;
@@ -238,6 +245,8 @@ class AudiobookSettingsSheet extends StatefulWidget {
 
   /// When true, skip AudiobookBridge JS calls and disable ttu-only features.
   final bool isHoshiReader;
+
+  final EpubBook? epubBook;
 
   @override
   State<AudiobookSettingsSheet> createState() => _AudiobookSettingsSheetState();
@@ -592,10 +601,9 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           setLocal(() => _isSearching = true);
           try {
             final List<BookSearchResult> results =
-                await AudiobookBridge.searchBook(
-              widget.webViewController,
-              query,
-            );
+                widget.epubBook != null
+                    ? await AudiobookBridge.searchBook(widget.epubBook!, query)
+                    : const <BookSearchResult>[];
             setLocal(() {
               _searchResults = results;
               _isSearching = false;
@@ -904,7 +912,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                   trailing: IconButton(
                     icon: const Icon(Icons.delete_outline, size: 18),
                     onPressed: () async {
-                      await widget.onDeleteBookmark?.call(i);
+                      await widget.onDeleteBookmark?.call(bm);
                       if (mounted) {
                         setState(() {
                           _bookmarks = List<Bookmark>.of(_bookmarks)

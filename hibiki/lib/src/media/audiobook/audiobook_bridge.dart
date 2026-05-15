@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:hibiki/src/epub/epub_book.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/sasayaki_match_codec.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
@@ -388,10 +389,42 @@ window.__hoshiAnnotate = function(chapterHref) {
   }) async {}
 
   static Future<List<BookSearchResult>> searchBook(
-    InAppWebViewController controller,
+    EpubBook book,
     String query,
   ) async {
-    return const <BookSearchResult>[];
+    if (query.isEmpty) return const <BookSearchResult>[];
+
+    final bool isCjk = RegExp(r'[　-鿿豈-﫿]').hasMatch(query);
+    final String needle = isCjk ? query : query.toLowerCase();
+    const int contextRadius = 20;
+
+    final List<BookSearchResult> results = <BookSearchResult>[];
+
+    for (int i = 0; i < book.chapters.length; i++) {
+      final String text = book.chapterPlainText(i);
+      final String haystack = isCjk ? text : text.toLowerCase();
+      int start = 0;
+      while (true) {
+        final int idx = haystack.indexOf(needle, start);
+        if (idx < 0) break;
+
+        final int ctxStart = (idx - contextRadius).clamp(0, text.length);
+        final int ctxEnd = (idx + query.length + contextRadius).clamp(0, text.length);
+        final String context = text.substring(ctxStart, ctxEnd);
+        final int matchStart = idx - ctxStart;
+
+        results.add(BookSearchResult(
+          sectionIndex: i,
+          charOffset: idx,
+          context: context,
+          matchStart: matchStart,
+        ));
+
+        start = idx + 1;
+      }
+    }
+
+    return results;
   }
 
   /// 通过 hoshiReader.calculateProgress() 获取当前位置。

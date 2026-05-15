@@ -42,7 +42,6 @@ import 'package:hibiki/src/reader/reader_selection_scripts.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/utils/misc/jidoujisho_text_selection.dart';
 import 'package:hibiki/src/media/audiobook/floating_lyric_channel.dart';
-import 'package:hibiki/src/media/floating_dict_channel.dart';
 import 'package:hibiki/src/anki/anki_models.dart';
 import 'package:hibiki/src/anki/anki_repository.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
@@ -102,6 +101,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   Timer? _volumeThrottleTimer;
   int _lastSavedSection = -1;
   double _lastSavedProgress = -1;
+  int _lastProgressSection = -1;
+  double _lastProgressValue = 0;
 
   AudiobookPlayerController? _audiobookController;
   String? _audiobookBookUid;
@@ -184,7 +185,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
     await _resolveAndApplyProfile(db);
 
-    _settings = ReaderSettings(db);
+    _settings = ReaderHoshiSource.readerSettings ?? ReaderSettings(db);
+    ReaderHoshiSource.readerSettings = _settings;
     await _settings!.ready;
 
     final bool exists = await EpubStorage.bookExists(widget.bookId);
@@ -231,6 +233,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         bm.sectionIndex < _book!.chapters.length) {
       _currentChapter = bm.sectionIndex;
       _initialProgress = bm.normCharOffset / 10000.0;
+      _lastProgressSection = _currentChapter;
+      _lastProgressValue = _initialProgress;
       debugPrint('[ReaderHoshi] restore from bookmark: '
           'chapter=$_currentChapter progress=$_initialProgress');
     } else {
@@ -245,6 +249,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           saved.sectionIndex < _book!.chapters.length) {
         _currentChapter = saved.sectionIndex;
         _initialProgress = saved.normCharOffset / 10000.0;
+        _lastProgressSection = _currentChapter;
+        _lastProgressValue = _initialProgress;
       }
     }
 
@@ -783,22 +789,32 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     );
   }
 
-  WebResourceResponse? _interceptRequest(WebUri url) {
+  Future<WebResourceResponse?> _interceptRequest(WebUri url) async {
     if (url.host != ReaderHoshiSource.kHost) return null;
     final String path = url.path;
 
     if (path.startsWith('/fonts/')) {
       final String raw = path.substring('/fonts/'.length);
       final String fontPath = Uri.decodeComponent(raw);
+      final String? safeFontPath = ReaderHoshiSource.safeCustomFontPath(
+        fontPath,
+        allowedRoots: <String>[
+          p.join(appModel.appDirectory.path, 'custom_fonts')
+        ],
+      );
+      if (safeFontPath == null) {
+        return _forbidden('font outside allowed directory: $fontPath');
+      }
       final Set<String> allowedPaths =
           (_settings?.customFonts ?? <Map<String, dynamic>>[])
               .map((e) => e['path'] as String?)
               .whereType<String>()
+              .map(p.canonicalize)
               .toSet();
-      if (!allowedPaths.contains(fontPath)) {
+      if (!allowedPaths.contains(safeFontPath)) {
         return _forbidden('font not in whitelist: $fontPath');
       }
-      final File fontFile = File(fontPath);
+      final File fontFile = File(safeFontPath);
       if (!fontFile.existsSync()) {
         return _notFound('font not found: $fontPath');
       }
@@ -806,8 +822,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       if (!_isValidFontData(data)) {
         return _notFound('font corrupted: $fontPath (${data.length} bytes)');
       }
-      debugPrint('[ReaderHoshi] font served: $fontPath (${data.length} bytes)');
-      final String mime = fallbackMimeType(fontPath);
+      debugPrint(
+          '[ReaderHoshi] font served: $safeFontPath (${data.length} bytes)');
+      final String mime = fallbackMimeType(safeFontPath);
       return WebResourceResponse(
         contentType: mime,
         statusCode: 200,
@@ -1162,7 +1179,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         );
       },
       shouldInterceptRequest: (controller, request) async {
-        return _interceptRequest(request.url);
+        return await _interceptRequest(request.url);
       },
       shouldOverrideUrlLoading: (controller, action) async {
         final String url = action.request.url?.toString() ?? '';
@@ -1249,6 +1266,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         source:
             'if (!window.__hoshiCssHighlightsSupported) { window.hoshiReader && window.hoshiReader.buildNodeOffsets(); }',
       );
+      await _settings!.setTheme(appModel.appThemeKey);
     }
   }
 
@@ -1325,8 +1343,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     ReaderHoshiSource.instance.setLyricsMode(entering);
 
     if (entering) {
-      final List<AudioCue> allCues =
-          _audiobookController!.allBookCuesSnapshot;
+      final List<AudioCue> allCues = _audiobookController!.allBookCuesSnapshot;
       if (allCues.isNotEmpty) {
         _audiobookController!.setChapterCues(allCues);
       }
@@ -1668,6 +1685,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _currentChapter = index;
     _initialProgress = progress;
     _displayedProgress = progress;
+    _lastProgressSection = index;
+    _lastProgressValue = progress;
     _restoreInFlight = true;
     setState(() {
       _readerContentReady = false;
@@ -1718,6 +1737,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _currentChapter = index;
     _initialProgress = 0.0;
     _displayedProgress = 0.0;
+    _lastProgressSection = index;
+    _lastProgressValue = 0.0;
     _initialFragment = fragment;
     _restoreInFlight = true;
     setState(() {
@@ -1915,6 +1936,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
     final double progress = current / total;
     _displayedProgress = progress;
+    _lastProgressSection = _currentChapter;
+    _lastProgressValue = progress;
     final int absoluteChars = _absoluteCharPosition(progress);
     final int charDiff = absoluteChars - _lastAbsoluteCount;
     if (charDiff > 0) {
@@ -1966,20 +1989,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   Future<void> _flushPosition() async {
     _saveDebounce?.cancel();
-    if (_controller == null || _lastSavedSection < 0) {
+    if (!_hasEverLoaded || _lastProgressSection < 0) {
       return;
     }
-    try {
-      final dynamic result = await _controller!.evaluateJavascript(
-        source: ReaderPaginationScripts.progressInvocation(),
-      );
-      final double? progress = _toDouble(result);
-      if (progress != null) {
-        await _persistPosition(_currentChapter, progress);
-      }
-    } catch (e, stack) {
-      ErrorLogService.instance.log('ReaderHoshi._flushReadingStats', e, stack);
-    }
+    await _persistPosition(_lastProgressSection, _lastProgressValue);
   }
 
   int _absoluteCharPosition(double progress) {
@@ -2226,8 +2239,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     }
     return true;
   }
-
-
 
   void _setupFloatingLyricHandlers() {
     FloatingLyricChannel.setEventHandlers(
@@ -2492,6 +2503,15 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           onJumpToCharOffset: (globalOffset) async {
             _jumpToGlobalCharOffset(globalOffset);
           },
+          epubBook: _book,
+          onSearchJump: (int sectionIndex, int charOffset) async {
+            if (_book == null || _chapterCumulativeChars.isEmpty) return;
+            final int globalOffset =
+                sectionIndex < _chapterCumulativeChars.length
+                    ? _chapterCumulativeChars[sectionIndex] + charOffset
+                    : charOffset;
+            await _jumpToGlobalCharOffset(globalOffset);
+          },
           bookmarks: bookmarks,
           onJumpToBookmark: (bm) async {
             if (bm.sectionIndex != _currentChapter) {
@@ -2503,8 +2523,18 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
                   'window.hoshiReader && window.hoshiReader.restoreProgress($progress);',
             );
           },
-          onDeleteBookmark: (index) async {
-            await bmRepo.removeBookmark(bookId, index);
+          onDeleteBookmark: (bookmark) async {
+            final int? id = bookmark.id;
+            if (id != null) {
+              await bmRepo.removeBookmarkById(id);
+            } else {
+              await bmRepo.removeBookmarkMatching(
+                bookId,
+                sectionIndex: bookmark.sectionIndex,
+                normCharOffset: bookmark.normCharOffset,
+                createdAt: bookmark.createdAt,
+              );
+            }
             bookmarks = await bmRepo.getBookmarks(bookId);
           },
           favoriteSentences: favorites,
@@ -2717,6 +2747,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     );
     final double? progress = _toDouble(result);
     _initialProgress = progress ?? 0.0;
+    _lastProgressSection = _currentChapter;
+    _lastProgressValue = _initialProgress;
     _restoreInFlight = true;
     debugPrint('[ReaderHoshi] reloadWithCurrentSettings: '
         'chapter=$_currentChapter progress=$_initialProgress '
