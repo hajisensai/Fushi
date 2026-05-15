@@ -181,14 +181,15 @@ claude mcp add spec-workflow-mcp -s user -- npx -y spec-workflow-mcp@latest
 
 ## Hibiki 阅读器调试
 
-- 修复 TTU 阅读器问题前，先定位是在 Flutter 容器、TTU WebView/JS/CSS、导入管线、音频 cue 匹配，还是 Android WebView/缓存层；不要把所有现象混成一个 bug。
-- TTU Web 端源码以 `D:\ttu-fork` 为准；改 JS/CSS/DOM 行为时先在该目录构建，再同步到 `hibiki/assets/ttu-ebook-reader`，并确认 APK 里实际打包的是新资源。
-- 书页空白、图片缺失、间距异常、播放栏遮挡等渲染问题，先检查布局、overlay、page margin、WebView 可视区域和 TTU 内容区域；不要一上来假设是图片解码或缓存坏了。
+- 当前 EPUB 阅读器是 Hoshi 路径：`ReaderHoshiPage`、`ReaderHoshiSource`、`reader_pagination_scripts.dart`、`reader_content_styles.dart`、`reader_selection_scripts.dart` 和 Hoshi 资源拦截。不要把当前阅读器问题带去 `D:\ttu-fork` 修。
+- `reader_ttu`、`setTtu*`、`Ttu*` 名字只说明旧数据兼容或迁移边界；它们不代表当前仍有 TTU 阅读器。改这些 key 或方法名前，必须先确认是否会破坏旧书籍、偏好、书签、阅读位置或迁移。
+- 旧 TTU 只保留迁移用途：`TtuMigrationServer`、`TtuIdbReader`、`assets/ttu-ebook-reader` 用来读取历史 IndexedDB。迁移代码的问题按迁移路径修；当前阅读器渲染/交互问题按 Hoshi 路径修。
+- 书页空白、图片缺失、间距异常、播放栏遮挡等渲染问题，先检查布局、overlay、page margin、WebView 可视区域、Hoshi 内容区域、资源拦截和 `window.hoshiReader` 状态；不要一上来假设是图片解码或缓存坏了。
 - 有声书播放栏相关问题必须同时看 Flutter 控件边界和 WebView/正文边界。重点记录 WebView bounds、正文 TextView/Image bounds、播放栏按钮 bounds；如果正文延伸到播放栏区域下方，就是布局 inset 问题。
-- 还原/跳转/跟随音频问题优先检查真实 reader 状态和 cue 位置：`sectionIndex`、`normCharOffset`、当前章节、当前句文本。已有保存位置时，位置数据优先于归一化文本匹配，文本匹配只能做 fallback。
-- TTU 页面恢复问题重点看 `_readerContentReady`、`onLoadStop`、`_bootstrapRestoreReaderPos`、`scrollToNormOffsetDone`、`viewportStable`、`_markReaderContentReady()`；不要只看 WebView 有内容就断言恢复完成。
-- 遇到 WebView renderer crash、`service-worker.js`、CacheStorage 或旧资源症状，要区分当前源码问题和旧运行时缓存问题；必要时用版本门控清 service worker/cache，但不要用清数据掩盖真实用户升级问题。
-- 调试 TTU DOM/JS 时使用 Chrome DevTools Protocol 或 WebView inspection 读取 DOM、console、JS 变量和布局尺寸；截图只能证明视觉现象，不能替代 DOM/边界数据。
+- 还原/跳转/跟随音频问题优先检查真实 reader 状态和 cue 位置：`_currentChapter`、章节内 progress、保存的 `ReaderPosition`、当前句文本和 `window.hoshiReader` 的恢复/分页状态。已有保存位置时，位置数据优先于归一化文本匹配，文本匹配只能做 fallback。
+- Hoshi 页面恢复问题重点看 `_readerContentReady`、`_restoreInFlight`、`onLoadStop`、`_navigateToChapter*()`、`window.hoshiReader.restoreProgress()`、`_readerSetupScript` 和分页脚本；不要只看 WebView 有内容就断言恢复完成。
+- 遇到 WebView renderer crash、资源 404、CacheStorage 或旧资源症状，要区分 Hoshi 当前资源拦截、旧迁移资产和用户设备缓存；不要加 TTU dummy 文件或用清数据掩盖真实升级问题。
+- 调试 Hoshi DOM/JS 时使用 Chrome DevTools Protocol 或 WebView inspection 读取 DOM、console、JS 变量和布局尺寸；截图只能证明视觉现象，不能替代 DOM/边界数据。
 
 阅读器手工验证至少覆盖：封面图片页、长文本竖排页、有声书播放栏显示时的底部正文、播放/暂停、上一句/下一句、跟随音频跳转、章节开头/末尾跨章节、导入后首次打开、重启 App 后恢复位置。
 
@@ -216,7 +217,7 @@ claude mcp add spec-workflow-mcp -s user -- npx -y spec-workflow-mcp@latest
   - 关键 UI hierarchy 路径，例如 `.codex-test/<case>.xml`。
   - 关键 logcat 证据；若只现场筛选没有落盘，最终回复要明确说明。
 - 对遮挡/布局类问题，记录截图之外还要记录边界数据：WebView bounds、正文节点 bounds、遮挡控件 bounds。
-- 对导入类问题，日志里至少筛 `hibiki-import`、`ttu-import`、`BookImportDialog`、`import_timeout`、`Renderer process`、`AndroidRuntime`、`Exception`、`Error`。
+- 对导入类问题，日志里至少筛 `hibiki-import`、`BookImportDialog`、`EpubImporter`、`ReaderHoshi`、`Renderer process`、`AndroidRuntime`、`Exception`、`Error`。
 - 不要把“导入成功”和“阅读器渲染正确”混为一个结论；导入、打开、播放、布局验证要分开说。
 
 ## Hibiki 持续审查
@@ -262,4 +263,4 @@ cd hibiki\android
 .\gradlew.bat :app:assembleRelease
 ```
 
-修改 TTU Web 资源时，还要在 `D:\ttu-fork` 构建并同步资产，再回到 Hibiki 构建/安装 APK 做模拟器验证。声明“修好了”之前必须用真实模拟器或用户指定设备复测目标路径，并留下截图、UI XML 或 logcat 证据。
+修改当前 Hoshi 阅读器的 WebView、JS、CSS、资源拦截或分页行为时，不需要构建 `D:\ttu-fork`；必须在 Hibiki 侧验证目标阅读器路径。修改旧 TTU 迁移代码或迁移资产时，验证“历史 IndexedDB -> 当前 Hoshi 存储/书架”的迁移路径。声明“修好了”之前必须用真实模拟器或用户指定设备复测目标路径，并留下截图、UI XML 或 logcat 证据。

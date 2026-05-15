@@ -29,12 +29,11 @@
 
 - Flutter `3.41.6` / Dart `3.11.4`，最低 Android API 24。
 - 主存储是 Drift SQLite：`HibikiDatabase`，偏好也落在 Drift `preferences` 表。旧注释里出现的 `Isar` / `Hive` 不一定代表当前事实，先查代码再判断。
-- EPUB 阅读器当前走 Hoshi/TTU 迁移后的 `ReaderHoshiPage` / `ReaderHoshiSource` 路径；`ReaderHoshiSource.uniqueKey` 仍是 `reader_ttu`，这是兼容旧数据的业务标识，不要随手改。
+- EPUB 阅读器当前走 Hoshi 实现：`ReaderHoshiPage` / `ReaderHoshiSource`。`ReaderHoshiSource.uniqueKey`、`reader_ttu/hoshi://book/...` 和部分 `setTtu*` 方法名只是旧数据兼容边界，不代表当前还有 TTU 阅读器；不要在没有迁移方案时随手改持久化 key。
 - 词典导入和查询核心走 `hoshidicts` C++ FFI；格式 UI 或旧 Dart format 类不一定代表真实导入路径。
 - 国际化使用 Slang，源文件在 `hibiki/lib/i18n/*.i18n.json`，生成文件是 `strings.g.dart`。
 - 有声书/字幕相关核心路径在 `hibiki/lib/src/media/audiobook/`，当前导入入口包括 `book_import_dialog.dart` 和 `audiobook_import_dialog.dart`。
-- ttu Web 端源码以 `D:\ttu-fork` 为准；修改 TTU WebView DOM、原生 reader chrome 或全局 JS API 时，先改 fork、构建，再同步到 `hibiki/assets/ttu-ebook-reader/`。不要在 Hibiki 侧用 CSS/JS 注入硬压。
-- TTU fork 细节以 `docs/ttu-fork-notes.md` 为准，不在本文件复制补丁清单。
+- 旧 TTU 只保留迁移用途：`TtuMigrationServer` / `TtuIdbReader` / `assets/ttu-ebook-reader` 用来读取历史 IndexedDB 数据。当前阅读器问题不要去 `D:\ttu-fork` 修。
 
 ## 审查规则
 
@@ -62,7 +61,7 @@
   cd hibiki\android
   .\gradlew.bat :app:assembleRelease
   ```
-- 修改 TTU Web 资源：先在 `D:\ttu-fork` 构建并同步资产，再回 Hibiki 构建/安装 APK 做模拟器验证。
+- 修改当前阅读器 WebView、JS、CSS、资源拦截或分页逻辑时，只在 Hibiki 侧验证 Hoshi 阅读器路径。修改旧 TTU 迁移代码或迁移资产时，验证“历史 IndexedDB -> 当前 Hoshi 存储/书架”的迁移路径。
 - 声明“修好了”之前，必须验证原始失败路径；阅读器/导入/播放/布局问题必须用真实模拟器或用户指定设备复测，并留下证据路径。
 
 ## 提交规则
