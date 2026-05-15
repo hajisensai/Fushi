@@ -65,6 +65,7 @@ const JAPANESE_RANGES = [
   [0x3000, 0x303f],
   ...FULLWIDTH_CHARACTER_RANGES,
 ];
+window.__hoshiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
 window.hoshiSelection = {
   selection: null,
   highlightWrappers: [],
@@ -310,7 +311,6 @@ window.hoshiSelection = {
   },
   highlightSelection: function(charCount) {
     if (!this.selection || !this.selection.ranges.length) return;
-    this.clearHighlightWrappers();
     var trimmedRanges = [];
     var remaining = charCount;
     for (var i = 0; i < this.selection.ranges.length; i++) {
@@ -324,18 +324,31 @@ window.hoshiSelection = {
       }
       trimmedRanges.push({ node: r.node, start: r.start, end: end });
     }
-    var range = document.createRange();
-    for (var i = trimmedRanges.length - 1; i >= 0; i--) {
-      var seg = trimmedRanges[i];
-      range.setStart(seg.node, seg.start);
-      range.setEnd(seg.node, seg.end);
-      var wrapper = document.createElement('span');
-      wrapper.className = 'hoshi-dict-highlight';
-      wrapper.appendChild(range.extractContents());
-      range.insertNode(wrapper);
-      this.highlightWrappers.push(wrapper);
+    if (window.__hoshiCssHighlightsSupported) {
+      var highlights = [];
+      for (var i = 0; i < trimmedRanges.length; i++) {
+        var seg = trimmedRanges[i];
+        var range = document.createRange();
+        range.setStart(seg.node, seg.start);
+        range.setEnd(seg.node, seg.end);
+        highlights.push(range);
+      }
+      CSS.highlights.set('hoshi-selection', new Highlight(...highlights));
+    } else {
+      this.clearHighlightWrappers();
+      var range = document.createRange();
+      for (var i = trimmedRanges.length - 1; i >= 0; i--) {
+        var seg = trimmedRanges[i];
+        range.setStart(seg.node, seg.start);
+        range.setEnd(seg.node, seg.end);
+        var wrapper = document.createElement('span');
+        wrapper.className = 'hoshi-dict-highlight';
+        wrapper.appendChild(range.extractContents());
+        range.insertNode(wrapper);
+        this.highlightWrappers.push(wrapper);
+      }
+      this.highlightWrappers.reverse();
     }
-    this.highlightWrappers.reverse();
   },
   getNormalizedOffset: function(targetNode, offset) {
     if (!window.hoshiReader) return null;
@@ -390,8 +403,12 @@ window.hoshiSelection = {
     }
   },
   clearSelection: function() {
-    window.getSelection().removeAllRanges();
-    this.clearHighlightWrappers();
+    window.getSelection()?.removeAllRanges();
+    if (window.__hoshiCssHighlightsSupported) {
+      CSS.highlights.delete('hoshi-selection');
+    } else {
+      this.clearHighlightWrappers();
+    }
     this.selection = null;
   }
 };

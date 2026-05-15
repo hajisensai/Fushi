@@ -225,7 +225,7 @@ class ReaderPaginationScripts {
     });
   },
   applySasayakiCues: function(cues) {
-    if (window.hoshiSelection) window.hoshiSelection.clearHighlightWrappers();
+    if (window.hoshiSelection) window.hoshiSelection.clearSelection();
     this.resetSasayakiCues();
     var cueRanges = this.collectSasayakiCueRanges(cues);
     var range = document.createRange();
@@ -267,7 +267,7 @@ class ReaderPaginationScripts {
     this.activeCueId = null;
   },
   resetSasayakiCues: function() {
-    if (window.hoshiSelection) window.hoshiSelection.clearHighlightWrappers();
+    if (window.hoshiSelection) window.hoshiSelection.clearSelection();
     var self = this;
     this.cueWrappers.forEach(function(wrappers) { self.unwrap(wrappers); });
     this.cueWrappers.clear();

@@ -211,9 +211,32 @@ ruby > rt, ruby > rp {
   -webkit-user-select: none;
   user-select: none;
 }
+::highlight(hoshi-selection) {
+  background-color: ${selectionColor ?? colors.selectionColor};
+  color: inherit;
+}
+::highlight(hoshi-hl-yellow) {
+  background-color: var(--hoshi-hl-yellow, rgba(255,220,0,0.35));
+}
+::highlight(hoshi-hl-green) {
+  background-color: var(--hoshi-hl-green, rgba(0,200,83,0.30));
+}
+::highlight(hoshi-hl-blue) {
+  background-color: var(--hoshi-hl-blue, rgba(68,138,255,0.30));
+}
+::highlight(hoshi-hl-pink) {
+  background-color: var(--hoshi-hl-pink, rgba(255,64,129,0.30));
+}
+::highlight(hoshi-hl-purple) {
+  background-color: var(--hoshi-hl-purple, rgba(170,0,255,0.25));
+}
 .hoshi-dict-highlight {
   background-color: ${selectionColor ?? colors.selectionColor} !important;
   color: inherit;
+}
+::highlight(hoshi-sasayaki) {
+  color: var(--hoshi-sasayaki-text-color);
+  background-color: var(--hoshi-sasayaki-background-color);
 }
 .hoshi-sasayaki-cue {
   background-color: transparent;
