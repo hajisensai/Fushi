@@ -116,6 +116,134 @@ void main() {
       }
     });
   });
+
+  group('readCss', () {
+    test('reads file content as UTF-8', () {
+      _createFile(tmpDir, 'style.css', 'body { color: red; }');
+      final repo = BookCssRepository(tmpDir.path);
+      final entry = repo.discoverCssFiles().first;
+      expect(repo.readCss(entry), 'body { color: red; }');
+    });
+  });
+
+  group('saveCss', () {
+    test('first save creates .original backup', () {
+      _createFile(tmpDir, 'style.css', 'original content');
+      final repo = BookCssRepository(tmpDir.path);
+      final entry = repo.discoverCssFiles().first;
+
+      repo.saveCss(entry, 'modified content');
+
+      expect(File(entry.originalPath).existsSync(), isTrue);
+      expect(File(entry.originalPath).readAsStringSync(), 'original content');
+      expect(File(entry.absolutePath).readAsStringSync(), 'modified content');
+    });
+
+    test('saving same content as disk is a no-op (no .original created)', () {
+      _createFile(tmpDir, 'style.css', 'same');
+      final repo = BookCssRepository(tmpDir.path);
+      final entry = repo.discoverCssFiles().first;
+
+      repo.saveCss(entry, 'same');
+
+      expect(File(entry.originalPath).existsSync(), isFalse);
+    });
+
+    test('saving back to original content deletes .original', () {
+      _createFile(tmpDir, 'style.css', 'original');
+      final repo = BookCssRepository(tmpDir.path);
+      var entry = repo.discoverCssFiles().first;
+
+      repo.saveCss(entry, 'changed');
+      expect(entry.hasOriginal, isTrue);
+
+      entry = repo.discoverCssFiles().first; // refresh
+      repo.saveCss(entry, 'original');
+      expect(File(entry.originalPath).existsSync(), isFalse);
+      expect(File(entry.absolutePath).readAsStringSync(), 'original');
+    });
+
+    test('second save does not overwrite .original', () {
+      _createFile(tmpDir, 'style.css', 'v1');
+      final repo = BookCssRepository(tmpDir.path);
+      var entry = repo.discoverCssFiles().first;
+
+      repo.saveCss(entry, 'v2');
+      entry = repo.discoverCssFiles().first;
+      repo.saveCss(entry, 'v3');
+
+      expect(File(entry.originalPath).readAsStringSync(), 'v1');
+      expect(File(entry.absolutePath).readAsStringSync(), 'v3');
+    });
+  });
+
+  group('isDifferentFromOriginal', () {
+    test('returns false when no .original exists', () {
+      _createFile(tmpDir, 'style.css', 'body{}');
+      final repo = BookCssRepository(tmpDir.path);
+      final entry = repo.discoverCssFiles().first;
+      expect(entry.isDifferentFromOriginal(), isFalse);
+    });
+
+    test('returns true when content differs from .original', () {
+      _createFile(tmpDir, 'style.css', 'modified');
+      _createFile(tmpDir, 'style.css.original', 'original');
+      final repo = BookCssRepository(tmpDir.path);
+      final entry = repo.discoverCssFiles().first;
+      expect(entry.isDifferentFromOriginal(), isTrue);
+    });
+
+    test('returns false when content matches .original', () {
+      _createFile(tmpDir, 'style.css', 'same');
+      _createFile(tmpDir, 'style.css.original', 'same');
+      final repo = BookCssRepository(tmpDir.path);
+      final entry = repo.discoverCssFiles().first;
+      expect(entry.isDifferentFromOriginal(), isFalse);
+    });
+  });
+
+  group('resetFile', () {
+    test('restores content from .original and deletes backup', () {
+      _createFile(tmpDir, 'style.css', 'modified');
+      _createFile(tmpDir, 'style.css.original', 'original');
+      final repo = BookCssRepository(tmpDir.path);
+      final entry = repo.discoverCssFiles().first;
+
+      repo.resetFile(entry);
+
+      expect(File(entry.absolutePath).readAsStringSync(), 'original');
+      expect(File(entry.originalPath).existsSync(), isFalse);
+    });
+
+    test('no-op when no .original exists', () {
+      _createFile(tmpDir, 'style.css', 'content');
+      final repo = BookCssRepository(tmpDir.path);
+      final entry = repo.discoverCssFiles().first;
+
+      repo.resetFile(entry); // should not throw
+
+      expect(File(entry.absolutePath).readAsStringSync(), 'content');
+    });
+  });
+
+  group('resetAll', () {
+    test('resets all files that have .original backups', () {
+      _createFile(tmpDir, 'a.css', 'modified-a');
+      _createFile(tmpDir, 'a.css.original', 'original-a');
+      _createFile(tmpDir, 'b.css', 'untouched-b');
+      _createFile(tmpDir, 'c.css', 'modified-c');
+      _createFile(tmpDir, 'c.css.original', 'original-c');
+
+      final repo = BookCssRepository(tmpDir.path);
+      repo.resetAll();
+
+      expect(File(p.join(tmpDir.path, 'a.css')).readAsStringSync(), 'original-a');
+      expect(File(p.join(tmpDir.path, 'b.css')).readAsStringSync(), 'untouched-b');
+      expect(File(p.join(tmpDir.path, 'c.css')).readAsStringSync(), 'original-c');
+      expect(File(p.join(tmpDir.path, 'a.css.original')).existsSync(), isFalse);
+      expect(File(p.join(tmpDir.path, 'c.css.original')).existsSync(), isFalse);
+    });
+  });
 }
 
 void _createFile(Directory root, String relativePath, String content) {

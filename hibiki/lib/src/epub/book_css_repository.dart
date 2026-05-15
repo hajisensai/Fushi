@@ -88,4 +88,52 @@ class BookCssRepository {
     }
     return result;
   }
+
+  String readCss(CssFileEntry entry) {
+    return File(entry.absolutePath).readAsStringSync();
+  }
+
+  /// Safe write: backup original if needed, write via temp+rename,
+  /// delete .original if content matches original.
+  void saveCss(CssFileEntry entry, String content) {
+    final File target = File(entry.absolutePath);
+    final File original = File(entry.originalPath);
+
+    // Step 1: backup if no .original exists and content actually differs
+    if (!original.existsSync()) {
+      final String currentContent = target.readAsStringSync();
+      if (currentContent == content) return; // no-op
+      original.writeAsStringSync(currentContent, flush: true);
+    }
+
+    // Step 2: write via temp → rename
+    final File temp = File('${entry.absolutePath}.tmp');
+    temp.writeAsStringSync(content, flush: true);
+    temp.renameSync(entry.absolutePath);
+
+    // Step 3: if content equals original, delete .original
+    if (original.existsSync()) {
+      final String originalContent = original.readAsStringSync();
+      if (originalContent == content) {
+        original.deleteSync();
+      }
+    }
+  }
+
+  void resetFile(CssFileEntry entry) {
+    final File original = File(entry.originalPath);
+    if (!original.existsSync()) return;
+    final File temp = File('${entry.absolutePath}.tmp');
+    temp.writeAsStringSync(original.readAsStringSync(), flush: true);
+    temp.renameSync(entry.absolutePath);
+    original.deleteSync();
+  }
+
+  void resetAll() {
+    for (final CssFileEntry entry in discoverCssFiles()) {
+      if (entry.hasOriginal) {
+        resetFile(entry);
+      }
+    }
+  }
 }
