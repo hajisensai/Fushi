@@ -330,21 +330,23 @@ class HoshiDicts {
       final od = outputDir.toNativeUtf8();
       try {
         final r = _bindings!.import_(zp, od);
-        final result = HoshiImportResult(
-          success: r.success != 0,
-          title: r.title.toDartString(),
-          termCount: r.termCount,
-          metaCount: r.metaCount,
-          tagCount: r.tagCount,
-          mediaCount: r.mediaCount,
-          detectedType: r.detectedType.toDartString(),
-          error: r.error.toDartString(),
-        );
         final rPtr = calloc<FfiImportResult>();
         rPtr.ref = r;
-        _bindings!.freeImportResult(rPtr);
-        calloc.free(rPtr);
-        return result;
+        try {
+          return HoshiImportResult(
+            success: r.success != 0,
+            title: r.title.toDartString(),
+            termCount: r.termCount,
+            metaCount: r.metaCount,
+            tagCount: r.tagCount,
+            mediaCount: r.mediaCount,
+            detectedType: r.detectedType.toDartString(),
+            error: r.error.toDartString(),
+          );
+        } finally {
+          _bindings!.freeImportResult(rPtr);
+          calloc.free(rPtr);
+        }
       } finally {
         calloc.free(zp);
         calloc.free(od);

@@ -28,6 +28,7 @@ class ReaderContentStyles {
     String? selectionColor,
     String? sasayakiColor,
     String? linkColor,
+    String? themeOverride,
   }) {
     return '<style>\n${css(
       settings: settings,
@@ -38,6 +39,7 @@ class ReaderContentStyles {
       selectionColor: selectionColor,
       sasayakiColor: sasayakiColor,
       linkColor: linkColor,
+      themeOverride: themeOverride,
     )}\n</style>';
   }
 
@@ -50,9 +52,12 @@ class ReaderContentStyles {
     String? selectionColor,
     String? sasayakiColor,
     String? linkColor,
+    String? themeOverride,
   }) {
-    final _ThemeColors colors =
-        _themeColors(settings.theme, customBg: customBg, customFg: customFg);
+    final _ThemeColors colors = _themeColors(
+        themeOverride ?? settings.theme,
+        customBg: customBg,
+        customFg: customFg);
 
     final String resolvedFontFaces;
     final String resolvedFontFamily;

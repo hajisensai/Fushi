@@ -53,10 +53,6 @@ class ReaderSettings {
     _db.deletePref('${_prefix}ttu_second_dimension_max');
   }
 
-  void updateCache(String key, Object value) {
-    _cache[key] = value;
-  }
-
   T _get<T>(String key, T defaultValue) {
     final dynamic value = _cache[key];
     if (value is T) return value;
