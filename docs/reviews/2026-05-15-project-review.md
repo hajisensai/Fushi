@@ -369,9 +369,75 @@
 
 ---
 
-### Next Scope
+---
 
-Round 2：按优先级修复所有 CRITICAL 和 HIGH 问题，然后重新审查。
+## Round 2-5: Fix & Review Iterations
+
+### Commits
+
+| Round | Commit | Scope |
+|-------|--------|-------|
+| 1 | `8d1bcb15` | 6 CRITICAL + 18 HIGH + 4 analyze issues (36 files, 732+/682-) |
+| 2 | `211006e5` | Reviewer feedback: HBK-012/008/011/023 + 4 context warnings |
+| 3 | `aa32b862` → `a99163ef` | Delete operation ordering: DB first, cache second |
+| 4 | `81718a5a` → `da5c4ffa` | 5 MEDIUM issues: HBK-026/027/031/032/034 |
+
+### Finding Status
+
+| ID | Severity | Status | Fix Description |
+|----|----------|--------|-----------------|
+| HBK-AUDIT-001 | CRITICAL | **fixed** | `toNativeUtf8(allocator: calloc)` for all 10 FFI calls |
+| HBK-AUDIT-002 | CRITICAL | **fixed** | basename + reject `..`/`/` + isWithin validation |
+| HBK-AUDIT-003 | CRITICAL | **fixed** | canonicalize + isWithin for cover href |
+| HBK-AUDIT-004 | CRITICAL | **fixed** | FNV-1a deterministic hash + migration |
+| HBK-AUDIT-005 | CRITICAL | **fixed** | hashCode from `uniqueKey.hashCode` |
+| HBK-AUDIT-006 | CRITICAL | **fixed** | `const {}` → `final {}` |
+| HBK-AUDIT-007 | HIGH | **fixed** | `intent.extra?['key'] as String?` + null checks |
+| HBK-AUDIT-008 | HIGH | **fixed** | Removed _flushPendingLookup, inline with addPostFrameCallback |
+| HBK-AUDIT-009 | HIGH | **fixed** | `if (!mounted) return;` guards |
+| HBK-AUDIT-010 | HIGH | **fixed** | _stableTopInset/BottomInset in didChangeDependencies |
+| HBK-AUDIT-011 | HIGH | **fixed** | try-catch + ErrorLogService + toast for delete methods |
+| HBK-AUDIT-012 | HIGH | **fixed** | `_ctx` helper + null/mounted guard for all 11 sites |
+| HBK-AUDIT-013 | HIGH | **fixed** | int.tryParse/double.tryParse with defaults |
+| HBK-AUDIT-014 | HIGH | **fixed** | Drift batch insert |
+| HBK-AUDIT-015 | HIGH | **fixed** | _noisySub cancelled in dispose() |
+| HBK-AUDIT-016 | HIGH | **fixed** | (merged with 015) |
+| HBK-AUDIT-017 | HIGH | **fixed** | unawaited(_player.pause/seek) |
+| HBK-AUDIT-018 | HIGH | **fixed** | 21 UI files: controller/subscription dispose |
+| HBK-AUDIT-019 | HIGH | **fixed** | AnkiChannelHandler null checks |
+| HBK-AUDIT-020 | HIGH | **fixed** | MainActivity instanceof checks |
+| HBK-AUDIT-021 | HIGH | **fixed** | TtsChannelHandler AtomicBoolean guard |
+| HBK-AUDIT-022 | HIGH | **fixed** | MainActivity SAF busy guard |
+| HBK-AUDIT-023 | HIGH | **fixed** | Removed duplicate onSelectionChanged call |
+| HBK-AUDIT-024 | HIGH | **fixed** | TextRange start/end clamped |
+| HBK-AUDIT-025 | MEDIUM | deferred | FK constraints — requires schema migration, risk/reward too low |
+| HBK-AUDIT-026 | MEDIUM | **fixed** | Cache key uses cleaned term + all query params |
+| HBK-AUDIT-027 | MEDIUM | **fixed** | Per-field try-catch in _rowToDictionary |
+| HBK-AUDIT-028 | MEDIUM | n/a | Color API not flagged by current Flutter version |
+| HBK-AUDIT-029 | MEDIUM | deferred | wakelock→wakelock_plus migration is large/risky |
+| HBK-AUDIT-030 | MEDIUM | deferred | ProGuard — app runs fine without rules, false positive |
+| HBK-AUDIT-031 | MEDIUM | **fixed** | Removed proxy config from gradle.properties |
+| HBK-AUDIT-032 | MEDIUM | **fixed** | network_security_config.xml: cleartext only for localhost |
+| HBK-AUDIT-033 | MEDIUM | deferred | Tautological tests — test quality, not runtime |
+| HBK-AUDIT-034 | MEDIUM | **fixed** | FutureBuilder futures cached in initState |
+| HBK-AUDIT-035 | MEDIUM | deferred | withPaths design decision |
+| HBK-AUDIT-036 | LOW | deferred | Hardcoded language list — cosmetic |
+| HBK-AUDIT-037 | LOW | deferred | Migration downgrade — design decision |
+| HBK-AUDIT-038 | LOW | deferred | Magic numbers — cosmetic |
+
+### Verification
+
+- `flutter analyze`: 0 issues (verified at each round)
+- Release APK: builds successfully at each round (36.0MB arm64)
+- 5 code-reviewer agent passes, final verdict: **Ready to merge, zero Important+ issues**
+
+### Deferred Items Rationale
+
+- **HBK-025** (FK): Schema migration adds complexity and risk; orphan records are a slow disk leak, not a crash or data corruption. Proper fix needs migration testing infrastructure.
+- **HBK-029** (wakelock): Package replacement involves API surface change across multiple files. Should be a dedicated PR.
+- **HBK-030** (ProGuard): The app runs correctly in release mode without custom rules. If JNI symbols were being stripped, it would crash on every dictionary operation — which it doesn't.
+- **HBK-033** (tests): Writing real unit tests requires understanding business logic deeply. This is a project-level task, not a quick fix.
+- **HBK-035** (withPaths): Needs design discussion about ownership semantics. Not a simple code change.
 
 ---
 
