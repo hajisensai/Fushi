@@ -346,7 +346,7 @@ Append to `BookCssRepository` class in `book_css_repository.dart`:
 
 - [ ] **Step 2: Write tests for save, reset, and .original lifecycle**
 
-Append these test groups to `book_css_repository_test.dart`:
+Insert these test groups **inside `main()`, before its closing `}`** in `book_css_repository_test.dart` (i.e., after the existing `displayTitle` group, before the `}` that closes `main`):
 
 ```dart
   group('readCss', () {
@@ -619,7 +619,9 @@ class _BookCssEditorPageState extends State<BookCssEditorPage>
       for (int i = 0; i < _entries.length; i++) {
         final String content = _repo.readCss(_entries[i]);
         _diskContent[i] = content;
-        _textControllers[i] = TextEditingController(text: content);
+        final controller = TextEditingController(text: content);
+        controller.addListener(_onTextChanged);
+        _textControllers[i] = controller;
       }
     } else {
       _tabController = null;
@@ -640,6 +642,10 @@ class _BookCssEditorPageState extends State<BookCssEditorPage>
     final String? disk = _diskContent[index];
     final String? editor = _textControllers[index]?.text;
     return disk != null && editor != null && disk != editor;
+  }
+
+  void _onTextChanged() {
+    setState(() {}); // rebuild tab labels to reflect * indicator
   }
 
   String _tabLabel(int index) {
@@ -928,7 +934,9 @@ Add this method to the `_ReaderHoshiHistoryPageState` class (near the other `_op
     }
     final String extractDir = await EpubStorage.bookPath(bookId);
     if (mounted) {
-      Navigator.pop(context); // close the dialog first
+      // Don't pop dialog — matches existing extraActions pattern
+      // (e.g. _openIllustrations, _openAudiobookImport).
+      // User returns to dialog after closing the editor.
       await Navigator.push(
         context,
         MaterialPageRoute<void>(
