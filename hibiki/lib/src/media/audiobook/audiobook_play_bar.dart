@@ -487,7 +487,8 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         content = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (!widget.isHoshiReader) _buildSearchSection(theme),
+            if (widget.epubBook != null && widget.onSearchJump != null)
+              _buildSearchSection(theme),
             if (widget.onJumpToCharOffset != null) ...[
               const SizedBox(height: 12),
               _buildCharJumpSection(theme),
@@ -592,35 +593,33 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
     );
   }
 
-  Widget _buildSearchSection(ThemeData theme) {
-    return StatefulBuilder(
-      builder: (ctx, setLocal) {
-        Future<void> doSearch() async {
-          final String query = _searchController.text.trim();
-          if (query.isEmpty) return;
-          setLocal(() => _isSearching = true);
-          try {
-            final List<BookSearchResult> results =
-                widget.epubBook != null
-                    ? await AudiobookBridge.searchBook(widget.epubBook!, query)
-                    : const <BookSearchResult>[];
-            if (!mounted) return;
-            setLocal(() {
-              _searchResults = results;
-              _isSearching = false;
-            });
-          } catch (e, stack) {
-            ErrorLogService.instance.log('AudiobookPlayBar.search', e, stack);
-            debugPrint('[hibiki-search] error: $e');
-            if (!mounted) return;
-            setLocal(() {
-              _searchResults = const [];
-              _isSearching = false;
-            });
-          }
-        }
+  Future<void> _doSearch() async {
+    final String query = _searchController.text.trim();
+    if (query.isEmpty) return;
+    setState(() => _isSearching = true);
+    try {
+      final List<BookSearchResult> results =
+          widget.epubBook != null
+              ? await AudiobookBridge.searchBook(widget.epubBook!, query)
+              : const <BookSearchResult>[];
+      if (!mounted) return;
+      setState(() {
+        _searchResults = results;
+        _isSearching = false;
+      });
+    } catch (e, stack) {
+      ErrorLogService.instance.log('AudiobookPlayBar.search', e, stack);
+      debugPrint('[hibiki-search] error: $e');
+      if (!mounted) return;
+      setState(() {
+        _searchResults = const [];
+        _isSearching = false;
+      });
+    }
+  }
 
-        return Column(
+  Widget _buildSearchSection(ThemeData theme) {
+    return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(t.book_search, style: theme.textTheme.titleMedium),
@@ -640,14 +639,14 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                       border: const OutlineInputBorder(),
                     ),
                     style: theme.textTheme.bodyMedium,
-                    onSubmitted: (_) => doSearch(),
+                    onSubmitted: (_) => _doSearch(),
                   ),
                 ),
                 const SizedBox(width: 8),
                 SizedBox(
                   height: 40,
                   child: FilledButton.tonal(
-                    onPressed: _isSearching ? null : doSearch,
+                    onPressed: _isSearching ? null : _doSearch,
                     style: FilledButton.styleFrom(
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       visualDensity: VisualDensity.compact,
@@ -727,7 +726,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                       ),
                       onTap: () async {
                         final String q = _searchController.text.trim();
-                        Navigator.pop(ctx);
+                        Navigator.pop(context);
                         await widget.onSearchJump?.call(r, q);
                       },
                     );
@@ -744,8 +743,6 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
             ],
           ],
         );
-      },
-    );
   }
 
   Widget _buildCharJumpSection(ThemeData theme) {

@@ -1238,7 +1238,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           _isNavigatingToChapter = false;
           _restoreInFlight = false;
           if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
-            _restoreCompleter!.complete();
+            _restoreCompleter!.complete(false);
           }
           _restoreCompleter = null;
         }
@@ -1272,7 +1272,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   // ── Restore Complete ──────────────────────────────────────────────
 
-  Completer<void>? _restoreCompleter;
+  Completer<bool>? _restoreCompleter;
 
   void _onRestoreComplete() {
     if (!mounted) {
@@ -1280,7 +1280,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     }
     _restoreInFlight = false;
     if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
-      _restoreCompleter!.complete();
+      _restoreCompleter!.complete(true);
     }
     _restoreCompleter = null;
 
@@ -1678,9 +1678,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _flushReadingStats();
 
     if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
-      _restoreCompleter!.complete();
+      _restoreCompleter!.complete(false);
     }
-    _restoreCompleter = Completer<void>();
+    _restoreCompleter = Completer<bool>();
 
     _currentChapter = index;
     _initialProgress = progress;
@@ -1699,7 +1699,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       debugPrint('[ReaderHoshi] _navigateToChapter loadUrl failed: $e');
       _restoreInFlight = false;
       if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
-        _restoreCompleter!.complete();
+        _restoreCompleter!.complete(false);
       }
       _restoreCompleter = null;
     }
@@ -1707,17 +1707,16 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   Future<bool> _navigateToChapterAndWait(int index) async {
     await _navigateToChapter(index);
-    bool success = true;
-    await _restoreCompleter?.future.timeout(
+    final bool success = await _restoreCompleter?.future.timeout(
       const Duration(seconds: 10),
       onTimeout: () {
         debugPrint('[ReaderHoshi] _navigateToChapterAndWait timed out');
         _isNavigatingToChapter = false;
         _restoreCompleter = null;
         _restoreInFlight = false;
-        success = false;
+        return false;
       },
-    );
+    ) ?? false;
     return success && _currentChapter == index;
   }
 
@@ -1733,9 +1732,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _flushReadingStats();
 
     if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
-      _restoreCompleter!.complete();
+      _restoreCompleter!.complete(false);
     }
-    _restoreCompleter = Completer<void>();
+    _restoreCompleter = Completer<bool>();
 
     _currentChapter = index;
     _initialProgress = 0.0;
@@ -1757,7 +1756,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           '[ReaderHoshi] _navigateToChapterWithFragment loadUrl failed: $e');
       _restoreInFlight = false;
       if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
-        _restoreCompleter!.complete();
+        _restoreCompleter!.complete(false);
       }
       _restoreCompleter = null;
     }
