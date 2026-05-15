@@ -261,6 +261,8 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _charJumpController = TextEditingController();
   List<BookSearchResult> _searchResults = const [];
+  String _searchResultsQuery = '';
+  int _searchGeneration = 0;
   bool _isSearching = false;
 
   String? _subPage;
@@ -597,22 +599,25 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
   Future<void> _doSearch() async {
     final String query = _searchController.text.trim();
     if (query.isEmpty) return;
+    final int gen = ++_searchGeneration;
     setState(() => _isSearching = true);
     try {
       final List<BookSearchResult> results = widget.epubBook != null
           ? await AudiobookBridge.searchBook(widget.epubBook!, query)
           : const <BookSearchResult>[];
-      if (!mounted) return;
+      if (!mounted || gen != _searchGeneration) return;
       setState(() {
         _searchResults = results;
+        _searchResultsQuery = query;
         _isSearching = false;
       });
     } catch (e, stack) {
       ErrorLogService.instance.log('AudiobookPlayBar.search', e, stack);
       debugPrint('[hibiki-search] error: $e');
-      if (!mounted) return;
+      if (!mounted || gen != _searchGeneration) return;
       setState(() {
         _searchResults = const [];
+        _searchResultsQuery = '';
         _isSearching = false;
       });
     }
@@ -676,7 +681,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               itemCount: _searchResults.length,
               itemBuilder: (_, i) {
                 final BookSearchResult r = _searchResults[i];
-                final String query = _searchController.text.trim();
+                final String query = _searchResultsQuery;
                 final int rawIdx = r.sectionIndex;
                 final List<TtuTocEntry> toc = widget.toc;
                 final TtuTocEntry? tocEntry =
@@ -724,7 +729,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                     style: theme.textTheme.bodySmall,
                   ),
                   onTap: () async {
-                    final String q = _searchController.text.trim();
+                    final String q = _searchResultsQuery;
                     Navigator.pop(context);
                     await widget.onSearchJump?.call(r, q);
                   },

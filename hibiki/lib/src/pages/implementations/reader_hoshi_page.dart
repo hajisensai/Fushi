@@ -265,7 +265,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
     _syncDictionaryTheme();
 
-    _lyricsMode = ReaderHoshiSource.instance.lyricsMode;
+    _lyricsMode = false;
+    ReaderHoshiSource.instance.setLyricsMode(false);
 
     _audioSlotResolved = true;
 
@@ -604,7 +605,12 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
             ext.endsWith('.ogg') ||
             ext.endsWith('.aac') ||
             ext.endsWith('.wav') ||
-            ext.endsWith('.mp4');
+            ext.endsWith('.mp4') ||
+            ext.endsWith('.flac') ||
+            ext.endsWith('.opus') ||
+            ext.endsWith('.wma') ||
+            ext.endsWith('.ac3') ||
+            ext.endsWith('.eac3');
       }).toList()
         ..sort((a, b) => a.path.compareTo(b.path));
       return files;
@@ -1273,9 +1279,18 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   // ── Restore Complete ──────────────────────────────────────────────
 
   Completer<bool>? _restoreCompleter;
+  int _navigateGeneration = 0;
+  int _restoreExpectedGeneration = 0;
 
   void _onRestoreComplete() {
     if (!mounted) {
+      return;
+    }
+    if (_restoreExpectedGeneration != _navigateGeneration) {
+      debugPrint(
+        '[ReaderHoshi] stale onRestoreComplete: '
+        'expected=$_restoreExpectedGeneration current=$_navigateGeneration',
+      );
       return;
     }
     _restoreInFlight = false;
@@ -1677,6 +1692,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _progressPollTimer?.cancel();
     _flushReadingStats();
 
+    final int gen = ++_navigateGeneration;
+    _restoreExpectedGeneration = gen;
     if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
       _restoreCompleter!.complete(false);
     }
@@ -1731,6 +1748,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _audiobookController?.cancelChapterTransition();
     _flushReadingStats();
 
+    final int gen = ++_navigateGeneration;
+    _restoreExpectedGeneration = gen;
     if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
       _restoreCompleter!.complete(false);
     }
