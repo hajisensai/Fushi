@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:html/parser.dart' as html_parser;
+import 'package:html/dom.dart' as html_dom;
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:hibiki/src/epub/epub_book.dart';
@@ -394,14 +396,14 @@ window.__hoshiAnnotate = function(chapterHref) {
   ) async {
     if (query.isEmpty) return const <BookSearchResult>[];
 
-    final List<String> chapterTexts = List<String>.generate(
+    final List<String> chapterHtmls = List<String>.generate(
       book.chapters.length,
-      (i) => book.chapterPlainText(i),
+      (i) => book.chapters[i].html,
     );
 
     return compute(
       _searchIsolate,
-      _SearchParams(chapterTexts: chapterTexts, query: query),
+      _SearchParams(chapterHtmls: chapterHtmls, query: query),
     );
   }
 
@@ -471,8 +473,8 @@ window.__hoshiAnnotate = function(chapterHref) {
 // ── 搜索 isolate ─────────────────────────────────────────────────────────────
 
 class _SearchParams {
-  const _SearchParams({required this.chapterTexts, required this.query});
-  final List<String> chapterTexts;
+  const _SearchParams({required this.chapterHtmls, required this.query});
+  final List<String> chapterHtmls;
   final String query;
 }
 
@@ -484,11 +486,10 @@ List<BookSearchResult> _searchIsolate(_SearchParams params) {
 
   final List<BookSearchResult> results = <BookSearchResult>[];
 
-  for (int i = 0; i < params.chapterTexts.length; i++) {
-    final String text = params.chapterTexts[i];
+  for (int i = 0; i < params.chapterHtmls.length; i++) {
+    final String text = _chapterPlainText(params.chapterHtmls[i]);
     final String haystack = text.toLowerCase();
     int start = 0;
-    int matchInChapter = 0;
     while (true) {
       final int idx = haystack.indexOf(needle, start);
       if (idx < 0) break;
@@ -504,16 +505,23 @@ List<BookSearchResult> _searchIsolate(_SearchParams params) {
         charOffset: idx,
         context: context,
         matchStart: matchStart,
-        matchIndexInChapter: matchInChapter,
       ));
 
       if (results.length >= maxResults) return results;
-      matchInChapter++;
       start = idx + 1;
     }
   }
 
   return results;
+}
+
+String _chapterPlainText(String html) {
+  final html_dom.Document doc = html_parser.parse(html);
+  final html_dom.Element? body = doc.body;
+  if (body == null) return '';
+  body.querySelectorAll('rt, rp, rtc').forEach((el) => el.remove());
+  final String raw = body.text;
+  return raw.replaceAll(RegExp(r'\s+'), ' ').trim();
 }
 
 // ── 数据类 ───────────────────────────────────────────────────────────────────
@@ -620,7 +628,6 @@ class BookSearchResult {
       charOffset: (m['charOffset'] as num).toInt(),
       context: m['context'] as String? ?? '',
       matchStart: (m['matchStart'] as num?)?.toInt() ?? 0,
-      matchIndexInChapter: (m['matchIndexInChapter'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -629,12 +636,10 @@ class BookSearchResult {
     required this.charOffset,
     required this.context,
     required this.matchStart,
-    required this.matchIndexInChapter,
   });
 
   final int sectionIndex;
   final int charOffset;
   final String context;
   final int matchStart;
-  final int matchIndexInChapter;
 }

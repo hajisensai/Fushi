@@ -34,8 +34,8 @@ class ReaderPaginationScripts {
   static String clearSasayakiCueInvocation() =>
       'window.hoshiReader.clearSasayakiCue()';
 
-  static String scrollToSearchMatchInvocation(String query, int matchIndex) =>
-      'window.hoshiReader.scrollToSearchMatch(${_jsStringLiteral(query)}, $matchIndex)';
+  static String scrollToSearchMatchInvocation(String query, int hintOffset) =>
+      'window.hoshiReader.scrollToSearchMatch(${_jsStringLiteral(query)}, $hintOffset)';
 
   static String clearSearchHighlightInvocation() =>
       'window.hoshiReader.clearSearchHighlight()';
@@ -331,7 +331,7 @@ class ReaderPaginationScripts {
       parent.normalize();
     });
   },
-  scrollToSearchMatch: function(query, matchIndex) {
+  scrollToSearchMatch: function(query, hintOffset) {
     if (!query) return null;
     var walker = this.createWalker();
     var node;
@@ -342,17 +342,22 @@ class ReaderPaginationScripts {
     var fullText = segments.map(function(s) { return s.text; }).join('');
     var lowerQuery = query.toLowerCase();
     var lowerFull = fullText.toLowerCase();
-    var found = 0;
-    var targetStart = -1;
+    var matches = [];
     var searchFrom = 0;
     while (searchFrom <= lowerFull.length) {
       var idx = lowerFull.indexOf(lowerQuery, searchFrom);
       if (idx < 0) break;
-      if (found === matchIndex) { targetStart = idx; break; }
-      found++;
+      matches.push(idx);
       searchFrom = idx + 1;
     }
-    if (targetStart < 0) return null;
+    if (!matches.length) return null;
+    var bestIdx = matches[0];
+    var bestDist = Math.abs(bestIdx - hintOffset);
+    for (var m = 1; m < matches.length; m++) {
+      var dist = Math.abs(matches[m] - hintOffset);
+      if (dist < bestDist) { bestIdx = matches[m]; bestDist = dist; }
+    }
+    var targetStart = bestIdx;
     var targetEnd = targetStart + query.length;
     var charPos = 0;
     var startNode = null, startOffset = 0, endNode = null, endOffset = 0;

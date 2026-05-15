@@ -1705,8 +1705,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     }
   }
 
-  Future<void> _navigateToChapterAndWait(int index) async {
+  Future<bool> _navigateToChapterAndWait(int index) async {
     await _navigateToChapter(index);
+    bool success = true;
     await _restoreCompleter?.future.timeout(
       const Duration(seconds: 10),
       onTimeout: () {
@@ -1714,8 +1715,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         _isNavigatingToChapter = false;
         _restoreCompleter = null;
         _restoreInFlight = false;
+        success = false;
       },
     );
+    return success && _currentChapter == index;
   }
 
   Future<void> _navigateToChapterWithFragment(
@@ -2507,13 +2510,14 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           onSearchJump: (BookSearchResult result, String query) async {
             if (_book == null || _controller == null) return;
             if (result.sectionIndex != _currentChapter) {
-              await _navigateToChapterAndWait(result.sectionIndex);
+              final bool ok =
+                  await _navigateToChapterAndWait(result.sectionIndex);
+              if (!ok || _controller == null) return;
             }
-            if (_controller == null) return;
             await _controller!.evaluateJavascript(
               source: ReaderPaginationScripts.scrollToSearchMatchInvocation(
                 query,
-                result.matchIndexInChapter,
+                result.charOffset,
               ),
             );
           },

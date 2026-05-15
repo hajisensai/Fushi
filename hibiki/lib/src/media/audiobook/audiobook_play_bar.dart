@@ -604,6 +604,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                 widget.epubBook != null
                     ? await AudiobookBridge.searchBook(widget.epubBook!, query)
                     : const <BookSearchResult>[];
+            if (!mounted) return;
             setLocal(() {
               _searchResults = results;
               _isSearching = false;
@@ -611,6 +612,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           } catch (e, stack) {
             ErrorLogService.instance.log('AudiobookPlayBar.search', e, stack);
             debugPrint('[hibiki-search] error: $e');
+            if (!mounted) return;
             setLocal(() {
               _searchResults = const [];
               _isSearching = false;
