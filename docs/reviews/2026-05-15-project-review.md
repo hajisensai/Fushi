@@ -439,3 +439,93 @@
 
 - Build a small WebView-side test harness for `scrollToSearchMatch()` with ruby, split text nodes, hidden text, repeated query, and vertical writing.
 - Then run emulator validation on a real EPUB chapter and record screenshot/UI/log evidence under `.codex-test/`.
+
+---
+
+## 八、Hoshi 全书搜索二次修复复审（commit `6109d496`）
+
+### Scope
+
+- Commit: `6109d496 fix(search): address all 4 review findings from HBK-AUDIT-SEARCH`
+- Files:
+  - `hibiki/lib/src/media/audiobook/audiobook_bridge.dart`
+  - `hibiki/lib/src/media/audiobook/audiobook_play_bar.dart`
+  - `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart`
+  - `hibiki/lib/src/reader/reader_pagination_scripts.dart`
+  - related reference: `hibiki/lib/src/epub/epub_book.dart`
+- Review type: code-path review plus targeted analyzer check. No emulator/WebView runtime validation was performed in this round.
+
+### Findings
+
+#### HBK-AUDIT-SEARCH-005: Hoshi 搜索入口仍被 `isHoshiReader` 条件隐藏，整套修复是死路径
+
+- **Severity**: HIGH
+- **Status**: code-path review found; supersedes the claim that all four search findings are fixed.
+- **Files**:
+  - `hibiki/lib/src/media/audiobook/audiobook_play_bar.dart:466-492`
+  - `hibiki/lib/src/media/audiobook/audiobook_play_bar.dart:595-618`
+  - `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart:2509-2522`
+- **根因**: `ReaderHoshiPage` 确实传入了 `epubBook` 和 `onSearchJump`，但 `AudiobookSettingsSheet` 的导航页仍写着 `if (!widget.isHoshiReader) _buildSearchSection(theme)`。Hoshi 阅读器调用该 sheet 时传 `isHoshiReader: true`，所以 `_buildSearchSection()` 根本不会渲染。
+- **影响**: 用户在当前 Hoshi 阅读器里看不到全书搜索入口。`searchBook()`、`scrollToSearchMatch()`、`onSearchJump` 的修复都不会被正常 UI 触发。这个问题比坐标精度还基础：功能不可达。
+- **修复建议**: 搜索入口的条件应绑定真实能力，而不是旧 TTU/Hoshi 分支名。最简单的数据模型是 `if (widget.epubBook != null && widget.onSearchJump != null) _buildSearchSection(theme)`；旧 TTU 如果没有 `epubBook/onSearchJump` 就自然不显示。别用 `isHoshiReader` 这种历史兼容标志控制新功能入口。
+- **验证方式**: 打开 Hoshi 阅读器的设置 sheet -> 导航页，确认出现“全书搜索”；输入查询后点结果，确认会进入 `onSearchJump` 并执行 WebView 定位。
+
+#### HBK-AUDIT-SEARCH-006: `hintOffset` 仍然不是 DOM 坐标，001 只是从“第 N 个”改成“猜最近”
+
+- **Severity**: HIGH
+- **Status**: partially fixed; root coordinate-system mismatch remains.
+- **Files**:
+  - `hibiki/lib/src/media/audiobook/audiobook_bridge.dart:459-503`
+  - `hibiki/lib/src/reader/reader_pagination_scripts.dart:334-392`
+  - `hibiki/lib/src/epub/epub_book.dart:50-56`
+- **根因**: Dart isolate 里的 `_chapterPlainText()` 仍会 `body.text` 后把所有空白折叠成一个空格，并删除 `rt/rp/rtc`；JS `scrollToSearchMatch()` 则拼接 live DOM text node，不折叠空白，且 `isFurigana()` 只跳过 `rt/rp`。`result.charOffset` 是 Dart 文本坐标，JS 把它当 DOM 拼接文本坐标来算距离。
+- **影响**: 重复短词、章节前半段有大量换行/缩进/隐藏节点/ruby 差异时，最近匹配会选错。这个失败不会报错，只会把用户带到同章另一个相同 query，属于最难发现的错跳。
+- **修复建议**: 不要继续在两个文本模型之间传裸 offset。要么搜索和定位都在 WebView DOM 坐标里完成，要么 isolate 产出与 JS 完全相同的 text segments，并把 `{segmentIndex, startOffset, endOffset}` 传给 JS。当前 `hintOffset` 只能当临时启发式，不是根因修复。
+- **验证方式**: 构造章节：开头大量换行缩进、多处相同短 query、`<ruby>`、跨 `<span>` 文本节点。点第二/第三条结果后，用 JS 读 `CSS.highlights.get('hoshi-search')` 的 range 上下文，必须与列表上下文一致。
+
+#### HBK-AUDIT-SEARCH-007: `_navigateToChapterAndWait()` 仍会把 load error 当成功
+
+- **Severity**: MEDIUM
+- **Status**: timeout path improved, error path still wrong.
+- **Files**:
+  - `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart:1235-1244`
+  - `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart:1688-1722`
+  - `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart:2509-2522`
+- **根因**: `_navigateToChapterAndWait()` 现在只在 timeout 时把 `success = false`，但 `_navigateToChapter()` 的 `loadUrl` catch 和 WebView `onReceivedError` 都只是 complete `_restoreCompleter` 并清状态，没有把失败信息传给等待者。等待者随后看到 `success == true && _currentChapter == index`，仍可能继续执行搜索定位 JS。
+- **影响**: 网络/资源拦截/章节 URL 错误等主 frame 加载失败时，搜索仍可能在错误或半初始化 DOM 上运行。003 的 timeout 分支修了，但“章节加载失败后不执行 JS”的契约还没修完整。
+- **修复建议**: 给章节导航建立显式结果状态，而不是用 completer 完成代表成功。可用 `Completer<bool>` 或 `_pendingChapterLoadFailed`，`onRestoreComplete` 才完成 `true`，`onReceivedError` / `_loadChapterDirectly` catch 完成 `false`。搜索跳转只接受 true。
+- **验证方式**: 人为让目标章节主 frame 加载失败，点击跨章搜索结果，确认不会调用 `scrollToSearchMatch()`，并且 UI 给出失败反馈或保留可重试状态。
+
+#### HBK-AUDIT-SEARCH-008: `StatefulBuilder` 的局部生命周期仍未被保护
+
+- **Severity**: LOW-MEDIUM
+- **Status**: partially fixed.
+- **Files**:
+  - `hibiki/lib/src/media/audiobook/audiobook_play_bar.dart:595-618`
+  - `hibiki/lib/src/media/audiobook/audiobook_play_bar.dart:728-731`
+- **根因**: `doSearch()` 只检查了外层 `_AudiobookSettingsSheetState.mounted`。但 `_buildSearchSection()` 是 `StatefulBuilder`，当用户切换子页面、返回上级、或局部 widget 被移除时，外层 State 仍 mounted，闭包里的 `setLocal()` 仍可能指向已移除的局部 element。`onTap` 仍是先 `Navigator.pop(ctx)` 再 await 跳转，失败反馈也被切断。
+- **影响**: 搜索过程中切换页面/关闭局部视图仍可能触发 `setState() called after dispose()` 或静默丢失状态。搜索跳转失败仍没有用户可见结果。
+- **修复建议**: 避免把异步搜索状态放在 `StatefulBuilder` 闭包里。把搜索状态提升到 `_AudiobookSettingsSheetState`，统一用 `setState` + `mounted` 管理；或引入独立 `StatefulWidget`，用它自己的 `mounted` 检查。跳转应先 await 结果，成功后再关闭面板，失败时留在搜索页。
+- **验证方式**: 在大书搜索 pending 时切换到其他设置页、返回上级、关闭 sheet，确认无 lifecycle 异常；模拟跳转失败时确认用户仍能重试。
+
+### Fixed / Improved
+
+- `HBK-AUDIT-SEARCH-002` 的主线程 HTML parse 问题基本修对：`searchBook()` 现在传 raw chapter HTML 到 `compute()`，`_chapterPlainText()` 在 isolate 内执行。
+- `HBK-AUDIT-SEARCH-003` 的 timeout 分支已有改善：跨章搜索跳转会在 `_navigateToChapterAndWait()` 返回 false 时中止。但 error path 仍见 `HBK-AUDIT-SEARCH-007`。
+
+### Verification
+
+- Ran:
+  - `D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat analyze lib/src/media/audiobook/audiobook_bridge.dart lib/src/media/audiobook/audiobook_play_bar.dart lib/src/pages/implementations/reader_hoshi_page.dart lib/src/reader/reader_pagination_scripts.dart`
+- Result:
+  - Analyzer returned 3 warnings:
+    - `reader_hoshi_page.dart:701:46 use_build_context_synchronously`
+    - `reader_hoshi_page.dart:1041:42 use_build_context_synchronously`
+    - `reader_hoshi_page.dart:1233:42 use_build_context_synchronously`
+  - No new compile error was observed in this targeted file set, but warning gate remains non-clean.
+
+### Next Scope
+
+- First fix reachability: make Hoshi search UI visible based on `epubBook/onSearchJump`.
+- Then replace the search result coordinate contract with DOM text segments or WebView-side search results.
+- Finally add a small JS/Dart test harness for repeated query + whitespace + ruby cases before emulator validation.
