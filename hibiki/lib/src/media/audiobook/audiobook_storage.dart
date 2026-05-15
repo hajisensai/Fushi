@@ -102,6 +102,9 @@ abstract final class AudiobookStorage {
       '.flac',
       '.wav',
       '.wma',
+      '.ac3',
+      '.eac3',
+      '.mp4',
     ];
     for (final FileSystemEntity f in persistDir.listSync()) {
       if (f is File && audioExts.contains(p.extension(f.path).toLowerCase())) {

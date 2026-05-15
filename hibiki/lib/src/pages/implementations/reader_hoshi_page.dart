@@ -1850,6 +1850,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   @override
   void onAllPopupsDismissed() {
+    if (!mounted) return;
     if (_pausedForLookup) {
       _pausedForLookup = false;
       _audiobookController?.play();

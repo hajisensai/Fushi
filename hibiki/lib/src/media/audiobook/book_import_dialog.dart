@@ -64,6 +64,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
   String? _epubPath;
   String? _subtitlePath;
   List<String> _audioPaths = [];
+  String? _coverPath;
 
   // 原始文件名（file_picker 在 Android 上返回的 cache 路径文件名可能与原始不同）
   String? _epubName;
@@ -144,6 +145,10 @@ class _BookImportDialogState extends State<BookImportDialog> {
         _subtitleRow(),
         const SizedBox(height: 8),
         _audioRow(),
+        if (_hasSubtitles && _epubPath == null) ...[
+          const SizedBox(height: 8),
+          _coverRow(),
+        ],
         const SizedBox(height: 12),
         TextField(
           controller: _titleCtrl,
@@ -186,8 +191,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
               padding: const EdgeInsets.only(top: 8),
               child: SasayakiThresholdSlider(
                 value: _similarityThreshold,
-                onChanged: (v) =>
-                    setState(() => _similarityThreshold = v),
+                onChanged: (v) => setState(() => _similarityThreshold = v),
               ),
             ),
         ],
@@ -379,16 +383,57 @@ class _BookImportDialogState extends State<BookImportDialog> {
     );
     if (result == null || !mounted) return;
 
-    final List<String> paths = result.files
-        .map((f) => f.path)
-        .whereType<String>()
-        .toList()
-      ..sort();
+    final List<String> paths =
+        result.files.map((f) => f.path).whereType<String>().toList()..sort();
 
     if (paths.isNotEmpty) {
       setState(() {
         _audioPaths = paths;
       });
+    }
+  }
+
+  Widget _coverRow() {
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(t.srt_import_pick_cover,
+                  style: const TextStyle(fontSize: 13)),
+              if (_coverPath != null)
+                Text(
+                  p.basename(_coverPath!),
+                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+            ],
+          ),
+        ),
+        if (_coverPath != null)
+          IconButton(
+            icon: const Icon(Icons.close, size: 18, color: Colors.grey),
+            onPressed: () => setState(() => _coverPath = null),
+          ),
+        IconButton(
+          icon: const Icon(Icons.image, size: 20),
+          tooltip: t.srt_import_pick_cover,
+          onPressed: _pickCover,
+        ),
+      ],
+    );
+  }
+
+  Future<void> _pickCover() async {
+    final FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+    );
+    if (result == null || !mounted) return;
+    final String? path = result.files.first.path;
+    if (path != null) {
+      setState(() => _coverPath = path);
     }
   }
 
@@ -421,7 +466,8 @@ class _BookImportDialogState extends State<BookImportDialog> {
       final String? authorText =
           _authorCtrl.text.trim().isEmpty ? null : _authorCtrl.text.trim();
 
-      debugPrint('[hibiki-import] route: epub=$_epubPath sub=$_subtitlePath audio=${_audioPaths.length} files');
+      debugPrint(
+          '[hibiki-import] route: epub=$_epubPath sub=$_subtitlePath audio=${_audioPaths.length} files');
       String? tail;
       if (_epubPath != null && _hasSubtitles) {
         debugPrint('[hibiki-import] → _importEpubWithAlignment');
@@ -487,7 +533,8 @@ class _BookImportDialogState extends State<BookImportDialog> {
           bytes: await epubFile.readAsBytes(),
           fileName: '${title.replaceAll(RegExp(r'[^\w\s\-]'), '')}.epub',
         );
-        debugPrint('[hibiki-import] subtitleBook: EPUB import done, id=$bookId');
+        debugPrint(
+            '[hibiki-import] subtitleBook: EPUB import done, id=$bookId');
       } catch (e, stack) {
         ErrorLogService.instance.log('BookImportDialog.epubImport', e, stack);
         debugPrint('[hibiki-import] EPUB generation/import failed: $e');
@@ -503,8 +550,8 @@ class _BookImportDialogState extends State<BookImportDialog> {
     final List<String> persistedAudioPaths = [];
     for (int i = 0; i < _audioPaths.length; i++) {
       persistedAudioPaths.add(
-        await AudiobookStorage.persistFile(
-          File(_audioPaths[i]), persistDir, dedupeIndex: i),
+        await AudiobookStorage.persistFile(File(_audioPaths[i]), persistDir,
+            dedupeIndex: i),
       );
     }
 
@@ -520,6 +567,12 @@ class _BookImportDialogState extends State<BookImportDialog> {
     }
     if (author != null) {
       book.author = author;
+    }
+    if (_coverPath != null) {
+      final String ext = p.extension(_coverPath!);
+      final String dest = p.join(persistDir.path, 'cover$ext');
+      await File(_coverPath!).copy(dest);
+      book.coverPath = dest;
     }
 
     debugPrint('[hibiki-import] SrtBook save: uid=$uid title="$title" '
@@ -622,16 +675,17 @@ class _BookImportDialogState extends State<BookImportDialog> {
         }
       }
       matchResult ??= await EpubCueMatcher.matchInIsolate(
-          sections: sections,
-          cues: cues,
-          searchWindow: chosenWindow,
-          similarityThreshold: _similarityThreshold,
-        );
+        sections: sections,
+        cues: cues,
+        searchWindow: chosenWindow,
+        similarityThreshold: _similarityThreshold,
+      );
       SasayakiMatchCodec.applyToCues(cues: cues, result: matchResult);
       final int pct = (matchResult.matchRate * 100).round();
       health = AudiobookHealth.fromRatePct(
         ratePct: pct,
-        reason: '${matchResult.matchedCues}/${matchResult.totalCues} cues matched '
+        reason:
+            '${matchResult.matchedCues}/${matchResult.totalCues} cues matched '
             '(window=$chosenWindow)',
       );
     } else if (runMatcher) {
@@ -653,8 +707,8 @@ class _BookImportDialogState extends State<BookImportDialog> {
     final List<String> persistedAudioPaths = [];
     for (int i = 0; i < _audioPaths.length; i++) {
       persistedAudioPaths.add(
-        await AudiobookStorage.persistFile(
-          File(_audioPaths[i]), persistDir, dedupeIndex: i),
+        await AudiobookStorage.persistFile(File(_audioPaths[i]), persistDir,
+            dedupeIndex: i),
       );
     }
 
@@ -682,7 +736,6 @@ class _BookImportDialogState extends State<BookImportDialog> {
 
     return _summarizeHealth(health);
   }
-
 
   String? _summarizeHealth(AudiobookHealth h) {
     switch (h.kind) {

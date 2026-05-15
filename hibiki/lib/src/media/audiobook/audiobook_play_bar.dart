@@ -82,20 +82,12 @@ class AudiobookPlayBar extends StatelessWidget {
                 ),
               ),
               AudiobookFollowAudioButton(controller: controller),
-              if (onToggleLyricsMode != null)
-                IconButton(
-                  icon: Icon(lyricsMode ? Icons.auto_stories : Icons.lyrics),
-                  iconSize: 20,
-                  onPressed: onToggleLyricsMode,
-                  tooltip: t.lyrics_mode,
-                ),
-              if (!lyricsMode)
-                IconButton(
-                  icon: const Icon(Icons.tune),
-                  iconSize: 20,
-                  onPressed: onOpenSettings,
-                  tooltip: t.audiobook_settings,
-                ),
+              IconButton(
+                icon: const Icon(Icons.tune),
+                iconSize: 20,
+                onPressed: onOpenSettings,
+                tooltip: t.audiobook_settings,
+              ),
             ],
           ),
         ),
@@ -210,6 +202,9 @@ class AudiobookSettingsSheet extends StatefulWidget {
     this.onPageMarginChanged,
     this.isHoshiReader = false,
     this.epubBook,
+    this.onStyleChanged,
+    this.lyricsMode = false,
+    this.onToggleLyricsMode,
     super.key,
   });
 
@@ -243,6 +238,13 @@ class AudiobookSettingsSheet extends StatefulWidget {
   final Future<void> Function(int globalCharOffset)? onJumpToCharOffset;
   final (int current, int total)? charProgress;
   final VoidCallback? onPageMarginChanged;
+
+  /// Called after any typography/style setting changes so the reader can
+  /// live-update CSS without a full page reload.
+  final VoidCallback? onStyleChanged;
+
+  final bool lyricsMode;
+  final VoidCallback? onToggleLyricsMode;
 
   /// When true, skip AudiobookBridge JS calls and disable ttu-only features.
   final bool isHoshiReader;
@@ -357,11 +359,15 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
       case 'prioritizeReaderStyles':
         await src.setTtuPrioritizeReaderStyles(value as bool);
     }
+    if (widget.isHoshiReader) {
+      widget.onStyleChanged?.call();
+    }
   }
 
   Future<void> _applyFuriganaMode(String mode) async {
     if (widget.isHoshiReader) {
       _src.setTtuFuriganaMode(mode);
+      widget.onStyleChanged?.call();
       return;
     }
     final hide = mode != 'show';
@@ -1149,6 +1155,10 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
       }),
       sw(t.auto_read_on_lookup, _src.autoReadOnLookup,
           _src.toggleAutoReadOnLookup),
+      sw(t.pause_on_lookup, _src.pauseOnLookup, () async {
+        await _src.setPauseOnLookup(value: !_src.pauseOnLookup);
+        setState(() {});
+      }),
       Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: Row(
@@ -1880,6 +1890,16 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceAround,
       children: [
+        if (widget.onToggleLyricsMode != null)
+          _actionBtn(
+            context,
+            icon: widget.lyricsMode ? Icons.auto_stories : Icons.lyrics,
+            label: t.lyrics_mode,
+            onTap: () {
+              Navigator.of(context).pop();
+              widget.onToggleLyricsMode!();
+            },
+          ),
         _actionBtn(
           context,
           icon: Icons.bookmark_add_outlined,

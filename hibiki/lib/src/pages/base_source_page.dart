@@ -244,8 +244,8 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
     final pos = _calculatePopupPosition(_pendingSelectionRect!, screen);
     final isDark = (appModel.overrideDictionaryTheme ?? theme).brightness ==
         Brightness.dark;
-    final fillColor =
-        appModel.overrideDictionaryColor ?? (isDark ? Colors.black : Colors.white);
+    final fillColor = appModel.overrideDictionaryColor ??
+        (isDark ? Colors.black : Colors.white);
     final borderColor = isDark
         ? Colors.white.withValues(alpha: 0.15)
         : Colors.black.withValues(alpha: 0.18);
@@ -342,10 +342,15 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
       _popupStack.value = [];
       appModel.currentMediaSource?.clearCurrentSentence();
       appModel.currentMediaSource?.clearExtraData();
+      onAllPopupsDismissed();
     } else {
       _popupStack.value = _popupStack.value.sublist(0, index);
     }
   }
+
+  /// Called when all dictionary popups are dismissed (stack becomes empty).
+  /// Override in subclasses to hook post-dismiss logic.
+  void onAllPopupsDismissed() {}
 
   Rect _calculatePopupPosition(Rect sel, Size screen) {
     return calcPopupPosition(
