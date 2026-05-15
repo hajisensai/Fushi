@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -371,7 +372,6 @@ window.__hoshiAnnotate = function(chapterHref) {
     return AudiobookClickEvent(chapterHref: chapter, sentenceIndex: sid);
   }
 
-
   static Future<void> bookmarkCurrentPage(
     InAppWebViewController controller,
   ) async {}
@@ -394,37 +394,15 @@ window.__hoshiAnnotate = function(chapterHref) {
   ) async {
     if (query.isEmpty) return const <BookSearchResult>[];
 
-    final bool isCjk = RegExp(r'[　-鿿豈-﫿]').hasMatch(query);
-    final String needle = isCjk ? query : query.toLowerCase();
-    const int contextRadius = 20;
+    final List<String> chapterTexts = List<String>.generate(
+      book.chapters.length,
+      (i) => book.chapterPlainText(i),
+    );
 
-    final List<BookSearchResult> results = <BookSearchResult>[];
-
-    for (int i = 0; i < book.chapters.length; i++) {
-      final String text = book.chapterPlainText(i);
-      final String haystack = isCjk ? text : text.toLowerCase();
-      int start = 0;
-      while (true) {
-        final int idx = haystack.indexOf(needle, start);
-        if (idx < 0) break;
-
-        final int ctxStart = (idx - contextRadius).clamp(0, text.length);
-        final int ctxEnd = (idx + query.length + contextRadius).clamp(0, text.length);
-        final String context = text.substring(ctxStart, ctxEnd);
-        final int matchStart = idx - ctxStart;
-
-        results.add(BookSearchResult(
-          sectionIndex: i,
-          charOffset: idx,
-          context: context,
-          matchStart: matchStart,
-        ));
-
-        start = idx + 1;
-      }
-    }
-
-    return results;
+    return compute(
+      _searchIsolate,
+      _SearchParams(chapterTexts: chapterTexts, query: query),
+    );
   }
 
   /// 通过 hoshiReader.calculateProgress() 获取当前位置。
@@ -489,6 +467,56 @@ window.__hoshiAnnotate = function(chapterHref) {
     return const <TtuTocEntry>[];
   }
 }
+
+// ── 搜索 isolate ─────────────────────────────────────────────────────────────
+
+class _SearchParams {
+  const _SearchParams({required this.chapterTexts, required this.query});
+  final List<String> chapterTexts;
+  final String query;
+}
+
+List<BookSearchResult> _searchIsolate(_SearchParams params) {
+  final String query = params.query;
+  final String needle = query.toLowerCase();
+  const int contextRadius = 20;
+  const int maxResults = 500;
+
+  final List<BookSearchResult> results = <BookSearchResult>[];
+
+  for (int i = 0; i < params.chapterTexts.length; i++) {
+    final String text = params.chapterTexts[i];
+    final String haystack = text.toLowerCase();
+    int start = 0;
+    int matchInChapter = 0;
+    while (true) {
+      final int idx = haystack.indexOf(needle, start);
+      if (idx < 0) break;
+
+      final int ctxStart = (idx - contextRadius).clamp(0, text.length);
+      final int ctxEnd =
+          (idx + query.length + contextRadius).clamp(0, text.length);
+      final String context = text.substring(ctxStart, ctxEnd);
+      final int matchStart = idx - ctxStart;
+
+      results.add(BookSearchResult(
+        sectionIndex: i,
+        charOffset: idx,
+        context: context,
+        matchStart: matchStart,
+        matchIndexInChapter: matchInChapter,
+      ));
+
+      if (results.length >= maxResults) return results;
+      matchInChapter++;
+      start = idx + 1;
+    }
+  }
+
+  return results;
+}
+
+// ── 数据类 ───────────────────────────────────────────────────────────────────
 
 class TtuTocEntry {
   const TtuTocEntry({
@@ -586,24 +614,27 @@ class AudiobookClickEvent {
 }
 
 class BookSearchResult {
-
   factory BookSearchResult.fromMap(Map<String, dynamic> m) {
     return BookSearchResult(
       sectionIndex: (m['sectionIndex'] as num).toInt(),
       charOffset: (m['charOffset'] as num).toInt(),
       context: m['context'] as String? ?? '',
       matchStart: (m['matchStart'] as num?)?.toInt() ?? 0,
+      matchIndexInChapter: (m['matchIndexInChapter'] as num?)?.toInt() ?? 0,
     );
   }
+
   const BookSearchResult({
     required this.sectionIndex,
     required this.charOffset,
     required this.context,
     required this.matchStart,
+    required this.matchIndexInChapter,
   });
 
   final int sectionIndex;
   final int charOffset;
   final String context;
   final int matchStart;
+  final int matchIndexInChapter;
 }

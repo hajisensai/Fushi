@@ -2504,13 +2504,18 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
             _jumpToGlobalCharOffset(globalOffset);
           },
           epubBook: _book,
-          onSearchJump: (int sectionIndex, int charOffset) async {
-            if (_book == null || _chapterCumulativeChars.isEmpty) return;
-            final int globalOffset =
-                sectionIndex < _chapterCumulativeChars.length
-                    ? _chapterCumulativeChars[sectionIndex] + charOffset
-                    : charOffset;
-            await _jumpToGlobalCharOffset(globalOffset);
+          onSearchJump: (BookSearchResult result, String query) async {
+            if (_book == null || _controller == null) return;
+            if (result.sectionIndex != _currentChapter) {
+              await _navigateToChapterAndWait(result.sectionIndex);
+            }
+            if (_controller == null) return;
+            await _controller!.evaluateJavascript(
+              source: ReaderPaginationScripts.scrollToSearchMatchInvocation(
+                query,
+                result.matchIndexInChapter,
+              ),
+            );
           },
           bookmarks: bookmarks,
           onJumpToBookmark: (bm) async {

@@ -238,7 +238,7 @@ class AudiobookSettingsSheet extends StatefulWidget {
   final Future<bool> Function()? onToggleFloatingLyric;
   final double floatingLyricFontSize;
   final ValueChanged<double>? onFloatingLyricFontSizeChanged;
-  final Future<void> Function(int sectionIndex, int charOffset)? onSearchJump;
+  final Future<void> Function(BookSearchResult result, String query)? onSearchJump;
   final Future<void> Function(int globalCharOffset)? onJumpToCharOffset;
   final (int current, int total)? charProgress;
   final VoidCallback? onPageMarginChanged;
@@ -723,12 +723,10 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.bodySmall,
                       ),
-                      onTap: () {
+                      onTap: () async {
+                        final String q = _searchController.text.trim();
                         Navigator.pop(ctx);
-                        widget.onSearchJump?.call(
-                          r.sectionIndex,
-                          r.charOffset,
-                        );
+                        await widget.onSearchJump?.call(r, q);
                       },
                     );
                   },

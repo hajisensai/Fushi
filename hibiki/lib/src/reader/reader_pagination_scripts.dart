@@ -34,6 +34,12 @@ class ReaderPaginationScripts {
   static String clearSasayakiCueInvocation() =>
       'window.hoshiReader.clearSasayakiCue()';
 
+  static String scrollToSearchMatchInvocation(String query, int matchIndex) =>
+      'window.hoshiReader.scrollToSearchMatch(${_jsStringLiteral(query)}, $matchIndex)';
+
+  static String clearSearchHighlightInvocation() =>
+      'window.hoshiReader.clearSearchHighlight()';
+
   static bool didScroll(String? result) =>
       result?.trim().replaceAll('"', '') == 'scrolled';
 
@@ -324,6 +330,66 @@ class ReaderPaginationScripts {
       parent.removeChild(wrapper);
       parent.normalize();
     });
+  },
+  scrollToSearchMatch: function(query, matchIndex) {
+    if (!query) return null;
+    var walker = this.createWalker();
+    var node;
+    var segments = [];
+    while (node = walker.nextNode()) {
+      segments.push({ node: node, text: node.textContent });
+    }
+    var fullText = segments.map(function(s) { return s.text; }).join('');
+    var lowerQuery = query.toLowerCase();
+    var lowerFull = fullText.toLowerCase();
+    var found = 0;
+    var targetStart = -1;
+    var searchFrom = 0;
+    while (searchFrom <= lowerFull.length) {
+      var idx = lowerFull.indexOf(lowerQuery, searchFrom);
+      if (idx < 0) break;
+      if (found === matchIndex) { targetStart = idx; break; }
+      found++;
+      searchFrom = idx + 1;
+    }
+    if (targetStart < 0) return null;
+    var targetEnd = targetStart + query.length;
+    var charPos = 0;
+    var startNode = null, startOffset = 0, endNode = null, endOffset = 0;
+    for (var i = 0; i < segments.length; i++) {
+      var seg = segments[i];
+      var segEnd = charPos + seg.text.length;
+      if (!startNode && targetStart < segEnd) {
+        startNode = seg.node;
+        startOffset = targetStart - charPos;
+      }
+      if (targetEnd <= segEnd) {
+        endNode = seg.node;
+        endOffset = targetEnd - charPos;
+        break;
+      }
+      charPos = segEnd;
+    }
+    if (!startNode || !endNode) return null;
+    var range = document.createRange();
+    range.setStart(startNode, startOffset);
+    range.setEnd(endNode, endOffset);
+    if (window.__hoshiCssHighlightsSupported) {
+      CSS.highlights.set('hoshi-search', new Highlight(range));
+    }
+    if (this.scrollToRange) {
+      this.scrollToRange(range);
+    } else if (this.scrollToTarget) {
+      var span = document.createElement('span');
+      range.surroundContents(span);
+      this.scrollToTarget(span);
+    }
+    return this.calculateProgress();
+  },
+  clearSearchHighlight: function() {
+    if (window.__hoshiCssHighlightsSupported) {
+      CSS.highlights.delete('hoshi-search');
+    }
   },
 ''';
 
