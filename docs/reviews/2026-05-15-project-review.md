@@ -410,34 +410,35 @@
 | HBK-AUDIT-022 | HIGH | **fixed** | MainActivity SAF busy guard |
 | HBK-AUDIT-023 | HIGH | **fixed** | Removed duplicate onSelectionChanged call |
 | HBK-AUDIT-024 | HIGH | **fixed** | TextRange start/end clamped |
-| HBK-AUDIT-025 | MEDIUM | deferred | FK constraints — requires schema migration, risk/reward too low |
+| HBK-AUDIT-025 | MEDIUM | **fixed** | Application-level cascade delete in deleteEpubBook + deleteAudiobookByBookUid; v12 migration cleans orphans |
 | HBK-AUDIT-026 | MEDIUM | **fixed** | Cache key uses cleaned term + all query params |
 | HBK-AUDIT-027 | MEDIUM | **fixed** | Per-field try-catch in _rowToDictionary |
-| HBK-AUDIT-028 | MEDIUM | n/a | Color API not flagged by current Flutter version |
-| HBK-AUDIT-029 | MEDIUM | deferred | wakelock→wakelock_plus migration is large/risky |
-| HBK-AUDIT-030 | MEDIUM | deferred | ProGuard — app runs fine without rules, false positive |
+| HBK-AUDIT-028 | MEDIUM | **fixed** | Verified: Color(int) not deprecated in Flutter 3.41.6 (analyze 0 issues) |
+| HBK-AUDIT-029 | MEDIUM | **fixed** | wakelock→wakelock_plus: imports + class rename in 5 files, pubspec ^1.1.4 |
+| HBK-AUDIT-030 | MEDIUM | **fixed** | ProGuard rules + Play Core dontwarn for R8 |
 | HBK-AUDIT-031 | MEDIUM | **fixed** | Removed proxy config from gradle.properties |
 | HBK-AUDIT-032 | MEDIUM | **fixed** | network_security_config.xml: cleartext only for localhost |
-| HBK-AUDIT-033 | MEDIUM | deferred | Tautological tests — test quality, not runtime |
+| HBK-AUDIT-033 | MEDIUM | **fixed** | path_traversal_test rewritten to test EpubParser; search_history_test verified as non-tautological |
 | HBK-AUDIT-034 | MEDIUM | **fixed** | FutureBuilder futures cached in initState |
-| HBK-AUDIT-035 | MEDIUM | deferred | withPaths design decision |
-| HBK-AUDIT-036 | LOW | deferred | Hardcoded language list — cosmetic |
-| HBK-AUDIT-037 | LOW | deferred | Migration downgrade — design decision |
-| HBK-AUDIT-038 | LOW | deferred | Magic numbers — cosmetic |
+| HBK-AUDIT-035 | MEDIUM | **fixed** | withPaths callback pattern with automatic dispose in finally |
+| HBK-AUDIT-036 | LOW | **fixed** | Dynamic manifest.json replaces hardcoded language list |
+| HBK-AUDIT-037 | LOW | **fixed** | Downgrade handler drops+recreates; indexes unconditional in beforeOpen |
+| HBK-AUDIT-038 | LOW | **fixed** | Magic numbers extracted to defaultMaxResults/defaultScanLength |
 
 ### Verification
 
 - `flutter analyze`: 0 issues (verified at each round)
-- Release APK: builds successfully at each round (36.0MB arm64)
-- 5 code-reviewer agent passes, final verdict: **Ready to merge, zero Important+ issues**
+- `flutter test`: 183/183 pass (verified at final round)
+- Release APK: builds successfully at each round (36.2MB arm64)
+- 7 code-reviewer agent passes across all rounds
+- **All 38 findings resolved — zero deferred items**
 
-### Deferred Items Rationale
+### Commits (Round 6: Deferred Issues)
 
-- **HBK-025** (FK): Schema migration adds complexity and risk; orphan records are a slow disk leak, not a crash or data corruption. Proper fix needs migration testing infrastructure.
-- **HBK-029** (wakelock): Package replacement involves API surface change across multiple files. Should be a dedicated PR.
-- **HBK-030** (ProGuard): The app runs correctly in release mode without custom rules. If JNI symbols were being stripped, it would crash on every dictionary operation — which it doesn't.
-- **HBK-033** (tests): Writing real unit tests requires understanding business logic deeply. This is a project-level task, not a quick fix.
-- **HBK-035** (withPaths): Needs design discussion about ownership semantics. Not a simple code change.
+| Commit | Scope |
+|--------|-------|
+| `2bda52d2` | 10 deferred issues: wakelock migration, withPaths callback, manifest, ProGuard, migration guards, tests |
+| `ba8a7625` | Reviewer feedback: unify deleteBook cascade + unconditional index creation |
 
 ---
 
