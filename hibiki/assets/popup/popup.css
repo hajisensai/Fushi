@@ -501,6 +501,7 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
     background-color: var(--hoshi-primary-highlight, rgba(160, 160, 160, 0.4));
     color: inherit;
 }
+
 .hoshi-dict-highlight {
     background-color: var(--hoshi-primary-highlight, rgba(160, 160, 160, 0.4)) !important;
     color: inherit;

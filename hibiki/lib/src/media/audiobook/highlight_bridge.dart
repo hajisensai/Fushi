@@ -96,29 +96,36 @@ class HighlightBridge {
     return map;
   }
 
-  function _buildGroups(map, offset, length) {
-    var segments = [];
-    for (var m = 0; m < map.length; m++) {
-      if (map[m].normIdx >= offset && map[m].normIdx < offset + length) {
-        segments.push(map[m]);
-      }
+  function _bisect(map, target) {
+    var lo = 0, hi = map.length;
+    while (lo < hi) {
+      var mid = (lo + hi) >>> 1;
+      if (map[mid].normIdx < target) lo = mid + 1; else hi = mid;
     }
+    return lo;
+  }
+
+  function _buildGroups(map, offset, length) {
+    var start = _bisect(map, offset);
+    var end = _bisect(map, offset + length);
     var groups = [];
     var cur = null;
-    for (var s = 0; s < segments.length; s++) {
-      if (!cur || cur.node !== segments[s].node) {
-        cur = { node: segments[s].node, start: segments[s].rawIdx, end: segments[s].rawIdx + 1 };
+    for (var s = start; s < end; s++) {
+      if (!cur || cur.node !== map[s].node) {
+        cur = { node: map[s].node, start: map[s].rawIdx, end: map[s].rawIdx + 1 };
         groups.push(cur);
       } else {
-        cur.end = segments[s].rawIdx + 1;
+        cur.end = map[s].rawIdx + 1;
       }
     }
     return groups;
   }
 
   var ALL_COLORS = ['yellow','green','blue','pink','purple'];
+  var _rebuildPending = false;
 
-  function _rebuildCssHighlights() {
+  function _rebuildCssHighlightsNow() {
+    _rebuildPending = false;
     var colorGroups = {};
     var rangeMap = window.__hibikiHighlightRangeMap;
     for (var id in rangeMap) {
@@ -144,6 +151,12 @@ class HighlightBridge {
       var cn = ALL_COLORS[ci2];
       root.style.setProperty('--hoshi-hl-' + cn, _hlColor(cn));
     }
+  }
+
+  function _rebuildCssHighlights() {
+    if (_rebuildPending) return;
+    _rebuildPending = true;
+    requestAnimationFrame(_rebuildCssHighlightsNow);
   }
 
   // ── 从 selection 计算 normCharOffset + length ──
@@ -216,7 +229,7 @@ class HighlightBridge {
           };
         }
       }
-      _rebuildCssHighlights();
+      _rebuildCssHighlightsNow();
     } else {
       document.querySelectorAll('[data-highlight-id]').forEach(function(el) {
         var parent = el.parentNode;
