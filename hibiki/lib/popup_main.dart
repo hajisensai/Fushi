@@ -99,12 +99,16 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
     final appModel = ref.watch(appProvider);
 
     if (appModel.initError != null) {
-      return MaterialApp(
-        debugShowCheckedModeBanner: false,
-        builder: _buildWithSpacing,
-        home: Scaffold(
-          backgroundColor: Colors.transparent,
-          body: Center(child: Text(t.init_error_message(error: appModel.initError!))),
+      return TranslationProvider(
+        child: MaterialApp(
+          debugShowCheckedModeBanner: false,
+          builder: _buildWithSpacing,
+          home: Scaffold(
+            backgroundColor: Colors.transparent,
+            body: Center(
+              child: Text(t.init_error_message(error: appModel.initError!)),
+            ),
+          ),
         ),
       );
     }
@@ -113,15 +117,17 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
       final isDark = brightness == Brightness.dark;
-      return MaterialApp(
-        debugShowCheckedModeBanner: false,
-        theme: isDark ? ThemeData.dark() : null,
-        builder: _buildWithSpacing,
-        home: Scaffold(
-          backgroundColor: Colors.transparent,
-          body: Center(
-            child: CircularProgressIndicator(
-              color: isDark ? Colors.white70 : null,
+      return TranslationProvider(
+        child: MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: isDark ? ThemeData.dark() : null,
+          builder: _buildWithSpacing,
+          home: Scaffold(
+            backgroundColor: Colors.transparent,
+            body: Center(
+              child: CircularProgressIndicator(
+                color: isDark ? Colors.white70 : null,
+              ),
             ),
           ),
         ),
@@ -143,19 +149,21 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
       }
     }
 
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      builder: _buildWithSpacing,
-      theme: appModel.overrideDictionaryTheme ?? appModel.theme,
-      darkTheme: appModel.overrideDictionaryTheme != null
-          ? null
-          : appModel.darkTheme,
-      themeMode: appModel.overrideDictionaryTheme != null
-          ? ThemeMode.light
-          : (appModel.isDarkMode ? ThemeMode.dark : ThemeMode.light),
-      home: PopupDictionaryPage(
-        key: ValueKey('$_searchTerm:$_searchGeneration'),
-        searchTerm: _searchTerm,
+    return TranslationProvider(
+      child: MaterialApp(
+        debugShowCheckedModeBanner: false,
+        builder: _buildWithSpacing,
+        theme: appModel.overrideDictionaryTheme ?? appModel.theme,
+        darkTheme: appModel.overrideDictionaryTheme != null
+            ? null
+            : appModel.darkTheme,
+        themeMode: appModel.overrideDictionaryTheme != null
+            ? ThemeMode.light
+            : (appModel.isDarkMode ? ThemeMode.dark : ThemeMode.light),
+        home: PopupDictionaryPage(
+          key: ValueKey('$_searchTerm:$_searchGeneration'),
+          searchTerm: _searchTerm,
+        ),
       ),
     );
   }

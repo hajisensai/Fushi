@@ -30,13 +30,20 @@ public class PopupDictActivity extends FlutterActivity {
     private MethodChannel popupChannel;
     private AnkiChannelHandler ankiChannelHandler;
     private TtsChannelHandler ttsChannelHandler;
+    private FlutterEngine configuredFlutterEngine;
     private String pendingProcessText;
     private int pendingCharIndex = -1;
 
     @Nullable
     @Override
     public String getCachedEngineId() {
-        return ENGINE_ID;
+        return null;
+    }
+
+    @Nullable
+    @Override
+    public FlutterEngine provideFlutterEngine(@NonNull Context context) {
+        return ensureCachedEngine(context);
     }
 
     @Override
@@ -44,15 +51,29 @@ public class PopupDictActivity extends FlutterActivity {
         return false;
     }
 
+    @NonNull
+    @Override
+    public String getDartEntrypointFunctionName() {
+        return "popupMain";
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         configureWebViewDataDirectory();
         pendingProcessText = extractProcessText(getIntent());
         pendingCharIndex = getIntent().getIntExtra("charIndex", -1);
-        ensureCachedEngine(this);
+        FlutterEngine flutterEngine = ensureCachedEngine(this);
 
         ankiChannelHandler = new AnkiChannelHandler(this);
         ttsChannelHandler = new TtsChannelHandler(this);
+
+        boolean engineWasRunning =
+                dartStarted || flutterEngine.getDartExecutor().isExecutingDart();
+        configurePopupEngine(flutterEngine);
+        startPopupDartIfNeeded(flutterEngine);
+        if (engineWasRunning && pendingProcessText != null) {
+            dispatchProcessTextToDart(pendingProcessText, pendingCharIndex);
+        }
 
         super.onCreate(savedInstanceState);
 
@@ -67,17 +88,26 @@ public class PopupDictActivity extends FlutterActivity {
         if (text != null) {
             pendingProcessText = text;
             pendingCharIndex = charIdx;
-            if (popupChannel != null) {
-                java.util.HashMap<String, Object> args = new java.util.HashMap<>();
-                args.put("text", text);
-                args.put("charIndex", charIdx);
-                popupChannel.invokeMethod("onNewProcessText", args);
-            }
+            dispatchProcessTextToDart(text, charIdx);
         }
     }
 
     @Override
     public void configureFlutterEngine(@NonNull FlutterEngine flutterEngine) {
+        configurePopupEngine(flutterEngine);
+        startPopupDartIfNeeded(flutterEngine);
+    }
+
+    private void configurePopupEngine(@NonNull FlutterEngine flutterEngine) {
+        if (configuredFlutterEngine == flutterEngine) return;
+
+        if (ankiChannelHandler == null) {
+            ankiChannelHandler = new AnkiChannelHandler(this);
+        }
+        if (ttsChannelHandler == null) {
+            ttsChannelHandler = new TtsChannelHandler(this);
+        }
+
         ankiChannelHandler.register(flutterEngine);
         ttsChannelHandler.register(flutterEngine);
 
@@ -100,22 +130,31 @@ public class PopupDictActivity extends FlutterActivity {
                     result.notImplemented();
             }
         });
+        configuredFlutterEngine = flutterEngine;
+    }
 
-        if (!dartStarted) {
+    private void startPopupDartIfNeeded(@NonNull FlutterEngine flutterEngine) {
+        if (dartStarted || flutterEngine.getDartExecutor().isExecutingDart()) {
             dartStarted = true;
-            FlutterLoader loader = FlutterInjector.instance().flutterLoader();
-            flutterEngine.getDartExecutor().executeDartEntrypoint(
-                new DartExecutor.DartEntrypoint(
-                    loader.findAppBundlePath(),
-                    "popupMain"
-                )
-            );
-        } else if (pendingProcessText != null) {
-            java.util.HashMap<String, Object> args = new java.util.HashMap<>();
-            args.put("text", pendingProcessText);
-            args.put("charIndex", pendingCharIndex);
-            popupChannel.invokeMethod("onNewProcessText", args);
+            return;
         }
+
+        dartStarted = true;
+        FlutterLoader loader = FlutterInjector.instance().flutterLoader();
+        flutterEngine.getDartExecutor().executeDartEntrypoint(
+            new DartExecutor.DartEntrypoint(
+                loader.findAppBundlePath(),
+                "popupMain"
+            )
+        );
+    }
+
+    private void dispatchProcessTextToDart(String text, int charIdx) {
+        if (popupChannel == null) return;
+        java.util.HashMap<String, Object> args = new java.util.HashMap<>();
+        args.put("text", text);
+        args.put("charIndex", charIdx);
+        popupChannel.invokeMethod("onNewProcessText", args);
     }
 
     @NonNull
@@ -155,17 +194,19 @@ public class PopupDictActivity extends FlutterActivity {
         getWindow().setAttributes(params);
     }
 
-    private static synchronized void ensureCachedEngine(@NonNull Context context) {
-        if (FlutterEngineCache.getInstance().contains(ENGINE_ID)) return;
+    private static synchronized FlutterEngine ensureCachedEngine(@NonNull Context context) {
+        FlutterEngine cachedEngine = FlutterEngineCache.getInstance().get(ENGINE_ID);
+        if (cachedEngine != null) return cachedEngine;
 
         Context appContext = context.getApplicationContext();
         FlutterLoader loader = FlutterInjector.instance().flutterLoader();
         loader.startInitialization(appContext);
         loader.ensureInitializationComplete(appContext, null);
 
-        FlutterEngine engine = new FlutterEngine(appContext);
+        FlutterEngine engine = new FlutterEngine(appContext, null, false);
         PopupPluginRegistrant.registerWith(engine);
         FlutterEngineCache.getInstance().put(ENGINE_ID, engine);
+        return engine;
     }
 
     private static synchronized void configureWebViewDataDirectory() {
