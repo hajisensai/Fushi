@@ -52,8 +52,22 @@ function setStructuredContentElementStyle(element, style) {
 }
 
 function rewriteDictLinks(html, dictName) {
+    const rewriteDictionaryMediaPath = (rawPath) => {
+        const trimmed = `${rawPath}`.trim();
+        if (!trimmed || /^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(trimmed)) {
+            return rawPath;
+        }
+        const normalized = trimmed.replace(/^(?:\.\/|\/)+/, '');
+        return `image://?dictionary=${encodeURIComponent(dictName)}&path=${encodeURIComponent(normalized)}`;
+    };
     return html.replace(/<link[^>]*href=['"]([^'"]+)['"][^>]*>/gi, (match, href) => {
         return `<link rel="stylesheet" href="dictmedia://${encodeURIComponent(href)}?dictionary=${encodeURIComponent(dictName)}">`;
+    }).replace(/<img\b[^>]*\bsrc=(['"])([^'"]+)\1[^>]*>/gi, (match, quote, src) => {
+        const rewritten = rewriteDictionaryMediaPath(src);
+        if (rewritten === src) {
+            return match;
+        }
+        return match.replace(/\bsrc=(['"])([^'"]+)\1/i, `src=${quote}${rewritten}${quote}`);
     });
 }
 
