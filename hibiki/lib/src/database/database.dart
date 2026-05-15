@@ -54,17 +54,19 @@ class HibikiDatabase extends _$HibikiDatabase {
   @override
   MigrationStrategy get migration => MigrationStrategy(
         beforeOpen: (details) async {
-          if (details.wasCreated) {
-            await customStatement(
-              'CREATE INDEX IF NOT EXISTS idx_profile_settings_profile ON profile_settings (profile_id)',
-            );
-            await customStatement(
-              'CREATE INDEX IF NOT EXISTS idx_media_type_profiles_profile ON media_type_profiles (profile_id)',
-            );
-            await customStatement(
-              'CREATE INDEX IF NOT EXISTS idx_book_profiles_profile ON book_profiles (profile_id)',
-            );
-          }
+          await customStatement(
+            'CREATE INDEX IF NOT EXISTS idx_profile_settings_profile ON profile_settings (profile_id)',
+          );
+          await customStatement(
+            'CREATE INDEX IF NOT EXISTS idx_media_type_profiles_profile ON media_type_profiles (profile_id)',
+          );
+          await customStatement(
+            'CREATE INDEX IF NOT EXISTS idx_book_profiles_profile ON book_profiles (profile_id)',
+          );
+          await customStatement(
+            'CREATE INDEX IF NOT EXISTS idx_bookmarks_ttu_book_id_created '
+            'ON bookmarks (ttu_book_id, created_at DESC)',
+          );
         },
         onUpgrade: (m, from, to) async {
           if (from > to) {
@@ -194,19 +196,6 @@ class HibikiDatabase extends _$HibikiDatabase {
         },
         onCreate: (m) async {
           await m.createAll();
-          await customStatement(
-            'CREATE INDEX IF NOT EXISTS idx_profile_settings_profile ON profile_settings (profile_id)',
-          );
-          await customStatement(
-            'CREATE INDEX IF NOT EXISTS idx_media_type_profiles_profile ON media_type_profiles (profile_id)',
-          );
-          await customStatement(
-            'CREATE INDEX IF NOT EXISTS idx_book_profiles_profile ON book_profiles (profile_id)',
-          );
-          await customStatement(
-            'CREATE INDEX IF NOT EXISTS idx_bookmarks_ttu_book_id_created '
-            'ON bookmarks (ttu_book_id, created_at DESC)',
-          );
         },
       );
 

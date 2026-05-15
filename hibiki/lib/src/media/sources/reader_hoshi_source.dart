@@ -312,8 +312,7 @@ class ReaderHoshiSource extends ReaderMediaSource {
         await srtRepo.delete(srt.uid);
       }
 
-      await (db.delete(db.epubBooks)..where((tbl) => tbl.id.equals(bookId)))
-          .go();
+      await db.deleteEpubBook(bookId);
       await EpubStorage.deleteBook(bookId);
       return true;
     } catch (e, stack) {
