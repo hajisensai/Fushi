@@ -136,6 +136,9 @@ class _BookImportDialogState extends State<BookImportDialog> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        Text(t.srt_import_hint_epub_or_srt,
+            style: const TextStyle(fontSize: 11, color: Colors.grey)),
+        const SizedBox(height: 4),
         _epubRow(),
         const SizedBox(height: 8),
         _subtitleRow(),
