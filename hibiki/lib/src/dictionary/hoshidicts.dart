@@ -115,43 +115,49 @@ class HoshiDictStyle {
 
 HoshiTermResult _convertTerm(FfiTermResult ffi) {
   final glossaries = <HoshiGlossaryEntry>[];
-  for (int i = 0; i < ffi.glossaryCount; i++) {
-    final g = ffi.glossaries[i];
-    glossaries.add(HoshiGlossaryEntry(
-      dictName: g.dictName.toDartString(),
-      glossary: g.glossary.toDartString(),
-      definitionTags: g.definitionTags.toDartString(),
-      termTags: g.termTags.toDartString(),
-    ));
+  if (ffi.glossaryCount > 0 && ffi.glossaries != nullptr) {
+    for (int i = 0; i < ffi.glossaryCount; i++) {
+      final g = ffi.glossaries[i];
+      glossaries.add(HoshiGlossaryEntry(
+        dictName: g.dictName.toDartString(),
+        glossary: g.glossary.toDartString(),
+        definitionTags: g.definitionTags.toDartString(),
+        termTags: g.termTags.toDartString(),
+      ));
+    }
   }
 
   final frequencies = <HoshiFrequencyEntry>[];
-  for (int i = 0; i < ffi.frequencyCount; i++) {
-    final f = ffi.frequencies[i];
-    final freqs = <HoshiFrequency>[];
-    for (int j = 0; j < f.count; j++) {
-      freqs.add(HoshiFrequency(
-        value: f.values[j],
-        displayValue: f.displayValues[j].toDartString(),
+  if (ffi.frequencyCount > 0 && ffi.frequencies != nullptr) {
+    for (int i = 0; i < ffi.frequencyCount; i++) {
+      final f = ffi.frequencies[i];
+      final freqs = <HoshiFrequency>[];
+      for (int j = 0; j < f.count; j++) {
+        freqs.add(HoshiFrequency(
+          value: f.values[j],
+          displayValue: f.displayValues[j].toDartString(),
+        ));
+      }
+      frequencies.add(HoshiFrequencyEntry(
+        dictName: f.dictName.toDartString(),
+        frequencies: freqs,
       ));
     }
-    frequencies.add(HoshiFrequencyEntry(
-      dictName: f.dictName.toDartString(),
-      frequencies: freqs,
-    ));
   }
 
   final pitches = <HoshiPitchEntry>[];
-  for (int i = 0; i < ffi.pitchCount; i++) {
-    final p = ffi.pitches[i];
-    final positions = <int>[];
-    for (int j = 0; j < p.count; j++) {
-      positions.add(p.positions[j]);
+  if (ffi.pitchCount > 0 && ffi.pitches != nullptr) {
+    for (int i = 0; i < ffi.pitchCount; i++) {
+      final p = ffi.pitches[i];
+      final positions = <int>[];
+      for (int j = 0; j < p.count; j++) {
+        positions.add(p.positions[j]);
+      }
+      pitches.add(HoshiPitchEntry(
+        dictName: p.dictName.toDartString(),
+        pitchPositions: positions,
+      ));
     }
-    pitches.add(HoshiPitchEntry(
-      dictName: p.dictName.toDartString(),
-      pitchPositions: positions,
-    ));
   }
 
   return HoshiTermResult(
@@ -357,8 +363,11 @@ class HoshiDicts {
       }
       final rPtr = calloc<FfiQueryResult>();
       rPtr.ref = r;
-      _bindings!.freeQueryResult(rPtr);
-      calloc.free(rPtr);
+      try {
+        _bindings!.freeQueryResult(rPtr);
+      } finally {
+        calloc.free(rPtr);
+      }
       return results;
     } finally {
       calloc.free(ep);
@@ -394,8 +403,11 @@ class HoshiDicts {
       }
       final rPtr = calloc<FfiLookupResults>();
       rPtr.ref = r;
-      _bindings!.freeLookupResults(rPtr);
-      calloc.free(rPtr);
+      try {
+        _bindings!.freeLookupResults(rPtr);
+      } finally {
+        calloc.free(rPtr);
+      }
       return results;
     } finally {
       calloc.free(tp);
@@ -414,8 +426,11 @@ class HoshiDicts {
     }
     final rPtr = calloc<FfiDictStyles>();
     rPtr.ref = r;
-    _bindings!.freeStyles(rPtr);
-    calloc.free(rPtr);
+    try {
+      _bindings!.freeStyles(rPtr);
+    } finally {
+      calloc.free(rPtr);
+    }
     return styles;
   }
 
@@ -425,14 +440,17 @@ class HoshiDicts {
     final mp = mediaPath.toNativeUtf8();
     try {
       final r = _bindings!.getMedia(_handle!, dn, mp);
-      if (r.size <= 0 || r.data == nullptr) {
-        return null;
+      Uint8List? bytes;
+      if (r.size > 0 && r.data != nullptr) {
+        bytes = Uint8List.fromList(r.data.asTypedList(r.size));
       }
-      final bytes = Uint8List.fromList(r.data.asTypedList(r.size));
       final rPtr = calloc<FfiMediaFile>();
       rPtr.ref = r;
-      _bindings!.freeMedia(rPtr);
-      calloc.free(rPtr);
+      try {
+        _bindings!.freeMedia(rPtr);
+      } finally {
+        calloc.free(rPtr);
+      }
       return bytes;
     } finally {
       calloc.free(dn);

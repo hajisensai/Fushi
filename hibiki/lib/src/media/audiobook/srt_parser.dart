@@ -161,6 +161,7 @@ class SrtParser {
     final int h = int.parse(match.group(1)!);
     final int m = int.parse(match.group(2)!);
     final int s = int.parse(match.group(3)!);
+    if (m >= 60 || s >= 60) return null;
     // 毫秒部分补齐到 3 位（如 '1' → 100，'12' → 120，'123' → 123）
     final String msStr = match.group(4)!.padRight(3, '0');
     final int ms = int.parse(msStr);

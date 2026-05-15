@@ -161,6 +161,7 @@ class LrcParser {
       final int h = int.parse(fullMatch.group(1)!);
       final int m = int.parse(fullMatch.group(2)!);
       final int s = int.parse(fullMatch.group(3)!);
+      if (m >= 60 || s >= 60) return null;
       final String msStr = fullMatch.group(4)!.padRight(3, '0');
       return h * 3600000 + m * 60000 + s * 1000 + int.parse(msStr);
     }
@@ -171,6 +172,7 @@ class LrcParser {
     if (shortMatch != null) {
       final int m = int.parse(shortMatch.group(1)!);
       final int s = int.parse(shortMatch.group(2)!);
+      if (s >= 60) return null;
       final String msStr = shortMatch.group(3)!.padRight(3, '0');
       return m * 60000 + s * 1000 + int.parse(msStr);
     }

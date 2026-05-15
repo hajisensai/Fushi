@@ -99,21 +99,19 @@ class SmilParser {
 
   /// 将 SMIL 时间字符串（hh:mm:ss.sss 或 ss.sss）转换为毫秒。
   static int _parseTimeToMs(String time) {
-    // 标准格式：h:mm:ss.sss 或 mm:ss.sss 或 ss.sss
     final List<String> parts = time.split(':');
     double seconds = 0;
 
     if (parts.length == 3) {
-      seconds = double.parse(parts[0]) * 3600 +
-          double.parse(parts[1]) * 60 +
-          double.parse(parts[2]);
+      seconds = (double.tryParse(parts[0]) ?? 0) * 3600 +
+          (double.tryParse(parts[1]) ?? 0) * 60 +
+          (double.tryParse(parts[2]) ?? 0);
     } else if (parts.length == 2) {
-      seconds =
-          double.parse(parts[0]) * 60 + double.parse(parts[1]);
+      seconds = (double.tryParse(parts[0]) ?? 0) * 60 +
+          (double.tryParse(parts[1]) ?? 0);
     } else {
       seconds = double.tryParse(parts[0]) ?? 0;
     }
-
     return (seconds * 1000).round();
   }
 }

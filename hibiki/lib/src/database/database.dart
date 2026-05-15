@@ -136,6 +136,8 @@ class HibikiDatabase extends _$HibikiDatabase {
       );
 
   Future<bool> _columnExists(String tableName, String columnName) async {
+    assert(RegExp(r'^[a-zA-Z_]\w*$').hasMatch(tableName), 'Invalid table name');
+    assert(RegExp(r'^[a-zA-Z_]\w*$').hasMatch(columnName), 'Invalid column name');
     final rows = await customSelect('PRAGMA table_info($tableName)').get();
     return rows.any((row) => row.read<String>('name') == columnName);
   }
@@ -208,22 +210,23 @@ class HibikiDatabase extends _$HibikiDatabase {
           .getSingleOrNull();
 
   Future<void> trimMediaHistory(String typeId, int maxItems) async {
-    final cnt = countAll();
-    final q = selectOnly(mediaItems)
-      ..where(mediaItems.mediaTypeIdentifier.equals(typeId))
-      ..addColumns([cnt]);
-    final row = await q.getSingle();
-    final count = row.read(cnt)!;
-    if (count <= maxItems) return;
-    final surplus = count - maxItems;
-    final oldest = await (select(mediaItems)
-          ..where((t) => t.mediaTypeIdentifier.equals(typeId))
-          ..orderBy([(t) => OrderingTerm.asc(t.id)])
-          ..limit(surplus))
-        .get();
-    for (final r in oldest) {
-      await (delete(mediaItems)..where((t) => t.id.equals(r.id))).go();
-    }
+    await transaction(() async {
+      final cnt = countAll();
+      final q = selectOnly(mediaItems)
+        ..where(mediaItems.mediaTypeIdentifier.equals(typeId))
+        ..addColumns([cnt]);
+      final row = await q.getSingle();
+      final count = row.read(cnt)!;
+      if (count <= maxItems) return;
+      final surplus = count - maxItems;
+      final oldestIds = await (select(mediaItems)
+            ..where((t) => t.mediaTypeIdentifier.equals(typeId))
+            ..orderBy([(t) => OrderingTerm.asc(t.id)])
+            ..limit(surplus))
+          .map((r) => r.id)
+          .get();
+      await (delete(mediaItems)..where((t) => t.id.isIn(oldestIds))).go();
+    });
   }
 
   // ── search history ──────────────────────────────────────────────
@@ -231,10 +234,10 @@ class HibikiDatabase extends _$HibikiDatabase {
       select(searchHistoryItems).get();
 
   Future<void> upsertSearchHistoryItem(SearchHistoryItemsCompanion item) async {
-    await (delete(searchHistoryItems)
-          ..where((t) => t.uniqueKey.equals(item.uniqueKey.value)))
-        .go();
-    await into(searchHistoryItems).insert(item);
+    await into(searchHistoryItems).insert(
+      item,
+      mode: InsertMode.insertOrReplace,
+    );
   }
 
   Future<int> deleteSearchHistoryByUniqueKey(String uk) =>
@@ -264,18 +267,19 @@ class HibikiDatabase extends _$HibikiDatabase {
           .getSingleOrNull();
 
   Future<void> trimSearchHistory(String historyKey, int maxItems) async {
-    final count = await countSearchHistory(historyKey);
-    if (count <= maxItems) return;
-    final surplus = count - maxItems;
-    final oldest = await (select(searchHistoryItems)
-          ..where((t) => t.historyKey.equals(historyKey))
-          ..orderBy([(t) => OrderingTerm.asc(t.id)])
-          ..limit(surplus))
-        .get();
-    for (final row in oldest) {
-      await (delete(searchHistoryItems)..where((t) => t.id.equals(row.id)))
+    await transaction(() async {
+      final count = await countSearchHistory(historyKey);
+      if (count <= maxItems) return;
+      final surplus = count - maxItems;
+      final oldestIds = await (select(searchHistoryItems)
+            ..where((t) => t.historyKey.equals(historyKey))
+            ..orderBy([(t) => OrderingTerm.asc(t.id)])
+            ..limit(surplus))
+          .map((r) => r.id)
+          .get();
+      await (delete(searchHistoryItems)..where((t) => t.id.isIn(oldestIds)))
           .go();
-    }
+    });
   }
 
   // ── audiobooks ──────────────────────────────────────────────────
@@ -600,12 +604,17 @@ class HibikiDatabase extends _$HibikiDatabase {
   Future<Set<int>> getBookIdsForAllTags(Set<int> tagIds) async {
     if (tagIds.isEmpty) return {};
     final tagCount = tagIds.length;
+    final placeholders = List.generate(tagCount, (_) => '?').join(',');
+    final variables = <Variable>[
+      ...tagIds.map((id) => Variable<int>(id)),
+      Variable<int>(tagCount),
+    ];
     final rows = await customSelect(
       'SELECT book_id FROM book_tag_mappings '
-      'WHERE tag_id IN (${tagIds.join(",")}) '
+      'WHERE tag_id IN ($placeholders) '
       'GROUP BY book_id '
       'HAVING COUNT(DISTINCT tag_id) = ?',
-      variables: [Variable<int>(tagCount)],
+      variables: variables,
     ).get();
     return rows.map((row) => row.read<int>('book_id')).toSet();
   }

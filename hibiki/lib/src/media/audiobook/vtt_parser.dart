@@ -160,9 +160,11 @@ class VttParser {
     final RegExpMatch? full =
         RegExp(r'^(\d+):(\d{2}):(\d{2})\.(\d{1,3})$').firstMatch(normalized);
     if (full != null) {
-      return int.parse(full.group(1)!) * 3600000 +
-          int.parse(full.group(2)!) * 60000 +
-          int.parse(full.group(3)!) * 1000 +
+      final int fh = int.parse(full.group(1)!);
+      final int fm = int.parse(full.group(2)!);
+      final int fs = int.parse(full.group(3)!);
+      if (fm >= 60 || fs >= 60) return null;
+      return fh * 3600000 + fm * 60000 + fs * 1000 +
           int.parse(full.group(4)!.padRight(3, '0'));
     }
 
@@ -170,8 +172,10 @@ class VttParser {
     final RegExpMatch? short =
         RegExp(r'^(\d+):(\d{2})\.(\d{1,3})$').firstMatch(normalized);
     if (short != null) {
-      return int.parse(short.group(1)!) * 60000 +
-          int.parse(short.group(2)!) * 1000 +
+      final int sm = int.parse(short.group(1)!);
+      final int ss = int.parse(short.group(2)!);
+      if (ss >= 60) return null;
+      return sm * 60000 + ss * 1000 +
           int.parse(short.group(3)!.padRight(3, '0'));
     }
 

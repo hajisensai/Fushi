@@ -2407,7 +2407,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   Future<void> _showAppearanceSheet() async {
     if (_settings == null || _controller == null || _book == null) return;
 
-    _syncSettingsToHive();
+    await _syncSettingsToHive();
 
     final ReaderHoshiSource src = ReaderHoshiSource.instance;
     final double snapshotFontSize = src.ttuFontSize;
@@ -2582,7 +2582,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
                 key: 'custom_fonts', defaultValue: '[]') !=
             snapshotCustomFontsRaw;
 
-    _syncSettingsFromHive();
+    await _syncSettingsFromHive();
     _syncDictionaryTheme();
     if (changed) {
       if (_lyricsMode) {
@@ -2630,48 +2630,52 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     return 'Ch. ${_currentChapter + 1}';
   }
 
-  void _syncSettingsToHive() {
+  Future<void> _syncSettingsToHive() async {
     final ReaderSettings s = _settings!;
     final ReaderHoshiSource src = ReaderHoshiSource.instance;
-    src.setTtuFontSize(s.fontSize);
-    src.setTtuLineHeight(s.lineHeight);
-    src.setTtuWritingMode(s.writingMode);
-    src.setTtuViewMode(s.viewMode);
-    src.setTtuTheme(s.theme);
-    src.setTtuFuriganaMode(s.furiganaMode);
-    src.setTtuTextIndentation(s.textIndentation);
-    src.setTtuMarginTop(s.marginTop);
-    src.setTtuMarginBottom(s.marginBottom);
-    src.setTtuMarginLeft(s.marginLeft);
-    src.setTtuMarginRight(s.marginRight);
-    src.setTtuPageColumns(s.pageColumns);
-    src.setTtuEnableVerticalFontKerning(s.enableVerticalFontKerning);
-    src.setTtuEnableFontVPAL(s.enableFontVPAL);
-    src.setTtuVerticalTextOrientation(s.verticalTextOrientation);
-    src.setTtuEnableTextJustification(s.enableTextJustification);
-    src.setTtuPrioritizeReaderStyles(s.prioritizeReaderStyles);
+    await Future.wait(<Future<void>>[
+      src.setTtuFontSize(s.fontSize),
+      src.setTtuLineHeight(s.lineHeight),
+      src.setTtuWritingMode(s.writingMode),
+      src.setTtuViewMode(s.viewMode),
+      src.setTtuTheme(s.theme),
+      src.setTtuFuriganaMode(s.furiganaMode),
+      src.setTtuTextIndentation(s.textIndentation),
+      src.setTtuMarginTop(s.marginTop),
+      src.setTtuMarginBottom(s.marginBottom),
+      src.setTtuMarginLeft(s.marginLeft),
+      src.setTtuMarginRight(s.marginRight),
+      src.setTtuPageColumns(s.pageColumns),
+      src.setTtuEnableVerticalFontKerning(s.enableVerticalFontKerning),
+      src.setTtuEnableFontVPAL(s.enableFontVPAL),
+      src.setTtuVerticalTextOrientation(s.verticalTextOrientation),
+      src.setTtuEnableTextJustification(s.enableTextJustification),
+      src.setTtuPrioritizeReaderStyles(s.prioritizeReaderStyles),
+    ]);
   }
 
-  void _syncSettingsFromHive() {
+  Future<void> _syncSettingsFromHive() async {
     final ReaderSettings s = _settings!;
     final ReaderHoshiSource src = ReaderHoshiSource.instance;
-    s.setFontSize(src.ttuFontSize);
-    s.setLineHeight(src.ttuLineHeight);
-    s.setWritingMode(src.ttuWritingMode);
-    s.setViewMode(src.ttuViewMode);
-    s.setTheme(src.ttuTheme);
-    s.setFuriganaMode(src.ttuFuriganaMode);
-    s.setTextIndentation(src.ttuTextIndentation);
-    s.setMarginTop(src.ttuMarginTop);
-    s.setMarginBottom(src.ttuMarginBottom);
-    s.setMarginLeft(src.ttuMarginLeft);
-    s.setMarginRight(src.ttuMarginRight);
-    s.setPageColumns(src.ttuPageColumns);
-    s.setEnableVerticalFontKerning(src.ttuEnableVerticalFontKerning);
-    s.setEnableFontVPAL(src.ttuEnableFontVPAL);
-    s.setVerticalTextOrientation(src.ttuVerticalTextOrientation);
-    s.setEnableTextJustification(src.ttuEnableTextJustification);
-    s.setPrioritizeReaderStyles(src.ttuPrioritizeReaderStyles);
+    await Future.wait(<Future<void>>[
+      s.setFontSize(src.ttuFontSize),
+      s.setLineHeight(src.ttuLineHeight),
+      s.setWritingMode(src.ttuWritingMode),
+      s.setViewMode(src.ttuViewMode),
+      s.setTheme(src.ttuTheme),
+      s.setFuriganaMode(src.ttuFuriganaMode),
+      s.setTextIndentation(src.ttuTextIndentation),
+      s.setMarginTop(src.ttuMarginTop),
+      s.setMarginBottom(src.ttuMarginBottom),
+      s.setMarginLeft(src.ttuMarginLeft),
+      s.setMarginRight(src.ttuMarginRight),
+      s.setPageColumns(src.ttuPageColumns),
+      s.setEnableVerticalFontKerning(src.ttuEnableVerticalFontKerning),
+      s.setEnableFontVPAL(src.ttuEnableFontVPAL),
+      s.setVerticalTextOrientation(src.ttuVerticalTextOrientation),
+      s.setEnableTextJustification(src.ttuEnableTextJustification),
+      s.setPrioritizeReaderStyles(src.ttuPrioritizeReaderStyles),
+    ]);
   }
 
   List<TtuTocEntry> _buildTtuToc() {

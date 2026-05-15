@@ -790,7 +790,7 @@ class AppModel with ChangeNotifier {
   }
 
   /// Populate maps for languages at startup to optimise performance.
-  void populateLanguages() async {
+  void populateLanguages() {
     /// A list of languages that the app will support at runtime.
     final List<Language> availableLanguages = List<Language>.unmodifiable(
       [
@@ -810,7 +810,7 @@ class AppModel with ChangeNotifier {
   }
 
   /// Populate maps for locales at startup to optimise performance.
-  void populateLocales() async {
+  void populateLocales() {
     /// A list of locales that the app will support at runtime. This is not
     /// related to supported target languages.
     final List<Locale> availableLocales = List<Locale>.unmodifiable(
@@ -845,7 +845,7 @@ class AppModel with ChangeNotifier {
   }
 
   /// Populate maps for media types at startup to optimise performance.
-  void populateMediaTypes() async {
+  void populateMediaTypes() {
     /// A list of media types that the app will support at runtime.
     final List<MediaType> availableMediaTypes = List<MediaType>.unmodifiable(
       [
@@ -864,7 +864,7 @@ class AppModel with ChangeNotifier {
   }
 
   /// Populate maps for media sources at startup to optimise performance.
-  void populateMediaSources() async {
+  void populateMediaSources() {
     /// A list of media sources that the app will support at runtime.
     final Map<MediaType, List<MediaSource>> availableMediaSources = {
       ReaderMediaType.instance: [
@@ -890,7 +890,7 @@ class AppModel with ChangeNotifier {
   }
 
   /// Populate maps for dictionary formats at startup to optimise performance.
-  void populateDictionaryFormats() async {
+  void populateDictionaryFormats() {
     /// A list of dictionary formats that the app will support at runtime.
     final List<DictionaryFormat> availableDictionaryFormats =
         List<DictionaryFormat>.unmodifiable(
@@ -915,7 +915,7 @@ class AppModel with ChangeNotifier {
   }
 
   /// Populate maps for fields at startup to optimise performance.
-  void populateFields() async {
+  void populateFields() {
     fields = Map<String, Field>.unmodifiable(
       Map<String, Field>.fromEntries(
         globalFields.map(
@@ -926,7 +926,7 @@ class AppModel with ChangeNotifier {
   }
 
   /// Populate maps for enhancements at startup to optimise performance.
-  void populateEnhancements() async {
+  void populateEnhancements() {
     /// A list of enhancements that the app will support at runtime.
     final Map<Field, List<Enhancement>> availableEnhancements = {
       AudioField.instance: [
@@ -1034,7 +1034,7 @@ class AppModel with ChangeNotifier {
   }
 
   /// Populate maps for actions at startup to optimise performance.
-  void populateQuickActions() async {
+  void populateQuickActions() {
     /// A list of actions that the app will support at runtime.
     final List<QuickAction> availableQuickActions = [
       AddToStashAction(),

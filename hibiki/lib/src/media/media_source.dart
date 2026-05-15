@@ -168,6 +168,15 @@ abstract class MediaSource {
   /// Delete the preference for a certain parameter [key] for this source.
   Future<void> deletePreference({required String key}) async {
     _preferences.remove(key);
+    final db = _sharedDb;
+    if (db != null) {
+      try {
+        await db.deletePref(_dbPrefKey(key));
+      } catch (e, stack) {
+        ErrorLogService.instance.log('MediaSource.deletePref', e, stack);
+        debugPrint('[MediaSource] deletePref write-through err: $e');
+      }
+    }
   }
 
   /// Get the best localisation for the label of this media source. If there

@@ -158,9 +158,11 @@ class AssParser {
     if (m == null) {
       return null;
     }
-    return int.parse(m.group(1)!) * 3600000 +
-        int.parse(m.group(2)!) * 60000 +
-        int.parse(m.group(3)!) * 1000 +
+    final int ah = int.parse(m.group(1)!);
+    final int am = int.parse(m.group(2)!);
+    final int as_ = int.parse(m.group(3)!);
+    if (am >= 60 || as_ >= 60) return null;
+    return ah * 3600000 + am * 60000 + as_ * 1000 +
         int.parse(m.group(4)!) * 10; // 厘秒 → 毫秒
   }
 

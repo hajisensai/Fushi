@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:hibiki/src/reader/reader_content_styles.dart';
 
 enum ReaderNavigationDirection {
@@ -897,25 +899,6 @@ $_sharedInitBoot
   }
 
   static String _jsStringLiteral(String value) {
-    final StringBuffer buf = StringBuffer('"');
-    for (int i = 0; i < value.length; i++) {
-      final String ch = value[i];
-      switch (ch) {
-        case '\\':
-          buf.write('\\\\');
-        case '"':
-          buf.write('\\"');
-        case '\n':
-          buf.write('\\n');
-        case '\r':
-          buf.write('\\r');
-        case '\t':
-          buf.write('\\t');
-        default:
-          buf.write(ch);
-      }
-    }
-    buf.write('"');
-    return buf.toString();
+    return jsonEncode(value);
   }
 }
