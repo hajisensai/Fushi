@@ -409,6 +409,20 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
+  MediaItem _srtBookMediaItem(SrtBook book) {
+    return MediaItem(
+      mediaIdentifier: ReaderHoshiSource.mediaIdentifierFor(book.ttuBookId),
+      title: book.title,
+      mediaTypeIdentifier: ReaderHoshiSource.instance.mediaType.uniqueKey,
+      mediaSourceIdentifier: ReaderHoshiSource.instance.uniqueKey,
+      position: 0,
+      duration: 1,
+      canDelete: false,
+      canEdit: false,
+      imageUrl: book.coverPath != null ? 'file://${book.coverPath}' : null,
+    );
+  }
+
   void _openSrtBook(SrtBook book) {
     if (book.ttuBookId <= 0) {
       Fluttertoast.showToast(msg: t.srt_epub_not_ready);
@@ -419,17 +433,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
       MaterialPageRoute<void>(
         builder: (_) => ReaderHoshiPage(
           bookId: book.ttuBookId,
-          item: MediaItem(
-            mediaIdentifier:
-                ReaderHoshiSource.mediaIdentifierFor(book.ttuBookId),
-            title: book.title,
-            mediaTypeIdentifier: ReaderHoshiSource.instance.mediaType.uniqueKey,
-            mediaSourceIdentifier: ReaderHoshiSource.instance.uniqueKey,
-            position: 0,
-            duration: 1,
-            canDelete: false,
-            canEdit: true,
-          ),
+          item: _srtBookMediaItem(book),
         ),
       ),
     );
@@ -438,34 +442,23 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
   Future<void> _showSrtBookDialog(SrtBook book) async {
     await showAppDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(book.title),
-        content: book.coverPath != null && File(book.coverPath!).existsSync()
-            ? Image.file(File(book.coverPath!),
-                height: 120, fit: BoxFit.contain)
-            : null,
-        actions: [
+      builder: (_) => MediaItemDialogPage(
+        item: _srtBookMediaItem(book),
+        isHistory: false,
+        extraActions: (_) => [
           TextButton(
             onPressed: () async {
-              Navigator.pop(ctx);
+              Navigator.pop(context);
               await _pickSrtBookCover(book);
             },
             child: Text(t.srt_import_pick_cover),
           ),
-          TextButton(
+          _destructiveConfirmButton(
+            label: t.dialog_delete,
             onPressed: () async {
-              Navigator.pop(ctx);
+              Navigator.pop(context);
               await _confirmDeleteSrtBook(book);
             },
-            child: Text(t.dialog_delete,
-                style: const TextStyle(color: Colors.red)),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _openSrtBook(book);
-            },
-            child: Text(t.dialog_read),
           ),
         ],
       ),
