@@ -1,4 +1,5 @@
 #include "hoshidicts/query.hpp"
+#include "hoshidicts/media_path.hpp"
 
 #include <ankerl/unordered_dense.h>
 #include <zstd.h>
@@ -53,14 +54,6 @@ struct BlobReader {
 
   [[nodiscard]] bool has(size_t n) const { return ptr + n <= end; }
 };
-
-std::string normalize_media_path(std::string path) {
-  std::ranges::replace(path, '\\', '/');
-  while (!path.empty() && path.front() == '/') {
-    path.erase(path.begin());
-  }
-  return path;
-}
 
 }
 
@@ -407,7 +400,7 @@ std::vector<char> DictionaryQuery::get_media_file(const std::string& dict_name, 
 }
 
 MediaFileView DictionaryQuery::get_media_file_view(const std::string& dict_name, const std::string& media_path) const {
-  const std::string normalized_media_path = normalize_media_path(media_path);
+  const std::string normalized_media_path = hoshidicts::normalize_media_path(media_path);
   for (const auto& [name, styles, data] : term_dicts_) {
     if (name != dict_name) {
       continue;

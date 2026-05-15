@@ -41,7 +41,9 @@ _DictionaryMediaResponse? _dictionaryMediaResponse(Uri url) {
     final String mediaPath = _normalizeMediaPath(
       url.queryParameters['path'] ?? '',
     );
-    if (dictName.isEmpty || mediaPath.isEmpty) return null;
+    if (dictName.isEmpty || mediaPath.isEmpty) {
+      return _DictionaryMediaResponse.notFound();
+    }
 
     try {
       final Uint8List? data = HoshiDicts.instance.getMediaFile(
@@ -66,13 +68,15 @@ _DictionaryMediaResponse? _dictionaryMediaResponse(Uri url) {
   if (url.scheme == 'dictmedia') {
     final String dictName = url.queryParameters['dictionary'] ?? '';
     final String mediaPath = _normalizeMediaPath(Uri.decodeComponent(url.host));
-    if (dictName.isEmpty || mediaPath.isEmpty) return null;
+    if (dictName.isEmpty || mediaPath.isEmpty) {
+      return _DictionaryMediaResponse.notFound();
+    }
 
     final Uint8List? data = HoshiDicts.instance.getMediaFile(
       dictName,
       mediaPath,
     );
-    if (data == null) return null;
+    if (data == null) return _DictionaryMediaResponse.notFound();
 
     return _DictionaryMediaResponse.ok(
       data: data,

@@ -1,15 +1,19 @@
+function normalizeDictMediaPath(raw) {
+    return `${raw}`.trim().replace(/\\/g, '/').replace(/^(?:\.\/|\/)+/, '');
+}
+
 function rewriteDictionaryMediaPath(rawPath, dictName) {
     const trimmed = `${rawPath}`.trim();
     if (!trimmed || /^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(trimmed)) {
         return null;
     }
-    const normalized = trimmed.replace(/\\/g, '/').replace(/^(?:\.\/|\/)+/, '');
+    const normalized = normalizeDictMediaPath(rawPath);
     return `image://?dictionary=${encodeURIComponent(dictName)}&path=${encodeURIComponent(normalized)}`;
 }
 
 function rewriteDictLinks(html, dictName) {
     return html.replace(/<link[^>]*href=['"]([^'"]+)['"][^>]*>/gi, (match, href) => {
-        const normalized = `${href}`.trim().replace(/\\/g, '/').replace(/^(?:\.\/|\/)+/, '');
+        const normalized = normalizeDictMediaPath(href);
         return `<link rel="stylesheet" href="dictmedia://${encodeURIComponent(normalized)}?dictionary=${encodeURIComponent(dictName)}">`;
     }).replace(/<img\b[^>]*\bsrc=(['"])([^'"]+)\1[^>]*>/gi, (match, quote, src) => {
         const rewritten = rewriteDictionaryMediaPath(src, dictName);
