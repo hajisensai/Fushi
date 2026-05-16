@@ -474,24 +474,15 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
       ),
       if (bookId > 0) ...[
         TextButton(
-          onPressed: () {
-            Navigator.pop(dialogContext);
-            _openAudiobookImport(item, bookId);
-          },
+          onPressed: () => _openAudiobookImport(item, bookId),
           child: Text(t.audiobook_import),
         ),
         TextButton(
-          onPressed: () {
-            Navigator.pop(dialogContext);
-            _openTagPicker(bookId);
-          },
+          onPressed: () => _openTagPicker(bookId),
           child: Text(t.tag_label),
         ),
         TextButton(
-          onPressed: () {
-            Navigator.pop(dialogContext);
-            _openBookProfilePicker(item, bookId);
-          },
+          onPressed: () => _openBookProfilePicker(item, bookId),
           child: Text(t.profile_book_profile),
         ),
         TextButton(
