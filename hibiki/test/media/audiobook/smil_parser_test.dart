@@ -157,5 +157,58 @@ void main() {
 
       expect(cues.single.textFragmentId, 'ch.xhtml');
     });
+
+    test('handles mm:ss.sss time format', () {
+      const smil = '''<smil xmlns="http://www.w3.org/ns/SMIL">
+  <body>
+    <par>
+      <text src="ch.xhtml#p1"/>
+      <audio src="a.mp3" clipBegin="01:30.500" clipEnd="02:00.000"/>
+    </par>
+  </body>
+</smil>''';
+
+      final cues = SmilParser.parseString(
+        content: smil,
+        bookUid: 'b',
+        chapterHref: 'ch.xhtml',
+      );
+      expect(cues, hasLength(1));
+      expect(cues[0].startMs, 90500);
+      expect(cues[0].endMs, 120000);
+    });
+
+    test('handles bare seconds time format', () {
+      const smil = '''<smil xmlns="http://www.w3.org/ns/SMIL">
+  <body>
+    <par>
+      <text src="ch.xhtml#p1"/>
+      <audio src="a.mp3" clipBegin="5.5" clipEnd="10.0"/>
+    </par>
+  </body>
+</smil>''';
+
+      final cues = SmilParser.parseString(
+        content: smil,
+        bookUid: 'b',
+        chapterHref: 'ch.xhtml',
+      );
+      expect(cues, hasLength(1));
+      expect(cues[0].startMs, 5500);
+      expect(cues[0].endMs, 10000);
+    });
+
+    test('empty body returns empty list', () {
+      const smil = '''<smil xmlns="http://www.w3.org/ns/SMIL">
+  <body/>
+</smil>''';
+
+      final cues = SmilParser.parseString(
+        content: smil,
+        bookUid: 'b',
+        chapterHref: 'ch.xhtml',
+      );
+      expect(cues, isEmpty);
+    });
   });
 }

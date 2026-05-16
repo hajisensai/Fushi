@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 import 'package:hibiki/src/media/audiobook/json_alignment_parser.dart';
 
 void main() {
@@ -117,6 +118,162 @@ void main() {
       );
 
       expect(cues, isEmpty);
+    });
+  });
+
+  group('JsonAlignmentParser.cuesForChapter', () {
+    late List<AudioCue> allCues;
+
+    setUp(() {
+      allCues = [
+        AudioCue()
+          ..bookUid = 'b'
+          ..chapterHref = 'ch02.xhtml'
+          ..sentenceIndex = 0
+          ..textFragmentId = '#p1'
+          ..text = 'c2-s0'
+          ..startMs = 0
+          ..endMs = 1000
+          ..audioFileIndex = 0,
+        AudioCue()
+          ..bookUid = 'b'
+          ..chapterHref = 'ch01.xhtml'
+          ..sentenceIndex = 2
+          ..textFragmentId = '#p3'
+          ..text = 'c1-s2'
+          ..startMs = 2000
+          ..endMs = 3000
+          ..audioFileIndex = 0,
+        AudioCue()
+          ..bookUid = 'b'
+          ..chapterHref = 'ch01.xhtml'
+          ..sentenceIndex = 0
+          ..textFragmentId = '#p1'
+          ..text = 'c1-s0'
+          ..startMs = 0
+          ..endMs = 1000
+          ..audioFileIndex = 0,
+      ];
+    });
+
+    test('filters by chapter and sorts by sentenceIndex', () {
+      final ch1 = JsonAlignmentParser.cuesForChapter(
+        allCues: allCues,
+        chapterHref: 'ch01.xhtml',
+      );
+      expect(ch1, hasLength(2));
+      expect(ch1[0].sentenceIndex, 0);
+      expect(ch1[1].sentenceIndex, 2);
+    });
+
+    test('returns empty for nonexistent chapter', () {
+      final ch = JsonAlignmentParser.cuesForChapter(
+        allCues: allCues,
+        chapterHref: 'ch99.xhtml',
+      );
+      expect(ch, isEmpty);
+    });
+
+    test('returns single cue for chapter with one entry', () {
+      final ch2 = JsonAlignmentParser.cuesForChapter(
+        allCues: allCues,
+        chapterHref: 'ch02.xhtml',
+      );
+      expect(ch2, hasLength(1));
+      expect(ch2[0].text, 'c2-s0');
+    });
+  });
+
+  group('JsonAlignmentParser.findCueIndex', () {
+    late List<AudioCue> cues;
+
+    setUp(() {
+      cues = [
+        AudioCue()
+          ..bookUid = 'b'
+          ..chapterHref = 'ch'
+          ..sentenceIndex = 0
+          ..textFragmentId = ''
+          ..text = ''
+          ..startMs = 1000
+          ..endMs = 2000
+          ..audioFileIndex = 0,
+        AudioCue()
+          ..bookUid = 'b'
+          ..chapterHref = 'ch'
+          ..sentenceIndex = 1
+          ..textFragmentId = ''
+          ..text = ''
+          ..startMs = 3000
+          ..endMs = 4000
+          ..audioFileIndex = 0,
+        AudioCue()
+          ..bookUid = 'b'
+          ..chapterHref = 'ch'
+          ..sentenceIndex = 2
+          ..textFragmentId = ''
+          ..text = ''
+          ..startMs = 5000
+          ..endMs = 6000
+          ..audioFileIndex = 0,
+      ];
+    });
+
+    test('empty cues returns -1', () {
+      expect(
+        JsonAlignmentParser.findCueIndex(cues: [], positionMs: 0),
+        -1,
+      );
+    });
+
+    test('position before first cue returns -1', () {
+      expect(
+        JsonAlignmentParser.findCueIndex(cues: cues, positionMs: 500),
+        -1,
+      );
+    });
+
+    test('position exactly at startMs returns that cue', () {
+      expect(
+        JsonAlignmentParser.findCueIndex(cues: cues, positionMs: 1000),
+        0,
+      );
+      expect(
+        JsonAlignmentParser.findCueIndex(cues: cues, positionMs: 3000),
+        1,
+      );
+    });
+
+    test('position within cue range returns that cue', () {
+      expect(
+        JsonAlignmentParser.findCueIndex(cues: cues, positionMs: 1500),
+        0,
+      );
+      expect(
+        JsonAlignmentParser.findCueIndex(cues: cues, positionMs: 3500),
+        1,
+      );
+    });
+
+    test('position at endMs returns that cue', () {
+      expect(
+        JsonAlignmentParser.findCueIndex(cues: cues, positionMs: 2000),
+        0,
+      );
+    });
+
+    test('position in gap between cues returns -1', () {
+      expect(
+        JsonAlignmentParser.findCueIndex(cues: cues, positionMs: 2500),
+        -1,
+      );
+    });
+
+    test('position after last cue returns -1', () {
+      expect(
+        JsonAlignmentParser.findCueIndex(cues: cues, positionMs: 7000),
+        -1,
+      );
     });
   });
 }
