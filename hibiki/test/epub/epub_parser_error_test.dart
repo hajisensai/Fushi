@@ -57,13 +57,13 @@ void main() {
       );
     });
 
-    test('malformed container.xml throws FormatException', () {
+    test('malformed container.xml throws', () {
       final bytes = _encodeArchive([
         _textFile('META-INF/container.xml', 'not xml at all {{{'),
       ]);
       expect(
         () => EpubParser.parseSync(bytes, extractDir.path),
-        throwsA(isA<Exception>()),
+        throwsA(anyOf(isA<FormatException>(), isA<ArgumentError>())),
       );
     });
 
@@ -131,7 +131,7 @@ void main() {
       final garbage = Uint8List.fromList(List.generate(100, (i) => i % 256));
       expect(
         () => EpubParser.parseSync(garbage, extractDir.path),
-        throwsA(isA<Exception>()),
+        throwsA(anyOf(isA<FormatException>(), isA<ArchiveException>())),
       );
     });
 

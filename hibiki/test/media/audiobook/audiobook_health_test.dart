@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_health.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
 
 void main() {
   group('AudiobookHealth.fromRatePct', () {
@@ -9,9 +10,10 @@ void main() {
       expect(h.ratePct, 0);
     });
 
-    test('negative → failed', () {
+    test('negative → failed with raw value preserved', () {
       final h = AudiobookHealth.fromRatePct(ratePct: -5);
       expect(h.kind, HealthKind.failed);
+      expect(h.ratePct, -5);
     });
 
     test('79% → partial', () {
@@ -75,6 +77,104 @@ void main() {
   group('AudiobookHealth.okThreshold', () {
     test('threshold is 80', () {
       expect(AudiobookHealth.okThreshold, 80);
+    });
+  });
+
+  group('AudiobookHealth.packInto / fromAudiobook round-trip', () {
+    Audiobook _makeAb() {
+      return Audiobook()
+        ..bookUid = 'test'
+        ..alignmentFormat = 'srt'
+        ..alignmentPath = '/a.srt';
+    }
+
+    test('ok round-trip preserves all fields', () {
+      final original = AudiobookHealth.fromRatePct(
+        ratePct: 95,
+        reason: '100/105 cues matched (window=200)',
+        measuredAt: DateTime(2026, 1, 1),
+      );
+      final ab = _makeAb();
+      original.packInto(ab);
+
+      expect(ab.healthKindRaw, 'ok');
+      expect(ab.matchRatePct, 95);
+      expect(ab.healthReason, contains('window=200'));
+      expect(ab.healthMeasuredAt, DateTime(2026, 1, 1));
+
+      final restored = AudiobookHealth.fromAudiobook(ab);
+      expect(restored.kind, HealthKind.ok);
+      expect(restored.ratePct, 95);
+      expect(restored.reason, original.reason);
+      expect(restored.measuredAt, DateTime(2026, 1, 1));
+    });
+
+    test('failed round-trip preserves reason', () {
+      final original = AudiobookHealth.failed(reason: 'file not found');
+      final ab = _makeAb();
+      original.packInto(ab);
+
+      final restored = AudiobookHealth.fromAudiobook(ab);
+      expect(restored.kind, HealthKind.failed);
+      expect(restored.ratePct, 0);
+      expect(restored.reason, 'file not found');
+    });
+
+    test('null healthKindRaw returns unrun', () {
+      final ab = _makeAb();
+      ab.healthKindRaw = null;
+
+      final h = AudiobookHealth.fromAudiobook(ab);
+      expect(h.kind, HealthKind.unrun);
+    });
+
+    test('unknown healthKindRaw falls back to unrun', () {
+      final ab = _makeAb();
+      ab.healthKindRaw = 'nonexistent_kind';
+
+      final h = AudiobookHealth.fromAudiobook(ab);
+      expect(h.kind, HealthKind.unrun);
+    });
+
+    test('corrupted matchRatePct (>100) is clamped to null', () {
+      final ab = _makeAb();
+      ab.healthKindRaw = 'ok';
+      ab.matchRatePct = 33554526;
+      ab.healthMeasuredAt = DateTime(2026, 1, 1);
+
+      final h = AudiobookHealth.fromAudiobook(ab);
+      expect(h.kind, HealthKind.ok);
+      expect(h.ratePct, isNull);
+    });
+
+    test('negative matchRatePct is clamped to null', () {
+      final ab = _makeAb();
+      ab.healthKindRaw = 'failed';
+      ab.matchRatePct = -1;
+
+      final h = AudiobookHealth.fromAudiobook(ab);
+      expect(h.ratePct, isNull);
+    });
+
+    test('null healthMeasuredAt falls back to epoch', () {
+      final ab = _makeAb();
+      ab.healthKindRaw = 'partial';
+      ab.matchRatePct = 50;
+      ab.healthMeasuredAt = null;
+
+      final h = AudiobookHealth.fromAudiobook(ab);
+      expect(h.measuredAt, DateTime.fromMillisecondsSinceEpoch(0));
+    });
+
+    test('notApplicable round-trip', () {
+      final original = AudiobookHealth.notApplicable(reason: 'synthetic');
+      final ab = _makeAb();
+      original.packInto(ab);
+
+      final restored = AudiobookHealth.fromAudiobook(ab);
+      expect(restored.kind, HealthKind.notApplicable);
+      expect(restored.ratePct, isNull);
+      expect(restored.reason, 'synthetic');
     });
   });
 }
