@@ -137,16 +137,13 @@ function setCue(index) {
 window.__lyricsSetCue = function(index) { setCue(index); };
 window.__lyricsGetCurrentIndex = function() { return _currentIdx; };
 
-// ── 点击句子跳转播放 ──
+// ── 点击句子跳转播放（短按仅跳转，不触发查词）──
 document.getElementById('lc').addEventListener('click', function(e) {
   if (_longPressed) { _longPressed = false; return; }
   var el = e.target.closest('.cue');
   if (!el) return;
   var idx = parseInt(el.getAttribute('data-cue-index'), 10);
   if (isNaN(idx)) return;
-  if (window.hoshiSelection) {
-    window.hoshiSelection.selectText(e.clientX, e.clientY, 400);
-  }
   if (window.flutter_inappwebview) {
     window.flutter_inappwebview.callHandler('onLyricsCueTap', idx);
   }

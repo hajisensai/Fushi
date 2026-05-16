@@ -634,6 +634,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     VolumeKeyChannel.instance.setInterceptEnabled(false);
     appModel.setOverrideDictionaryTheme(null);
     appModel.setOverrideDictionaryColor(null);
+    if (_lyricsMode) {
+      _syncPositionFromCurrentCue();
+    }
     _flushPosition();
     _flushReadingStats();
     _audiobookController?.removeListener(_onCueChanged);
@@ -1465,17 +1468,25 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final AudiobookPlayerController ctrl = _audiobookController!;
     final AudioCue? cue = ctrl.currentCue;
     int targetChapter = _lyricsEntryChapter;
+    double targetProgress = _lastProgressValue;
 
     if (cue != null) {
       final SasayakiFragment? frag =
           SasayakiMatchCodec.tryDecode(cue.textFragmentId);
       if (frag != null) {
         targetChapter = frag.sectionIndex;
+        if (targetChapter >= 0 &&
+            targetChapter < _chapterCharCounts.length &&
+            _chapterCharCounts[targetChapter] > 0) {
+          targetProgress =
+              frag.normCharStart / _chapterCharCounts[targetChapter];
+          targetProgress = targetProgress.clamp(0.0, 1.0);
+        }
       }
     }
 
     _lyricsCueList = const [];
-    await _navigateToChapter(targetChapter);
+    await _navigateToChapter(targetChapter, progress: targetProgress);
   }
 
   // ── Audiobook Cue Wiring ──────────────────────────────────────────
@@ -1874,11 +1885,13 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       return;
     }
 
-    if (ReaderHoshiSource.instance.pauseOnLookup &&
+    final bool shouldPause =
+        _lyricsMode || ReaderHoshiSource.instance.pauseOnLookup;
+    if (shouldPause &&
         _audiobookController != null &&
         _audiobookController!.isPlaying) {
       _audiobookController!.pause();
-      _pausedForLookup = true;
+      _pausedForLookup = !_lyricsMode;
     }
 
     final Rect selectionRect = data.rect != null
@@ -2075,6 +2088,22 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       sectionIndex: section,
       normCharOffset: normOffset,
     );
+  }
+
+  void _syncPositionFromCurrentCue() {
+    final AudioCue? cue = _audiobookController?.currentCue;
+    if (cue == null) return;
+    final SasayakiFragment? frag =
+        SasayakiMatchCodec.tryDecode(cue.textFragmentId);
+    if (frag == null) return;
+    _lastProgressSection = frag.sectionIndex;
+    if (frag.sectionIndex >= 0 &&
+        frag.sectionIndex < _chapterCharCounts.length &&
+        _chapterCharCounts[frag.sectionIndex] > 0) {
+      _lastProgressValue =
+          frag.normCharStart / _chapterCharCounts[frag.sectionIndex];
+      _lastProgressValue = _lastProgressValue.clamp(0.0, 1.0);
+    }
   }
 
   Future<void> _flushPosition() async {

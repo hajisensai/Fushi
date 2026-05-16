@@ -432,8 +432,8 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
       mediaSourceIdentifier: ReaderHoshiSource.instance.uniqueKey,
       position: 0,
       duration: 1,
-      canDelete: false,
-      canEdit: false,
+      canDelete: true,
+      canEdit: true,
       imageUrl: book.coverPath != null ? 'file://${book.coverPath}' : null,
     );
   }
@@ -455,14 +455,9 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
   }
 
   List<Widget> _srtExtraActions(BuildContext dialogContext, SrtBook book) {
+    final int bookId = book.ttuBookId;
+    final MediaItem item = _srtBookMediaItem(book);
     return [
-      TextButton(
-        onPressed: () async {
-          Navigator.pop(dialogContext);
-          await _pickSrtBookCover(book);
-        },
-        child: Text(t.srt_import_pick_cover),
-      ),
       _destructiveConfirmButton(
         label: t.dialog_delete,
         onPressed: () async {
@@ -470,6 +465,43 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
           await _confirmDeleteSrtBook(book);
         },
       ),
+      TextButton(
+        onPressed: () async {
+          Navigator.pop(dialogContext);
+          await _pickSrtBookCover(book);
+        },
+        child: Text(t.srt_import_pick_cover),
+      ),
+      if (bookId > 0) ...[
+        TextButton(
+          onPressed: () {
+            Navigator.pop(dialogContext);
+            _openAudiobookImport(item, bookId);
+          },
+          child: Text(t.audiobook_import),
+        ),
+        TextButton(
+          onPressed: () {
+            Navigator.pop(dialogContext);
+            _openTagPicker(bookId);
+          },
+          child: Text(t.tag_label),
+        ),
+        TextButton(
+          onPressed: () {
+            Navigator.pop(dialogContext);
+            _openBookProfilePicker(item, bookId);
+          },
+          child: Text(t.profile_book_profile),
+        ),
+        TextButton(
+          onPressed: () {
+            Navigator.pop(dialogContext);
+            _openCssEditor(bookId);
+          },
+          child: Text(t.book_css_editor_edit_css),
+        ),
+      ],
     ];
   }
 
@@ -487,7 +519,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
         context: context,
         builder: (ctx) => MediaItemDialogPage(
           item: _srtBookMediaItem(book),
-          isHistory: false,
+          isHistory: true,
           extraActions: (_) => _srtExtraActions(ctx, book),
         ),
       );

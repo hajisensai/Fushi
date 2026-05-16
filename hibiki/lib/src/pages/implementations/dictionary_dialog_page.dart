@@ -3,10 +3,13 @@ import 'dart:io';
 import 'package:change_notifier_builder/change_notifier_builder.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:fluttertoast/fluttertoast.dart';
+import 'package:path/path.dart' as path;
 import 'package:spaces/spaces.dart';
 import 'package:hibiki/dictionary.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/src/dictionary/dictionary_downloader.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/utils.dart';
 import 'package:collection/collection.dart';
@@ -62,16 +65,22 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                Flexible(child: buildImportFolderButton()),
+                Flexible(child: _buildDownloadRecommendedButton()),
                 const SizedBox(width: 8),
-                Flexible(child: buildImportButton()),
+                Flexible(child: buildImportFolderButton()),
               ],
             ),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                Flexible(child: buildClearButton()),
+                Flexible(child: buildImportButton()),
                 const SizedBox(width: 8),
+                Flexible(child: buildClearButton()),
+              ],
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
                 Flexible(child: buildCloseButton()),
               ],
             ),
@@ -235,6 +244,108 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
 
     if (mounted) {
       Navigator.pop(context);
+    }
+  }
+
+  Widget _buildDownloadRecommendedButton() {
+    return TextButton(
+      onPressed: _downloadRecommendedDictionaries,
+      child: Text(t.dict_download_recommended,
+          overflow: TextOverflow.ellipsis, maxLines: 1),
+    );
+  }
+
+  Future<void> _downloadRecommendedDictionaries() async {
+    final List<RecommendedDictionary> toDownload =
+        DictionaryDownloader.recommended.where((RecommendedDictionary rec) {
+      final String key = rec.name.toLowerCase().split(' ').first;
+      return !appModel.dictionaries
+          .any((d) => d.name.toLowerCase().contains(key));
+    }).toList();
+
+    if (toDownload.isEmpty) {
+      Fluttertoast.showToast(msg: t.import_complete);
+      return;
+    }
+
+    final String names =
+        toDownload.map((d) => '• ${d.name}\n  ${d.description}').join('\n');
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(t.dict_download_confirm_title),
+        content: Text(t.dict_download_confirm_body(names: names)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(t.dialog_cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(t.dict_download_recommended),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    final ValueNotifier<String> progressNotifier =
+        ValueNotifier<String>(t.import_start);
+    final ValueNotifier<double> downloadProgress = ValueNotifier<double>(0);
+
+    showAppDialog(
+      barrierDismissible: false,
+      context: context,
+      builder: (ctx) => ValueListenableBuilder<String>(
+        valueListenable: progressNotifier,
+        builder: (_, String msg, __) => AlertDialog(
+          title: Text(msg),
+          content: ValueListenableBuilder<double>(
+            valueListenable: downloadProgress,
+            builder: (_, double progress, __) =>
+                LinearProgressIndicator(value: progress > 0 ? progress : null),
+          ),
+        ),
+      ),
+    );
+
+    final Directory tempDir = Directory(
+      path.join(appModel.dictionaryResourceDirectory.path, 'download_temp'),
+    );
+
+    try {
+      for (final RecommendedDictionary rec in toDownload) {
+        progressNotifier.value = t.dict_downloading(name: rec.name);
+        downloadProgress.value = 0;
+
+        final File zipFile = await DictionaryDownloader.download(
+          url: rec.url,
+          tempDir: tempDir,
+          progressNotifier: downloadProgress,
+        );
+
+        progressNotifier.value = t.import_extract;
+        await appModel.importDictionary(
+          file: zipFile,
+          progressNotifier: progressNotifier,
+          onImportSuccess: () {
+            _selectedOrder = appModel.dictionaries.last.order;
+          },
+        );
+      }
+
+      progressNotifier.value = t.dict_download_complete;
+      await Future<void>.delayed(const Duration(seconds: 1));
+    } catch (e) {
+      progressNotifier.value = t.dict_download_failed(error: e.toString());
+      await Future<void>.delayed(const Duration(seconds: 3));
+    } finally {
+      if (tempDir.existsSync()) {
+        tempDir.deleteSync(recursive: true);
+      }
+      if (mounted) Navigator.pop(context);
+      setState(() {});
     }
   }
 
