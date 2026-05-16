@@ -13,6 +13,7 @@ import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
 import 'package:hibiki/src/media/audiobook/favorite_sentence_repository.dart';
 import 'package:hibiki/src/media/sources/reader_hoshi_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/pages/implementations/book_css_editor_page.dart';
 import 'package:hibiki/src/pages/implementations/custom_theme_page.dart';
 import 'package:hibiki/utils.dart';
 
@@ -205,6 +206,8 @@ class AudiobookSettingsSheet extends StatefulWidget {
     this.onStyleChanged,
     this.lyricsMode = false,
     this.onToggleLyricsMode,
+    this.extractDir,
+    this.onReloadChapter,
     super.key,
   });
 
@@ -250,6 +253,9 @@ class AudiobookSettingsSheet extends StatefulWidget {
   final bool isHoshiReader;
 
   final EpubBook? epubBook;
+
+  final String? extractDir;
+  final VoidCallback? onReloadChapter;
 
   @override
   State<AudiobookSettingsSheet> createState() => _AudiobookSettingsSheetState();
@@ -457,6 +463,24 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           label: t.section_layout,
           page: 'layout',
         ),
+        if (widget.extractDir != null)
+          ListTile(
+            dense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+            leading: const Icon(Icons.code, size: 22),
+            title: Text(t.book_css_editor_edit_css),
+            trailing: const Icon(Icons.chevron_right, size: 20),
+            onTap: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      BookCssEditorPage(extractDir: widget.extractDir!),
+                ),
+              );
+              widget.onReloadChapter?.call();
+            },
+          ),
         if (widget.controller != null)
           _categoryTile(
             theme,

@@ -2567,6 +2567,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           appModel: appModel,
           isHoshiReader: true,
           onStyleChanged: _applyStylesLive,
+          extractDir: _extractDir,
+          onReloadChapter: () => _navigateToChapter(_currentChapter),
           lyricsMode: _lyricsMode,
           onToggleLyricsMode: _toggleLyricsMode,
           showFloatingLyric: appModel.showFloatingLyric,
