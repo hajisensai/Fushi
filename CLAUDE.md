@@ -35,6 +35,72 @@
 - 有声书/字幕相关核心路径在 `hibiki/lib/src/media/audiobook/`，当前导入入口包括 `book_import_dialog.dart` 和 `audiobook_import_dialog.dart`。
 - 旧 TTU 只保留迁移用途：`TtuMigrationServer` / `TtuIdbReader` / `assets/ttu-ebook-reader` 用来读取历史 IndexedDB 数据。当前阅读器问题不要去 `D:\ttu-fork` 修。
 
+## 集成测试素材
+
+测试素材存放在仓库外固定路径，不纳入 git：
+
+| 类型 | 路径 |
+|------|------|
+| EPUB | `.codex-test/fixtures/kagami/かがみの孤城 (辻村深月) (Z-Library).epub` |
+| 音频 | `.codex-test/fixtures/kagami/かがみの孤城 [audiobook.jp 244083].m4b` |
+| 字幕 | `.codex-test/fixtures/kagami/かがみの孤城 [audiobook.jp 244083].srt` |
+| 字典 | `D:\辞典\` 目录下任意 `.zip`，推荐用体积小的先跑通流程 |
+
+`D:\辞典\` 可用字典清单：
+- `明镜日汉双解词典_Yomitan 1.4.4.zip`
+- `[JA-JA] 日本語俗語辞書.zip`
+- `[JA-JA] 実用日本語表現辞典.zip`
+- `[JA Freq] BCCWJ_SUW_LUW_combined.zip`
+- `[JA Freq] JPDB_v2.2_Frequency_Kana_2024-10-13.zip`
+- `どんなときどう使う 日本語表現文型辞典_1_05.zip`
+- `[JA-JA] 明鏡国語辞典 第三版[2025-08-18].zip`
+- `（大修館）明鏡国語辞典［第二版］.zip`
+- `Nihongo-Bunkei-Jiten.zip`
+- `[JA-JA] ことわざ・慣用句の百科事典.zip`
+- `[JA-JA] 絵でわかる慣用句 [2024-06-30].zip`
+- `[JA-JA Expressions] 故事ことわざの辞典.zip`
+- `[JA-JA Grammar] [画像付き] 絵でわかる日本語 v3.zip`
+- `大辞泉/大辞泉 第二版[2025-04-29][no-images].zip`
+- `大辞泉/大辞泉 第二版[2025-04-29].zip`
+- `旺文社国語辞典 第十二版/旺文社国語辞典 第十二版[2025-04-29].zip`
+- `小学館 例解学習国語 第十二版/小学館例解学習国語 第十二版[2025-08-18].zip`
+- `[Pitch] NHK日本語発音アクセント新辞典.zip`
+
+## 集成测试流程
+
+集成测试需要一台已连接的 Android 模拟器或真机（`adb devices` 可见）。
+
+### 冒烟测试（当前已有）
+
+```powershell
+cd hibiki
+flutter drive --driver=test_driver/integration_test.dart --target=integration_test/app_smoke_test.dart
+```
+
+验证 app 启动、渲染、导航切换不崩溃。
+
+### 导入流程测试（扩展方向）
+
+1. **推送素材到设备**：
+   ```powershell
+   adb push ".codex-test\fixtures\kagami\かがみの孤城 (辻村深月) (Z-Library).epub" /sdcard/Download/
+   adb push ".codex-test\fixtures\kagami\かがみの孤城 [audiobook.jp 244083].m4b" /sdcard/Download/
+   adb push ".codex-test\fixtures\kagami\かがみの孤城 [audiobook.jp 244083].srt" /sdcard/Download/
+   adb push "D:\辞典\明镜日汉双解词典_Yomitan 1.4.4.zip" /sdcard/Download/
+   ```
+
+2. **预授权限**：
+   ```powershell
+   adb shell pm grant com.example.hibiki android.permission.READ_EXTERNAL_STORAGE
+   adb shell pm grant com.example.hibiki android.permission.WRITE_EXTERNAL_STORAGE
+   ```
+
+3. **测试验证点**：
+   - EPUB 导入：文件进入书架、可打开阅读器、Scaffold 正常渲染
+   - 有声书导入：m4b + srt 配对、书架可见、播放控件可渲染
+   - 字典导入：zip 导入完成、搜索词条有结果返回
+   - 综合：阅读器内划词查词能命中已导入字典
+
 ## 审查规则
 
 - 用户要求审查项目、继续审查、风险审计或类似任务时，默认进入持续审查模式；不要只在聊天里输出一次性总结。
