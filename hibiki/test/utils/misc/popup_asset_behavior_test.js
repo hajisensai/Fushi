@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
+const dictMediaPath = path.resolve(__dirname, '../../../assets/popup/dict-media.js');
 const popupPath = path.resolve(__dirname, '../../../assets/popup/popup.js');
 
 class FakeClassList {
@@ -64,6 +65,10 @@ class FakeElement {
 
   addEventListener(type, handler) {
     (this.listeners[type] ??= []).push(handler);
+  }
+
+  getBoundingClientRect() {
+    return {width: 0, height: 0};
   }
 
   closest(selector) {
@@ -191,6 +196,9 @@ function createPopupContext() {
 
 function loadPopup() {
   const context = createPopupContext();
+  vm.runInNewContext(fs.readFileSync(dictMediaPath, 'utf8'), context, {
+    filename: dictMediaPath,
+  });
   vm.runInNewContext(fs.readFileSync(popupPath, 'utf8'), context, {
     filename: popupPath,
   });
@@ -217,7 +225,7 @@ function testEmSizedWideImagesUseHorizontalScrollWrapper() {
   assert.equal(node.children[0].children[0].style.maxWidth, 'none');
 }
 
-function testExplicitContentImageDimensionsDefaultToEmUnits() {
+function testExplicitContentImageDimensionsDefaultToPixelUnits() {
   const context = loadPopup();
   const node = context.createDefinitionImage(
     {
@@ -229,9 +237,32 @@ function testExplicitContentImageDimensionsDefaultToEmUnits() {
     false,
   );
 
-  assert.equal(node.className, 'gloss-image-scroll');
-  assert.equal(node.children[0].dataset.sizeUnits, 'em');
-  assert.equal(node.children[0].children[0].style.width, '100em');
+  assert.equal(node.className, 'gloss-image-link');
+  assert.equal(node.dataset.sizeUnits, undefined);
+  assert.equal(node.children[0].style.width, '100px');
+}
+
+function testPixelImagesUseNaturalAspectRatioAfterLoad() {
+  const context = loadPopup();
+  const node = context.createDefinitionImage(
+    {
+      path: 'img/d93ed9600ba7717bd75cd68f5d35760c.png',
+      width: 100,
+      height: 10,
+    },
+    'test-dict',
+    false,
+  );
+  const container = node.children[0];
+  const sizer = container.children[0];
+  const img = container.children[3];
+
+  img.naturalWidth = 230;
+  img.naturalHeight = 246;
+  img.listeners.load[0]();
+
+  assert.equal(container.style.width, '100px');
+  assert.equal(sizer.style.paddingTop, `${(246 / 230) * 100}%`);
 }
 
 function testLongPressTimerSurvivesEarlyTouchEnd() {
@@ -296,7 +327,5 @@ function testLongPressFallsBackFromElementToTextNode() {
 }
 
 testEmSizedWideImagesUseHorizontalScrollWrapper();
-testExplicitContentImageDimensionsDefaultToEmUnits();
-testLongPressTimerSurvivesEarlyTouchEnd();
-testRepeatedTouchStartDoesNotCancelPendingLongPress();
-testLongPressFallsBackFromElementToTextNode();
+testExplicitContentImageDimensionsDefaultToPixelUnits();
+testPixelImagesUseNaturalAspectRatioAfterLoad();

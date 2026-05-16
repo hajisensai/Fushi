@@ -105,7 +105,7 @@ function createDefinitionImage(data, dictionary, exporting) {
     const hasDimensions = (hasPreferredWidth || hasPreferredHeight || typeof data.width === 'number' || typeof data.height === 'number');
     const invAspectRatio = (hasPreferredWidth && hasPreferredHeight ? preferredHeight / preferredWidth : height / width);
     const usedWidth = (hasPreferredWidth ? preferredWidth : (hasPreferredHeight ? preferredHeight / invAspectRatio : width));
-    const effectiveSizeUnits = (typeof sizeUnits === 'string' ? sizeUnits : (hasDimensions ? 'em' : null));
+    const effectiveSizeUnits = (typeof sizeUnits === 'string' ? sizeUnits : null);
 
     console.log('[IMG-def]', path, JSON.stringify({
         width, height, preferredWidth, preferredHeight,
@@ -181,9 +181,12 @@ function createDefinitionImage(data, dictionary, exporting) {
             img.style.position = 'static';
             img.style.display = 'inline-block';
         }
-        if (!hasDimensions && !isSvg) {
+        if (effectiveSizeUnits !== 'em' && !isSvg) {
             img.addEventListener('load', () => {
-                imageContainer.style.width = `${Math.min(img.naturalWidth, window.innerWidth - 20)}px`;
+                if (img.naturalWidth <= 0 || img.naturalHeight <= 0) return;
+                if (!hasDimensions) {
+                    imageContainer.style.width = `${Math.min(img.naturalWidth, window.innerWidth - 20)}px`;
+                }
                 aspectRatioSizer.style.paddingTop = `${(img.naturalHeight / img.naturalWidth) * 100}%`;
             }, { once: true });
         }
