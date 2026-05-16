@@ -29,7 +29,7 @@ hibiki/                              # repo root
 │   │           ├── database/             # Drift tables, database class, DAOs
 │   │           ├── models/               # Shared data models
 │   │           ├── language/             # LanguageConfig abstract interface ONLY (no dict dependency)
-│   │           └── i18n/                 # Slang source JSON + generated strings
+│   │           └── i18n/                 # Slang source JSON + generated strings (deferred — stays in app during Phase 0)
 │   ├── hibiki_dictionary/
 │   │   ├── pubspec.yaml
 │   │   └── lib/
@@ -67,8 +67,7 @@ hibiki/                              # repo root
 │               ├── tts_engine.dart       # Abstract TTS interface
 │               ├── platform_integration.dart  # Abstract intent/sharing/wakelock
 │               └── storage_paths.dart    # Abstract storage paths
-├── apps/
-│   └── android/                          # symlink or move of hibiki/hibiki/
+├── hibiki/                               # Android app (stays in place during Phase 0; move to apps/android/ deferred to Phase 1+)
 ├── native/
 │   └── hoshidicts/                       # C++ source (moved from android/app/src/main/cpp/); includes built-in deinflector
 ├── melos.yaml
@@ -167,7 +166,7 @@ foreach ($pkg in $packages) {
 Create `packages/hibiki_core/pubspec.yaml`:
 ```yaml
 name: hibiki_core
-description: Shared models, database, parsers, and i18n for Hibiki
+description: Shared models, database, language config, and i18n for Hibiki
 publish_to: none
 resolution: workspace
 
@@ -180,8 +179,7 @@ dependencies:
     sdk: flutter
   drift: ^2.23.0
   sqlite3_flutter_libs: ^0.5.28
-  slang: ^3.13.0
-  slang_flutter: ^3.13.0
+  # slang/i18n deferred — stays in app during Phase 0
   path: ^1.8.3
   collection: ^1.17.0
 
@@ -1275,7 +1273,7 @@ git tag phase0-complete
 - [ ] Smoke test passes: book import, reading, dictionary, Anki, audiobook
 - [ ] All 5 packages resolve and export correctly
 - [ ] hoshidicts C++ compiles from `native/hoshidicts/`
-- [ ] No `package:hibiki/src/database/`, `package:hibiki/src/dictionary/`, `package:hibiki/src/anki/`, or `package:hibiki/src/language/` imports remain in app (all migrated to package imports)
+- [ ] No `package:hibiki/src/database/`, `package:hibiki/src/dictionary/`, `package:hibiki/src/anki/`, `package:hibiki/src/language/`, or `package:hibiki/src/media/audiobook/{parser,text_file_io}` imports remain in app (all migrated to package imports)
 - [ ] inappwebview 6.x PoC documented (PASS or documented blockers)
 
 ---
