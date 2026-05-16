@@ -531,11 +531,7 @@ function createDefinitionImage(data, dictionary, exporting = false) {
                        preferredWidth :
                        (hasPreferredHeight ? preferredHeight / invAspectRatio : width)
                        );
-    const effectiveSizeUnits = (
-                                typeof sizeUnits === 'string' ?
-                                sizeUnits :
-                                (hasDimensions ? 'em' : null)
-                                );
+    const effectiveSizeUnits = typeof sizeUnits === 'string' ? sizeUnits : null;
 
     const node = document.createElement(exporting ? 'span' : 'a');
     node.classList.add('gloss-image-link');
@@ -618,7 +614,12 @@ function createDefinitionImage(data, dictionary, exporting = false) {
                 img.style.display = 'inline-block';
             }
             img.addEventListener('load', () => {
-                if (!hasDimensions && !isSvg) {
+                if (effectiveSizeUnits !== 'em' && !isSvg && img.naturalWidth > 0 && img.naturalHeight > 0) {
+                    if (!hasDimensions) {
+                        imageContainer.style.width = `${Math.min(img.naturalWidth, window.innerWidth - 20)}px`;
+                    }
+                    aspectRatioSizer.style.paddingTop = `${(img.naturalHeight / img.naturalWidth) * 100}%`;
+                } else if (!hasDimensions && !isSvg) {
                     imageContainer.style.width = `${Math.min(img.naturalWidth, window.innerWidth - 20)}px`;
                     aspectRatioSizer.style.paddingTop = `${(img.naturalHeight / img.naturalWidth) * 100}%`;
                 }
@@ -1178,9 +1179,6 @@ function createDeinflectionSection(entry) {
 function createFrequencySection(frequencies) {
     if (!frequencies?.length) return null;
     const section = el('div', { className: 'category-section frequency-section' });
-    const label = el('div', { className: 'category-label' });
-    label.appendChild(el('span', { className: 'category-name', textContent: '词频' }));
-    section.appendChild(label);
     const body = el('div', { className: 'category-body' });
     if (window.harmonicFrequency) {
         const normalRow = el('div', { className: 'tag-row', style: 'display:none' });
@@ -1208,9 +1206,6 @@ function createFrequencySection(frequencies) {
 function createPitchSection(pitches, reading) {
     if (!pitches?.length) return null;
     const section = el('div', { className: 'category-section pitch-section' });
-    const label = el('div', { className: 'category-label' });
-    label.appendChild(el('span', { className: 'category-name', textContent: '声调' }));
-    section.appendChild(label);
     const body = el('div', { className: 'category-body' });
     const pitchContainer = el('div', { className: 'pitch-list' });
     if (window.deduplicatePitchAccents) {
@@ -1242,9 +1237,6 @@ function createGlossarySectionWrapper(entry) {
     const dictNames = Object.keys(grouped);
     if (!dictNames.length) return null;
     const section = el('div', { className: 'category-section glossary-section' });
-    const label = el('div', { className: 'category-label' });
-    label.appendChild(el('span', { className: 'category-name', textContent: '辞典' }));
-    section.appendChild(label);
     const body = el('div', { className: 'category-body' });
     section.appendChild(body);
     return { details: section, body, grouped, dictNames };
