@@ -326,6 +326,8 @@ class ReaderHoshiSource extends ReaderMediaSource {
 
   static ReaderSettings? readerSettings;
 
+  static VoidCallback? onSettingsChangedLive;
+
   int portForLanguage(Language language) {
     if (language is JapaneseLanguage) {
       return 52059;

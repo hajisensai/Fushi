@@ -5,6 +5,7 @@ import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/profile/profile_selector.dart';
+import 'package:hibiki/src/media/sources/reader_hoshi_source.dart';
 
 class DisplaySettingsPage extends BasePage {
   const DisplaySettingsPage({super.key});
@@ -262,6 +263,7 @@ class _DisplaySettingsPageState extends BasePageState {
   void _update(VoidCallback fn) {
     fn();
     setState(() {});
+    ReaderHoshiSource.onSettingsChangedLive?.call();
   }
 
   Widget _settingRow(

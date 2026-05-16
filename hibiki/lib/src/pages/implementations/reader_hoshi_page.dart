@@ -145,6 +145,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    ReaderHoshiSource.onSettingsChangedLive = () {
+      if (mounted) _applyStylesLive();
+    };
     _initBook();
   }
 
@@ -622,6 +625,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   @override
   void dispose() {
+    ReaderHoshiSource.onSettingsChangedLive = null;
     WidgetsBinding.instance.removeObserver(this);
     _progressPollTimer?.cancel();
     _saveDebounce?.cancel();

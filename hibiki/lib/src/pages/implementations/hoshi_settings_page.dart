@@ -305,7 +305,9 @@ Widget _buildFontEntry(BuildContext context) {
       Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => const CustomFontsPage()),
-      );
+      ).then((_) {
+        ReaderHoshiSource.onSettingsChangedLive?.call();
+      });
     },
   );
 }
@@ -358,6 +360,7 @@ Widget _buildThemeSelector(AppModel appModel,
                   return;
                 }
                 appModel.setAppThemeKey(e.key);
+                ReaderHoshiSource.onSettingsChangedLive?.call();
               },
             );
           }),
@@ -376,7 +379,9 @@ Widget _buildThemeSelector(AppModel appModel,
               Navigator.push(
                 navContext,
                 MaterialPageRoute(builder: (_) => const CustomThemePage()),
-              );
+              ).then((_) {
+                ReaderHoshiSource.onSettingsChangedLive?.call();
+              });
             },
           ),
         ],
