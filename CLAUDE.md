@@ -79,7 +79,7 @@ flutter drive --driver=test_driver/integration_test.dart --target=integration_te
 
 验证 app 启动、渲染、导航切换不崩溃。
 
-### 导入流程测试（扩展方向）
+### 导入流程测试
 
 1. **推送素材到设备**：
    ```powershell
@@ -95,11 +95,168 @@ flutter drive --driver=test_driver/integration_test.dart --target=integration_te
    adb shell pm grant com.example.hibiki android.permission.WRITE_EXTERNAL_STORAGE
    ```
 
-3. **测试验证点**：
+3. **验证点**：
    - EPUB 导入：文件进入书架、可打开阅读器、Scaffold 正常渲染
    - 有声书导入：m4b + srt 配对、书架可见、播放控件可渲染
    - 字典导入：zip 导入完成、搜索词条有结果返回
    - 综合：阅读器内划词查词能命中已导入字典
+
+### 完整功能测试矩阵
+
+以下是人工或自动化集成测试应覆盖的全部流程。
+
+#### A. 启动与初始化
+
+| # | 步骤 | 预期 |
+|---|------|------|
+| A1 | 全新安装启动（无数据库） | 自动创建 Default profile，显示首页 |
+| A2 | 带历史数据启动（已有书/字典/配置） | 恢复上次状态，无崩溃 |
+| A3 | 数据库迁移启动（旧 schema → 新 schema） | 迁移成功，数据完整 |
+
+#### B. 字典导入与查词
+
+| # | 步骤 | 预期 |
+|---|------|------|
+| B1 | 导入 Yomitan zip 字典（明镜日汉双解） | 导入进度显示，完成后字典列表可见 |
+| B2 | 导入第二本字典（日本語俗語辞書） | 两本字典共存 |
+| B3 | 搜索「猫」 | 返回包含释义的结果，多字典结果合并显示 |
+| B4 | 搜索「食べる」（动词活用） | 命中词条 |
+| B5 | 搜索不存在的词「xyzabc」 | 无结果，UI 不崩溃 |
+| B6 | 删除一本字典 | 字典列表更新，搜索结果相应减少 |
+| B7 | 导入频率字典（BCCWJ） | 频率标签显示在词条旁 |
+| B8 | 导入 Pitch 字典（NHK） | 音高标注显示 |
+
+#### C. EPUB 阅读器
+
+| # | 步骤 | 预期 |
+|---|------|------|
+| C1 | 导入 EPUB（かがみの孤城） | 书架出现封面/标题 |
+| C2 | 打开书籍 | 阅读器渲染首页内容 |
+| C3 | 翻页（左滑/音量键） | 页面切换，进度更新 |
+| C4 | 划词选中文本 | 弹出字典弹窗，显示释义 |
+| C5 | 关闭阅读器再打开 | 恢复到上次阅读位置 |
+| C6 | 长文本滚动（连续模式） | 无卡顿，滚动流畅 |
+
+#### D. 有声书
+
+| # | 步骤 | 预期 |
+|---|------|------|
+| D1 | 导入 m4b + srt（かがみの孤城 audiobook） | 书架出现有声书条目 |
+| D2 | 播放 | 音频正常播放，字幕同步高亮 |
+| D3 | 暂停/恢复 | 状态正确切换 |
+| D4 | 拖动进度条 | 音频跳转，字幕重新同步 |
+| D5 | 点击字幕文本查词 | 弹出字典弹窗 |
+| D6 | 后台播放 | 切到其他 app 后音频继续 |
+| D7 | 关闭再打开 | 恢复到上次播放位置 |
+
+#### E. 阅读器配置项逐项测试
+
+每项配置修改后验证阅读器立即反映变化，不崩溃。
+
+| # | 配置项 | 测试值 | 验证 |
+|---|--------|--------|------|
+| E1 | fontSize | 14, 22, 36, 50 | 字体大小变化可见 |
+| E2 | lineHeight | 1.0, 1.65, 2.5 | 行距变化可见 |
+| E3 | writingMode | `vertical-rl`, `horizontal-tb` | 排版方向切换 |
+| E4 | viewMode | `paginated`, `continuous` | 分页/滚动切换 |
+| E5 | theme | `light-theme`, `dark-theme`, `sepia-theme` | 主题颜色变化 |
+| E6 | furiganaMode | `show`, `hide`, `partial`, `toggle` | 振假名显示/隐藏 |
+| E7 | textIndentation | 0, 1, 2 | 首行缩进变化 |
+| E8 | marginTop/Bottom/Left/Right | 0, 10, 30, 50 | 边距变化可见 |
+| E9 | pageColumns | 0 (auto), 1, 2 | 分栏变化 |
+| E10 | enableVerticalFontKerning | true, false | 字距变化 |
+| E11 | enableFontVPAL | true, false | VPAL 生效 |
+| E12 | verticalTextOrientation | `mixed`, `upright` | 竖排英文方向变化 |
+| E13 | enableTextJustification | true, false | 两端对齐 |
+| E14 | prioritizeReaderStyles | true, false | 原书样式/自定义样式切换 |
+| E15 | autoReadOnLookup | true, false | 查词时是否自动朗读 |
+| E16 | highlightOnTap | true, false | 点击是否高亮 |
+| E17 | keepScreenAwake | true, false | 屏幕常亮切换 |
+| E18 | tapEmptyToHideChrome | true, false | 点击空白隐藏工具栏 |
+| E19 | invertSwipeDirection | true, false | 翻页方向反转 |
+| E20 | volumePageTurningSpeed | 50, 100, 200 | 音量键翻页速度 |
+| E21 | dismissSwipeSensitivity | 0.3, 0.6, 0.9 | 滑动返回灵敏度 |
+| E22 | customFonts | 添加字体、启用/禁用、排序、删除 | 自定义字体生效 |
+
+#### F. 配置组合与随机测试
+
+| # | 步骤 | 预期 |
+|---|------|------|
+| F1 | 竖排 + 分页 + 振假名显示 + 大字体(36) + 暗色主题 | 正常渲染 |
+| F2 | 横排 + 连续滚动 + 振假名隐藏 + 小字体(14) + 亮色主题 | 正常渲染 |
+| F3 | 竖排 + 2栏 + 大边距(30) + 自定义字体 | 正常渲染 |
+| F4 | 随机 3-5 项配置同时修改 | 无崩溃，设置均生效 |
+| F5 | 快速连续切换 writingMode 10 次 | 无卡死、无白屏 |
+| F6 | 修改配置 → 关闭阅读器 → 重新打开 | 配置持久化，重新打开后仍然生效 |
+| F7 | 修改配置 → 杀进程 → 重新启动 | 配置不丢失 |
+
+#### G. Profile 系统测试
+
+| # | 步骤 | 预期 |
+|---|------|------|
+| G1 | 创建新 Profile「竖排暗色」 | Profile 列表出现 |
+| G2 | 在当前配置下 snapshot 到该 Profile | 设置快照保存成功 |
+| G3 | 修改若干配置项 | 当前配置改变 |
+| G4 | 切换回「竖排暗色」Profile（apply） | 所有配置恢复到快照时的状态 |
+| G5 | 创建第二个 Profile「横排亮色」 | 两个 Profile 共存 |
+| G6 | 在两个 Profile 间反复切换 | 每次切换后配置完全对应 |
+| G7 | 复制 Profile | 新 Profile 设置与源完全一致 |
+| G8 | 重命名 Profile | 名称更新，设置不变 |
+| G9 | 删除非活跃 Profile | 列表更新，当前配置不变 |
+| G10 | 删除唯一 Profile | 阻止删除（至少保留一个） |
+| G11 | 绑定 Profile 到媒体类型（EPUB → 竖排暗色） | 打开 EPUB 时自动应用该 Profile |
+| G12 | 绑定 Profile 到具体书籍 | 打开该书时用书级 Profile，优先于媒体类型绑定 |
+| G13 | 删除已绑定的 Profile | 绑定关系清理，回退到 Default |
+| G14 | 修改配置 → 切换 Profile → 切换回来 | 未保存的修改被覆盖（apply 是全量替换） |
+
+#### H. 字典配置项
+
+| # | 步骤 | 预期 |
+|---|------|------|
+| H1 | dictionary_entry_font_size: 12, 16, 24 | 字典弹窗字体大小变化 |
+| H2 | maximum_terms: 1, 5, 20 | 搜索结果条数限制 |
+| H3 | auto_search: true/false | 输入时是否自动搜索 |
+| H4 | auto_search_debounce_delay: 100, 300, 800 | 延迟触发搜索的时间 |
+| H5 | collapse_dictionaries: true/false | 多字典结果折叠/展开 |
+| H6 | deduplicate_pitch_accents: true/false | 重复音高去重 |
+| H7 | harmonic_frequency: true/false | 频率调和显示 |
+| H8 | custom_dict_css 修改 | 字典条目样式变化 |
+| H9 | global_dict_css 修改 | 全局字典样式变化 |
+
+#### I. 播放器配置项
+
+| # | 步骤 | 预期 |
+|---|------|------|
+| I1 | player_listening_comprehension_mode: true/false | 字幕隐藏/显示模式 |
+| I2 | player_background_play: true/false | 后台播放开关 |
+| I3 | double_tap_seek_duration: 5, 10, 30 | 双击快进秒数变化 |
+| I4 | show_floating_lyric: true/false | 浮动歌词显示/隐藏 |
+| I5 | floating_lyric_font_size: 12, 18, 28 | 浮动歌词大小变化 |
+| I6 | is_transcript_opaque: true/false | 字幕区域透明度 |
+| I7 | player_orientation_portrait: true/false | 强制竖屏 |
+
+#### J. 主题与外观配置
+
+| # | 步骤 | 预期 |
+|---|------|------|
+| J1 | 切换内置主题预设 | 全局颜色方案变化 |
+| J2 | custom_theme_seed 修改 | 自定义种子色生效 |
+| J3 | custom_theme_dark: true/false | 深色/浅色切换 |
+| J4 | 逐一修改 custom_theme_font/bg/selection/primary/secondary/tertiary/container/sasayaki/link_color | 对应 UI 元素颜色变化 |
+| J5 | 修改主题后重启 app | 主题持久化 |
+
+#### K. 边界与异常
+
+| # | 步骤 | 预期 |
+|---|------|------|
+| K1 | fontSize 设为极端值（1, 200） | 不崩溃，合理限制或渲染 |
+| K2 | margin 设为负数 | 不崩溃，忽略或归零 |
+| K3 | 导入损坏的 EPUB | 友好错误提示，不崩溃 |
+| K4 | 导入损坏的字典 zip | 友好错误提示 |
+| K5 | 导入超大字典（大辞泉 完整版） | 导入成功，不 OOM |
+| K6 | 数据库并发写入（快速连续修改配置） | 无死锁、无数据丢失 |
+| K7 | 断网状态下所有本地功能 | 正常工作 |
+| K8 | 存储空间不足时导入 | 友好提示 |
 
 ## 审查规则
 
