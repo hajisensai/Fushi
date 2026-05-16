@@ -64,21 +64,20 @@ void main() {
       // App survived without fatal crash
       expect(find.byType(Scaffold), findsWidgets);
 
-      // Filter out known emulator-only errors (WebView renderer, chromium)
-      // and fail on unexpected app-level errors.
+      // Filter out known emulator-only errors (WebView renderer, chromium,
+      // network timeouts) and fail on unexpected app-level errors.
       final List<FlutterErrorDetails> unexpectedErrors = errors.where((e) {
         final String msg = e.exceptionAsString().toLowerCase();
         if (msg.contains('webview') || msg.contains('chromium')) return false;
         if (msg.contains('renderer') && msg.contains('crash')) return false;
+        if (msg.contains('socketexception')) return false;
+        if (msg.contains('tls') || msg.contains('timeout')) return false;
         return true;
       }).toList();
 
-      if (unexpectedErrors.isNotEmpty) {
-        debugPrint('[test] ${unexpectedErrors.length} unexpected errors:');
-        for (final e in unexpectedErrors) {
-          debugPrint('  - ${e.exceptionAsString()}');
-        }
-      }
+      expect(unexpectedErrors, isEmpty,
+          reason: 'App produced unexpected FlutterErrors: '
+              '${unexpectedErrors.map((e) => e.exceptionAsString()).join('; ')}');
     } finally {
       FlutterError.onError = oldHandler;
     }
