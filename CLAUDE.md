@@ -91,8 +91,8 @@ flutter drive --driver=test_driver/integration_test.dart --target=integration_te
 
 2. **预授权限**：
    ```powershell
-   adb shell pm grant com.example.hibiki android.permission.READ_EXTERNAL_STORAGE
-   adb shell pm grant com.example.hibiki android.permission.WRITE_EXTERNAL_STORAGE
+   adb shell pm grant app.hibiki.reader android.permission.READ_EXTERNAL_STORAGE
+   adb shell pm grant app.hibiki.reader android.permission.WRITE_EXTERNAL_STORAGE
    ```
 
 3. **验证点**：
