@@ -659,6 +659,8 @@ function createDefinitionImage(data, dictionary, exporting = false) {
                 if (shouldUseNaturalPixels) {
                     if (!hasDimensions) {
                         imageContainer.style.width = `${Math.min(img.naturalWidth, window.innerWidth - 20)}px`;
+                    } else if (hasMismatchedNaturalAspectRatio(img, invAspectRatio)) {
+                        imageContainer.style.width = `${Math.min(img.naturalWidth, window.innerWidth - 20)}px`;
                     } else if (useEmUnits) {
                         imageContainer.style.width = `${usedWidth}px`;
                     }

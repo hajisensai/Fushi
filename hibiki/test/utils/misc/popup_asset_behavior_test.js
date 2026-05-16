@@ -269,7 +269,7 @@ function testEmSizedWideImagesUseHorizontalScrollWrapper() {
   assert.equal(node.children[0].children[0].style.maxWidth, 'none');
 }
 
-function testLargeRasterImagesMarkedAsEmRenderAsPixels() {
+function testLargeRasterImagesMarkedAsEmUseNaturalWidthAfterLoad() {
   const context = loadPopup();
   const node = context.createDefinitionImage(
     {
@@ -293,7 +293,7 @@ function testLargeRasterImagesMarkedAsEmRenderAsPixels() {
   img.naturalHeight = 246;
   img.listeners.load[0]();
 
-  assert.equal(container.style.width, '100px');
+  assert.equal(container.style.width, '230px');
   assert.equal(link.dataset.sizeUnits, undefined);
   assert.equal(sizer.style.paddingTop, `${(246 / 230) * 100}%`);
 }
@@ -315,7 +315,7 @@ function testExplicitContentImageDimensionsDefaultToPixelUnits() {
   assert.equal(node.children[0].style.width, '100px');
 }
 
-function testPixelImagesUseNaturalAspectRatioAfterLoad() {
+function testPixelImagesWithBadDeclaredAspectUseNaturalWidthAfterLoad() {
   const context = loadPopup();
   const node = context.createDefinitionImage(
     {
@@ -334,7 +334,7 @@ function testPixelImagesUseNaturalAspectRatioAfterLoad() {
   img.naturalHeight = 246;
   img.listeners.load[0]();
 
-  assert.equal(container.style.width, '100px');
+  assert.equal(container.style.width, '230px');
   assert.equal(sizer.style.paddingTop, `${(246 / 230) * 100}%`);
 }
 
@@ -442,7 +442,7 @@ function testLongPressFallsBackFromElementToTextNode() {
 }
 
 testEmSizedWideImagesUseHorizontalScrollWrapper();
-testLargeRasterImagesMarkedAsEmRenderAsPixels();
+testLargeRasterImagesMarkedAsEmUseNaturalWidthAfterLoad();
 testExplicitContentImageDimensionsDefaultToPixelUnits();
-testPixelImagesUseNaturalAspectRatioAfterLoad();
+testPixelImagesWithBadDeclaredAspectUseNaturalWidthAfterLoad();
 testTappingDefinitionImageOpensLightbox();
