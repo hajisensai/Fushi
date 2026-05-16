@@ -34,11 +34,13 @@ void main() {
     });
 
     test('negative timestamps do not crash', () {
-      final cues = SrtParser.parseString(
-        content: '1\n-1:00:00,000 --> 00:00:01,000\nBad\n',
-        bookUid: 'b',
+      expect(
+        () => SrtParser.parseString(
+          content: '1\n-1:00:00,000 --> 00:00:01,000\nBad\n',
+          bookUid: 'b',
+        ),
+        returnsNormally,
       );
-      expect(cues, isA<List>());
     });
   });
 
@@ -49,11 +51,13 @@ void main() {
     });
 
     test('missing WEBVTT header still attempts parse', () {
-      final cues = VttParser.parseString(
-        content: '00:00:01.000 --> 00:00:02.000\nHello\n',
-        bookUid: 'b',
+      expect(
+        () => VttParser.parseString(
+          content: '00:00:01.000 --> 00:00:02.000\nHello\n',
+          bookUid: 'b',
+        ),
+        returnsNormally,
       );
-      expect(cues, isA<List>());
     });
 
     test('only WEBVTT header with no cues returns empty', () {
@@ -62,11 +66,13 @@ void main() {
     });
 
     test('cue with missing end time does not crash', () {
-      final cues = VttParser.parseString(
-        content: 'WEBVTT\n\n00:00:01.000 -->\nHello\n',
-        bookUid: 'b',
+      expect(
+        () => VttParser.parseString(
+          content: 'WEBVTT\n\n00:00:01.000 -->\nHello\n',
+          bookUid: 'b',
+        ),
+        returnsNormally,
       );
-      expect(cues, isA<List>());
     });
   });
 
@@ -95,13 +101,15 @@ void main() {
     });
 
     test('Dialogue with insufficient fields does not crash', () {
-      final cues = AssParser.parseString(
-        content: '[Events]\nFormat: Layer, Start, End, Style, Name, '
-            'MarginL, MarginR, MarginV, Effect, Text\n'
-            'Dialogue: 0,bad\n',
-        bookUid: 'b',
+      expect(
+        () => AssParser.parseString(
+          content: '[Events]\nFormat: Layer, Start, End, Style, Name, '
+              'MarginL, MarginR, MarginV, Effect, Text\n'
+              'Dialogue: 0,bad\n',
+          bookUid: 'b',
+        ),
+        returnsNormally,
       );
-      expect(cues, isA<List>());
     });
   });
 

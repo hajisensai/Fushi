@@ -43,6 +43,7 @@ void main() {
           trailing: Icon(Icons.check),
         ),
       ));
+      await tester.pumpAndSettle();
 
       expect(find.byIcon(Icons.check), findsOneWidget);
     });
