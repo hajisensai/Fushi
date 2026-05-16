@@ -58,6 +58,14 @@ function shouldRenderDefinitionImageToCanvas(path, appearance, usedWidth, invAsp
     return /\.svg$/i.test(path) && appearance === 'monochrome' && usedWidth <= 4 && (usedWidth * invAspectRatio) <= 4;
 }
 
+function hasMismatchedNaturalAspectRatio(img, invAspectRatio) {
+    if (img.naturalWidth <= 0 || img.naturalHeight <= 0 || invAspectRatio <= 0) {
+        return false;
+    }
+    const naturalInvAspectRatio = img.naturalHeight / img.naturalWidth;
+    return Math.abs(Math.log(naturalInvAspectRatio / invAspectRatio)) > Math.log(1.5);
+}
+
 function createDefinitionImageCanvas(imageUrl, alt, onLoad) {
     const canvas = document.createElement('canvas');
     canvas.classList.add('gloss-image');
@@ -106,10 +114,12 @@ function createDefinitionImage(data, dictionary, exporting) {
     const invAspectRatio = (hasPreferredWidth && hasPreferredHeight ? preferredHeight / preferredWidth : height / width);
     const usedWidth = (hasPreferredWidth ? preferredWidth : (hasPreferredHeight ? preferredHeight / invAspectRatio : width));
     const effectiveSizeUnits = (typeof sizeUnits === 'string' ? sizeUnits : null);
+    const isSvg = /\.svg$/i.test(path);
+    const useEmUnits = effectiveSizeUnits === 'em';
 
     console.log('[IMG-def]', path, JSON.stringify({
         width, height, preferredWidth, preferredHeight,
-        usedWidth, hasDimensions, appearance, sizeUnits: effectiveSizeUnits
+        usedWidth, hasDimensions, appearance, sizeUnits: useEmUnits ? effectiveSizeUnits : null
     }));
 
     const node = document.createElement('a');
@@ -142,13 +152,12 @@ function createDefinitionImage(data, dictionary, exporting) {
     node.dataset.collapsed = typeof collapsed === 'boolean' ? `${collapsed}` : 'false';
     node.dataset.collapsible = typeof collapsible === 'boolean' ? `${collapsible}` : 'true';
     if (typeof verticalAlign === 'string') node.dataset.verticalAlign = verticalAlign;
-    if (effectiveSizeUnits !== null) node.dataset.sizeUnits = effectiveSizeUnits;
+    if (useEmUnits) node.dataset.sizeUnits = effectiveSizeUnits;
 
     aspectRatioSizer.style.paddingTop = `${invAspectRatio * 100}%`;
     if (typeof border === 'string') imageContainer.style.border = border;
     if (typeof borderRadius === 'string') imageContainer.style.borderRadius = borderRadius;
-    const isSvg = /\.svg$/i.test(path);
-    if (effectiveSizeUnits === 'em') {
+    if (useEmUnits) {
         imageContainer.style.width = `${usedWidth}em`;
     } else if (!hasDimensions && isSvg) {
         node.dataset.hasAspectRatio = 'false';
@@ -181,19 +190,27 @@ function createDefinitionImage(data, dictionary, exporting) {
             img.style.position = 'static';
             img.style.display = 'inline-block';
         }
-        if (effectiveSizeUnits !== 'em' && !isSvg) {
+        if (!isSvg) {
             img.addEventListener('load', () => {
                 if (img.naturalWidth <= 0 || img.naturalHeight <= 0) return;
+                if (useEmUnits && !hasMismatchedNaturalAspectRatio(img, invAspectRatio)) return;
                 if (!hasDimensions) {
                     imageContainer.style.width = `${Math.min(img.naturalWidth, window.innerWidth - 20)}px`;
+                } else if (useEmUnits) {
+                    imageContainer.style.width = `${usedWidth}px`;
                 }
                 aspectRatioSizer.style.paddingTop = `${(img.naturalHeight / img.naturalWidth) * 100}%`;
+                if (useEmUnits) {
+                    delete node.dataset.sizeUnits;
+                    node.style.maxWidth = '100%';
+                    imageContainer.style.maxWidth = '100%';
+                }
             }, { once: true });
         }
         img.src = imageUrl;
         imageContainer.appendChild(img);
     }
-    if (effectiveSizeUnits === 'em') {
+    if (useEmUnits) {
         node.style.maxWidth = 'none';
         imageContainer.style.maxWidth = 'none';
         const scrollWrapper = document.createElement('div');

@@ -225,6 +225,35 @@ function testEmSizedWideImagesUseHorizontalScrollWrapper() {
   assert.equal(node.children[0].children[0].style.maxWidth, 'none');
 }
 
+function testLargeRasterImagesMarkedAsEmRenderAsPixels() {
+  const context = loadPopup();
+  const node = context.createDefinitionImage(
+    {
+      path: 'img/d93ed9600ba7717bd75cd68f5d35760c.png',
+      width: 100,
+      height: 10,
+      sizeUnits: 'em',
+    },
+    'test-dict',
+    false,
+  );
+
+  assert.equal(node.className, 'gloss-image-scroll');
+
+  const link = node.children[0];
+  const container = link.children[0];
+  const sizer = container.children[0];
+  const img = container.children[3];
+
+  img.naturalWidth = 230;
+  img.naturalHeight = 246;
+  img.listeners.load[0]();
+
+  assert.equal(container.style.width, '100px');
+  assert.equal(link.dataset.sizeUnits, undefined);
+  assert.equal(sizer.style.paddingTop, `${(246 / 230) * 100}%`);
+}
+
 function testExplicitContentImageDimensionsDefaultToPixelUnits() {
   const context = loadPopup();
   const node = context.createDefinitionImage(
@@ -327,5 +356,6 @@ function testLongPressFallsBackFromElementToTextNode() {
 }
 
 testEmSizedWideImagesUseHorizontalScrollWrapper();
+testLargeRasterImagesMarkedAsEmRenderAsPixels();
 testExplicitContentImageDimensionsDefaultToPixelUnits();
 testPixelImagesUseNaturalAspectRatioAfterLoad();

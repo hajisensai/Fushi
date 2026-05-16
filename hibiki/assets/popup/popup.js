@@ -277,6 +277,14 @@ function setStructuredContentElementStyle(element, style) {
     }
 }
 
+function hasMismatchedNaturalAspectRatio(img, invAspectRatio) {
+    if (img.naturalWidth <= 0 || img.naturalHeight <= 0 || invAspectRatio <= 0) {
+        return false;
+    }
+    const naturalInvAspectRatio = img.naturalHeight / img.naturalWidth;
+    return Math.abs(Math.log(naturalInvAspectRatio / invAspectRatio)) > Math.log(1.5);
+}
+
 const COMPACT_GLOSSARIES_ANKI = `.yomitan-glossary ul[data-sc-content="glossary"] > li:not(:first-child)::before, .yomitan-glossary .glossary-list > li:not(:first-child)::before { white-space: pre-wrap; content: " | "; display: inline; color: rgb(119, 119, 119); }
 .yomitan-glossary ul[data-sc-content="glossary"] > li, .yomitan-glossary .glossary-list > li { display: inline; }
 .yomitan-glossary ul[data-sc-content="glossary"], .yomitan-glossary .glossary-list { display: inline; list-style: none; padding-left: 0px; }`;
@@ -532,6 +540,8 @@ function createDefinitionImage(data, dictionary, exporting = false) {
                        (hasPreferredHeight ? preferredHeight / invAspectRatio : width)
                        );
     const effectiveSizeUnits = typeof sizeUnits === 'string' ? sizeUnits : null;
+    const isSvg = /\.svg$/i.test(path);
+    const useEmUnits = effectiveSizeUnits === 'em';
 
     const node = document.createElement(exporting ? 'span' : 'a');
     node.classList.add('gloss-image-link');
@@ -567,7 +577,7 @@ function createDefinitionImage(data, dictionary, exporting = false) {
     if (typeof verticalAlign === 'string') {
         node.dataset.verticalAlign = verticalAlign;
     }
-    if (effectiveSizeUnits !== null) {
+    if (useEmUnits) {
         node.dataset.sizeUnits = effectiveSizeUnits;
     }
     
@@ -575,9 +585,8 @@ function createDefinitionImage(data, dictionary, exporting = false) {
     
     if (typeof border === 'string') { imageContainer.style.border = border; }
     if (typeof borderRadius === 'string') { imageContainer.style.borderRadius = borderRadius; }
-    const isSvg = /\.svg$/i.test(path);
-    console.log('[IMG_CREATE]', path, 'dims=' + hasDimensions, 'svg=' + isSvg, usedWidth + 'x' + (usedWidth * invAspectRatio) + (effectiveSizeUnits || 'px'));
-    if (effectiveSizeUnits === 'em') {
+    console.log('[IMG_CREATE]', path, 'dims=' + hasDimensions, 'svg=' + isSvg, usedWidth + 'x' + (usedWidth * invAspectRatio) + (useEmUnits ? 'em' : 'px'));
+    if (useEmUnits) {
         imageContainer.style.width = `${usedWidth}em`;
     } else if (!hasDimensions && isSvg) {
         node.dataset.hasAspectRatio = 'false';
@@ -614,11 +623,19 @@ function createDefinitionImage(data, dictionary, exporting = false) {
                 img.style.display = 'inline-block';
             }
             img.addEventListener('load', () => {
-                if (effectiveSizeUnits !== 'em' && !isSvg && img.naturalWidth > 0 && img.naturalHeight > 0) {
+                const shouldUseNaturalPixels = !isSvg && img.naturalWidth > 0 && img.naturalHeight > 0 && (!useEmUnits || hasMismatchedNaturalAspectRatio(img, invAspectRatio));
+                if (shouldUseNaturalPixels) {
                     if (!hasDimensions) {
                         imageContainer.style.width = `${Math.min(img.naturalWidth, window.innerWidth - 20)}px`;
+                    } else if (useEmUnits) {
+                        imageContainer.style.width = `${usedWidth}px`;
                     }
                     aspectRatioSizer.style.paddingTop = `${(img.naturalHeight / img.naturalWidth) * 100}%`;
+                    if (useEmUnits) {
+                        delete node.dataset.sizeUnits;
+                        node.style.maxWidth = '100%';
+                        imageContainer.style.maxWidth = '100%';
+                    }
                 } else if (!hasDimensions && !isSvg) {
                     imageContainer.style.width = `${Math.min(img.naturalWidth, window.innerWidth - 20)}px`;
                     aspectRatioSizer.style.paddingTop = `${(img.naturalHeight / img.naturalWidth) * 100}%`;
@@ -648,7 +665,7 @@ function createDefinitionImage(data, dictionary, exporting = false) {
         if (filename) {
             image.alt = alt;
             image.src = filename;
-            if (effectiveSizeUnits === 'em') {
+            if (useEmUnits) {
                 const emSize = 14;
                 const scaleFactor = 2 * window.devicePixelRatio;
                 image.width = usedWidth * emSize * scaleFactor;
@@ -656,13 +673,13 @@ function createDefinitionImage(data, dictionary, exporting = false) {
                 image.width = usedWidth;
             }
             image.height = image.width * invAspectRatio;
-            applyImageStyles(node, imageContainer, aspectRatioSizer, imageBackground, image, filename, appearance, effectiveSizeUnits === 'em');
+            applyImageStyles(node, imageContainer, aspectRatioSizer, imageBackground, image, filename, appearance, useEmUnits);
         } else {
             image.textContent = alt;
         }
         imageContainer.appendChild(image);
     }
-    if (effectiveSizeUnits === 'em' && !exporting) {
+    if (useEmUnits && !exporting) {
         node.style.maxWidth = 'none';
         imageContainer.style.maxWidth = 'none';
         const scrollWrapper = document.createElement('div');
