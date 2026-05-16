@@ -799,9 +799,17 @@ ImportResult import_yomitan(Zip& zip, const std::string& output_dir, bool low_ra
       throw std::runtime_error("failed to parse index.json");
     }
 
-    result.title = index.title;
+    result.title = sanitize_title(std::string(index.title));
 
     std::filesystem::path dict_path = std::filesystem::path(output_dir) / result.title;
+    {
+      auto canonical_parent = std::filesystem::weakly_canonical(output_dir);
+      auto canonical_child = std::filesystem::weakly_canonical(dict_path);
+      auto rel = std::filesystem::relative(canonical_child, canonical_parent);
+      if (rel.empty() || *rel.begin() == "..") {
+        throw std::runtime_error("path traversal detected in dictionary title");
+      }
+    }
     std::string path = dict_path.string();
     std::filesystem::create_directories(dict_path);
 
@@ -874,6 +882,14 @@ ImportResult dictionary_importer::write_simple_dict(const std::string& title, co
     result.detected_type = "term";
 
     std::filesystem::path dict_path = std::filesystem::path(output_dir) / result.title;
+    {
+      auto canonical_parent = std::filesystem::weakly_canonical(output_dir);
+      auto canonical_child = std::filesystem::weakly_canonical(dict_path);
+      auto rel = std::filesystem::relative(canonical_child, canonical_parent);
+      if (rel.empty() || *rel.begin() == "..") {
+        throw std::runtime_error("path traversal detected in dictionary title");
+      }
+    }
     std::string path = dict_path.string();
     std::filesystem::create_directories(dict_path);
 
