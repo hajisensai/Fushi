@@ -209,54 +209,122 @@ flutter drive --driver=test_driver/integration_test.dart --target=integration_te
 | G13 | 删除已绑定的 Profile | 绑定关系清理，回退到 Default |
 | G14 | 修改配置 → 切换 Profile → 切换回来 | 未保存的修改被覆盖（apply 是全量替换） |
 
-#### H. 字典配置项
+#### H. 字典配置项逐项测试
+
+| # | 配置项 | 测试值 | 验证 |
+|---|--------|--------|------|
+| H1 | dictionary_entry_font_size | 10, 16, 24, 32 | 字典弹窗/页面字体大小变化 |
+| H2 | maximum_terms | 1, 5, 10, 20 | 搜索结果条数限制生效 |
+| H3 | auto_search | true, false | 输入时自动搜索 vs 需按回车 |
+| H4 | auto_search_debounce_delay | 100, 300, 500, 800 | 停止输入后触发搜索的延迟可感知 |
+| H5 | collapse_dictionaries | true, false | 多字典结果折叠/全展开 |
+| H6 | deduplicate_pitch_accents | true, false | 相同音高条目去重/保留全部 |
+| H7 | harmonic_frequency | true, false | 频率调和计算显示/隐藏 |
+| H8 | custom_dict_css | 添加自定义样式、清空 | 指定字典条目样式变化 |
+| H9 | global_dict_css | 添加背景色样式、清空 | 所有字典全局样式变化 |
+| H10 | search_history_by_key | true, false | 搜索历史按字典分类 vs 全局合并 |
+| H11 | auto_add_book_name_to_tags | true, false | Anki 导出时自动加书名标签 |
+| H12 | 字典排序（拖拽调整顺序） | 把第二本拖到第一位 | 搜索结果优先显示新排第一的字典 |
+| H13 | 启用/禁用单本字典 | 禁用一本字典 | 搜索结果不再包含该字典 |
+| H14 | 字典显示名称修改 | 改为自定义名称 | UI 各处使用新名称 |
+
+#### I. 播放器配置项逐项测试
+
+| # | 配置项 | 测试值 | 验证 |
+|---|--------|--------|------|
+| I1 | player_listening_comprehension_mode | true, false | 字幕隐藏（听力模式）/ 正常显示 |
+| I2 | player_background_play | true, false | 切到后台继续播放 / 暂停 |
+| I3 | double_tap_seek_duration | 5, 10, 15, 30 | 双击快进/快退秒数变化 |
+| I4 | show_floating_lyric | true, false | 浮动歌词 overlay 显示/隐藏 |
+| I5 | floating_lyric_font_size | 12, 18, 24, 32 | 浮动歌词文字大小变化 |
+| I6 | is_transcript_opaque | true, false | 字幕区域不透明/半透明 |
+| I7 | is_transcript_player_mode | true, false | 字幕播放器模式（全屏字幕）/ 普通 |
+| I8 | player_orientation_portrait | true, false | 强制竖屏 / 跟随系统 |
+| I9 | player_hardware_acceleration | true, false | 硬件加速开关 |
+| I10 | player_use_opensles | true, false | OpenSL ES 音频引擎切换 |
+| I11 | player_subtitle_notification | true, false | 通知栏显示当前字幕 |
+| I12 | stretch_to_fill_screen | true, false | 视频拉伸填满/保持比例 |
+| I13 | show_play_bar | true, false | 底部播放条显示/隐藏 |
+| I14 | show_media_notification | true, false | 媒体通知栏控件显示/隐藏 |
+
+#### J. 主题与外观配置逐项测试
+
+| # | 配置项 | 测试值 | 验证 |
+|---|--------|--------|------|
+| J1 | app_theme_key | 逐个切换所有内置预设 | 全局颜色方案变化 |
+| J2 | custom_theme_seed | #FF0000, #00FF00, #0000FF | 种子色影响全局 Material You 配色 |
+| J3 | custom_theme_dark | true, false | 深色/浅色模式切换 |
+| J4 | custom_theme_font_color | #000000, #FFFFFF, #FF5722 | 全局文字颜色变化 |
+| J5 | custom_theme_bg_color | #FFFFFF, #121212, #FFF8E1 | 背景颜色变化 |
+| J6 | custom_theme_selection_color | #BBDEFB, #FF4081 | 文本选中高亮颜色变化 |
+| J7 | custom_theme_primary_color | 多种颜色 | 主色调（AppBar、按钮）变化 |
+| J8 | custom_theme_secondary_color | 多种颜色 | 次要色调变化 |
+| J9 | custom_theme_tertiary_color | 多种颜色 | 第三色调变化 |
+| J10 | custom_theme_container_color | 多种颜色 | 容器/卡片背景变化 |
+| J11 | custom_theme_sasayaki_color | 多种颜色 | Sasayaki 弹窗颜色变化 |
+| J12 | custom_theme_link_color | 多种颜色 | 链接/可点击文字颜色变化 |
+| J13 | 修改主题后重启 app | — | 主题持久化，不回退 |
+| J14 | 自定义主题各项 → 切回内置预设 → 再切回自定义 | — | 自定义值保留不丢失 |
+
+#### K. UI/弹窗/浮动配置项逐项测试
+
+| # | 配置项 | 测试值 | 验证 |
+|---|--------|--------|------|
+| K1 | show_floating_dict | true, false | 浮动字典服务启动/停止 |
+| K2 | popup_max_width | 300, 500, 800, 全屏 | 字典弹窗宽度限制变化 |
+| K3 | disable_dialog_scrim | true, false | 弹窗背景遮罩显示/隐藏 |
+| K4 | populate_bookmarks | true, false | 自动填充书签列表 |
+| K5 | current_home_tab_index | 0, 1, 2, 3 | 重启后恢复到上次所在 tab |
+| K6 | target_language | ja, zh, ko, en | 目标语言切换影响词典/分词 |
+| K7 | app_locale | zh, ja, en | app UI 语言切换 |
+
+#### K2. 模糊窗口配置项逐项测试
+
+| # | 配置项 | 测试值 | 验证 |
+|---|--------|--------|------|
+| K2-1 | blur_visible | true, false | 模糊遮罩显示/隐藏 |
+| K2-2 | blur_width | 100, 200, 500 | 模糊区域宽度变化 |
+| K2-3 | blur_height | 50, 100, 300 | 模糊区域高度变化 |
+| K2-4 | blur_left | 0, 50, 200 | 模糊区域水平位置 |
+| K2-5 | blur_top | 0, 50, 200 | 模糊区域垂直位置 |
+| K2-6 | blur_red | 0, 128, 255 | 模糊颜色红通道 |
+| K2-7 | blur_green | 0, 128, 255 | 模糊颜色绿通道 |
+| K2-8 | blur_blue | 0, 128, 255 | 模糊颜色蓝通道 |
+| K2-9 | blur_opacity | 0.0, 0.5, 1.0 | 模糊透明度 |
+| K2-10 | blur_radius | 0, 5, 15, 30 | 模糊半径（强度） |
+
+#### K3. 音频源配置项逐项测试
+
+| # | 配置项 | 测试值 | 验证 |
+|---|--------|--------|------|
+| K3-1 | audio_sources | 添加远程音频源 URL | 查词时音频可播放 |
+| K3-2 | audio_sources | 删除音频源 | 该源不再出现在结果中 |
+| K3-3 | audio_sources | 调整音频源优先级（排序） | 优先使用排位靠前的源 |
+| K3-4 | local_audio_enabled | true, false | 本地音频查找启用/禁用 |
+| K3-5 | local_audio_db_path | 设置有效路径 | 本地音频可被索引和播放 |
+| K3-6 | local_audio_db_path | 设置无效路径 | 友好提示，不崩溃 |
+
+#### K4. 边界与异常
 
 | # | 步骤 | 预期 |
 |---|------|------|
-| H1 | dictionary_entry_font_size: 12, 16, 24 | 字典弹窗字体大小变化 |
-| H2 | maximum_terms: 1, 5, 20 | 搜索结果条数限制 |
-| H3 | auto_search: true/false | 输入时是否自动搜索 |
-| H4 | auto_search_debounce_delay: 100, 300, 800 | 延迟触发搜索的时间 |
-| H5 | collapse_dictionaries: true/false | 多字典结果折叠/展开 |
-| H6 | deduplicate_pitch_accents: true/false | 重复音高去重 |
-| H7 | harmonic_frequency: true/false | 频率调和显示 |
-| H8 | custom_dict_css 修改 | 字典条目样式变化 |
-| H9 | global_dict_css 修改 | 全局字典样式变化 |
-
-#### I. 播放器配置项
-
-| # | 步骤 | 预期 |
-|---|------|------|
-| I1 | player_listening_comprehension_mode: true/false | 字幕隐藏/显示模式 |
-| I2 | player_background_play: true/false | 后台播放开关 |
-| I3 | double_tap_seek_duration: 5, 10, 30 | 双击快进秒数变化 |
-| I4 | show_floating_lyric: true/false | 浮动歌词显示/隐藏 |
-| I5 | floating_lyric_font_size: 12, 18, 28 | 浮动歌词大小变化 |
-| I6 | is_transcript_opaque: true/false | 字幕区域透明度 |
-| I7 | player_orientation_portrait: true/false | 强制竖屏 |
-
-#### J. 主题与外观配置
-
-| # | 步骤 | 预期 |
-|---|------|------|
-| J1 | 切换内置主题预设 | 全局颜色方案变化 |
-| J2 | custom_theme_seed 修改 | 自定义种子色生效 |
-| J3 | custom_theme_dark: true/false | 深色/浅色切换 |
-| J4 | 逐一修改 custom_theme_font/bg/selection/primary/secondary/tertiary/container/sasayaki/link_color | 对应 UI 元素颜色变化 |
-| J5 | 修改主题后重启 app | 主题持久化 |
-
-#### K. 边界与异常
-
-| # | 步骤 | 预期 |
-|---|------|------|
-| K1 | fontSize 设为极端值（1, 200） | 不崩溃，合理限制或渲染 |
-| K2 | margin 设为负数 | 不崩溃，忽略或归零 |
-| K3 | 导入损坏的 EPUB | 友好错误提示，不崩溃 |
-| K4 | 导入损坏的字典 zip | 友好错误提示 |
-| K5 | 导入超大字典（大辞泉 完整版） | 导入成功，不 OOM |
-| K6 | 数据库并发写入（快速连续修改配置） | 无死锁、无数据丢失 |
-| K7 | 断网状态下所有本地功能 | 正常工作 |
-| K8 | 存储空间不足时导入 | 友好提示 |
+| K4-1 | fontSize 设为极端值（1, 200） | 不崩溃，合理限制或渲染 |
+| K4-2 | margin 设为负数 | 不崩溃，忽略或归零 |
+| K4-3 | 导入损坏的 EPUB | 友好错误提示，不崩溃 |
+| K4-4 | 导入损坏的字典 zip | 友好错误提示 |
+| K4-5 | 导入超大字典（大辞泉 完整版） | 导入成功，不 OOM |
+| K4-6 | 数据库并发写入（快速连续修改配置） | 无死锁、无数据丢失 |
+| K4-7 | 断网状态下所有本地功能 | 正常工作 |
+| K4-8 | 存储空间不足时导入 | 友好提示 |
+| K4-9 | debounce_delay 设为 0 | 不崩溃，立即搜索 |
+| K4-10 | maximum_terms 设为 0 | 不崩溃，显示空或忽略 |
+| K4-11 | popup_max_width 设为极小（50） | 弹窗仍可用，不溢出 |
+| K4-12 | blur_opacity 设为超出范围（-1, 2.0） | 钳位或忽略，不崩溃 |
+| K4-13 | custom_fonts JSON 格式损坏 | 忽略错误，回退空列表 |
+| K4-14 | 字典 CSS 包含恶意 `<script>` | XSS 被过滤或不执行 |
+| K4-15 | 所有字典禁用后搜索 | 空结果，不崩溃 |
+| K4-16 | profile 快照为空（无任何偏好设置） | apply 后回退默认值 |
+| K4-17 | 两个 Profile 快速反复切换 50 次 | 无死锁、无数据错乱 |
 
 #### L. Creator 与 Anki 集成
 
