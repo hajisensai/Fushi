@@ -662,7 +662,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
             : Icons.block,
         action: () {
           appModel.toggleDictionaryHidden(dictionary);
-          final notifier = _notifiersByDictionary[dictionary];
+          final notifier = _notifiersByDictionary[dictionary.name];
           if (notifier != null) {
             notifier.value = !notifier.value;
             notifier.value = !notifier.value;
@@ -678,7 +678,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
             : Icons.unfold_less,
         action: () {
           appModel.toggleDictionaryCollapsed(dictionary);
-          final notifier = _notifiersByDictionary[dictionary];
+          final notifier = _notifiersByDictionary[dictionary.name];
           if (notifier != null) {
             notifier.value = !notifier.value;
             notifier.value = !notifier.value;
