@@ -286,6 +286,28 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
     -webkit-overflow-scrolling: touch;
 }
 
+.dict-image-lightbox {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483647;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(0, 0, 0, 0.82);
+    cursor: zoom-out;
+}
+
+.dict-image-lightbox-image {
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    background: transparent;
+}
+
 .glossary-group {
     position: relative;
     margin-top: 5px;

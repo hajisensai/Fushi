@@ -44,6 +44,8 @@ class FakeElement {
     this.parentElement = null;
     this.parentNode = null;
     this.textContent = '';
+    this.src = '';
+    this.alt = '';
   }
 
   appendChild(child) {
@@ -65,6 +67,26 @@ class FakeElement {
 
   addEventListener(type, handler) {
     (this.listeners[type] ??= []).push(handler);
+  }
+
+  dispatchEvent(event) {
+    for (const handler of this.listeners[event.type] ?? []) {
+      handler(event);
+    }
+  }
+
+  remove() {
+    if (!this.parentElement) {
+      return;
+    }
+    const parent = this.parentElement;
+    const siblings = parent.children;
+    const index = siblings.indexOf(this);
+    if (index >= 0) {
+      siblings.splice(index, 1);
+    }
+    this.parentElement = null;
+    this.parentNode = null;
   }
 
   getBoundingClientRect() {
@@ -142,6 +164,28 @@ function createPopupContext() {
     },
     addEventListener(type, handler) {
       (listeners[type] ??= []).push(handler);
+    },
+    querySelector(selector) {
+      if (!selector.startsWith('.')) {
+        return null;
+      }
+      const className = selector.slice(1);
+      const visit = (element) => {
+        if (
+          element.classList?.contains(className) ||
+          element.className.split(/\s+/).includes(className)
+        ) {
+          return element;
+        }
+        for (const child of element.children ?? []) {
+          const found = visit(child);
+          if (found) {
+            return found;
+          }
+        }
+        return null;
+      };
+      return visit(this.body);
     },
   };
 
@@ -294,6 +338,48 @@ function testPixelImagesUseNaturalAspectRatioAfterLoad() {
   assert.equal(sizer.style.paddingTop, `${(246 / 230) * 100}%`);
 }
 
+function testTappingDefinitionImageOpensLightbox() {
+  const context = loadPopup();
+  const node = context.createDefinitionImage(
+    {
+      path: 'img/d93ed9600ba7717bd75cd68f5d35760c.png',
+      width: 100,
+      height: 10,
+      data: {alt: 'test image'},
+    },
+    'test-dict',
+    false,
+  );
+  context.document.body.appendChild(node);
+
+  node.dispatchEvent({
+    type: 'click',
+    preventDefault() {
+      this.defaultPrevented = true;
+    },
+    stopPropagation() {
+      this.propagationStopped = true;
+    },
+  });
+
+  const lightbox = context.document.body.children.find(
+    (child) => child.className === 'dict-image-lightbox',
+  );
+
+  assert.ok(lightbox, 'image lightbox was not opened');
+  assert.equal(lightbox.children[0].tagName, 'IMG');
+  assert.equal(lightbox.children[0].src, 'image://?dictionary=test-dict&path=img%2Fd93ed9600ba7717bd75cd68f5d35760c.png');
+  assert.equal(lightbox.children[0].alt, 'test image');
+
+  lightbox.dispatchEvent({type: 'click'});
+  assert.equal(
+    context.document.body.children.some(
+      (child) => child.className === 'dict-image-lightbox',
+    ),
+    false,
+  );
+}
+
 function testLongPressTimerSurvivesEarlyTouchEnd() {
   const context = loadPopup();
   const touchStart = context.__listeners.touchstart[0];
@@ -359,3 +445,4 @@ testEmSizedWideImagesUseHorizontalScrollWrapper();
 testLargeRasterImagesMarkedAsEmRenderAsPixels();
 testExplicitContentImageDimensionsDefaultToPixelUnits();
 testPixelImagesUseNaturalAspectRatioAfterLoad();
+testTappingDefinitionImageOpensLightbox();

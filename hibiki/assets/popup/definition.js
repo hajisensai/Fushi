@@ -66,6 +66,37 @@ function hasMismatchedNaturalAspectRatio(img, invAspectRatio) {
     return Math.abs(Math.log(naturalInvAspectRatio / invAspectRatio)) > Math.log(1.5);
 }
 
+function closeImageLightbox() {
+    document.querySelector('.dict-image-lightbox')?.remove();
+}
+
+function openImageLightbox(imageUrl, alt) {
+    closeImageLightbox();
+    const overlay = document.createElement('div');
+    overlay.className = 'dict-image-lightbox';
+    overlay.setAttribute('role', 'button');
+    overlay.setAttribute('aria-label', 'Close image preview');
+
+    const image = document.createElement('img');
+    image.className = 'dict-image-lightbox-image';
+    image.src = imageUrl;
+    image.alt = alt || '';
+    overlay.appendChild(image);
+
+    overlay.addEventListener('click', () => closeImageLightbox());
+    image.addEventListener('click', (event) => event.stopPropagation());
+
+    document.body.appendChild(overlay);
+}
+
+function enableDefinitionImagePreview(node, imageUrl, alt) {
+    node.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        openImageLightbox(imageUrl, alt);
+    });
+}
+
 function createDefinitionImageCanvas(imageUrl, alt, onLoad) {
     const canvas = document.createElement('canvas');
     canvas.classList.add('gloss-image');
@@ -175,6 +206,7 @@ function createDefinitionImage(data, dictionary, exporting) {
 
     const imageUrl = rewriteDictionaryMediaPath(path, dictionary);
     if (imageUrl === null) return node;
+    enableDefinitionImagePreview(node, imageUrl, nodeData?.alt || title || '');
     const inlineSvg = !hasDimensions && isSvg;
     if (!inlineSvg && shouldRenderDefinitionImageToCanvas(path, appearance, usedWidth, invAspectRatio)) {
         imageContainer.appendChild(createDefinitionImageCanvas(imageUrl, nodeData?.alt || title || '', (canvas, sourceImage) => {
