@@ -15,7 +15,7 @@
 
 ##### HBK-AUDIT-001 — FFI allocator mismatch (UB / heap corruption)
 - **severity**: CRITICAL
-- **status**: open
+- **status**: fixed
 - **file**: `hibiki/lib/src/dictionary/hoshidicts.dart` (lines 301-334, 373-389, 399-430, 454-474)
 - **root cause**: 所有 `toNativeUtf8()` 调用使用默认 `malloc` 分配器，但释放时用 `calloc.free()`。`package:ffi` 中 `malloc` 和 `calloc` 是不同的 allocator 实例，混用属于未定义行为。
 - **impact**: 堆损坏、随机崩溃、数据丢失，在不同 Android 版本/架构上表现不一致。
@@ -24,7 +24,7 @@
 
 ##### HBK-AUDIT-002 — Dictionary import path traversal
 - **severity**: CRITICAL
-- **status**: open
+- **status**: fixed
 - **file**: `hibiki/lib/src/models/app_model.dart` (lines ~2117-2146)
 - **root cause**: `importDictionary` 用 `result.title`（来自 zip 内 index.json）直接拼接文件路径，未做路径清理。恶意字典 zip 可用 `../../` 覆盖任意应用文件。
 - **impact**: 任意文件覆写，数据库损坏，代码执行（如覆盖 shared_prefs XML）。
@@ -33,7 +33,7 @@
 
 ##### HBK-AUDIT-003 — EPUB cover path traversal
 - **severity**: CRITICAL
-- **status**: open
+- **status**: fixed
 - **file**: `hibiki/lib/src/media/epub/epub_parser.dart` (lines ~313-322)
 - **root cause**: `coverHref` 从 OPF manifest 中提取后直接用于文件路径拼接，未验证是否在 EPUB 根目录内。
 - **impact**: 恶意 EPUB 可通过 `../../` 路径读取应用沙箱内任意文件。
@@ -42,7 +42,7 @@
 
 ##### HBK-AUDIT-004 — String.hashCode 做持久化目录名
 - **severity**: CRITICAL
-- **status**: open
+- **status**: fixed
 - **file**: `hibiki/lib/src/media/audiobook/audiobook_storage.dart` (lines ~10-11)
 - **root cause**: 用 `String.hashCode` 生成有声书存储目录名。Dart `String.hashCode` 不保证跨 isolate、跨运行、跨版本稳定。
 - **impact**: 应用升级或 Flutter 升级后找不到已导入的有声书数据，数据丢失。
@@ -51,7 +51,7 @@
 
 ##### HBK-AUDIT-005 — MediaItem.hashCode 用 toJson().hashCode
 - **severity**: CRITICAL
-- **status**: open
+- **status**: fixed
 - **file**: `hibiki/lib/src/models/media_item.dart` (line ~118)
 - **root cause**: `hashCode` 实现为 `toJson().hashCode`，`toJson()` 返回 `Map`，`Map.hashCode` 是 identity-based（`Object.hashCode`），不基于内容。违反 `==`/`hashCode` 契约。
 - **impact**: 放入 `Set`/`Map` 后行为不可预测：相等对象有不同 hashCode，查找失败。
@@ -60,7 +60,7 @@
 
 ##### HBK-AUDIT-006 — _furiganaCache 是 const 空 Map
 - **severity**: CRITICAL
-- **status**: open
+- **status**: fixed
 - **file**: `hibiki/lib/src/utils/language_utils.dart` (line ~60)
 - **root cause**: `_furiganaCache` 声明为 `const {}`（编译时常量），任何写入都会抛 `UnsupportedError`。缓存完全不工作。
 - **impact**: furigana 解析永远不缓存，每次重新计算。如果调用方 catch 了异常则静默降级为无缓存，性能严重退化。
@@ -73,7 +73,7 @@
 
 ##### HBK-AUDIT-007 — intent.extra! force unwrap NPE
 - **severity**: HIGH
-- **status**: open
+- **status**: fixed
 - **file**: `hibiki/lib/main.dart` (lines 253, 259, 264)
 - **root cause**: `intent.extra!['key']` 直接 force unwrap，当 extra 为 null 或 key 不存在时抛 NPE。
 - **impact**: 从外部 app 通过 intent 打开时崩溃（如分享文件到 Hibiki）。
@@ -82,7 +82,7 @@
 
 ##### HBK-AUDIT-008 — _pendingLookupText 在 build() 中修改
 - **severity**: HIGH
-- **status**: open
+- **status**: fixed
 - **file**: `hibiki/lib/main.dart` (lines ~356-362)
 - **root cause**: `build()` 方法内修改 `_pendingLookupText` 状态。`build()` 可被框架多次调用，导致副作用重复执行。
 - **impact**: lookup 可能被触发多次或丢失。
@@ -91,7 +91,7 @@
 
 ##### HBK-AUDIT-009 — use_build_context_synchronously (3处)
 - **severity**: HIGH
-- **status**: open
+- **status**: fixed
 - **file**: `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart` (多处 async gap 后用 context)
 - **root cause**: `await` 之后使用 `context`（如 `Navigator.of(context)`），widget 可能已 unmount。
 - **impact**: `FlutterError: Looking up a deactivated widget's ancestor` 崩溃。
@@ -100,7 +100,7 @@
 
 ##### HBK-AUDIT-010 — _stableTopInset/_stableBottomInset 在 build() 中赋值
 - **severity**: HIGH
-- **status**: open
+- **status**: fixed
 - **file**: `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart`
 - **root cause**: `build()` 中通过 `MediaQuery.of(context)` 读取 insets 并赋值给成员变量。build() 可能在同一帧被调用多次。
 - **impact**: 布局闪烁或无限 rebuild 循环。
@@ -109,7 +109,7 @@
 
 ##### HBK-AUDIT-011 — void async 方法吞异常 (~10+ 处)
 - **severity**: HIGH
-- **status**: open
+- **status**: fixed
 - **file**: `hibiki/lib/src/models/app_model.dart` (系统性)
 - **root cause**: 大量 `void` 返回的 async 方法（`importDictionary`、`deleteDictionary`、`exportAnkiDeck` 等），内部 `await` 抛异常时无 try-catch，调用方也不 await。异常被 zone 吞掉。
 - **impact**: 操作静默失败，用户不知道导入/删除/导出失败了。
@@ -118,7 +118,7 @@
 
 ##### HBK-AUDIT-012 — navigatorKey.currentContext! force unwrap
 - **severity**: HIGH
-- **status**: open
+- **status**: fixed
 - **file**: `hibiki/lib/src/models/app_model.dart`
 - **root cause**: 在可能尚未 attach 或已 dispose 的时机访问 `navigatorKey.currentContext!`。
 - **impact**: 应用启动早期或后台恢复时 NPE 崩溃。
@@ -127,7 +127,7 @@
 
 ##### HBK-AUDIT-013 — getPrefTyped int.parse 无 tryParse
 - **severity**: HIGH
-- **status**: open
+- **status**: fixed
 - **file**: `hibiki/lib/src/database/database.dart`
 - **root cause**: `getPrefTyped<int>` 用 `int.parse(value)` 而不是 `int.tryParse(value)`，corrupted preference 值会崩溃。
 - **impact**: 单个损坏的 preference 导致应用无法启动。
@@ -136,7 +136,7 @@
 
 ##### HBK-AUDIT-014 — N+1 insert 模式
 - **severity**: HIGH
-- **status**: open
+- **status**: fixed
 - **file**: `hibiki/lib/src/database/database.dart` (`replaceCuesForBook`, `replaceAllDictionaryHistory`, `replaceProfileSettings`)
 - **root cause**: 在 `transaction` 内逐条 `into(...).insert()`，数百条 cue 时性能极差。
 - **impact**: 有声书 cue 导入时 UI 卡顿数秒，大词典历史替换同理。
@@ -145,7 +145,7 @@
 
 ##### HBK-AUDIT-015 — becomingNoisyEventStream 订阅泄漏
 - **severity**: HIGH
-- **status**: open
+- **status**: fixed
 - **file**: `hibiki/lib/src/media/audiobook/audiobook_controller.dart`
 - **root cause**: `AudioSession.instance` 的 `becomingNoisyEventStream` 订阅在 controller dispose 时未取消。
 - **impact**: dispose 后仍收到事件，访问已释放资源崩溃。内存泄漏。
@@ -154,7 +154,7 @@
 
 ##### HBK-AUDIT-016 — clip playerStateStream 订阅泄漏
 - **severity**: HIGH
-- **status**: open
+- **status**: fixed
 - **file**: `hibiki/lib/src/media/audiobook/audiobook_controller.dart`
 - **root cause**: 对 `_player.playerStateStream` 的监听未在 dispose 中取消。
 - **impact**: 同 HBK-AUDIT-015。
@@ -163,7 +163,7 @@
 
 ##### HBK-AUDIT-017 — _player.pause() 未 await
 - **severity**: HIGH
-- **status**: open
+- **status**: fixed
 - **file**: `hibiki/lib/src/media/audiobook/audiobook_controller.dart`
 - **root cause**: `pause()` 是 async 操作但未 await，后续状态检查可能看到过期状态。
 - **impact**: 暂停后立即 seek/play 可能产生音频 glitch 或状态不一致。
@@ -172,7 +172,7 @@
 
 ##### HBK-AUDIT-018 — UI 页面 controller/subscription 未 dispose (系统性)
 - **severity**: HIGH
-- **status**: open
+- **status**: fixed
 - **file**: 25+ UI 页面文件（`audio_recorder_page.dart`、`dictionary_dialog_page.dart`、`history_reader_page.dart` 等）
 - **root cause**: `TextEditingController`、`ScrollController`、`StreamSubscription` 在 `initState` 或字段中创建，但 `dispose()` 中未释放。
 - **impact**: 内存泄漏，长时间使用后 OOM。事件回调访问已 unmount widget。
@@ -181,7 +181,7 @@
 
 ##### HBK-AUDIT-019 — AnkiChannelHandler NPE
 - **severity**: HIGH
-- **status**: open
+- **status**: fixed
 - **file**: `hibiki/android/.../AnkiChannelHandler.java`
 - **root cause**: `call.argument("key")` 返回值未 null check 直接使用。
 - **impact**: Flutter 侧传参错误时 Java 层 NPE → 应用崩溃。
@@ -190,7 +190,7 @@
 
 ##### HBK-AUDIT-020 — MainActivity unchecked casts
 - **severity**: HIGH
-- **status**: open
+- **status**: fixed
 - **file**: `hibiki/android/.../MainActivity.java`
 - **root cause**: intent extras 直接 cast 为目标类型，无 `instanceof` 检查。
 - **impact**: 其他 app 发送错误类型 extra 时 ClassCastException。
@@ -199,7 +199,7 @@
 
 ##### HBK-AUDIT-021 — TtsChannelHandler data race
 - **severity**: HIGH
-- **status**: open
+- **status**: fixed
 - **file**: `hibiki/android/.../TtsChannelHandler.java`
 - **root cause**: TTS 回调在非主线程执行，但直接调用 `result.success()`（必须在主线程）。
 - **impact**: 低概率崩溃：`CalledFromWrongThreadException`。
@@ -208,7 +208,7 @@
 
 ##### HBK-AUDIT-022 — pendingSafResult overwrite
 - **severity**: HIGH
-- **status**: open
+- **status**: fixed
 - **file**: `hibiki/android/.../MainActivity.java`
 - **root cause**: `pendingSafResult` 是单个字段，第二次 SAF 请求覆盖第一次的 result callback。
 - **impact**: 快速连续两次文件选择，第一次回调丢失，UI 永远等待。
@@ -217,7 +217,7 @@
 
 ##### HBK-AUDIT-023 — onSelectionChanged 双触发
 - **severity**: HIGH
-- **status**: open
+- **status**: fixed
 - **file**: `hibiki/lib/src/utils/` (text selection handler)
 - **root cause**: 选中文本的回调在某些路径触发两次（tap + selection change），导致 popup 弹出两次或查词两次。
 - **impact**: UI 闪烁，词典查询重复。
@@ -226,7 +226,7 @@
 
 ##### HBK-AUDIT-024 — getSentenceFromParagraph 负 TextRange
 - **severity**: HIGH
-- **status**: open
+- **status**: fixed
 - **file**: `hibiki/lib/src/utils/language_utils.dart`
 - **root cause**: 当 offset 超出段落长度时，计算出负数 `start`，构造 `TextRange(start: -N, end: M)`。
 - **impact**: 下游使用 TextRange 时 `substring` 抛 RangeError。
@@ -239,7 +239,7 @@
 
 ##### HBK-AUDIT-025 — 无 FK 约束 (ReaderPositions.ttuBookId, AudioCues→Audiobooks)
 - **severity**: MEDIUM
-- **status**: open
+- **status**: fixed
 - **file**: `hibiki/lib/src/database/tables.dart`
 - **root cause**: `ReaderPositions.ttuBookId` 无外键到 `EpubBooks`，`AudioCues` 无外键到 `Audiobooks`。
 - **impact**: 删除书籍后遗留孤儿记录，数据库膨胀。
@@ -248,7 +248,7 @@
 
 ##### HBK-AUDIT-026 — _dictionarySearchCache key collision
 - **severity**: MEDIUM
-- **status**: open
+- **status**: fixed
 - **file**: `hibiki/lib/src/models/app_model.dart`
 - **root cause**: 缓存 key 只用搜索文本，不含词典配置/启用状态。切换词典后缓存返回旧结果。
 - **impact**: 切换词典后查词结果不更新。
@@ -257,7 +257,7 @@
 
 ##### HBK-AUDIT-027 — _rowToDictionary jsonDecode 无 try-catch
 - **severity**: MEDIUM
-- **status**: open
+- **status**: fixed
 - **file**: `hibiki/lib/src/models/app_model.dart`
 - **root cause**: `jsonDecode(row['metadata'])` 无异常处理，损坏的 JSON 会抛异常。
 - **impact**: 单条损坏词典记录导致整个词典列表加载失败。
@@ -266,7 +266,7 @@
 
 ##### HBK-AUDIT-028 — deprecated Color API
 - **severity**: MEDIUM
-- **status**: open
+- **status**: fixed
 - **file**: `reader_hoshi_page.dart` 及多个 UI 文件
 - **root cause**: 使用 `Color(0xFF...)` 构造器（Flutter 3.x 中标记 deprecated）。
 - **impact**: 未来 Flutter 版本编译警告/错误。
@@ -275,7 +275,7 @@
 
 ##### HBK-AUDIT-029 — deprecated wakelock package
 - **severity**: MEDIUM
-- **status**: open
+- **status**: fixed
 - **file**: `hibiki/pubspec.yaml`
 - **root cause**: 使用 `wakelock` 包（已废弃），应迁移到 `wakelock_plus`。
 - **impact**: 未来 Flutter/Android SDK 升级后可能不兼容。
@@ -284,7 +284,7 @@
 
 ##### HBK-AUDIT-030 — missing ProGuard rules
 - **severity**: MEDIUM
-- **status**: open
+- **status**: fixed
 - **file**: `hibiki/android/app/build.gradle`
 - **root cause**: release build 未配置 ProGuard/R8 rules，反射/JNI 类可能被 minify 删除。
 - **impact**: release APK 中 JNI 函数找不到，hoshidicts FFI 崩溃。
@@ -293,7 +293,7 @@
 
 ##### HBK-AUDIT-031 — proxy config in gradle.properties
 - **severity**: MEDIUM
-- **status**: open
+- **status**: fixed
 - **file**: `hibiki/android/gradle.properties`
 - **root cause**: 遗留了代理配置（`systemProp.http.proxyHost` 等），CI 或其他开发者环境下构建失败。
 - **impact**: 无法在无代理环境构建。
@@ -302,7 +302,7 @@
 
 ##### HBK-AUDIT-032 — cleartext traffic allowed
 - **severity**: MEDIUM
-- **status**: open
+- **status**: fixed
 - **file**: `hibiki/android/app/src/main/AndroidManifest.xml`
 - **root cause**: `android:usesCleartextTraffic="true"`。
 - **impact**: 允许 HTTP 明文流量，MITM 风险。
@@ -311,7 +311,7 @@
 
 ##### HBK-AUDIT-033 — tautological tests
 - **severity**: MEDIUM
-- **status**: open
+- **status**: fixed
 - **file**: `hibiki/test/` (3 个文件)
 - **root cause**: 测试只验证 stdlib 行为（如 `expect(1+1, 2)`），不测试生产代码。
 - **impact**: 零测试覆盖的假象。
@@ -320,7 +320,7 @@
 
 ##### HBK-AUDIT-034 — FutureBuilder anti-pattern
 - **severity**: MEDIUM
-- **status**: open
+- **status**: fixed
 - **file**: 多个 UI 文件
 - **root cause**: `FutureBuilder` 的 `future` 参数在 `build()` 中创建新 Future，每次 rebuild 重新请求。
 - **impact**: 无限请求循环或数据闪烁。
@@ -329,7 +329,7 @@
 
 ##### HBK-AUDIT-035 — withPaths 创建无追踪实例
 - **severity**: MEDIUM
-- **status**: open
+- **status**: fixed
 - **file**: `hibiki/lib/src/dictionary/hoshidicts.dart` (line 477)
 - **root cause**: `withPaths` 创建新 HoshiDicts 实例但不赋给 `_instance`，调用方负责 dispose，但无强制机制。
 - **impact**: 内存泄漏（C++ 侧资源不释放）。
@@ -342,7 +342,7 @@
 
 ##### HBK-AUDIT-036 — 硬编码语言列表
 - **severity**: LOW
-- **status**: open
+- **status**: fixed
 - **file**: `hibiki/lib/src/dictionary/hoshidicts.dart` (lines 196-215)
 - **root cause**: `preloadTransforms` 中语言列表硬编码，新增语言需改源码。
 - **impact**: 可维护性差，但功能正确。
@@ -351,7 +351,7 @@
 
 ##### HBK-AUDIT-037 — migration 缺少 downgrade path
 - **severity**: LOW
-- **status**: open
+- **status**: fixed
 - **file**: `hibiki/lib/src/database/database.dart`
 - **root cause**: schema migration 只有 upgrade 路径，降级（如从 v11 回 v10）未处理。
 - **impact**: 用户安装旧版本后数据库不兼容。
@@ -360,7 +360,7 @@
 
 ##### HBK-AUDIT-038 — 多处 magic number
 - **severity**: LOW
-- **status**: open
+- **status**: fixed
 - **file**: 多个文件
 - **root cause**: `maxResults: 16`、`scanLength: 16`、`padding: 8.0` 等 magic number 散落各处。
 - **impact**: 可读性差，但功能正确。

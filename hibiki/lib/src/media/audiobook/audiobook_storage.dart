@@ -137,5 +137,11 @@ abstract final class AudiobookStorage {
       await dir.delete(recursive: true);
       debugPrint('[hibiki-import] deleted persist dir: ${dir.path}');
     }
+    final Directory oldDir = Directory(
+        p.join(docs.path, 'audiobooks', bookUid.hashCode.toRadixString(16)));
+    if (oldDir.existsSync()) {
+      await oldDir.delete(recursive: true);
+      debugPrint('[hibiki-import] deleted legacy persist dir: ${oldDir.path}');
+    }
   }
 }

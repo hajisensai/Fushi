@@ -2145,10 +2145,7 @@ class AppModel with ChangeNotifier {
               result.error.isNotEmpty ? result.error : t.import_failed);
         }
 
-        final name = result.title.trim();
-        if (name.isEmpty) {
-          throw Exception('Dictionary title is empty');
-        }
+        final name = _sanitizeDictionaryTitle(result.title);
 
         progressNotifier.value = t.import_name(name: name);
 
@@ -2167,6 +2164,10 @@ class AppModel with ChangeNotifier {
         final innerDataDir = Directory(path.join(tempOutputDir.path, name));
         final finalResourceDirectory =
             Directory(path.join(dictionaryResourceDirectory.path, name));
+        if (!path.isWithin(dictionaryResourceDirectory.path,
+            finalResourceDirectory.path)) {
+          throw Exception('Invalid dictionary title: path traversal detected');
+        }
         if (finalResourceDirectory.existsSync()) {
           finalResourceDirectory.deleteSync(recursive: true);
         }
@@ -2218,6 +2219,14 @@ class AppModel with ChangeNotifier {
     }
   }
 
+  static String _sanitizeDictionaryTitle(String raw) {
+    final cleaned = path.basename(raw.trim()).replaceAll(RegExp(r'[/\\]'), '_');
+    if (cleaned.isEmpty || cleaned == '.' || cleaned == '..') {
+      throw Exception('Dictionary title is empty');
+    }
+    return cleaned;
+  }
+
   static DictionaryType _parseDictionaryType(String type) {
     switch (type) {
       case 'frequency':
@@ -2261,13 +2270,7 @@ class AppModel with ChangeNotifier {
             result.error.isNotEmpty ? result.error : t.import_failed);
       }
 
-      final name = path.basename(result.title.trim()).replaceAll(
-            RegExp(r'[/\\]'),
-            '_',
-          );
-      if (name.isEmpty || name == '.' || name == '..') {
-        throw Exception('Dictionary title is empty');
-      }
+      final name = _sanitizeDictionaryTitle(result.title);
 
       progressNotifier.value = t.import_name(name: name);
 
