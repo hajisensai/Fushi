@@ -670,6 +670,22 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
         },
       ),
       buildPopupItem(
+        label: dictionary.isCollapsed(appModel.targetLanguage)
+            ? t.options_expand
+            : t.options_collapse,
+        icon: dictionary.isCollapsed(appModel.targetLanguage)
+            ? Icons.unfold_more
+            : Icons.unfold_less,
+        action: () {
+          appModel.toggleDictionaryCollapsed(dictionary);
+          final notifier = _notifiersByDictionary[dictionary];
+          if (notifier != null) {
+            notifier.value = !notifier.value;
+            notifier.value = !notifier.value;
+          }
+        },
+      ),
+      buildPopupItem(
         label: t.custom_dict_css,
         icon: Icons.code,
         action: () {

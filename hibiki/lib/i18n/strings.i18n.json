@@ -94,6 +94,8 @@
     "options_delete": "Delete",
     "options_show": "Enable",
     "options_hide": "Disable",
+    "options_collapse": "Auto-collapse",
+    "options_expand": "Auto-expand",
     "options_edit": "Edit",
     "info_empty_home_tab": "History is empty",
     "delete_in_progress": "Delete in progress",

@@ -156,7 +156,7 @@ class DictionaryPopupWebViewState
       window.deduplicatePitchAccents = $deduplicatePitch;
       window.harmonicFrequency = $harmonicFreq;
       window.collapseDictionaries = $collapseDict;
-      window.collapsedDictionaryNames = [];
+      window.collapsedDictionaryNames = ${jsonEncode(appModel.dictionaries.where((d) => d.isCollapsed(appModel.targetLanguage)).map((d) => d.name).toList())};
       window.lookupEntries = $entriesJson;
       window.dictionaryStyles = $stylesJson;
       window.globalDictCSS = ${jsonEncode(appModel.globalDictCSS)};
