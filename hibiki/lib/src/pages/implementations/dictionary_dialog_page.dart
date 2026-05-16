@@ -258,9 +258,9 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
   Future<void> _downloadRecommendedDictionaries() async {
     final List<RecommendedDictionary> toDownload =
         DictionaryDownloader.recommended.where((RecommendedDictionary rec) {
-      final String key = rec.name.toLowerCase().split(' ').first;
-      return !appModel.dictionaries
-          .any((d) => d.name.toLowerCase().contains(key));
+      return !appModel.dictionaries.any(
+        (d) => d.name.startsWith(rec.matchPrefix),
+      );
     }).toList();
 
     if (toDownload.isEmpty) {
@@ -314,32 +314,42 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
       path.join(appModel.dictionaryResourceDirectory.path, 'download_temp'),
     );
 
+    int successCount = 0;
+    String? lastError;
+
     try {
       for (final RecommendedDictionary rec in toDownload) {
         progressNotifier.value = t.dict_downloading(name: rec.name);
         downloadProgress.value = 0;
 
-        final File zipFile = await DictionaryDownloader.download(
-          url: rec.url,
-          tempDir: tempDir,
-          progressNotifier: downloadProgress,
-        );
+        try {
+          final File zipFile = await DictionaryDownloader.download(
+            url: rec.url,
+            tempDir: tempDir,
+            progressNotifier: downloadProgress,
+          );
 
-        progressNotifier.value = t.import_extract;
-        await appModel.importDictionary(
-          file: zipFile,
-          progressNotifier: progressNotifier,
-          onImportSuccess: () {
-            _selectedOrder = appModel.dictionaries.last.order;
-          },
-        );
+          progressNotifier.value = t.import_extract;
+          await appModel.importDictionary(
+            file: zipFile,
+            progressNotifier: progressNotifier,
+            onImportSuccess: () {},
+          );
+          successCount++;
+        } catch (e) {
+          lastError = '${rec.name}: $e';
+        }
       }
 
-      progressNotifier.value = t.dict_download_complete;
-      await Future<void>.delayed(const Duration(seconds: 1));
-    } catch (e) {
-      progressNotifier.value = t.dict_download_failed(error: e.toString());
-      await Future<void>.delayed(const Duration(seconds: 3));
+      if (successCount == toDownload.length) {
+        progressNotifier.value = t.dict_download_complete;
+      } else if (successCount > 0) {
+        progressNotifier.value =
+            '$successCount/${toDownload.length} OK. Failed: $lastError';
+      } else {
+        progressNotifier.value = t.dict_download_failed(error: lastError ?? '');
+      }
+      await Future<void>.delayed(const Duration(seconds: 2));
     } finally {
       if (tempDir.existsSync()) {
         tempDir.deleteSync(recursive: true);

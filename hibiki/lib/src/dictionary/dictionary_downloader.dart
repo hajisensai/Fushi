@@ -9,11 +9,16 @@ class RecommendedDictionary {
     required this.name,
     required this.url,
     required this.description,
+    required this.matchPrefix,
   });
 
   final String name;
   final String url;
   final String description;
+
+  /// Stable prefix to detect if this dictionary is already installed.
+  /// Matched with `startsWith` against installed dictionary names.
+  final String matchPrefix;
 }
 
 class DictionaryDownloader {
@@ -25,12 +30,14 @@ class DictionaryDownloader {
       url:
           'https://github.com/yomidevs/jmdict-yomitan/releases/latest/download/JMdict_english.zip',
       description: 'Japanese-English dictionary (~22 MB)',
+      matchPrefix: 'JMdict',
     ),
     RecommendedDictionary(
       name: 'JPDB Frequency',
       url:
           'https://github.com/MarvNC/jpdb-freq-list/releases/latest/download/JPDB.Frequency.List.zip',
       description: 'Word frequency data (~1 MB)',
+      matchPrefix: 'JPDB',
     ),
   ];
 
