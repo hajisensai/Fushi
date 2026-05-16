@@ -1870,7 +1870,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       return;
     }
 
-    if (ReaderHoshiSource.instance.pauseOnLookup &&
+    if ((ReaderHoshiSource.instance.pauseOnLookup || _lyricsMode) &&
         _audiobookController != null &&
         _audiobookController!.isPlaying) {
       _audiobookController!.pause();
