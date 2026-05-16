@@ -351,13 +351,93 @@ AppModel 的 3,456 行 God object 中，language 模块仅使用 **1 个 double 
 | 组件 | 提取难度 | 说明 |
 |------|---------|------|
 | Drift 数据库 | **最低** | 完全自包含，零业务耦合 |
-| 字幕解析器 | **低** | 纯函数，可能只依赖 SubtitleCue 模型 |
 | 词典引擎/FFI | **低-中** | 自包含 + 多平台 _openLib 改造 |
 | Language 模块 | **中** | 需改 1 个 AppModel 参数 + 移 ErrorLogService |
 | dart_mappable 生成代码 | **低** | 重新 build_runner 即可 |
 | Anki | **低** | MethodChannel 留在 app，接口+模型进包 |
-| Audio | **中** | 37+ 文件需分类，UI 留 app |
+| Audio + 解析器 | **中** | 37+ 文件需分类 + 6 个解析器依赖 AudioCue/text_file_io，一起进 hibiki_audio |
+
+---
+
+## Round 5: 测试验证
+
+### Scope
+
+实际执行工具链验证 Phase 0 计划的可行性：
+1. `flutter analyze` — 代码库健康检查
+2. `flutter test` — 单元测试基线
+3. `melos bootstrap` — 工作区搭建可行性（隔离 worktree 测试）
+4. 解析器隔离度分析 — 验证 Task 3 的文件分配
+5. AGP 版本兼容性
+
+### Findings
+
+#### HBK-AUDIT-016: flutter analyze 通过（0 错误 0 警告）
+
+- **severity:** INFO
+- **status:** VERIFIED
+- **事实：** `flutter analyze` 返回 13 个 info-level lint 提示（prefer_const_declarations），零错误、零警告。
+- **结论：** 代码库在结构重构前状态健康。
+
+#### HBK-AUDIT-017: flutter test 587 全部通过
+
+- **severity:** INFO
+- **status:** VERIFIED
+- **事实：** `flutter test` 在 16 秒内完成 587 个测试，全部通过。
+- **结论：** 单元测试基线完整。Phase 0 重构后可用作回归验证。
+
+#### HBK-AUDIT-018: melos bootstrap 验证通过（隔离 worktree）
+
+- **severity:** HIGH
+- **status:** VERIFIED
+- **事实：** 在独立 git worktree 中创建了 Task 1 定义的完整 workspace 结构（root pubspec.yaml、melos.yaml、5 个空包骨架），执行 `dart run melos bootstrap` 成功。
+- **发现的修正：**
+  - SDK 约束必须 `>=3.5.0`（workspace resolution 功能需要），计划中原写 `>=3.0.0` — **已修正全部 12 处**
+  - Melos 7.x 必须作为 root pubspec 的 `dev_dependencies` 声明，仅全局安装不够 — **已修正 Task 1 Step 2**
+  - `melos bootstrap` 命令须改为 `dart run melos bootstrap` — **已修正 Task 1 Step 8**
+- **结论：** Task 1（workspace 搭建）的步骤在修正后可执行。
+
+#### HBK-AUDIT-019: AGP 8.3.2 过旧导致构建失败
+
+- **severity:** HIGH
+- **status:** OPEN — 需在 Phase 0 执行前修复
+- **file:** `hibiki/android/settings.gradle`
+- **事实：** 当前 AGP 版本 8.3.2，但最新 androidx 依赖需要 8.9.1+。worktree 构建失败于此。这是**预存问题**，非 Phase 0 引入。
+- **修复建议：** 已在 Phase 0 Task 1 Step 9 添加 WARNING，包含具体修改指令（settings.gradle AGP 版本 8.3.2→8.9.1）。建议在开始 Phase 0 前先在 develop 分支独立修复并验证。
+- **验证方式：** `flutter build apk --release` 成功
+
+#### HBK-AUDIT-020: 解析器不可提取到 hibiki_core — 已修正分配
+
+- **severity:** HIGH
+- **status:** FIXED
+- **事实：** 原 Task 3 将 6 个解析器放入 `hibiki_core`。实际依赖分析发现：
+  - **全部 6 个解析器**导入 `audiobook_model.dart`（`AudioCue` 类，8 个领域专属字段）
+  - **全部 6 个解析器**导入 `text_file_io.dart`（`flutter_charset_detector` 包）
+  - vtt/lrc/ass 解析器依赖 `srt_parser.dart`（解析器间耦合）
+  - srt_parser 导入 `audiobook_bridge.dart`（show import）
+  - lrc_parser 导入 `srt_book_repository.dart`（show import）
+  - smil_parser 额外需要 `package:xml`
+- **修正：**
+  - Task 3 重写为仅提取 `LanguageConfig` 接口和共享模型（不含解析器）
+  - Task 7 扩展为同时提取解析器 + audiobook 核心文件到 `hibiki_audio`
+  - File Structure Map 中 `parsers/` 从 `hibiki_core` 移到 `hibiki_audio`
+  - 设计文档 §2.1、§2.2、§6 同步更新
+- **验证方式：** 两份文档内容一致，无矛盾引用
+
+### 文档一致性验证
+
+| 检查项 | 设计文档 | Phase 0 计划 | 一致？ |
+|--------|---------|-------------|--------|
+| 解析器位置 | hibiki_audio（§2.1, §6） | Task 7 hibiki_audio | YES |
+| hibiki_core 内容 | LanguageConfig + 模型 + DB + i18n（§2.1） | Task 3 LanguageConfig only, Task 4 DB | YES |
+| Language 抽象 | LanguageConfig 接口 in core（§2.2） | Task 3 Step 1 | YES |
+| Language 实现 | hibiki_dictionary（§2.2） | Task 5 Step 4b | YES |
+| AppModel 依赖 | dictionaryFontSize only（§2.2 耦合说明） | Task 5 Step 5 | YES |
+| hoshidicts 统计 | ~3,600行 16函数（§3.1） | (引用设计文档) | YES |
+| ve_dart/MeCab | 不存在（§3.5 已移除） | 无引用 | YES |
+| SDK 约束 | (不涉及) | >=3.5.0 <4.0.0 (全部 12 处) | YES |
+| Melos 安装 | (不涉及) | dev_dependency + dart run melos | YES |
 
 ### Next Scope
 
-Round 5：验证 Phase 0 Task 9（inappwebview 6.x PoC）的审计清单是否完整
+Round 6：如有必要，验证 Task 9（inappwebview 6.x PoC）审计清单完整性。当前所有高优先级问题已修正或记录。

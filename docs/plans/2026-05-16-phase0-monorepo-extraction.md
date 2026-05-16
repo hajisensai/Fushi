@@ -27,8 +27,7 @@ hibiki/                              # repo root
 │   │       ├── hibiki_core.dart          # barrel export
 │   │       └── src/
 │   │           ├── database/             # Drift tables, database class, DAOs
-│   │           ├── models/               # Data models (SubtitleCue, etc.)
-│   │           ├── parsers/              # SRT/LRC/VTT/ASS/SMIL parsers
+│   │           ├── models/               # Shared data models
 │   │           ├── language/             # LanguageConfig abstract interface ONLY (no dict dependency)
 │   │           └── i18n/                 # Slang source JSON + generated strings
 │   ├── hibiki_dictionary/
@@ -58,6 +57,7 @@ hibiki/                              # repo root
 │   │           ├── player/               # Audio player abstraction (just_audio wrapper)
 │   │           ├── recorder/             # Recording abstraction
 │   │           ├── audiobook/            # Audiobook controller, bridge, matching
+│   │           ├── parsers/              # SRT/LRC/VTT/ASS/SMIL/JSON parsers (depend on AudioCue + text_file_io)
 │   │           └── cue/                  # Cue models, alignment, normalization
 │   └── hibiki_platform/
 │       ├── pubspec.yaml
@@ -102,12 +102,17 @@ name: hibiki_workspace
 publish_to: none
 
 environment:
-  sdk: ">=3.0.0 <4.0.0"
+  sdk: ">=3.11.0 <4.0.0"
 
 workspace:
   - packages/*
   - hibiki
+
+dev_dependencies:
+  melos: ^7.7.0
 ```
+
+> **TESTED:** Dart workspace globs (`packages/*`) require SDK >=3.11.0. `resolution: workspace` in sub-packages requires >=3.5.0. Melos 7.x requires local `dev_dependency`, not just global install.
 
 - [ ] **Step 3: Create melos.yaml**
 
@@ -167,7 +172,7 @@ publish_to: none
 resolution: workspace
 
 environment:
-  sdk: ">=3.0.0 <4.0.0"
+  sdk: ">=3.5.0 <4.0.0"
   flutter: ">=3.41.6"
 
 dependencies:
@@ -195,7 +200,7 @@ publish_to: none
 resolution: workspace
 
 environment:
-  sdk: ">=3.0.0 <4.0.0"
+  sdk: ">=3.5.0 <4.0.0"
   flutter: ">=3.41.6"
 
 dependencies:
@@ -228,7 +233,7 @@ publish_to: none
 resolution: workspace
 
 environment:
-  sdk: ">=3.0.0 <4.0.0"
+  sdk: ">=3.5.0 <4.0.0"
   flutter: ">=3.41.6"
 
 dependencies:
@@ -251,7 +256,7 @@ publish_to: none
 resolution: workspace
 
 environment:
-  sdk: ">=3.0.0 <4.0.0"
+  sdk: ">=3.5.0 <4.0.0"
   flutter: ">=3.41.6"
 
 dependencies:
@@ -277,7 +282,7 @@ publish_to: none
 resolution: workspace
 
 environment:
-  sdk: ">=3.0.0 <4.0.0"
+  sdk: ">=3.5.0 <4.0.0"
   flutter: ">=3.41.6"
 
 dependencies:
@@ -306,12 +311,17 @@ library hibiki_core;
 - [ ] **Step 8: Bootstrap workspace**
 
 ```powershell
-melos bootstrap
+# 如果 melos 不在 PATH 上，用 dart run：
+D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat run melos bootstrap
 ```
 
-Expected: All packages resolved successfully.
+Expected: "6 packages bootstrapped" (已在 worktree 中验证通过)
 
 - [ ] **Step 9: Verify Android build still works**
+
+> **WARNING (已验证):** 当前项目有 **预存的 AGP 版本问题** — `hibiki/android/settings.gradle` 中 AGP 8.3.2 过旧，最新 `androidx.browser:browser:1.9.0` 等依赖需要 AGP 8.9.1+。这会导致 release build 失败。**此问题与 workspace 设置无关**，但必须在 Phase 0 开始前或 Task 1 中解决。
+>
+> 修复：`hibiki/android/settings.gradle` 中 `id "com.android.application" version "8.3.2"` 升级到 `"8.9.1"` 或更高。同时检查 NDK 版本（需要 28.2.13676358+）。
 
 ```powershell
 cd hibiki
@@ -417,62 +427,20 @@ git commit -m "feat(platform): add abstract platform service interfaces"
 
 ---
 
-## Task 3: Extract hibiki_core — Models & Parsers (NOT language implementations)
+## Task 3: Extract hibiki_core — LanguageConfig Interface & Shared Models
 
-Move platform-independent models and parsers from the app into `hibiki_core`. **Language implementations stay in app** until Task 5 moves them to `hibiki_dictionary` (they depend on dictionary/hoshidicts). Only the abstract `Language` class interface goes to `hibiki_core`.
+Move platform-independent abstractions from the app into `hibiki_core`. This task is deliberately minimal: only the `LanguageConfig` abstract interface and shared data models.
 
-> **WARNING:** `language.dart` imports `package:hibiki/dictionary.dart`, `package:hibiki/models.dart` (AppModel, 3,456 lines), `package:hibiki/utils.dart` (UI widgets), and `hoshidicts.dart`. These cannot go into `hibiki_core` without creating circular dependencies. The extraction strategy is:
-> 1. Extract a minimal `LanguageConfig` interface into `hibiki_core` (language metadata, no dict operations)
-> 2. Language implementations (which call hoshidicts lookup) → `hibiki_dictionary` (Task 5)
-> 3. Language methods that reference AppModel → stay in app (injected via Riverpod)
+> **Why no parsers here?** Testing confirmed ALL 6 parsers (srt, vtt, lrc, ass, smil, json_alignment) depend on `audiobook_model.dart` (`AudioCue` class) and `text_file_io.dart` (`flutter_charset_detector`). Additionally, vtt/lrc/ass parsers depend on `srt_parser.dart`, and srt_parser imports `audiobook_bridge.dart`. These files form a cohesive unit with the audiobook subsystem and belong in `hibiki_audio` (Task 7), NOT `hibiki_core`.
+
+> **Why no Language implementations here?** `language.dart` imports `package:hibiki/dictionary.dart`, `package:hibiki/models.dart` (AppModel), `package:hibiki/utils.dart` (UI widgets), and `hoshidicts.dart`. Moving them to `hibiki_core` would create circular dependencies. They go to `hibiki_dictionary` in Task 5.
 
 **Files:**
-- Move: `hibiki/lib/src/media/audiobook/srt_parser.dart` -> `packages/hibiki_core/lib/src/parsers/srt_parser.dart`
-- Move: `hibiki/lib/src/media/audiobook/vtt_parser.dart` -> `packages/hibiki_core/lib/src/parsers/vtt_parser.dart`
-- Move: `hibiki/lib/src/media/audiobook/lrc_parser.dart` -> `packages/hibiki_core/lib/src/parsers/lrc_parser.dart`
-- Move: `hibiki/lib/src/media/audiobook/ass_parser.dart` -> `packages/hibiki_core/lib/src/parsers/ass_parser.dart`
-- Move: `hibiki/lib/src/media/audiobook/smil_parser.dart` -> `packages/hibiki_core/lib/src/parsers/smil_parser.dart`
-- Move: `hibiki/lib/src/media/audiobook/json_alignment_parser.dart` -> `packages/hibiki_core/lib/src/parsers/json_alignment_parser.dart`
-- Create: `packages/hibiki_core/lib/src/language/language_config.dart` (NEW: minimal abstract interface, no dict imports)
+- Create: `packages/hibiki_core/lib/src/language/language_config.dart` (NEW: minimal abstract interface)
+- Create: `packages/hibiki_core/lib/src/models/` (shared models if any emerge during extraction)
 - Modify: `packages/hibiki_core/lib/hibiki_core.dart` (add exports)
-- Modify: All app files that import moved files (update to package import)
 
-- [ ] **Step 1: Copy parser files to hibiki_core**
-
-```powershell
-New-Item -ItemType Directory -Force "packages/hibiki_core/lib/src/parsers"
-$parsers = @("srt_parser.dart", "vtt_parser.dart", "lrc_parser.dart", "ass_parser.dart", "smil_parser.dart", "json_alignment_parser.dart")
-foreach ($p in $parsers) {
-  Copy-Item "hibiki/lib/src/media/audiobook/$p" "packages/hibiki_core/lib/src/parsers/$p"
-}
-```
-
-- [ ] **Step 2: Update parser imports to remove app-specific dependencies**
-
-Each parser file likely imports from its original location. Review each file and:
-- Remove any import of `package:hibiki/...` or relative imports to app code
-- If a parser depends on a model (e.g., `AudioCue`), define a shared model in `hibiki_core/lib/src/models/cue.dart`
-
-Create `packages/hibiki_core/lib/src/models/cue.dart`:
-```dart
-class SubtitleCue {
-  final Duration start;
-  final Duration end;
-  final String text;
-  final int index;
-
-  const SubtitleCue({
-    required this.start,
-    required this.end,
-    required this.text,
-    required this.index,
-  });
-}
-```
-
-Update each parser to use `SubtitleCue` instead of any database-specific model.
-
-- [ ] **Step 3: Create minimal Language config interface (NOT full language.dart)**
+- [ ] **Step 1: Create minimal LanguageConfig interface**
 
 Create `packages/hibiki_core/lib/src/language/language_config.dart`:
 
@@ -495,41 +463,26 @@ abstract class LanguageConfig {
 }
 ```
 
-> **NOTE:** The full `Language` class with `textToWords()`, `prepareSearchResults()` etc. stays in the app until Task 5 moves it to `hibiki_dictionary` where it can access hoshidicts.
+> **NOTE:** The full `Language` class with `textToWords()`, `prepareSearchResults()`, `wordFromIndex()` etc. stays in the app until Task 5 moves it to `hibiki_dictionary` where it can access hoshidicts.
 
-- [ ] **Step 4: (SKIP — language implementations stay in app for now)**
-
-Language files are NOT moved in this task. They will move to `hibiki_dictionary` in Task 5, after the dictionary package exists and can satisfy their `hoshidicts` import.
-
-- [ ] **Step 5: Update barrel export**
+- [ ] **Step 2: Update barrel export**
 
 Update `packages/hibiki_core/lib/hibiki_core.dart`:
 ```dart
 library hibiki_core;
 
-// Models
-export 'src/models/cue.dart';
-
-// Parsers
-export 'src/parsers/srt_parser.dart';
-export 'src/parsers/vtt_parser.dart';
-export 'src/parsers/lrc_parser.dart';
-export 'src/parsers/ass_parser.dart';
-export 'src/parsers/smil_parser.dart';
-export 'src/parsers/json_alignment_parser.dart';
-
 // Language (interface only — implementations in hibiki_dictionary)
 export 'src/language/language_config.dart';
 ```
 
-- [ ] **Step 6: Verify hibiki_core compiles**
+- [ ] **Step 3: Verify hibiki_core compiles**
 
 ```powershell
 cd packages/hibiki_core
 D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat analyze
 ```
 
-- [ ] **Step 7: Add hibiki_core dependency to app**
+- [ ] **Step 4: Add hibiki_core dependency to app**
 
 In `hibiki/pubspec.yaml`, add:
 ```yaml
@@ -538,37 +491,7 @@ dependencies:
     path: ../packages/hibiki_core
 ```
 
-- [ ] **Step 8: Update app imports**
-
-Find all files in `hibiki/lib/` that import the moved files and update:
-```dart
-// Before
-import '../language/language.dart';
-// or
-import 'package:hibiki/src/language/language.dart';
-
-// After
-import 'package:hibiki_core/hibiki_core.dart';
-```
-
-Use grep to find all affected files:
-```powershell
-rg "import.*language/language" hibiki/lib/ --files-with-matches
-rg "import.*srt_parser|vtt_parser|lrc_parser|ass_parser|smil_parser" hibiki/lib/ --files-with-matches
-```
-
-- [ ] **Step 9: Keep original files as re-exports (temporary bridge)**
-
-To minimize breakage, the original files can temporarily re-export from the package:
-
-```dart
-// hibiki/lib/src/language/language.dart (temporary)
-export 'package:hibiki_core/src/language/language.dart';
-```
-
-This allows gradual migration. Remove these once all imports are updated.
-
-- [ ] **Step 10: Verify Android build**
+- [ ] **Step 5: Verify Android build**
 
 ```powershell
 cd hibiki
@@ -576,13 +499,13 @@ D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat analyze
 D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat build apk --release --target-platform android-arm64 --split-per-abi
 ```
 
-Expected: Build succeeds.
+Expected: Build succeeds. No imports changed yet — Task 3 only adds the package as a dependency.
 
-- [ ] **Step 11: Commit**
+- [ ] **Step 6: Commit**
 
 ```powershell
-git add packages/hibiki_core/ hibiki/pubspec.yaml hibiki/lib/
-git commit -m "refactor(core): extract parsers and language to hibiki_core"
+git add packages/hibiki_core/ hibiki/pubspec.yaml
+git commit -m "refactor(core): add LanguageConfig interface to hibiki_core"
 ```
 
 ---
@@ -1001,17 +924,19 @@ git commit -m "refactor(anki): extract Anki integration to hibiki_anki with Anki
 
 ## Task 7: Extract hibiki_audio
 
-Move audiobook controller, matching, and alignment code. The `media/audiobook/` directory has 37+ files — classify each:
+Move audiobook controller, matching, alignment code, AND parsers. The `media/audiobook/` directory has 37+ files — classify each:
+
+> **Why parsers are here, not in hibiki_core:** Testing confirmed ALL 6 parsers depend on `audiobook_model.dart` (`AudioCue` class with bookUid, chapterHref, sentenceIndex, textFragmentId, text, startMs, endMs, audioFileIndex — 8 fields, NOT a generic SubtitleCue) and `text_file_io.dart` (`flutter_charset_detector` package). Additionally vtt/lrc/ass parsers depend on `srt_parser.dart`, and srt_parser imports `audiobook_bridge.dart`. These form a cohesive audiobook subsystem.
 
 **Goes to `hibiki_audio` (business logic, no UI):**
-- audiobook_controller.dart, audiobook_model.dart, audiobook_repository.dart
-- audiobook_bridge.dart, audiobook_storage.dart, audiobook_health.dart
-- audio_text_normalizer.dart, epub_srt_matcher.dart, epub_cue_matcher.dart
-- collection_audio_matcher.dart, sasayaki_match_codec.dart, sasayaki_rematch.dart, cues_to_epub.dart
-- srt_book_model.dart, srt_book_repository.dart
-- reader_position_model.dart, reader_position_repository.dart
-- reading_statistic_model.dart, reading_time_tracker.dart
-- bookmark_repository.dart, favorite_sentence_repository.dart, text_file_io.dart
+- **Parsers**: srt_parser.dart, vtt_parser.dart, lrc_parser.dart, ass_parser.dart, smil_parser.dart, json_alignment_parser.dart
+- **Parser support**: text_file_io.dart (charset detection, used by all parsers)
+- **Core audiobook**: audiobook_controller.dart, audiobook_model.dart, audiobook_repository.dart
+- **Bridge/storage**: audiobook_bridge.dart, audiobook_storage.dart, audiobook_health.dart
+- **Matching/alignment**: audio_text_normalizer.dart, epub_srt_matcher.dart, epub_cue_matcher.dart, collection_audio_matcher.dart, sasayaki_match_codec.dart, sasayaki_rematch.dart, cues_to_epub.dart
+- **SRT book**: srt_book_model.dart, srt_book_repository.dart
+- **Position/stats**: reader_position_model.dart, reader_position_repository.dart, reading_statistic_model.dart, reading_time_tracker.dart
+- **Other**: bookmark_repository.dart, favorite_sentence_repository.dart
 
 **Stays in app (UI / platform-specific):**
 - audiobook_import_dialog.dart, audiobook_play_bar.dart, book_import_dialog.dart
@@ -1023,8 +948,9 @@ Move audiobook controller, matching, and alignment code. The `media/audiobook/` 
 - ttu_idb_reader.dart (TTU migration)
 
 **Files:**
+- Move: Parsers + text_file_io -> `packages/hibiki_audio/lib/src/parsers/`
 - Move: Core audiobook + cue files -> `packages/hibiki_audio/lib/src/audiobook/` and `cue/`
-- Move: Model/repository files -> `packages/hibiki_audio/lib/src/audiobook/` or `packages/hibiki_core/`
+- Move: Model/repository files -> `packages/hibiki_audio/lib/src/audiobook/`
 - Keep: UI dialog files, MethodChannel files, WebView bridge files stay in app
 - Modify: `packages/hibiki_audio/lib/hibiki_audio.dart`
 
@@ -1033,7 +959,22 @@ Move audiobook controller, matching, and alignment code. The `media/audiobook/` 
 ```powershell
 New-Item -ItemType Directory -Force "packages/hibiki_audio/lib/src/audiobook"
 New-Item -ItemType Directory -Force "packages/hibiki_audio/lib/src/cue"
+New-Item -ItemType Directory -Force "packages/hibiki_audio/lib/src/parsers"
 New-Item -ItemType Directory -Force "packages/hibiki_audio/lib/src/player"
+
+# Parsers (depend on audiobook_model + text_file_io)
+$parsers = @(
+  "srt_parser.dart",
+  "vtt_parser.dart",
+  "lrc_parser.dart",
+  "ass_parser.dart",
+  "smil_parser.dart",
+  "json_alignment_parser.dart",
+  "text_file_io.dart"
+)
+foreach ($p in $parsers) {
+  Copy-Item "hibiki/lib/src/media/audiobook/$p" "packages/hibiki_audio/lib/src/parsers/"
+}
 
 # Core audiobook files
 $audioFiles = @(
@@ -1066,8 +1007,10 @@ foreach ($f in $cueFiles) {
 - [ ] **Step 2: Fix internal imports**
 
 Update all `package:hibiki/...` imports in copied files to use:
-- `package:hibiki_core/...` for database, parsers, models
-- Relative imports within `hibiki_audio`
+- `package:hibiki_core/...` for database, models
+- Relative imports within `hibiki_audio` (e.g., parser→audiobook_model is `../audiobook/audiobook_model.dart`)
+
+> **IMPORTANT**: Parsers currently use `AudioCue` from `audiobook_model.dart`. Since both are now in `hibiki_audio`, use relative imports. Do NOT create a separate `SubtitleCue` class — `AudioCue` has 8 domain-specific fields that parsers populate directly.
 
 - [ ] **Step 3: Update barrel export**
 
@@ -1075,11 +1018,23 @@ Update all `package:hibiki/...` imports in copied files to use:
 // packages/hibiki_audio/lib/hibiki_audio.dart
 library hibiki_audio;
 
+// Parsers
+export 'src/parsers/srt_parser.dart';
+export 'src/parsers/vtt_parser.dart';
+export 'src/parsers/lrc_parser.dart';
+export 'src/parsers/ass_parser.dart';
+export 'src/parsers/smil_parser.dart';
+export 'src/parsers/json_alignment_parser.dart';
+export 'src/parsers/text_file_io.dart';
+
+// Audiobook core
 export 'src/audiobook/audiobook_controller.dart';
 export 'src/audiobook/audiobook_model.dart';
 export 'src/audiobook/audiobook_repository.dart';
 export 'src/audiobook/audiobook_bridge.dart';
 export 'src/audiobook/audiobook_storage.dart';
+
+// Cue/alignment
 export 'src/cue/audio_text_normalizer.dart';
 export 'src/cue/epub_srt_matcher.dart';
 export 'src/cue/epub_cue_matcher.dart';
@@ -1098,7 +1053,7 @@ D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat build apk --release --t
 
 ```powershell
 git add packages/hibiki_audio/ hibiki/lib/ hibiki/pubspec.yaml
-git commit -m "refactor(audio): extract audiobook and cue matching to hibiki_audio"
+git commit -m "refactor(audio): extract audiobook, parsers and cue matching to hibiki_audio"
 ```
 
 ---
