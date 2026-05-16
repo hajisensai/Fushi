@@ -333,10 +333,10 @@ DynamicLibrary _openLib() {
 | hibiki_anki 抽包 | AnkiService 接口 + Android AnkiDroid 实现 |
 | hibiki_audio 抽包 | just_audio + record 封装 |
 | hibiki_platform 抽包 | TtsEngine / PlatformIntegration / StoragePaths 接口 |
-| inappwebview 6.x PoC | 升级 + Android 全功能回归验证（6 个自定义点逐一确认） |
+| inappwebview 6.x PoC | 升级 + Android 全功能回归验证（10 文件 / 8 使用模式逐一确认） |
 | **验收** | Android APK 编译通过 (`--release --split-per-abi`)，手动测试全功能：书架导入、阅读器翻页/查词/高亮、词典查询、Anki 制卡、有声书同步播放 |
 
-### Phase 1 -- Windows 版（5-7 周）
+### Phase 1 -- Windows 版（4-6 周）
 
 **目标：** Windows 上实现全功能阅读器。
 
@@ -385,7 +385,7 @@ DynamicLibrary _openLib() {
 | 数据迁移 | JSON/ZIP 导出导入，支持跨平台迁移书架和进度 |
 | 性能 | 各平台冷启动优化、大词典查询性能测试 |
 
-**总计：16-22 周**
+**总计：14-20 周**（删除 MeCab 跨平台编译后下修；hoshidicts 内建 deinflection 无需额外分词器）
 
 ## 7. 风险清单
 
