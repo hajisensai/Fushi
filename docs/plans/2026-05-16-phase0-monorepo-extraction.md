@@ -27,9 +27,9 @@ hibiki/                              # repo root
 │   │       ├── hibiki_core.dart          # barrel export
 │   │       └── src/
 │   │           ├── database/             # Drift tables, database class, DAOs
-│   │           ├── models/               # Data models (AnkiNote, DictEntry, etc.)
+│   │           ├── models/               # Data models (SubtitleCue, etc.)
 │   │           ├── parsers/              # SRT/LRC/VTT/ASS/SMIL parsers
-│   │           ├── language/             # Language abstraction + implementations
+│   │           ├── language/             # LanguageConfig abstract interface ONLY (no dict dependency)
 │   │           └── i18n/                 # Slang source JSON + generated strings
 │   ├── hibiki_dictionary/
 │   │   ├── pubspec.yaml
@@ -39,7 +39,7 @@ hibiki/                              # repo root
 │   │           ├── engine/               # DictionaryEngine interface + hoshidicts impl
 │   │           ├── ffi/                  # hoshidicts FFI bindings
 │   │           ├── formats/              # Yomichan, MDict, etc.
-│   │           ├── nlp/                  # Ve integration, MeCab FFI (future)
+│   │           ├── language/             # Language implementations (Japanese, Chinese, English)
 │   │           └── models/               # DictEntry, SearchResult, etc.
 │   ├── hibiki_anki/
 │   │   ├── pubspec.yaml
@@ -70,7 +70,7 @@ hibiki/                              # repo root
 ├── apps/
 │   └── android/                          # symlink or move of hibiki/hibiki/
 ├── native/
-│   └── hoshidicts/                       # C++ source (moved from android/app/src/main/cpp/)
+│   └── hoshidicts/                       # C++ source (moved from android/app/src/main/cpp/); includes built-in deinflector
 ├── melos.yaml
 ├── pubspec.yaml                          # workspace root
 └── (existing: docs/, ci/, chisa/, .github/, etc.)
@@ -190,7 +190,7 @@ dev_dependencies:
 Create `packages/hibiki_dictionary/pubspec.yaml`:
 ```yaml
 name: hibiki_dictionary
-description: Dictionary engine, FFI bindings, and NLP for Hibiki
+description: Dictionary engine, FFI bindings, and language implementations for Hibiki
 publish_to: none
 resolution: workspace
 
@@ -206,12 +206,19 @@ dependencies:
   ffi: ^2.0.2
   kana_kit: ^2.0.0
   archive: ^3.3.7
+  dio: ^5.1.1
+  collection: ^1.17.0
+  dart_mappable: ^4.0.0-dev.1
   path: ^1.8.3
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  dart_mappable_builder: ^4.0.0-dev.2
+  build_runner: ^2.4.6
 ```
+
+> **Note:** `dio` needed by `dictionary_downloader.dart`. `collection` used by language implementations. `dart_mappable` + builder needed for `structured_content.dart` (uses `@MappableClass` annotation, mapper is a `part of` file that needs regeneration after move).
 
 Create `packages/hibiki_anki/pubspec.yaml`:
 ```yaml
@@ -410,9 +417,14 @@ git commit -m "feat(platform): add abstract platform service interfaces"
 
 ---
 
-## Task 3: Extract hibiki_core — Models & Parsers
+## Task 3: Extract hibiki_core — Models & Parsers (NOT language implementations)
 
-Move platform-independent models and parsers from the app into `hibiki_core`. Start with parsers (least coupled), then language, then models.
+Move platform-independent models and parsers from the app into `hibiki_core`. **Language implementations stay in app** until Task 5 moves them to `hibiki_dictionary` (they depend on dictionary/hoshidicts). Only the abstract `Language` class interface goes to `hibiki_core`.
+
+> **WARNING:** `language.dart` imports `package:hibiki/dictionary.dart`, `package:hibiki/models.dart` (AppModel, 3,456 lines), `package:hibiki/utils.dart` (UI widgets), and `hoshidicts.dart`. These cannot go into `hibiki_core` without creating circular dependencies. The extraction strategy is:
+> 1. Extract a minimal `LanguageConfig` interface into `hibiki_core` (language metadata, no dict operations)
+> 2. Language implementations (which call hoshidicts lookup) → `hibiki_dictionary` (Task 5)
+> 3. Language methods that reference AppModel → stay in app (injected via Riverpod)
 
 **Files:**
 - Move: `hibiki/lib/src/media/audiobook/srt_parser.dart` -> `packages/hibiki_core/lib/src/parsers/srt_parser.dart`
@@ -421,9 +433,7 @@ Move platform-independent models and parsers from the app into `hibiki_core`. St
 - Move: `hibiki/lib/src/media/audiobook/ass_parser.dart` -> `packages/hibiki_core/lib/src/parsers/ass_parser.dart`
 - Move: `hibiki/lib/src/media/audiobook/smil_parser.dart` -> `packages/hibiki_core/lib/src/parsers/smil_parser.dart`
 - Move: `hibiki/lib/src/media/audiobook/json_alignment_parser.dart` -> `packages/hibiki_core/lib/src/parsers/json_alignment_parser.dart`
-- Move: `hibiki/lib/src/language/language.dart` -> `packages/hibiki_core/lib/src/language/language.dart`
-- Move: `hibiki/lib/src/language/language_utils.dart` -> `packages/hibiki_core/lib/src/language/language_utils.dart`
-- Move: `hibiki/lib/src/language/implementations/` -> `packages/hibiki_core/lib/src/language/implementations/`
+- Create: `packages/hibiki_core/lib/src/language/language_config.dart` (NEW: minimal abstract interface, no dict imports)
 - Modify: `packages/hibiki_core/lib/hibiki_core.dart` (add exports)
 - Modify: All app files that import moved files (update to package import)
 
@@ -462,18 +472,34 @@ class SubtitleCue {
 
 Update each parser to use `SubtitleCue` instead of any database-specific model.
 
-- [ ] **Step 3: Copy language files**
+- [ ] **Step 3: Create minimal Language config interface (NOT full language.dart)**
 
-```powershell
-New-Item -ItemType Directory -Force "packages/hibiki_core/lib/src/language/implementations"
-Copy-Item "hibiki/lib/src/language/language.dart" "packages/hibiki_core/lib/src/language/language.dart"
-Copy-Item "hibiki/lib/src/language/language_utils.dart" "packages/hibiki_core/lib/src/language/language_utils.dart"
-Copy-Item "hibiki/lib/src/language/implementations/*" "packages/hibiki_core/lib/src/language/implementations/" -Recurse
+Create `packages/hibiki_core/lib/src/language/language_config.dart`:
+
+```dart
+import 'package:flutter/painting.dart';
+
+/// Minimal language metadata interface — no dictionary operations.
+/// Full Language class with lookup/deinflection lives in hibiki_dictionary.
+abstract class LanguageConfig {
+  String get languageName;
+  String get languageCode;
+  String get threeLetterCode;
+  String get countryCode;
+  TextDirection get textDirection;
+  bool get preferVerticalReading;
+  bool get isSpaceDelimited;
+  TextBaseline get textBaseline;
+  String get helloWorld;
+  String get defaultFontFamily;
+}
 ```
 
-- [ ] **Step 4: Review and fix language file imports**
+> **NOTE:** The full `Language` class with `textToWords()`, `prepareSearchResults()` etc. stays in the app until Task 5 moves it to `hibiki_dictionary` where it can access hoshidicts.
 
-Language files likely use `kana_kit` and similar. Add necessary deps to `hibiki_core/pubspec.yaml` if needed. Remove any `package:hibiki/...` imports.
+- [ ] **Step 4: (SKIP — language implementations stay in app for now)**
+
+Language files are NOT moved in this task. They will move to `hibiki_dictionary` in Task 5, after the dictionary package exists and can satisfy their `hoshidicts` import.
 
 - [ ] **Step 5: Update barrel export**
 
@@ -492,12 +518,8 @@ export 'src/parsers/ass_parser.dart';
 export 'src/parsers/smil_parser.dart';
 export 'src/parsers/json_alignment_parser.dart';
 
-// Language
-export 'src/language/language.dart';
-export 'src/language/language_utils.dart';
-export 'src/language/implementations/japanese_language.dart';
-export 'src/language/implementations/chinese_language.dart';
-export 'src/language/implementations/english_language.dart';
+// Language (interface only — implementations in hibiki_dictionary)
+export 'src/language/language_config.dart';
 ```
 
 - [ ] **Step 6: Verify hibiki_core compiles**
@@ -634,9 +656,9 @@ git commit -m "refactor(core): extract Drift database to hibiki_core"
 
 ---
 
-## Task 5: Extract hibiki_dictionary
+## Task 5: Extract hibiki_dictionary (+ Language Implementations)
 
-Move dictionary engine, FFI bindings, and format handlers.
+Move dictionary engine, FFI bindings, format handlers, AND language implementations (which depend on dictionary/hoshidicts).
 
 **Files:**
 - Move: `hibiki/lib/src/dictionary/hoshidicts.dart` -> `packages/hibiki_dictionary/lib/src/engine/hoshidicts.dart`
@@ -648,6 +670,23 @@ Move dictionary engine, FFI bindings, and format handlers.
 - Move: `hibiki/lib/src/dictionary/dictionary_utils.dart` -> `packages/hibiki_dictionary/lib/src/engine/dictionary_utils.dart`
 - Move: `hibiki/lib/src/dictionary/formats/` -> `packages/hibiki_dictionary/lib/src/formats/`
 - Move: `hibiki/lib/src/dictionary/structured_content.dart` -> `packages/hibiki_dictionary/lib/src/models/structured_content.dart`
+- Move: `hibiki/lib/src/language/language.dart` -> `packages/hibiki_dictionary/lib/src/language/language.dart`
+- Move: `hibiki/lib/src/language/language_utils.dart` -> `packages/hibiki_dictionary/lib/src/language/language_utils.dart`
+- Move: `hibiki/lib/src/language/implementations/` -> `packages/hibiki_dictionary/lib/src/language/implementations/`
+
+> **NOTE: Language module extraction requires pre-work.** Analysis shows the coupling is narrow:
+>
+> **AppModel dependency (only 1 property used):**
+> - `Language.getTermReadingOverrideWidget()` and `Language.getPitchWidget()` pass `AppModel appModel` as parameter
+> - `JapaneseLanguage` only accesses `appModel.dictionaryFontSize` (a `double`)
+> - Chinese/English implementations don't use AppModel at all
+> - **Fix:** Replace `AppModel appModel` parameter with `double dictionaryFontSize` or define a 1-field interface
+>
+> **utils.dart dependency (only ErrorLogService):**
+> - `language_utils.dart:141` uses `ErrorLogService.instance.log()` — move ErrorLogService to `hibiki_core`
+> - Chinese/English import `utils.dart` but don't use any symbol — remove unused imports
+>
+> **Estimated effort: 1-2 days** (much less than originally feared)
 
 - [ ] **Step 1: Create directory structure**
 
@@ -656,7 +695,8 @@ New-Item -ItemType Directory -Force "packages/hibiki_dictionary/lib/src/engine"
 New-Item -ItemType Directory -Force "packages/hibiki_dictionary/lib/src/ffi"
 New-Item -ItemType Directory -Force "packages/hibiki_dictionary/lib/src/formats"
 New-Item -ItemType Directory -Force "packages/hibiki_dictionary/lib/src/models"
-New-Item -ItemType Directory -Force "packages/hibiki_dictionary/lib/src/nlp"
+New-Item -ItemType Directory -Force "packages/hibiki_dictionary/lib/src/language"
+New-Item -ItemType Directory -Force "packages/hibiki_dictionary/lib/src/language/implementations"
 ```
 
 - [ ] **Step 2: Copy FFI bindings**
@@ -707,11 +747,30 @@ Copy-Item "hibiki/lib/src/dictionary/structured_content.mapper.dart" "packages/h
 Copy-Item "hibiki/lib/src/dictionary/formats/*" "packages/hibiki_dictionary/lib/src/formats/"
 ```
 
+- [ ] **Step 4b: Copy language files into hibiki_dictionary**
+
+```powershell
+Copy-Item "hibiki/lib/src/language/language.dart" "packages/hibiki_dictionary/lib/src/language/"
+Copy-Item "hibiki/lib/src/language/language_utils.dart" "packages/hibiki_dictionary/lib/src/language/"
+Copy-Item "hibiki/lib/src/language/implementations/*" "packages/hibiki_dictionary/lib/src/language/implementations/" -Recurse
+```
+
 - [ ] **Step 5: Fix internal imports in copied files**
 
 Update all relative imports within the dictionary package to use the new paths. Update any `package:hibiki/...` imports to either:
-- `package:hibiki_core/...` (for database, models)
+- `package:hibiki_core/...` (for database, models, LanguageConfig)
 - Relative imports within the package
+- **For language files — specific decoupling steps (audited):**
+
+  1. **`package:hibiki/dictionary.dart`** → internal relative import within hibiki_dictionary (e.g., `../models/dictionary_entry.dart`). All dictionary types (DictionaryEntry, DictionarySearchResult, DictionaryFormat, etc.) are now co-located in the same package.
+
+  2. **`package:hibiki/language.dart`** → self-reference barrel, remove. Use relative imports.
+
+  3. **`package:hibiki/models.dart`** (AppModel) → **Only `dictionaryFontSize: double` is used.** In `Language.getTermReadingOverrideWidget()` and `Language.getPitchWidget()`, change parameter from `required AppModel appModel` to `required double dictionaryFontSize`. JapaneseLanguage overrides access `appModel.dictionaryFontSize` at 4 locations (lines 218, 244, 275, 299) — change to use the new `double` parameter directly. Chinese/English don't reference AppModel at all.
+
+  4. **`package:hibiki/utils.dart`** → Only `ErrorLogService.instance.log()` used in `language_utils.dart:141`. Move `ErrorLogService` to `hibiki_core`. Remove unused `utils.dart` imports from `chinese_language.dart` and `english_language.dart`.
+
+  5. **`package:hibiki/src/dictionary/hoshidicts.dart`** → internal relative import within hibiki_dictionary.
 
 - [ ] **Step 6: Update barrel export**
 
@@ -729,6 +788,13 @@ export 'src/models/dictionary_search_result.dart';
 export 'src/models/dictionary_operations_params.dart';
 export 'src/models/structured_content.dart';
 export 'src/formats/dictionary_format.dart';
+
+// Language (implementations live here because they depend on hoshidicts)
+export 'src/language/language.dart';
+export 'src/language/language_utils.dart';
+export 'src/language/implementations/japanese_language.dart';
+export 'src/language/implementations/chinese_language.dart';
+export 'src/language/implementations/english_language.dart';
 ```
 
 - [ ] **Step 7: Add dependency to app and verify**
@@ -764,6 +830,7 @@ Move Anki models, repository, and create the abstract interface.
 - Move: `hibiki/lib/src/anki/anki_models.dart` -> `packages/hibiki_anki/lib/src/anki_models.dart`
 - Move: `hibiki/lib/src/anki/anki_repository.dart` -> `packages/hibiki_anki/lib/src/ankidroid/anki_repository.dart`
 - Move: `hibiki/lib/src/anki/lapis_preset.dart` -> `packages/hibiki_anki/lib/src/lapis_preset.dart`
+- Keep: `hibiki/lib/src/anki/anki_view_model.dart` stays in app (UI layer ViewModel)
 - Create: `packages/hibiki_anki/lib/src/ankiconnect/ankiconnect_service.dart` (stub for future)
 
 - [ ] **Step 1: Create AnkiService abstract interface**
@@ -934,16 +1001,31 @@ git commit -m "refactor(anki): extract Anki integration to hibiki_anki with Anki
 
 ## Task 7: Extract hibiki_audio
 
-Move audiobook controller, matching, and alignment code.
+Move audiobook controller, matching, and alignment code. The `media/audiobook/` directory has 37+ files — classify each:
+
+**Goes to `hibiki_audio` (business logic, no UI):**
+- audiobook_controller.dart, audiobook_model.dart, audiobook_repository.dart
+- audiobook_bridge.dart, audiobook_storage.dart, audiobook_health.dart
+- audio_text_normalizer.dart, epub_srt_matcher.dart, epub_cue_matcher.dart
+- collection_audio_matcher.dart, sasayaki_match_codec.dart, sasayaki_rematch.dart, cues_to_epub.dart
+- srt_book_model.dart, srt_book_repository.dart
+- reader_position_model.dart, reader_position_repository.dart
+- reading_statistic_model.dart, reading_time_tracker.dart
+- bookmark_repository.dart, favorite_sentence_repository.dart, text_file_io.dart
+
+**Stays in app (UI / platform-specific):**
+- audiobook_import_dialog.dart, audiobook_play_bar.dart, book_import_dialog.dart
+- floating_lyric_channel.dart (MethodChannel)
+- highlight_bridge.dart (WebView bridge)
+- lyrics_mode_html.dart (HTML generation for WebView)
+- text_to_epub.dart (may depend on UI flow)
+- reading_statistic_idb_reader.dart (TTU migration)
+- ttu_idb_reader.dart (TTU migration)
 
 **Files:**
-- Move: `hibiki/lib/src/media/audiobook/audiobook_controller.dart` -> `packages/hibiki_audio/lib/src/audiobook/`
-- Move: `hibiki/lib/src/media/audiobook/audiobook_model.dart` -> `packages/hibiki_audio/lib/src/audiobook/`
-- Move: `hibiki/lib/src/media/audiobook/audiobook_repository.dart` -> `packages/hibiki_audio/lib/src/audiobook/`
-- Move: `hibiki/lib/src/media/audiobook/audio_text_normalizer.dart` -> `packages/hibiki_audio/lib/src/cue/`
-- Move: `hibiki/lib/src/media/audiobook/epub_srt_matcher.dart` -> `packages/hibiki_audio/lib/src/cue/`
-- Move: `hibiki/lib/src/media/audiobook/epub_cue_matcher.dart` -> `packages/hibiki_audio/lib/src/cue/`
-- (and other audiobook files)
+- Move: Core audiobook + cue files -> `packages/hibiki_audio/lib/src/audiobook/` and `cue/`
+- Move: Model/repository files -> `packages/hibiki_audio/lib/src/audiobook/` or `packages/hibiki_core/`
+- Keep: UI dialog files, MethodChannel files, WebView bridge files stay in app
 - Modify: `packages/hibiki_audio/lib/hibiki_audio.dart`
 
 - [ ] **Step 1: Create directory structure and copy files**
@@ -1094,16 +1176,27 @@ Evaluate upgrading from the custom fork to official 6.x. This is a spike — if 
 - Modify: `hibiki/pubspec.yaml` (change inappwebview dependency)
 - Modify: Reader page files (API changes)
 
-- [ ] **Step 1: Document current fork customizations**
+- [ ] **Step 1: Document current fork customizations (file-level audit)**
 
 ```powershell
 cd hibiki
 rg "flutter_inappwebview" lib/ --files-with-matches
 ```
 
-Create `docs/plans/inappwebview-6x-audit.md` listing:
-- Every file that uses flutter_inappwebview
-- Every custom API call (resource interception, JS handlers, custom schemes)
+Create `docs/plans/inappwebview-6x-audit.md` with per-file analysis. Known usage map (from review):
+
+| File | APIs Used | PoC Priority |
+|------|----------|-------------|
+| `dictionary_popup_webview.dart` | InAppWebView, 11 JS handlers, shouldInterceptRequest, ContextMenu | HIGH |
+| `reader_hoshi_page.dart` | InAppWebView, evaluateJavascript, JS handlers | HIGH |
+| `highlight_bridge.dart` | evaluateJavascript (CSS Highlights API injection) | MEDIUM |
+| `audiobook_bridge.dart` | evaluateJavascript, JS handlers | MEDIUM |
+| `ttu_idb_reader.dart` | HeadlessInAppWebView, IndexedDB access | LOW (migration only) |
+| `reading_statistic_idb_reader.dart` | HeadlessInAppWebView | LOW (migration only) |
+| `audiobook_play_bar.dart` | Controller passthrough | LOW |
+| `main.dart` | HeadlessInAppWebView engine warm-up | MEDIUM |
+
+For each file, list every API call with line numbers and check 6.x equivalent.
 
 - [ ] **Step 2: Create a git branch for the PoC**
 
@@ -1235,9 +1328,8 @@ git tag phase0-complete
 ## Notes for Phase 1 Planning
 
 After Phase 0 is verified, Phase 1 (Windows) will be planned as a separate document covering:
-1. hoshidicts Windows DLL compilation (MSVC + CMake adaptation of `native/hoshidicts/`)
-2. MeCab Windows DLL compilation (`native/mecab/`)
-3. flutter_inappwebview 6.x Windows WebView2 integration
-4. Fluent Design UI shell (NavigationPane + pages)
-5. AnkiConnect HTTP integration (using the stub from Task 6)
-6. Windows packaging (MSIX)
+1. hoshidicts Windows DLL compilation (MSVC + CMake adaptation of `native/hoshidicts/`; deinflection is built-in, no separate MeCab needed)
+2. flutter_inappwebview 6.x Windows WebView2 integration
+3. Fluent Design UI shell (NavigationPane + pages)
+4. AnkiConnect HTTP integration (using the stub from Task 6)
+5. Windows packaging (MSIX)
