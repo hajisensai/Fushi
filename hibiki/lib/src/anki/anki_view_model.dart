@@ -1,8 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:hibiki/src/anki/anki_models.dart';
-import 'package:hibiki/src/anki/anki_repository.dart';
-import 'package:hibiki/src/anki/lapis_preset.dart';
+import 'package:hibiki_anki/hibiki_anki.dart';
 
 class AnkiUiState {
   const AnkiUiState({

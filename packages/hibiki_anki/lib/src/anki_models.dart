@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:collection/collection.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:flutter/foundation.dart';
 
 class AnkiDeck {
   const AnkiDeck({required this.id, required this.name});
@@ -158,8 +158,7 @@ class AnkiMiningPayload {
       try {
         singleGlossaries = Map<String, String>.from(jsonDecode(sgRaw) as Map);
       } catch (e, stack) {
-        ErrorLogService.instance
-            .log('AnkiMiningPayload.singleGlossaries', e, stack);
+        debugPrint('AnkiMiningPayload.singleGlossaries: $e\n$stack');
       }
     } else if (sgRaw is Map) {
       singleGlossaries = Map<String, String>.from(sgRaw);
@@ -173,8 +172,7 @@ class AnkiMiningPayload {
             .map((e) => DictionaryMedia.fromJson(e as Map<String, dynamic>))
             .toList();
       } catch (e, stack) {
-        ErrorLogService.instance
-            .log('AnkiMiningPayload.dictionaryMedia', e, stack);
+        debugPrint('AnkiMiningPayload.dictionaryMedia: $e\n$stack');
       }
     } else if (dmRaw is List) {
       dictionaryMedia = dmRaw

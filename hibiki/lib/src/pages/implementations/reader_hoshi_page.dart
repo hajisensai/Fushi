@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
@@ -41,8 +41,7 @@ import 'package:hibiki/src/reader/reader_selection_data.dart';
 import 'package:hibiki/src/reader/reader_selection_scripts.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/media/audiobook/floating_lyric_channel.dart';
-import 'package:hibiki/src/anki/anki_models.dart';
-import 'package:hibiki/src/anki/anki_repository.dart';
+import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/misc/tts_channel.dart';

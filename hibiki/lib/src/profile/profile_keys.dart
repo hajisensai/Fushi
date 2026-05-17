@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:hibiki/src/anki/anki_models.dart';
+import 'package:hibiki_anki/hibiki_anki.dart';
 
 class ProfileKeys {
   ProfileKeys._();

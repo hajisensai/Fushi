@@ -40,6 +40,8 @@ dependencies:
     path: ../packages/hibiki_core
   hibiki_dictionary:
     path: ../packages/hibiki_dictionary
+  hibiki_anki:
+    path: ../packages/hibiki_anki
   hibiki_platform:
     path: ../packages/hibiki_platform
   flutter_archive: ^5.0.0

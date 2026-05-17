@@ -1,7 +1,6 @@
 name: hibiki_anki
-description: Anki integration abstraction for Hibiki
+description: Anki integration for Hibiki - abstract service, AnkiDroid and AnkiConnect implementations
 publish_to: none
-
 
 environment:
   sdk: ">=3.5.0 <4.0.0"
@@ -10,8 +9,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  hibiki_core:
-    path: ../hibiki_core
+  collection: any
+  shared_preferences: ^2.2.2
+  http: ^1.1.0
 
 dev_dependencies:
   flutter_test:

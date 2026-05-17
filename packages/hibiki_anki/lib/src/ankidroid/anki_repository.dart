@@ -6,13 +6,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:hibiki/src/anki/anki_models.dart';
-import 'package:hibiki/src/anki/lapis_preset.dart';
-import 'package:hibiki/src/utils/misc/channel_constants.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import '../anki_models.dart';
+import '../lapis_preset.dart';
 
 class AnkiRepository {
-  static const _channel = HibikiChannels.anki;
+  static const _channel = MethodChannel('app.hibiki.reader/anki');
   static const _settingsKey = 'hoshi_anki_settings';
   static const _legacyDeckKey = 'last_selected_deck';
 
@@ -27,8 +25,7 @@ class AnkiRepository {
           return AnkiSettings.fromJson(
               jsonDecode(migrated) as Map<String, dynamic>);
         } catch (e, stack) {
-          ErrorLogService.instance
-              .log('AnkiRepository.loadSettings.legacy', e, stack);
+          debugPrint('AnkiRepository.loadSettings.legacy: $e\n$stack');
         }
       }
       return const AnkiSettings();
@@ -36,7 +33,7 @@ class AnkiRepository {
     try {
       return AnkiSettings.fromJson(jsonDecode(raw) as Map<String, dynamic>);
     } catch (e, stack) {
-      ErrorLogService.instance.log('AnkiRepository.loadSettings', e, stack);
+      debugPrint('AnkiRepository.loadSettings: $e\n$stack');
       return const AnkiSettings();
     }
   }
@@ -132,8 +129,7 @@ class AnkiRepository {
       final json = Map<String, dynamic>.from(jsonDecode(rawPayloadJson) as Map);
       payload = AnkiMiningPayload.fromJson(json);
     } catch (e, stack) {
-      ErrorLogService.instance
-          .log('AnkiRepository.mineEntry.parsePayload', e, stack);
+      debugPrint('AnkiRepository.mineEntry.parsePayload: $e\n$stack');
       return MineResult.error;
     }
 
@@ -208,8 +204,7 @@ class AnkiRepository {
           });
           if (isDupe == true) return MineResult.duplicate;
         } catch (e, stack) {
-          ErrorLogService.instance
-              .log('AnkiRepository.mineEntry.dupeCheck', e, stack);
+          debugPrint('AnkiRepository.mineEntry.dupeCheck: $e\n$stack');
         }
       }
     }
@@ -226,9 +221,7 @@ class AnkiRepository {
         'tags': tags,
       });
       return MineResult.success;
-    } on PlatformException catch (e, stack) {
-      ErrorLogService.instance
-          .log('AnkiRepository.mineEntry.addNote', e, stack);
+    } on PlatformException catch (e) {
       debugPrint('Failed to add note: ${e.message}');
       return MineResult.error;
     }
@@ -248,7 +241,7 @@ class AnkiRepository {
       });
       return result == true;
     } catch (e, stack) {
-      ErrorLogService.instance.log('AnkiRepository.isDuplicate', e, stack);
+      debugPrint('AnkiRepository.isDuplicate: $e\n$stack');
       return false;
     }
   }
@@ -295,8 +288,7 @@ class AnkiRepository {
       return _addMediaFile(
           audioFile.path, audioFile.uri.pathSegments.last, 'audio/mpeg');
     } catch (e, stack) {
-      ErrorLogService.instance.log('AnkiRepository._addRemoteAudio', e, stack);
-      debugPrint('Failed to add remote audio: $e');
+      debugPrint('AnkiRepository._addRemoteAudio: $e\n$stack');
       return null;
     }
   }
@@ -312,9 +304,7 @@ class AnkiRepository {
           await _addMediaFile(file.path, filename, mimeTypeForPath(media.path));
       return result != null ? ankiInlineMediaReference(result) : null;
     } catch (e, stack) {
-      ErrorLogService.instance
-          .log('AnkiRepository._addDictionaryMedia', e, stack);
-      debugPrint('Failed to add dictionary media: $e');
+      debugPrint('AnkiRepository._addDictionaryMedia: $e\n$stack');
       return null;
     }
   }
@@ -330,8 +320,7 @@ class AnkiRepository {
       });
       return result as String?;
     } catch (e, stack) {
-      ErrorLogService.instance.log('AnkiRepository._addMediaFile', e, stack);
-      debugPrint('Failed to add Anki media $preferredName: $e');
+      debugPrint('AnkiRepository._addMediaFile $preferredName: $e\n$stack');
       return null;
     }
   }

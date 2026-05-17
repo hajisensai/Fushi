@@ -785,6 +785,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.3.0"
+  hibiki_anki:
+    dependency: "direct main"
+    description:
+      path: "../packages/hibiki_anki"
+      relative: true
+    source: path
+    version: "0.0.0"
   hibiki_core:
     dependency: "direct main"
     description:

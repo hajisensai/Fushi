@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/anki/anki_models.dart';
+import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/profile/profile_keys.dart';
 
 void main() {

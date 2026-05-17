@@ -1,4 +1,4 @@
-import 'package:hibiki/src/anki/anki_models.dart';
+import 'anki_models.dart';
 
 class LapisPreset {
   static const _defaults = {

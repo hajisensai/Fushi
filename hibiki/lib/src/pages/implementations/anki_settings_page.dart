@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 
-import 'package:hibiki/src/anki/anki_models.dart';
+import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 
 class AnkiSettingsPage extends BasePage {

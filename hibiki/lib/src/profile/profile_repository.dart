@@ -1,4 +1,4 @@
-﻿import 'package:hibiki/src/anki/anki_repository.dart';
+import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/profile/profile_keys.dart';
 

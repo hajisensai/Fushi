@@ -37,7 +37,7 @@ import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
 import 'package:hibiki/src/epub/ttu_migration.dart';
 import 'package:hibiki/src/epub/ttu_migration_server.dart';
 import 'package:hibiki/src/profile/profile_repository.dart';
-import 'package:hibiki/src/anki/anki_repository.dart';
+import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/media/floating_dict_channel.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/i18n/strings.g.dart';
