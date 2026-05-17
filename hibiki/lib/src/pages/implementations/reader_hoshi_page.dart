@@ -686,7 +686,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   }
 
   Future<void> _syncPageSize() async {
-    if (_controller == null || !_readerContentReady) return;
+    if (_controller == null || !_readerContentReady || _lyricsMode) return;
     final Size screen = MediaQuery.of(context).size;
     final double w = screen.width;
     final double h = screen.height - _readerTopOffset - _readerBottomReserve;
@@ -947,6 +947,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   Future<void> _applyStylesLive() async {
     if (_controller == null || _settings == null) return;
     await _syncSettingsFromHive();
+    if (_lyricsMode) {
+      await _loadLyricsPage();
+      return;
+    }
     final String css = ReaderContentStyles.css(
       settings: _settings!,
       themeOverride: appModel.appThemeKey,
@@ -1299,6 +1303,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         final int chapterSnapshot = _currentChapter;
         debugPrint('[ReaderHoshi] onLoadStop: url=$url '
             'chapter=$chapterSnapshot progress=$_initialProgress');
+        if (_lyricsMode && _isLyricsUrl(url)) {
+          await _onChapterLoadComplete(controller);
+          return;
+        }
         final String expectedUrl = _chapterUrl(chapterSnapshot);
         if (url != null &&
             Uri.parse(url.toString()).path != Uri.parse(expectedUrl).path) {
@@ -1530,6 +1538,12 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       encoding: 'utf-8',
       baseUrl: WebUri('https://hoshi.local/lyrics'),
     );
+  }
+
+  bool _isLyricsUrl(WebUri? url) {
+    if (url == null) return false;
+    final Uri uri = Uri.parse(url.toString());
+    return uri.host == ReaderHoshiSource.kHost && uri.path == '/lyrics';
   }
 
   Future<void> _exitLyricsMode() async {
@@ -2095,7 +2109,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   // ── Progress Save/Restore ─────────────────────────────────────────
 
   Future<void> _refreshProgress() async {
-    if (_controller == null) return;
+    if (_controller == null || _lyricsMode) return;
     final dynamic result = await _controller!.evaluateJavascript(
       source: 'window.hoshiProgressDetails()',
     );
@@ -2132,17 +2146,21 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   }
 
   void _debouncedSavePosition(double progress) {
+    _debouncedSaveReaderPosition(_currentChapter, progress);
+  }
+
+  void _debouncedSaveReaderPosition(int section, double progress) {
     if (_restoreInFlight) {
       return;
     }
-    if (_currentChapter == _lastSavedSection &&
+    if (section == _lastSavedSection &&
         (progress - _lastSavedProgress).abs() < 0.001) {
       return;
     }
 
     _saveDebounce?.cancel();
     _saveDebounce = Timer(const Duration(milliseconds: 500), () {
-      _persistPosition(_currentChapter, progress);
+      _persistPosition(section, progress);
     });
   }
 
@@ -2175,6 +2193,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       _lastProgressValue =
           frag.normCharStart / _chapterCharCounts[frag.sectionIndex];
       _lastProgressValue = _lastProgressValue.clamp(0.0, 1.0);
+      _debouncedSaveReaderPosition(_lastProgressSection, _lastProgressValue);
     }
   }
 
@@ -2779,6 +2798,25 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   Future<void> _addBookmarkAtCurrentPosition() async {
     if (_controller == null) return;
+    if (_lyricsMode) {
+      _syncPositionFromCurrentCue();
+      if (_lastProgressSection < 0) return;
+      final int normOffset = (_lastProgressValue * 10000).round();
+      final String label = _book?.toc.isNotEmpty == true
+          ? _currentChapterLabelFor(_lastProgressSection)
+          : 'Ch. ${_lastProgressSection + 1}';
+      final Bookmark bm = Bookmark(
+        sectionIndex: _lastProgressSection,
+        normCharOffset: normOffset,
+        label: label,
+        createdAt: DateTime.now(),
+        ttuBookId: widget.bookId,
+        bookTitle: _book?.title,
+      );
+      await BookmarkRepository(appModel.database)
+          .addBookmark(widget.bookId, bm);
+      return;
+    }
 
     final dynamic result = await _controller!.evaluateJavascript(
       source: ReaderPaginationScripts.progressInvocation(),
@@ -2804,14 +2842,18 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   }
 
   String _currentChapterLabel() {
+    return _currentChapterLabelFor(_currentChapter);
+  }
+
+  String _currentChapterLabelFor(int chapterIndex) {
     if (_book == null) return '';
     final List<TtuTocEntry> toc = _buildTtuToc();
     for (int i = toc.length - 1; i >= 0; i--) {
-      if (toc[i].index <= _currentChapter) {
+      if (toc[i].index <= chapterIndex) {
         return toc[i].label;
       }
     }
-    return 'Ch. ${_currentChapter + 1}';
+    return 'Ch. ${chapterIndex + 1}';
   }
 
   Future<void> _syncSettingsToHive() async {
@@ -2895,6 +2937,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   Future<void> _reloadWithCurrentSettings() async {
     if (_controller == null) return;
+    if (_lyricsMode) {
+      await _loadLyricsPage();
+      return;
+    }
     final dynamic result = await _controller!.evaluateJavascript(
       source: ReaderPaginationScripts.progressInvocation(),
     );
