@@ -3,7 +3,6 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:path/path.dart' as p;
@@ -433,16 +432,16 @@ class _BookImportDialogState extends State<BookImportDialog> {
 
   Future<void> _doImport() async {
     if (_epubPath == null && !_hasSubtitles) {
-      Fluttertoast.showToast(msg: t.srt_import_missing_input);
+      HibikiToast.show(msg: t.srt_import_missing_input);
       return;
     }
     if (_epubPath != null && !_hasSubtitles && _audioPaths.isNotEmpty) {
-      Fluttertoast.showToast(msg: t.srt_import_audio_needs_subtitle);
+      HibikiToast.show(msg: t.srt_import_audio_needs_subtitle);
       return;
     }
     final String title = _titleCtrl.text.trim();
     if (title.isEmpty) {
-      Fluttertoast.showToast(msg: t.srt_import_missing_title);
+      HibikiToast.show(msg: t.srt_import_missing_title);
       return;
     }
 
@@ -471,14 +470,14 @@ class _BookImportDialogState extends State<BookImportDialog> {
         final String msg = tail == null
             ? t.srt_import_success
             : '${t.srt_import_success} · $tail';
-        Fluttertoast.showToast(msg: msg);
+        HibikiToast.show(msg: msg);
         Navigator.pop(context, true);
       }
     } catch (e, stack) {
       ErrorLogService.instance.log('BookImportDialog.import', e, stack);
       debugPrint('BookImportDialog error: $e');
       if (mounted) {
-        Fluttertoast.showToast(msg: '${t.srt_import_error}: $e');
+        HibikiToast.show(msg: '${t.srt_import_error}: $e');
       }
     } finally {
       if (mounted) {

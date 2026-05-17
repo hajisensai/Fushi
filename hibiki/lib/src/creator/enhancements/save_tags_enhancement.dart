@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:hibiki/creator.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/utils.dart';
@@ -37,7 +36,7 @@ class SaveTagsEnhancement extends Enhancement {
         creatorModel.getFieldController(TagsField.instance).text.trim();
     appModel.setSavedTags(tags);
 
-    Fluttertoast.showToast(
+    HibikiToast.show(
       msg: t.saved_tags,
       toastLength: Toast.LENGTH_SHORT,
       gravity: ToastGravity.BOTTOM,

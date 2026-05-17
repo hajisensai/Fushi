@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
@@ -247,7 +246,7 @@ class _CustomThemePageState extends BasePageState {
   void _shareTheme() {
     final code = _encodeTheme();
     Clipboard.setData(ClipboardData(text: code));
-    Fluttertoast.showToast(msg: t.theme_code_copied);
+    HibikiToast.show(msg: t.theme_code_copied);
   }
 
   void _importTheme() {
@@ -270,7 +269,7 @@ class _CustomThemePageState extends BasePageState {
             onPressed: () {
               final result = _decodeTheme(controller.text);
               if (result == null) {
-                Fluttertoast.showToast(msg: t.import_theme_invalid);
+                HibikiToast.show(msg: t.import_theme_invalid);
                 return;
               }
               Navigator.pop(ctx);
@@ -302,7 +301,7 @@ class _CustomThemePageState extends BasePageState {
                 _linkColor = result.linkColor ?? generated.primary;
                 _useLinkColor = result.linkColor != null;
               });
-              Fluttertoast.showToast(msg: t.import_theme_success);
+              HibikiToast.show(msg: t.import_theme_success);
             },
             child: Text(t.dialog_import),
           ),

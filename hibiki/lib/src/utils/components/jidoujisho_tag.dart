@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:spaces/spaces.dart';
+
+import 'package:hibiki/src/utils/misc/hibiki_toast.dart';
 
 /// A tag that can be clicked on for more information. Used in dictionary
 /// entries to indicate information about a definition or term.
@@ -56,7 +57,7 @@ class JidoujishoTag extends StatelessWidget {
       child: InkWell(
         onTap: message != null
             ? () {
-                Fluttertoast.showToast(
+                HibikiToast.show(
                   backgroundColor: backgroundColor,
                   textColor: effectiveForeground,
                   msg: message!,

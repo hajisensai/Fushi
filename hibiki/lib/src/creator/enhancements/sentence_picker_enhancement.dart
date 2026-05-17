@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:hibiki/creator.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/utils.dart';
@@ -35,7 +34,7 @@ class SentencePickerEnhancement extends Enhancement {
     String sourceText = creatorModel.getFieldController(field).text;
 
     if (sourceText.trim().isEmpty) {
-      Fluttertoast.showToast(
+      HibikiToast.show(
         msg: t.no_text,
         toastLength: Toast.LENGTH_SHORT,
         gravity: ToastGravity.BOTTOM,

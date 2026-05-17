@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -38,6 +40,7 @@ class _MiscellaneousSettingsPageState
   }
 
   Future<void> _loadCurrentIcon() async {
+    if (!Platform.isAndroid) return;
     final results = await Future.wait([
       _iconChannel.invokeMethod<String>('getCurrentIcon'),
       _iconChannel.invokeMethod<bool>('isCustomShortcutSupported'),
@@ -134,19 +137,21 @@ class _MiscellaneousSettingsPageState
               setState(() {});
             },
           ),
-          const Divider(),
-          const SizedBox(height: 8),
-          Text(t.app_icon_label, style: textTheme.titleMedium),
-          const SizedBox(height: 12),
-          _buildIconGrid(),
-          if (_customSupported) ...[
+          if (Platform.isAndroid) ...[
+            const Divider(),
             const SizedBox(height: 8),
-            Text(
-              t.icon_custom_hint,
-              style: textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+            Text(t.app_icon_label, style: textTheme.titleMedium),
+            const SizedBox(height: 12),
+            _buildIconGrid(),
+            if (_customSupported) ...[
+              const SizedBox(height: 8),
+              Text(
+                t.icon_custom_hint,
+                style: textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
-            ),
+            ],
           ],
         ],
       ),

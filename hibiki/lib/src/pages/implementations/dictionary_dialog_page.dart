@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:change_notifier_builder/change_notifier_builder.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:path/path.dart' as path;
 import 'package:spaces/spaces.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
@@ -263,7 +262,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
     }).toList();
 
     if (toDownload.isEmpty) {
-      Fluttertoast.showToast(msg: t.import_complete);
+      HibikiToast.show(msg: t.import_complete);
       return;
     }
 

@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:intl/intl.dart';
 import 'package:hibiki/src/epub/epub_book.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart';
@@ -1867,7 +1866,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                         icon: const Icon(Icons.copy, size: 16),
                         onPressed: () {
                           Clipboard.setData(ClipboardData(text: fav.text));
-                          Fluttertoast.showToast(msg: t.copy);
+                          HibikiToast.show(msg: t.copy);
                         },
                       ),
                       IconButton(

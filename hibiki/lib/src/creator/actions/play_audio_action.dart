@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:hibiki/creator.dart';
 import 'package:hibiki/models.dart';
@@ -48,7 +47,7 @@ class PlayAudioAction extends QuickAction {
     ];
 
     if (audioEnhancements.isEmpty) {
-      Fluttertoast.showToast(
+      HibikiToast.show(
         msg: t.no_audio_enhancements,
         toastLength: Toast.LENGTH_SHORT,
         gravity: ToastGravity.BOTTOM,
@@ -108,7 +107,7 @@ class PlayAudioAction extends QuickAction {
       }
     }
 
-    Fluttertoast.showToast(
+    HibikiToast.show(
       msg: t.audio_unavailable,
       toastLength: Toast.LENGTH_SHORT,
       gravity: ToastGravity.BOTTOM,

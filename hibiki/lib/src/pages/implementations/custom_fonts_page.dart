@@ -4,7 +4,6 @@ import 'package:archive/archive_io.dart';
 import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
@@ -159,7 +158,7 @@ bool _isFontFile(String path) {
   return _fontExtensions.contains(p.extension(path).toLowerCase());
 }
 
-// ── 系统字体扫描（通过 platform channel） ─────────────────────────────────────
+// ── 系统字体扫描 ─────────────────────────────────────────────────────────────
 
 const _fontsChannel = HibikiChannels.fonts;
 List<String>? _cachedSystemFonts;
@@ -168,17 +167,68 @@ Future<List<String>> _getSystemFonts() async {
   if (_cachedSystemFonts != null && _cachedSystemFonts!.isNotEmpty) {
     return _cachedSystemFonts!;
   }
-  try {
-    final result =
-        await _fontsChannel.invokeMethod<List<dynamic>>('listSystemFonts');
-    debugPrint('[hibiki-fonts] channel returned ${result?.length} fonts');
-    _cachedSystemFonts = result?.cast<String>() ?? [];
-  } catch (e, stack) {
-    ErrorLogService.instance.log('CustomFontsPage.listSystemFonts', e, stack);
-    debugPrint('[hibiki-fonts] channel error: $e');
-    _cachedSystemFonts = [];
+  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+    _cachedSystemFonts = await _getDesktopSystemFonts();
+  } else {
+    try {
+      final result =
+          await _fontsChannel.invokeMethod<List<dynamic>>('listSystemFonts');
+      debugPrint('[hibiki-fonts] channel returned ${result?.length} fonts');
+      _cachedSystemFonts = result?.cast<String>() ?? [];
+    } catch (e, stack) {
+      ErrorLogService.instance.log('CustomFontsPage.listSystemFonts', e, stack);
+      debugPrint('[hibiki-fonts] channel error: $e');
+      _cachedSystemFonts = [];
+    }
   }
   return _cachedSystemFonts!;
+}
+
+Future<List<String>> _getDesktopSystemFonts() async {
+  final fontDirs = <String>[];
+  if (Platform.isWindows) {
+    fontDirs.add(r'C:\Windows\Fonts');
+    final localAppData = Platform.environment['LOCALAPPDATA'];
+    if (localAppData != null) {
+      fontDirs.add(p.join(localAppData, r'Microsoft\Windows\Fonts'));
+    }
+  } else if (Platform.isMacOS) {
+    fontDirs.addAll(['/System/Library/Fonts', '/Library/Fonts']);
+    final home = Platform.environment['HOME'];
+    if (home != null) fontDirs.add('$home/Library/Fonts');
+  } else if (Platform.isLinux) {
+    fontDirs.addAll(['/usr/share/fonts', '/usr/local/share/fonts']);
+    final home = Platform.environment['HOME'];
+    if (home != null) fontDirs.add('$home/.local/share/fonts');
+  }
+
+  final names = <String>{};
+  for (final dirPath in fontDirs) {
+    final dir = Directory(dirPath);
+    if (!dir.existsSync()) continue;
+    try {
+      await for (final entity in dir.list(recursive: true)) {
+        if (entity is! File) continue;
+        final ext = p.extension(entity.path).toLowerCase();
+        if (!_fontExtensions.contains(ext)) continue;
+        final name = p
+            .basenameWithoutExtension(entity.path)
+            .replaceAll(RegExp(r'[-_]'), ' ')
+            .replaceAll(
+                RegExp(
+                    r'\s+(Regular|Bold|Italic|Light|Medium|Thin|'
+                    r'Black|ExtraBold|SemiBold|ExtraLight|Condensed|Expanded)$',
+                    caseSensitive: false),
+                '');
+        if (name.isNotEmpty) names.add(name);
+      }
+    } catch (e) {
+      debugPrint('[hibiki-fonts] error scanning $dirPath: $e');
+    }
+  }
+  final sorted = names.toList()..sort();
+  debugPrint('[hibiki-fonts] desktop scan found ${sorted.length} fonts');
+  return sorted;
 }
 
 // ── 系统字体选择页 ────────────────────────────────────────────────────────────
@@ -354,7 +404,7 @@ class _CustomFontsPageState extends BasePageState {
 
     if (count > 0) {
       await _save();
-      Fluttertoast.showToast(msg: t.custom_fonts_imported_count(count: count));
+      HibikiToast.show(msg: t.custom_fonts_imported_count(count: count));
     }
   }
 
@@ -495,7 +545,7 @@ class _CustomFontsPageState extends BasePageState {
     } catch (e, stack) {
       ErrorLogService.instance.log('CustomFontsPage.extractArchive', e, stack);
       debugPrint('[hibiki-fonts] archive extract failed: $e');
-      Fluttertoast.showToast(msg: t.custom_fonts_archive_error);
+      HibikiToast.show(msg: t.custom_fonts_archive_error);
       return 0;
     }
   }
@@ -633,10 +683,9 @@ class _CustomFontsPageState extends BasePageState {
 
       if (count > 0) {
         await _save();
-        Fluttertoast.showToast(
-            msg: t.custom_fonts_imported_count(count: count));
+        HibikiToast.show(msg: t.custom_fonts_imported_count(count: count));
       } else {
-        Fluttertoast.showToast(msg: t.custom_fonts_no_fonts_in_archive);
+        HibikiToast.show(msg: t.custom_fonts_no_fonts_in_archive);
       }
     } on DioError catch (e, stack) {
       if (mounted) Navigator.pop(context);
@@ -644,7 +693,7 @@ class _CustomFontsPageState extends BasePageState {
         debugPrint('[hibiki-fonts] DioError: type=${e.type} '
             'status=${e.response?.statusCode} msg=${e.message}');
         debugPrint('[hibiki-fonts] stack: $stack');
-        Fluttertoast.showToast(
+        HibikiToast.show(
           msg: '${t.custom_fonts_download_failed}: ${e.type.name}',
           toastLength: Toast.LENGTH_LONG,
         );
@@ -655,7 +704,7 @@ class _CustomFontsPageState extends BasePageState {
       if (mounted) Navigator.pop(context);
       debugPrint('[hibiki-fonts] download failed: $e');
       debugPrint('[hibiki-fonts] stack: $stack');
-      Fluttertoast.showToast(
+      HibikiToast.show(
         msg: '${t.custom_fonts_download_failed}: $e',
         toastLength: Toast.LENGTH_LONG,
       );
@@ -765,7 +814,7 @@ class _CustomFontsPageState extends BasePageState {
         debugPrint('[Hibiki] failed to delete font file $filePath: $e');
       }
     }
-    Fluttertoast.showToast(msg: t.custom_fonts_removed);
+    HibikiToast.show(msg: t.custom_fonts_removed);
   }
 
   void _onReorder(int oldIndex, int newIndex) {

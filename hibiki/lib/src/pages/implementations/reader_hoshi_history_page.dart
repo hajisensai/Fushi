@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:path/path.dart' as p;
 import 'package:transparent_image/transparent_image.dart';
 import 'package:spaces/spaces.dart';
@@ -125,14 +124,14 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     final existing = ref.read(bookTagMapProvider).valueOrNull;
     final alreadyHas = existing?[bookId]?.any((t) => t.id == tag.id) ?? false;
     if (alreadyHas) {
-      Fluttertoast.showToast(msg: t.tag_already_on_book(name: tag.name));
+      HibikiToast.show(msg: t.tag_already_on_book(name: tag.name));
       return;
     }
     await ref.read(appProvider).database.addTagToBook(bookId, tag.id);
     ref.invalidate(bookTagMapProvider);
     ref.invalidate(filteredBookIdsProvider);
     if (mounted) {
-      Fluttertoast.showToast(msg: t.tag_added_to_book(name: tag.name));
+      HibikiToast.show(msg: t.tag_added_to_book(name: tag.name));
     }
   }
 
@@ -436,7 +435,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
 
   void _openSrtBook(SrtBook book) {
     if (book.ttuBookId <= 0) {
-      Fluttertoast.showToast(msg: t.srt_epub_not_ready);
+      HibikiToast.show(msg: t.srt_epub_not_ready);
       return;
     }
     Navigator.push(
@@ -808,7 +807,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     );
     if (!mounted) return;
     if (!ok) {
-      Fluttertoast.showToast(msg: t.epub_delete_error);
+      HibikiToast.show(msg: t.epub_delete_error);
       return;
     }
     _refreshSrtBooks();

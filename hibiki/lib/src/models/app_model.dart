@@ -17,7 +17,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_exit_app/flutter_exit_app.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:drift/drift.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as path;
@@ -1822,6 +1821,7 @@ class AppModel with ChangeNotifier {
   static const _splashChannel = HibikiChannels.splash;
 
   void _persistSplashColor() {
+    if (!Platform.isAndroid && !Platform.isIOS) return;
     final brightness = isDarkMode ? Brightness.dark : Brightness.light;
     final bool useCustomRoles = appThemeKey == 'custom-theme';
     final surface = buildHibikiColorScheme(
@@ -1912,6 +1912,8 @@ class AppModel with ChangeNotifier {
     LocaleSettings.setLocaleRaw(localeTag);
     if (Platform.isAndroid || Platform.isIOS) {
       Restart.restartApp();
+    } else {
+      notifyListeners();
     }
   }
 
@@ -2107,7 +2109,7 @@ class AppModel with ChangeNotifier {
           );
         } catch (e, stack) {
           ErrorLogService.instance.log('AppModel.importDictZip', e, stack);
-          Fluttertoast.showToast(
+          HibikiToast.show(
             msg: '${path.basenameWithoutExtension(zipFiles[i].path)}: $e',
             toastLength: Toast.LENGTH_LONG,
           );
@@ -2399,7 +2401,7 @@ class AppModel with ChangeNotifier {
       clearDictionaryResultsCache();
     } catch (e, stack) {
       ErrorLogService.instance.log('deleteDictionaries', e, stack);
-      Fluttertoast.showToast(msg: 'Failed to delete dictionaries');
+      HibikiToast.show(msg: 'Failed to delete dictionaries');
     } finally {
       dictionarySearchAgainNotifier.notifyListeners();
     }
@@ -2422,7 +2424,7 @@ class AppModel with ChangeNotifier {
       clearDictionaryResultsCache();
     } catch (e, stack) {
       ErrorLogService.instance.log('deleteDictionary', e, stack);
-      Fluttertoast.showToast(msg: 'Failed to delete dictionary');
+      HibikiToast.show(msg: 'Failed to delete dictionary');
     } finally {
       dictionarySearchAgainNotifier.notifyListeners();
     }
@@ -2506,7 +2508,7 @@ class AppModel with ChangeNotifier {
   Future<void> requestExternalStoragePermissions() async {
     if (!Platform.isAndroid) return;
     if (isFirstTimeSetup) {
-      Fluttertoast.showToast(
+      HibikiToast.show(
         msg: t.storage_permissions,
         toastLength: Toast.LENGTH_SHORT,
         gravity: ToastGravity.BOTTOM,
@@ -2988,13 +2990,13 @@ class AppModel with ChangeNotifier {
     }
 
     if (terms.length == 1) {
-      Fluttertoast.showToast(
+      HibikiToast.show(
         msg: t.stash_added_single(term: terms.first),
         toastLength: Toast.LENGTH_SHORT,
         gravity: ToastGravity.BOTTOM,
       );
     } else {
-      Fluttertoast.showToast(
+      HibikiToast.show(
         msg: t.stash_added_multiple,
         toastLength: Toast.LENGTH_SHORT,
         gravity: ToastGravity.BOTTOM,
@@ -3011,7 +3013,7 @@ class AppModel with ChangeNotifier {
       searchTerm: term,
     );
 
-    Fluttertoast.showToast(
+    HibikiToast.show(
       msg: t.stash_clear_single(term: term),
       toastLength: Toast.LENGTH_SHORT,
       gravity: ToastGravity.BOTTOM,
@@ -3036,7 +3038,7 @@ class AppModel with ChangeNotifier {
   /// Shown when a query fails to be made to an online service. For example,
   /// when there is no internet connection.
   void showFailedToCommunicateMessage() {
-    Fluttertoast.showToast(
+    HibikiToast.show(
       msg: t.failed_online_service,
       toastLength: Toast.LENGTH_SHORT,
       gravity: ToastGravity.BOTTOM,
@@ -3124,7 +3126,7 @@ class AppModel with ChangeNotifier {
 
     /// Redundant to do this with the share notification on Android 33+
     if (!Platform.isAndroid || (_androidDeviceInfo?.version.sdkInt ?? 0) < 33) {
-      Fluttertoast.showToast(
+      HibikiToast.show(
         msg: t.copied_to_clipboard,
         toastLength: Toast.LENGTH_SHORT,
         gravity: ToastGravity.BOTTOM,
@@ -3931,7 +3933,7 @@ class AppModel with ChangeNotifier {
       },
       onAnkiExport: (String word, String reading, String meaning) async {
         debugPrint('[FloatingDict] Anki export: $word / $reading');
-        Fluttertoast.showToast(
+        HibikiToast.show(
           msg: t.anki_export_not_implemented,
           toastLength: Toast.LENGTH_SHORT,
         );

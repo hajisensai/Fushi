@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:hibiki/creator.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/utils.dart';
@@ -90,7 +89,7 @@ abstract class AudioExportField extends Field {
         String fallbackTerm =
             creatorModel.getFieldController(fallbackField).text.trim();
         if (fallbackTerm.isNotEmpty) {
-          Fluttertoast.showToast(
+          HibikiToast.show(
             msg: t.field_fallback_used(
               field: getLocalisedLabel(appModel),
               secondField: fallbackField.getLocalisedLabel(appModel),
@@ -104,7 +103,7 @@ abstract class AudioExportField extends Field {
       }
     }
 
-    Fluttertoast.showToast(
+    HibikiToast.show(
       msg: t.no_text_to_search,
       toastLength: Toast.LENGTH_SHORT,
       gravity: ToastGravity.BOTTOM,
@@ -164,7 +163,7 @@ abstract class AudioExportField extends Field {
         );
       } else {
         if (cause == EnhancementTriggerCause.manual) {
-          Fluttertoast.showToast(
+          HibikiToast.show(
             msg: t.audio_unavailable,
             toastLength: Toast.LENGTH_SHORT,
             gravity: ToastGravity.BOTTOM,

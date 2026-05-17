@@ -19,6 +19,7 @@ import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/utils/components/jidoujisho_text_selection_controls.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:hibiki/src/utils/misc/hibiki_toast.dart';
 
 Color? _savedSplashColor;
 
@@ -189,11 +190,13 @@ void main() {
 
     /// Log the error.
     ErrorLogService.instance.log('UncaughtZone', exception, stack);
-    FlutterLogs.logError(
-      'hoshi_reader',
-      details.exceptionAsString(),
-      stack.toString(),
-    );
+    if (Platform.isAndroid || Platform.isIOS) {
+      FlutterLogs.logError(
+        'hoshi_reader',
+        details.exceptionAsString(),
+        stack.toString(),
+      );
+    }
   });
 }
 
@@ -220,6 +223,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
     super.initState();
 
     WidgetsBinding.instance.addObserver(this);
+    HibikiToast.navigatorKey = ref.read(appProvider).navigatorKey;
 
     if (Platform.isAndroid) {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -251,7 +255,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
     required intents.Intent? intent,
     required bool isInitial,
   }) async {
-    if (intent == null) {
+    if (intent == null || !mounted) {
       return;
     }
 

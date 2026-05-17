@@ -5,7 +5,6 @@ import 'package:hibiki/src/media/audiobook/book_import_dialog.dart'
     show BookImportDialog;
 import 'package:path/path.dart' as p;
 import 'package:flutter/material.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/media/audiobook/sasayaki_rematch.dart';
 import 'package:hibiki/src/epub/epub_book.dart';
@@ -572,7 +571,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
 
   Future<void> _doImport() async {
     if (!_hasAudioSource || _alignmentPath == null) {
-      Fluttertoast.showToast(msg: t.audiobook_import_error);
+      HibikiToast.show(msg: t.audiobook_import_error);
       return;
     }
 
@@ -682,7 +681,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
         final String msg = tail == null
             ? t.audiobook_import_success
             : '${t.audiobook_import_success} · $tail';
-        Fluttertoast.showToast(msg: msg);
+        HibikiToast.show(msg: msg);
         Navigator.pop(context, true); // true = reload player
       }
     } on FileSystemException catch (e, stack) {
@@ -692,14 +691,14 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
         final bool diskFull = e.osError?.errorCode == 28 ||
             e.message.toLowerCase().contains('no space');
         if (diskFull) {
-          Fluttertoast.showToast(
+          HibikiToast.show(
             msg: t.audiobook_import_error_disk_full(
               size: _formatBytes(grandTotal),
             ),
             toastLength: Toast.LENGTH_LONG,
           );
         } else {
-          Fluttertoast.showToast(
+          HibikiToast.show(
             msg: t.audiobook_import_error_copy_failed(
               name: e.path ?? '',
             ),
@@ -710,7 +709,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       ErrorLogService.instance.log('AudiobookImport.doImport', e, stack);
       debugPrint('AudiobookImportDialog import error: $e');
       if (mounted) {
-        Fluttertoast.showToast(msg: t.audiobook_import_error);
+        HibikiToast.show(msg: t.audiobook_import_error);
       }
     } finally {
       if (mounted) {
@@ -725,7 +724,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
   Future<void> _openReMatchSheet(Audiobook ab) async {
     final int? ttuId = widget.ttuBookId;
     if (ttuId == null || ttuId <= 0) {
-      Fluttertoast.showToast(msg: t.ttu_not_bound_cannot_rematch);
+      HibikiToast.show(msg: t.ttu_not_bound_cannot_rematch);
       return;
     }
     await SasayakiRematch.promptAndRun(
@@ -969,7 +968,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       ErrorLogService.instance.log('AudiobookImport.deleteAudiobook', e, st);
       debugPrint('AudiobookImportDialog: deleteAudiobook failed: $e\n$st');
       if (mounted) {
-        Fluttertoast.showToast(msg: t.audiobook_import_error);
+        HibikiToast.show(msg: t.audiobook_import_error);
       }
       return;
     }

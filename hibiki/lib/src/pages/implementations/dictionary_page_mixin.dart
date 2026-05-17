@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
@@ -74,20 +73,20 @@ mixin DictionaryPageMixin {
     switch (result) {
       case MineResult.success:
         final settings = await repo.loadSettings();
-        Fluttertoast.showToast(
+        HibikiToast.show(
           msg: t.card_exported(deck: settings.selectedDeckName ?? ''),
           toastLength: Toast.LENGTH_SHORT,
           gravity: ToastGravity.BOTTOM,
         );
         return true;
       case MineResult.duplicate:
-        Fluttertoast.showToast(msg: t.card_duplicate);
+        HibikiToast.show(msg: t.card_duplicate);
         return false;
       case MineResult.notConfigured:
-        Fluttertoast.showToast(msg: t.card_export_not_configured);
+        HibikiToast.show(msg: t.card_export_not_configured);
         return false;
       case MineResult.error:
-        Fluttertoast.showToast(msg: t.card_export_failed);
+        HibikiToast.show(msg: t.card_export_failed);
         return false;
     }
   }

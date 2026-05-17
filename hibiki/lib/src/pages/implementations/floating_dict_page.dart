@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
@@ -99,16 +98,16 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
     switch (result) {
       case MineResult.success:
         final settings = await repo.loadSettings();
-        Fluttertoast.showToast(
+        HibikiToast.show(
           msg: t.card_exported(deck: settings.selectedDeckName ?? ''),
           toastLength: Toast.LENGTH_SHORT,
         );
       case MineResult.duplicate:
-        Fluttertoast.showToast(msg: t.card_duplicate);
+        HibikiToast.show(msg: t.card_duplicate);
       case MineResult.notConfigured:
-        Fluttertoast.showToast(msg: t.card_export_not_configured);
+        HibikiToast.show(msg: t.card_export_not_configured);
       case MineResult.error:
-        Fluttertoast.showToast(msg: t.card_export_failed);
+        HibikiToast.show(msg: t.card_export_failed);
     }
   }
 

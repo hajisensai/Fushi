@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart'
     show AudiobookImportDialog;
 
@@ -54,7 +53,7 @@ class SasayakiRematch {
     void Function(bool running)? onRunningChanged,
   }) async {
     if (ttuBookId <= 0) {
-      Fluttertoast.showToast(msg: t.ttu_not_bound_cannot_rematch);
+      HibikiToast.show(msg: t.ttu_not_bound_cannot_rematch);
       return null;
     }
     final AudiobookHealth? overlay = await repo.readHealthOverlay(ab.bookUid);
@@ -200,11 +199,11 @@ class SasayakiRematch {
     List<int> windows = EpubCueMatcher.defaultProbeWindows,
   }) async {
     if (sections.isEmpty) {
-      Fluttertoast.showToast(msg: t.sasayaki_no_sections);
+      HibikiToast.show(msg: t.sasayaki_no_sections);
       return null;
     }
     if (cues.isEmpty) {
-      Fluttertoast.showToast(msg: t.sasayaki_no_cues_to_match);
+      HibikiToast.show(msg: t.sasayaki_no_cues_to_match);
       return null;
     }
     try {
@@ -215,16 +214,15 @@ class SasayakiRematch {
       );
       final MapEntry<int, double>? best = r.best;
       if (best == null || best.value <= 0) {
-        Fluttertoast.showToast(msg: t.sasayaki_all_zero);
+        HibikiToast.show(msg: t.sasayaki_all_zero);
         return null;
       }
       final int pct = (best.value * 100).round();
-      Fluttertoast.showToast(
-          msg: t.sasayaki_auto_picked(window: best.key, pct: pct));
+      HibikiToast.show(msg: t.sasayaki_auto_picked(window: best.key, pct: pct));
       return best.key;
     } catch (e, st) {
       debugPrint('[hibiki-audiobook] autoProbe failed: $e\n$st');
-      Fluttertoast.showToast(msg: t.sasayaki_auto_failed(error: e));
+      HibikiToast.show(msg: t.sasayaki_auto_failed(error: e));
       return null;
     }
   }
@@ -260,7 +258,7 @@ class SasayakiRematch {
     try {
       final List<AudioCue> cues = await repo.cuesForBook(ab.bookUid);
       if (cues.isEmpty) {
-        Fluttertoast.showToast(msg: t.sasayaki_no_stored_cues);
+        HibikiToast.show(msg: t.sasayaki_no_stored_cues);
         return;
       }
       final String extractDir = await EpubStorage.bookDirectory(ttuBookId);
@@ -274,7 +272,7 @@ class SasayakiRematch {
         ),
       );
       if (sections.isEmpty) {
-        Fluttertoast.showToast(msg: t.sasayaki_no_chapters);
+        HibikiToast.show(msg: t.sasayaki_no_chapters);
         return;
       }
       final MatchResult result = await EpubCueMatcher.matchInIsolate(
@@ -302,12 +300,12 @@ class SasayakiRematch {
             '(window=$searchWindow threshold=$similarityThreshold)',
       );
       await repo.updateHealthOverlay(bookUid: ab.bookUid, health: health);
-      Fluttertoast.showToast(
+      HibikiToast.show(
         msg: t.sasayaki_rematch_result(pct: pct, window: searchWindow),
       );
     } catch (e, st) {
       debugPrint('[hibiki-audiobook] SasayakiRematch failed: $e\n$st');
-      Fluttertoast.showToast(msg: t.sasayaki_rematch_failed(error: e));
+      HibikiToast.show(msg: t.sasayaki_rematch_failed(error: e));
     }
   }
 }

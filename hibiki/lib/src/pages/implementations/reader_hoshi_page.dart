@@ -5,6 +5,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:hibiki/i18n/strings.g.dart';
+import 'package:hibiki/src/utils/misc/hibiki_toast.dart';
 import 'package:path/path.dart' as p;
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -13,7 +14,6 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/epub/epub_book.dart';
 import 'package:hibiki/src/epub/epub_parser.dart';
 import 'package:hibiki/src/epub/epub_storage.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart';
 import 'package:hibiki/src/media/audiobook/lyrics_mode_html.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
@@ -464,7 +464,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       debugPrint('[ReaderHoshi] audiobook load failed: $e');
       controller.dispose();
       if (mounted) {
-        Fluttertoast.showToast(msg: t.audiobook_load_error);
+        HibikiToast.show(msg: t.audiobook_load_error);
       }
       return;
     }
@@ -542,7 +542,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       debugPrint('[ReaderHoshi] srt book load failed: $e');
       controller.dispose();
       if (mounted) {
-        Fluttertoast.showToast(msg: t.audiobook_load_error);
+        HibikiToast.show(msg: t.audiobook_load_error);
       }
       return;
     }
@@ -1623,20 +1623,20 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     switch (result) {
       case MineResult.success:
         final AnkiSettings settings = await repo.loadSettings();
-        Fluttertoast.showToast(
+        HibikiToast.show(
           msg: t.card_exported(deck: settings.selectedDeckName ?? ''),
           toastLength: Toast.LENGTH_SHORT,
           gravity: ToastGravity.BOTTOM,
         );
         return true;
       case MineResult.duplicate:
-        Fluttertoast.showToast(msg: t.card_duplicate);
+        HibikiToast.show(msg: t.card_duplicate);
         return false;
       case MineResult.notConfigured:
-        Fluttertoast.showToast(msg: t.card_export_not_configured);
+        HibikiToast.show(msg: t.card_export_not_configured);
         return false;
       case MineResult.error:
-        Fluttertoast.showToast(msg: t.card_export_failed);
+        HibikiToast.show(msg: t.card_export_failed);
         return false;
     }
   }
@@ -3033,7 +3033,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final String sentence =
         appModel.currentMediaSource?.currentSentence.text ?? '';
     if (sentence.isEmpty) {
-      Fluttertoast.showToast(msg: t.no_sentence_selected);
+      HibikiToast.show(msg: t.no_sentence_selected);
       return;
     }
 
@@ -3070,7 +3070,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
               'if (!window.__hoshiCssHighlightsSupported) { window.hoshiReader && window.hoshiReader.buildNodeOffsets(); }',
         );
       }
-      Fluttertoast.showToast(msg: t.favorite_removed);
+      HibikiToast.show(msg: t.favorite_removed);
       return;
     }
 
@@ -3102,7 +3102,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
             'if (!window.__hoshiCssHighlightsSupported) { window.hoshiReader && window.hoshiReader.buildNodeOffsets(); }',
       );
     }
-    Fluttertoast.showToast(msg: t.favorite_added);
+    HibikiToast.show(msg: t.favorite_added);
   }
 
   @override

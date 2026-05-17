@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:network_to_file_image/network_to_file_image.dart';
 import 'package:hibiki/creator.dart';
 import 'package:hibiki/models.dart';
@@ -185,7 +184,7 @@ abstract class ImageExportField extends Field with ChangeNotifier {
         String fallbackTerm =
             creatorModel.getFieldController(fallbackField).text.trim();
         if (fallbackTerm.isNotEmpty) {
-          Fluttertoast.showToast(
+          HibikiToast.show(
             msg: t.field_fallback_used(
               field: getLocalisedLabel(appModel),
               secondField: fallbackField.getLocalisedLabel(appModel),
@@ -199,7 +198,7 @@ abstract class ImageExportField extends Field with ChangeNotifier {
       }
     }
 
-    Fluttertoast.showToast(
+    HibikiToast.show(
       msg: t.no_text_to_search,
       toastLength: Toast.LENGTH_SHORT,
       gravity: ToastGravity.BOTTOM,
