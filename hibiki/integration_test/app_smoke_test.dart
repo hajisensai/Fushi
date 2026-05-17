@@ -42,8 +42,9 @@ void main() {
       final bool hasNavBar = find.byType(NavigationBar).evaluate().isNotEmpty;
 
       if (hasBottomNav || hasNavBar) {
-        final Finder navBar =
-            hasBottomNav ? find.byType(BottomNavigationBar) : find.byType(NavigationBar);
+        final Finder navBar = hasBottomNav
+            ? find.byType(BottomNavigationBar)
+            : find.byType(NavigationBar);
 
         final Finder navIcons = find.descendant(
           of: navBar,

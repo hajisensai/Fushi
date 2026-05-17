@@ -5,7 +5,8 @@ import 'package:hibiki/src/media/audiobook/sasayaki_rematch.dart';
 void main() {
   group('SasayakiRematch.supportedFormats', () {
     test('contains srt, lrc, vtt, ass', () {
-      expect(SasayakiRematch.supportedFormats, containsAll(['srt', 'lrc', 'vtt', 'ass']));
+      expect(SasayakiRematch.supportedFormats,
+          containsAll(['srt', 'lrc', 'vtt', 'ass']));
     });
 
     test('does not contain smil or json', () {
@@ -29,40 +30,50 @@ void main() {
     }
 
     test('SRT format is eligible', () {
-      expect(SasayakiRematch.isEligible(makeAb(format: 'srt', path: 'a.srt')), isTrue);
+      expect(SasayakiRematch.isEligible(makeAb(format: 'srt', path: 'a.srt')),
+          isTrue);
     });
 
     test('LRC format is eligible', () {
-      expect(SasayakiRematch.isEligible(makeAb(format: 'lrc', path: 'a.lrc')), isTrue);
+      expect(SasayakiRematch.isEligible(makeAb(format: 'lrc', path: 'a.lrc')),
+          isTrue);
     });
 
     test('VTT format is eligible', () {
-      expect(SasayakiRematch.isEligible(makeAb(format: 'vtt', path: 'a.vtt')), isTrue);
+      expect(SasayakiRematch.isEligible(makeAb(format: 'vtt', path: 'a.vtt')),
+          isTrue);
     });
 
     test('ASS format is eligible', () {
-      expect(SasayakiRematch.isEligible(makeAb(format: 'ass', path: 'a.ass')), isTrue);
+      expect(SasayakiRematch.isEligible(makeAb(format: 'ass', path: 'a.ass')),
+          isTrue);
     });
 
     test('SMIL format is not eligible', () {
-      expect(SasayakiRematch.isEligible(makeAb(format: 'smil', path: 'a.smil')), isFalse);
+      expect(SasayakiRematch.isEligible(makeAb(format: 'smil', path: 'a.smil')),
+          isFalse);
     });
 
     test('JSON format is not eligible', () {
-      expect(SasayakiRematch.isEligible(makeAb(format: 'json', path: 'a.json')), isFalse);
+      expect(SasayakiRematch.isEligible(makeAb(format: 'json', path: 'a.json')),
+          isFalse);
     });
 
     test('SMIL extension overrides unknown format', () {
-      expect(SasayakiRematch.isEligible(makeAb(format: '', path: 'align.smil')), isFalse);
+      expect(SasayakiRematch.isEligible(makeAb(format: '', path: 'align.smil')),
+          isFalse);
     });
 
     test('JSON extension overrides unknown format', () {
-      expect(SasayakiRematch.isEligible(makeAb(format: '', path: 'align.json')), isFalse);
+      expect(SasayakiRematch.isEligible(makeAb(format: '', path: 'align.json')),
+          isFalse);
     });
 
     test('case insensitive format check', () {
-      expect(SasayakiRematch.isEligible(makeAb(format: 'SMIL', path: 'a.txt')), isFalse);
-      expect(SasayakiRematch.isEligible(makeAb(format: 'JSON', path: 'a.txt')), isFalse);
+      expect(SasayakiRematch.isEligible(makeAb(format: 'SMIL', path: 'a.txt')),
+          isFalse);
+      expect(SasayakiRematch.isEligible(makeAb(format: 'JSON', path: 'a.txt')),
+          isFalse);
     });
 
     test('empty format and path is eligible (not non-matcher)', () {
@@ -70,7 +81,9 @@ void main() {
     });
 
     test('unknown format with non-excluded extension is eligible', () {
-      expect(SasayakiRematch.isEligible(makeAb(format: 'custom', path: 'a.txt')), isTrue);
+      expect(
+          SasayakiRematch.isEligible(makeAb(format: 'custom', path: 'a.txt')),
+          isTrue);
     });
   });
 

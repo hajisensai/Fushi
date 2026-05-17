@@ -74,12 +74,15 @@ void main() {
 
   group('LanguageUtils.isCodePointInRange', () {
     test('returns true for code point within range', () {
-      expect(LanguageUtils.isCodePointInRange(0x3041, [0x3040, 0x309f]), isTrue);
+      expect(
+          LanguageUtils.isCodePointInRange(0x3041, [0x3040, 0x309f]), isTrue);
     });
 
     test('returns true for code point at range boundaries', () {
-      expect(LanguageUtils.isCodePointInRange(0x3040, [0x3040, 0x309f]), isTrue);
-      expect(LanguageUtils.isCodePointInRange(0x309f, [0x3040, 0x309f]), isTrue);
+      expect(
+          LanguageUtils.isCodePointInRange(0x3040, [0x3040, 0x309f]), isTrue);
+      expect(
+          LanguageUtils.isCodePointInRange(0x309f, [0x3040, 0x309f]), isTrue);
     });
 
     test('returns false for code point outside range', () {

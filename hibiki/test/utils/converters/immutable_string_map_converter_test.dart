@@ -67,8 +67,7 @@ void main() {
     });
 
     test('toIsar produces valid JSON string', () {
-      final serialized =
-          ImmutableStringMapConverter.toIsar({'a': 1});
+      final serialized = ImmutableStringMapConverter.toIsar({'a': 1});
       expect(serialized, '{"a":1}');
     });
 
