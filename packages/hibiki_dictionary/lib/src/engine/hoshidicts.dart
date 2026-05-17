@@ -1,12 +1,10 @@
 import 'dart:convert' show jsonDecode;
 import 'dart:ffi';
 import 'dart:isolate';
-import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
-import 'package:flutter/services.dart' show rootBundle;
-
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show rootBundle;
 
 import '../ffi/hoshidicts_ffi_bindings.dart';
 
@@ -199,7 +197,7 @@ class HoshiDicts {
       final manifest =
           await rootBundle.loadString('assets/transforms/manifest.json');
       languages = List<String>.from(jsonDecode(manifest) as List);
-    } catch (e, stack) {
+    } catch (e) {
       debugPrint('[HoshiDicts.preloadTransforms(manifest)] $e');
       return;
     }
@@ -209,7 +207,7 @@ class HoshiDicts {
         final json =
             await rootBundle.loadString('assets/transforms/$lang.json');
         jsons.add(json);
-      } catch (e, stack) {
+      } catch (e) {
         debugPrint('[HoshiDicts.preloadTransforms($lang)] $e');
       }
     }

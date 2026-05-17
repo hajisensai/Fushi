@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../anki_service.dart';
-import '../anki_models.dart';
 
 class AnkiConnectService implements AnkiService {
   final String host;

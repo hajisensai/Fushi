@@ -138,7 +138,7 @@ class LanguageUtils {
       if (segments != null) {
         return segments;
       }
-    } catch (e, stack) {
+    } catch (e) {
       debugPrint('[LanguageUtils.rubySegments] $e');
 
       /// This is the fallback upon failure.

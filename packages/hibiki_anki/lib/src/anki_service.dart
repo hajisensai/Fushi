@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'anki_models.dart';
 
 abstract class AnkiService {
   Future<bool> isAvailable();
