@@ -286,11 +286,14 @@ BaseAnkiRepository (abstract)
 | Platform guards (all MethodChannels) | ✅ Complete (11 channels, 28 findings) |
 | flutter_inappwebview v6 migration | ✅ Complete (WebView2 confirmed at runtime) |
 | AnkiConnect desktop backend | ✅ Complete (HTTP → Anki Desktop) |
-| Test suite compatibility | ✅ 607/607 pass |
+| Test suite compatibility | ✅ 724/724 pass |
 | Windows build (debug + release) | ✅ Both succeed |
 | App startup on Windows | ✅ Clean startup, all init phases |
 | FFI DLL bundling | ✅ hoshidicts_ffi.dll loads |
 | VS detection | ⚠️ Works with local SDK patch (VCTools workload not installed) |
 | EPUB reader rendering | 🔲 Requires manual interaction |
 | Dictionary search | 🔲 Requires manual interaction |
-| Fluttertoast replacement | 📋 Deferred to Phase 4 |
+| Fluttertoast replacement | ✅ HibikiToast with desktop overlay fallback |
+| WebView2 onReceivedError handling | ✅ Complete (cef74251) |
+| Pagination JS WebView2 compat | ✅ Complete (0a4fce60) |
+| Audio cue priming | ✅ Complete (cef74251) |
