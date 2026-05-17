@@ -437,7 +437,8 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
       duration: 1,
       canDelete: true,
       canEdit: true,
-      imageUrl: book.coverPath != null ? 'file://${book.coverPath}' : null,
+      imageUrl:
+          book.coverPath != null ? Uri.file(book.coverPath!).toString() : null,
     );
   }
 

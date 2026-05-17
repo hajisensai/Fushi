@@ -44,7 +44,7 @@ final dictionaryCssProvider =
                       ? 'woff2'
                       : 'woff';
           fontFaces.writeln(
-              '@font-face { font-family: "$fontName"; src: url("file://${f.path.replaceAll('\\', '/')}") format("$format"); }');
+              '@font-face { font-family: "$fontName"; src: url("${Uri.file(f.path)}") format("$format"); }');
         }
       }
     }
