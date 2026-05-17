@@ -421,9 +421,13 @@ class _CustomFontsPageState extends BasePageState {
     final destPath = p.join(
         _fontsDir.path, '${name}_${DateTime.now().millisecondsSinceEpoch}$ext');
     await srcFile.copy(destPath);
-    setState(() {
+    if (mounted) {
+      setState(() {
+        _fonts.add({'name': name, 'path': destPath, 'enabled': true});
+      });
+    } else {
       _fonts.add({'name': name, 'path': destPath, 'enabled': true});
-    });
+    }
     return 1;
   }
 
@@ -523,9 +527,13 @@ class _CustomFontsPageState extends BasePageState {
           '${overrideName.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')}_${DateTime.now().millisecondsSinceEpoch}$ext',
         );
         File(destPath).writeAsBytesSync(entry.content as List<int>);
-        setState(() {
+        if (mounted) {
+          setState(() {
+            _fonts.add({'name': overrideName, 'path': destPath, 'enabled': true});
+          });
+        } else {
           _fonts.add({'name': overrideName, 'path': destPath, 'enabled': true});
-        });
+        }
         return 1;
       }
 
@@ -536,9 +544,13 @@ class _CustomFontsPageState extends BasePageState {
         final ext = p.extension(entry.name);
         final destPath = p.join(_fontsDir.path, '${baseName}_$ts$ext');
         File(destPath).writeAsBytesSync(entry.content as List<int>);
-        setState(() {
+        if (mounted) {
+          setState(() {
+            _fonts.add({'name': baseName, 'path': destPath, 'enabled': true});
+          });
+        } else {
           _fonts.add({'name': baseName, 'path': destPath, 'enabled': true});
-        });
+        }
         count++;
       }
       return count;
