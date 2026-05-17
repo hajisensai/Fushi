@@ -262,3 +262,47 @@ Test hooks are minimal and non-invasive (ValueKey only, zero layout/behavior imp
 - Block explicitly when prerequisites are missing
 
 No further blocking issues found.
+
+---
+
+## Round 4 - Test Correctness and Coverage Gap Audit
+
+### Scope
+
+- Commit: `97571749`
+- Full audit of all 81 unit test files + 4 integration tests + 5 golden tests
+- Focus: incorrect assertions, tautological tests, coverage blind spots
+
+### Findings Fixed
+
+#### Unit Tests
+
+| File | Issue | Fix |
+|------|-------|-----|
+| `anki_mappings_test.dart` | `throwsA(isA<Exception>())` matches any exception, not UNIQUE violation | Narrowed to `SqliteException` |
+| `media_items_test.dart` | Same broad exception matcher | Narrowed to `SqliteException` |
+| `srt_books_test.dart` | Same broad exception matcher | Narrowed to `SqliteException` |
+| `frequency_field_test.dart` | Only 1 test, no edge cases | Expanded to 9 tests: empty extra, empty list, single source, popularity precedence, malformed JSON, missing key, zero value, deduplication |
+| `subtitle_parser_error_test.dart` | `returnsNormally` without output verification — can't tell if parser returns garbage | Replaced with actual parse + output assertion for 4 cases |
+| `epub_storage_test.dart` | Test named "bookPath returns path" but never calls bookPath | Renamed to match actual behavior |
+
+#### Integration Tests
+
+| File | Issue | Fix |
+|------|-------|-----|
+| `test_helpers.dart:64` | `findSearchField()` crashes with StateError if no field | Added `expect()` guard before `.first` |
+| `reader_dictionary_test.dart:173` | Dictionary search `warning` instead of `fail` — test silently passes with broken search | Changed to `fail()` with clear message |
+| `user_path_test.dart:88-99` | Rapid tab switching only asserts Scaffold exists | Added skip counter, tab identity check after switching |
+
+### What Still Can't Be Caught (Known Limitations)
+
+1. **WebView content correctness**: Tests verify the WebView widget exists and loads, but cannot inspect actual rendered HTML/CSS inside the WebView from Flutter integration tests. Requires either JS bridge test hooks or screenshot comparison.
+2. **Dictionary result quality**: Tests can verify results appear, but can't verify correctness of dictionary lookup (e.g., wrong readings, missing entries) without a test dictionary with known content.
+3. **Golden tests scope**: Golden tests cover 5 small widgets with default state only. Complex states (long text, RTL, responsive) and app-level components (reader chrome, dictionary popup) aren't golden-tested.
+4. **Reader position restore**: No unit or integration test verifies that closing and reopening a book restores the exact reading position.
+5. **Concurrent database writes**: Tests are sequential; no test stresses concurrent access patterns that could deadlock or corrupt data.
+
+### Verification
+
+- `flutter analyze` on all modified files: 0 issues
+- `flutter test`: 615 tests passed (+8 from expanded frequency_field_test)
