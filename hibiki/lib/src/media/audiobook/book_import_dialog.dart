@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
@@ -131,10 +132,8 @@ class _BookImportDialogState extends State<BookImportDialog> {
         _subtitleRow(),
         const SizedBox(height: 8),
         _audioRow(),
-        if (_hasSubtitles && _epubPath == null) ...[
-          const SizedBox(height: 8),
-          _coverRow(),
-        ],
+        const SizedBox(height: 8),
+        _coverRow(),
         const SizedBox(height: 12),
         TextField(
           controller: _titleCtrl,
@@ -423,6 +422,16 @@ class _BookImportDialogState extends State<BookImportDialog> {
     }
   }
 
+  Future<void> _applyCoverToEpub(int bookId) async {
+    final String extractDir = await EpubStorage.bookDirectory(bookId);
+    final String ext = p.extension(_coverPath!);
+    final String dest = p.join(extractDir, 'cover$ext');
+    await File(_coverPath!).copy(dest);
+    await (widget.db.update(widget.db.epubBooks)
+          ..where((tbl) => tbl.id.equals(bookId)))
+        .write(EpubBooksCompanion(coverPath: Value('cover$ext')));
+  }
+
   // ── 导入 ────────────────────────────────────────────────────────────────
 
   void _reportProgress(double value, String msg) {
@@ -585,11 +594,15 @@ class _BookImportDialogState extends State<BookImportDialog> {
     }
 
     _reportProgress(0.5, t.import_step_importing_epub);
-    await EpubImporter.import(
+    final int bookId = await EpubImporter.import(
       db: widget.db,
       bytes: bytes,
       fileName: filename,
     );
+
+    if (_coverPath != null) {
+      await _applyCoverToEpub(bookId);
+    }
     _reportProgress(1, t.import_step_done);
   }
 
@@ -614,6 +627,10 @@ class _BookImportDialogState extends State<BookImportDialog> {
       bytes: importBytes,
       fileName: importFilename,
     );
+
+    if (_coverPath != null) {
+      await _applyCoverToEpub(bookId);
+    }
 
     _reportProgress(0.35, t.import_step_reading_idb);
     List<EpubSection> sections = const <EpubSection>[];

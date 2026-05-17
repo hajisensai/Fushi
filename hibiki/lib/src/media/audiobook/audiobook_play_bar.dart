@@ -363,7 +363,12 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         await src.setTtuPrioritizeReaderStyles(value as bool);
     }
     if (widget.isHoshiReader) {
-      widget.onStyleChanged?.call();
+      const layoutKeys = {'writingMode', 'viewMode', 'pageColumns', 'prioritizeReaderStyles'};
+      if (layoutKeys.contains(key)) {
+        widget.onReloadChapter?.call();
+      } else {
+        widget.onStyleChanged?.call();
+      }
     }
   }
 
@@ -460,24 +465,6 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           label: t.section_layout,
           page: 'layout',
         ),
-        if (widget.extractDir != null)
-          ListTile(
-            dense: true,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-            leading: const Icon(Icons.code, size: 22),
-            title: Text(t.book_css_editor_edit_css),
-            trailing: const Icon(Icons.chevron_right, size: 20),
-            onTap: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) =>
-                      BookCssEditorPage(extractDir: widget.extractDir!),
-                ),
-              );
-              widget.onReloadChapter?.call();
-            },
-          ),
         if (widget.controller != null)
           _categoryTile(
             theme,
@@ -541,7 +528,27 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         title = t.reader_settings_section;
         content = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: _buildReaderSwitches(theme),
+          children: [
+            ..._buildReaderSwitches(theme),
+            if (widget.extractDir != null)
+              ListTile(
+                dense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                leading: const Icon(Icons.code, size: 22),
+                title: Text(t.book_css_editor_edit_css),
+                trailing: const Icon(Icons.chevron_right, size: 20),
+                onTap: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          BookCssEditorPage(extractDir: widget.extractDir!),
+                    ),
+                  );
+                  widget.onReloadChapter?.call();
+                },
+              ),
+          ],
         );
       case 'typography':
         title = t.section_typography;

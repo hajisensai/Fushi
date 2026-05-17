@@ -86,7 +86,7 @@ window.hoshiSelection = {
   },
   findParagraph: function(node) {
     var el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
-    return (el && el.closest('p, .glossary-content')) || null;
+    return (el && el.closest('p, .glossary-content, .cue')) || null;
   },
   createWalker: function(rootNode) {
     var root = rootNode || document.body;

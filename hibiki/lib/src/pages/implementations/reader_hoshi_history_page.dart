@@ -495,24 +495,14 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
   }
 
   Future<void> _showSrtBookDialog(SrtBook book) async {
-    if (book.ttuBookId <= 0) {
-      await showAppDialog(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: Text(book.title),
-          actions: _srtExtraActions(ctx, book),
-        ),
-      );
-    } else {
-      await showAppDialog(
-        context: context,
-        builder: (ctx) => MediaItemDialogPage(
-          item: _srtBookMediaItem(book),
-          isHistory: true,
-          extraActions: (_) => _srtExtraActions(ctx, book),
-        ),
-      );
-    }
+    await showAppDialog(
+      context: context,
+      builder: (ctx) => MediaItemDialogPage(
+        item: _srtBookMediaItem(book),
+        isHistory: true,
+        extraActions: (_) => _srtExtraActions(ctx, book),
+      ),
+    );
     if (mounted) setState(() {});
   }
 

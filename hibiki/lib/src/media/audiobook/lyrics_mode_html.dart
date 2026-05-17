@@ -60,8 +60,8 @@ body { font-family: "Noto Serif JP", "Noto Sans JP", serif; }
   opacity: 0.15;
   transition: opacity 0.35s ease-out, font-size 0.3s ease-out, font-weight 0.3s ease-out;
   cursor: pointer;
-  -webkit-user-select: text;
-  user-select: text;
+  -webkit-user-select: none;
+  user-select: none;
 }
 .cue.current {
   opacity: 1.0;

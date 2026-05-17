@@ -171,11 +171,7 @@ body {
 }
 
 .frequency-dict-label {
-    display: flex;
-    align-items: center;
-    background-color: var(--freq-tag-color, #77aaeb);
-    color: #fff;
-    padding: 4px 4px;
+    display: none;
 }
 
 .frequency-values {
@@ -402,7 +398,8 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
 .dict-label {
     font-size: 10px;
     opacity: 0.7;
-    display: block;
+    display: inline;
+    margin-right: 4px;
 }
 
 .dict-label.selected {
@@ -471,11 +468,7 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
 }
 
 .pitch-dict-label {
-    background-color: var(--pitch-tag-color, #94a6eb);
-    color: #fff;
-    padding: 2px 4px;
-    border-radius: 4px;
-    flex-shrink: 0;
+    display: none;
 }
 
 .pitch-entries {

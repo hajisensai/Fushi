@@ -680,11 +680,19 @@ class _AudioSourcesDialogState extends State<_AudioSourcesDialog> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Flexible(
-              child: ListView.builder(
+              child: ReorderableListView.builder(
                 shrinkWrap: true,
                 itemCount: _sources.length,
+                onReorder: (int oldIndex, int newIndex) {
+                  setState(() {
+                    if (newIndex > oldIndex) newIndex--;
+                    final item = _sources.removeAt(oldIndex);
+                    _sources.insert(newIndex, item);
+                  });
+                },
                 itemBuilder: (context, index) {
                   return ListTile(
+                    key: ValueKey('audio_src_$index'),
                     dense: true,
                     title: Text(
                       _sources[index],

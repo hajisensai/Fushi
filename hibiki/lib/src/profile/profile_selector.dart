@@ -26,17 +26,17 @@ class ProfileSelector extends ConsumerWidget {
         : uiState.profiles.first.id;
 
     return Row(
-      mainAxisSize: MainAxisSize.min,
       children: [
         Text(
           '${t.profile_label}: ',
           style: theme.textTheme.bodyMedium,
         ),
-        Flexible(
+        Expanded(
           child: DropdownButton<int>(
             value: validId,
             underline: const SizedBox.shrink(),
             isDense: true,
+            isExpanded: true,
             items: [
               for (final p in uiState.profiles)
                 DropdownMenuItem(value: p.id, child: Text(p.name)),

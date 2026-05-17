@@ -1481,7 +1481,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   Future<void> _exitLyricsMode() async {
     final AudiobookPlayerController ctrl = _audiobookController!;
     final AudioCue? cue = ctrl.currentCue;
-    int targetChapter = _lyricsEntryChapter;
+    int targetChapter = _lastProgressSection >= 0
+        ? _lastProgressSection
+        : _lyricsEntryChapter;
     double targetProgress = _lastProgressValue;
 
     if (cue != null) {
@@ -1519,6 +1521,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           source: 'if(window.__lyricsSetCue)window.__lyricsSetCue($idx);',
         );
       }
+      _syncPositionFromCurrentCue();
       _syncFloatingLyric(controller);
       _syncMediaNotification(controller);
       return;
@@ -1905,7 +1908,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         _audiobookController != null &&
         _audiobookController!.isPlaying) {
       _audiobookController!.pause();
-      _pausedForLookup = !_lyricsMode;
+      _pausedForLookup = true;
     }
 
     final Rect selectionRect = data.rect != null

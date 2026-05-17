@@ -243,10 +243,16 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         final ext = f.path.toLowerCase();
         return ext.endsWith('.mp3') ||
             ext.endsWith('.m4a') ||
+            ext.endsWith('.m4b') ||
             ext.endsWith('.ogg') ||
             ext.endsWith('.aac') ||
             ext.endsWith('.wav') ||
-            ext.endsWith('.mp4');
+            ext.endsWith('.mp4') ||
+            ext.endsWith('.flac') ||
+            ext.endsWith('.opus') ||
+            ext.endsWith('.wma') ||
+            ext.endsWith('.ac3') ||
+            ext.endsWith('.eac3');
       }).toList()
         ..sort((a, b) => a.path.compareTo(b.path));
       return files;

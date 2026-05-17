@@ -391,6 +391,12 @@ class _HourlyChartPainter extends CustomPainter {
   final Color barColor;
   final Color labelColor;
 
+  static String _formatMs(int ms) {
+    final minutes = ms ~/ 60000;
+    if (minutes >= 60) return '${minutes ~/ 60}h';
+    return '${minutes}m';
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
     if (hourlyMs.isEmpty) return;
@@ -399,8 +405,10 @@ class _HourlyChartPainter extends CustomPainter {
     if (maxMs == 0) return;
 
     const bottomPadding = 20.0;
+    const leftPadding = 32.0;
     final chartHeight = size.height - bottomPadding;
-    final step = size.width / 24;
+    final chartWidth = size.width - leftPadding;
+    final step = chartWidth / 24;
     final barWidth = step * 0.7;
     final gap = step * 0.15;
 
@@ -410,8 +418,20 @@ class _HourlyChartPainter extends CustomPainter {
 
     final labelStyle = TextStyle(fontSize: 9, color: labelColor);
 
+    // Y-axis labels
+    const int yTicks = 4;
+    for (int i = 0; i <= yTicks; i++) {
+      final value = (maxMs * i / yTicks).round();
+      final y = chartHeight - (chartHeight * i / yTicks);
+      final tp = TextPainter(
+        text: TextSpan(text: _formatMs(value), style: labelStyle),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(canvas, Offset(leftPadding - tp.width - 4, y - tp.height / 2));
+    }
+
     for (int i = 0; i < 24; i++) {
-      final x = i * step + gap;
+      final x = leftPadding + i * step + gap;
       final barHeight = (hourlyMs[i] / maxMs) * chartHeight;
 
       if (hourlyMs[i] > 0) {
@@ -454,6 +474,12 @@ class _BarChartPainter extends CustomPainter {
   final Color barColor;
   final Color labelColor;
 
+  static String _formatChars(int chars) {
+    if (chars >= 10000) return '${(chars / 10000).toStringAsFixed(1)}万';
+    if (chars >= 1000) return '${(chars / 1000).toStringAsFixed(1)}k';
+    return chars.toString();
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
     if (data.isEmpty) return;
@@ -463,10 +489,12 @@ class _BarChartPainter extends CustomPainter {
     if (maxChars == 0) return;
 
     const bottomPadding = 20.0;
+    const leftPadding = 36.0;
     final chartHeight = size.height - bottomPadding;
-    final barWidth = (size.width / data.length) * 0.7;
-    final gap = (size.width / data.length) * 0.3;
-    final step = size.width / data.length;
+    final chartWidth = size.width - leftPadding;
+    final barWidth = (chartWidth / data.length) * 0.7;
+    final gap = (chartWidth / data.length) * 0.3;
+    final step = chartWidth / data.length;
 
     final paint = Paint()
       ..color = barColor
@@ -474,9 +502,21 @@ class _BarChartPainter extends CustomPainter {
 
     final labelStyle = TextStyle(fontSize: 9, color: labelColor);
 
+    // Y-axis labels
+    const int yTicks = 4;
+    for (int i = 0; i <= yTicks; i++) {
+      final value = (maxChars * i / yTicks).round();
+      final y = chartHeight - (chartHeight * i / yTicks);
+      final tp = TextPainter(
+        text: TextSpan(text: _formatChars(value), style: labelStyle),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(canvas, Offset(leftPadding - tp.width - 4, y - tp.height / 2));
+    }
+
     for (int i = 0; i < data.length; i++) {
       final d = data[i];
-      final x = i * step + gap / 2;
+      final x = leftPadding + i * step + gap / 2;
       final barHeight = (d.chars / maxChars) * chartHeight;
 
       if (d.chars > 0) {
@@ -487,7 +527,6 @@ class _BarChartPainter extends CustomPainter {
         canvas.drawRRect(rect, paint);
       }
 
-      // 每 5 天标注日期
       if (i % 5 == 0 || i == data.length - 1) {
         final tp = TextPainter(
           text: TextSpan(
