@@ -29,6 +29,11 @@ set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_RELEASE}")
 # Use Unicode for all projects.
 add_definitions(-DUNICODE -D_UNICODE)
 
+# Force UTF-8 source encoding for all targets (including plugins) to avoid
+# C4819 warnings on CJK Windows systems where the default code page cannot
+# represent characters in third-party plugin sources.
+add_compile_options(/utf-8)
+
 # Compilation settings that should be applied to most targets.
 function(APPLY_STANDARD_SETTINGS TARGET)
   target_compile_features(${TARGET} PUBLIC cxx_std_17)

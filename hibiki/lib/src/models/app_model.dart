@@ -3385,36 +3385,48 @@ class AppModel with ChangeNotifier {
       return;
     }
 
-    _audioHandler = await ag.AudioService.init<JidoujishoAudioHandler>(
-      builder: () => JidoujishoAudioHandler(
-        onPlayPause: () {
-          _playStreamController.add(null);
-        },
-        onSeek: (position) {
-          _seekStreamController.add(position);
-        },
-        onRewind: () {
-          _rewindStreamController.add(null);
-        },
-        onFastForward: () {
-          _fastForwardStreamController.add(null);
-        },
-        onSkipToNext: () {
-          _skipNextStreamController.add(null);
-        },
-        onSkipToPrevious: () {
-          _skipPreviousStreamController.add(null);
-        },
-      ),
-      config: const ag.AudioServiceConfig(
-        androidNotificationChannelId: 'app.hibiki.reader.channel.audio',
-        androidNotificationChannelName: 'hibiki',
-        androidNotificationIcon: 'drawable/ic_stat_hibiki',
-        notificationColor: Colors.black,
-        fastForwardInterval: Duration(seconds: 5),
-        rewindInterval: Duration(seconds: 5),
-      ),
-    );
+    try {
+      _audioHandler = await ag.AudioService.init<JidoujishoAudioHandler>(
+        builder: () => JidoujishoAudioHandler(
+          onPlayPause: () {
+            _playStreamController.add(null);
+          },
+          onSeek: (position) {
+            _seekStreamController.add(position);
+          },
+          onRewind: () {
+            _rewindStreamController.add(null);
+          },
+          onFastForward: () {
+            _fastForwardStreamController.add(null);
+          },
+          onSkipToNext: () {
+            _skipNextStreamController.add(null);
+          },
+          onSkipToPrevious: () {
+            _skipPreviousStreamController.add(null);
+          },
+        ),
+        config: const ag.AudioServiceConfig(
+          androidNotificationChannelId: 'app.hibiki.reader.channel.audio',
+          androidNotificationChannelName: 'hibiki',
+          androidNotificationIcon: 'drawable/ic_stat_hibiki',
+          notificationColor: Colors.black,
+          fastForwardInterval: Duration(seconds: 5),
+          rewindInterval: Duration(seconds: 5),
+        ),
+      );
+    } catch (e) {
+      debugPrint('[Hibiki] AudioService.init failed (non-fatal): $e');
+      _audioHandler = JidoujishoAudioHandler(
+        onPlayPause: () => _playStreamController.add(null),
+        onSeek: (position) => _seekStreamController.add(position),
+        onRewind: () => _rewindStreamController.add(null),
+        onFastForward: () => _fastForwardStreamController.add(null),
+        onSkipToNext: () => _skipNextStreamController.add(null),
+        onSkipToPrevious: () => _skipPreviousStreamController.add(null),
+      );
+    }
   }
 
   /// Whether or not searching in the app is performed without hitting the
