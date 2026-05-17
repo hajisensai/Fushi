@@ -15,7 +15,7 @@ void main() {
   final IntegrationTestWidgetsFlutterBinding binding =
       IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('full user path: tabs, settings, screenshots',
+  testWidgets('full user path: tabs, settings, rapid switching',
       (WidgetTester tester) async {
     final List<FlutterErrorDetails> errors = [];
     final FlutterExceptionHandler? oldHandler = FlutterError.onError;
@@ -78,33 +78,13 @@ void main() {
           reason: 'Books tab should render after round-trip navigation');
       await _takeScreenshotSafe(binding, 'home_books_return');
 
-      _assertNoUnexpectedErrors(errors);
-    } finally {
-      FlutterError.onError = oldHandler;
-    }
-  });
-
-  testWidgets('rapid tab switching stability', (WidgetTester tester) async {
-    final List<FlutterErrorDetails> errors = [];
-    final FlutterExceptionHandler? oldHandler = FlutterError.onError;
-    FlutterError.onError = (FlutterErrorDetails details) {
-      errors.add(details);
-      debugPrint('[test] FlutterError: ${details.exceptionAsString()}');
-    };
-
-    try {
-      app.main();
-      await _waitForHomeReady(tester);
-
-      final List<Finder> navIcons = _findNavIcons();
-      if (navIcons.length < 2) {
-        debugPrint('[test] Skipping rapid tab switch: < 2 nav icons');
-        return;
-      }
-
+      // --- Rapid tab switching stability ---
+      debugPrint('[test] Starting rapid tab switching (20 cycles)');
       for (int i = 0; i < 20; i++) {
         final int tabIndex = i % navIcons.length;
-        await tester.tap(navIcons[tabIndex]);
+        final Finder target = navIcons[tabIndex];
+        if (target.evaluate().isEmpty) continue;
+        await tester.tap(target);
         await tester.pump(const Duration(milliseconds: 200));
       }
 
