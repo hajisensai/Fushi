@@ -25,13 +25,9 @@ void main() {
   group('ReaderContentStyles.css with default settings', () {
     late String css;
 
-    setUpAll(() async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
-      final ReaderSettings settings = ReaderSettings(db);
-      await settings.ready;
+    setUp(() async {
+      final ReaderSettings settings = await _defaultSettings();
       css = ReaderContentStyles.css(settings: settings);
-      await db.close();
     });
 
     test('contains body selector', () {
