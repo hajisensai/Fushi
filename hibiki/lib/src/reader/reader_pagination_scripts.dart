@@ -692,11 +692,12 @@ $_sharedJs
     var context = this.getScrollContext();
     this.scrollToProgressPaged(context, progress);
     var pos = this.getPagePosition(context);
-    requestAnimationFrame(() => {
-      this.setPagePosition(context, pos);
-      this.registerSnapScroll(pos);
-      requestAnimationFrame(() => this.notifyRestoreComplete());
-    });
+    var self = this;
+    setTimeout(function() {
+      self.setPagePosition(context, pos);
+      self.registerSnapScroll(pos);
+      setTimeout(function() { self.notifyRestoreComplete(); }, 16);
+    }, 16);
   },
   jumpToFragment: async function(fragment) {
     await document.fonts.ready;
@@ -713,11 +714,12 @@ $_sharedJs
     var anchor = (context.vertical ? rect.top : rect.left) + currentScroll;
     var targetScroll = this.alignToPage(context, anchor);
     this.setPagePosition(context, targetScroll);
-    requestAnimationFrame(() => {
-      this.setPagePosition(context, targetScroll);
-      this.registerSnapScroll(targetScroll);
-      requestAnimationFrame(() => this.notifyRestoreComplete());
-    });
+    var self = this;
+    setTimeout(function() {
+      self.setPagePosition(context, targetScroll);
+      self.registerSnapScroll(targetScroll);
+      setTimeout(function() { self.notifyRestoreComplete(); }, 16);
+    }, 16);
     return true;
   },
   paginate: function(direction) {

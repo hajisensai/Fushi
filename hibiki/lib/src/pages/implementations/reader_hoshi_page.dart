@@ -409,10 +409,50 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       await _initSrtBookController(srt);
     }
 
+    await _primeAudioCuesForCurrentBook();
+
     if (_audiobookController == null && _lyricsMode) {
       _lyricsMode = false;
       await ReaderHoshiSource.instance.setLyricsMode(false);
     }
+  }
+
+  Future<void> _primeAudioCuesForCurrentBook() async {
+    final AudiobookPlayerController? controller = _audiobookController;
+    if (controller == null) return;
+
+    if (_srtBookUid != null) {
+      final SrtBookRepository repo = SrtBookRepository(appModel.database);
+      final List<AudioCue> cues = await repo.cuesFor(_srtBookUid!);
+      controller.setChapterCues(cues);
+      controller.setAllBookCues(cues);
+      _cachedAllCues = cues;
+      _cachedSasayaki = false;
+      return;
+    }
+
+    final String? bookUid = _audiobookBookUid;
+    if (bookUid == null || _book == null) return;
+
+    final AudiobookRepository repo = AudiobookRepository(appModel.database);
+    final List<AudioCue> allCues = await repo.cuesForBook(bookUid);
+    controller.setAllBookCues(allCues);
+    _cachedAllCues = allCues;
+    _cachedSasayaki = allCues.any(
+      (c) => SasayakiMatchCodec.tryDecode(c.textFragmentId) != null,
+    );
+
+    if (_cachedSasayaki) {
+      controller.setChapterCues(allCues);
+      return;
+    }
+
+    final String chapterHref = _book!.chapters[_currentChapter].href;
+    final List<AudioCue> chapterCues = await repo.cuesForChapter(
+      bookUid: bookUid,
+      chapterHref: chapterHref,
+    );
+    controller.setChapterCues(chapterCues);
   }
 
   Future<void> _initAudiobookController(
@@ -1256,16 +1296,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       },
       onLoadStop: (controller, url) async {
         _isNavigatingToChapter = false;
-        if (_lyricsMode) {
-          if (!_readerContentReady) {
-            setState(() {
-              _readerContentReady = true;
-              _hasEverLoaded = true;
-            });
-          }
-          _onCueChanged();
-          return;
-        }
         final int chapterSnapshot = _currentChapter;
         debugPrint('[ReaderHoshi] onLoadStop: url=$url '
             'chapter=$chapterSnapshot progress=$_initialProgress');
@@ -1276,26 +1306,24 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
               '[ReaderHoshi] onLoadStop: stale page (expected=$expectedUrl), ignoring');
           return;
         }
-        String? sasayakiCuesJson;
-        if (_audiobookController != null) {
-          sasayakiCuesJson = await _prepareSasayakiCuesJson();
-        }
-        if (_currentChapter != chapterSnapshot) return;
-        await controller.evaluateJavascript(
-          source: _buildReaderSetupScript(sasayakiCuesJson: sasayakiCuesJson),
-        );
-        _initialFragment = null;
-        if (_audiobookController != null) {
-          await _injectAudiobookBridge();
-        }
-        await HighlightBridge.inject(controller);
-        await _applyChapterHighlights();
-        if (!mounted) return;
-        _lastSyncedWidth = MediaQuery.of(context).size.width;
+        await _onChapterLoadComplete(controller);
       },
-      onReceivedError: (controller, request, error) {
+      onReceivedError: (controller, request, error) async {
         if (request.isForMainFrame ?? false) {
-          debugPrint('[ReaderHoshi] onReceivedError: ${error.description}');
+          debugPrint('[ReaderHoshi] onReceivedError: ${error.description} '
+              'url=${request.url}');
+          // WebView2 on Windows reports NavigationCompleted with isSuccess=false
+          // for intercepted hoshi.local URLs because the domain doesn't resolve
+          // at the network layer, even though shouldInterceptRequest provided a
+          // valid response. The content IS rendered — treat as onLoadStop.
+          if (Platform.isWindows &&
+              request.url.host == ReaderHoshiSource.kHost) {
+            debugPrint('[ReaderHoshi] Windows: treating intercepted navigation '
+                'error as successful load');
+            _isNavigatingToChapter = false;
+            await _onChapterLoadComplete(controller);
+            return;
+          }
           if (_restoreExpectedGeneration != _navigateGeneration) return;
           _isNavigatingToChapter = false;
           _restoreInFlight = false;
@@ -1309,6 +1337,36 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         debugPrint('[WebView] ${msg.message}');
       },
     );
+  }
+
+  Future<void> _onChapterLoadComplete(InAppWebViewController controller) async {
+    if (_lyricsMode) {
+      if (!_readerContentReady) {
+        setState(() {
+          _readerContentReady = true;
+          _hasEverLoaded = true;
+        });
+      }
+      _onCueChanged();
+      return;
+    }
+    final int chapterSnapshot = _currentChapter;
+    String? sasayakiCuesJson;
+    if (_audiobookController != null) {
+      sasayakiCuesJson = await _prepareSasayakiCuesJson();
+    }
+    if (_currentChapter != chapterSnapshot) return;
+    await controller.evaluateJavascript(
+      source: _buildReaderSetupScript(sasayakiCuesJson: sasayakiCuesJson),
+    );
+    _initialFragment = null;
+    if (_audiobookController != null) {
+      await _injectAudiobookBridge();
+    }
+    await HighlightBridge.inject(controller);
+    await _applyChapterHighlights();
+    if (!mounted) return;
+    _lastSyncedWidth = MediaQuery.of(context).size.width;
   }
 
   Future<void> _applyChapterHighlights() async {
