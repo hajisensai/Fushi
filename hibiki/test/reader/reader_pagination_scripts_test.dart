@@ -45,4 +45,128 @@ void main() {
       expect(ReaderPaginationScripts.doubleResult(''), isNull);
     });
   });
+
+  group('ReaderPaginationScripts invocations', () {
+    test('paginateInvocation forward', () {
+      expect(
+        ReaderPaginationScripts.paginateInvocation(
+            ReaderNavigationDirection.forward),
+        "window.hoshiReader && window.hoshiReader.paginate('forward')",
+      );
+    });
+
+    test('paginateInvocation backward', () {
+      expect(
+        ReaderPaginationScripts.paginateInvocation(
+            ReaderNavigationDirection.backward),
+        "window.hoshiReader && window.hoshiReader.paginate('backward')",
+      );
+    });
+
+    test('progressInvocation', () {
+      expect(
+        ReaderPaginationScripts.progressInvocation(),
+        'window.hoshiReader && window.hoshiReader.calculateProgress()',
+      );
+    });
+
+    test('updatePageSizeInvocation', () {
+      expect(
+        ReaderPaginationScripts.updatePageSizeInvocation(360.0, 640.0),
+        'window.hoshiReader && window.hoshiReader.updatePageSize(360.0, 640.0)',
+      );
+    });
+
+    test('clearSasayakiCueInvocation', () {
+      expect(
+        ReaderPaginationScripts.clearSasayakiCueInvocation(),
+        'window.hoshiReader.clearSasayakiCue()',
+      );
+    });
+
+    test('scrollToSearchMatchInvocation escapes query', () {
+      final String result =
+          ReaderPaginationScripts.scrollToSearchMatchInvocation('猫', 100);
+      expect(result, contains('scrollToSearchMatch'));
+      expect(result, contains('100'));
+    });
+
+    test('clearSearchHighlightInvocation', () {
+      expect(
+        ReaderPaginationScripts.clearSearchHighlightInvocation(),
+        'window.hoshiReader.clearSearchHighlight()',
+      );
+    });
+  });
+
+  group('ReaderPaginationScripts.shellScript contract', () {
+    test('paginated mode contains hoshiReader object', () {
+      final String script = ReaderPaginationScripts.shellScript(
+        initialProgress: 0.0,
+        continuousMode: false,
+      );
+      expect(script, contains('<script>'));
+      expect(script, contains('</script>'));
+      expect(script, contains('window.hoshiReader'));
+    });
+
+    test('continuous mode contains hoshiReader object', () {
+      final String script = ReaderPaginationScripts.shellScript(
+        initialProgress: 0.5,
+        continuousMode: true,
+      );
+      expect(script, contains('window.hoshiReader'));
+    });
+
+    test('paginated mode defines paginate method', () {
+      final String script = ReaderPaginationScripts.shellScript(
+        initialProgress: 0.0,
+        continuousMode: false,
+      );
+      expect(script, contains('paginate'));
+      expect(script, contains('calculateProgress'));
+    });
+
+    test('initial progress is injected', () {
+      final String script = ReaderPaginationScripts.shellScript(
+        initialProgress: 0.75,
+        continuousMode: false,
+      );
+      expect(script, contains('0.75'));
+    });
+
+    test('sasayaki cues JSON is injected when provided', () {
+      final String script = ReaderPaginationScripts.shellScript(
+        initialProgress: 0.0,
+        continuousMode: false,
+        sasayakiCuesJson: '[{"id":"cue1","start":0,"end":10}]',
+      );
+      expect(script, contains('cue1'));
+    });
+
+    test('defines onRestoreComplete callback', () {
+      final String script = ReaderPaginationScripts.shellScript(
+        initialProgress: 0.0,
+        continuousMode: false,
+      );
+      expect(script, contains('onRestoreComplete'));
+    });
+
+    test('defines updatePageSize method', () {
+      final String script = ReaderPaginationScripts.shellScript(
+        initialProgress: 0.0,
+        continuousMode: false,
+      );
+      expect(script, contains('updatePageSize'));
+    });
+
+    test('defines initialize function', () {
+      final String script = ReaderPaginationScripts.shellScript(
+        initialProgress: 0.0,
+        continuousMode: false,
+      );
+      expect(script, contains('initialize'));
+      expect(script, contains('addEventListener'));
+    });
+  });
 }

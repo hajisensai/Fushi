@@ -92,4 +92,65 @@ void main() {
     expect(pos!.ttuCharOffset, isNull,
         reason: 'DB -1 should map to model null');
   });
+
+  test('findByTtuBookId returns null for absent book', () async {
+    expect(await repo.findByTtuBookId(999), isNull);
+  });
+
+  test('delete removes position', () async {
+    await repo.save(
+      ttuBookId: 10,
+      sectionIndex: 1,
+      normCharOffset: 500,
+    );
+    await repo.delete(10);
+    expect(await repo.findByTtuBookId(10), isNull);
+  });
+
+  test('save→restore round-trip preserves all model fields', () async {
+    await repo.save(
+      ttuBookId: 7,
+      sectionIndex: 5,
+      normCharOffset: 3000,
+      ttuCharOffset: 250,
+    );
+    final pos = await repo.findByTtuBookId(7);
+    expect(pos, isNotNull);
+    expect(pos!.ttuBookId, 7);
+    expect(pos.sectionIndex, 5);
+    expect(pos.normCharOffset, 3000);
+    expect(pos.ttuCharOffset, 250);
+    expect(pos.updatedAt, greaterThan(0));
+    expect(pos.id, isNotNull);
+  });
+
+  test('normCharOffset boundary: chapter start (0)', () async {
+    await repo.save(ttuBookId: 1, sectionIndex: 0, normCharOffset: 0);
+    final pos = await repo.findByTtuBookId(1);
+    expect(pos!.normCharOffset, 0);
+  });
+
+  test('normCharOffset boundary: chapter end (10000)', () async {
+    await repo.save(ttuBookId: 2, sectionIndex: 0, normCharOffset: 10000);
+    final pos = await repo.findByTtuBookId(2);
+    expect(pos!.normCharOffset, 10000);
+  });
+
+  test('multiple books have independent positions', () async {
+    await repo.save(ttuBookId: 1, sectionIndex: 3, normCharOffset: 1000);
+    await repo.save(ttuBookId: 2, sectionIndex: 7, normCharOffset: 5000);
+
+    final pos1 = await repo.findByTtuBookId(1);
+    final pos2 = await repo.findByTtuBookId(2);
+    expect(pos1!.sectionIndex, 3);
+    expect(pos2!.sectionIndex, 7);
+  });
+
+  test('first save with null ttuCharOffset keeps DB default', () async {
+    await repo.save(ttuBookId: 50, sectionIndex: 0, normCharOffset: 100);
+    final pos = await repo.findByTtuBookId(50);
+    expect(pos!.ttuCharOffset, isNull,
+        reason:
+            'first save without ttuCharOffset → DB default -1 → model null');
+  });
 }
