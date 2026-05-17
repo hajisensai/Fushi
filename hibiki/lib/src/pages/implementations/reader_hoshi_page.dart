@@ -1011,38 +1011,45 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   $paginationJs
   $furiganaJs
   var startX = 0, startY = 0, startTime = 0, hasStart = false;
-  document.addEventListener('touchstart', function(e) {
-    var t = e.touches[0];
-    hasStart = true;
-    startX = t.clientX;
-    startY = t.clientY;
-    startTime = Date.now();
-  }, {passive: true});
-  document.addEventListener('touchend', function(e) {
+  function _gestureStart(x, y) { hasStart = true; startX = x; startY = y; startTime = Date.now(); }
+  function _gestureEnd(x, y, e) {
     if (!hasStart) return;
     hasStart = false;
-    var t = e.changedTouches[0];
-    var dx = t.clientX - startX;
-    var dy = t.clientY - startY;
+    var dx = x - startX;
+    var dy = y - startY;
     var elapsed = Date.now() - startTime;
     var absDx = Math.abs(dx);
     var absDy = Math.abs(dy);
     var velocity = absDx / Math.max(1, elapsed) * 1000;
     if (absDx > absDy && (absDx >= 72 || (absDx >= 36 && velocity >= 900))) {
-      e.preventDefault();
+      if (e && e.preventDefault) e.preventDefault();
       if (dx < 0) {
         window.flutter_inappwebview.callHandler('onSwipe', 'left');
       } else {
         window.flutter_inappwebview.callHandler('onSwipe', 'right');
       }
     } else if (absDx < 20 && absDy < 20 && elapsed < 500) {
-      var target = document.elementFromPoint(t.clientX, t.clientY);
+      var target = document.elementFromPoint(x, y);
       if (target && target.tagName === 'IMG' && target.src) {
         window.flutter_inappwebview.callHandler('onImageTap', target.src);
       } else {
-        window.flutter_inappwebview.callHandler('onTap', t.clientX, t.clientY);
+        window.flutter_inappwebview.callHandler('onTap', x, y);
       }
     }
+  }
+  document.addEventListener('touchstart', function(e) {
+    var t = e.touches[0]; _gestureStart(t.clientX, t.clientY);
+  }, {passive: true});
+  document.addEventListener('touchend', function(e) {
+    var t = e.changedTouches[0]; _gestureEnd(t.clientX, t.clientY, e);
+  }, {passive: false});
+  document.addEventListener('pointerdown', function(e) {
+    if (e.pointerType === 'touch' || e.button !== 0) return;
+    _gestureStart(e.clientX, e.clientY);
+  }, {passive: true});
+  document.addEventListener('pointerup', function(e) {
+    if (e.pointerType === 'touch' || e.button !== 0) return;
+    _gestureEnd(e.clientX, e.clientY, e);
   }, {passive: false});
   window.hoshiProgressDetails = function() {
     var r = window.hoshiReader;
@@ -2167,11 +2174,15 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
     final LogicalKeyboardKey key = event.logicalKey;
 
-    if (key == LogicalKeyboardKey.pageDown) {
+    if (key == LogicalKeyboardKey.pageDown ||
+        key == LogicalKeyboardKey.arrowRight ||
+        key == LogicalKeyboardKey.arrowDown) {
       _paginate(ReaderNavigationDirection.forward);
       return KeyEventResult.handled;
     }
-    if (key == LogicalKeyboardKey.pageUp) {
+    if (key == LogicalKeyboardKey.pageUp ||
+        key == LogicalKeyboardKey.arrowLeft ||
+        key == LogicalKeyboardKey.arrowUp) {
       _paginate(ReaderNavigationDirection.backward);
       return KeyEventResult.handled;
     }

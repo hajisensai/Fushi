@@ -977,17 +977,12 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
   var TAP_SLOP = 12;
   var SWIPE_THRESHOLD = 20;
   var downX = 0, downY = 0, hasDown = false;
-  document.addEventListener('touchstart', function(e) {
-    if (!e.touches.length) return;
-    hasDown = true;
-    downX = e.touches[0].clientX;
-    downY = e.touches[0].clientY;
-  }, {passive: true});
-  document.addEventListener('touchend', function(e) {
-    if (!hasDown || !e.changedTouches.length) return;
+  function _bStart(x, y) { hasDown = true; downX = x; downY = y; }
+  function _bEnd(x, y) {
+    if (!hasDown) return;
     hasDown = false;
-    var dx = e.changedTouches[0].clientX - downX;
-    var dy = e.changedTouches[0].clientY - downY;
+    var dx = x - downX;
+    var dy = y - downY;
     if (Math.abs(dx) < TAP_SLOP && Math.abs(dy) < TAP_SLOP) return;
     var root = document.scrollingElement || document.documentElement;
     var vertical = window.hoshiReader && window.hoshiReader.isVertical();
@@ -1008,6 +1003,22 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
     if (dir && window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
       window.flutter_inappwebview.callHandler('onBoundarySwipe', dir);
     }
+  }
+  document.addEventListener('touchstart', function(e) {
+    if (!e.touches.length) return;
+    _bStart(e.touches[0].clientX, e.touches[0].clientY);
+  }, {passive: true});
+  document.addEventListener('touchend', function(e) {
+    if (!e.changedTouches.length) return;
+    _bEnd(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+  }, {passive: true});
+  document.addEventListener('pointerdown', function(e) {
+    if (e.pointerType === 'touch' || e.button !== 0) return;
+    _bStart(e.clientX, e.clientY);
+  }, {passive: true});
+  document.addEventListener('pointerup', function(e) {
+    if (e.pointerType === 'touch' || e.button !== 0) return;
+    _bEnd(e.clientX, e.clientY);
   }, {passive: true});
 })();
 $_sharedInitBoot
