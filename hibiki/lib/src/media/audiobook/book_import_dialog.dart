@@ -219,6 +219,11 @@ class _BookImportDialogState extends State<BookImportDialog> {
           ),
         ),
         IconButton(
+          icon: const Icon(Icons.folder_open, size: 20),
+          tooltip: t.srt_import_pick_any_file,
+          onPressed: () => _pickEpub(anyFile: true),
+        ),
+        IconButton(
           icon: const Icon(Icons.menu_book, size: 20),
           tooltip: t.srt_import_pick_epub,
           onPressed: _pickEpub,
@@ -319,10 +324,10 @@ class _BookImportDialogState extends State<BookImportDialog> {
     'xml',
   ];
 
-  Future<void> _pickEpub() async {
+  Future<void> _pickEpub({bool anyFile = false}) async {
     final FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: _bookExtensions,
+      type: anyFile ? FileType.any : FileType.custom,
+      allowedExtensions: anyFile ? null : _bookExtensions,
     );
     final PlatformFile? file = result?.files.single;
     final String? path = file?.path;
@@ -584,7 +589,9 @@ class _BookImportDialogState extends State<BookImportDialog> {
     final String filename;
 
     _reportProgress(0.2, t.import_step_reading);
-    if (TextToEpub.isSupported(_epubPath!)) {
+    final String ext = p.extension(_epubPath!).toLowerCase();
+    if (TextToEpub.isSupported(_epubPath!) ||
+        (ext != '.epub' && ext != '.zip')) {
       _reportProgress(0.3, t.import_step_converting_epub);
       bytes = await TextToEpub.convert(file: file, title: title);
       filename = '${title.replaceAll(RegExp(r'[^\w\s\-]'), '')}.epub';

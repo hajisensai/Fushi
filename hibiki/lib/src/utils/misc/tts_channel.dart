@@ -1,18 +1,21 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
 /// Thin wrapper around the native Android TextToSpeech MethodChannel.
 /// Calls are fire-and-forget; failures are silently swallowed.
+/// Only functional on Android — all methods return no-op values on other platforms.
 class TtsChannel {
   TtsChannel._();
   static final TtsChannel instance = TtsChannel._();
 
+  static final bool _isSupported = Platform.isAndroid;
   static const _channel = HibikiChannels.tts;
 
-  /// Speak [text] using the given [locale] (e.g. "ja-JP").
-  /// Returns immediately; errors are ignored.
   Future<void> speak(String text, {String locale = 'ja-JP'}) async {
+    if (!_isSupported) return;
     try {
       await _channel.invokeMethod('speak', {
         'text': text,
@@ -23,8 +26,8 @@ class TtsChannel {
     }
   }
 
-  /// Play audio from a URL (e.g. mp3 from jpod101/forvo).
   Future<bool> playUrl(String url) async {
+    if (!_isSupported) return false;
     try {
       final result = await _channel.invokeMethod('playUrl', {'url': url});
       return result == true;
@@ -34,8 +37,8 @@ class TtsChannel {
     }
   }
 
-  /// Set the paths to local audio SQLite databases (android.db from Yomitan).
   Future<bool> setLocalAudioDbs(List<String> paths) async {
+    if (!_isSupported) return false;
     try {
       final result = await _channel.invokeMethod('setLocalAudioDb', {
         'paths': paths,
@@ -47,14 +50,12 @@ class TtsChannel {
     }
   }
 
-  /// Convenience wrapper for a single database path.
   Future<bool> setLocalAudioDb(String path) =>
       setLocalAudioDbs(path.isEmpty ? [] : [path]);
 
-  /// Query the local audio database for a word's pronunciation.
-  /// Returns {file, source, dbIndex} metadata if found, or null.
   Future<Map<String, dynamic>?> queryLocalAudio(
       String expression, String reading) async {
+    if (!_isSupported) return null;
     try {
       final result = await _channel.invokeMethod('queryLocalAudio', {
         'expression': expression,
@@ -68,10 +69,9 @@ class TtsChannel {
     }
   }
 
-  /// Extract audio blob from local DB and write to temp file.
-  /// Returns the temp file path, or null on failure.
   Future<String?> extractLocalAudio(String file, String source,
       {int dbIndex = 0}) async {
+    if (!_isSupported) return null;
     try {
       final result = await _channel.invokeMethod('extractLocalAudio', {
         'file': file,
@@ -85,8 +85,8 @@ class TtsChannel {
     }
   }
 
-  /// Play a local file path via MediaPlayer.
   Future<bool> playFile(String filePath) async {
+    if (!_isSupported) return false;
     try {
       final result =
           await _channel.invokeMethod('playFile', {'path': filePath});
@@ -97,14 +97,13 @@ class TtsChannel {
     }
   }
 
-  /// Extract a segment from an audio file using Android MediaExtractor/MediaMuxer.
-  /// Returns the output file path on success, null on failure.
   Future<String?> extractAudioSegment({
     required String inputPath,
     required int startMs,
     required int endMs,
     required String outputPath,
   }) async {
+    if (!_isSupported) return null;
     try {
       final result = await _channel.invokeMethod('extractAudioSegment', {
         'inputPath': inputPath,
@@ -119,10 +118,9 @@ class TtsChannel {
     }
   }
 
-  /// Synthesize [text] to a WAV file at [outputPath] using Android TTS.
-  /// Returns the output path on success, null on failure.
   Future<String?> ttsToFile(String text, String outputPath,
       {String locale = 'ja-JP'}) async {
+    if (!_isSupported) return null;
     try {
       final result = await _channel.invokeMethod('ttsToFile', {
         'text': text,
@@ -136,8 +134,8 @@ class TtsChannel {
     }
   }
 
-  /// Stop any ongoing TTS or URL audio playback.
   Future<void> stop() async {
+    if (!_isSupported) return;
     try {
       await _channel.invokeMethod('stop');
     } catch (e, stack) {

@@ -363,7 +363,12 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         await src.setTtuPrioritizeReaderStyles(value as bool);
     }
     if (widget.isHoshiReader) {
-      const layoutKeys = {'writingMode', 'viewMode', 'pageColumns', 'prioritizeReaderStyles'};
+      const layoutKeys = {
+        'writingMode',
+        'viewMode',
+        'pageColumns',
+        'prioritizeReaderStyles'
+      };
       if (layoutKeys.contains(key)) {
         widget.onReloadChapter?.call();
       } else {

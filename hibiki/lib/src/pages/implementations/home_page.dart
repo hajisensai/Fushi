@@ -88,6 +88,8 @@ class _HomePageState extends BasePageState<HomePage>
     }
   }
 
+  static const double _desktopBreakpoint = 600;
+
   @override
   Widget build(BuildContext context) {
     if (!appModel.isDatabaseOpen) {
@@ -96,25 +98,72 @@ class _HomePageState extends BasePageState<HomePage>
 
     return GestureDetector(
       onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
-      child: Scaffold(
-        resizeToAvoidBottomInset: false,
-        appBar: buildAppBar(),
-        body: SafeArea(child: buildBody()),
-        bottomNavigationBar: Container(
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
-            border: const Border(),
-          ),
-          padding: EdgeInsets.only(
-              bottom: MediaQuery.of(context).viewPadding.bottom),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildNavItem(0, Icons.menu_book, t.books),
-              _buildNavItem(1, Icons.search, t.dictionaries),
-              _buildNavItem(2, Icons.tune, t.settings),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final bool useRail = constraints.maxWidth >= _desktopBreakpoint;
+          if (useRail) {
+            return _buildDesktopLayout();
+          }
+          return _buildMobileLayout();
+        },
+      ),
+    );
+  }
+
+  Widget _buildDesktopLayout() {
+    return Scaffold(
+      resizeToAvoidBottomInset: false,
+      appBar: buildAppBar(),
+      body: Row(
+        children: [
+          NavigationRail(
+            selectedIndex: _currentTab,
+            onDestinationSelected: (int index) {
+              setState(() => _currentTab = index);
+              if (index == 0) _loadIconPreset();
+            },
+            labelType: NavigationRailLabelType.all,
+            destinations: [
+              NavigationRailDestination(
+                icon: const Icon(Icons.menu_book),
+                label: Text(t.books),
+              ),
+              NavigationRailDestination(
+                icon: const Icon(Icons.search),
+                label: Text(t.dictionaries),
+              ),
+              NavigationRailDestination(
+                icon: const Icon(Icons.tune),
+                label: Text(t.settings),
+              ),
             ],
           ),
+          const VerticalDivider(thickness: 1, width: 1),
+          Expanded(child: buildBody()),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMobileLayout() {
+    return Scaffold(
+      resizeToAvoidBottomInset: false,
+      appBar: buildAppBar(),
+      body: SafeArea(child: buildBody()),
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          border: const Border(),
+        ),
+        padding:
+            EdgeInsets.only(bottom: MediaQuery.of(context).viewPadding.bottom),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            _buildNavItem(0, Icons.menu_book, t.books),
+            _buildNavItem(1, Icons.search, t.dictionaries),
+            _buildNavItem(2, Icons.tune, t.settings),
+          ],
         ),
       ),
     );

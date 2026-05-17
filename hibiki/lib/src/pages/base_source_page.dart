@@ -179,8 +179,8 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
       if (url == null || url.isEmpty) return;
 
       if (url.startsWith('file://')) {
-        final ok =
-            await TtsChannel.instance.playFile(url.replaceFirst('file://', ''));
+        final filePath = Uri.parse(url).toFilePath();
+        final ok = await TtsChannel.instance.playFile(filePath);
         debugPrint('[hibiki-autoread] playFile ok=$ok');
       } else if (url.startsWith('/')) {
         final ok = await TtsChannel.instance.playFile(url);

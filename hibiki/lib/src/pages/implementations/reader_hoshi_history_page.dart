@@ -38,6 +38,11 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
   Future<List<SrtBook>>? _srtBooksFuture;
   final Map<String, Future<_AudiobookInfo>> _audiobookInfoCache = {};
 
+  static double _gridExtent(BuildContext context) {
+    final double width = MediaQuery.sizeOf(context).width;
+    return width >= 600 ? 180 : 150;
+  }
+
   void _refreshSrtBooks() {
     _srtBooksFuture = SrtBookRepository(appModel.database).listAll();
     _audiobookInfoCache.clear();
@@ -218,7 +223,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
                 padding: EdgeInsets.zero,
                 sliver: SliverGrid.builder(
                   gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: 150,
+                    maxCrossAxisExtent: _gridExtent(context),
                     childAspectRatio: mediaSource.aspectRatio,
                   ),
                   itemCount: srtBooks.length,
@@ -259,7 +264,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
               padding: EdgeInsets.zero,
               sliver: SliverGrid.builder(
                 gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: 150,
+                  maxCrossAxisExtent: _gridExtent(context),
                   childAspectRatio: mediaSource.aspectRatio,
                 ),
                 itemCount: srtBooks.length,
@@ -272,7 +277,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
               SliverToBoxAdapter(child: _buildSectionHeader(t.section_epub)),
             SliverGrid.builder(
               gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 150,
+                maxCrossAxisExtent: _gridExtent(context),
                 childAspectRatio: mediaSource.aspectRatio,
               ),
               itemCount: epubBooks.length,

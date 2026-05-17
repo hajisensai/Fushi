@@ -346,7 +346,8 @@ abstract class MediaSource {
 
     if (item.imageUrl != null) {
       if (item.imageUrl!.startsWith('file://')) {
-        return FileImage(File(item.imageUrl!.replaceFirst('file://', '')));
+        final String filePath = Uri.parse(item.imageUrl!).toFilePath();
+        return FileImage(File(filePath));
       } else {
         return CachedNetworkImageProvider(
           fallbackUrl ?? item.imageUrl!,

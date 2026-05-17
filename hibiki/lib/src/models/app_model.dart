@@ -1219,16 +1219,7 @@ class AppModel with ChangeNotifier {
 
       await _bindLocalAudioDbForNativeHandler(clearMissingPath: true);
 
-      debugPrint('[Hibiki] init: licenses');
-
-      /// Inject open source licenses for non-Flutter dependencies that are
-      /// included as assets.
-      await injectAssetLicenses();
-
       debugPrint('[Hibiki] init: populate maps');
-
-      /// Populate entities with key-value maps for constant time performance.
-      /// This is not the initialisation step, which occurs below.
       populateLanguages();
       populateLocales();
       LocaleSettings.setLocaleRaw(appLocale.toLanguageTag());
@@ -1238,77 +1229,74 @@ class AppModel with ChangeNotifier {
       populateEnhancements();
       populateQuickActions();
 
-      debugPrint('[Hibiki] init: targetLanguage');
+      debugPrint('[Hibiki] init: targetLanguage + licenses (parallel)');
+      await Future.wait(<Future<void>>[
+        targetLanguage.initialise(),
+        injectAssetLicenses(),
+      ]);
 
-      /// Get the current target language and prepare its resources for use. This
-      /// will not re-run if the target language is already initialised, as
-      /// a [Language] should always have a singleton instance and will not
-      /// re-prepare its resources if already initialised. See
-      /// [Language.initialise] for more details.
-      await targetLanguage.initialise();
-
-      debugPrint('[Hibiki] init: enhancements');
-
-      /// Ready all enhancements sources for use.
-      for (Field field in globalFields) {
-        for (Enhancement enhancement in enhancements[field]!.values) {
-          await enhancement.initialise();
-        }
-      }
-
-      debugPrint('[Hibiki] init: quick actions');
-
-      /// Ready all quick actions for use.
-      for (QuickAction action in quickActions.values) {
-        await action.initialise();
-      }
-
-      debugPrint('[Hibiki] init: media sources');
+      debugPrint(
+          '[Hibiki] init: enhancements + quick actions + media sources (parallel)');
       MediaSource.setDatabase(_database);
       final readerSettings = ReaderSettings(_database);
       await readerSettings.ready;
       ReaderHoshiSource.readerSettings = readerSettings;
 
-      /// Ready all media sources for use.
-      for (MediaType type in mediaTypes.values) {
-        for (MediaSource source in mediaSources[type]!.values) {
-          await source.initialise();
-        }
-      }
+      await Future.wait(<Future<void>>[
+        Future.wait(<Future<void>>[
+          for (Field field in globalFields)
+            for (Enhancement enhancement in enhancements[field]!.values)
+              enhancement.initialise(),
+        ]),
+        Future.wait(<Future<void>>[
+          for (QuickAction action in quickActions.values) action.initialise(),
+        ]),
+        Future.wait(<Future<void>>[
+          for (MediaType type in mediaTypes.values)
+            for (MediaSource source in mediaSources[type]!.values)
+              source.initialise(),
+        ]),
+      ]);
 
-      debugPrint('[Hibiki] init: ttu → EpubBooks migration');
-      try {
-        final migServer = await TtuMigrationServer.start(targetLanguage);
-        final int migCount = await TtuMigration.migrateIfNeeded(
-          _database,
-          migServer.boundPort!,
-        );
-        if (migCount > 0) {
-          debugPrint('[Hibiki] ttu migration: $migCount books migrated');
+      if (_shouldRunTtuMigration()) {
+        debugPrint('[Hibiki] init: ttu → EpubBooks migration');
+        try {
+          final migServer = await TtuMigrationServer.start(targetLanguage);
+          final int migCount = await TtuMigration.migrateIfNeeded(
+            _database,
+            migServer.boundPort!,
+          );
+          if (migCount > 0) {
+            debugPrint('[Hibiki] ttu migration: $migCount books migrated');
+          }
+          final int blobCount = await TtuMigration.remediateMissingBlobs(
+            _database,
+            migServer.boundPort!,
+          );
+          if (blobCount > 0) {
+            debugPrint('[Hibiki] ttu blob remediation: $blobCount books fixed');
+          }
+          final int tocCount = await TtuMigration.remediateMissingToc(
+            _database,
+            migServer.boundPort!,
+          );
+          if (tocCount > 0) {
+            debugPrint('[Hibiki] ttu TOC remediation: $tocCount books fixed');
+          }
+          final int charCount = await TtuMigration.remediateMissingCharacters(
+            _database,
+          );
+          if (charCount > 0) {
+            debugPrint(
+                '[Hibiki] characters remediation: $charCount books fixed');
+          }
+        } catch (e, stack) {
+          ErrorLogService.instance.log('AppModel.ttuMigration', e, stack);
+          debugPrint('[Hibiki] ttu migration failed (non-fatal): $e');
         }
-        final int blobCount = await TtuMigration.remediateMissingBlobs(
-          _database,
-          migServer.boundPort!,
-        );
-        if (blobCount > 0) {
-          debugPrint('[Hibiki] ttu blob remediation: $blobCount books fixed');
-        }
-        final int tocCount = await TtuMigration.remediateMissingToc(
-          _database,
-          migServer.boundPort!,
-        );
-        if (tocCount > 0) {
-          debugPrint('[Hibiki] ttu TOC remediation: $tocCount books fixed');
-        }
-        final int charCount = await TtuMigration.remediateMissingCharacters(
-          _database,
-        );
-        if (charCount > 0) {
-          debugPrint('[Hibiki] characters remediation: $charCount books fixed');
-        }
-      } catch (e, stack) {
-        ErrorLogService.instance.log('AppModel.ttuMigration', e, stack);
-        debugPrint('[Hibiki] ttu migration failed (non-fatal): $e');
+      } else {
+        debugPrint('[Hibiki] init: ttu migration skipped '
+            '(desktop or version >= 0.5.0)');
       }
 
       debugPrint('[Hibiki] init: search preload');
@@ -1345,6 +1333,16 @@ class AppModel with ChangeNotifier {
       _initError = '$e';
       notifyListeners();
     }
+  }
+
+  bool _shouldRunTtuMigration() {
+    if (!Platform.isAndroid && !Platform.isIOS) return false;
+    final parts = _packageInfo.version.split('.');
+    final int major = int.tryParse(parts.elementAtOrNull(0) ?? '') ?? 0;
+    final int minor = int.tryParse(parts.elementAtOrNull(1) ?? '') ?? 0;
+    // >= 0.5.0 → no TTU data ever existed, skip migration
+    if (major > 0 || (major == 0 && minor >= 5)) return false;
+    return true;
   }
 
   Future<void> initialiseForDictionaryPopup() async {

@@ -115,7 +115,8 @@ mixin DictionaryPageMixin {
       );
       if (url == null || url.isEmpty) return;
       if (url.startsWith('file://')) {
-        await TtsChannel.instance.playFile(url.replaceFirst('file://', ''));
+        final filePath = Uri.parse(url).toFilePath();
+        await TtsChannel.instance.playFile(filePath);
       } else if (url.startsWith('/')) {
         await TtsChannel.instance.playFile(url);
       } else if (url.startsWith('http')) {

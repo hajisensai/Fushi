@@ -357,7 +357,7 @@ class DictionaryPopupWebViewState
               url = data['url']?.toString() ?? '';
             }
             if (url.isNotEmpty && url.startsWith('file://')) {
-              final filePath = url.replaceFirst('file://', '');
+              final filePath = Uri.parse(url).toFilePath();
               return TtsChannel.instance.playFile(filePath);
             }
             if (url.isNotEmpty && url.startsWith('/')) {

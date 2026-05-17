@@ -529,7 +529,8 @@ class _CustomFontsPageState extends BasePageState {
         File(destPath).writeAsBytesSync(entry.content as List<int>);
         if (mounted) {
           setState(() {
-            _fonts.add({'name': overrideName, 'path': destPath, 'enabled': true});
+            _fonts
+                .add({'name': overrideName, 'path': destPath, 'enabled': true});
           });
         } else {
           _fonts.add({'name': overrideName, 'path': destPath, 'enabled': true});

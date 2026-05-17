@@ -59,7 +59,8 @@ class HistoryReaderPageState<T extends BaseHistoryPage>
       child: GridView.builder(
         padding: const EdgeInsets.only(top: 48),
         gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: 150,
+          maxCrossAxisExtent:
+              MediaQuery.sizeOf(context).width >= 600 ? 180 : 150,
           childAspectRatio: mediaSource.aspectRatio,
         ),
         physics: const AlwaysScrollableScrollPhysics(
@@ -81,7 +82,7 @@ class HistoryReaderPageState<T extends BaseHistoryPage>
         alignment: Alignment.bottomLeft,
         children: [
           ColoredBox(
-            color: Colors.grey.shade800.withOpacity(0.3),
+            color: Theme.of(context).colorScheme.surfaceContainerLowest,
             child: AspectRatio(
               aspectRatio: mediaSource.aspectRatio,
               child: FadeInImage(

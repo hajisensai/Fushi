@@ -1481,9 +1481,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   Future<void> _exitLyricsMode() async {
     final AudiobookPlayerController ctrl = _audiobookController!;
     final AudioCue? cue = ctrl.currentCue;
-    int targetChapter = _lastProgressSection >= 0
-        ? _lastProgressSection
-        : _lyricsEntryChapter;
+    int targetChapter =
+        _lastProgressSection >= 0 ? _lastProgressSection : _lyricsEntryChapter;
     double targetProgress = _lastProgressValue;
 
     if (cue != null) {

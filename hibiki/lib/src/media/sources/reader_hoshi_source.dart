@@ -261,15 +261,24 @@ class ReaderHoshiSource extends ReaderMediaSource {
 
       String? imageUrl;
       if (book.coverPath != null && book.coverPath!.isNotEmpty) {
-        final String absPath = p.join(book.extractDir, book.coverPath);
+        String coverRel = book.coverPath!;
+        if (coverRel.startsWith('/')) coverRel = coverRel.substring(1);
+        final String absPath = p.join(book.extractDir, coverRel);
         if (File(absPath).existsSync()) {
           imageUrl = Uri.file(absPath).toString();
         }
       }
       if (imageUrl == null) {
-        final String fallback = p.join(book.extractDir, 'cover.jpg');
-        if (File(fallback).existsSync()) {
-          imageUrl = Uri.file(fallback).toString();
+        for (final String name in const [
+          'cover.jpg',
+          'cover.jpeg',
+          'cover.png',
+        ]) {
+          final String fallback = p.join(book.extractDir, name);
+          if (File(fallback).existsSync()) {
+            imageUrl = Uri.file(fallback).toString();
+            break;
+          }
         }
       }
 
