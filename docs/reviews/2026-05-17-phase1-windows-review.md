@@ -188,3 +188,62 @@
 ### Phase 1 Status: COMPLETE (for code changes)
 
 All code-level Windows adaptation is done. Remaining items are environmental (VS workload marker) and runtime testing (EPUB rendering, dictionary FFI queries) which require manual interaction with the running app.
+
+---
+
+## Round 5: Runtime Verification on Windows
+
+### Scope
+- Windows debug build and app launch verification (post-reboot)
+- WebView2 runtime confirmation (flutter_inappwebview_windows)
+- hoshidicts FFI DLL loading verification
+- VS detection status post-reboot
+
+### Findings
+
+| ID | Severity | Status | Description |
+|----|----------|--------|-------------|
+| HBK-P1-036 | info | verified | VS Community 2022 17.14.3 detected by Flutter — but ONLY because local SDK patch is still active. `vswhere -requires Microsoft.VisualStudio.Workload.NativeDesktop` still returns empty. Patch remains necessary until user installs workload via VS Installer. |
+| HBK-P1-037 | info | verified | Windows debug build succeeds (147.6s). `hibiki.exe` + `hoshidicts_ffi.dll` (3.2MB) bundled correctly. |
+| HBK-P1-038 | info | verified | App startup completes all init phases: PackageInfo, DeviceInfo, directories, Drift DB, licenses, maps, targetLanguage, enhancements, quick actions, media sources, ttu→EpubBooks migration, search preload. "init: DONE" reached. |
+| HBK-P1-039 | info | verified | flutter_inappwebview_windows WebView2 integration confirmed at runtime. HeadlessInAppWebView was instantiated for IDB migration check and deallocated cleanly. No crashes. |
+| HBK-P1-040 | info | verified | hoshidicts_ffi.dll loads without DLL missing/symbol errors. FFI binding is functional at DLL level. |
+| HBK-P1-041 | info | noted | TTU migration IDB read returns 404 (expected on fresh Windows install — no Android IndexedDB data). Migration gracefully fails with "will retry next launch". |
+| HBK-P1-042 | info | noted | Fluttertoast still has no Windows plugin. Console noise confirmed during app usage (non-crashing). Deferred to Phase 4. |
+
+### Verification
+
+| Check | Result |
+|-------|--------|
+| flutter doctor (VS detection) | VS Community 2022 detected (with SDK patch) |
+| flutter test | 587/587 passed |
+| Windows debug build | Success (hibiki.exe + hoshidicts_ffi.dll) |
+| App startup (no crash) | All init phases complete, Lifecycle Resumed |
+| WebView2 runtime | HeadlessInAppWebView instantiated and deallocated cleanly |
+| hoshidicts DLL loading | No load errors |
+| No MissingPluginException | Confirmed (all channels guarded) |
+
+### Remaining Manual Testing (requires user interaction)
+
+| Item | How to verify |
+|------|---------------|
+| EPUB reader rendering | Import an EPUB from local file, open it — verify text renders in WebView2 |
+| Dictionary search | Import a Yomitan zip, search a term — verify hoshidicts returns results |
+| Dictionary + EPUB integration | Open EPUB, tap a word — verify dictionary popup works |
+
+### Phase 1 Final Status
+
+| Category | Status |
+|----------|--------|
+| C++ cross-platform adaptation | ✅ Complete |
+| MSVC compilation | ✅ Complete (0 errors, warnings only) |
+| Platform guards (all MethodChannels) | ✅ Complete (11 channels, 28 findings) |
+| flutter_inappwebview v6 migration | ✅ Complete (WebView2 confirmed at runtime) |
+| Test suite compatibility | ✅ 587/587 pass |
+| Windows build (debug + release) | ✅ Both succeed |
+| App startup on Windows | ✅ Clean startup, all init phases |
+| FFI DLL bundling | ✅ hoshidicts_ffi.dll loads |
+| VS detection | ⚠️ Works with local SDK patch (VCTools workload not installed) |
+| EPUB reader rendering | 🔲 Requires manual interaction |
+| Dictionary search | 🔲 Requires manual interaction |
+| Fluttertoast replacement | 📋 Deferred to Phase 4 |
