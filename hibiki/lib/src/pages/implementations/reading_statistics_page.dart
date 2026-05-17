@@ -1,8 +1,8 @@
-import 'package:flutter/foundation.dart';
+﻿import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
-import 'package:hibiki/src/database/database.dart';
+import 'package:hibiki_core/hibiki_core.dart';
 
 class ReadingStatisticsPage extends BasePage {
   const ReadingStatisticsPage({super.key});

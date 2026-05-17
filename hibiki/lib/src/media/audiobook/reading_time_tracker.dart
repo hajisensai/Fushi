@@ -1,7 +1,7 @@
-import 'dart:async';
+﻿import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:hibiki/src/database/database.dart';
+import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
 class ReadingTimeTracker {

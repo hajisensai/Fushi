@@ -1,8 +1,8 @@
-import 'dart:io';
+﻿import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/database/database.dart';
+import 'package:hibiki_core/hibiki_core.dart';
 
 Future<HibikiDatabase> _openRealDb() async {
   final dir = await Directory.systemTemp.createTemp('hibiki_fk_test_');

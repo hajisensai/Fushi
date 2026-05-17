@@ -1,4 +1,4 @@
-import 'package:hibiki/src/database/database.dart';
+﻿import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_health.dart'
     show HealthKind;
 

@@ -1,6 +1,6 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 
-import 'package:hibiki/src/database/database.dart';
+import 'package:hibiki_core/hibiki_core.dart';
 
 class FavoriteSentence {
   factory FavoriteSentence.fromJson(Map<String, dynamic> json) =>

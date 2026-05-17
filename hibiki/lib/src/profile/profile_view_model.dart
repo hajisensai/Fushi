@@ -1,7 +1,7 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+﻿import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:hibiki/src/anki/anki_view_model.dart';
-import 'package:hibiki/src/database/database.dart';
+import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/media/sources/reader_hoshi_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/profile/profile_repository.dart';

@@ -1,6 +1,6 @@
-import 'package:drift/native.dart';
+﻿import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/database/database.dart';
+import 'package:hibiki_core/hibiki_core.dart';
 
 Future<HibikiDatabase> _openDb() async {
   final db = HibikiDatabase.forTesting(NativeDatabase.memory());
