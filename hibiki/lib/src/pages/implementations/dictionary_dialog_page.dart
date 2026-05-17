@@ -522,22 +522,12 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
                 if (allEmpty)
                   buildEmptyMessage()
                 else ...[
-                  _buildSection(
-                    title: t.dictionary_section_term,
-                    dictionaries: termDicts,
-                  ),
-                  _buildSection(
-                    title: t.dictionary_section_kanji,
-                    dictionaries: kanjiDicts,
-                  ),
-                  _buildSection(
-                    title: t.dictionary_section_frequency,
-                    dictionaries: freqDicts,
-                  ),
-                  _buildSection(
-                    title: t.dictionary_section_pitch,
-                    dictionaries: pitchDicts,
-                  ),
+                  buildDictionaryList([
+                    ...termDicts,
+                    ...kanjiDicts,
+                    ...freqDicts,
+                    ...pitchDicts,
+                  ]),
                 ],
                 const JidoujishoDivider(),
               ],
@@ -545,31 +535,6 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
           ),
         ),
       ),
-    );
-  }
-
-  Widget _buildSection({
-    required String title,
-    required List<Dictionary> dictionaries,
-  }) {
-    if (dictionaries.isEmpty) return const SizedBox.shrink();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Text(
-            title,
-            style: TextStyle(
-              fontSize: textTheme.titleSmall?.fontSize,
-              fontWeight: FontWeight.bold,
-              color: theme.colorScheme.primary,
-            ),
-          ),
-        ),
-        Flexible(child: buildDictionaryList(dictionaries)),
-      ],
     );
   }
 

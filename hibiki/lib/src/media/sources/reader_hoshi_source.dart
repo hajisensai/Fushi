@@ -513,16 +513,20 @@ class ReaderHoshiSource extends ReaderMediaSource {
   double get ttuFontSize =>
       readerSettings?.fontSize ??
       getPreference<double>(key: 'ttu_font_size', defaultValue: 20);
-  Future<void> setTtuFontSize(double v) =>
-      readerSettings?.setFontSize(v) ??
-      setPreference<double>(key: 'ttu_font_size', value: v);
+  Future<void> setTtuFontSize(double v) async {
+    await (readerSettings?.setFontSize(v) ??
+        setPreference<double>(key: 'ttu_font_size', value: v));
+    onSettingsChangedLive?.call();
+  }
 
   double get ttuLineHeight =>
       readerSettings?.lineHeight ??
       getPreference<double>(key: 'ttu_line_height', defaultValue: 1.65);
-  Future<void> setTtuLineHeight(double v) =>
-      readerSettings?.setLineHeight(v) ??
-      setPreference<double>(key: 'ttu_line_height', value: v);
+  Future<void> setTtuLineHeight(double v) async {
+    await (readerSettings?.setLineHeight(v) ??
+        setPreference<double>(key: 'ttu_line_height', value: v));
+    onSettingsChangedLive?.call();
+  }
 
   String get ttuWritingMode =>
       readerSettings?.writingMode ??
@@ -550,9 +554,11 @@ class ReaderHoshiSource extends ReaderMediaSource {
         key: 'ttu_theme',
         defaultValue: 'light-theme',
       );
-  Future<void> setTtuTheme(String v) =>
-      readerSettings?.setTheme(v) ??
-      setPreference<String>(key: 'ttu_theme', value: v);
+  Future<void> setTtuTheme(String v) async {
+    await (readerSettings?.setTheme(v) ??
+        setPreference<String>(key: 'ttu_theme', value: v));
+    onSettingsChangedLive?.call();
+  }
 
   String get ttuFuriganaMode {
     final ReaderSettings? settings = readerSettings;
@@ -578,47 +584,59 @@ class ReaderHoshiSource extends ReaderMediaSource {
     );
   }
 
-  Future<void> setTtuFuriganaMode(String v) =>
-      readerSettings?.setFuriganaMode(v) ??
-      setPreference<String>(
-        key: 'ttu_furigana_mode',
-        value: normalizeFuriganaMode(v),
-      );
+  Future<void> setTtuFuriganaMode(String v) async {
+    await (readerSettings?.setFuriganaMode(v) ??
+        setPreference<String>(
+          key: 'ttu_furigana_mode',
+          value: normalizeFuriganaMode(v),
+        ));
+    onSettingsChangedLive?.call();
+  }
 
   double get ttuTextIndentation =>
       readerSettings?.textIndentation ??
       getPreference<double>(key: 'ttu_text_indentation', defaultValue: 0);
-  Future<void> setTtuTextIndentation(double v) =>
-      readerSettings?.setTextIndentation(v) ??
-      setPreference<double>(key: 'ttu_text_indentation', value: v);
+  Future<void> setTtuTextIndentation(double v) async {
+    await (readerSettings?.setTextIndentation(v) ??
+        setPreference<double>(key: 'ttu_text_indentation', value: v));
+    onSettingsChangedLive?.call();
+  }
 
   double get ttuMarginTop =>
       readerSettings?.marginTop ??
       getPreference<double>(key: 'ttu_margin_top', defaultValue: 0);
-  Future<void> setTtuMarginTop(double v) =>
-      readerSettings?.setMarginTop(v) ??
-      setPreference<double>(key: 'ttu_margin_top', value: v);
+  Future<void> setTtuMarginTop(double v) async {
+    await (readerSettings?.setMarginTop(v) ??
+        setPreference<double>(key: 'ttu_margin_top', value: v));
+    onSettingsChangedLive?.call();
+  }
 
   double get ttuMarginBottom =>
       readerSettings?.marginBottom ??
       getPreference<double>(key: 'ttu_margin_bottom', defaultValue: 0);
-  Future<void> setTtuMarginBottom(double v) =>
-      readerSettings?.setMarginBottom(v) ??
-      setPreference<double>(key: 'ttu_margin_bottom', value: v);
+  Future<void> setTtuMarginBottom(double v) async {
+    await (readerSettings?.setMarginBottom(v) ??
+        setPreference<double>(key: 'ttu_margin_bottom', value: v));
+    onSettingsChangedLive?.call();
+  }
 
   double get ttuMarginLeft =>
       readerSettings?.marginLeft ??
       getPreference<double>(key: 'ttu_margin_left', defaultValue: 0);
-  Future<void> setTtuMarginLeft(double v) =>
-      readerSettings?.setMarginLeft(v) ??
-      setPreference<double>(key: 'ttu_margin_left', value: v);
+  Future<void> setTtuMarginLeft(double v) async {
+    await (readerSettings?.setMarginLeft(v) ??
+        setPreference<double>(key: 'ttu_margin_left', value: v));
+    onSettingsChangedLive?.call();
+  }
 
   double get ttuMarginRight =>
       readerSettings?.marginRight ??
       getPreference<double>(key: 'ttu_margin_right', defaultValue: 0);
-  Future<void> setTtuMarginRight(double v) =>
-      readerSettings?.setMarginRight(v) ??
-      setPreference<double>(key: 'ttu_margin_right', value: v);
+  Future<void> setTtuMarginRight(double v) async {
+    await (readerSettings?.setMarginRight(v) ??
+        setPreference<double>(key: 'ttu_margin_right', value: v));
+    onSettingsChangedLive?.call();
+  }
 
   int get ttuPageColumns =>
       readerSettings?.pageColumns ??
@@ -630,16 +648,20 @@ class ReaderHoshiSource extends ReaderMediaSource {
   bool get ttuEnableVerticalFontKerning =>
       readerSettings?.enableVerticalFontKerning ??
       getPreference<bool>(key: 'ttu_vert_kerning', defaultValue: false);
-  Future<void> setTtuEnableVerticalFontKerning(bool v) =>
-      readerSettings?.setEnableVerticalFontKerning(v) ??
-      setPreference<bool>(key: 'ttu_vert_kerning', value: v);
+  Future<void> setTtuEnableVerticalFontKerning(bool v) async {
+    await (readerSettings?.setEnableVerticalFontKerning(v) ??
+        setPreference<bool>(key: 'ttu_vert_kerning', value: v));
+    onSettingsChangedLive?.call();
+  }
 
   bool get ttuEnableFontVPAL =>
       readerSettings?.enableFontVPAL ??
       getPreference<bool>(key: 'ttu_font_vpal', defaultValue: false);
-  Future<void> setTtuEnableFontVPAL(bool v) =>
-      readerSettings?.setEnableFontVPAL(v) ??
-      setPreference<bool>(key: 'ttu_font_vpal', value: v);
+  Future<void> setTtuEnableFontVPAL(bool v) async {
+    await (readerSettings?.setEnableFontVPAL(v) ??
+        setPreference<bool>(key: 'ttu_font_vpal', value: v));
+    onSettingsChangedLive?.call();
+  }
 
   String get ttuVerticalTextOrientation =>
       readerSettings?.verticalTextOrientation ??
@@ -647,23 +669,29 @@ class ReaderHoshiSource extends ReaderMediaSource {
         key: 'ttu_vert_text_orient',
         defaultValue: 'mixed',
       );
-  Future<void> setTtuVerticalTextOrientation(String v) =>
-      readerSettings?.setVerticalTextOrientation(v) ??
-      setPreference<String>(key: 'ttu_vert_text_orient', value: v);
+  Future<void> setTtuVerticalTextOrientation(String v) async {
+    await (readerSettings?.setVerticalTextOrientation(v) ??
+        setPreference<String>(key: 'ttu_vert_text_orient', value: v));
+    onSettingsChangedLive?.call();
+  }
 
   bool get ttuEnableTextJustification =>
       readerSettings?.enableTextJustification ??
       getPreference<bool>(key: 'ttu_text_justify', defaultValue: false);
-  Future<void> setTtuEnableTextJustification(bool v) =>
-      readerSettings?.setEnableTextJustification(v) ??
-      setPreference<bool>(key: 'ttu_text_justify', value: v);
+  Future<void> setTtuEnableTextJustification(bool v) async {
+    await (readerSettings?.setEnableTextJustification(v) ??
+        setPreference<bool>(key: 'ttu_text_justify', value: v));
+    onSettingsChangedLive?.call();
+  }
 
   bool get ttuPrioritizeReaderStyles =>
       readerSettings?.prioritizeReaderStyles ??
       getPreference<bool>(key: 'ttu_reader_styles', defaultValue: false);
-  Future<void> setTtuPrioritizeReaderStyles(bool v) =>
-      readerSettings?.setPrioritizeReaderStyles(v) ??
-      setPreference<bool>(key: 'ttu_reader_styles', value: v);
+  Future<void> setTtuPrioritizeReaderStyles(bool v) async {
+    await (readerSettings?.setPrioritizeReaderStyles(v) ??
+        setPreference<bool>(key: 'ttu_reader_styles', value: v));
+    onSettingsChangedLive?.call();
+  }
 
   String get _legacyFuriganaStyle =>
       getPreference<String>(key: 'ttu_furigana_style', defaultValue: 'partial')
@@ -686,14 +714,17 @@ class ReaderHoshiSource extends ReaderMediaSource {
     }
   }
 
-  Future<void> setCustomFonts(List<Map<String, dynamic>> fonts) =>
-      readerSettings?.setCustomFonts(fonts) ??
-      setPreference<String>(key: 'custom_fonts', value: jsonEncode(fonts));
+  Future<void> setCustomFonts(List<Map<String, dynamic>> fonts) async {
+    await (readerSettings?.setCustomFonts(fonts) ??
+        setPreference<String>(key: 'custom_fonts', value: jsonEncode(fonts)));
+    onSettingsChangedLive?.call();
+  }
 
   Future<void> addCustomFont({required String name, String? path}) async {
     final ReaderSettings? settings = readerSettings;
     if (settings != null) {
       await settings.addCustomFont(name: name, path: path);
+      onSettingsChangedLive?.call();
       return;
     }
     final List<Map<String, dynamic>> list = customFonts;
@@ -727,6 +758,7 @@ class ReaderHoshiSource extends ReaderMediaSource {
         }
       }
       await settings.removeCustomFont(index);
+      onSettingsChangedLive?.call();
       return;
     }
     final List<Map<String, dynamic>> list = customFonts;
@@ -753,6 +785,7 @@ class ReaderHoshiSource extends ReaderMediaSource {
     final ReaderSettings? settings = readerSettings;
     if (settings != null) {
       await settings.toggleCustomFont(index);
+      onSettingsChangedLive?.call();
       return;
     }
     final List<Map<String, dynamic>> list = customFonts;
@@ -767,6 +800,7 @@ class ReaderHoshiSource extends ReaderMediaSource {
     final ReaderSettings? settings = readerSettings;
     if (settings != null) {
       await settings.reorderCustomFonts(oldIndex, newIndex);
+      onSettingsChangedLive?.call();
       return;
     }
     final List<Map<String, dynamic>> list = customFonts;

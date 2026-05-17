@@ -1,4 +1,4 @@
-﻿import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
@@ -415,14 +415,31 @@ class _HourlyChartPainter extends CustomPainter {
     final paint = Paint()
       ..color = barColor
       ..style = PaintingStyle.fill;
+    final axisPaint = Paint()
+      ..color = labelColor.withValues(alpha: 0.55)
+      ..strokeWidth = 1;
+    final gridPaint = Paint()
+      ..color = labelColor.withValues(alpha: 0.16)
+      ..strokeWidth = 1;
 
     final labelStyle = TextStyle(fontSize: 9, color: labelColor);
 
-    // Y-axis labels
+    canvas.drawLine(
+      const Offset(leftPadding, 0),
+      Offset(leftPadding, chartHeight),
+      axisPaint,
+    );
+    canvas.drawLine(
+      Offset(leftPadding, chartHeight),
+      Offset(size.width, chartHeight),
+      axisPaint,
+    );
+
     const int yTicks = 4;
     for (int i = 0; i <= yTicks; i++) {
       final value = (maxMs * i / yTicks).round();
       final y = chartHeight - (chartHeight * i / yTicks);
+      canvas.drawLine(Offset(leftPadding, y), Offset(size.width, y), gridPaint);
       final tp = TextPainter(
         text: TextSpan(text: _formatMs(value), style: labelStyle),
         textDirection: TextDirection.ltr,
@@ -499,14 +516,31 @@ class _BarChartPainter extends CustomPainter {
     final paint = Paint()
       ..color = barColor
       ..style = PaintingStyle.fill;
+    final axisPaint = Paint()
+      ..color = labelColor.withValues(alpha: 0.55)
+      ..strokeWidth = 1;
+    final gridPaint = Paint()
+      ..color = labelColor.withValues(alpha: 0.16)
+      ..strokeWidth = 1;
 
     final labelStyle = TextStyle(fontSize: 9, color: labelColor);
 
-    // Y-axis labels
+    canvas.drawLine(
+      const Offset(leftPadding, 0),
+      Offset(leftPadding, chartHeight),
+      axisPaint,
+    );
+    canvas.drawLine(
+      Offset(leftPadding, chartHeight),
+      Offset(size.width, chartHeight),
+      axisPaint,
+    );
+
     const int yTicks = 4;
     for (int i = 0; i <= yTicks; i++) {
       final value = (maxChars * i / yTicks).round();
       final y = chartHeight - (chartHeight * i / yTicks);
+      canvas.drawLine(Offset(leftPadding, y), Offset(size.width, y), gridPaint);
       final tp = TextPainter(
         text: TextSpan(text: _formatChars(value), style: labelStyle),
         textDirection: TextDirection.ltr,

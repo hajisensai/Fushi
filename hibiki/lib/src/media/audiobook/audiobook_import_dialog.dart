@@ -453,7 +453,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       if (result == null || !mounted) return;
 
       final List<String> paths =
-          result.files.map((f) => f.path).whereType<String>().toList()..sort();
+          result.files.map((f) => f.path).whereType<String>().toList()
+            ..sort(compareAudioFilePath);
 
       if (paths.isNotEmpty) {
         setState(() {

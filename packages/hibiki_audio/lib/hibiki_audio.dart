@@ -15,6 +15,7 @@ export 'src/audiobook/audiobook_health.dart';
 export 'src/audiobook/audiobook_controller.dart';
 export 'src/audiobook/audiobook_repository.dart';
 export 'src/audiobook/audiobook_storage.dart';
+export 'src/audiobook/audio_file_sort.dart';
 export 'src/audiobook/srt_book_model.dart';
 export 'src/audiobook/srt_book_repository.dart';
 export 'src/audiobook/reader_position_model.dart';

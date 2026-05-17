@@ -25,8 +25,6 @@ class AudiobookPlayBar extends StatelessWidget {
     required this.controller,
     required this.onOpenSettings,
     this.backgroundColor,
-    this.lyricsMode = false,
-    this.onToggleLyricsMode,
     super.key,
   });
 
@@ -36,9 +34,6 @@ class AudiobookPlayBar extends StatelessWidget {
   /// 用户点 ⚙ 设置按钮后触发。由 reader 页面侧注入，因为设置面板要
   /// 访问 WebView controller 才能 probe ttu 当前章节 / TOC、触发书签。
   final VoidCallback onOpenSettings;
-
-  final bool lyricsMode;
-  final VoidCallback? onToggleLyricsMode;
 
   @override
   Widget build(BuildContext context) {
@@ -241,7 +236,7 @@ class AudiobookSettingsSheet extends StatefulWidget {
 
   /// Called after any typography/style setting changes so the reader can
   /// live-update CSS without a full page reload.
-  final VoidCallback? onStyleChanged;
+  final Future<void> Function()? onStyleChanged;
 
   final bool lyricsMode;
   final VoidCallback? onToggleLyricsMode;
@@ -252,7 +247,7 @@ class AudiobookSettingsSheet extends StatefulWidget {
   final EpubBook? epubBook;
 
   final String? extractDir;
-  final VoidCallback? onReloadChapter;
+  final Future<void> Function()? onReloadChapter;
 
   @override
   State<AudiobookSettingsSheet> createState() => _AudiobookSettingsSheetState();
@@ -269,6 +264,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
   String _searchResultsQuery = '';
   int _searchGeneration = 0;
   bool _isSearching = false;
+  bool _layoutReloading = false;
 
   String? _subPage;
 
@@ -370,17 +366,28 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         'prioritizeReaderStyles'
       };
       if (layoutKeys.contains(key)) {
-        widget.onReloadChapter?.call();
+        await _reloadLayoutLive();
       } else {
-        widget.onStyleChanged?.call();
+        await widget.onStyleChanged?.call();
       }
+    }
+  }
+
+  Future<void> _reloadLayoutLive() async {
+    final Future<void> Function()? reload = widget.onReloadChapter;
+    if (reload == null || _layoutReloading) return;
+    _layoutReloading = true;
+    try {
+      await reload();
+    } finally {
+      _layoutReloading = false;
     }
   }
 
   Future<void> _applyFuriganaMode(String mode) async {
     if (widget.isHoshiReader) {
-      _src.setTtuFuriganaMode(mode);
-      widget.onStyleChanged?.call();
+      await _src.setTtuFuriganaMode(mode);
+      await widget.onStyleChanged?.call();
       return;
     }
     final hide = mode != 'show';
@@ -550,7 +557,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                           BookCssEditorPage(extractDir: widget.extractDir!),
                     ),
                   );
-                  widget.onReloadChapter?.call();
+                  await _reloadLayoutLive();
                 },
               ),
           ],
@@ -1656,7 +1663,6 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                 return;
               }
               final String mode = sel.first;
-              _src.setTtuFuriganaMode(mode);
               setState(() {});
               _applyFuriganaMode(mode);
             },

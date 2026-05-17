@@ -1,6 +1,7 @@
+import 'dart:io';
+
 import 'package:hibiki_core/hibiki_core.dart';
-import 'audiobook_health.dart'
-    show HealthKind;
+import 'audiobook_health.dart' show HealthKind;
 
 /// 有声书元数据。一本 EPUB 可挂载 0..1 个有声书。
 class Audiobook {
@@ -14,6 +15,15 @@ class Audiobook {
 
   /// 手动选择的音频文件路径列表。files 模式下非 null，folder 模式下为 null。
   List<String>? audioPaths;
+
+  List<String>? get audioPathsInCueOrder {
+    final List<String>? paths = audioPaths;
+    if (paths == null) return null;
+    return List<String>.unmodifiable(paths);
+  }
+
+  List<File> get audioFilesInCueOrder =>
+      (audioPathsInCueOrder ?? const <String>[]).map(File.new).toList();
 
   /// 对齐文件格式：'smil' | 'json' | 'lrc'。
   late String alignmentFormat;
@@ -77,6 +87,13 @@ class AudioCue {
 
   /// 多段音频时的文件下标（对应 [Audiobook] audioRoot 下按名称排序的文件列表）。
   late int audioFileIndex;
+
+  File? resolveAudioFile(List<File> audioFiles) {
+    if (audioFileIndex < 0 || audioFileIndex >= audioFiles.length) {
+      return null;
+    }
+    return audioFiles[audioFileIndex];
+  }
 
   static AudioCue fromRow(AudioCueRow r) {
     final c = AudioCue();

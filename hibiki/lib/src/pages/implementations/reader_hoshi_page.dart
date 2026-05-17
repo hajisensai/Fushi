@@ -100,6 +100,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   bool _lyricsMode = false;
   bool _lyricsModeTransition = false;
   int _lyricsEntryChapter = 0;
+  int _lyricsEntryCueIndex = 0;
   List<AudioCue> _lyricsCueList = const [];
 
   bool _pausedForLookup = false;
@@ -260,7 +261,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _syncDictionaryTheme();
 
     _lyricsMode = false;
-    ReaderHoshiSource.instance.setLyricsMode(false);
+    await ReaderHoshiSource.instance.setLyricsMode(false);
 
     _audioSlotResolved = true;
 
@@ -364,7 +365,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       final String ext = p.extension(e.path).toLowerCase();
       return ext == '.html' || ext == '.xhtml' || ext == '.htm';
     }).toList()
-          ..sort((a, b) => _naturalCompare(a.path, b.path));
+          ..sort((a, b) => compareAudioFilePath(a.path, b.path));
 
     final List<EpubChapter> chapters = <EpubChapter>[];
     for (int i = 0; i < htmlFiles.length; i++) {
@@ -383,25 +384,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       chapters: chapters,
       rootDirectory: extractDir,
     );
-  }
-
-  static final RegExp _chunkRe = RegExp(r'(\d+|\D+)');
-
-  static int _naturalCompare(String a, String b) {
-    final List<String> ac = _chunkRe.allMatches(a).map((m) => m[0]!).toList();
-    final List<String> bc = _chunkRe.allMatches(b).map((m) => m[0]!).toList();
-    final int len = ac.length < bc.length ? ac.length : bc.length;
-    for (int i = 0; i < len; i++) {
-      final int? an = int.tryParse(ac[i]);
-      final int? bn = int.tryParse(bc[i]);
-      if (an != null && bn != null) {
-        if (an != bn) return an.compareTo(bn);
-      } else {
-        final int cmp = ac[i].compareTo(bc[i]);
-        if (cmp != 0) return cmp;
-      }
-    }
-    return ac.length.compareTo(bc.length);
   }
 
   Future<void> _resolveAudioSlot() async {
@@ -425,6 +407,11 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       await _initAudiobookController(ab, bookUid);
     } else if (srt != null) {
       await _initSrtBookController(srt);
+    }
+
+    if (_audiobookController == null && _lyricsMode) {
+      _lyricsMode = false;
+      await ReaderHoshiSource.instance.setLyricsMode(false);
     }
   }
 
@@ -606,7 +593,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
             ext.endsWith('.ac3') ||
             ext.endsWith('.eac3');
       }).toList()
-        ..sort((a, b) => a.path.compareTo(b.path));
+        ..sort((a, b) => compareAudioFilePath(a.path, b.path));
       return files;
     }
     return <File>[];
@@ -1424,7 +1411,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     await Future<void>.delayed(const Duration(milliseconds: 200));
 
     setState(() => _lyricsMode = entering);
-    ReaderHoshiSource.instance.setLyricsMode(entering);
+    await ReaderHoshiSource.instance.setLyricsMode(entering);
 
     if (entering) {
       final List<AudioCue> allCues = _audiobookController!.allBookCuesSnapshot;
@@ -1432,6 +1419,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         _audiobookController!.setChapterCues(allCues);
       }
       _lyricsEntryChapter = _currentChapter;
+      _lyricsEntryCueIndex =
+          _audiobookController!.allBookCuesSnapshot.isNotEmpty
+              ? _audiobookController!.allBookCueIdx
+              : _audiobookController!.currentCueIdx;
       await _loadLyricsPage();
     } else {
       await _exitLyricsMode();
@@ -1446,11 +1437,16 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _lyricsCueList = ctrl.allBookCuesSnapshot.isNotEmpty
         ? ctrl.allBookCuesSnapshot
         : ctrl.chapterCuesSnapshot;
-    if (_lyricsCueList.isEmpty) return;
+    if (_lyricsCueList.isEmpty) {
+      await _exitLyricsMode();
+      return;
+    }
 
     final int currentIdx = ctrl.allBookCuesSnapshot.isNotEmpty
         ? ctrl.allBookCueIdx
         : ctrl.currentCueIdx;
+    final int safeCurrentIdx =
+        currentIdx >= 0 ? currentIdx : _lyricsEntryCueIndex;
 
     final Color bg = _themeBackgroundColor();
     final Color fg = _themeTextColor();
@@ -1463,7 +1459,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
     final String html = LyricsModeHtml.generate(
       cues: _lyricsCueList,
-      currentIndex: currentIdx.clamp(0, _lyricsCueList.length - 1),
+      currentIndex: safeCurrentIdx.clamp(0, _lyricsCueList.length - 1),
       backgroundColor: colorToCss(bg),
       textColor: colorToCss(fg),
       accentColor: colorToCss(accent),
@@ -1890,10 +1886,12 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   @override
   void onAllPopupsDismissed() {
     if (!mounted) return;
-    if (_pausedForLookup) {
+    if (_pausedForLookup && !_lyricsMode) {
       _pausedForLookup = false;
       _audiobookController?.play();
+      return;
     }
+    _pausedForLookup = false;
   }
 
   Future<void> _handleTextSelected(ReaderSelectionData data) async {
@@ -2467,8 +2465,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
                 controller: ctrl,
                 onOpenSettings: _showAppearanceSheet,
                 backgroundColor: _themeBackgroundColor(),
-                lyricsMode: _lyricsMode,
-                onToggleLyricsMode: _toggleLyricsMode,
               ),
               ColoredBox(
                 color: _themeBackgroundColor(),
@@ -2561,28 +2557,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
     await _syncSettingsToHive();
 
-    final ReaderHoshiSource src = ReaderHoshiSource.instance;
-    final double snapshotFontSize = src.ttuFontSize;
-    final double snapshotLineHeight = src.ttuLineHeight;
-    final String snapshotWritingMode = src.ttuWritingMode;
-    final String snapshotViewMode = src.ttuViewMode;
-    final String snapshotTheme = src.ttuTheme;
-    final String snapshotFuriganaMode = src.ttuFuriganaMode;
-    final double snapshotTextIndentation = src.ttuTextIndentation;
-    final double snapshotMarginTop = src.ttuMarginTop;
-    final double snapshotMarginBottom = src.ttuMarginBottom;
-    final double snapshotMarginLeft = src.ttuMarginLeft;
-    final double snapshotMarginRight = src.ttuMarginRight;
-    final int snapshotPageColumns = src.ttuPageColumns;
-    final bool snapshotVerticalFontKerning = src.ttuEnableVerticalFontKerning;
-    final bool snapshotFontVPAL = src.ttuEnableFontVPAL;
-    final String snapshotVerticalTextOrientation =
-        src.ttuVerticalTextOrientation;
-    final bool snapshotTextJustification = src.ttuEnableTextJustification;
-    final bool snapshotPrioritizeReaderStyles = src.ttuPrioritizeReaderStyles;
-    final String snapshotCustomFontsRaw =
-        src.getPreference<String>(key: 'custom_fonts', defaultValue: '[]');
-
     final List<TtuTocEntry> toc = _buildTtuToc();
     final int bookId = widget.bookId;
     final BookmarkRepository bmRepo = BookmarkRepository(appModel.database);
@@ -2618,7 +2592,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           isHoshiReader: true,
           onStyleChanged: _applyStylesLive,
           extractDir: _extractDir,
-          onReloadChapter: () => _navigateToChapter(_currentChapter),
+          onReloadChapter: _reloadWithCurrentSettings,
           lyricsMode: _lyricsMode,
           onToggleLyricsMode: _toggleLyricsMode,
           showFloatingLyric: appModel.showFloatingLyric,
@@ -2741,38 +2715,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       },
     );
 
-    final ReaderHoshiSource srcAfter = ReaderHoshiSource.instance;
-    final bool changed = srcAfter.ttuFontSize != snapshotFontSize ||
-        srcAfter.ttuLineHeight != snapshotLineHeight ||
-        srcAfter.ttuWritingMode != snapshotWritingMode ||
-        srcAfter.ttuViewMode != snapshotViewMode ||
-        srcAfter.ttuTheme != snapshotTheme ||
-        srcAfter.ttuFuriganaMode != snapshotFuriganaMode ||
-        srcAfter.ttuTextIndentation != snapshotTextIndentation ||
-        srcAfter.ttuMarginTop != snapshotMarginTop ||
-        srcAfter.ttuMarginBottom != snapshotMarginBottom ||
-        srcAfter.ttuMarginLeft != snapshotMarginLeft ||
-        srcAfter.ttuMarginRight != snapshotMarginRight ||
-        srcAfter.ttuPageColumns != snapshotPageColumns ||
-        srcAfter.ttuEnableVerticalFontKerning != snapshotVerticalFontKerning ||
-        srcAfter.ttuEnableFontVPAL != snapshotFontVPAL ||
-        srcAfter.ttuVerticalTextOrientation !=
-            snapshotVerticalTextOrientation ||
-        srcAfter.ttuEnableTextJustification != snapshotTextJustification ||
-        srcAfter.ttuPrioritizeReaderStyles != snapshotPrioritizeReaderStyles ||
-        srcAfter.getPreference<String>(
-                key: 'custom_fonts', defaultValue: '[]') !=
-            snapshotCustomFontsRaw;
-
     await _syncSettingsFromHive();
     _syncDictionaryTheme();
-    if (changed) {
-      if (_lyricsMode) {
-        _loadLyricsPage();
-      } else {
-        _reloadWithCurrentSettings();
-      }
-    }
   }
 
   Future<void> _addBookmarkAtCurrentPosition() async {

@@ -229,8 +229,8 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   }) async {
     if (audioPaths != null && audioPaths.isNotEmpty) {
       final files = <File>[];
-      for (final p in audioPaths) {
-        final f = File(p);
+      for (final path in audioPaths) {
+        final f = File(path);
         if (await f.exists()) files.add(f);
       }
       return files;
@@ -254,7 +254,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
             ext.endsWith('.ac3') ||
             ext.endsWith('.eac3');
       }).toList()
-        ..sort((a, b) => a.path.compareTo(b.path));
+        ..sort((a, b) => compareAudioFilePath(a.path, b.path));
       return files;
     }
     return [];
@@ -262,13 +262,22 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
   Future<void> _playItemAudio(_CollectionItem item) async {
     final int? ttuId = item.ttuBookId;
-    if (ttuId == null || ttuId <= 0) return;
+    if (ttuId == null || ttuId <= 0) {
+      HibikiToast.show(msg: t.srt_audio_unresolved);
+      return;
+    }
 
     final List<File>? audioFiles = _audioFileMap[ttuId];
-    if (audioFiles == null || audioFiles.isEmpty) return;
+    if (audioFiles == null || audioFiles.isEmpty) {
+      HibikiToast.show(msg: t.srt_audio_unresolved);
+      return;
+    }
 
     final List<AudioCue>? cues = _cueMap[ttuId];
-    if (cues == null || cues.isEmpty) return;
+    if (cues == null || cues.isEmpty) {
+      HibikiToast.show(msg: t.srt_audio_unresolved);
+      return;
+    }
 
     final AudioPlaybackRange? range = CollectionAudioMatcher.findPlaybackRange(
       cues: cues,
@@ -277,8 +286,12 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       normCharLength: item.normCharLength,
       text: item.text,
     );
-    if (range == null) return;
+    if (range == null) {
+      HibikiToast.show(msg: t.srt_audio_unresolved);
+      return;
+    }
     if (range.audioFileIndex < 0 || range.audioFileIndex >= audioFiles.length) {
+      HibikiToast.show(msg: t.srt_audio_unresolved);
       return;
     }
 

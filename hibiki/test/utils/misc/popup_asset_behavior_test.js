@@ -141,6 +141,14 @@ function createPopupContext() {
     createElement(tagName) {
       return new FakeElement(tagName);
     },
+    createTextNode(text) {
+      return {
+        nodeType: 3,
+        textContent: String(text),
+        parentElement: null,
+        parentNode: null,
+      };
+    },
     createRange() {
       return {
         node: null,
@@ -441,8 +449,25 @@ function testLongPressFallsBackFromElementToTextNode() {
   assert.equal(context.window.getSelection().toString(), '辞書名');
 }
 
+function testFrequencyAndPitchSectionsDoNotRenderCrowdedTitles() {
+  const context = loadPopup();
+
+  const freq = context.createFrequencySection([
+    {dictionary: 'freq-dict', frequencies: [{value: '1'}]},
+  ]);
+  const pitch = context.createPitchSection([
+    {dictionary: 'pitch-dict', pitchPositions: [0]},
+  ], 'かな');
+
+  assert.ok(freq, 'frequency section was not rendered');
+  assert.ok(pitch, 'pitch section was not rendered');
+  assert.equal(freq.children.some((child) => child.className === 'category-title'), false);
+  assert.equal(pitch.children.some((child) => child.className === 'category-title'), false);
+}
+
 testEmSizedWideImagesUseHorizontalScrollWrapper();
 testLargeRasterImagesMarkedAsEmUseNaturalWidthAfterLoad();
 testExplicitContentImageDimensionsDefaultToPixelUnits();
 testPixelImagesWithBadDeclaredAspectUseNaturalWidthAfterLoad();
 testTappingDefinitionImageOpensLightbox();
+testFrequencyAndPitchSectionsDoNotRenderCrowdedTitles();
