@@ -36,6 +36,10 @@ dependencies:
     sdk: flutter
   flutter_localizations:
     sdk: flutter
+  hibiki_core:
+    path: ../packages/hibiki_core
+  hibiki_platform:
+    path: ../packages/hibiki_platform
   flutter_archive: ^5.0.0
   flutter_cache_manager: ^3.3.0
   flutter_charset_detector: ^1.0.2
