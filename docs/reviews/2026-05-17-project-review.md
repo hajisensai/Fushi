@@ -89,8 +89,78 @@ Commits in scope: up to `b929b6c5` (current HEAD on `feature/multiplatform`).
 - `flutter test`: 723/723 passed
 - `flutter build windows`: Dart compilation successful; blocked only by file lock
 
+---
+
+## Round 2: Windows Runtime Verification
+
+### Scope
+
+Actual runtime testing of the Windows desktop build:
+- App startup and initialization (debug mode, captured console output)
+- Widget tree inspection via Dart VM Service
+- Process stability monitoring
+- Hot reassemble stress test
+
+Commits in scope: `00e42f80` → `5385e9a5`.
+
+### Findings
+
+#### HBK-AUDIT-008 — ref.watch() crash in initState on Windows
+- **Severity**: CRITICAL
+- **Status**: FIXED (5385e9a5)
+- **File**: `lib/src/pages/implementations/reader_hoshi_history_page.dart:47`
+- **Root cause**: `_refreshSrtBooks()` accessed `appModel.database` which calls `ref.watch(appProvider)`. When called from `initState()`, `ref.watch()` throws because the widget isn't fully mounted yet. This was masked on Android by faster initialization timing, but consistently crashed on Windows desktop.
+- **Impact**: `ReaderHoshiHistoryPage` (the bookshelf/history page) throws an unhandled exception on every Windows startup, potentially preventing navigation.
+- **Fix**: Changed `appModel.database` to `appModelNoUpdate.database` (which uses cached `ref.read()`, safe in initState).
+- **Verification**: After fix, app starts cleanly with full init sequence completing:
+  ```
+  [Hibiki] init: PackageInfo + DeviceInfo
+  [Hibiki] init: Drift database
+  [Hibiki] init: DONE
+  ```
+  No exceptions in debug console. `ReaderHoshiHistoryPage` present in widget tree.
+
+### Runtime Test Results
+
+| Test | Method | Result |
+|------|--------|--------|
+| App startup without crash | Debug console log capture | ✅ PASS — Full init sequence, zero exceptions |
+| initState fix (HBK-AUDIT-008) | Widget tree inspection via VM Service | ✅ PASS — `ReaderHoshiHistoryPage` renders |
+| Desktop NavigationRail layout | Widget tree inspection | ✅ PASS — `NavigationRail` present at 1920x1080 |
+| Drift SQLite database | VM Service isolate check | ✅ PASS — DB worker isolate alive and runnable |
+| Material framework | Widget tree inspection | ✅ PASS — `Scaffold`, `AppBar`, `MaterialApp` |
+| Book grid rendering | Widget tree inspection | ✅ PASS — `SliverGrid`, `FadeInImage` present |
+| Process stability | 7+ minutes uptime check | ✅ PASS — PID 196496, 372MB, no crash |
+| Hot reassemble (UI rebuild) | VM Service `ext.flutter.reassemble` | ✅ PASS — No errors triggered |
+| Main isolate health | VM Service `getIsolate` | ✅ PASS — Resume, Runnable |
+| DB isolate health | VM Service `getIsolate` | ✅ PASS — Resume, Runnable |
+
+### Verification Methodology
+
+- **Debug console capture**: `flutter run -d windows --debug` piped through grep for `[Hibiki]|Exception|Error|EXCEPTION`
+- **Widget tree inspection**: Dart VM Service WebSocket protocol → `ext.flutter.inspector.getRootWidgetSummaryTree`
+- **Process monitoring**: `Get-Process -Id <PID>` + `WorkingSet64` memory check
+- **UIAutomation**: Confirmed window exists at 1920x1080 (`FLUTTERVIEW` pane)
+- **Note**: Flutter GPU rendering prevents GDI-based screenshot capture (PrintWindow returns black). Visual verification done via widget tree structural analysis.
+
+### Summary
+
+| Category | Count |
+|----------|-------|
+| New findings | 1 (HBK-AUDIT-008 — CRITICAL, FIXED) |
+| Runtime tests passed | 10/10 |
+| Process uptime | 7+ minutes, stable |
+
+### Commits This Session
+
+| Hash | Description |
+|------|-------------|
+| `00e42f80` | fix(windows): correct file:// URI construction and test sync |
+| `5385e9a5` | fix(windows): use appModelNoUpdate in initState to avoid ref.watch crash |
+
 ### Next Scope
 
-- Runtime verification on Windows
-- WebView2-specific behavior
-- AnkiConnectRepository on Windows
+- Dictionary import and search functionality on Windows (WebView2 rendering)
+- EPUB reader WebView rendering on Windows
+- Custom font loading from `C:\Windows\Fonts`
+- AnkiConnect integration testing on Windows
