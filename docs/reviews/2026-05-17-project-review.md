@@ -207,3 +207,58 @@ All 6 findings from Round 1 are addressed. The critical WebView filter issue is 
 - Has expansion points for reader/dictionary when test hooks arrive
 
 No further blocking issues found in this round.
+
+---
+
+## Round 3 - Reader Test Hooks Implementation + Code Review Fix
+
+### Scope
+
+- Commits: `8feda25e`, `4130ab78`
+- New test hooks added to:
+  - `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart`
+  - `hibiki/lib/src/pages/implementations/reader_hoshi_history_page.dart`
+- Integration tests rewritten:
+  - `hibiki/integration_test/reader_dictionary_test.dart`
+  - `hibiki/integration_test/regression_test.dart`
+- Shared helpers extracted:
+  - `hibiki/integration_test/test_helpers.dart` (new)
+
+### Test Hooks Added
+
+| Widget | Key | Purpose |
+|--------|-----|---------|
+| InAppWebView | `hoshi_webview` | Verify WebView exists in tree |
+| SizedBox sentinel | `hoshi_content_ready` | Detect when reader content has loaded |
+| Positioned (play bar) | `hoshi_play_bar` | Bounds checking for HBK-REG-001 |
+| Text (progress) | `hoshi_progress` | Read chapter/character progress |
+| Padding (book card) | `book_entry_{mediaId}` | Tap specific books from shelf |
+| Padding (SRT card) | `srt_entry_{bookId}` | Tap specific SRT books from shelf |
+
+### Findings
+
+All code review findings have been addressed:
+
+1. **Double `app.main()` (HIGH)** — status: **fixed** in `4130ab78`. Reader and dictionary tests merged into single `testWidgets`. No duplicate Drift connections.
+2. **Silent pass on missing play bar (MEDIUM)** — status: **fixed** in `4130ab78`. Regression test now `fail()`s with explicit blocked message when play bar is absent.
+3. **Progress text timing (LOW)** — status: **fixed** in `4130ab78`. Added 4s pump before progress text check to allow JS callback arrival.
+4. **Fragile search field finder (LOW)** — status: **fixed** in `4130ab78`. Extracted to `findSearchField()` in `test_helpers.dart` with clear fallthrough logic.
+5. **Helper duplication (TRIVIAL)** — status: **fixed** in `4130ab78`. Extracted `waitForHome`, `takeScreenshot`, `assertStrictErrors`, `findBookEntries` to shared `test_helpers.dart`.
+
+### Verification
+
+- `flutter analyze integration_test/` — no issues
+- `flutter analyze lib/src/pages/implementations/reader_hoshi_page.dart lib/src/pages/implementations/reader_hoshi_history_page.dart` — no issues
+- `flutter test` — 607 tests passed
+
+### Judgment
+
+Test hooks are minimal and non-invasive (ValueKey only, zero layout/behavior impact). Integration tests now have real assertions that:
+- Find books by stable keys, not fragile widget-type heuristics
+- Wait for WebView creation and content readiness via sentinel
+- Check play bar / WebView bounds overlap (HBK-REG-001)
+- Verify progress text after JS callback delay
+- Use strict error policy (WebView errors are fatal)
+- Block explicitly when prerequisites are missing
+
+No further blocking issues found.
