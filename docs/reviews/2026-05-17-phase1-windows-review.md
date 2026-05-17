@@ -231,6 +231,52 @@ All code-level Windows adaptation is done. Remaining items are environmental (VS
 | Dictionary search | Import a Yomitan zip, search a term — verify hoshidicts returns results |
 | Dictionary + EPUB integration | Open EPUB, tap a word — verify dictionary popup works |
 
+---
+
+## Round 6: AnkiConnect Desktop Backend
+
+### Scope
+- Implement AnkiConnect HTTP backend for desktop Anki integration (Windows/macOS)
+- Extract shared settings logic into `BaseAnkiRepository` abstract class
+- Make `ankiRepositoryProvider` platform-aware (Android→MethodChannel, desktop→HTTP)
+
+### Findings
+
+| ID | Severity | Status | Description |
+|----|----------|--------|-------------|
+| HBK-P1-043 | critical | **fixed** | AnkiDroid MethodChannel unusable on Windows. Created `AnkiConnectRepository` using HTTP API to communicate with Anki Desktop via AnkiConnect add-on. |
+| HBK-P1-044 | warn | **fixed** | `isDuplicate()` in `AnkiConnectRepository` lacked name-based fallback for deck lookup (unlike `mineEntry()`). Synthetic IDs could shift when decks are reordered in Anki. Fixed. |
+| HBK-P1-045 | warn | **fixed** | `_settingsKey` was private to `BaseAnkiRepository` but Android subclass hardcoded the same literal. Exposed as `@protected static const settingsKey`. |
+| HBK-P1-046 | warn | **fixed** | `isDuplicate` search query in `AnkiConnectService` didn't escape `"` in field values, causing incorrect results for entries with quotes. Added `_escapeAnkiQuery`. |
+| HBK-P1-047 | warn | **fixed** | `AnkiConnectService._request` had no HTTP timeout. A hung Anki Desktop would hang the app indefinitely. Added 10s timeout. |
+| HBK-P1-048 | info | **fixed** | `_storeDictionaryMedia` used `ankiInlineMediaReference()` which was designed for Android's opaque return format, not plain filenames. Replaced with explicit `<img>` / `[sound:]` formatting. |
+| HBK-P1-049 | info | noted | Two separate repository instances exist (Riverpod provider + `app_model.dart` startup). State is mediated through `SharedPreferences`, so they don't conflict. |
+| HBK-P1-050 | info | noted | Remote audio cached with `.mp3` extension regardless of actual format. Pre-existing behavior faithfully replicated from Android path. |
+
+### Architecture
+
+```
+BaseAnkiRepository (abstract)
+├── loadSettings / saveSettings / updateSettings (SharedPreferences)
+├── selectDeckAfterFetch / selectNoteTypeAfterFetch (shared logic)
+├── fieldMappingsAfterFetch (Lapis preset detection)
+│
+├── AnkiRepository (Android)
+│   └── MethodChannel → AnkiDroid app
+│
+└── AnkiConnectRepository (Desktop)
+    └── HTTP → localhost:8765 (Anki Desktop + AnkiConnect add-on)
+```
+
+### Verification
+
+| Check | Result |
+|-------|--------|
+| flutter analyze (package) | 0 issues |
+| flutter analyze (app) | 0 issues |
+| flutter test | 607/607 passed |
+| Windows release build | Success |
+
 ### Phase 1 Final Status
 
 | Category | Status |
@@ -239,7 +285,8 @@ All code-level Windows adaptation is done. Remaining items are environmental (VS
 | MSVC compilation | ✅ Complete (0 errors, warnings only) |
 | Platform guards (all MethodChannels) | ✅ Complete (11 channels, 28 findings) |
 | flutter_inappwebview v6 migration | ✅ Complete (WebView2 confirmed at runtime) |
-| Test suite compatibility | ✅ 587/587 pass |
+| AnkiConnect desktop backend | ✅ Complete (HTTP → Anki Desktop) |
+| Test suite compatibility | ✅ 607/607 pass |
 | Windows build (debug + release) | ✅ Both succeed |
 | App startup on Windows | ✅ Clean startup, all init phases |
 | FFI DLL bundling | ✅ hoshidicts_ffi.dll loads |
