@@ -164,3 +164,68 @@ Commits in scope: `00e42f80` → `5385e9a5`.
 - EPUB reader WebView rendering on Windows
 - Custom font loading from `C:\Windows\Fonts`
 - AnkiConnect integration testing on Windows
+
+---
+
+## Round 3: Code Quality Audit & Consistency Fix
+
+### Scope
+
+Post-commit review of Windows adaptation changes (reader WebView2 handling, pagination JS, audio cue priming). Full codebase scan for remaining platform issues.
+
+### Findings
+
+#### HBK-AUDIT-009 — Duplicated onLoadStop/onReceivedError logic
+- **Severity**: MEDIUM
+- **Status**: FIXED (`cef74251`)
+- **File**: `lib/src/pages/implementations/reader_hoshi_page.dart`
+- **Root cause**: Windows `onReceivedError` handler duplicated ~35 lines from `onLoadStop` (lyrics mode check, sasayaki prep, JS injection, highlight bridge, chapter highlights).
+- **Impact**: Maintenance burden; any future change to the load-complete sequence must be updated in two places.
+- **Fix**: Extracted shared logic into `_onChapterLoadComplete(InAppWebViewController)`. Both `onLoadStop` and the Windows `onReceivedError` branch call it.
+
+#### HBK-AUDIT-010 — Inconsistent requestAnimationFrame→setTimeout fix
+- **Severity**: MEDIUM
+- **Status**: FIXED (`0a4fce60`)
+- **File**: `lib/src/reader/reader_pagination_scripts.dart`
+- **Root cause**: Paged mode `restoreProgress` and `jumpToFragment` were changed to `setTimeout(fn, 16)` for WebView2 compatibility, but continuous mode retained `requestAnimationFrame`. Both code paths execute during initial page load when WebView2 may not have composited yet.
+- **Impact**: Continuous mode position restore could hang on Windows (callback never fires).
+- **Fix**: Applied same `setTimeout` pattern to continuous mode `restoreProgress` and `jumpToFragment`. Scroll/resize event handlers left as `requestAnimationFrame` (correct — they run after page is visible).
+
+#### HBK-AUDIT-011 — Platform guards comprehensive scan
+- **Severity**: INFO
+- **Status**: VERIFIED OK
+- **Details**: Full scan of all `MethodChannel.invokeMethod`, `DeviceInfoPlugin`, `permission_handler`, and `AndroidIntent` usages. All critical paths properly guarded. `popup_main.dart` and `floating_dict_main.dart` are Android-only entry points (never reached on Windows). `Fluttertoast` is fire-and-forget (non-crashing, deferred to Phase 4).
+
+#### HBK-AUDIT-012 — File path construction audit
+- **Severity**: INFO
+- **Status**: VERIFIED OK
+- **Details**: `'${dir.path}/filename'` pattern used in ~11 locations. Dart's `File`/`Directory` constructors accept mixed separators on Windows — not a bug. All `file://` URI construction uses `Uri.file()`. EPUB internal path normalization (`replaceAll('\\', '/')`) is correct (EPUB uses `/` in manifest).
+
+#### HBK-AUDIT-013 — Audio cue priming method
+- **Severity**: INFO
+- **Status**: VERIFIED OK
+- **File**: `lib/src/pages/implementations/reader_hoshi_page.dart:420-456`
+- **Details**: `_primeAudioCuesForCurrentBook()` handles initial cue loading during setup. Does NOT duplicate `_injectAudiobookBridge()` (which handles per-chapter cue injection on page load). Correct separation of concerns.
+
+### Verification
+
+| Check | Result |
+|-------|--------|
+| flutter analyze (lib/) | 0 issues |
+| flutter test | 724/724 passed |
+| Code duplication eliminated | Confirmed (onLoadStop → _onChapterLoadComplete) |
+| Pagination JS consistency | Confirmed (both modes use setTimeout for restore) |
+
+### Commits This Round
+
+| Hash | Description |
+|------|-------------|
+| `cef74251` | fix(reader): Windows WebView2 load handling + audio cue priming |
+| `be8e6bde` | fix(test): dart format + lint fixes in tests |
+| `0a4fce60` | fix(reader): consistent setTimeout in continuous mode restore |
+
+### Next Scope
+
+- Windows runtime testing: EPUB reader rendering via WebView2
+- Windows runtime testing: dictionary import and FFI search
+- Continue adaptation plan execution
