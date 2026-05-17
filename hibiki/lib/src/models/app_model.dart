@@ -1159,7 +1159,9 @@ class AppModel with ChangeNotifier {
       _prefCache.addAll(await _database.getAllPrefs());
 
       /// Ensure default profile exists on first launch.
-      final profileRepo = ProfileRepository(_database, AnkiRepository());
+      final BaseAnkiRepository ankiRepo =
+          Platform.isAndroid ? AnkiRepository() : AnkiConnectRepository();
+      final profileRepo = ProfileRepository(_database, ankiRepo);
       await profileRepo.ensureDefaultProfile();
 
       /// Load dictionary metadata cache.
@@ -1521,8 +1523,7 @@ class AppModel with ChangeNotifier {
       metadata = {};
     }
     try {
-      hiddenLanguages =
-          List<String>.from(jsonDecode(r.hiddenLanguagesJson));
+      hiddenLanguages = List<String>.from(jsonDecode(r.hiddenLanguagesJson));
     } catch (e, stack) {
       ErrorLogService.instance
           .log('_rowToDictionary.hiddenLanguages', e, stack);
@@ -2171,8 +2172,8 @@ class AppModel with ChangeNotifier {
         final innerDataDir = Directory(path.join(tempOutputDir.path, name));
         final finalResourceDirectory =
             Directory(path.join(dictionaryResourceDirectory.path, name));
-        if (!path.isWithin(dictionaryResourceDirectory.path,
-            finalResourceDirectory.path)) {
+        if (!path.isWithin(
+            dictionaryResourceDirectory.path, finalResourceDirectory.path)) {
           throw Exception('Invalid dictionary title: path traversal detected');
         }
         if (finalResourceDirectory.existsSync()) {
@@ -2298,8 +2299,8 @@ class AppModel with ChangeNotifier {
       final innerDataDir = Directory(path.join(tempOutputDir.path, name));
       final finalResourceDirectory =
           Directory(path.join(dictionaryResourceDirectory.path, name));
-      if (!path.isWithin(dictionaryResourceDirectory.path,
-          finalResourceDirectory.path)) {
+      if (!path.isWithin(
+          dictionaryResourceDirectory.path, finalResourceDirectory.path)) {
         throw Exception('Invalid dictionary title: path traversal detected');
       }
       if (finalResourceDirectory.existsSync()) {

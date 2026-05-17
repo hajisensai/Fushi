@@ -5,7 +5,7 @@ import 'package:hibiki/src/profile/profile_keys.dart';
 class ProfileRepository {
   ProfileRepository(this._db, this._ankiRepo);
   final HibikiDatabase _db;
-  final AnkiRepository _ankiRepo;
+  final BaseAnkiRepository _ankiRepo;
 
   Future<List<ProfileRow>> getAllProfiles() => _db.getAllProfiles();
 

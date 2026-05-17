@@ -8,7 +8,8 @@ class AnkiConnectService implements AnkiService {
 
   AnkiConnectService({this.host = 'localhost', this.port = 8765});
 
-  Future<dynamic> _request(String action, [Map<String, dynamic>? params]) async {
+  Future<dynamic> _request(String action,
+      [Map<String, dynamic>? params]) async {
     final body = jsonEncode({
       'action': action,
       'version': 6,
@@ -82,6 +83,18 @@ class AnkiConnectService implements AnkiService {
       'query': 'deck:"$deckName" $fieldName:"$fieldValue"',
     });
     return (result as List).isNotEmpty;
+  }
+
+  Future<void> storeMediaFile({
+    required String filename,
+    String? data,
+    String? path,
+  }) async {
+    await _request('storeMediaFile', {
+      'filename': filename,
+      if (data != null) 'data': data,
+      if (path != null) 'path': path,
+    });
   }
 }
 

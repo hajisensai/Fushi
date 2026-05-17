@@ -7,19 +7,19 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../anki_models.dart';
-import '../lapis_preset.dart';
+import '../base_anki_repository.dart';
 
-class AnkiRepository {
+class AnkiRepository extends BaseAnkiRepository {
   static const _channel = MethodChannel('app.hibiki.reader/anki');
-  static const _settingsKey = 'hoshi_anki_settings';
   static const _legacyDeckKey = 'last_selected_deck';
 
+  @override
   Future<AnkiSettings> loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_settingsKey);
+    final raw = prefs.getString('hoshi_anki_settings');
     if (raw == null) {
       await _migrateFromLegacy(prefs);
-      final migrated = prefs.getString(_settingsKey);
+      final migrated = prefs.getString('hoshi_anki_settings');
       if (migrated != null) {
         try {
           return AnkiSettings.fromJson(
@@ -38,19 +38,7 @@ class AnkiRepository {
     }
   }
 
-  Future<void> saveSettings(AnkiSettings settings) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_settingsKey, jsonEncode(settings.toJson()));
-  }
-
-  Future<AnkiSettings> updateSettings(
-      AnkiSettings Function(AnkiSettings) transform) async {
-    final current = await loadSettings();
-    final updated = transform(current);
-    await saveSettings(updated);
-    return updated;
-  }
-
+  @override
   Future<AnkiFetchResult> fetchConfiguration() async {
     try {
       await _channel.invokeMethod('requestAnkidroidPermissions');
@@ -80,8 +68,8 @@ class AnkiRepository {
       }
 
       final updated = await updateSettings((current) {
-        final selectedDeck = _selectDeckAfterFetch(decks, current);
-        final selectedNoteType = _selectNoteTypeAfterFetch(noteTypes, current);
+        final selectedDeck = selectDeckAfterFetch(decks, current);
+        final selectedNoteType = selectNoteTypeAfterFetch(noteTypes, current);
         return current.copyWith(
           selectedDeckId: selectedDeck.id,
           selectedDeckName: selectedDeck.name,
@@ -89,7 +77,7 @@ class AnkiRepository {
           selectedNoteTypeName: selectedNoteType.name,
           availableDecks: decks,
           availableNoteTypes: noteTypes,
-          fieldMappings: _fieldMappingsAfterFetch(selectedNoteType, current),
+          fieldMappings: fieldMappingsAfterFetch(selectedNoteType, current),
         );
       });
       return AnkiFetchResult.success(
@@ -102,6 +90,7 @@ class AnkiRepository {
     }
   }
 
+  @override
   Future<MineResult> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
@@ -227,6 +216,7 @@ class AnkiRepository {
     }
   }
 
+  @override
   Future<bool> isDuplicate(String expression, String reading) async {
     final settings = await loadSettings();
     final noteType = settings.selectedNoteType;
@@ -340,70 +330,12 @@ class AnkiRepository {
     return -1;
   }
 
-  AnkiDeck _selectDeckAfterFetch(List<AnkiDeck> decks, AnkiSettings current) =>
-      decks.firstWhereOrNull((d) => d.id == current.selectedDeckId) ??
-      (current.selectedDeckName != null
-          ? decks.firstWhereOrNull((d) => d.name == current.selectedDeckName)
-          : null) ??
-      decks.firstWhereOrNull(
-          (d) => !d.name.toLowerCase().startsWith('default')) ??
-      decks.first;
-
-  AnkiNoteType _selectNoteTypeAfterFetch(
-          List<AnkiNoteType> noteTypes, AnkiSettings current) =>
-      noteTypes.firstWhereOrNull((t) => t.id == current.selectedNoteTypeId) ??
-      (current.selectedNoteTypeName != null
-          ? noteTypes
-              .firstWhereOrNull((t) => t.name == current.selectedNoteTypeName)
-          : null) ??
-      noteTypes.firstWhereOrNull(LapisPreset.matches) ??
-      noteTypes.first;
-
-  Map<String, String> _fieldMappingsAfterFetch(
-      AnkiNoteType selectedNoteType, AnkiSettings current) {
-    if (LapisPreset.matches(selectedNoteType) &&
-        !_currentSelectionMatchesLapis(current)) {
-      return LapisPreset.applyDefaults(selectedNoteType, {});
-    }
-    return current.fieldMappings;
-  }
-
-  bool _currentSelectionMatchesLapis(AnkiSettings current) {
-    final matched = current.availableNoteTypes.firstWhereOrNull((t) =>
-        t.id == current.selectedNoteTypeId ||
-        t.name == current.selectedNoteTypeName);
-    if (matched != null) return LapisPreset.matches(matched);
-    return current.selectedNoteTypeName?.toLowerCase().contains('lapis') ??
-        false;
-  }
-
   Future<void> _migrateFromLegacy(SharedPreferences prefs) async {
     final legacyDeck = prefs.getString(_legacyDeckKey);
     if (legacyDeck != null && legacyDeck != 'Default') {
       final settings = AnkiSettings(selectedDeckName: legacyDeck);
-      await prefs.setString(_settingsKey, jsonEncode(settings.toJson()));
+      await prefs.setString(
+          'hoshi_anki_settings', jsonEncode(settings.toJson()));
     }
   }
 }
-
-sealed class AnkiFetchResult {
-  const AnkiFetchResult();
-  const factory AnkiFetchResult.success({
-    required List<AnkiDeck> decks,
-    required List<AnkiNoteType> noteTypes,
-  }) = AnkiFetchSuccess;
-  const factory AnkiFetchResult.error(String message) = AnkiFetchError;
-}
-
-class AnkiFetchSuccess extends AnkiFetchResult {
-  const AnkiFetchSuccess({required this.decks, required this.noteTypes});
-  final List<AnkiDeck> decks;
-  final List<AnkiNoteType> noteTypes;
-}
-
-class AnkiFetchError extends AnkiFetchResult {
-  const AnkiFetchError(this.message);
-  final String message;
-}
-
-enum MineResult { success, duplicate, notConfigured, error }

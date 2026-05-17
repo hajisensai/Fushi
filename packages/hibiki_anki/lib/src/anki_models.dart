@@ -438,3 +438,25 @@ const _ankiGaijiImageStyle = '<style>'
     '.yomitan-glossary [data-sc-img][data-sc-class="gaiji"] .gloss-image'
     '{position:static!important;width:1em!important;height:1em!important;vertical-align:text-bottom!important}'
     '</style>';
+
+sealed class AnkiFetchResult {
+  const AnkiFetchResult();
+  const factory AnkiFetchResult.success({
+    required List<AnkiDeck> decks,
+    required List<AnkiNoteType> noteTypes,
+  }) = AnkiFetchSuccess;
+  const factory AnkiFetchResult.error(String message) = AnkiFetchError;
+}
+
+class AnkiFetchSuccess extends AnkiFetchResult {
+  const AnkiFetchSuccess({required this.decks, required this.noteTypes});
+  final List<AnkiDeck> decks;
+  final List<AnkiNoteType> noteTypes;
+}
+
+class AnkiFetchError extends AnkiFetchResult {
+  const AnkiFetchError(this.message);
+  final String message;
+}
+
+enum MineResult { success, duplicate, notConfigured, error }

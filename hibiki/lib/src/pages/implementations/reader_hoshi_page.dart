@@ -693,7 +693,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   @override
   Widget build(BuildContext context) {
-
     final Color bgColor = _themeBackgroundColor();
 
     return Focus(
@@ -1581,7 +1580,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   @override
   Future<bool> onMineFromPopup(Map<String, String> fields) async {
-    final AnkiRepository repo = ref.read(ankiRepositoryProvider);
+    final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
     final String sentence =
         appModel.currentMediaSource?.currentSentence.text ?? '';
 
