@@ -59,7 +59,7 @@ void main() {
 
       expect(
         () => db.upsertSrtBook(_srtBook(title: 'V2')),
-        throwsA(isA<Exception>()),
+        throwsA(isA<SqliteException>()),
       );
     });
 

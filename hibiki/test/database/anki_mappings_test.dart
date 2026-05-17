@@ -54,7 +54,7 @@ void main() {
 
       expect(
         () => db.into(db.ankiMappings).insert(companion),
-        throwsA(isA<Exception>()),
+        throwsA(isA<SqliteException>()),
       );
     });
   });

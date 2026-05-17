@@ -49,7 +49,7 @@ void main() {
 
       expect(
         () => db.upsertMediaItem(_item(title: 'V2')),
-        throwsA(isA<Exception>()),
+        throwsA(isA<SqliteException>()),
       );
     });
 

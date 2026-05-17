@@ -159,7 +159,7 @@ void main() {
 
       screenshotCount += await takeScreenshot(binding, 'dict_search_field');
 
-      // Type a known word.
+      // Type a known word and verify results appear.
       await tester.enterText(findSearchField(), '猫');
       await tester.pump(const Duration(seconds: 5));
 
@@ -171,8 +171,9 @@ void main() {
       debugPrint('[reader] Dict results: $resultWidgets widgets');
 
       if (resultWidgets == 0) {
-        debugPrint('[reader] WARNING: No results for 猫. '
-            'Is a dictionary imported on this device?');
+        fail('Dictionary search for 猫 returned zero results. '
+            'This test requires at least one dictionary imported. '
+            'See CLAUDE.md § 集成测试流程.');
       }
 
       screenshotCount += await takeScreenshot(binding, 'dict_search_result');

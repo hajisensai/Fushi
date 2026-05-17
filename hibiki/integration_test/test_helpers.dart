@@ -61,5 +61,8 @@ Finder findSearchField() {
   if (find.byType(TextFormField).evaluate().isNotEmpty) {
     return find.byType(TextFormField).first;
   }
-  return find.byType(SearchBar).first;
+  final Finder searchBar = find.byType(SearchBar);
+  expect(searchBar, findsWidgets,
+      reason: 'No TextField, TextFormField, or SearchBar found');
+  return searchBar.first;
 }

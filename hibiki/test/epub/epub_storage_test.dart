@@ -14,8 +14,9 @@ void main() {
     if (tmpDir.existsSync()) tmpDir.deleteSync(recursive: true);
   });
 
-  test('bookPath returns path without creating directory', () {
+  test('path.join does not create intermediate directories', () {
     final String path = p.join(tmpDir.path, 'hoshi_books', '42');
+    expect(path, endsWith(p.join('hoshi_books', '42')));
     expect(Directory(path).existsSync(), isFalse);
   });
 

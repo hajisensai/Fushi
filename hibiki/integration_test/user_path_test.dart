@@ -85,18 +85,31 @@ void main() {
 
       // --- Rapid tab switching stability ---
       debugPrint('[test] Starting rapid tab switching (20 cycles)');
+      int skippedTaps = 0;
       for (int i = 0; i < 20; i++) {
         final int tabIndex = i % navIcons.length;
         final Finder target = navIcons[tabIndex];
-        if (target.evaluate().isEmpty) continue;
+        if (target.evaluate().isEmpty) {
+          skippedTaps++;
+          continue;
+        }
         await tester.tap(target);
         await tester.pump(const Duration(milliseconds: 200));
       }
 
       await tester.pump(const Duration(seconds: 2));
 
+      expect(skippedTaps, lessThan(5),
+          reason: 'Most tab taps should find their target');
       expect(find.byType(Scaffold), findsWidgets,
           reason: 'App should survive rapid tab switching');
+
+      // After rapid switching, verify the app is still interactive:
+      // tap the first tab and verify it has content.
+      await tester.tap(navIcons[0]);
+      await tester.pump(const Duration(seconds: 2));
+      expect(find.byIcon(Icons.menu_book), findsWidgets,
+          reason: 'Books tab icon must be present after rapid switching');
 
       expect(screenshotCount, greaterThan(0),
           reason: 'At least one screenshot must succeed for evidence');
