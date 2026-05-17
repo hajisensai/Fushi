@@ -174,7 +174,7 @@
                 android:resource="@xml/provider_paths" />
         </provider>
         <provider
-            android:name="com.pichillilorenzo.flutter_inappwebview.InAppWebViewFileProvider"
+            android:name="com.pichillilorenzo.flutter_inappwebview_android.InAppWebViewFileProvider"
             android:authorities="${applicationId}.flutter_inappwebview.fileprovider"
             android:exported="false"
             android:grantUriPermissions="true">

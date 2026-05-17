@@ -12,7 +12,7 @@
 -keep class com.ryanheise.audioservice.** { *; }
 
 # InAppWebView
--keep class com.pichillilorenzo.flutter_inappwebview.** { *; }
+-keep class com.pichillilorenzo.flutter_inappwebview_android.** { *; }
 
 # Drift / SQLite (moor_ffi)
 -keep class com.tekartik.sqflite.** { *; }

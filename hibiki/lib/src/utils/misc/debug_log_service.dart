@@ -33,6 +33,7 @@ class DebugLogService {
   }
 
   void _installHook() {
+    if (_originalDebugPrint != null) return;
     _originalDebugPrint = debugPrint;
     debugPrint = _interceptedDebugPrint;
   }

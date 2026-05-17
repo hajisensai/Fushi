@@ -18,7 +18,7 @@ final class PopupPluginRegistrant {
         }
         try {
             flutterEngine.getPlugins().add(
-                new com.pichillilorenzo.flutter_inappwebview.InAppWebViewFlutterPlugin());
+                new com.pichillilorenzo.flutter_inappwebview_android.InAppWebViewFlutterPlugin());
         } catch (Exception e) {
             Log.e(TAG, "Error registering plugin flutter_inappwebview", e);
         }
