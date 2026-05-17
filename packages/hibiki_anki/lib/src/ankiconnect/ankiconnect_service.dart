@@ -8,6 +8,8 @@ class AnkiConnectService implements AnkiService {
 
   AnkiConnectService({this.host = 'localhost', this.port = 8765});
 
+  static const _timeout = Duration(seconds: 10);
+
   Future<dynamic> _request(String action,
       [Map<String, dynamic>? params]) async {
     final body = jsonEncode({
@@ -15,11 +17,13 @@ class AnkiConnectService implements AnkiService {
       'version': 6,
       if (params != null) 'params': params,
     });
-    final response = await http.post(
-      Uri.parse('http://$host:$port'),
-      body: body,
-      headers: {'Content-Type': 'application/json'},
-    );
+    final response = await http
+        .post(
+          Uri.parse('http://$host:$port'),
+          body: body,
+          headers: {'Content-Type': 'application/json'},
+        )
+        .timeout(_timeout);
     final result = jsonDecode(response.body);
     if (result['error'] != null) {
       throw AnkiConnectException(result['error'] as String);
@@ -80,7 +84,8 @@ class AnkiConnectService implements AnkiService {
     required String fieldValue,
   }) async {
     final result = await _request('findNotes', {
-      'query': 'deck:"$deckName" $fieldName:"$fieldValue"',
+      'query':
+          'deck:"${_escapeAnkiQuery(deckName)}" $fieldName:"${_escapeAnkiQuery(fieldValue)}"',
     });
     return (result as List).isNotEmpty;
   }
@@ -97,6 +102,8 @@ class AnkiConnectService implements AnkiService {
     });
   }
 }
+
+String _escapeAnkiQuery(String value) => value.replaceAll('"', '\\"');
 
 class AnkiConnectException implements Exception {
   final String message;

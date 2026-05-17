@@ -16,10 +16,10 @@ class AnkiRepository extends BaseAnkiRepository {
   @override
   Future<AnkiSettings> loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString('hoshi_anki_settings');
+    final raw = prefs.getString(BaseAnkiRepository.settingsKey);
     if (raw == null) {
       await _migrateFromLegacy(prefs);
-      final migrated = prefs.getString('hoshi_anki_settings');
+      final migrated = prefs.getString(BaseAnkiRepository.settingsKey);
       if (migrated != null) {
         try {
           return AnkiSettings.fromJson(
@@ -335,7 +335,7 @@ class AnkiRepository extends BaseAnkiRepository {
     if (legacyDeck != null && legacyDeck != 'Default') {
       final settings = AnkiSettings(selectedDeckName: legacyDeck);
       await prefs.setString(
-          'hoshi_anki_settings', jsonEncode(settings.toJson()));
+          BaseAnkiRepository.settingsKey, jsonEncode(settings.toJson()));
     }
   }
 }

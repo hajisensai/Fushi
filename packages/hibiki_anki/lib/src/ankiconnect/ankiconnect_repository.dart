@@ -199,7 +199,11 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   Future<bool> isDuplicate(String expression, String reading) async {
     final settings = await loadSettings();
     final deck = settings.availableDecks
-        .firstWhereOrNull((d) => d.id == settings.selectedDeckId);
+            .firstWhereOrNull((d) => d.id == settings.selectedDeckId) ??
+        (settings.selectedDeckName != null
+            ? settings.availableDecks
+                .firstWhereOrNull((d) => d.name == settings.selectedDeckName)
+            : null);
     final noteType = settings.selectedNoteType;
     if (deck == null || noteType == null || noteType.fields.isEmpty) {
       return false;
@@ -284,7 +288,9 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         filename: filename,
         data: base64Encode(bytes),
       );
-      return ankiInlineMediaReference(filename);
+      final mime = mimeTypeForPath(filename);
+      if (mime.startsWith('audio/')) return '[sound:$filename]';
+      return '<img src="$filename">';
     } catch (e, stack) {
       debugPrint('AnkiConnectRepository._storeDictionaryMedia: $e\n$stack');
       return null;

@@ -8,11 +8,12 @@ import 'anki_models.dart';
 import 'lapis_preset.dart';
 
 abstract class BaseAnkiRepository {
-  static const _settingsKey = 'hoshi_anki_settings';
+  @protected
+  static const settingsKey = 'hoshi_anki_settings';
 
   Future<AnkiSettings> loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_settingsKey);
+    final raw = prefs.getString(settingsKey);
     if (raw == null) return const AnkiSettings();
     try {
       return AnkiSettings.fromJson(jsonDecode(raw) as Map<String, dynamic>);
@@ -24,7 +25,7 @@ abstract class BaseAnkiRepository {
 
   Future<void> saveSettings(AnkiSettings settings) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_settingsKey, jsonEncode(settings.toJson()));
+    await prefs.setString(settingsKey, jsonEncode(settings.toJson()));
   }
 
   Future<AnkiSettings> updateSettings(
