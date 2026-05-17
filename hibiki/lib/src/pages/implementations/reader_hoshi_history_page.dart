@@ -300,6 +300,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
 
   Widget _buildSrtCard(SrtBook book) {
     return _bookCardShell(
+      cardKey: ValueKey<String>('srt_entry_${book.ttuBookId}'),
       onTap: () => _openSrtBook(book),
       onLongPress: () => _showSrtBookDialog(book),
       child: Stack(
@@ -351,8 +352,10 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     required VoidCallback onTap,
     required VoidCallback onLongPress,
     required Widget child,
+    Key? cardKey,
   }) {
     return Padding(
+      key: cardKey,
       padding: Spacing.of(context).insets.all.normal,
       child: Material(
         color: theme.colorScheme.surfaceContainerLow,
@@ -662,6 +665,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
   Widget buildMediaItem(MediaItem item) {
     final int? bookId = _parseBookId(item.mediaIdentifier);
     final card = _bookCardShell(
+      cardKey: ValueKey<String>('book_entry_${item.mediaIdentifier}'),
       onTap: () async {
         final MediaSource source = item.getMediaSource(appModel: appModel);
         await appModel.openMedia(

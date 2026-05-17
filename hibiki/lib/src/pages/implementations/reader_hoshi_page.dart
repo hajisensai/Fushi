@@ -739,6 +739,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
                   ),
                 ),
               ),
+              if (_readerContentReady)
+                const SizedBox.shrink(
+                    key: ValueKey<String>('hoshi_content_ready')),
               _buildTopProgressBar(),
               buildDictionary(),
               _buildBottomChrome(),
@@ -1051,6 +1054,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (e.pointerType === 'touch' || e.button !== 0) return;
     _gestureEnd(e.clientX, e.clientY, e);
   }, {passive: false});
+  document.addEventListener('selectstart', function(e) {
+    if (hasStart) e.preventDefault();
+  });
   var _wheelTimer = null;
   document.addEventListener('wheel', function(e) {
     if (_wheelTimer) return;
@@ -1092,6 +1098,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   Widget _buildWebView() {
     return InAppWebView(
+      key: const ValueKey<String>('hoshi_webview'),
       contextMenu: ContextMenu(
         settings: ContextMenuSettings(
           hideDefaultSystemContextMenuItems: false,
@@ -2447,6 +2454,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       listenable: ctrl,
       builder: (context, _) {
         return Positioned(
+          key: const ValueKey<String>('hoshi_play_bar'),
           left: 0,
           right: 0,
           bottom: 0,
@@ -2935,6 +2943,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         child: Text(
           '$_progressCurrentChars / $_progressTotalChars'
           '  ${(ratio * 100).toStringAsFixed(2)}%',
+          key: const ValueKey<String>('hoshi_progress'),
           style: TextStyle(fontSize: _infoFontSize, color: infoColor),
           textAlign: TextAlign.center,
         ),
