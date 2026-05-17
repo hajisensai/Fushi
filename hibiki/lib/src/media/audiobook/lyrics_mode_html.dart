@@ -152,25 +152,31 @@ document.getElementById('lc').addEventListener('click', function(e) {
 // ── 长按选词 (long-press to select; 短按→跳转，长按→查词) ──
 var _tapStartX = 0, _tapStartY = 0, _tapStartTime = 0;
 var _longPressed = false;
-document.addEventListener('touchstart', function(e) {
-  var t = e.touches[0];
-  _tapStartX = t.clientX;
-  _tapStartY = t.clientY;
-  _tapStartTime = Date.now();
-  _longPressed = false;
-}, {passive: true});
-
-document.addEventListener('touchend', function(e) {
-  var t = e.changedTouches[0];
-  var dx = Math.abs(t.clientX - _tapStartX);
-  var dy = Math.abs(t.clientY - _tapStartY);
+function _lpStart(x, y) { _tapStartX = x; _tapStartY = y; _tapStartTime = Date.now(); _longPressed = false; }
+function _lpEnd(x, y) {
+  var dx = Math.abs(x - _tapStartX);
+  var dy = Math.abs(y - _tapStartY);
   var elapsed = Date.now() - _tapStartTime;
   if (dx < 20 && dy < 20 && elapsed >= 500) {
     _longPressed = true;
     if (window.hoshiSelection) {
-      window.hoshiSelection.selectText(t.clientX, t.clientY, 400);
+      window.hoshiSelection.selectText(x, y, 400);
     }
   }
+}
+document.addEventListener('touchstart', function(e) {
+  var t = e.touches[0]; _lpStart(t.clientX, t.clientY);
+}, {passive: true});
+document.addEventListener('touchend', function(e) {
+  var t = e.changedTouches[0]; _lpEnd(t.clientX, t.clientY);
+}, {passive: true});
+document.addEventListener('pointerdown', function(e) {
+  if (e.pointerType === 'touch' || e.button !== 0) return;
+  _lpStart(e.clientX, e.clientY);
+}, {passive: true});
+document.addEventListener('pointerup', function(e) {
+  if (e.pointerType === 'touch' || e.button !== 0) return;
+  _lpEnd(e.clientX, e.clientY);
 }, {passive: true});
 
 // ── 歌词模式：覆写 selection 回调，附加 cue 元数据 ──

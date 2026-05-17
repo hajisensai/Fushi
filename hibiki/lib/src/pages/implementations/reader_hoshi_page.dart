@@ -1051,6 +1051,16 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (e.pointerType === 'touch' || e.button !== 0) return;
     _gestureEnd(e.clientX, e.clientY, e);
   }, {passive: false});
+  var _wheelTimer = null;
+  document.addEventListener('wheel', function(e) {
+    if (_wheelTimer) return;
+    var r = window.hoshiReader;
+    if (!r || !('paginationMetrics' in r)) return;
+    _wheelTimer = setTimeout(function() { _wheelTimer = null; }, 250);
+    var forward = (e.deltaY > 0 || e.deltaX > 0);
+    window.flutter_inappwebview.callHandler('onSwipe', forward ? 'left' : 'right');
+    e.preventDefault();
+  }, {passive: false});
   window.hoshiProgressDetails = function() {
     var r = window.hoshiReader;
     if (!r) return '';
