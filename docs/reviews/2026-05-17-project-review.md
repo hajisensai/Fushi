@@ -123,3 +123,87 @@
 - Audit actual reader/Hoshi testability hooks and decide where to expose stable state for integration tests.
 - Convert HBK-REG-001 into a repeatable device verification path with required `.codex-test/` artifacts.
 - Review whether generated files and local dirty changes are being produced by the test/build flow and whether they need cleanup rules.
+
+---
+
+## Round 2 - Fix Verification
+
+### Scope
+
+- Commit `cc5f8f5a`: fix(test): address 6 audit findings from HBK-AUDIT-039~044
+- Files reviewed:
+  - `hibiki/integration_test/user_path_test.dart` (modified)
+  - `hibiki/integration_test/app_smoke_test.dart` (modified)
+  - `hibiki/integration_test/regression_test.dart` (new)
+  - `hibiki/integration_test/reader_dictionary_test.dart` (new)
+  - `.github/workflows/main.yml` (modified)
+  - `.github/workflows/release.yml` (modified)
+
+### Findings
+
+#### HBK-AUDIT-041 - WebView errors filtered (CRITICAL)
+
+- status: **fixed**
+- verification:
+  - `user_path_test.dart` now calls `_assertNoUnexpectedErrors(errors, allowWebViewErrors: true)` — the filter is explicit and opt-in, not default.
+  - `regression_test.dart` and `reader_dictionary_test.dart` both use `_assertStrictErrors` / `_assertNoWebViewErrors` which do NOT filter WebView/chromium/renderer errors.
+  - `app_smoke_test.dart` retains the filter for startup-only scope — acceptable since its scope is "app starts without crash", not "reader works".
+
+#### HBK-AUDIT-040 - Assertions too weak (HIGH)
+
+- status: **fixed**
+- verification:
+  - `user_path_test.dart:51`: `expect(hasSearch, isTrue, reason: ...)` — was previously just `debugPrint`.
+  - `user_path_test.dart:65`: `expect(hasListTiles, isTrue, reason: ...)` — same.
+  - Breaking the search field or removing ListTiles will now fail the test.
+
+#### HBK-AUDIT-042 - Screenshot infrastructure can produce zero artifacts (HIGH)
+
+- status: **fixed**
+- verification:
+  - `_takeScreenshotSafe` now returns `int` (1=success, 0=fail) with a 10s timeout.
+  - `user_path_test.dart:101`: `expect(screenshotCount, greaterThan(0))` enforces at least one capture.
+  - A hung `takeScreenshot` call will timeout instead of stalling indefinitely.
+
+#### HBK-AUDIT-043 - CI only builds APK (HIGH)
+
+- status: **fixed**
+- verification:
+  - `main.yml:50-56`: Added `flutter analyze` + `flutter test` steps before APK build.
+  - `release.yml:55-61`: Same two steps added before release build.
+  - A failing unit test or analysis error will now block the workflow.
+
+#### HBK-AUDIT-044 - Known regressions not in test flow (HIGH)
+
+- status: **fixed** (skeleton level)
+- verification:
+  - `regression_test.dart` wires HBK-REG-001 into the test suite.
+  - Test explicitly `fail()`s with a clear blocked message if fixtures aren't present — no silent pass.
+  - WebView errors are NOT filtered in this test.
+  - Full bounds validation awaits stable reader test hooks (marked TODO).
+
+#### HBK-AUDIT-039 - No reader/dictionary device tests (HIGH)
+
+- status: **fixed** (skeleton level)
+- verification:
+  - `reader_dictionary_test.dart` provides two testWidgets: reader open + dictionary search.
+  - Both use strict error policy (WebView errors = failure).
+  - Both fail clearly when prerequisites (imported books/dictionaries) are missing.
+  - Full interactivity assertions (tap book, navigate pages, select text, lookup) await stable widget keys in Hoshi reader.
+
+### Remaining Work (not blockers for this round)
+
+1. **Reader test hooks**: Hoshi reader needs to expose testable state (e.g., a `ValueKey` on the WebView, a channel to query page number/DOM state) before full reader integration assertions can be implemented.
+2. **CI device tests**: Integration tests require an emulator. Could add as a manual/nightly workflow with `reactivecircus/android-emulator-runner@v2` in the future.
+3. **Golden test coverage**: The 5 existing golden tests protect small widgets. Could expand to reader chrome / dictionary popup in the future.
+
+### Judgment
+
+All 6 findings from Round 1 are addressed. The critical WebView filter issue is resolved with a clear policy split. The test suite now:
+- Fails on real errors instead of masking them
+- Has mandatory evidence collection (screenshots)
+- Is enforced by CI
+- Covers the documented regression
+- Has expansion points for reader/dictionary when test hooks arrive
+
+No further blocking issues found in this round.
