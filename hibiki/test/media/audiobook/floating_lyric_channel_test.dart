@@ -8,6 +8,10 @@ void main() {
   const String channelName = 'app.hibiki.reader/floating_lyric';
   const MethodCodec codec = StandardMethodCodec();
 
+  setUp(() {
+    FloatingLyricChannel.platformOverride = true;
+  });
+
   Future<void> invokeFromNative(String method, [Object? arguments]) async {
     final ByteData data = codec.encodeMethodCall(
       MethodCall(method, arguments),
@@ -23,6 +27,7 @@ void main() {
       null,
     );
     FloatingLyricChannel.clearEventHandlers();
+    FloatingLyricChannel.platformOverride = null;
   });
 
   group('FloatingLyricChannel native events', () {

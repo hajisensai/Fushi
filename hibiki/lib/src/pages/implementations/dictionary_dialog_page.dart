@@ -385,6 +385,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
           '${appModel.dictionaryResourceDirectory.path}/saf_import_temp',
         );
 
+        if (!Platform.isAndroid) return;
         final result = await _safChannel.invokeMethod<String>(
           'pickAndCopyDirectory',
           {'destPath': tempDir.path},

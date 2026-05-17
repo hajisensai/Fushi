@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 
@@ -8,6 +11,9 @@ typedef FloatingLyricLockHandler = void Function(bool locked);
 /// Android floating subtitle overlay channel.
 class FloatingLyricChannel {
   FloatingLyricChannel._();
+
+  @visibleForTesting
+  static bool? platformOverride;
 
   static const MethodChannel _channel = HibikiChannels.floatingLyric;
 
@@ -89,25 +95,30 @@ class FloatingLyricChannel {
   }
 
   static Future<bool> canDrawOverlays() async {
+    if (!(platformOverride ?? Platform.isAndroid)) return false;
     final bool? result = await _channel.invokeMethod<bool>('canDrawOverlays');
     return result ?? false;
   }
 
   static Future<bool> show() async {
+    if (!(platformOverride ?? Platform.isAndroid)) return false;
     final bool? result = await _channel.invokeMethod<bool>('show');
     return result ?? false;
   }
 
   static Future<void> hide() async {
+    if (!(platformOverride ?? Platform.isAndroid)) return;
     await _channel.invokeMethod<void>('hide');
   }
 
   static Future<bool> isShowing() async {
+    if (!(platformOverride ?? Platform.isAndroid)) return false;
     final bool? result = await _channel.invokeMethod<bool>('isShowing');
     return result ?? false;
   }
 
   static Future<void> updateText(String text) async {
+    if (!(platformOverride ?? Platform.isAndroid)) return;
     await _channel.invokeMethod<void>('updateText', {'text': text});
   }
 
@@ -115,6 +126,7 @@ class FloatingLyricChannel {
     required int start,
     required int length,
   }) async {
+    if (!(platformOverride ?? Platform.isAndroid)) return;
     await _channel.invokeMethod<void>('highlight', {
       'start': start,
       'length': length,
@@ -129,6 +141,7 @@ class FloatingLyricChannel {
     required String unlock,
     required String close,
   }) async {
+    if (!(platformOverride ?? Platform.isAndroid)) return;
     await _channel.invokeMethod<void>('updateLabels', {
       'previous': previous,
       'playPause': playPause,
@@ -140,6 +153,7 @@ class FloatingLyricChannel {
   }
 
   static Future<void> setPlaybackState({required bool playing}) async {
+    if (!(platformOverride ?? Platform.isAndroid)) return;
     await _channel.invokeMethod<void>('setPlaybackState', {
       'playing': playing,
     });
@@ -154,6 +168,7 @@ class FloatingLyricChannel {
     int highlightColor = 0x80FFD54F,
     int activeColor = 0xFFFFD54F,
   }) async {
+    if (!(platformOverride ?? Platform.isAndroid)) return;
     await _channel.invokeMethod<void>('updateStyle', {
       'fontSize': fontSize,
       'textColor': textColor,
@@ -166,6 +181,7 @@ class FloatingLyricChannel {
   }
 
   static Future<void> setLocked(bool locked) async {
+    if (!(platformOverride ?? Platform.isAndroid)) return;
     await _channel.invokeMethod<void>('setLocked', {'locked': locked});
   }
 }

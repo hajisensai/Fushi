@@ -101,10 +101,12 @@ class FloatingDictChannel {
   }
 
   static Future<void> setSearchText(String text) async {
+    if (!Platform.isAndroid) return;
     await _channel.invokeMethod<void>('setSearchText', text);
   }
 
   static Future<void> sendSearchResult(String? json) async {
+    if (!Platform.isAndroid) return;
     await _channel.invokeMethod<void>('searchResult', json);
   }
 }
