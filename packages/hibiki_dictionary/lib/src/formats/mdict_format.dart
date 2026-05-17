@@ -5,8 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_archive/flutter_archive.dart';
 import 'package:path/path.dart' as path;
 
-import 'package:hibiki/dictionary.dart';
-import 'package:hibiki/i18n/strings.g.dart';
+import '../models/dictionary_operations_params.dart';
+import 'dictionary_format.dart';
 
 class MdictFormat extends DictionaryFormat {
   MdictFormat._privateConstructor()
@@ -51,7 +51,7 @@ Future<void> prepareDirectoryMdictFormat(PrepareDirectoryParams params) async {
 
   final mdxFile = _findFileByExtension(params.resourceDirectory, '.mdx');
   if (mdxFile == null) {
-    throw Exception(t.dictionary_mdx_not_found);
+    throw Exception('MDX file not found in archive');
   }
 
   // MDict reading via dict_reader has been removed; will be replaced by

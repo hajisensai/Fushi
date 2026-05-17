@@ -6,8 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_archive/flutter_archive.dart';
 import 'package:path/path.dart' as path;
 
-import 'package:hibiki/dictionary.dart';
-import 'package:hibiki/i18n/strings.g.dart';
+import '../models/dictionary_entry.dart';
+import '../models/dictionary_operations_params.dart';
+import 'dictionary_format.dart';
 
 /// A dictionary format for archives following the ABBYY Lingvo or DSL format
 /// compatible with GoldenDict.
@@ -94,11 +95,9 @@ void prepareEntriesMigakuFormat({
       isar.dictionaryEntrys.putSync(entry);
 
       count++;
-      params.send(t.import_found_entry(
-        count: count,
-      ));
+      params.send('Found $count entries');
     }
   }
 
-  params.send(t.import_found_entry(count: count));
+  params.send('Found $count entries');
 }

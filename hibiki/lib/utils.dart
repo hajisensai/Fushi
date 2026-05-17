@@ -26,7 +26,7 @@ export 'src/utils/player/blur_options.dart';
 export 'src/utils/misc/jidoujisho_color.dart';
 export 'src/utils/misc/jidoujisho_time_format.dart';
 export 'src/utils/misc/jidoujisho_audio_handler.dart';
-export 'src/utils/misc/jidoujisho_text_selection.dart';
+export 'package:hibiki_core/src/models/jidoujisho_text_selection.dart';
 export 'src/utils/misc/dialog_content.dart';
 export 'src/utils/misc/volume_key_channel.dart';
 export 'src/utils/misc/tts_channel.dart';

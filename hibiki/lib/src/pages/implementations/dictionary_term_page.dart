@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sliver_tools/sliver_tools.dart';
 import 'package:spaces/spaces.dart';
 import 'package:visibility_detector/visibility_detector.dart';
-import 'package:hibiki/dictionary.dart';
+import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/models/creator_model.dart';

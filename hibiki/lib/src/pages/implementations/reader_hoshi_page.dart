@@ -40,7 +40,6 @@ import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
 import 'package:hibiki/src/reader/reader_selection_data.dart';
 import 'package:hibiki/src/reader/reader_selection_scripts.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
-import 'package:hibiki/src/utils/misc/jidoujisho_text_selection.dart';
 import 'package:hibiki/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:hibiki/src/anki/anki_models.dart';
 import 'package:hibiki/src/anki/anki_repository.dart';

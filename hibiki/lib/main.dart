@@ -11,7 +11,7 @@ import 'package:stack_trace/stack_trace.dart';
 import 'package:spaces/spaces.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:hibiki/models.dart';
-import 'package:hibiki/src/dictionary/hoshidicts.dart';
+import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/popup_main.dart' as popup_entrypoint;
 import 'package:hibiki/src/utils/misc/channel_constants.dart';

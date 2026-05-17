@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/services.dart';
-import 'package:hibiki/src/dictionary/dictionary_search_result.dart';
+import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 
 typedef FloatingDictSearchHandler = Future<DictionarySearchResult?> Function(

@@ -4,7 +4,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:hibiki/creator.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
-import 'package:hibiki/dictionary.dart';
+import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 
 /// An enhancement that calls the native share API for sharing word details.
 class ShareAction extends QuickAction {

@@ -4,11 +4,14 @@ import 'dart:math';
 
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
-import 'package:hibiki/dictionary.dart';
-import 'package:hibiki/language.dart';
-import 'package:hibiki/models.dart';
-import 'package:hibiki/utils.dart';
-import 'package:hibiki/src/dictionary/hoshidicts.dart';
+import 'package:hibiki_core/hibiki_core.dart';
+
+import '../engine/hoshidicts.dart';
+import '../formats/dictionary_format.dart';
+import '../models/dictionary_entry.dart';
+import '../models/dictionary_operations_params.dart';
+import '../models/dictionary_search_result.dart';
+import 'language_utils.dart';
 
 /// Defines common characteristics required for tuning locale and text
 /// segmentation behaviour for different languages. Override the variables
@@ -392,7 +395,7 @@ abstract class Language {
   /// may want to display a furigana widget instead.
   Widget getTermReadingOverrideWidget({
     required BuildContext context,
-    required AppModel appModel,
+    required double dictionaryFontSize,
     required DictionaryEntry entry,
     required Function(String) onSearch,
   }) {
@@ -417,7 +420,7 @@ abstract class Language {
   /// Some languages may have custom widgets for generating pronunciation
   /// diagrams.
   Widget getPitchWidget({
-    required AppModel appModel,
+    required double dictionaryFontSize,
     required BuildContext context,
     required String reading,
     required int downstep,

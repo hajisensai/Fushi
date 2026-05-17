@@ -7,7 +7,7 @@ import 'package:fluttertoast/fluttertoast.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:hibiki/creator.dart';
 import 'package:hibiki/models.dart';
-import 'package:hibiki/dictionary.dart';
+import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/utils.dart';
 
 /// An enhancement used effectively as a shortcut for previewing audio.

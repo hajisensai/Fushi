@@ -1,7 +1,7 @@
 import 'package:expandable/expandable.dart';
 import 'package:flutter/material.dart';
 import 'package:spaces/spaces.dart';
-import 'package:hibiki/dictionary.dart';
+import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/pages.dart';
 
 /// Returns the widget for a [DictionarySearchResult] which returns a

@@ -4,7 +4,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as path;
 
-import 'package:hibiki/dictionary.dart';
+import '../models/dictionary_operations_params.dart';
+import 'dictionary_format.dart';
 
 /// A dictionary format for archives following the ABBYY Lingvo or DSL format
 /// compatible with GoldenDict.

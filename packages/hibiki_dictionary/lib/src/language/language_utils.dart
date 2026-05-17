@@ -1,7 +1,8 @@
+import 'package:flutter/foundation.dart';
 import 'package:kana_kit/kana_kit.dart';
 import 'package:ruby_text/ruby_text.dart';
-import 'package:hibiki/dictionary.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
+
+import '../models/dictionary_entry.dart';
 
 /// Extra methods for [RegExp].
 
@@ -138,7 +139,7 @@ class LanguageUtils {
         return segments;
       }
     } catch (e, stack) {
-      ErrorLogService.instance.log('LanguageUtils.rubySegments', e, stack);
+      debugPrint('[LanguageUtils.rubySegments] $e');
 
       /// This is the fallback upon failure.
       return [RubyTextData(term, ruby: reading)];

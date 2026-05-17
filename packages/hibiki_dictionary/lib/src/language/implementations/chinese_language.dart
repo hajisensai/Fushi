@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/dictionary.dart';
-import 'package:hibiki/language.dart';
-import 'package:hibiki/utils.dart';
-import 'package:hibiki/src/dictionary/hoshidicts.dart';
+import 'package:hibiki_core/hibiki_core.dart';
+
+import '../../engine/hoshidicts.dart';
+import '../../formats/yomichan_dictionary_format.dart';
+import '../language.dart';
 
 class ChineseLanguage extends Language {
   ChineseLanguage._privateConstructor()

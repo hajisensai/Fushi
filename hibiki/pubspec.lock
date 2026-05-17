@@ -792,6 +792,13 @@ packages:
       relative: true
     source: path
     version: "0.0.0"
+  hibiki_dictionary:
+    dependency: "direct main"
+    description:
+      path: "../packages/hibiki_dictionary"
+      relative: true
+    source: path
+    version: "0.0.0"
   hibiki_platform:
     dependency: "direct main"
     description:

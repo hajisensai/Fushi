@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui';
@@ -28,9 +28,7 @@ import 'package:remove_emoji/remove_emoji.dart';
 import 'package:restart_app/restart_app.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:hibiki/creator.dart';
-import 'package:hibiki/dictionary.dart';
-import 'package:hibiki/src/dictionary/hoshidicts.dart';
-import 'package:hibiki/language.dart';
+import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';

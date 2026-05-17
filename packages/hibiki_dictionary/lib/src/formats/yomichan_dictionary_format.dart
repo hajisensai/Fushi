@@ -10,7 +10,8 @@ import 'package:flutter/material.dart';
 import 'package:html/dom.dart' as dom;
 import 'package:path/path.dart' as path;
 import 'package:recase/recase.dart';
-import 'package:hibiki/dictionary.dart';
+import '../models/dictionary_operations_params.dart';
+import 'dictionary_format.dart';
 
 /// A dictionary format for archives following the latest Yomichan bank schema.
 /// Example dictionaries for this format may be downloaded from the Yomichan

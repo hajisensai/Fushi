@@ -1,13 +1,17 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:hibiki_core/hibiki_core.dart';
 import 'package:kana_kit/kana_kit.dart';
 import 'package:ruby_text/ruby_text.dart';
-import 'package:hibiki/dictionary.dart';
-import 'package:hibiki/language.dart';
-import 'package:hibiki/models.dart';
-import 'package:hibiki/utils.dart';
-import 'package:hibiki/src/dictionary/hoshidicts.dart';
+
+import '../../engine/hoshidicts.dart';
+import '../../formats/yomichan_dictionary_format.dart';
+import '../../models/dictionary_entry.dart';
+import '../../models/dictionary_operations_params.dart';
+import '../../models/dictionary_search_result.dart';
+import '../language.dart';
+import '../language_utils.dart';
 
 /// Language implementation of the Japanese language.
 class JapaneseLanguage extends Language {
@@ -129,7 +133,7 @@ class JapaneseLanguage extends Language {
   @override
   Widget getTermReadingOverrideWidget({
     required BuildContext context,
-    required AppModel appModel,
+    required double dictionaryFontSize,
     required DictionaryEntry entry,
     required Function(String) onSearch,
   }) {
@@ -193,7 +197,7 @@ class JapaneseLanguage extends Language {
 
   @override
   Widget getPitchWidget({
-    required AppModel appModel,
+    required double dictionaryFontSize,
     required BuildContext context,
     required String reading,
     required int downstep,
@@ -216,7 +220,7 @@ class JapaneseLanguage extends Language {
           text,
           style: TextStyle(
             color: color,
-            fontSize: appModel.dictionaryFontSize,
+            fontSize: dictionaryFontSize,
           ),
         ),
       );
@@ -235,7 +239,7 @@ class JapaneseLanguage extends Language {
           text,
           style: TextStyle(
             color: color,
-            fontSize: appModel.dictionaryFontSize,
+            fontSize: dictionaryFontSize,
           ),
         ),
       );
@@ -253,7 +257,7 @@ class JapaneseLanguage extends Language {
           text,
           style: TextStyle(
             color: color,
-            fontSize: appModel.dictionaryFontSize,
+            fontSize: dictionaryFontSize,
           ),
         ),
       );
@@ -303,7 +307,7 @@ class JapaneseLanguage extends Language {
         ' [$downstep]  ',
         style: TextStyle(
           color: color,
-          fontSize: appModel.dictionaryFontSize,
+          fontSize: dictionaryFontSize,
         ),
       ),
     );

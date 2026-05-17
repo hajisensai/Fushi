@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/language/language_utils.dart';
+import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 
 void main() {
   group('RegExpExtension.allMatchesWithSep', () {

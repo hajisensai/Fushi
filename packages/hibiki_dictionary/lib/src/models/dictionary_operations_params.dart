@@ -1,7 +1,8 @@
 import 'dart:io';
 import 'dart:isolate';
 
-import 'package:hibiki/dictionary.dart';
+import '../engine/dictionary.dart';
+import '../formats/dictionary_format.dart';
 
 class IsolateParams {
   IsolateParams({

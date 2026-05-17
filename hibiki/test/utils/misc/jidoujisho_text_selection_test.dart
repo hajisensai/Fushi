@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/jidoujisho_text_selection.dart';
+import 'package:hibiki_core/hibiki_core.dart';
 
 void main() {
   group('JidoujishoTextSelection', () {

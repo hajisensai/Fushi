@@ -6,7 +6,7 @@ import 'package:progress_indicators/progress_indicators.dart';
 import 'package:spaces/spaces.dart';
 import 'package:transparent_image/transparent_image.dart';
 import 'package:hibiki/creator.dart';
-import 'package:hibiki/dictionary.dart';
+import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 

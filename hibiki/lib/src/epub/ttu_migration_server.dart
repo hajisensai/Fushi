@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:hibiki/language.dart';
+import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:local_assets_server/local_assets_server.dart';
 
 /// Minimal ttu asset server for migration only.

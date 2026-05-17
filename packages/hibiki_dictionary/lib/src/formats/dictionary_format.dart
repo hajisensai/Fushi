@@ -1,6 +1,6 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/widgets.dart';
-import 'package:hibiki/dictionary.dart';
+import '../models/dictionary_operations_params.dart';
 
 abstract class DictionaryFormat {
   DictionaryFormat({

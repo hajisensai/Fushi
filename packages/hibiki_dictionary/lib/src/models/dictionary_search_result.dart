@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:hibiki/dictionary.dart';
+import 'dictionary_entry.dart';
 
 class DictionarySearchResult {
   factory DictionarySearchResult.fromJson(String json) {

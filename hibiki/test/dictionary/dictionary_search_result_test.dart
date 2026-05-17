@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/dictionary/dictionary_entry.dart';
-import 'package:hibiki/src/dictionary/dictionary_search_result.dart';
+import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 
 void main() {
   group('DictionarySearchResult', () {

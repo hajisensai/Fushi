@@ -5,8 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/creator.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
-import 'package:hibiki/dictionary.dart';
-import 'package:hibiki/language.dart';
+import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 

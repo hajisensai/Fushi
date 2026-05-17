@@ -1,4 +1,4 @@
-import 'package:hibiki/src/dictionary/hoshidicts.dart';
+import 'hoshidicts.dart';
 
 Future<HoshiImportResult> importDictionaryViaHoshidicts({
   required String zipPath,
