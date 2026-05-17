@@ -118,20 +118,22 @@ void main() {
     await ErrorLogService.instance.init();
     await DebugLogService.instance.init();
 
-    /// Initialise local file-based logging.
-    await FlutterLogs.initLogs(
-      logLevelsEnabled: [
-        LogLevel.INFO,
-        LogLevel.WARNING,
-        LogLevel.ERROR,
-        LogLevel.SEVERE
-      ],
-      timeStampFormat: TimeStampFormat.DATE_FORMAT_1,
-      directoryStructure: DirectoryStructure.FOR_DATE,
-      logTypesEnabled: ['device', 'network', 'errors'],
-      logFileExtension: LogFileExtension.LOG,
-      logsRetentionPeriodInDays: 7,
-    );
+    /// Initialise local file-based logging (mobile only).
+    if (Platform.isAndroid || Platform.isIOS) {
+      await FlutterLogs.initLogs(
+        logLevelsEnabled: [
+          LogLevel.INFO,
+          LogLevel.WARNING,
+          LogLevel.ERROR,
+          LogLevel.SEVERE
+        ],
+        timeStampFormat: TimeStampFormat.DATE_FORMAT_1,
+        directoryStructure: DirectoryStructure.FOR_DATE,
+        logTypesEnabled: ['device', 'network', 'errors'],
+        logFileExtension: LogFileExtension.LOG,
+        logsRetentionPeriodInDays: 7,
+      );
+    }
 
     /// Run the heavy initialisation after the first frame has been scheduled.
     /// [AppModel.isInitialised] will flip to true and notify listeners when

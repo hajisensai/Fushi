@@ -2503,6 +2503,7 @@ class AppModel with ChangeNotifier {
   /// Requests for full external storage permissions. Required to handle video
   /// files and their subtitle files in the same directory.
   Future<void> requestExternalStoragePermissions() async {
+    if (!Platform.isAndroid) return;
     if (isFirstTimeSetup) {
       Fluttertoast.showToast(
         msg: t.storage_permissions,
@@ -2521,7 +2522,7 @@ class AppModel with ChangeNotifier {
       await Permission.storage.request();
     }
 
-    if (Platform.isAndroid && (_androidDeviceInfo?.version.sdkInt ?? 0) >= 30) {
+    if ((_androidDeviceInfo?.version.sdkInt ?? 0) >= 30) {
       final manageStorageGranted =
           await Permission.manageExternalStorage.isGranted;
       if (!manageStorageGranted) {
@@ -2572,11 +2573,13 @@ class AppModel with ChangeNotifier {
   /// Used to ask for AnkiDroid database permissions. Should be called at
   /// startup.
   Future<void> requestAnkidroidPermissions() async {
+    if (!Platform.isAndroid) return;
     await methodChannel.invokeMethod('requestAnkidroidPermissions');
   }
 
   /// Adds the default 'hibiki Kinomoto' model to the list of Anki card types.
   Future<void> addDefaultModelIfMissing() async {
+    if (!Platform.isAndroid) return;
     List<String> models = await getModelList();
     if (!models.contains('Lapis')) {
       methodChannel.invokeMethod('addDefaultModel');

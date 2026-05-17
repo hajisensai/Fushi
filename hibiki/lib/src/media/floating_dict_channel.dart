@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
@@ -67,29 +68,35 @@ class FloatingDictChannel {
   }
 
   static Future<bool> canDrawOverlays() async {
+    if (!Platform.isAndroid) return false;
     final bool? result = await _channel.invokeMethod<bool>('canDrawOverlays');
     return result ?? false;
   }
 
   static Future<bool> show() async {
+    if (!Platform.isAndroid) return false;
     final bool? result = await _channel.invokeMethod<bool>('show');
     return result ?? false;
   }
 
   static Future<void> hide() async {
+    if (!Platform.isAndroid) return;
     await _channel.invokeMethod<void>('hide');
   }
 
   static Future<bool> isShowing() async {
+    if (!Platform.isAndroid) return false;
     final bool? result = await _channel.invokeMethod<bool>('isShowing');
     return result ?? false;
   }
 
   static Future<void> setClipboardMonitoring({required bool enabled}) async {
+    if (!Platform.isAndroid) return;
     await _channel.invokeMethod<void>('setClipboardMonitoring', enabled);
   }
 
   static Future<void> searchTerm(String term) async {
+    if (!Platform.isAndroid) return;
     await _channel.invokeMethod<void>('searchTerm', term);
   }
 

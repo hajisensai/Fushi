@@ -37,6 +37,7 @@ class CameraEnhancement extends ImageEnhancement {
     required CreatorModel creatorModel,
     required EnhancementTriggerCause cause,
   }) async {
+    if (!Platform.isAndroid && !Platform.isIOS) return;
     ImageExportField imageField = field as ImageExportField;
     XFile? pickedFile =
         await ImagePicker().pickImage(source: ImageSource.camera);
