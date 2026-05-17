@@ -3,7 +3,7 @@ description: A focused Japanese EPUB reader with popup dictionary and Anki integ
 publish_to: 'none'
 version: 0.3.0+30
 environment:
-  sdk: ">=3.0.0<4.0.0"
+  sdk: ">=3.5.0 <4.0.0"
   flutter: "^3.41.6"
 
 dependencies:
@@ -30,7 +30,7 @@ dependencies:
   expandable: ^5.0.1
   external_app_launcher: ^4.0.3
   external_path: ^2.2.0
-  file_picker: ^5.3.0
+  file_picker: ^8.0.0
   float_column: ^4.0.3
   flutter:
     sdk: flutter

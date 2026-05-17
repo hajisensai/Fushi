@@ -1,0 +1,24 @@
+name: hibiki_workspace
+repository: https://github.com/hdjsadgfwtg/hibiki
+
+packages:
+  - packages/*
+  - hibiki
+
+command:
+  bootstrap:
+    usePubspecOverrides: true
+
+scripts:
+  analyze:
+    run: melos exec -- "dart analyze --fatal-infos"
+    description: Run dart analyze in all packages
+
+  test:
+    run: melos exec -- "flutter test"
+    description: Run tests in all packages
+
+  build:android:
+    run: |
+      cd hibiki && flutter build apk --release --target-platform android-arm64 --split-per-abi
+    description: Build Android release APK

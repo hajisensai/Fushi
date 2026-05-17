@@ -14,6 +14,7 @@
 *.ipr
 *.iws
 .idea/
+melos_*.iml
 
 # The .vscode folder contains launch configuration and tasks you configure in
 # VS Code which you may wish to be included in version control, so this line
@@ -30,6 +31,8 @@
 .pub-cache/
 .pub/
 /build/
+**/pubspec_overrides.yaml
+packages/*/pubspec.lock
 
 # Web related
 
@@ -43,6 +46,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+**/android/build/
 
 # AI/planning docs
 AGENTS.md
@@ -59,6 +63,9 @@ qa-*.png
 qa-*-summary.txt
 popup_*.png
 debug_screenshot.png
+
+# Claude agent worktrees
+.claude/worktrees/
 
 # Codex test artifacts
 .codex-test/

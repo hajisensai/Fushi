@@ -1,0 +1,18 @@
+name: hibiki_dictionary
+description: Dictionary engine, FFI bindings, and language implementations for Hibiki
+publish_to: none
+
+
+environment:
+  sdk: ">=3.5.0 <4.0.0"
+  flutter: ">=3.41.6"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  hibiki_core:
+    path: ../hibiki_core
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter

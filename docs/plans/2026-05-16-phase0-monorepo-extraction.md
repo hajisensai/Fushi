@@ -82,40 +82,34 @@ hibiki/                              # repo root
 **Files:**
 - Create: `melos.yaml`
 - Create: `pubspec.yaml` (workspace root)
-- Modify: `hibiki/pubspec.yaml` (add workspace reference)
+- Create: `tool/bootstrap.ps1` (Windows workaround)
+- Modify: `hibiki/pubspec.yaml` (upgrade file_picker)
 
-- [ ] **Step 1: Install melos globally**
+> **IMPORTANT (已验证 2026-05-17):** 不使用 Dart 原生 `resolution: workspace`。
+> 原因：unified resolution 会拉升 transitive Android deps（core:1.18.0, browser:1.9.0）要求 AGP 8.9.1+，
+> 但当前 AGP 8.3.2 / Gradle 8.12 / Kotlin 1.9.23 构建正常，升级是全有或全无的巨大风险。
+> 替代方案：melos `usePubspecOverrides: true` + 各包独立 path deps。
 
-```bash
-dart pub global activate melos
-```
+> **KNOWN BUG:** `melos bootstrap` 在 CJK Windows（中文/日文系统区域）崩溃（Dart VM subprocess
+> stdout 编码为系统 locale 而非 UTF-8，melos 用 UTF-8 解码时报 FormatException）。
+> Workaround: Windows 上用 `tool/bootstrap.ps1`，CI (Linux) 用 `dart run melos bootstrap`。
 
-Expected: "Activated melos X.X.X"
-
-- [ ] **Step 2: Create workspace root pubspec.yaml**
-
-Create `d:\APP\vs_claude_code\hibiki\pubspec.yaml`:
+- [x] **Step 1: Create workspace root pubspec.yaml**
 
 ```yaml
 name: hibiki_workspace
 publish_to: none
 
 environment:
-  sdk: ">=3.11.0 <4.0.0"
-
-workspace:
-  - packages/*
-  - hibiki
+  sdk: ">=3.5.0 <4.0.0"
 
 dev_dependencies:
   melos: ^7.7.0
 ```
 
-> **TESTED:** Dart workspace globs (`packages/*`) require SDK >=3.11.0. `resolution: workspace` in sub-packages requires >=3.5.0. Melos 7.x requires local `dev_dependency`, not just global install.
+注意：无 `workspace:` 字段（不启用 Dart unified resolution）。
 
-- [ ] **Step 3: Create melos.yaml**
-
-Create `d:\APP\vs_claude_code\hibiki\melos.yaml`:
+- [x] **Step 2: Create melos.yaml**
 
 ```yaml
 name: hibiki_workspace
@@ -132,27 +126,23 @@ command:
 scripts:
   analyze:
     run: melos exec -- "dart analyze --fatal-infos"
-    description: Run dart analyze in all packages
-
   test:
     run: melos exec -- "flutter test"
-    description: Run tests in all packages
-
   build:android:
     run: |
       cd hibiki && flutter build apk --release --target-platform android-arm64 --split-per-abi
-    description: Build Android release APK
 ```
 
-- [ ] **Step 4: Add workspace reference to app pubspec.yaml**
+- [x] **Step 3: Create Windows bootstrap script**
 
-In `hibiki/pubspec.yaml`, add at the top level (after `publish_to`):
+`tool/bootstrap.ps1` — runs `flutter pub get` in each package sequentially。
 
-```yaml
-resolution: workspace
-```
+- [x] **Step 4: Upgrade file_picker ^5.3.0 → ^8.0.0**
 
-- [ ] **Step 5: Create empty package directories**
+Flutter 3.41.6 移除了 V1 plugin embedding（`PluginRegistry.Registrar`），file_picker 5.x/6.x 引用该类无法编译。
+file_picker 8.x 仅使用 V2 embedding，dart analyze 通过。
+
+- [x] **Step 5: Create empty package directories**
 
 ```powershell
 $packages = @("hibiki_core", "hibiki_dictionary", "hibiki_anki", "hibiki_audio", "hibiki_platform")
@@ -161,14 +151,13 @@ foreach ($pkg in $packages) {
 }
 ```
 
-- [ ] **Step 6: Create package pubspec files**
+- [x] **Step 6: Create package pubspec files**
 
 Create `packages/hibiki_core/pubspec.yaml`:
 ```yaml
 name: hibiki_core
 description: Shared models, database, language config, and i18n for Hibiki
 publish_to: none
-resolution: workspace
 
 environment:
   sdk: ">=3.5.0 <4.0.0"
@@ -177,17 +166,11 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  drift: ^2.23.0
-  sqlite3_flutter_libs: ^0.5.28
-  # slang/i18n deferred — stays in app during Phase 0
-  path: ^1.8.3
-  collection: ^1.17.0
+  # 实际依赖在 Phase 0 文件迁移时按需添加（drift, path, collection 等）
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  drift_dev: ^2.23.0
-  build_runner: ^2.4.6
 ```
 
 Create `packages/hibiki_dictionary/pubspec.yaml`:
@@ -195,7 +178,6 @@ Create `packages/hibiki_dictionary/pubspec.yaml`:
 name: hibiki_dictionary
 description: Dictionary engine, FFI bindings, and language implementations for Hibiki
 publish_to: none
-resolution: workspace
 
 environment:
   sdk: ">=3.5.0 <4.0.0"
@@ -206,19 +188,11 @@ dependencies:
     sdk: flutter
   hibiki_core:
     path: ../hibiki_core
-  ffi: ^2.0.2
-  kana_kit: ^2.0.0
-  archive: ^3.3.7
-  dio: ^5.1.1
-  collection: ^1.17.0
-  dart_mappable: ^4.0.0-dev.1
-  path: ^1.8.3
+  # 实际依赖在文件迁移时按需添加（ffi, kana_kit, archive, dio, dart_mappable 等）
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  dart_mappable_builder: ^4.0.0-dev.2
-  build_runner: ^2.4.6
 ```
 
 > **Note:** `dio` needed by `dictionary_downloader.dart`. `collection` used by language implementations. `dart_mappable` + builder needed for `structured_content.dart` (uses `@MappableClass` annotation, mapper is a `part of` file that needs regeneration after move).
@@ -228,7 +202,6 @@ Create `packages/hibiki_anki/pubspec.yaml`:
 name: hibiki_anki
 description: Anki integration abstraction for Hibiki
 publish_to: none
-resolution: workspace
 
 environment:
   sdk: ">=3.5.0 <4.0.0"
@@ -239,7 +212,6 @@ dependencies:
     sdk: flutter
   hibiki_core:
     path: ../hibiki_core
-  http: ^1.1.0
 
 dev_dependencies:
   flutter_test:
@@ -249,9 +221,8 @@ dev_dependencies:
 Create `packages/hibiki_audio/pubspec.yaml`:
 ```yaml
 name: hibiki_audio
-description: Audio playback and recording for Hibiki
+description: Audio playback, recording, and subtitle parsers for Hibiki
 publish_to: none
-resolution: workspace
 
 environment:
   sdk: ">=3.5.0 <4.0.0"
@@ -262,10 +233,7 @@ dependencies:
     sdk: flutter
   hibiki_core:
     path: ../hibiki_core
-  just_audio: ^0.9.31
-  audio_service: ^0.18.9
-  record: ^5.0.0
-  path: ^1.8.3
+  # 实际依赖在文件迁移时按需添加（just_audio, audio_service, record, path 等）
 
 dev_dependencies:
   flutter_test:
@@ -277,7 +245,6 @@ Create `packages/hibiki_platform/pubspec.yaml`:
 name: hibiki_platform
 description: Platform service abstractions for Hibiki
 publish_to: none
-resolution: workspace
 
 environment:
   sdk: ">=3.5.0 <4.0.0"
@@ -294,7 +261,7 @@ dev_dependencies:
     sdk: flutter
 ```
 
-- [ ] **Step 7: Create barrel export files**
+- [x] **Step 7: Create barrel export files**
 
 Create each `lib/<package_name>.dart`:
 
@@ -306,33 +273,43 @@ library hibiki_core;
 
 (Same pattern for all 5 packages)
 
-- [ ] **Step 8: Bootstrap workspace**
+- [x] **Step 8: Bootstrap workspace**
 
 ```powershell
-# 如果 melos 不在 PATH 上，用 dart run：
-D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat run melos bootstrap
+# Windows (CJK locale workaround):
+powershell -ExecutionPolicy Bypass -File tool\bootstrap.ps1
+
+# Linux/CI:
+dart run melos bootstrap
 ```
 
-Expected: "6 packages bootstrapped" (已在 worktree 中验证通过)
+已验证：所有 6 个包独立 `flutter pub get` 成功。
 
-- [ ] **Step 9: Verify Android build still works**
+- [x] **Step 9: Verify Android build still works**
 
-> **WARNING (已验证):** 当前项目有 **预存的 AGP 版本问题** — `hibiki/android/settings.gradle` 中 AGP 8.3.2 过旧，最新 `androidx.browser:browser:1.9.0` 等依赖需要 AGP 8.9.1+。这会导致 release build 失败。**此问题与 workspace 设置无关**，但必须在 Phase 0 开始前或 Task 1 中解决。
->
-> 修复：`hibiki/android/settings.gradle` 中 `id "com.android.application" version "8.3.2"` 升级到 `"8.9.1"` 或更高。同时检查 NDK 版本（需要 28.2.13676358+）。
+> **已验证 2026-05-17:** AGP 8.3.2 + Gradle 8.12 构建 debug APK 成功 (647 tasks, BUILD SUCCESSFUL)。
+> file_picker ^8.0.0 兼容 Flutter 3.41.6（无 V1 embedding 引用）。
+> media3-transformer 保持 1.10.0（原始版本，无需降级）。
+
+```powershell
+cd hibiki\android
+.\gradlew.bat :app:assembleDebug
+```
+
+- [x] **Step 10: Verify tests pass**
 
 ```powershell
 cd hibiki
-D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat build apk --release --target-platform android-arm64 --split-per-abi
+flutter test
 ```
 
-Expected: APK builds successfully (no code was moved yet, just workspace structure added).
+已验证：587/587 tests passed, flutter analyze 无 error。
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 11: Commit**
 
 ```powershell
-git add melos.yaml pubspec.yaml packages/
-git add hibiki/pubspec.yaml
+git add melos.yaml pubspec.yaml pubspec.lock packages/ tool/
+git add hibiki/pubspec.yaml hibiki/pubspec.lock
 git commit -m "chore: setup melos workspace with empty packages"
 ```
 
