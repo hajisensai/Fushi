@@ -6,6 +6,12 @@ project(hoshidicts_ffi LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# MSVC: UTF-8 source/execution charset, disable min/max macros, enable C++23 features
+if(MSVC)
+  add_compile_options(/utf-8 /Zc:__cplusplus /permissive-)
+  add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN)
+endif()
+
 # Windows: export all symbols from the shared library (or use HOSHI_EXPORT selectively)
 if(WIN32)
   set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS OFF)
@@ -19,10 +25,10 @@ set(ZSTD_BUILD_STATIC ON CACHE BOOL "")
 set(LIBDEFLATE_BUILD_SHARED_LIB OFF CACHE BOOL "")
 set(LIBDEFLATE_BUILD_GZIP OFF CACHE BOOL "")
 
-add_subdirectory(hoshidicts_external/glaze)
-add_subdirectory(hoshidicts_external/zstd)
-add_subdirectory(hoshidicts_external/unordered_dense)
-add_subdirectory(hoshidicts_external/libdeflate)
+add_subdirectory(hoshidicts_external/glaze EXCLUDE_FROM_ALL)
+add_subdirectory(hoshidicts_external/zstd EXCLUDE_FROM_ALL)
+add_subdirectory(hoshidicts_external/unordered_dense EXCLUDE_FROM_ALL)
+add_subdirectory(hoshidicts_external/libdeflate EXCLUDE_FROM_ALL)
 
 add_library(hoshidicts STATIC
     hoshidicts_src/hash/hash.cpp
