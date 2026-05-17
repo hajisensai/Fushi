@@ -71,6 +71,33 @@ class AudiobookPlayerController extends ChangeNotifier {
   AudioCue? _currentCue;
   int _currentCueIndex = -1;
 
+  AudioCue? cueAtCurrentPositionInBook() {
+    if (_allBookCues.isEmpty) return _currentCue;
+    final int effectiveMs =
+        (_player.position.inMilliseconds - delayMs.value).clamp(0, 1 << 30);
+    AudioCue? best;
+    int bestStart = -1;
+    for (final AudioCue cue in _allBookCues) {
+      final int? start = _globalMsForCue(
+        audioFileIndex: cue.audioFileIndex,
+        startMs: cue.startMs,
+        fileOffsets: _fileOffsets,
+      );
+      final int? end = _globalMsForCue(
+        audioFileIndex: cue.audioFileIndex,
+        startMs: cue.endMs,
+        fileOffsets: _fileOffsets,
+      );
+      if (start == null || end == null) continue;
+      if (start <= effectiveMs && end > effectiveMs) return cue;
+      if (start <= effectiveMs && start > bestStart) {
+        best = cue;
+        bestStart = start;
+      }
+    }
+    return best ?? _currentCue;
+  }
+
   /// 当前章节 cue 列表长度（UI 用于 "第 x / n 句" 进度显示）。
   int get chapterCueCount => _chapterCues.length;
 

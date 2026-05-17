@@ -458,7 +458,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   }
 
   void _restoreFromCurrentAudioCue() {
-    final AudioCue? cue = _audiobookController?.currentCue;
+    final AudioCue? cue = _audiobookController?.cueAtCurrentPositionInBook();
     if (cue == null || _book == null) return;
 
     final SasayakiFragment? frag =
@@ -479,10 +479,12 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     }
 
     final int chapter = _chapterIndexForCue(cue);
-    if (chapter < 0) return;
-    _currentChapter = chapter;
+    final int fallbackChapter =
+        chapter >= 0 ? chapter : _chapterIndexForText(cue.text);
+    if (fallbackChapter < 0) return;
+    _currentChapter = fallbackChapter;
     _initialProgress = 0.0;
-    _lastProgressSection = chapter;
+    _lastProgressSection = fallbackChapter;
     _lastProgressValue = 0.0;
     debugPrint('[ReaderHoshi] restore from audio cue chapter: '
         'chapter=$_currentChapter href=${cue.chapterHref}');
@@ -494,6 +496,19 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (chapterHref.isEmpty) return -1;
     for (int i = 0; i < _book!.chapters.length; i++) {
       if (_book!.chapters[i].href == chapterHref) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  int _chapterIndexForText(String text) {
+    if (_book == null) return -1;
+    final String needle = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (needle.length < 6) return -1;
+    for (int i = 0; i < _book!.chapters.length; i++) {
+      final String chapterText = _book!.chapterPlainText(i);
+      if (chapterText.contains(needle)) {
         return i;
       }
     }
