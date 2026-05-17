@@ -4,7 +4,7 @@
 #include <ankerl/unordered_dense.h>
 #include <zstd.h>
 
-#include <android/log.h>
+#include "hoshidicts/platform.hpp"
 
 #include <algorithm>
 #include <cstddef>
@@ -368,8 +368,8 @@ std::string DictionaryQuery::decompress_glossary(const void* data, size_t size) 
 
   static constexpr size_t kMaxGlossarySize = 64 * 1024 * 1024;  // 64 MB
   if (decompressed_size > kMaxGlossarySize) {
-    __android_log_print(ANDROID_LOG_WARN, "hoshidicts",
-                        "glossary decompressed size %llu exceeds limit", decompressed_size);
+    HOSHI_LOGW("glossary decompressed size %llu exceeds limit",
+               static_cast<unsigned long long>(decompressed_size));
     return "";
   }
 

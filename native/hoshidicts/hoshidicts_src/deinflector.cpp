@@ -3,7 +3,7 @@
 #include <glaze/glaze.hpp>
 #include <utf8.h>
 
-#include <android/log.h>
+#include "hoshidicts/platform.hpp"
 
 #include <algorithm>
 #include <cstddef>
@@ -11,8 +11,8 @@
 #include <string>
 #include <vector>
 
-#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "hoshidicts", __VA_ARGS__)
-#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, "hoshidicts", __VA_ARGS__)
+#define LOGE HOSHI_LOGE
+#define LOGW HOSHI_LOGW
 
 namespace hoshidicts_json {
 

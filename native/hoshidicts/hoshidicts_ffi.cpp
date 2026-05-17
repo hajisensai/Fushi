@@ -2,7 +2,7 @@
 #include <cstring>
 #include <string>
 #include <vector>
-#include <pthread.h>
+#include "hoshidicts/platform.hpp"
 #include "hoshidicts/deinflector.hpp"
 #include "hoshidicts/importer.hpp"
 #include "hoshidicts/lookup.hpp"
@@ -174,7 +174,11 @@ struct ImportThreadArgs {
   FfiImportResult result;
 };
 
+#ifdef _WIN32
+static unsigned __stdcall import_thread_fn(void* arg) {
+#else
 static void* import_thread_fn(void* arg) {
+#endif
   auto* a = static_cast<ImportThreadArgs*>(arg);
   try {
     auto result = dictionary_importer::import(a->zip_path, a->output_dir);
@@ -197,36 +201,35 @@ static void* import_thread_fn(void* arg) {
     a->result.detected_type = dup("term");
     a->result.error = dup(e.what());
   }
+#ifdef _WIN32
+  return 0;
+#else
   return nullptr;
+#endif
 }
 
-__attribute__((visibility("default")))
+HOSHI_EXPORT
 FfiImportResult hoshidicts_import(const char* zip_path, const char* output_dir) {
   ImportThreadArgs args;
   args.zip_path = zip_path;
   args.output_dir = output_dir;
   args.result = {};
 
-  pthread_t thread;
-  pthread_attr_t attr;
-  pthread_attr_init(&attr);
-  pthread_attr_setstacksize(&attr, 32 * 1024 * 1024);
+  HoshiThread thread;
+  bool ok = hoshi_thread_create(thread, import_thread_fn, &args, 32 * 1024 * 1024);
 
-  int rc = pthread_create(&thread, &attr, import_thread_fn, &args);
-  pthread_attr_destroy(&attr);
-
-  if (rc != 0) {
+  if (!ok) {
     args.result.success = 0;
     args.result.title = dup("");
     args.result.error = dup("Failed to create import thread");
     return args.result;
   }
 
-  pthread_join(thread, nullptr);
+  hoshi_thread_join(thread);
   return args.result;
 }
 
-__attribute__((visibility("default")))
+HOSHI_EXPORT
 void hoshidicts_free_import_result(FfiImportResult* r) {
   if (!r) return;
   free(r->title);
@@ -241,39 +244,39 @@ struct HoshidictsHandle {
   Deinflector deinflector;
 };
 
-__attribute__((visibility("default")))
+HOSHI_EXPORT
 void* hoshidicts_create() {
   return new HoshidictsHandle();
 }
 
-__attribute__((visibility("default")))
+HOSHI_EXPORT
 void hoshidicts_destroy(void* handle) {
   delete static_cast<HoshidictsHandle*>(handle);
 }
 
-__attribute__((visibility("default")))
+HOSHI_EXPORT
 void hoshidicts_add_term_dict(void* handle, const char* path) {
   static_cast<HoshidictsHandle*>(handle)->query.add_term_dict(path);
 }
 
-__attribute__((visibility("default")))
+HOSHI_EXPORT
 void hoshidicts_add_freq_dict(void* handle, const char* path) {
   static_cast<HoshidictsHandle*>(handle)->query.add_freq_dict(path);
 }
 
-__attribute__((visibility("default")))
+HOSHI_EXPORT
 void hoshidicts_add_pitch_dict(void* handle, const char* path) {
   static_cast<HoshidictsHandle*>(handle)->query.add_pitch_dict(path);
 }
 
-__attribute__((visibility("default")))
+HOSHI_EXPORT
 void hoshidicts_load_transforms(void* handle, const char* json) {
   static_cast<HoshidictsHandle*>(handle)->deinflector.load_transforms_json(json);
 }
 
 // ── query ───────────────────────────────────────────────────────────
 
-__attribute__((visibility("default")))
+HOSHI_EXPORT
 FfiQueryResult hoshidicts_query(void* handle, const char* expression) {
   FfiQueryResult r{};
   auto& q = static_cast<HoshidictsHandle*>(handle)->query;
@@ -286,7 +289,7 @@ FfiQueryResult hoshidicts_query(void* handle, const char* expression) {
   return r;
 }
 
-__attribute__((visibility("default")))
+HOSHI_EXPORT
 void hoshidicts_free_query_result(FfiQueryResult* r) {
   if (!r) return;
   for (int i = 0; i < r->count; i++) {
@@ -297,7 +300,7 @@ void hoshidicts_free_query_result(FfiQueryResult* r) {
 
 // ── lookup ──────────────────────────────────────────────────────────
 
-__attribute__((visibility("default")))
+HOSHI_EXPORT
 FfiLookupResults hoshidicts_lookup(void* handle, const char* text, int32_t max_results, int32_t scan_length) {
   FfiLookupResults r{};
   auto* h = static_cast<HoshidictsHandle*>(handle);
@@ -322,7 +325,7 @@ FfiLookupResults hoshidicts_lookup(void* handle, const char* text, int32_t max_r
   return r;
 }
 
-__attribute__((visibility("default")))
+HOSHI_EXPORT
 void hoshidicts_free_lookup_results(FfiLookupResults* r) {
   if (!r) return;
   for (int i = 0; i < r->count; i++) {
@@ -340,7 +343,7 @@ void hoshidicts_free_lookup_results(FfiLookupResults* r) {
 
 // ── styles ──────────────────────────────────────────────────────────
 
-__attribute__((visibility("default")))
+HOSHI_EXPORT
 FfiDictStyles hoshidicts_get_styles(void* handle) {
   FfiDictStyles r{};
   auto& q = static_cast<HoshidictsHandle*>(handle)->query;
@@ -354,7 +357,7 @@ FfiDictStyles hoshidicts_get_styles(void* handle) {
   return r;
 }
 
-__attribute__((visibility("default")))
+HOSHI_EXPORT
 void hoshidicts_free_styles(FfiDictStyles* r) {
   if (!r) return;
   for (int i = 0; i < r->count; i++) {
@@ -371,7 +374,7 @@ struct FfiMediaFile {
   int32_t size;
 };
 
-__attribute__((visibility("default")))
+HOSHI_EXPORT
 FfiMediaFile hoshidicts_get_media(void* handle, const char* dict_name, const char* media_path) {
   FfiMediaFile r{};
   auto& q = static_cast<HoshidictsHandle*>(handle)->query;
@@ -382,7 +385,7 @@ FfiMediaFile hoshidicts_get_media(void* handle, const char* dict_name, const cha
   return r;
 }
 
-__attribute__((visibility("default")))
+HOSHI_EXPORT
 void hoshidicts_free_media(FfiMediaFile* r) {
   if (!r) return;
   free(r->data);

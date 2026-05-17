@@ -3,6 +3,14 @@ import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 
+DynamicLibrary _openNativeLib() {
+  if (Platform.isAndroid) return DynamicLibrary.open('libhoshidicts_ffi.so');
+  if (Platform.isWindows) return DynamicLibrary.open('hoshidicts_ffi.dll');
+  if (Platform.isMacOS) return DynamicLibrary.open('libhoshidicts_ffi.dylib');
+  if (Platform.isIOS) return DynamicLibrary.process();
+  throw UnsupportedError('hoshidicts: unsupported platform ${Platform.operatingSystem}');
+}
+
 // ── C struct mirrors ────────────────────────────────────────────────
 
 final class FfiGlossary extends Struct {
@@ -144,9 +152,7 @@ typedef _FreeMediaDart = void Function(Pointer<FfiMediaFile> r);
 
 class HoshidictsFfiBindings {
   HoshidictsFfiBindings() {
-    _lib = Platform.isAndroid
-        ? DynamicLibrary.open('libhoshidicts_ffi.so')
-        : throw UnsupportedError('hoshidicts only supports Android');
+    _lib = _openNativeLib();
 
     import_ = _lib.lookupFunction<
         FfiImportResult Function(Pointer<Utf8>, Pointer<Utf8>),

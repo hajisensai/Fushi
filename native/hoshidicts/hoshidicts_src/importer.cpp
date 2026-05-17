@@ -30,7 +30,7 @@
 #include "stardict/stardict_reader.hpp"
 #include "zip/zip.hpp"
 
-#include <android/log.h>
+#include "hoshidicts/platform.hpp"
 #include <utf8.h>
 
 namespace {
@@ -236,13 +236,11 @@ ProcessedFile process_term_bank(const std::string& content) {
     std::string_view definition_tags = term.definition_tags.value_or("");
 
     if (expr.size() > std::numeric_limits<uint16_t>::max()) {
-      __android_log_print(ANDROID_LOG_WARN, "hoshidicts",
-                          "expression too long (%zu bytes), skipping entry", expr.size());
+      HOSHI_LOGW("expression too long (%zu bytes), skipping entry", expr.size());
       continue;
     }
     if (reading.size() > std::numeric_limits<uint16_t>::max()) {
-      __android_log_print(ANDROID_LOG_WARN, "hoshidicts",
-                          "reading too long (%zu bytes), skipping entry", reading.size());
+      HOSHI_LOGW("reading too long (%zu bytes), skipping entry", reading.size());
       continue;
     }
 
@@ -508,8 +506,7 @@ ProcessedFile process_simple_entries(const std::vector<SimpleEntry>& entries) {
     std::string_view expr = entry.headword;
 
     if (expr.size() > std::numeric_limits<uint16_t>::max()) {
-      __android_log_print(ANDROID_LOG_WARN, "hoshidicts",
-                          "expression too long (%zu bytes), skipping entry", expr.size());
+      HOSHI_LOGW("expression too long (%zu bytes), skipping entry", expr.size());
       continue;
     }
 

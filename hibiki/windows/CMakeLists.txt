@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.14)
-project(yuuna LANGUAGES CXX)
+project(hibiki LANGUAGES C CXX)
 
-set(BINARY_NAME "yuuna")
+set(BINARY_NAME "hibiki")
 
 cmake_policy(SET CMP0063 NEW)
 
@@ -50,6 +50,9 @@ add_subdirectory("runner")
 # them to the application.
 include(flutter/generated_plugins.cmake)
 
+# === hoshidicts native dictionary engine ===
+set(HOSHIDICTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../native/hoshidicts")
+add_subdirectory("${HOSHIDICTS_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/hoshidicts")
 
 # === Installation ===
 # Support files are copied into place next to the executable, so that it can
@@ -79,6 +82,10 @@ if(PLUGIN_BUNDLED_LIBRARIES)
     DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
     COMPONENT Runtime)
 endif()
+
+# Install hoshidicts DLL next to the executable
+install(TARGETS hoshidicts_ffi RUNTIME DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+  COMPONENT Runtime)
 
 # Fully re-copy the assets directory on each build to avoid having stale files
 # from a previous install.

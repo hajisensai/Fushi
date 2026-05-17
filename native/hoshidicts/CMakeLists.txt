@@ -6,6 +6,11 @@ project(hoshidicts_ffi LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Windows: export all symbols from the shared library (or use HOSHI_EXPORT selectively)
+if(WIN32)
+  set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS OFF)
+endif()
+
 set(ZSTD_BUILD_PROGRAMS OFF CACHE BOOL "")
 set(ZSTD_BUILD_TESTS OFF CACHE BOOL "")
 set(ZSTD_BUILD_SHARED OFF CACHE BOOL "")
@@ -40,12 +45,18 @@ target_include_directories(hoshidicts PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/hoshidicts_external/xxHash
 )
 
+# Platform-conditional linking
+set(HOSHIDICTS_PLATFORM_LIBS "")
+if(ANDROID)
+  list(APPEND HOSHIDICTS_PLATFORM_LIBS log)
+endif()
+
 target_link_libraries(hoshidicts PRIVATE
     glaze::glaze
     libzstd_static
     libdeflate_static
     unordered_dense
-    log
+    ${HOSHIDICTS_PLATFORM_LIBS}
 )
 
 add_library(hoshidicts_ffi SHARED
@@ -58,5 +69,13 @@ target_include_directories(hoshidicts_ffi PRIVATE
 
 target_link_libraries(hoshidicts_ffi PRIVATE
     hoshidicts
-    log
+    ${HOSHIDICTS_PLATFORM_LIBS}
 )
+
+# Windows: set output name without 'lib' prefix
+if(WIN32)
+  set_target_properties(hoshidicts_ffi PROPERTIES
+      PREFIX ""
+      OUTPUT_NAME "hoshidicts_ffi"
+  )
+endif()
