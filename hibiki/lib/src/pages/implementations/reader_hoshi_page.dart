@@ -244,6 +244,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         _initialProgress = saved.normCharOffset / 10000.0;
         _lastProgressSection = _currentChapter;
         _lastProgressValue = _initialProgress;
+      } else {
+        _restoreFromCurrentAudioCue();
       }
     }
 
@@ -453,6 +455,49 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       chapterHref: chapterHref,
     );
     controller.setChapterCues(chapterCues);
+  }
+
+  void _restoreFromCurrentAudioCue() {
+    final AudioCue? cue = _audiobookController?.currentCue;
+    if (cue == null || _book == null) return;
+
+    final SasayakiFragment? frag =
+        SasayakiMatchCodec.tryDecode(cue.textFragmentId);
+    if (frag != null &&
+        frag.sectionIndex >= 0 &&
+        frag.sectionIndex < _book!.chapters.length) {
+      _currentChapter = frag.sectionIndex;
+      _initialProgress = _chapterCharCounts[frag.sectionIndex] > 0
+          ? (frag.normCharStart / _chapterCharCounts[frag.sectionIndex])
+              .clamp(0.0, 1.0)
+          : 0.0;
+      _lastProgressSection = _currentChapter;
+      _lastProgressValue = _initialProgress;
+      debugPrint('[ReaderHoshi] restore from audio cue: '
+          'chapter=$_currentChapter progress=$_initialProgress');
+      return;
+    }
+
+    final int chapter = _chapterIndexForCue(cue);
+    if (chapter < 0) return;
+    _currentChapter = chapter;
+    _initialProgress = 0.0;
+    _lastProgressSection = chapter;
+    _lastProgressValue = 0.0;
+    debugPrint('[ReaderHoshi] restore from audio cue chapter: '
+        'chapter=$_currentChapter href=${cue.chapterHref}');
+  }
+
+  int _chapterIndexForCue(AudioCue cue) {
+    if (_book == null) return -1;
+    final String chapterHref = cue.chapterHref.trim();
+    if (chapterHref.isEmpty) return -1;
+    for (int i = 0; i < _book!.chapters.length; i++) {
+      if (_book!.chapters[i].href == chapterHref) {
+        return i;
+      }
+    }
+    return -1;
   }
 
   Future<void> _initAudiobookController(
