@@ -229,3 +229,82 @@ Post-commit review of Windows adaptation changes (reader WebView2 handling, pagi
 - Windows runtime testing: EPUB reader rendering via WebView2
 - Windows runtime testing: dictionary import and FFI search
 - Continue adaptation plan execution
+
+---
+
+## Round 4: Windows Runtime Verification (Post-Fix)
+
+### Scope
+
+Rebuild and relaunch Windows debug app after Round 3 fixes. Verify startup, widget tree, process stability, and remaining platform compatibility.
+
+### Findings
+
+#### HBK-AUDIT-014 — Windows build + startup clean
+- **Severity**: INFO
+- **Status**: VERIFIED OK
+- **Details**: `flutter build windows --debug` succeeds (8.9s). App launches, all init phases complete in order: PackageInfo+DeviceInfo → directories → Drift database → maps → targetLanguage+licenses → enhancements+actions+sources → search preload → DONE. Zero exceptions in console.
+
+#### HBK-AUDIT-015 — Widget tree structural verification
+- **Severity**: INFO
+- **Status**: VERIFIED OK
+- **Details**: Via Dart VM Service WebSocket inspection:
+  - Desktop layout active: `NavigationRail` (not BottomNavigationBar)
+  - Bookshelf page renders: `ReaderHoshiHistoryPage` → `Column` → `_TagBarContent` → `ListView`
+  - Material framework intact: `MaterialApp` → `Scaffold` → `Row`
+  - Book drag/drop: `LongPressDraggable<BookTagRow>` + `DragTarget<BookTagRow>` present
+
+#### HBK-AUDIT-016 — Process stability
+- **Severity**: INFO
+- **Status**: VERIFIED OK
+- **Details**: PID stable, 385MB working set, 109 threads, no crash after sustained runtime. Both main isolate and Drift DB worker isolate healthy.
+
+#### HBK-AUDIT-017 — audio_service safety check
+- **Severity**: INFO
+- **Status**: VERIFIED OK
+- **File**: `lib/src/models/app_model.dart:3385-3430`
+- **Details**: `initialiseAudioHandler()` wraps `AudioService.init()` in try-catch. If platform init fails (possible on Windows), fallback creates `JidoujishoAudioHandler` directly without system media notifications. Non-crashing.
+
+#### HBK-AUDIT-018 — Comprehensive platform guard final scan
+- **Severity**: INFO
+- **Status**: VERIFIED OK
+- **Details**: Final targeted scan of 6 key Android-only APIs:
+  - `HibikiToast`: Desktop overlay fallback implemented
+  - `ExternalPath`: Both usages guarded with `Platform.isAndroid`
+  - `FlutterExitApp`: Guarded, Windows uses `exit(0)`
+  - `receive_intent`: Guarded with `Platform.isAndroid`
+  - `webViewAssetUrl`: Has explicit Windows/Linux path using `Uri.file()`
+  - `audio_service`: try-catch with fallback handler
+
+### Verification
+
+| Check | Result |
+|-------|--------|
+| Windows debug build | ✅ Success (8.9s) |
+| App startup (zero exceptions) | ✅ Pass |
+| Widget tree (NavigationRail desktop layout) | ✅ Pass |
+| Process stability (385MB, 109 threads) | ✅ Pass |
+| Platform guards (6 key APIs) | ✅ All safe |
+| flutter analyze | ✅ 0 issues |
+| flutter test | ✅ 724/724 passed |
+
+### Phase 1 Completion Status
+
+| Category | Status |
+|----------|--------|
+| C++ cross-platform adaptation | ✅ Complete |
+| MSVC compilation | ✅ Complete |
+| Platform guards (all channels) | ✅ Complete |
+| flutter_inappwebview v6 migration | ✅ Complete |
+| AnkiConnect desktop backend | ✅ Complete |
+| WebView2 onReceivedError handling | ✅ Complete |
+| Pagination JS WebView2 compatibility | ✅ Complete |
+| Audio cue priming | ✅ Complete |
+| Test suite | ✅ 724/724 pass |
+| Windows build (debug + release) | ✅ Both succeed |
+| App startup on Windows | ✅ Clean, all init phases |
+| Widget tree verification | ✅ Desktop layout correct |
+| Process stability | ✅ Verified |
+| EPUB reader rendering | 🔲 Requires GUI interaction |
+| Dictionary import + search | 🔲 Requires GUI interaction |
+| Fluttertoast → HibikiToast | ✅ Already migrated |
