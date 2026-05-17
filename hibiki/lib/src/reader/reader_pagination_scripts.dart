@@ -893,18 +893,19 @@ $_sharedJs
   },
   restoreProgress: async function(progress) {
     await document.fonts.ready;
+    var self = this;
     if (progress <= 0) {
       this.scrollToChapterStart();
-      requestAnimationFrame(() => {
-        this.scrollToChapterStart();
-        this.notifyRestoreComplete();
-      });
+      setTimeout(function() {
+        self.scrollToChapterStart();
+        self.notifyRestoreComplete();
+      }, 16);
       return;
     }
     this.scrollToProgressContinuous(progress);
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => this.notifyRestoreComplete());
-    });
+    setTimeout(function() {
+      setTimeout(function() { self.notifyRestoreComplete(); }, 16);
+    }, 16);
   },
   jumpToFragment: async function(fragment) {
     await document.fonts.ready;
@@ -914,10 +915,11 @@ $_sharedJs
       this.notifyRestoreComplete();
       return false;
     }
+    var self = this;
     target.scrollIntoView();
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => this.notifyRestoreComplete());
-    });
+    setTimeout(function() {
+      setTimeout(function() { self.notifyRestoreComplete(); }, 16);
+    }, 16);
     return true;
   },
   paginate: function(direction) {
