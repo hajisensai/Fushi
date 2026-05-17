@@ -5,6 +5,8 @@ import 'package:integration_test/integration_test.dart';
 
 import 'package:hibiki/main.dart' as app;
 
+import 'test_helpers.dart';
+
 /// Regression tests for documented bugs in docs/REGRESSION_BUGS.md.
 ///
 /// These require a connected device/emulator with test fixtures pushed to
@@ -30,29 +32,14 @@ void main() {
     try {
       app.main();
 
-      // Wait for home screen.
-      bool ready = false;
-      for (int i = 0; i < 180; i++) {
-        await tester.pump(const Duration(milliseconds: 500));
-        if (find.byIcon(Icons.menu_book).evaluate().isNotEmpty) {
-          ready = true;
-          break;
-        }
-      }
-      expect(ready, isTrue, reason: 'Home must render within 90s');
+      final bool homeReady = await waitForHome(tester);
+      expect(homeReady, isTrue, reason: 'Home must render within 90s');
       await tester.pump(const Duration(seconds: 2));
 
-      screenshotCount += await _screenshot(binding, 'reg001_home');
+      screenshotCount += await takeScreenshot(binding, 'reg001_home');
 
-      // Find a book entry using test hook keys.
-      final Finder bookEntries = find.byWidgetPredicate((Widget w) {
-        final Key? k = w.key;
-        if (k is ValueKey<String>) {
-          return k.value.startsWith('book_entry_') ||
-              k.value.startsWith('srt_entry_');
-        }
-        return false;
-      });
+      // Find a book entry.
+      final Finder bookEntries = findBookEntries();
 
       if (bookEntries.evaluate().isEmpty) {
         fail('HBK-REG-001 blocked: no books on shelf. '
@@ -90,75 +77,51 @@ void main() {
       expect(contentReady, isTrue,
           reason: 'Reader content must become ready within 60s');
 
-      screenshotCount += await _screenshot(binding, 'reg001_reader_ready');
+      screenshotCount += await takeScreenshot(binding, 'reg001_reader_ready');
 
       // Check play bar vs WebView bounds.
       final Finder playBar =
           find.byKey(const ValueKey<String>('hoshi_play_bar'));
+
       if (playBar.evaluate().isEmpty) {
-        debugPrint('[reg] No play bar found — audiobook may not be attached. '
-            'For full HBK-REG-001 verification, import Kagami with '
-            'm4b + srt before running.');
-      } else {
-        final RenderBox playBarBox =
-            tester.renderObject(playBar) as RenderBox;
-        final Offset playBarTopLeft =
-            playBarBox.localToGlobal(Offset.zero);
-
-        final RenderBox webViewBox =
-            tester.renderObject(find.byKey(webViewKey)) as RenderBox;
-        final Offset webViewTopLeft =
-            webViewBox.localToGlobal(Offset.zero);
-        final double webViewBottom =
-            webViewTopLeft.dy + webViewBox.size.height;
-
-        debugPrint(
-          '[reg] WebView bottom: $webViewBottom, '
-          'PlayBar top: ${playBarTopLeft.dy}, '
-          'PlayBar height: ${playBarBox.size.height}',
-        );
-
-        expect(webViewBottom, lessThanOrEqualTo(playBarTopLeft.dy + 1),
-            reason: 'HBK-REG-001: Reader WebView must not extend '
-                'under the audiobook play bar. '
-                'WebView bottom=$webViewBottom, '
-                'PlayBar top=${playBarTopLeft.dy}');
-
-        screenshotCount += await _screenshot(binding, 'reg001_bounds_check');
+        fail('HBK-REG-001 blocked: play bar not present. '
+            'This regression requires an audiobook (m4b + srt) attached '
+            'to the test book. Import Kagami with audio fixtures first. '
+            'See CLAUDE.md § 集成测试流程.');
       }
+
+      final RenderBox playBarBox =
+          tester.renderObject(playBar) as RenderBox;
+      final Offset playBarTopLeft =
+          playBarBox.localToGlobal(Offset.zero);
+
+      final RenderBox webViewBox =
+          tester.renderObject(find.byKey(webViewKey)) as RenderBox;
+      final Offset webViewTopLeft =
+          webViewBox.localToGlobal(Offset.zero);
+      final double webViewBottom =
+          webViewTopLeft.dy + webViewBox.size.height;
+
+      debugPrint(
+        '[reg] WebView bottom: $webViewBottom, '
+        'PlayBar top: ${playBarTopLeft.dy}, '
+        'PlayBar height: ${playBarBox.size.height}',
+      );
+
+      expect(webViewBottom, lessThanOrEqualTo(playBarTopLeft.dy + 1),
+          reason: 'HBK-REG-001: Reader WebView must not extend '
+              'under the audiobook play bar. '
+              'WebView bottom=$webViewBottom, '
+              'PlayBar top=${playBarTopLeft.dy}');
+
+      screenshotCount += await takeScreenshot(binding, 'reg001_bounds_check');
 
       expect(screenshotCount, greaterThan(0),
           reason: 'At least one screenshot must succeed');
 
-      // WebView errors are NOT allowed in reader regression tests.
-      _assertNoWebViewErrors(errors);
+      assertStrictErrors(errors);
     } finally {
       FlutterError.onError = oldHandler;
     }
   });
-}
-
-Future<int> _screenshot(
-    IntegrationTestWidgetsFlutterBinding binding, String name) async {
-  try {
-    await binding.takeScreenshot(name).timeout(const Duration(seconds: 10));
-    debugPrint('[reg] Screenshot saved: $name');
-    return 1;
-  } catch (e) {
-    debugPrint('[reg] Screenshot skipped ($name): $e');
-    return 0;
-  }
-}
-
-void _assertNoWebViewErrors(List<FlutterErrorDetails> errors) {
-  final List<FlutterErrorDetails> unexpected = errors.where((e) {
-    final String msg = e.exceptionAsString().toLowerCase();
-    if (msg.contains('socketexception')) return false;
-    if (msg.contains('tls') || msg.contains('timeout')) return false;
-    return true;
-  }).toList();
-
-  expect(unexpected, isEmpty,
-      reason: 'Reader regression test must not have errors (including WebView): '
-          '${unexpected.map((e) => e.exceptionAsString()).join('; ')}');
 }

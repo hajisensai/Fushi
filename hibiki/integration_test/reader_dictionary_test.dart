@@ -5,6 +5,8 @@ import 'package:integration_test/integration_test.dart';
 
 import 'package:hibiki/main.dart' as app;
 
+import 'test_helpers.dart';
+
 /// Integration tests for the highest-risk Hibiki user paths:
 /// EPUB import → Hoshi reader → dictionary lookup.
 ///
@@ -21,7 +23,7 @@ void main() {
   final IntegrationTestWidgetsFlutterBinding binding =
       IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('reader opens and renders content after EPUB import',
+  testWidgets('reader opens, content loads, dictionary search works',
       (WidgetTester tester) async {
     final List<FlutterErrorDetails> errors = [];
     final FlutterExceptionHandler? oldHandler = FlutterError.onError;
@@ -34,31 +36,15 @@ void main() {
     try {
       app.main();
 
-      // Wait for home.
-      bool ready = false;
-      for (int i = 0; i < 180; i++) {
-        await tester.pump(const Duration(milliseconds: 500));
-        if (find.byIcon(Icons.menu_book).evaluate().isNotEmpty) {
-          ready = true;
-          break;
-        }
-      }
-      expect(ready, isTrue, reason: 'Home must render within 90s');
+      final bool homeReady = await waitForHome(tester);
+      expect(homeReady, isTrue, reason: 'Home must render within 90s');
       await tester.pump(const Duration(seconds: 2));
 
-      screenshotCount += await _screenshot(binding, 'reader_test_home');
+      screenshotCount += await takeScreenshot(binding, 'reader_test_home');
 
-      // Find a book entry on the shelf using test hook keys.
-      // Book entries have ValueKey('book_entry_...') or
-      // ValueKey('srt_entry_...').
-      final Finder bookEntries = find.byWidgetPredicate((Widget w) {
-        final Key? k = w.key;
-        if (k is ValueKey<String>) {
-          return k.value.startsWith('book_entry_') ||
-              k.value.startsWith('srt_entry_');
-        }
-        return false;
-      });
+      // ── Phase 1: Open a book from the shelf ──
+
+      final Finder bookEntries = findBookEntries();
 
       if (bookEntries.evaluate().isEmpty) {
         fail('Reader test blocked: no books on shelf. '
@@ -69,13 +55,13 @@ void main() {
       debugPrint(
           '[reader] Found ${bookEntries.evaluate().length} book(s) on shelf');
 
-      // Tap the first book to open the Hoshi reader.
       await tester.tap(bookEntries.first);
       await tester.pump(const Duration(seconds: 3));
 
-      screenshotCount += await _screenshot(binding, 'reader_opening');
+      screenshotCount += await takeScreenshot(binding, 'reader_opening');
 
-      // Wait for the Hoshi WebView to appear (up to 30s).
+      // ── Phase 2: Verify Hoshi WebView loads ──
+
       const Key webViewKey = ValueKey<String>('hoshi_webview');
       bool webViewFound = false;
       for (int i = 0; i < 60; i++) {
@@ -88,9 +74,8 @@ void main() {
       expect(webViewFound, isTrue,
           reason: 'Hoshi WebView must appear after opening a book');
 
-      // Wait for content to be ready (up to 60s).
-      // The sentinel widget 'hoshi_content_ready' only exists when
-      // _readerContentReady == true.
+      // ── Phase 3: Wait for content ready ──
+
       const Key contentReadyKey = ValueKey<String>('hoshi_content_ready');
       bool contentReady = false;
       for (int i = 0; i < 120; i++) {
@@ -103,9 +88,12 @@ void main() {
       expect(contentReady, isTrue,
           reason: 'Reader content must become ready within 60s');
 
-      screenshotCount += await _screenshot(binding, 'reader_content_ready');
+      screenshotCount += await takeScreenshot(binding, 'reader_content_ready');
 
-      // Verify the progress indicator is present when content is ready.
+      // Allow JS progress callback to arrive.
+      await tester.pump(const Duration(seconds: 4));
+
+      // Verify progress indicator.
       final Finder progressText =
           find.byKey(const ValueKey<String>('hoshi_progress'));
       if (progressText.evaluate().isNotEmpty) {
@@ -115,7 +103,8 @@ void main() {
             reason: 'Progress text must have content');
       }
 
-      // Check play bar bounds if audiobook is attached (HBK-REG-001 check).
+      // ── Phase 4: Check play bar bounds (HBK-REG-001) ──
+
       final Finder playBar =
           find.byKey(const ValueKey<String>('hoshi_play_bar'));
       if (playBar.evaluate().isNotEmpty) {
@@ -140,41 +129,18 @@ void main() {
             reason: 'HBK-REG-001: WebView content must not extend '
                 'under the play bar');
 
-        screenshotCount += await _screenshot(binding, 'reader_with_playbar');
+        screenshotCount +=
+            await takeScreenshot(binding, 'reader_with_playbar');
       }
 
-      expect(screenshotCount, greaterThan(0),
-          reason: 'At least one screenshot must succeed');
+      // ── Phase 5: Navigate back and test dictionary ──
 
-      // WebView/renderer errors MUST fail this test.
-      _assertStrictErrors(errors);
-    } finally {
-      FlutterError.onError = oldHandler;
-    }
-  });
-
-  testWidgets('dictionary search returns results for imported dictionary',
-      (WidgetTester tester) async {
-    final List<FlutterErrorDetails> errors = [];
-    final FlutterExceptionHandler? oldHandler = FlutterError.onError;
-    FlutterError.onError = (FlutterErrorDetails details) {
-      errors.add(details);
-      debugPrint('[dict] FlutterError: ${details.exceptionAsString()}');
-    };
-
-    try {
-      app.main();
-
-      // Wait for home.
-      bool ready = false;
-      for (int i = 0; i < 180; i++) {
-        await tester.pump(const Duration(milliseconds: 500));
-        if (find.byIcon(Icons.menu_book).evaluate().isNotEmpty) {
-          ready = true;
-          break;
-        }
-      }
-      expect(ready, isTrue, reason: 'Home must render within 90s');
+      // Go back to home.
+      final NavigatorState nav = Navigator.of(
+        tester.element(find.byType(Scaffold).first),
+      );
+      nav.pop();
+      await tester.pump(const Duration(seconds: 3));
 
       // Navigate to dictionary tab.
       final Finder searchIcon = find.byIcon(Icons.search);
@@ -191,62 +157,32 @@ void main() {
       expect(hasSearch, isTrue,
           reason: 'Dictionary tab must have a search field');
 
-      // Type a known word into the search field and check for results.
-      final Finder searchField = find.byType(TextField).evaluate().isNotEmpty
-          ? find.byType(TextField).first
-          : find.byType(TextFormField).evaluate().isNotEmpty
-              ? find.byType(TextFormField).first
-              : find.byType(SearchBar).first;
+      screenshotCount += await takeScreenshot(binding, 'dict_search_field');
 
-      await tester.enterText(searchField, '猫');
+      // Type a known word.
+      await tester.enterText(findSearchField(), '猫');
       await tester.pump(const Duration(seconds: 5));
 
-      // If a dictionary is imported, results should appear.
-      // We look for content beyond the search field itself.
-      final int widgetCountAfterSearch =
+      final int resultWidgets =
           find.byType(Card).evaluate().length +
               find.byType(ListTile).evaluate().length +
               find.byType(ExpansionTile).evaluate().length;
 
-      debugPrint(
-          '[dict] Widgets after search: $widgetCountAfterSearch '
-          '(Cards+ListTiles+ExpansionTiles)');
+      debugPrint('[reader] Dict results: $resultWidgets widgets');
 
-      // Don't hard-fail on zero results since dictionary may not be
-      // imported, but log it clearly for manual review.
-      if (widgetCountAfterSearch == 0) {
-        debugPrint('[dict] WARNING: No results for 猫. '
+      if (resultWidgets == 0) {
+        debugPrint('[reader] WARNING: No results for 猫. '
             'Is a dictionary imported on this device?');
       }
 
-      _assertStrictErrors(errors);
+      screenshotCount += await takeScreenshot(binding, 'dict_search_result');
+
+      expect(screenshotCount, greaterThan(0),
+          reason: 'At least one screenshot must succeed');
+
+      assertStrictErrors(errors);
     } finally {
       FlutterError.onError = oldHandler;
     }
   });
-}
-
-Future<int> _screenshot(
-    IntegrationTestWidgetsFlutterBinding binding, String name) async {
-  try {
-    await binding.takeScreenshot(name).timeout(const Duration(seconds: 10));
-    debugPrint('[reader] Screenshot saved: $name');
-    return 1;
-  } catch (e) {
-    debugPrint('[reader] Screenshot skipped ($name): $e');
-    return 0;
-  }
-}
-
-void _assertStrictErrors(List<FlutterErrorDetails> errors) {
-  final List<FlutterErrorDetails> unexpected = errors.where((e) {
-    final String msg = e.exceptionAsString().toLowerCase();
-    if (msg.contains('socketexception')) return false;
-    if (msg.contains('tls') || msg.contains('timeout')) return false;
-    return true;
-  }).toList();
-
-  expect(unexpected, isEmpty,
-      reason: 'Errors (including WebView/renderer) are fatal in reader/dict tests: '
-          '${unexpected.map((e) => e.exceptionAsString()).join('; ')}');
 }
