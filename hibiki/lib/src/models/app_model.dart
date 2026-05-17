@@ -227,8 +227,8 @@ class AppModel with ChangeNotifier {
   late final PackageInfo _packageInfo;
 
   /// Used to get information on the Android version of the device.
-  AndroidDeviceInfo get androidDeviceInfo => _androidDeviceInfo;
-  late final AndroidDeviceInfo _androidDeviceInfo;
+  AndroidDeviceInfo? get androidDeviceInfo => _androidDeviceInfo;
+  AndroidDeviceInfo? _androidDeviceInfo;
 
   /// Whether [initialise] has completed successfully.
   bool get isInitialised => _isInitialised;
@@ -1062,6 +1062,9 @@ class AppModel with ChangeNotifier {
   /// This path also initialises the folder if it does not exist, and includes
   /// a .nomedia file within the folder.
   Future<Directory> prepareHibikiDirectory() async {
+    if (!Platform.isAndroid) {
+      return prepareFallbackHibikiDirectory();
+    }
     String publicDirectory =
         await ExternalPath.getExternalStoragePublicDirectory(
             ExternalPath.DIRECTORY_DCIM);
@@ -1140,7 +1143,9 @@ class AppModel with ChangeNotifier {
 
       /// Prepare entities that may be repeatedly used at runtime.
       _packageInfo = await PackageInfo.fromPlatform();
-      _androidDeviceInfo = await DeviceInfoPlugin().androidInfo;
+      if (Platform.isAndroid) {
+        _androidDeviceInfo = await DeviceInfoPlugin().androidInfo;
+      }
 
       debugPrint('[Hibiki] init: directories (early, needed for DB)');
       _temporaryDirectory = await getTemporaryDirectory();
@@ -1351,7 +1356,9 @@ class AppModel with ChangeNotifier {
     try {
       debugPrint('[Hibiki-popup] init: PackageInfo + DeviceInfo');
       _packageInfo = await PackageInfo.fromPlatform();
-      _androidDeviceInfo = await DeviceInfoPlugin().androidInfo;
+      if (Platform.isAndroid) {
+        _androidDeviceInfo = await DeviceInfoPlugin().androidInfo;
+      }
 
       debugPrint('[Hibiki-popup] init: directories');
       _temporaryDirectory = await getTemporaryDirectory();
@@ -1902,7 +1909,9 @@ class AppModel with ChangeNotifier {
   Future<void> setAppLocale(String localeTag) async {
     await _setPref('app_locale', localeTag);
     LocaleSettings.setLocaleRaw(localeTag);
-    Restart.restartApp();
+    if (Platform.isAndroid || Platform.isIOS) {
+      Restart.restartApp();
+    }
   }
 
   /// Persist a new last selected dictionary format. This is called when the
@@ -2512,7 +2521,7 @@ class AppModel with ChangeNotifier {
       await Permission.storage.request();
     }
 
-    if (_androidDeviceInfo.version.sdkInt >= 30) {
+    if (Platform.isAndroid && (_androidDeviceInfo?.version.sdkInt ?? 0) >= 30) {
       final manageStorageGranted =
           await Permission.manageExternalStorage.isGranted;
       if (!manageStorageGranted) {
@@ -3107,8 +3116,8 @@ class AppModel with ChangeNotifier {
   void copyToClipboard(String term) {
     FlutterClipboard.copy(term);
 
-    /// Redundant to do this with the share notification on Android
-    if (_androidDeviceInfo.version.sdkInt < 33) {
+    /// Redundant to do this with the share notification on Android 33+
+    if (!Platform.isAndroid || (_androidDeviceInfo?.version.sdkInt ?? 0) < 33) {
       Fluttertoast.showToast(
         msg: t.copied_to_clipboard,
         toastLength: Toast.LENGTH_SHORT,
@@ -3187,12 +3196,14 @@ class AppModel with ChangeNotifier {
       directories.add(lastPickedDirectory);
     }
 
-    List<String> paths =
-        (await ExternalPath.getExternalStorageDirectories()) ?? [];
-    for (String path in paths) {
-      Directory directory = Directory(path);
-      if (!directories.contains(directory)) {
-        directories.add(directory);
+    if (Platform.isAndroid) {
+      List<String> paths =
+          (await ExternalPath.getExternalStorageDirectories()) ?? [];
+      for (String path in paths) {
+        Directory directory = Directory(path);
+        if (!directories.contains(directory)) {
+          directories.add(directory);
+        }
       }
     }
 
@@ -3530,7 +3541,11 @@ class AppModel with ChangeNotifier {
   void shutdown() async {
     databaseCloseNotifier.notifyListeners();
     await _database.close();
-    FlutterExitApp.exitApp();
+    if (Platform.isAndroid || Platform.isIOS) {
+      FlutterExitApp.exitApp();
+    } else {
+      exit(0);
+    }
   }
 
   Future<void> closeForPopup() async {
