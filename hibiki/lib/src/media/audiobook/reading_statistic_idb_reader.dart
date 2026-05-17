@@ -7,7 +7,7 @@ import 'package:hibiki/src/media/audiobook/ttu_idb_reader.dart'
     show TtuIdbReader;
 
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
-import 'package:hibiki/src/media/audiobook/reading_statistic_model.dart';
+import 'package:hibiki_audio/hibiki_audio.dart';
 
 /// 从 ttu IndexedDB `books` 库的 `statistic` object store 批量读取统计记录。
 ///

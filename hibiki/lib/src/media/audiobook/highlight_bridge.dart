@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:hibiki/src/media/audiobook/favorite_sentence_repository.dart';
+import 'package:hibiki_audio/hibiki_audio.dart';
 
 class HighlightBridge {
   HighlightBridge._();

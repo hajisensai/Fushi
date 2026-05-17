@@ -1,4 +1,4 @@
-import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
+import 'audiobook_model.dart';
 
 /// 一本有声书的对齐健康度语义。
 ///

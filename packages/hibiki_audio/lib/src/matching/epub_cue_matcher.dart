@@ -1,7 +1,7 @@
-import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
-import 'package:hibiki/src/media/audiobook/epub_srt_matcher.dart';
+import '../audiobook/audiobook_model.dart';
+import 'epub_srt_matcher.dart';
 
-export 'package:hibiki/src/media/audiobook/epub_srt_matcher.dart'
+export 'epub_srt_matcher.dart'
     show EpubSection, CueMatch, MatchResult, ProbeResult;
 
 /// 格式无关的 cue↔EPUB 模糊匹配器。

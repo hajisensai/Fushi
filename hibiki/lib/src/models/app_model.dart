@@ -33,7 +33,7 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
-import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
+import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/epub/ttu_migration.dart';
 import 'package:hibiki/src/epub/ttu_migration_server.dart';
 import 'package:hibiki/src/profile/profile_repository.dart';

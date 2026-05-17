@@ -7,12 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/utils.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
-import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
-import 'package:hibiki/src/media/audiobook/favorite_sentence_repository.dart';
-import 'package:hibiki/src/media/audiobook/collection_audio_matcher.dart';
-import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
+import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/pages/base_page.dart';
 
 enum _CollectionType { bookmark, sentence }

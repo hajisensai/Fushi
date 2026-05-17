@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart';
@@ -10,8 +10,7 @@ import 'package:html/parser.dart' as html_parser;
 
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/epub/epub_storage.dart';
-import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
-import 'package:hibiki/src/media/audiobook/reader_position_repository.dart';
+import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/media/audiobook/ttu_idb_reader.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/utils.dart';

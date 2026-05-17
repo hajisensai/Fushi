@@ -3,8 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
-import 'package:hibiki/src/media/audiobook/cues_to_epub.dart';
+import 'package:hibiki_audio/hibiki_audio.dart';
 
 // ── Minimal ZIP reader for tests (no external deps) ──────────────────────────
 //

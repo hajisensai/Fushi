@@ -42,6 +42,8 @@ dependencies:
     path: ../packages/hibiki_dictionary
   hibiki_anki:
     path: ../packages/hibiki_anki
+  hibiki_audio:
+    path: ../packages/hibiki_audio
   hibiki_platform:
     path: ../packages/hibiki_platform
   flutter_archive: ^5.0.0

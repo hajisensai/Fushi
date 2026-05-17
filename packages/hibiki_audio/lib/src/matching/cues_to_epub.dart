@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
+import '../audiobook/audiobook_model.dart';
 
 /// Converts a flat [AudioCue] list into a valid EPUB 3 file.
 ///

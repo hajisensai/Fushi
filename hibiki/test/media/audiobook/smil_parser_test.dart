@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/audiobook/smil_parser.dart';
+import 'package:hibiki_audio/hibiki_audio.dart';
 
 void main() {
   group('SmilParser.parseString', () {

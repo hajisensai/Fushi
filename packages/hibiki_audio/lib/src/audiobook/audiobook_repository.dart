@@ -1,12 +1,11 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 
 import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_health.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_storage.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'audiobook_health.dart';
+import 'audiobook_model.dart';
+import 'audiobook_storage.dart';
 
 class AudiobookRepository {
   const AudiobookRepository(this._db);
@@ -179,8 +178,7 @@ class AudiobookRepository {
             : DateTime.now(),
       );
     } catch (e, stack) {
-      ErrorLogService.instance
-          .log('AudiobookRepository.healthOverlay', e, stack);
+      debugPrint('AudiobookRepository.healthOverlay: $e\n$stack');
       debugPrint('[hibiki-audiobook] readHealthOverlay parse failed: $e');
       return null;
     }

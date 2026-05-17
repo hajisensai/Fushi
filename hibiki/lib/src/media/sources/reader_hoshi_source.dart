@@ -12,12 +12,8 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/epub/epub_storage.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
-import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
+import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
-import 'package:hibiki/src/media/audiobook/reader_position_repository.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_repository.dart';
-import 'package:hibiki/src/media/audiobook/srt_book_repository.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/utils.dart';
 

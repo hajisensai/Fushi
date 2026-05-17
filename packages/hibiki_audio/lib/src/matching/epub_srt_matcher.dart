@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
-import 'package:hibiki/src/media/audiobook/audio_text_normalizer.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
+import 'audio_text_normalizer.dart';
+import '../audiobook/audiobook_model.dart';
 
 /// EPUB 一个章节，供 [EpubSrtMatcher] 使用。
 ///

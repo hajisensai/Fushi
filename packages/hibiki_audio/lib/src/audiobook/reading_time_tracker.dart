@@ -1,8 +1,7 @@
-﻿import 'dart:async';
+import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
 class ReadingTimeTracker {
   ReadingTimeTracker(this._database);
@@ -58,7 +57,7 @@ class ReadingTimeTracker {
     _database
         .addHourlyReadingTime(dateKey: dateKey, hour: hour, deltaMs: deltaMs)
         .catchError((Object e, StackTrace stack) {
-      ErrorLogService.instance.log('ReadingTimeTracker.write', e, stack);
+      debugPrint('ReadingTimeTracker.write: $e\n$stack');
       debugPrint('[reading-time-tracker] write error: $e');
     });
   }

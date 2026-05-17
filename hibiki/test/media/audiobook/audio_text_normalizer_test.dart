@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/audiobook/audio_text_normalizer.dart';
+import 'package:hibiki_audio/hibiki_audio.dart';
 
 void main() {
   group('AudioTextNormalizer.normalize', () {

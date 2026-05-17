@@ -1,9 +1,9 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/media/audiobook/bookmark_repository.dart';
+import 'package:hibiki_audio/hibiki_audio.dart';
 
 void main() {
   late HibikiDatabase db;

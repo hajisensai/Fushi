@@ -792,6 +792,13 @@ packages:
       relative: true
     source: path
     version: "0.0.0"
+  hibiki_audio:
+    dependency: "direct main"
+    description:
+      path: "../packages/hibiki_audio"
+      relative: true
+    source: path
+    version: "0.0.0"
   hibiki_core:
     dependency: "direct main"
     description:

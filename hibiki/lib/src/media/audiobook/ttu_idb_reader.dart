@@ -3,7 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:hibiki/src/media/audiobook/epub_srt_matcher.dart';
+import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
 /// ttu IDB 里一本书的基本元数据（当前只暴露 title + 章节文本）。

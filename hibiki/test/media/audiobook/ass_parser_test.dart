@@ -1,7 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/audiobook/ass_parser.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
-import 'package:hibiki/src/media/audiobook/srt_parser.dart';
+import 'package:hibiki_audio/hibiki_audio.dart';
 
 void main() {
   const String header = '''

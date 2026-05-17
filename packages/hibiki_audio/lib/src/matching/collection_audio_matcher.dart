@@ -1,6 +1,6 @@
-import 'package:hibiki/src/media/audiobook/audio_text_normalizer.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
-import 'package:hibiki/src/media/audiobook/sasayaki_match_codec.dart';
+import 'audio_text_normalizer.dart';
+import '../audiobook/audiobook_model.dart';
+import 'sasayaki_match_codec.dart';
 
 /// 播放区间：audioFileIndex + 时间范围。
 class AudioPlaybackRange {

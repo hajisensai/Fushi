@@ -1,5 +1,5 @@
-import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
-import 'package:hibiki/src/media/audiobook/epub_srt_matcher.dart';
+import '../audiobook/audiobook_model.dart';
+import 'epub_srt_matcher.dart';
 
 /// Sasayaki 匹配信息在 `AudioCue.textFragmentId` 上的编码方案。
 ///

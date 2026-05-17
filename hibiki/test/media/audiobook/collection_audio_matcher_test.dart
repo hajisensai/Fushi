@@ -1,7 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
-import 'package:hibiki/src/media/audiobook/collection_audio_matcher.dart';
-import 'package:hibiki/src/media/audiobook/sasayaki_match_codec.dart';
+import 'package:hibiki_audio/hibiki_audio.dart';
 
 AudioCue _cue({
   required int audioFileIndex,

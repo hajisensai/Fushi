@@ -1,11 +1,11 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 
 import 'package:drift/drift.dart';
 import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
-import 'package:hibiki/src/media/audiobook/srt_book_model.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_storage.dart';
-import 'package:hibiki/src/media/audiobook/srt_parser.dart';
+import 'audiobook_model.dart';
+import 'srt_book_model.dart';
+import 'audiobook_storage.dart';
+import '../parsers/srt_parser.dart';
 
 class SrtBookRepository {
   const SrtBookRepository(this._db);

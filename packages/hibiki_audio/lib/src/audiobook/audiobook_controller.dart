@@ -4,12 +4,10 @@ import 'dart:io';
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:hibiki/utils.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
-import 'package:hibiki/src/media/audiobook/collection_audio_matcher.dart';
-import 'package:hibiki/src/media/audiobook/json_alignment_parser.dart';
-import 'package:hibiki/src/media/audiobook/sasayaki_match_codec.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'audiobook_model.dart';
+import '../matching/collection_audio_matcher.dart';
+import '../parsers/json_alignment_parser.dart';
+import '../matching/sasayaki_match_codec.dart';
 
 /// 有声书播放控制器。
 ///
@@ -269,7 +267,7 @@ class AudiobookPlayerController extends ChangeNotifier {
             )
             .timeout(const Duration(seconds: 60));
       } catch (e, stack) {
-        ErrorLogService.instance.log('AudiobookController.setSource', e, stack);
+        debugPrint('AudiobookController.setSource: $e\n$stack');
         debugPrint('[hibiki-audiobook] setAudioSource failed: $e');
         _loadReady.complete();
         rethrow;
@@ -293,7 +291,7 @@ class AudiobookPlayerController extends ChangeNotifier {
             )
             .timeout(const Duration(seconds: 60));
       } catch (e, stack) {
-        ErrorLogService.instance.log('AudiobookController.setSource', e, stack);
+        debugPrint('AudiobookController.setSource: $e\n$stack');
         debugPrint('[hibiki-audiobook] setAudioSource (multi) failed: $e');
         _loadReady.complete();
         rethrow;
@@ -306,7 +304,7 @@ class AudiobookPlayerController extends ChangeNotifier {
       try {
         await _player.seek(Duration(milliseconds: savedMs));
       } catch (e, stack) {
-        ErrorLogService.instance.log('AudiobookController.seekSaved', e, stack);
+        debugPrint('AudiobookController.seekSaved: $e\n$stack');
         debugPrint('[hibiki-audiobook] seek to saved $savedMs ms failed: $e');
       }
     }
@@ -317,7 +315,7 @@ class AudiobookPlayerController extends ChangeNotifier {
       try {
         await _player.setSpeed(initialSpeed);
       } catch (e, stack) {
-        ErrorLogService.instance.log('AudiobookController.setSpeed', e, stack);
+        debugPrint('AudiobookController.setSpeed: $e\n$stack');
         debugPrint(
             '[hibiki-audiobook] initial setSpeed $initialSpeed failed: $e');
       }
@@ -985,7 +983,7 @@ class AudiobookPlayerController extends ChangeNotifier {
       final Duration? d = await probe.setFilePath(file.path);
       return d;
     } catch (e, stack) {
-      ErrorLogService.instance.log('AudiobookController.durationOf', e, stack);
+      debugPrint('AudiobookController.durationOf: $e\n$stack');
       return null;
     } finally {
       await probe.dispose();

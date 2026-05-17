@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
-import 'package:hibiki/src/media/audiobook/text_file_io.dart';
+import '../audiobook/audiobook_model.dart';
+import 'text_file_io.dart';
 
 /// 解析自定义 JSON 对齐文件，产出 [AudioCue] 列表。
 ///

@@ -1,8 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/audiobook/ass_parser.dart';
-import 'package:hibiki/src/media/audiobook/lrc_parser.dart';
-import 'package:hibiki/src/media/audiobook/srt_parser.dart';
-import 'package:hibiki/src/media/audiobook/vtt_parser.dart';
+import 'package:hibiki_audio/hibiki_audio.dart';
 
 void main() {
   group('SrtParser error paths', () {

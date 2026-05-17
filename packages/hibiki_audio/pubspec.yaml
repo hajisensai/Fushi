@@ -1,7 +1,6 @@
 name: hibiki_audio
-description: Audio playback, recording, and subtitle parsing for Hibiki
+description: Audio playback, recording, audiobook matching, and subtitle parsing for Hibiki
 publish_to: none
-
 
 environment:
   sdk: ">=3.5.0 <4.0.0"
@@ -12,6 +11,15 @@ dependencies:
     sdk: flutter
   hibiki_core:
     path: ../hibiki_core
+  just_audio: ^0.9.31
+  audio_session: ^0.1.13
+  xml: ^6.3.0
+  flutter_charset_detector: ^1.0.2
+  path: ^1.8.2
+  path_provider: ^2.0.13
+  drift: ^2.23.0
+  sqlite3_flutter_libs: ^0.5.28
+  collection: any
 
 dev_dependencies:
   flutter_test:

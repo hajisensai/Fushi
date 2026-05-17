@@ -1,6 +1,6 @@
-﻿import 'package:drift/drift.dart';
+import 'package:drift/drift.dart';
 import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/media/audiobook/reader_position_model.dart';
+import 'reader_position_model.dart';
 
 /// 阅读位置持久化。
 ///

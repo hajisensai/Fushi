@@ -1,10 +1,10 @@
 import 'dart:io';
 
-import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
-import 'package:hibiki/src/media/audiobook/srt_book_repository.dart'
+import '../audiobook/audiobook_model.dart';
+import '../audiobook/srt_book_repository.dart'
     show SrtBookRepository;
-import 'package:hibiki/src/media/audiobook/srt_parser.dart';
-import 'package:hibiki/src/media/audiobook/text_file_io.dart';
+import 'srt_parser.dart';
+import 'text_file_io.dart';
 
 /// 解析 LRC（歌词）字幕文件，产出 [AudioCue] 列表。
 ///

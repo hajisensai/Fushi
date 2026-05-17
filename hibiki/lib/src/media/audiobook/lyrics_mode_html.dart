@@ -1,4 +1,4 @@
-import 'package:hibiki/src/media/audiobook/audiobook_model.dart';
+import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/reader/reader_selection_scripts.dart';
 
 class LyricsModeHtml {

@@ -1,4 +1,4 @@
-import 'package:hibiki/src/media/audiobook/audiobook_model.dart' show AudioCue;
+import 'audiobook_model.dart' show AudioCue;
 
 /// 独立 SRT 有声书元数据。
 ///
