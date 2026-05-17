@@ -10,8 +10,6 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  hibiki_core:
-    path: ../hibiki_core
 
 dev_dependencies:
   flutter_test:
