@@ -4,7 +4,7 @@ import 'package:hibiki/src/reader/reader_resource_sanitizer.dart';
 void main() {
   group('ReaderResourceSanitizer.sanitizeCss', () {
     test('strips -epub-writing-mode completely', () {
-      final input = '  -epub-writing-mode: vertical-rl;';
+      const input = '  -epub-writing-mode: vertical-rl;';
 
       final output = ReaderResourceSanitizer.sanitizeCss(input);
 
@@ -12,7 +12,7 @@ void main() {
     });
 
     test('converts -epub-line-break to standard + webkit prefix', () {
-      final input = '  -epub-line-break: strict;';
+      const input = '  -epub-line-break: strict;';
 
       final output = ReaderResourceSanitizer.sanitizeCss(input);
 
@@ -21,7 +21,7 @@ void main() {
     });
 
     test('converts -epub-word-break to standard + webkit prefix', () {
-      final input = '  -epub-word-break: break-all;';
+      const input = '  -epub-word-break: break-all;';
 
       final output = ReaderResourceSanitizer.sanitizeCss(input);
 
@@ -30,7 +30,7 @@ void main() {
     });
 
     test('converts -epub-hyphens to standard + webkit prefix', () {
-      final input = '  -epub-hyphens: auto;';
+      const input = '  -epub-hyphens: auto;';
 
       final output = ReaderResourceSanitizer.sanitizeCss(input);
 
@@ -39,7 +39,7 @@ void main() {
     });
 
     test('converts -epub-text-combine to text-combine-upright', () {
-      final input = '  -epub-text-combine: horizontal;';
+      const input = '  -epub-text-combine: horizontal;';
 
       final output = ReaderResourceSanitizer.sanitizeCss(input);
 
@@ -48,7 +48,7 @@ void main() {
     });
 
     test('converts -epub-text-emphasis-style to standard + webkit', () {
-      final input = '  -epub-text-emphasis-style: dot;';
+      const input = '  -epub-text-emphasis-style: dot;';
 
       final output = ReaderResourceSanitizer.sanitizeCss(input);
 
@@ -57,7 +57,7 @@ void main() {
     });
 
     test('converts -epub-text-emphasis-color to standard + webkit', () {
-      final input = '  -epub-text-emphasis-color: red;';
+      const input = '  -epub-text-emphasis-color: red;';
 
       final output = ReaderResourceSanitizer.sanitizeCss(input);
 
@@ -66,7 +66,7 @@ void main() {
     });
 
     test('unknown -epub- property becomes unprefixed', () {
-      final input = '  -epub-some-future-prop: value;';
+      const input = '  -epub-some-future-prop: value;';
 
       final output = ReaderResourceSanitizer.sanitizeCss(input);
 
@@ -75,7 +75,7 @@ void main() {
     });
 
     test('non-epub CSS is left untouched', () {
-      final input = '''body {
+      const input = '''body {
   font-size: 16px;
   color: black;
 }''';
@@ -86,7 +86,7 @@ void main() {
     });
 
     test('handles multiple -epub- properties in one block', () {
-      final input = '''p {
+      const input = '''p {
   -epub-writing-mode: vertical-rl;
   -epub-line-break: strict;
   margin: 0;

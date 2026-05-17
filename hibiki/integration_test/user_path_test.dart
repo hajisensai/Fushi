@@ -60,8 +60,7 @@ void main() {
             reason: 'Settings tab should render');
         screenshotCount += await _takeScreenshotSafe(binding, 'tab_settings');
 
-        final bool hasListTiles =
-            find.byType(ListTile).evaluate().isNotEmpty;
+        final bool hasListTiles = find.byType(ListTile).evaluate().isNotEmpty;
         expect(hasListTiles, isTrue,
             reason: 'Settings tab must contain ListTile entries');
 
@@ -135,8 +134,7 @@ Future<void> _waitForHomeReady(WidgetTester tester) async {
       return;
     }
     if (i > 0 && i % 20 == 0) {
-      final bool hasScaffold =
-          find.byType(Scaffold).evaluate().isNotEmpty;
+      final bool hasScaffold = find.byType(Scaffold).evaluate().isNotEmpty;
       debugPrint(
           '[test] Still waiting for home... iteration $i, scaffold=$hasScaffold');
     }

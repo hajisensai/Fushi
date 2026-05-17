@@ -38,7 +38,7 @@ void main() {
     test('createTag returns id and getAllTags retrieves it', () async {
       final db = await _openDb();
 
-      final id = await db.createTag('Fiction', 0xFF0000FF);
+      await db.createTag('Fiction', 0xFF0000FF);
 
       final tags = await db.getAllTags();
       expect(tags, hasLength(1));

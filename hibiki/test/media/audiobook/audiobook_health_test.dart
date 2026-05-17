@@ -80,7 +80,7 @@ void main() {
   });
 
   group('AudiobookHealth.packInto / fromAudiobook round-trip', () {
-    Audiobook _makeAb() {
+    Audiobook makeAb() {
       return Audiobook()
         ..bookUid = 'test'
         ..alignmentFormat = 'srt'
@@ -93,7 +93,7 @@ void main() {
         reason: '100/105 cues matched (window=200)',
         measuredAt: DateTime(2026, 1, 1),
       );
-      final ab = _makeAb();
+      final ab = makeAb();
       original.packInto(ab);
 
       expect(ab.healthKindRaw, 'ok');
@@ -110,7 +110,7 @@ void main() {
 
     test('failed round-trip preserves reason', () {
       final original = AudiobookHealth.failed(reason: 'file not found');
-      final ab = _makeAb();
+      final ab = makeAb();
       original.packInto(ab);
 
       final restored = AudiobookHealth.fromAudiobook(ab);
@@ -120,7 +120,7 @@ void main() {
     });
 
     test('null healthKindRaw returns unrun', () {
-      final ab = _makeAb();
+      final ab = makeAb();
       ab.healthKindRaw = null;
 
       final h = AudiobookHealth.fromAudiobook(ab);
@@ -128,7 +128,7 @@ void main() {
     });
 
     test('unknown healthKindRaw falls back to unrun', () {
-      final ab = _makeAb();
+      final ab = makeAb();
       ab.healthKindRaw = 'nonexistent_kind';
 
       final h = AudiobookHealth.fromAudiobook(ab);
@@ -136,7 +136,7 @@ void main() {
     });
 
     test('corrupted matchRatePct (>100) is clamped to null', () {
-      final ab = _makeAb();
+      final ab = makeAb();
       ab.healthKindRaw = 'ok';
       ab.matchRatePct = 33554526;
       ab.healthMeasuredAt = DateTime(2026, 1, 1);
@@ -147,7 +147,7 @@ void main() {
     });
 
     test('negative matchRatePct is clamped to null', () {
-      final ab = _makeAb();
+      final ab = makeAb();
       ab.healthKindRaw = 'failed';
       ab.matchRatePct = -1;
 
@@ -156,7 +156,7 @@ void main() {
     });
 
     test('null healthMeasuredAt falls back to epoch', () {
-      final ab = _makeAb();
+      final ab = makeAb();
       ab.healthKindRaw = 'partial';
       ab.matchRatePct = 50;
       ab.healthMeasuredAt = null;
@@ -167,7 +167,7 @@ void main() {
 
     test('notApplicable round-trip', () {
       final original = AudiobookHealth.notApplicable(reason: 'synthetic');
-      final ab = _makeAb();
+      final ab = makeAb();
       original.packInto(ab);
 
       final restored = AudiobookHealth.fromAudiobook(ab);

@@ -108,17 +108,13 @@ void main() {
       final Finder playBar =
           find.byKey(const ValueKey<String>('hoshi_play_bar'));
       if (playBar.evaluate().isNotEmpty) {
-        final RenderBox playBarBox =
-            tester.renderObject(playBar) as RenderBox;
-        final Offset playBarTopLeft =
-            playBarBox.localToGlobal(Offset.zero);
+        final RenderBox playBarBox = tester.renderObject(playBar) as RenderBox;
+        final Offset playBarTopLeft = playBarBox.localToGlobal(Offset.zero);
 
         final RenderBox webViewBox =
             tester.renderObject(find.byKey(webViewKey)) as RenderBox;
-        final Offset webViewTopLeft =
-            webViewBox.localToGlobal(Offset.zero);
-        final double webViewBottom =
-            webViewTopLeft.dy + webViewBox.size.height;
+        final Offset webViewTopLeft = webViewBox.localToGlobal(Offset.zero);
+        final double webViewBottom = webViewTopLeft.dy + webViewBox.size.height;
 
         debugPrint(
           '[reader] WebView bottom: $webViewBottom, '
@@ -129,8 +125,7 @@ void main() {
             reason: 'HBK-REG-001: WebView content must not extend '
                 'under the play bar');
 
-        screenshotCount +=
-            await takeScreenshot(binding, 'reader_with_playbar');
+        screenshotCount += await takeScreenshot(binding, 'reader_with_playbar');
       }
 
       // ── Phase 5: Navigate back and test dictionary ──
@@ -150,10 +145,9 @@ void main() {
       await tester.pump(const Duration(seconds: 3));
 
       // Verify search field exists.
-      final bool hasSearch =
-          find.byType(TextField).evaluate().isNotEmpty ||
-              find.byType(TextFormField).evaluate().isNotEmpty ||
-              find.byType(SearchBar).evaluate().isNotEmpty;
+      final bool hasSearch = find.byType(TextField).evaluate().isNotEmpty ||
+          find.byType(TextFormField).evaluate().isNotEmpty ||
+          find.byType(SearchBar).evaluate().isNotEmpty;
       expect(hasSearch, isTrue,
           reason: 'Dictionary tab must have a search field');
 
@@ -163,10 +157,9 @@ void main() {
       await tester.enterText(findSearchField(), '猫');
       await tester.pump(const Duration(seconds: 5));
 
-      final int resultWidgets =
-          find.byType(Card).evaluate().length +
-              find.byType(ListTile).evaluate().length +
-              find.byType(ExpansionTile).evaluate().length;
+      final int resultWidgets = find.byType(Card).evaluate().length +
+          find.byType(ListTile).evaluate().length +
+          find.byType(ExpansionTile).evaluate().length;
 
       debugPrint('[reader] Dict results: $resultWidgets widgets');
 

@@ -90,17 +90,13 @@ void main() {
             'See CLAUDE.md § 集成测试流程.');
       }
 
-      final RenderBox playBarBox =
-          tester.renderObject(playBar) as RenderBox;
-      final Offset playBarTopLeft =
-          playBarBox.localToGlobal(Offset.zero);
+      final RenderBox playBarBox = tester.renderObject(playBar) as RenderBox;
+      final Offset playBarTopLeft = playBarBox.localToGlobal(Offset.zero);
 
       final RenderBox webViewBox =
           tester.renderObject(find.byKey(webViewKey)) as RenderBox;
-      final Offset webViewTopLeft =
-          webViewBox.localToGlobal(Offset.zero);
-      final double webViewBottom =
-          webViewTopLeft.dy + webViewBox.size.height;
+      final Offset webViewTopLeft = webViewBox.localToGlobal(Offset.zero);
+      final double webViewBottom = webViewTopLeft.dy + webViewBox.size.height;
 
       debugPrint(
         '[reg] WebView bottom: $webViewBottom, '
