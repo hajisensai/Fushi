@@ -38,6 +38,7 @@ class AudioRecorderEnhancement extends AudioEnhancement {
     required CreatorModel creatorModel,
     required EnhancementTriggerCause cause,
   }) async {
+    if (!Platform.isAndroid) return;
     AudioExportField audioField = field as AudioExportField;
 
     bool permissionGranted = await Permission.microphone.isGranted;

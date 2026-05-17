@@ -2551,10 +2551,12 @@ class AppModel with ChangeNotifier {
             child: Text(t.dialog_launch_ankidroid),
             onPressed: () async {
               final navigator = Navigator.of(context);
-              await LaunchApp.openApp(
-                androidPackageName: 'com.ichi2.anki',
-                openStore: true,
-              );
+              if (Platform.isAndroid) {
+                await LaunchApp.openApp(
+                  androidPackageName: 'com.ichi2.anki',
+                  openStore: true,
+                );
+              }
               navigator.pop();
             },
           ),
@@ -3577,6 +3579,7 @@ class AppModel with ChangeNotifier {
   static const _lifecycleChannel = HibikiChannels.lifecycle;
 
   Future<void> moveToBack() async {
+    if (!Platform.isAndroid) return;
     try {
       await _lifecycleChannel.invokeMethod<void>('moveTaskToBack');
     } catch (e, stack) {

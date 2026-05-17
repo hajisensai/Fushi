@@ -207,46 +207,49 @@ class AudioField extends AudioExportField {
         return IconButton(
           icon: Icon(iconData, size: 24),
           onPressed: () async {
-            final AudioSession session = await AudioSession.instance;
-            await session.configure(
-              const AudioSessionConfiguration(
-                avAudioSessionCategory: AVAudioSessionCategory.playback,
-                avAudioSessionCategoryOptions:
-                    AVAudioSessionCategoryOptions.duckOthers,
-                avAudioSessionMode: AVAudioSessionMode.defaultMode,
-                avAudioSessionRouteSharingPolicy:
-                    AVAudioSessionRouteSharingPolicy.defaultPolicy,
-                avAudioSessionSetActiveOptions:
-                    AVAudioSessionSetActiveOptions.none,
-                androidAudioAttributes: AndroidAudioAttributes(
-                  contentType: AndroidAudioContentType.music,
-                  usage: AndroidAudioUsage.media,
+            AudioSession? session;
+            if (Platform.isAndroid || Platform.isIOS || Platform.isMacOS) {
+              session = await AudioSession.instance;
+              await session.configure(
+                const AudioSessionConfiguration(
+                  avAudioSessionCategory: AVAudioSessionCategory.playback,
+                  avAudioSessionCategoryOptions:
+                      AVAudioSessionCategoryOptions.duckOthers,
+                  avAudioSessionMode: AVAudioSessionMode.defaultMode,
+                  avAudioSessionRouteSharingPolicy:
+                      AVAudioSessionRouteSharingPolicy.defaultPolicy,
+                  avAudioSessionSetActiveOptions:
+                      AVAudioSessionSetActiveOptions.none,
+                  androidAudioAttributes: AndroidAudioAttributes(
+                    contentType: AndroidAudioContentType.music,
+                    usage: AndroidAudioUsage.media,
+                  ),
+                  androidAudioFocusGainType:
+                      AndroidAudioFocusGainType.gainTransientMayDuck,
+                  androidWillPauseWhenDucked: true,
                 ),
-                androidAudioFocusGainType:
-                    AndroidAudioFocusGainType.gainTransientMayDuck,
-                androidWillPauseWhenDucked: true,
-              ),
-            );
+              );
 
-            session.becomingNoisyEventStream.listen((event) async {
-              await _audioPlayer.pause();
-              session.setActive(false);
-            });
+              session.becomingNoisyEventStream.listen((event) async {
+                await _audioPlayer.pause();
+                session?.setActive(false);
+              });
+            }
 
             if (playerState == null ||
                 playerState.processingState == ProcessingState.completed) {
               await _audioPlayer.seek(Duration.zero);
 
-              session.setActive(true);
+              session?.setActive(true);
               await _audioPlayer.play();
-              session.setActive(false);
+              session?.setActive(false);
             } else if (playerState.playing) {
               await _audioPlayer.pause();
-              session.setActive(false);
+              session?.setActive(false);
             } else {
-              session.setActive(true);
+              session?.setActive(true);
               await _audioPlayer.play();
-              session.setActive(false);
+              session?.setActive(false);
             }
           },
         );

@@ -64,6 +64,7 @@ class UpdateChecker {
     bool autoInstall = false,
     bool betaChannel = false,
   }) async {
+    if (!Platform.isAndroid) return;
     if (neverRemind && !autoInstall) return;
     try {
       await _cleanupOldApks(currentVersion);
