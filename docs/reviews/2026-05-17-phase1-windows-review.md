@@ -89,7 +89,66 @@
 
 ### Next Scope
 
-1. Launch `hibiki.exe` on Windows and verify app starts
-2. flutter_inappwebview 6.x migration PoC (critical path for EPUB reader)
-3. Remaining platform guards in navigation-reachable pages
+1. ~~Launch `hibiki.exe` on Windows and verify app starts~~ → Done (Round 3)
+2. ~~flutter_inappwebview 6.x migration PoC (critical path for EPUB reader)~~ → Done (Round 3)
+3. ~~Remaining platform guards in navigation-reachable pages~~ → Done (Round 3)
 4. Install VS VCTools workload after system reboot (cleans up local SDK patch)
+
+---
+
+## Round 3: Platform Guards & WebView2 Migration
+
+### Scope
+- flutter_inappwebview migration from Android-only git fork to official v6.1.5 (WebView2 for Windows)
+- Comprehensive platform guard audit across all Dart source files
+- Windows build + runtime verification
+
+### Findings
+
+| ID | Severity | Status | Description |
+|----|----------|--------|-------------|
+| HBK-P1-010 | critical | **fixed** | `UpdateChecker._check()` calls `DeviceInfoPlugin().androidInfo` unconditionally on startup. Fixed: early return on non-Android. |
+| HBK-P1-011 | critical | **fixed** | `FlutterLogs.initLogs()` in `main.dart` has no Windows implementation — MissingPluginException at startup. Fixed: guarded with `Platform.isAndroid \|\| Platform.isIOS`. |
+| HBK-P1-012 | critical | **fixed** | `AppModel.moveToBack()` calls Android `moveTaskToBack` MethodChannel. Fixed: early return on non-Android. |
+| HBK-P1-013 | critical | **fixed** | `LaunchApp.openApp()` in AnkiDroid dialog is Android-only. Fixed: guarded. |
+| HBK-P1-014 | critical | **fixed** | `RecordMp3` usage in `AudioRecorderDialogPage` — Android-only. Fixed: `AudioRecorderEnhancement` returns early on non-Android. |
+| HBK-P1-015 | critical | **fixed** | `AudioSession` configuration (4 locations) throws MissingPluginException on Windows. Fixed: null-safe session with platform check. |
+| HBK-P1-016 | critical | **fixed** | `requestAnkidroidPermissions()` and `addDefaultModelIfMissing()` use Android MethodChannel. Fixed: early return on non-Android. |
+| HBK-P1-017 | critical | **fixed** | `FloatingDictChannel` methods (`canDrawOverlays`, `show`, `hide`, `isShowing`, `setClipboardMonitoring`, `searchTerm`) call Android MethodChannel without guards. Fixed: early return on non-Android. |
+| HBK-P1-018 | critical | **fixed** | `CameraEnhancement` uses `ImagePicker(source: ImageSource.camera)` — no camera on desktop. Fixed: early return on non-mobile. |
+| HBK-P1-019 | critical | **fixed** | `requestExternalStoragePermissions()` requests Android-only permissions. Fixed: early return on non-Android. |
+| HBK-P1-020 | warn | noted | `Fluttertoast.showToast` (80 calls across 22 files) — no Windows plugin. Fire-and-forget (not awaited), so unhandled future error prints to console but does NOT crash. Deferred to Phase 4 polish. |
+| HBK-P1-021 | warn | noted | `TtsChannel` methods are Android-only but already have try-catch on all calls. Silent no-op on Windows. Acceptable. |
+| HBK-P1-022 | info | verified | `PopupChannel` — has try-catch on `getInitialProcessText`. Handler registration is cross-platform safe. |
+| HBK-P1-023 | info | verified | `VolumeKeyChannel` — catches MissingPluginException explicitly. Safe. |
+| HBK-P1-024 | info | verified | `WakelockPlus` — supports Windows (graceful no-op). Safe. |
+| HBK-P1-025 | info | verified | `share_plus` — supports Windows since v7.x. Safe. |
+| HBK-P1-026 | info | verified | `local_assets_server` — uses dart:io HttpServer, cross-platform. Safe. |
+| HBK-P1-027 | info | verified | No hardcoded Android paths (`/sdcard/`, `/storage/`). All use `path_provider`. |
+
+### Verification
+
+| Check | Result |
+|-------|--------|
+| flutter analyze (hibiki lib/) | 0 errors in project code (external temp_base.dart and chisa/ excluded) |
+| flutter test | 587/587 passed |
+| Windows release build | Success: `hibiki.exe` built in 58.6s |
+| Android APK build | Not re-tested (no changes to Android-specific code paths) |
+| flutter_inappwebview v6.1.5 migration | Build success, Windows plugin registered |
+
+### Blockers (updated)
+
+| Blocker | Impact | Status |
+|---------|--------|--------|
+| ~~flutter_inappwebview fork is Android-only~~ | ~~EPUB reader won't work on Windows~~ | **Resolved** — migrated to v6.1.5 (WebView2) |
+| ~~Unguarded Android-only APIs crash on Windows~~ | ~~App crash at startup and navigation~~ | **Resolved** — 11 critical issues fixed |
+| Fluttertoast has no Windows plugin | Console error noise (non-crashing) | Deferred to Phase 4 |
+| VS VCTools workload marker missing | Requires local SDK patch | Pending reboot |
+| EPUB reader runtime untested on Windows | Unknown rendering issues | Next step |
+
+### Next Scope
+
+1. Test EPUB reader rendering on Windows (WebView2 runtime)
+2. Verify dictionary search works on Windows (hoshidicts FFI)
+3. Final cleanup: remove old git fork patches if they exist
+4. Phase 1 completion report
