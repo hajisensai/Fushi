@@ -1168,11 +1168,13 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           _src.toggleInvertSwipeDirection),
       sw(t.keep_screen_awake, _src.keepScreenAwake, () async {
         _src.toggleKeepScreenAwake();
-        if (_src.keepScreenAwake) {
-          await WakelockPlus.enable();
-        } else {
-          await WakelockPlus.disable();
-        }
+        try {
+          if (_src.keepScreenAwake) {
+            await WakelockPlus.enable();
+          } else {
+            await WakelockPlus.disable();
+          }
+        } catch (_) {}
       }),
       sw(t.auto_read_on_lookup, _src.autoReadOnLookup,
           _src.toggleAutoReadOnLookup),

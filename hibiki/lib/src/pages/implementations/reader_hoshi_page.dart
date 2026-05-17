@@ -247,7 +247,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     }
 
     if (_settings!.keepScreenAwake) {
-      WakelockPlus.enable();
+      try {
+        WakelockPlus.enable();
+      } catch (_) {}
     }
 
     final ReaderHoshiSource src = ReaderHoshiSource.instance;
@@ -639,7 +641,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       FloatingLyricChannel.hide();
     }
     appModel.audioHandler?.clearNotification();
-    WakelockPlus.disable();
+    try {
+      WakelockPlus.disable();
+    } catch (_) {}
     super.dispose();
   }
 

@@ -48,7 +48,9 @@ void main() {
 
     /// Ensure the top and bottom bars are shown at launch and wake prevention
     /// is disabled if not reverted from entering a media source.
-    WakelockPlus.disable();
+    if (Platform.isAndroid || Platform.isIOS) {
+      WakelockPlus.disable();
+    }
     if (Platform.isAndroid || Platform.isIOS) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     }

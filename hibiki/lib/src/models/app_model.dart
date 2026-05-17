@@ -2739,7 +2739,9 @@ class AppModel with ChangeNotifier {
     _overrideDictionaryTheme = null;
 
     if (ReaderHoshiSource.instance.keepScreenAwake) {
-      await WakelockPlus.enable();
+      try {
+        await WakelockPlus.enable();
+      } catch (_) {}
     }
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
@@ -2785,7 +2787,9 @@ class AppModel with ChangeNotifier {
     _overrideDictionaryColor = null;
     _overrideDictionaryTheme = null;
     blockCreatorInitialMedia = false;
-    await WakelockPlus.disable();
+    try {
+      await WakelockPlus.disable();
+    } catch (_) {}
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     await mediaSource.onSourceExit(
       appModel: this,

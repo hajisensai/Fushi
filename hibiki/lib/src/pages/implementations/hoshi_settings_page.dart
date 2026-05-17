@@ -225,11 +225,13 @@ List<Widget> _buildReaderOnlySwitches(VoidCallback rebuild,
       value: _source.keepScreenAwake,
       onChanged: (_) async {
         _source.toggleKeepScreenAwake();
-        if (_source.keepScreenAwake) {
-          await WakelockPlus.enable();
-        } else {
-          await WakelockPlus.disable();
-        }
+        try {
+          if (_source.keepScreenAwake) {
+            await WakelockPlus.enable();
+          } else {
+            await WakelockPlus.disable();
+          }
+        } catch (_) {}
         rebuild();
       },
     ),
