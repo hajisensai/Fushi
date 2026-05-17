@@ -152,3 +152,39 @@
 2. Verify dictionary search works on Windows (hoshidicts FFI)
 3. Final cleanup: remove old git fork patches if they exist
 4. Phase 1 completion report
+
+---
+
+## Round 4: Final Review & Code Quality Audit
+
+### Scope
+- Self-review of all platform guard changes across the branch
+- Verify all MethodChannel call sites are either guarded, try-caught, or unreachable on Windows
+- Code quality and consistency check
+
+### Findings
+
+| ID | Severity | Status | Description |
+|----|----------|--------|-------------|
+| HBK-P1-028 | critical | **fixed** | `FloatingLyricChannel` methods (`canDrawOverlays`, `show`, `hide`, `isShowing`, `updateText`, `highlight`, `updateLabels`, `setPlaybackState`, `updateStyle`, `setLocked`) all unguarded. Fixed with `platformOverride ?? Platform.isAndroid`. |
+| HBK-P1-029 | critical | **fixed** | SAF channel `pickAndCopyDirectory` in `dictionary_dialog_page.dart` — Android Storage Access Framework. Guarded with `if (!Platform.isAndroid) return`. |
+| HBK-P1-030 | info | verified | `_handleNativeCall` handlers in FloatingDictChannel/FloatingLyricChannel invoke MethodChannel responses. Safe: only called FROM native, unreachable on Windows. |
+| HBK-P1-031 | info | verified | `_splashChannel.invokeMethod('setSplashColor')` uses `.catchError((_) {})`. Safe. |
+| HBK-P1-032 | info | verified | `_fontsChannel` in custom_fonts_page has try-catch. Returns empty list on failure. Safe. |
+| HBK-P1-033 | info | verified | All Anki MethodChannel calls (`getDecks`, `getModelList`, `getFieldList`, `getExportTemplates`, `addNote`) wrapped in try-catch with error dialog. Safe (won't crash, shows error). |
+| HBK-P1-034 | warn | noted | Pre-existing: `session.becomingNoisyEventStream.listen(...)` called on every play tap creates listener leaks. Not a platform issue. |
+| HBK-P1-035 | info | noted | Inconsistency: FloatingLyricChannel has `platformOverride` for testability, FloatingDictChannel uses raw `Platform.isAndroid`. Justified: only FloatingLyricChannel has outbound-call tests. |
+
+### Verification
+
+| Check | Result |
+|-------|--------|
+| flutter test | 587/587 passed |
+| Windows release build | Success (43.5s) |
+| Windows app launch | Clean startup, all init phases complete, no crashes |
+| MethodChannel audit complete | All 11 channels verified: guarded/try-caught/unreachable |
+| No remaining critical/high platform issues | Confirmed |
+
+### Phase 1 Status: COMPLETE (for code changes)
+
+All code-level Windows adaptation is done. Remaining items are environmental (VS workload marker) and runtime testing (EPUB rendering, dictionary FFI queries) which require manual interaction with the running app.
