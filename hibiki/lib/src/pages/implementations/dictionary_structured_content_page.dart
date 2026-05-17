@@ -130,8 +130,7 @@ class _DictionaryHtmlWidgetState extends ConsumerState<DictionaryHtmlWidget> {
       height: _contentHeight,
       child: InAppWebView(
         initialUrlRequest: URLRequest(
-          url: WebUri(
-              'file:///android_asset/flutter_assets/assets/popup/definition.html'),
+          url: WebUri(webViewAssetUrl('assets/popup/definition.html')),
         ),
         initialSettings: InAppWebViewSettings(
           transparentBackground: true,

@@ -192,8 +192,7 @@ class DictionaryPopupWebViewState
             () => VerticalDragGestureRecognizer()),
       },
       initialUrlRequest: URLRequest(
-        url: WebUri(
-            'file:///android_asset/flutter_assets/assets/popup/popup.html'),
+        url: WebUri(webViewAssetUrl('assets/popup/popup.html')),
       ),
       initialSettings: InAppWebViewSettings(
         transparentBackground: true,

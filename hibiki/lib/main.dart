@@ -149,8 +149,8 @@ void main() {
 
     // ── 预热 WebView 引擎 ──────────────────────────────────────────────
     // 用户还在看主页/书架时就把冷启动成本吃掉：~500-1500ms。
-    // Desktop platforms (Windows/macOS) skip warmup — WebView2/WKWebView cold
-    // start is fast enough and HeadlessInAppWebView may not be available yet.
+    // Desktop: HeadlessInAppWebView may crash WebView2 if called before the
+    // Flutter view is attached, so only warm up on mobile.
     if (Platform.isAndroid || Platform.isIOS) {
       unawaited(Future(() async {
         try {
