@@ -47,6 +47,14 @@ jobs:
         chmod +x ci/apply-patches.sh
         bash ci/apply-patches.sh
 
+    - name: Run dart analyze
+      working-directory: hibiki
+      run: flutter analyze
+
+    - name: Run unit tests
+      working-directory: hibiki
+      run: flutter test
+
     - name: Build debug APK
       working-directory: hibiki
       run: flutter build apk --debug

@@ -56,7 +56,7 @@ void main() {
           await tester.pump(const Duration(seconds: 3));
         }
 
-        if (navIcons.evaluate().length >= 1) {
+        if (navIcons.evaluate().isNotEmpty) {
           await tester.tap(navIcons.at(0));
           await tester.pump(const Duration(seconds: 3));
         }

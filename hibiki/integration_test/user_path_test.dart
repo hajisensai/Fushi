@@ -23,12 +23,13 @@ void main() {
       errors.add(details);
       debugPrint('[test] FlutterError: ${details.exceptionAsString()}');
     };
+    int screenshotCount = 0;
 
     try {
       app.main();
       await _waitForHomeReady(tester);
 
-      await _takeScreenshotSafe(binding, 'home_books_tab');
+      screenshotCount += await _takeScreenshotSafe(binding, 'home_books_tab');
 
       final List<Finder> navIcons = _findNavIcons();
       final int tabCount = navIcons.length;
@@ -42,12 +43,13 @@ void main() {
 
       expect(find.byType(Scaffold), findsWidgets,
           reason: 'Dictionary tab should render');
-      await _takeScreenshotSafe(binding, 'tab_dictionary');
+      screenshotCount += await _takeScreenshotSafe(binding, 'tab_dictionary');
 
       final bool hasSearch = find.byType(TextField).evaluate().isNotEmpty ||
           find.byType(TextFormField).evaluate().isNotEmpty ||
           find.byType(SearchBar).evaluate().isNotEmpty;
-      debugPrint('[test] Dictionary tab has search field: $hasSearch');
+      expect(hasSearch, isTrue,
+          reason: 'Dictionary tab must contain a search field');
 
       // --- Tab 2: Settings ---
       if (tabCount >= 3) {
@@ -56,17 +58,19 @@ void main() {
 
         expect(find.byType(Scaffold), findsWidgets,
             reason: 'Settings tab should render');
-        await _takeScreenshotSafe(binding, 'tab_settings');
+        screenshotCount += await _takeScreenshotSafe(binding, 'tab_settings');
 
         final bool hasListTiles =
             find.byType(ListTile).evaluate().isNotEmpty;
-        debugPrint('[test] Settings tab has ListTiles: $hasListTiles');
+        expect(hasListTiles, isTrue,
+            reason: 'Settings tab must contain ListTile entries');
 
         final Finder scrollable = find.byType(Scrollable);
         if (scrollable.evaluate().isNotEmpty) {
           await tester.drag(scrollable.first, const Offset(0, -300));
           await tester.pump(const Duration(seconds: 1));
-          await _takeScreenshotSafe(binding, 'tab_settings_scrolled');
+          screenshotCount +=
+              await _takeScreenshotSafe(binding, 'tab_settings_scrolled');
         }
       }
 
@@ -76,7 +80,8 @@ void main() {
 
       expect(find.byType(Scaffold), findsWidgets,
           reason: 'Books tab should render after round-trip navigation');
-      await _takeScreenshotSafe(binding, 'home_books_return');
+      screenshotCount +=
+          await _takeScreenshotSafe(binding, 'home_books_return');
 
       // --- Rapid tab switching stability ---
       debugPrint('[test] Starting rapid tab switching (20 cycles)');
@@ -93,7 +98,11 @@ void main() {
       expect(find.byType(Scaffold), findsWidgets,
           reason: 'App should survive rapid tab switching');
 
-      _assertNoUnexpectedErrors(errors);
+      expect(screenshotCount, greaterThan(0),
+          reason: 'At least one screenshot must succeed for evidence');
+      debugPrint('[test] $screenshotCount screenshots captured');
+
+      _assertNoUnexpectedErrors(errors, allowWebViewErrors: true);
     } finally {
       FlutterError.onError = oldHandler;
     }
@@ -134,23 +143,28 @@ List<Finder> _findNavIcons() {
   return found;
 }
 
-Future<void> _takeScreenshotSafe(
+Future<int> _takeScreenshotSafe(
     IntegrationTestWidgetsFlutterBinding binding, String name) async {
   try {
-    await binding.takeScreenshot(name);
+    await binding.takeScreenshot(name).timeout(const Duration(seconds: 10));
     debugPrint('[test] Screenshot saved: $name');
+    return 1;
   } catch (e) {
     debugPrint('[test] Screenshot skipped ($name): $e');
+    return 0;
   }
 }
 
-void _assertNoUnexpectedErrors(List<FlutterErrorDetails> errors) {
+void _assertNoUnexpectedErrors(List<FlutterErrorDetails> errors,
+    {bool allowWebViewErrors = false}) {
   final List<FlutterErrorDetails> unexpected = errors.where((e) {
     final String msg = e.exceptionAsString().toLowerCase();
-    if (msg.contains('webview') || msg.contains('chromium')) return false;
-    if (msg.contains('renderer') && msg.contains('crash')) return false;
     if (msg.contains('socketexception')) return false;
     if (msg.contains('tls') || msg.contains('timeout')) return false;
+    if (allowWebViewErrors) {
+      if (msg.contains('webview') || msg.contains('chromium')) return false;
+      if (msg.contains('renderer') && msg.contains('crash')) return false;
+    }
     return true;
   }).toList();
 
