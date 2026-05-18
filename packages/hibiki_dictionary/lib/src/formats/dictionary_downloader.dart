@@ -92,15 +92,6 @@ class DictionaryDownloader {
       langCode: 'ja',
     ),
     RecommendedDictionary(
-      name: 'Wiktionary JA-JA IPA',
-      url: '$_wtyBase/ja/ja/wty-ja-ja-ipa.zip',
-      description: 'ウィクショナリー発音 (IPA)',
-      matchPrefix: 'wty-ja-ja-ipa',
-      category: DictionaryCategory.jaJa,
-      sizeEstimate: '~330 KB',
-      langCode: 'ja',
-    ),
-    RecommendedDictionary(
       name: 'Pixiv百科事典',
       url: '$_marvBase/%5BMonolingual%5D%20Pixiv.zip',
       description: '⚠ 百科事典 (非国語辞典) — ポップカルチャー用語',
