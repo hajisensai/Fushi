@@ -165,10 +165,57 @@ class DictionaryPopupWebViewState
     ''');
   }
 
+  static String _colorToHex(Color c) {
+    final int r = (c.r * 255).round().clamp(0, 255);
+    final int g = (c.g * 255).round().clamp(0, 255);
+    final int b = (c.b * 255).round().clamp(0, 255);
+    return '#${r.toRadixString(16).padLeft(2, '0')}'
+        '${g.toRadixString(16).padLeft(2, '0')}'
+        '${b.toRadixString(16).padLeft(2, '0')}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = Translations.of(context);
+    final appModel = ref.read(appProvider);
+    final Color bgColor =
+        appModel.overrideDictionaryColor ?? Theme.of(context).colorScheme.surface;
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final String bgHex = _colorToHex(bgColor);
+    final String theme = isDark ? 'dark' : 'light';
+
     return InAppWebView(
+      // Windows WebView2 (HWND) flashes white before loading file:// URLs.
+      // initialData embeds the background color in the first byte of HTML,
+      // eliminating the flash. Android transparency works natively.
+      initialData: Platform.isWindows
+          ? InAppWebViewInitialData(
+              data: '<!DOCTYPE html>'
+                  '<html data-theme="$theme" style="--background-color:$bgHex">'
+                  '<head>'
+                  '<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">'
+                  '<link rel="stylesheet" href="popup.css">'
+                  '<script src="dict-media.js"></script>'
+                  '<script src="selection.js"></script>'
+                  '<script src="popup.js"></script>'
+                  '</head>'
+                  '<body>'
+                  '<div id="entries-container"></div>'
+                  '<div class="overlay">'
+                  '<div class="overlay-close" onclick="closeOverlay()">×</div>'
+                  '<div class="overlay-content"></div>'
+                  '</div>'
+                  '</body></html>',
+              baseUrl: WebUri(webViewAssetUrl('assets/popup/')),
+              mimeType: 'text/html',
+              encoding: 'utf-8',
+            )
+          : null,
+      initialUrlRequest: Platform.isWindows
+          ? null
+          : URLRequest(
+              url: WebUri(webViewAssetUrl('assets/popup/popup.html')),
+            ),
       contextMenu: ContextMenu(
         settings: ContextMenuSettings(
           hideDefaultSystemContextMenuItems: false,
@@ -191,13 +238,8 @@ class DictionaryPopupWebViewState
         Factory<VerticalDragGestureRecognizer>(
             () => VerticalDragGestureRecognizer()),
       },
-      initialUrlRequest: URLRequest(
-        url: WebUri(webViewAssetUrl('assets/popup/popup.html')),
-      ),
       initialSettings: InAppWebViewSettings(
-        // flutter_inappwebview_windows 0.6.0 has inverted logic:
-        // transparentBackground:true skips put_DefaultBackgroundColor (white),
-        // transparentBackground:false sets alpha=0 (transparent).
+        // flutter_inappwebview_windows 0.6.0 inverts transparentBackground
         transparentBackground: !Platform.isWindows,
         supportZoom: false,
         horizontalScrollBarEnabled: false,
@@ -228,7 +270,7 @@ class DictionaryPopupWebViewState
 
         controller.addJavaScriptHandler(
           handlerName: 'popupRendered',
-          callback: (args) {},
+          callback: (_) {},
         );
 
         controller.addJavaScriptHandler(

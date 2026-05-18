@@ -88,15 +88,47 @@
 - 内存缓存 + DB 持久化双层架构健全 ✓
 - Profile 排除列表合理（`active_profile_id`, `first_time_setup`, `current_home_tab_index`, `app_locale`, session-specific keys）✓
 
+### HBK-AUDIT-005: 字典弹窗背景不跟随阅读器主题（三重根因）
+
+- **severity**: HIGH
+- **status**: FIXED（兼容层）
+- **file**: `hibiki/assets/popup/popup.css`, `hibiki/lib/src/pages/implementations/dictionary_popup_webview.dart`, `hibiki/lib/src/pages/implementations/dictionary_structured_content_page.dart`
+- **根因（三重）**:
+  1. **CSS 变量声明但未使用**: `popup.css` 的 `html, body` 设置 `background-color: transparent`，`--background-color` 变量被 JS 注入但从未被 `background-color` 属性引用。
+  2. **CSS 变量在 body 上被重复声明**: `html[data-theme="light"], html[data-theme="light"] body` 同时在 `html` 和 `body` 上声明 `--background-color`，阻止 JS 通过 `documentElement.style.setProperty()` 覆盖。
+  3. **flutter_inappwebview_windows 0.6.0 `transparentBackground` 逻辑反转**: `in_app_webview.cpp:210` 初始化路径 `if (!settings->transparentBackground)` 把条件写反了——`true` 时跳过设透明（留白色），`false` 时反而设透明。动态更新路径（:1444）逻辑正确。
+- **影响**: Windows 上字典弹窗打开时闪白色背景，不跟随阅读器主题。Android 因透明支持正常而部分生效。
+- **修复（分层）**:
+  1. `popup.css`: `background-color: transparent` → `background-color: var(--background-color, transparent)` — WebView 自己渲染背景色。
+  2. `popup.css`: 将 `body` 从 `data-theme` CSS 变量声明选择器中移除，只在 `html` 上声明。
+  3. `dictionary_popup_webview.dart`: Windows 上用 `initialData` 内联 HTML（`<html data-theme="..." style="--background-color:...">`），WebView2 解析的第一个字节就有正确背景色，消除 HWND 初始化白闪。Android 保持 `initialUrlRequest` 不变。
+  4. `transparentBackground: !Platform.isWindows` — 绕过插件反转 bug。
+  5. `dictionary_structured_content_page.dart`: 同样应用 `transparentBackground: !Platform.isWindows`。
+- **验证**: flutter analyze 通过，Windows build 成功，用户确认白色闪烁消除。
+- **后续清理条件**: fork `flutter_inappwebview_windows` 修复 `in_app_webview.cpp:210` 的 `!` 号后，可以移除 `!Platform.isWindows` hack 和 Windows `initialData` 分支，统一回 `initialUrlRequest`。
+
+### HBK-AUDIT-006: flutter_inappwebview_windows transparentBackground 逻辑反转（外部依赖 bug）
+
+- **severity**: MEDIUM
+- **status**: WORKAROUND（待 fork 根治）
+- **file**: `flutter_inappwebview_windows-0.6.0/windows/in_app_webview/in_app_webview.cpp:210`
+- **根因**: 初始化路径条件取反 `if (!settings->transparentBackground)`，与动态更新路径 `:1444` 的正确逻辑 `newSettings->transparentBackground ? 0 : 255` 不一致。
+- **影响**: `transparentBackground: true` 在 Windows 上初始化时不生效，WebView2 默认白色背景。
+- **当前绕过**: Dart 侧 `transparentBackground: !Platform.isWindows` 利用反转逻辑达到透明效果。
+- **根治方案**: fork `flutter_inappwebview_windows`，修改 `:210` 为 `if (settings->transparentBackground)`（去掉 `!`），或改写为与动态路径一致的 `BYTE alpha = settings->transparentBackground ? 0 : 255` 模式。
+- **清理后影响**: 移除所有 `!Platform.isWindows` hack，`transparentBackground: true` 全平台统一。
+
 ## 已知低优先级观察（非本轮修复范围）
 
 1. **Nullable Color 哨兵值 0**: `customThemeFontColor` 等使用 `0` 表示 null，与 `Color(0x00000000)`（透明黑）冲突。实际影响极低（用户不会选透明黑作为字体色），但技术上不完美。
 2. **`async void` 反模式**: 约 30 个 setter 仍然是 `void...async` 而非 `Future<void>`。调用者无法 await 或捕获错误。但在当前架构中，所有调用者都是 fire-and-forget 模式，没有造成实际问题。
 3. **`floatingLyricFontSize` getter 未 clamp**: setter 中 clamp(8, 64) 但 getter 直接返回数据库值。如果数据库被手动修改，可能返回超范围值。
+4. **popup.html 与 initialData HTML 结构重复**: Windows 用 Dart 内联 HTML，Android 用 `popup.html` 资产文件。两处 HTML 结构需要保持同步。fork 插件修复后可消除此重复。
 
 ## Next Scope
 
 下一轮可审查：
+- fork `flutter_inappwebview_windows` 根治 transparentBackground bug
 - 阅读器 WebView JS/CSS 注入路径的完整性
 - 有声书 SRT 解析与同步时序
 - 字典 FFI 导入路径在 Windows 上的 thread stack 行为
