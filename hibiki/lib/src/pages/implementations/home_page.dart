@@ -27,6 +27,7 @@ class _HomePageState extends BasePageState<HomePage>
   int _currentTab = 0;
   String _iconAsset = 'assets/meta/icon.png';
   final FocusNode _keyboardFocusNode = FocusNode();
+  final ValueNotifier<int> _dictFocusSignal = ValueNotifier<int>(0);
 
   @override
   void initState() {
@@ -72,6 +73,7 @@ class _HomePageState extends BasePageState<HomePage>
 
   @override
   void dispose() {
+    _dictFocusSignal.dispose();
     _keyboardFocusNode.dispose();
     WidgetsBinding.instance.removeObserver(this);
     appModelNoUpdate.databaseCloseNotifier.removeListener(refresh);
@@ -108,6 +110,7 @@ class _HomePageState extends BasePageState<HomePage>
           return KeyEventResult.handled;
         case LogicalKeyboardKey.keyF:
           setState(() => _currentTab = 1);
+          _dictFocusSignal.value++;
           return KeyEventResult.handled;
       }
     }
@@ -121,10 +124,16 @@ class _HomePageState extends BasePageState<HomePage>
     }
 
     return Focus(
+      autofocus: isDesktopPlatform,
       focusNode: _keyboardFocusNode,
       onKeyEvent: _handleKeyEvent,
       child: GestureDetector(
-        onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+        onTap: () {
+          final FocusNode? current = FocusManager.instance.primaryFocus;
+          if (current != null && current != _keyboardFocusNode) {
+            current.unfocus();
+          }
+        },
         child: LayoutBuilder(
           builder: (context, constraints) {
             final sizeClass = windowSizeClassOf(constraints);
@@ -139,7 +148,6 @@ class _HomePageState extends BasePageState<HomePage>
   }
 
   Widget _buildDesktopLayout(WindowSizeClass sizeClass) {
-    final bool expanded = sizeClass == WindowSizeClass.expanded;
     return Scaffold(
       resizeToAvoidBottomInset: false,
       appBar: buildAppBar(),
@@ -152,8 +160,6 @@ class _HomePageState extends BasePageState<HomePage>
               if (index == 0) _loadIconPreset();
             },
             labelType: NavigationRailLabelType.all,
-            extended: false,
-            minWidth: expanded ? 80 : 72,
             destinations: [
               NavigationRailDestination(
                 icon: const Icon(Icons.menu_book),
@@ -224,7 +230,7 @@ class _HomePageState extends BasePageState<HomePage>
   Widget buildBody() {
     switch (_currentTab) {
       case 1:
-        return const HomeDictionaryPage();
+        return HomeDictionaryPage(focusSignal: _dictFocusSignal);
       case 2:
         return const HoshiSettingsContent();
       default:

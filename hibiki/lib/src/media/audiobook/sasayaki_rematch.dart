@@ -6,7 +6,6 @@ import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/epub/epub_book.dart';
 import 'package:hibiki/src/epub/epub_parser.dart';
 import 'package:hibiki/src/epub/epub_storage.dart';
-import 'package:hibiki/src/utils/misc/platform_utils.dart';
 import 'package:hibiki/utils.dart';
 
 /// Sasayaki 重匹配入口，被 [AudiobookImportDialog]（已附加视图）和书架
@@ -161,8 +160,7 @@ class SasayakiRematch {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   TextButton(
-                    onPressed:
-                        autoBusy ? null : () => Navigator.pop(sheetCtx),
+                    onPressed: autoBusy ? null : () => Navigator.pop(sheetCtx),
                     child: Text(t.cancel),
                   ),
                   const SizedBox(width: 8),
@@ -189,7 +187,7 @@ class SasayakiRematch {
         context: context,
         builder: (ctx) => Dialog(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 480),
+            constraints: const BoxConstraints(maxWidth: 480, maxHeight: 400),
             child: StatefulBuilder(builder: buildSheetBody),
           ),
         ),

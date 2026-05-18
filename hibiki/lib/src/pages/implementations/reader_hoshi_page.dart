@@ -682,9 +682,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       if (!exists) return <File>[];
       final List<FileSystemEntity> entries = await dir.list().toList();
       final List<File> files = entries
-              .whereType<File>()
-              .where((f) => AudiobookStorage.isAudioFile(f.path))
-              .toList()
+          .whereType<File>()
+          .where((f) => AudiobookStorage.isAudioFile(f.path))
+          .toList()
         ..sort((a, b) => compareAudioFilePath(a.path, b.path));
       return files;
     }
@@ -2704,142 +2704,139 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (!mounted) return;
 
     final Widget sheetContent = AudiobookSettingsSheet(
-          controller: _audiobookController,
-          toc: toc,
-          readerProgress: (_currentChapter + 1, _book!.chapters.length),
-          onJumpSection: (index) async {
-            _navigateToChapter(index);
-          },
-          onBookmark: () async {
-            await _addBookmarkAtCurrentPosition();
-          },
-          onExitReader: () {
-            Navigator.of(context).pop();
-          },
-          webViewController: _controller!,
-          appModel: appModel,
-          isHoshiReader: true,
-          onStyleChanged: _applyStylesLive,
-          extractDir: _extractDir,
-          onReloadChapter: _reloadWithCurrentSettings,
-          lyricsMode: _lyricsMode,
-          onToggleLyricsMode: _toggleLyricsMode,
-          showFloatingLyric: appModel.showFloatingLyric,
-          onToggleFloatingLyric: _toggleFloatingLyric,
-          floatingLyricFontSize: appModel.floatingLyricFontSize,
-          onFloatingLyricFontSizeChanged: (v) async {
-            await appModel.setFloatingLyricFontSize(v);
-            final Color bg = _themeBackgroundColor();
-            final Color fg = _themeTextColor();
-            final bool dark = _isReaderThemeDark;
-            await FloatingLyricChannel.updateStyle(
-              fontSize: v,
-              textColor: fg.value,
-              bgColor: bg.withAlpha(dark ? 230 : 220).value,
-              buttonTextColor: fg.value,
-              buttonBgColor:
-                  (dark ? const Color(0x33FFFFFF) : const Color(0x1A000000))
-                      .value,
-            );
-          },
-          showMediaNotification: appModel.showMediaNotification,
-          onToggleMediaNotification: _toggleMediaNotification,
-          charProgress:
-              _progressCurrentChars != null && _progressTotalChars != null
-                  ? (_progressCurrentChars!, _progressTotalChars!)
-                  : null,
-          onJumpToCharOffset: (globalOffset) async {
-            _jumpToGlobalCharOffset(globalOffset);
-          },
-          epubBook: _book,
-          onSearchJump: (BookSearchResult result, String query) async {
-            if (_book == null || _controller == null) return;
-            if (result.sectionIndex != _currentChapter) {
-              final bool ok =
-                  await _navigateToChapterAndWait(result.sectionIndex);
-              if (!ok || !mounted || _controller == null) return;
-            }
-            await _controller!.evaluateJavascript(
-              source: ReaderPaginationScripts.scrollToSearchMatchInvocation(
-                query,
-                result.charOffset,
-              ),
-            );
-          },
-          bookmarks: bookmarks,
-          onJumpToBookmark: (bm) async {
-            if (bm.sectionIndex != _currentChapter) {
-              await _navigateToChapterAndWait(bm.sectionIndex);
-            }
-            if (!mounted || _controller == null) return;
-            final double progress = bm.normCharOffset / 10000.0;
-            await _controller!.evaluateJavascript(
-              source:
-                  'window.hoshiReader && window.hoshiReader.restoreProgress($progress);',
-            );
-          },
-          onDeleteBookmark: (bookmark) async {
-            final int? id = bookmark.id;
-            if (id != null) {
-              await bmRepo.removeBookmarkById(id);
-            } else {
-              await bmRepo.removeBookmarkMatching(
-                bookId,
-                sectionIndex: bookmark.sectionIndex,
-                normCharOffset: bookmark.normCharOffset,
-                createdAt: bookmark.createdAt,
-              );
-            }
-            bookmarks = await bmRepo.getBookmarks(bookId);
-          },
-          favoriteSentences: favorites,
-          onDeleteFavorite: (fav) async {
-            await favRepo.removeById(fav.id);
-          },
-          onJumpToFavorite: (fav) async {
-            if (fav.sectionIndex == null) return;
-            if (fav.sectionIndex != _currentChapter) {
-              await _navigateToChapterAndWait(fav.sectionIndex!);
-            }
-            if (!mounted || _controller == null) return;
-            if (fav.normCharOffset != null) {
-              final double progress = fav.normCharOffset! / 10000.0;
-              await _controller!.evaluateJavascript(
-                source:
-                    'window.hoshiReader && window.hoshiReader.restoreProgress($progress);',
-              );
-            }
-          },
-          onPlayFavorite: _audiobookController == null
-              ? null
-              : (fav) async {
-                  if (fav.normCharOffset == null || fav.sectionIndex == null) {
-                    return;
-                  }
-                  final int section = fav.sectionIndex!;
-                  final List<AudioCue> cues =
-                      _audiobookController!.sasayakiCuesForSection(section);
-                  AudioCue? target;
-                  for (final AudioCue cue in cues) {
-                    final SasayakiFragment? frag =
-                        SasayakiMatchCodec.tryDecode(cue.textFragmentId);
-                    if (frag == null) continue;
-                    if (frag.normCharStart <= fav.normCharOffset! &&
-                        frag.normCharEnd > fav.normCharOffset!) {
-                      target = cue;
-                      break;
-                    }
-                  }
-                  if (target != null) {
-                    await _audiobookController!.playRange(
-                      AudioPlaybackRange(
-                        audioFileIndex: target.audioFileIndex,
-                        startMs: target.startMs,
-                        endMs: target.endMs,
-                      ),
-                    );
-                  }
-                },
+      controller: _audiobookController,
+      toc: toc,
+      readerProgress: (_currentChapter + 1, _book!.chapters.length),
+      onJumpSection: (index) async {
+        _navigateToChapter(index);
+      },
+      onBookmark: () async {
+        await _addBookmarkAtCurrentPosition();
+      },
+      onExitReader: () {
+        Navigator.of(context).pop();
+      },
+      webViewController: _controller!,
+      appModel: appModel,
+      isHoshiReader: true,
+      onStyleChanged: _applyStylesLive,
+      extractDir: _extractDir,
+      onReloadChapter: _reloadWithCurrentSettings,
+      lyricsMode: _lyricsMode,
+      onToggleLyricsMode: _toggleLyricsMode,
+      showFloatingLyric: appModel.showFloatingLyric,
+      onToggleFloatingLyric: _toggleFloatingLyric,
+      floatingLyricFontSize: appModel.floatingLyricFontSize,
+      onFloatingLyricFontSizeChanged: (v) async {
+        await appModel.setFloatingLyricFontSize(v);
+        final Color bg = _themeBackgroundColor();
+        final Color fg = _themeTextColor();
+        final bool dark = _isReaderThemeDark;
+        await FloatingLyricChannel.updateStyle(
+          fontSize: v,
+          textColor: fg.value,
+          bgColor: bg.withAlpha(dark ? 230 : 220).value,
+          buttonTextColor: fg.value,
+          buttonBgColor:
+              (dark ? const Color(0x33FFFFFF) : const Color(0x1A000000)).value,
+        );
+      },
+      showMediaNotification: appModel.showMediaNotification,
+      onToggleMediaNotification: _toggleMediaNotification,
+      charProgress: _progressCurrentChars != null && _progressTotalChars != null
+          ? (_progressCurrentChars!, _progressTotalChars!)
+          : null,
+      onJumpToCharOffset: (globalOffset) async {
+        _jumpToGlobalCharOffset(globalOffset);
+      },
+      epubBook: _book,
+      onSearchJump: (BookSearchResult result, String query) async {
+        if (_book == null || _controller == null) return;
+        if (result.sectionIndex != _currentChapter) {
+          final bool ok = await _navigateToChapterAndWait(result.sectionIndex);
+          if (!ok || !mounted || _controller == null) return;
+        }
+        await _controller!.evaluateJavascript(
+          source: ReaderPaginationScripts.scrollToSearchMatchInvocation(
+            query,
+            result.charOffset,
+          ),
+        );
+      },
+      bookmarks: bookmarks,
+      onJumpToBookmark: (bm) async {
+        if (bm.sectionIndex != _currentChapter) {
+          await _navigateToChapterAndWait(bm.sectionIndex);
+        }
+        if (!mounted || _controller == null) return;
+        final double progress = bm.normCharOffset / 10000.0;
+        await _controller!.evaluateJavascript(
+          source:
+              'window.hoshiReader && window.hoshiReader.restoreProgress($progress);',
+        );
+      },
+      onDeleteBookmark: (bookmark) async {
+        final int? id = bookmark.id;
+        if (id != null) {
+          await bmRepo.removeBookmarkById(id);
+        } else {
+          await bmRepo.removeBookmarkMatching(
+            bookId,
+            sectionIndex: bookmark.sectionIndex,
+            normCharOffset: bookmark.normCharOffset,
+            createdAt: bookmark.createdAt,
+          );
+        }
+        bookmarks = await bmRepo.getBookmarks(bookId);
+      },
+      favoriteSentences: favorites,
+      onDeleteFavorite: (fav) async {
+        await favRepo.removeById(fav.id);
+      },
+      onJumpToFavorite: (fav) async {
+        if (fav.sectionIndex == null) return;
+        if (fav.sectionIndex != _currentChapter) {
+          await _navigateToChapterAndWait(fav.sectionIndex!);
+        }
+        if (!mounted || _controller == null) return;
+        if (fav.normCharOffset != null) {
+          final double progress = fav.normCharOffset! / 10000.0;
+          await _controller!.evaluateJavascript(
+            source:
+                'window.hoshiReader && window.hoshiReader.restoreProgress($progress);',
+          );
+        }
+      },
+      onPlayFavorite: _audiobookController == null
+          ? null
+          : (fav) async {
+              if (fav.normCharOffset == null || fav.sectionIndex == null) {
+                return;
+              }
+              final int section = fav.sectionIndex!;
+              final List<AudioCue> cues =
+                  _audiobookController!.sasayakiCuesForSection(section);
+              AudioCue? target;
+              for (final AudioCue cue in cues) {
+                final SasayakiFragment? frag =
+                    SasayakiMatchCodec.tryDecode(cue.textFragmentId);
+                if (frag == null) continue;
+                if (frag.normCharStart <= fav.normCharOffset! &&
+                    frag.normCharEnd > fav.normCharOffset!) {
+                  target = cue;
+                  break;
+                }
+              }
+              if (target != null) {
+                await _audiobookController!.playRange(
+                  AudioPlaybackRange(
+                    audioFileIndex: target.audioFileIndex,
+                    startMs: target.startMs,
+                    endMs: target.endMs,
+                  ),
+                );
+              }
+            },
     );
 
     if (isDesktopPlatform) {
@@ -2847,7 +2844,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         context: context,
         builder: (_) => Dialog(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520, maxHeight: 720),
+            constraints: const BoxConstraints(maxWidth: 520),
             child: sheetContent,
           ),
         ),

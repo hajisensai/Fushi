@@ -7,12 +7,13 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
-import 'package:hibiki/src/utils/misc/platform_utils.dart';
 import 'package:hibiki/utils.dart';
 
 /// The body content for the Dictionary tab in the main menu.
 class HomeDictionaryPage extends BaseTabPage {
-  const HomeDictionaryPage({super.key});
+  const HomeDictionaryPage({super.key, this.focusSignal});
+
+  final ValueNotifier<int>? focusSignal;
 
   @override
   BaseTabPageState<BaseTabPage> createState() => _HomeDictionaryPageState();
@@ -49,6 +50,13 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     appModelNoUpdate.dictionaryEntriesNotifier
         .addListener(_onDictionaryEntriesChanged);
     _searchFocusNode.addListener(_onFocusChanged);
+    (widget as HomeDictionaryPage).focusSignal?.addListener(_onFocusSignal);
+  }
+
+  void _onFocusSignal() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _searchFocusNode.requestFocus();
+    });
   }
 
   void _onFocusChanged() {
@@ -81,6 +89,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
 
   @override
   void dispose() {
+    (widget as HomeDictionaryPage).focusSignal?.removeListener(_onFocusSignal);
     _searchFocusNode.removeListener(_onFocusChanged);
     appModelNoUpdate.dictionarySearchAgainNotifier.removeListener(_searchAgain);
     appModelNoUpdate.dictionaryEntriesNotifier
@@ -109,8 +118,6 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
 
   @override
   Widget build(BuildContext context) {
-    final sizeClass = windowSizeClassFromContext(context);
-    final bool wide = sizeClass == WindowSizeClass.expanded;
     return PopScope(
       canPop: !_hasActiveQuery && _popupStack.isEmpty,
       onPopInvokedWithResult: (didPop, _) {
@@ -121,16 +128,23 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
           _clearSearch();
         }
       },
-      child: Center(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: wide ? 960 : double.infinity),
-          child: Column(
-            children: [
-              _buildSearchHeader(),
-              Expanded(child: _buildBody()),
-            ],
-          ),
-        ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final bool wide =
+              windowSizeClassOf(constraints) == WindowSizeClass.expanded;
+          return Center(
+            child: ConstrainedBox(
+              constraints:
+                  BoxConstraints(maxWidth: wide ? 960 : double.infinity),
+              child: Column(
+                children: [
+                  _buildSearchHeader(),
+                  Expanded(child: _buildBody()),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }

@@ -49,6 +49,13 @@ class HistoryReaderPageState<T extends BaseHistoryPage>
     }
   }
 
+  static double _gridExtent(BuildContext context) {
+    final double w = MediaQuery.sizeOf(context).width;
+    if (w >= 840) return 200;
+    if (w >= 600) return 180;
+    return 150;
+  }
+
   /// This is shown as the body when [shouldPlaceholderBeShown] is false.
   @override
   Widget buildHistory(List<MediaItem> items) {
@@ -59,12 +66,7 @@ class HistoryReaderPageState<T extends BaseHistoryPage>
       child: GridView.builder(
         padding: const EdgeInsets.only(top: 48),
         gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: () {
-            final double w = MediaQuery.sizeOf(context).width;
-            if (w >= 840) return 200.0;
-            if (w >= 600) return 180.0;
-            return 150.0;
-          }(),
+          maxCrossAxisExtent: _gridExtent(context),
           childAspectRatio: mediaSource.aspectRatio,
         ),
         physics: const AlwaysScrollableScrollPhysics(
