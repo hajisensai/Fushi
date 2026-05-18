@@ -34,11 +34,9 @@ class LyricsModeHtml {
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html, body {
-  width: 100%; height: 100%;
+  width: 100%;
   background: $backgroundColor;
   overflow-x: hidden;
-  overflow-y: scroll;
-  -webkit-overflow-scrolling: touch;
   -webkit-tap-highlight-color: transparent;
   -webkit-touch-callout: none;
 }
@@ -121,14 +119,17 @@ var _cues = document.querySelectorAll('.cue');
 
 function setCue(index) {
   if (index === _currentIdx) return;
+  var old = _currentIdx;
   _currentIdx = index;
-  for (var i = 0; i < _cues.length; i++) {
-    _cues[i].classList.remove('current', 'near-1', 'near-2', 'near-3');
-    var dist = Math.abs(i - index);
-    if (dist === 0) _cues[i].classList.add('current');
-    else if (dist === 1) _cues[i].classList.add('near-1');
-    else if (dist === 2) _cues[i].classList.add('near-2');
-    else if (dist === 3) _cues[i].classList.add('near-3');
+  var len = _cues.length;
+  if (old >= 0) {
+    for (var i = Math.max(0, old - 3), e = Math.min(len - 1, old + 3); i <= e; i++)
+      _cues[i].classList.remove('current', 'near-1', 'near-2', 'near-3');
+  }
+  for (var i = Math.max(0, index - 3), e = Math.min(len - 1, index + 3); i <= e; i++) {
+    var d = Math.abs(i - index);
+    if (d === 0) _cues[i].classList.add('current');
+    else _cues[i].classList.add('near-' + d);
   }
   scrollToCenter(_cues[index]);
 }
