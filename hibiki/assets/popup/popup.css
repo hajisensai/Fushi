@@ -29,7 +29,7 @@ body {
     --text-color-light4: #888888;
     --background-color-dark1: #eeeeee;
     color: var(--text-color);
-    background-color: transparent;
+    background-color: var(--background-color, transparent);
     font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", sans-serif !important;
     overscroll-behavior-y: contain;
     touch-action: auto;
@@ -516,15 +516,13 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
     color: inherit;
 }
 
-html[data-theme="light"],
-html[data-theme="light"] body {
+html[data-theme="light"] {
     --background-color: #fff;
     --background-color-light: #fff;
     --text-color: #000;
 }
 
-html[data-theme="dark"],
-html[data-theme="dark"] body {
+html[data-theme="dark"] {
     --background-color: #000;
     --background-color-light: #000;
     --text-color: #fff;

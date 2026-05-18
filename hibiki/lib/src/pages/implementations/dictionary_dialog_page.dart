@@ -411,6 +411,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
             countNotifier: countNotifier,
             totalNotifier: totalNotifier,
             onImportSuccess: () {
+              if (!mounted) return;
               _selectedOrder = appModel.dictionaries.last.order;
               setState(() {});
             },

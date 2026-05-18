@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -141,15 +142,14 @@ class DictionaryPopupWebViewState
     final int br = (bgColor.r * 255.0).round().clamp(0, 255);
     final int bg = (bgColor.g * 255.0).round().clamp(0, 255);
     final int bb = (bgColor.b * 255.0).round().clamp(0, 255);
-    final String bgCssOverride =
-        "document.documentElement.style.setProperty('--background-color', 'rgb($br, $bg, $bb)');";
+    final String bgRgb = 'rgb($br, $bg, $bb)';
 
     final bool needsScrollCheck = widget.onScrolledToBottom != null;
     _controller!.evaluateJavascript(source: '''
       document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
       document.documentElement.style.setProperty('--hoshi-primary-highlight', '$primaryRgba');
       document.documentElement.style.setProperty('--text-color', '$textRgba');
-      $bgCssOverride
+      document.documentElement.style.setProperty('--background-color', '$bgRgb');
       window.audioSources = $audioSourcesJson;
       window.needsAudio = true;
       window.deduplicatePitchAccents = $deduplicatePitch;
@@ -195,7 +195,10 @@ class DictionaryPopupWebViewState
         url: WebUri(webViewAssetUrl('assets/popup/popup.html')),
       ),
       initialSettings: InAppWebViewSettings(
-        transparentBackground: true,
+        // flutter_inappwebview_windows 0.6.0 has inverted logic:
+        // transparentBackground:true skips put_DefaultBackgroundColor (white),
+        // transparentBackground:false sets alpha=0 (transparent).
+        transparentBackground: !Platform.isWindows,
         supportZoom: false,
         horizontalScrollBarEnabled: false,
         allowFileAccessFromFileURLs: true,
