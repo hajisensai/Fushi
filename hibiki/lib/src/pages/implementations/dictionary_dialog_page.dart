@@ -23,6 +23,7 @@ class DictionaryDialogPage extends BasePage {
 
 class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
   int? _selectedOrder;
+  bool _isDownloading = false;
   final ScrollController _contentScrollController = ScrollController();
 
   @override
@@ -278,6 +279,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
   }
 
   Future<void> _showDownloadSelectionDialog() async {
+    if (_isDownloading) return;
     const catalog = DictionaryDownloader.catalog;
     final byCategory = DictionaryDownloader.byCategory;
     final defaults =
@@ -428,6 +430,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
   Future<void> _downloadSelectedDictionaries(
     List<RecommendedDictionary> toDownload,
   ) async {
+    _isDownloading = true;
     final ValueNotifier<String> progressNotifier =
         ValueNotifier<String>(t.import_start);
     final ValueNotifier<double> downloadProgress = ValueNotifier<double>(0);
@@ -489,9 +492,12 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
       }
       await Future<void>.delayed(const Duration(seconds: 2));
     } finally {
+      progressNotifier.dispose();
+      downloadProgress.dispose();
       if (tempDir.existsSync()) {
         tempDir.deleteSync(recursive: true);
       }
+      _isDownloading = false;
       if (mounted) {
         Navigator.pop(context);
         setState(() {});

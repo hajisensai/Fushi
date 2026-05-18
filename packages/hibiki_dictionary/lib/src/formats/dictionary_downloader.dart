@@ -382,10 +382,12 @@ class DictionaryDownloader {
     }
 
     // For Chinese/Korean users without a dedicated JMdict,
-    // also recommend JA-JA monolingual dictionaries.
+    // also recommend lightweight JA-JA dicts (skip large ones like Nico-Pixiv).
     if (!foundMatch && (lang == 'zh' || lang == 'ko')) {
       for (int i = 0; i < catalog.length; i++) {
-        if (catalog[i].category == DictionaryCategory.jaJa) {
+        final d = catalog[i];
+        if (d.category == DictionaryCategory.jaJa &&
+            d.name != 'Nico-Pixiv百科事典') {
           selected.add(i);
         }
       }
