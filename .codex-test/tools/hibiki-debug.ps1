@@ -260,10 +260,32 @@ function Vm-Call {
         if ($resp.error) {
             return "ERROR: $($resp.error.message)"
         }
-        return ($resp.result | ConvertTo-Json -Depth 5 -Compress)
+        return ($resp.result | ConvertTo-Json -Depth 20 -Compress)
     } catch {
         return "ERROR: $($_.Exception.Message)"
     }
+}
+
+function Vm-GetMainIsolateId {
+    $vmInfo = Vm-Call "getVM"
+    if ($vmInfo -like "ERROR:*") { return $null }
+    $vm = $vmInfo | ConvertFrom-Json
+    if ($vm.isolates -and $vm.isolates.Count -gt 0) {
+        foreach ($iso in $vm.isolates) {
+            if ($iso.name -eq 'main') { return $iso.id }
+        }
+        return $vm.isolates[0].id
+    }
+    return $null
+}
+
+function Vm-GetRootLibId {
+    param([string]$IsolateId)
+    $isoInfo = Vm-Call "getIsolate" @{ isolateId = $IsolateId }
+    if ($isoInfo -like "ERROR:*") { return $null }
+    $iso = $isoInfo | ConvertFrom-Json
+    if ($iso.rootLib -and $iso.rootLib.id) { return $iso.rootLib.id }
+    return $null
 }
 
 function Vm-Evaluate {
@@ -272,18 +294,15 @@ function Vm-Evaluate {
         return "ERROR: No VM service URL. Use -VmUrl ws://127.0.0.1:<port>/<token>/ws"
     }
 
-    $vmInfo = Vm-Call "getVM"
-    if ($vmInfo -like "ERROR:*") { return $vmInfo }
-
-    $vm = $vmInfo | ConvertFrom-Json
-    $isolateId = $null
-    if ($vm.isolates -and $vm.isolates.Count -gt 0) {
-        $isolateId = $vm.isolates[0].id
-    }
+    $isolateId = Vm-GetMainIsolateId
     if (-not $isolateId) { return "ERROR: No running isolate found" }
+
+    $libId = Vm-GetRootLibId $isolateId
+    if (-not $libId) { return "ERROR: Cannot find root library" }
 
     $result = Vm-Call "evaluate" @{
         isolateId  = $isolateId
+        targetId   = $libId
         expression = $Expression
     }
     return $result
@@ -477,28 +496,33 @@ function Handle-Prefs {
     $backend = Resolve-Backend
 
     if ($backend -eq 'android') {
-        # Access SharedPreferences via run-as (debug builds only)
-        $prefsDir = "/data/data/$Package/shared_prefs"
+        # Requires debug build (run-as). Check first.
+        $debugCheck = Adb-Shell "run-as $Package id 2>&1"
+        if ($debugCheck -like '*not debuggable*' -or $debugCheck -like '*not found*') {
+            Format-Event 'android' 'state' 'prefs' @{} "Package not debuggable — install a debug build to use prefs" 'WARN'
+            return
+        }
 
         if (-not $CmdArgs -or $CmdArgs.Count -eq 0) {
-            # List all pref files
-            $result = Adb-Shell "run-as $Package ls shared_prefs/ 2>/dev/null || ls $prefsDir/ 2>/dev/null"
+            # List preference keys from Drift SQLite
+            $result = Adb-Shell "run-as $Package sqlite3 databases/hibiki.db `"SELECT key FROM preferences ORDER BY key`" 2>&1"
+            if (-not $result -or $result -like '*Error*') {
+                # Fallback: list SharedPreferences files
+                $result = Adb-Shell "run-as $Package ls shared_prefs/ 2>/dev/null"
+                if (-not $result) { $result = "(no preferences found)" }
+            }
             Format-Event 'android' 'state' 'prefs_list' @{} $result
             return
         }
 
         $key = $CmdArgs[0]
         if ($CmdArgs.Count -ge 2) {
-            # Set preference - use Drift DB since app uses Drift for preferences
             $value = $CmdArgs[1]
-            # The app uses Drift SQLite for preferences, not SharedPreferences
-            $dbPath = "/data/data/$Package/databases/hibiki.db"
             $sql = "INSERT OR REPLACE INTO preferences (key, value) VALUES ('$key', '$value')"
             $result = Adb-Shell "run-as $Package sqlite3 databases/hibiki.db `"$sql`" 2>&1"
             if (-not $result) { $result = "set (restart app to apply)" }
             Format-Event 'android' 'state' 'prefs_set' @{ key = $key; value = $value } $result
         } else {
-            # Read preference
             $sql = "SELECT value FROM preferences WHERE key='$key'"
             $result = Adb-Shell "run-as $Package sqlite3 databases/hibiki.db `"$sql`" 2>&1"
             if (-not $result) { $result = "(not set)" }
@@ -546,13 +570,13 @@ function Handle-Logcat {
     $appPid = Adb-Shell "pidof $Package"
     if ($appPid -and $appPid -match '^\d+$') {
         if ($filter) {
-            $result = Adb-Shell "logcat -d -t 80 --pid=$appPid | grep -i '$filter'"
+            $result = Adb-Shell "logcat -d -t 80 --pid=$appPid | grep -i '$filter' || true"
         } else {
             $result = Adb-Shell "logcat -d -t 50 --pid=$appPid"
         }
     } else {
         if ($filter) {
-            $result = Adb-Shell "logcat -d -t 80 *:S flutter:V | grep -i '$filter'"
+            $result = Adb-Shell "logcat -d -t 80 *:S flutter:V | grep -i '$filter' || true"
         } else {
             $result = Adb-Shell "logcat -d -t 50 *:S flutter:V"
         }
@@ -562,7 +586,7 @@ function Handle-Logcat {
 }
 
 function Handle-CrashLog {
-    $result = Adb-Shell "logcat -d -t 200 *:E | grep -A5 '$Package\|FATAL\|AndroidRuntime'"
+    $result = Adb-Shell "logcat -d -t 200 *:E | grep -A5 '$Package\|FATAL\|AndroidRuntime' || true"
     if (-not $result) { $result = "(no crashes found)" }
     Format-Event 'android' 'debug' 'crash_log' @{} $result
 }
@@ -604,7 +628,12 @@ function Handle-Eval {
 function Handle-Reload {
     $backend = Resolve-Backend
     if ($backend -eq 'vm') {
-        $result = Vm-Call "reloadSources" @{ pause = $false }
+        $isolateId = Vm-GetMainIsolateId
+        if (-not $isolateId) {
+            Format-Event 'vm' 'dev' 'hot_reload' @{} "No running isolate" 'ERROR'
+            return
+        }
+        $result = Vm-Call "reloadSources" @{ isolateId = $isolateId; pause = $false }
         Format-Event 'vm' 'dev' 'hot_reload' @{} $result
     } else {
         Format-Event 'android' 'dev' 'hot_reload' @{} "Requires VM service URL (-VmUrl)" 'ERROR'
@@ -612,12 +641,30 @@ function Handle-Reload {
 }
 
 function Handle-WidgetTree {
+    param([string[]]$CmdArgs)
     $backend = Resolve-Backend
     if ($backend -eq 'vm') {
-        $result = Vm-Call "ext.flutter.inspector.getRootWidgetSummaryTree" @{ objectGroup = "debug-tool" }
-        Format-Event 'vm' 'inspect' 'widget_tree' @{} $result
+        $isolateId = Vm-GetMainIsolateId
+        if (-not $isolateId) {
+            Format-Event 'vm' 'inspect' 'widget_tree' @{} "No running isolate" 'ERROR'
+            return
+        }
+        $maxDepth = if ($CmdArgs -and $CmdArgs[0] -match '^\d+$') { [int]$CmdArgs[0] } else { 5 }
+        $result = Vm-Call "ext.flutter.inspector.getRootWidgetSummaryTree" @{
+            isolateId  = $isolateId
+            objectGroup = "debug-tool"
+            maxDepth   = $maxDepth
+        }
+        if ($result -like "ERROR:*") {
+            Format-Event 'vm' 'inspect' 'widget_tree' @{} $result 'ERROR'
+            return
+        }
+        $descriptions = [regex]::Matches($result, '"description":"([^"]+)"') |
+            ForEach-Object { $_.Groups[1].Value }
+        $treeText = $descriptions -join "`n"
+        Format-Event 'vm' 'inspect' 'widget_tree' @{ maxDepth = $maxDepth; widgets = $descriptions.Count } $treeText
     } else {
-        Format-Event 'android' 'inspect' 'widget_tree' @{} "Requires VM service URL" 'ERROR'
+        Format-Event 'android' 'inspect' 'widget_tree' @{} "Requires VM service URL (-VmUrl)" 'ERROR'
     }
 }
 
