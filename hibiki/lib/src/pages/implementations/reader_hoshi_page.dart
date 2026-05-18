@@ -89,6 +89,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   Timer? _saveDebounce;
   Timer? _progressPollTimer;
   Timer? _volumeThrottleTimer;
+  Timer? _contentReadyTimer;
   int _lastSavedSection = -1;
   double _lastSavedProgress = -1;
   int _lastProgressSection = -1;
@@ -708,6 +709,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _progressPollTimer?.cancel();
     _saveDebounce?.cancel();
     _volumeThrottleTimer?.cancel();
+    _contentReadyTimer?.cancel();
     VolumeKeyChannel.instance.setHandlers();
     VolumeKeyChannel.instance.setInterceptEnabled(false);
     appModel.setOverrideDictionaryTheme(null);
@@ -1252,6 +1254,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       ),
       onWebViewCreated: (controller) {
         _controller = controller;
+        _startContentReadyTimeout();
         if (_lyricsMode && _audiobookController != null) {
           final List<AudioCue> allCues =
               _audiobookController!.allBookCuesSnapshot;
@@ -1445,22 +1448,28 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       return;
     }
     final int chapterSnapshot = _currentChapter;
-    String? sasayakiCuesJson;
-    if (_audiobookController != null) {
-      sasayakiCuesJson = await _prepareSasayakiCuesJson();
+    try {
+      String? sasayakiCuesJson;
+      if (_audiobookController != null) {
+        sasayakiCuesJson = await _prepareSasayakiCuesJson();
+      }
+      if (_currentChapter != chapterSnapshot) return;
+      await controller.evaluateJavascript(
+        source: _buildReaderSetupScript(sasayakiCuesJson: sasayakiCuesJson),
+      );
+      _initialFragment = null;
+      if (_audiobookController != null) {
+        await _injectAudiobookBridge();
+      }
+      await HighlightBridge.inject(controller);
+      await _applyChapterHighlights();
+      if (!mounted) return;
+      _lastSyncedWidth = MediaQuery.of(context).size.width;
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('ReaderHoshi._onChapterLoadComplete', e, stack);
+      debugPrint('[ReaderHoshi] _onChapterLoadComplete failed: $e');
     }
-    if (_currentChapter != chapterSnapshot) return;
-    await controller.evaluateJavascript(
-      source: _buildReaderSetupScript(sasayakiCuesJson: sasayakiCuesJson),
-    );
-    _initialFragment = null;
-    if (_audiobookController != null) {
-      await _injectAudiobookBridge();
-    }
-    await HighlightBridge.inject(controller);
-    await _applyChapterHighlights();
-    if (!mounted) return;
-    _lastSyncedWidth = MediaQuery.of(context).size.width;
   }
 
   Future<void> _applyChapterHighlights() async {
@@ -1490,7 +1499,21 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   int _navigateGeneration = 0;
   int _restoreExpectedGeneration = 0;
 
+  void _startContentReadyTimeout() {
+    _contentReadyTimer?.cancel();
+    _contentReadyTimer = Timer(const Duration(seconds: 8), () {
+      if (!mounted || _readerContentReady) return;
+      debugPrint(
+          '[ReaderHoshi] content ready timeout — forcing overlay removal');
+      setState(() {
+        _readerContentReady = true;
+        _hasEverLoaded = true;
+      });
+    });
+  }
+
   void _onRestoreComplete() {
+    _contentReadyTimer?.cancel();
     if (!mounted) {
       return;
     }
@@ -1945,6 +1968,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     setState(() {
       _readerContentReady = false;
     });
+    _startContentReadyTimeout();
 
     try {
       await _loadChapterDirectly(index);
@@ -2003,6 +2027,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     setState(() {
       _readerContentReady = false;
     });
+    _startContentReadyTimeout();
 
     try {
       await _loadChapterDirectly(index);
@@ -2767,6 +2792,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       appModel: appModel,
       isHoshiReader: true,
       onStyleChanged: _applyStylesLive,
+      onThemeChanged: _onThemeChanged,
       extractDir: _extractDir,
       onReloadChapter: _reloadWithCurrentSettings,
       lyricsMode: _lyricsMode,
@@ -3071,6 +3097,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     setState(() {
       _readerContentReady = false;
     });
+    _startContentReadyTimeout();
 
     await _loadChapterDirectly(_currentChapter);
   }
@@ -3211,6 +3238,14 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final int g = (c.g * 255.0).round().clamp(0, 255);
     final int b = (c.b * 255.0).round().clamp(0, 255);
     return 'rgba($r,$g,$b,0.34)';
+  }
+
+  Future<void> _onThemeChanged() async {
+    _syncDictionaryTheme();
+    if (appModel.showFloatingLyric) {
+      await _applyFloatingLyricStyle();
+    }
+    if (mounted) setState(() {});
   }
 
   void _syncDictionaryTheme() {

@@ -1687,8 +1687,8 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                   if (!on) return;
                   s.theme = themeKey;
                   setState(() {});
-                  await _updateSetting('theme', themeKey);
                   await widget.appModel.setAppThemeKey(themeKey);
+                  await _updateSetting('theme', themeKey);
                   await widget.onThemeChanged?.call();
                 },
               );
