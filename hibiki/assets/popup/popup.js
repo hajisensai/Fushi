@@ -674,15 +674,6 @@ function createDefinitionImage(data, dictionary, exporting = false) {
                     imageContainer.style.width = `${Math.min(img.naturalWidth, window.innerWidth - 20)}px`;
                     aspectRatioSizer.style.paddingTop = `${(img.naturalHeight / img.naturalWidth) * 100}%`;
                 }
-                const r = img.getBoundingClientRect();
-                const cr = imageContainer.getBoundingClientRect();
-                const cs = getComputedStyle(img);
-                console.log('[IMG_RENDER]', path,
-                    'natural=' + img.naturalWidth + 'x' + img.naturalHeight,
-                    'rect=' + Math.round(r.width) + 'x' + Math.round(r.height),
-                    'container=' + Math.round(cr.width) + 'x' + Math.round(cr.height),
-                    'vis=' + cs.visibility, 'op=' + cs.opacity, 'disp=' + cs.display,
-                    'pos=' + cs.position, 'clip=' + cs.overflow);
             }, {once: true});
             img.addEventListener('error', (e) => {
                 console.log('[IMG_ERROR]', path, imageUrl);

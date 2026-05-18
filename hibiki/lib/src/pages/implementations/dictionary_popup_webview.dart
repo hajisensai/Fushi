@@ -451,9 +451,7 @@ class DictionaryPopupWebViewState
       onConsoleMessage: (controller, consoleMessage) {
         final msg = consoleMessage.message;
         debugPrint('[PopupWebView] $msg');
-        if (msg.startsWith('[IMG')) {
-          ErrorLogService.instance.log('PopupImage', msg);
-        } else if (msg.startsWith('[LONGPRESS]')) {
+        if (msg.startsWith('[LONGPRESS]')) {
           ErrorLogService.instance.log('PopupLongPress', msg);
         } else if (msg.startsWith('[RENDER_CONTENT]') ||
             msg.startsWith('[RICHTEXT]') ||
