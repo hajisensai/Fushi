@@ -66,7 +66,6 @@ class AudiobookRepository {
 
   Future<void> saveCues({
     required String bookUid,
-    required String chapterHref,
     required List<AudioCue> cues,
   }) async {
     await _db.replaceCuesForBook(

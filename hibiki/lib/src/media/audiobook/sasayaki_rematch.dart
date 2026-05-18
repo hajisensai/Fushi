@@ -290,17 +290,10 @@ class SasayakiRematch {
         similarityThreshold: similarityThreshold,
       );
       SasayakiMatchCodec.applyToCues(cues: cues, result: result);
-      final Map<String, List<AudioCue>> byChapter = <String, List<AudioCue>>{};
-      for (final AudioCue c in cues) {
-        byChapter.putIfAbsent(c.chapterHref, () => <AudioCue>[]).add(c);
-      }
-      for (final MapEntry<String, List<AudioCue>> entry in byChapter.entries) {
-        await repo.saveCues(
-          bookUid: ab.bookUid,
-          chapterHref: entry.key,
-          cues: entry.value,
-        );
-      }
+      await repo.saveCues(
+        bookUid: ab.bookUid,
+        cues: cues,
+      );
       final int pct = (result.matchRate * 100).round();
       final AudiobookHealth health = AudiobookHealth.fromRatePct(
         ratePct: pct,

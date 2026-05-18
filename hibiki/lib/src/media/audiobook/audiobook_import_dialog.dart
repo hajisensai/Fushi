@@ -678,9 +678,6 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       }
 
       health.packInto(audiobook);
-      if (_patchingAudio) {
-        await widget.repo.deleteAudiobook(widget.bookUid);
-      }
       await widget.repo.saveAudiobook(audiobook);
       await widget.repo.updateHealthOverlay(
         bookUid: widget.bookUid,
@@ -824,7 +821,6 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       final AudiobookHealth health = await _matchCuesToTtu(cues);
       await widget.repo.saveCues(
         bookUid: widget.bookUid,
-        chapterHref: SrtParser.defaultChapter,
         cues: cues,
       );
       return health;
@@ -836,7 +832,6 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       final AudiobookHealth health = await _matchCuesToTtu(cues);
       await widget.repo.saveCues(
         bookUid: widget.bookUid,
-        chapterHref: LrcParser.defaultChapter,
         cues: cues,
       );
       return health;
@@ -848,7 +843,6 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       final AudiobookHealth health = await _matchCuesToTtu(cues);
       await widget.repo.saveCues(
         bookUid: widget.bookUid,
-        chapterHref: VttParser.defaultChapter,
         cues: cues,
       );
       return health;
@@ -860,7 +854,6 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       final AudiobookHealth health = await _matchCuesToTtu(cues);
       await widget.repo.saveCues(
         bookUid: widget.bookUid,
-        chapterHref: AssParser.defaultChapter,
         cues: cues,
       );
       return health;
@@ -869,18 +862,10 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
         jsonFile: alignFile,
         bookUid: widget.bookUid,
       );
-      // 按章节批量存入 Isar
-      final Map<String, List<AudioCue>> byChapter = {};
-      for (final AudioCue c in allCues) {
-        byChapter.putIfAbsent(c.chapterHref, () => []).add(c);
-      }
-      for (final MapEntry<String, List<AudioCue>> entry in byChapter.entries) {
-        await widget.repo.saveCues(
-          bookUid: widget.bookUid,
-          chapterHref: entry.key,
-          cues: entry.value,
-        );
-      }
+      await widget.repo.saveCues(
+        bookUid: widget.bookUid,
+        cues: allCues,
+      );
       return _healthFromFragmentIntegrity(
         allCues,
         formatLabel: 'json',
@@ -899,7 +884,6 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       );
       await widget.repo.saveCues(
         bookUid: widget.bookUid,
-        chapterHref: chapterHref,
         cues: cues,
       );
       return _healthFromFragmentIntegrity(cues, formatLabel: 'smil');

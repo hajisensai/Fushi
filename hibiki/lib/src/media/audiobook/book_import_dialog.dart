@@ -710,8 +710,6 @@ class _BookImportDialogState extends State<BookImportDialog> {
       bookUid,
       0,
     );
-    final String chapterHref = _defaultChapterFor(ext);
-
     AudiobookHealth health;
     final bool runMatcher = SasayakiRematch.supportedFormats.contains(ext);
     if (runMatcher && sections.isNotEmpty && cues.isNotEmpty) {
@@ -792,7 +790,6 @@ class _BookImportDialogState extends State<BookImportDialog> {
     await widget.audiobookRepo.saveAudiobook(audiobook);
     await widget.audiobookRepo.saveCues(
       bookUid: bookUid,
-      chapterHref: chapterHref,
       cues: cues,
     );
     await widget.audiobookRepo.updateHealthOverlay(
@@ -815,20 +812,6 @@ class _BookImportDialogState extends State<BookImportDialog> {
       case HealthKind.unrun:
       case HealthKind.running:
         return null;
-    }
-  }
-
-  String _defaultChapterFor(String ext) {
-    switch (ext) {
-      case 'lrc':
-        return LrcParser.defaultChapter;
-      case 'vtt':
-        return VttParser.defaultChapter;
-      case 'ass':
-      case 'ssa':
-        return AssParser.defaultChapter;
-      default:
-        return SrtParser.defaultChapter;
     }
   }
 
