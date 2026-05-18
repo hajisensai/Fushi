@@ -493,10 +493,9 @@ packages:
   file_picker:
     dependency: "direct main"
     description:
-      name: file_picker
-      sha256: ab13ae8ef5580a411c458d6207b6774a6c237d77ac37011b13994879f68a8810
-      url: "https://pub.dev"
-    source: hosted
+      path: "../packages/file_picker"
+      relative: true
+    source: path
     version: "8.3.7"
   fixnum:
     dependency: transitive

@@ -122,6 +122,8 @@ dependency_overrides:
   logging: 1.1.1
   record_mp3_plus: ^1.2.0
   wakelock_plus_platform_interface: 1.1.0 # Pigeon v10/v17 channel mismatch with wakelock_plus 1.1.4
+  file_picker:
+    path: ../packages/file_picker
 
 dev_dependencies:
   build_runner: ^2.3.3
