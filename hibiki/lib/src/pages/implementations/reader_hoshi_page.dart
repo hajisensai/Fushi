@@ -101,6 +101,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   bool _lyricsMode = false;
   bool _lyricsModeTransition = false;
+
+  @override
+  bool get shouldDisablePopupScrim => _lyricsMode || super.shouldDisablePopupScrim;
   bool _lyricsPageReady = false;
   int _lyricsEntryChapter = 0;
   int _lyricsEntryCueIndex = 0;

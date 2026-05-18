@@ -199,6 +199,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
   double get popupMaxWidth => appModel.popupMaxWidth;
   double get popupMaxHeight => 360;
   double get popupPadding => 6;
+  bool get shouldDisablePopupScrim => appModel.disableDialogScrim;
 
   late final Listenable _popupListenable =
       Listenable.merge([_popupStack, _isSearchingNotifier]);
@@ -226,7 +227,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
                       behavior: HitTestBehavior.translucent,
                       onTap: clearDictionaryResult,
                       child: Container(
-                        color: appModel.disableDialogScrim
+                        color: shouldDisablePopupScrim
                             ? Colors.transparent
                             : Colors.black54,
                       ),
