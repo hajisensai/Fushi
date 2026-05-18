@@ -1,7 +1,7 @@
 # Hibiki 多平台适配设计
 
-> 日期：2026-05-16
-> 状态：Draft
+> 日期：2026-05-16（更新：2026-05-19）
+> 状态：Active — Phase 0 完成, Phase 1 基本完成, Phase 2/3 计划已完善
 > 目标平台：Android（现有）、Windows、macOS、iOS
 
 ## 1. 背景与动机
@@ -389,18 +389,121 @@ DynamicLibrary _openLib() {
 
 ## 7. 风险清单
 
-| # | 风险 | 影响 | 概率 | 缓解 |
-|---|------|------|------|------|
-| 1 | flutter_inappwebview 6.x 自定义功能不兼容 | 阅读器核心功能受阻 | 中 | Phase 0 先做 PoC；Windows 备选 webview_windows |
-| 2 | hoshidicts C++23 (glaze) 在 MSVC 上编译失败 | 词典引擎不可用 | 低 | glaze 官方 CI 测试 MSVC；最坏退 Clang-cl |
-| 3 | fluent_ui / macos_ui 缺少需要的组件 | 部分 UI 需自定义实现 | 低 | 两个包可用 Flutter 内置 widget 补充 |
-| 4 | 四套 UI 的长期维护成本 | 新功能同步延迟 | 中 | 业务逻辑全在 packages/，UI 变更频率低于逻辑变更 |
-| 5 | Phase 0 monorepo 重构破坏 Android | 主平台不可用 | 中 | 每个抽包步骤后立即编译验证，不批量操作 |
-| 6 | iOS App Store 审核 | 分发延迟 | 低 | 预留审核周期，提前准备隐私政策和审核材料 |
-| 7 | macOS/iOS 开发需要 Mac 硬件 | Phase 2/3 无法启动 | 中 | 需提前准备 Mac 开发机；CI 可用 GitHub Actions macOS runner |
-| 8 | Language 模块解耦 | Phase 0 增加 1-2 天 | 低 | 审计显示 AppModel 依赖仅 1 个属性 (dictionaryFontSize: double)，utils 依赖仅 ErrorLogService；改参数签名即可 |
+| # | 风险 | 影响 | 概率 | 缓解 | 状态 |
+|---|------|------|------|------|------|
+| 1 | flutter_inappwebview 6.x 自定义功能不兼容 | 阅读器核心功能受阻 | 中 | Phase 0 先做 PoC；Windows 备选 webview_windows | ✅ 已解决 — 6.1.5 迁移完成 |
+| 2 | hoshidicts C++23 (glaze) 在 MSVC 上编译失败 | 词典引擎不可用 | 低 | glaze 官方 CI 测试 MSVC；最坏退 Clang-cl | ✅ 已解决 — MSVC 19.44 编译通过 |
+| 3 | fluent_ui / macos_ui 缺少需要的组件 | 部分 UI 需自定义实现 | 低 | 两个包可用 Flutter 内置 widget 补充 | Phase 2/4 再评估 |
+| 4 | 四套 UI 的长期维护成本 | 新功能同步延迟 | 中 | 业务逻辑全在 packages/，UI 变更频率低于逻辑变更 | 决策：Phase 2 先用 Material |
+| 5 | Phase 0 monorepo 重构破坏 Android | 主平台不可用 | 中 | 每个抽包步骤后立即编译验证，不批量操作 | ✅ 已解决 — Android 无回归 |
+| 6 | iOS App Store 审核 | 分发延迟 | 低 | 预留审核周期，提前准备隐私政策和审核材料 | Phase 3 |
+| 7 | macOS/iOS 开发需要 Mac 硬件 | Phase 2/3 无法启动 | 中 | 需提前准备 Mac 开发机；CI 可用 GitHub Actions macOS runner | 仍然阻断 |
+| 8 | Language 模块解耦 | Phase 0 增加 1-2 天 | 低 | 审计显示 AppModel 依赖仅 1 个属性 | ✅ 已解决 |
+| 9 | Apple Clang C++23 支持不完整 | hoshidicts 在 macOS/iOS 编译失败 | 低 | 要求 Xcode 15.2+；fallback 到 c++2b | Phase 2 新增 |
+| 10 | iOS 线程栈限制（32MB→~8MB） | 词典导入崩溃 | 中 | 确认 importer 解压缓冲区是否堆分配；必要时重构 | Phase 3 新增 |
+| 11 | WKWebView sandbox 限制 file:// 访问 | EPUB 内图片/字体加载失败 | 中 | 使用 custom URL scheme handler 或 local HTTP server | Phase 2 新增 |
+| 12 | .apkg 格式兼容性 | AnkiMobile 无法导入 | 低 | 测试 AnkiMobile 23.x；使用 Anki 2.1 schema | Phase 3 新增 |
 
-## 8. 不在本次范围
+## 8. Phase 状态与经验教训（2026-05-19 更新）
+
+### Phase 0: Monorepo 抽包 — ✅ 完成
+
+- 5 个包成功抽出，零循环依赖
+- 724 测试全部通过
+- flutter_inappwebview 从 Android-only fork 迁移到 6.1.5
+
+### Phase 1: Windows Port — ✅ 基本完成
+
+**已完成：**
+- hoshidicts DLL 在 MSVC 19.44 上编译成功（4 个关键修复：NOMINMAX, UTF-8, __cplusplus, EXCLUDE_FROM_ALL）
+- 28 个平台守卫发现，21 个已修复，7 个延期
+- AnkiConnect HTTP 后端实现
+- HibikiToast 桌面 overlay 替代 Fluttertoast
+- WebView2 运行时确认；requestAnimationFrame 初始化时序问题已修复
+
+**待办：**
+- EPUB 阅读器运行时手动测试
+- 词典搜索运行时手动测试
+- VS VCTools workload 安装（清理本地 SDK patch）
+
+**关键教训：**
+1. MSVC 对 C++23 的支持需要显式开启：`/utf-8 /Zc:__cplusplus /permissive-`
+2. WebView2 在初始化阶段 `requestAnimationFrame` 不可靠，需要 `setTimeout` 替代
+3. 第三方库的 CMake install 规则与 Flutter 冲突，必须用 `EXCLUDE_FROM_ALL`
+4. 平台守卫审计要覆盖所有 11 个 MethodChannel，不能只看启动路径
+
+### Phase 2: macOS Port — 📋 计划已完善
+
+详见 `docs/plans/2026-05-19-phase2-macos-port.md`
+
+**关键阻断项：**
+- 需要 Mac 硬件
+- 需要创建 `hibiki/macos/` 项目目录
+- 需要 hoshidicts CocoaPods podspec
+- 需要验证 Apple Clang C++23 支持（Xcode 15+）
+
+### Phase 3: iOS Port — 📋 计划已完善
+
+详见 `docs/plans/2026-05-19-phase3-ios-port.md`
+
+**关键阻断项：**
+- 依赖 Phase 2 完成（共享 WKWebView 验证和 Apple 编译链）
+- 需要 Apple Developer 账号
+- hoshidicts 必须静态链接（iOS 沙盒禁止动态库加载）
+- .apkg 导出需要全新实现（iOS 上无 AnkiDroid 也无 AnkiConnect）
+- 32MB pthread 栈在 iOS 上可能受限，需要确认 importer 解压缓冲区是否已堆分配
+
+### 2026-05-19 审查发现的跨平台就绪差距
+
+| ID | 严重度 | 状态 | 描述 |
+|----|--------|------|------|
+| HBK-MP-001 | critical | Phase 2/3 阻断 | CMakeLists.txt 缺少 Apple 平台目标 |
+| HBK-MP-002 | critical | Phase 2/3 阻断 | 缺少 hoshidicts iOS/macOS podspec |
+| HBK-MP-003 | critical | Phase 2 预期 | macOS 项目目录不存在 |
+| HBK-MP-005 | medium | Phase 2/3 分发 | 缺少 entitlements 文件 |
+| HBK-MP-006 | medium | Phase 3 | iOS Podfile 缺少 platform 版本 |
+| HBK-MP-009 | low | Phase 2 | WKWebView 错误处理待验证 |
+
+详见 `docs/reviews/2026-05-19-multiplatform-readiness-audit.md`
+
+## 9. Apple 平台原生构建集成补充（2026-05-19 新增）
+
+### 9.1 hoshidicts CocoaPods 集成策略
+
+Android 和 Windows 的原生构建集成方式不同，Apple 平台需要第三种：
+
+| 平台 | 构建系统 | 集成方式 | 产物 |
+|------|---------|---------|------|
+| Android | Gradle + CMake | `externalNativeBuild { cmake }` in build.gradle | .so |
+| Windows | Flutter CMake | `add_subdirectory` in windows/CMakeLists.txt | .dll |
+| **macOS** | **CocoaPods** | **podspec + source_files 直接编译** | **.dylib（自动 embed）** |
+| **iOS** | **CocoaPods** | **podspec + static_framework + source_files** | **静态链接到主二进制** |
+
+关键区别：
+- macOS 用动态库，`DynamicLibrary.open('libhoshidicts_ffi.dylib')` 通过 RPATH 解析
+- iOS 用静态链接，`DynamicLibrary.process()` 在主进程中查找符号
+- 两个平台共享同一份 C++ 源码，通过 podspec 的 `s.platform` 区分
+
+### 9.2 iOS 线程栈限制
+
+Phase 1 的 `platform.hpp` 使用 32MB 栈的 pthread 线程做词典导入。iOS 的限制：
+- 默认线程栈：512KB
+- 实际上限：~8MB（系统强制）
+
+**必须在 Phase 3 开始前确认：** `importer.cpp` 中解压缓冲区是栈分配还是堆分配。如果是栈分配，需要改为 `std::vector` / `std::unique_ptr<char[]>`。
+
+### 9.3 .apkg 导出（iOS Anki 方案）
+
+iOS 无法使用 AnkiDroid API 或 AnkiConnect，必须实现 .apkg 文件导出：
+- 生成 SQLite `collection.anki21` + media 文件映射
+- 打包为 ZIP（.apkg）
+- 通过 iOS Share Sheet 分享
+
+限制：无法实时查重、无法获取已有 deck/model 列表。UI 需要相应调整。
+
+详见 `docs/plans/2026-05-19-phase3-ios-port.md` Task 4。
+
+## 10. 不在本次范围
 
 - Linux 支持（架构允许未来添加，但不在本期目标）
 - Web 版
