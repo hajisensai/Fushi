@@ -33,6 +33,12 @@ class ReaderSettings {
     await _migrateMargins();
   }
 
+  /// Reload all settings from the database, e.g. after a profile switch.
+  Future<void> refreshFromDb() async {
+    _cache.clear();
+    await _loadAll();
+  }
+
   Future<void> _migrateMargins() async {
     final double? first = _cache['ttu_first_dimension_margin'] as double?;
     final double? second = _cache['ttu_second_dimension_margin'] as double?;

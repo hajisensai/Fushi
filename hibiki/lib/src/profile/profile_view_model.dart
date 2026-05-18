@@ -149,6 +149,7 @@ final profileViewModelProvider =
     final appModel = ref.read(appProvider);
     appModel.refreshPrefCache();
     ReaderHoshiSource.instance.refreshPreferencesFromDb();
+    ReaderHoshiSource.readerSettings?.refreshFromDb();
   }
 
   return ProfileViewModel(repo, onApplied);

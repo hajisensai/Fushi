@@ -3253,19 +3253,20 @@ class AppModel with ChangeNotifier {
   }
 
   /// Set the blur options used in the player.
-  void setBlurOptions(BlurOptions options) {
-    _setPref('blur_width', options.width);
-    _setPref('blur_height', options.height);
-    _setPref('blur_left', options.left);
-    _setPref('blur_top', options.top);
+  Future<void> setBlurOptions(BlurOptions options) async {
+    await _setPref('blur_width', options.width);
+    await _setPref('blur_height', options.height);
+    await _setPref('blur_left', options.left);
+    await _setPref('blur_top', options.top);
 
-    _setPref('blur_red', options.color.red);
-    _setPref('blur_green', options.color.green);
-    _setPref('blur_blue', options.color.blue);
-    _setPref('blur_opacity', options.color.opacity);
+    await _setPref('blur_red', options.color.red);
+    await _setPref('blur_green', options.color.green);
+    await _setPref('blur_blue', options.color.blue);
+    await _setPref('blur_opacity', options.color.opacity);
 
-    _setPref('blur_radius', options.blurRadius);
-    _setPref('blur_visible', options.visible);
+    await _setPref('blur_radius', options.blurRadius);
+    await _setPref('blur_visible', options.visible);
+    notifyListeners();
   }
 
   /// Gets the last used audio index of a given media item.
@@ -3287,6 +3288,7 @@ class AppModel with ChangeNotifier {
   void togglePlayerListeningComprehensionMode() async {
     await _setPref('player_listening_comprehension_mode',
         !isPlayerListeningComprehensionMode);
+    notifyListeners();
   }
 
   /// Get orientation for player.
@@ -3297,6 +3299,7 @@ class AppModel with ChangeNotifier {
   /// Toggle orientation for player.
   void togglePlayerOrientationPortrait() async {
     await _setPref('player_orientation_portrait', !isPlayerOrientationPortrait);
+    notifyListeners();
   }
 
   /// Get whether or not to stretch to fill screen.
@@ -3307,6 +3310,7 @@ class AppModel with ChangeNotifier {
   /// Toggle stretch to fill screen.
   void toggleStretchToFill() async {
     await _setPref('stretch_to_fill_screen', !isStretchToFill);
+    notifyListeners();
   }
 
   /// Whether or not the player should use hardware acceleration.
@@ -3317,6 +3321,7 @@ class AppModel with ChangeNotifier {
   /// Set whether or not the player should use hardware acceleration.
   void setPlayerHardwareAcceleration({required bool value}) async {
     await _setPref('player_hardware_acceleration', value);
+    notifyListeners();
   }
 
   /// Whether or not the player should allow background play.
@@ -3327,6 +3332,7 @@ class AppModel with ChangeNotifier {
   /// Set whether or not the player should allow background play.
   void setPlayerBackgroundPlay({required bool value}) async {
     await _setPref('player_background_play', value);
+    notifyListeners();
   }
 
   /// Whether or not the player should show subtitles in notifications.
@@ -3337,6 +3343,7 @@ class AppModel with ChangeNotifier {
   /// Set whether or not the player should show subtitles in notifications.
   void setShowSubtitlesInNotification({required bool value}) async {
     await _setPref('player_subtitle_notification', value);
+    notifyListeners();
   }
 
   /// Whether or not the player should use hardware acceleration.
@@ -3344,9 +3351,10 @@ class AppModel with ChangeNotifier {
     return _getPref('player_use_opensles', defaultValue: true);
   }
 
-  /// Set whether or not the player should use hardware acceleration.
+  /// Set whether or not the player should use OpenSL ES.
   void setPlayerUseOpenSLES({required bool value}) async {
     await _setPref('player_use_opensles', value);
+    notifyListeners();
   }
 
   /// Allows the player screen to listen to play/pause changes.
@@ -3440,34 +3448,37 @@ class AppModel with ChangeNotifier {
   /// Toggle auto search option.
   void toggleAutoSearchEnabled() async {
     await _setPref('auto_search', !autoSearchEnabled);
+    notifyListeners();
   }
 
   /// Search debounce delay in milliseconds by default.
   final int defaultSearchDebounceDelay = 100;
 
-  /// The search debounce delay in milliseconds for searching in the app..
+  /// The search debounce delay in milliseconds.
   int get searchDebounceDelay {
     return _getPref('auto_search_debounce_delay',
         defaultValue: defaultSearchDebounceDelay);
   }
 
-  /// Sets the debounce delay in milliseconds for searching in the app..
+  /// Sets the search debounce delay in milliseconds.
   void setSearchDebounceDelay(int debounceDelay) async {
     await _setPref('auto_search_debounce_delay', debounceDelay);
+    notifyListeners();
   }
 
   /// Default dictionary font size for meanings.
   final double defaultDictionaryFontSize = 16;
 
-  /// The search debounce delay in milliseconds for searching in the app..
+  /// The dictionary entry font size.
   double get dictionaryFontSize {
     return _getPref('dictionary_entry_font_size',
         defaultValue: defaultDictionaryFontSize);
   }
 
-  /// Sets the debounce delay in milliseconds for searching in the app..
+  /// Sets the dictionary entry font size.
   void setDictionaryFontSize(double fontSize) async {
     await _setPref('dictionary_entry_font_size', fontSize);
+    notifyListeners();
   }
 
   /// Default popup max width in dp.
@@ -3498,6 +3509,7 @@ class AppModel with ChangeNotifier {
   /// backward when double tapped by the user.
   void setDoubleTapSeekDuration(int value) async {
     await _setPref('double_tap_seek_duration', value);
+    notifyListeners();
   }
 
   /// Whether or not it is the app's first time setup to show the languages
@@ -3521,6 +3533,7 @@ class AppModel with ChangeNotifier {
   /// Sets the maximum dictionary terms in a result.
   void setMaximumTerms(int value) async {
     await _setPref('maximum_terms', value);
+    notifyListeners();
   }
 
   /// Adds a [DictionarySearchResult] to dictionary history.
@@ -3619,6 +3632,7 @@ class AppModel with ChangeNotifier {
       'is_transcript_player_mode',
       !isTranscriptPlayerMode,
     );
+    notifyListeners();
   }
 
   /// Get whether or not the transcript should have a background.
@@ -3632,6 +3646,7 @@ class AppModel with ChangeNotifier {
       'is_transcript_opaque',
       !isTranscriptOpaque,
     );
+    notifyListeners();
   }
 
   /// Get whether or not subtitle timings are shown.
@@ -3645,6 +3660,7 @@ class AppModel with ChangeNotifier {
       'subtitle_timings_shown',
       !subtitleTimingsShown,
     );
+    notifyListeners();
   }
 
   /// Get the saved value that the user has set for the [TagsField].
@@ -3666,6 +3682,7 @@ class AppModel with ChangeNotifier {
   /// Toggle auto-adding of book name to tags.
   void toggleAutoAddBookNameToTags() async {
     await _setPref('auto_add_book_name_to_tags', !autoAddBookNameToTags);
+    notifyListeners();
   }
 
   /// Whether to deduplicate pitch accent values across dictionaries.
@@ -3676,6 +3693,7 @@ class AppModel with ChangeNotifier {
   /// Toggle pitch accent deduplication.
   void toggleDeduplicatePitchAccents() async {
     await _setPref('deduplicate_pitch_accents', !deduplicatePitchAccents);
+    notifyListeners();
   }
 
   /// Whether to show harmonic mean frequency aggregation.
@@ -3686,6 +3704,7 @@ class AppModel with ChangeNotifier {
   /// Toggle harmonic frequency aggregation.
   void toggleHarmonicFrequency() async {
     await _setPref('harmonic_frequency', !harmonicFrequency);
+    notifyListeners();
   }
 
   /// Whether to auto-collapse dictionaries (only expand the first one).
@@ -3696,6 +3715,7 @@ class AppModel with ChangeNotifier {
   /// Toggle dictionary auto-collapse.
   void toggleCollapseDictionaries() async {
     await _setPref('collapse_dictionaries', !collapseDictionaries);
+    notifyListeners();
   }
 
   Map<String, String> get customDictCSS {
@@ -3759,6 +3779,7 @@ class AppModel with ChangeNotifier {
   /// Set the list of audio source URL templates.
   void setAudioSources(List<String> sources) async {
     await _setPref('audio_sources', sources);
+    notifyListeners();
   }
 
   /// All local audio database entries (multi-DB support).
@@ -3884,6 +3905,7 @@ class AppModel with ChangeNotifier {
     } else {
       TtsChannel.instance.setLocalAudioDbs(<String>[]);
     }
+    notifyListeners();
   }
 
   bool get showPlayBar {
