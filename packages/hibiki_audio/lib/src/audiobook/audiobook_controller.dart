@@ -56,6 +56,7 @@ class AudiobookPlayerController extends ChangeNotifier {
 
   /// 全书 cue（供收藏句子跨章匹配），setAllBookCues 设定。
   List<AudioCue> _allBookCues = [];
+  Map<int, int> _allBookCueIdToIndex = {};
   List<AudioCue> get allBookCuesSnapshot => _allBookCues;
 
   /// clip 播放前主播放器是否正在播放，clip 结束后恢复。
@@ -108,11 +109,12 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 歌词模式使用此索引而非 [currentCueIdx]（后者是 chapter-relative）。
   int get allBookCueIdx {
     final AudioCue? cue = _currentCue;
-    if (cue == null || _allBookCues.isEmpty) {
-      return -1;
+    if (cue == null || _allBookCues.isEmpty) return -1;
+    final int? id = cue.id;
+    if (id != null) {
+      return _allBookCueIdToIndex[id] ?? -1;
     }
-    final int result = _allBookCueIndex(allBookCues: _allBookCues, currentCue: cue);
-    return result;
+    return _allBookCueIndex(allBookCues: _allBookCues, currentCue: cue);
   }
 
   // ── PR8b: Follow audio ────────────────────────────────────────────────────
@@ -408,6 +410,12 @@ class AudiobookPlayerController extends ChangeNotifier {
 
   void setAllBookCues(List<AudioCue> cues) {
     _allBookCues = List<AudioCue>.from(cues);
+    final Map<int, int> idMap = <int, int>{};
+    for (int i = 0; i < _allBookCues.length; i++) {
+      final int? id = _allBookCues[i].id;
+      if (id != null) idMap[id] = i;
+    }
+    _allBookCueIdToIndex = idMap;
   }
 
   // ── 播放控制 API ───────────────────────────────────────────────────────────

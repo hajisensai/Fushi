@@ -478,14 +478,19 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       );
       final PlatformFile? file = result?.files.single;
       final String? path = file?.path;
-      if (path != null && file != null && mounted) {
-        setState(() {
-          _alignmentPath = path;
-          _alignmentName = file.name;
-          _probedCues = null;
-          _probedCuesSourcePath = null;
-        });
+      if (path == null || file == null || !mounted) return;
+      const Set<String> allowed = {'smil', 'srt', 'lrc', 'vtt', 'ass', 'json'};
+      final String ext = p.extension(path).toLowerCase().replaceFirst('.', '');
+      if (!allowed.contains(ext)) {
+        HibikiToast.show(msg: t.import_unsupported_file_format(ext: '.$ext'));
+        return;
       }
+      setState(() {
+        _alignmentPath = path;
+        _alignmentName = file.name;
+        _probedCues = null;
+        _probedCuesSourcePath = null;
+      });
     } finally {
       _pickerActive = false;
     }

@@ -363,6 +363,12 @@ class _BookImportDialogState extends State<BookImportDialog> {
       final PlatformFile? file = result?.files.single;
       final String? path = file?.path;
       if (path == null || file == null || !mounted) return;
+      const Set<String> allowed = {'srt', 'lrc', 'vtt', 'ass', 'ssa'};
+      final String ext = p.extension(path).toLowerCase().replaceFirst('.', '');
+      if (!allowed.contains(ext)) {
+        HibikiToast.show(msg: t.import_unsupported_file_format(ext: '.$ext'));
+        return;
+      }
 
       setState(() {
         _subtitlePath = path;

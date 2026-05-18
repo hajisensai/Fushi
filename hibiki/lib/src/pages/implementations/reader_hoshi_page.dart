@@ -679,21 +679,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       final bool exists = await dir.exists();
       if (!exists) return <File>[];
       final List<FileSystemEntity> entries = await dir.list().toList();
-      final List<File> files = entries.whereType<File>().where((f) {
-        final String ext = f.path.toLowerCase();
-        return ext.endsWith('.mp3') ||
-            ext.endsWith('.m4a') ||
-            ext.endsWith('.m4b') ||
-            ext.endsWith('.ogg') ||
-            ext.endsWith('.aac') ||
-            ext.endsWith('.wav') ||
-            ext.endsWith('.mp4') ||
-            ext.endsWith('.flac') ||
-            ext.endsWith('.opus') ||
-            ext.endsWith('.wma') ||
-            ext.endsWith('.ac3') ||
-            ext.endsWith('.eac3');
-      }).toList()
+      final List<File> files = entries
+              .whereType<File>()
+              .where((f) => AudiobookStorage.isAudioFile(f.path))
+              .toList()
         ..sort((a, b) => compareAudioFilePath(a.path, b.path));
       return files;
     }
@@ -2174,7 +2163,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final dynamic result = await _controller!.evaluateJavascript(
       source: 'window.hoshiProgressDetails()',
     );
-    if (result == null) return;
+    if (result == null || !mounted) return;
     final String str = result.toString().replaceAll('"', '').trim();
     if (str.isEmpty) return;
 
