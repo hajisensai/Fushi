@@ -210,6 +210,33 @@ Defined in `reader_hoshi_page.dart:3056-3141`:
 
 **修复**: 提取 `_buildThemeData(Brightness)` 私有方法，消除约 70 行重复。
 
+### HBK-AUDIT-006 — 查词高亮与当前播放语句同色 [Bug]
+
+**Severity**: Medium | **Status**: Fixed
+
+**File**: `reader_content_styles.dart:389-420`
+
+**根因**: water/gray/dark/black 四个主题的 `selectionColor`（查词/选中高亮）和 `sasayakiColor`（当前播放语句）都落在蓝色系，肉眼难以区分。
+
+**影响**: 用户在有声书模式下查词时，无法分辨哪部分是"正在播放的句子"、哪部分是"查词选中的文字"。
+
+**修复**: 把 water/gray/dark/black 主题的 `selectionColor` 改为暖色调琥珀色，与蓝色系 sasayaki 形成冷暖对比。
+
+| 主题 | 旧 selectionColor | 新 selectionColor | sasayakiColor |
+|------|------------------|------------------|---------------|
+| water | `rgba(130,170,210,.35)` 蓝 | `rgba(200,170,110,.35)` 琥珀 | `rgba(100,180,220,.40)` 蓝 |
+| gray | `rgba(100,140,180,.35)` 钢蓝 | `rgba(190,155,100,.35)` 琥珀 | `rgba(80,150,200,.35)` 蓝 |
+| dark | `rgba(110,120,150,.35)` 灰蓝 | `rgba(180,145,90,.35)` 琥珀 | `rgba(70,130,180,.35)` 钢蓝 |
+| black | `rgba(90,100,130,.40)` 暗蓝 | `rgba(170,135,80,.40)` 琥珀 | `rgba(60,120,170,.40)` 蓝 |
+
+### HBK-AUDIT-007 — TOC 选中章节字体色与 accent 相同 [Code Quality]
+
+**Severity**: Low | **Status**: Fixed
+
+**File**: `audiobook_play_bar.dart:891-900`
+
+**修复**: 改为 Material 3 标准 `ListTile(selected: true)` + `primaryContainer` 底色 + `onPrimaryContainer` 文字色。
+
 ## Next Scope
 
 - 验证修复后预设主题切换不再泄漏自定义颜色

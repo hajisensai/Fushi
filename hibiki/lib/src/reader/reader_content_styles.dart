@@ -390,7 +390,7 @@ body.show-all-rt rt {
         return const _ThemeColors(
           textColor: 'rgba(0, 0, 0, 0.87)',
           backgroundColor: '#dfecf4',
-          selectionColor: 'rgba(130, 170, 210, 0.35)',
+          selectionColor: 'rgba(200, 170, 110, 0.35)',
           sasayakiColor: 'rgba(100, 180, 220, 0.40)',
           linkColor: '#3a5fad',
         );
@@ -398,7 +398,7 @@ body.show-all-rt rt {
         return const _ThemeColors(
           textColor: 'rgba(255, 255, 255, 0.87)',
           backgroundColor: '#23272a',
-          selectionColor: 'rgba(100, 140, 180, 0.35)',
+          selectionColor: 'rgba(190, 155, 100, 0.35)',
           sasayakiColor: 'rgba(80, 150, 200, 0.35)',
           linkColor: '#6fa8dc',
         );
@@ -406,7 +406,7 @@ body.show-all-rt rt {
         return const _ThemeColors(
           textColor: 'rgba(255, 255, 255, 0.6)',
           backgroundColor: '#121212',
-          selectionColor: 'rgba(110, 120, 150, 0.35)',
+          selectionColor: 'rgba(180, 145, 90, 0.35)',
           sasayakiColor: 'rgba(70, 130, 180, 0.35)',
           linkColor: '#7aacdf',
         );
@@ -414,7 +414,7 @@ body.show-all-rt rt {
         return const _ThemeColors(
           textColor: 'rgba(255, 255, 255, 0.87)',
           backgroundColor: '#000',
-          selectionColor: 'rgba(90, 100, 130, 0.40)',
+          selectionColor: 'rgba(170, 135, 80, 0.40)',
           sasayakiColor: 'rgba(60, 120, 170, 0.40)',
           linkColor: '#5b9bd5',
         );
