@@ -1240,7 +1240,20 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       ),
       onWebViewCreated: (controller) {
         _controller = controller;
-        _loadChapterDirectly(_currentChapter);
+        if (_lyricsMode && _audiobookController != null) {
+          final List<AudioCue> allCues =
+              _audiobookController!.allBookCuesSnapshot;
+          if (allCues.isNotEmpty) {
+            _audiobookController!.setChapterCues(allCues);
+          }
+          _lyricsEntryChapter = _currentChapter;
+          _lyricsEntryCueIndex = allCues.isNotEmpty
+              ? _audiobookController!.allBookCueIdx
+              : _audiobookController!.currentCueIdx;
+          _loadLyricsPage();
+        } else {
+          _loadChapterDirectly(_currentChapter);
+        }
 
         controller.addJavaScriptHandler(
           handlerName: 'onTextSelected',
