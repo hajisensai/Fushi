@@ -835,5 +835,7 @@
     "creator_action_play_audio": "播放音频",
     "creator_action_share": "分享",
     "favorite_removed": "句子已取消收藏。",
-    "no_sentence_selected": "未选择句子"
+    "no_sentence_selected": "未选择句子",
+    "custom_dict_css": "自定义 CSS",
+    "custom_dict_css_global": "全局（所有词典）"
 }

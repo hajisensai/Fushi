@@ -835,5 +835,7 @@
     "color_sasayaki": "Sorotan Sasayaki",
     "color_sasayaki_desc": "Sorotan sinkronisasi subtitle buku audio",
     "invert_swipe_direction": "Balik arah geser untuk membalik halaman",
-    "tap_empty_hide_chrome": "Ketuk area kosong untuk menyembunyikan kontrol"
+    "tap_empty_hide_chrome": "Ketuk area kosong untuk menyembunyikan kontrol",
+    "custom_dict_css": "CSS Kustom",
+    "custom_dict_css_global": "Global (semua kamus)"
 }

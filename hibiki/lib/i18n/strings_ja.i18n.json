@@ -190,8 +190,8 @@
     "audio_unavailable": "音声が見つかりませんでした。",
     "no_audio_enhancements": "音声拡張機能が割り当てられていません。",
     "card_exported": "カードを『$deck』にエクスポートしました。",
-    "info_incognito_on": "シークレットモード オン。辞書?メディア?検索履歴は記録されません。",
-    "info_incognito_off": "シークレットモード オフ。辞書?メディア?検索履歴が記録されます。",
+    "info_incognito_on": "シークレットモード オン。辞書、メディア、検索履歴は記録されません。",
+    "info_incognito_off": "シークレットモード オフ。辞書、メディア、検索履歴が記録されます。",
     "exit_media_title": "メディアを終了",
     "exit_media_description": "メインメニューに戻ります。よろしいですか？",
     "unimplemented_source": "未実装のソース",
@@ -450,11 +450,11 @@
     "audiobook_import_error": "インポートに失敗しました",
     "audiobook_remove_confirm": "紐付けされたオーディオブックを削除しますか？",
     "srt_import": "本をインポート",
-    "srt_import_pick_srt": "字幕ファイルを選択（EPUB?音声と組み合わせ可能）",
+    "srt_import_pick_srt": "字幕ファイルを選択（EPUB・音声と組み合わせ可能）",
     "srt_import_pick_srt_dir": "字幕ディレクトリを選択",
     "srt_no_subtitle_files": "選択したディレクトリに字幕ファイルがありません",
     "srt_pick_subtitle_file": "字幕ファイルを選択",
-    "srt_import_pick_epub": "EPUBを選択（字幕?音声と組み合わせ可能）",
+    "srt_import_pick_epub": "EPUBを選択（字幕・音声と組み合わせ可能）",
     "srt_import_pick_audio_dir": "音声ディレクトリを選択",
     "srt_import_pick_audio_files": "音声ファイルを選択",
     "srt_import_files_selected": "$n 件のファイルを選択済み",
@@ -835,5 +835,7 @@
     "color_link": "リンクの色",
     "color_link_desc": "リーダーのハイパーリンク色",
     "color_sasayaki": "ささやきハイライト",
-    "color_sasayaki_desc": "オーディオブック字幕同期ハイライト"
+    "color_sasayaki_desc": "オーディオブック字幕同期ハイライト",
+    "custom_dict_css": "カスタム CSS",
+    "custom_dict_css_global": "グローバル（全辞書）"
 }

@@ -835,5 +835,7 @@
     "color_sasayaki": "Evidenziazione Sasayaki",
     "color_sasayaki_desc": "Evidenziazione sincronizzazione sottotitoli audiolibro",
     "invert_swipe_direction": "Inverti direzione scorrimento per voltare pagina",
-    "tap_empty_hide_chrome": "Tocca un'area vuota per nascondere i controlli"
+    "tap_empty_hide_chrome": "Tocca un'area vuota per nascondere i controlli",
+    "custom_dict_css": "CSS personalizzato",
+    "custom_dict_css_global": "Globale (tutti i dizionari)"
 }

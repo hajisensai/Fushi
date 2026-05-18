@@ -835,5 +835,7 @@
     "color_sasayaki": "تمييز Sasayaki",
     "color_sasayaki_desc": "تمييز مزامنة ترجمة الكتاب المسموع",
     "invert_swipe_direction": "عكس اتجاه التمرير لقلب الصفحات",
-    "tap_empty_hide_chrome": "انقر على المنطقة الفارغة لإخفاء عناصر التحكم"
+    "tap_empty_hide_chrome": "انقر على المنطقة الفارغة لإخفاء عناصر التحكم",
+    "custom_dict_css": "CSS مخصص",
+    "custom_dict_css_global": "عام (جميع القواميس)"
 }

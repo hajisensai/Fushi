@@ -835,5 +835,7 @@
     "color_link": "連結顏色",
     "color_link_desc": "閱讀器超連結顏色",
     "color_sasayaki": "Sasayaki 醒目標示",
-    "color_sasayaki_desc": "有聲書字幕同步醒目標示"
+    "color_sasayaki_desc": "有聲書字幕同步醒目標示",
+    "custom_dict_css": "自訂 CSS",
+    "custom_dict_css_global": "全域（所有辭典）"
 }
