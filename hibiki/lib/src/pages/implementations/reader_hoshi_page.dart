@@ -101,6 +101,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   bool _lyricsMode = false;
   bool _lyricsModeTransition = false;
+  bool _lyricsPageReady = false;
   int _lyricsEntryChapter = 0;
   int _lyricsEntryCueIndex = 0;
   List<AudioCue> _lyricsCueList = const [];
@@ -263,8 +264,12 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
     _syncDictionaryTheme();
 
-    _lyricsMode = false;
-    await ReaderHoshiSource.instance.setLyricsMode(false);
+    final bool savedLyricsMode =
+        _audiobookController != null && ReaderHoshiSource.instance.lyricsMode;
+    _lyricsMode = savedLyricsMode;
+    if (!savedLyricsMode) {
+      await ReaderHoshiSource.instance.setLyricsMode(false);
+    }
 
     _audioSlotResolved = true;
 
@@ -1407,6 +1412,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           _hasEverLoaded = true;
         });
       }
+      _lyricsPageReady = true;
       _onCueChanged();
       return;
     }
@@ -1551,6 +1557,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   }
 
   Future<void> _loadLyricsPage() async {
+    _lyricsPageReady = false;
     final AudiobookPlayerController ctrl = _audiobookController!;
     _lyricsCueList = ctrl.allBookCuesSnapshot.isNotEmpty
         ? ctrl.allBookCuesSnapshot
@@ -1620,6 +1627,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       }
     }
 
+    _lyricsPageReady = false;
     _lyricsCueList = const [];
     await _navigateToChapter(targetChapter, progress: targetProgress);
   }
@@ -1632,13 +1640,15 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (controller == null) return;
 
     if (_lyricsMode) {
-      final int idx = controller.allBookCuesSnapshot.isNotEmpty
-          ? controller.allBookCueIdx
-          : controller.currentCueIdx;
-      if (idx >= 0) {
-        _controller!.evaluateJavascript(
-          source: 'if(window.__lyricsSetCue)window.__lyricsSetCue($idx);',
-        );
+      if (_lyricsPageReady) {
+        final int idx = controller.allBookCuesSnapshot.isNotEmpty
+            ? controller.allBookCueIdx
+            : controller.currentCueIdx;
+        if (idx >= 0) {
+          _controller!.evaluateJavascript(
+            source: 'if(window.__lyricsSetCue)window.__lyricsSetCue($idx);',
+          );
+        }
       }
       _syncPositionFromCurrentCue();
       _syncFloatingLyric(controller);
@@ -2011,12 +2021,17 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   @override
   void onAllPopupsDismissed() {
     if (!mounted) return;
-    if (_pausedForLookup && !_lyricsMode) {
+    _clearLookupState();
+  }
+
+  void _clearLookupState() {
+    if (_pausedForLookup) {
       _pausedForLookup = false;
       _audiobookController?.play();
-      return;
     }
-    _pausedForLookup = false;
+    _controller?.evaluateJavascript(
+      source: ReaderSelectionScripts.clearInvocation(),
+    );
   }
 
   Future<void> _handleTextSelected(ReaderSelectionData data) async {
@@ -2670,7 +2685,12 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       ),
     );
 
-    await _resolveAudioSlot();
+    try {
+      await _resolveAudioSlot();
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderHoshi.openAudioImport', e, stack);
+      debugPrint('[ReaderHoshi] resolveAudioSlot after import failed: $e');
+    }
     if (mounted) setState(() {});
   }
 

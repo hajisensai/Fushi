@@ -16,8 +16,14 @@ class LyricsModeHtml {
     for (int i = 0; i < cues.length; i++) {
       final String escaped = _escapeHtml(cues[i].text);
       final String fragId = _escapeAttr(cues[i].textFragmentId);
+      final int dist = (i - currentIndex).abs();
+      final String cls = dist == 0
+          ? 'cue current'
+          : dist <= 3
+              ? 'cue near-$dist'
+              : 'cue';
       cueHtml.write(
-        '<div class="cue" data-cue-index="$i" '
+        '<div class="$cls" data-cue-index="$i" '
         'data-text-fragment-id="$fragId">'
         '$escaped</div>\n',
       );
@@ -56,19 +62,21 @@ body { font-family: "Noto Serif JP", "Noto Sans JP", serif; }
   padding: 12px 8px;
   max-width: 92vw;
   opacity: 0.15;
-  transition: opacity 0.35s ease-out, font-size 0.3s ease-out, font-weight 0.3s ease-out;
+  transform: scale(1);
+  transition: opacity 0.35s ease-out, transform 0.3s ease-out, color 0.3s ease-out;
+  will-change: transform, opacity;
   cursor: pointer;
   -webkit-user-select: none;
   user-select: none;
 }
 .cue.current {
   opacity: 1.0;
-  font-size: ${(fontSize * 1.45).round()}px;
+  transform: scale(1.15);
   font-weight: 700;
   color: $accentColor;
 }
-.cue.near-1 { opacity: 0.55; font-size: ${(fontSize * 1.15).round()}px; }
-.cue.near-2 { opacity: 0.35; font-size: ${(fontSize * 1.05).round()}px; }
+.cue.near-1 { opacity: 0.55; transform: scale(1.05); }
+.cue.near-2 { opacity: 0.35; }
 .cue.near-3 { opacity: 0.25; }
 ::highlight(hoshi-selection) {
   background-color: $accentColor;
@@ -138,19 +146,25 @@ function setCue(index) {
 window.__lyricsSetCue = function(index) { setCue(index); };
 window.__lyricsGetCurrentIndex = function() { return _currentIdx; };
 
-// ── 点击句子跳转播放（短按仅跳转，不触发查词）──
+// ── 点击：当前句子→查词，其他句子→跳转播放 ──
 document.getElementById('lc').addEventListener('click', function(e) {
   if (_longPressed) { _longPressed = false; return; }
   var el = e.target.closest('.cue');
   if (!el) return;
   var idx = parseInt(el.getAttribute('data-cue-index'), 10);
   if (isNaN(idx)) return;
+  if (idx === _currentIdx) {
+    if (window.hoshiSelection) {
+      window.hoshiSelection.selectText(e.clientX, e.clientY, 400);
+    }
+    return;
+  }
   if (window.flutter_inappwebview) {
     window.flutter_inappwebview.callHandler('onLyricsCueTap', idx);
   }
 });
 
-// ── 长按选词 (long-press to select; 短按→跳转，长按→查词) ──
+// ── 长按选词 ──
 var _tapStartX = 0, _tapStartY = 0, _tapStartTime = 0;
 var _longPressed = false;
 function _lpStart(x, y) { _tapStartX = x; _tapStartY = y; _tapStartTime = Date.now(); _longPressed = false; }
@@ -205,9 +219,14 @@ document.addEventListener('pointerup', function(e) {
   };
 })();
 
-// ── 初始定位 ──
+// ── 初始定位（即时跳转，不用动画，避免与 Dart 端 setCue 竞争） ──
+_currentIdx = $currentIndex;
 if ($currentIndex >= 0 && $currentIndex < _cues.length) {
-  setCue($currentIndex);
+  var _initEl = _cues[$currentIndex];
+  if (_initEl) {
+    var _iy = _initEl.offsetTop - (window.innerHeight / 2) + (_initEl.offsetHeight / 2);
+    window.scrollTo(0, Math.max(0, _iy));
+  }
 }
 </script>
 </body>
