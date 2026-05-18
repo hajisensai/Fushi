@@ -94,7 +94,7 @@ class DictionaryDownloader {
     RecommendedDictionary(
       name: 'Pixiv百科事典',
       url: '$_marvBase/%5BMonolingual%5D%20Pixiv.zip',
-      description: '⚠ 百科事典 (非国語辞典) — ポップカルチャー用語',
+      description: '百科事典 — ポップカルチャー用語',
       matchPrefix: 'Pixiv',
       category: DictionaryCategory.jaJa,
       sizeEstimate: '~30 MB',
@@ -103,7 +103,7 @@ class DictionaryDownloader {
     RecommendedDictionary(
       name: 'Nico-Pixiv百科事典',
       url: '$_marvBase/%5BOther%5D%20Nico-Pixiv.zip',
-      description: '⚠ 百科事典 (非国語辞典) — ニコニコ+ピクシブ',
+      description: '百科事典 — ニコニコ+ピクシブ',
       matchPrefix: 'Nico-Pixiv',
       category: DictionaryCategory.jaJa,
       sizeEstimate: '~55 MB',
@@ -113,7 +113,7 @@ class DictionaryDownloader {
       name: '複合語起源',
       url:
           '$_marvBase/%5BOther%5D%20%E8%A4%87%E5%90%88%E8%AA%9E%E8%B5%B7%E6%BA%90.zip',
-      description: '⚠ 語源辞典 (非国語辞典) — 複合語の語源',
+      description: '語源辞典 — 複合語の語源',
       matchPrefix: '複合語起源',
       category: DictionaryCategory.jaJa,
       sizeEstimate: '~3 MB',
@@ -122,7 +122,7 @@ class DictionaryDownloader {
     RecommendedDictionary(
       name: 'surasura',
       url: '$_marvBase/%5BMonolingual%5D%20surasura.zip',
-      description: '⚠ 読解補助 (非国語辞典) — すらすら読解',
+      description: '読解補助 — すらすら読解',
       matchPrefix: 'surasura',
       category: DictionaryCategory.jaJa,
       sizeEstimate: '~2 MB',
