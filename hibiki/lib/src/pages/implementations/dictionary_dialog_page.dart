@@ -246,47 +246,188 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
 
   Widget _buildDownloadRecommendedButton() {
     return TextButton(
-      onPressed: _downloadRecommendedDictionaries,
-      child: Text(t.dict_download_recommended,
+      onPressed: _showDownloadSelectionDialog,
+      child: Text(t.dict_download_browse,
           overflow: TextOverflow.ellipsis, maxLines: 1),
     );
   }
 
-  Future<void> _downloadRecommendedDictionaries() async {
-    final List<RecommendedDictionary> toDownload =
-        DictionaryDownloader.recommended.where((RecommendedDictionary rec) {
-      return !appModel.dictionaries.any(
-        (d) => d.name.startsWith(rec.matchPrefix),
-      );
-    }).toList();
+  String _categoryLabel(DictionaryCategory cat) {
+    switch (cat) {
+      case DictionaryCategory.jaEn:
+        return t.dict_category_ja_en;
+      case DictionaryCategory.jaJa:
+        return t.dict_category_ja_ja;
+      case DictionaryCategory.jaOther:
+        return t.dict_category_ja_other;
+      case DictionaryCategory.kanji:
+        return t.dict_category_kanji;
+      case DictionaryCategory.frequency:
+        return t.dict_category_frequency;
+      case DictionaryCategory.names:
+        return t.dict_category_names;
+      case DictionaryCategory.supplementary:
+        return t.dict_category_supplementary;
+    }
+  }
 
-    if (toDownload.isEmpty) {
-      HibikiToast.show(msg: t.import_complete);
-      return;
+  bool _isDictInstalled(RecommendedDictionary rec) {
+    return appModel.dictionaries.any(
+      (d) => d.name.startsWith(rec.matchPrefix),
+    );
+  }
+
+  Future<void> _showDownloadSelectionDialog() async {
+    const catalog = DictionaryDownloader.catalog;
+    final byCategory = DictionaryDownloader.byCategory;
+    final defaults =
+        DictionaryDownloader.defaultSelectionFor(appModel.appLocale);
+
+    final installedIndices = <int>{};
+    for (int i = 0; i < catalog.length; i++) {
+      if (_isDictInstalled(catalog[i])) installedIndices.add(i);
     }
 
-    final String names =
-        toDownload.map((d) => '• ${d.name}\n  ${d.description}').join('\n');
-    final bool? confirmed = await showDialog<bool>(
+    // Pre-check defaults that are not already installed.
+    final initialChecked = defaults.difference(installedIndices);
+
+    final selected = await showDialog<Set<int>>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(t.dict_download_confirm_title),
-        content: Text(t.dict_download_confirm_body(names: names)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(t.dialog_cancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(t.dict_download_recommended),
-          ),
+      builder: (ctx) {
+        var checked = Set<int>.from(initialChecked);
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            final downloadCount =
+                checked.where((i) => !installedIndices.contains(i)).length;
+            return AlertDialog(
+              title: Text(t.dict_download_select_title),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (final cat in DictionaryCategory.values)
+                        if (byCategory.containsKey(cat))
+                          _buildCategoryTile(
+                            cat: cat,
+                            items: byCategory[cat]!,
+                            catalog: catalog,
+                            checked: checked,
+                            installedIndices: installedIndices,
+                            initiallyExpanded: cat == DictionaryCategory.jaEn ||
+                                cat == DictionaryCategory.jaJa,
+                            onChanged: (int idx, bool val) {
+                              setDialogState(() {
+                                if (val) {
+                                  checked.add(idx);
+                                } else {
+                                  checked.remove(idx);
+                                }
+                              });
+                            },
+                          ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, null),
+                  child: Text(t.dialog_cancel),
+                ),
+                TextButton(
+                  onPressed: downloadCount > 0
+                      ? () => Navigator.pop(ctx, checked)
+                      : null,
+                  child: Text(
+                      t.dict_download_button(count: downloadCount.toString())),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (selected == null || selected.isEmpty || !mounted) return;
+
+    final toDownload = selected
+        .where((i) => !installedIndices.contains(i))
+        .map((i) => catalog[i])
+        .toList();
+
+    if (toDownload.isEmpty) return;
+    await _downloadSelectedDictionaries(toDownload);
+  }
+
+  Widget _buildCategoryTile({
+    required DictionaryCategory cat,
+    required List<RecommendedDictionary> items,
+    required List<RecommendedDictionary> catalog,
+    required Set<int> checked,
+    required Set<int> installedIndices,
+    required bool initiallyExpanded,
+    required void Function(int idx, bool val) onChanged,
+  }) {
+    return Theme(
+      data: theme.copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        title: Text(_categoryLabel(cat),
+            style: TextStyle(fontSize: textTheme.titleSmall?.fontSize)),
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: EdgeInsets.zero,
+        initiallyExpanded: initiallyExpanded,
+        children: [
+          for (final rec in items)
+            _buildDictCheckbox(
+              rec: rec,
+              catalog: catalog,
+              checked: checked,
+              installedIndices: installedIndices,
+              onChanged: onChanged,
+            ),
         ],
       ),
     );
+  }
 
-    if (confirmed != true || !mounted) return;
+  Widget _buildDictCheckbox({
+    required RecommendedDictionary rec,
+    required List<RecommendedDictionary> catalog,
+    required Set<int> checked,
+    required Set<int> installedIndices,
+    required void Function(int idx, bool val) onChanged,
+  }) {
+    final idx = catalog.indexOf(rec);
+    final installed = installedIndices.contains(idx);
+    return CheckboxListTile(
+      dense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+      value: installed || checked.contains(idx),
+      onChanged: installed ? null : (bool? val) => onChanged(idx, val ?? false),
+      title: Text(
+        rec.name,
+        style: TextStyle(
+          fontSize: textTheme.bodyMedium?.fontSize,
+          color: installed ? theme.unselectedWidgetColor : null,
+        ),
+      ),
+      subtitle: Text(
+        installed
+            ? t.dict_download_installed
+            : '${rec.description}  ${rec.sizeEstimate}',
+        style: TextStyle(
+          fontSize: textTheme.bodySmall?.fontSize,
+          color: theme.unselectedWidgetColor,
+        ),
+      ),
+    );
+  }
 
+  Future<void> _downloadSelectedDictionaries(
+    List<RecommendedDictionary> toDownload,
+  ) async {
     final ValueNotifier<String> progressNotifier =
         ValueNotifier<String>(t.import_start);
     final ValueNotifier<double> downloadProgress = ValueNotifier<double>(0);
