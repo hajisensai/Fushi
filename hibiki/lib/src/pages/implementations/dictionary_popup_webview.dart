@@ -174,6 +174,34 @@ class DictionaryPopupWebViewState
         '${b.toRadixString(16).padLeft(2, '0')}';
   }
 
+  // NavigateToString() uses about:blank origin — relative URLs can't resolve.
+  // Read popup assets from disk once, embed inline in the HTML string.
+  static String? _winCss;
+  static String? _winDictMediaJs;
+  static String? _winSelectionJs;
+  static String? _winPopupJs;
+  static bool _winAssetsLoadFailed = false;
+
+  static void _ensureWindowsAssetsLoaded() {
+    if (_winCss != null || _winAssetsLoadFailed) return;
+    try {
+      _winCss = _readPopupAsset('popup.css');
+      _winDictMediaJs = _readPopupAsset('dict-media.js');
+      _winSelectionJs = _readPopupAsset('selection.js');
+      _winPopupJs = _readPopupAsset('popup.js');
+    } catch (e, stack) {
+      _winAssetsLoadFailed = true;
+      ErrorLogService.instance.log('PopupWebView._ensureWindowsAssetsLoaded', e, stack);
+    }
+  }
+
+  static String _readPopupAsset(String name) {
+    final content = File(
+      Uri.parse(webViewAssetUrl('assets/popup/$name')).toFilePath(),
+    ).readAsStringSync();
+    return content.replaceAll('</script', r'<\/script');
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = Translations.of(context);
@@ -182,36 +210,38 @@ class DictionaryPopupWebViewState
         appModel.overrideDictionaryColor ?? Theme.of(context).colorScheme.surface;
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
     final String bgHex = _colorToHex(bgColor);
-    final String theme = isDark ? 'dark' : 'light';
+    final String themeAttr = isDark ? 'dark' : 'light';
+
+    InAppWebViewInitialData? winData;
+    if (Platform.isWindows) {
+      _ensureWindowsAssetsLoaded();
+      if (_winCss != null) {
+        winData = InAppWebViewInitialData(
+          data: '<!DOCTYPE html>'
+              '<html data-theme="$themeAttr" style="--background-color:$bgHex">'
+              '<head>'
+              '<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">'
+              '<style>${_winCss!.replaceAll('</style', r'<\/style')}</style>'
+              '<script>$_winDictMediaJs</script>'
+              '<script>$_winSelectionJs</script>'
+              '<script>$_winPopupJs</script>'
+              '</head>'
+              '<body>'
+              '<div id="entries-container"></div>'
+              '<div class="overlay">'
+              '<div class="overlay-close" onclick="closeOverlay()">×</div>'
+              '<div class="overlay-content"></div>'
+              '</div>'
+              '</body></html>',
+          mimeType: 'text/html',
+          encoding: 'utf-8',
+        );
+      }
+    }
 
     return InAppWebView(
-      // Windows WebView2 (HWND) flashes white before loading file:// URLs.
-      // initialData embeds the background color in the first byte of HTML,
-      // eliminating the flash. Android transparency works natively.
-      initialData: Platform.isWindows
-          ? InAppWebViewInitialData(
-              data: '<!DOCTYPE html>'
-                  '<html data-theme="$theme" style="--background-color:$bgHex">'
-                  '<head>'
-                  '<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">'
-                  '<link rel="stylesheet" href="popup.css">'
-                  '<script src="dict-media.js"></script>'
-                  '<script src="selection.js"></script>'
-                  '<script src="popup.js"></script>'
-                  '</head>'
-                  '<body>'
-                  '<div id="entries-container"></div>'
-                  '<div class="overlay">'
-                  '<div class="overlay-close" onclick="closeOverlay()">×</div>'
-                  '<div class="overlay-content"></div>'
-                  '</div>'
-                  '</body></html>',
-              baseUrl: WebUri(webViewAssetUrl('assets/popup/')),
-              mimeType: 'text/html',
-              encoding: 'utf-8',
-            )
-          : null,
-      initialUrlRequest: Platform.isWindows
+      initialData: winData,
+      initialUrlRequest: winData != null
           ? null
           : URLRequest(
               url: WebUri(webViewAssetUrl('assets/popup/popup.html')),
@@ -239,8 +269,7 @@ class DictionaryPopupWebViewState
             () => VerticalDragGestureRecognizer()),
       },
       initialSettings: InAppWebViewSettings(
-        // flutter_inappwebview_windows 0.6.0 inverts transparentBackground
-        transparentBackground: !Platform.isWindows,
+        transparentBackground: true,
         supportZoom: false,
         horizontalScrollBarEnabled: false,
         allowFileAccessFromFileURLs: true,

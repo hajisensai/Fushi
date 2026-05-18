@@ -458,7 +458,11 @@ class _RecursiveDictionaryPageState
                 child: GestureDetector(
                   behavior: HitTestBehavior.translucent,
                   onTap: () => _popNestedPopupAt(0),
-                  child: Container(color: Colors.transparent),
+                  child: Container(
+                    color: appModel.disableDialogScrim
+                        ? Colors.transparent
+                        : Colors.black54,
+                  ),
                 ),
               ),
             for (int i = 0; i < _popupStack.length; i++)

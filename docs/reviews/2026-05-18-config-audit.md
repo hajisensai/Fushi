@@ -118,17 +118,47 @@
 - **根治方案**: fork `flutter_inappwebview_windows`，修改 `:210` 为 `if (settings->transparentBackground)`（去掉 `!`），或改写为与动态路径一致的 `BYTE alpha = settings->transparentBackground ? 0 : 255` 模式。
 - **清理后影响**: 移除所有 `!Platform.isWindows` hack，`transparentBackground: true` 全平台统一。
 
+### HBK-AUDIT-007: 阅读器弹窗遮罩（scrim）始终透明
+
+- **severity**: MEDIUM
+- **status**: FIXED
+- **file**: `hibiki/lib/src/pages/base_source_page.dart:228`
+- **根因**: `buildDictionary()` 里弹窗背后的 `Positioned.fill` GestureDetector 的 `Container` 硬编码 `Colors.transparent`，未读取 `disableDialogScrim` 设置。其他弹窗（`show_app_dialog.dart`、`update_checker.dart`）均读取该设置。
+- **影响**: 阅读器字典弹窗弹出时没有半透明遮罩，与全局设置不一致。
+- **修复**: 改为 `appModel.disableDialogScrim ? Colors.transparent : Colors.black54`，与其他弹窗一致。
+- **验证**: flutter analyze 通过，724 测试通过。
+
+### HBK-AUDIT-005 后续：Windows initialData 内联资源方案
+
+- **severity**: HIGH → FIXED（根治）
+- **status**: FIXED
+- **file**: `dictionary_popup_webview.dart`, `packages/flutter_inappwebview_windows/`
+- **根因链（5 层）**:
+  1. **CSS 变量声明但未使用** → 已修复（fd8ea26c）
+  2. **CSS body 重复声明** → 已修复（fd8ea26c）
+  3. **插件 transparentBackground 逻辑反转** → fork 修复 `in_app_webview.cpp:210`
+  4. **NavigateToString() 的 about:blank origin** → 相对 URL 无法解析 → CSS/JS 不加载
+  5. **loadData() 忽略 baseUrl** → WebView2 `NavigateToString` 不支持 baseUrl
+- **最终方案**:
+  - 插件 fork 根治 `transparentBackground` 反转 bug
+  - Windows 用 `initialData` 内联 HTML + CSS + JS（从磁盘读取、静态缓存、escape `</script>` / `</style>`）
+  - 文件读取失败时自动降级到 `initialUrlRequest`
+  - `transparentBackground: true` 全平台统一
+  - Android 继续用 `initialUrlRequest` 加载 `popup.html`
+- **已通过验证**: flutter analyze 0 issues, 724 tests passed, Windows build 成功
+- **待用户验证**: 导入词典后验证弹窗内容正常渲染、无白/黑闪烁
+
 ## 已知低优先级观察（非本轮修复范围）
 
 1. **Nullable Color 哨兵值 0**: `customThemeFontColor` 等使用 `0` 表示 null，与 `Color(0x00000000)`（透明黑）冲突。实际影响极低（用户不会选透明黑作为字体色），但技术上不完美。
 2. **`async void` 反模式**: 约 30 个 setter 仍然是 `void...async` 而非 `Future<void>`。调用者无法 await 或捕获错误。但在当前架构中，所有调用者都是 fire-and-forget 模式，没有造成实际问题。
 3. **`floatingLyricFontSize` getter 未 clamp**: setter 中 clamp(8, 64) 但 getter 直接返回数据库值。如果数据库被手动修改，可能返回超范围值。
-4. **popup.html 与 initialData HTML 结构重复**: Windows 用 Dart 内联 HTML，Android 用 `popup.html` 资产文件。两处 HTML 结构需要保持同步。fork 插件修复后可消除此重复。
+4. **popup.html 与 initialData HTML 结构重复**: Windows 用 Dart 内联 HTML，Android 用 `popup.html` 资产文件。两处 HTML 结构需要保持同步。
+5. **DictionaryHtmlWidget（定义页面）未使用 initialData**: `dictionary_structured_content_page.dart` 仍用 `initialUrlRequest`，依赖插件 fork 的 `transparentBackground` 修复。闪烁风险低于弹窗（嵌入式 SizedBox 非浮动），但不为零。
 
 ## Next Scope
 
 下一轮可审查：
-- fork `flutter_inappwebview_windows` 根治 transparentBackground bug
 - 阅读器 WebView JS/CSS 注入路径的完整性
 - 有声书 SRT 解析与同步时序
 - 字典 FFI 导入路径在 Windows 上的 thread stack 行为

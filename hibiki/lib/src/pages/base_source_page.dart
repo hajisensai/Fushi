@@ -225,7 +225,11 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
                     child: GestureDetector(
                       behavior: HitTestBehavior.translucent,
                       onTap: clearDictionaryResult,
-                      child: Container(color: Colors.transparent),
+                      child: Container(
+                        color: appModel.disableDialogScrim
+                            ? Colors.transparent
+                            : Colors.black54,
+                      ),
                     ),
                   ),
                   if (showLoadingPlaceholder) _buildLoadingPlaceholder(screen),

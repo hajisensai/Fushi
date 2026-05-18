@@ -133,7 +133,7 @@ class _DictionaryHtmlWidgetState extends ConsumerState<DictionaryHtmlWidget> {
           url: WebUri(webViewAssetUrl('assets/popup/definition.html')),
         ),
         initialSettings: InAppWebViewSettings(
-          transparentBackground: !Platform.isWindows,
+          transparentBackground: true,
           allowFileAccessFromFileURLs: true,
           allowUniversalAccessFromFileURLs: true,
           supportZoom: false,
