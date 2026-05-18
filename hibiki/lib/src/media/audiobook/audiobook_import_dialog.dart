@@ -416,11 +416,6 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
           ),
         ),
         IconButton(
-          icon: const Icon(Icons.folder_open, size: 20),
-          tooltip: t.srt_import_pick_any_file,
-          onPressed: () => _pickAlignment(anyFile: true),
-        ),
-        IconButton(
           icon: const Icon(Icons.align_horizontal_left, size: 20),
           tooltip: t.audiobook_pick_alignment,
           onPressed: _pickAlignment,
@@ -483,13 +478,13 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     'json',
   ];
 
-  Future<void> _pickAlignment({bool anyFile = false}) async {
+  Future<void> _pickAlignment() async {
     if (_pickerActive) return;
     _pickerActive = true;
     try {
       final FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: anyFile ? FileType.any : FileType.custom,
-        allowedExtensions: anyFile ? null : _alignmentExtensions,
+        type: FileType.custom,
+        allowedExtensions: _alignmentExtensions,
       );
       final PlatformFile? file = result?.files.single;
       final String? path = file?.path;
