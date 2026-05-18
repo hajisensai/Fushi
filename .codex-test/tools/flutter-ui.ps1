@@ -154,6 +154,11 @@ function Escape-Dart([string]$s) {
     return $s
 }
 
+function As-Double([string]$v) {
+    if ($v.Contains('.')) { return $v }
+    return "$v.0"
+}
+
 $script:ScreenW = 0
 $script:ScreenH = 0
 
@@ -223,11 +228,11 @@ switch ($Action) {
         if ($Rest.Count -lt 2) { Write-Error 'Usage: tap <x> <y>'; return }
         $x = $Rest[0]; $y = $Rest[1]; $p = New-PointerId
         $down = '(() { WidgetsBinding.instance.handlePointerEvent(PointerDownEvent(position: Offset(__X__, __Y__), pointer: __P__)); return "down"; })()'
-        $down = $down.Replace('__X__', "$x.0").Replace('__Y__', "$y.0").Replace('__P__', "$p")
+        $down = $down.Replace('__X__', (As-Double $x)).Replace('__Y__', (As-Double $y)).Replace('__P__', "$p")
         Vm-Eval $down | Out-Null
         Start-Sleep -Milliseconds 60
         $up = '(() { WidgetsBinding.instance.handlePointerEvent(PointerUpEvent(position: Offset(__X__, __Y__), pointer: __P__)); return "up"; })()'
-        $up = $up.Replace('__X__', "$x.0").Replace('__Y__', "$y.0").Replace('__P__', "$p")
+        $up = $up.Replace('__X__', (As-Double $x)).Replace('__Y__', (As-Double $y)).Replace('__P__', "$p")
         Vm-Eval $up | Out-Null
         Write-Output "Tapped @ $x,$y"
     }
@@ -244,10 +249,10 @@ switch ($Action) {
         }
         $parts = $coords -split ','
         $tx = $parts[0]; $ty = $parts[1]; $p = New-PointerId
-        $down = '(() { WidgetsBinding.instance.handlePointerEvent(PointerDownEvent(position: Offset(__X__, __Y__), pointer: __P__)); return "d"; })()'.Replace('__X__', "$tx.0").Replace('__Y__', "$ty.0").Replace('__P__', "$p")
+        $down = '(() { WidgetsBinding.instance.handlePointerEvent(PointerDownEvent(position: Offset(__X__, __Y__), pointer: __P__)); return "d"; })()'.Replace('__X__', (As-Double $tx)).Replace('__Y__', (As-Double $ty)).Replace('__P__', "$p")
         Vm-Eval $down | Out-Null
         Start-Sleep -Milliseconds 60
-        $up = '(() { WidgetsBinding.instance.handlePointerEvent(PointerUpEvent(position: Offset(__X__, __Y__), pointer: __P__)); return "u"; })()'.Replace('__X__', "$tx.0").Replace('__Y__', "$ty.0").Replace('__P__', "$p")
+        $up = '(() { WidgetsBinding.instance.handlePointerEvent(PointerUpEvent(position: Offset(__X__, __Y__), pointer: __P__)); return "u"; })()'.Replace('__X__', (As-Double $tx)).Replace('__Y__', (As-Double $ty)).Replace('__P__', "$p")
         Vm-Eval $up | Out-Null
         Write-Output "Tapped '$($Rest -join ' ')' @ $tx,$ty"
     }
@@ -270,10 +275,10 @@ switch ($Action) {
         }
         $parts = $coords -split ','
         $tx = $parts[0]; $ty = $parts[1]; $p = New-PointerId
-        $down = '(() { WidgetsBinding.instance.handlePointerEvent(PointerDownEvent(position: Offset(__X__, __Y__), pointer: __P__)); return "d"; })()'.Replace('__X__', "$tx.0").Replace('__Y__', "$ty.0").Replace('__P__', "$p")
+        $down = '(() { WidgetsBinding.instance.handlePointerEvent(PointerDownEvent(position: Offset(__X__, __Y__), pointer: __P__)); return "d"; })()'.Replace('__X__', (As-Double $tx)).Replace('__Y__', (As-Double $ty)).Replace('__P__', "$p")
         Vm-Eval $down | Out-Null
         Start-Sleep -Milliseconds 60
-        $up = '(() { WidgetsBinding.instance.handlePointerEvent(PointerUpEvent(position: Offset(__X__, __Y__), pointer: __P__)); return "u"; })()'.Replace('__X__', "$tx.0").Replace('__Y__', "$ty.0").Replace('__P__', "$p")
+        $up = '(() { WidgetsBinding.instance.handlePointerEvent(PointerUpEvent(position: Offset(__X__, __Y__), pointer: __P__)); return "u"; })()'.Replace('__X__', (As-Double $tx)).Replace('__Y__', (As-Double $ty)).Replace('__P__', "$p")
         Vm-Eval $up | Out-Null
         Write-Output "Tapped key='$($Rest[0])' @ $tx,$ty"
     }
@@ -284,7 +289,7 @@ switch ($Action) {
         $steps = if ($Rest.Count -ge 5) { $Rest[4] } else { '10' }
         $p = New-PointerId
         $tpl = '(() { final b = WidgetsBinding.instance; final p = __P__; final steps = __STEPS__; final dx = (__X2__ - __X1__) / steps; final dy = (__Y2__ - __Y1__) / steps; b.handlePointerEvent(PointerDownEvent(position: Offset(__X1__, __Y1__), pointer: p)); for (var i = 1; i <= steps; i++) { final t = i / steps; b.handlePointerEvent(PointerMoveEvent(position: Offset(__X1__ + (__X2__ - __X1__) * t, __Y1__ + (__Y2__ - __Y1__) * t), pointer: p, delta: Offset(dx, dy))); } b.handlePointerEvent(PointerUpEvent(position: Offset(__X2__, __Y2__), pointer: p)); return "swiped"; })()'
-        $expr = $tpl.Replace('__X1__', "$x1.0").Replace('__Y1__', "$y1.0").Replace('__X2__', "$x2.0").Replace('__Y2__', "$y2.0").Replace('__STEPS__', $steps).Replace('__P__', "$p")
+        $expr = $tpl.Replace('__X1__', (As-Double $x1)).Replace('__Y1__', (As-Double $y1)).Replace('__X2__', (As-Double $x2)).Replace('__Y2__', (As-Double $y2)).Replace('__STEPS__', $steps).Replace('__P__', "$p")
         Vm-Eval $expr | Out-Null
         Write-Output "Swiped ($x1,$y1)->($x2,$y2) ${steps} steps"
     }
@@ -296,7 +301,7 @@ switch ($Action) {
         $ty = [math]::Floor($script:ScreenH * 0.25)
         $p = New-PointerId
         $tpl = '(() { final b = WidgetsBinding.instance; final p = __P__; final dy = (__TY__ - __FY__) / 10; b.handlePointerEvent(PointerDownEvent(position: Offset(__CX__, __FY__), pointer: p)); for (var i = 1; i <= 10; i++) { final t = i / 10; b.handlePointerEvent(PointerMoveEvent(position: Offset(__CX__, __FY__ + (__TY__ - __FY__) * t), pointer: p, delta: Offset(0, dy))); } b.handlePointerEvent(PointerUpEvent(position: Offset(__CX__, __TY__), pointer: p)); return "scrolled"; })()'
-        $expr = $tpl.Replace('__CX__', "$cx.0").Replace('__FY__', "$fy.0").Replace('__TY__', "$ty.0").Replace('__P__', "$p")
+        $expr = $tpl.Replace('__CX__', (As-Double $cx)).Replace('__FY__', (As-Double $fy)).Replace('__TY__', (As-Double $ty)).Replace('__P__', "$p")
         Vm-Eval $expr | Out-Null
         Write-Output 'Scrolled down'
     }
@@ -308,7 +313,7 @@ switch ($Action) {
         $ty = [math]::Floor($script:ScreenH * 0.75)
         $p = New-PointerId
         $tpl = '(() { final b = WidgetsBinding.instance; final p = __P__; final dy = (__TY__ - __FY__) / 10; b.handlePointerEvent(PointerDownEvent(position: Offset(__CX__, __FY__), pointer: p)); for (var i = 1; i <= 10; i++) { final t = i / 10; b.handlePointerEvent(PointerMoveEvent(position: Offset(__CX__, __FY__ + (__TY__ - __FY__) * t), pointer: p, delta: Offset(0, dy))); } b.handlePointerEvent(PointerUpEvent(position: Offset(__CX__, __TY__), pointer: p)); return "scrolled"; })()'
-        $expr = $tpl.Replace('__CX__', "$cx.0").Replace('__FY__', "$fy.0").Replace('__TY__', "$ty.0").Replace('__P__', "$p")
+        $expr = $tpl.Replace('__CX__', (As-Double $cx)).Replace('__FY__', (As-Double $fy)).Replace('__TY__', (As-Double $ty)).Replace('__P__', "$p")
         Vm-Eval $expr | Out-Null
         Write-Output 'Scrolled up'
     }
@@ -318,10 +323,10 @@ switch ($Action) {
         $x = $Rest[0]; $y = $Rest[1]
         $ms = if ($Rest.Count -ge 3) { [int]$Rest[2] } else { 1500 }
         $p = New-PointerId
-        $down = '(() { WidgetsBinding.instance.handlePointerEvent(PointerDownEvent(position: Offset(__X__, __Y__), pointer: __P__)); return "d"; })()'.Replace('__X__', "$x.0").Replace('__Y__', "$y.0").Replace('__P__', "$p")
+        $down = '(() { WidgetsBinding.instance.handlePointerEvent(PointerDownEvent(position: Offset(__X__, __Y__), pointer: __P__)); return "d"; })()'.Replace('__X__', (As-Double $x)).Replace('__Y__', (As-Double $y)).Replace('__P__', "$p")
         Vm-Eval $down | Out-Null
         Start-Sleep -Milliseconds $ms
-        $up = '(() { WidgetsBinding.instance.handlePointerEvent(PointerUpEvent(position: Offset(__X__, __Y__), pointer: __P__)); return "u"; })()'.Replace('__X__', "$x.0").Replace('__Y__', "$y.0").Replace('__P__', "$p")
+        $up = '(() { WidgetsBinding.instance.handlePointerEvent(PointerUpEvent(position: Offset(__X__, __Y__), pointer: __P__)); return "u"; })()'.Replace('__X__', (As-Double $x)).Replace('__Y__', (As-Double $y)).Replace('__P__', "$p")
         Vm-Eval $up | Out-Null
         Write-Output "Long-pressed @ $x,$y ${ms}ms"
     }
