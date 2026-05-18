@@ -36,6 +36,8 @@ import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/misc/tts_channel.dart';
 import 'package:hibiki/src/utils/misc/volume_key_channel.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:hibiki/src/utils/misc/platform_utils.dart';
+import 'package:hibiki/src/utils/misc/show_app_dialog.dart';
 
 class ReaderHoshiPage extends BaseSourcePage {
   const ReaderHoshiPage({
@@ -2701,11 +2703,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
     if (!mounted) return;
 
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) {
-        return AudiobookSettingsSheet(
+    final Widget sheetContent = AudiobookSettingsSheet(
           controller: _audiobookController,
           toc: toc,
           readerProgress: (_currentChapter + 1, _book!.chapters.length),
@@ -2842,9 +2840,25 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
                     );
                   }
                 },
-        );
-      },
     );
+
+    if (isDesktopPlatform) {
+      await showAppDialog(
+        context: context,
+        builder: (_) => Dialog(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520, maxHeight: 720),
+            child: sheetContent,
+          ),
+        ),
+      );
+    } else {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        builder: (_) => sheetContent,
+      );
+    }
 
     await _syncSettingsFromHive();
     _syncDictionaryTheme();

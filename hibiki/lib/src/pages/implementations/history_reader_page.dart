@@ -59,8 +59,12 @@ class HistoryReaderPageState<T extends BaseHistoryPage>
       child: GridView.builder(
         padding: const EdgeInsets.only(top: 48),
         gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent:
-              MediaQuery.sizeOf(context).width >= 600 ? 180 : 150,
+          maxCrossAxisExtent: () {
+            final double w = MediaQuery.sizeOf(context).width;
+            if (w >= 840) return 200.0;
+            if (w >= 600) return 180.0;
+            return 150.0;
+          }(),
           childAspectRatio: mediaSource.aspectRatio,
         ),
         physics: const AlwaysScrollableScrollPhysics(

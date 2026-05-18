@@ -5,6 +5,7 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/profile/profile_selector.dart';
+import 'package:hibiki/src/utils/misc/platform_utils.dart';
 import 'package:hibiki/utils.dart';
 
 // ─── Shared setting-item builders ────────────────────────────────────────────
@@ -153,6 +154,14 @@ class _HintIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final Widget icon = Icon(
+      Icons.info_outline,
+      size: 16,
+      color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+    );
+    if (isDesktopPlatform) {
+      return Tooltip(message: hint, child: icon);
+    }
     return GestureDetector(
       onTap: () => showAppDialog(
         context: context,
@@ -166,11 +175,7 @@ class _HintIcon extends StatelessWidget {
           ],
         ),
       ),
-      child: Icon(
-        Icons.info_outline,
-        size: 16,
-        color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.6),
-      ),
+      child: icon,
     );
   }
 }
@@ -500,7 +505,12 @@ class HoshiSettingsContent extends BasePage {
 class _HoshiSettingsContentState extends BasePageState {
   @override
   Widget build(BuildContext context) {
-    return ListView(
+    final sizeClass = windowSizeClassFromContext(context);
+    final bool wide = sizeClass == WindowSizeClass.expanded;
+    return Center(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: wide ? 640 : double.infinity),
+        child: ListView(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       children: [
         _buildThemeSelector(appModel, navContext: context),
@@ -584,6 +594,8 @@ class _HoshiSettingsContentState extends BasePageState {
             },
           ),
       ],
+    ),
+      ),
     );
   }
 

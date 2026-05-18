@@ -40,7 +40,9 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
 
   static double _gridExtent(BuildContext context) {
     final double width = MediaQuery.sizeOf(context).width;
-    return width >= 600 ? 180 : 150;
+    if (width >= 840) return 200;
+    if (width >= 600) return 180;
+    return 150;
   }
 
   void _refreshSrtBooks() {

@@ -7,6 +7,7 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:hibiki/src/utils/misc/platform_utils.dart';
 import 'package:hibiki/utils.dart';
 
 /// The body content for the Dictionary tab in the main menu.
@@ -108,6 +109,8 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
 
   @override
   Widget build(BuildContext context) {
+    final sizeClass = windowSizeClassFromContext(context);
+    final bool wide = sizeClass == WindowSizeClass.expanded;
     return PopScope(
       canPop: !_hasActiveQuery && _popupStack.isEmpty,
       onPopInvokedWithResult: (didPop, _) {
@@ -118,11 +121,16 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
           _clearSearch();
         }
       },
-      child: Column(
-        children: [
-          _buildSearchHeader(),
-          Expanded(child: _buildBody()),
-        ],
+      child: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: wide ? 960 : double.infinity),
+          child: Column(
+            children: [
+              _buildSearchHeader(),
+              Expanded(child: _buildBody()),
+            ],
+          ),
+        ),
       ),
     );
   }

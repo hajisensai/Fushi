@@ -6,6 +6,7 @@ import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/epub/epub_book.dart';
 import 'package:hibiki/src/epub/epub_parser.dart';
 import 'package:hibiki/src/epub/epub_storage.dart';
+import 'package:hibiki/src/utils/misc/platform_utils.dart';
 import 'package:hibiki/utils.dart';
 
 /// Sasayaki 重匹配入口，被 [AudiobookImportDialog]（已附加视图）和书架
@@ -112,84 +113,93 @@ class SasayakiRematch {
     bool autoBusy = false;
     List<EpubSection>? probedSections;
     List<AudioCue>? probedCues;
+    Widget buildSheetBody(BuildContext sheetCtx, StateSetter setSheet) {
+      Future<void> handleAuto() async {
+        setSheet(() => autoBusy = true);
+        try {
+          probedSections ??= await _loadSections(
+            ttuBookId: ttuBookId,
+          );
+          probedCues ??= await repo.cuesForBook(bookUid);
+          final int? best = await runAutoProbe(
+            sections: probedSections ?? const <EpubSection>[],
+            cues: probedCues ?? const <AudioCue>[],
+          );
+          if (best != null) {
+            setSheet(() => window = best);
+          }
+        } finally {
+          setSheet(() => autoBusy = false);
+        }
+      }
+
+      return SafeArea(
+        child: Padding(
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 4,
+            bottom: MediaQuery.of(sheetCtx).viewInsets.bottom + 16,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SasayakiWindowSlider(
+                value: window,
+                onChanged: (v) => setSheet(() => window = v),
+                onAutoTap: handleAuto,
+                autoBusy: autoBusy,
+              ),
+              const SizedBox(height: 12),
+              SasayakiThresholdSlider(
+                value: threshold,
+                onChanged: (v) => setSheet(() => threshold = v),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed:
+                        autoBusy ? null : () => Navigator.pop(sheetCtx),
+                    child: Text(t.cancel),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    icon: const Icon(Icons.play_arrow, size: 18),
+                    label: Text(t.rematch_run),
+                    onPressed: autoBusy
+                        ? null
+                        : () => Navigator.pop(
+                              sheetCtx,
+                              _MatchParams(window, threshold),
+                            ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (isDesktopPlatform) {
+      return showDialog<_MatchParams>(
+        context: context,
+        builder: (ctx) => Dialog(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: StatefulBuilder(builder: buildSheetBody),
+          ),
+        ),
+      );
+    }
     return showModalBottomSheet<_MatchParams>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (sheetCtx) {
-        return StatefulBuilder(
-          builder: (ctx, setSheet) {
-            Future<void> handleAuto() async {
-              setSheet(() => autoBusy = true);
-              try {
-                probedSections ??= await _loadSections(
-                  ttuBookId: ttuBookId,
-                );
-                probedCues ??= await repo.cuesForBook(bookUid);
-                final int? best = await runAutoProbe(
-                  sections: probedSections ?? const <EpubSection>[],
-                  cues: probedCues ?? const <AudioCue>[],
-                );
-                if (best != null) {
-                  setSheet(() => window = best);
-                }
-              } finally {
-                setSheet(() => autoBusy = false);
-              }
-            }
-
-            return SafeArea(
-              child: Padding(
-                padding: EdgeInsets.only(
-                  left: 20,
-                  right: 20,
-                  top: 4,
-                  bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SasayakiWindowSlider(
-                      value: window,
-                      onChanged: (v) => setSheet(() => window = v),
-                      onAutoTap: handleAuto,
-                      autoBusy: autoBusy,
-                    ),
-                    const SizedBox(height: 12),
-                    SasayakiThresholdSlider(
-                      value: threshold,
-                      onChanged: (v) => setSheet(() => threshold = v),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        TextButton(
-                          onPressed:
-                              autoBusy ? null : () => Navigator.pop(sheetCtx),
-                          child: Text(t.cancel),
-                        ),
-                        const SizedBox(width: 8),
-                        FilledButton.icon(
-                          icon: const Icon(Icons.play_arrow, size: 18),
-                          label: Text(t.rematch_run),
-                          onPressed: autoBusy
-                              ? null
-                              : () => Navigator.pop(
-                                    sheetCtx,
-                                    _MatchParams(window, threshold),
-                                  ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
+      builder: (ctx) => StatefulBuilder(builder: buildSheetBody),
     );
   }
 
