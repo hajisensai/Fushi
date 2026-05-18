@@ -308,3 +308,128 @@ Rebuild and relaunch Windows debug app after Round 3 fixes. Verify startup, widg
 | EPUB reader rendering | 🔲 Requires GUI interaction |
 | Dictionary import + search | 🔲 Requires GUI interaction |
 | Fluttertoast → HibikiToast | ✅ Already migrated |
+
+---
+
+## Round 5: Debug Script Testing + Codebase Quality Sweep
+
+### Scope
+
+Comprehensive testing of `.codex-test/tools/hibiki-debug.ps1` across both Android (ADB) and Flutter VM Service (Windows) backends. Full review and fix of uncommitted Dart changes across the working tree.
+
+### Debug Script Test Results
+
+#### Android Backend (emulator-5554)
+
+| Command | Status | Notes |
+|---------|--------|-------|
+| `search 猫` | ✅ PASS | WEB_SEARCH intent launched successfully |
+| `process-text 食べる` | ✅ PASS | PROCESS_TEXT intent → PopupDictActivity |
+| `logcat` (unfiltered) | ✅ PASS | PID-filtered, 50 recent entries |
+| `logcat flutter` (filtered) | ✅ PASS | Grep filter works correctly |
+| `logcat xyznonexistent` | ✅ PASS | Returns "(no matching log entries)" cleanly |
+| `crash-log` | ✅ PASS | Returns "(no crashes found)" with exit code 0 |
+| `prefs` (release build) | ✅ PASS | Detects non-debuggable package, shows warning |
+| `launch` | ✅ PASS | App starts via `am start` |
+| `pid` | ✅ PASS | Returns PID 7154 |
+| `activity` | ✅ PASS | Shows current activity state |
+| `memory` | ✅ PASS | Shows meminfo summary |
+| `help` | ✅ PASS | Full command listing |
+
+#### VM Backend (Windows, ws://127.0.0.1:6998)
+
+| Command | Status | Notes |
+|---------|--------|-------|
+| `eval "1+1"` | ✅ PASS | Returns 2 |
+| `eval "Platform.operatingSystem"` | ✅ PASS | Returns "windows" |
+| `widget-tree` | ✅ PASS | 10+ widgets, correct tree structure |
+| `reload` | ❌ EXPECTED | Known limitation — needs Flutter daemon |
+| `prefs` (VM) | ❌ EXPECTED | `ref.read` not in scope of root library |
+
+### Findings
+
+#### HBK-AUDIT-019 — Debug script VM Service issues (3 bugs)
+- **Severity**: MEDIUM
+- **Status**: FIXED (`78b43aba`)
+- **File**: `.codex-test/tools/hibiki-debug.ps1`
+- **Root cause**: (1) `evaluate` API requires `targetId` (root library ID), not just `isolateId`. (2) `getRootWidgetSummaryTree` and `reloadSources` require `isolateId` parameter. (3) `ConvertTo-Json -Depth 5` truncates nested widget trees in PS 5.1.
+- **Fix**: Added `Vm-GetMainIsolateId` and `Vm-GetRootLibId` helpers. Fixed `Vm-Evaluate` to pass `targetId`. Fixed widget-tree/reload to pass `isolateId`. Increased JSON depth to 20.
+
+#### HBK-AUDIT-020 — Debug script prefs command error handling
+- **Severity**: LOW
+- **Status**: FIXED (`78b43aba`)
+- **File**: `.codex-test/tools/hibiki-debug.ps1`
+- **Root cause**: `prefs` command ran `run-as` without checking if package is debuggable, producing cryptic error. Also, prefs list defaulted to listing SharedPreferences files instead of Drift SQLite keys.
+- **Fix**: Added upfront debuggable check with clear warning. Changed listing to query `preferences` table from Drift SQLite.
+
+#### HBK-AUDIT-021 — grep exit code causing false errors
+- **Severity**: LOW
+- **Status**: FIXED (`78b43aba`)
+- **File**: `.codex-test/tools/hibiki-debug.ps1`
+- **Root cause**: `logcat | grep ...` returns exit code 1 when no matches found, causing PowerShell to treat it as an error.
+- **Fix**: Added `|| true` to grep pipes in `logcat`, `crash-log`.
+
+#### HBK-AUDIT-022 — Missing mounted check after async navigation
+- **Severity**: MEDIUM
+- **Status**: FIXED (`4afa85ab`)
+- **File**: `lib/src/pages/implementations/reader_hoshi_page.dart:2768`
+- **Root cause**: `onSearchJump` callback called `_navigateToChapterAndWait()` (async) then accessed `_controller!` without checking `mounted` afterward. If widget is disposed during navigation, crash.
+- **Fix**: Added `!mounted` to the existing guard: `if (!ok || !mounted || _controller == null) return;`
+
+#### HBK-AUDIT-023 — Color API migration incomplete
+- **Severity**: MEDIUM
+- **Status**: FIXED (`4afa85ab`)
+- **File**: `lib/src/pages/implementations/reader_hoshi_page.dart`
+- **Root cause**: `_customThemeTextCss` and `_customHighlightCss` used deprecated `.red`/`.green`/`.blue` (integer 0-255) instead of Flutter 3.41's `.r`/`.g`/`.b` (normalized float 0-1).
+- **Fix**: Migrated to `.r * 255.0` pattern. Deduplicated `_customThemeTextCss` to use shared `_colorToCssRgba` helper.
+
+#### HBK-AUDIT-024 — Double-tap file picker race condition
+- **Severity**: MEDIUM
+- **Status**: FIXED (`4afa85ab`)
+- **File**: `lib/src/media/audiobook/book_import_dialog.dart`
+- **Root cause**: All four picker methods (`_pickEpub`, `_pickSubtitle`, `_pickAudio`, `_pickCover`) could be triggered simultaneously by rapid tapping, potentially opening multiple native file pickers.
+- **Fix**: Added `_pickerActive` flag with try/finally guard to all picker methods.
+
+#### HBK-AUDIT-025 — setState after dispose in dictionary dialog
+- **Severity**: LOW
+- **Status**: FIXED (`4afa85ab`)
+- **File**: `lib/src/pages/implementations/dictionary_dialog_page.dart`
+- **Root cause**: `_selectedOrder = -1; setState(() {})` was called after `Navigator.pop(context)`, outside the `if (mounted)` check. After pop, widget may already be disposed.
+- **Fix**: Moved both lines inside the existing `if (mounted)` block.
+
+#### HBK-AUDIT-026 — Reading statistics off-by-one
+- **Severity**: LOW
+- **Status**: FIXED (`4afa85ab`)
+- **File**: `lib/src/pages/implementations/reading_statistics_page.dart`
+- **Root cause**: `now.subtract(Duration(days: 30))` with loop `for (int i = 0; i <= 30; ...)` produced 31 data points. The chart showed 31 bars but labeled "最近30天".
+- **Fix**: Changed to `subtract(Duration(days: 29))` with `for (int i = 0; i < 30; ...)` — exactly 30 bars including today.
+
+#### HBK-AUDIT-027 — BarChartPainter shouldRepaint uses reference equality
+- **Severity**: LOW
+- **Status**: FIXED (`4afa85ab`)
+- **File**: `lib/src/pages/implementations/reading_statistics_page.dart`
+- **Root cause**: `shouldRepaint` compared `data` list by reference (`!=`) and ignored color changes. Any rebuild that created a new list instance would skip repainting.
+- **Fix**: Changed to `!listEquals(data, oldDelegate.data)` and added `barColor`/`labelColor` comparison.
+
+### Verification
+
+| Check | Result |
+|-------|--------|
+| flutter analyze (full app) | 0 issues |
+| flutter test | 724/724 passed |
+| Debug script Android commands | 12/12 passed |
+| Debug script VM commands | 3/3 passed (2 expected limitations) |
+
+### Commits This Round
+
+| Hash | Description |
+|------|-------------|
+| `78b43aba` | fix(tools): debug script VM Service + prefs error handling |
+| `4afa85ab` | fix: mounted safety, picker guard, Color API, stats off-by-one |
+
+### Next Scope
+
+- EPUB reader rendering verification on Windows (WebView2)
+- Dictionary import and FFI search on Windows
+- Custom font loading from `C:\Windows\Fonts`
+- AnkiConnect integration testing on Windows
