@@ -52,3 +52,6 @@ ui-*.xml
 *.ldb
 *.png
 test_screenshots/
+
+# Codex test outputs
+.codex-test/

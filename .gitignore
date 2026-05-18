@@ -70,6 +70,10 @@ debug_screenshot.png
 # Codex test fixtures (large binaries)
 .codex-test/fixtures/
 
+# Codex test outputs (flutter run logs, temp files)
+flutter_run_*.txt
+*_tmp_before.txt
+
 # AI-generated docs (local-only)
 docs/superpowers/
 docs/REGRESSION_BUGS.md
