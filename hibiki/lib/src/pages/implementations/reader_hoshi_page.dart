@@ -1504,12 +1504,12 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final FavoriteSentenceRepository repo =
         FavoriteSentenceRepository(appModel.database);
     final List<FavoriteSentence> all = await repo.getAll();
+    if (_controller == null || !mounted) return;
     final List<String> texts = all
         .where((s) => s.ttuBookId == widget.bookId)
         .map((s) => s.text)
         .where((t) => t.isNotEmpty)
         .toList();
-    if (texts.isEmpty) return;
     final String json = jsonEncode(texts);
     await _controller!.evaluateJavascript(
       source:

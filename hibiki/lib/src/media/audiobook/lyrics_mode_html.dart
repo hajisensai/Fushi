@@ -55,6 +55,7 @@ body { font-family: "Noto Serif JP", "Noto Sans JP", serif; }
   gap: 0;
 }
 .cue {
+  position: relative;
   text-align: center;
   color: $textColor;
   font-size: ${fontSize}px;
@@ -96,7 +97,6 @@ body { font-family: "Noto Serif JP", "Noto Sans JP", serif; }
   font-size: 0.5em;
   opacity: 0.6;
 }
-.cue { position: relative; }
 </style>
 </head>
 <body>
