@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Hibiki Flutter UI tool - cross-platform UI element location and interaction
   via Flutter VM Service. Equivalent of adb-ui.ps1 for Windows/macOS/Linux/iOS.
@@ -172,8 +172,10 @@ function Ensure-ScreenSize {
     if ($script:ScreenW -eq 0) { $script:ScreenW = 1080; $script:ScreenH = 1920 }
 }
 
+$script:NextPointerId = 10000
 function New-PointerId {
-    return (Get-Date).Millisecond + 1000
+    $script:NextPointerId++
+    return $script:NextPointerId
 }
 
 # ─── Command Dispatch ────────────────────────────────────────────────────────
@@ -363,6 +365,9 @@ switch ($Action) {
     'screenshot' {
         $ts = Get-Date -Format 'yyyyMMdd_HHmmss'
         $path = if ($Rest -and $Rest[0]) { $Rest[0] } else { "d:\APP\vs_claude_code\hibiki\.codex-test\flutter_screenshot_$ts.png" }
+        $screenshotDone = $false
+
+        # Strategy 1: Windows .NET desktop capture (only useful for desktop Flutter apps)
         try {
             Add-Type -AssemblyName System.Drawing
             Add-Type -AssemblyName System.Windows.Forms
@@ -373,12 +378,42 @@ switch ($Action) {
             $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
             $g.Dispose()
             $bmp.Dispose()
-            Write-Output "Screenshot: $path"
+            Write-Output "Screenshot (desktop): $path"
+            $screenshotDone = $true
         } catch {
-            Write-Output "Windows screenshot failed: $($_.Exception.Message)"
-            Write-Output "Alternatives:"
+            Write-Output "Windows desktop screenshot failed: $($_.Exception.Message)"
+        }
+
+        # Strategy 2: ADB screencap fallback (for Flutter apps running on Android device/emulator)
+        if (-not $screenshotDone) {
+            $adbPath = $null
+            try { $adbPath = (Get-Command adb -ErrorAction Stop).Source } catch {}
+            if ($adbPath) {
+                Write-Output 'Attempting ADB screenshot...'
+                $deviceTmp = '/sdcard/flutter_ui_screenshot.png'
+                $adbCapture = & adb shell screencap -p $deviceTmp 2>&1
+                if ($LASTEXITCODE -eq 0) {
+                    $adbPull = & adb pull $deviceTmp $path 2>&1
+                    if ($LASTEXITCODE -eq 0) {
+                        & adb shell rm $deviceTmp 2>&1 | Out-Null
+                        Write-Output "Screenshot (adb): $path"
+                        $screenshotDone = $true
+                    } else {
+                        Write-Output "ADB pull failed: $adbPull"
+                    }
+                } else {
+                    Write-Output "ADB screencap failed: $adbCapture"
+                }
+            } else {
+                Write-Output 'ADB not found in PATH, skipping device screenshot.'
+            }
+        }
+
+        if (-not $screenshotDone) {
+            Write-Output "Screenshot failed. Alternatives:"
             Write-Output "  macOS:  screencapture -x $path"
             Write-Output "  Linux:  import $path   (ImageMagick)"
+            Write-Output "  ADB:    adb shell screencap -p /sdcard/ss.png; adb pull /sdcard/ss.png $path"
         }
     }
 
