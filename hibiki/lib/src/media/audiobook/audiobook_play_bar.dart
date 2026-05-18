@@ -884,20 +884,25 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                     left: isChild ? 24 : 0,
                     right: 8,
                   ),
+                  selected: isCurrent,
+                  selectedTileColor: theme.colorScheme.primaryContainer,
+                  selectedColor: theme.colorScheme.onPrimaryContainer,
+                  shape: isCurrent
+                      ? RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8))
+                      : null,
                   title: Text(
                     e.label.isEmpty ? t.untitled_chapter : e.label,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: isCurrent
                         ? theme.textTheme.bodyMedium?.copyWith(
-                            color: theme.colorScheme.primary,
                             fontWeight: FontWeight.w600,
                           )
                         : theme.textTheme.bodyMedium,
                   ),
                   trailing: isCurrent
-                      ? Icon(Icons.chevron_right,
-                          color: theme.colorScheme.primary, size: 20)
+                      ? const Icon(Icons.chevron_right, size: 20)
                       : null,
                   onTap: () async {
                     Navigator.of(ctx).pop();
