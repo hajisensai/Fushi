@@ -1519,11 +1519,9 @@ function createGlossarySection(dictName, contents, isFirst, entryIdx) {
     ` : '';
     
     const dictStyle = window.dictionaryStyles?.[dictName] ?? '';
-    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-    const baseColor = isDark ? '#fff' : '#000';
     let styleText = `
         [data-dictionary="${dictName}"] {
-            color: ${baseColor};
+            color: var(--text-color);
             ${compactCss}
         }
     `.trim();
@@ -1675,7 +1673,21 @@ window.renderPopup = function() {
 };
 
 
+let _popupMouseDownPos = null;
+document.addEventListener('mousedown', (e) => {
+    _popupMouseDownPos = { x: e.clientX, y: e.clientY };
+});
+
 document.addEventListener('click', (e) => {
+    if (_popupMouseDownPos) {
+        const dx = e.clientX - _popupMouseDownPos.x;
+        const dy = e.clientY - _popupMouseDownPos.y;
+        _popupMouseDownPos = null;
+        if (dx * dx + dy * dy > 25) {
+            return;
+        }
+    }
+
     const sel = window.getSelection();
     if (sel && sel.toString().length > 0) {
         sel.removeAllRanges();
