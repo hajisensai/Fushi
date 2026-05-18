@@ -44,6 +44,8 @@ const String _marvBase =
     'https://github.com/MarvNC/yomichan-dictionaries/raw/master/dl';
 const String _kuuuubeBase =
     'https://github.com/Kuuuube/yomitan-dictionaries/raw/main/dictionaries';
+const String _wtyBase =
+    'https://huggingface.co/datasets/daxida/wty-release/resolve/main/latest/dict';
 
 class DictionaryDownloader {
   DictionaryDownloader._();
@@ -79,7 +81,25 @@ class DictionaryDownloader {
       langCode: 'en',
     ),
 
-    // ── JA-JA (百科・補助 — not 国語辞典) ──
+    // ── JA-JA ──
+    RecommendedDictionary(
+      name: 'Wiktionary JA-JA',
+      url: '$_wtyBase/ja/ja/wty-ja-ja.zip',
+      description: '日本語版ウィクショナリー — 無料の国語辞典型リソース',
+      matchPrefix: 'wty-ja-ja',
+      category: DictionaryCategory.jaJa,
+      sizeEstimate: '~13 MB',
+      langCode: 'ja',
+    ),
+    RecommendedDictionary(
+      name: 'Wiktionary JA-JA IPA',
+      url: '$_wtyBase/ja/ja/wty-ja-ja-ipa.zip',
+      description: 'ウィクショナリー発音 (IPA)',
+      matchPrefix: 'wty-ja-ja-ipa',
+      category: DictionaryCategory.jaJa,
+      sizeEstimate: '~330 KB',
+      langCode: 'ja',
+    ),
     RecommendedDictionary(
       name: 'Pixiv百科事典',
       url: '$_marvBase/%5BMonolingual%5D%20Pixiv.zip',
@@ -241,7 +261,7 @@ class DictionaryDownloader {
       name: 'Wiktionary Kanji',
       url: '$_marvBase/%5BKanji%5D%20Wiktionary.zip',
       description: 'Kanji from Wiktionary',
-      matchPrefix: 'Wiktionary',
+      matchPrefix: 'Wiktionary Kanji',
       category: DictionaryCategory.kanji,
       sizeEstimate: '~4 MB',
     ),
@@ -350,10 +370,11 @@ class DictionaryDownloader {
       }
     }
 
-    // For Japanese locale → recommend JA-JA dicts.
+    // For Japanese locale → recommend Wiktionary JA-JA (proper dictionary).
+    // Skip 百科事典/補助 entries by default — users can add them manually.
     if (lang == 'ja') {
       for (int i = 0; i < catalog.length; i++) {
-        if (catalog[i].category == DictionaryCategory.jaJa) {
+        if (catalog[i].matchPrefix == 'wty-ja-ja') {
           selected.add(i);
         }
       }
@@ -382,13 +403,12 @@ class DictionaryDownloader {
     }
 
     // For Chinese/Korean users without a dedicated JMdict,
-    // also recommend lightweight JA-JA dicts (skip large ones like Nico-Pixiv).
+    // also recommend Wiktionary JA-JA (proper dictionary resource).
     if (!foundMatch && (lang == 'zh' || lang == 'ko')) {
       for (int i = 0; i < catalog.length; i++) {
-        final d = catalog[i];
-        if (d.category == DictionaryCategory.jaJa &&
-            d.name != 'Nico-Pixiv百科事典') {
+        if (catalog[i].matchPrefix == 'wty-ja-ja') {
           selected.add(i);
+          break;
         }
       }
     }
