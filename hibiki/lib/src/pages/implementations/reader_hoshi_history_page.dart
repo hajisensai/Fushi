@@ -44,8 +44,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
   }
 
   void _refreshSrtBooks() {
-    _srtBooksFuture =
-        SrtBookRepository(appModelNoUpdate.database).listAll();
+    _srtBooksFuture = SrtBookRepository(appModelNoUpdate.database).listAll();
     _audiobookInfoCache.clear();
   }
 

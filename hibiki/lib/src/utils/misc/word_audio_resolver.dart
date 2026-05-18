@@ -71,9 +71,14 @@ class WordAudioResolver {
         .replaceAll('{reading}', Uri.encodeComponent(reading));
   }
 
+  static final Dio _dio = Dio(BaseOptions(
+    connectTimeout: const Duration(seconds: 5),
+    receiveTimeout: const Duration(seconds: 10),
+  ));
+
   static Future<List<String>> defaultFetchAudioSourceList(String url) async {
     try {
-      final Response<dynamic> response = await Dio().get<dynamic>(url);
+      final Response<dynamic> response = await _dio.get<dynamic>(url);
       final dynamic body = response.data is String
           ? jsonDecode(response.data as String)
           : response.data;
