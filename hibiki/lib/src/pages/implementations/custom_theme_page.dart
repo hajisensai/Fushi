@@ -65,7 +65,7 @@ class _CustomThemePageState extends BasePageState {
     _containerColor ??= generated.primaryContainer;
     _sasayakiColor = appModelNoUpdate.customThemeSasayakiColor;
     _useSasayakiColor = _sasayakiColor != null;
-    _sasayakiColor ??= const Color(0x6687CEEB);
+    _sasayakiColor ??= JidoujishoColor.defaultSasayakiColor;
     _linkColor = appModelNoUpdate.customThemeLinkColor;
     _useLinkColor = _linkColor != null;
     _linkColor ??= generated.primary;
@@ -295,8 +295,8 @@ class _CustomThemePageState extends BasePageState {
                 _containerColor =
                     result.containerColor ?? generated.primaryContainer;
                 _useContainerColor = result.containerColor != null;
-                _sasayakiColor =
-                    result.sasayakiColor ?? const Color(0x6687CEEB);
+                _sasayakiColor = result.sasayakiColor ??
+                    JidoujishoColor.defaultSasayakiColor;
                 _useSasayakiColor = result.sasayakiColor != null;
                 _linkColor = result.linkColor ?? generated.primary;
                 _useLinkColor = result.linkColor != null;
@@ -644,7 +644,7 @@ class _CustomThemePageState extends BasePageState {
                     decoration: BoxDecoration(
                       color: _useSasayakiColor
                           ? _sasayakiColor
-                          : const Color(0x6687CEEB),
+                          : JidoujishoColor.defaultSasayakiColor,
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
@@ -663,7 +663,7 @@ class _CustomThemePageState extends BasePageState {
                           style: TextStyle(
                             backgroundColor: _useSasayakiColor
                                 ? _sasayakiColor
-                                : const Color(0x6687CEEB),
+                                : JidoujishoColor.defaultSasayakiColor,
                           ),
                         ),
                         const TextSpan(text: 'テスト　'),
@@ -883,8 +883,9 @@ class _CustomThemePageState extends BasePageState {
   Widget _buildSasayakiPreview(ColorScheme cs) {
     final Color fc = _useFontColor ? _fontColor! : cs.onSurface;
     final Color bg = _useBgColor ? _bgColor! : cs.surfaceContainerLow;
-    final Color sas =
-        _useSasayakiColor ? _sasayakiColor! : const Color(0x6687CEEB);
+    final Color sas = _useSasayakiColor
+        ? _sasayakiColor!
+        : JidoujishoColor.defaultSasayakiColor;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(

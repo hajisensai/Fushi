@@ -37,6 +37,7 @@ import 'package:hibiki/src/utils/misc/tts_channel.dart';
 import 'package:hibiki/src/utils/misc/volume_key_channel.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:hibiki/src/utils/misc/platform_utils.dart';
+import 'package:hibiki/src/utils/misc/jidoujisho_color.dart';
 import 'package:hibiki/src/utils/misc/show_app_dialog.dart';
 
 class ReaderHoshiPage extends BaseSourcePage {
@@ -103,7 +104,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   bool _lyricsModeTransition = false;
 
   @override
-  bool get shouldDisablePopupScrim => _lyricsMode || super.shouldDisablePopupScrim;
+  bool get shouldDisablePopupScrim =>
+      _lyricsMode || super.shouldDisablePopupScrim;
   bool _lyricsPageReady = false;
   int _lyricsEntryChapter = 0;
   int _lyricsEntryCueIndex = 0;
@@ -990,17 +992,23 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     );
   }
 
+  bool get _isCustomTheme => appModel.appThemeKey == 'custom-theme';
+
   String _buildStyleTag() {
     return '<style id="hoshi-reader-style">\n${ReaderContentStyles.css(
       settings: _settings!,
       themeOverride: appModel.appThemeKey,
-      customBg:
-          appModel.appThemeKey == 'custom-theme' ? _readerBackgroundHex : null,
-      customFg:
-          appModel.appThemeKey == 'custom-theme' ? _customThemeTextCss : null,
-      selectionColor: _colorToCssRgba(appModel.customThemeSelectionColor),
-      sasayakiColor: _colorToCssRgba(appModel.customThemeSasayakiColor),
-      linkColor: _colorToCssRgba(appModel.customThemeLinkColor),
+      customBg: _isCustomTheme ? _readerBackgroundHex : null,
+      customFg: _isCustomTheme ? _customThemeTextCss : null,
+      selectionColor: _isCustomTheme
+          ? _colorToCssRgba(appModel.customThemeSelectionColor)
+          : null,
+      sasayakiColor: _isCustomTheme
+          ? _colorToCssRgba(appModel.customThemeSasayakiColor)
+          : null,
+      linkColor: _isCustomTheme
+          ? _colorToCssRgba(appModel.customThemeLinkColor)
+          : null,
     )}\n</style>';
   }
 
@@ -1014,13 +1022,17 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final String css = ReaderContentStyles.css(
       settings: _settings!,
       themeOverride: appModel.appThemeKey,
-      customBg:
-          appModel.appThemeKey == 'custom-theme' ? _readerBackgroundHex : null,
-      customFg:
-          appModel.appThemeKey == 'custom-theme' ? _customThemeTextCss : null,
-      selectionColor: _colorToCssRgba(appModel.customThemeSelectionColor),
-      sasayakiColor: _colorToCssRgba(appModel.customThemeSasayakiColor),
-      linkColor: _colorToCssRgba(appModel.customThemeLinkColor),
+      customBg: _isCustomTheme ? _readerBackgroundHex : null,
+      customFg: _isCustomTheme ? _customThemeTextCss : null,
+      selectionColor: _isCustomTheme
+          ? _colorToCssRgba(appModel.customThemeSelectionColor)
+          : null,
+      sasayakiColor: _isCustomTheme
+          ? _colorToCssRgba(appModel.customThemeSasayakiColor)
+          : null,
+      linkColor: _isCustomTheme
+          ? _colorToCssRgba(appModel.customThemeLinkColor)
+          : null,
     );
     final String escaped = css
         .replaceAll('\\', '\\\\')
@@ -1592,7 +1604,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final Color bg = _themeBackgroundColor();
     final Color fg = _themeTextColor();
     final Color accent = _isReaderThemeDark
-        ? const Color(0xFFFFDC00)
+        ? JidoujishoColor.defaultHighlightYellow
         : Theme.of(context).colorScheme.primary;
 
     String colorToCss(Color c) =>
@@ -1860,9 +1872,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   Future<void> _injectAudiobookBridge() async {
     if (_controller == null || _audiobookController == null) return;
 
-    final Color highlightColor =
-        appModel.customThemeSasayakiColor ?? const Color(0x6687CEEB);
-    await AudiobookBridge.inject(_controller!, primaryColor: highlightColor);
+    await AudiobookBridge.inject(_controller!,
+        primaryColor: _themeSasayakiColor());
 
     final List<AudioCue>? allCues = _cachedAllCues;
     if (allCues == null) return;
@@ -3142,6 +3153,27 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         return dark ? const Color(0xDEFFFFFF) : const Color(0xDE000000);
       default:
         return const Color(0xDE000000);
+    }
+  }
+
+  Color _themeSasayakiColor() {
+    final String theme = appModel.appThemeKey;
+    switch (theme) {
+      case 'ecru-theme':
+        return const Color(0x66A8C68C);
+      case 'water-theme':
+        return const Color(0x6664B4DC);
+      case 'gray-theme':
+        return const Color(0x595096C8);
+      case 'dark-theme':
+        return const Color(0x594682B4);
+      case 'black-theme':
+        return const Color(0x663C78AA);
+      case 'custom-theme':
+        return appModel.customThemeSasayakiColor ??
+            JidoujishoColor.defaultSasayakiColor;
+      default:
+        return JidoujishoColor.defaultSasayakiColor;
     }
   }
 

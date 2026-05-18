@@ -558,91 +558,14 @@ class AppModel with ChangeNotifier {
     return themePresets[appThemeKey]?.seed ?? const Color(0xFF1F4959);
   }
 
-  ThemeData get theme {
-    final bool useCustomRoles = appThemeKey == 'custom-theme';
-    final cs = buildHibikiColorScheme(
-      seedColor: _seedColor,
-      brightness: Brightness.light,
-      primary: useCustomRoles ? customThemePrimaryColor : null,
-      secondary: useCustomRoles ? customThemeSecondaryColor : null,
-      tertiary: useCustomRoles ? customThemeTertiaryColor : null,
-      primaryContainer: useCustomRoles ? customThemeContainerColor : null,
-    );
-    return ThemeData(
-      useMaterial3: true,
-      colorScheme: cs,
-      textTheme: textTheme,
-      appBarTheme: const AppBarTheme(
-        elevation: 0,
-        centerTitle: false,
-      ),
-      switchTheme: SwitchThemeData(
-        thumbColor: WidgetStateColor.resolveWith((states) {
-          return states.contains(WidgetState.selected)
-              ? cs.primary
-              : cs.onSurfaceVariant;
-        }),
-        trackColor: WidgetStateColor.resolveWith((states) {
-          return states.contains(WidgetState.selected)
-              ? cs.primaryContainer
-              : cs.surfaceContainerHighest;
-        }),
-        trackOutlineColor: WidgetStateColor.resolveWith((states) {
-          return states.contains(WidgetState.selected)
-              ? Colors.transparent
-              : cs.outline;
-        }),
-      ),
-      bottomNavigationBarTheme: BottomNavigationBarThemeData(
-        elevation: 0,
-        type: BottomNavigationBarType.fixed,
-        selectedLabelStyle: textTheme.labelSmall,
-        unselectedLabelStyle: textTheme.labelSmall,
-        showSelectedLabels: true,
-        showUnselectedLabels: true,
-      ),
-      popupMenuTheme: const PopupMenuThemeData(
-        shape: RoundedRectangleBorder(),
-      ),
-      dialogTheme: DialogThemeData(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-      ),
-      listTileTheme: const ListTileThemeData(
-        dense: true,
-        horizontalTitleGap: 0,
-      ),
-      inputDecorationTheme: InputDecorationTheme(
-        enabledBorder: UnderlineInputBorder(
-          borderSide: BorderSide(
-            color: cs.outline,
-          ),
-        ),
-        focusedBorder: UnderlineInputBorder(
-          borderSide: BorderSide(color: cs.primary),
-        ),
-      ),
-      scrollbarTheme: ScrollbarThemeData(
-        thickness: WidgetStateProperty.all(3),
-        thumbVisibility: WidgetStateProperty.all(true),
-      ),
-      sliderTheme: SliderThemeData(
-        thumbColor: cs.primary,
-        activeTrackColor: cs.primary,
-        inactiveTrackColor: cs.outlineVariant,
-        trackShape: const RectangularSliderTrackShape(),
-        trackHeight: 2,
-        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-      ),
-    );
-  }
+  ThemeData get theme => _buildThemeData(Brightness.light);
+  ThemeData get darkTheme => _buildThemeData(Brightness.dark);
 
-  ThemeData get darkTheme {
+  ThemeData _buildThemeData(Brightness brightness) {
     final bool useCustomRoles = appThemeKey == 'custom-theme';
     final cs = buildHibikiColorScheme(
       seedColor: _seedColor,
-      brightness: Brightness.dark,
+      brightness: brightness,
       primary: useCustomRoles ? customThemePrimaryColor : null,
       secondary: useCustomRoles ? customThemeSecondaryColor : null,
       tertiary: useCustomRoles ? customThemeTertiaryColor : null,
@@ -704,6 +627,8 @@ class AppModel with ChangeNotifier {
         ),
       ),
       scrollbarTheme: ScrollbarThemeData(
+        thickness:
+            brightness == Brightness.light ? WidgetStateProperty.all(3) : null,
         thumbVisibility: WidgetStateProperty.all(true),
       ),
       sliderTheme: SliderThemeData(

@@ -1919,7 +1919,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
       case 'purple':
         return const Color(0xFFAA00FF);
       default:
-        return const Color(0xFFFFDC00);
+        return JidoujishoColor.defaultHighlightYellow;
     }
   }
 
