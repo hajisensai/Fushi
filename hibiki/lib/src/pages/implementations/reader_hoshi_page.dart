@@ -2765,7 +2765,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
             if (result.sectionIndex != _currentChapter) {
               final bool ok =
                   await _navigateToChapterAndWait(result.sectionIndex);
-              if (!ok || _controller == null) return;
+              if (!ok || !mounted || _controller == null) return;
             }
             await _controller!.evaluateJavascript(
               source: ReaderPaginationScripts.scrollToSearchMatchInvocation(
@@ -2779,6 +2779,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
             if (bm.sectionIndex != _currentChapter) {
               await _navigateToChapterAndWait(bm.sectionIndex);
             }
+            if (!mounted || _controller == null) return;
             final double progress = bm.normCharOffset / 10000.0;
             await _controller!.evaluateJavascript(
               source:
@@ -2800,16 +2801,15 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
             bookmarks = await bmRepo.getBookmarks(bookId);
           },
           favoriteSentences: favorites,
-          onDeleteFavorite: (index) async {
-            if (index >= 0 && index < favorites.length) {
-              await favRepo.removeById(favorites[index].id);
-            }
+          onDeleteFavorite: (fav) async {
+            await favRepo.removeById(fav.id);
           },
           onJumpToFavorite: (fav) async {
             if (fav.sectionIndex == null) return;
             if (fav.sectionIndex != _currentChapter) {
               await _navigateToChapterAndWait(fav.sectionIndex!);
             }
+            if (!mounted || _controller == null) return;
             if (fav.normCharOffset != null) {
               final double progress = fav.normCharOffset! / 10000.0;
               await _controller!.evaluateJavascript(
@@ -3008,10 +3008,13 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _initialProgress = progress ?? 0.0;
     _lastProgressSection = _currentChapter;
     _lastProgressValue = _initialProgress;
+
+    final int gen = ++_navigateGeneration;
+    _restoreExpectedGeneration = gen;
     _restoreInFlight = true;
     debugPrint('[ReaderHoshi] reloadWithCurrentSettings: '
         'chapter=$_currentChapter progress=$_initialProgress '
-        'continuous=${_settings?.isContinuousMode}');
+        'generation=$gen continuous=${_settings?.isContinuousMode}');
 
     setState(() {
       _readerContentReady = false;
@@ -3116,7 +3119,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   String? get _customThemeTextCss {
     final Color c = _themeTextColor();
-    return 'rgba(${c.red},${c.green},${c.blue},${(c.alpha / 255).toStringAsFixed(2)})';
+    return _colorToCssRgba(c);
   }
 
   static String? _colorToCssRgba(Color? c) {
@@ -3131,7 +3134,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (appModel.appThemeKey != 'custom-theme') return null;
     final Color? c = appModel.customThemePrimaryColor;
     if (c == null) return null;
-    return 'rgba(${c.red},${c.green},${c.blue},0.34)';
+    final int r = (c.r * 255.0).round().clamp(0, 255);
+    final int g = (c.g * 255.0).round().clamp(0, 255);
+    final int b = (c.b * 255.0).round().clamp(0, 255);
+    return 'rgba($r,$g,$b,0.34)';
   }
 
   void _syncDictionaryTheme() {

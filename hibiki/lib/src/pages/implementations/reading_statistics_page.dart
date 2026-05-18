@@ -125,9 +125,9 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     }
 
     // 最近 30 天，按日期排序
-    final thirtyDaysAgo = now.subtract(const Duration(days: 30));
+    final thirtyDaysAgo = now.subtract(const Duration(days: 29));
     _dailyData = [];
-    for (int i = 0; i <= 30; i++) {
+    for (int i = 0; i < 30; i++) {
       final d = thirtyDaysAgo.add(Duration(days: i));
       final key = _dateKey(d);
       _dailyData.add(dailyMap[key] ?? _DayData(dateKey: key));
@@ -579,5 +579,7 @@ class _BarChartPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _BarChartPainter oldDelegate) =>
-      data != oldDelegate.data;
+      !listEquals(data, oldDelegate.data) ||
+      barColor != oldDelegate.barColor ||
+      labelColor != oldDelegate.labelColor;
 }

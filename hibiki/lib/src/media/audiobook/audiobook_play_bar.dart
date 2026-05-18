@@ -181,8 +181,6 @@ class AudiobookSettingsSheet extends StatefulWidget {
     this.onDeleteFavorite,
     this.onJumpToFavorite,
     this.onPlayFavorite,
-    this.showPlayBar = true,
-    this.onTogglePlayBar,
     this.showMediaNotification = true,
     this.onToggleMediaNotification,
     this.showFloatingLyric = false,
@@ -217,11 +215,9 @@ class AudiobookSettingsSheet extends StatefulWidget {
   final Future<void> Function(Bookmark bookmark)? onJumpToBookmark;
   final Future<void> Function(Bookmark bookmark)? onDeleteBookmark;
   final List<FavoriteSentence> favoriteSentences;
-  final Future<void> Function(int index)? onDeleteFavorite;
+  final Future<void> Function(FavoriteSentence fav)? onDeleteFavorite;
   final Future<void> Function(FavoriteSentence fav)? onJumpToFavorite;
   final Future<void> Function(FavoriteSentence fav)? onPlayFavorite;
-  final bool showPlayBar;
-  final VoidCallback? onTogglePlayBar;
   final bool showMediaNotification;
   final VoidCallback? onToggleMediaNotification;
   final bool showFloatingLyric;
@@ -1892,11 +1888,11 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                       IconButton(
                         icon: const Icon(Icons.delete_outline, size: 16),
                         onPressed: () async {
-                          await widget.onDeleteFavorite?.call(i);
+                          await widget.onDeleteFavorite?.call(fav);
                           if (mounted) {
                             setState(() {
                               _favorites = List<FavoriteSentence>.of(_favorites)
-                                ..removeAt(i);
+                                ..remove(fav);
                             });
                           }
                         },

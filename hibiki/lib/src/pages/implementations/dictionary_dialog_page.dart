@@ -114,10 +114,9 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
 
             if (mounted) {
               Navigator.pop(context);
+              _selectedOrder = -1;
+              setState(() {});
             }
-
-            _selectedOrder = -1;
-            setState(() {});
           },
         ),
         TextButton(
@@ -162,10 +161,9 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
 
             if (mounted) {
               Navigator.pop(context);
+              _selectedOrder = -1;
+              setState(() {});
             }
-
-            _selectedOrder = -1;
-            setState(() {});
           },
         ),
         TextButton(
@@ -232,6 +230,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
         file: file,
         cssFiles: cssFiles,
         onImportSuccess: () {
+          if (!mounted) return;
           _selectedOrder = appModel.dictionaries.last.order;
           setState(() {});
         },
@@ -352,8 +351,10 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
       if (tempDir.existsSync()) {
         tempDir.deleteSync(recursive: true);
       }
-      if (mounted) Navigator.pop(context);
-      setState(() {});
+      if (mounted) {
+        Navigator.pop(context);
+        setState(() {});
+      }
     }
   }
 

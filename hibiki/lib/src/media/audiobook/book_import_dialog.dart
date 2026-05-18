@@ -58,6 +58,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
   String? _subtitleName;
 
   bool _importing = false;
+  bool _pickerActive = false;
   final ValueNotifier<double> _progress = ValueNotifier<double>(0);
   final ValueNotifier<String> _progressMsg = ValueNotifier<String>('');
 
@@ -325,62 +326,82 @@ class _BookImportDialogState extends State<BookImportDialog> {
   ];
 
   Future<void> _pickEpub({bool anyFile = false}) async {
-    final FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: anyFile ? FileType.any : FileType.custom,
-      allowedExtensions: anyFile ? null : _bookExtensions,
-    );
-    final PlatformFile? file = result?.files.single;
-    final String? path = file?.path;
-    if (path != null && file != null && mounted) {
-      setState(() {
-        _epubPath = path;
-        _epubName = file.name;
-        if (_titleCtrl.text.isEmpty) {
-          _titleCtrl.text = file.name.replaceAll(
-              RegExp(
-                  r'\.(epub|txt|html?|xhtml|md|markdown|rst|org|csv|tsv|log|json|xml)$',
-                  caseSensitive: false),
-              '');
-        }
-      });
+    if (_pickerActive) return;
+    _pickerActive = true;
+    try {
+      final FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: anyFile ? FileType.any : FileType.custom,
+        allowedExtensions: anyFile ? null : _bookExtensions,
+      );
+      final PlatformFile? file = result?.files.single;
+      final String? path = file?.path;
+      if (path != null && file != null && mounted) {
+        setState(() {
+          _epubPath = path;
+          _epubName = file.name;
+          if (_titleCtrl.text.isEmpty) {
+            _titleCtrl.text = file.name.replaceAll(
+                RegExp(
+                    r'\.(epub|txt|html?|xhtml|md|markdown|rst|org|csv|tsv|log|json|xml)$',
+                    caseSensitive: false),
+                '');
+          }
+        });
+      }
+    } finally {
+      _pickerActive = false;
     }
   }
 
   Future<void> _pickSubtitle() async {
-    final FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['srt', 'lrc', 'vtt', 'ass', 'ssa'],
-    );
-    final PlatformFile? file = result?.files.single;
-    final String? path = file?.path;
-    if (path == null || file == null || !mounted) return;
+    if (_pickerActive) return;
+    _pickerActive = true;
+    try {
+      final FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['srt', 'lrc', 'vtt', 'ass', 'ssa'],
+      );
+      final PlatformFile? file = result?.files.single;
+      final String? path = file?.path;
+      if (path == null || file == null || !mounted) return;
 
-    setState(() {
-      _subtitlePath = path;
-      _subtitleName = file.name;
-      if (_titleCtrl.text.isEmpty) {
-        final String name = file.name;
-        final int dot = name.lastIndexOf('.');
-        _titleCtrl.text = dot > 0 ? name.substring(0, dot) : name;
-      }
-    });
+      setState(() {
+        _subtitlePath = path;
+        _subtitleName = file.name;
+        if (_titleCtrl.text.isEmpty) {
+          final String name = file.name;
+          final int dot = name.lastIndexOf('.');
+          _titleCtrl.text = dot > 0 ? name.substring(0, dot) : name;
+        }
+      });
+    } finally {
+      _pickerActive = false;
+    }
   }
 
   Future<void> _pickAudio() async {
-    final FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.audio,
-      allowMultiple: true,
-    );
-    if (result == null || !mounted) return;
+    if (_pickerActive) return;
+    _pickerActive = true;
+    try {
+      final FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.audio,
+        allowMultiple: true,
+      );
+      if (result == null || !mounted) return;
 
-    final List<String> paths =
-        result.files.map((f) => f.path).whereType<String>().toList()
-          ..sort(compareAudioFilePath);
+      final List<String> paths = result.files
+          .map((f) => f.path)
+          .whereType<String>()
+          .toList()
+        ..sort(compareAudioFilePath);
 
-    if (paths.isNotEmpty) {
-      setState(() {
-        _audioPaths = paths;
-      });
+      if (paths.isNotEmpty) {
+        setState(() {
+          _audioPaths = paths;
+        });
+      }
+    } finally {
+      _pickerActive = false;
     }
   }
 
@@ -418,13 +439,19 @@ class _BookImportDialogState extends State<BookImportDialog> {
   }
 
   Future<void> _pickCover() async {
-    final FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.image,
-    );
-    if (result == null || !mounted) return;
-    final String? path = result.files.first.path;
-    if (path != null) {
-      setState(() => _coverPath = path);
+    if (_pickerActive) return;
+    _pickerActive = true;
+    try {
+      final FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+      );
+      if (result == null || !mounted) return;
+      final String? path = result.files.first.path;
+      if (path != null) {
+        setState(() => _coverPath = path);
+      }
+    } finally {
+      _pickerActive = false;
     }
   }
 
@@ -544,15 +571,27 @@ class _BookImportDialogState extends State<BookImportDialog> {
 
     _reportProgress(0.7, t.import_step_persisting);
     final Directory persistDir = await _ensurePersistDir(uid);
-    final String persistedSrt =
-        await _persistFile(File(_subtitlePath!), persistDir);
+    final String persistedSrt = await AudiobookStorage.persistFileWithProgress(
+      File(_subtitlePath!),
+      persistDir,
+      onProgress: (int copied, int total) {
+        _reportProgress(
+            0.7, t.import_step_copying_file(name: p.basename(_subtitlePath!)));
+      },
+    );
 
     await AudiobookStorage.cleanAudioFiles(persistDir);
     final List<String> persistedAudioPaths = [];
-    for (int i = 0; i < _audioPaths.length; i++) {
+    for (final String src in _audioPaths) {
       persistedAudioPaths.add(
-        await AudiobookStorage.persistFile(File(_audioPaths[i]), persistDir,
-            dedupeIndex: i),
+        await AudiobookStorage.persistFileWithProgress(
+          File(src),
+          persistDir,
+          onProgress: (int copied, int total) {
+            _reportProgress(
+                0.8, t.import_step_copying_file(name: p.basename(src)));
+          },
+        ),
       );
     }
 
@@ -711,15 +750,27 @@ class _BookImportDialogState extends State<BookImportDialog> {
 
     _reportProgress(0.8, t.import_step_persisting);
     final Directory persistDir = await _ensurePersistDir(bookUid);
-    final String persistedSrt =
-        await _persistFile(File(_subtitlePath!), persistDir);
+    final String persistedSrt = await AudiobookStorage.persistFileWithProgress(
+      File(_subtitlePath!),
+      persistDir,
+      onProgress: (int copied, int total) {
+        _reportProgress(
+            0.8, t.import_step_copying_file(name: p.basename(_subtitlePath!)));
+      },
+    );
 
     await AudiobookStorage.cleanAudioFiles(persistDir);
     final List<String> persistedAudioPaths = [];
-    for (int i = 0; i < _audioPaths.length; i++) {
+    for (final String src in _audioPaths) {
       persistedAudioPaths.add(
-        await AudiobookStorage.persistFile(File(_audioPaths[i]), persistDir,
-            dedupeIndex: i),
+        await AudiobookStorage.persistFileWithProgress(
+          File(src),
+          persistDir,
+          onProgress: (int copied, int total) {
+            _reportProgress(
+                0.85, t.import_step_copying_file(name: p.basename(src)));
+          },
+        ),
       );
     }
 
@@ -801,7 +852,4 @@ class _BookImportDialogState extends State<BookImportDialog> {
 
   Future<Directory> _ensurePersistDir(String key) =>
       AudiobookStorage.ensurePersistDir(key);
-
-  Future<String> _persistFile(File src, Directory persistDir) =>
-      AudiobookStorage.persistFile(src, persistDir);
 }
