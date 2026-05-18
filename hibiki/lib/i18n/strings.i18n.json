@@ -129,7 +129,7 @@
     "dict_download_installed": "Installed",
     "dict_download_total_size": "Total: $size",
     "dict_category_ja_en": "Japanese-English",
-    "dict_category_ja_ja": "日本語 (Monolingual)",
+    "dict_category_ja_ja": "日本語 (百科・補助, 非国語辞典)",
     "dict_category_ja_other": "Other Languages",
     "dict_category_kanji": "Kanji",
     "dict_category_frequency": "Frequency",
