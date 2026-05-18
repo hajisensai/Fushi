@@ -474,8 +474,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     _pickerActive = true;
     try {
       final FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['smil', 'json', 'srt', 'lrc', 'vtt', 'ass'],
+        type: FileType.any,
       );
       final PlatformFile? file = result?.files.single;
       final String? path = file?.path;
@@ -586,10 +585,22 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
 
     int grandTotal = 0;
     try {
-      _reportProgress(0.1, t.import_step_parsing);
       final String ext = _alignmentPath!.split('.').last.toLowerCase();
       const Set<String> cueFormats = {'smil', 'srt', 'lrc', 'vtt', 'ass'};
       final String format = cueFormats.contains(ext) ? ext : 'json';
+
+      // file_picker 返回的路径在 cache/ 下，Android 随时会清理。
+      // 必须在 parse 之前就复制到持久目录，否则用户点 IMPORT 时缓存可能已被删。
+      _reportProgress(0.05, t.import_step_persisting);
+      final Directory persistDir = await _ensurePersistDir();
+      final String persistedAlignment =
+          await AudiobookStorage.persistFileWithProgress(
+        File(_alignmentPath!),
+        persistDir,
+      );
+      _alignmentPath = persistedAlignment;
+
+      _reportProgress(0.1, t.import_step_parsing);
 
       // 先跑 parse + matcher（含 saveCues）拿到 health；此时 Audiobook 还
       // 没写入。然后一次性带全字段 saveAudiobook —— **不能两次 put**，否则
@@ -598,16 +609,31 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       final AudiobookHealth health = await _parseCues(format);
 
       _reportProgress(0.5, t.import_step_persisting);
-      // file_picker 返回的路径在 cache/ 下，Android 随时会清理。
-      // 把音频和对齐文件复制到持久目录再存路径。
-      final Directory persistDir = await _ensurePersistDir();
 
-      final List<File> filesToCopy = <File>[File(_alignmentPath!)];
+      // 收集需要复制的音频文件。
+      // file mode: 用户选的文件列表。
+      // directory mode: 列出目录下所有音频文件。
+      // 两种模式都复制到持久化目录——Android 11+ scoped storage 下，
+      // SAF 临时授权的路径后续可能无法访问。
+      final List<File> audioCopyFiles = <File>[];
       if (_audioPaths != null && _audioPaths!.isNotEmpty) {
-        filesToCopy.addAll(_audioPaths!.map(File.new));
+        audioCopyFiles.addAll(_audioPaths!.map(File.new));
+      } else if (_audioDir != null) {
+        final Directory srcDir = Directory(_audioDir!);
+        if (await srcDir.exists()) {
+          final List<FileSystemEntity> entries = await srcDir.list().toList();
+          audioCopyFiles.addAll(
+            entries
+                .whereType<File>()
+                .where((f) => AudiobookStorage.isAudioFile(f.path)),
+          );
+          audioCopyFiles.sort(
+            (a, b) => compareAudioFilePath(a.path, b.path),
+          );
+        }
       }
 
-      for (final File f in filesToCopy) {
+      for (final File f in audioCopyFiles) {
         if (!p.isWithin(
             p.canonicalize(persistDir.path), p.canonicalize(f.path))) {
           grandTotal += await f.length();
@@ -615,45 +641,25 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       }
       int grandCopied = 0;
 
-      final String persistedAlignment =
+      await AudiobookStorage.cleanAudioFiles(persistDir);
+      final List<String> persistedPaths = <String>[];
+      for (final File srcFile in audioCopyFiles) {
+        final int fileLen = await srcFile.length();
+        final int capturedGrandCopied = grandCopied;
+        persistedPaths.add(
           await AudiobookStorage.persistFileWithProgress(
-        File(_alignmentPath!),
-        persistDir,
-        onProgress: (int copied, int total) {
-          final double ratio =
-              grandTotal > 0 ? (grandCopied + copied) / grandTotal : 0.0;
-          _reportProgress(0.5 + ratio * 0.3,
-              t.import_step_copying_file(name: p.basename(_alignmentPath!)));
-        },
-      );
-      grandCopied += await File(_alignmentPath!).length();
-
-      List<String>? persistedAudioPaths;
-      String? persistedAudioRoot;
-      if (_audioPaths != null && _audioPaths!.isNotEmpty) {
-        await AudiobookStorage.cleanAudioFiles(persistDir);
-        persistedAudioPaths = <String>[];
-        for (final String src in _audioPaths!) {
-          final File srcFile = File(src);
-          final int fileLen = await srcFile.length();
-          final int capturedGrandCopied = grandCopied;
-          persistedAudioPaths.add(
-            await AudiobookStorage.persistFileWithProgress(
-              srcFile,
-              persistDir,
-              onProgress: (int copied, int total) {
-                final double ratio = grandTotal > 0
-                    ? (capturedGrandCopied + copied) / grandTotal
-                    : 0.0;
-                _reportProgress(0.5 + ratio * 0.3,
-                    t.import_step_copying_file(name: p.basename(src)));
-              },
-            ),
-          );
-          grandCopied += fileLen;
-        }
-      } else {
-        persistedAudioRoot = _audioDir;
+            srcFile,
+            persistDir,
+            onProgress: (int copied, int total) {
+              final double ratio = grandTotal > 0
+                  ? (capturedGrandCopied + copied) / grandTotal
+                  : 0.0;
+              _reportProgress(0.5 + ratio * 0.3,
+                  t.import_step_copying_file(name: p.basename(srcFile.path)));
+            },
+          ),
+        );
+        grandCopied += fileLen;
       }
 
       _reportProgress(0.8, t.import_step_saving);
@@ -662,10 +668,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
         ..alignmentFormat = format
         ..alignmentPath = persistedAlignment;
 
-      if (persistedAudioPaths != null && persistedAudioPaths.isNotEmpty) {
-        audiobook.audioPaths = persistedAudioPaths;
-      } else {
-        audiobook.audioRoot = persistedAudioRoot;
+      if (persistedPaths.isNotEmpty) {
+        audiobook.audioRoot = persistDir.path;
       }
 
       health.packInto(audiobook);

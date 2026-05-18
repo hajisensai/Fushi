@@ -358,8 +358,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
     _pickerActive = true;
     try {
       final FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['srt', 'lrc', 'vtt', 'ass', 'ssa'],
+        type: FileType.any,
       );
       final PlatformFile? file = result?.files.single;
       final String? path = file?.path;

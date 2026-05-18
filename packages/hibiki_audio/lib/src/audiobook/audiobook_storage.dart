@@ -6,6 +6,13 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 abstract final class AudiobookStorage {
+  static const Set<String> audioExtensions = {
+    '.mp3', '.m4a', '.m4b', '.aac', '.ogg', '.opus',
+    '.flac', '.wav', '.wma', '.ac3', '.eac3', '.mp4',
+  };
+
+  static bool isAudioFile(String path) =>
+      audioExtensions.contains(p.extension(path).toLowerCase());
   static String _stableHash(String input) {
     final List<int> bytes = utf8.encode(input);
     int h = 0x811c9dc5;
@@ -108,22 +115,8 @@ abstract final class AudiobookStorage {
 
   static Future<void> cleanAudioFiles(Directory persistDir) async {
     if (!persistDir.existsSync()) return;
-    final List<String> audioExts = [
-      '.mp3',
-      '.m4a',
-      '.m4b',
-      '.aac',
-      '.ogg',
-      '.opus',
-      '.flac',
-      '.wav',
-      '.wma',
-      '.ac3',
-      '.eac3',
-      '.mp4',
-    ];
     for (final FileSystemEntity f in persistDir.listSync()) {
-      if (f is File && audioExts.contains(p.extension(f.path).toLowerCase())) {
+      if (f is File && isAudioFile(f.path)) {
         await f.delete();
       }
     }
