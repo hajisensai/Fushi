@@ -1,5 +1,6 @@
 import 'package:change_notifier_builder/change_notifier_builder.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:spaces/spaces.dart';
 import 'package:hibiki/media.dart';
@@ -25,6 +26,8 @@ class _HomePageState extends BasePageState<HomePage>
 
   int _currentTab = 0;
   String _iconAsset = 'assets/meta/icon.png';
+  final FocusNode _keyboardFocusNode = FocusNode();
+  final ValueNotifier<int> _dictFocusSignal = ValueNotifier<int>(0);
 
   @override
   void initState() {
@@ -70,6 +73,8 @@ class _HomePageState extends BasePageState<HomePage>
 
   @override
   void dispose() {
+    _dictFocusSignal.dispose();
+    _keyboardFocusNode.dispose();
     WidgetsBinding.instance.removeObserver(this);
     appModelNoUpdate.databaseCloseNotifier.removeListener(refresh);
     super.dispose();
@@ -88,7 +93,29 @@ class _HomePageState extends BasePageState<HomePage>
     }
   }
 
-  static const double _desktopBreakpoint = 600;
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    final bool ctrl = HardwareKeyboard.instance.isControlPressed;
+    if (ctrl) {
+      switch (event.logicalKey) {
+        case LogicalKeyboardKey.digit1:
+          setState(() => _currentTab = 0);
+          _loadIconPreset();
+          return KeyEventResult.handled;
+        case LogicalKeyboardKey.digit2:
+          setState(() => _currentTab = 1);
+          return KeyEventResult.handled;
+        case LogicalKeyboardKey.digit3:
+          setState(() => _currentTab = 2);
+          return KeyEventResult.handled;
+        case LogicalKeyboardKey.keyF:
+          setState(() => _currentTab = 1);
+          _dictFocusSignal.value++;
+          return KeyEventResult.handled;
+      }
+    }
+    return KeyEventResult.ignored;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -96,21 +123,31 @@ class _HomePageState extends BasePageState<HomePage>
       return const SizedBox.shrink();
     }
 
-    return GestureDetector(
-      onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final bool useRail = constraints.maxWidth >= _desktopBreakpoint;
-          if (useRail) {
-            return _buildDesktopLayout();
+    return Focus(
+      autofocus: isDesktopPlatform,
+      focusNode: _keyboardFocusNode,
+      onKeyEvent: _handleKeyEvent,
+      child: GestureDetector(
+        onTap: () {
+          final FocusNode? current = FocusManager.instance.primaryFocus;
+          if (current != null && current != _keyboardFocusNode) {
+            current.unfocus();
           }
-          return _buildMobileLayout();
         },
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final sizeClass = windowSizeClassOf(constraints);
+            if (sizeClass == WindowSizeClass.compact) {
+              return _buildMobileLayout();
+            }
+            return _buildDesktopLayout(sizeClass);
+          },
+        ),
       ),
     );
   }
 
-  Widget _buildDesktopLayout() {
+  Widget _buildDesktopLayout(WindowSizeClass sizeClass) {
     return Scaffold(
       resizeToAvoidBottomInset: false,
       appBar: buildAppBar(),
@@ -193,7 +230,7 @@ class _HomePageState extends BasePageState<HomePage>
   Widget buildBody() {
     switch (_currentTab) {
       case 1:
-        return const HomeDictionaryPage();
+        return HomeDictionaryPage(focusSignal: _dictFocusSignal);
       case 2:
         return const HoshiSettingsContent();
       default:
@@ -310,11 +347,26 @@ class _HomePageState extends BasePageState<HomePage>
           tooltip: t.tag_filter,
           icon: selectedIds.isEmpty ? Icons.filter_list : Icons.filter_list_off,
           onTap: () {
-            showModalBottomSheet(
-              context: context,
-              isScrollControlled: true,
-              builder: (_) => const TagFilterSheet(),
-            );
+            if (isDesktopPlatform) {
+              showAppDialog(
+                context: context,
+                builder: (_) => Dialog(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      maxWidth: 480,
+                      maxHeight: 600,
+                    ),
+                    child: const TagFilterSheet(),
+                  ),
+                ),
+              );
+            } else {
+              showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                builder: (_) => const TagFilterSheet(),
+              );
+            }
           },
         );
       },
