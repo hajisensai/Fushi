@@ -1671,10 +1671,11 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       _audiobookController?.cancelChapterTransition();
       return;
     }
-    if (_restoreInFlight) return;
-    if (_book == null ||
+    if (_restoreInFlight ||
+        _book == null ||
         newSection < 0 ||
         newSection >= _book!.chapters.length) {
+      _audiobookController?.cancelChapterTransition();
       return;
     }
     await _navigateToChapter(newSection);
@@ -2368,6 +2369,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final String epubPath =
         Uri.decodeComponent(uri.path.substring('/epub/'.length));
     final String filePath = p.join(_extractDir!, epubPath);
+    if (!p.isWithin(p.canonicalize(_extractDir!), p.canonicalize(filePath))) {
+      return;
+    }
     final File file = File(filePath);
     if (!file.existsSync()) return;
     final Uint8List bytes = file.readAsBytesSync();
