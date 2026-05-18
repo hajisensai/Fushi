@@ -1445,6 +1445,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       }
       _lyricsPageReady = true;
       _onCueChanged();
+      await _applyLyricsFavorites();
       return;
     }
     final int chapterSnapshot = _currentChapter;
@@ -1481,6 +1482,11 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         .where((s) =>
             s.ttuBookId == widget.bookId && s.sectionIndex == _currentChapter)
         .toList();
+    final int withOffsets =
+        chapterFavs.where((s) => s.normCharOffset != null).length;
+    debugPrint('[hoshi-hl] chapter=$_currentChapter '
+        'total=${all.length} chapterFavs=${chapterFavs.length} '
+        'withOffsets=$withOffsets');
     if (chapterFavs.isNotEmpty) {
       await HighlightBridge.applyHighlights(_controller!, chapterFavs,
           backgroundHex: _readerBackgroundHex,
@@ -1491,6 +1497,24 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       );
       await _settings!.setTheme(appModel.appThemeKey);
     }
+  }
+
+  Future<void> _applyLyricsFavorites() async {
+    if (_controller == null) return;
+    final FavoriteSentenceRepository repo =
+        FavoriteSentenceRepository(appModel.database);
+    final List<FavoriteSentence> all = await repo.getAll();
+    final List<String> texts = all
+        .where((s) => s.ttuBookId == widget.bookId)
+        .map((s) => s.text)
+        .where((t) => t.isNotEmpty)
+        .toList();
+    if (texts.isEmpty) return;
+    final String json = jsonEncode(texts);
+    await _controller!.evaluateJavascript(
+      source:
+          'window.__lyricsMarkFavorites && window.__lyricsMarkFavorites($json);',
+    );
   }
 
   // ── Restore Complete ──────────────────────────────────────────────
@@ -3302,6 +3326,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
                 length: _cachedSelectionRange!.length
               )
             : null);
+    debugPrint('[hoshi-hl] toggleFavorite: '
+        'sentenceRange=${sentenceRange != null ? "(${sentenceRange.offset},${sentenceRange.length})" : "null"} '
+        'cachedSentence=${_cachedSentenceRange != null} '
+        'cachedSelection=${_cachedSelectionRange != null}');
     final FavoriteSentenceRepository repo =
         FavoriteSentenceRepository(appModel.database);
 
@@ -3313,7 +3341,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         normCharOffset: sentenceRange?.offset,
       );
       setState(() => _currentSentenceIsFavorited = false);
-      if (sentenceRange != null) {
+      if (_lyricsMode) {
+        await _applyLyricsFavorites();
+      } else if (sentenceRange != null) {
         final List<FavoriteSentence> all = await repo.getAll();
         final List<FavoriteSentence> chapterFavs = all
             .where((s) =>
@@ -3346,7 +3376,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     );
     await repo.add(fav);
     setState(() => _currentSentenceIsFavorited = true);
-    if (sentenceRange != null) {
+    if (_lyricsMode) {
+      await _applyLyricsFavorites();
+    } else if (sentenceRange != null) {
       final List<FavoriteSentence> all = await repo.getAll();
       final List<FavoriteSentence> chapterFavs = all
           .where((s) =>

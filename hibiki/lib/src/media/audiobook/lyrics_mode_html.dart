@@ -87,6 +87,16 @@ body { font-family: "Noto Serif JP", "Noto Sans JP", serif; }
   color: inherit;
   border-radius: 2px;
 }
+.cue.favorited::before {
+  content: '\\2605';
+  position: absolute;
+  right: -2px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.5em;
+  opacity: 0.6;
+}
+.cue { position: relative; }
 </style>
 </head>
 <body>
@@ -218,6 +228,17 @@ document.addEventListener('pointerup', function(e) {
     return selected;
   };
 })();
+
+// ── 收藏标记 ──
+window.__lyricsMarkFavorites = function(texts) {
+  var set = new Set(texts || []);
+  var cues = document.querySelectorAll('.cue');
+  for (var i = 0; i < cues.length; i++) {
+    var t = cues[i].textContent.trim();
+    if (set.has(t)) cues[i].classList.add('favorited');
+    else cues[i].classList.remove('favorited');
+  }
+};
 
 // ── 初始定位（即时跳转，不用动画，避免与 Dart 端 setCue 竞争） ──
 _currentIdx = $currentIndex;

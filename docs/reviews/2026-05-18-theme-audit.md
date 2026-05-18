@@ -237,8 +237,44 @@ Defined in `reader_hoshi_page.dart:3056-3141`:
 
 **修复**: 改为 Material 3 标准 `ListTile(selected: true)` + `primaryContainer` 底色 + `onPrimaryContainer` 文字色。
 
+### HBK-AUDIT-008 — 收藏句子高亮完全不显示 [Bug]
+
+**Severity**: Critical | **Status**: Fixed
+
+**Files**: `highlight_bridge.dart`, `reader_hoshi_page.dart`
+
+**根因 (三重)**:
+1. `_buildOffsetMap` JS 函数使用 `charCodeAt` 迭代文本，而保存侧 (`getNormalizedOffset`) 使用 `codePointAt`。非 BMP 字符（如 emoji、部分 CJK 扩展）导致偏移量错位，Range 创建失败。
+2. `_buildGroups` 中 `rawIdx + 1` 硬编码单 code unit 宽度，非 BMP 字符的第二个 surrogate 被截断。
+3. `FavoriteSentenceRepository.applyHighlights` 原本用 `.where()` 静默丢弃 `normCharOffset == null` 的收藏，无日志无回退。
+
+**影响**: 所有收藏句子高亮不可见——有偏移量的因 Unicode 错位而 Range 创建失败，无偏移量的被静默过滤。
+
+**修复**:
+- `_buildOffsetMap`: 改用 `codePointAt` + `charLen` 迭代，map 条目增加 `rawLen` 字段
+- `_buildGroups`: 使用 `rawLen` 替代硬编码 `+1`
+- `__hibikiGetSelectionNormRange`: 同样的 `codePointAt` 修复
+- 新增 `__hibikiFindTextNormRange` JS 函数：文本搜索回退，用于无偏移量的旧收藏
+- Dart 侧 `applyHighlights`: 对无偏移量的收藏调用文本搜索回退，添加 debugPrint 诊断
+
+### HBK-AUDIT-009 — 歌词模式不显示收藏标记 [Bug]
+
+**Severity**: Medium | **Status**: Fixed
+
+**Files**: `lyrics_mode_html.dart`, `reader_hoshi_page.dart`
+
+**根因**: 歌词模式使用独立 HTML 页面，不加载 `HighlightBridge` JS，因此 `_applyChapterHighlights()` 对歌词页面无效。歌词页面没有任何收藏标记机制。
+
+**影响**: 歌词模式下收藏的句子没有视觉反馈。
+
+**修复**:
+- `lyrics_mode_html.dart`: 添加 `.cue.favorited::before` CSS（★星标）+ `__lyricsMarkFavorites(texts)` JS 函数
+- `reader_hoshi_page.dart`: 新增 `_applyLyricsFavorites()` 方法，在歌词页面加载完成和收藏切换时调用
+
 ## Next Scope
 
 - 验证修复后预设主题切换不再泄漏自定义颜色
 - 检查 `_syncDictionaryTheme()` 是否正确使用主题颜色
 - Audiobook highlight preset 是否需要与主题联动（当前设计为独立，暂不视为 bug）
+- 在真机上验证：收藏句子 → 切章节 → 切回 → 高亮是否恢复
+- 验证歌词模式收藏星标是否正确出现/消失

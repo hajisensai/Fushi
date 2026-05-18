@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 
@@ -86,11 +87,14 @@ class HighlightBridge {
     var node;
     while ((node = walker.nextNode()) != null) {
       var txt = node.textContent || '';
-      for (var i = 0; i < txt.length; i++) {
-        if (!_skip(txt.charCodeAt(i))) {
-          map.push({ node: node, rawIdx: i, normIdx: normCount });
+      for (var i = 0; i < txt.length;) {
+        var cp = txt.codePointAt(i);
+        var charLen = cp > 0xFFFF ? 2 : 1;
+        if (!_skip(cp)) {
+          map.push({ node: node, rawIdx: i, normIdx: normCount, rawLen: charLen });
           normCount++;
         }
+        i += charLen;
       }
     }
     return map;
@@ -112,10 +116,10 @@ class HighlightBridge {
     var cur = null;
     for (var s = start; s < end; s++) {
       if (!cur || cur.node !== map[s].node) {
-        cur = { node: map[s].node, start: map[s].rawIdx, end: map[s].rawIdx + 1 };
+        cur = { node: map[s].node, start: map[s].rawIdx, end: map[s].rawIdx + map[s].rawLen };
         groups.push(cur);
       } else {
-        cur.end = map[s].rawIdx + 1;
+        cur.end = map[s].rawIdx + map[s].rawLen;
       }
     }
     return groups;
@@ -177,21 +181,24 @@ class HighlightBridge {
 
     while ((node = walker.nextNode()) != null) {
       var nodeText = node.textContent || '';
-      for (var i = 0; i < nodeText.length; i++) {
+      for (var i = 0; i < nodeText.length;) {
+        var cp = nodeText.codePointAt(i);
+        var charLen = cp > 0xFFFF ? 2 : 1;
         var inRange;
         try {
           var pt = document.createRange();
           pt.setStart(node, i);
-          pt.setEnd(node, Math.min(i + 1, node.length));
+          pt.setEnd(node, Math.min(i + charLen, node.length));
           inRange = (range.compareBoundaryPoints(Range.START_TO_END, pt) > 0 &&
                      range.compareBoundaryPoints(Range.END_TO_START, pt) < 0);
         } catch(e) { inRange = false; }
 
-        if (!_skip(nodeText.charCodeAt(i))) {
+        if (!_skip(cp)) {
           if (inRange && startNorm < 0) startNorm = normCount;
           if (inRange) endNorm = normCount + 1;
           normCount++;
         }
+        i += charLen;
       }
     }
 
@@ -264,6 +271,41 @@ class HighlightBridge {
     }
   };
 
+  // ── 文本搜索回退：为没有偏移量的收藏查找位置 ──
+  window.__hibikiFindTextNormRange = function(text) {
+    if (!text) return null;
+    var root = _root();
+    var walker = _walker(root);
+    var normChars = [];
+    var node;
+    while ((node = walker.nextNode()) != null) {
+      var txt = node.textContent || '';
+      for (var i = 0; i < txt.length;) {
+        var cp = txt.codePointAt(i);
+        var charLen = cp > 0xFFFF ? 2 : 1;
+        if (!_skip(cp)) {
+          normChars.push(String.fromCodePoint(cp));
+        }
+        i += charLen;
+      }
+    }
+    var haystack = normChars.join('');
+    var needleChars = [];
+    for (var i = 0; i < text.length;) {
+      var cp = text.codePointAt(i);
+      var charLen = cp > 0xFFFF ? 2 : 1;
+      if (!_skip(cp)) {
+        needleChars.push(String.fromCodePoint(cp));
+      }
+      i += charLen;
+    }
+    var needle = needleChars.join('');
+    if (!needle) return null;
+    var idx = haystack.indexOf(needle);
+    if (idx < 0) return null;
+    return { offset: idx, length: needle.length };
+  };
+
   // ── 移除单条高亮 ──
   window.__hibikiRemoveHighlight = function(id) {
     if (window.__hoshiCssHighlightsSupported) {
@@ -308,15 +350,47 @@ class HighlightBridge {
     String backgroundHex = '#ffffff',
     String? customHighlightCss,
   }) async {
-    final List<Map<String, dynamic>> payload = highlights
-        .where((h) => h.normCharOffset != null && h.normCharLength != null)
-        .map((h) => <String, dynamic>{
+    final List<Map<String, dynamic>> payload = [];
+    int backfillCount = 0;
+    for (final FavoriteSentence h in highlights) {
+      if (h.normCharOffset != null && h.normCharLength != null) {
+        payload.add(<String, dynamic>{
+          'id': h.id,
+          'offset': h.normCharOffset,
+          'length': h.normCharLength,
+          'color': h.color ?? 'yellow',
+        });
+        continue;
+      }
+      if (h.text.isEmpty) continue;
+      final String escapedText = jsonEncode(h.text);
+      final Object? raw = await controller.evaluateJavascript(
+        source:
+            '(function(){try{var r=window.__hibikiFindTextNormRange($escapedText);'
+            'return r?JSON.stringify(r):"null";}catch(e){return "null";}})();',
+      );
+      if (raw is String && raw != 'null' && raw.isNotEmpty) {
+        try {
+          final Map<String, dynamic> found =
+              jsonDecode(raw) as Map<String, dynamic>;
+          final int? offset = (found['offset'] as num?)?.toInt();
+          final int? length = (found['length'] as num?)?.toInt();
+          if (offset != null && length != null) {
+            payload.add(<String, dynamic>{
               'id': h.id,
-              'offset': h.normCharOffset,
-              'length': h.normCharLength,
+              'offset': offset,
+              'length': length,
               'color': h.color ?? 'yellow',
-            })
-        .toList();
+            });
+            backfillCount++;
+          }
+        } catch (_) {}
+      }
+    }
+    if (backfillCount > 0) {
+      debugPrint(
+          '[hoshi-hl] backfilled $backfillCount favorites via text search');
+    }
     final String json = jsonEncode(payload);
     final String escapedBg = jsonEncode(backgroundHex);
     final String escapedCustom =
