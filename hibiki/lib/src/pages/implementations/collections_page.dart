@@ -327,6 +327,69 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         _audioFileMap.containsKey(item.ttuBookId);
   }
 
+  Future<void> _showItemDialog(_CollectionItem item) async {
+    final isBookmark = item.type == _CollectionType.bookmark;
+    final canNavigate = item.ttuBookId != null && item.ttuBookId! > 0;
+    final hasAudio = _hasAudio(item);
+    final displayTitle = isBookmark ? (item.label ?? '') : (item.text ?? '');
+    final cs = Theme.of(context).colorScheme;
+
+    await showAppDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: SelectableText(
+          displayTitle,
+          maxLines: 3,
+        ),
+        content: item.bookTitle != null
+            ? Text(item.bookTitle!, style: textTheme.bodyMedium)
+            : null,
+        actions: [
+          if (hasAudio)
+            TextButton.icon(
+              icon: Icon(
+                _playingAudio ? Icons.hourglass_top : Icons.volume_up,
+                size: 18,
+              ),
+              label: Text(t.dialog_play),
+              onPressed: _playingAudio
+                  ? null
+                  : () {
+                      Navigator.pop(ctx);
+                      _playItemAudio(item);
+                    },
+            ),
+          if (!isBookmark && item.text != null)
+            TextButton.icon(
+              icon: const Icon(Icons.copy, size: 18),
+              label: Text(t.copy),
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: item.text!));
+                Navigator.pop(ctx);
+              },
+            ),
+          TextButton.icon(
+            icon: Icon(Icons.delete, size: 18, color: cs.error),
+            label: Text(t.dialog_delete, style: TextStyle(color: cs.error)),
+            onPressed: () {
+              Navigator.pop(ctx);
+              _deleteItem(item);
+            },
+          ),
+          if (canNavigate)
+            FilledButton.icon(
+              icon: const Icon(Icons.menu_book, size: 18),
+              label: Text(t.dialog_read),
+              onPressed: () {
+                Navigator.pop(ctx);
+                _openBook(item);
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -470,6 +533,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
           ],
         ),
         onTap: canNavigate ? () => _openBook(item) : null,
+        onLongPress: () => _showItemDialog(item),
       ),
     );
   }
