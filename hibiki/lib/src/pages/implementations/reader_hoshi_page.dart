@@ -174,7 +174,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   }
 
   Future<void> _initBook() async {
-    final HibikiDatabase db = appModel.database;
+    final HibikiDatabase db = appModelNoUpdate.database;
 
     await _resolveAndApplyProfile(db);
 
@@ -231,8 +231,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       debugPrint('[ReaderHoshi] restore from bookmark: '
           'chapter=$_currentChapter progress=$_initialProgress');
     } else {
-      final ReaderPositionRepository repo =
-          ReaderPositionRepository(appModel.database);
+      final ReaderPositionRepository repo = ReaderPositionRepository(db);
       final ReaderPosition? saved = await repo.findByTtuBookId(widget.bookId);
       debugPrint('[ReaderHoshi] restore lookup: bookId=${widget.bookId} '
           'saved=$saved section=${saved?.sectionIndex} '
@@ -677,12 +676,14 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     }
     if (audioRoot != null) {
       final Directory dir = Directory(audioRoot);
-      if (!await dir.exists()) return <File>[];
+      final bool exists = await dir.exists();
+      if (!exists) return <File>[];
       final List<FileSystemEntity> entries = await dir.list().toList();
       final List<File> files = entries.whereType<File>().where((f) {
         final String ext = f.path.toLowerCase();
         return ext.endsWith('.mp3') ||
             ext.endsWith('.m4a') ||
+            ext.endsWith('.m4b') ||
             ext.endsWith('.ogg') ||
             ext.endsWith('.aac') ||
             ext.endsWith('.wav') ||

@@ -108,8 +108,11 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 歌词模式使用此索引而非 [currentCueIdx]（后者是 chapter-relative）。
   int get allBookCueIdx {
     final AudioCue? cue = _currentCue;
-    if (cue == null || _allBookCues.isEmpty) return -1;
-    return _allBookCueIndex(allBookCues: _allBookCues, currentCue: cue);
+    if (cue == null || _allBookCues.isEmpty) {
+      return -1;
+    }
+    final int result = _allBookCueIndex(allBookCues: _allBookCues, currentCue: cue);
+    return result;
   }
 
   // ── PR8b: Follow audio ────────────────────────────────────────────────────
