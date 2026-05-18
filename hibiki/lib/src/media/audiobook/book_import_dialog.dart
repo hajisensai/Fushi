@@ -261,6 +261,11 @@ class _BookImportDialogState extends State<BookImportDialog> {
             }),
           ),
         IconButton(
+          icon: const Icon(Icons.folder_open, size: 20),
+          tooltip: t.srt_import_pick_any_file,
+          onPressed: () => _pickSubtitle(anyFile: true),
+        ),
+        IconButton(
           icon: const Icon(Icons.subtitles, size: 20),
           tooltip: t.srt_import_pick_subtitle_files,
           onPressed: _pickSubtitle,
@@ -353,12 +358,21 @@ class _BookImportDialogState extends State<BookImportDialog> {
     }
   }
 
-  Future<void> _pickSubtitle() async {
+  static const List<String> _subtitleExtensions = [
+    'srt',
+    'lrc',
+    'vtt',
+    'ass',
+    'ssa',
+  ];
+
+  Future<void> _pickSubtitle({bool anyFile = false}) async {
     if (_pickerActive) return;
     _pickerActive = true;
     try {
       final FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.any,
+        type: anyFile ? FileType.any : FileType.custom,
+        allowedExtensions: anyFile ? null : _subtitleExtensions,
       );
       final PlatformFile? file = result?.files.single;
       final String? path = file?.path;
