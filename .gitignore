@@ -67,8 +67,8 @@ debug_screenshot.png
 # Claude agent worktrees
 .claude/worktrees/
 
-# Codex test artifacts
-.codex-test/
+# Codex test fixtures (large binaries)
+.codex-test/fixtures/
 
 # AI-generated docs (local-only)
 docs/superpowers/
