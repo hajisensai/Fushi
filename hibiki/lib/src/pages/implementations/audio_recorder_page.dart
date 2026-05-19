@@ -34,7 +34,7 @@ class AudioRecorderDialogPage extends BasePage {
 
 class _AudioRecorderDialogPageState
     extends BasePageState<AudioRecorderDialogPage> {
-  final ScrollController _scrollController = ScrollController();
+  static const double _playerTimeWidthThreshold = 280;
 
   File? _audioFile;
 
@@ -44,7 +44,6 @@ class _AudioRecorderDialogPageState
   @override
   void dispose() {
     _audioPlayer.dispose();
-    _scrollController.dispose();
     _positionNotifier.dispose();
     _durationNotifier.dispose();
     _playerStateNotifier.dispose();
@@ -66,14 +65,9 @@ class _AudioRecorderDialogPageState
   Widget buildContent() {
     return SizedBox(
       width: double.maxFinite,
-      child: RawScrollbar(
-        thickness: 3,
-        thumbVisibility: true,
-        controller: _scrollController,
-        child: _audioFile == null || _isRecording
-            ? buildDisabledPlayer()
-            : buildAudioPlayer(),
-      ),
+      child: _audioFile == null || _isRecording
+          ? buildDisabledPlayer()
+          : buildAudioPlayer(),
     );
   }
 
@@ -90,14 +84,21 @@ class _AudioRecorderDialogPageState
   Widget buildAudioPlayer() {
     return SizedBox(
       height: 48,
-      child: Row(
-        children: [
-          buildPlayButton(),
-          buildDurationAndPosition(),
-          Expanded(
-            child: buildSlider(),
-          ),
-        ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final bool showTime =
+              constraints.maxWidth >= _playerTimeWidthThreshold;
+
+          return Row(
+            children: [
+              buildPlayButton(),
+              if (showTime) buildDurationAndPosition(),
+              Expanded(
+                child: buildSlider(),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -234,13 +235,12 @@ class _AudioRecorderDialogPageState
           max = 1.0;
         }
 
-        return Expanded(
-          child: Slider(
-              value: sliderValue <= max ? sliderValue : 0.0,
-              max: max,
-              onChanged: (progress) {
-                _audioPlayer.seek(Duration(milliseconds: progress.floor()));
-              }),
+        return Slider(
+          value: sliderValue <= max ? sliderValue : 0.0,
+          max: max,
+          onChanged: (progress) {
+            _audioPlayer.seek(Duration(milliseconds: progress.floor()));
+          },
         );
       },
     );
@@ -272,46 +272,54 @@ class _AudioRecorderDialogPageState
     return SizedBox(
       height: 48,
       child: IgnorePointer(
-        child: Row(
-          children: [
-            if (_isRecording)
-              Container(
-                height: 48,
-                width: 48,
-                padding: const EdgeInsets.all(16),
-                child: const CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation(Colors.red),
-                ),
-              )
-            else
-              Opacity(
-                opacity: 0.5,
-                child: IconButton(
-                  icon: Icon(
-                    Icons.play_arrow_outlined,
-                    size: 24,
-                    color: theme.unselectedWidgetColor,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final bool showTime =
+                constraints.maxWidth >= _playerTimeWidthThreshold;
+
+            return Row(
+              children: [
+                if (_isRecording)
+                  Container(
+                    height: 48,
+                    width: 48,
+                    padding: const EdgeInsets.all(16),
+                    child: const CircularProgressIndicator(
+                      valueColor: AlwaysStoppedAnimation(Colors.red),
+                    ),
+                  )
+                else
+                  Opacity(
+                    opacity: 0.5,
+                    child: IconButton(
+                      icon: Icon(
+                        Icons.play_arrow_outlined,
+                        size: 24,
+                        color: theme.unselectedWidgetColor,
+                      ),
+                      onPressed: null,
+                    ),
                   ),
-                  onPressed: null,
+                if (showTime)
+                  const Opacity(
+                    opacity: 0.5,
+                    child: Text(
+                      '--:-- / --:--',
+                    ),
+                  ),
+                Expanded(
+                  child: Opacity(
+                    opacity: 0.5,
+                    child: Slider(
+                      value: 0,
+                      thumbColor: Theme.of(context).unselectedWidgetColor,
+                      onChanged: (value) {},
+                    ),
+                  ),
                 ),
-              ),
-            const Opacity(
-              opacity: 0.5,
-              child: Text(
-                '--:-- / --:--',
-              ),
-            ),
-            Expanded(
-              child: Opacity(
-                opacity: 0.5,
-                child: Slider(
-                  value: 0,
-                  thumbColor: Theme.of(context).unselectedWidgetColor,
-                  onChanged: (value) {},
-                ),
-              ),
-            ),
-          ],
+              ],
+            );
+          },
         ),
       ),
     );

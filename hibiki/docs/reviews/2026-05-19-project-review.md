@@ -690,3 +690,24 @@
 
 ### Next Scope
 - Continue Windows UI review with media item editing and audio recorder dialogs, where row density and image/audio controls are more likely to produce compact-window overflow.
+
+## Round 31: Audio Recorder Compact Dialog Fix
+
+### Scope
+- `hibiki/lib/src/pages/implementations/audio_recorder_page.dart`
+- `hibiki/test/pages/audio_recorder_page_test.dart`
+- Audio recorder dialog under compact Windows-sized surfaces.
+
+### Findings
+
+#### HBK-AUDIT-043
+- severity: medium
+- status: fixed
+- files: `hibiki/lib/src/pages/implementations/audio_recorder_page.dart`, `hibiki/test/pages/audio_recorder_page_test.dart`
+- root cause: `AudioRecorderDialogPage` wrapped a non-scrollable player row in `RawScrollbar` with a private `ScrollController`, so Flutter could not attach a `ScrollPosition`. The same player row also always rendered the fixed `--:-- / --:--` time label next to a slider, which overflowed in a 320x240 compact desktop window.
+- impact: opening the audio recorder dialog in a small Windows window could throw layout/debug exceptions and clip player controls. This was a real widget-test reproduction, not a screenshot-only conclusion.
+- fix: removed the invalid scrollbar/controller, kept the audio player as a bounded row, moved the slider flex ownership to the row, and hid the time label below the compact width threshold so the primary play/record and slider controls remain visible.
+- verification: the new compact widget test first failed with a `RenderFlex overflowed by 1.3 pixels` error and `Scrollbar's ScrollController has no ScrollPosition attached`. After the fix, `flutter test test/pages/audio_recorder_page_test.dart` passed with 1 test.
+
+### Next Scope
+- Continue Windows UI review with media item editing, especially the cover override field where an image preview and two icon buttons share a `TextField.suffixIcon`.
