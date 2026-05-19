@@ -986,3 +986,59 @@
 
 ### Next Scope
 - Continue Windows UI review with media edit dialog shell and remaining settings confirmation dialogs.
+
+## Round 56: Audiobook SrtBook Fallback & Import Atomicity Code Review
+
+### Scope
+- Commits: `22f916ac`, `43ea6f48`, `5d25bc47`, `905b0909`
+- `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart` — `_resolveAudioSlot`, `_primeAudioCuesForCurrentBook`, `_initSrtBookController`, `_buildSrtChapterMap`, `_onCueChanged`, `_syncPositionFromCurrentCue`, `_restoreFromCurrentAudioCue`, `_toggleLyricsMode`, `_exitLyricsMode`, `_handleCueCrossChapter`, `_handleBoundarySkip`, `dispose`
+- `hibiki/lib/src/media/audiobook/audiobook_import_dialog.dart` — `_parseCues`, `_doImport`, `_enterReplaceSubtitleMode`
+- `hibiki/lib/src/audiobook/audiobook_repository.dart` — `deleteAudiobook`, `saveAudiobook`, `saveCues`
+- `packages/hibiki_audio/lib/src/matching/cues_to_epub.dart` — `splitChapters`
+- All 17 i18n locale files — `audio_panel_pick_new_subtitle` key
+
+### Findings
+
+#### HBK-AUDIT-057 — All five original changes verified correct
+- severity: info
+- status: verified
+- files: `reader_hoshi_page.dart`, `audiobook_import_dialog.dart`, `audiobook_repository.dart`
+- summary:
+  1. `_resolveAudioSlot`: Independent `if` checks (not `else if`) — when Audiobook exists but has no audio files, `_initAudiobookController` returns without setting `_audiobookController`, so the second `if (_audiobookController == null && srt != null)` correctly falls back to SrtBook. ✅
+  2. `_primeAudioCuesForCurrentBook`: Detects flat `srt://default` cues via `allCues.every((c) => c.chapterHref == SrtParser.defaultChapter)`, loads all cues as chapter cues to avoid empty chapter-filtered result. ✅
+  3. `_initSrtBookController`: 5 preference reads (`followAudio`, `delayMs`, `speed`, `positionMs`, `imagePauseSec`) via `Future.wait` + 5 persistence callbacks (`onPositionWrite`, `onDelayPersist`, `onSpeedPersist`, `onImagePausePersist`, `onFollowAudioPersist`). All callbacks have explicit type annotations. ✅
+  4. `deleteAudiobook`: Delegates to `_db.deleteAudiobookByBookUid()` (which internally deletes cues then audiobook) + filesystem cleanup. No redundant transaction wrapper. ✅
+  5. Import flow: `_parseCues` returns `({health, cues})` record without writing to database. `_doImport` calls `saveAudiobook` → `saveCues` → `updateHealthOverlay` in correct order. "替换字幕" button via `_enterReplaceSubtitleMode` preserves existing audio sources and pre-populates alignment path. ✅
+- verification: flutter analyze (0 errors/warnings), flutter test (786/786 passed)
+
+#### HBK-AUDIT-058 — Cross-chapter sync parity between Sasayaki and SRT paths
+- severity: info
+- status: verified
+- files: `reader_hoshi_page.dart` lines 1797–1832
+- summary: Both Sasayaki and SRT cross-chapter paths in `_onCueChanged` call all three sync methods (`_syncPositionFromCurrentCue`, `_syncFloatingLyric`, `_syncMediaNotification`). Design difference is intentional: Sasayaki relies on controller's `onCrossChapter` callback for chapter navigation; SRT handles navigation directly in `_onCueChanged` because the controller has no SRT chapter awareness. SRT path correctly gates navigation on `shouldRevealCurrentCue && !_restoreInFlight`.
+
+#### HBK-AUDIT-059 — Empty cue guard in _buildSrtChapterMap
+- severity: info
+- status: verified
+- files: `reader_hoshi_page.dart` line 491, `cues_to_epub.dart` line 96
+- summary: `CuesToEpub.splitChapters([])` returns `[[]]` (list with one empty list). `_buildSrtChapterMap` has an early `if (cues.isEmpty) return` guard that prevents `.first` on the empty inner list. The guard was added in commit `905b0909`. ✅
+
+#### HBK-AUDIT-060 — Import atomicity is order-correct but not transactional
+- severity: low
+- status: accepted
+- files: `audiobook_import_dialog.dart` lines 692–700
+- root cause: `saveAudiobook` → `saveCues` → `updateHealthOverlay` are three independent database calls without a wrapping transaction. If `saveCues` fails after `saveAudiobook` succeeds, an audiobook record exists with stale/no cues.
+- impact: Extremely narrow failure window (milliseconds between calls). Both `saveAudiobook` (upsert) and `saveCues` (replace-all) are idempotent — re-importing recovers cleanly. The old code was worse: `saveCues` ran inside `_parseCues` BEFORE `saveAudiobook`, creating orphan cues on failure.
+- recommendation: Not worth adding a cross-repository transaction at this time. The idempotent nature of both operations makes manual recovery trivial. Mark as accepted risk.
+
+#### HBK-AUDIT-061 — Lifecycle completeness
+- severity: info
+- status: verified
+- files: `reader_hoshi_page.dart` `dispose()` (lines 769–801)
+- summary: All 4 media stream subscriptions (`_playStreamSub`, `_seekStreamSub`, `_skipNextSub`, `_skipPrevSub`) cancelled. Audiobook controller listener removed and controller disposed. Position flushed to persistent storage. Floating lyric hidden and media notification cleared. Wakelock disabled in try/catch. ✅
+
+### Conclusion
+All five targeted changes are correctly implemented and verified by static analysis + 786 unit tests. The commit chain (22f916ac → 43ea6f48 → 5d25bc47 → 905b0909) progressively tightened the implementation from base fix through feature addition, review findings, and edge case guards. One accepted low-severity risk (non-transactional import) is mitigated by idempotent operations. No code changes required.
+
+### Next Scope
+- Runtime verification on emulator: SrtBook fallback path (import SRT-only book), "替换字幕" button flow, play/pause/seek/skip controls, lyrics mode toggle.
