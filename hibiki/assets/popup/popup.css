@@ -171,11 +171,15 @@ body {
 }
 
 .frequency-dict-label {
-    display: none;
+    padding: 2px 4px;
+    background-color: var(--freq-tag-color, #77aaeb);
+    color: #fff;
+    font-weight: 500;
+    white-space: nowrap;
 }
 
 .frequency-values {
-    padding: 4px 4px;
+    padding: 2px 4px;
 }
 
 hr {
@@ -436,7 +440,7 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
 }
 
 .category-section {
-    margin-top: 8px;
+    margin-top: 4px;
 }
 
 .category-body {

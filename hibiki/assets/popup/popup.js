@@ -1117,7 +1117,7 @@ function createFrequencyGroup(freqGroup) {
 function createHarmonicFrequencyTag(frequencies) {
     const rank = getFrequencyHarmonicRank(frequencies);
     return el('span', { className: 'frequency-group harmonic-frequency' }, [
-        el('span', { className: 'frequency-dict-label', textContent: 'Average' }),
+        el('span', { className: 'frequency-dict-label', textContent: 'avg' }),
         el('span', { className: 'frequency-values', textContent: rank })
     ]);
 }
