@@ -34,6 +34,29 @@ void main() {
     expect(popupRect.bottom, lessThanOrEqualTo(594));
   });
 
+  test('calcPopupPosition respects bottomReserve', () {
+    final Rect popupRect = calcPopupPosition(
+      selectionRect: const Rect.fromLTWH(100, 500, 20, 20),
+      screen: const Size(400, 800),
+      bottomReserve: 80,
+    );
+
+    expect(popupRect.bottom, lessThanOrEqualTo(800 - 80));
+  });
+
+  test('calcPopupPosition survives bottomReserve larger than the surface', () {
+    final Rect popupRect = calcPopupPosition(
+      selectionRect: const Rect.fromLTWH(10, 10, 10, 10),
+      screen: const Size(80, 48),
+      bottomReserve: 80,
+    );
+
+    expect(popupRect.left, greaterThanOrEqualTo(0));
+    expect(popupRect.top, greaterThanOrEqualTo(0));
+    expect(popupRect.right, lessThanOrEqualTo(80));
+    expect(popupRect.bottom, lessThanOrEqualTo(48));
+  });
+
   testWidgets('empty popup layer fits a compact surface without overflow', (
     WidgetTester tester,
   ) async {

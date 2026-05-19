@@ -358,3 +358,24 @@
 
 ### Next Scope
 - Continue review with popup WebView result content sizing and nested popup stack behavior after result links/selections.
+
+## Round 17: Reader Popup Bottom Reserve Bounds
+
+### Scope
+- `hibiki/lib/src/pages/implementations/dictionary_popup_layer.dart`
+- `hibiki/test/pages/dictionary_popup_layer_test.dart`
+- Current dirty reader popup bottom-reserve path in `BaseSourcePage` / `ReaderHoshiPage`.
+
+### Findings
+
+#### HBK-AUDIT-027
+- severity: medium
+- status: fixed
+- files: `hibiki/lib/src/pages/implementations/dictionary_popup_layer.dart`, `hibiki/test/pages/dictionary_popup_layer_test.dart`
+- root cause: the current reader popup bottom-reserve path subtracts bottom chrome height from the available popup surface, but `calcPopupPosition()` treated the reserve as always smaller than the surface. If a compact Windows window, transient layout, or oversized bottom chrome made `bottomReserve >= screen.height`, the vertical clamp bounds inverted and threw `Invalid argument(s): 6.0`.
+- impact: the normal reader screenshot can look correct, while compact windows or chrome-heavy layouts can crash or hide lookup popups when the reader tries to avoid the bottom controls.
+- fix: clamp `bottomReserve` to the screen height and derive horizontal and vertical insets separately. Vertical sizing now uses the effective area above the reserved bottom chrome, so the function preserves the bottom-avoidance behavior without letting impossible reserves break popup placement.
+- verification: TDD red check failed with `Invalid argument(s): 6.0` when `bottomReserve` exceeded a compact surface. After the fix, `flutter test test/pages/dictionary_popup_layer_test.dart` passed with 5 tests, full `flutter test` passed with 755 tests, and `flutter build windows --debug` built `build\windows\x64\runner\Debug\hibiki.exe` with the existing `flutter_inappwebview_windows` CMake dev warning.
+
+### Next Scope
+- Continue review with popup WebView result content sizing and nested popup stack behavior after result links/selections.
