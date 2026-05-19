@@ -607,3 +607,23 @@
 
 ### Next Scope
 - Continue Windows UI review with remaining dialog surfaces that still use raw `MediaQuery` sizing or unconstrained `AlertDialog` content, then audit whether any remaining `verified-pass` items need stronger widget/runtime evidence.
+
+## Round 27: AlertDialog Inset Evidence For Compact Width Rule
+
+### Scope
+- `hibiki/test/utils/misc/platform_layout_test.dart`
+- The `desktopDialogContentWidth()` rule introduced in Round 26, checked against real Flutter `AlertDialog` insets on a compact 320x240 desktop-shaped surface.
+
+### Findings
+
+#### HBK-AUDIT-039
+- severity: low
+- status: verified-pass
+- files: `hibiki/test/utils/misc/platform_layout_test.dart`
+- root cause: no production defect found in this round. The risk was that the new 256px compact dialog content floor from Round 26 might still be too wide after `AlertDialog` applies its own default inset padding, which would turn a math-only fix into a real compact-window overflow.
+- impact: if this had failed, the shared dialog width helper would need to account for dialog insets rather than only raw window width. That would mean Round 26 had improved text-field usability but not actually proven compact-window safety.
+- fix: no production code change. Added a widget test that renders `AlertDialog(content: SizedBox(width: desktopDialogContentWidth(320)))` in a 320x240 test viewport and asserts the content rect stays inside the screen with no Flutter exception.
+- verification: `flutter test test/utils/misc/platform_layout_test.dart` passed with 11 tests. `flutter build windows --debug` built `build\windows\x64\runner\Debug\hibiki.exe` with the existing third-party `flutter_inappwebview_windows` CMake dev warning.
+
+### Next Scope
+- Continue Windows UI review with other dialogs and sheets that still lack compact-window widget evidence, prioritizing surfaces that collect text input or host scrollable content.

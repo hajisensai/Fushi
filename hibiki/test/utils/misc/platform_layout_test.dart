@@ -1,4 +1,4 @@
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/utils/misc/platform_utils.dart';
 
@@ -99,6 +99,32 @@ void main() {
     test('keeps compact dialog fields usable', () {
       expect(desktopDialogContentWidth(320), 256);
       expect(desktopDialogContentWidth(1200), 420);
+    });
+
+    testWidgets('keeps compact AlertDialog content inside screen insets', (
+      WidgetTester tester,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(320, 240);
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AlertDialog(
+            content: SizedBox(
+              key: childKey,
+              width: desktopDialogContentWidth(320),
+              height: 40,
+            ),
+          ),
+        ),
+      );
+
+      expect(tester.takeException(), isNull);
+
+      final Rect contentRect = tester.getRect(find.byKey(childKey));
+      expect(contentRect.left, greaterThanOrEqualTo(0));
+      expect(contentRect.right, lessThanOrEqualTo(320));
     });
 
     testWidgets('constrains expanded desktop content to max width', (
