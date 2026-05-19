@@ -115,4 +115,31 @@ void main() {
     );
     await tester.pump();
   });
+
+  testWidgets('exposes stable popup search targets for desktop drive', (
+    WidgetTester tester,
+  ) async {
+    final AppModel appModel = AppModel();
+
+    await tester.pumpWidget(
+      buildTestApp(
+        appModel: appModel,
+        home: PopupDictionaryPage(
+          searchTerm: 'search',
+          closeInApp: () {},
+          autoSearchOnOpen: false,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey<String>('popup_dictionary_search_field')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('popup_dictionary_search_button')),
+      findsOneWidget,
+    );
+  });
 }

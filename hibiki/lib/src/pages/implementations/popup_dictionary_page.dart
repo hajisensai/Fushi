@@ -167,6 +167,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
           ),
         Expanded(
           child: TextField(
+            key: const ValueKey<String>('popup_dictionary_search_field'),
             controller: _searchController,
             focusNode: _searchFocusNode,
             style: TextStyle(color: textColor, fontSize: 14),
@@ -186,6 +187,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
           width: 36,
           height: 36,
           child: IconButton(
+            key: const ValueKey<String>('popup_dictionary_search_button'),
             icon: Icon(Icons.search, color: hintColor, size: 20),
             padding: EdgeInsets.zero,
             onPressed: () => _onSearchSubmit(_searchController.text),

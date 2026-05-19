@@ -251,3 +251,24 @@
 
 ### Next Scope
 - Continue auditing desktop lookup UX at the widget/logic level first: popup sizing under small Windows windows, search submission inside the in-app dialog, and nested result popups. Full Windows drive should still wait until it will not steal focus from the user's active desktop session.
+
+## Round 12: Desktop Popup Search Targets
+
+### Scope
+- `hibiki/lib/src/pages/implementations/popup_dictionary_page.dart`
+- `hibiki/test/pages/popup_dictionary_page_test.dart`
+- Windows/CJK popup dictionary search targeting without launching a focused desktop runner.
+
+### Findings
+
+#### HBK-AUDIT-022
+- severity: medium
+- status: fixed
+- files: `hibiki/lib/src/pages/implementations/popup_dictionary_page.dart`, `hibiki/test/pages/popup_dictionary_page_test.dart`
+- root cause: the new in-app desktop lookup dialog exposed a keyed close button, but its search `TextField` and search `IconButton` were still anonymous widgets. Future Windows drive tests would have to fall back to scanning for the first text field or search icon, repeating the same false-targeting problem already fixed for the home dictionary page.
+- impact: CJK lookup validation inside the desktop popup could type into or tap the wrong widget if another text field or search icon is present in the same widget tree, producing flaky or false-positive Windows UI evidence.
+- fix: added stable `ValueKey<String>` identifiers for `popup_dictionary_search_field` and `popup_dictionary_search_button`.
+- verification: TDD red check failed because `popup_dictionary_search_field` was missing. After the fix, `flutter test test/pages/popup_dictionary_page_test.dart` passed with 3 tests. This is a widget-level non-focus-stealing verification path; no Windows runner was launched.
+
+### Next Scope
+- Continue desktop popup lookup review with search submission/result evidence and nested popup positioning under constrained Windows dialog sizes.
