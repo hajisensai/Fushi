@@ -3647,7 +3647,7 @@ class AppModel with ChangeNotifier {
 
   /// Whether to show harmonic mean frequency aggregation.
   bool get harmonicFrequency {
-    return _getPref('harmonic_frequency', defaultValue: true);
+    return _getPref('harmonic_frequency', defaultValue: false);
   }
 
   /// Toggle harmonic frequency aggregation.

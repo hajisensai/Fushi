@@ -440,11 +440,11 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
 }
 
 .category-section {
-    margin-top: 4px;
+    margin-top: 2px;
 }
 
 .category-body {
-    padding: 2px 0 0 0;
+    padding: 0;
 }
 
 .category-body .tag-row {
