@@ -142,4 +142,72 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets('popup search bar submits trimmed query from button', (
+    WidgetTester tester,
+  ) async {
+    final AppModel appModel = AppModel();
+    final TextEditingController controller =
+        TextEditingController(text: '  日本語  ');
+    final FocusNode focusNode = FocusNode();
+    final List<String> submitted = <String>[];
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+
+    await tester.pumpWidget(
+      buildTestApp(
+        appModel: appModel,
+        home: Scaffold(
+          body: PopupDictionarySearchBar(
+            controller: controller,
+            focusNode: focusNode,
+            onClose: null,
+            onSubmit: submitted.add,
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('popup_dictionary_search_button')),
+    );
+    await tester.pump();
+
+    expect(submitted, <String>['日本語']);
+  });
+
+  testWidgets('popup search bar submits trimmed query from keyboard action', (
+    WidgetTester tester,
+  ) async {
+    final AppModel appModel = AppModel();
+    final TextEditingController controller = TextEditingController();
+    final FocusNode focusNode = FocusNode();
+    final List<String> submitted = <String>[];
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+
+    await tester.pumpWidget(
+      buildTestApp(
+        appModel: appModel,
+        home: Scaffold(
+          body: PopupDictionarySearchBar(
+            controller: controller,
+            focusNode: focusNode,
+            onClose: null,
+            onSubmit: submitted.add,
+          ),
+        ),
+      ),
+    );
+
+    final Finder searchField = find.byKey(
+      const ValueKey<String>('popup_dictionary_search_field'),
+    );
+    await tester.showKeyboard(searchField);
+    await tester.enterText(searchField, '  keyboard  ');
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pump();
+
+    expect(submitted, <String>['keyboard']);
+  });
 }

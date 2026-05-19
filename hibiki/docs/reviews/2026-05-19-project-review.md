@@ -272,3 +272,24 @@
 
 ### Next Scope
 - Continue desktop popup lookup review with search submission/result evidence and nested popup positioning under constrained Windows dialog sizes.
+
+## Round 13: Desktop Popup Search Submit
+
+### Scope
+- `hibiki/lib/src/pages/implementations/popup_dictionary_page.dart`
+- `hibiki/test/pages/popup_dictionary_page_test.dart`
+- Windows/CJK popup dictionary search submission without launching a focused desktop runner.
+
+### Findings
+
+#### HBK-AUDIT-023
+- severity: medium
+- status: fixed
+- files: `hibiki/lib/src/pages/implementations/popup_dictionary_page.dart`, `hibiki/test/pages/popup_dictionary_page_test.dart`
+- root cause: Round 12 proved that desktop popup search controls were targetable, but not that either the icon button or keyboard search action actually submitted the user's query into the lookup flow. That left a UI false-state hole: a Windows test could type into a visible field and still never prove the submit contract.
+- impact: CJK popup lookup validation could pass on widget presence alone while the real button or Enter/search-key path was disconnected, whitespace-polluted, or untestable without starting a focus-stealing Windows runner.
+- fix: extracted the search row into `PopupDictionarySearchBar`, kept the same stable keys, and made both the icon button and `TextInputAction.search` use one typed submit path that trims input and ignores empty queries before delegating to the page search handler.
+- verification: TDD red check failed as expected because `PopupDictionarySearchBar` did not exist. After the fix, `flutter test test/pages/popup_dictionary_page_test.dart` passed with 5 tests, including button-submit and keyboard-submit cases. Full `flutter test` passed with 748 tests, and `flutter build windows --debug` built `build\windows\x64\runner\Debug\hibiki.exe` with existing CMake/WebView2/native warnings. This remains a widget-level non-focus-stealing verification path.
+
+### Next Scope
+- Continue desktop popup lookup review with nested result popup positioning and constrained Windows dialog sizes; avoid screenshot-only conclusions unless backed by bounds or widget evidence.
