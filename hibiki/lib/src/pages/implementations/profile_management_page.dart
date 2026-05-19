@@ -218,27 +218,69 @@ class _ProfileManagementPageState extends BasePageState<ProfileManagementPage> {
   ) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(t.profile_delete),
-        content: Text(t.profile_confirm_delete(name: name)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(t.dialog_close),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(
-              t.profile_delete,
-              style: TextStyle(color: theme.colorScheme.error),
-            ),
-          ),
-        ],
+      builder: (ctx) => ProfileDeleteDialog(
+        profileName: name,
+        onConfirm: () => Navigator.pop(ctx, true),
       ),
     );
     if (confirmed == true) {
       await vm.deleteProfile(id);
     }
+  }
+}
+
+@visibleForTesting
+class ProfileDeleteDialog extends StatelessWidget {
+  const ProfileDeleteDialog({
+    required this.profileName,
+    required this.onConfirm,
+    super.key,
+  });
+
+  final String profileName;
+  final VoidCallback onConfirm;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return AlertDialog(
+      titlePadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+      contentPadding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+      actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      buttonPadding: const EdgeInsets.symmetric(horizontal: 4),
+      title: Text(
+        t.profile_delete,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      content: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: double.maxFinite,
+          maxHeight: MediaQuery.of(context).size.height * 0.34,
+        ),
+        child: SingleChildScrollView(
+          child: Text(
+            t.profile_confirm_delete(name: profileName),
+            style: theme.textTheme.bodySmall,
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: Text(t.dialog_close),
+        ),
+        FilledButton(
+          onPressed: onConfirm,
+          style: FilledButton.styleFrom(
+            backgroundColor: theme.colorScheme.errorContainer,
+            foregroundColor: theme.colorScheme.onErrorContainer,
+          ),
+          child: Text(t.profile_delete),
+        ),
+      ],
+    );
   }
 }
 

@@ -34,4 +34,27 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.byType(TextField), findsOneWidget);
   });
+
+  testWidgets('profile delete dialog fits a compact desktop window', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 240);
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      buildApp(
+        const ProfileDeleteDialog(
+          profileName:
+              'Very long profile name used to test compact Windows delete confirmation layout',
+          onConfirm: _noop,
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(find.text(t.profile_delete), findsWidgets);
+  });
 }
+
+void _noop() {}

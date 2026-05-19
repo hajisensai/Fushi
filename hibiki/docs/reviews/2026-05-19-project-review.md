@@ -902,3 +902,24 @@
 
 ### Next Scope
 - Continue Windows UI review with media item dialogs and remaining large-content settings dialogs.
+
+## Round 41: Profile Delete Dialog Compact Layout Fix
+
+### Scope
+- `hibiki/lib/src/pages/implementations/profile_management_page.dart`
+- `hibiki/test/pages/profile_management_page_test.dart`
+- Profile deletion confirmation under compact Windows-sized surfaces.
+
+### Findings
+
+#### HBK-AUDIT-053
+- severity: low
+- status: fixed
+- files: `hibiki/lib/src/pages/implementations/profile_management_page.dart`, `hibiki/test/pages/profile_management_page_test.dart`
+- root cause: the profile delete confirmation still used an inline default `AlertDialog`, unlike the already compacted profile name dialog. The long profile name lived in an unconstrained content body and the dialog could not be tested directly.
+- impact: deleting a profile with a long name in a small Windows window could produce cramped or overflow-prone confirmation UI, and later changes could regress it without a focused widget test.
+- fix: extracted `ProfileDeleteDialog`, constrained and scrolled the message body, ellipsized the title, reduced action padding, and used destructive filled-button styling.
+- verification: the compact widget test first failed because `ProfileDeleteDialog` did not exist. After extraction and compact layout, `flutter test test/pages/profile_management_page_test.dart` passed with 2 tests.
+
+### Next Scope
+- Continue Windows UI review with collection delete confirmations and remaining default confirmation dialogs.
