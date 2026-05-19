@@ -715,7 +715,6 @@
     "update_auto_install": "Tự động cài đặt bản cập nhật",
     "update_beta_channel": "Nhận bản cập nhật thử nghiệm",
     "debug_log_toggle": "Bật nhật ký gỡ lỗi",
-    "disable_dialog_scrim": "Tắt lớp phủ popup (e-ink)",
     "native_dictionary_popup": "Popup từ điển gốc (e-ink)",
     "update_settings": "Cài đặt cập nhật",
     "anki_settings_label": "Cài đặt Anki",

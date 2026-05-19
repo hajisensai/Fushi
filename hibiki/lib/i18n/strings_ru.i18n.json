@@ -642,7 +642,6 @@
     "update_auto_install": "Автоустановка обновлений",
     "update_beta_channel": "Получать бета-обновления",
     "debug_log_toggle": "Включить журнал отладки",
-    "disable_dialog_scrim": "Отключить затемнение (e-ink)",
     "native_dictionary_popup": "Нативное всплывающее окно словаря (e-ink)",
     "update_settings": "Настройки обновлений",
     "anki_settings_label": "Настройки Anki",

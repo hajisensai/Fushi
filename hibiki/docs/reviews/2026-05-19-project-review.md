@@ -541,3 +541,24 @@
 
 ### Next Scope
 - Continue only with clean, directly Windows/UI-related review items; leave i18n key cleanup for a separate encoding-safe pass.
+
+## Round 24: Dead Popup Scrim Locale Key Cleanup
+
+### Scope
+- `hibiki/lib/i18n/strings*.i18n.json`
+- `hibiki/lib/i18n/strings.g.dart`
+- The remaining dirty locale cleanup for the removed popup scrim setting.
+
+### Findings
+
+#### HBK-AUDIT-036
+- severity: low
+- status: fixed
+- files: `hibiki/lib/i18n/strings*.i18n.json`, `hibiki/lib/i18n/strings.g.dart`
+- root cause: `disable_dialog_scrim` was left behind in all Slang locale sources and the generated dispatch file after the popup scrim setting path was removed. The first dirty working-tree state also introduced UTF-8 BOM markers and huge generated-file formatting churn, which would have made a simple cleanup unsafe to commit.
+- impact: the stale key did not currently affect runtime UI, but keeping it confused the Windows popup cleanup by implying a scrim setting still existed. Committing the BOM/churn version would also make future i18n reviews noisy and brittle.
+- fix: regenerate Slang from the existing locale sources, remove only the dead `disable_dialog_scrim` key from each locale JSON, rewrite locale JSON as UTF-8 without BOM, and regenerate `strings.g.dart` so only the corresponding getters and flat-map branches disappear.
+- verification: `rg -n "disable_dialog_scrim|disableDialogScrim|dialog scrim|scrim" hibiki/lib hibiki/test hibiki/android hibiki/ios` produced no matches. A PowerShell `ConvertFrom-Json` pass over every `*.i18n.json` succeeded and confirmed the key is absent. Byte-prefix checks confirmed locale JSON starts with `{` (`7B 0D 0A`), not BOM (`EF BB BF`). `dart run slang` succeeded after the cleanup.
+
+### Next Scope
+- Remaining uncommitted files are local iOS Flutter environment files and `.codex-test/screenshots/`; neither is a Windows UI source change. Continue broad Windows UI review from committed source and tests rather than staging local environment noise.

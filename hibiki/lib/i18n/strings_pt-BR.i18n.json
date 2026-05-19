@@ -715,7 +715,6 @@
     "update_auto_install": "Instalar atualizações automaticamente",
     "update_beta_channel": "Receber atualizações beta",
     "debug_log_toggle": "Ativar log de depuração",
-    "disable_dialog_scrim": "Desativar sobreposição do popup (e-ink)",
     "native_dictionary_popup": "Popup de dicionário nativo (e-ink)",
     "update_settings": "Configurações de Atualização",
     "anki_settings_label": "Configurações do Anki",
