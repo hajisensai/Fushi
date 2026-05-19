@@ -488,6 +488,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   }
 
   (Map<int, int>, List<(int, int)>) _buildSrtChapterMap(List<AudioCue> cues) {
+    if (cues.isEmpty) return (<int, int>{}, <(int, int)>[]);
     final Map<int, int> map = <int, int>{};
     final List<List<AudioCue>> chapters = CuesToEpub.splitChapters(cues);
     final List<(int, int)> ranges = <(int, int)>[];
@@ -526,6 +527,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       final int? srtChapter = _srtCueChapterMap![cue.sentenceIndex];
       if (srtChapter != null &&
           srtChapter >= 0 &&
+          srtChapter < _srtChapterRanges!.length &&
           srtChapter < _book!.chapters.length) {
         _currentChapter = srtChapter;
         final (int first, int last) = _srtChapterRanges![srtChapter];
@@ -1798,6 +1800,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           SasayakiMatchCodec.tryDecode(cue.textFragmentId);
       if (frag != null && frag.sectionIndex != _currentChapter) {
         AudiobookBridge.highlight(_controller!);
+        _syncPositionFromCurrentCue();
+        _syncFloatingLyric(controller);
+        _syncMediaNotification(controller);
         return;
       }
       if (frag == null && _srtCueChapterMap != null) {
