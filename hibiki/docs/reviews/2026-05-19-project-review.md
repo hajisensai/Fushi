@@ -711,3 +711,24 @@
 
 ### Next Scope
 - Continue Windows UI review with media item editing, especially the cover override field where an image preview and two icon buttons share a `TextField.suffixIcon`.
+
+## Round 32: Media Item Cover Field Compact Layout Fix
+
+### Scope
+- `hibiki/lib/src/pages/implementations/media_item_edit_dialog_page.dart`
+- `hibiki/test/pages/media_item_edit_dialog_page_test.dart`
+- Media item edit dialog cover override field under compact Windows-sized surfaces.
+
+### Findings
+
+#### HBK-AUDIT-044
+- severity: medium
+- status: fixed
+- files: `hibiki/lib/src/pages/implementations/media_item_edit_dialog_page.dart`, `hibiki/test/pages/media_item_edit_dialog_page_test.dart`
+- root cause: the cover override `TextField` built a large inline `suffixIcon` row containing an image preview and two wide icon buttons, with `Expanded` nested inside a suffix slot that should be explicitly bounded. That made the field hard to reason about and left compact desktop windows vulnerable to suffix overflow or hidden controls.
+- impact: editing a media item in a small Windows window could crowd or clip the cover preview/actions, especially because the cover field shared the same dialog width as title editing and action buttons.
+- fix: extracted `MediaItemCoverOverrideField`, constrained the suffix icon area, replaced the unbounded `Expanded` preview with a bounded `Flexible` preview, and kept the pick/undo actions in the same production path. The first attempt to test the full `MediaItemEditDialogPage` was discarded because the Reader/Hoshi/AppModel dependency chain hung during widget-test loading and did not produce layout evidence.
+- verification: `flutter test test/pages/media_item_edit_dialog_page_test.dart --timeout 30s` passed with 1 focused compact-width widget test for the extracted production cover field.
+
+### Next Scope
+- Continue Windows UI review with remaining profile/media edit input surfaces and any dialog that still combines image/audio controls with narrow desktop widths.

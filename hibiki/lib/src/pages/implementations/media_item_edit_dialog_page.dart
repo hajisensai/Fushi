@@ -33,13 +33,10 @@ class _MediaItemEditDialogPageState
   bool _clearOverrideImage = false;
 
   final TextEditingController _nameOverrideController = TextEditingController();
-  final TextEditingController _coverOverrideController =
-      TextEditingController(text: '-');
 
   @override
   void dispose() {
     _nameOverrideController.dispose();
-    _coverOverrideController.dispose();
     super.dispose();
   }
 
@@ -96,59 +93,30 @@ class _MediaItemEditDialogPageState
               ),
             ),
           ),
-          TextField(
-            readOnly: true,
-            controller: _coverOverrideController,
-            style: const TextStyle(color: Colors.transparent),
-            decoration: InputDecoration(
-              floatingLabelBehavior: FloatingLabelBehavior.always,
-              suffixIcon: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Expanded(
-                    child: Padding(
-                      padding: Spacing.of(context).insets.all.small,
-                      child: Image(
-                          image: _coverImageProvider ?? _defaultImageProvider!,
-                          fit: BoxFit.fitHeight),
-                    ),
-                  ),
-                  const SizedBox(width: 5),
-                  JidoujishoIconButton(
-                    tooltip: t.pick_image,
-                    isWideTapArea: true,
-                    icon: Icons.file_upload,
-                    onTap: () async {
-                      ImagePicker imagePicker = ImagePicker();
-                      final pickedFile = await imagePicker.pickImage(
-                          source: ImageSource.gallery);
-                      if (pickedFile != null) {
-                        _newFile = File(pickedFile.path);
-                        _coverImageProvider = FileImage(_newFile!);
-                        if (_newFile != null) {
-                          _clearOverrideImage = false;
-                        }
-                      }
+          MediaItemCoverOverrideField(
+            imageProvider: _coverImageProvider ?? _defaultImageProvider!,
+            onPickImage: () async {
+              ImagePicker imagePicker = ImagePicker();
+              final pickedFile = await imagePicker.pickImage(
+                source: ImageSource.gallery,
+              );
+              if (pickedFile != null) {
+                _newFile = File(pickedFile.path);
+                _coverImageProvider = FileImage(_newFile!);
+                if (_newFile != null) {
+                  _clearOverrideImage = false;
+                }
+              }
 
-                      setState(() {});
-                    },
-                  ),
-                  JidoujishoIconButton(
-                    tooltip: t.undo,
-                    isWideTapArea: true,
-                    icon: Icons.undo,
-                    onTap: () async {
-                      _newFile = null;
-                      _coverImageProvider = null;
-                      _clearOverrideImage = true;
+              setState(() {});
+            },
+            onUndo: () async {
+              _newFile = null;
+              _coverImageProvider = null;
+              _clearOverrideImage = true;
 
-                      setState(() {});
-                    },
-                  ),
-                ],
-              ),
-            ),
+              setState(() {});
+            },
           ),
         ],
       ),
@@ -198,5 +166,62 @@ class _MediaItemEditDialogPageState
       navigator.pop();
       mediaSource.mediaType.refreshTab();
     }
+  }
+}
+
+@visibleForTesting
+class MediaItemCoverOverrideField extends StatelessWidget {
+  const MediaItemCoverOverrideField({
+    required this.imageProvider,
+    required this.onPickImage,
+    required this.onUndo,
+    super.key,
+  });
+
+  final ImageProvider imageProvider;
+  final Future<void> Function()? onPickImage;
+  final Future<void> Function()? onUndo;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      readOnly: true,
+      style: const TextStyle(color: Colors.transparent),
+      decoration: InputDecoration(
+        floatingLabelBehavior: FloatingLabelBehavior.always,
+        suffixIconConstraints: const BoxConstraints(
+          minHeight: 48,
+          maxHeight: 56,
+          minWidth: 144,
+          maxWidth: 180,
+        ),
+        suffixIcon: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Padding(
+                padding: Spacing.of(context).insets.all.small,
+                child: Image(
+                  image: imageProvider,
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
+            JidoujishoIconButton(
+              tooltip: t.pick_image,
+              isWideTapArea: true,
+              icon: Icons.file_upload,
+              onTap: onPickImage,
+            ),
+            JidoujishoIconButton(
+              tooltip: t.undo,
+              isWideTapArea: true,
+              icon: Icons.undo,
+              onTap: onUndo,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
