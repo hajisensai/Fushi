@@ -113,18 +113,24 @@ endif()
 
 #### 2b. Create macOS podspec
 
-File: `native/hoshidicts/hoshidicts_macos.podspec`
+File: `native/hoshidicts/hoshidicts_native.podspec`
+
+> **Note:** macOS and iOS share the same podspec file name (`hoshidicts_native.podspec`) because CocoaPods resolves by `s.name`, not filename. Use a single podspec with `if defined?(osx)` platform detection, or separate directories. See Phase 3 plan for the iOS variant.
 
 ```ruby
 Pod::Spec.new do |s|
   s.name             = 'hoshidicts_native'
   s.version          = '1.0.0'
-  s.summary          = 'Hoshidicts C++ dictionary engine for macOS'
+  s.summary          = 'Hoshidicts C++ dictionary engine'
   s.homepage         = 'https://github.com/user/hibiki'
   s.license          = { :type => 'MIT' }
   s.author           = 'Hibiki'
   s.source           = { :path => '.' }
-  s.platform         = :osx, '10.15'
+
+  # Multi-platform: shared with iOS (Phase 3)
+  s.ios.deployment_target = '12.0'
+  s.osx.deployment_target = '10.15'
+  s.static_framework = true  # Required for iOS; harmless for macOS
 
   s.source_files     = 'hoshidicts_src/**/*.{cpp,hpp,h,c}',
                         'hoshidicts_ffi.cpp',
@@ -133,7 +139,9 @@ Pod::Spec.new do |s|
                         'hoshidicts_external/xxHash/*.{h,c}'
   s.header_mappings_dir = 'hoshidicts_include'
 
-  s.dependency 'FlutterMacOS'
+  # Platform-specific Flutter dependency
+  s.ios.dependency 'Flutter'
+  s.osx.dependency 'FlutterMacOS'
 
   s.pod_target_xcconfig = {
     'CLANG_CXX_LANGUAGE_STANDARD' => 'c++23',
@@ -149,8 +157,6 @@ Pod::Spec.new do |s|
     ].join(' '),
   }
 
-  # Vendored static libs for zstd and libdeflate (pre-built or compiled in separate target)
-  # Alternative: include source files directly
   s.subspec 'zstd' do |zstd|
     zstd.source_files = 'hoshidicts_external/zstd/lib/**/*.{c,h}'
     zstd.header_mappings_dir = 'hoshidicts_external/zstd/lib'
@@ -390,6 +396,7 @@ Audiobook plays → subtitles sync → TTS speaks selected text
 - [ ] Keyboard shortcuts work (page turn, Cmd+D, Cmd+E)
 - [ ] macOS menu bar present and functional
 - [ ] Android APK still builds and passes tests (no regression)
+- [ ] Windows build still works (Phase 1 regression check)
 
 ## Estimated Duration
 

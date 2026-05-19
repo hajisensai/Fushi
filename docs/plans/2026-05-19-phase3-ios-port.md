@@ -123,19 +123,24 @@ Create an iOS podspec that compiles hoshidicts C++ source directly into the app 
 
 #### 2a. Create iOS podspec
 
-File: `native/hoshidicts/hoshidicts_ios.podspec`
+File: `native/hoshidicts/hoshidicts_native.podspec` (shared with macOS — same file)
+
+> **Recommended approach:** Use a single multi-platform podspec instead of separate files per platform. CocoaPods resolves `:path` references by `s.name`, so having two files with the same pod name in the same directory causes conflicts.
 
 ```ruby
 Pod::Spec.new do |s|
   s.name             = 'hoshidicts_native'
   s.version          = '1.0.0'
-  s.summary          = 'Hoshidicts C++ dictionary engine for iOS'
+  s.summary          = 'Hoshidicts C++ dictionary engine'
   s.homepage         = 'https://github.com/user/hibiki'
   s.license          = { :type => 'MIT' }
   s.author           = 'Hibiki'
   s.source           = { :path => '.' }
-  s.platform         = :ios, '12.0'
-  s.static_framework = true
+
+  # Multi-platform: macOS dynamic, iOS static
+  s.ios.deployment_target = '12.0'
+  s.osx.deployment_target = '10.15'
+  s.static_framework = true  # Required for iOS; harmless for macOS
 
   s.source_files     = 'hoshidicts_src/**/*.{cpp,hpp,h,c}',
                         'hoshidicts_ffi.cpp',
@@ -144,7 +149,10 @@ Pod::Spec.new do |s|
                         'hoshidicts_external/xxHash/*.{h,c}'
 
   s.header_mappings_dir = 'hoshidicts_include'
-  s.dependency 'Flutter'
+
+  # Platform-specific Flutter dependency
+  s.ios.dependency 'Flutter'
+  s.osx.dependency 'FlutterMacOS'
 
   s.pod_target_xcconfig = {
     'CLANG_CXX_LANGUAGE_STANDARD' => 'c++23',
@@ -158,10 +166,8 @@ Pod::Spec.new do |s|
       '"$(PODS_TARGET_SRCROOT)/hoshidicts_external/libdeflate"',
       '"$(PODS_TARGET_SRCROOT)/hoshidicts_external/zstd/lib"',
     ].join(' '),
-    # Note: bitcode was removed in Xcode 15; no -fembed-bitcode flag needed
   }
 
-  # Include vendored dependencies as source
   s.subspec 'zstd' do |zstd|
     zstd.source_files = 'hoshidicts_external/zstd/lib/**/*.{c,h}'
     zstd.pod_target_xcconfig = {
