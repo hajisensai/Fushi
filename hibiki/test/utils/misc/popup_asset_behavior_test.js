@@ -65,6 +65,10 @@ class FakeElement {
     this.attributes[name] = String(value);
   }
 
+  hasAttribute(name) {
+    return Object.prototype.hasOwnProperty.call(this.attributes, name);
+  }
+
   addEventListener(type, handler) {
     (this.listeners[type] ??= []).push(handler);
   }
@@ -465,12 +469,36 @@ function testFrequencyAndPitchSectionsDoNotRenderCrowdedTitles() {
   assert.equal(pitch.children.some((child) => child.className === 'category-title'), false);
 }
 
+function testStructuredContentTablesUseHorizontalScrollContainer() {
+  const context = loadPopup();
+  const parent = context.document.createElement('div');
+
+  context.renderStructuredContent(parent, {
+    tag: 'table',
+    content: [
+      {
+        tag: 'tr',
+        content: [
+          {tag: 'td', content: 'left'},
+          {tag: 'td', content: 'right'},
+        ],
+      },
+    ],
+  }, null, 'test-dict', false);
+
+  assert.equal(parent.children.length, 1);
+  assert.equal(parent.children[0].className, 'gloss-sc-table-container');
+  assert.equal(parent.children[0].children[0].tagName, 'TABLE');
+  assert.equal(parent.children[0].children[0].className, 'gloss-sc-table');
+}
+
 testEmSizedWideImagesUseHorizontalScrollWrapper();
 testLargeRasterImagesMarkedAsEmUseNaturalWidthAfterLoad();
 testExplicitContentImageDimensionsDefaultToPixelUnits();
 testPixelImagesWithBadDeclaredAspectUseNaturalWidthAfterLoad();
 testTappingDefinitionImageOpensLightbox();
 testFrequencyAndPitchSectionsDoNotRenderCrowdedTitles();
+testStructuredContentTablesUseHorizontalScrollContainer();
 // TODO: testLongPress* tests access document.__listeners.touchstart but popup.js
 // registers touchstart on per-entry summary elements. Rewrite tests to create a
 // dictionary entry, then fire touchstart on the summary element's own listener.

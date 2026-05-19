@@ -421,3 +421,25 @@
 
 ### Next Scope
 - Continue review with popup result content layout under long expressions, large structured content, and image/table-heavy dictionary entries.
+
+## Round 20: Popup Structured Content Layout
+
+### Scope
+- `hibiki/assets/popup/popup.css`
+- `hibiki/assets/popup/popup.js`
+- `hibiki/test/utils/misc/popup_asset_behavior_test.js`
+- Long expressions, large images, and structured table content inside Windows popup result WebView.
+
+### Findings
+
+#### HBK-AUDIT-030
+- severity: low
+- status: verified-pass
+- files: `hibiki/assets/popup/popup.css`, `hibiki/assets/popup/popup.js`, `hibiki/test/utils/misc/popup_asset_behavior_test.js`
+- root cause: no production defect found in this round. The risk was that long terms, image-heavy entries, or wide structured-content tables could overflow a compact Windows popup result surface even when ordinary screenshots looked fine.
+- impact: if this regressed, CJK lookup results with large dictionary media or wide tables would clip horizontally or force the popup content outside its intended bounds.
+- fix: no production code change. Added an asset-level regression test proving structured-content tables render inside `.gloss-sc-table-container`, matching the existing CSS horizontal-scroll guard. Existing asset tests already cover oversized image scroll wrappers and natural image sizing.
+- verification: `node test/utils/misc/popup_asset_behavior_test.js` passed after extending the fake DOM with `hasAttribute()`. `flutter test test/pages/dictionary_popup_webview_test.dart` passed, `flutter test test/pages/popup_dictionary_page_test.dart` passed with 7 tests, full `flutter test` passed with 757 tests, and `flutter build windows --debug` built `build\windows\x64\runner\Debug\hibiki.exe` with the existing `flutter_inappwebview_windows` CMake dev warning.
+
+### Next Scope
+- Continue review with remaining Windows popup host paths, especially Android popup activity parity versus in-app desktop popup behavior and any unverified generated/dirty UI changes.
