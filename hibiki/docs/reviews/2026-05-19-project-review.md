@@ -839,3 +839,24 @@
 
 ### Next Scope
 - Continue Windows UI review with dictionary CSS editor and remaining reader/history confirmation dialogs.
+
+## Round 38: Book CSS Editor Compact Layout Fix
+
+### Scope
+- `hibiki/lib/src/pages/implementations/book_css_editor_page.dart`
+- `hibiki/test/pages/book_css_editor_page_test.dart`
+- Book CSS editor bottom action bar and unsaved-changes confirmation dialog under compact Windows-sized surfaces.
+
+### Findings
+
+#### HBK-AUDIT-050
+- severity: medium
+- status: fixed
+- files: `hibiki/lib/src/pages/implementations/book_css_editor_page.dart`, `hibiki/test/pages/book_css_editor_page_test.dart`
+- root cause: the editor bottom bar used a fixed horizontal `Row` with reset/save buttons, while the unsaved/reset dialogs used default `AlertDialog` padding with long content and multiple actions. A 320x240 desktop window left no room for either layout.
+- impact: opening the editor in a small Windows window could produce a right overflow in the bottom bar; switching tabs with unsaved changes could additionally produce a vertical dialog overflow.
+- fix: changed the bottom bar to a compact `Wrap` inside `SafeArea`, extracted a reusable `BookCssConfirmationDialog`, reduced dialog padding, constrained and scrolled the message body, and ellipsized long titles.
+- verification: the new compact widget test first reproduced a `RenderFlex overflowed by 48 pixels on the right` in the bottom bar and a `RenderFlex overflowed by 64 pixels on the bottom` in the dialog. After the fix, `flutter test test/pages/book_css_editor_page_test.dart` passed with 3 tests.
+
+### Next Scope
+- Continue Windows UI review with reader/history confirmation dialogs and remaining settings pages that combine long labels with horizontal action rows.

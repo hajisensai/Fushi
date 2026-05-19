@@ -78,6 +78,30 @@ void main() {
   );
 
   testWidgets(
+    'unsaved changes dialog fits a compact desktop window',
+    (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(320, 240);
+      addTearDown(tester.view.reset);
+
+      createCss(tmpDir, 'a.css', 'aaa');
+      createCss(tmpDir, 'b.css', 'bbb');
+
+      await tester.pumpWidget(buildApp(tmpDir.path));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField).first, 'modified');
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('b.css'));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text(t.book_css_editor_unsaved_changes), findsOneWidget);
+    },
+  );
+
+  testWidgets(
     'reset current discards editor changes when no .original exists',
     (WidgetTester tester) async {
       createCss(tmpDir, 'style.css', 'original content');

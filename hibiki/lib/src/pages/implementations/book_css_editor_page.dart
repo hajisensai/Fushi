@@ -92,21 +92,22 @@ class _BookCssEditorPageState extends State<BookCssEditorPage> {
 
     final String? result = await showDialog<String>(
       context: context,
-      builder: (_) => AlertDialog(
-        title: Text(t.book_css_editor_unsaved_changes),
-        content: Text(t.book_css_editor_unsaved_changes_message),
+      builder: (ctx) => BookCssConfirmationDialog<String>(
+        title: t.book_css_editor_unsaved_changes,
+        message: t.book_css_editor_unsaved_changes_message,
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, 'cancel'),
-            child: Text(t.book_css_editor_cancel),
+          BookCssDialogAction<String>(
+            value: 'cancel',
+            label: t.book_css_editor_cancel,
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, 'discard'),
-            child: Text(t.book_css_editor_discard),
+          BookCssDialogAction<String>(
+            value: 'discard',
+            label: t.book_css_editor_discard,
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, 'save'),
-            child: Text(t.book_css_editor_save),
+          BookCssDialogAction<String>(
+            value: 'save',
+            label: t.book_css_editor_save,
+            filled: true,
           ),
         ],
       ),
@@ -141,17 +142,18 @@ class _BookCssEditorPageState extends State<BookCssEditorPage> {
 
     final bool? confirmed = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
-        title: Text(t.book_css_editor_unsaved_changes),
-        content: Text(t.book_css_editor_confirm_reset),
+      builder: (ctx) => BookCssConfirmationDialog<bool>(
+        title: t.book_css_editor_unsaved_changes,
+        message: t.book_css_editor_confirm_reset,
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text(t.book_css_editor_cancel),
+          BookCssDialogAction<bool>(
+            value: false,
+            label: t.book_css_editor_cancel,
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text(t.book_css_editor_reset_current),
+          BookCssDialogAction<bool>(
+            value: true,
+            label: t.book_css_editor_reset_current,
+            filled: true,
           ),
         ],
       ),
@@ -183,17 +185,18 @@ class _BookCssEditorPageState extends State<BookCssEditorPage> {
 
     final bool? confirmed = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
-        title: Text(t.book_css_editor_unsaved_changes),
-        content: Text(t.book_css_editor_confirm_reset_all),
+      builder: (ctx) => BookCssConfirmationDialog<bool>(
+        title: t.book_css_editor_unsaved_changes,
+        message: t.book_css_editor_confirm_reset_all,
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text(t.book_css_editor_cancel),
+          BookCssDialogAction<bool>(
+            value: false,
+            label: t.book_css_editor_cancel,
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text(t.book_css_editor_reset_all),
+          BookCssDialogAction<bool>(
+            value: true,
+            label: t.book_css_editor_reset_all,
+            filled: true,
           ),
         ],
       ),
@@ -278,23 +281,97 @@ class _BookCssEditorPageState extends State<BookCssEditorPage> {
             );
           }),
         ),
-        bottomNavigationBar: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Row(
-            children: [
-              OutlinedButton(
-                onPressed: _currentTabCanReset() ? _doResetCurrent : null,
-                child: Text(t.book_css_editor_reset_current),
-              ),
-              const Spacer(),
-              FilledButton(
-                onPressed: () => _doSave(_selectedIndex),
-                child: Text(t.book_css_editor_save),
-              ),
-            ],
+        bottomNavigationBar: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            child: Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                OutlinedButton(
+                  onPressed: _currentTabCanReset() ? _doResetCurrent : null,
+                  child: Text(t.book_css_editor_reset_current),
+                ),
+                FilledButton(
+                  onPressed: () => _doSave(_selectedIndex),
+                  child: Text(t.book_css_editor_save),
+                ),
+              ],
+            ),
           ),
         ),
       ),
+    );
+  }
+}
+
+@visibleForTesting
+class BookCssDialogAction<T> {
+  const BookCssDialogAction({
+    required this.value,
+    required this.label,
+    this.filled = false,
+  });
+
+  final T value;
+  final String label;
+  final bool filled;
+}
+
+@visibleForTesting
+class BookCssConfirmationDialog<T> extends StatelessWidget {
+  const BookCssConfirmationDialog({
+    required this.title,
+    required this.message,
+    required this.actions,
+    super.key,
+  });
+
+  final String title;
+  final String message;
+  final List<BookCssDialogAction<T>> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    final TextTheme textTheme = Theme.of(context).textTheme;
+
+    return AlertDialog(
+      titlePadding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+      actionsPadding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
+      buttonPadding: const EdgeInsets.symmetric(horizontal: 4),
+      title: Text(
+        title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: textTheme.titleMedium,
+      ),
+      content: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: double.maxFinite,
+          maxHeight: MediaQuery.of(context).size.height * 0.3,
+        ),
+        child: SingleChildScrollView(
+          child: Text(
+            message,
+            style: textTheme.bodySmall,
+          ),
+        ),
+      ),
+      actions: [
+        for (final action in actions)
+          action.filled
+              ? FilledButton(
+                  onPressed: () => Navigator.pop(context, action.value),
+                  child: Text(action.label),
+                )
+              : TextButton(
+                  onPressed: () => Navigator.pop(context, action.value),
+                  child: Text(action.label),
+                ),
+      ],
     );
   }
 }
