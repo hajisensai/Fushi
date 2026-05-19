@@ -944,3 +944,24 @@
 
 ### Next Scope
 - Continue Windows UI review with reader/media dialogs that still use default `AlertDialog` layouts and long content.
+
+## Round 43: Media Item Dialog Compact Action Layout Fix
+
+### Scope
+- `hibiki/lib/src/pages/implementations/media_item_dialog_page.dart`
+- `hibiki/test/pages/media_item_dialog_page_test.dart`
+- Media item long-press detail dialog under compact Windows-sized surfaces with long titles and multiple actions.
+
+### Findings
+
+#### HBK-AUDIT-055
+- severity: medium
+- status: fixed
+- files: `hibiki/lib/src/pages/implementations/media_item_dialog_page.dart`, `hibiki/test/pages/media_item_dialog_page_test.dart`
+- root cause: media item detail dialogs used the default `AlertDialog` title/content/actions layout. With long media titles and four actions, Flutter's default action overflow behavior expanded vertically and left too little room in compact desktop windows.
+- impact: long-pressing a media item in a small Windows window could produce a bottom overflow before the user could reliably read, edit, clear, or use source-specific actions.
+- fix: extracted `MediaItemDialogFrame`, compacted dialog inset/padding, constrained the preview content, capped the media title to one line, and wrapped action buttons in a horizontal `MediaItemDialogActionStrip` instead of letting the default overflow bar grow vertically.
+- verification: the compact widget test first failed because `MediaItemDialogFrame` did not exist, then reproduced `RenderFlex overflowed by 120 pixels on the bottom` and later 32/14 pixel bottom overflows while tightening the frame. After the action strip fix, `flutter test test/pages/media_item_dialog_page_test.dart` passed with 1 test.
+
+### Next Scope
+- Continue Windows UI review with media edit dialogs and remaining default dialog shells.
