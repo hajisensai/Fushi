@@ -126,7 +126,7 @@ void main() {
 Future<void> _waitForHomeReady(WidgetTester tester) async {
   for (int i = 0; i < 180; i++) {
     await tester.pump(const Duration(milliseconds: 500));
-    if (find.byIcon(Icons.menu_book).evaluate().isNotEmpty) {
+    if (isHomeReady()) {
       debugPrint('[test] Home ready at iteration $i (${i * 500}ms)');
       await tester.pump(const Duration(seconds: 1));
       return;

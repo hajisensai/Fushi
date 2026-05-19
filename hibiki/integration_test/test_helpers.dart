@@ -9,7 +9,7 @@ bool get screenshotsAreRequired =>
 Future<bool> waitForHome(WidgetTester tester) async {
   for (int i = 0; i < 180; i++) {
     await tester.pump(const Duration(milliseconds: 500));
-    if (find.byIcon(Icons.menu_book).evaluate().isNotEmpty) {
+    if (isHomeReady()) {
       debugPrint('[test] Home ready at iteration $i (${i * 500}ms)');
       await tester.pump(const Duration(seconds: 1));
       return true;
@@ -19,6 +19,10 @@ Future<bool> waitForHome(WidgetTester tester) async {
     }
   }
   return false;
+}
+
+bool isHomeReady() {
+  return findPrimaryNavigationTargets().length >= 2;
 }
 
 Future<int> takeScreenshot(

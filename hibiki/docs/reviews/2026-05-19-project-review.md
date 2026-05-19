@@ -207,3 +207,25 @@
 
 ### Next Scope
 - Continue hardening Windows reader/dictionary drive assertions so every check proves a specific app surface instead of relying on generic widget counts.
+
+## Round 10: Home Readiness Targeting
+
+### Scope
+- `hibiki/integration_test/test_helpers.dart`
+- `hibiki/integration_test/user_path_test.dart`
+- `hibiki/test/integration/navigation_helpers_test.dart`
+- Windows drive startup readiness checks.
+
+### Findings
+
+#### HBK-AUDIT-020
+- severity: medium
+- status: fixed
+- files: `hibiki/integration_test/test_helpers.dart`, `hibiki/integration_test/user_path_test.dart`, `hibiki/test/integration/navigation_helpers_test.dart`
+- root cause: Windows integration tests treated any `Icons.menu_book` in the widget tree as proof that the home page was ready. That icon can appear in unrelated content, so the tests could start navigation before the primary home navigation had actually rendered.
+- impact: Windows drive runs could fail or become noisy by tapping navigation targets before the app reached the home shell, especially when startup timing is slow or another page/surface includes a book icon.
+- fix: added `isHomeReady()` based on the shared primary navigation target resolver and changed both home wait paths to use it. The new widget test proves an unrelated book icon no longer marks the home shell ready.
+- verification: TDD red check failed as expected because `isHomeReady()` did not exist. After the fix, `flutter test test/integration/navigation_helpers_test.dart` passed with 7 tests. `dart format .` completed with 0 changed files. Full `flutter test` is currently blocked by unrelated dirty-worktree compile errors in `reader_hoshi_page.dart`, `hoshi_settings_page.dart`, and `app_model.dart` around `shouldDisablePopupScrim` / `disableDialogScrim` symbols; those files already have non-round changes and were not included in this fix.
+
+### Next Scope
+- Continue replacing broad Windows drive probes with assertions tied to the actual navigation shell, reader surface, and dictionary result surface.

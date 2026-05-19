@@ -152,6 +152,19 @@ void main() {
     expect(findDictionaryResultEvidence(), findsOneWidget);
   });
 
+  testWidgets('isHomeReady ignores unrelated book icons',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(child: Icon(Icons.menu_book)),
+        ),
+      ),
+    );
+
+    expect(isHomeReady(), isFalse);
+  });
+
   test('screenshots are optional on Windows drive', () {
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     addTearDown(() => debugDefaultTargetPlatformOverride = null);
