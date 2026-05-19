@@ -5,6 +5,8 @@ import 'package:integration_test/integration_test.dart';
 
 import 'package:hibiki/main.dart' as app;
 
+import 'test_helpers.dart';
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -36,7 +38,7 @@ void main() {
       expect(rendered, isTrue,
           reason: 'App should render at least one Scaffold within 90 seconds');
 
-      final List<Finder> navTargets = _findPrimaryNavigationTargets();
+      final List<Finder> navTargets = findPrimaryNavigationTargets();
 
       if (navTargets.length >= 2) {
         await tester.tap(navTargets[1]);
@@ -69,34 +71,4 @@ void main() {
       FlutterError.onError = oldHandler;
     }
   });
-}
-
-List<Finder> _findPrimaryNavigationTargets() {
-  final Finder rail = find.byType(NavigationRail);
-  if (rail.evaluate().isNotEmpty) {
-    return _navigationIconsInside(rail);
-  }
-
-  final Finder bottomNav = find.byType(BottomNavigationBar);
-  if (bottomNav.evaluate().isNotEmpty) {
-    return _navigationIconsInside(bottomNav);
-  }
-
-  final Finder navigationBar = find.byType(NavigationBar);
-  if (navigationBar.evaluate().isNotEmpty) {
-    return _navigationIconsInside(navigationBar);
-  }
-
-  return const <Finder>[];
-}
-
-List<Finder> _navigationIconsInside(Finder navigationRoot) {
-  final Finder icons = find.descendant(
-    of: navigationRoot,
-    matching: find.byType(Icon),
-  );
-  return List<Finder>.generate(
-    icons.evaluate().length,
-    (int index) => icons.at(index),
-  );
 }

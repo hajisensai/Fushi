@@ -43,3 +43,36 @@
 
 ### Next Scope
 - Continue Windows UI review with `flutter drive` coverage for CJK dictionary search and Hoshi reader interactions, using fixtures where required.
+
+## Round 3: Windows Integration Test Targeting
+
+### Scope
+- `hibiki/integration_test/app_smoke_test.dart`
+- `hibiki/integration_test/user_path_test.dart`
+- `hibiki/integration_test/reader_dictionary_test.dart`
+- `hibiki/integration_test/regression_test.dart`
+- `hibiki/integration_test/test_helpers.dart`
+- `hibiki/test/integration/navigation_helpers_test.dart`
+
+### Findings
+
+#### HBK-AUDIT-012
+- severity: medium
+- status: fixed
+- files: `hibiki/integration_test/test_helpers.dart`, `hibiki/integration_test/app_smoke_test.dart`, `hibiki/integration_test/user_path_test.dart`, `hibiki/integration_test/reader_dictionary_test.dart`, `hibiki/test/integration/navigation_helpers_test.dart`
+- root cause: integration tests selected navigation tabs by scanning the whole widget tree for icons such as `Icons.search`. On Windows the content area can contain the same icons as the navigation rail, so the tests could tap a content icon instead of the navigation target.
+- impact: Windows UI drive tests could become flaky or silently exercise the wrong path, especially around Dictionary and Settings navigation.
+- fix: introduced a shared `findPrimaryNavigationTargets()` helper that scopes icon lookup to `NavigationRail`, `BottomNavigationBar`, or `NavigationBar`; app smoke, user path, and reader/dictionary integration tests now use that helper.
+- verification: `flutter test test/integration/navigation_helpers_test.dart` passed and validates that content-area search icons are ignored when a `NavigationRail` is present. `flutter test` also passed with 731 tests, and `flutter drive -d windows --driver=test_driver/integration_test.dart --target=integration_test/app_smoke_test.dart` passed after the helper was shared.
+
+#### HBK-AUDIT-013
+- severity: low
+- status: fixed
+- files: `hibiki/integration_test/test_helpers.dart`, `hibiki/integration_test/user_path_test.dart`, `hibiki/integration_test/reader_dictionary_test.dart`, `hibiki/integration_test/regression_test.dart`
+- root cause: Windows desktop `flutter drive` reports `MissingPluginException` for `integration_test` screenshot capture, but the tests still required at least one screenshot.
+- impact: completed Windows widget interactions could fail only because screenshot capture is unsupported in this drive path.
+- fix: screenshot evidence remains required on platforms that support it, but Windows drive tests now use widget assertions and drive exit status as the authoritative evidence.
+- verification: `flutter drive -d windows --driver=test_driver/integration_test.dart --target=integration_test/user_path_test.dart` reached all tab navigation steps and skipped screenshots correctly; a later run was interrupted by a Flutter Windows `RawKeyboard` assertion caused by a host `Meta Left` key event while the user was actively using the machine, so this test remains environment-sensitive rather than a product UI failure. The non-focus-stealing validation path is covered by `flutter test test/integration/navigation_helpers_test.dart` and the passing Windows `app_smoke_test` drive run above.
+
+### Next Scope
+- Continue with non-focus-stealing Windows checks first. For full `user_path_test` and reader/dictionary drive validation, run when the desktop keyboard focus is not being used, or move those flows to widget-level tests where possible.

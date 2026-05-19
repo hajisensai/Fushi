@@ -5,11 +5,7 @@ import 'package:integration_test/integration_test.dart';
 
 import 'package:hibiki/main.dart' as app;
 
-const List<IconData> _knownTabIcons = [
-  Icons.menu_book,
-  Icons.search,
-  Icons.tune,
-];
+import 'test_helpers.dart';
 
 void main() {
   final IntegrationTestWidgetsFlutterBinding binding =
@@ -31,7 +27,7 @@ void main() {
 
       screenshotCount += await _takeScreenshotSafe(binding, 'home_books_tab');
 
-      final List<Finder> navIcons = _findNavIcons();
+      final List<Finder> navIcons = findPrimaryNavigationTargets();
       final int tabCount = navIcons.length;
       debugPrint('[test] Found $tabCount navigation icons');
       expect(tabCount, greaterThanOrEqualTo(2),
@@ -110,8 +106,10 @@ void main() {
       expect(find.byIcon(Icons.menu_book), findsWidgets,
           reason: 'Books tab icon must be present after rapid switching');
 
-      expect(screenshotCount, greaterThan(0),
-          reason: 'At least one screenshot must succeed for evidence');
+      if (screenshotsAreRequired) {
+        expect(screenshotCount, greaterThan(0),
+            reason: 'At least one screenshot must succeed for evidence');
+      }
       debugPrint('[test] $screenshotCount screenshots captured');
 
       _assertNoUnexpectedErrors(errors, allowWebViewErrors: true);
@@ -141,17 +139,6 @@ Future<void> _waitForHomeReady(WidgetTester tester) async {
   }
   debugPrint('[test] Home not ready after 90s');
   fail('Home page did not show navigation icons within 90s');
-}
-
-List<Finder> _findNavIcons() {
-  final List<Finder> found = [];
-  for (final IconData iconData in _knownTabIcons) {
-    final Finder f = find.byIcon(iconData);
-    if (f.evaluate().isNotEmpty) {
-      found.add(f);
-    }
-  }
-  return found;
 }
 
 Future<int> _takeScreenshotSafe(

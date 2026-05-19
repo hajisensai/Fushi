@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+bool get screenshotsAreRequired =>
+    !kIsWeb && defaultTargetPlatform != TargetPlatform.windows;
+
 Future<bool> waitForHome(WidgetTester tester) async {
   for (int i = 0; i < 180; i++) {
     await tester.pump(const Duration(milliseconds: 500));
@@ -65,4 +68,34 @@ Finder findSearchField() {
   expect(searchBar, findsWidgets,
       reason: 'No TextField, TextFormField, or SearchBar found');
   return searchBar.first;
+}
+
+List<Finder> findPrimaryNavigationTargets() {
+  final Finder rail = find.byType(NavigationRail);
+  if (rail.evaluate().isNotEmpty) {
+    return _navigationIconsInside(rail);
+  }
+
+  final Finder bottomNav = find.byType(BottomNavigationBar);
+  if (bottomNav.evaluate().isNotEmpty) {
+    return _navigationIconsInside(bottomNav);
+  }
+
+  final Finder navigationBar = find.byType(NavigationBar);
+  if (navigationBar.evaluate().isNotEmpty) {
+    return _navigationIconsInside(navigationBar);
+  }
+
+  return const <Finder>[];
+}
+
+List<Finder> _navigationIconsInside(Finder navigationRoot) {
+  final Finder icons = find.descendant(
+    of: navigationRoot,
+    matching: find.byType(Icon),
+  );
+  return List<Finder>.generate(
+    icons.evaluate().length,
+    (int index) => icons.at(index),
+  );
 }

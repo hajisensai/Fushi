@@ -112,8 +112,10 @@ void main() {
 
       screenshotCount += await takeScreenshot(binding, 'reg001_bounds_check');
 
-      expect(screenshotCount, greaterThan(0),
-          reason: 'At least one screenshot must succeed');
+      if (screenshotsAreRequired) {
+        expect(screenshotCount, greaterThan(0),
+            reason: 'At least one screenshot must succeed');
+      }
 
       assertStrictErrors(errors);
     } finally {

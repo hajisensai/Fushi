@@ -138,10 +138,10 @@ void main() {
       await tester.pump(const Duration(seconds: 3));
 
       // Navigate to dictionary tab.
-      final Finder searchIcon = find.byIcon(Icons.search);
-      expect(searchIcon, findsWidgets,
-          reason: 'Dictionary tab icon must be present');
-      await tester.tap(searchIcon.first);
+      final List<Finder> navTargets = findPrimaryNavigationTargets();
+      expect(navTargets.length, greaterThanOrEqualTo(2),
+          reason: 'Dictionary tab navigation target must be present');
+      await tester.tap(navTargets[1]);
       await tester.pump(const Duration(seconds: 3));
 
       // Verify search field exists.
@@ -171,8 +171,10 @@ void main() {
 
       screenshotCount += await takeScreenshot(binding, 'dict_search_result');
 
-      expect(screenshotCount, greaterThan(0),
-          reason: 'At least one screenshot must succeed');
+      if (screenshotsAreRequired) {
+        expect(screenshotCount, greaterThan(0),
+            reason: 'At least one screenshot must succeed');
+      }
 
       assertStrictErrors(errors);
     } finally {
