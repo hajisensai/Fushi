@@ -207,6 +207,9 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
         showBorder: false,
         overrideFillColor: Colors.transparent,
         onDismiss: _close,
+        onScrolledToBottom: entry.allLoaded
+            ? null
+            : () => loadMoreForEntry(entry: entry, popupStack: _stack),
         onTextSelected: (text, localRect) {
           if (_stack.length > 1) {
             setState(() => _stack.removeRange(1, _stack.length));

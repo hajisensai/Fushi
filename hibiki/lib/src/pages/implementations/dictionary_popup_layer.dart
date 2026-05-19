@@ -44,6 +44,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     required this.onDuplicateCheck,
     this.isSearching = false,
     this.onTapOutside,
+    this.onScrolledToBottom,
     this.headerWidget,
     this.overlayWidget,
     this.isDark = false,
@@ -62,6 +63,7 @@ class DictionaryPopupLayer extends StatelessWidget {
   final Future<bool> Function(String expression, String reading)
       onDuplicateCheck;
   final VoidCallback? onTapOutside;
+  final VoidCallback? onScrolledToBottom;
   final Widget? headerWidget;
   final Widget? overlayWidget;
   final bool isDark;
@@ -101,6 +103,7 @@ class DictionaryPopupLayer extends StatelessWidget {
             onLinkClick: onLinkClick,
             onMineEntry: onMineEntry,
             onDuplicateCheck: onDuplicateCheck,
+            onScrolledToBottom: onScrolledToBottom,
           ),
           if (isSearching)
             const Center(

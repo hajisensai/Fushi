@@ -18,6 +18,7 @@ class NestedPopupEntry {
   final Rect selectionRect;
   DictionarySearchResult? result;
   bool isSearching = true;
+  bool allLoaded = false;
   final GlobalKey<DictionaryPopupWebViewState> webViewKey =
       GlobalKey<DictionaryPopupWebViewState>();
 }
@@ -169,6 +170,9 @@ mixin DictionaryPageMixin {
         overrideFillColor: mixinAppModel.overrideDictionaryColor,
         onDismiss: () => onPop(index),
         onTapOutside: () => onPop(0),
+        onScrolledToBottom: entry.allLoaded
+            ? null
+            : () => loadMoreForEntry(entry: entry, popupStack: popupStack),
         onTextSelected: (text, localRect) {
           final Rect childRect = localRect == Rect.zero
               ? entry.selectionRect
@@ -211,6 +215,7 @@ mixin DictionaryPageMixin {
       query: trimmed,
       selectionRect: fallbackSelectionRect(selectionRect),
     );
+    final int maxTerms = mixinAppModel.maximumTerms;
     setState(() {
       if (replaceStack) popupStack.clear();
       popupStack.add(entry);
@@ -219,8 +224,9 @@ mixin DictionaryPageMixin {
       entry.result = await mixinAppModel.searchDictionary(
         searchTerm: trimmed,
         searchWithWildcards: true,
-        overrideMaximumTerms: mixinAppModel.maximumTerms,
+        overrideMaximumTerms: maxTerms,
       );
+      entry.allLoaded = (entry.result?.entries.length ?? 0) < maxTerms;
     } finally {
       if (mounted && popupStack.contains(entry)) {
         setState(() => entry.isSearching = false);
@@ -239,6 +245,28 @@ mixin DictionaryPageMixin {
         if (first.word.isNotEmpty) {
           autoReadWord(first.word, first.reading);
         }
+      }
+    }
+  }
+
+  Future<void> loadMoreForEntry({
+    required NestedPopupEntry entry,
+    required List<NestedPopupEntry> popupStack,
+  }) async {
+    if (entry.allLoaded || entry.isSearching || entry.result == null) return;
+    final int current = entry.result!.entries.length;
+    final int newMax = current + mixinAppModel.maximumTerms;
+    setState(() => entry.isSearching = true);
+    try {
+      entry.result = await mixinAppModel.searchDictionary(
+        searchTerm: entry.query,
+        searchWithWildcards: true,
+        overrideMaximumTerms: newMax,
+      );
+      entry.allLoaded = (entry.result?.entries.length ?? 0) < newMax;
+    } finally {
+      if (mounted && popupStack.contains(entry)) {
+        setState(() => entry.isSearching = false);
       }
     }
   }
