@@ -315,7 +315,7 @@ PlatformMenuBar(
 
 ### Expected Result
 
-AnkiConnect implementation from Phase 1 (`AnkiConnectRepository`) is pure HTTP — should work identically on macOS. The `ankiRepositoryProvider` already selects HTTP backend for `Platform.isMacOS`.
+AnkiConnect implementation from Phase 1 (`AnkiConnectRepository`) is pure HTTP — should work identically on macOS. The `ankiRepositoryProvider` (`anki_view_model.dart:114-117`) returns `AnkiConnectRepository()` as the default for all non-Android platforms, so macOS gets HTTP backend without additional code changes.
 
 ### Verification
 

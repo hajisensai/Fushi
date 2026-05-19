@@ -102,7 +102,7 @@ Complete audit of multiplatform readiness across all layers:
 
 - **severity**: low
 - **status**: open
-- **file**: `reader_hoshi_page.dart:1319-1330`
+- **file**: `reader_hoshi_page.dart:1407-1422`
 - **root cause**: `onReceivedError` handler has Windows-specific logic for WebView2's behavior of reporting intercepted-domain navigation as errors. macOS uses WKWebView which may behave differently.
 - **impact**: EPUB reader may show spurious error handling or miss real errors on macOS.
 - **fix**: Test WKWebView behavior on macOS; add platform-specific branch if needed.

@@ -490,7 +490,7 @@ Phase 1 的 `platform.hpp` 使用 32MB 栈的 pthread 线程做词典导入。iO
 - 默认线程栈：512KB
 - 实际上限：~8MB（系统强制）
 
-**必须在 Phase 3 开始前确认：** `importer.cpp` 中解压缓冲区是栈分配还是堆分配。如果是栈分配，需要改为 `std::vector` / `std::unique_ptr<char[]>`。
+**已确认（2026-05-19 审查）：** `importer.cpp` 中所有解压缓冲区已经使用 `std::vector<char>`（堆分配）。无需重构，只需在 `hoshidicts_ffi.cpp:219` 将线程栈大小从 32MB 降到 8MB。
 
 ### 9.3 .apkg 导出（iOS Anki 方案）
 

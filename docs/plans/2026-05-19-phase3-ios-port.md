@@ -66,13 +66,14 @@ Same Mac hardware as Phase 2 (Xcode), plus:
        </dict>
      </array>
      ```
-   - Add `NSAppTransportSecurity` if AnkiConnect localhost HTTP needed (iOS only in dev):
+   - Add `NSAppTransportSecurity` for local asset server (`hoshi.local` HTTP on localhost):
      ```xml
      <key>NSAppTransportSecurity</key>
      <dict>
        <key>NSAllowsLocalNetworking</key><true/>
      </dict>
      ```
+     Note: iOS uses .apkg export, not AnkiConnect HTTP — this exception is for the EPUB reader's local asset server only.
    - Audio background mode (for audiobook):
      ```xml
      <key>UIBackgroundModes</key>
@@ -508,9 +509,9 @@ Already partially configured in the codebase (verified in audio session guards f
 ### 5d. App Transport Security
 
 If the app makes HTTP (non-HTTPS) requests:
-- AnkiConnect localhost: Allowed via `NSAllowsLocalNetworking` (already in Task 1)
-- Local asset server (`hoshi.local`): Runs on localhost, covered by the same exception
+- Local asset server (`hoshi.local`): Runs on localhost, allowed via `NSAllowsLocalNetworking` (already in Task 1)
 - External URLs: Must be HTTPS (no action needed — all external requests already use HTTPS)
+- Note: iOS uses .apkg file export for Anki, not AnkiConnect HTTP — no localhost Anki connection needed
 
 ### Verification
 
