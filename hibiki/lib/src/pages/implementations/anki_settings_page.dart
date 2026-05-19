@@ -182,59 +182,13 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
     final dictionaryNames =
         appModel.termDictionaries.map((d) => d.name).toList();
     final options = AnkiHandlebarOptions.forTermDictionaries(dictionaryNames);
-    final controller = TextEditingController(text: currentValue);
 
     final result = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(t.anki_select_handlebar(field: field)),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: controller,
-                decoration: InputDecoration(
-                  hintText: t.anki_field_not_mapped,
-                  border: const OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: options.length,
-                  itemBuilder: (_, i) {
-                    final opt = options[i];
-                    if (opt == '-') return const Divider(height: 1);
-                    final isSelected = currentValue == opt;
-                    return ListTile(
-                      dense: true,
-                      title: Text(opt),
-                      selected: isSelected,
-                      onTap: () => Navigator.pop(ctx, opt),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, ''),
-            child: Text(MaterialLocalizations.of(ctx).deleteButtonTooltip),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(MaterialLocalizations.of(ctx).cancelButtonLabel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, controller.text),
-            child: Text(MaterialLocalizations.of(ctx).okButtonLabel),
-          ),
-        ],
+      builder: (ctx) => AnkiHandlebarPickerDialog(
+        title: t.anki_select_handlebar(field: field),
+        initialValue: currentValue,
+        options: options,
       ),
     );
 
@@ -255,6 +209,120 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
         ),
         onChanged: (v) => vm.updateTags(v),
       ),
+    );
+  }
+}
+
+@visibleForTesting
+class AnkiHandlebarPickerDialog extends StatefulWidget {
+  const AnkiHandlebarPickerDialog({
+    required this.title,
+    required this.initialValue,
+    required this.options,
+    super.key,
+  });
+
+  final String title;
+  final String initialValue;
+  final List<String> options;
+
+  @override
+  State<AnkiHandlebarPickerDialog> createState() =>
+      _AnkiHandlebarPickerDialogState();
+}
+
+class _AnkiHandlebarPickerDialogState extends State<AnkiHandlebarPickerDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialValue);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final double maxHeight = MediaQuery.of(context).size.height * 0.36;
+
+    return AlertDialog(
+      titlePadding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+      actionsPadding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
+      buttonPadding: const EdgeInsets.symmetric(horizontal: 4),
+      title: Text(
+        widget.title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: Theme.of(context).textTheme.titleMedium,
+      ),
+      content: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: double.maxFinite,
+          maxHeight: maxHeight,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _controller,
+              style: Theme.of(context).textTheme.bodySmall,
+              decoration: InputDecoration(
+                hintText: t.anki_field_not_mapped,
+                border: const OutlineInputBorder(),
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 8,
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: widget.options.length,
+                itemBuilder: (_, i) {
+                  final opt = widget.options[i];
+                  if (opt == '-') return const Divider(height: 1);
+                  final isSelected = widget.initialValue == opt;
+                  return ListTile(
+                    dense: true,
+                    minVerticalPadding: 0,
+                    visualDensity: VisualDensity.compact,
+                    title: Text(
+                      opt,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    selected: isSelected,
+                    onTap: () => Navigator.pop(context, opt),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, ''),
+          child: Text(MaterialLocalizations.of(context).deleteButtonTooltip),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(MaterialLocalizations.of(context).cancelButtonLabel),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, _controller.text),
+          child: Text(MaterialLocalizations.of(context).okButtonLabel),
+        ),
+      ],
     );
   }
 }

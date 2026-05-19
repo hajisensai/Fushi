@@ -776,3 +776,24 @@
 
 ### Next Scope
 - Continue Windows UI review with remaining dictionary/settings dialogs that have large scrollable content or multiple trailing actions.
+
+## Round 35: Anki Handlebar Picker Compact Layout Fix
+
+### Scope
+- `hibiki/lib/src/pages/implementations/anki_settings_page.dart`
+- `hibiki/test/pages/anki_settings_page_test.dart`
+- Anki field mapping handlebar picker dialog under compact Windows-sized surfaces.
+
+### Findings
+
+#### HBK-AUDIT-047
+- severity: medium
+- status: fixed
+- files: `hibiki/lib/src/pages/implementations/anki_settings_page.dart`, `hibiki/test/pages/anki_settings_page_test.dart`
+- root cause: the Anki handlebar picker was built inline with default `AlertDialog` padding, a full-density text field, a shrink-wrapped option list, and three action buttons. Even after extracting it, the initial compact version still allowed too much vertical chrome for a 320x240 window.
+- impact: users editing Anki field mappings in a small Windows window could hit a bottom overflow instead of reliably choosing or typing a handlebar value.
+- fix: extracted `AnkiHandlebarPickerDialog`, bounded the option list height against the current window, reduced title/content/action/button padding, made the text field dense, and ellipsized long option labels.
+- verification: the compact widget test first failed because the dialog widget did not exist, then reproduced a `RenderFlex overflowed by 112 pixels on the bottom` error. After the compact picker fix, `flutter test test/pages/anki_settings_page_test.dart` passed with 1 test.
+
+### Next Scope
+- Continue Windows UI review with remaining settings dialogs, especially custom dictionary/audio-source editors and bottom action rows.
