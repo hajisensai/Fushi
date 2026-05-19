@@ -3,6 +3,7 @@ import 'package:multi_value_listenable_builder/multi_value_listenable_builder.da
 import 'package:spaces/spaces.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_progress_dialog_content.dart';
 
 /// The content of the dialog used for showing dictionary import progress when
 /// importing a dictionary from the dictionary menu. See the
@@ -38,68 +39,39 @@ class _DictionaryDialogImportPageState
     return WillPopScope(
       onWillPop: () async => false,
       child: AlertDialog(
-        contentPadding: Spacing.of(context).insets.all.big,
-        content: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            buildProgressSpinner(),
-            const Space.semiBig(),
-            buildProgressMessage(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget buildProgressSpinner() {
-    return CircularProgressIndicator(
-      valueColor: AlwaysStoppedAnimation<Color>(
-        theme.colorScheme.primary,
+        contentPadding: Spacing.of(context).insets.all.small,
+        content: buildProgressMessage(),
       ),
     );
   }
 
   Widget buildProgressMessage() {
-    return Flexible(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Space.extraSmall(),
-          Padding(
-            padding: const EdgeInsets.only(left: 0.5),
-            child: MultiValueListenableBuilder(
-                valueListenables: [widget.countNotifier, widget.totalNotifier],
-                builder: (context, values, _) {
-                  int? currentCount = values.elementAt(0);
-                  int? totalCount = values.elementAt(1);
+    return MultiValueListenableBuilder(
+      valueListenables: [
+        widget.countNotifier,
+        widget.totalNotifier,
+        widget.progressNotifier,
+      ],
+      builder: (context, values, _) {
+        int? currentCount = values.elementAt(0);
+        int? totalCount = values.elementAt(1);
+        String progress = values.elementAt(2);
 
-                  return Text(
-                    currentCount != null &&
-                            totalCount != null &&
-                            totalCount != 1
-                        ? '${t.import_in_progress}\n$currentCount / $totalCount'
-                        : t.import_in_progress,
-                    style: TextStyle(
-                      fontSize: textTheme.bodySmall?.fontSize,
-                      color: theme.unselectedWidgetColor,
-                    ),
-                  );
-                }),
+        final String header =
+            currentCount != null && totalCount != null && totalCount != 1
+                ? '${t.import_in_progress}\n$currentCount / $totalCount'
+                : t.import_in_progress;
+
+        return DictionaryProgressDialogContent(
+          header: header,
+          message: progress,
+          progressColor: theme.colorScheme.primary,
+          headerStyle: TextStyle(
+            fontSize: textTheme.bodySmall?.fontSize,
+            color: theme.unselectedWidgetColor,
           ),
-          const Space.small(),
-          ValueListenableBuilder<String>(
-            valueListenable: widget.progressNotifier,
-            builder: (context, progressNotification, _) {
-              return Text(
-                widget.progressNotifier.value,
-                maxLines: 10,
-                overflow: TextOverflow.ellipsis,
-              );
-            },
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

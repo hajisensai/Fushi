@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:spaces/spaces.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_progress_dialog_content.dart';
 
 /// The content of the dialog used for showing dictionary import progress when
 /// deleting a dictionary from the dictionary menu. See the
@@ -27,53 +28,22 @@ class _DictionaryDialogDeletePageState
     return WillPopScope(
       onWillPop: () async => false,
       child: AlertDialog(
-        contentPadding: Spacing.of(context).insets.all.big,
-        content: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            buildProgressSpinner(),
-            const Space.semiBig(),
-            buildProgressMessage(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget buildProgressSpinner() {
-    return CircularProgressIndicator(
-      valueColor: AlwaysStoppedAnimation<Color>(
-        theme.colorScheme.primary,
+        contentPadding: Spacing.of(context).insets.all.small,
+        content: buildProgressMessage(),
       ),
     );
   }
 
   Widget buildProgressMessage() {
-    return Flexible(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Space.extraSmall(),
-          Padding(
-            padding: const EdgeInsets.only(left: 0.5),
-            child: Text(
-              widget.name != null
-                  ? '${t.delete_in_progress}\n${widget.name}'
-                  : t.delete_in_progress,
-              style: TextStyle(
-                fontSize: textTheme.bodySmall?.fontSize,
-                color: theme.unselectedWidgetColor,
-              ),
-            ),
-          ),
-          const Space.small(),
-          Text(
-            t.dictionaries_deleting_data,
-            maxLines: 10,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
+    return DictionaryProgressDialogContent(
+      header: widget.name != null
+          ? '${t.delete_in_progress}\n${widget.name}'
+          : t.delete_in_progress,
+      message: t.dictionaries_deleting_data,
+      progressColor: theme.colorScheme.primary,
+      headerStyle: TextStyle(
+        fontSize: textTheme.bodySmall?.fontSize,
+        color: theme.unselectedWidgetColor,
       ),
     );
   }

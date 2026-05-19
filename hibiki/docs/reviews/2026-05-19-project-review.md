@@ -753,3 +753,26 @@
 
 ### Next Scope
 - Continue Windows UI review with remaining settings/profile rows that combine dropdowns or multiple trailing actions in narrow desktop widths.
+
+## Round 34: Dictionary Progress Dialog Compact Layout Fix
+
+### Scope
+- `hibiki/lib/src/pages/implementations/dictionary_dialog_import_page.dart`
+- `hibiki/lib/src/pages/implementations/dictionary_dialog_delete_page.dart`
+- `hibiki/lib/src/pages/implementations/dictionary_progress_dialog_content.dart`
+- `hibiki/test/pages/dictionary_progress_dialog_page_test.dart`
+- Dictionary import/delete progress dialogs under compact Windows-sized surfaces.
+
+### Findings
+
+#### HBK-AUDIT-046
+- severity: medium
+- status: fixed
+- files: `hibiki/lib/src/pages/implementations/dictionary_dialog_import_page.dart`, `hibiki/lib/src/pages/implementations/dictionary_dialog_delete_page.dart`, `hibiki/lib/src/pages/implementations/dictionary_progress_dialog_content.dart`, `hibiki/test/pages/dictionary_progress_dialog_page_test.dart`
+- root cause: dictionary import and delete progress dialogs duplicated a full-padding `AlertDialog` body with a horizontal spinner/message row and long text column. In a 320x240 Windows window, the default vertical chrome plus long progress text exceeded the available height.
+- impact: users importing or deleting dictionaries in a small desktop window could see layout overflow while the operation was in progress, exactly when the UI should be stable and non-dismissible.
+- fix: introduced shared `DictionaryProgressDialogContent` with compact spinner sizing, bounded height, scrollable text content, and smaller dialog padding; both import and delete progress dialogs now use the same bounded layout.
+- verification: the compact widget tests first failed with bottom overflows of 55px for import and 60px for delete. After the shared content fix, `flutter test test/pages/dictionary_progress_dialog_page_test.dart` passed with 2 tests.
+
+### Next Scope
+- Continue Windows UI review with remaining dictionary/settings dialogs that have large scrollable content or multiple trailing actions.
