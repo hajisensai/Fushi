@@ -85,12 +85,9 @@ class _BookImportDialogState extends State<BookImportDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return BookImportDialogFrame(
       title: Text(t.srt_import),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: SingleChildScrollView(child: _buildForm()),
-      ),
+      content: _buildForm(),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
@@ -849,4 +846,42 @@ class _BookImportDialogState extends State<BookImportDialog> {
 
   Future<Directory> _ensurePersistDir(String key) =>
       AudiobookStorage.ensurePersistDir(key);
+}
+
+@visibleForTesting
+class BookImportDialogFrame extends StatelessWidget {
+  const BookImportDialogFrame({
+    required this.title,
+    required this.content,
+    required this.actions,
+    super.key,
+  });
+
+  final Widget title;
+  final Widget content;
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      titlePadding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      actionsPadding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+      buttonPadding: const EdgeInsets.symmetric(horizontal: 4),
+      title: DefaultTextStyle.merge(
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        child: title,
+      ),
+      content: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: double.maxFinite,
+          maxHeight: MediaQuery.of(context).size.height * 0.56,
+        ),
+        child: SingleChildScrollView(child: content),
+      ),
+      actions: actions,
+    );
+  }
 }

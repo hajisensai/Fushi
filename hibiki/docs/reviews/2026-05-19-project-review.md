@@ -1008,6 +1008,27 @@
 ### Next Scope
 - Continue Windows UI review with remaining settings confirmation dialogs and large-form dialogs.
 
+## Round 46: Book Import Dialog Compact Frame Fix
+
+### Scope
+- `hibiki/lib/src/media/audiobook/book_import_dialog.dart`
+- `hibiki/test/media/audiobook/book_import_dialog_test.dart`
+- Unified EPUB/SRT/audio/cover import dialog under compact Windows-sized surfaces.
+
+### Findings
+
+#### HBK-AUDIT-063
+- severity: medium
+- status: fixed
+- files: `hibiki/lib/src/media/audiobook/book_import_dialog.dart`, `hibiki/test/media/audiobook/book_import_dialog_test.dart`
+- root cause: `BookImportDialog` used a raw `AlertDialog` for a large multi-field import form. The form was scrollable internally, but the dialog shell had no compact-window height contract or direct widget coverage.
+- impact: adding matcher controls, progress text, or longer localized labels could push the import dialog beyond a small Windows window, and this path is a primary import workflow rather than a rare settings confirmation.
+- fix: extracted `BookImportDialogFrame`, compacted dialog inset/padding, constrained form height, and kept the existing import/cancel actions and import logic unchanged.
+- verification: the compact widget test first failed because `BookImportDialogFrame` did not exist. A first implementation accidentally placed the frame inside the state class and failed compilation; after moving it to top level and restoring the method braces, `flutter test test/media/audiobook/book_import_dialog_test.dart` passed with 1 test.
+
+### Next Scope
+- Continue Windows UI review with remaining import/settings dialogs; stop only after a final no-blocker pass is recorded.
+
 ## Round 56: Audiobook SrtBook Fallback & Import Atomicity Code Review
 
 ### Scope
