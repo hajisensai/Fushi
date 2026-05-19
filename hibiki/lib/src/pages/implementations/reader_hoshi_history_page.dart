@@ -38,8 +38,11 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
   Future<List<SrtBook>>? _srtBooksFuture;
   final Map<String, Future<_AudiobookInfo>> _audiobookInfoCache = {};
 
-  static double _gridExtent(BuildContext context) {
-    return readerShelfGridExtentForWidth(MediaQuery.sizeOf(context).width);
+  static double _gridExtent(BuildContext context, BoxConstraints constraints) {
+    return readerShelfGridExtentForLayout(
+      mediaWidth: MediaQuery.sizeOf(context).width,
+      contentWidth: constraints.maxWidth,
+    );
   }
 
   void _refreshSrtBooks() {
@@ -211,7 +214,52 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
         thumbVisibility: true,
         thickness: 3,
         controller: mediaType.scrollController,
-        child: CustomScrollView(
+        child: LayoutBuilder(
+          builder: (context, constraints) => CustomScrollView(
+            controller: mediaType.scrollController,
+            physics: const AlwaysScrollableScrollPhysics(
+              parent: BouncingScrollPhysics(),
+            ),
+            slivers: [
+              const SliverToBoxAdapter(child: SizedBox(height: 8)),
+              if (srtBooks.isNotEmpty) ...[
+                SliverToBoxAdapter(
+                    child: _buildSectionHeader(t.srt_books_section)),
+                SliverPadding(
+                  padding: EdgeInsets.zero,
+                  sliver: SliverGrid.builder(
+                    gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                      maxCrossAxisExtent: _gridExtent(context, constraints),
+                      childAspectRatio: mediaSource.aspectRatio,
+                    ),
+                    itemCount: srtBooks.length,
+                    itemBuilder: (_, i) => _buildSrtCard(srtBooks[i]),
+                  ),
+                ),
+              ],
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text(
+                    t.tag_no_books_for_filter,
+                    textAlign: TextAlign.center,
+                    style: textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return RawScrollbar(
+      thumbVisibility: true,
+      thickness: 3,
+      controller: mediaType.scrollController,
+      child: LayoutBuilder(
+        builder: (context, constraints) => CustomScrollView(
           controller: mediaType.scrollController,
           physics: const AlwaysScrollableScrollPhysics(
             parent: BouncingScrollPhysics(),
@@ -225,7 +273,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
                 padding: EdgeInsets.zero,
                 sliver: SliverGrid.builder(
                   gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: _gridExtent(context),
+                    maxCrossAxisExtent: _gridExtent(context, constraints),
                     childAspectRatio: mediaSource.aspectRatio,
                   ),
                   itemCount: srtBooks.length,
@@ -233,60 +281,20 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
                 ),
               ),
             ],
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(
-                  t.tag_no_books_for_filter,
-                  textAlign: TextAlign.center,
-                  style: textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-    return RawScrollbar(
-      thumbVisibility: true,
-      thickness: 3,
-      controller: mediaType.scrollController,
-      child: CustomScrollView(
-        controller: mediaType.scrollController,
-        physics: const AlwaysScrollableScrollPhysics(
-          parent: BouncingScrollPhysics(),
-        ),
-        slivers: [
-          const SliverToBoxAdapter(child: SizedBox(height: 8)),
-          if (srtBooks.isNotEmpty) ...[
-            SliverToBoxAdapter(child: _buildSectionHeader(t.srt_books_section)),
-            SliverPadding(
-              padding: EdgeInsets.zero,
-              sliver: SliverGrid.builder(
+            if (epubBooks.isNotEmpty) ...[
+              if (srtBooks.isNotEmpty)
+                SliverToBoxAdapter(child: _buildSectionHeader(t.section_epub)),
+              SliverGrid.builder(
                 gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: _gridExtent(context),
+                  maxCrossAxisExtent: _gridExtent(context, constraints),
                   childAspectRatio: mediaSource.aspectRatio,
                 ),
-                itemCount: srtBooks.length,
-                itemBuilder: (_, i) => _buildSrtCard(srtBooks[i]),
+                itemCount: epubBooks.length,
+                itemBuilder: (_, i) => buildMediaItem(epubBooks[i]),
               ),
-            ),
+            ],
           ],
-          if (epubBooks.isNotEmpty) ...[
-            if (srtBooks.isNotEmpty)
-              SliverToBoxAdapter(child: _buildSectionHeader(t.section_epub)),
-            SliverGrid.builder(
-              gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: _gridExtent(context),
-                childAspectRatio: mediaSource.aspectRatio,
-              ),
-              itemCount: epubBooks.length,
-              itemBuilder: (_, i) => buildMediaItem(epubBooks[i]),
-            ),
-          ],
-        ],
+        ),
       ),
     );
   }

@@ -76,3 +76,25 @@
 
 ### Next Scope
 - Continue with non-focus-stealing Windows checks first. For full `user_path_test` and reader/dictionary drive validation, run when the desktop keyboard focus is not being used, or move those flows to widget-level tests where possible.
+
+## Round 4: Reader Shelf Grid Width
+
+### Scope
+- `hibiki/lib/src/utils/misc/platform_utils.dart`
+- `hibiki/lib/src/pages/implementations/history_reader_page.dart`
+- `hibiki/lib/src/pages/implementations/reader_hoshi_history_page.dart`
+- `hibiki/test/utils/misc/platform_layout_test.dart`
+
+### Findings
+
+#### HBK-AUDIT-014
+- severity: medium
+- status: fixed
+- files: `hibiki/lib/src/utils/misc/platform_utils.dart`, `hibiki/lib/src/pages/implementations/history_reader_page.dart`, `hibiki/lib/src/pages/implementations/reader_hoshi_history_page.dart`, `hibiki/test/utils/misc/platform_layout_test.dart`
+- root cause: reader shelf grid card extents were computed from `MediaQuery.sizeOf(context).width`, i.e. the whole app/window width. On Windows the shelf is inside `DesktopContentLayout`, so the grid's real content width can be much narrower than the full window.
+- impact: on wide Windows layouts the shelf could pick a wider card breakpoint than the constrained grid actually has, causing inconsistent columns and spacing drift between EPUB and SRT sections.
+- fix: added `readerShelfGridExtentForLayout()` and changed the base reader shelf plus Hoshi EPUB/SRT grids to compute extents from `LayoutBuilder` constraints, falling back to media width only when no content constraint is available.
+- verification: `flutter test test/utils/misc/platform_layout_test.dart` passed and now covers constrained content width (`mediaWidth: 1600`, `contentWidth: 760` -> `180`).
+
+### Next Scope
+- Continue auditing Windows-specific focus/keyboard behavior without using host mouse input; current remaining blocker is full drive validation while the desktop keyboard is actively in use.

@@ -62,6 +62,23 @@ void main() {
       expect(readerShelfGridExtentForWidth(1450), 210);
     });
 
+    test('sizes reader shelf cards from constrained content width', () {
+      expect(
+        readerShelfGridExtentForLayout(
+          mediaWidth: 1600,
+          contentWidth: 760,
+        ),
+        180,
+      );
+      expect(
+        readerShelfGridExtentForLayout(
+          mediaWidth: 1600,
+          contentWidth: 1100,
+        ),
+        190,
+      );
+    });
+
     test('adds desktop breathing room without changing compact padding', () {
       expect(
         desktopContentPadding(WindowSizeClass.compact),

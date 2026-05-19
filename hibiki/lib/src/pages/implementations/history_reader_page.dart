@@ -50,8 +50,11 @@ class HistoryReaderPageState<T extends BaseHistoryPage>
     }
   }
 
-  static double _gridExtent(BuildContext context) {
-    return readerShelfGridExtentForWidth(MediaQuery.sizeOf(context).width);
+  static double _gridExtent(BuildContext context, BoxConstraints constraints) {
+    return readerShelfGridExtentForLayout(
+      mediaWidth: MediaQuery.sizeOf(context).width,
+      contentWidth: constraints.maxWidth,
+    );
   }
 
   /// This is shown as the body when [shouldPlaceholderBeShown] is false.
@@ -61,18 +64,20 @@ class HistoryReaderPageState<T extends BaseHistoryPage>
       thumbVisibility: true,
       thickness: 3,
       controller: mediaType.scrollController,
-      child: GridView.builder(
-        padding: const EdgeInsets.only(top: 48),
-        gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: _gridExtent(context),
-          childAspectRatio: mediaSource.aspectRatio,
+      child: LayoutBuilder(
+        builder: (context, constraints) => GridView.builder(
+          padding: const EdgeInsets.only(top: 48),
+          gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: _gridExtent(context, constraints),
+            childAspectRatio: mediaSource.aspectRatio,
+          ),
+          physics: const AlwaysScrollableScrollPhysics(
+            parent: BouncingScrollPhysics(),
+          ),
+          controller: mediaType.scrollController,
+          itemCount: items.length,
+          itemBuilder: (context, index) => buildMediaItem(items[index]),
         ),
-        physics: const AlwaysScrollableScrollPhysics(
-          parent: BouncingScrollPhysics(),
-        ),
-        controller: mediaType.scrollController,
-        itemCount: items.length,
-        itemBuilder: (context, index) => buildMediaItem(items[index]),
       ),
     );
   }

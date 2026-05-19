@@ -50,6 +50,13 @@ double readerShelfGridExtentForWidth(double width) {
   return 150;
 }
 
+double readerShelfGridExtentForLayout({
+  required double mediaWidth,
+  double? contentWidth,
+}) {
+  return readerShelfGridExtentForWidth(contentWidth ?? mediaWidth);
+}
+
 class DesktopContentLayout extends StatelessWidget {
   const DesktopContentLayout({
     required this.kind,
