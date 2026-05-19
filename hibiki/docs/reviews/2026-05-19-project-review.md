@@ -987,6 +987,27 @@
 ### Next Scope
 - Continue Windows UI review with media edit dialog shell and remaining settings confirmation dialogs.
 
+## Round 45: Media Item Edit Dialog Compact Frame Fix
+
+### Scope
+- `hibiki/lib/src/pages/implementations/media_item_edit_dialog_page.dart`
+- `hibiki/test/pages/media_item_edit_dialog_page_test.dart`
+- Media item edit dialog shell with title override field, cover override field, and save/cancel actions.
+
+### Findings
+
+#### HBK-AUDIT-062
+- severity: low
+- status: fixed
+- files: `hibiki/lib/src/pages/implementations/media_item_edit_dialog_page.dart`, `hibiki/test/pages/media_item_edit_dialog_page_test.dart`
+- root cause: the media item edit dialog used a raw `AlertDialog` with content padding but no compact-window height constraint around its stacked text and cover fields.
+- impact: future cover-field changes or localized action labels could push the edit dialog past compact Windows window bounds without a focused shell test.
+- fix: extracted `MediaItemEditDialogFrame`, added compact inset/action padding, constrained and scrolled dialog content, and left the existing title/cover save flow unchanged.
+- verification: the compact widget test first failed because `MediaItemEditDialogFrame` did not exist. After extraction and compact layout, `flutter test test/pages/media_item_edit_dialog_page_test.dart` passed with 2 tests.
+
+### Next Scope
+- Continue Windows UI review with remaining settings confirmation dialogs and large-form dialogs.
+
 ## Round 56: Audiobook SrtBook Fallback & Import Atomicity Code Review
 
 ### Scope

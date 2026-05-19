@@ -38,4 +38,38 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.byType(TextField), findsOneWidget);
   });
+
+  testWidgets('media item edit dialog frame fits compact content', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 240);
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      buildApp(
+        MediaItemEditDialogFrame(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(width: double.maxFinite, height: 1),
+              const TextField(maxLines: null),
+              MediaItemCoverOverrideField(
+                imageProvider: MemoryImage(kTransparentImage),
+                onPickImage: null,
+                onUndo: null,
+              ),
+            ],
+          ),
+          actions: const [
+            TextButton(onPressed: null, child: Text('Cancel')),
+            TextButton(onPressed: null, child: Text('Save')),
+          ],
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Save'), findsOneWidget);
+  });
 }

@@ -59,10 +59,7 @@ class _MediaItemEditDialogPageState
       );
     }
 
-    return AlertDialog(
-      contentPadding: MediaQuery.of(context).orientation == Orientation.portrait
-          ? Spacing.of(context).insets.all.big
-          : Spacing.of(context).insets.all.normal,
+    return MediaItemEditDialogFrame(
       content: buildContent(),
       actions: actions,
     );
@@ -166,6 +163,38 @@ class _MediaItemEditDialogPageState
       navigator.pop();
       mediaSource.mediaType.refreshTab();
     }
+  }
+}
+
+@visibleForTesting
+class MediaItemEditDialogFrame extends StatelessWidget {
+  const MediaItemEditDialogFrame({
+    required this.content,
+    required this.actions,
+    super.key,
+  });
+
+  final Widget content;
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      contentPadding: MediaQuery.of(context).orientation == Orientation.portrait
+          ? Spacing.of(context).insets.all.big
+          : Spacing.of(context).insets.all.normal,
+      actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      buttonPadding: const EdgeInsets.symmetric(horizontal: 4),
+      content: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: double.maxFinite,
+          maxHeight: MediaQuery.of(context).size.height * 0.54,
+        ),
+        child: SingleChildScrollView(child: content),
+      ),
+      actions: actions,
+    );
   }
 }
 
