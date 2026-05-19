@@ -881,3 +881,24 @@
 
 ### Next Scope
 - Continue Windows UI review with remaining delete confirmations and media item dialogs that expose long titles or many actions.
+
+## Round 40: Reader History Delete Dialog Compact Layout Fix
+
+### Scope
+- `hibiki/lib/src/pages/implementations/reader_hoshi_history_page.dart`
+- `hibiki/test/pages/reader_history_delete_dialog_test.dart`
+- Reader history EPUB/SRT delete confirmation dialogs under compact Windows-sized surfaces.
+
+### Findings
+
+#### HBK-AUDIT-052
+- severity: low
+- status: fixed
+- files: `hibiki/lib/src/pages/implementations/reader_hoshi_history_page.dart`, `hibiki/test/pages/reader_history_delete_dialog_test.dart`
+- root cause: the EPUB and SRT delete confirmations duplicated default `AlertDialog` layouts with unconstrained long title/message text, so compact Windows windows had no shared guard against overflow.
+- impact: long book titles could make delete confirmation dialogs cramped or overflow-prone, and the two delete paths could drift independently.
+- fix: extracted shared `ReaderHistoryDeleteDialog`, applied compact dialog padding, constrained and scrolled the message body, ellipsized the title, and kept the destructive action styling.
+- verification: the compact widget test first failed because the shared dialog did not exist. After extraction and compact layout, `flutter test test/pages/reader_history_delete_dialog_test.dart` passed with 1 test.
+
+### Next Scope
+- Continue Windows UI review with media item dialogs and remaining large-content settings dialogs.

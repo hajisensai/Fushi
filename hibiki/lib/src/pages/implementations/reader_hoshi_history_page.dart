@@ -544,19 +544,10 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
   Future<void> _confirmDeleteSrtBook(SrtBook book) async {
     final bool? confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(t.srt_delete_title),
-        content: Text(t.srt_delete_confirm(title: book.title)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(t.dialog_cancel),
-          ),
-          _destructiveConfirmButton(
-            label: t.dialog_delete,
-            onPressed: () => Navigator.pop(ctx, true),
-          ),
-        ],
+      builder: (ctx) => ReaderHistoryDeleteDialog(
+        title: t.srt_delete_title,
+        message: t.srt_delete_confirm(title: book.title),
+        onConfirm: () => Navigator.pop(ctx, true),
       ),
     );
     if (confirmed != true || !mounted) return;
@@ -794,19 +785,10 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     Navigator.pop(context);
     final bool? confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(t.epub_delete_title),
-        content: Text(t.srt_delete_confirm(title: item.title)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(t.dialog_cancel),
-          ),
-          _destructiveConfirmButton(
-            label: t.dialog_delete,
-            onPressed: () => Navigator.pop(ctx, true),
-          ),
-        ],
+      builder: (ctx) => ReaderHistoryDeleteDialog(
+        title: t.epub_delete_title,
+        message: t.srt_delete_confirm(title: item.title),
+        onConfirm: () => Navigator.pop(ctx, true),
       ),
     );
     if (confirmed != true || !mounted) return;
@@ -1119,6 +1101,64 @@ class _BookDragTargetState extends State<_BookDragTarget> {
           ],
         );
       },
+    );
+  }
+}
+
+@visibleForTesting
+class ReaderHistoryDeleteDialog extends StatelessWidget {
+  const ReaderHistoryDeleteDialog({
+    required this.title,
+    required this.message,
+    required this.onConfirm,
+    super.key,
+  });
+
+  final String title;
+  final String message;
+  final VoidCallback onConfirm;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return AlertDialog(
+      titlePadding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+      actionsPadding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
+      buttonPadding: const EdgeInsets.symmetric(horizontal: 4),
+      title: Text(
+        title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: theme.textTheme.titleMedium,
+      ),
+      content: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: double.maxFinite,
+          maxHeight: MediaQuery.of(context).size.height * 0.34,
+        ),
+        child: SingleChildScrollView(
+          child: Text(
+            message,
+            style: theme.textTheme.bodySmall,
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: Text(t.dialog_cancel),
+        ),
+        FilledButton(
+          onPressed: onConfirm,
+          style: FilledButton.styleFrom(
+            backgroundColor: theme.colorScheme.errorContainer,
+            foregroundColor: theme.colorScheme.onErrorContainer,
+          ),
+          child: Text(t.dialog_delete),
+        ),
+      ],
     );
   }
 }
