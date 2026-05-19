@@ -58,6 +58,11 @@ Finder findBookEntries() {
 }
 
 Finder findSearchField() {
+  final Finder homeDictionarySearch =
+      find.byKey(const ValueKey<String>('home_dictionary_search_field'));
+  if (homeDictionarySearch.evaluate().isNotEmpty) {
+    return homeDictionarySearch.first;
+  }
   if (find.byType(TextField).evaluate().isNotEmpty) {
     return find.byType(TextField).first;
   }

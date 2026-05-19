@@ -162,3 +162,25 @@
 
 ### Next Scope
 - Continue checking reader/dictionary interaction contracts that can be moved out of full Windows drive runs. Prioritize pure functions or widget tests for focus-sensitive paths.
+
+## Round 8: Dictionary Search Field Targeting
+
+### Scope
+- `hibiki/lib/src/pages/implementations/home_dictionary_page.dart`
+- `hibiki/integration_test/test_helpers.dart`
+- `hibiki/test/integration/navigation_helpers_test.dart`
+- Windows/CJK dictionary search drive-test targeting.
+
+### Findings
+
+#### HBK-AUDIT-018
+- severity: medium
+- status: fixed
+- files: `hibiki/lib/src/pages/implementations/home_dictionary_page.dart`, `hibiki/integration_test/test_helpers.dart`, `hibiki/test/integration/navigation_helpers_test.dart`
+- root cause: `findSearchField()` selected the first `TextField`/`TextFormField` in the entire widget tree. On Windows desktop layouts the dictionary tab can coexist with other content or overlay input fields, so the CJK dictionary drive test could type into an unrelated field instead of the real home dictionary search field.
+- impact: Windows CJK search validation could become flaky or silently verify the wrong input target, leaving the actual dictionary search path untested.
+- fix: gave the home dictionary search `TextField` a stable `ValueKey<String>('home_dictionary_search_field')`, and changed `findSearchField()` to prefer that keyed field before falling back to the old generic field lookup for compatibility.
+- verification: TDD red check failed as expected because `findSearchField()` picked `unrelated_search_field`. After the fix, `flutter test test/integration/navigation_helpers_test.dart` passed with 5 tests. `dart format .` formatted the changed dictionary page. `flutter test` passed with 741 tests. No Windows runner was launched, so this round did not take desktop focus from the user.
+
+### Next Scope
+- Continue reducing full Windows drive dependency by giving reader/dictionary interaction targets stable keys and lower-level tests where possible.

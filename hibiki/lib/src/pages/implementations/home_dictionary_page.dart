@@ -160,6 +160,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
               child: SizedBox(
                 height: 42,
                 child: TextField(
+                  key: const ValueKey<String>('home_dictionary_search_field'),
                   controller: _controller,
                   focusNode: _searchFocusNode,
                   textInputAction: TextInputAction.search,

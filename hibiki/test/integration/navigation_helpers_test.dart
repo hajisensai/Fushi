@@ -109,6 +109,27 @@ void main() {
     expect(tester.widget<Icon>(targets[1]).icon, Icons.search);
   });
 
+  testWidgets('findSearchField prefers keyed dictionary search field',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Column(
+            children: [
+              TextField(key: ValueKey<String>('unrelated_search_field')),
+              TextField(key: ValueKey<String>('home_dictionary_search_field')),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final Finder target = findSearchField();
+
+    expect(tester.widget<TextField>(target).key,
+        const ValueKey<String>('home_dictionary_search_field'));
+  });
+
   test('screenshots are optional on Windows drive', () {
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     addTearDown(() => debugDefaultTargetPlatformOverride = null);
