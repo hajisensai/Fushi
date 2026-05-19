@@ -112,7 +112,9 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
     final swTotal = Stopwatch()..start();
 
     try {
-      _isSearchingNotifier.value = true;
+      if (!deferDisplay) {
+        _isSearchingNotifier.value = true;
+      }
 
       final dictionaryResult = await appModel.searchDictionary(
         searchTerm: searchTerm,
