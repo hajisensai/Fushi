@@ -95,15 +95,19 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
   /// Action to perform within the source page upon closing the media.
   Future<void> onSourcePagePop() async {}
 
+  _PopupStackItem? _deferredPopupItem;
+
   Future<int> searchDictionaryResult({
     required String searchTerm,
     required Rect selectionRect,
     int? overrideMaximumTerms,
+    bool deferDisplay = false,
   }) async {
     overrideMaximumTerms ??= appModel.maximumTerms;
 
     final gen = ++_searchGeneration;
     _pendingSelectionRect = selectionRect;
+    _deferredPopupItem = null;
     final swTotal = Stopwatch()..start();
 
     try {
@@ -126,7 +130,12 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
         selectionRect: selectionRect,
         searchTerm: searchTerm,
       );
-      _popupStack.value = [..._popupStack.value, item];
+
+      if (deferDisplay) {
+        _deferredPopupItem = item;
+      } else {
+        _popupStack.value = [..._popupStack.value, item];
+      }
 
       debugPrint(
           '[dict-perf] searchDictionaryResult: search=${msAfterSearch}ms pushPopup=${swTotal.elapsedMilliseconds}ms "$searchTerm"');
@@ -149,11 +158,23 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
 
       return highlightCount;
     } finally {
-      if (_searchGeneration == gen) {
+      if (_searchGeneration == gen && !deferDisplay) {
         _isSearchingNotifier.value = false;
         _pendingSelectionRect = null;
       }
     }
+  }
+
+  void showDeferredPopup({Rect? selectionRect}) {
+    final item = _deferredPopupItem;
+    if (item == null) return;
+    _deferredPopupItem = null;
+    if (selectionRect != null) {
+      item.selectionRect = selectionRect;
+    }
+    _popupStack.value = [..._popupStack.value, item];
+    _isSearchingNotifier.value = false;
+    _pendingSelectionRect = null;
   }
 
   /// Resolve audio exactly like Hoshi: enabled sources only, no TTS fallback.
@@ -342,6 +363,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
     _searchGeneration++;
     _pendingSelectionRect = null;
     _isSearchingNotifier.value = false;
+    _deferredPopupItem = null;
     if (index > 0) {
       final parent = _popupStack.value[index - 1];
       parent.webViewKey.currentState?.clearSelection();
@@ -359,13 +381,6 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
   /// Called when all dictionary popups are dismissed (stack becomes empty).
   /// Override in subclasses to hook post-dismiss logic.
   void onAllPopupsDismissed() {}
-
-  void repositionTopPopup(Rect expandedSelectionRect) {
-    final stack = _popupStack.value;
-    if (stack.isEmpty) return;
-    stack.last.selectionRect = expandedSelectionRect;
-    _popupStack.value = List.of(stack);
-  }
 
   Rect _calculatePopupPosition(Rect sel, Size screen) {
     return calcPopupPosition(

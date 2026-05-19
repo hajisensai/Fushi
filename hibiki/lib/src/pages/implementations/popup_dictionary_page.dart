@@ -128,6 +128,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       child: Column(
         children: [
           _buildSearchBar(),
+          Divider(height: 1, thickness: 1, color: borderColor),
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
@@ -184,6 +185,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
         webViewKey: entry.webViewKey,
         isDark: isDark,
         showBorder: false,
+        swipeDismissible: false,
         overrideFillColor: Colors.transparent,
         onDismiss: _close,
         onTapOutside: _close,
@@ -262,6 +264,8 @@ class PopupDictionarySearchBar extends StatelessWidget {
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               border: InputBorder.none,
+              enabledBorder: InputBorder.none,
+              focusedBorder: InputBorder.none,
             ),
             textInputAction: TextInputAction.search,
             onSubmitted: (_) => _submit(),

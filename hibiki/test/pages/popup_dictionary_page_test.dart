@@ -302,4 +302,35 @@ void main() {
 
     expect(layer.onTapOutside, isNotNull);
   });
+
+  testWidgets('base popup layer disables swipe dismiss inside popup host', (
+    WidgetTester tester,
+  ) async {
+    final AppModel appModel = PopupTestAppModel();
+
+    await tester.pumpWidget(
+      buildTestApp(
+        appModel: appModel,
+        home: PopupDictionaryPage(
+          searchTerm: 'search',
+          closeInApp: () {},
+          autoSearchOnOpen: false,
+        ),
+      ),
+    );
+
+    final Finder searchField = find.byKey(
+      const ValueKey<String>('popup_dictionary_search_field'),
+    );
+    await tester.showKeyboard(searchField);
+    await tester.enterText(searchField, 'search');
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pump();
+
+    final DictionaryPopupLayer layer = tester.widget(
+      find.byType(DictionaryPopupLayer),
+    );
+
+    expect(layer.swipeDismissible, isFalse);
+  });
 }

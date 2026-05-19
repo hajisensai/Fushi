@@ -2111,17 +2111,23 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     );
   }
 
-  Future<void> _highlightAndReposition(int highlightCount) async {
-    if (highlightCount <= 0 || _controller == null) return;
-    final raw = await _controller!.evaluateJavascript(
-      source: ReaderSelectionScripts.highlightInvocation(highlightCount),
-    );
-    if (!mounted) return;
-    final rect = ReaderSelectionScripts.highlightRectFromResult(
-      raw,
-      topOffset: _readerTopOffset,
-    );
-    if (rect != null) repositionTopPopup(rect);
+  Future<void> _highlightAndShowPopup(
+    int highlightCount,
+    Rect fallbackRect,
+  ) async {
+    Rect finalRect = fallbackRect;
+    if (highlightCount > 0 && _controller != null) {
+      final raw = await _controller!.evaluateJavascript(
+        source: ReaderSelectionScripts.highlightInvocation(highlightCount),
+      );
+      if (!mounted) return;
+      final rect = ReaderSelectionScripts.highlightRectFromResult(
+        raw,
+        topOffset: _readerTopOffset,
+      );
+      if (rect != null) finalRect = rect;
+    }
+    showDeferredPopup(selectionRect: finalRect);
   }
 
   Future<void> _handleTextSelected(ReaderSelectionData data) async {
@@ -2191,8 +2197,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       final int highlightCount = await searchDictionaryResult(
         searchTerm: data.text,
         selectionRect: selectionRect,
+        deferDisplay: true,
       );
-      await _highlightAndReposition(highlightCount);
+      await _highlightAndShowPopup(highlightCount, selectionRect);
       _checkFavoriteStatus();
       return;
     }
@@ -2204,9 +2211,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final int highlightCount = await searchDictionaryResult(
       searchTerm: data.text,
       selectionRect: selectionRect,
+      deferDisplay: true,
     );
 
-    await _highlightAndReposition(highlightCount);
+    await _highlightAndShowPopup(highlightCount, selectionRect);
     if (data.normalizedOffset != null && data.normalizedLength != null) {
       _cachedSelectionRange = (
         offset: data.normalizedOffset!,

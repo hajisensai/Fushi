@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
 
 import '../widgets/widget_test_helpers.dart';
 
@@ -80,5 +81,32 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('swipeDismissible false leaves the layer unwrapped', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      buildTestApp(
+        SizedBox(
+          width: 240,
+          height: 160,
+          child: DictionaryPopupLayer(
+            result: null,
+            isSearching: false,
+            webViewKey: GlobalKey<DictionaryPopupWebViewState>(),
+            swipeDismissible: false,
+            onDismiss: () {},
+            onTextSelected: (text, rect) {},
+            onLinkClick: (query, rect) {},
+            onMineEntry: (fields) async => false,
+            onDuplicateCheck: (expression, reading) async => false,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(DictionaryPopupLayer), findsOneWidget);
+    expect(find.byType(SwipeDismissWrapper), findsNothing);
   });
 }

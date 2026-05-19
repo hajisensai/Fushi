@@ -468,3 +468,46 @@
 
 ### Next Scope
 - Continue review with remaining dirty Windows popup host paths that do not require stealing focus, especially `PopupDictActivity` window flags and the current popup swipe-dismiss/desktop search-field deltas.
+
+## Round 22: Popup Host Swipe And Deferred Display
+
+### Scope
+- `hibiki/lib/src/pages/implementations/dictionary_popup_layer.dart`
+- `hibiki/lib/src/pages/implementations/popup_dictionary_page.dart`
+- `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart`
+- `hibiki/android/app/src/main/java/app/hibiki/reader/PopupDictActivity.java`
+- `hibiki/test/pages/dictionary_popup_layer_test.dart`
+- `hibiki/test/pages/popup_dictionary_page_test.dart`
+- Remaining Windows/desktop popup host UI deltas that do not require stealing focus.
+
+### Findings
+
+#### HBK-AUDIT-032
+- severity: medium
+- status: fixed
+- files: `hibiki/lib/src/pages/implementations/dictionary_popup_layer.dart`, `hibiki/lib/src/pages/implementations/popup_dictionary_page.dart`, `hibiki/test/pages/dictionary_popup_layer_test.dart`, `hibiki/test/pages/popup_dictionary_page_test.dart`
+- root cause: `DictionaryPopupLayer` always wrapped content in `SwipeDismissWrapper`. That behavior is useful for floating reader/nested popups, but it is wrong for the full-size popup dictionary host: a horizontal drag inside the dedicated popup window can dismiss the whole host while the user is scrolling, selecting text, or interacting with result content.
+- impact: Windows in-app popup and Android popup activity content could disappear from an ordinary content gesture. A screenshot would look correct because the layout is fine; the bug is in the gesture contract.
+- fix: added an explicit `swipeDismissible` flag to `DictionaryPopupLayer`, defaulting to the previous behavior, and disabled it only for the base `PopupDictionaryPage` host layer. The popup page also keeps the search/header boundary visually separate with a divider and removes TextField outline variants so the host chrome is not double-bordered.
+- verification: added widget coverage proving `swipeDismissible: false` leaves the layer unwrapped and proving the base popup host layer passes `swipeDismissible == false`. `flutter test test/pages/dictionary_popup_layer_test.dart test/pages/popup_dictionary_page_test.dart test/reader/reader_selection_scripts_test.dart` passed with 41 tests. Full `flutter test` passed with 763 tests. `flutter build windows --debug` built `build\windows\x64\runner\Debug\hibiki.exe` with the existing third-party `flutter_inappwebview_windows` CMake dev warning.
+
+#### HBK-AUDIT-033
+- severity: high
+- status: fixed
+- files: `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart`
+- root cause: the reader lookup popup flow was partly migrated from immediate display plus later repositioning to deferred display after highlight bounds were known. The helper was renamed to `_highlightAndShowPopup()`, but stale calls to `_highlightAndReposition()` remained in the text-selection path during the dirty state, making related Flutter tests fail to compile.
+- impact: this is not a visual nit. Any test or build that includes `ReaderHoshiPage` can fail at compile time, blocking Windows UI verification entirely.
+- fix: use one flow for both lyrics and normal reader selections: call `searchDictionaryResult(..., deferDisplay: true)`, evaluate the highlight bounds, and then show the deferred popup once with the final rectangle.
+- verification: the compile failure was reproduced while running `flutter test test/pages/popup_dictionary_page_test.dart --plain-name "base popup layer disables swipe dismiss inside popup host"`. After the fix, that test passed, the combined targeted popup/selection tests passed with 41 tests, full `flutter test` passed with 763 tests, and `flutter build windows --debug` succeeded.
+
+#### HBK-AUDIT-034
+- severity: low
+- status: verified-pass
+- files: `hibiki/android/app/src/main/java/app/hibiki/reader/PopupDictActivity.java`
+- root cause: the dirty native popup activity changes were reviewed for Windows-facing popup parity. They ignore blank `hibiki://lookup?word=` inputs and clear window dimming for the transparent popup activity.
+- impact: blank lookup intents no longer open an empty popup, and the Android popup behaves more like the desktop in-app popup by avoiding an extra dimmed background behind the small dictionary surface.
+- fix: no additional production edit in this round beyond preserving the existing dirty native change for later Android-specific validation.
+- verification: static code review only. No Android activity instrumentation was run in this Windows-focused pass.
+
+### Next Scope
+- Continue review with remaining dirty generated/i18n and lyrics overlay files only if they are actually Windows UI related; otherwise leave them out of the Windows popup/layout fix stream.

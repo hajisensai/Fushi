@@ -181,7 +181,8 @@ public class PopupDictActivity extends FlutterActivity {
         if (data != null
                 && "hibiki".equals(data.getScheme())
                 && "lookup".equals(data.getHost())) {
-            return data.getQueryParameter("word");
+            String word = data.getQueryParameter("word");
+            if (word != null && !word.trim().isEmpty()) return word;
         }
         return null;
     }
@@ -201,7 +202,9 @@ public class PopupDictActivity extends FlutterActivity {
         params.width = width;
         params.height = height;
         params.gravity = Gravity.CENTER;
+        params.dimAmount = 0f;
         getWindow().setAttributes(params);
+        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
     }
 
     private static synchronized FlutterEngine ensureCachedEngine(@NonNull Context context) {

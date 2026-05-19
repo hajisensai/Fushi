@@ -67,6 +67,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.isDark = false,
     this.overrideFillColor,
     this.showBorder = true,
+    this.swipeDismissible = true,
     super.key,
   });
 
@@ -86,6 +87,7 @@ class DictionaryPopupLayer extends StatelessWidget {
   final bool isDark;
   final Color? overrideFillColor;
   final bool showBorder;
+  final bool swipeDismissible;
 
   @override
   Widget build(BuildContext context) {
@@ -93,18 +95,22 @@ class DictionaryPopupLayer extends StatelessWidget {
     final fillColor = overrideFillColor ?? colorScheme.surface;
     final borderColor = colorScheme.outlineVariant.withValues(alpha: 0.5);
 
+    Widget container = Container(
+      decoration: BoxDecoration(
+        color: fillColor,
+        borderRadius: showBorder ? BorderRadius.circular(8) : null,
+        border: showBorder ? Border.all(color: borderColor) : null,
+      ),
+      clipBehavior: showBorder ? Clip.antiAlias : Clip.none,
+      child: _buildContent(context),
+    );
+
+    if (!swipeDismissible) return container;
+
     return SwipeDismissWrapper(
       sensitivity: ReaderHoshiSource.instance.dismissSwipeSensitivity,
       onDismiss: onDismiss,
-      child: Container(
-        decoration: BoxDecoration(
-          color: fillColor,
-          borderRadius: showBorder ? BorderRadius.circular(8) : null,
-          border: showBorder ? Border.all(color: borderColor) : null,
-        ),
-        clipBehavior: showBorder ? Clip.antiAlias : Clip.none,
-        child: _buildContent(context),
-      ),
+      child: container,
     );
   }
 
