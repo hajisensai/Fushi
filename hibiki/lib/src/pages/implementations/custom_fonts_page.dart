@@ -579,30 +579,13 @@ class _CustomFontsPageState extends BasePageState {
         barrierDismissible: false,
         builder: (ctx) => PopScope(
           canPop: false,
-          child: AlertDialog(
-            title: Text(displayName ?? t.custom_fonts_downloading),
-            content: ValueListenableBuilder<double?>(
-              valueListenable: progressNotifier,
-              builder: (_, progress, __) => Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  LinearProgressIndicator(value: progress),
-                  const SizedBox(height: 8),
-                  Text(progress != null
-                      ? '${(progress * 100).toStringAsFixed(0)}%'
-                      : t.custom_fonts_downloading),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  cancelToken.cancel();
-                  Navigator.pop(ctx);
-                },
-                child: Text(t.dialog_cancel),
-              ),
-            ],
+          child: CustomFontDownloadProgressDialog(
+            title: displayName ?? t.custom_fonts_downloading,
+            progressNotifier: progressNotifier,
+            onCancel: () {
+              cancelToken.cancel();
+              Navigator.pop(ctx);
+            },
           ),
         ),
       );
@@ -742,33 +725,10 @@ class _CustomFontsPageState extends BasePageState {
   }
 
   Future<void> _importFromUrl() async {
-    final urlController = TextEditingController();
     final url = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(t.custom_fonts_import_url),
-        content: TextField(
-          controller: urlController,
-          decoration: const InputDecoration(
-            hintText: 'https://example.com/fonts.zip',
-            border: OutlineInputBorder(),
-          ),
-          keyboardType: TextInputType.url,
-          autofocus: true,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(t.dialog_cancel),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, urlController.text.trim()),
-            child: Text(t.dialog_import),
-          ),
-        ],
-      ),
+      builder: (ctx) => const CustomFontUrlImportDialog(),
     );
-    urlController.dispose();
     if (url == null || url.isEmpty) return;
     await _downloadUrl(url);
   }
@@ -955,6 +915,118 @@ class _CustomFontsPageState extends BasePageState {
                 ),
               ],
             ),
+    );
+  }
+}
+
+@visibleForTesting
+class CustomFontDownloadProgressDialog extends StatelessWidget {
+  const CustomFontDownloadProgressDialog({
+    required this.title,
+    required this.progressNotifier,
+    required this.onCancel,
+    super.key,
+  });
+
+  final String title;
+  final ValueNotifier<double?> progressNotifier;
+  final VoidCallback onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      titlePadding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+      actionsPadding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
+      buttonPadding: const EdgeInsets.symmetric(horizontal: 4),
+      title: Text(
+        title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: Theme.of(context).textTheme.titleMedium,
+      ),
+      content: ValueListenableBuilder<double?>(
+        valueListenable: progressNotifier,
+        builder: (_, progress, __) => Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            LinearProgressIndicator(value: progress),
+            const SizedBox(height: 4),
+            Text(
+              progress != null
+                  ? '${(progress * 100).toStringAsFixed(0)}%'
+                  : t.custom_fonts_downloading,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: onCancel,
+          child: Text(t.dialog_cancel),
+        ),
+      ],
+    );
+  }
+}
+
+@visibleForTesting
+class CustomFontUrlImportDialog extends StatefulWidget {
+  const CustomFontUrlImportDialog({super.key});
+
+  @override
+  State<CustomFontUrlImportDialog> createState() =>
+      _CustomFontUrlImportDialogState();
+}
+
+class _CustomFontUrlImportDialogState extends State<CustomFontUrlImportDialog> {
+  final TextEditingController _urlController = TextEditingController();
+
+  @override
+  void dispose() {
+    _urlController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      titlePadding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+      actionsPadding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
+      buttonPadding: const EdgeInsets.symmetric(horizontal: 4),
+      title: Text(
+        t.custom_fonts_import_url,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: Theme.of(context).textTheme.titleMedium,
+      ),
+      content: TextField(
+        controller: _urlController,
+        decoration: const InputDecoration(
+          hintText: 'https://example.com/fonts.zip',
+          border: OutlineInputBorder(),
+          isDense: true,
+          contentPadding: EdgeInsets.symmetric(
+            horizontal: 8,
+            vertical: 8,
+          ),
+        ),
+        keyboardType: TextInputType.url,
+        autofocus: true,
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(t.dialog_cancel),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, _urlController.text.trim()),
+          child: Text(t.dialog_import),
+        ),
+      ],
     );
   }
 }

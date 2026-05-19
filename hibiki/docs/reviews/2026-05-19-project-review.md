@@ -818,3 +818,24 @@
 
 ### Next Scope
 - Continue Windows UI review with CSS/font editor dialogs and remaining confirmation dialogs that still use default `AlertDialog` padding.
+
+## Round 37: Custom Font Dialog Compact Layout Fix
+
+### Scope
+- `hibiki/lib/src/pages/implementations/custom_fonts_page.dart`
+- `hibiki/test/pages/custom_fonts_dialog_page_test.dart`
+- Custom font URL import and download progress dialogs under compact Windows-sized surfaces.
+
+### Findings
+
+#### HBK-AUDIT-049
+- severity: low
+- status: fixed
+- files: `hibiki/lib/src/pages/implementations/custom_fonts_page.dart`, `hibiki/test/pages/custom_fonts_dialog_page_test.dart`
+- root cause: the URL import and download progress dialogs were built inline with default `AlertDialog` title/content/action padding and unbounded long title text, which made the layout harder to test and easier to overflow in compact desktop windows.
+- impact: long recommended font names or localized dialog titles could consume too much vertical chrome on small Windows windows; because the dialogs were inline, there was no direct widget coverage for this layout.
+- fix: extracted `CustomFontUrlImportDialog` and `CustomFontDownloadProgressDialog`, applied compact dialog padding, dense input padding, one-line ellipsized titles/progress labels, and kept the existing import/download flow unchanged.
+- verification: the compact widget test first failed because both dialogs were inline and unavailable; after extraction and compact layout, `flutter test test/pages/custom_fonts_dialog_page_test.dart` passed with 2 tests and full `flutter test` passed with 779 tests. `flutter build windows --debug` was blocked by an unrelated dirty `audiobook_import_dialog.dart` compile error (`_AudiobookImportDialogState.health` is undefined after a local parsed-health refactor).
+
+### Next Scope
+- Continue Windows UI review with dictionary CSS editor and remaining reader/history confirmation dialogs.
