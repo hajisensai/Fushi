@@ -468,20 +468,13 @@ class DictionaryPopupWebViewState
 
   static String buildLookupEntriesJson(DictionarySearchResult result) {
     final Map<String, Map<String, dynamic>> grouped = {};
+    final Map<String, Set<String>> seenFrequencies = {};
+    final Map<String, Set<String>> seenPitches = {};
 
     for (final entry in result.entries) {
       final key = '${entry.word}\n${entry.reading}';
+      final extraData = _decodeExtra(entry);
       if (!grouped.containsKey(key)) {
-        Map<String, dynamic>? extraData;
-        if (entry.extra.isNotEmpty) {
-          try {
-            extraData = jsonDecode(entry.extra) as Map<String, dynamic>;
-          } catch (e, stack) {
-            ErrorLogService.instance
-                .log('DictPopupWebview.extraData', e, stack);
-          }
-        }
-
         grouped[key] = {
           'expression': entry.word,
           'reading': entry.reading,
@@ -489,20 +482,19 @@ class DictionaryPopupWebViewState
           'rules': <String>[],
           'deinflectionTrace': <Map<String, String>>[],
           'glossaries': <Map<String, dynamic>>[],
-          'frequencies': _convertFrequencies(extraData),
-          'pitches': _convertPitches(extraData),
+          'frequencies': <Map<String, dynamic>>[],
+          'pitches': <Map<String, dynamic>>[],
         };
-
-        if (extraData != null && extraData.containsKey('deinflected')) {
-          final matched = extraData['matched'] as String? ?? '';
-          final deinflected = extraData['deinflected'] as String? ?? '';
-          if (matched != deinflected && deinflected.isNotEmpty) {
-            grouped[key]!['deinflectionTrace'] = [
-              {'name': '$matched → $deinflected', 'description': ''}
-            ];
-          }
-        }
+        seenFrequencies[key] = <String>{};
+        seenPitches[key] = <String>{};
       }
+
+      _mergeLookupMetadata(
+        group: grouped[key]!,
+        extraData: extraData,
+        seenFrequencies: seenFrequencies[key]!,
+        seenPitches: seenPitches[key]!,
+      );
 
       dynamic contentValue;
       try {
@@ -521,6 +513,65 @@ class DictionaryPopupWebViewState
     }
 
     return jsonEncode(grouped.values.toList());
+  }
+
+  static Map<String, dynamic>? _decodeExtra(DictionaryEntry entry) {
+    if (entry.extra.isEmpty) return null;
+    try {
+      return jsonDecode(entry.extra) as Map<String, dynamic>;
+    } catch (e, stack) {
+      ErrorLogService.instance.log('DictPopupWebview.extraData', e, stack);
+      return null;
+    }
+  }
+
+  static void _mergeLookupMetadata({
+    required Map<String, dynamic> group,
+    required Map<String, dynamic>? extraData,
+    required Set<String> seenFrequencies,
+    required Set<String> seenPitches,
+  }) {
+    if (extraData == null) return;
+
+    final matched = extraData['matched'] as String?;
+    if (matched != null &&
+        matched.isNotEmpty &&
+        group['matched'] == group['expression']) {
+      group['matched'] = matched;
+    }
+
+    final trace = group['deinflectionTrace'] as List<Map<String, String>>;
+    if (trace.isEmpty && extraData.containsKey('deinflected')) {
+      final traceMatched = matched ?? '';
+      final deinflected = extraData['deinflected'] as String? ?? '';
+      if (traceMatched != deinflected && deinflected.isNotEmpty) {
+        trace.add({'name': '$traceMatched → $deinflected', 'description': ''});
+      }
+    }
+
+    _appendUniqueMetadata(
+      target: group['frequencies'] as List<Map<String, dynamic>>,
+      values: _convertFrequencies(extraData),
+      seen: seenFrequencies,
+    );
+    _appendUniqueMetadata(
+      target: group['pitches'] as List<Map<String, dynamic>>,
+      values: _convertPitches(extraData),
+      seen: seenPitches,
+    );
+  }
+
+  static void _appendUniqueMetadata({
+    required List<Map<String, dynamic>> target,
+    required List<Map<String, dynamic>> values,
+    required Set<String> seen,
+  }) {
+    for (final value in values) {
+      final key = jsonEncode(value);
+      if (seen.add(key)) {
+        target.add(value);
+      }
+    }
   }
 
   static String _getExtraField(DictionaryEntry entry, String field) {

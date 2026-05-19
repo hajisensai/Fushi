@@ -379,3 +379,24 @@
 
 ### Next Scope
 - Continue review with popup WebView result content sizing and nested popup stack behavior after result links/selections.
+
+## Round 18: Popup WebView Metadata Merge
+
+### Scope
+- `hibiki/lib/src/pages/implementations/dictionary_popup_webview.dart`
+- `hibiki/test/pages/dictionary_popup_webview_test.dart`
+- Dictionary popup WebView JSON contract used by Windows desktop popup results.
+
+### Findings
+
+#### HBK-AUDIT-028
+- severity: medium
+- status: fixed
+- files: `hibiki/lib/src/pages/implementations/dictionary_popup_webview.dart`, `hibiki/test/pages/dictionary_popup_webview_test.dart`
+- root cause: `buildLookupEntriesJson()` groups entries by `word + reading`, but initialized `matched`, `deinflectionTrace`, `frequencies`, and `pitches` only from the first entry in each group. When the first glossary entry had no metadata and a later grouped entry carried frequency or pitch data, the WebView received empty metadata arrays.
+- impact: the visible popup could look fine on a normal screenshot while still omitting frequency or pitch sections depending on dictionary ordering. That is a real data-contract bug in the Windows popup result path, not a visual-only artifact.
+- fix: decode each entry's `extra` once, then merge metadata into the grouped result across the whole group. Frequency and pitch payloads are deduplicated by their encoded JSON value so repeated glossary entries from the same Hoshi term do not duplicate metadata blocks.
+- verification: TDD red check failed because a later grouped entry's `frequencies` and `pitches` were dropped. After the fix, `flutter test test/pages/dictionary_popup_webview_test.dart` passed, full `flutter test` passed with 756 tests, and `flutter build windows --debug` built `build\windows\x64\runner\Debug\hibiki.exe` with the existing `flutter_inappwebview_windows` CMake dev warning.
+
+### Next Scope
+- Continue review with nested popup stack behavior after result links/selections, especially link-click geometry and recursive lookup result state.
