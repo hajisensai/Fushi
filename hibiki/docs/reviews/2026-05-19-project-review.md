@@ -314,3 +314,24 @@
 
 ### Next Scope
 - Continue review with the rendered popup layer stack under constrained dialog sizes and verify whether result WebView content gets stable height without overflow.
+
+## Round 15: Compact Desktop Popup Dialog
+
+### Scope
+- `hibiki/lib/src/models/app_model.dart`
+- `hibiki/test/pages/popup_dictionary_page_test.dart`
+- In-app desktop popup dictionary dialog under compact Windows-sized surfaces.
+
+### Findings
+
+#### HBK-AUDIT-025
+- severity: low
+- status: verified-pass
+- files: `hibiki/lib/src/models/app_model.dart`, `hibiki/test/pages/popup_dictionary_page_test.dart`
+- root cause: no production defect found in this round. The risk was that the non-Android popup dictionary path wraps `PopupDictionaryPage` in `Dialog(insetPadding: EdgeInsets.all(24))` plus `ConstrainedBox(maxWidth: 520, maxHeight: 640)`, and a compact desktop window might overflow or render outside the viewport.
+- impact: if this had failed, Windows lookup validation could show a normal screenshot at large size while compact windows clipped or hid the popup. The widget check did not reproduce that failure.
+- fix: no layout code change. Added a non-focus-stealing widget regression test that opens the desktop popup in a 320x240 test window and asserts no Flutter exception plus an in-bounds dialog rectangle.
+- verification: `flutter test test/pages/popup_dictionary_page_test.dart --plain-name "desktop popup dialog renders inside a compact window"` passed. Full `flutter test` passed with 751 tests, and `flutter build windows --debug` built `build\windows\x64\runner\Debug\hibiki.exe` with the existing `flutter_inappwebview_windows` CMake dev warning. This is recorded as verified-pass, not fixed.
+
+### Next Scope
+- Continue review with popup result WebView content sizing and empty/loading states under compact popup surfaces.

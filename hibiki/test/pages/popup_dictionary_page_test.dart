@@ -116,6 +116,35 @@ void main() {
     await tester.pump();
   });
 
+  testWidgets('desktop popup dialog renders inside a compact window', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 240);
+    addTearDown(tester.view.reset);
+    final AppModel appModel = AppModel();
+
+    await tester.pumpWidget(
+      buildTestApp(
+        appModel: appModel,
+        home: const Scaffold(body: SizedBox.shrink()),
+      ),
+    );
+
+    unawaited(appModel.openPopupDictionaryLookup(searchTerm: 'search'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+
+    final Rect dialogRect = tester.getRect(find.byType(Dialog));
+
+    expect(dialogRect.left, greaterThanOrEqualTo(0));
+    expect(dialogRect.top, greaterThanOrEqualTo(0));
+    expect(dialogRect.right, lessThanOrEqualTo(320));
+    expect(dialogRect.bottom, lessThanOrEqualTo(240));
+  });
+
   testWidgets('exposes stable popup search targets for desktop drive', (
     WidgetTester tester,
   ) async {
