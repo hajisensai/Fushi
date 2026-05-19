@@ -47,7 +47,7 @@ class CuesToEpub {
     required String outputPath,
     String? author,
   }) async {
-    final List<List<AudioCue>> chapters = _splitChapters(cues);
+    final List<List<AudioCue>> chapters = splitChapters(cues);
     final _EpubZip zip = _EpubZip();
 
     // mimetype MUST be the first entry and stored (no compression) per EPUB spec.
@@ -92,7 +92,7 @@ class CuesToEpub {
   // ── chapter splitting ─────────────────────────────────────────────────────
 
   /// Splits [cues] into sub-lists, each within the size/duration thresholds.
-  static List<List<AudioCue>> _splitChapters(List<AudioCue> cues) {
+  static List<List<AudioCue>> splitChapters(List<AudioCue> cues) {
     if (cues.isEmpty) {
       return [[]];
     }

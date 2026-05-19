@@ -99,6 +99,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   String? _audiobookBookUid;
   String? _srtBookUid;
   Map<int, int>? _srtCueChapterMap;
+  List<(int firstIdx, int lastIdx)>? _srtChapterRanges;
 
   bool _audioSlotResolved = false;
 
@@ -411,6 +412,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       _audiobookBookUid = null;
       _srtBookUid = null;
       _srtCueChapterMap = null;
+      _srtChapterRanges = null;
     }
 
     final HibikiDatabase db = appModel.database;
@@ -486,11 +488,16 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   Map<int, int> _buildSrtChapterMap(List<AudioCue> cues) {
     final Map<int, int> map = <int, int>{};
     final List<List<AudioCue>> chapters = CuesToEpub.splitChapters(cues);
+    final List<(int, int)> ranges = <(int, int)>[];
     for (int ch = 0; ch < chapters.length; ch++) {
+      if (chapters[ch].isEmpty) continue;
+      ranges.add(
+          (chapters[ch].first.sentenceIndex, chapters[ch].last.sentenceIndex));
       for (final AudioCue cue in chapters[ch]) {
         map[cue.sentenceIndex] = ch;
       }
     }
+    _srtChapterRanges = ranges;
     return map;
   }
 
@@ -2405,15 +2412,31 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (cue == null) return;
     final SasayakiFragment? frag =
         SasayakiMatchCodec.tryDecode(cue.textFragmentId);
-    if (frag == null) return;
-    _lastProgressSection = frag.sectionIndex;
-    if (frag.sectionIndex >= 0 &&
-        frag.sectionIndex < _chapterCharCounts.length &&
-        _chapterCharCounts[frag.sectionIndex] > 0) {
-      _lastProgressValue =
-          frag.normCharStart / _chapterCharCounts[frag.sectionIndex];
-      _lastProgressValue = _lastProgressValue.clamp(0.0, 1.0);
-      _debouncedSaveReaderPosition(_lastProgressSection, _lastProgressValue);
+    if (frag != null) {
+      _lastProgressSection = frag.sectionIndex;
+      if (frag.sectionIndex >= 0 &&
+          frag.sectionIndex < _chapterCharCounts.length &&
+          _chapterCharCounts[frag.sectionIndex] > 0) {
+        _lastProgressValue =
+            frag.normCharStart / _chapterCharCounts[frag.sectionIndex];
+        _lastProgressValue = _lastProgressValue.clamp(0.0, 1.0);
+        _debouncedSaveReaderPosition(_lastProgressSection, _lastProgressValue);
+      }
+      return;
+    }
+    if (_srtCueChapterMap != null && _srtChapterRanges != null) {
+      final int? chapter = _srtCueChapterMap![cue.sentenceIndex];
+      if (chapter != null &&
+          chapter >= 0 &&
+          chapter < _srtChapterRanges!.length) {
+        _lastProgressSection = chapter;
+        final (int first, int last) = _srtChapterRanges![chapter];
+        final int span = last - first;
+        _lastProgressValue = span > 0
+            ? ((cue.sentenceIndex - first) / span).clamp(0.0, 1.0)
+            : 0.0;
+        _debouncedSaveReaderPosition(_lastProgressSection, _lastProgressValue);
+      }
     }
   }
 
