@@ -732,3 +732,24 @@
 
 ### Next Scope
 - Continue Windows UI review with remaining profile/media edit input surfaces and any dialog that still combines image/audio controls with narrow desktop widths.
+
+## Round 33: Profile Name Dialog Compact Layout Fix
+
+### Scope
+- `hibiki/lib/src/pages/implementations/profile_management_page.dart`
+- `hibiki/test/pages/profile_management_page_test.dart`
+- Profile create/copy/rename name input dialogs under compact Windows-sized surfaces.
+
+### Findings
+
+#### HBK-AUDIT-045
+- severity: medium
+- status: fixed
+- files: `hibiki/lib/src/pages/implementations/profile_management_page.dart`, `hibiki/test/pages/profile_management_page_test.dart`
+- root cause: profile create/copy/rename each built the same full-density `AlertDialog` inline, with default title/content/action padding and a non-dense `TextField`. In a 320x240 desktop window the default Material vertical chrome overflowed the bottom.
+- impact: users managing profiles in a small Windows window could hit a layout overflow while creating, copying, or renaming profiles.
+- fix: extracted the duplicated name input dialog into `ProfileNameDialog`, gave it compact title/content/action padding, and used a dense text field while preserving the same trim-on-submit behavior for all three profile actions.
+- verification: the new compact widget test first failed with `A RenderFlex overflowed by 16 pixels on the bottom`. After the compact dialog fix, `flutter test test/pages/profile_management_page_test.dart` passed with 1 test.
+
+### Next Scope
+- Continue Windows UI review with remaining settings/profile rows that combine dropdowns or multiple trailing actions in narrow desktop widths.
