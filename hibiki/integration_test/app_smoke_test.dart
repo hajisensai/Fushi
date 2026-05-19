@@ -36,30 +36,16 @@ void main() {
       expect(rendered, isTrue,
           reason: 'App should render at least one Scaffold within 90 seconds');
 
-      // If we find navigation, try switching tabs
-      final bool hasBottomNav =
-          find.byType(BottomNavigationBar).evaluate().isNotEmpty;
-      final bool hasNavBar = find.byType(NavigationBar).evaluate().isNotEmpty;
+      final List<Finder> navTargets = _findPrimaryNavigationTargets();
 
-      if (hasBottomNav || hasNavBar) {
-        final Finder navBar = hasBottomNav
-            ? find.byType(BottomNavigationBar)
-            : find.byType(NavigationBar);
+      if (navTargets.length >= 2) {
+        await tester.tap(navTargets[1]);
+        await tester.pump(const Duration(seconds: 3));
+      }
 
-        final Finder navIcons = find.descendant(
-          of: navBar,
-          matching: find.byType(Icon),
-        );
-
-        if (navIcons.evaluate().length >= 2) {
-          await tester.tap(navIcons.at(1));
-          await tester.pump(const Duration(seconds: 3));
-        }
-
-        if (navIcons.evaluate().isNotEmpty) {
-          await tester.tap(navIcons.at(0));
-          await tester.pump(const Duration(seconds: 3));
-        }
+      if (navTargets.isNotEmpty) {
+        await tester.tap(navTargets[0]);
+        await tester.pump(const Duration(seconds: 3));
       }
 
       // App survived without fatal crash
@@ -83,4 +69,34 @@ void main() {
       FlutterError.onError = oldHandler;
     }
   });
+}
+
+List<Finder> _findPrimaryNavigationTargets() {
+  final Finder rail = find.byType(NavigationRail);
+  if (rail.evaluate().isNotEmpty) {
+    return _navigationIconsInside(rail);
+  }
+
+  final Finder bottomNav = find.byType(BottomNavigationBar);
+  if (bottomNav.evaluate().isNotEmpty) {
+    return _navigationIconsInside(bottomNav);
+  }
+
+  final Finder navigationBar = find.byType(NavigationBar);
+  if (navigationBar.evaluate().isNotEmpty) {
+    return _navigationIconsInside(navigationBar);
+  }
+
+  return const <Finder>[];
+}
+
+List<Finder> _navigationIconsInside(Finder navigationRoot) {
+  final Finder icons = find.descendant(
+    of: navigationRoot,
+    matching: find.byType(Icon),
+  );
+  return List<Finder>.generate(
+    icons.evaluate().length,
+    (int index) => icons.at(index),
+  );
 }
