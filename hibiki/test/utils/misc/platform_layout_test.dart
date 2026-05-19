@@ -96,6 +96,11 @@ void main() {
       );
     });
 
+    test('keeps compact dialog fields usable', () {
+      expect(desktopDialogContentWidth(320), 256);
+      expect(desktopDialogContentWidth(1200), 420);
+    });
+
     testWidgets('constrains expanded desktop content to max width', (
       WidgetTester tester,
     ) async {

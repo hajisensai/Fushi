@@ -77,7 +77,7 @@ class _LyricsDialogPageState extends BasePageState<LyricsDialogPage> {
       child: SingleChildScrollView(
         controller: _contentScrollController,
         child: SizedBox(
-          width: MediaQuery.of(context).size.width * (1 / 3),
+          width: desktopDialogContentWidth(MediaQuery.sizeOf(context).width),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [

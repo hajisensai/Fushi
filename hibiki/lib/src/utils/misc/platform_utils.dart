@@ -43,6 +43,10 @@ EdgeInsets desktopContentPadding(WindowSizeClass sizeClass) {
   };
 }
 
+double desktopDialogContentWidth(double availableWidth) {
+  return (availableWidth * 0.8).clamp(256.0, 420.0);
+}
+
 double readerShelfGridExtentForWidth(double width) {
   if (width >= 1280) return 210;
   if (width >= 960) return 190;

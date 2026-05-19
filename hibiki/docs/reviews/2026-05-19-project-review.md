@@ -583,3 +583,27 @@
 
 ### Next Scope
 - Continue Windows UI review with remaining media/dialog surfaces that still calculate widths from raw `MediaQuery` values, especially legacy player dialogs and settings dialogs that can overflow compact desktop windows.
+
+## Round 26: Compact Desktop Dialog Field Widths
+
+### Scope
+- `hibiki/lib/src/utils/misc/platform_utils.dart`
+- `hibiki/lib/src/pages/implementations/lyrics_dialog_page.dart`
+- `hibiki/lib/src/pages/implementations/websocket_dialog_page.dart`
+- `hibiki/lib/src/pages/implementations/blur_options_dialog_page.dart`
+- `hibiki/test/utils/misc/platform_layout_test.dart`
+- Legacy media/player dialogs using raw `MediaQuery.size.width * fraction` content widths.
+
+### Findings
+
+#### HBK-AUDIT-038
+- severity: medium
+- status: fixed
+- files: `hibiki/lib/src/utils/misc/platform_utils.dart`, `hibiki/lib/src/pages/implementations/lyrics_dialog_page.dart`, `hibiki/lib/src/pages/implementations/websocket_dialog_page.dart`, `hibiki/lib/src/pages/implementations/blur_options_dialog_page.dart`, `hibiki/test/utils/misc/platform_layout_test.dart`
+- root cause: the lyrics and websocket dialogs sized their input content to one third of the full window width, while the blur options dialog used three quarters. On a compact Windows window such as 320px wide, the one-third rule produces about 106px of content width, which is not a usable desktop text field. The same feature class had three independent width formulas instead of one dialog-width rule.
+- impact: compact desktop windows could render media/player dialogs with cramped input fields even though large-window screenshots looked fine. The bug is deterministic from the layout math and does not require screenshot evidence.
+- fix: add `desktopDialogContentWidth(double availableWidth)` to the existing platform layout helpers and use it in the lyrics, websocket, and blur options dialogs. The rule keeps compact windows at a usable 256px content width and caps large desktop dialogs at 420px so they do not sprawl.
+- verification: the failing-first `platform_layout_test.dart` case initially failed because `desktopDialogContentWidth` did not exist. After the fix, `flutter test test/utils/misc/platform_layout_test.dart` passed with 10 tests, full `flutter test` passed with 766 tests, and `flutter build windows --debug` built `build\windows\x64\runner\Debug\hibiki.exe` with the existing third-party `flutter_inappwebview_windows` CMake dev warning.
+
+### Next Scope
+- Continue Windows UI review with remaining dialog surfaces that still use raw `MediaQuery` sizing or unconstrained `AlertDialog` content, then audit whether any remaining `verified-pass` items need stronger widget/runtime evidence.

@@ -67,7 +67,7 @@ class _BlurOptionsDialogPageState extends BasePageState<BlurOptionsDialogPage> {
         child: SingleChildScrollView(
           controller: _contentScrollController,
           child: SizedBox(
-            width: MediaQuery.of(context).size.width * (3 / 4),
+            width: desktopDialogContentWidth(MediaQuery.sizeOf(context).width),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
