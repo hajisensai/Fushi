@@ -218,9 +218,9 @@ flutter build macos --debug
 5. Test resource loading (custom fonts, images from EPUB)
 6. If `file://` access blocked: switch to custom scheme (`hoshi.local://`) or local HTTP server
 
-### Known Issue: reader_hoshi_page.dart:1319-1330
+### Known Issue: reader_hoshi_page.dart:1407-1422
 
-Windows-specific `onReceivedError` handler treats intercepted-domain navigation as success. Need to test if WKWebView triggers the same error pattern. If not, the existing code is safe (falls through to default handler).
+Windows-specific `onReceivedError` handler treats intercepted-domain navigation as success (line 1415: `if (Platform.isWindows && request.url.host == ReaderHoshiSource.kHost)`). Need to test if WKWebView triggers the same error pattern. If not, the existing code is safe (falls through to default handler).
 
 ### Verification
 
@@ -249,7 +249,7 @@ Extend existing keyboard navigation (from Phase 1 Windows):
 | PageUp/PageDown | Page turn | Existing (Phase 1) |
 | F11 / Cmd+Ctrl+F | Fullscreen | New |
 
-Implementation: Use `RawKeyboardListener` / `KeyboardListener` (already partially implemented in `reader_hoshi_page.dart:2261-2279`). Add Cmd modifier variants.
+Implementation: Extend existing `Focus` + `onKeyEvent` handler (already implemented in `reader_hoshi_page.dart:2410-2429` as `_handleKeyEvent`, wired at line 796). Add Cmd modifier variants for macOS shortcuts.
 
 ### 4b. Menu Bar Integration
 
@@ -276,13 +276,13 @@ PlatformMenuBar(
 ### 4c. Window Management
 
 - Window title bar: Show current book title
-- Window size/position persistence: `window_manager` package (already a dependency)
+- Window size/position persistence: `window_manager` package (needs to be added to pubspec.yaml)
 - Minimum window size: 800x600
 
 ### 4d. Drag and Drop
 
 - Accept `.epub` and `.zip` (dictionary) files dropped onto the window
-- Use `desktop_drop` package
+- Use `desktop_drop` package (needs to be added to pubspec.yaml)
 - Route to import dialog based on file extension
 
 ### 4e. macOS UI Shell Decision

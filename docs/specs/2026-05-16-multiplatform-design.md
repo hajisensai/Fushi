@@ -400,7 +400,7 @@ DynamicLibrary _openLib() {
 | 7 | macOS/iOS 开发需要 Mac 硬件 | Phase 2/3 无法启动 | 中 | 需提前准备 Mac 开发机；CI 可用 GitHub Actions macOS runner | 仍然阻断 |
 | 8 | Language 模块解耦 | Phase 0 增加 1-2 天 | 低 | 审计显示 AppModel 依赖仅 1 个属性 | ✅ 已解决 |
 | 9 | Apple Clang C++23 支持不完整 | hoshidicts 在 macOS/iOS 编译失败 | 低 | 要求 Xcode 15.2+；fallback 到 c++2b | Phase 2 新增 |
-| 10 | iOS 线程栈限制（32MB→~8MB） | 词典导入崩溃 | 中 | 确认 importer 解压缓冲区是否堆分配；必要时重构 | Phase 3 新增 |
+| 10 | iOS 线程栈限制（32MB→~8MB） | 词典导入崩溃 | 低 | ✅ 已确认 importer 缓冲区全部使用 `std::vector`（堆分配），只需改 `hoshidicts_ffi.cpp:219` 栈大小为 8MB | Phase 3 新增 |
 | 11 | WKWebView sandbox 限制 file:// 访问 | EPUB 内图片/字体加载失败 | 中 | 使用 custom URL scheme handler 或 local HTTP server | Phase 2 新增 |
 | 12 | .apkg 格式兼容性 | AnkiMobile 无法导入 | 低 | 测试 AnkiMobile 23.x；使用 Anki 2.1 schema | Phase 3 新增 |
 
@@ -450,8 +450,8 @@ DynamicLibrary _openLib() {
 - 依赖 Phase 2 完成（共享 WKWebView 验证和 Apple 编译链）
 - 需要 Apple Developer 账号
 - hoshidicts 必须静态链接（iOS 沙盒禁止动态库加载）
-- .apkg 导出需要全新实现（iOS 上无 AnkiDroid 也无 AnkiConnect）
-- 32MB pthread 栈在 iOS 上可能受限，需要确认 importer 解压缓冲区是否已堆分配
+- .apkg 导出需要全新实现（iOS 上无 AnkiDroid 也无 AnkiConnect），且 `ankiRepositoryProvider`（`anki_view_model.dart:114-117`）当前对所有非 Android 平台返回 `AnkiConnectRepository`，需要为 iOS 添加 `ApkgExportRepository` 分支
+- ~~32MB pthread 栈在 iOS 上可能受限~~ → 已确认 importer 缓冲区全部堆分配，只需改栈大小参数
 
 ### 2026-05-19 审查发现的跨平台就绪差距
 
@@ -461,8 +461,8 @@ DynamicLibrary _openLib() {
 | HBK-MP-002 | critical | Phase 2/3 阻断 | 缺少 hoshidicts iOS/macOS podspec |
 | HBK-MP-003 | critical | Phase 2 预期 | macOS 项目目录不存在 |
 | HBK-MP-005 | medium | Phase 2/3 分发 | 缺少 entitlements 文件 |
-| HBK-MP-006 | medium | Phase 3 | iOS Podfile 缺少 platform 版本 |
-| HBK-MP-009 | low | Phase 2 | WKWebView 错误处理待验证 |
+| HBK-MP-006 | medium | Phase 3 | iOS Podfile 缺少 platform 版本（当前注释为 11.0，需改为 12.0） |
+| HBK-MP-009 | low | Phase 2 | WKWebView 错误处理待验证（实际位于 reader_hoshi_page.dart:1407-1422） |
 
 详见 `docs/reviews/2026-05-19-multiplatform-readiness-audit.md`
 
