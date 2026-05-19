@@ -896,6 +896,7 @@
     "init_error_message": "Initialization failed: $error",
     "local_audio_add_db": "Add Local Audio Database",
     "lyrics_mode": "Lyrics Mode",
+    "book_mode": "Book Mode",
     "miscellaneous_settings": "Miscellaneous",
     "no_results_found": "No results found.",
     "pause_on_lookup": "Pause on Lookup",

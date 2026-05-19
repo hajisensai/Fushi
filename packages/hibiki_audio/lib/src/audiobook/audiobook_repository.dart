@@ -78,12 +78,8 @@ class AudiobookRepository {
   }
 
   Future<void> deleteAudiobook(String bookUid) async {
-    await _db.transaction(() async {
-      await _db.deleteAudiobookByBookUid(bookUid);
-      await ((_db.delete(_db.audioCues))
-            ..where((t) => t.bookUid.equals(bookUid)))
-          .go();
-    });
+    // deleteAudiobookByBookUid 内部已先删 audioCues 再删 audiobooks。
+    await _db.deleteAudiobookByBookUid(bookUid);
     await AudiobookStorage.deletePersistDir(bookUid);
   }
 

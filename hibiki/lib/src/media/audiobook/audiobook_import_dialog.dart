@@ -180,6 +180,10 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
                 onPressed: () => Navigator.pop(context),
                 child: Text(t.dialog_close),
               ),
+              TextButton(
+                onPressed: () => _enterReplaceSubtitleMode(existing),
+                child: Text(t.audio_panel_pick_new_subtitle),
+              ),
               _destructiveFilledButton(
                 context: context,
                 label: t.audiobook_remove,
@@ -617,11 +621,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
 
       _reportProgress(0.1, t.import_step_parsing);
 
-      // 先跑 parse + matcher（含 saveCues）拿到 health；此时 Audiobook 还
-      // 没写入。然后一次性带全字段 saveAudiobook —— **不能两次 put**，否则
-      // Isar 会把带长 CJK bookUid 的记录写坏（FormatException offset 43）。
-      // 见 `updateHealth readback THREW`。
-      final AudiobookHealth health = await _parseCues(format);
+      final ({AudiobookHealth health, List<AudioCue> cues}) parsed =
+          await _parseCues(format);
 
       _reportProgress(0.5, t.import_step_persisting);
 
@@ -687,16 +688,20 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
         audiobook.audioPaths = persistedPaths;
       }
 
-      health.packInto(audiobook);
+      parsed.health.packInto(audiobook);
       await widget.repo.saveAudiobook(audiobook);
+      await widget.repo.saveCues(
+        bookUid: widget.bookUid,
+        cues: parsed.cues,
+      );
       await widget.repo.updateHealthOverlay(
         bookUid: widget.bookUid,
-        health: health,
+        health: parsed.health,
       );
       _reportProgress(1, t.import_step_done);
 
       if (mounted) {
-        final String? tail = _summarizeHealth(health);
+        final String? tail = _summarizeHealth(parsed.health);
         final String msg = tail == null
             ? t.audiobook_import_success
             : '${t.audiobook_import_success} · $tail';
@@ -816,87 +821,64 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     }
   }
 
-  /// 返回本次导入的健康度。所有格式都要给出一个 [AudiobookHealth]，调用方
-  /// 会写回 Audiobook 记录，书卡上的角标据此展示。
-  Future<AudiobookHealth> _parseCues(String format) async {
+  /// 解析字幕文件并运行 matcher（如适用）。返回 cues 和 health，
+  /// 但 **不写入数据库**——调用方在 saveAudiobook 之后再 saveCues，
+  /// 避免中途失败留下孤立 cue。
+  Future<({AudiobookHealth health, List<AudioCue> cues})> _parseCues(
+      String format) async {
     final File alignFile = File(_alignmentPath!);
 
-    // SRT / LRC / VTT / ASS：都走"单章节 defaultChapter"路径，都会尝试
-    // matcher（前提是绑定了 ttu 书）。
     if (format == 'srt') {
       final List<AudioCue> cues = await SrtParser.parse(
         srtFile: alignFile,
         bookUid: widget.bookUid,
       );
       final AudiobookHealth health = await _matchCuesToTtu(cues);
-      await widget.repo.saveCues(
-        bookUid: widget.bookUid,
-        cues: cues,
-      );
-      return health;
+      return (health: health, cues: cues);
     } else if (format == 'lrc') {
       final List<AudioCue> cues = await LrcParser.parse(
         lrcFile: alignFile,
         bookUid: widget.bookUid,
       );
       final AudiobookHealth health = await _matchCuesToTtu(cues);
-      await widget.repo.saveCues(
-        bookUid: widget.bookUid,
-        cues: cues,
-      );
-      return health;
+      return (health: health, cues: cues);
     } else if (format == 'vtt') {
       final List<AudioCue> cues = await VttParser.parse(
         vttFile: alignFile,
         bookUid: widget.bookUid,
       );
       final AudiobookHealth health = await _matchCuesToTtu(cues);
-      await widget.repo.saveCues(
-        bookUid: widget.bookUid,
-        cues: cues,
-      );
-      return health;
+      return (health: health, cues: cues);
     } else if (format == 'ass') {
       final List<AudioCue> cues = await AssParser.parse(
         assFile: alignFile,
         bookUid: widget.bookUid,
       );
       final AudiobookHealth health = await _matchCuesToTtu(cues);
-      await widget.repo.saveCues(
-        bookUid: widget.bookUid,
-        cues: cues,
-      );
-      return health;
+      return (health: health, cues: cues);
     } else if (format == 'json') {
-      final List<AudioCue> allCues = await JsonAlignmentParser.parse(
+      final List<AudioCue> cues = await JsonAlignmentParser.parse(
         jsonFile: alignFile,
         bookUid: widget.bookUid,
       );
-      await widget.repo.saveCues(
-        bookUid: widget.bookUid,
-        cues: allCues,
-      );
-      return _healthFromFragmentIntegrity(
-        allCues,
-        formatLabel: 'json',
+      return (
+        health: _healthFromFragmentIntegrity(cues, formatLabel: 'json'),
+        cues: cues,
       );
     } else {
-      // SMIL：单文件对应单章节，文件名（去扩展）推断 chapterHref
       final String fileName =
           _alignmentPath!.split(Platform.pathSeparator).last;
       final String chapterHref = fileName.replaceAll(
           RegExp(r'\.smil$', caseSensitive: false), '.xhtml');
-
       final List<AudioCue> cues = await SmilParser.parse(
         smilFile: alignFile,
         bookUid: widget.bookUid,
         chapterHref: chapterHref,
       );
-      await widget.repo.saveCues(
-        bookUid: widget.bookUid,
+      return (
+        health: _healthFromFragmentIntegrity(cues, formatLabel: 'smil'),
         cues: cues,
       );
-      return _healthFromFragmentIntegrity(cues, formatLabel: 'smil');
     }
   }
 
@@ -940,6 +922,19 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       case HealthKind.running:
         return null;
     }
+  }
+
+  void _enterReplaceSubtitleMode(Audiobook ab) {
+    setState(() {
+      _patchingAudio = true;
+      _alignmentPath = ab.alignmentPath;
+      _alignmentName = ab.alignmentPath.split(Platform.pathSeparator).last;
+      if (ab.audioPaths != null && ab.audioPaths!.isNotEmpty) {
+        _audioPaths = List<String>.from(ab.audioPaths!);
+      } else if (ab.audioRoot != null && ab.audioRoot!.isNotEmpty) {
+        _audioDir = ab.audioRoot;
+      }
+    });
   }
 
   Future<void> _removeAudiobook(Audiobook ab) async {

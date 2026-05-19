@@ -98,6 +98,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   AudiobookPlayerController? _audiobookController;
   String? _audiobookBookUid;
   String? _srtBookUid;
+  Map<int, int>? _srtCueChapterMap;
 
   bool _audioSlotResolved = false;
 
@@ -409,6 +410,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       _audiobookController = null;
       _audiobookBookUid = null;
       _srtBookUid = null;
+      _srtCueChapterMap = null;
     }
 
     final HibikiDatabase db = appModel.database;
@@ -420,7 +422,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
     if (ab != null) {
       await _initAudiobookController(ab, bookUid);
-    } else if (srt != null) {
+    }
+    // Audiobook 记录存在但无音频文件时 _initAudiobookController 提前返回，
+    // controller 仍为 null → 回退到 SrtBook 路径加载音频。
+    if (_audiobookController == null && srt != null) {
       await _initSrtBookController(srt);
     }
 
@@ -443,6 +448,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       controller.setAllBookCues(cues);
       _cachedAllCues = cues;
       _cachedSasayaki = false;
+      _srtCueChapterMap = _buildSrtChapterMap(cues);
       return;
     }
 
@@ -457,7 +463,14 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       (c) => SasayakiMatchCodec.tryDecode(c.textFragmentId) != null,
     );
 
-    if (_cachedSasayaki) {
+    // SRT 格式导入的 Audiobook 在 matcher 全部失败时，cue 的
+    // chapterHref 仍为 'srt://default'，按 EPUB 章节 href 查不到。
+    // 与 SrtBook 路径对齐，直接用全部 cue。
+    final bool allSrtDefault = allCues.isNotEmpty &&
+        allCues
+            .every((AudioCue c) => c.chapterHref == SrtParser.defaultChapter);
+
+    if (_cachedSasayaki || allSrtDefault) {
       controller.setChapterCues(allCues);
       return;
     }
@@ -468,6 +481,17 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       chapterHref: chapterHref,
     );
     controller.setChapterCues(chapterCues);
+  }
+
+  Map<int, int> _buildSrtChapterMap(List<AudioCue> cues) {
+    final Map<int, int> map = <int, int>{};
+    final List<List<AudioCue>> chapters = CuesToEpub.splitChapters(cues);
+    for (int ch = 0; ch < chapters.length; ch++) {
+      for (final AudioCue cue in chapters[ch]) {
+        map[cue.sentenceIndex] = ch;
+      }
+    }
+    return map;
   }
 
   void _restoreFromCurrentAudioCue() {
@@ -489,6 +513,20 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       debugPrint('[ReaderHoshi] restore from audio cue: '
           'chapter=$_currentChapter progress=$_initialProgress');
       return;
+    }
+
+    if (_srtCueChapterMap != null) {
+      final int? srtChapter = _srtCueChapterMap![cue.sentenceIndex];
+      if (srtChapter != null &&
+          srtChapter >= 0 &&
+          srtChapter < _book!.chapters.length) {
+        _currentChapter = srtChapter;
+        _initialProgress = 0.0;
+        _lastProgressSection = srtChapter;
+        _lastProgressValue = 0.0;
+        debugPrint('[ReaderHoshi] restore from SRT cue: chapter=$srtChapter');
+        return;
+      }
     }
 
     final int chapter = _chapterIndexForCue(cue);
@@ -627,17 +665,21 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final AudiobookPlayerController controller = AudiobookPlayerController();
 
     final List<Object> prefs = await Future.wait(<Future<Object>>[
+      abRepo.readFollowAudio(srtBookUid),
       abRepo.readDelayMs(srtBookUid),
       abRepo.readSpeed(srtBookUid),
+      abRepo.readPositionMs(srtBookUid),
       abRepo.readImagePauseSec(srtBookUid),
     ]);
     try {
       await controller.load(
         audiobook: syntheticAudiobook,
         audioFiles: audioFiles,
-        initialDelayMs: prefs[0] as int,
-        initialSpeed: prefs[1] as double,
-        initialImagePauseSec: prefs[2] as int,
+        initialFollowAudio: prefs[0] as bool,
+        initialDelayMs: prefs[1] as int,
+        initialSpeed: prefs[2] as double,
+        initialPositionMs: prefs[3] as int,
+        initialImagePauseSec: prefs[4] as int,
       );
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderHoshi.loadSrtBook', e, stack);
@@ -654,14 +696,20 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       return;
     }
 
-    controller.onDelayPersist = (ms) async {
+    controller.onPositionWrite = (String uid, int posMs) {
+      abRepo.updatePositionMs(bookUid: uid, positionMs: posMs);
+    };
+    controller.onDelayPersist = (int ms) async {
       await abRepo.updateDelayMs(bookUid: srtBookUid, ms: ms);
     };
-    controller.onSpeedPersist = (speed) async {
+    controller.onSpeedPersist = (double speed) async {
       await abRepo.updateSpeed(bookUid: srtBookUid, speed: speed);
     };
-    controller.onImagePausePersist = (sec) async {
+    controller.onImagePausePersist = (int sec) async {
       await abRepo.updateImagePauseSec(bookUid: srtBookUid, sec: sec);
+    };
+    controller.onFollowAudioPersist = (bool value) async {
+      await abRepo.updateFollowAudio(bookUid: srtBookUid, value: value);
     };
     controller.getCurrentReaderSection = () => _currentChapter;
     controller.onCrossChapter = _handleCueCrossChapter;
@@ -1740,6 +1788,15 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         AudiobookBridge.highlight(_controller!);
         return;
       }
+      if (frag == null && _srtCueChapterMap != null) {
+        final int? cueChapter = _srtCueChapterMap![cue.sentenceIndex];
+        if (cueChapter != null && cueChapter != _currentChapter) {
+          if (controller.shouldRevealCurrentCue && !_restoreInFlight) {
+            _navigateToChapter(cueChapter);
+          }
+          return;
+        }
+      }
     }
     final bool forceReveal = controller.consumeForceReveal();
     final bool reveal = forceReveal || controller.shouldRevealCurrentCue;
@@ -1929,6 +1986,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (_srtBookUid != null) {
       _audiobookController!.setChapterCues(allCues);
       _audiobookController!.setAllBookCues(allCues);
+      _srtCueChapterMap ??= _buildSrtChapterMap(allCues);
     } else if (_audiobookBookUid != null) {
       if (_cachedSasayaki) {
         _audiobookController!.setChapterCues(allCues);
