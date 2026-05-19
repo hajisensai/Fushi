@@ -2419,22 +2419,11 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
 
-    final LogicalKeyboardKey key = event.logicalKey;
-
-    if (key == LogicalKeyboardKey.pageDown ||
-        key == LogicalKeyboardKey.arrowRight ||
-        key == LogicalKeyboardKey.arrowDown) {
-      _paginate(ReaderNavigationDirection.forward);
-      return KeyEventResult.handled;
-    }
-    if (key == LogicalKeyboardKey.pageUp ||
-        key == LogicalKeyboardKey.arrowLeft ||
-        key == LogicalKeyboardKey.arrowUp) {
-      _paginate(ReaderNavigationDirection.backward);
-      return KeyEventResult.handled;
-    }
-
-    return KeyEventResult.ignored;
+    final ReaderNavigationDirection? direction =
+        ReaderPaginationScripts.navigationDirectionForKey(event.logicalKey);
+    if (direction == null) return KeyEventResult.ignored;
+    _paginate(direction);
+    return KeyEventResult.handled;
   }
 
   // ── Page Turn ─────────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/services.dart';
 import 'package:hibiki/src/reader/reader_content_styles.dart';
 
 enum ReaderNavigationDirection {
@@ -21,6 +22,22 @@ class ReaderPaginationScripts {
 
   static String updatePageSizeInvocation(double width, double height) =>
       'window.hoshiReader && window.hoshiReader.updatePageSize($width, $height)';
+
+  static ReaderNavigationDirection? navigationDirectionForKey(
+    LogicalKeyboardKey key,
+  ) {
+    if (key == LogicalKeyboardKey.pageDown ||
+        key == LogicalKeyboardKey.arrowRight ||
+        key == LogicalKeyboardKey.arrowDown) {
+      return ReaderNavigationDirection.forward;
+    }
+    if (key == LogicalKeyboardKey.pageUp ||
+        key == LogicalKeyboardKey.arrowLeft ||
+        key == LogicalKeyboardKey.arrowUp) {
+      return ReaderNavigationDirection.backward;
+    }
+    return null;
+  }
 
   static String applySasayakiCuesInvocation(String cuesJson) =>
       'window.hoshiReader && window.hoshiReader.applySasayakiCues($cuesJson)';

@@ -141,3 +141,24 @@
 
 ### Next Scope
 - Continue non-focus-stealing review of Hoshi reader and dictionary interaction contracts. Treat external screenshots as supporting artifacts only when they agree with widget/DOM/bounds evidence.
+
+## Round 7: Reader Keyboard Navigation Contract
+
+### Scope
+- `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart`
+- `hibiki/lib/src/reader/reader_pagination_scripts.dart`
+- `hibiki/test/reader/reader_pagination_scripts_test.dart`
+
+### Findings
+
+#### HBK-AUDIT-017
+- severity: low
+- status: fixed
+- files: `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart`, `hibiki/lib/src/reader/reader_pagination_scripts.dart`, `hibiki/test/reader/reader_pagination_scripts_test.dart`
+- root cause: Windows/desktop reader keyboard navigation was only encoded inside the private `ReaderHoshiPage._handleKeyEvent()` method. Proving PageDown/arrow-key behavior therefore required launching the full reader/WebView path, which is focus-sensitive on Windows and unsuitable while the user is actively using the desktop.
+- impact: reader keyboard paging could regress silently, or review could fall back to noisy full-window drive runs that may be contaminated by host keyboard events.
+- fix: extracted the key-to-`ReaderNavigationDirection` mapping into `ReaderPaginationScripts.navigationDirectionForKey()`. `ReaderHoshiPage._handleKeyEvent()` now delegates to the shared mapping, and unit tests cover forward keys, backward keys, and ignored non-navigation keys.
+- verification: TDD red check failed as expected because `ReaderPaginationScripts.navigationDirectionForKey` did not exist. After the extraction, `flutter test test/reader/reader_pagination_scripts_test.dart` passed with 28 tests. `dart format .` formatted the two changed Dart files. `flutter test` passed with 740 tests. No Windows runner was launched, so this round did not take desktop focus from the user.
+
+### Next Scope
+- Continue checking reader/dictionary interaction contracts that can be moved out of full Windows drive runs. Prioritize pure functions or widget tests for focus-sensitive paths.

@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/services.dart';
 import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
 
 void main() {
@@ -95,6 +96,43 @@ void main() {
       expect(
         ReaderPaginationScripts.clearSearchHighlightInvocation(),
         'window.hoshiReader.clearSearchHighlight()',
+      );
+    });
+  });
+
+  group('ReaderPaginationScripts.navigationDirectionForKey', () {
+    test('maps desktop forward keys', () {
+      for (final LogicalKeyboardKey key in <LogicalKeyboardKey>[
+        LogicalKeyboardKey.pageDown,
+        LogicalKeyboardKey.arrowRight,
+        LogicalKeyboardKey.arrowDown,
+      ]) {
+        expect(
+          ReaderPaginationScripts.navigationDirectionForKey(key),
+          ReaderNavigationDirection.forward,
+        );
+      }
+    });
+
+    test('maps desktop backward keys', () {
+      for (final LogicalKeyboardKey key in <LogicalKeyboardKey>[
+        LogicalKeyboardKey.pageUp,
+        LogicalKeyboardKey.arrowLeft,
+        LogicalKeyboardKey.arrowUp,
+      ]) {
+        expect(
+          ReaderPaginationScripts.navigationDirectionForKey(key),
+          ReaderNavigationDirection.backward,
+        );
+      }
+    });
+
+    test('ignores non-navigation keys', () {
+      expect(
+        ReaderPaginationScripts.navigationDirectionForKey(
+          LogicalKeyboardKey.keyA,
+        ),
+        isNull,
       );
     });
   });
