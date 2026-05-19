@@ -860,3 +860,24 @@
 
 ### Next Scope
 - Continue Windows UI review with reader/history confirmation dialogs and remaining settings pages that combine long labels with horizontal action rows.
+
+## Round 39: Book Profile Dialog Compact Layout Fix
+
+### Scope
+- `hibiki/lib/src/pages/implementations/reader_hoshi_history_page.dart`
+- `hibiki/test/pages/book_profile_dialog_page_test.dart`
+- Reader history book-profile selection dialog under compact Windows-sized surfaces.
+
+### Findings
+
+#### HBK-AUDIT-051
+- severity: medium
+- status: fixed
+- files: `hibiki/lib/src/pages/implementations/reader_hoshi_history_page.dart`, `hibiki/test/pages/book_profile_dialog_page_test.dart`
+- root cause: `_BookProfileDialog` rendered profile choices as an unconstrained `Column` of full-density `RadioListTile`s. The list size scaled directly with profile count instead of the window, and the dialog had default padding/title behavior.
+- impact: users with many profiles could open the book profile selector in a compact Windows window and hit vertical overflow, making later profile choices unreachable or causing layout assertions in debug builds.
+- fix: extracted `BookProfileDialogContent`, gave the profile list a bounded `ListView`, made radio rows compact with ellipsized labels, and reduced the dialog title/content/action padding.
+- verification: the compact widget test first failed because the content widget did not exist, then reproduced missing `Material` assertions plus a massive bottom overflow from the unbounded `Column`. After the fix, `flutter test test/pages/book_profile_dialog_page_test.dart` passed with 1 test.
+
+### Next Scope
+- Continue Windows UI review with remaining delete confirmations and media item dialogs that expose long titles or many actions.

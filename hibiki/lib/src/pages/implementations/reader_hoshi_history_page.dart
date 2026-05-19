@@ -1174,33 +1174,26 @@ class _BookProfileDialogState extends State<_BookProfileDialog> {
   Widget build(BuildContext context) {
     final t = Translations.of(context);
     return AlertDialog(
-      title: Text(t.profile_book_profile),
+      titlePadding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+      actionsPadding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
+      buttonPadding: const EdgeInsets.symmetric(horizontal: 4),
+      title: Text(
+        t.profile_book_profile,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: Theme.of(context).textTheme.titleMedium,
+      ),
       content: _loading
           ? const SizedBox(
               height: 48,
               child: Center(child: CircularProgressIndicator()),
             )
-          : Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                RadioListTile<int?>(
-                  title: Text(
-                    t.profile_follow_default_current(
-                      name: widget.activeProfileName,
-                    ),
-                  ),
-                  value: null,
-                  groupValue: _selectedProfileId,
-                  onChanged: _onChanged,
-                ),
-                for (final profile in widget.profiles)
-                  RadioListTile<int?>(
-                    title: Text(profile.name),
-                    value: profile.id,
-                    groupValue: _selectedProfileId,
-                    onChanged: _onChanged,
-                  ),
-              ],
+          : BookProfileDialogContent(
+              activeProfileName: widget.activeProfileName,
+              profiles: widget.profiles,
+              selectedProfileId: _selectedProfileId,
+              onChanged: _onChanged,
             ),
       actions: [
         TextButton(
@@ -1208,6 +1201,67 @@ class _BookProfileDialogState extends State<_BookProfileDialog> {
           child: Text(t.dialog_close),
         ),
       ],
+    );
+  }
+}
+
+@visibleForTesting
+class BookProfileDialogContent extends StatelessWidget {
+  const BookProfileDialogContent({
+    required this.activeProfileName,
+    required this.profiles,
+    required this.selectedProfileId,
+    required this.onChanged,
+    super.key,
+  });
+
+  final String activeProfileName;
+  final List<ProfileRow> profiles;
+  final int? selectedProfileId;
+  final ValueChanged<int?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Translations.of(context);
+
+    return Material(
+      color: Colors.transparent,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: double.maxFinite,
+          maxHeight: MediaQuery.of(context).size.height * 0.46,
+        ),
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            RadioListTile<int?>(
+              title: Text(
+                t.profile_follow_default_current(name: activeProfileName),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              value: null,
+              groupValue: selectedProfileId,
+              onChanged: onChanged,
+              dense: true,
+              visualDensity: VisualDensity.compact,
+            ),
+            for (final profile in profiles)
+              RadioListTile<int?>(
+                title: Text(
+                  profile.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                value: profile.id,
+                groupValue: selectedProfileId,
+                onChanged: onChanged,
+                dense: true,
+                visualDensity: VisualDensity.compact,
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
