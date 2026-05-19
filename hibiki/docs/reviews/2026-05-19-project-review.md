@@ -98,3 +98,25 @@
 
 ### Next Scope
 - Continue auditing Windows-specific focus/keyboard behavior without using host mouse input; current remaining blocker is full drive validation while the desktop keyboard is actively in use.
+
+## Round 5: Non-Focus-Stealing Navigation Evidence
+
+### Scope
+- `hibiki/lib/src/pages/implementations/home_page.dart`
+- `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart`
+- `hibiki/integration_test/test_helpers.dart`
+- `hibiki/test/integration/navigation_helpers_test.dart`
+
+### Findings
+
+#### HBK-AUDIT-015
+- severity: low
+- status: fixed
+- files: `hibiki/test/integration/navigation_helpers_test.dart`
+- root cause: full Windows `flutter drive` can receive host keyboard messages while the user is actively using the same desktop. The observed failure happened in Flutter's Windows `RawKeyboard` platform message path for a host `Meta Left` key event before Hibiki's `HomePage._handleKeyEvent` or `ReaderHoshiPage._handleKeyEvent` business logic could decide anything.
+- impact: a valid Windows UI interaction test can fail because the test window briefly owns focus while unrelated host keyboard input is present. Re-running this while the user is working would violate the no-mouse/no-focus-stealing constraint and still give noisy evidence.
+- fix: expanded the no-window widget coverage for the shared integration helper. The test now proves that desktop `NavigationRail` order is stable (`Books`, `Dictionary`, `Settings`), content-area icons are ignored, mobile bottom navigation remains supported, and Windows drive screenshot capture is optional.
+- verification: `flutter test test/integration/navigation_helpers_test.dart` passed with 4 tests. This does not replace full reader/dictionary drive validation, but it removes the focus-stealing dependency from the navigation/screenshot portions of the Windows UI evidence.
+
+### Next Scope
+- Continue moving reader/dictionary interaction checks toward widget or lower-level Hoshi JS/CSS tests where possible. Full Windows drive should only run when the desktop is idle enough that host keyboard events will not contaminate Flutter's platform input stream.
