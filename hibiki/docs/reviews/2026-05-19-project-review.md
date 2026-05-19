@@ -648,3 +648,24 @@
 
 ### Next Scope
 - Continue Windows UI review with profile/media edit dialogs and any remaining input surfaces that still lack compact-window widget evidence.
+
+## Round 29: Media Source Picker Compact Dialog Evidence
+
+### Scope
+- `hibiki/lib/src/pages/implementations/media_source_picker_dialog_page.dart`
+- `hibiki/test/pages/media_source_picker_dialog_page_test.dart`
+- Media source picker dialog under compact Windows-sized surfaces.
+
+### Findings
+
+#### HBK-AUDIT-041
+- severity: low
+- status: verified-pass
+- files: `hibiki/lib/src/pages/implementations/media_source_picker_dialog_page.dart`, `hibiki/test/pages/media_source_picker_dialog_page_test.dart`
+- root cause: no production defect found in this round. The risk was that `MediaSourcePickerDialogPage` uses a scrollable column containing a `Flexible` child and a shrink-wrapped `ListView`, which looked like a possible unbounded-height layout trap in compact Windows windows.
+- impact: if this had failed, users could hit a layout exception when opening source selection in a small desktop window, and the picker would need a simpler bounded scroll structure.
+- fix: no production code change. Added a widget test with a lightweight `AppModel` override that renders the real reader source picker in a 320x240 viewport and asserts no Flutter exception while the source row is present.
+- verification: the first test harness failed because the uninitialised test `AppModel` had no locale/database state; after replacing it with a focused `PickerTestAppModel`, `flutter test test/pages/media_source_picker_dialog_page_test.dart` passed with 1 test. Full `flutter test` passed with 769 tests. `flutter build windows --debug` built `build\windows\x64\runner\Debug\hibiki.exe` with the existing third-party `flutter_inappwebview_windows` CMake dev warning.
+
+### Next Scope
+- Continue Windows UI review with profile/media edit dialogs, especially surfaces with image previews or multiple action buttons where compact height can still be a real constraint.
