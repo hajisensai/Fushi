@@ -120,3 +120,24 @@
 
 ### Next Scope
 - Continue moving reader/dictionary interaction checks toward widget or lower-level Hoshi JS/CSS tests where possible. Full Windows drive should only run when the desktop is idle enough that host keyboard events will not contaminate Flutter's platform input stream.
+
+## Round 6: Desktop Layout Constraint Evidence
+
+### Scope
+- `hibiki/lib/src/utils/misc/platform_utils.dart`
+- `hibiki/test/utils/misc/platform_layout_test.dart`
+- Windows layout evidence path after the user reported the external screenshot did not match the live app.
+
+### Findings
+
+#### HBK-AUDIT-016
+- severity: low
+- status: fixed
+- files: `hibiki/test/utils/misc/platform_layout_test.dart`
+- root cause: the previous external screenshot path was not reliable enough to judge the Windows UI. It could disagree with the user's live view, so it should not be treated as product evidence. The shared desktop layout policy also only had pure metric tests, not a widget-level check that Flutter's real constraint tree produced the intended content width.
+- impact: a false screenshot could waste review time, and a future change to `DesktopContentLayout` could silently remove the desktop width cap or compact full-width behavior without failing tests.
+- fix: added widget tests for `DesktopContentLayout` that run without opening a desktop window. The tests verify expanded dictionary content is capped to the 1040px desktop policy minus 24px side padding, and compact content remains full-width without desktop padding.
+- verification: `flutter test test/utils/misc/platform_layout_test.dart` passed with 9 tests. `dart format .` completed with 0 changed files. `flutter test` passed with 737 tests. No Windows runner was launched, so this round did not take desktop focus from the user.
+
+### Next Scope
+- Continue non-focus-stealing review of Hoshi reader and dictionary interaction contracts. Treat external screenshots as supporting artifacts only when they agree with widget/DOM/bounds evidence.

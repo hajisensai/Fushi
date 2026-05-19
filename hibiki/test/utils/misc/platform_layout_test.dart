@@ -25,6 +25,8 @@ void main() {
   });
 
   group('desktop layout metrics', () {
+    const ValueKey<String> childKey = ValueKey<String>('content-child');
+
     test('keeps mobile layouts unconstrained', () {
       expect(
         desktopContentMaxWidth(
@@ -92,6 +94,54 @@ void main() {
         desktopContentPadding(WindowSizeClass.expanded),
         const EdgeInsets.symmetric(horizontal: 24),
       );
+    });
+
+    testWidgets('constrains expanded desktop content to max width', (
+      WidgetTester tester,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1600, 200);
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        const Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox(
+            width: double.infinity,
+            height: double.infinity,
+            child: DesktopContentLayout(
+              kind: DesktopContentKind.dictionary,
+              child: SizedBox.expand(key: childKey),
+            ),
+          ),
+        ),
+      );
+
+      expect(tester.getSize(find.byKey(childKey)).width, 992);
+    });
+
+    testWidgets('keeps compact content full width without desktop padding', (
+      WidgetTester tester,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(500, 200);
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        const Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox(
+            width: double.infinity,
+            height: double.infinity,
+            child: DesktopContentLayout(
+              kind: DesktopContentKind.dictionary,
+              child: SizedBox.expand(key: childKey),
+            ),
+          ),
+        ),
+      );
+
+      expect(tester.getSize(find.byKey(childKey)).width, 500);
     });
   });
 }
