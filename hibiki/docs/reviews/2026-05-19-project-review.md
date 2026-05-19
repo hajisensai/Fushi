@@ -627,3 +627,24 @@
 
 ### Next Scope
 - Continue Windows UI review with other dialogs and sheets that still lack compact-window widget evidence, prioritizing surfaces that collect text input or host scrollable content.
+
+## Round 28: Tag Edit Compact Dialog Evidence
+
+### Scope
+- `hibiki/lib/src/pages/implementations/tag_management_page.dart`
+- `hibiki/test/pages/tag_management_page_test.dart`
+- Tag creation/editing dialog under compact Windows-sized surfaces.
+
+### Findings
+
+#### HBK-AUDIT-040
+- severity: low
+- status: verified-pass
+- files: `hibiki/lib/src/pages/implementations/tag_management_page.dart`, `hibiki/test/pages/tag_management_page_test.dart`
+- root cause: no production defect found in this round. The risk was that `TagEditDialog` uses an `AlertDialog` with non-scrollable content containing a text field plus ten color swatches, which looked like a possible compact-window overflow source.
+- impact: if this failed, tag creation/editing could become unusable on small Windows windows despite the rest of the app layout being constrained correctly.
+- fix: no production code change. Added a widget test rendering `TagEditDialog` in a 320x240 viewport with real generated translations and asserted no Flutter exception while the text field remains present.
+- verification: `flutter test test/pages/tag_management_page_test.dart` passed with 1 test. Full `flutter test` passed with 768 tests. `flutter build windows --debug` built `build\windows\x64\runner\Debug\hibiki.exe` with the existing third-party `flutter_inappwebview_windows` CMake dev warning.
+
+### Next Scope
+- Continue Windows UI review with profile/media edit dialogs and any remaining input surfaces that still lack compact-window widget evidence.
