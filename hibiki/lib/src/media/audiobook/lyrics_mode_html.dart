@@ -81,12 +81,15 @@ body { font-family: "Noto Serif JP", "Noto Sans JP", serif; }
 .cue.near-3 { opacity: 0.25; }
 ::highlight(hoshi-selection) {
   background-color: $accentColor;
-  color: inherit;
+  color: $backgroundColor;
 }
 .hoshi-dict-highlight {
   background-color: $accentColor !important;
   color: inherit;
   border-radius: 2px;
+}
+.cue.current .hoshi-dict-highlight {
+  color: $backgroundColor;
 }
 .cue.favorited::before {
   content: '\\2605';
