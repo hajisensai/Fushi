@@ -184,3 +184,26 @@
 
 ### Next Scope
 - Continue reducing full Windows drive dependency by giving reader/dictionary interaction targets stable keys and lower-level tests where possible.
+
+## Round 9: Dictionary Result Evidence
+
+### Scope
+- `hibiki/lib/src/pages/implementations/home_dictionary_page.dart`
+- `hibiki/integration_test/test_helpers.dart`
+- `hibiki/integration_test/reader_dictionary_test.dart`
+- `hibiki/test/integration/navigation_helpers_test.dart`
+- Windows/CJK dictionary search result verification.
+
+### Findings
+
+#### HBK-AUDIT-019
+- severity: medium
+- status: fixed
+- files: `hibiki/lib/src/pages/implementations/home_dictionary_page.dart`, `hibiki/integration_test/test_helpers.dart`, `hibiki/integration_test/reader_dictionary_test.dart`, `hibiki/test/integration/navigation_helpers_test.dart`
+- root cause: `reader_dictionary_test` treated any `Card`, `ListTile`, or `ExpansionTile` in the full widget tree as dictionary search result evidence. On desktop layouts this is too broad: unrelated settings rows, history cards, or overlay widgets can satisfy the count without proving that the CJK dictionary result view actually appeared.
+- impact: Windows CJK dictionary search drive validation could produce a false pass while the actual result pane failed to render.
+- fix: added a stable `ValueKey<String>('home_dictionary_result_evidence')` inside the home dictionary result view, exposed `findDictionaryResultEvidence()`, and changed `reader_dictionary_test` to assert that keyed evidence instead of counting unrelated generic widgets.
+- verification: TDD red check failed as expected because `findDictionaryResultEvidence()` did not exist. After the fix, `flutter test test/integration/navigation_helpers_test.dart` passed with 6 tests. `dart format .` formatted the changed dictionary page. `flutter test` passed with 742 tests. No Windows runner was launched, so this round did not take desktop focus from the user.
+
+### Next Scope
+- Continue hardening Windows reader/dictionary drive assertions so every check proves a specific app surface instead of relying on generic widget counts.

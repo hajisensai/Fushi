@@ -75,6 +75,12 @@ Finder findSearchField() {
   return searchBar.first;
 }
 
+Finder findDictionaryResultEvidence() {
+  return find.byKey(
+    const ValueKey<String>('home_dictionary_result_evidence'),
+  );
+}
+
 List<Finder> findPrimaryNavigationTargets() {
   final Finder rail = find.byType(NavigationRail);
   if (rail.evaluate().isNotEmpty) {

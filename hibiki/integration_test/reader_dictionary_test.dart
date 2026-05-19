@@ -157,13 +157,11 @@ void main() {
       await tester.enterText(findSearchField(), '猫');
       await tester.pump(const Duration(seconds: 5));
 
-      final int resultWidgets = find.byType(Card).evaluate().length +
-          find.byType(ListTile).evaluate().length +
-          find.byType(ExpansionTile).evaluate().length;
+      final Finder resultEvidence = findDictionaryResultEvidence();
+      final int resultCount = resultEvidence.evaluate().length;
+      debugPrint('[reader] Dict result evidence: $resultCount widgets');
 
-      debugPrint('[reader] Dict results: $resultWidgets widgets');
-
-      if (resultWidgets == 0) {
+      if (resultCount == 0) {
         fail('Dictionary search for 猫 returned zero results. '
             'This test requires at least one dictionary imported. '
             'See CLAUDE.md § 集成测试流程.');

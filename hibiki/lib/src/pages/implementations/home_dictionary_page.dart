@@ -506,6 +506,9 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
         final Size screen = Size(constraints.maxWidth, constraints.maxHeight);
         return Stack(
           children: [
+            const SizedBox.shrink(
+              key: ValueKey<String>('home_dictionary_result_evidence'),
+            ),
             DictionaryPopupWebView(
               result: _result!,
               onTextSelected: (text, localRect) {

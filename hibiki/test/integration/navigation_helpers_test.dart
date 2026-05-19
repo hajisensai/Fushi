@@ -130,6 +130,28 @@ void main() {
         const ValueKey<String>('home_dictionary_search_field'));
   });
 
+  testWidgets('findDictionaryResultEvidence ignores unrelated cards',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Column(
+            children: [
+              Card(child: Text('Unrelated card')),
+              ListTile(title: Text('Unrelated tile')),
+              ExpansionTile(title: Text('Unrelated expansion')),
+              SizedBox(
+                key: ValueKey<String>('home_dictionary_result_evidence'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(findDictionaryResultEvidence(), findsOneWidget);
+  });
+
   test('screenshots are optional on Windows drive', () {
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     addTearDown(() => debugDefaultTargetPlatformOverride = null);
