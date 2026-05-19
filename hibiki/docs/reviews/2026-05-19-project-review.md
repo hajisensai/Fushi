@@ -293,3 +293,24 @@
 
 ### Next Scope
 - Continue desktop popup lookup review with nested result popup positioning and constrained Windows dialog sizes; avoid screenshot-only conclusions unless backed by bounds or widget evidence.
+
+## Round 14: Constrained Popup Positioning
+
+### Scope
+- `hibiki/lib/src/pages/implementations/dictionary_popup_layer.dart`
+- `hibiki/test/pages/dictionary_popup_layer_test.dart`
+- Shared nested popup positioning used by dictionary pages and reader popup surfaces.
+
+### Findings
+
+#### HBK-AUDIT-024
+- severity: medium
+- status: fixed
+- files: `hibiki/lib/src/pages/implementations/dictionary_popup_layer.dart`, `hibiki/test/pages/dictionary_popup_layer_test.dart`
+- root cause: `calcPopupPosition()` used fixed padding as the lower clamp bound even when the available popup surface was smaller than `padding * 2`. In a constrained Windows dialog, tiny transient layout, or test harness surface, `clamp(padding, screen - size - padding)` could receive inverted bounds and throw before any UI could render.
+- impact: normal desktop windows may look fine, but constrained popup/dialog layouts could crash or produce no nested result popup. A screenshot from a normal-sized window would miss this because the failure is a geometry precondition bug.
+- fix: normalized the usable inset from the actual screen size first, then derived width, height, and left/top clamp bounds from that usable rectangle. This keeps regular desktop dimensions capped by `maxWidth`/`maxHeight` while making tiny surfaces degrade into an in-bounds rectangle instead of throwing.
+- verification: TDD red check failed with `Invalid argument(s): 6.0` in `double.clamp`. After the fix, `flutter test test/pages/dictionary_popup_layer_test.dart` passed with 2 tests covering tiny constrained surfaces and normal 800x600 desktop bounds. Full `flutter test` passed with 750 tests, and `flutter build windows --debug` built `build\windows\x64\runner\Debug\hibiki.exe` with the existing `flutter_inappwebview_windows` CMake dev warning.
+
+### Next Scope
+- Continue review with the rendered popup layer stack under constrained dialog sizes and verify whether result WebView content gets stable height without overflow.
