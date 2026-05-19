@@ -5,6 +5,7 @@ const vm = require('vm');
 
 const dictMediaPath = path.resolve(__dirname, '../../../assets/popup/dict-media.js');
 const popupPath = path.resolve(__dirname, '../../../assets/popup/popup.js');
+const selectionPath = path.resolve(__dirname, '../../../assets/popup/selection.js');
 
 class FakeClassList {
   constructor(element) {
@@ -492,6 +493,27 @@ function testStructuredContentTablesUseHorizontalScrollContainer() {
   assert.equal(parent.children[0].children[0].className, 'gloss-sc-table');
 }
 
+function testSelectionHighlightReturnsBoundsForPopupPositioning() {
+  const source = fs.readFileSync(selectionPath, 'utf8');
+
+  assert.ok(
+    source.includes('if (!this.selection?.ranges.length) return null;'),
+    'highlightSelection should return null when no ranges exist',
+  );
+  assert.ok(
+    source.includes('bounds.left'),
+    'highlightSelection should aggregate range bounds',
+  );
+  assert.ok(
+    source.includes('width: bounds.right - bounds.left'),
+    'highlightSelection should return a width from aggregated bounds',
+  );
+  assert.ok(
+    source.includes('height: bounds.bottom - bounds.top'),
+    'highlightSelection should return a height from aggregated bounds',
+  );
+}
+
 testEmSizedWideImagesUseHorizontalScrollWrapper();
 testLargeRasterImagesMarkedAsEmUseNaturalWidthAfterLoad();
 testExplicitContentImageDimensionsDefaultToPixelUnits();
@@ -499,6 +521,7 @@ testPixelImagesWithBadDeclaredAspectUseNaturalWidthAfterLoad();
 testTappingDefinitionImageOpensLightbox();
 testFrequencyAndPitchSectionsDoNotRenderCrowdedTitles();
 testStructuredContentTablesUseHorizontalScrollContainer();
+testSelectionHighlightReturnsBoundsForPopupPositioning();
 // TODO: testLongPress* tests access document.__listeners.touchstart but popup.js
 // registers touchstart on per-entry summary elements. Rewrite tests to create a
 // dictionary entry, then fire touchstart on the summary element's own listener.

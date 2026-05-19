@@ -104,6 +104,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
 
     final gen = ++_searchGeneration;
     _pendingSelectionRect = selectionRect;
+    final swTotal = Stopwatch()..start();
 
     try {
       _isSearchingNotifier.value = true;
@@ -116,6 +117,8 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
 
       if (_searchGeneration != gen) return 0;
 
+      final msAfterSearch = swTotal.elapsedMilliseconds;
+
       appModel.addToDictionaryHistory(result: dictionaryResult);
 
       final item = _PopupStackItem(
@@ -124,6 +127,9 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
         searchTerm: searchTerm,
       );
       _popupStack.value = [..._popupStack.value, item];
+
+      debugPrint(
+          '[dict-perf] searchDictionaryResult: search=${msAfterSearch}ms pushPopup=${swTotal.elapsedMilliseconds}ms "$searchTerm"');
 
       final int highlightCount = dictionaryResult.entries.isNotEmpty
           ? dictionaryResult.entries.first.word.runes.length
@@ -199,6 +205,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
   double get popupMaxWidth => appModel.popupMaxWidth;
   double get popupMaxHeight => 360;
   double get popupPadding => 6;
+  double get popupBottomReserve => 0;
   late final Listenable _popupListenable =
       Listenable.merge([_popupStack, _isSearchingNotifier]);
 
@@ -353,6 +360,13 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
   /// Override in subclasses to hook post-dismiss logic.
   void onAllPopupsDismissed() {}
 
+  void repositionTopPopup(Rect expandedSelectionRect) {
+    final stack = _popupStack.value;
+    if (stack.isEmpty) return;
+    stack.last.selectionRect = expandedSelectionRect;
+    _popupStack.value = List.of(stack);
+  }
+
   Rect _calculatePopupPosition(Rect sel, Size screen) {
     return calcPopupPosition(
       selectionRect: sel,
@@ -360,6 +374,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
       padding: popupPadding,
       maxWidth: popupMaxWidth,
       maxHeight: popupMaxHeight,
+      bottomReserve: popupBottomReserve,
     );
   }
 
@@ -443,7 +458,7 @@ class _PopupStackItem {
   });
 
   final DictionarySearchResult result;
-  final Rect selectionRect;
+  Rect selectionRect;
   final String searchTerm;
   final GlobalKey<DictionaryPopupWebViewState> webViewKey =
       GlobalKey<DictionaryPopupWebViewState>();

@@ -311,7 +311,7 @@ window.hoshiSelection = {
     },
 
     highlightSelection(charCount) {
-        if (!this.selection?.ranges.length) return;
+        if (!this.selection?.ranges.length) return null;
         const trimmedRanges = [];
         let remaining = charCount;
 
@@ -325,6 +325,23 @@ window.hoshiSelection = {
                 remaining--;
             }
             trimmedRanges.push({ node: r.node, start: r.start, end });
+        }
+
+        let bounds = null;
+        for (const seg of trimmedRanges) {
+            const range = document.createRange();
+            range.setStart(seg.node, seg.start);
+            range.setEnd(seg.node, seg.end);
+            for (const r of range.getClientRects()) {
+                if (!bounds) {
+                    bounds = { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+                } else {
+                    if (r.left < bounds.left) bounds.left = r.left;
+                    if (r.top < bounds.top) bounds.top = r.top;
+                    if (r.right > bounds.right) bounds.right = r.right;
+                    if (r.bottom > bounds.bottom) bounds.bottom = r.bottom;
+                }
+            }
         }
 
         if (window.__hoshiCssHighlightsSupported) {
@@ -350,6 +367,8 @@ window.hoshiSelection = {
             }
             this.highlightWrappers.reverse();
         }
+
+        return bounds ? { x: bounds.left, y: bounds.top, width: bounds.right - bounds.left, height: bounds.bottom - bounds.top } : null;
     },
 
     clearHighlightWrappers() {

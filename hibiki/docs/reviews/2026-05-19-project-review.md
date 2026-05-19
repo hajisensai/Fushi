@@ -443,3 +443,28 @@
 
 ### Next Scope
 - Continue review with remaining Windows popup host paths, especially Android popup activity parity versus in-app desktop popup behavior and any unverified generated/dirty UI changes.
+
+## Round 21: Reader Highlight Popup Geometry
+
+### Scope
+- `hibiki/lib/src/reader/reader_selection_scripts.dart`
+- `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart`
+- `hibiki/lib/src/pages/base_source_page.dart`
+- `hibiki/assets/popup/selection.js`
+- `hibiki/test/reader/reader_selection_scripts_test.dart`
+- `hibiki/test/utils/misc/popup_asset_behavior_test.js`
+- Hoshi reader lookup popup geometry after dictionary result highlighting on Windows-sized layouts.
+
+### Findings
+
+#### HBK-AUDIT-031
+- severity: medium
+- status: fixed
+- files: `hibiki/lib/src/reader/reader_selection_scripts.dart`, `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart`, `hibiki/lib/src/pages/base_source_page.dart`, `hibiki/assets/popup/selection.js`, `hibiki/test/reader/reader_selection_scripts_test.dart`, `hibiki/test/utils/misc/popup_asset_behavior_test.js`
+- root cause: the selection highlight code was moving from a fire-and-forget contract to a geometry-returning contract, but the contract needed to be explicit and tested. Without using the returned highlighted-range bounds, the reader popup could stay anchored to the original tap/selection rectangle even after the dictionary result highlighted a shorter matched expression.
+- impact: a normal screenshot can look fine when the original selection and matched expression overlap closely, while Windows reader lookup popups can drift or feel badly placed for longer selected sentences, deinflected matches, or compact reader chrome layouts.
+- fix: made `highlightSelection()` return explicit bounds in both the Hoshi reader selection script and popup asset script, JSON-stringified the reader invocation, added a typed Dart parser for bridge results, and updated `ReaderHoshiPage` to reposition the active popup from the real highlighted bounds when available. Invalid or missing bounds now fall back to the existing popup position instead of crashing.
+- verification: `flutter test test/reader/reader_selection_scripts_test.dart` passed with 27 tests. `node test/utils/misc/popup_asset_behavior_test.js` passed and now checks the popup asset highlight bounds contract. `dart format .` changed 0 files. Full `flutter test` passed with 761 tests. `flutter build windows --debug` was attempted, but MSBuild could not copy `WebView2Loader.dll` because the running process `Hibiki (191208)` had the existing debug DLL locked; no app process was killed because the user is actively using the computer.
+
+### Next Scope
+- Continue review with remaining dirty Windows popup host paths that do not require stealing focus, especially `PopupDictActivity` window flags and the current popup swipe-dismiss/desktop search-field deltas.

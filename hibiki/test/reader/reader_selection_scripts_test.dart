@@ -22,14 +22,62 @@ void main() {
     test('generates correct JS call', () {
       expect(
         ReaderSelectionScripts.highlightInvocation(5),
-        'window.hoshiSelection.highlightSelection(5)',
+        'JSON.stringify(window.hoshiSelection.highlightSelection(5))',
       );
     });
 
     test('handles zero count', () {
       expect(
         ReaderSelectionScripts.highlightInvocation(0),
-        'window.hoshiSelection.highlightSelection(0)',
+        'JSON.stringify(window.hoshiSelection.highlightSelection(0))',
+      );
+    });
+  });
+
+  group('ReaderSelectionScripts.highlightRectFromResult', () {
+    test('parses JSON string and applies reader top offset', () {
+      final rect = ReaderSelectionScripts.highlightRectFromResult(
+        '{"x":10,"y":20,"width":30,"height":40}',
+        topOffset: 5,
+      );
+
+      expect(rect?.left, 10);
+      expect(rect?.top, 25);
+      expect(rect?.width, 30);
+      expect(rect?.height, 40);
+    });
+
+    test('parses map result from platform bridge', () {
+      final rect = ReaderSelectionScripts.highlightRectFromResult(
+        <String, Object?>{
+          'x': 1,
+          'y': 2.5,
+          'width': 3,
+          'height': 4.5,
+        },
+      );
+
+      expect(rect?.left, 1);
+      expect(rect?.top, 2.5);
+      expect(rect?.width, 3);
+      expect(rect?.height, 4.5);
+    });
+
+    test('ignores empty and invalid highlight bounds', () {
+      expect(ReaderSelectionScripts.highlightRectFromResult(null), isNull);
+      expect(ReaderSelectionScripts.highlightRectFromResult('null'), isNull);
+      expect(ReaderSelectionScripts.highlightRectFromResult(''), isNull);
+      expect(
+          ReaderSelectionScripts.highlightRectFromResult('  null  '), isNull);
+      expect(
+        ReaderSelectionScripts.highlightRectFromResult(
+          '{"x":10,"y":20,"width":0,"height":40}',
+        ),
+        isNull,
+      );
+      expect(
+        ReaderSelectionScripts.highlightRectFromResult('not-json'),
+        isNull,
       );
     });
   });
@@ -138,6 +186,13 @@ void main() {
     test('includes CSS Highlights API support detection', () {
       expect(js, contains('__hoshiCssHighlightsSupported'));
       expect(js, contains('CSS.highlights'));
+    });
+
+    test('highlightSelection returns bounds for popup positioning', () {
+      expect(js, contains('return null;'));
+      expect(js, contains('bounds.left'));
+      expect(js, contains('width: bounds.right - bounds.left'));
+      expect(js, contains('height: bounds.bottom - bounds.top'));
     });
 
     test('defines bracket pairs for sentence extraction', () {

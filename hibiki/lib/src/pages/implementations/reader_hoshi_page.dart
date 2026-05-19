@@ -136,6 +136,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   double get _readerBottomReserve => _readerChromeHeight + _stableBottomInset;
 
   @override
+  double get popupBottomReserve =>
+      (_readerContentReady && _showChrome) ? _readerBottomReserve : 0;
+
+  @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
@@ -2107,6 +2111,19 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     );
   }
 
+  Future<void> _highlightAndReposition(int highlightCount) async {
+    if (highlightCount <= 0 || _controller == null) return;
+    final raw = await _controller!.evaluateJavascript(
+      source: ReaderSelectionScripts.highlightInvocation(highlightCount),
+    );
+    if (!mounted) return;
+    final rect = ReaderSelectionScripts.highlightRectFromResult(
+      raw,
+      topOffset: _readerTopOffset,
+    );
+    if (rect != null) repositionTopPopup(rect);
+  }
+
   Future<void> _handleTextSelected(ReaderSelectionData data) async {
     if (data.text.isEmpty) {
       return;
@@ -2175,11 +2192,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         searchTerm: data.text,
         selectionRect: selectionRect,
       );
-      if (highlightCount > 0 && _controller != null) {
-        await _controller!.evaluateJavascript(
-          source: ReaderSelectionScripts.highlightInvocation(highlightCount),
-        );
-      }
+      await _highlightAndReposition(highlightCount);
       _checkFavoriteStatus();
       return;
     }
@@ -2193,11 +2206,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       selectionRect: selectionRect,
     );
 
-    if (highlightCount > 0 && _controller != null) {
-      await _controller!.evaluateJavascript(
-        source: ReaderSelectionScripts.highlightInvocation(highlightCount),
-      );
-    }
+    await _highlightAndReposition(highlightCount);
     if (data.normalizedOffset != null && data.normalizedLength != null) {
       _cachedSelectionRange = (
         offset: data.normalizedOffset!,

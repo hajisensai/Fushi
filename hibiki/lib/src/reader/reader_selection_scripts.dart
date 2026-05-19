@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:ui';
+
 class ReaderSelectionScripts {
   ReaderSelectionScripts._();
 
@@ -5,7 +8,7 @@ class ReaderSelectionScripts {
       'window.hoshiSelection.selectText($x, $y, $maxLength)';
 
   static String highlightInvocation(int count) =>
-      'window.hoshiSelection.highlightSelection($count)';
+      'JSON.stringify(window.hoshiSelection.highlightSelection($count))';
 
   static String clearInvocation() => 'window.hoshiSelection.clearSelection()';
 
@@ -13,6 +16,33 @@ class ReaderSelectionScripts {
     if (result == null) return true;
     final String trimmed = result.trim().replaceAll('"', '');
     return trimmed.isEmpty || trimmed == 'null';
+  }
+
+  static Rect? highlightRectFromResult(Object? raw, {double topOffset = 0}) {
+    if (raw == null) return null;
+    try {
+      final Map<String, dynamic> data;
+      if (raw is String) {
+        final String trimmed = raw.trim();
+        if (trimmed.isEmpty || trimmed == 'null') return null;
+        data = jsonDecode(trimmed) as Map<String, dynamic>;
+      } else if (raw is Map) {
+        data = Map<String, dynamic>.from(raw);
+      } else {
+        return null;
+      }
+      final double width = (data['width'] as num).toDouble();
+      final double height = (data['height'] as num).toDouble();
+      if (width <= 0 || height <= 0) return null;
+      return Rect.fromLTWH(
+        (data['x'] as num).toDouble(),
+        (data['y'] as num).toDouble() + topOffset,
+        width,
+        height,
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   static String script() => '<script>\n${source()}\n</script>';
@@ -309,7 +339,7 @@ window.hoshiSelection = {
     return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
   },
   highlightSelection: function(charCount) {
-    if (!this.selection || !this.selection.ranges.length) return;
+    if (!this.selection || !this.selection.ranges.length) return null;
     var trimmedRanges = [];
     var remaining = charCount;
     for (var i = 0; i < this.selection.ranges.length; i++) {
@@ -322,6 +352,25 @@ window.hoshiSelection = {
         remaining--;
       }
       trimmedRanges.push({ node: r.node, start: r.start, end: end });
+    }
+    var bounds = null;
+    for (var i = 0; i < trimmedRanges.length; i++) {
+      var seg = trimmedRanges[i];
+      var bRange = document.createRange();
+      bRange.setStart(seg.node, seg.start);
+      bRange.setEnd(seg.node, seg.end);
+      var rects = bRange.getClientRects();
+      for (var j = 0; j < rects.length; j++) {
+        var r = rects[j];
+        if (!bounds) {
+          bounds = { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+        } else {
+          if (r.left < bounds.left) bounds.left = r.left;
+          if (r.top < bounds.top) bounds.top = r.top;
+          if (r.right > bounds.right) bounds.right = r.right;
+          if (r.bottom > bounds.bottom) bounds.bottom = r.bottom;
+        }
+      }
     }
     if (window.__hoshiCssHighlightsSupported) {
       var highlights = [];
@@ -348,6 +397,7 @@ window.hoshiSelection = {
       }
       this.highlightWrappers.reverse();
     }
+    return bounds ? { x: bounds.left, y: bounds.top, width: bounds.right - bounds.left, height: bounds.bottom - bounds.top } : null;
   },
   getNormalizedOffset: function(targetNode, offset) {
     if (!window.hoshiReader) return null;
