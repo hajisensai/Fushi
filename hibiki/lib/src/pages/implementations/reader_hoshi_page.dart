@@ -1161,7 +1161,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _gestureEnd(e.clientX, e.clientY, e);
   }, {passive: false});
   document.addEventListener('selectstart', function(e) {
-    if (hasStart) e.preventDefault();
+    if (hasStart && (Date.now() - startTime) < 400) e.preventDefault();
   });
   var _wheelTimer = null;
   document.addEventListener('wheel', function(e) {
