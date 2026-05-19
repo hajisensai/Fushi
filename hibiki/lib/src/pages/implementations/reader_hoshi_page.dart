@@ -3,6 +3,8 @@ import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/utils/misc/hibiki_toast.dart';
@@ -1143,6 +1145,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       } else {
         window.flutter_inappwebview.callHandler('onTap', x, y);
       }
+    } else if (absDx < 20 && absDy < 20 && elapsed >= 500) {
+      if (window.hoshiSelection) {
+        window.hoshiSelection.selectText(x, y, 400);
+      }
     }
   }
   document.addEventListener('touchstart', function(e) {
@@ -1204,6 +1210,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   Widget _buildWebView() {
     return InAppWebView(
       key: const ValueKey<String>('hoshi_webview'),
+      gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+        Factory<LongPressGestureRecognizer>(() => LongPressGestureRecognizer()),
+      },
       contextMenu: ContextMenu(
         settings: ContextMenuSettings(
           hideDefaultSystemContextMenuItems: false,
