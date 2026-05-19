@@ -38,6 +38,18 @@ class BlurOptions {
   bool visible;
 }
 
+/// Returns the default blur widget bounds for a screen.
+Rect defaultBlurRect(Size screen) {
+  const double defaultSize = 150;
+
+  return Rect.fromLTWH(
+    screen.width / 2 - defaultSize / 2,
+    screen.height / 4 - defaultSize / 2,
+    defaultSize,
+    defaultSize,
+  );
+}
+
 /// Blur widget used in the player.
 class ResizeableWidget extends ConsumerStatefulWidget {
   /// Initialise this object.
@@ -116,10 +128,12 @@ class _ResizeableWidgetState extends ConsumerState<ResizeableWidget> {
           }
 
           if (_notifier.value.top == -1 || _notifier.value.left == -1) {
-            _height = 150;
-            _width = 150;
-            _top = MediaQuery.of(context).size.height / 4 - _height / 2;
-            _left = MediaQuery.of(context).size.height / 2 - _height / 2;
+            final Rect defaultRect =
+                defaultBlurRect(MediaQuery.of(context).size);
+            _height = defaultRect.height;
+            _width = defaultRect.width;
+            _top = defaultRect.top;
+            _left = defaultRect.left;
           }
 
           Color color = _notifier.value.color;

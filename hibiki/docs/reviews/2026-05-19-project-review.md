@@ -562,3 +562,24 @@
 
 ### Next Scope
 - Remaining uncommitted files are local iOS Flutter environment files and `.codex-test/screenshots/`; neither is a Windows UI source change. Continue broad Windows UI review from committed source and tests rather than staging local environment noise.
+
+## Round 25: Blur Overlay Default Desktop Position
+
+### Scope
+- `hibiki/lib/src/utils/player/blur_options.dart`
+- `hibiki/test/utils/player/blur_options_test.dart`
+- Default blur overlay placement on Windows-shaped player surfaces.
+
+### Findings
+
+#### HBK-AUDIT-037
+- severity: medium
+- status: fixed
+- files: `hibiki/lib/src/utils/player/blur_options.dart`, `hibiki/test/utils/player/blur_options_test.dart`
+- root cause: `ResizeableWidget` initialized its default horizontal position from `MediaQuery.size.height` instead of `MediaQuery.size.width`. The vertical default and horizontal default were both derived from height, so wide Windows windows placed the blur overlay too far left even though the saved-position path could look normal after manual adjustment.
+- impact: first-use blur overlay placement was wrong on desktop-shaped windows. A screenshot of an already-saved layout could look fine, but new users or reset state would get a mispositioned overlay.
+- fix: extract the default rectangle calculation into `defaultBlurRect(Size screen)` and compute `left` from `screen.width` while preserving the existing vertical quarter-screen placement and default 150x150 size.
+- verification: added a failing-first widget-independent test for a `1200x600` window, where the old height-based calculation would produce `left == 225` instead of the expected centered `left == 525`. After the fix, `flutter test test/utils/player/blur_options_test.dart` passed. `dart format lib/src/utils/player/blur_options.dart test/utils/player/blur_options_test.dart` formatted the touched Dart files. Full `flutter test` passed with 765 tests, and `flutter build windows --debug` built `build\windows\x64\runner\Debug\hibiki.exe` with the existing third-party `flutter_inappwebview_windows` CMake dev warning. The fixed repository-wide `dart format .` command is still blocked by a transient generated `build/flutter_inappwebview_android/.transforms/.../headless_in_app_webview/*` missing-path error, so it is not counted as passed.
+
+### Next Scope
+- Continue Windows UI review with remaining media/dialog surfaces that still calculate widths from raw `MediaQuery` values, especially legacy player dialogs and settings dialogs that can overflow compact desktop windows.
