@@ -797,3 +797,24 @@
 
 ### Next Scope
 - Continue Windows UI review with remaining settings dialogs, especially custom dictionary/audio-source editors and bottom action rows.
+
+## Round 36: Audio Sources Dialog Compact Layout Fix
+
+### Scope
+- `hibiki/lib/src/pages/implementations/dictionary_settings_dialog_page.dart`
+- `hibiki/test/pages/audio_sources_dialog_page_test.dart`
+- Dictionary settings audio-source management dialog under compact Windows-sized surfaces.
+
+### Findings
+
+#### HBK-AUDIT-048
+- severity: medium
+- status: fixed
+- files: `hibiki/lib/src/pages/implementations/dictionary_settings_dialog_page.dart`, `hibiki/test/pages/audio_sources_dialog_page_test.dart`
+- root cause: the audio-source editor was a private dialog using default `AlertDialog` chrome, a shrink-wrapped reorderable list, full `Space.normal()` spacing that depends on a page-level `Spacing` ancestor, two-line URL labels, and normal-density icon/input controls.
+- impact: when opened in a compact Windows window, the dialog could overflow vertically; when tested or reused outside the settings page shell, it also crashed because the dialog body depended on an ambient `Spacing` provider.
+- fix: exposed `AudioSourcesDialog` for direct widget coverage, bounded its content height to the current window, reduced dialog padding and list/input density, ellipsized long URLs to one line, and replaced the ambient `Space.normal()` dependency with a local `SizedBox`.
+- verification: the compact widget test first failed because the dialog was private, then reproduced both the missing `Spacing` assertion and a bottom overflow. After the fix, `flutter test test/pages/audio_sources_dialog_page_test.dart` passed with 1 test.
+
+### Next Scope
+- Continue Windows UI review with CSS/font editor dialogs and remaining confirmation dialogs that still use default `AlertDialog` padding.

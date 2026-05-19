@@ -631,7 +631,7 @@ class _DictionaryDialogPageState extends BasePageState {
   void showAudioSourcesPage() {
     showAppDialog(
       context: context,
-      builder: (context) => _AudioSourcesDialog(
+      builder: (context) => AudioSourcesDialog(
         sources: List<String>.from(appModel.audioSources),
         onSave: (sources) {
           appModel.setAudioSources(sources);
@@ -641,20 +641,22 @@ class _DictionaryDialogPageState extends BasePageState {
   }
 }
 
-class _AudioSourcesDialog extends StatefulWidget {
-  const _AudioSourcesDialog({
+@visibleForTesting
+class AudioSourcesDialog extends StatefulWidget {
+  const AudioSourcesDialog({
     required this.sources,
     required this.onSave,
+    super.key,
   });
 
   final List<String> sources;
   final void Function(List<String>) onSave;
 
   @override
-  State<_AudioSourcesDialog> createState() => _AudioSourcesDialogState();
+  State<AudioSourcesDialog> createState() => _AudioSourcesDialogState();
 }
 
-class _AudioSourcesDialogState extends State<_AudioSourcesDialog> {
+class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
   late List<String> _sources;
   final _controller = TextEditingController();
 
@@ -672,10 +674,24 @@ class _AudioSourcesDialogState extends State<_AudioSourcesDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final double maxHeight = MediaQuery.of(context).size.height * 0.42;
+
     return AlertDialog(
-      title: Text(t.manage_audio_sources),
-      content: SizedBox(
-        width: double.maxFinite,
+      titlePadding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+      actionsPadding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
+      buttonPadding: const EdgeInsets.symmetric(horizontal: 4),
+      title: Text(
+        t.manage_audio_sources,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: Theme.of(context).textTheme.titleMedium,
+      ),
+      content: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: double.maxFinite,
+          maxHeight: maxHeight,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -694,13 +710,16 @@ class _AudioSourcesDialogState extends State<_AudioSourcesDialog> {
                   return ListTile(
                     key: ValueKey('audio_src_$index'),
                     dense: true,
+                    minVerticalPadding: 0,
+                    visualDensity: VisualDensity.compact,
                     title: Text(
                       _sources[index],
                       style: Theme.of(context).textTheme.bodySmall,
-                      maxLines: 2,
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                     trailing: IconButton(
+                      visualDensity: VisualDensity.compact,
                       icon: const Icon(Icons.delete, size: 18),
                       onPressed: () {
                         setState(() {
@@ -712,13 +731,19 @@ class _AudioSourcesDialogState extends State<_AudioSourcesDialog> {
                 },
               ),
             ),
-            const Space.normal(),
+            const SizedBox(height: 4),
             TextField(
               controller: _controller,
               decoration: InputDecoration(
                 hintText: 'https://...{term}...{reading}',
                 hintStyle: Theme.of(context).textTheme.bodySmall,
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 8,
+                ),
                 suffixIcon: IconButton(
+                  visualDensity: VisualDensity.compact,
                   icon: const Icon(Icons.add),
                   onPressed: _addSource,
                 ),
