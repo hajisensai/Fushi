@@ -400,3 +400,24 @@
 
 ### Next Scope
 - Continue review with nested popup stack behavior after result links/selections, especially link-click geometry and recursive lookup result state.
+
+## Round 19: Popup Tap-Outside Wiring
+
+### Scope
+- `hibiki/lib/src/pages/implementations/popup_dictionary_page.dart`
+- `hibiki/test/pages/popup_dictionary_page_test.dart`
+- Independent desktop/Android popup dictionary base result layer close behavior.
+
+### Findings
+
+#### HBK-AUDIT-029
+- severity: low
+- status: fixed
+- files: `hibiki/lib/src/pages/implementations/popup_dictionary_page.dart`, `hibiki/test/pages/popup_dictionary_page_test.dart`
+- root cause: `DictionaryPopupWebView` emits `tapOutside` when the user clicks blank popup content, and nested popup layers plus reader popups already wire that callback to dismiss. The independent `PopupDictionaryPage` base layer did not pass `onTapOutside`, so the JavaScript handler was installed but had no page action.
+- impact: in the Windows in-app popup and Android popup activity, clicking blank result content could look like a valid outside-dismiss gesture but do nothing. A screenshot would not catch this because the visible layout is fine; the callback contract was missing.
+- fix: passed `_close` as `onTapOutside` for the base popup layer, matching the existing close button and nested-layer behavior.
+- verification: TDD red check failed with `DictionaryPopupLayer.onTapOutside == null` for the base layer. After the fix, `flutter test test/pages/popup_dictionary_page_test.dart` passed with 7 tests, full `flutter test` passed with 757 tests, and `flutter build windows --debug` built `build\windows\x64\runner\Debug\hibiki.exe` with existing third-party/native warnings only.
+
+### Next Scope
+- Continue review with popup result content layout under long expressions, large structured content, and image/table-heavy dictionary entries.

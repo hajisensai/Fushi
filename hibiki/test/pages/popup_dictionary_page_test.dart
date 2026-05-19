@@ -6,8 +6,40 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/pages/implementations/popup_dictionary_page.dart';
+import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:spaces/spaces.dart';
+
+class PopupTestAppModel extends AppModel {
+  @override
+  int get maximumTerms => 10;
+
+  @override
+  double get popupMaxWidth => 400;
+
+  @override
+  List<String> get enabledAudioSources => const <String>[];
+
+  @override
+  void addToSearchHistory({
+    required String historyKey,
+    required String searchTerm,
+  }) {}
+
+  @override
+  void addToDictionaryHistory({required DictionarySearchResult result}) {}
+
+  @override
+  Future<DictionarySearchResult> searchDictionary({
+    required String searchTerm,
+    required bool searchWithWildcards,
+    int? overrideMaximumTerms,
+    bool useCache = true,
+  }) async {
+    return DictionarySearchResult(searchTerm: searchTerm);
+  }
+}
 
 Widget buildTestApp({
   required AppModel appModel,
@@ -238,5 +270,36 @@ void main() {
     await tester.pump();
 
     expect(submitted, <String>['keyboard']);
+  });
+
+  testWidgets('base popup layer wires tap outside for in-app popup', (
+    WidgetTester tester,
+  ) async {
+    final AppModel appModel = PopupTestAppModel();
+
+    await tester.pumpWidget(
+      buildTestApp(
+        appModel: appModel,
+        home: PopupDictionaryPage(
+          searchTerm: 'search',
+          closeInApp: () {},
+          autoSearchOnOpen: false,
+        ),
+      ),
+    );
+
+    final Finder searchField = find.byKey(
+      const ValueKey<String>('popup_dictionary_search_field'),
+    );
+    await tester.showKeyboard(searchField);
+    await tester.enterText(searchField, 'search');
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pump();
+
+    final DictionaryPopupLayer layer = tester.widget(
+      find.byType(DictionaryPopupLayer),
+    );
+
+    expect(layer.onTapOutside, isNotNull);
   });
 }

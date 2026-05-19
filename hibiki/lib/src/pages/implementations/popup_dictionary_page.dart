@@ -186,6 +186,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
         showBorder: false,
         overrideFillColor: Colors.transparent,
         onDismiss: _close,
+        onTapOutside: _close,
         onScrolledToBottom: entry.allLoaded
             ? null
             : () => loadMoreForEntry(entry: entry, popupStack: _stack),
