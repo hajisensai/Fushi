@@ -34,6 +34,37 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text(t.dialog_delete), findsOneWidget);
   });
+
+  testWidgets('collection item dialog fits compact title and actions', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 240);
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      buildApp(
+        CollectionItemDialogFrame(
+          title: const SelectableText(
+            'Very long favorite sentence used to test compact Windows collection item dialog layout',
+            maxLines: 3,
+          ),
+          content: const Text(
+            'Very long book title used to test compact collection dialog content',
+          ),
+          actions: const [
+            TextButton(onPressed: null, child: Text('Play')),
+            TextButton(onPressed: null, child: Text('Copy')),
+            TextButton(onPressed: null, child: Text('Delete')),
+            FilledButton(onPressed: null, child: Text('Read')),
+          ],
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Read'), findsOneWidget);
+  });
 }
 
 void _noop() {}

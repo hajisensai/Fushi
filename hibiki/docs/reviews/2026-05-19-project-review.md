@@ -965,3 +965,24 @@
 
 ### Next Scope
 - Continue Windows UI review with media edit dialogs and remaining default dialog shells.
+
+## Round 44: Collection Item Dialog Compact Action Layout Fix
+
+### Scope
+- `hibiki/lib/src/pages/implementations/collections_page.dart`
+- `hibiki/test/pages/collections_page_test.dart`
+- Collection long-press detail dialog with long favorite/bookmark text and multiple actions.
+
+### Findings
+
+#### HBK-AUDIT-056
+- severity: low
+- status: fixed
+- files: `hibiki/lib/src/pages/implementations/collections_page.dart`, `hibiki/test/pages/collections_page_test.dart`
+- root cause: collection item detail used an inline default `AlertDialog` with long selectable text and up to four actions, leaving the compact desktop layout unbounded and untested.
+- impact: future action additions or longer localized labels could regress compact Windows dialog layout without focused coverage.
+- fix: extracted `CollectionItemDialogFrame`, compacted inset/padding, constrained and scrolled optional content, and wrapped actions in a horizontal `CollectionItemDialogActionStrip`.
+- verification: the compact widget test first failed because `CollectionItemDialogFrame` did not exist. After extraction and compact layout, `flutter test test/pages/collections_page_test.dart` passed with 2 tests.
+
+### Next Scope
+- Continue Windows UI review with media edit dialog shell and remaining settings confirmation dialogs.
