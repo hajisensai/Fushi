@@ -257,8 +257,14 @@ class AppModel with ChangeNotifier {
     dictionaryMenuNotifier.notifyListeners();
   }
 
-  /// Used to strip emoji from search terms.
-  final _removeEmoji = RemoveEmoji();
+  /// Pre-compiled regex from remove_emoji package (avoids per-call RegExp()).
+  static final RegExp _emojiRegex = RegExp(RemoveEmoji().getRegexString());
+
+  static final RegExp _punctuationRegex =
+      RegExp(r'^[\p{P}\p{S}]+|[\p{P}\p{S}]+$', unicode: true);
+  static final RegExp _loneSurrogateRegex = RegExp(
+    '[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]',
+  );
 
   /// Used to notify toggling incognito. Updates the app logo to and from
   /// grayscale.
@@ -2362,15 +2368,29 @@ class AppModel with ChangeNotifier {
     int? overrideMaximumTerms,
     bool useCache = true,
   }) async {
-    searchTerm = searchTerm.replaceAll('\n', ' ');
-    searchTerm = _removeEmoji.clean(searchTerm, ' ', false);
-    searchTerm = searchTerm.replaceAll(
-        RegExp(r'^[\p{P}\p{S}]+|[\p{P}\p{S}]+$', unicode: true), '');
+    final swTotal = Stopwatch()..start();
+    final swPreprocess = Stopwatch()..start();
 
-    RegExp loneSurrogate = RegExp(
-      '[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]',
-    );
-    searchTerm = searchTerm.replaceAll(loneSurrogate, ' ');
+    searchTerm = searchTerm.replaceAll('\n', ' ');
+
+    final swEmoji = Stopwatch()..start();
+    searchTerm = searchTerm.replaceAll(_emojiRegex, ' ');
+    swEmoji.stop();
+
+    final swPunct = Stopwatch()..start();
+    searchTerm = searchTerm.replaceAll(_punctuationRegex, '');
+    swPunct.stop();
+
+    final swSurrogate = Stopwatch()..start();
+    searchTerm = searchTerm.replaceAll(_loneSurrogateRegex, ' ');
+    swSurrogate.stop();
+
+    swPreprocess.stop();
+    debugPrint('[dict-perf] preprocess: ${swPreprocess.elapsedMilliseconds}ms '
+        '(emoji=${swEmoji.elapsedMicroseconds}µs '
+        'punct=${swPunct.elapsedMicroseconds}µs '
+        'surrogate=${swSurrogate.elapsedMicroseconds}µs) '
+        '"$searchTerm"');
 
     if (searchTerm.trim().isEmpty) {
       return DictionarySearchResult(searchTerm: searchTerm);
@@ -2381,6 +2401,8 @@ class AppModel with ChangeNotifier {
         '$searchTerm/$effectiveMaxTerms/$maximumDictionarySearchResults';
 
     if (useCache && _dictionarySearchCache.containsKey(cacheKey)) {
+      swTotal.stop();
+      debugPrint('[dict-perf] cache HIT: ${swTotal.elapsedMilliseconds}ms');
       return _dictionarySearchCache[cacheKey]!;
     }
 
@@ -2388,11 +2410,19 @@ class AppModel with ChangeNotifier {
       return DictionarySearchResult(searchTerm: searchTerm);
     }
 
+    final swLookup = Stopwatch()..start();
     final result = targetLanguage.prepareSearchResultsDirect(
       searchTerm: searchTerm,
       maximumDictionarySearchResults: maximumDictionarySearchResults,
       maximumDictionaryTermsInResult: effectiveMaxTerms,
     );
+    swLookup.stop();
+    debugPrint(
+        '[dict-perf] prepareSearchResultsDirect: ${swLookup.elapsedMilliseconds}ms entries=${result?.entries.length ?? 0}');
+
+    swTotal.stop();
+    debugPrint(
+        '[dict-perf] searchDictionary total: ${swTotal.elapsedMilliseconds}ms');
 
     if (result != null && result.entries.isNotEmpty) {
       _dictionarySearchCache[cacheKey] = result;
@@ -2769,7 +2799,10 @@ class AppModel with ChangeNotifier {
       host: 'lookup',
       queryParameters: {'word': trimmed},
     );
-    await launchUrl(uri);
+    final bool launched = await launchUrl(uri);
+    if (!launched) {
+      debugPrint('[hibiki] Failed to launch popup dictionary for: $trimmed');
+    }
   }
 
   /// A helper function for opening a text segmentation dialog.
@@ -2979,6 +3012,7 @@ class AppModel with ChangeNotifier {
   }
 
   void _persistDictionaryHistory() async {
+    final swPersist = Stopwatch()..start();
     final items = <DictionaryHistoryCompanion>[];
     for (int i = 0; i < _dictionaryHistoryResults.length; i++) {
       items.add(DictionaryHistoryCompanion.insert(
@@ -2986,7 +3020,11 @@ class AppModel with ChangeNotifier {
         resultJson: _dictionaryHistoryResults[i].toJson(),
       ));
     }
+    final swSerialize = swPersist.elapsedMilliseconds;
     await _database.replaceAllDictionaryHistory(items);
+    swPersist.stop();
+    debugPrint(
+        '[dict-perf] persistHistory: serialize=${swSerialize}ms dbWrite=${swPersist.elapsedMilliseconds - swSerialize}ms total=${swPersist.elapsedMilliseconds}ms items=${items.length}');
   }
 
   /// Add a [MediaItem] to history. This should be called at startup

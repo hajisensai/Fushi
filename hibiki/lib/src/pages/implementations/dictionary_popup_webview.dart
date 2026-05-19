@@ -115,7 +115,12 @@ class DictionaryPopupWebViewState
     if (_controller == null || !_ready) return;
     if (widget.result.entries.isEmpty) return;
 
+    final swJson = Stopwatch()..start();
     final entriesJson = buildLookupEntriesJson(widget.result);
+    swJson.stop();
+    debugPrint(
+        '[dict-perf] buildLookupEntriesJson: ${swJson.elapsedMilliseconds}ms len=${entriesJson.length}');
+
     final stylesJson = jsonEncode(HoshiDicts.dictionaryStyles);
     final ThemeData theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
@@ -145,6 +150,7 @@ class DictionaryPopupWebViewState
     final String bgRgb = 'rgb($br, $bg, $bb)';
 
     final bool needsScrollCheck = widget.onScrolledToBottom != null;
+    final swInject = Stopwatch()..start();
     _controller!.evaluateJavascript(source: '''
       document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
       document.documentElement.style.setProperty('--hoshi-primary-highlight', '$primaryRgba');
@@ -162,7 +168,11 @@ class DictionaryPopupWebViewState
       window.customDictCSS = ${jsonEncode(appModel.customDictCSS)};
       window.renderPopup();
       ${needsScrollCheck ? _scrollCheckJs : ""}
-    ''');
+    ''').then((_) {
+      swInject.stop();
+      debugPrint(
+          '[dict-perf] evaluateJavascript: ${swInject.elapsedMilliseconds}ms');
+    });
   }
 
   static String _colorToHex(Color c) {
@@ -191,7 +201,8 @@ class DictionaryPopupWebViewState
       _winPopupJs = _readPopupAsset('popup.js');
     } catch (e, stack) {
       _winAssetsLoadFailed = true;
-      ErrorLogService.instance.log('PopupWebView._ensureWindowsAssetsLoaded', e, stack);
+      ErrorLogService.instance
+          .log('PopupWebView._ensureWindowsAssetsLoaded', e, stack);
     }
   }
 
@@ -206,8 +217,8 @@ class DictionaryPopupWebViewState
   Widget build(BuildContext context) {
     final t = Translations.of(context);
     final appModel = ref.read(appProvider);
-    final Color bgColor =
-        appModel.overrideDictionaryColor ?? Theme.of(context).colorScheme.surface;
+    final Color bgColor = appModel.overrideDictionaryColor ??
+        Theme.of(context).colorScheme.surface;
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
     final String bgHex = _colorToHex(bgColor);
     final String themeAttr = isDark ? 'dark' : 'light';

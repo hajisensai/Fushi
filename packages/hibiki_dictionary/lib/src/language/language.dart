@@ -512,14 +512,24 @@ DictionarySearchResult? prepareSearchResultsDirectStandard({
 }) {
   if (!HoshiDicts.isInitialized) return null;
 
+  final swFfi = Stopwatch()..start();
   final results = HoshiDicts.instance.lookup(
     searchTerm,
     maxResults: maximumDictionarySearchResults,
   );
+  swFfi.stop();
+  debugPrint('[dict-perf]   ffi lookup: ${swFfi.elapsedMilliseconds}ms results=${results.length}');
+
   if (results.isEmpty) return null;
-  return buildResultFromLookup(
+
+  final swBuild = Stopwatch()..start();
+  final built = buildResultFromLookup(
     searchTerm: searchTerm,
     results: results,
     maximumTerms: maximumDictionaryTermsInResult,
   );
+  swBuild.stop();
+  debugPrint('[dict-perf]   buildResultFromLookup: ${swBuild.elapsedMilliseconds}ms entries=${built.entries.length}');
+
+  return built;
 }
