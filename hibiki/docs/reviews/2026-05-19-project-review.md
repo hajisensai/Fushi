@@ -669,3 +669,24 @@
 
 ### Next Scope
 - Continue Windows UI review with profile/media edit dialogs, especially surfaces with image previews or multiple action buttons where compact height can still be a real constraint.
+
+## Round 30: Switch Settings Compact Dialog Evidence
+
+### Scope
+- `hibiki/lib/src/pages/implementations/switch_settings_page.dart`
+- `hibiki/test/pages/switch_settings_page_test.dart`
+- Generic switch settings dialog under compact Windows-sized surfaces.
+
+### Findings
+
+#### HBK-AUDIT-042
+- severity: low
+- status: verified-pass
+- files: `hibiki/lib/src/pages/implementations/switch_settings_page.dart`, `hibiki/test/pages/switch_settings_page_test.dart`
+- root cause: no production defect found in this round. The risk was that `SwitchSettingsPage` renders switch rows inside a `Wrap`, and each row contains an `Expanded` label. That pattern can be suspicious in Flutter because `Expanded` requires bounded horizontal constraints.
+- impact: if this failed, generic switch-setting dialogs could throw layout exceptions or hide action buttons in compact desktop windows.
+- fix: no production code change. Added a widget test rendering a two-row `SwitchSettingsPage<String>` in a 320x240 viewport and asserted no Flutter exception while both switches are present.
+- verification: `flutter test test/pages/switch_settings_page_test.dart` passed with 1 test. Full `flutter test` passed with 770 tests. `flutter build windows --debug` built `build\windows\x64\runner\Debug\hibiki.exe` with the existing third-party `flutter_inappwebview_windows` CMake dev warning.
+
+### Next Scope
+- Continue Windows UI review with media item editing and audio recorder dialogs, where row density and image/audio controls are more likely to produce compact-window overflow.
