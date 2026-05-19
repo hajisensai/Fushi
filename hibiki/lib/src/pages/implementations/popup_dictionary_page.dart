@@ -11,10 +11,14 @@ import 'package:hibiki/utils.dart';
 class PopupDictionaryPage extends ConsumerStatefulWidget {
   const PopupDictionaryPage({
     required this.searchTerm,
+    this.closeInApp,
+    this.autoSearchOnOpen = true,
     super.key,
   });
 
   final String searchTerm;
+  final VoidCallback? closeInApp;
+  final bool autoSearchOnOpen;
 
   @override
   ConsumerState<PopupDictionaryPage> createState() =>
@@ -41,10 +45,12 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   void initState() {
     super.initState();
     _searchController = TextEditingController(text: widget.searchTerm);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _pushSearch(widget.searchTerm, Rect.zero);
-    });
+    if (widget.autoSearchOnOpen && appModel.isInitialised) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _pushSearch(widget.searchTerm, Rect.zero);
+      });
+    }
   }
 
   @override
@@ -71,6 +77,11 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   Future<void> _close() async {
     if (_isClosing) return;
     _isClosing = true;
+    final VoidCallback? closeInApp = widget.closeInApp;
+    if (closeInApp != null) {
+      closeInApp();
+      return;
+    }
     await PopupChannel.instance.finishPopup();
   }
 
@@ -142,6 +153,18 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
 
     return Row(
       children: [
+        if (widget.closeInApp != null)
+          SizedBox(
+            width: 36,
+            height: 36,
+            child: IconButton(
+              key: const ValueKey<String>('popup_dictionary_close_button'),
+              icon: Icon(Icons.close, color: hintColor, size: 20),
+              tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+              padding: EdgeInsets.zero,
+              onPressed: _close,
+            ),
+          ),
         Expanded(
           child: TextField(
             controller: _searchController,

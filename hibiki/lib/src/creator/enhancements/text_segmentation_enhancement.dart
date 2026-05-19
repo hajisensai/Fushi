@@ -42,54 +42,22 @@ class TextSegmentationEnhancement extends Enhancement {
       return;
     }
 
-    if (field is SentenceField) {
-      await appModel.openTextSegmentationDialog(
-        sourceText: sourceText,
-        onSearch: (selection) async {
-          String searchTerm = selection.textInside;
-          String afterSearchTerm = searchTerm;
-
-          final subscription =
-              appModel.cardCreatorRecursiveSearchStream.listen((event) {
-            if (searchTerm == afterSearchTerm) {
-              creatorModel.setSentenceAndCloze(selection);
-            }
-          });
-
-          await appModel.openRecursiveDictionarySearch(
-            searchTerm: searchTerm,
-            onUpdateQuery: (query) {
-              afterSearchTerm = query;
-            },
-            killOnPop: false,
-          );
-
-          subscription.cancel();
-        },
-        onSelect: (selection) {
+    await appModel.openTextSegmentationDialog(
+      sourceText: sourceText,
+      onSearch: (selection) {
+        if (field is SentenceField) {
           creatorModel.setSentenceAndCloze(selection);
-          creatorModel.getFieldController(TermField.instance).text =
-              selection.textInside;
-
-          Navigator.pop(context);
-        },
-      );
-    } else {
-      appModel.openTextSegmentationDialog(
-        sourceText: sourceText,
-        onSearch: (selection) {
-          appModel.openRecursiveDictionarySearch(
-            searchTerm: selection.textInside,
-            killOnPop: false,
-          );
-        },
-        onSelect: (selection) {
-          creatorModel.getFieldController(TermField.instance).text =
-              selection.textInside;
-
-          Navigator.pop(context);
-        },
-      );
-    }
+        }
+        appModel.openPopupDictionaryLookup(searchTerm: selection.textInside);
+      },
+      onSelect: (selection) {
+        if (field is SentenceField) {
+          creatorModel.setSentenceAndCloze(selection);
+        }
+        creatorModel.getFieldController(TermField.instance).text =
+            selection.textInside;
+        Navigator.pop(context);
+      },
+    );
   }
 }

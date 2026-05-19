@@ -216,8 +216,6 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
     with WidgetsBindingObserver {
   final navigatorKey = GlobalKey<NavigatorState>();
   bool _isMainIntent = true;
-  String? _pendingLookupText;
-
   StreamSubscription? _intentsSubscription;
 
   @override
@@ -267,39 +265,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
           _isMainIntent = true;
         });
         return;
-      case 'android.intent.action.SEND':
-        final String? data =
-            intent.extra?['android.intent.extra.TEXT'] as String?;
-        if (data != null && data.trim().isNotEmpty) {
-          textContextMenuAction(data);
-        }
-        break;
-      case 'android.intent.action.PROCESS_TEXT':
-        final String? data =
-            intent.extra?['android.intent.extra.PROCESS_TEXT'] as String?;
-        if (data != null && data.trim().isNotEmpty) {
-          textContextMenuAction(data);
-        }
-        return;
-      case 'android.intent.action.WEB_SEARCH':
-        final String? data = intent.extra?['query'] as String?;
-        if (data != null && data.trim().isNotEmpty) {
-          textContextMenuAction(data);
-        }
-        return;
     }
-  }
-
-  void textContextMenuAction(String data) {
-    if (data.trim().isEmpty) return;
-    if (!appModel.isInitialised) {
-      _pendingLookupText = data;
-      return;
-    }
-    appModel.openRecursiveDictionarySearch(
-      searchTerm: data,
-      killOnPop: true,
-    );
   }
 
   @override
@@ -375,14 +341,6 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
           ),
         ),
       );
-    }
-
-    if (_pendingLookupText != null && appModel.isInitialised) {
-      final text = _pendingLookupText!;
-      _pendingLookupText = null;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        textContextMenuAction(text);
-      });
     }
 
     return TranslationProvider(

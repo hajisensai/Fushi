@@ -57,9 +57,6 @@ class SearchDictionaryEnhancement extends Enhancement {
       }
     }
 
-    appModel.openRecursiveDictionarySearch(
-      searchTerm: searchTerm,
-      killOnPop: false,
-    );
+    appModel.openPopupDictionaryLookup(searchTerm: searchTerm);
   }
 }

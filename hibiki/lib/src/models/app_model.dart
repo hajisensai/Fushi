@@ -25,6 +25,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:remove_emoji/remove_emoji.dart';
 import 'package:restart_app/restart_app.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:hibiki/creator.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
@@ -36,6 +37,7 @@ import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/epub/ttu_migration.dart';
 import 'package:hibiki/src/epub/ttu_migration_server.dart';
 import 'package:hibiki/src/profile/profile_repository.dart';
+import 'package:hibiki/src/pages/implementations/popup_dictionary_page.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/media/floating_dict_channel.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
@@ -484,17 +486,6 @@ class AppModel with ChangeNotifier {
       _currentMediaPauseController.stream;
   final StreamController<void> _currentMediaPauseController =
       StreamController.broadcast();
-
-  /// For listening to searches made inside the Card Creator.
-  Stream<void> get cardCreatorRecursiveSearchStream =>
-      _cardCreatorRecursiveSearchStreamController.stream;
-  final StreamController<void> _cardCreatorRecursiveSearchStreamController =
-      StreamController.broadcast();
-
-  /// Broadcast that a search was made in the Card Creator
-  void notifyRecursiveSearch() {
-    _cardCreatorRecursiveSearchStreamController.add(null);
-  }
 
   /// Allows actions to be performed upon Play/Pause on headset buttons.
   Stream<void> get playPauseHeadsetActionStream =>
@@ -2746,43 +2737,39 @@ class AppModel with ChangeNotifier {
     );
   }
 
-  /// A helper function for doing a recursive dictionary search.
-  Future<void> openRecursiveDictionarySearch({
+  Future<void> openPopupDictionaryLookup({
     required String searchTerm,
-    required bool killOnPop,
-    Function(String)? onUpdateQuery,
   }) async {
-    _currentMediaPauseController.add(null);
-
-    if (searchTerm.trim().isEmpty) {
+    final String trimmed = searchTerm.trim();
+    if (trimmed.isEmpty) return;
+    if (!Platform.isAndroid) {
+      final ctx = _ctx;
+      if (ctx == null || !ctx.mounted) return;
+      await showAppDialog(
+        context: ctx,
+        builder: (dialogContext) => Dialog(
+          insetPadding: const EdgeInsets.all(24),
+          clipBehavior: Clip.antiAlias,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              maxWidth: 520,
+              maxHeight: 640,
+            ),
+            child: PopupDictionaryPage(
+              searchTerm: trimmed,
+              closeInApp: () => Navigator.of(dialogContext).pop(),
+            ),
+          ),
+        ),
+      );
       return;
     }
-    final ctx = _ctx;
-    if (ctx == null) return;
-    await Navigator.push(
-      ctx,
-      PageRouteBuilder(
-        pageBuilder: (context, animation1, animation2) =>
-            RecursiveDictionaryPage(
-          searchTerm: searchTerm,
-          killOnPop: killOnPop,
-          onUpdateQuery: onUpdateQuery,
-        ),
-        transitionDuration: Duration.zero,
-        reverseTransitionDuration: Duration.zero,
-      ),
+    final Uri uri = Uri(
+      scheme: 'hibiki',
+      host: 'lookup',
+      queryParameters: {'word': trimmed},
     );
-    refreshDictionaryHistory();
-  }
-
-  /// A helper function for showing a result already in dictionary history.
-  Future<void> openResultFromHistory({
-    required DictionarySearchResult result,
-  }) async {
-    await openRecursiveDictionarySearch(
-      searchTerm: result.searchTerm,
-      killOnPop: false,
-    );
+    await launchUrl(uri);
   }
 
   /// A helper function for opening a text segmentation dialog.
@@ -3522,7 +3509,6 @@ class AppModel with ChangeNotifier {
     incognitoNotifier.dispose();
     databaseCloseNotifier.dispose();
     _currentMediaPauseController.close();
-    _cardCreatorRecursiveSearchStreamController.close();
     _playPauseHeadsetActionStreamController.close();
     _creatorActiveController.close();
     _playStreamController.close();
@@ -3935,15 +3921,6 @@ class AppModel with ChangeNotifier {
 
   Future<void> setUpdateDebugChannel(bool value) async {
     await _setPref('update_debug_channel', value);
-    notifyListeners();
-  }
-
-  bool get disableDialogScrim {
-    return _getPref('disable_dialog_scrim', defaultValue: false);
-  }
-
-  Future<void> setDisableDialogScrim(bool value) async {
-    await _setPref('disable_dialog_scrim', value);
     notifyListeners();
   }
 

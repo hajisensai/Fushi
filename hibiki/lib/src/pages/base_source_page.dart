@@ -199,8 +199,6 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
   double get popupMaxWidth => appModel.popupMaxWidth;
   double get popupMaxHeight => 360;
   double get popupPadding => 6;
-  bool get shouldDisablePopupScrim => appModel.disableDialogScrim;
-
   late final Listenable _popupListenable =
       Listenable.merge([_popupStack, _isSearchingNotifier]);
 
@@ -227,9 +225,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
                       behavior: HitTestBehavior.translucent,
                       onTap: clearDictionaryResult,
                       child: Container(
-                        color: shouldDisablePopupScrim
-                            ? Colors.transparent
-                            : Colors.black54,
+                        color: Colors.transparent,
                       ),
                     ),
                   ),
@@ -423,18 +419,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
   /// Action upon selecting the Search option.
   @override
   void onSearch(String searchTerm, {String? sentence = ''}) async {
-    if (appModel.isMediaOpen) {
-      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-      await Future.delayed(const Duration(milliseconds: 5), () {});
-    }
-    await appModel.openRecursiveDictionarySearch(
-      searchTerm: searchTerm,
-      killOnPop: false,
-    );
-    if (appModel.isMediaOpen) {
-      await Future.delayed(const Duration(milliseconds: 5), () {});
-      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-    }
+    await appModel.openPopupDictionaryLookup(searchTerm: searchTerm);
   }
 
   /// Action upon selecting the Stash option.

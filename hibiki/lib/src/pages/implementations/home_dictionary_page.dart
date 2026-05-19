@@ -527,9 +527,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
                   behavior: HitTestBehavior.translucent,
                   onTap: () => _popNestedPopupAt(0),
                   child: Container(
-                    color: appModel.disableDialogScrim
-                        ? Colors.transparent
-                        : Colors.black54,
+                    color: Colors.transparent,
                   ),
                 ),
               ),

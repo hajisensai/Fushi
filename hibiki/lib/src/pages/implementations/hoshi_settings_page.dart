@@ -474,14 +474,6 @@ class _HoshiSettingsDialogPageState extends BasePageState {
               const Space.small(),
               ..._buildReaderOnlySwitches(() => setState(() {}),
                   appModel: appModel),
-              _buildSwitch(
-                label: t.disable_dialog_scrim,
-                value: appModel.disableDialogScrim,
-                onChanged: (v) {
-                  appModel.setDisableDialogScrim(v);
-                  setState(() {});
-                },
-              ),
               const Space.small(),
               const JidoujishoDivider(),
               _buildPageTurningSpeed(() => setState(() {})),
@@ -664,14 +656,6 @@ class _ReaderBehaviorSettingsPageState extends BasePageState {
           const Space.small(),
           ..._buildReaderOnlySwitches(() => setState(() {}),
               appModel: appModel),
-          _buildSwitch(
-            label: t.disable_dialog_scrim,
-            value: appModel.disableDialogScrim,
-            onChanged: (v) {
-              appModel.setDisableDialogScrim(v);
-              setState(() {});
-            },
-          ),
           const Space.small(),
           const JidoujishoDivider(),
           _buildPageTurningSpeed(() => setState(() {})),

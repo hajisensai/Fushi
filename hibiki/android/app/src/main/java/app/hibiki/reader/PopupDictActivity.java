@@ -173,7 +173,17 @@ public class PopupDictActivity extends FlutterActivity {
 
     private String extractProcessText(Intent intent) {
         if (intent == null) return null;
-        return intent.getStringExtra(Intent.EXTRA_PROCESS_TEXT);
+        String text = intent.getStringExtra(Intent.EXTRA_PROCESS_TEXT);
+        if (text != null) return text;
+        text = intent.getStringExtra(Intent.EXTRA_TEXT);
+        if (text != null) return text;
+        android.net.Uri data = intent.getData();
+        if (data != null
+                && "hibiki".equals(data.getScheme())
+                && "lookup".equals(data.getHost())) {
+            return data.getQueryParameter("word");
+        }
+        return null;
     }
 
     private void applyPopupWindowSize() {

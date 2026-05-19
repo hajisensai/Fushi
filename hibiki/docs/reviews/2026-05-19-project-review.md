@@ -229,3 +229,25 @@
 
 ### Next Scope
 - Continue replacing broad Windows drive probes with assertions tied to the actual navigation shell, reader surface, and dictionary result surface.
+
+## Round 11: Desktop Lookup Routing
+
+### Scope
+- `hibiki/lib/src/models/app_model.dart`
+- `hibiki/lib/src/pages/implementations/popup_dictionary_page.dart`
+- `hibiki/test/pages/popup_dictionary_page_test.dart`
+- Current dirty lookup-path changes that route selection/search actions through `openPopupDictionaryLookup()`
+
+### Findings
+
+#### HBK-AUDIT-021
+- severity: high
+- status: fixed
+- files: `hibiki/lib/src/models/app_model.dart`, `hibiki/lib/src/pages/implementations/popup_dictionary_page.dart`, `hibiki/test/pages/popup_dictionary_page_test.dart`
+- root cause: the current lookup refactor routed all recursive dictionary searches through `openPopupDictionaryLookup()`, but that method unconditionally launched `hibiki://lookup?word=...`. The `hibiki://lookup` intent is only registered in Android manifest for `PopupDictActivity`; Windows has no equivalent protocol registration, so desktop lookup actions could leave the app or fail at the OS URL layer instead of opening Hibiki's dictionary UI.
+- impact: Windows CJK lookup from selection menus, creator enhancements, stash/text segmentation search, and other shared lookup actions could stop being an in-app UI flow. Passing screenshots or a green app launch would not prove this path because the failure is in the action routing contract.
+- fix: kept Android on the existing native popup intent path, and added a desktop/non-Android branch that opens `PopupDictionaryPage` inside a normal Flutter `Dialog`. `PopupDictionaryPage` now supports an optional in-app close callback and exposes a keyed close button for deterministic widget evidence; it still uses the native `PopupChannel.finishPopup()` when launched as the Android popup entrypoint.
+- verification: TDD red check first failed because `PopupDictionaryPage` had no in-app close contract. After the fix, `flutter test test/pages/popup_dictionary_page_test.dart` passed with 2 tests, including a desktop lookup assertion that no `url_launcher` call is made. `dart format .` completed; full `flutter test` passed with 745 tests. The stale Round 10 note about `disableDialogScrim` / `shouldDisablePopupScrim` compile blockers is superseded by current evidence: the present worktree compiles and tests cleanly.
+
+### Next Scope
+- Continue auditing desktop lookup UX at the widget/logic level first: popup sizing under small Windows windows, search submission inside the in-app dialog, and nested result popups. Full Windows drive should still wait until it will not steal focus from the user's active desktop session.

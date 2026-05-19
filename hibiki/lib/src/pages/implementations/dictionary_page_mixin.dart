@@ -24,8 +24,8 @@ class NestedPopupEntry {
 }
 
 /// Non-generic mixin that consolidates the popup stack management, Anki mining,
-/// and audio auto-read logic shared across PopupDictionaryPage,
-/// RecursiveDictionaryPage, and HomeDictionaryPage.
+/// and audio auto-read logic shared across PopupDictionaryPage
+/// and HomeDictionaryPage.
 ///
 /// No `on` constraint is used so it can be applied to all three state classes
 /// regardless of their different base class hierarchies.

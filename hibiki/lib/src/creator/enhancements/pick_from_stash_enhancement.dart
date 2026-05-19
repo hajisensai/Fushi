@@ -36,10 +36,7 @@ class OpenStashEnhancement extends Enhancement {
         creatorModel.getFieldController(field).text = selection;
       },
       onSearch: (selection) {
-        appModel.openRecursiveDictionarySearch(
-          searchTerm: selection,
-          killOnPop: false,
-        );
+        appModel.openPopupDictionaryLookup(searchTerm: selection);
       },
     );
   }
