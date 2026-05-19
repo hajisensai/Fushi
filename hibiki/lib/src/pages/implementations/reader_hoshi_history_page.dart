@@ -39,10 +39,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
   final Map<String, Future<_AudiobookInfo>> _audiobookInfoCache = {};
 
   static double _gridExtent(BuildContext context) {
-    final double width = MediaQuery.sizeOf(context).width;
-    if (width >= 840) return 200;
-    if (width >= 600) return 180;
-    return 150;
+    return readerShelfGridExtentForWidth(MediaQuery.sizeOf(context).width);
   }
 
   void _refreshSrtBooks() {
@@ -64,36 +61,39 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
         ref.watch(filteredBookIdsProvider);
     final allTags = ref.watch(allTagsProvider);
 
-    return Column(
-      children: [
-        _buildTagBar(allTags.valueOrNull ?? const []),
-        Expanded(
-          child: books.when(
-            data: (bookList) {
-              final Set<int>? filterSet = filteredIds.valueOrNull;
-              final List<MediaItem> filtered;
-              if (filterSet == null) {
-                filtered = bookList;
-              } else {
-                filtered = bookList.where((item) {
-                  final int? id = _parseBookId(item.mediaIdentifier);
-                  return id != null && filterSet.contains(id);
-                }).toList();
-              }
-              return buildBody(filtered);
-            },
-            error: (error, stack) => buildError(
-              error: error,
-              stack: stack,
-              refresh: () {
-                _refreshSrtBooks();
-                ref.invalidate(hoshiBooksProvider(appModel.targetLanguage));
+    return DesktopContentLayout(
+      kind: DesktopContentKind.readerShelf,
+      child: Column(
+        children: [
+          _buildTagBar(allTags.valueOrNull ?? const []),
+          Expanded(
+            child: books.when(
+              data: (bookList) {
+                final Set<int>? filterSet = filteredIds.valueOrNull;
+                final List<MediaItem> filtered;
+                if (filterSet == null) {
+                  filtered = bookList;
+                } else {
+                  filtered = bookList.where((item) {
+                    final int? id = _parseBookId(item.mediaIdentifier);
+                    return id != null && filterSet.contains(id);
+                  }).toList();
+                }
+                return buildBody(filtered);
               },
+              error: (error, stack) => buildError(
+                error: error,
+                stack: stack,
+                refresh: () {
+                  _refreshSrtBooks();
+                  ref.invalidate(hoshiBooksProvider(appModel.targetLanguage));
+                },
+              ),
+              loading: () => const SizedBox.shrink(),
             ),
-            loading: () => const SizedBox.shrink(),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 

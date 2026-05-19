@@ -505,104 +505,94 @@ class HoshiSettingsContent extends BasePage {
 class _HoshiSettingsContentState extends BasePageState {
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final bool wide =
-            windowSizeClassOf(constraints) == WindowSizeClass.expanded;
-        return Center(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: wide ? 640 : double.infinity),
-            child: ListView(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              children: [
-                _buildThemeSelector(appModel, navContext: context),
-                const Space.small(),
-                const JidoujishoDivider(),
-                const Space.small(),
-                ListTile(
-                  dense: true,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-                  leading: const Icon(Icons.person, size: 22),
-                  title: const ProfileSelector(),
-                ),
-                _categoryTile(
-                  context,
-                  icon: Icons.style,
-                  label: t.anki_settings_label,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => const AnkiSettingsPage()),
-                    );
-                  },
-                ),
-                _categoryTile(
-                  context,
-                  icon: Icons.auto_stories,
-                  label: t.reader_settings_section,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => const _ReaderBehaviorSettingsPage()),
-                    ).then((_) => setState(() {}));
-                  },
-                ),
-                _categoryTile(
-                  context,
-                  icon: Icons.system_update,
-                  label: t.section_update,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => const _UpdateSettingsPage()),
-                    ).then((_) => setState(() {}));
-                  },
-                ),
-                _categoryTile(
-                  context,
-                  icon: Icons.widgets_outlined,
-                  label: t.miscellaneous_settings,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => const MiscellaneousSettingsPage()),
-                    );
-                  },
-                ),
-                _categoryTile(
-                  context,
-                  icon: Icons.bug_report,
-                  label: t.error_log_label(
-                      n: ErrorLogService.instance.entries.length),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const ErrorLogPage()),
-                    ).then((_) => setState(() {}));
-                  },
-                ),
-                if (DebugLogService.instance.enabled)
-                  _categoryTile(
-                    context,
-                    icon: Icons.terminal,
-                    label: t.debug_log_title(
-                        count: DebugLogService.instance.entries.length),
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const DebugLogPage()),
-                      ).then((_) => setState(() {}));
-                    },
-                  ),
-              ],
-            ),
+    return DesktopContentLayout(
+      kind: DesktopContentKind.settings,
+      child: ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        children: [
+          _buildThemeSelector(appModel, navContext: context),
+          const Space.small(),
+          const JidoujishoDivider(),
+          const Space.small(),
+          ListTile(
+            dense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+            leading: const Icon(Icons.person, size: 22),
+            title: const ProfileSelector(),
           ),
-        );
-      },
+          _categoryTile(
+            context,
+            icon: Icons.style,
+            label: t.anki_settings_label,
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const AnkiSettingsPage()),
+              );
+            },
+          ),
+          _categoryTile(
+            context,
+            icon: Icons.auto_stories,
+            label: t.reader_settings_section,
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const _ReaderBehaviorSettingsPage()),
+              ).then((_) => setState(() {}));
+            },
+          ),
+          _categoryTile(
+            context,
+            icon: Icons.system_update,
+            label: t.section_update,
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const _UpdateSettingsPage()),
+              ).then((_) => setState(() {}));
+            },
+          ),
+          _categoryTile(
+            context,
+            icon: Icons.widgets_outlined,
+            label: t.miscellaneous_settings,
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const MiscellaneousSettingsPage()),
+              );
+            },
+          ),
+          _categoryTile(
+            context,
+            icon: Icons.bug_report,
+            label:
+                t.error_log_label(n: ErrorLogService.instance.entries.length),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ErrorLogPage()),
+              ).then((_) => setState(() {}));
+            },
+          ),
+          if (DebugLogService.instance.enabled)
+            _categoryTile(
+              context,
+              icon: Icons.terminal,
+              label: t.debug_log_title(
+                  count: DebugLogService.instance.entries.length),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const DebugLogPage()),
+                ).then((_) => setState(() {}));
+              },
+            ),
+        ],
+      ),
     );
   }
 

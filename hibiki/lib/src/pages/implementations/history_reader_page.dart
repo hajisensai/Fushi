@@ -3,6 +3,7 @@ import 'package:spaces/spaces.dart';
 import 'package:transparent_image/transparent_image.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/src/utils/misc/platform_utils.dart';
 
 /// A default page for a [ReaderMediaSource]'s tab body content when selected
 /// as a source in the main menu.
@@ -50,10 +51,7 @@ class HistoryReaderPageState<T extends BaseHistoryPage>
   }
 
   static double _gridExtent(BuildContext context) {
-    final double w = MediaQuery.sizeOf(context).width;
-    if (w >= 840) return 200;
-    if (w >= 600) return 180;
-    return 150;
+    return readerShelfGridExtentForWidth(MediaQuery.sizeOf(context).width);
   }
 
   /// This is shown as the body when [shouldPlaceholderBeShown] is false.

@@ -128,23 +128,14 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
           _clearSearch();
         }
       },
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final bool wide =
-              windowSizeClassOf(constraints) == WindowSizeClass.expanded;
-          return Center(
-            child: ConstrainedBox(
-              constraints:
-                  BoxConstraints(maxWidth: wide ? 960 : double.infinity),
-              child: Column(
-                children: [
-                  _buildSearchHeader(),
-                  Expanded(child: _buildBody()),
-                ],
-              ),
-            ),
-          );
-        },
+      child: DesktopContentLayout(
+        kind: DesktopContentKind.dictionary,
+        child: Column(
+          children: [
+            _buildSearchHeader(),
+            Expanded(child: _buildBody()),
+          ],
+        ),
       ),
     );
   }
