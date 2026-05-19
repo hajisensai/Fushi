@@ -96,6 +96,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
   Future<void> onSourcePagePop() async {}
 
   _PopupStackItem? _deferredPopupItem;
+  int _deferredGeneration = 0;
 
   Future<int> searchDictionaryResult({
     required String searchTerm,
@@ -133,6 +134,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
 
       if (deferDisplay) {
         _deferredPopupItem = item;
+        _deferredGeneration = gen;
       } else {
         _popupStack.value = [..._popupStack.value, item];
       }
@@ -158,7 +160,8 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
 
       return highlightCount;
     } finally {
-      if (_searchGeneration == gen && !deferDisplay) {
+      if (_searchGeneration == gen &&
+          (!deferDisplay || _deferredPopupItem == null)) {
         _isSearchingNotifier.value = false;
         _pendingSelectionRect = null;
       }
@@ -167,14 +170,18 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
 
   void showDeferredPopup({Rect? selectionRect}) {
     final item = _deferredPopupItem;
-    if (item == null) return;
+    final gen = _deferredGeneration;
     _deferredPopupItem = null;
-    if (selectionRect != null) {
-      item.selectionRect = selectionRect;
+    if (item != null) {
+      if (selectionRect != null) {
+        item.selectionRect = selectionRect;
+      }
+      _popupStack.value = [..._popupStack.value, item];
     }
-    _popupStack.value = [..._popupStack.value, item];
-    _isSearchingNotifier.value = false;
-    _pendingSelectionRect = null;
+    if (_searchGeneration == gen) {
+      _isSearchingNotifier.value = false;
+      _pendingSelectionRect = null;
+    }
   }
 
   /// Resolve audio exactly like Hoshi: enabled sources only, no TTS fallback.

@@ -2116,18 +2116,22 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     Rect fallbackRect,
   ) async {
     Rect finalRect = fallbackRect;
-    if (highlightCount > 0 && _controller != null) {
-      final raw = await _controller!.evaluateJavascript(
-        source: ReaderSelectionScripts.highlightInvocation(highlightCount),
-      );
-      if (!mounted) return;
-      final rect = ReaderSelectionScripts.highlightRectFromResult(
-        raw,
-        topOffset: _readerTopOffset,
-      );
-      if (rect != null) finalRect = rect;
+    try {
+      if (highlightCount > 0 && _controller != null) {
+        final raw = await _controller!.evaluateJavascript(
+          source: ReaderSelectionScripts.highlightInvocation(highlightCount),
+        );
+        if (mounted) {
+          final rect = ReaderSelectionScripts.highlightRectFromResult(
+            raw,
+            topOffset: _readerTopOffset,
+          );
+          if (rect != null) finalRect = rect;
+        }
+      }
+    } finally {
+      showDeferredPopup(selectionRect: finalRect);
     }
-    showDeferredPopup(selectionRect: finalRect);
   }
 
   Future<void> _handleTextSelected(ReaderSelectionData data) async {
