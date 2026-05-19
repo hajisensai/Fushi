@@ -923,3 +923,24 @@
 
 ### Next Scope
 - Continue Windows UI review with collection delete confirmations and remaining default confirmation dialogs.
+
+## Round 42: Collection Delete Dialog Compact Layout Fix
+
+### Scope
+- `hibiki/lib/src/pages/implementations/collections_page.dart`
+- `hibiki/test/pages/collections_page_test.dart`
+- Collection bookmark/favorite swipe-delete confirmation under compact Windows-sized surfaces.
+
+### Findings
+
+#### HBK-AUDIT-054
+- severity: low
+- status: fixed
+- files: `hibiki/lib/src/pages/implementations/collections_page.dart`, `hibiki/test/pages/collections_page_test.dart`
+- root cause: collection swipe-delete confirmation used an inline default `AlertDialog` with long bookmark/favorite text directly in the content slot, so compact desktop windows had no bounded scroll area or direct test coverage.
+- impact: long saved sentences or bookmark labels could make the confirmation dialog cramped or overflow-prone before deletion.
+- fix: extracted `CollectionDeleteDialog`, constrained and scrolled the message body, reduced dialog/action padding, and used destructive filled-button styling while preserving the existing `confirmDismiss` delete flow.
+- verification: the compact widget test first failed because `CollectionDeleteDialog` did not exist. After extraction and compact layout, `flutter test test/pages/collections_page_test.dart` passed with 1 test.
+
+### Next Scope
+- Continue Windows UI review with reader/media dialogs that still use default `AlertDialog` layouts and long content.

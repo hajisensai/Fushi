@@ -469,26 +469,14 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         child: Icon(Icons.delete, color: Theme.of(context).colorScheme.onError),
       ),
       confirmDismiss: (_) async {
+        final String message = isBookmark
+            ? '${t.collection_bookmark}: ${item.label ?? ""}'
+            : item.text ?? '';
         return await showDialog<bool>(
               context: context,
-              builder: (ctx) => AlertDialog(
-                content: Text(isBookmark
-                    ? '${t.collection_bookmark}: ${item.label ?? ""}'
-                    : item.text ?? ''),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(ctx, false),
-                    child: Text(t.dialog_close),
-                  ),
-                  TextButton(
-                    onPressed: () => Navigator.pop(ctx, true),
-                    child: Text(
-                      t.dialog_delete,
-                      style:
-                          TextStyle(color: Theme.of(context).colorScheme.error),
-                    ),
-                  ),
-                ],
+              builder: (ctx) => CollectionDeleteDialog(
+                message: message,
+                onConfirm: () => Navigator.pop(ctx, true),
               ),
             ) ??
             false;
@@ -556,6 +544,55 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         onTap: canNavigate ? () => _openBook(item) : null,
         onLongPress: () => _showItemDialog(item),
       ),
+    );
+  }
+}
+
+@visibleForTesting
+class CollectionDeleteDialog extends StatelessWidget {
+  const CollectionDeleteDialog({
+    required this.message,
+    required this.onConfirm,
+    super.key,
+  });
+
+  final String message;
+  final VoidCallback onConfirm;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return AlertDialog(
+      contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+      actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      buttonPadding: const EdgeInsets.symmetric(horizontal: 4),
+      content: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: double.maxFinite,
+          maxHeight: MediaQuery.of(context).size.height * 0.42,
+        ),
+        child: SingleChildScrollView(
+          child: Text(
+            message,
+            style: theme.textTheme.bodySmall,
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: Text(t.dialog_close),
+        ),
+        FilledButton(
+          onPressed: onConfirm,
+          style: FilledButton.styleFrom(
+            backgroundColor: theme.colorScheme.errorContainer,
+            foregroundColor: theme.colorScheme.onErrorContainer,
+          ),
+          child: Text(t.dialog_delete),
+        ),
+      ],
     );
   }
 }
