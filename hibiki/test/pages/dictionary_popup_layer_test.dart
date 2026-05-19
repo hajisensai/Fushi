@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
+
+import '../widgets/widget_test_helpers.dart';
 
 void main() {
   test('calcPopupPosition stays inside a constrained popup surface', () {
@@ -29,5 +32,30 @@ void main() {
     expect(popupRect.top, greaterThanOrEqualTo(6));
     expect(popupRect.right, lessThanOrEqualTo(794));
     expect(popupRect.bottom, lessThanOrEqualTo(594));
+  });
+
+  testWidgets('empty popup layer fits a compact surface without overflow', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      buildTestApp(
+        SizedBox(
+          width: 80,
+          height: 48,
+          child: DictionaryPopupLayer(
+            result: null,
+            isSearching: false,
+            webViewKey: GlobalKey<DictionaryPopupWebViewState>(),
+            onDismiss: () {},
+            onTextSelected: (text, rect) {},
+            onLinkClick: (query, rect) {},
+            onMineEntry: (fields) async => false,
+            onDuplicateCheck: (expression, reading) async => false,
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
   });
 }

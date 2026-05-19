@@ -40,7 +40,8 @@ class JidoujishoPlaceholderMessage extends StatelessWidget {
       children: [
         Icon(
           icon,
-          size: Theme.of(context).textTheme.headlineMedium?.fontSize,
+          size:
+              iconSize ?? Theme.of(context).textTheme.headlineMedium?.fontSize,
           color: color ?? Theme.of(context).unselectedWidgetColor,
         ),
         const Space.small(),

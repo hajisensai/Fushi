@@ -97,12 +97,12 @@ class DictionaryPopupLayer extends StatelessWidget {
           border: showBorder ? Border.all(color: borderColor) : null,
         ),
         clipBehavior: showBorder ? Clip.antiAlias : Clip.none,
-        child: _buildContent(),
+        child: _buildContent(context),
       ),
     );
   }
 
-  Widget _buildBody() {
+  Widget _buildBody(BuildContext context) {
     if (result != null && result!.entries.isNotEmpty) {
       return Stack(
         children: [
@@ -139,15 +139,22 @@ class DictionaryPopupLayer extends StatelessWidget {
     }
 
     return Center(
-      child: JidoujishoPlaceholderMessage(
-        icon: Icons.search_off,
-        message: t.no_search_results,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(8),
+        child: JidoujishoPlaceholderMessage(
+          icon: Icons.search_off,
+          message: t.no_search_results,
+          iconSize: 20,
+          messageStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).unselectedWidgetColor,
+              ),
+        ),
       ),
     );
   }
 
-  Widget _buildContent() {
-    Widget body = _buildBody();
+  Widget _buildContent(BuildContext context) {
+    Widget body = _buildBody(context);
     if (overlayWidget != null) {
       body = Stack(
         children: [

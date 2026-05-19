@@ -45,5 +45,18 @@ void main() {
       expect(text.style?.fontSize, 24);
       expect(text.style?.color, Colors.green);
     });
+
+    testWidgets('uses custom iconSize when provided', (tester) async {
+      await tester.pumpWidget(buildTestApp(
+        const JidoujishoPlaceholderMessage(
+          icon: Icons.search,
+          message: 'Search',
+          iconSize: 18,
+        ),
+      ));
+
+      final Icon icon = tester.widget<Icon>(find.byIcon(Icons.search));
+      expect(icon.size, 18);
+    });
   });
 }

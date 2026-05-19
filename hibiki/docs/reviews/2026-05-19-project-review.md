@@ -335,3 +335,26 @@
 
 ### Next Scope
 - Continue review with popup result WebView content sizing and empty/loading states under compact popup surfaces.
+
+## Round 16: Compact Popup Empty State
+
+### Scope
+- `hibiki/lib/src/pages/implementations/dictionary_popup_layer.dart`
+- `hibiki/lib/src/utils/components/jidoujisho_placeholder_message.dart`
+- `hibiki/test/pages/dictionary_popup_layer_test.dart`
+- `hibiki/test/widgets/jidoujisho_placeholder_message_test.dart`
+- Empty/loading dictionary popup content under compact desktop popup surfaces.
+
+### Findings
+
+#### HBK-AUDIT-026
+- severity: medium
+- status: fixed
+- files: `hibiki/lib/src/pages/implementations/dictionary_popup_layer.dart`, `hibiki/lib/src/utils/components/jidoujisho_placeholder_message.dart`, `hibiki/test/pages/dictionary_popup_layer_test.dart`, `hibiki/test/widgets/jidoujisho_placeholder_message_test.dart`
+- root cause: `DictionaryPopupLayer` reused the generic page-level `JidoujishoPlaceholderMessage` for no-result popup content. That component defaults to a large icon plus title-sized text, and its `iconSize` parameter was declared but ignored, so the popup could not request a compact placeholder. In a small popup surface this produced a `RenderFlex overflowed` exception.
+- impact: desktop lookup could render fine in a normal window while compact dialog surfaces, constrained nested popups, or test harness sizes overflowed in the no-result state. This is a real UI layout bug, not a screenshot artifact.
+- fix: made `JidoujishoPlaceholderMessage.iconSize` actually control the icon size, and changed the popup no-result state to use a compact, scrollable placeholder with smaller icon/text and padding.
+- verification: TDD red check failed with `A RenderFlex overflowed by 210 pixels on the bottom` for an 80x48 popup surface. A second red check proved `iconSize` was ignored (`expected 18`, actual `28.0`). After the fix, `flutter test test/pages/dictionary_popup_layer_test.dart` passed with 3 tests, `flutter test test/widgets/jidoujisho_placeholder_message_test.dart` passed with 4 tests, full `flutter test` passed with 754 tests, and `flutter build windows --debug` built `build\windows\x64\runner\Debug\hibiki.exe` with the existing `flutter_inappwebview_windows` CMake dev warning.
+
+### Next Scope
+- Continue review with popup WebView result content sizing and nested popup stack behavior after result links/selections.
