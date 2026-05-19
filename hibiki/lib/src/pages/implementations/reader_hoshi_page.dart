@@ -450,7 +450,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       controller.setAllBookCues(cues);
       _cachedAllCues = cues;
       _cachedSasayaki = false;
-      _srtCueChapterMap = _buildSrtChapterMap(cues);
+      final (Map<int, int> m, List<(int, int)> r) = _buildSrtChapterMap(cues);
+      _srtCueChapterMap = m;
+      _srtChapterRanges = r;
       return;
     }
 
@@ -485,20 +487,18 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     controller.setChapterCues(chapterCues);
   }
 
-  Map<int, int> _buildSrtChapterMap(List<AudioCue> cues) {
+  (Map<int, int>, List<(int, int)>) _buildSrtChapterMap(List<AudioCue> cues) {
     final Map<int, int> map = <int, int>{};
     final List<List<AudioCue>> chapters = CuesToEpub.splitChapters(cues);
     final List<(int, int)> ranges = <(int, int)>[];
     for (int ch = 0; ch < chapters.length; ch++) {
-      if (chapters[ch].isEmpty) continue;
       ranges.add(
           (chapters[ch].first.sentenceIndex, chapters[ch].last.sentenceIndex));
       for (final AudioCue cue in chapters[ch]) {
         map[cue.sentenceIndex] = ch;
       }
     }
-    _srtChapterRanges = ranges;
-    return map;
+    return (map, ranges);
   }
 
   void _restoreFromCurrentAudioCue() {
@@ -522,16 +522,21 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       return;
     }
 
-    if (_srtCueChapterMap != null) {
+    if (_srtCueChapterMap != null && _srtChapterRanges != null) {
       final int? srtChapter = _srtCueChapterMap![cue.sentenceIndex];
       if (srtChapter != null &&
           srtChapter >= 0 &&
           srtChapter < _book!.chapters.length) {
         _currentChapter = srtChapter;
-        _initialProgress = 0.0;
+        final (int first, int last) = _srtChapterRanges![srtChapter];
+        final int span = last - first;
+        _initialProgress = span > 0
+            ? ((cue.sentenceIndex - first) / span).clamp(0.0, 1.0)
+            : 0.0;
         _lastProgressSection = srtChapter;
-        _lastProgressValue = 0.0;
-        debugPrint('[ReaderHoshi] restore from SRT cue: chapter=$srtChapter');
+        _lastProgressValue = _initialProgress;
+        debugPrint('[ReaderHoshi] restore from SRT cue: '
+            'chapter=$srtChapter progress=$_initialProgress');
         return;
       }
     }
@@ -1801,6 +1806,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           if (controller.shouldRevealCurrentCue && !_restoreInFlight) {
             _navigateToChapter(cueChapter);
           }
+          _syncPositionFromCurrentCue();
+          _syncFloatingLyric(controller);
+          _syncMediaNotification(controller);
           return;
         }
       }
@@ -1993,7 +2001,12 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (_srtBookUid != null) {
       _audiobookController!.setChapterCues(allCues);
       _audiobookController!.setAllBookCues(allCues);
-      _srtCueChapterMap ??= _buildSrtChapterMap(allCues);
+      if (_srtCueChapterMap == null) {
+        final (Map<int, int> m, List<(int, int)> r) =
+            _buildSrtChapterMap(allCues);
+        _srtCueChapterMap = m;
+        _srtChapterRanges = r;
+      }
     } else if (_audiobookBookUid != null) {
       if (_cachedSasayaki) {
         _audiobookController!.setChapterCues(allCues);
