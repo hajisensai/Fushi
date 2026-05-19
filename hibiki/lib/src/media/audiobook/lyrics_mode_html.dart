@@ -67,8 +67,6 @@ body { font-family: "Noto Serif JP", "Noto Sans JP", serif; }
   transition: opacity 0.35s ease-out, transform 0.3s ease-out, color 0.3s ease-out;
   will-change: transform, opacity;
   cursor: pointer;
-  -webkit-user-select: none;
-  user-select: none;
 }
 .cue.current {
   opacity: 1.0;
@@ -161,7 +159,6 @@ window.__lyricsGetCurrentIndex = function() { return _currentIdx; };
 
 // ── 点击：当前句子→查词，其他句子→跳转播放 ──
 document.getElementById('lc').addEventListener('click', function(e) {
-  if (_longPressed) { _longPressed = false; return; }
   var el = e.target.closest('.cue');
   if (!el) return;
   var idx = parseInt(el.getAttribute('data-cue-index'), 10);
@@ -176,36 +173,6 @@ document.getElementById('lc').addEventListener('click', function(e) {
     window.flutter_inappwebview.callHandler('onLyricsCueTap', idx);
   }
 });
-
-// ── 长按选词 ──
-var _tapStartX = 0, _tapStartY = 0, _tapStartTime = 0;
-var _longPressed = false;
-function _lpStart(x, y) { _tapStartX = x; _tapStartY = y; _tapStartTime = Date.now(); _longPressed = false; }
-function _lpEnd(x, y) {
-  var dx = Math.abs(x - _tapStartX);
-  var dy = Math.abs(y - _tapStartY);
-  var elapsed = Date.now() - _tapStartTime;
-  if (dx < 20 && dy < 20 && elapsed >= 500) {
-    _longPressed = true;
-    if (window.hoshiSelection) {
-      window.hoshiSelection.selectText(x, y, 400);
-    }
-  }
-}
-document.addEventListener('touchstart', function(e) {
-  var t = e.touches[0]; _lpStart(t.clientX, t.clientY);
-}, {passive: true});
-document.addEventListener('touchend', function(e) {
-  var t = e.changedTouches[0]; _lpEnd(t.clientX, t.clientY);
-}, {passive: true});
-document.addEventListener('pointerdown', function(e) {
-  if (e.pointerType === 'touch' || e.button !== 0) return;
-  _lpStart(e.clientX, e.clientY);
-}, {passive: true});
-document.addEventListener('pointerup', function(e) {
-  if (e.pointerType === 'touch' || e.button !== 0) return;
-  _lpEnd(e.clientX, e.clientY);
-}, {passive: true});
 
 // ── 歌词模式：覆写 selection 回调，附加 cue 元数据 ──
 (function() {

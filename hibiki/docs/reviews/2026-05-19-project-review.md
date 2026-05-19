@@ -511,3 +511,33 @@
 
 ### Next Scope
 - Continue review with remaining dirty generated/i18n and lyrics overlay files only if they are actually Windows UI related; otherwise leave them out of the Windows popup/layout fix stream.
+
+## Round 23: Lyrics Mode Selection Contract
+
+### Scope
+- `hibiki/lib/src/media/audiobook/lyrics_mode_html.dart`
+- `hibiki/test/media/audiobook/lyrics_mode_html_test.dart`
+- Remaining dirty lyrics-mode WebView HTML changes, with attention to desktop/Windows pointer and text-selection behavior.
+
+### Findings
+
+#### HBK-AUDIT-035
+- severity: medium
+- status: fixed
+- files: `hibiki/lib/src/media/audiobook/lyrics_mode_html.dart`, `hibiki/test/media/audiobook/lyrics_mode_html_test.dart`
+- root cause: lyrics mode carried a hand-rolled long-press recognizer and disabled text selection on every cue. That duplicated the Hoshi selection script already injected into the page and made pointer behavior fragile on desktop-class environments: click, long press, drag selection, and cue navigation competed in the same HTML layer.
+- impact: Windows/WebView pointer input could feel inconsistent: the current cue is supposed to open lookup on click, while native text selection should remain available. Disabling selection plus a custom long-press gate is the wrong data flow.
+- fix: remove the cue-level `user-select: none` rules and the custom long-press handlers. The current cue click now directly calls `window.hoshiSelection.selectText(...)`; non-current cue clicks continue to call `onLyricsCueTap` for playback jump.
+- verification: added `lyrics_mode_html_test.dart` coverage proving the generated HTML keeps current-cue click lookup, does not disable native selection, and does not include the old long-press event hooks. `flutter test test/media/audiobook/lyrics_mode_html_test.dart` passed with 2 tests.
+
+#### HBK-AUDIT-036
+- severity: low
+- status: open
+- files: `hibiki/lib/i18n/strings*.i18n.json`, `hibiki/lib/i18n/strings.g.dart`
+- root cause: the remaining i18n dirty diff removes the now-unreferenced `disable_dialog_scrim` key, but the working tree version also adds UTF-8 BOM markers to locale JSON files and rewrites `strings.g.dart` with huge formatting churn.
+- impact: deleting a dead key is probably fine, but committing the current dirty i18n diff would bury a one-key cleanup under generated-file noise and possible encoding drift.
+- fix: do not commit the current i18n dirty state in this Windows UI round. A later cleanup should regenerate or edit the locale files in a clean UTF-8/no-BOM pass and stage only the intended key removal.
+- verification: `rg -n "disable_dialog_scrim|disableDialogScrim|dialog scrim|scrim" hibiki/lib hibiki/test hibiki/android hibiki/ios` found no runtime references. No i18n files were staged in this round.
+
+### Next Scope
+- Continue only with clean, directly Windows/UI-related review items; leave i18n key cleanup for a separate encoding-safe pass.
