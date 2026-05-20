@@ -397,6 +397,21 @@ void main() {
       expect(r.matchedCues, 2);
     });
 
+    test('全角/ASCII 交叉：EPUB 用半角 cue 用全角仍命中', () {
+      final List<EpubSection> sections = <EpubSection>[
+        mkSection(0, 'Hello World 第1話が始まる'),
+      ];
+      final List<AudioCue> cues = <AudioCue>[
+        mkCue(0, 'Ｈｅｌｌｏ　Ｗｏｒｌｄ'),
+        mkCue(1, '第１話が始まる'),
+      ];
+
+      final MatchResult r =
+          EpubSrtMatcher.match(sections: sections, cues: cues);
+
+      expect(r.matchedCues, 2);
+    });
+
     test('normCharStart/End 在 section 内且单调', () {
       final List<EpubSection> sections = <EpubSection>[
         mkSection(0, 'あいうえおかきくけこさしすせそ'),

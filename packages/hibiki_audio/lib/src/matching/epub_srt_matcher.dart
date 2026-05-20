@@ -147,11 +147,34 @@ class EpubSrtMatcher {
       );
     }
 
-    final _Index idx = _buildIndex(sections);
+    final List<String> normCueTexts = <String>[
+      for (final AudioCue c in cues) AudioTextNormalizer.normalize(c.text),
+    ];
+    return _matchCore(
+      idx: _buildIndex(sections),
+      sections: sections,
+      cues: cues,
+      searchWindow: searchWindow,
+      similarityThreshold: similarityThreshold,
+      maxConsecutiveMisses: maxConsecutiveMisses,
+      preNormCueTexts: normCueTexts,
+    );
+  }
+
+  static MatchResult _matchCore({
+    required _Index idx,
+    required List<EpubSection> sections,
+    required List<AudioCue> cues,
+    required int searchWindow,
+    required double similarityThreshold,
+    required int maxConsecutiveMisses,
+    List<String>? preNormCueTexts,
+  }) {
     final String big = idx.normText;
     final int totalLen = big.length;
 
-    final int start = _findStart(big, cues, similarityThreshold);
+    final int start =
+        _findStart(big, cues, similarityThreshold, preNormCueTexts);
     debugPrint('[sasayaki] matcher: sections=${sections.length} '
         'totalNormLen=$totalLen cues=${cues.length} startCursor=$start '
         'threshold=$similarityThreshold');
@@ -170,7 +193,9 @@ class EpubSrtMatcher {
 
     for (int ci = 0; ci < cues.length; ci++) {
       final AudioCue cue = cues[ci];
-      final String nc = AudioTextNormalizer.normalize(cue.text);
+      final String nc = preNormCueTexts != null
+          ? preNormCueTexts[ci]
+          : AudioTextNormalizer.normalize(cue.text);
       if (nc.isEmpty) {
         results.add(CueMatch.unmatched);
         continue;
@@ -421,7 +446,8 @@ class EpubSrtMatcher {
   /// 取前 [defaultProbeCount] 条 cue，跳过 `＊` 开头 & 太短的，在全书做 indexOf
   /// （精确 + 模糊兜底），返回最小命中偏移；全部 miss 则回到 0。
   static int _findStart(
-      String big, List<AudioCue> cues, double similarityThreshold) {
+      String big, List<AudioCue> cues, double similarityThreshold,
+      [List<String>? preNormCueTexts]) {
     int? minStart;
     final int limit =
         cues.length < defaultProbeCount ? cues.length : defaultProbeCount;
@@ -430,7 +456,9 @@ class EpubSrtMatcher {
       if (raw.startsWith('＊') || raw.startsWith('*')) {
         continue;
       }
-      final String nc = AudioTextNormalizer.normalize(raw);
+      final String nc = preNormCueTexts != null
+          ? preNormCueTexts[i]
+          : AudioTextNormalizer.normalize(raw);
       if (nc.length < defaultProbeMinLen) {
         continue;
       }
@@ -518,12 +546,31 @@ class _MatchRequest {
 
 MatchResult _matchEntrypoint(_MatchRequest req) {
   final List<AudioCue> cues = _rebuildCues(req.cueTexts, req.cueIndexes);
-  return EpubSrtMatcher.match(
+  if (cues.isEmpty) {
+    return const MatchResult(
+      matches: <CueMatch>[],
+      totalCues: 0,
+      matchedCues: 0,
+    );
+  }
+  if (req.sections.isEmpty) {
+    return MatchResult(
+      matches: List<CueMatch>.filled(cues.length, CueMatch.unmatched),
+      totalCues: cues.length,
+      matchedCues: 0,
+    );
+  }
+  final List<String> normCueTexts = <String>[
+    for (final String t in req.cueTexts) AudioTextNormalizer.normalize(t),
+  ];
+  return EpubSrtMatcher._matchCore(
+    idx: EpubSrtMatcher._buildIndex(req.sections),
     sections: req.sections,
     cues: cues,
     searchWindow: req.searchWindow,
     similarityThreshold: req.similarityThreshold,
     maxConsecutiveMisses: req.maxConsecutiveMisses,
+    preNormCueTexts: normCueTexts,
   );
 }
 
@@ -576,14 +623,21 @@ ProbeResult _probeEntrypoint(_ProbeRequest req) {
   double bestRate = -1;
   MatchResult? bestResult;
 
+  final _Index idx = EpubSrtMatcher._buildIndex(req.sections);
+  final List<String> normCueTexts = <String>[
+    for (final String t in req.cueTexts) AudioTextNormalizer.normalize(t),
+  ];
+
   for (final int w in req.windows) {
     final List<AudioCue> cues = _rebuildCues(req.cueTexts, req.cueIndexes);
-    final MatchResult r = EpubSrtMatcher.match(
+    final MatchResult r = EpubSrtMatcher._matchCore(
+      idx: idx,
       sections: req.sections,
       cues: cues,
       searchWindow: w,
       similarityThreshold: req.similarityThreshold,
       maxConsecutiveMisses: req.maxConsecutiveMisses,
+      preNormCueTexts: normCueTexts,
     );
     map[w] = r.matchRate;
     if (r.matchRate > bestRate + 1e-9 ||

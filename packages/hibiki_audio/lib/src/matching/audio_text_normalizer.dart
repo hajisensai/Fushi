@@ -19,14 +19,85 @@ class AudioTextNormalizer {
         continue;
       }
       if (cp >= 0x41 && cp <= 0x5A) {
+        // ASCII A-Z → a-z
         buf.writeCharCode(cp + 0x20);
       } else if (cp >= 0xFF21 && cp <= 0xFF3A) {
-        buf.writeCharCode(cp + 0x20);
+        // 全角 Ａ-Ｚ → ASCII a-z
+        buf.writeCharCode(cp - 0xFEC0);
+      } else if (cp >= 0xFF41 && cp <= 0xFF5A) {
+        // 全角 ａ-ｚ → ASCII a-z
+        buf.writeCharCode(cp - 0xFEE0);
+      } else if (cp >= 0xFF10 && cp <= 0xFF19) {
+        // 全角 ０-９ → ASCII 0-9
+        buf.writeCharCode(cp - 0xFEE0);
+      } else if (cp >= 0xFF66 && cp <= 0xFF9D) {
+        // 半角片假名 → 全角片假名
+        buf.writeCharCode(_hwKataToFw[cp - 0xFF66]);
       } else {
         buf.writeCharCode(cp);
       }
     }
   }
+
+  // 半角片假名 (U+FF66..U+FF9D) → 全角片假名 查找表
+  static const List<int> _hwKataToFw = <int>[
+    0x30F2, // ｦ → ヲ
+    0x30A1, // ｧ → ァ
+    0x30A3, // ｨ → ィ
+    0x30A5, // ｩ → ゥ
+    0x30A7, // ｪ → ェ
+    0x30A9, // ｫ → ォ
+    0x30E3, // ｬ → ャ
+    0x30E5, // ｭ → ュ
+    0x30E7, // ｮ → ョ
+    0x30C3, // ｯ → ッ
+    0x30FC, // ｰ → ー
+    0x30A2, // ｱ → ア
+    0x30A4, // ｲ → イ
+    0x30A6, // ｳ → ウ
+    0x30A8, // ｴ → エ
+    0x30AA, // ｵ → オ
+    0x30AB, // ｶ → カ
+    0x30AD, // ｷ → キ
+    0x30AF, // ｸ → ク
+    0x30B1, // ｹ → ケ
+    0x30B3, // ｺ → コ
+    0x30B5, // ｻ → サ
+    0x30B7, // ｼ → シ
+    0x30B9, // ｽ → ス
+    0x30BB, // ｾ → セ
+    0x30BD, // ｿ → ソ
+    0x30BF, // ﾀ → タ
+    0x30C1, // ﾁ → チ
+    0x30C4, // ﾂ → ツ
+    0x30C6, // ﾃ → テ
+    0x30C8, // ﾄ → ト
+    0x30CA, // ﾅ → ナ
+    0x30CB, // ﾆ → ニ
+    0x30CC, // ﾇ → ヌ
+    0x30CD, // ﾈ → ネ
+    0x30CE, // ﾉ → ノ
+    0x30CF, // ﾊ → ハ
+    0x30D2, // ﾋ → ヒ
+    0x30D5, // ﾌ → フ
+    0x30D8, // ﾍ → ヘ
+    0x30DB, // ﾎ → ホ
+    0x30DE, // ﾏ → マ
+    0x30DF, // ﾐ → ミ
+    0x30E0, // ﾑ → ム
+    0x30E1, // ﾒ → メ
+    0x30E2, // ﾓ → モ
+    0x30E4, // ﾔ → ヤ
+    0x30E6, // ﾕ → ユ
+    0x30E8, // ﾖ → ヨ
+    0x30E9, // ﾗ → ラ
+    0x30EA, // ﾘ → リ
+    0x30EB, // ﾙ → ル
+    0x30EC, // ﾚ → レ
+    0x30ED, // ﾛ → ロ
+    0x30EF, // ﾜ → ワ
+    0x30F3, // ﾝ → ン
+  ];
 
   static bool _isKeepable(int c) {
     return (c >= 0x30 && c <= 0x39) || // 0-9

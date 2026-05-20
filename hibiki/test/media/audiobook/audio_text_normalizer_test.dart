@@ -27,16 +27,16 @@ void main() {
       expect(AudioTextNormalizer.normalize('ABC'), 'abc');
     });
 
-    test('lowercases fullwidth uppercase', () {
-      expect(AudioTextNormalizer.normalize('ＡＢＣ'), 'ａｂｃ');
+    test('lowercases fullwidth uppercase to ASCII', () {
+      expect(AudioTextNormalizer.normalize('ＡＢＣ'), 'abc');
     });
 
     test('preserves digits', () {
       expect(AudioTextNormalizer.normalize('123'), '123');
     });
 
-    test('preserves fullwidth digits', () {
-      expect(AudioTextNormalizer.normalize('０１２'), '０１２');
+    test('converts fullwidth digits to ASCII', () {
+      expect(AudioTextNormalizer.normalize('０１２'), '012');
     });
 
     test('strips emoji and special symbols', () {
@@ -54,12 +54,37 @@ void main() {
       );
     });
 
-    test('preserves halfwidth katakana', () {
-      expect(AudioTextNormalizer.normalize('ｱｲｳ'), 'ｱｲｳ');
+    test('converts halfwidth katakana to fullwidth', () {
+      expect(AudioTextNormalizer.normalize('ｱｲｳ'), 'アイウ');
     });
 
     test('preserves 々 repetition mark', () {
       expect(AudioTextNormalizer.normalize('人々'), '人々');
+    });
+
+    test('fullwidth lowercase letters map to ASCII', () {
+      expect(AudioTextNormalizer.normalize('ａｂｃ'), 'abc');
+    });
+
+    test('mixed ASCII and fullwidth normalize to same form', () {
+      expect(
+        AudioTextNormalizer.normalize('Helloｗorld'),
+        AudioTextNormalizer.normalize('Ｈｅｌｌｏworld'),
+      );
+    });
+
+    test('fullwidth and ASCII digits normalize to same form', () {
+      expect(
+        AudioTextNormalizer.normalize('第１話'),
+        AudioTextNormalizer.normalize('第1話'),
+      );
+    });
+
+    test('halfwidth katakana with fullwidth equivalent match', () {
+      expect(
+        AudioTextNormalizer.normalize('ｶﾀｶﾅ'),
+        AudioTextNormalizer.normalize('カタカナ'),
+      );
     });
   });
 
