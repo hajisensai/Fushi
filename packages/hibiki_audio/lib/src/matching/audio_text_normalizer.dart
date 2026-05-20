@@ -5,7 +5,7 @@
 class AudioTextNormalizer {
   AudioTextNormalizer._();
 
-  /// 归一化文本：剥掉非白名单字符，全角/ASCII 大写转小写。
+  /// 归一化文本：剥掉非白名单字符，大小写统一，片假名转平假名。
   static String normalize(String s) {
     final StringBuffer buf = StringBuffer();
     appendNormalized(buf, s);
