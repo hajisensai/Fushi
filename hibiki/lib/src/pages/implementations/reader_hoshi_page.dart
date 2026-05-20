@@ -1433,6 +1433,21 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
             }
           },
         );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'onCueTap',
+          callback: (List<dynamic> args) {
+            if (args.isEmpty || _audiobookController == null) return;
+            final int sentenceIndex = (args[0] as num).toInt();
+            final List<AudioCue>? allCues = _cachedAllCues;
+            if (allCues == null) return;
+            final int idx = allCues.indexWhere(
+                (AudioCue c) => c.sentenceIndex == sentenceIndex);
+            if (idx >= 0) {
+              _audiobookController!.playCueAndContinue(allCues[idx]);
+            }
+          },
+        );
       },
       shouldInterceptRequest: (controller, request) async {
         return await _interceptRequest(request.url);
@@ -1811,6 +1826,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         if (cueChapter != null && cueChapter != _currentChapter) {
           if (controller.shouldRevealCurrentCue && !_restoreInFlight) {
             _navigateToChapter(cueChapter);
+          } else {
+            AudiobookBridge.highlight(_controller!);
           }
           _syncPositionFromCurrentCue();
           _syncFloatingLyric(controller);
@@ -1821,13 +1838,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     }
     final bool forceReveal = controller.consumeForceReveal();
     final bool reveal = forceReveal || controller.shouldRevealCurrentCue;
-    if (reveal) {
-      debugPrint('[_onCueChanged] reveal cue=${cue?.textFragmentId} '
-          'forceReveal=$forceReveal '
-          'follow=${controller.followAudio.value} '
-          'playing=${controller.isPlaying}');
-    }
     AudiobookBridge.highlight(_controller!, cue: cue, reveal: reveal);
+    _syncPositionFromCurrentCue();
     _syncFloatingLyric(controller);
     _syncMediaNotification(controller);
   }

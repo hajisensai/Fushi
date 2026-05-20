@@ -64,6 +64,25 @@ window.__hoshiHighlight = function(selector, reveal) {
 };
 ''';
 
+  /// SRT cue 点击事件：委托事件监听 [data-cue-id]，通过 callHandler 通知 Dart。
+  static const String _cueClickFn = '''
+(function() {
+  if (window.__hoshiCueClickBound) return;
+  window.__hoshiCueClickBound = true;
+  document.addEventListener('click', function(e) {
+    var sel = window.getSelection();
+    if (sel && !sel.isCollapsed) return;
+    var el = e.target.closest('[data-cue-id]');
+    if (!el) return;
+    var id = parseInt(el.dataset.cueId, 10);
+    if (isNaN(id) || id < 0) return;
+    if (window.flutter_inappwebview) {
+      window.flutter_inappwebview.callHandler('onCueTap', id);
+    }
+  });
+})();
+''';
+
   /// Sasayaki 句子高亮 + 点击事件。
   ///
   /// `__hoshiIsSkippable` 保留 — 归一化偏移计算需要它。
@@ -247,6 +266,7 @@ window.__hoshiAnnotate = function(chapterHref) {
 ''');
 
     await controller.evaluateJavascript(source: _highlightFn);
+    await controller.evaluateJavascript(source: _cueClickFn);
     await controller.evaluateJavascript(source: _sasayakiFn);
     await controller.evaluateJavascript(source: _chapterNavFn);
     await controller.evaluateJavascript(source: _annotateFn);
