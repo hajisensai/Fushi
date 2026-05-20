@@ -140,6 +140,10 @@ class _HomePageState extends BasePageState<HomePage>
             if (sizeClass == WindowSizeClass.compact) {
               return _buildMobileLayout();
             }
+            if (!isDesktopPlatform &&
+                constraints.maxWidth <= constraints.maxHeight) {
+              return _buildMobileLayout();
+            }
             return _buildDesktopLayout(sizeClass);
           },
         ),
@@ -151,33 +155,36 @@ class _HomePageState extends BasePageState<HomePage>
     return Scaffold(
       resizeToAvoidBottomInset: false,
       appBar: buildAppBar(),
-      body: Row(
-        children: [
-          NavigationRail(
-            selectedIndex: _currentTab,
-            onDestinationSelected: (int index) {
-              setState(() => _currentTab = index);
-              if (index == 0) _loadIconPreset();
-            },
-            labelType: NavigationRailLabelType.all,
-            destinations: [
-              NavigationRailDestination(
-                icon: const Icon(Icons.menu_book),
-                label: Text(t.books),
-              ),
-              NavigationRailDestination(
-                icon: const Icon(Icons.search),
-                label: Text(t.dictionaries),
-              ),
-              NavigationRailDestination(
-                icon: const Icon(Icons.tune),
-                label: Text(t.settings),
-              ),
-            ],
-          ),
-          const VerticalDivider(thickness: 1, width: 1),
-          Expanded(child: buildBody()),
-        ],
+      body: SafeArea(
+        child: Row(
+          children: [
+            NavigationRail(
+              groupAlignment: 0.0,
+              selectedIndex: _currentTab,
+              onDestinationSelected: (int index) {
+                setState(() => _currentTab = index);
+                if (index == 0) _loadIconPreset();
+              },
+              labelType: NavigationRailLabelType.all,
+              destinations: [
+                NavigationRailDestination(
+                  icon: const Icon(Icons.menu_book),
+                  label: Text(t.books),
+                ),
+                NavigationRailDestination(
+                  icon: const Icon(Icons.search),
+                  label: Text(t.dictionaries),
+                ),
+                NavigationRailDestination(
+                  icon: const Icon(Icons.tune),
+                  label: Text(t.settings),
+                ),
+              ],
+            ),
+            const VerticalDivider(thickness: 1, width: 1),
+            Expanded(child: buildBody()),
+          ],
+        ),
       ),
     );
   }
@@ -243,8 +250,12 @@ class _HomePageState extends BasePageState<HomePage>
       notifier: appModel.incognitoNotifier,
       builder: (context, notifier, _) {
         return Padding(
-          padding: Spacing.of(context).insets.onlyLeft.normal,
-          child: Image.asset(_iconAsset),
+          padding: const EdgeInsets.only(left: 12),
+          child: Image.asset(
+            _iconAsset,
+            width: 32,
+            height: 32,
+          ),
         );
       },
     );

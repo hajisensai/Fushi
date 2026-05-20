@@ -92,6 +92,26 @@ class ReaderSettings {
   double get fontSize => _get<double>('ttu_font_size', 22);
   Future<void> setFontSize(double v) => _set<double>('ttu_font_size', v);
 
+  double get lyricsFontSize => _get<double>('lyrics_font_size', 24);
+  Future<void> setLyricsFontSize(double v) =>
+      _set<double>('lyrics_font_size', v);
+
+  double get lyricsMarginTop => _get<double>('lyrics_margin_top', 0);
+  Future<void> setLyricsMarginTop(double v) =>
+      _set<double>('lyrics_margin_top', v);
+
+  double get lyricsMarginBottom => _get<double>('lyrics_margin_bottom', 0);
+  Future<void> setLyricsMarginBottom(double v) =>
+      _set<double>('lyrics_margin_bottom', v);
+
+  double get lyricsMarginLeft => _get<double>('lyrics_margin_left', 0);
+  Future<void> setLyricsMarginLeft(double v) =>
+      _set<double>('lyrics_margin_left', v);
+
+  double get lyricsMarginRight => _get<double>('lyrics_margin_right', 0);
+  Future<void> setLyricsMarginRight(double v) =>
+      _set<double>('lyrics_margin_right', v);
+
   double get lineHeight => _get<double>('ttu_line_height', 1.65);
   Future<void> setLineHeight(double v) => _set<double>('ttu_line_height', v);
 

@@ -11,6 +11,10 @@ class LyricsModeHtml {
     required String textColor,
     required String accentColor,
     required double fontSize,
+    double marginTop = 0,
+    double marginBottom = 0,
+    double marginLeft = 0,
+    double marginRight = 0,
   }) {
     final StringBuffer cueHtml = StringBuffer();
     for (int i = 0; i < cues.length; i++) {
@@ -51,7 +55,7 @@ body { font-family: "Noto Serif JP", "Noto Sans JP", serif; }
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 45vh 20px 45vh 20px;
+  padding: calc(45vh + ${marginTop}vh) ${marginLeft > 0 ? marginLeft : 2.5}vw calc(45vh + ${marginBottom}vh) ${marginRight > 0 ? marginRight : 2.5}vw;
   gap: 0;
 }
 .cue {
@@ -62,6 +66,8 @@ body { font-family: "Noto Serif JP", "Noto Sans JP", serif; }
   line-height: 1.7;
   padding: 12px 8px;
   max-width: 92vw;
+  overflow-wrap: break-word;
+  word-break: break-word;
   opacity: 0.15;
   transform: scale(1);
   transition: opacity 0.35s ease-out, transform 0.3s ease-out, color 0.3s ease-out;
@@ -178,24 +184,17 @@ document.getElementById('lc').addEventListener('click', function(e) {
 (function() {
   var origSelectText = window.hoshiSelection.selectText;
   window.hoshiSelection.selectText = function(x, y, maxLen) {
-    var selected = origSelectText.call(window.hoshiSelection, x, y, maxLen);
-    var sel = window.getSelection();
-    if (sel && sel.anchorNode) {
-      var cueEl = sel.anchorNode.nodeType === 1
-        ? sel.anchorNode.closest('.cue')
-        : sel.anchorNode.parentElement
-          ? sel.anchorNode.parentElement.closest('.cue')
-          : null;
-      if (cueEl) {
-        window.__lyricsCueContext = {
-          textFragmentId: cueEl.getAttribute('data-text-fragment-id'),
-          cueIndex: parseInt(cueEl.getAttribute('data-cue-index'), 10),
-        };
-      } else {
-        window.__lyricsCueContext = null;
-      }
+    var hitEl = document.elementFromPoint(x, y);
+    var cueEl = hitEl ? hitEl.closest('.cue') : null;
+    if (cueEl) {
+      window.__lyricsCueContext = {
+        textFragmentId: cueEl.getAttribute('data-text-fragment-id'),
+        cueIndex: parseInt(cueEl.getAttribute('data-cue-index'), 10),
+      };
+    } else {
+      window.__lyricsCueContext = null;
     }
-    return selected;
+    return origSelectText.call(window.hoshiSelection, x, y, maxLen);
   };
 })();
 
@@ -207,6 +206,36 @@ window.__lyricsMarkFavorites = function(texts) {
     var t = cues[i].textContent.trim();
     if (set.has(t)) cues[i].classList.add('favorited');
     else cues[i].classList.remove('favorited');
+  }
+};
+
+// ── 实时样式更新（避免整页重载） ──
+window.__lyricsUpdateStyle = function(bgColor, textColor, accentColor, fontSize, mt, mb, ml, mr) {
+  var root = document.documentElement;
+  document.body.style.background = bgColor;
+  root.style.background = bgColor;
+
+  var sheet = document.styleSheets[0];
+  var rules = sheet.cssRules || sheet.rules;
+  for (var i = 0; i < rules.length; i++) {
+    var r = rules[i];
+    if (r.selectorText === '.cue') {
+      r.style.color = textColor;
+      r.style.fontSize = fontSize + 'px';
+    } else if (r.selectorText === '.cue.current') {
+      r.style.color = accentColor;
+    } else if (r.type === CSSRule.STYLE_RULE && r.selectorText === '.cue.current .hoshi-dict-highlight') {
+      r.style.color = bgColor;
+    } else if (r.selectorText === '.hoshi-dict-highlight') {
+      r.style.setProperty('background-color', accentColor, 'important');
+    } else if (r.selectorText === '::highlight(hoshi-selection)') {
+      r.style.setProperty('background-color', accentColor);
+      r.style.color = bgColor;
+    } else if (r.selectorText === '.lyrics-container') {
+      var lv = (ml != null && ml > 0) ? ml : 2.5;
+      var rv = (mr != null && mr > 0) ? mr : 2.5;
+      r.style.padding = 'calc(45vh + ' + (mt||0) + 'vh) ' + lv + 'vw calc(45vh + ' + (mb||0) + 'vh) ' + rv + 'vw';
+    }
   }
 };
 

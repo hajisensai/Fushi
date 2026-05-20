@@ -519,6 +519,51 @@ class ReaderHoshiSource extends ReaderMediaSource {
     onSettingsChangedLive?.call();
   }
 
+  double get lyricsFontSize =>
+      readerSettings?.lyricsFontSize ??
+      getPreference<double>(key: 'lyrics_font_size', defaultValue: 24);
+  Future<void> setLyricsFontSize(double v) async {
+    await (readerSettings?.setLyricsFontSize(v) ??
+        setPreference<double>(key: 'lyrics_font_size', value: v));
+    onSettingsChangedLive?.call();
+  }
+
+  double get lyricsMarginTop =>
+      readerSettings?.lyricsMarginTop ??
+      getPreference<double>(key: 'lyrics_margin_top', defaultValue: 0);
+  Future<void> setLyricsMarginTop(double v) async {
+    await (readerSettings?.setLyricsMarginTop(v) ??
+        setPreference<double>(key: 'lyrics_margin_top', value: v));
+    onSettingsChangedLive?.call();
+  }
+
+  double get lyricsMarginBottom =>
+      readerSettings?.lyricsMarginBottom ??
+      getPreference<double>(key: 'lyrics_margin_bottom', defaultValue: 0);
+  Future<void> setLyricsMarginBottom(double v) async {
+    await (readerSettings?.setLyricsMarginBottom(v) ??
+        setPreference<double>(key: 'lyrics_margin_bottom', value: v));
+    onSettingsChangedLive?.call();
+  }
+
+  double get lyricsMarginLeft =>
+      readerSettings?.lyricsMarginLeft ??
+      getPreference<double>(key: 'lyrics_margin_left', defaultValue: 0);
+  Future<void> setLyricsMarginLeft(double v) async {
+    await (readerSettings?.setLyricsMarginLeft(v) ??
+        setPreference<double>(key: 'lyrics_margin_left', value: v));
+    onSettingsChangedLive?.call();
+  }
+
+  double get lyricsMarginRight =>
+      readerSettings?.lyricsMarginRight ??
+      getPreference<double>(key: 'lyrics_margin_right', defaultValue: 0);
+  Future<void> setLyricsMarginRight(double v) async {
+    await (readerSettings?.setLyricsMarginRight(v) ??
+        setPreference<double>(key: 'lyrics_margin_right', value: v));
+    onSettingsChangedLive?.call();
+  }
+
   double get ttuLineHeight =>
       readerSettings?.lineHeight ??
       getPreference<double>(key: 'ttu_line_height', defaultValue: 1.65);

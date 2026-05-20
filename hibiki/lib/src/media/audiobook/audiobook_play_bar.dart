@@ -1371,6 +1371,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         ),
       );
     }
+    if (widget.lyricsMode) return _buildLyricsTypographySection(theme);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1586,6 +1587,93 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               _updateSetting('prioritizeReaderStyles', v);
             },
           ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLyricsTypographySection(ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Text(
+            t.lyrics_font_size_hint,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+        _numberStepper(
+          theme,
+          label: t.lyrics_font_size,
+          value: _src.lyricsFontSize,
+          step: 1,
+          min: 8,
+          max: 64,
+          format: (double v) => '${v.round()}',
+          onChanged: (double v) {
+            _src.setLyricsFontSize(v);
+            setState(() {});
+            widget.onStyleChanged?.call();
+          },
+        ),
+        _numberStepper(
+          theme,
+          label: t.margin_top,
+          value: _src.lyricsMarginTop,
+          step: 1,
+          min: 0,
+          max: 30,
+          format: (double v) => '${v.round()}',
+          onChanged: (double v) {
+            _src.setLyricsMarginTop(v);
+            setState(() {});
+            widget.onStyleChanged?.call();
+          },
+        ),
+        _numberStepper(
+          theme,
+          label: t.margin_bottom,
+          value: _src.lyricsMarginBottom,
+          step: 1,
+          min: 0,
+          max: 30,
+          format: (double v) => '${v.round()}',
+          onChanged: (double v) {
+            _src.setLyricsMarginBottom(v);
+            setState(() {});
+            widget.onStyleChanged?.call();
+          },
+        ),
+        _numberStepper(
+          theme,
+          label: t.margin_left,
+          value: _src.lyricsMarginLeft,
+          step: 1,
+          min: 0,
+          max: 30,
+          format: (double v) => '${v.round()}',
+          onChanged: (double v) {
+            _src.setLyricsMarginLeft(v);
+            setState(() {});
+            widget.onStyleChanged?.call();
+          },
+        ),
+        _numberStepper(
+          theme,
+          label: t.margin_right,
+          value: _src.lyricsMarginRight,
+          step: 1,
+          min: 0,
+          max: 30,
+          format: (double v) => '${v.round()}',
+          onChanged: (double v) {
+            _src.setLyricsMarginRight(v);
+            setState(() {});
+            widget.onStyleChanged?.call();
+          },
         ),
       ],
     );

@@ -47,14 +47,20 @@ class _ProfileManagementPageState extends BasePageState<ProfileManagementPage> {
                   vm,
                 ),
                 _buildMediaTypeRow(
+                  t.profile_media_srtbook,
+                  'srtbook',
+                  uiState,
+                  vm,
+                ),
+                _buildMediaTypeRow(
                   t.profile_media_audiobook,
                   'audiobook',
                   uiState,
                   vm,
                 ),
                 _buildMediaTypeRow(
-                  t.profile_media_video,
-                  'video',
+                  t.profile_media_lyrics,
+                  'lyrics',
                   uiState,
                   vm,
                 ),
@@ -203,7 +209,7 @@ class _ProfileManagementPageState extends BasePageState<ProfileManagementPage> {
       builder: (ctx) => ProfileNameDialog(
         title: t.profile_rename,
         initialName: currentName,
-        submitLabel: t.dialog_create,
+        submitLabel: t.dialog_save,
       ),
     );
     if (name != null && name.isNotEmpty) {

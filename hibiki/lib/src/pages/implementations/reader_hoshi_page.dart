@@ -152,7 +152,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _initBook();
   }
 
-  Future<void> _resolveAndApplyProfile(HibikiDatabase db) async {
+  Future<void> _resolveAndApplyProfile(
+    HibikiDatabase db, {
+    String? mediaTypeOverride,
+  }) async {
     try {
       final ProfileRepository profileRepo = ref.read(profileRepositoryProvider);
       final ProfileViewModel profileVm =
@@ -160,15 +163,19 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
       final String bookUid = ReaderHoshiSource.bookUidFor(widget.bookId);
 
-      // Determine media type: check for audiobook or srt binding.
-      String mediaType = 'epub';
-      final abRow = await db.getAudiobookByBookUid(bookUid);
-      if (abRow != null) {
-        mediaType = 'audiobook';
+      String mediaType;
+      if (mediaTypeOverride != null) {
+        mediaType = mediaTypeOverride;
       } else {
-        final srtRow = await db.getSrtBookByTtuBookId(widget.bookId);
-        if (srtRow != null) {
-          mediaType = 'video';
+        mediaType = 'epub';
+        final abRow = await db.getAudiobookByBookUid(bookUid);
+        if (abRow != null) {
+          mediaType = 'audiobook';
+        } else {
+          final srtRow = await db.getSrtBookByTtuBookId(widget.bookId);
+          if (srtRow != null) {
+            mediaType = 'srtbook';
+          }
         }
       }
 
@@ -1082,7 +1089,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (_controller == null || _settings == null) return;
     await _syncSettingsFromHive();
     if (_lyricsMode) {
-      await _loadLyricsPage();
+      await _updateLyricsStyleLive();
       return;
     }
     final String css = ReaderContentStyles.css(
@@ -1441,8 +1448,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
             final int sentenceIndex = (args[0] as num).toInt();
             final List<AudioCue>? allCues = _cachedAllCues;
             if (allCues == null) return;
-            final int idx = allCues.indexWhere(
-                (AudioCue c) => c.sentenceIndex == sentenceIndex);
+            final int idx = allCues
+                .indexWhere((AudioCue c) => c.sentenceIndex == sentenceIndex);
             if (idx >= 0) {
               _audiobookController!.playCueAndContinue(allCues[idx]);
             }
@@ -1686,28 +1693,43 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     }
 
     setState(() => _lyricsModeTransition = true);
-    await Future<void>.delayed(const Duration(milliseconds: 200));
+    try {
+      await Future<void>.delayed(const Duration(milliseconds: 200));
 
-    setState(() => _lyricsMode = entering);
-    await ReaderHoshiSource.instance.setLyricsMode(entering);
+      setState(() => _lyricsMode = entering);
+      await ReaderHoshiSource.instance.setLyricsMode(entering);
 
-    if (entering) {
-      final List<AudioCue> allCues = _audiobookController!.allBookCuesSnapshot;
-      if (allCues.isNotEmpty) {
-        _audiobookController!.setChapterCues(allCues);
+      if (entering) {
+        await _resolveAndApplyProfile(
+          appModelNoUpdate.database,
+          mediaTypeOverride: 'lyrics',
+        );
+        final List<AudioCue> allCues =
+            _audiobookController!.allBookCuesSnapshot;
+        if (allCues.isNotEmpty) {
+          _audiobookController!.setChapterCues(allCues);
+        }
+        _lyricsEntryChapter = _currentChapter;
+        _lyricsEntryCueIndex =
+            _audiobookController!.allBookCuesSnapshot.isNotEmpty
+                ? _audiobookController!.allBookCueIdx
+                : _audiobookController!.currentCueIdx;
+        await _loadLyricsPage();
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        _showLyricsModeHintIfNeeded();
+      } else {
+        await _resolveAndApplyProfile(appModelNoUpdate.database);
+        await _exitLyricsMode();
+        try {
+          await _restoreCompleter?.future.timeout(
+            const Duration(seconds: 8),
+            onTimeout: () => false,
+          );
+        } catch (_) {}
       }
-      _lyricsEntryChapter = _currentChapter;
-      _lyricsEntryCueIndex =
-          _audiobookController!.allBookCuesSnapshot.isNotEmpty
-              ? _audiobookController!.allBookCueIdx
-              : _audiobookController!.currentCueIdx;
-      await _loadLyricsPage();
-    } else {
-      await _exitLyricsMode();
+    } finally {
+      if (mounted) setState(() => _lyricsModeTransition = false);
     }
-
-    await Future<void>.delayed(const Duration(milliseconds: 100));
-    if (mounted) setState(() => _lyricsModeTransition = false);
   }
 
   Future<void> _loadLyricsPage() async {
@@ -1742,7 +1764,11 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       backgroundColor: colorToCss(bg),
       textColor: colorToCss(fg),
       accentColor: colorToCss(accent),
-      fontSize: (_settings?.fontSize ?? 20).toDouble(),
+      fontSize: ReaderHoshiSource.instance.lyricsFontSize,
+      marginTop: ReaderHoshiSource.instance.lyricsMarginTop,
+      marginBottom: ReaderHoshiSource.instance.lyricsMarginBottom,
+      marginLeft: ReaderHoshiSource.instance.lyricsMarginLeft,
+      marginRight: ReaderHoshiSource.instance.lyricsMarginRight,
     );
 
     await _controller!.loadData(
@@ -1750,6 +1776,57 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       mimeType: 'text/html',
       encoding: 'utf-8',
       baseUrl: WebUri('https://hoshi.local/lyrics'),
+    );
+  }
+
+  Future<void> _updateLyricsStyleLive() async {
+    if (_controller == null || !_lyricsPageReady) return;
+    final Color bg = _themeBackgroundColor();
+    final Color fg = _themeTextColor();
+    final Color accent = _isReaderThemeDark
+        ? JidoujishoColor.defaultHighlightYellow
+        : Theme.of(context).colorScheme.primary;
+    final double fontSize = ReaderHoshiSource.instance.lyricsFontSize;
+
+    String colorToCss(Color c) =>
+        'rgba(${(c.r * 255).round()},${(c.g * 255).round()},${(c.b * 255).round()},${c.a.toStringAsFixed(2)})';
+
+    final String bgCss = colorToCss(bg);
+    final String fgCss = colorToCss(fg);
+    final String accentCss = colorToCss(accent);
+
+    final ReaderHoshiSource src = ReaderHoshiSource.instance;
+    final double mt = src.lyricsMarginTop;
+    final double mb = src.lyricsMarginBottom;
+    final double ml = src.lyricsMarginLeft;
+    final double mr = src.lyricsMarginRight;
+    await _controller!.evaluateJavascript(
+      source: 'window.__lyricsUpdateStyle && window.__lyricsUpdateStyle('
+          "'$bgCss','$fgCss','$accentCss',$fontSize,$mt,$mb,$ml,$mr);",
+    );
+    setState(() {});
+  }
+
+  void _showLyricsModeHintIfNeeded() {
+    final ReaderHoshiSource src = ReaderHoshiSource.instance;
+    final bool shown = src.getPreference<bool>(
+      key: 'lyrics_mode_hint_shown',
+      defaultValue: false,
+    );
+    if (shown || !mounted) return;
+    src.setPreference<bool>(key: 'lyrics_mode_hint_shown', value: true);
+    showDialog<void>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: Text(t.lyrics_mode_hint_title),
+        content: Text(t.lyrics_mode_hint_body),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(MaterialLocalizations.of(ctx).okButtonLabel),
+          ),
+        ],
+      ),
     );
   }
 
@@ -2265,8 +2342,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       return;
     }
 
-    final bool shouldPause =
-        _lyricsMode || ReaderHoshiSource.instance.pauseOnLookup;
+    final bool shouldPause = ReaderHoshiSource.instance.pauseOnLookup;
     if (shouldPause &&
         _audiobookController != null &&
         _audiobookController!.isPlaying) {
@@ -2324,6 +2400,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           }
         } catch (_) {}
       }
+      _lookupCue ??= _audiobookController?.currentCue;
       final int highlightCount = await searchDictionaryResult(
         searchTerm: data.text,
         selectionRect: selectionRect,
@@ -3502,6 +3579,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _syncDictionaryTheme();
     if (appModel.showFloatingLyric) {
       await _applyFloatingLyricStyle();
+    }
+    if (_lyricsMode) {
+      await _updateLyricsStyleLive();
     }
     if (mounted) setState(() {});
   }
