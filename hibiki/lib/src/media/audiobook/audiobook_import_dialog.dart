@@ -21,6 +21,7 @@ class AudiobookImportDialog extends StatefulWidget {
     required this.bookUid,
     required this.repo,
     this.ttuBookId,
+    this.audioOnly = false,
     super.key,
   });
 
@@ -31,6 +32,10 @@ class AudiobookImportDialog extends StatefulWidget {
   /// `.srt` 时，走 Sasayaki 路径：从提取目录读章节文本 → EpubSrtMatcher 匹配
   /// → 把命中 cue 的偏移编码写回 textFragmentId。
   final int? ttuBookId;
+
+  /// When true, only audio files can be imported (alignment row and matcher
+  /// settings are hidden). Used for SRT books that already have their own cues.
+  final bool audioOnly;
 
   @override
   State<AudiobookImportDialog> createState() => _AudiobookImportDialogState();
@@ -140,7 +145,9 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
 
     return AlertDialog(
       title: Text(
-        showImportForm ? t.audiobook_import : t.audiobook_attached,
+        showImportForm
+            ? (widget.audioOnly ? t.audio_import : t.audiobook_import)
+            : t.audiobook_attached,
       ),
       content: SizedBox(
         width: double.maxFinite,
@@ -324,9 +331,11 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _audioSourceRow(),
-        const SizedBox(height: 12),
-        _alignmentRow(),
-        if (_willRunMatcher) ...[
+        if (!widget.audioOnly) ...[
+          const SizedBox(height: 12),
+          _alignmentRow(),
+        ],
+        if (!widget.audioOnly && _willRunMatcher) ...[
           const SizedBox(height: 12),
           SasayakiWindowSlider(
             value: _searchWindow,
@@ -591,7 +600,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
   }
 
   Future<void> _doImport() async {
-    if (!_hasAudioSource || _alignmentPath == null) {
+    if (!_hasAudioSource || (!widget.audioOnly && _alignmentPath == null)) {
       HibikiToast.show(msg: t.audiobook_import_error);
       return;
     }
@@ -604,25 +613,26 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
 
     int grandTotal = 0;
     try {
-      final String ext = _alignmentPath!.split('.').last.toLowerCase();
-      const Set<String> cueFormats = {'smil', 'srt', 'lrc', 'vtt', 'ass'};
-      final String format = cueFormats.contains(ext) ? ext : 'json';
+      String? persistedAlignment;
+      ({AudiobookHealth health, List<AudioCue> cues})? parsed;
 
-      // file_picker 返回的路径在 cache/ 下，Android 随时会清理。
-      // 必须在 parse 之前就复制到持久目录，否则用户点 IMPORT 时缓存可能已被删。
-      _reportProgress(0.05, t.import_step_persisting);
       final Directory persistDir = await _ensurePersistDir();
-      final String persistedAlignment =
-          await AudiobookStorage.persistFileWithProgress(
-        File(_alignmentPath!),
-        persistDir,
-      );
-      _alignmentPath = persistedAlignment;
 
-      _reportProgress(0.1, t.import_step_parsing);
+      if (!widget.audioOnly && _alignmentPath != null) {
+        final String ext = _alignmentPath!.split('.').last.toLowerCase();
+        const Set<String> cueFormats = {'smil', 'srt', 'lrc', 'vtt', 'ass'};
+        final String format = cueFormats.contains(ext) ? ext : 'json';
 
-      final ({AudiobookHealth health, List<AudioCue> cues}) parsed =
-          await _parseCues(format);
+        _reportProgress(0.05, t.import_step_persisting);
+        persistedAlignment = await AudiobookStorage.persistFileWithProgress(
+          File(_alignmentPath!),
+          persistDir,
+        );
+        _alignmentPath = persistedAlignment;
+
+        _reportProgress(0.1, t.import_step_parsing);
+        parsed = await _parseCues(format);
+      }
 
       _reportProgress(0.5, t.import_step_persisting);
 
@@ -679,29 +689,39 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       }
 
       _reportProgress(0.8, t.import_step_saving);
-      final Audiobook audiobook = Audiobook()
-        ..bookUid = widget.bookUid
-        ..alignmentFormat = format
-        ..alignmentPath = persistedAlignment;
+      final Audiobook audiobook = Audiobook()..bookUid = widget.bookUid;
+
+      if (persistedAlignment != null) {
+        final String ext = persistedAlignment.split('.').last.toLowerCase();
+        const Set<String> cueFormats = {'smil', 'srt', 'lrc', 'vtt', 'ass'};
+        audiobook
+          ..alignmentFormat = cueFormats.contains(ext) ? ext : 'json'
+          ..alignmentPath = persistedAlignment;
+      }
 
       if (persistedPaths.isNotEmpty) {
         audiobook.audioPaths = persistedPaths;
       }
 
-      parsed.health.packInto(audiobook);
+      if (parsed != null) {
+        parsed.health.packInto(audiobook);
+      }
       await widget.repo.saveAudiobook(audiobook);
-      await widget.repo.saveCues(
-        bookUid: widget.bookUid,
-        cues: parsed.cues,
-      );
-      await widget.repo.updateHealthOverlay(
-        bookUid: widget.bookUid,
-        health: parsed.health,
-      );
+      if (parsed != null) {
+        await widget.repo.saveCues(
+          bookUid: widget.bookUid,
+          cues: parsed.cues,
+        );
+        await widget.repo.updateHealthOverlay(
+          bookUid: widget.bookUid,
+          health: parsed.health,
+        );
+      }
       _reportProgress(1, t.import_step_done);
 
       if (mounted) {
-        final String? tail = _summarizeHealth(parsed.health);
+        final String? tail =
+            parsed != null ? _summarizeHealth(parsed.health) : null;
         final String msg = tail == null
             ? t.audiobook_import_success
             : '${t.audiobook_import_success} · $tail';
