@@ -92,6 +92,8 @@ class _DictionaryDialogPageState extends BasePageState {
               const Space.small(),
               buildHarmonicFrequencySwitch(),
               const Space.small(),
+              buildShowExpressionTagsSwitch(),
+              const Space.small(),
               const JidoujishoDivider(),
               buildDebounceDelayField(),
               buildDictionaryFontSizeField(),
@@ -277,6 +279,31 @@ class _DictionaryDialogPageState extends BasePageState {
               onChanged: (value) {
                 appModel.toggleHarmonicFrequency();
                 notifier.value = appModel.harmonicFrequency;
+              },
+            );
+          },
+        )
+      ],
+    );
+  }
+
+  Widget buildShowExpressionTagsSwitch() {
+    ValueNotifier<bool> notifier =
+        ValueNotifier<bool>(appModel.showExpressionTags);
+
+    return Row(
+      children: [
+        Expanded(
+          child: Text(t.show_expression_tags),
+        ),
+        ValueListenableBuilder<bool>(
+          valueListenable: notifier,
+          builder: (_, value, __) {
+            return Switch(
+              value: value,
+              onChanged: (value) {
+                appModel.toggleShowExpressionTags();
+                notifier.value = appModel.showExpressionTags;
               },
             );
           },

@@ -79,7 +79,8 @@ struct FfiImportResult {
   char* title;
   int32_t term_count;
   int32_t meta_count;
-  int32_t tag_count;
+  int32_t freq_count;
+  int32_t pitch_count;
   int32_t media_count;
   char* detected_type;
   char* error;
@@ -186,7 +187,8 @@ static void* import_thread_fn(void* arg) {
     a->result.title = dup(result.title);
     a->result.term_count = static_cast<int32_t>(result.term_count);
     a->result.meta_count = static_cast<int32_t>(result.meta_count);
-    a->result.tag_count = static_cast<int32_t>(result.tag_count);
+    a->result.freq_count = static_cast<int32_t>(result.freq_count);
+    a->result.pitch_count = static_cast<int32_t>(result.pitch_count);
     a->result.media_count = static_cast<int32_t>(result.media_count);
     a->result.detected_type = dup(result.detected_type);
     std::string err;

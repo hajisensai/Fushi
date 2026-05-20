@@ -134,6 +134,7 @@ class DictionaryPopupWebViewState
     final deduplicatePitch = appModel.deduplicatePitchAccents;
     final harmonicFreq = appModel.harmonicFrequency;
     final collapseDict = appModel.collapseDictionaries;
+    final showExprTags = appModel.showExpressionTags;
     final audioSourcesJson = jsonEncode(appModel.enabledAudioSources);
 
     final Color onSurface = theme.colorScheme.onSurface;
@@ -160,6 +161,7 @@ class DictionaryPopupWebViewState
       window.needsAudio = true;
       window.deduplicatePitchAccents = $deduplicatePitch;
       window.harmonicFrequency = $harmonicFreq;
+      window.showExpressionTags = $showExprTags;
       window.collapseDictionaries = $collapseDict;
       window.collapsedDictionaryNames = ${jsonEncode(appModel.dictionaries.where((d) => d.isCollapsed(appModel.targetLanguage)).map((d) => d.name).toList())};
       window.lookupEntries = $entriesJson;

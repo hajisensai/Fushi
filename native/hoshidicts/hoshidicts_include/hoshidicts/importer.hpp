@@ -8,7 +8,8 @@ struct ImportResult {
   std::string title;
   size_t term_count = 0;
   size_t meta_count = 0;
-  size_t tag_count = 0;
+  size_t freq_count = 0;
+  size_t pitch_count = 0;
   size_t media_count = 0;
   std::string detected_type = "term";
   std::vector<std::string> errors;

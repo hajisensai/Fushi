@@ -153,6 +153,20 @@ body {
     line-height: 1;
 }
 
+.expr-tag-row {
+    margin-top: 0;
+}
+
+.expr-tag {
+    font-size: 11px;
+    padding: 2px 4px;
+    margin-right: 2px;
+    background-color: var(--expr-tag-color, rgba(120, 140, 160, 0.22));
+    border-radius: 4px;
+    color: var(--expr-tag-text-color, inherit);
+    -webkit-user-select: text;
+}
+
 .deinflection-tag {
     font-size: 11px;
     padding: 2px 4px;

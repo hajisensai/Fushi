@@ -3656,6 +3656,17 @@ class AppModel with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Whether to show expression and reading as tags above deinflection info.
+  bool get showExpressionTags {
+    return _getPref('show_expression_tags', defaultValue: false);
+  }
+
+  /// Toggle expression/reading tag display.
+  void toggleShowExpressionTags() async {
+    await _setPref('show_expression_tags', !showExpressionTags);
+    notifyListeners();
+  }
+
   /// Whether to auto-collapse dictionaries (only expand the first one).
   bool get collapseDictionaries {
     return _getPref('collapse_dictionaries', defaultValue: true);

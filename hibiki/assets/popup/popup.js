@@ -1208,6 +1208,18 @@ function createPitchGroup(pitchData, reading) {
     return container;
 }
 
+function createExpressionTagsSection(entry) {
+    if (!window.showExpressionTags) return null;
+    const container = el('div', { className: 'entry-tags' });
+    const row = el('div', { className: 'tag-row expr-tag-row' });
+    row.appendChild(el('span', { className: 'expr-tag', textContent: entry.expression }));
+    if (entry.reading && entry.reading !== entry.expression) {
+        row.appendChild(el('span', { className: 'expr-tag', textContent: entry.reading }));
+    }
+    container.appendChild(row);
+    return container;
+}
+
 function createDeinflectionSection(entry) {
     const { deinflectionTrace } = entry;
     if (!deinflectionTrace?.length) return null;
@@ -1611,6 +1623,11 @@ window.renderPopup = function() {
                 entryDiv.appendChild(kanjiRow);
             }
 
+            const exprTags = createExpressionTagsSection(entry);
+            if (exprTags) {
+                entryDiv.appendChild(exprTags);
+            }
+
             const deinflection = createDeinflectionSection(entry);
             if (deinflection) {
                 entryDiv.appendChild(deinflection);
@@ -1640,6 +1657,16 @@ window.renderPopup = function() {
 
         container.innerHTML = '';
         container.appendChild(fragment);
+
+        container.querySelectorAll('.glossary-content ruby').forEach(ruby => {
+            ruby.childNodes.forEach(node => {
+                if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) {
+                    const span = document.createElement('span');
+                    span.textContent = node.textContent;
+                    node.replaceWith(span);
+                }
+            });
+        });
 
         window.flutter_inappwebview.callHandler('popupRendered',
             document.body.scrollHeight);

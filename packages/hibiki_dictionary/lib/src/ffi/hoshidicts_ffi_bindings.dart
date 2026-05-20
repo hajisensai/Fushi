@@ -8,7 +8,8 @@ DynamicLibrary _openNativeLib() {
   if (Platform.isWindows) return DynamicLibrary.open('hoshidicts_ffi.dll');
   if (Platform.isMacOS) return DynamicLibrary.open('libhoshidicts_ffi.dylib');
   if (Platform.isIOS) return DynamicLibrary.process();
-  throw UnsupportedError('hoshidicts: unsupported platform ${Platform.operatingSystem}');
+  throw UnsupportedError(
+      'hoshidicts: unsupported platform ${Platform.operatingSystem}');
 }
 
 // ── C struct mirrors ────────────────────────────────────────────────
@@ -87,7 +88,9 @@ final class FfiImportResult extends Struct {
   @Int32()
   external int metaCount;
   @Int32()
-  external int tagCount;
+  external int freqCount;
+  @Int32()
+  external int pitchCount;
   @Int32()
   external int mediaCount;
   external Pointer<Utf8> detectedType;

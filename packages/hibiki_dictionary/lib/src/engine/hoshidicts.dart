@@ -86,7 +86,8 @@ class HoshiImportResult {
     required this.title,
     required this.termCount,
     required this.metaCount,
-    required this.tagCount,
+    required this.freqCount,
+    required this.pitchCount,
     required this.mediaCount,
     required this.detectedType,
     required this.error,
@@ -95,7 +96,8 @@ class HoshiImportResult {
   final String title;
   final int termCount;
   final int metaCount;
-  final int tagCount;
+  final int freqCount;
+  final int pitchCount;
   final int mediaCount;
   final String detectedType;
   final String error;
@@ -339,7 +341,8 @@ class HoshiDicts {
             title: r.title.toDartString(),
             termCount: r.termCount,
             metaCount: r.metaCount,
-            tagCount: r.tagCount,
+            freqCount: r.freqCount,
+            pitchCount: r.pitchCount,
             mediaCount: r.mediaCount,
             detectedType: r.detectedType.toDartString(),
             error: r.error.toDartString(),
@@ -391,7 +394,8 @@ class HoshiDicts {
       final swNative = Stopwatch()..start();
       final r = _bindings!.lookup(_handle!, tp, maxResults, scanLength);
       swNative.stop();
-      debugPrint('[dict-perf]     native call: ${swNative.elapsedMicroseconds}µs count=${r.count}');
+      debugPrint(
+          '[dict-perf]     native call: ${swNative.elapsedMicroseconds}µs count=${r.count}');
 
       final rPtr = calloc<FfiLookupResults>();
       rPtr.ref = r;
@@ -416,7 +420,8 @@ class HoshiDicts {
           ));
         }
         swConvert.stop();
-        debugPrint('[dict-perf]     ffi→dart convert: ${swConvert.elapsedMicroseconds}µs');
+        debugPrint(
+            '[dict-perf]     ffi→dart convert: ${swConvert.elapsedMicroseconds}µs');
         return results;
       } finally {
         _bindings!.freeLookupResults(rPtr);
