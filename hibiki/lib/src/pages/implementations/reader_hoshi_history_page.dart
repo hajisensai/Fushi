@@ -38,6 +38,11 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
   Future<List<SrtBook>>? _srtBooksFuture;
   final Map<String, Future<_AudiobookInfo>> _audiobookInfoCache = {};
 
+  bool _selectionMode = false;
+  final Set<String> _selectedKeys = {};
+  List<MediaItem> _visibleEpubBooks = const [];
+  List<SrtBook> _visibleSrtBooks = const [];
+
   static double _gridExtent(BuildContext context, BoxConstraints constraints) {
     return readerShelfGridExtentForLayout(
       mediaWidth: MediaQuery.sizeOf(context).width,
@@ -48,6 +53,28 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
   void _refreshSrtBooks() {
     _srtBooksFuture = SrtBookRepository(appModelNoUpdate.database).listAll();
     _audiobookInfoCache.clear();
+  }
+
+  void _toggleSelectionMode() {
+    setState(() {
+      _selectionMode = !_selectionMode;
+      _selectedKeys.clear();
+    });
+  }
+
+  void _exitSelectionMode() {
+    setState(() {
+      _selectionMode = false;
+      _selectedKeys.clear();
+    });
+  }
+
+  void _toggleSelection(String key) {
+    setState(() {
+      if (!_selectedKeys.remove(key)) {
+        _selectedKeys.add(key);
+      }
+    });
   }
 
   @override
@@ -95,17 +122,19 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
               loading: () => const SizedBox.shrink(),
             ),
           ),
+          if (_selectionMode) _buildBatchActionBar(),
         ],
       ),
     );
   }
 
   Widget _buildTagBar(List<BookTagRow> allTags) {
-    if (allTags.isEmpty) return const SizedBox.shrink();
     return _TagBarContent(
       tags: allTags,
       onToggleFilter: _toggleFilter,
       onReorder: _reorderTags,
+      selectionMode: _selectionMode,
+      onToggleSelectionMode: _toggleSelectionMode,
     );
   }
 
@@ -278,6 +307,8 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     } else {
       srtBooks = allSrtBooks;
     }
+    _visibleEpubBooks = epubBooks;
+    _visibleSrtBooks = srtBooks;
     if (epubBooks.isEmpty && srtBooks.isEmpty) {
       return hasActiveFilter
           ? Center(
@@ -401,10 +432,12 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
   }
 
   Widget _buildSrtCard(SrtBook book) {
+    final String selKey = 'srt_${book.uid}';
     final tagWidget =
         book.id != null ? _buildSrtBookTagLabels(book.id!) : null;
     final card = _bookCardShell(
       cardKey: ValueKey<String>('srt_entry_${book.ttuBookId}'),
+      selectionKey: selKey,
       onTap: () => _openSrtBook(book),
       onLongPress: () => _showSrtBookDialog(book),
       child: Stack(
@@ -430,7 +463,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
         ],
       ),
     );
-    if (book.id == null) return card;
+    if (book.id == null || _selectionMode) return card;
     return _BookDragTarget(
       bookId: book.id!,
       onTagDropped: (tag) => _addTagToSrtBook(book.id!, tag),
@@ -469,7 +502,10 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     required VoidCallback onLongPress,
     required Widget child,
     Key? cardKey,
+    String? selectionKey,
   }) {
+    final bool selected =
+        selectionKey != null && _selectedKeys.contains(selectionKey);
     return Padding(
       key: cardKey,
       padding: Spacing.of(context).insets.all.normal,
@@ -478,11 +514,59 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
         borderRadius: BorderRadius.circular(12),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
-          onTap: onTap,
-          onLongPress: onLongPress,
+          onTap: _selectionMode && selectionKey != null
+              ? () => _toggleSelection(selectionKey)
+              : onTap,
+          onLongPress: _selectionMode ? null : onLongPress,
           child: AspectRatio(
             aspectRatio: mediaSource.aspectRatio,
-            child: child,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                child,
+                if (_selectionMode && selectionKey != null)
+                  Positioned(
+                    top: 4,
+                    left: 4,
+                    child: IgnorePointer(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? theme.colorScheme.primary
+                              : theme.colorScheme.surface.withValues(alpha: 0.7),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: selected
+                                ? theme.colorScheme.primary
+                                : theme.colorScheme.outline,
+                            width: 1.5,
+                          ),
+                        ),
+                        padding: const EdgeInsets.all(2),
+                        child: Icon(
+                          Icons.check,
+                          size: 14,
+                          color: selected
+                              ? theme.colorScheme.onPrimary
+                              : Colors.transparent,
+                        ),
+                      ),
+                    ),
+                  ),
+                if (selected)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color:
+                              theme.colorScheme.primary.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -647,6 +731,139 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     if (mounted) setState(() {});
   }
 
+  void _selectAll() {
+    setState(() {
+      for (final item in _visibleEpubBooks) {
+        _selectedKeys.add(item.mediaIdentifier);
+      }
+      for (final book in _visibleSrtBooks) {
+        _selectedKeys.add('srt_${book.uid}');
+      }
+    });
+  }
+
+  void _deselectAll() {
+    setState(() => _selectedKeys.clear());
+  }
+
+  Widget _buildBatchActionBar() {
+    return Material(
+      elevation: 6,
+      color: theme.colorScheme.surfaceContainer,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            children: [
+              Text(
+                t.batch_selected_count(n: _selectedKeys.length),
+                style: textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(width: 8),
+              TextButton(
+                onPressed: _selectAll,
+                child: Text(t.batch_select_all),
+              ),
+              TextButton(
+                onPressed: _deselectAll,
+                child: Text(t.batch_deselect_all),
+              ),
+              const Spacer(),
+              IconButton(
+                onPressed:
+                    _selectedKeys.isEmpty ? null : _batchShowTagPicker,
+                icon: const Icon(Icons.sell_outlined),
+                tooltip: t.tag_label,
+              ),
+              const SizedBox(width: 4),
+              IconButton(
+                onPressed:
+                    _selectedKeys.isEmpty ? null : _batchDeleteConfirm,
+                icon: const Icon(Icons.delete_outline),
+                tooltip: t.dialog_delete,
+                color: theme.colorScheme.error,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _batchDeleteConfirm() async {
+    final int count = _selectedKeys.length;
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => ReaderHistoryDeleteDialog(
+        title: t.dialog_delete,
+        message: t.batch_delete_confirm(n: count),
+        onConfirm: () => Navigator.pop(ctx, true),
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    int deleted = 0;
+    final Set<String> toDelete = Set.of(_selectedKeys);
+    for (final key in toDelete) {
+      if (key.startsWith('srt_')) {
+        final String uid = key.substring(4);
+        final SrtBookRepository repo = SrtBookRepository(appModel.database);
+        final SrtBook? book = await repo.findByUid(uid);
+        if (book != null) {
+          if (book.ttuBookId > 0) {
+            await ReaderHoshiSource.instance.deleteBook(
+              db: appModel.database,
+              bookId: book.ttuBookId,
+            );
+          }
+          await repo.delete(uid);
+          deleted++;
+        }
+      } else {
+        final int? bookId = _parseBookId(key);
+        if (bookId != null) {
+          final bool ok = await ReaderHoshiSource.instance.deleteBook(
+            db: appModel.database,
+            bookId: bookId,
+          );
+          if (ok) deleted++;
+        }
+      }
+    }
+    if (!mounted) return;
+    _refreshSrtBooks();
+    ref.invalidate(hoshiBooksProvider(appModel.targetLanguage));
+    ref.invalidate(bookTagMapProvider);
+    ref.invalidate(srtBookTagMapProvider);
+    _exitSelectionMode();
+    HibikiToast.show(msg: t.batch_delete_success(n: deleted));
+  }
+
+  Future<void> _batchShowTagPicker() async {
+    final allTags = ref.read(allTagsProvider).valueOrNull;
+    if (allTags == null || allTags.isEmpty) {
+      HibikiToast.show(msg: t.tag_no_tags_hint);
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (_) => _BatchTagPickerDialog(
+        allTags: allTags,
+        selectedKeys: _selectedKeys,
+        database: appModel.database,
+        parseBookId: _parseBookId,
+      ),
+    );
+    if (!mounted) return;
+    ref.invalidate(bookTagMapProvider);
+    ref.invalidate(srtBookTagMapProvider);
+    ref.invalidate(filteredBookIdsProvider);
+    ref.invalidate(filteredSrtBookIdsProvider);
+  }
+
   Future<void> _confirmDeleteSrtBook(SrtBook book) async {
     final bool? confirmed = await showDialog<bool>(
       context: context,
@@ -766,6 +983,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     final int? bookId = _parseBookId(item.mediaIdentifier);
     final card = _bookCardShell(
       cardKey: ValueKey<String>('book_entry_${item.mediaIdentifier}'),
+      selectionKey: item.mediaIdentifier,
       onTap: () async {
         final MediaSource source = item.getMediaSource(appModel: appModel);
         await appModel.openMedia(
@@ -790,6 +1008,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
       child: buildMediaItemContent(item),
     );
     if (bookId == null) return card;
+    if (_selectionMode) return card;
     return _BookDragTarget(
       bookId: bookId,
       onTagDropped: (tag) => _addTagToBook(bookId, tag),
@@ -1016,10 +1235,14 @@ class _TagBarContent extends ConsumerStatefulWidget {
     required this.tags,
     required this.onToggleFilter,
     required this.onReorder,
+    required this.selectionMode,
+    required this.onToggleSelectionMode,
   });
   final List<BookTagRow> tags;
   final void Function(int tagId) onToggleFilter;
   final Future<void> Function(int oldIndex, int newIndex) onReorder;
+  final bool selectionMode;
+  final VoidCallback onToggleSelectionMode;
 
   @override
   ConsumerState<_TagBarContent> createState() => _TagBarContentState();
@@ -1030,6 +1253,9 @@ class _TagBarContentState extends ConsumerState<_TagBarContent> {
   Widget build(BuildContext context) {
     final selectedIds = ref.watch(selectedTagIdsProvider);
     final theme = Theme.of(context);
+    final t = Translations.of(context);
+
+    final int trailingCount = widget.tags.isEmpty ? 1 : 2;
 
     return Container(
       height: 44,
@@ -1043,10 +1269,28 @@ class _TagBarContentState extends ConsumerState<_TagBarContent> {
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        itemCount: widget.tags.length + 1,
+        itemCount: widget.tags.length + trailingCount,
         separatorBuilder: (_, __) => const SizedBox(width: 6),
         itemBuilder: (context, index) {
-          if (index == widget.tags.length) {
+          if (index == widget.tags.length + trailingCount - 1) {
+            return SizedBox(
+              width: 32,
+              height: 32,
+              child: IconButton(
+                padding: EdgeInsets.zero,
+                icon: Icon(
+                  widget.selectionMode ? Icons.close : Icons.checklist,
+                  size: 18,
+                  color: widget.selectionMode
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.onSurfaceVariant,
+                ),
+                tooltip: widget.selectionMode ? null : t.batch_select,
+                onPressed: widget.onToggleSelectionMode,
+              ),
+            );
+          }
+          if (index == widget.tags.length && widget.tags.isNotEmpty) {
             return SizedBox(
               width: 32,
               height: 32,
@@ -1069,6 +1313,16 @@ class _TagBarContentState extends ConsumerState<_TagBarContent> {
           }
           final tag = widget.tags[index];
           final isSelected = selectedIds.contains(tag.id);
+          if (widget.selectionMode) {
+            return GestureDetector(
+              onTap: () => widget.onToggleFilter(tag.id),
+              child: _TagChip(
+                tag: tag,
+                isSelected: isSelected,
+                isDimmed: false,
+              ),
+            );
+          }
           return LongPressDraggable<BookTagRow>(
             data: tag,
             feedback: Material(
@@ -1443,6 +1697,157 @@ class BookProfileDialogContent extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _BatchTagPickerDialog extends StatefulWidget {
+  const _BatchTagPickerDialog({
+    required this.allTags,
+    required this.selectedKeys,
+    required this.database,
+    required this.parseBookId,
+  });
+
+  final List<BookTagRow> allTags;
+  final Set<String> selectedKeys;
+  final HibikiDatabase database;
+  final int? Function(String) parseBookId;
+
+  @override
+  State<_BatchTagPickerDialog> createState() => _BatchTagPickerDialogState();
+}
+
+class _BatchTagPickerDialogState extends State<_BatchTagPickerDialog> {
+  final Set<int> _addTagIds = {};
+  final Set<int> _removeTagIds = {};
+
+  Future<void> _apply() async {
+    final tr = Translations.of(context);
+    final db = widget.database;
+
+    final List<int> epubBookIds = [];
+    final List<String> srtUids = [];
+    for (final key in widget.selectedKeys) {
+      if (key.startsWith('srt_')) {
+        srtUids.add(key.substring(4));
+      } else {
+        final int? id = widget.parseBookId(key);
+        if (id != null) epubBookIds.add(id);
+      }
+    }
+
+    final List<int> srtBookIds = await _resolveSrtBookIds(srtUids);
+
+    for (final tagId in _addTagIds) {
+      for (final bookId in epubBookIds) {
+        await db.addTagToBook(bookId, tagId);
+      }
+      for (final srtId in srtBookIds) {
+        await db.addTagToSrtBook(srtId, tagId);
+      }
+    }
+    for (final tagId in _removeTagIds) {
+      for (final bookId in epubBookIds) {
+        await db.removeTagFromBook(bookId, tagId);
+      }
+      for (final srtId in srtBookIds) {
+        await db.removeTagFromSrtBook(srtId, tagId);
+      }
+    }
+
+    if (!mounted) return;
+    for (final tagId in _addTagIds) {
+      final tag = widget.allTags.firstWhere((row) => row.id == tagId);
+      HibikiToast.show(
+        msg: tr.batch_tag_added(
+          name: tag.name,
+          n: widget.selectedKeys.length,
+        ),
+      );
+    }
+    for (final tagId in _removeTagIds) {
+      final tag = widget.allTags.firstWhere((row) => row.id == tagId);
+      HibikiToast.show(
+        msg: tr.batch_tag_removed(
+          name: tag.name,
+          n: widget.selectedKeys.length,
+        ),
+      );
+    }
+    Navigator.pop(context);
+  }
+
+  Future<List<int>> _resolveSrtBookIds(List<String> uids) async {
+    final List<int> ids = [];
+    final repo = SrtBookRepository(widget.database);
+    for (final uid in uids) {
+      final book = await repo.findByUid(uid);
+      if (book?.id != null) ids.add(book!.id!);
+    }
+    return ids;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Translations.of(context);
+    final theme = Theme.of(context);
+    return AlertDialog(
+      titlePadding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      contentPadding: const EdgeInsets.fromLTRB(0, 8, 0, 0),
+      actionsPadding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
+      title: Text(
+        t.batch_tag_title,
+        style: theme.textTheme.titleMedium,
+      ),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: ListView.builder(
+          shrinkWrap: true,
+          itemCount: widget.allTags.length,
+          itemBuilder: (_, i) {
+            final tag = widget.allTags[i];
+            final bool adding = _addTagIds.contains(tag.id);
+            final bool removing = _removeTagIds.contains(tag.id);
+            final bool? value =
+                adding ? true : (removing ? false : null);
+            return CheckboxListTile(
+              tristate: true,
+              value: value,
+              onChanged: (v) {
+                setState(() {
+                  _addTagIds.remove(tag.id);
+                  _removeTagIds.remove(tag.id);
+                  if (v == true) {
+                    _addTagIds.add(tag.id);
+                  } else if (v == false) {
+                    _removeTagIds.add(tag.id);
+                  }
+                });
+              },
+              secondary: CircleAvatar(
+                radius: 12,
+                backgroundColor: Color(tag.colorValue),
+              ),
+              title: Text(tag.name),
+              dense: true,
+              visualDensity: VisualDensity.compact,
+            );
+          },
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(t.dialog_cancel),
+        ),
+        FilledButton(
+          onPressed: _addTagIds.isEmpty && _removeTagIds.isEmpty
+              ? null
+              : _apply,
+          child: Text(t.batch_tag_apply),
+        ),
+      ],
     );
   }
 }
