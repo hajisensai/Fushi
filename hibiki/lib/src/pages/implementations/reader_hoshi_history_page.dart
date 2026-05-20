@@ -161,35 +161,85 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     }
   }
 
-  List<Widget> _buildTagLabels(int bookId) {
+  Widget? _buildTagLabels(int bookId) {
     final tagMap = ref.watch(bookTagMapProvider).valueOrNull;
-    if (tagMap == null) return const [];
+    if (tagMap == null) return null;
     final tags = tagMap[bookId];
-    if (tags == null || tags.isEmpty) return const [];
-    final display = tags.take(3).toList();
-    return display.map((tag) {
-      return Container(
-        margin: const EdgeInsets.only(right: 3, bottom: 2),
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-        decoration: BoxDecoration(
-          color: Color(tag.colorValue).withValues(alpha: 0.85),
-          borderRadius: BorderRadius.circular(4),
+    if (tags == null || tags.isEmpty) return null;
+    return _adaptiveTagColumn(tags);
+  }
+
+  Widget _tagChip(BookTagRow tag) {
+    return Container(
+      margin: const EdgeInsets.only(right: 3, bottom: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+      decoration: BoxDecoration(
+        color: Color(tag.colorValue).withValues(alpha: 0.85),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        tag.name,
+        style: TextStyle(
+          fontSize: 9,
+          color:
+              ThemeData.estimateBrightnessForColor(Color(tag.colorValue)) ==
+                      Brightness.dark
+                  ? Colors.white
+                  : Colors.black,
+          fontWeight: FontWeight.w600,
         ),
-        child: Text(
-          tag.name,
-          style: TextStyle(
-            fontSize: 9,
-            color:
-                ThemeData.estimateBrightnessForColor(Color(tag.colorValue)) ==
-                        Brightness.dark
-                    ? Colors.white
-                    : Colors.black,
-            fontWeight: FontWeight.w600,
-          ),
-          overflow: TextOverflow.ellipsis,
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+  }
+
+  Widget _overflowChip(int count) {
+    return Container(
+      margin: const EdgeInsets.only(right: 3, bottom: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.85),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        '+$count',
+        style: TextStyle(
+          fontSize: 9,
+          color: theme.colorScheme.onSurfaceVariant,
+          fontWeight: FontWeight.w600,
         ),
-      );
-    }).toList();
+      ),
+    );
+  }
+
+  Widget _adaptiveTagColumn(List<BookTagRow> tags) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const double chipHeight = 15.0;
+        final double usable = constraints.maxHeight * 0.55;
+        final int maxSlots =
+            (usable / chipHeight).floor().clamp(1, tags.length);
+
+        if (maxSlots >= tags.length) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [for (final tag in tags) _tagChip(tag)],
+          );
+        }
+
+        final int visibleCount = maxSlots <= 1 ? 1 : maxSlots - 1;
+        final int overflow = tags.length - visibleCount;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final tag in tags.take(visibleCount)) _tagChip(tag),
+            if (overflow > 0 && maxSlots > 1) _overflowChip(overflow),
+          ],
+        );
+      },
+    );
   }
 
   Widget buildBody(List<MediaItem> books) {
@@ -202,7 +252,8 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
-  Widget _buildBodyWithSrtBooks(List<MediaItem> books, List<SrtBook> allSrtBooks) {
+  Widget _buildBodyWithSrtBooks(
+      List<MediaItem> books, List<SrtBook> allSrtBooks) {
     final Set<int> srtTtuIds = {
       for (final b in allSrtBooks)
         if (b.ttuBookId > 0) b.ttuBookId,
@@ -341,40 +392,17 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
-  List<Widget> _buildSrtBookTagLabels(int srtBookId) {
+  Widget? _buildSrtBookTagLabels(int srtBookId) {
     final tagMap = ref.watch(srtBookTagMapProvider).valueOrNull;
-    if (tagMap == null) return const [];
+    if (tagMap == null) return null;
     final tags = tagMap[srtBookId];
-    if (tags == null || tags.isEmpty) return const [];
-    final display = tags.take(3).toList();
-    return display.map((tag) {
-      return Container(
-        margin: const EdgeInsets.only(right: 3, bottom: 2),
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-        decoration: BoxDecoration(
-          color: Color(tag.colorValue).withValues(alpha: 0.85),
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: Text(
-          tag.name,
-          style: TextStyle(
-            fontSize: 9,
-            color:
-                ThemeData.estimateBrightnessForColor(Color(tag.colorValue)) ==
-                        Brightness.dark
-                    ? Colors.white
-                    : Colors.black,
-            fontWeight: FontWeight.w600,
-          ),
-          overflow: TextOverflow.ellipsis,
-        ),
-      );
-    }).toList();
+    if (tags == null || tags.isEmpty) return null;
+    return _adaptiveTagColumn(tags);
   }
 
   Widget _buildSrtCard(SrtBook book) {
-    final tagLabels =
-        book.id != null ? _buildSrtBookTagLabels(book.id!) : const <Widget>[];
+    final tagWidget =
+        book.id != null ? _buildSrtBookTagLabels(book.id!) : null;
     final card = _bookCardShell(
       cardKey: ValueKey<String>('srt_entry_${book.ttuBookId}'),
       onTap: () => _openSrtBook(book),
@@ -393,14 +421,11 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
               foreground: theme.colorScheme.onSecondaryContainer,
             ),
           ),
-          if (tagLabels.isNotEmpty)
+          if (tagWidget != null)
             Positioned(
-              top: 4,
-              left: 4,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: tagLabels,
-              ),
+              top: 6,
+              left: 6,
+              child: tagWidget,
             ),
         ],
       ),
@@ -521,7 +546,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
       mediaSourceIdentifier: ReaderHoshiSource.instance.uniqueKey,
       position: 0,
       duration: 1,
-      canDelete: true,
+      canDelete: false,
       canEdit: true,
       imageUrl:
           book.coverPath != null ? Uri.file(book.coverPath!).toString() : null,
@@ -544,44 +569,48 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
-  List<Widget> _srtExtraActions(BuildContext dialogContext, SrtBook book) {
+  List<DialogAction> _srtExtraActions(
+      BuildContext dialogContext, SrtBook book) {
     final int bookId = book.ttuBookId;
     final MediaItem item = _srtBookMediaItem(book);
     return [
-      _destructiveConfirmButton(
+      DialogDangerAction(
         label: t.dialog_delete,
         onPressed: () async {
           Navigator.pop(dialogContext);
           await _confirmDeleteSrtBook(book);
         },
       ),
-      TextButton(
+      DialogQuickAction(
+        label: t.srt_import_pick_cover,
+        icon: Icons.image_outlined,
         onPressed: () async {
           Navigator.pop(dialogContext);
           await _pickSrtBookCover(book);
         },
-        child: Text(t.srt_import_pick_cover),
       ),
       if (book.id != null)
-        TextButton(
+        DialogQuickAction(
+          label: t.tag_label,
+          icon: Icons.sell_outlined,
           onPressed: () => _openSrtBookTagPicker(book.id!),
-          child: Text(t.tag_label),
         ),
       if (bookId > 0) ...[
-        TextButton(
-          onPressed: () => _openAudiobookImport(item, bookId),
-          child: Text(t.audiobook_import),
+        DialogQuickAction(
+          label: t.audio_import,
+          icon: Icons.headphones_outlined,
+          onPressed: () => _openAudioImport(item, bookId),
         ),
-        TextButton(
+        DialogListAction(
+          label: t.profile_book_profile,
           onPressed: () => _openBookProfilePicker(item, bookId),
-          child: Text(t.profile_book_profile),
         ),
-        TextButton(
+        DialogListAction(
+          label: t.book_css_editor_edit_css,
           onPressed: () {
             Navigator.pop(dialogContext);
             _openCssEditor(bookId);
           },
-          child: Text(t.book_css_editor_edit_css),
         ),
       ],
     ];
@@ -664,8 +693,8 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
             snapshot.data?.healthKind ?? HealthKind.notApplicable;
 
         final int? bookId = _parseBookId(item.mediaIdentifier);
-        final tagLabels =
-            bookId != null ? _buildTagLabels(bookId) : const <Widget>[];
+        final tagWidget =
+            bookId != null ? _buildTagLabels(bookId) : null;
 
         return Stack(
           fit: StackFit.expand,
@@ -700,14 +729,11 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
                       foreground: theme.colorScheme.onSurfaceVariant,
                     ),
             ),
-            if (tagLabels.isNotEmpty)
+            if (tagWidget != null)
               Positioned(
-                top: 4,
-                left: 4,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: tagLabels,
-                ),
+                top: 6,
+                left: 6,
+                child: tagWidget,
               ),
           ],
         );
@@ -813,49 +839,38 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
   }
 
   @override
-  List<Widget> extraActions(MediaItem item) {
+  List<DialogAction> extraActions(MediaItem item) {
     final int? bookId = _parseBookId(item.mediaIdentifier);
     if (bookId == null) return const [];
-    return <Widget>[
-      _destructiveConfirmButton(
+    return <DialogAction>[
+      DialogDangerAction(
         label: t.dialog_delete,
         onPressed: () => _confirmDeleteEpub(item, bookId),
       ),
-      TextButton(
+      DialogQuickAction(
+        label: t.view_illustrations,
+        icon: Icons.image_outlined,
         onPressed: () => _openIllustrations(item, bookId),
-        child: Text(t.view_illustrations),
       ),
-      TextButton(
+      DialogQuickAction(
+        label: t.audiobook_import,
+        icon: Icons.headphones_outlined,
         onPressed: () => _openAudiobookImport(item, bookId),
-        child: Text(t.audiobook_import),
       ),
-      TextButton(
+      DialogQuickAction(
+        label: t.tag_label,
+        icon: Icons.sell_outlined,
         onPressed: () => _openTagPicker(bookId),
-        child: Text(t.tag_label),
       ),
-      TextButton(
+      DialogListAction(
+        label: t.profile_book_profile,
         onPressed: () => _openBookProfilePicker(item, bookId),
-        child: Text(t.profile_book_profile),
       ),
-      TextButton(
+      DialogListAction(
+        label: t.book_css_editor_edit_css,
         onPressed: () => _openCssEditor(bookId),
-        child: Text(t.book_css_editor_edit_css),
       ),
     ];
-  }
-
-  Widget _destructiveConfirmButton({
-    required String label,
-    required VoidCallback onPressed,
-  }) {
-    return FilledButton(
-      onPressed: onPressed,
-      style: FilledButton.styleFrom(
-        backgroundColor: theme.colorScheme.errorContainer,
-        foregroundColor: theme.colorScheme.onErrorContainer,
-      ),
-      child: Text(label),
-    );
   }
 
   Future<void> _confirmDeleteEpub(MediaItem item, int bookId) async {
@@ -898,6 +913,22 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
         ),
       ),
     );
+  }
+
+  Future<void> _openAudioImport(MediaItem item, int bookId) async {
+    Navigator.pop(context);
+    await showDialog<bool>(
+      context: context,
+      builder: (_) => AudiobookImportDialog(
+        bookUid: item.uniqueKey,
+        repo: AudiobookRepository(appModel.database),
+        ttuBookId: bookId,
+        audioOnly: true,
+      ),
+    );
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   Future<void> _openAudiobookImport(MediaItem item, int bookId) async {
@@ -1274,16 +1305,35 @@ class _BookProfileDialog extends StatefulWidget {
 class _BookProfileDialogState extends State<_BookProfileDialog> {
   int? _selectedProfileId;
   bool _loading = true;
+  late List<ProfileRow> _profiles;
+  late String _activeProfileName;
 
   @override
   void initState() {
     super.initState();
+    _profiles = widget.profiles;
+    _activeProfileName = widget.activeProfileName;
     _loadCurrent();
   }
 
   Future<void> _loadCurrent() async {
     final int? current =
         await widget.profileRepo.getBookProfileId(widget.bookUid);
+
+    if (_profiles.isEmpty || _activeProfileName.isEmpty) {
+      _profiles = await widget.profileRepo.getAllProfiles();
+      final int activeId = await widget.profileRepo.getActiveProfileId();
+      for (final p in _profiles) {
+        if (p.id == activeId) {
+          _activeProfileName = p.name;
+          break;
+        }
+      }
+      if (_activeProfileName.isEmpty && _profiles.isNotEmpty) {
+        _activeProfileName = _profiles.first.name;
+      }
+    }
+
     if (mounted) {
       setState(() {
         _selectedProfileId = current;
@@ -1321,8 +1371,8 @@ class _BookProfileDialogState extends State<_BookProfileDialog> {
               child: Center(child: CircularProgressIndicator()),
             )
           : BookProfileDialogContent(
-              activeProfileName: widget.activeProfileName,
-              profiles: widget.profiles,
+              activeProfileName: _activeProfileName,
+              profiles: _profiles,
               selectedProfileId: _selectedProfileId,
               onChanged: _onChanged,
             ),

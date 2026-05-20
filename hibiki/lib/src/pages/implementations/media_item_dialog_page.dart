@@ -4,9 +4,43 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 
-/// The content of the dialog used upon long-pressing a [MediaItem].
+// ---------------------------------------------------------------------------
+// Action data model
+// ---------------------------------------------------------------------------
+
+sealed class DialogAction {
+  const DialogAction({required this.label, required this.onPressed});
+  final String label;
+  final VoidCallback onPressed;
+}
+
+final class DialogQuickAction extends DialogAction {
+  const DialogQuickAction({
+    required super.label,
+    required super.onPressed,
+    required this.icon,
+  });
+  final IconData icon;
+}
+
+final class DialogListAction extends DialogAction {
+  const DialogListAction({required super.label, required super.onPressed});
+}
+
+final class DialogDangerAction extends DialogAction {
+  const DialogDangerAction({
+    required super.label,
+    required super.onPressed,
+    this.muted = false,
+  });
+  final bool muted;
+}
+
+// ---------------------------------------------------------------------------
+// Dialog page
+// ---------------------------------------------------------------------------
+
 class MediaItemDialogPage extends BasePage {
-  /// Create an instance of this page.
   const MediaItemDialogPage({
     required this.item,
     required this.isHistory,
@@ -14,15 +48,9 @@ class MediaItemDialogPage extends BasePage {
     super.key,
   });
 
-  /// The [MediaItem] pertaining to the page.
   final MediaItem item;
-
-  /// Whether or not the media items are in history.
   final bool isHistory;
-
-  /// Extra actions to include in the dialog page if supplied by a
-  /// media source.
-  final List<Widget>? Function(MediaItem)? extraActions;
+  final List<DialogAction> Function(MediaItem)? extraActions;
 
   @override
   BasePageState createState() => _MediaItemDialogPageState();
@@ -31,99 +59,40 @@ class MediaItemDialogPage extends BasePage {
 class _MediaItemDialogPageState extends BasePageState<MediaItemDialogPage> {
   MediaSource get mediaSource => widget.item.getMediaSource(appModel: appModel);
 
-  @override
-  Widget build(BuildContext context) {
-    return MediaItemDialogFrame(
-      title: buildTitle(),
-      content: buildContent(),
-      actions: actions,
-    );
-  }
+  // -- action categorisation ------------------------------------------------
 
-  Widget buildTitle() {
-    return SelectableText(
-      mediaSource.getDisplayTitleFromMediaItem(widget.item),
-      selectionControls: selectionControls,
-    );
-  }
+  List<DialogAction> get _externalActions =>
+      widget.extraActions?.call(widget.item) ?? const [];
 
-  Widget buildContent() {
-    return SingleChildScrollView(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          FadeInImage(
-            placeholder: MemoryImage(kTransparentImage),
-            imageErrorBuilder: (_, __, ___) {
-              if (widget.item.extraUrl != null) {
-                return FadeInImage(
-                  placeholder: MemoryImage(kTransparentImage),
-                  imageErrorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                  image: mediaSource.getDisplayThumbnailFromMediaItem(
-                    appModel: appModel,
-                    item: widget.item,
-                    fallbackUrl: widget.item.extraUrl,
-                  ),
-                  fit: BoxFit.contain,
-                );
-              } else {
-                return const SizedBox.shrink();
-              }
-            },
-            image: mediaSource.getDisplayThumbnailFromMediaItem(
-              appModel: appModel,
-              item: widget.item,
-            ),
-            fit: BoxFit.contain,
-          ),
-        ],
-      ),
-    );
-  }
+  List<DialogQuickAction> get _quickActions =>
+      _externalActions.whereType<DialogQuickAction>().toList();
 
-  List<Widget> get actions => [
-        if (widget.item.canDelete && widget.isHistory) buildClearButton(),
-        if (widget.extraActions != null) ...?widget.extraActions!(widget.item),
-        if (widget.item.canEdit && widget.isHistory) buildEditButton(),
-        buildLaunchButton(),
+  List<DialogListAction> get _listActions => [
+        ..._externalActions.whereType<DialogListAction>(),
+        if (widget.item.canEdit && widget.isHistory)
+          DialogListAction(label: t.dialog_edit_info, onPressed: _executeEdit),
       ];
 
-  String get launchLabel {
-    return t.dialog_read;
-  }
+  List<DialogDangerAction> get _dangerActions => [
+        ..._externalActions.whereType<DialogDangerAction>(),
+        if (widget.item.canDelete && widget.isHistory)
+          DialogDangerAction(
+            label: t.dialog_clear,
+            onPressed: _executeClear,
+            muted: true,
+          ),
+      ];
 
-  Widget buildClearButton() {
-    // Clear 是"擦掉进度"，不动书本身，走次操作 TextButton。
-    return TextButton(
-      onPressed: executeClear,
-      child: Text(t.dialog_clear),
-    );
-  }
+  // -- callbacks ------------------------------------------------------------
 
-  /// 主操作（打开/阅读）走 FilledButton，视觉上与 Edit / Clear / 扩展按钮
-  /// （如"删除"）拉开层级，让用户一眼看到"读"在哪。
-  Widget buildLaunchButton() {
-    return FilledButton(
-      onPressed: executeLaunch,
-      child: Text(launchLabel),
-    );
-  }
-
-  Widget buildEditButton() {
-    return TextButton(
-      onPressed: executeEdit,
-      child: Text(t.dialog_edit),
-    );
-  }
-
-  void executeEdit() async {
+  void _executeEdit() async {
     await showAppDialog(
       context: context,
       builder: (context) => MediaItemEditDialogPage(item: widget.item),
     );
   }
 
-  void executeLaunch() async {
+  void _executeLaunch() async {
     Navigator.pop(context);
     await appModel.openMedia(
       mediaSource: mediaSource,
@@ -132,32 +101,243 @@ class _MediaItemDialogPageState extends BasePageState<MediaItemDialogPage> {
     );
   }
 
-  void executeClear() async {
+  void _executeClear() async {
     final navigator = Navigator.of(context);
     await appModel.deleteMediaItem(widget.item);
     navigator.pop();
   }
+
+  // -- build ----------------------------------------------------------------
+
+  bool get _hasCover =>
+      mediaSource.getOverrideThumbnailFromMediaItem(
+            appModel: appModel,
+            item: widget.item,
+          ) !=
+          null ||
+      (widget.item.imageUrl?.isNotEmpty ?? false) ||
+      (widget.item.base64Image?.isNotEmpty ?? false) ||
+      (widget.item.extraUrl?.isNotEmpty ?? false);
+
+  @override
+  Widget build(BuildContext context) {
+    final String displayTitle =
+        mediaSource.getDisplayTitleFromMediaItem(widget.item);
+    final String? author = widget.item.author;
+    final bool hasAuthor = author != null && author.isNotEmpty;
+
+    return MediaItemDialogFrame(
+      cover: _hasCover ? _buildCover() : null,
+      title: displayTitle,
+      author: hasAuthor ? author : null,
+      launchLabel: t.dialog_read,
+      onLaunch: _executeLaunch,
+      quickActions: _quickActions,
+      listActions: _listActions,
+      dangerActions: _dangerActions,
+    );
+  }
+
+  Widget _buildCover() {
+    return FadeInImage(
+      placeholder: MemoryImage(kTransparentImage),
+      imageErrorBuilder: (_, __, ___) {
+        if (widget.item.extraUrl != null) {
+          return FadeInImage(
+            placeholder: MemoryImage(kTransparentImage),
+            imageErrorBuilder: (_, __, ___) => const SizedBox.shrink(),
+            image: mediaSource.getDisplayThumbnailFromMediaItem(
+              appModel: appModel,
+              item: widget.item,
+              fallbackUrl: widget.item.extraUrl,
+            ),
+            fit: BoxFit.contain,
+          );
+        }
+        return const SizedBox.shrink();
+      },
+      image: mediaSource.getDisplayThumbnailFromMediaItem(
+        appModel: appModel,
+        item: widget.item,
+      ),
+      fit: BoxFit.contain,
+    );
+  }
 }
+
+// ---------------------------------------------------------------------------
+// Dialog frame (pure layout, testable in isolation)
+// ---------------------------------------------------------------------------
 
 @visibleForTesting
 class MediaItemDialogFrame extends StatelessWidget {
   const MediaItemDialogFrame({
     required this.title,
-    required this.content,
-    required this.actions,
+    required this.launchLabel,
+    required this.onLaunch,
+    this.cover,
+    this.author,
+    this.quickActions = const [],
+    this.listActions = const [],
+    this.dangerActions = const [],
     super.key,
   });
 
-  final Widget title;
-  final Widget content;
-  final List<Widget> actions;
+  final Widget? cover;
+  final String title;
+  final String? author;
+  final String launchLabel;
+  final VoidCallback onLaunch;
+  final List<DialogQuickAction> quickActions;
+  final List<DialogListAction> listActions;
+  final List<DialogDangerAction> dangerActions;
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: title,
-      content: content,
-      actions: actions,
+    final screenHeight = MediaQuery.sizeOf(context).height;
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+
+    return Dialog(
+      clipBehavior: Clip.antiAlias,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 420,
+          maxHeight: screenHeight * 0.82,
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // -- Cover --
+              if (cover != null)
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: screenHeight * 0.28,
+                  ),
+                  child: Container(
+                    color: cs.surfaceContainerHighest,
+                    child: cover,
+                  ),
+                ),
+
+              // -- Text + actions area --
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Title
+                    Text(
+                      title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: tt.titleMedium,
+                    ),
+
+                    // Author
+                    if (author != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        author!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: tt.bodySmall?.copyWith(
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+
+                    const SizedBox(height: 16),
+
+                    // Primary action (Read)
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: onLaunch,
+                        child: Text(launchLabel),
+                      ),
+                    ),
+
+                    // Quick actions
+                    if (quickActions.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      _buildQuickActions(),
+                    ],
+
+                    // List actions
+                    if (listActions.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      const Divider(),
+                      for (final action in listActions)
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          dense: true,
+                          visualDensity: VisualDensity.compact,
+                          title: Text(action.label),
+                          trailing: Icon(
+                            Icons.chevron_right,
+                            color: cs.onSurfaceVariant,
+                          ),
+                          onTap: action.onPressed,
+                        ),
+                    ],
+
+                    // Danger actions
+                    if (dangerActions.isNotEmpty) ...[
+                      const Divider(),
+                      const SizedBox(height: 4),
+                      for (final action in dangerActions)
+                        Center(
+                          child: TextButton(
+                            onPressed: action.onPressed,
+                            style: TextButton.styleFrom(
+                              foregroundColor:
+                                  action.muted ? cs.onSurfaceVariant : cs.error,
+                            ),
+                            child: Text(action.label),
+                          ),
+                        ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuickActions() {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final action in quickActions)
+          _QuickActionChip(action: action),
+      ],
+    );
+  }
+}
+
+class _QuickActionChip extends StatelessWidget {
+  const _QuickActionChip({required this.action});
+  final DialogQuickAction action;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      onPressed: action.onPressed,
+      icon: Icon(action.icon, size: 18),
+      label: Text(
+        action.label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
     );
   }
 }

@@ -86,8 +86,8 @@ abstract class BaseHistoryPageState<T extends BaseHistoryPage>
   }
 
   /// Extra actions to supply to a history page.
-  List<Widget> extraActions(MediaItem item) {
-    return [];
+  List<DialogAction> extraActions(MediaItem item) {
+    return const [];
   }
 
   /// Build the widget visually representing the [MediaItem]'s history tile.
