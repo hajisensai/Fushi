@@ -248,8 +248,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
   Widget _buildDownloadRecommendedButton() {
     return TextButton(
       onPressed: _showDownloadSelectionDialog,
-      child: Text(t.dict_download_browse,
-          overflow: TextOverflow.ellipsis, maxLines: 1),
+      child: Text(t.dict_download_browse),
     );
   }
 
@@ -508,8 +507,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
   Widget buildImportButton() {
     return TextButton(
       onPressed: _importDictionaryFiles,
-      child: Text(t.dialog_import_dictionary,
-          overflow: TextOverflow.ellipsis, maxLines: 1),
+      child: Text(t.dialog_import_dictionary),
     );
   }
 
@@ -517,8 +515,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
 
   Widget buildImportFolderButton() {
     return TextButton(
-      child: Text(t.dialog_import_folder,
-          overflow: TextOverflow.ellipsis, maxLines: 1),
+      child: Text(t.dialog_import_folder),
       onPressed: () async {
         ValueNotifier<String> progressNotifier =
             ValueNotifier<String>(t.import_start);
@@ -671,12 +668,22 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
                 if (allEmpty)
                   buildEmptyMessage()
                 else ...[
-                  buildDictionaryList([
-                    ...termDicts,
-                    ...kanjiDicts,
-                    ...freqDicts,
-                    ...pitchDicts,
-                  ]),
+                  _buildSection(
+                    title: t.dictionary_section_term,
+                    dictionaries: termDicts,
+                  ),
+                  _buildSection(
+                    title: t.dictionary_section_kanji,
+                    dictionaries: kanjiDicts,
+                  ),
+                  _buildSection(
+                    title: t.dictionary_section_frequency,
+                    dictionaries: freqDicts,
+                  ),
+                  _buildSection(
+                    title: t.dictionary_section_pitch,
+                    dictionaries: pitchDicts,
+                  ),
                 ],
                 const JidoujishoDivider(),
               ],
@@ -684,6 +691,31 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildSection({
+    required String title,
+    required List<Dictionary> dictionaries,
+  }) {
+    if (dictionaries.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Text(
+            title,
+            style: TextStyle(
+              fontSize: textTheme.titleSmall?.fontSize,
+              fontWeight: FontWeight.bold,
+              color: theme.colorScheme.primary,
+            ),
+          ),
+        ),
+        buildDictionaryList(dictionaries),
+      ],
     );
   }
 
