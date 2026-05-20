@@ -7,8 +7,18 @@ import 'package:path_provider/path_provider.dart';
 
 abstract final class AudiobookStorage {
   static const Set<String> audioExtensions = {
-    '.mp3', '.m4a', '.m4b', '.aac', '.ogg', '.opus',
-    '.flac', '.wav', '.wma', '.ac3', '.eac3', '.mp4',
+    '.mp3',
+    '.m4a',
+    '.m4b',
+    '.aac',
+    '.ogg',
+    '.opus',
+    '.flac',
+    '.wav',
+    '.wma',
+    '.ac3',
+    '.eac3',
+    '.mp4',
   };
 
   static bool isAudioFile(String path) =>

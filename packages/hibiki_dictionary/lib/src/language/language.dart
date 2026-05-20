@@ -518,7 +518,8 @@ DictionarySearchResult? prepareSearchResultsDirectStandard({
     maxResults: maximumDictionarySearchResults,
   );
   swFfi.stop();
-  debugPrint('[dict-perf]   ffi lookup: ${swFfi.elapsedMilliseconds}ms results=${results.length}');
+  debugPrint(
+      '[dict-perf]   ffi lookup: ${swFfi.elapsedMilliseconds}ms results=${results.length}');
 
   if (results.isEmpty) return null;
 
@@ -529,7 +530,8 @@ DictionarySearchResult? prepareSearchResultsDirectStandard({
     maximumTerms: maximumDictionaryTermsInResult,
   );
   swBuild.stop();
-  debugPrint('[dict-perf]   buildResultFromLookup: ${swBuild.elapsedMilliseconds}ms entries=${built.entries.length}');
+  debugPrint(
+      '[dict-perf]   buildResultFromLookup: ${swBuild.elapsedMilliseconds}ms entries=${built.entries.length}');
 
   return built;
 }

@@ -17,13 +17,11 @@ class AnkiConnectService implements AnkiService {
       'version': 6,
       if (params != null) 'params': params,
     });
-    final response = await http
-        .post(
-          Uri.parse('http://$host:$port'),
-          body: body,
-          headers: {'Content-Type': 'application/json'},
-        )
-        .timeout(_timeout);
+    final response = await http.post(
+      Uri.parse('http://$host:$port'),
+      body: body,
+      headers: {'Content-Type': 'application/json'},
+    ).timeout(_timeout);
     final result = jsonDecode(response.body);
     if (result['error'] != null) {
       throw AnkiConnectException(result['error'] as String);

@@ -1084,3 +1084,31 @@ All five targeted changes are correctly implemented and verified by static analy
 
 ### Next Scope
 - Runtime verification on emulator: SrtBook fallback path (import SRT-only book), "替换字幕" button flow, play/pause/seek/skip controls, lyrics mode toggle.
+
+## Round 47: Windows Compact UI Final No-Blocker Pass
+
+### Scope
+- Remaining short/default dialog shells after the Windows compact UI fixes:
+  - `hibiki/lib/src/pages/implementations/language_dialog_page.dart`
+  - `hibiki/lib/src/pages/implementations/websocket_dialog_page.dart`
+  - `hibiki/lib/src/pages/implementations/lyrics_dialog_page.dart`
+  - `hibiki/lib/src/pages/implementations/example_sentences_dialog_page.dart`
+  - `hibiki/lib/src/pages/implementations/text_segmentation_dialog_page.dart`
+  - `hibiki/lib/src/pages/implementations/miscellaneous_settings_page.dart`
+  - `hibiki/lib/src/pages/implementations/open_stash_dialog_page.dart`
+  - `hibiki/lib/src/pages/implementations/hoshi_settings_page.dart`
+- Previously fixed high-risk compact surfaces in this pass: reader/history confirmations, profile dialogs, collection dialogs, media item dialogs, media edit dialog, and book import dialog.
+
+### Findings
+
+#### HBK-AUDIT-064
+- severity: info
+- status: verified
+- files: see Scope
+- root cause: no remaining blocker found in the sampled short/default dialogs. The remaining `AlertDialog` usages are either short confirmation text, simple lists/content already naturally scrollable, or settings dialogs whose high-risk long-form/multi-action peers now have compact frame tests.
+- impact: no code change required in this final pass. Continuing to mechanically replace every short default dialog would add abstraction without a reproduced compact-window failure.
+- fix: no runtime change. Kept the review boundary explicit and preserved existing behavior.
+- verification: final no-blocker pass used source search for remaining `AlertDialog` / `showDialog` call sites, compared them against the new compact widget-test coverage, and left only low-risk short/simple dialogs unmodified. Latest verified code state before this doc-only pass: `flutter test` passed with 788 tests, `flutter build windows --debug` built `build\windows\x64\runner\Debug\hibiki.exe`, and targeted compact tests passed for the newly added dialog frames.
+
+### Next Scope
+- No blocking Windows compact UI issue remains in the reviewed dialog/layout scope. Future work should be driven by a concrete failing widget test, user report, or runtime evidence rather than blanket replacement of short default dialogs.

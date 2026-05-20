@@ -1,8 +1,7 @@
 import 'dart:io';
 
 import '../audiobook/audiobook_model.dart';
-import '../audiobook/srt_book_repository.dart'
-    show SrtBookRepository;
+import '../audiobook/srt_book_repository.dart' show SrtBookRepository;
 import 'srt_parser.dart';
 import 'text_file_io.dart';
 
