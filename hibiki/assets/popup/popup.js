@@ -1720,7 +1720,7 @@ document.addEventListener('click', (e) => {
         window.hoshiSelection?.selectText(e.clientX, e.clientY, 20);
         return;
     }
-    if (!target?.closest('.entry-header') && !target?.closest('.entry-tags') && !target?.closest('.glossary-group')) {
+    if (!target?.closest('.entry-header') && !target?.closest('.entry-tags') && !target?.closest('.glossary-group') && !target?.closest('.category-section')) {
         window.flutter_inappwebview.callHandler('tapOutside');
     }
 });
