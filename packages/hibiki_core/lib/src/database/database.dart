@@ -39,6 +39,7 @@ LazyDatabase _openDb(String dbDirectory) {
   EpubBooks,
   BookTags,
   BookTagMappings,
+  SrtBookTagMappings,
   Profiles,
   ProfileSettings,
   MediaTypeProfiles,
@@ -49,7 +50,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 12;
+  int get schemaVersion => 13;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -192,6 +193,9 @@ class HibikiDatabase extends _$HibikiDatabase {
                 'WHERE ttu_book_id NOT IN (SELECT id FROM epub_books)',
               );
             }
+          }
+          if (from < 13) {
+            await m.createTable(srtBookTagMappings);
           }
         },
         onCreate: (m) async {
@@ -790,6 +794,80 @@ class HibikiDatabase extends _$HibikiDatabase {
       ..addColumns([cnt]);
     final row = await q.getSingle();
     return row.read(cnt)!;
+  }
+
+  // ── srt book tags ───────────────────────────────────────────────
+
+  Future<List<BookTagRow>> getTagsForSrtBook(int srtBookId) {
+    final query = select(bookTags).join([
+      innerJoin(
+        srtBookTagMappings,
+        srtBookTagMappings.tagId.equalsExp(bookTags.id),
+      ),
+    ])
+      ..where(srtBookTagMappings.srtBookId.equals(srtBookId))
+      ..orderBy([OrderingTerm.asc(bookTags.createdAt)]);
+    return query.map((row) => row.readTable(bookTags)).get();
+  }
+
+  Future<void> addTagToSrtBook(int srtBookId, int tagId) =>
+      into(srtBookTagMappings).insert(
+        SrtBookTagMappingsCompanion.insert(
+            srtBookId: srtBookId, tagId: tagId),
+        mode: InsertMode.insertOrIgnore,
+      );
+
+  Future<void> removeTagFromSrtBook(int srtBookId, int tagId) =>
+      (delete(srtBookTagMappings)
+            ..where((t) =>
+                t.srtBookId.equals(srtBookId) & t.tagId.equals(tagId)))
+          .go();
+
+  Future<void> setTagsForSrtBook(int srtBookId, Set<int> tagIds) =>
+      transaction(() async {
+        final existing = await (select(srtBookTagMappings)
+              ..where((t) => t.srtBookId.equals(srtBookId)))
+            .get();
+        final existingTagIds = existing.map((e) => e.tagId).toSet();
+
+        final toRemove = existingTagIds.difference(tagIds);
+        final toAdd = tagIds.difference(existingTagIds);
+
+        for (final tagId in toRemove) {
+          await (delete(srtBookTagMappings)
+                ..where((t) =>
+                    t.srtBookId.equals(srtBookId) & t.tagId.equals(tagId)))
+              .go();
+        }
+        for (final tagId in toAdd) {
+          await into(srtBookTagMappings).insert(
+            SrtBookTagMappingsCompanion.insert(
+              srtBookId: srtBookId,
+              tagId: tagId,
+            ),
+          );
+        }
+      });
+
+  Future<List<SrtBookTagMappingRow>> getAllSrtBookTagMappings() =>
+      select(srtBookTagMappings).get();
+
+  Future<Set<int>> getSrtBookIdsForAllTags(Set<int> tagIds) async {
+    if (tagIds.isEmpty) return {};
+    final tagCount = tagIds.length;
+    final placeholders = List.generate(tagCount, (_) => '?').join(',');
+    final variables = <Variable>[
+      ...tagIds.map((id) => Variable<int>(id)),
+      Variable<int>(tagCount),
+    ];
+    final rows = await customSelect(
+      'SELECT srt_book_id FROM srt_book_tag_mappings '
+      'WHERE tag_id IN ($placeholders) '
+      'GROUP BY srt_book_id '
+      'HAVING COUNT(DISTINCT tag_id) = ?',
+      variables: variables,
+    ).get();
+    return rows.map((row) => row.read<int>('srt_book_id')).toSet();
   }
 
   // ── profiles ──────────────────────────────────────────────────────

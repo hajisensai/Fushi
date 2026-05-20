@@ -35,6 +35,29 @@ final bookTagMapProvider =
   return result;
 });
 
+final srtBookTagMapProvider =
+    FutureProvider<Map<int, List<BookTagRow>>>((ref) async {
+  final db = ref.watch(appProvider).database;
+  final tags = await db.getAllTags();
+  final mappings = await db.getAllSrtBookTagMappings();
+  final tagById = {for (final t in tags) t.id: t};
+  final Map<int, List<BookTagRow>> result = {};
+  for (final m in mappings) {
+    final tag = tagById[m.tagId];
+    if (tag != null) {
+      result.putIfAbsent(m.srtBookId, () => []).add(tag);
+    }
+  }
+  return result;
+});
+
+final filteredSrtBookIdsProvider = FutureProvider<Set<int>?>((ref) async {
+  final tagIds = ref.watch(selectedTagIdsProvider);
+  if (tagIds.isEmpty) return null;
+  final db = ref.watch(appProvider).database;
+  return db.getSrtBookIdsForAllTags(tagIds);
+});
+
 class TagFilterSheet extends ConsumerStatefulWidget {
   const TagFilterSheet({super.key});
 

@@ -7,8 +7,13 @@ import 'package:hibiki/src/pages/implementations/tag_management_page.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 
 class TagPickerPage extends ConsumerStatefulWidget {
-  const TagPickerPage({required this.bookId, super.key});
+  const TagPickerPage({
+    required this.bookId,
+    this.isSrtBook = false,
+    super.key,
+  });
   final int bookId;
+  final bool isSrtBook;
 
   @override
   ConsumerState<TagPickerPage> createState() => _TagPickerPageState();
@@ -28,7 +33,9 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
 
   Future<void> _load() async {
     final allTags = await _db.getAllTags();
-    final bookTags = await _db.getTagsForBook(widget.bookId);
+    final bookTags = widget.isSrtBook
+        ? await _db.getTagsForSrtBook(widget.bookId)
+        : await _db.getTagsForBook(widget.bookId);
     if (mounted) {
       setState(() {
         _allTags = allTags;
@@ -39,10 +46,14 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
 
   Future<void> _toggle(int tagId, bool selected) async {
     if (selected) {
-      await _db.addTagToBook(widget.bookId, tagId);
+      widget.isSrtBook
+          ? await _db.addTagToSrtBook(widget.bookId, tagId)
+          : await _db.addTagToBook(widget.bookId, tagId);
       setState(() => _selectedTagIds.add(tagId));
     } else {
-      await _db.removeTagFromBook(widget.bookId, tagId);
+      widget.isSrtBook
+          ? await _db.removeTagFromSrtBook(widget.bookId, tagId)
+          : await _db.removeTagFromBook(widget.bookId, tagId);
       setState(() => _selectedTagIds.remove(tagId));
     }
   }
@@ -60,7 +71,9 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
     if (result == null) return;
     try {
       final newId = await _db.createTag(result.name, result.color);
-      await _db.addTagToBook(widget.bookId, newId);
+      widget.isSrtBook
+          ? await _db.addTagToSrtBook(widget.bookId, newId)
+          : await _db.addTagToBook(widget.bookId, newId);
       await _load();
     } on SqliteException catch (e) {
       if (e.extendedResultCode == 2067 && mounted) {

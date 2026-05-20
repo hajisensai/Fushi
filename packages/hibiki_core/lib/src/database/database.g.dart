@@ -6810,6 +6810,237 @@ class BookTagMappingsCompanion extends UpdateCompanion<BookTagMappingRow> {
   }
 }
 
+class $SrtBookTagMappingsTable extends SrtBookTagMappings
+    with TableInfo<$SrtBookTagMappingsTable, SrtBookTagMappingRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SrtBookTagMappingsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _srtBookIdMeta =
+      const VerificationMeta('srtBookId');
+  @override
+  late final GeneratedColumn<int> srtBookId = GeneratedColumn<int>(
+      'srt_book_id', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'REFERENCES srt_books (id) ON DELETE CASCADE'));
+  static const VerificationMeta _tagIdMeta = const VerificationMeta('tagId');
+  @override
+  late final GeneratedColumn<int> tagId = GeneratedColumn<int>(
+      'tag_id', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'REFERENCES book_tags (id) ON DELETE CASCADE'));
+  @override
+  List<GeneratedColumn> get $columns => [id, srtBookId, tagId];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'srt_book_tag_mappings';
+  @override
+  VerificationContext validateIntegrity(
+      Insertable<SrtBookTagMappingRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('srt_book_id')) {
+      context.handle(
+          _srtBookIdMeta,
+          srtBookId.isAcceptableOrUnknown(
+              data['srt_book_id']!, _srtBookIdMeta));
+    } else if (isInserting) {
+      context.missing(_srtBookIdMeta);
+    }
+    if (data.containsKey('tag_id')) {
+      context.handle(
+          _tagIdMeta, tagId.isAcceptableOrUnknown(data['tag_id']!, _tagIdMeta));
+    } else if (isInserting) {
+      context.missing(_tagIdMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [
+        {srtBookId, tagId},
+      ];
+  @override
+  SrtBookTagMappingRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SrtBookTagMappingRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      srtBookId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}srt_book_id'])!,
+      tagId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}tag_id'])!,
+    );
+  }
+
+  @override
+  $SrtBookTagMappingsTable createAlias(String alias) {
+    return $SrtBookTagMappingsTable(attachedDatabase, alias);
+  }
+}
+
+class SrtBookTagMappingRow extends DataClass
+    implements Insertable<SrtBookTagMappingRow> {
+  final int id;
+  final int srtBookId;
+  final int tagId;
+  const SrtBookTagMappingRow(
+      {required this.id, required this.srtBookId, required this.tagId});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['srt_book_id'] = Variable<int>(srtBookId);
+    map['tag_id'] = Variable<int>(tagId);
+    return map;
+  }
+
+  SrtBookTagMappingsCompanion toCompanion(bool nullToAbsent) {
+    return SrtBookTagMappingsCompanion(
+      id: Value(id),
+      srtBookId: Value(srtBookId),
+      tagId: Value(tagId),
+    );
+  }
+
+  factory SrtBookTagMappingRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SrtBookTagMappingRow(
+      id: serializer.fromJson<int>(json['id']),
+      srtBookId: serializer.fromJson<int>(json['srtBookId']),
+      tagId: serializer.fromJson<int>(json['tagId']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'srtBookId': serializer.toJson<int>(srtBookId),
+      'tagId': serializer.toJson<int>(tagId),
+    };
+  }
+
+  SrtBookTagMappingRow copyWith({int? id, int? srtBookId, int? tagId}) =>
+      SrtBookTagMappingRow(
+        id: id ?? this.id,
+        srtBookId: srtBookId ?? this.srtBookId,
+        tagId: tagId ?? this.tagId,
+      );
+  SrtBookTagMappingRow copyWithCompanion(SrtBookTagMappingsCompanion data) {
+    return SrtBookTagMappingRow(
+      id: data.id.present ? data.id.value : this.id,
+      srtBookId: data.srtBookId.present ? data.srtBookId.value : this.srtBookId,
+      tagId: data.tagId.present ? data.tagId.value : this.tagId,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SrtBookTagMappingRow(')
+          ..write('id: $id, ')
+          ..write('srtBookId: $srtBookId, ')
+          ..write('tagId: $tagId')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, srtBookId, tagId);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SrtBookTagMappingRow &&
+          other.id == this.id &&
+          other.srtBookId == this.srtBookId &&
+          other.tagId == this.tagId);
+}
+
+class SrtBookTagMappingsCompanion
+    extends UpdateCompanion<SrtBookTagMappingRow> {
+  final Value<int> id;
+  final Value<int> srtBookId;
+  final Value<int> tagId;
+  const SrtBookTagMappingsCompanion({
+    this.id = const Value.absent(),
+    this.srtBookId = const Value.absent(),
+    this.tagId = const Value.absent(),
+  });
+  SrtBookTagMappingsCompanion.insert({
+    this.id = const Value.absent(),
+    required int srtBookId,
+    required int tagId,
+  })  : srtBookId = Value(srtBookId),
+        tagId = Value(tagId);
+  static Insertable<SrtBookTagMappingRow> custom({
+    Expression<int>? id,
+    Expression<int>? srtBookId,
+    Expression<int>? tagId,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (srtBookId != null) 'srt_book_id': srtBookId,
+      if (tagId != null) 'tag_id': tagId,
+    });
+  }
+
+  SrtBookTagMappingsCompanion copyWith(
+      {Value<int>? id, Value<int>? srtBookId, Value<int>? tagId}) {
+    return SrtBookTagMappingsCompanion(
+      id: id ?? this.id,
+      srtBookId: srtBookId ?? this.srtBookId,
+      tagId: tagId ?? this.tagId,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (srtBookId.present) {
+      map['srt_book_id'] = Variable<int>(srtBookId.value);
+    }
+    if (tagId.present) {
+      map['tag_id'] = Variable<int>(tagId.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SrtBookTagMappingsCompanion(')
+          ..write('id: $id, ')
+          ..write('srtBookId: $srtBookId, ')
+          ..write('tagId: $tagId')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $ProfilesTable extends Profiles
     with TableInfo<$ProfilesTable, ProfileRow> {
   @override
@@ -7792,6 +8023,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
   late final $BookTagsTable bookTags = $BookTagsTable(this);
   late final $BookTagMappingsTable bookTagMappings =
       $BookTagMappingsTable(this);
+  late final $SrtBookTagMappingsTable srtBookTagMappings =
+      $SrtBookTagMappingsTable(this);
   late final $ProfilesTable profiles = $ProfilesTable(this);
   late final $ProfileSettingsTable profileSettings =
       $ProfileSettingsTable(this);
@@ -7819,6 +8052,7 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
         dictionaryHistory,
         bookTags,
         bookTagMappings,
+        srtBookTagMappings,
         profiles,
         profileSettings,
         mediaTypeProfiles,
@@ -7846,6 +8080,20 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
                 limitUpdateKind: UpdateKind.delete),
             result: [
               TableUpdate('book_tag_mappings', kind: UpdateKind.delete),
+            ],
+          ),
+          WritePropagation(
+            on: TableUpdateQuery.onTableName('srt_books',
+                limitUpdateKind: UpdateKind.delete),
+            result: [
+              TableUpdate('srt_book_tag_mappings', kind: UpdateKind.delete),
+            ],
+          ),
+          WritePropagation(
+            on: TableUpdateQuery.onTableName('book_tags',
+                limitUpdateKind: UpdateKind.delete),
+            result: [
+              TableUpdate('srt_book_tag_mappings', kind: UpdateKind.delete),
             ],
           ),
           WritePropagation(
@@ -9236,6 +9484,29 @@ typedef $$SrtBooksTableUpdateCompanionBuilder = SrtBooksCompanion Function({
   Value<int> ttuBookId,
 });
 
+final class $$SrtBooksTableReferences
+    extends BaseReferences<_$HibikiDatabase, $SrtBooksTable, SrtBookRow> {
+  $$SrtBooksTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static MultiTypedResultKey<$SrtBookTagMappingsTable,
+      List<SrtBookTagMappingRow>> _srtBookTagMappingsRefsTable(
+          _$HibikiDatabase db) =>
+      MultiTypedResultKey.fromTable(db.srtBookTagMappings,
+          aliasName: $_aliasNameGenerator(
+              db.srtBooks.id, db.srtBookTagMappings.srtBookId));
+
+  $$SrtBookTagMappingsTableProcessedTableManager get srtBookTagMappingsRefs {
+    final manager =
+        $$SrtBookTagMappingsTableTableManager($_db, $_db.srtBookTagMappings)
+            .filter((f) => f.srtBookId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache =
+        $_typedResult.readTableOrNull(_srtBookTagMappingsRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
+}
+
 class $$SrtBooksTableFilterComposer
     extends Composer<_$HibikiDatabase, $SrtBooksTable> {
   $$SrtBooksTableFilterComposer({
@@ -9275,6 +9546,27 @@ class $$SrtBooksTableFilterComposer
 
   ColumnFilters<int> get ttuBookId => $composableBuilder(
       column: $table.ttuBookId, builder: (column) => ColumnFilters(column));
+
+  Expression<bool> srtBookTagMappingsRefs(
+      Expression<bool> Function($$SrtBookTagMappingsTableFilterComposer f) f) {
+    final $$SrtBookTagMappingsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.srtBookTagMappings,
+        getReferencedColumn: (t) => t.srtBookId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$SrtBookTagMappingsTableFilterComposer(
+              $db: $db,
+              $table: $db.srtBookTagMappings,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
 }
 
 class $$SrtBooksTableOrderingComposer
@@ -9356,6 +9648,28 @@ class $$SrtBooksTableAnnotationComposer
 
   GeneratedColumn<int> get ttuBookId =>
       $composableBuilder(column: $table.ttuBookId, builder: (column) => column);
+
+  Expression<T> srtBookTagMappingsRefs<T extends Object>(
+      Expression<T> Function($$SrtBookTagMappingsTableAnnotationComposer a) f) {
+    final $$SrtBookTagMappingsTableAnnotationComposer composer =
+        $composerBuilder(
+            composer: this,
+            getCurrentColumn: (t) => t.id,
+            referencedTable: $db.srtBookTagMappings,
+            getReferencedColumn: (t) => t.srtBookId,
+            builder: (joinBuilder,
+                    {$addJoinBuilderToRootComposer,
+                    $removeJoinBuilderFromRootComposer}) =>
+                $$SrtBookTagMappingsTableAnnotationComposer(
+                  $db: $db,
+                  $table: $db.srtBookTagMappings,
+                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                  joinBuilder: joinBuilder,
+                  $removeJoinBuilderFromRootComposer:
+                      $removeJoinBuilderFromRootComposer,
+                ));
+    return f(composer);
+  }
 }
 
 class $$SrtBooksTableTableManager extends RootTableManager<
@@ -9367,9 +9681,9 @@ class $$SrtBooksTableTableManager extends RootTableManager<
     $$SrtBooksTableAnnotationComposer,
     $$SrtBooksTableCreateCompanionBuilder,
     $$SrtBooksTableUpdateCompanionBuilder,
-    (SrtBookRow, BaseReferences<_$HibikiDatabase, $SrtBooksTable, SrtBookRow>),
+    (SrtBookRow, $$SrtBooksTableReferences),
     SrtBookRow,
-    PrefetchHooks Function()> {
+    PrefetchHooks Function({bool srtBookTagMappingsRefs})> {
   $$SrtBooksTableTableManager(_$HibikiDatabase db, $SrtBooksTable table)
       : super(TableManagerState(
           db: db,
@@ -9429,9 +9743,35 @@ class $$SrtBooksTableTableManager extends RootTableManager<
             ttuBookId: ttuBookId,
           ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map((e) =>
+                  (e.readTable(table), $$SrtBooksTableReferences(db, table, e)))
               .toList(),
-          prefetchHooksCallback: null,
+          prefetchHooksCallback: ({srtBookTagMappingsRefs = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [
+                if (srtBookTagMappingsRefs) db.srtBookTagMappings
+              ],
+              addJoins: null,
+              getPrefetchedDataCallback: (items) async {
+                return [
+                  if (srtBookTagMappingsRefs)
+                    await $_getPrefetchedData<SrtBookRow, $SrtBooksTable,
+                            SrtBookTagMappingRow>(
+                        currentTable: table,
+                        referencedTable: $$SrtBooksTableReferences
+                            ._srtBookTagMappingsRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$SrtBooksTableReferences(db, table, p0)
+                                .srtBookTagMappingsRefs,
+                        referencedItemsForCurrentItem:
+                            (item, referencedItems) => referencedItems
+                                .where((e) => e.srtBookId == item.id),
+                        typedResults: items)
+                ];
+              },
+            );
+          },
         ));
 }
 
@@ -9444,9 +9784,9 @@ typedef $$SrtBooksTableProcessedTableManager = ProcessedTableManager<
     $$SrtBooksTableAnnotationComposer,
     $$SrtBooksTableCreateCompanionBuilder,
     $$SrtBooksTableUpdateCompanionBuilder,
-    (SrtBookRow, BaseReferences<_$HibikiDatabase, $SrtBooksTable, SrtBookRow>),
+    (SrtBookRow, $$SrtBooksTableReferences),
     SrtBookRow,
-    PrefetchHooks Function()>;
+    PrefetchHooks Function({bool srtBookTagMappingsRefs})>;
 typedef $$ReaderPositionsTableCreateCompanionBuilder = ReaderPositionsCompanion
     Function({
   Value<int> id,
@@ -11248,6 +11588,24 @@ final class $$BookTagsTableReferences
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: cache));
   }
+
+  static MultiTypedResultKey<$SrtBookTagMappingsTable,
+      List<SrtBookTagMappingRow>> _srtBookTagMappingsRefsTable(
+          _$HibikiDatabase db) =>
+      MultiTypedResultKey.fromTable(db.srtBookTagMappings,
+          aliasName: $_aliasNameGenerator(
+              db.bookTags.id, db.srtBookTagMappings.tagId));
+
+  $$SrtBookTagMappingsTableProcessedTableManager get srtBookTagMappingsRefs {
+    final manager =
+        $$SrtBookTagMappingsTableTableManager($_db, $_db.srtBookTagMappings)
+            .filter((f) => f.tagId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache =
+        $_typedResult.readTableOrNull(_srtBookTagMappingsRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
 }
 
 class $$BookTagsTableFilterComposer
@@ -11287,6 +11645,27 @@ class $$BookTagsTableFilterComposer
             $$BookTagMappingsTableFilterComposer(
               $db: $db,
               $table: $db.bookTagMappings,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
+  Expression<bool> srtBookTagMappingsRefs(
+      Expression<bool> Function($$SrtBookTagMappingsTableFilterComposer f) f) {
+    final $$SrtBookTagMappingsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.srtBookTagMappings,
+        getReferencedColumn: (t) => t.tagId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$SrtBookTagMappingsTableFilterComposer(
+              $db: $db,
+              $table: $db.srtBookTagMappings,
               $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
               joinBuilder: joinBuilder,
               $removeJoinBuilderFromRootComposer:
@@ -11365,6 +11744,28 @@ class $$BookTagsTableAnnotationComposer
             ));
     return f(composer);
   }
+
+  Expression<T> srtBookTagMappingsRefs<T extends Object>(
+      Expression<T> Function($$SrtBookTagMappingsTableAnnotationComposer a) f) {
+    final $$SrtBookTagMappingsTableAnnotationComposer composer =
+        $composerBuilder(
+            composer: this,
+            getCurrentColumn: (t) => t.id,
+            referencedTable: $db.srtBookTagMappings,
+            getReferencedColumn: (t) => t.tagId,
+            builder: (joinBuilder,
+                    {$addJoinBuilderToRootComposer,
+                    $removeJoinBuilderFromRootComposer}) =>
+                $$SrtBookTagMappingsTableAnnotationComposer(
+                  $db: $db,
+                  $table: $db.srtBookTagMappings,
+                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                  joinBuilder: joinBuilder,
+                  $removeJoinBuilderFromRootComposer:
+                      $removeJoinBuilderFromRootComposer,
+                ));
+    return f(composer);
+  }
 }
 
 class $$BookTagsTableTableManager extends RootTableManager<
@@ -11378,7 +11779,8 @@ class $$BookTagsTableTableManager extends RootTableManager<
     $$BookTagsTableUpdateCompanionBuilder,
     (BookTagRow, $$BookTagsTableReferences),
     BookTagRow,
-    PrefetchHooks Function({bool bookTagMappingsRefs})> {
+    PrefetchHooks Function(
+        {bool bookTagMappingsRefs, bool srtBookTagMappingsRefs})> {
   $$BookTagsTableTableManager(_$HibikiDatabase db, $BookTagsTable table)
       : super(TableManagerState(
           db: db,
@@ -11421,11 +11823,13 @@ class $$BookTagsTableTableManager extends RootTableManager<
               .map((e) =>
                   (e.readTable(table), $$BookTagsTableReferences(db, table, e)))
               .toList(),
-          prefetchHooksCallback: ({bookTagMappingsRefs = false}) {
+          prefetchHooksCallback: (
+              {bookTagMappingsRefs = false, srtBookTagMappingsRefs = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [
-                if (bookTagMappingsRefs) db.bookTagMappings
+                if (bookTagMappingsRefs) db.bookTagMappings,
+                if (srtBookTagMappingsRefs) db.srtBookTagMappings
               ],
               addJoins: null,
               getPrefetchedDataCallback: (items) async {
@@ -11439,6 +11843,19 @@ class $$BookTagsTableTableManager extends RootTableManager<
                         managerFromTypedResult: (p0) =>
                             $$BookTagsTableReferences(db, table, p0)
                                 .bookTagMappingsRefs,
+                        referencedItemsForCurrentItem: (item,
+                                referencedItems) =>
+                            referencedItems.where((e) => e.tagId == item.id),
+                        typedResults: items),
+                  if (srtBookTagMappingsRefs)
+                    await $_getPrefetchedData<BookTagRow, $BookTagsTable,
+                            SrtBookTagMappingRow>(
+                        currentTable: table,
+                        referencedTable: $$BookTagsTableReferences
+                            ._srtBookTagMappingsRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$BookTagsTableReferences(db, table, p0)
+                                .srtBookTagMappingsRefs,
                         referencedItemsForCurrentItem: (item,
                                 referencedItems) =>
                             referencedItems.where((e) => e.tagId == item.id),
@@ -11461,7 +11878,8 @@ typedef $$BookTagsTableProcessedTableManager = ProcessedTableManager<
     $$BookTagsTableUpdateCompanionBuilder,
     (BookTagRow, $$BookTagsTableReferences),
     BookTagRow,
-    PrefetchHooks Function({bool bookTagMappingsRefs})>;
+    PrefetchHooks Function(
+        {bool bookTagMappingsRefs, bool srtBookTagMappingsRefs})>;
 typedef $$BookTagMappingsTableCreateCompanionBuilder = BookTagMappingsCompanion
     Function({
   Value<int> id,
@@ -11779,6 +12197,325 @@ typedef $$BookTagMappingsTableProcessedTableManager = ProcessedTableManager<
     (BookTagMappingRow, $$BookTagMappingsTableReferences),
     BookTagMappingRow,
     PrefetchHooks Function({bool bookId, bool tagId})>;
+typedef $$SrtBookTagMappingsTableCreateCompanionBuilder
+    = SrtBookTagMappingsCompanion Function({
+  Value<int> id,
+  required int srtBookId,
+  required int tagId,
+});
+typedef $$SrtBookTagMappingsTableUpdateCompanionBuilder
+    = SrtBookTagMappingsCompanion Function({
+  Value<int> id,
+  Value<int> srtBookId,
+  Value<int> tagId,
+});
+
+final class $$SrtBookTagMappingsTableReferences extends BaseReferences<
+    _$HibikiDatabase, $SrtBookTagMappingsTable, SrtBookTagMappingRow> {
+  $$SrtBookTagMappingsTableReferences(
+      super.$_db, super.$_table, super.$_typedResult);
+
+  static $SrtBooksTable _srtBookIdTable(_$HibikiDatabase db) =>
+      db.srtBooks.createAlias($_aliasNameGenerator(
+          db.srtBookTagMappings.srtBookId, db.srtBooks.id));
+
+  $$SrtBooksTableProcessedTableManager get srtBookId {
+    final $_column = $_itemColumn<int>('srt_book_id')!;
+
+    final manager = $$SrtBooksTableTableManager($_db, $_db.srtBooks)
+        .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_srtBookIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+
+  static $BookTagsTable _tagIdTable(_$HibikiDatabase db) =>
+      db.bookTags.createAlias(
+          $_aliasNameGenerator(db.srtBookTagMappings.tagId, db.bookTags.id));
+
+  $$BookTagsTableProcessedTableManager get tagId {
+    final $_column = $_itemColumn<int>('tag_id')!;
+
+    final manager = $$BookTagsTableTableManager($_db, $_db.bookTags)
+        .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_tagIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+}
+
+class $$SrtBookTagMappingsTableFilterComposer
+    extends Composer<_$HibikiDatabase, $SrtBookTagMappingsTable> {
+  $$SrtBookTagMappingsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  $$SrtBooksTableFilterComposer get srtBookId {
+    final $$SrtBooksTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.srtBookId,
+        referencedTable: $db.srtBooks,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$SrtBooksTableFilterComposer(
+              $db: $db,
+              $table: $db.srtBooks,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$BookTagsTableFilterComposer get tagId {
+    final $$BookTagsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.tagId,
+        referencedTable: $db.bookTags,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$BookTagsTableFilterComposer(
+              $db: $db,
+              $table: $db.bookTags,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$SrtBookTagMappingsTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $SrtBookTagMappingsTable> {
+  $$SrtBookTagMappingsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  $$SrtBooksTableOrderingComposer get srtBookId {
+    final $$SrtBooksTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.srtBookId,
+        referencedTable: $db.srtBooks,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$SrtBooksTableOrderingComposer(
+              $db: $db,
+              $table: $db.srtBooks,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$BookTagsTableOrderingComposer get tagId {
+    final $$BookTagsTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.tagId,
+        referencedTable: $db.bookTags,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$BookTagsTableOrderingComposer(
+              $db: $db,
+              $table: $db.bookTags,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$SrtBookTagMappingsTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $SrtBookTagMappingsTable> {
+  $$SrtBookTagMappingsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  $$SrtBooksTableAnnotationComposer get srtBookId {
+    final $$SrtBooksTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.srtBookId,
+        referencedTable: $db.srtBooks,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$SrtBooksTableAnnotationComposer(
+              $db: $db,
+              $table: $db.srtBooks,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$BookTagsTableAnnotationComposer get tagId {
+    final $$BookTagsTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.tagId,
+        referencedTable: $db.bookTags,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$BookTagsTableAnnotationComposer(
+              $db: $db,
+              $table: $db.bookTags,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$SrtBookTagMappingsTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $SrtBookTagMappingsTable,
+    SrtBookTagMappingRow,
+    $$SrtBookTagMappingsTableFilterComposer,
+    $$SrtBookTagMappingsTableOrderingComposer,
+    $$SrtBookTagMappingsTableAnnotationComposer,
+    $$SrtBookTagMappingsTableCreateCompanionBuilder,
+    $$SrtBookTagMappingsTableUpdateCompanionBuilder,
+    (SrtBookTagMappingRow, $$SrtBookTagMappingsTableReferences),
+    SrtBookTagMappingRow,
+    PrefetchHooks Function({bool srtBookId, bool tagId})> {
+  $$SrtBookTagMappingsTableTableManager(
+      _$HibikiDatabase db, $SrtBookTagMappingsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SrtBookTagMappingsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SrtBookTagMappingsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SrtBookTagMappingsTableAnnotationComposer(
+                  $db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<int> srtBookId = const Value.absent(),
+            Value<int> tagId = const Value.absent(),
+          }) =>
+              SrtBookTagMappingsCompanion(
+            id: id,
+            srtBookId: srtBookId,
+            tagId: tagId,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required int srtBookId,
+            required int tagId,
+          }) =>
+              SrtBookTagMappingsCompanion.insert(
+            id: id,
+            srtBookId: srtBookId,
+            tagId: tagId,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (
+                    e.readTable(table),
+                    $$SrtBookTagMappingsTableReferences(db, table, e)
+                  ))
+              .toList(),
+          prefetchHooksCallback: ({srtBookId = false, tagId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins: <
+                  T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic>>(state) {
+                if (srtBookId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.srtBookId,
+                    referencedTable:
+                        $$SrtBookTagMappingsTableReferences._srtBookIdTable(db),
+                    referencedColumn: $$SrtBookTagMappingsTableReferences
+                        ._srtBookIdTable(db)
+                        .id,
+                  ) as T;
+                }
+                if (tagId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.tagId,
+                    referencedTable:
+                        $$SrtBookTagMappingsTableReferences._tagIdTable(db),
+                    referencedColumn:
+                        $$SrtBookTagMappingsTableReferences._tagIdTable(db).id,
+                  ) as T;
+                }
+
+                return state;
+              },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ));
+}
+
+typedef $$SrtBookTagMappingsTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $SrtBookTagMappingsTable,
+    SrtBookTagMappingRow,
+    $$SrtBookTagMappingsTableFilterComposer,
+    $$SrtBookTagMappingsTableOrderingComposer,
+    $$SrtBookTagMappingsTableAnnotationComposer,
+    $$SrtBookTagMappingsTableCreateCompanionBuilder,
+    $$SrtBookTagMappingsTableUpdateCompanionBuilder,
+    (SrtBookTagMappingRow, $$SrtBookTagMappingsTableReferences),
+    SrtBookTagMappingRow,
+    PrefetchHooks Function({bool srtBookId, bool tagId})>;
 typedef $$ProfilesTableCreateCompanionBuilder = ProfilesCompanion Function({
   Value<int> id,
   required String name,
@@ -12938,6 +13675,8 @@ class $HibikiDatabaseManager {
       $$BookTagsTableTableManager(_db, _db.bookTags);
   $$BookTagMappingsTableTableManager get bookTagMappings =>
       $$BookTagMappingsTableTableManager(_db, _db.bookTagMappings);
+  $$SrtBookTagMappingsTableTableManager get srtBookTagMappings =>
+      $$SrtBookTagMappingsTableTableManager(_db, _db.srtBookTagMappings);
   $$ProfilesTableTableManager get profiles =>
       $$ProfilesTableTableManager(_db, _db.profiles);
   $$ProfileSettingsTableTableManager get profileSettings =>

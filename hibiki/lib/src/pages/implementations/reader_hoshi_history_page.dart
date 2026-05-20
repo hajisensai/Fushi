@@ -186,19 +186,31 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
-  Widget _buildBodyWithSrtBooks(List<MediaItem> books, List<SrtBook> srtBooks) {
-    final Set<int> srtBookIds = {
-      for (final b in srtBooks)
+  Widget _buildBodyWithSrtBooks(List<MediaItem> books, List<SrtBook> allSrtBooks) {
+    final Set<int> srtTtuIds = {
+      for (final b in allSrtBooks)
         if (b.ttuBookId > 0) b.ttuBookId,
     };
-    final List<MediaItem> epubBooks = srtBookIds.isEmpty
+    final List<MediaItem> epubBooks = srtTtuIds.isEmpty
         ? books
         : books.where((item) {
             final int? id = _parseBookId(item.mediaIdentifier);
-            return id == null || !srtBookIds.contains(id);
+            return id == null || !srtTtuIds.contains(id);
           }).toList();
 
     final bool hasActiveFilter = ref.read(selectedTagIdsProvider).isNotEmpty;
+    final Set<int>? srtFilterSet =
+        ref.watch(filteredSrtBookIdsProvider).valueOrNull;
+    final List<SrtBook> srtBooks;
+    if (srtFilterSet != null) {
+      srtBooks = allSrtBooks
+          .where((b) => b.id != null && srtFilterSet.contains(b.id))
+          .toList();
+    } else if (hasActiveFilter) {
+      srtBooks = const [];
+    } else {
+      srtBooks = allSrtBooks;
+    }
     if (epubBooks.isEmpty && srtBooks.isEmpty) {
       return hasActiveFilter
           ? Center(
@@ -313,7 +325,40 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
+  List<Widget> _buildSrtBookTagLabels(int srtBookId) {
+    final tagMap = ref.watch(srtBookTagMapProvider).valueOrNull;
+    if (tagMap == null) return const [];
+    final tags = tagMap[srtBookId];
+    if (tags == null || tags.isEmpty) return const [];
+    final display = tags.take(3).toList();
+    return display.map((tag) {
+      return Container(
+        margin: const EdgeInsets.only(right: 3, bottom: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+        decoration: BoxDecoration(
+          color: Color(tag.colorValue).withValues(alpha: 0.85),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Text(
+          tag.name,
+          style: TextStyle(
+            fontSize: 9,
+            color:
+                ThemeData.estimateBrightnessForColor(Color(tag.colorValue)) ==
+                        Brightness.dark
+                    ? Colors.white
+                    : Colors.black,
+            fontWeight: FontWeight.w600,
+          ),
+          overflow: TextOverflow.ellipsis,
+        ),
+      );
+    }).toList();
+  }
+
   Widget _buildSrtCard(SrtBook book) {
+    final tagLabels =
+        book.id != null ? _buildSrtBookTagLabels(book.id!) : const <Widget>[];
     return _bookCardShell(
       cardKey: ValueKey<String>('srt_entry_${book.ttuBookId}'),
       onTap: () => _openSrtBook(book),
@@ -332,6 +377,15 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
               foreground: theme.colorScheme.onSecondaryContainer,
             ),
           ),
+          if (tagLabels.isNotEmpty)
+            Positioned(
+              top: 4,
+              left: 4,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: tagLabels,
+              ),
+            ),
         ],
       ),
     );
@@ -486,14 +540,15 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
         },
         child: Text(t.srt_import_pick_cover),
       ),
+      if (book.id != null)
+        TextButton(
+          onPressed: () => _openSrtBookTagPicker(book.id!),
+          child: Text(t.tag_label),
+        ),
       if (bookId > 0) ...[
         TextButton(
           onPressed: () => _openAudiobookImport(item, bookId),
           child: Text(t.audiobook_import),
-        ),
-        TextButton(
-          onPressed: () => _openTagPicker(bookId),
-          child: Text(t.tag_label),
         ),
         TextButton(
           onPressed: () => _openBookProfilePicker(item, bookId),
@@ -846,6 +901,20 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     ).then((_) {
       ref.invalidate(bookTagMapProvider);
       ref.invalidate(filteredBookIdsProvider);
+      ref.invalidate(allTagsProvider);
+    });
+  }
+
+  void _openSrtBookTagPicker(int srtBookId) {
+    Navigator.pop(context);
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => TagPickerPage(bookId: srtBookId, isSrtBook: true),
+      ),
+    ).then((_) {
+      ref.invalidate(srtBookTagMapProvider);
+      ref.invalidate(filteredSrtBookIdsProvider);
       ref.invalidate(allTagsProvider);
     });
   }

@@ -231,6 +231,21 @@ class BookTagMappings extends Table {
       ];
 }
 
+// ── srt_book_tag_mappings ─────────────────────────────────────────
+@DataClassName('SrtBookTagMappingRow')
+class SrtBookTagMappings extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  IntColumn get srtBookId =>
+      integer().references(SrtBooks, #id, onDelete: KeyAction.cascade)();
+  IntColumn get tagId =>
+      integer().references(BookTags, #id, onDelete: KeyAction.cascade)();
+
+  @override
+  List<Set<Column>> get uniqueKeys => [
+        {srtBookId, tagId},
+      ];
+}
+
 // ── profiles ────────────────────────────────────────────────────────
 @DataClassName('ProfileRow')
 class Profiles extends Table {
