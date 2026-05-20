@@ -956,7 +956,7 @@
     "batch_select": "Select",
     "batch_selected_count": "$n selected",
     "batch_select_all": "All",
-    "batch_deselect_all": "None",
+    "batch_invert_selection": "Invert",
     "batch_delete_confirm": "Delete $n book(s)? This cannot be undone.",
     "batch_delete_success": "Deleted $n book(s).",
     "batch_tag_title": "Manage Tags",

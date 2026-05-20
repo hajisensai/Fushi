@@ -950,7 +950,7 @@
     "batch_select": "选择",
     "batch_selected_count": "已选 $n 项",
     "batch_select_all": "全选",
-    "batch_deselect_all": "取消全选",
+    "batch_invert_selection": "反选",
     "batch_delete_confirm": "确定删除 $n 本书？此操作不可撤销。",
     "batch_delete_success": "已删除 $n 本书。",
     "batch_tag_title": "批量管理标签",

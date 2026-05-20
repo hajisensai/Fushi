@@ -210,11 +210,10 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
         tag.name,
         style: TextStyle(
           fontSize: 9,
-          color:
-              ThemeData.estimateBrightnessForColor(Color(tag.colorValue)) ==
-                      Brightness.dark
-                  ? Colors.white
-                  : Colors.black,
+          color: ThemeData.estimateBrightnessForColor(Color(tag.colorValue)) ==
+                  Brightness.dark
+              ? Colors.white
+              : Colors.black,
           fontWeight: FontWeight.w600,
         ),
         overflow: TextOverflow.ellipsis,
@@ -227,7 +226,8 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
       margin: const EdgeInsets.only(right: 3, bottom: 2),
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.85),
+        color:
+            theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.85),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Text(
@@ -433,8 +433,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
 
   Widget _buildSrtCard(SrtBook book) {
     final String selKey = 'srt_${book.uid}';
-    final tagWidget =
-        book.id != null ? _buildSrtBookTagLabels(book.id!) : null;
+    final tagWidget = book.id != null ? _buildSrtBookTagLabels(book.id!) : null;
     final card = _bookCardShell(
       cardKey: ValueKey<String>('srt_entry_${book.ttuBookId}'),
       selectionKey: selKey,
@@ -474,7 +473,6 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
   Widget _buildSrtCover(SrtBook book) {
     if (book.coverPath != null && File(book.coverPath!).existsSync()) {
       return FadeInImage(
-        key: UniqueKey(),
         imageErrorBuilder: (_, __, ___) => _coverPlaceholderIcon(
           Icons.subtitles_outlined,
         ),
@@ -533,7 +531,8 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
                         decoration: BoxDecoration(
                           color: selected
                               ? theme.colorScheme.primary
-                              : theme.colorScheme.surface.withValues(alpha: 0.7),
+                              : theme.colorScheme.surface
+                                  .withValues(alpha: 0.7),
                           shape: BoxShape.circle,
                           border: Border.all(
                             color: selected
@@ -742,8 +741,17 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     });
   }
 
-  void _deselectAll() {
-    setState(() => _selectedKeys.clear());
+  void _invertSelection() {
+    setState(() {
+      final Set<String> allKeys = {
+        for (final item in _visibleEpubBooks) item.mediaIdentifier,
+        for (final book in _visibleSrtBooks) 'srt_${book.uid}',
+      };
+      final Set<String> inverted = allKeys.difference(_selectedKeys);
+      _selectedKeys
+        ..clear()
+        ..addAll(inverted);
+    });
   }
 
   Widget _buildBatchActionBar() {
@@ -768,20 +776,18 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
                 child: Text(t.batch_select_all),
               ),
               TextButton(
-                onPressed: _deselectAll,
-                child: Text(t.batch_deselect_all),
+                onPressed: _invertSelection,
+                child: Text(t.batch_invert_selection),
               ),
               const Spacer(),
               IconButton(
-                onPressed:
-                    _selectedKeys.isEmpty ? null : _batchShowTagPicker,
+                onPressed: _selectedKeys.isEmpty ? null : _batchShowTagPicker,
                 icon: const Icon(Icons.sell_outlined),
                 tooltip: t.tag_label,
               ),
               const SizedBox(width: 4),
               IconButton(
-                onPressed:
-                    _selectedKeys.isEmpty ? null : _batchDeleteConfirm,
+                onPressed: _selectedKeys.isEmpty ? null : _batchDeleteConfirm,
                 icon: const Icon(Icons.delete_outline),
                 tooltip: t.dialog_delete,
                 color: theme.colorScheme.error,
@@ -910,14 +916,12 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
             snapshot.data?.healthKind ?? HealthKind.notApplicable;
 
         final int? bookId = _parseBookId(item.mediaIdentifier);
-        final tagWidget =
-            bookId != null ? _buildTagLabels(bookId) : null;
+        final tagWidget = bookId != null ? _buildTagLabels(bookId) : null;
 
         return Stack(
           fit: StackFit.expand,
           children: [
             FadeInImage(
-              key: UniqueKey(),
               imageErrorBuilder: (_, __, ___) =>
                   _coverPlaceholderIcon(Icons.menu_book_outlined),
               placeholder: MemoryImage(kTransparentImage),
@@ -1809,8 +1813,7 @@ class _BatchTagPickerDialogState extends State<_BatchTagPickerDialog> {
             final tag = widget.allTags[i];
             final bool adding = _addTagIds.contains(tag.id);
             final bool removing = _removeTagIds.contains(tag.id);
-            final bool? value =
-                adding ? true : (removing ? false : null);
+            final bool? value = adding ? true : (removing ? false : null);
             return CheckboxListTile(
               tristate: true,
               value: value,
@@ -1842,9 +1845,8 @@ class _BatchTagPickerDialogState extends State<_BatchTagPickerDialog> {
           child: Text(t.dialog_cancel),
         ),
         FilledButton(
-          onPressed: _addTagIds.isEmpty && _removeTagIds.isEmpty
-              ? null
-              : _apply,
+          onPressed:
+              _addTagIds.isEmpty && _removeTagIds.isEmpty ? null : _apply,
           child: Text(t.batch_tag_apply),
         ),
       ],
