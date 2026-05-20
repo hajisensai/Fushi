@@ -7,8 +7,8 @@ void main() {
       expect(AudioTextNormalizer.normalize('あいうえお'), 'あいうえお');
     });
 
-    test('preserves katakana', () {
-      expect(AudioTextNormalizer.normalize('アイウエオ'), 'アイウエオ');
+    test('converts katakana to hiragana', () {
+      expect(AudioTextNormalizer.normalize('アイウエオ'), 'あいうえお');
     });
 
     test('preserves kanji', () {
@@ -54,8 +54,8 @@ void main() {
       );
     });
 
-    test('converts halfwidth katakana to fullwidth', () {
-      expect(AudioTextNormalizer.normalize('ｱｲｳ'), 'アイウ');
+    test('converts halfwidth katakana to hiragana', () {
+      expect(AudioTextNormalizer.normalize('ｱｲｳ'), 'あいう');
     });
 
     test('preserves 々 repetition mark', () {
@@ -85,6 +85,28 @@ void main() {
         AudioTextNormalizer.normalize('ｶﾀｶﾅ'),
         AudioTextNormalizer.normalize('カタカナ'),
       );
+    });
+
+    test('katakana and hiragana normalize to same form', () {
+      expect(
+        AudioTextNormalizer.normalize('カタカナ'),
+        AudioTextNormalizer.normalize('かたかな'),
+      );
+    });
+
+    test('mixed katakana/hiragana normalizes to hiragana', () {
+      expect(
+        AudioTextNormalizer.normalize('カタかな'),
+        'かたかな',
+      );
+    });
+
+    test('chōon mark ー preserved (no hiragana equivalent)', () {
+      expect(AudioTextNormalizer.normalize('コーヒー'), 'こーひー');
+    });
+
+    test('halfwidth katakana chains through to hiragana', () {
+      expect(AudioTextNormalizer.normalize('ｶﾀｶﾅ'), 'かたかな');
     });
   });
 

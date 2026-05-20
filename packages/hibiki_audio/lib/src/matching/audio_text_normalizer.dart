@@ -18,24 +18,23 @@ class AudioTextNormalizer {
       if (!_isKeepable(cp)) {
         continue;
       }
+      int out = cp;
       if (cp >= 0x41 && cp <= 0x5A) {
-        // ASCII A-Z → a-z
-        buf.writeCharCode(cp + 0x20);
+        out = cp + 0x20; // ASCII A-Z → a-z
       } else if (cp >= 0xFF21 && cp <= 0xFF3A) {
-        // 全角 Ａ-Ｚ → ASCII a-z
-        buf.writeCharCode(cp - 0xFEC0);
+        out = cp - 0xFEC0; // 全角 Ａ-Ｚ → ASCII a-z
       } else if (cp >= 0xFF41 && cp <= 0xFF5A) {
-        // 全角 ａ-ｚ → ASCII a-z
-        buf.writeCharCode(cp - 0xFEE0);
+        out = cp - 0xFEE0; // 全角 ａ-ｚ → ASCII a-z
       } else if (cp >= 0xFF10 && cp <= 0xFF19) {
-        // 全角 ０-９ → ASCII 0-9
-        buf.writeCharCode(cp - 0xFEE0);
+        out = cp - 0xFEE0; // 全角 ０-９ → ASCII 0-9
       } else if (cp >= 0xFF66 && cp <= 0xFF9D) {
-        // 半角片假名 → 全角片假名
-        buf.writeCharCode(_hwKataToFw[cp - 0xFF66]);
-      } else {
-        buf.writeCharCode(cp);
+        out = _hwKataToFw[cp - 0xFF66]; // 半角片假名 → 全角片假名
       }
+      // 片假名 → 平假名 (ァ-ヶ → ぁ-ゖ)
+      if (out >= 0x30A1 && out <= 0x30F6) {
+        out -= 0x60;
+      }
+      buf.writeCharCode(out);
     }
   }
 

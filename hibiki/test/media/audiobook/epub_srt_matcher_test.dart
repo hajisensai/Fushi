@@ -362,11 +362,12 @@ void main() {
       // 真实现象：EPUB 首句 `<b>…</b>` 后原作者多加 1 字标点/送り仮名差异，
       // SRT 听写与 EPUB 差 1 字 → exact 失败。当前 matcher 不回溯补首条，
       // 直接从后续精确锚点开始，避免导入时做指数级补救。
+      // 注：あ→ア 的差异已被片假名归一化吸收，改用汉字差异来测试。
       final List<EpubSection> sections = <EpubSection>[
         mkSection(0, '最初の文はここにある二番目の文で続く最後の文で終わる'),
       ];
       final List<AudioCue> cues = <AudioCue>[
-        mkCue(0, '最初の文はここにアる'), // る → ア 差 1 字
+        mkCue(0, '最初の文はここに有る'), // ある → 有る 差 1 字
         mkCue(1, '二番目の文で続く'),
         mkCue(2, '最後の文で終わる'),
       ];
@@ -404,6 +405,38 @@ void main() {
       final List<AudioCue> cues = <AudioCue>[
         mkCue(0, 'Ｈｅｌｌｏ　Ｗｏｒｌｄ'),
         mkCue(1, '第１話が始まる'),
+      ];
+
+      final MatchResult r =
+          EpubSrtMatcher.match(sections: sections, cues: cues);
+
+      expect(r.matchedCues, 2);
+    });
+
+    test('片假名↔平假名：EPUB 用片假名 cue 用平假名仍命中', () {
+      final List<EpubSection> sections = <EpubSection>[
+        mkSection(0, 'コーヒーを飲む。ケーキを食べる。'),
+      ];
+      final List<AudioCue> cues = <AudioCue>[
+        mkCue(0, 'こーひーを飲む。'),
+        mkCue(1, 'けーきを食べる。'),
+      ];
+
+      final MatchResult r =
+          EpubSrtMatcher.match(sections: sections, cues: cues);
+
+      expect(r.matchedCues, 2);
+      expect(r.matches[0].score, 1.0);
+      expect(r.matches[1].score, 1.0);
+    });
+
+    test('片假名↔平假名：cue 用片假名 EPUB 用平假名仍命中', () {
+      final List<EpubSection> sections = <EpubSection>[
+        mkSection(0, 'こーひーを飲む。けーきを食べる。'),
+      ];
+      final List<AudioCue> cues = <AudioCue>[
+        mkCue(0, 'コーヒーを飲む。'),
+        mkCue(1, 'ケーキを食べる。'),
       ];
 
       final MatchResult r =
