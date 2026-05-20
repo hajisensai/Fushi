@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.media.AudioAttributes;
+import android.media.MediaMetadataRetriever;
 import android.media.MediaPlayer;
 import android.os.Handler;
 import android.os.Looper;
@@ -83,6 +84,9 @@ public class TtsChannelHandler {
                         break;
                     case "extractAudioSegment":
                         handleExtractAudioSegment(call, result);
+                        break;
+                    case "extractEmbeddedCover":
+                        handleExtractEmbeddedCover(call, result);
                         break;
                     default:
                         result.notImplemented();
@@ -479,6 +483,38 @@ public class TtsChannelHandler {
                 transformerTmp.delete();
                 new Handler(Looper.getMainLooper()).post(() ->
                     result.error("EXTRACT_ERROR", e.getMessage(), null));
+            }
+        });
+    }
+
+    private void handleExtractEmbeddedCover(MethodCall call, MethodChannel.Result result) {
+        String audioPath = call.argument("audioPath");
+        String outputPath = call.argument("outputPath");
+        if (audioPath == null || outputPath == null) {
+            result.success(null);
+            return;
+        }
+        ioExecutor.execute(() -> {
+            try {
+                MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+                try {
+                    retriever.setDataSource(audioPath);
+                    byte[] art = retriever.getEmbeddedPicture();
+                    if (art == null || art.length == 0) {
+                        new Handler(Looper.getMainLooper()).post(() -> result.success(null));
+                        return;
+                    }
+                    File outFile = new File(outputPath);
+                    try (FileOutputStream fos = new FileOutputStream(outFile)) {
+                        fos.write(art);
+                    }
+                    new Handler(Looper.getMainLooper()).post(() -> result.success(outputPath));
+                } finally {
+                    retriever.release();
+                }
+            } catch (Exception e) {
+                android.util.Log.w("hibiki-audio", "extractEmbeddedCover failed", e);
+                new Handler(Looper.getMainLooper()).post(() -> result.success(null));
             }
         });
     }

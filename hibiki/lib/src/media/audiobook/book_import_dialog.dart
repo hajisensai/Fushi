@@ -9,6 +9,7 @@ import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:path/path.dart' as p;
 import 'package:hibiki/src/media/audiobook/sasayaki_rematch.dart';
 import 'package:hibiki/src/media/audiobook/text_to_epub.dart';
+import 'package:hibiki/src/utils/misc/tts_channel.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/epub/epub_book.dart';
 import 'package:hibiki/src/epub/epub_importer.dart';
@@ -52,6 +53,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
   String? _subtitlePath;
   List<String> _audioPaths = [];
   String? _coverPath;
+  String? _audioCoverPath;
 
   // 原始文件名（file_picker 在 Android 上返回的 cache 路径文件名可能与原始不同）
   String? _epubName;
@@ -292,6 +294,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
             icon: const Icon(Icons.close, size: 18, color: Colors.grey),
             onPressed: () => setState(() {
               _audioPaths = [];
+              _audioCoverPath = null;
             }),
           ),
         IconButton(
@@ -409,14 +412,38 @@ class _BookImportDialogState extends State<BookImportDialog> {
       if (paths.isNotEmpty) {
         setState(() {
           _audioPaths = paths;
+          _audioCoverPath = null;
         });
+        if (_coverPath == null) {
+          await _tryExtractAudioCover();
+        }
       }
     } finally {
       _pickerActive = false;
     }
   }
 
+  Future<void> _tryExtractAudioCover() async {
+    if (_audioPaths.isEmpty) return;
+    final Directory tmpDir = await getTemporaryDirectory();
+    final String outputPath = p.join(
+      tmpDir.path,
+      'audio_cover_${DateTime.now().millisecondsSinceEpoch}.jpg',
+    );
+    for (final String audioPath in _audioPaths) {
+      final String? result = await TtsChannel.instance.extractEmbeddedCover(
+        audioPath: audioPath,
+        outputPath: outputPath,
+      );
+      if (result != null && mounted) {
+        setState(() => _audioCoverPath = result);
+        return;
+      }
+    }
+  }
+
   Widget _coverRow() {
+    final String? effectiveCover = _coverPath ?? _audioCoverPath;
     return Row(
       children: [
         Expanded(
@@ -425,9 +452,9 @@ class _BookImportDialogState extends State<BookImportDialog> {
             children: [
               Text(t.srt_import_pick_cover,
                   style: const TextStyle(fontSize: 13)),
-              if (_coverPath != null)
+              if (effectiveCover != null)
                 Text(
-                  p.basename(_coverPath!),
+                  p.basename(effectiveCover),
                   style: const TextStyle(fontSize: 11, color: Colors.grey),
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
@@ -435,10 +462,13 @@ class _BookImportDialogState extends State<BookImportDialog> {
             ],
           ),
         ),
-        if (_coverPath != null)
+        if (effectiveCover != null)
           IconButton(
             icon: const Icon(Icons.close, size: 18, color: Colors.grey),
-            onPressed: () => setState(() => _coverPath = null),
+            onPressed: () => setState(() {
+              _coverPath = null;
+              _audioCoverPath = null;
+            }),
           ),
         IconButton(
           icon: const Icon(Icons.image, size: 20),
@@ -466,14 +496,22 @@ class _BookImportDialogState extends State<BookImportDialog> {
     }
   }
 
-  Future<void> _applyCoverToEpub(int bookId) async {
+  Future<void> _applyCoverToEpub(int bookId, {String? sourcePath}) async {
+    final String source = sourcePath ?? _coverPath!;
     final String extractDir = await EpubStorage.bookDirectory(bookId);
-    final String ext = p.extension(_coverPath!);
+    final String ext = p.extension(source);
     final String dest = p.join(extractDir, 'cover$ext');
-    await File(_coverPath!).copy(dest);
+    await File(source).copy(dest);
     await (widget.db.update(widget.db.epubBooks)
           ..where((tbl) => tbl.id.equals(bookId)))
         .write(EpubBooksCompanion(coverPath: Value('cover$ext')));
+  }
+
+  Future<bool> _epubHasCover(int bookId) async {
+    final row = await (widget.db.select(widget.db.epubBooks)
+          ..where((tbl) => tbl.id.equals(bookId)))
+        .getSingleOrNull();
+    return row?.coverPath != null;
   }
 
   // ── 导入 ────────────────────────────────────────────────────────────────
@@ -619,10 +657,11 @@ class _BookImportDialogState extends State<BookImportDialog> {
     if (author != null) {
       book.author = author;
     }
-    if (_coverPath != null) {
-      final String ext = p.extension(_coverPath!);
+    final String? coverSource = _coverPath ?? _audioCoverPath;
+    if (coverSource != null) {
+      final String ext = p.extension(coverSource);
       final String dest = p.join(persistDir.path, 'cover$ext');
-      await File(_coverPath!).copy(dest);
+      await File(coverSource).copy(dest);
       book.coverPath = dest;
     }
 
@@ -658,10 +697,16 @@ class _BookImportDialogState extends State<BookImportDialog> {
       fileName: filename,
     );
 
+    await _applyBestCoverToEpub(bookId);
+    _reportProgress(1, t.import_step_done);
+  }
+
+  Future<void> _applyBestCoverToEpub(int bookId) async {
     if (_coverPath != null) {
       await _applyCoverToEpub(bookId);
+    } else if (_audioCoverPath != null && !(await _epubHasCover(bookId))) {
+      await _applyCoverToEpub(bookId, sourcePath: _audioCoverPath);
     }
-    _reportProgress(1, t.import_step_done);
   }
 
   Future<String?> _importEpubWithAlignment({required String title}) async {
@@ -686,9 +731,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
       fileName: importFilename,
     );
 
-    if (_coverPath != null) {
-      await _applyCoverToEpub(bookId);
-    }
+    await _applyBestCoverToEpub(bookId);
 
     _reportProgress(0.35, t.import_step_reading_idb);
     List<EpubSection> sections = const <EpubSection>[];

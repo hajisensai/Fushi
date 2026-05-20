@@ -97,6 +97,23 @@ class TtsChannel {
     }
   }
 
+  Future<String?> extractEmbeddedCover({
+    required String audioPath,
+    required String outputPath,
+  }) async {
+    if (!_isSupported) return null;
+    try {
+      final result = await _channel.invokeMethod('extractEmbeddedCover', {
+        'audioPath': audioPath,
+        'outputPath': outputPath,
+      });
+      return result as String?;
+    } catch (e, stack) {
+      ErrorLogService.instance.log('TtsChannel.extractEmbeddedCover', e, stack);
+      return null;
+    }
+  }
+
   Future<String?> extractAudioSegment({
     required String inputPath,
     required int startMs,
