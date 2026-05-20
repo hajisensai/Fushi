@@ -4,6 +4,7 @@ import 'package:hibiki/utils.dart';
 
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
+import 'package:hibiki/src/profile/profile_selector.dart';
 
 class AnkiSettingsPage extends BasePage {
   const AnkiSettingsPage({super.key});
@@ -26,6 +27,11 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
           bottom: MediaQuery.of(context).padding.bottom + 16,
         ),
         children: [
+          const ListTile(
+            leading: Icon(Icons.person),
+            title: ProfileSelector(),
+          ),
+          const Divider(),
           _buildFetchTile(uiState, vm),
           if (uiState.errorMessage != null)
             Padding(

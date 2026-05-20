@@ -1145,6 +1145,7 @@ class AppModel with ChangeNotifier {
       populateLanguages();
       populateLocales();
       LocaleSettings.setLocaleRaw(appLocale.toLanguageTag());
+      await _seedBuiltInTags();
       populateMediaTypes();
       populateMediaSources();
       populateDictionaryFormats();
@@ -1406,6 +1407,18 @@ class AppModel with ChangeNotifier {
     }
     _prefCache[key] = strVal;
     await _database.setPref(key, strVal);
+  }
+
+  Future<void> _seedBuiltInTags() async {
+    if (_prefCache.containsKey('builtInTagsSeeded')) return;
+    final existing = await _database.getAllTags();
+    if (existing.isEmpty) {
+      const int blue = 0xFF42A5F5;
+      const int green = 0xFF66BB6A;
+      await _database.createTag(t.tag_builtin_reading, blue);
+      await _database.createTag(t.tag_builtin_finished, green);
+    }
+    await _setPref('builtInTagsSeeded', 'true');
   }
 
   Future<void> _bindLocalAudioDbForNativeHandler({
