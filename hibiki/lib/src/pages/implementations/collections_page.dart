@@ -564,53 +564,13 @@ class CollectionItemDialogFrame extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      titlePadding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-      contentPadding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
-      actionsPadding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
-      buttonPadding: const EdgeInsets.symmetric(horizontal: 4),
       title: DefaultTextStyle.merge(
-        maxLines: 2,
+        maxLines: 3,
         overflow: TextOverflow.ellipsis,
         child: title,
       ),
-      content: content == null
-          ? null
-          : ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: double.maxFinite,
-                maxHeight: MediaQuery.of(context).size.height * 0.20,
-              ),
-              child: SingleChildScrollView(child: content),
-            ),
-      actions: [
-        CollectionItemDialogActionStrip(actions: actions),
-      ],
-    );
-  }
-}
-
-@visibleForTesting
-class CollectionItemDialogActionStrip extends StatelessWidget {
-  const CollectionItemDialogActionStrip({
-    required this.actions,
-    super.key,
-  });
-
-  final List<Widget> actions;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.maxFinite,
-      child: SingleChildScrollView(
-        reverse: true,
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: actions,
-        ),
-      ),
+      content: content,
+      actions: actions,
     );
   }
 }

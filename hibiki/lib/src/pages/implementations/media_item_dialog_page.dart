@@ -43,7 +43,6 @@ class _MediaItemDialogPageState extends BasePageState<MediaItemDialogPage> {
   Widget buildTitle() {
     return SelectableText(
       mediaSource.getDisplayTitleFromMediaItem(widget.item),
-      maxLines: 1,
       selectionControls: selectionControls,
     );
   }
@@ -156,52 +155,9 @@ class MediaItemDialogFrame extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      titlePadding: const EdgeInsets.fromLTRB(12, 8, 12, 2),
-      contentPadding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
-      actionsPadding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
-      buttonPadding: const EdgeInsets.symmetric(horizontal: 4),
-      actionsOverflowButtonSpacing: 0,
-      title: DefaultTextStyle.merge(
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        child: title,
-      ),
-      content: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: double.maxFinite,
-          maxHeight: MediaQuery.of(context).size.height * 0.06,
-        ),
-        child: content,
-      ),
-      actions: [
-        MediaItemDialogActionStrip(actions: actions),
-      ],
-    );
-  }
-}
-
-@visibleForTesting
-class MediaItemDialogActionStrip extends StatelessWidget {
-  const MediaItemDialogActionStrip({
-    required this.actions,
-    super.key,
-  });
-
-  final List<Widget> actions;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.maxFinite,
-      child: SingleChildScrollView(
-        reverse: true,
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: actions,
-        ),
-      ),
+      title: title,
+      content: content,
+      actions: actions,
     );
   }
 }

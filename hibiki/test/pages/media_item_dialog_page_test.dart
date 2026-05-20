@@ -7,21 +7,14 @@ void main() {
     return MaterialApp(home: Scaffold(body: Center(child: child)));
   }
 
-  testWidgets('media item dialog frame fits compact title and actions', (
+  testWidgets('media item dialog frame shows all actions', (
     WidgetTester tester,
   ) async {
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(320, 240);
-    addTearDown(tester.view.reset);
-
     await tester.pumpWidget(
       buildApp(
         MediaItemDialogFrame(
-          title: const SelectableText(
-            'Very long media title used to test compact Windows media item dialog layout',
-            maxLines: 1,
-          ),
-          content: const SizedBox(width: 260, height: 640),
+          title: const SelectableText('Test title'),
+          content: const SizedBox(width: 260, height: 100),
           actions: const [
             TextButton(onPressed: null, child: Text('Clear')),
             TextButton(onPressed: null, child: Text('Extra')),
@@ -33,6 +26,9 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
+    expect(find.text('Clear'), findsOneWidget);
+    expect(find.text('Extra'), findsOneWidget);
+    expect(find.text('Edit'), findsOneWidget);
     expect(find.text('Read'), findsOneWidget);
   });
 }

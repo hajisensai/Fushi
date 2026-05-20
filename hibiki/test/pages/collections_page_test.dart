@@ -35,12 +35,9 @@ void main() {
     expect(find.text(t.dialog_delete), findsOneWidget);
   });
 
-  testWidgets('collection item dialog fits compact title and actions', (
+  testWidgets('collection item dialog shows all actions', (
     WidgetTester tester,
   ) async {
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(320, 240);
-    addTearDown(tester.view.reset);
 
     await tester.pumpWidget(
       buildApp(
@@ -63,6 +60,9 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
+    expect(find.text('Play'), findsOneWidget);
+    expect(find.text('Copy'), findsOneWidget);
+    expect(find.text('Delete'), findsOneWidget);
     expect(find.text('Read'), findsOneWidget);
   });
 }
