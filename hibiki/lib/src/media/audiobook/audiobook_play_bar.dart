@@ -198,6 +198,7 @@ class AudiobookSettingsSheet extends StatefulWidget {
     this.onToggleLyricsMode,
     this.extractDir,
     this.onReloadChapter,
+    this.onAudioImport,
     super.key,
   });
 
@@ -244,6 +245,7 @@ class AudiobookSettingsSheet extends StatefulWidget {
 
   final String? extractDir;
   final Future<void> Function()? onReloadChapter;
+  final VoidCallback? onAudioImport;
 
   @override
   State<AudiobookSettingsSheet> createState() => _AudiobookSettingsSheetState();
@@ -505,6 +507,21 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
             _buildDelaySection(theme, widget.controller!),
             const SizedBox(height: 16),
             _buildImagePauseSection(theme, widget.controller!),
+            if (widget.onAudioImport != null) ...[
+              const SizedBox(height: 16),
+              const Divider(height: 1),
+              const SizedBox(height: 12),
+              Center(
+                child: TextButton.icon(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    widget.onAudioImport!();
+                  },
+                  icon: const Icon(Icons.swap_horiz, size: 18),
+                  label: Text(t.srt_book_replace_audio),
+                ),
+              ),
+            ],
           ],
         );
       case 'navigation':
@@ -1936,7 +1953,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           _actionBtn(
             context,
             icon: widget.lyricsMode ? Icons.auto_stories : Icons.lyrics,
-            label: t.lyrics_mode,
+            label: widget.lyricsMode ? t.book_mode : t.lyrics_mode,
             onTap: () {
               Navigator.of(context).pop();
               widget.onToggleLyricsMode!();

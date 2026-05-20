@@ -3,6 +3,7 @@ import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/utils/misc/hibiki_toast.dart';
@@ -1883,6 +1884,36 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     return null;
   }
 
+  AudioCue? _findCueForSentence(String sentence) {
+    if (_srtBookUid == null) return null;
+    final List<AudioCue>? allCues = _cachedAllCues;
+    if (allCues == null || allCues.isEmpty) return null;
+
+    final int chapter = _currentChapter;
+    int startIdx = 0;
+    int endIdx = allCues.length;
+    if (_srtChapterRanges != null &&
+        chapter >= 0 &&
+        chapter < _srtChapterRanges!.length) {
+      final (int first, int last) = _srtChapterRanges![chapter];
+      startIdx = first;
+      endIdx = last + 1;
+    }
+
+    final String needle = sentence.trim();
+    if (needle.isEmpty) return null;
+
+    for (int i = startIdx; i < endIdx && i < allCues.length; i++) {
+      if (allCues[i].text.trim() == needle) return allCues[i];
+    }
+    for (int i = startIdx; i < endIdx && i < allCues.length; i++) {
+      if (allCues[i].text.length > 2 && needle.contains(allCues[i].text)) {
+        return allCues[i];
+      }
+    }
+    return null;
+  }
+
   @override
   void clearDictionaryResult() {
     _lookupCue = null;
@@ -2294,6 +2325,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _lookupCue = data.normalizedOffset != null
         ? _findCueForOffset(data.normalizedOffset!)
         : null;
+    if (_lookupCue == null && _srtBookUid != null) {
+      _lookupCue = _findCueForSentence(data.sentence);
+    }
 
     final int highlightCount = await searchDictionaryResult(
       searchTerm: data.text,
@@ -2855,6 +2889,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   }
 
   Future<void> _openAudioImportDialog() async {
+    if (_srtBookUid != null) {
+      await _openSrtBookAudioPicker();
+      return;
+    }
     final String bookUid = ReaderHoshiSource.bookUidFor(widget.bookId);
     final AudiobookRepository repo = AudiobookRepository(appModel.database);
 
@@ -2874,6 +2912,83 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       debugPrint('[ReaderHoshi] resolveAudioSlot after import failed: $e');
     }
     if (mounted) setState(() {});
+  }
+
+  Future<void> _openSrtBookAudioPicker() async {
+    final SrtBookRepository repo = SrtBookRepository(appModel.database);
+    final SrtBook? book = await repo.findByUid(_srtBookUid!);
+    if (book == null || !mounted) return;
+
+    final List<String>? newPaths = await showDialog<List<String>>(
+      context: context,
+      builder: (ctx) {
+        final String currentLabel =
+            book.audioPaths != null && book.audioPaths!.isNotEmpty
+                ? t.srt_import_files_selected(n: book.audioPaths!.length)
+                : (book.audioRoot ?? t.audio_panel_add_audio);
+        return AlertDialog(
+          title: Text(t.srt_book_replace_audio),
+          content: Text(currentLabel),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(t.dialog_cancel),
+            ),
+            FilledButton.icon(
+              onPressed: () async {
+                final FilePickerResult? result =
+                    await FilePicker.platform.pickFiles(
+                  type: FileType.audio,
+                  allowMultiple: true,
+                );
+                if (result == null) return;
+                final List<String> paths = result.files
+                    .map((f) => f.path)
+                    .whereType<String>()
+                    .toList()
+                  ..sort(compareAudioFilePath);
+                if (paths.isNotEmpty && ctx.mounted) {
+                  Navigator.pop(ctx, paths);
+                }
+              },
+              icon: const Icon(Icons.audio_file, size: 18),
+              label: Text(t.srt_import_pick_audio_files),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (newPaths == null || newPaths.isEmpty || !mounted) return;
+
+    HibikiToast.show(msg: t.dialog_importing);
+
+    try {
+      final Directory persistDir =
+          await AudiobookStorage.ensurePersistDir(_srtBookUid!);
+      await AudiobookStorage.cleanAudioFiles(persistDir);
+
+      final List<String> persisted = <String>[];
+      for (final String src in newPaths) {
+        persisted.add(
+          await AudiobookStorage.persistFileWithProgress(File(src), persistDir),
+        );
+      }
+
+      book.audioPaths = persisted;
+      book.audioRoot = null;
+      await repo.save(book);
+
+      await _resolveAudioSlot();
+      if (mounted) {
+        setState(() {});
+        HibikiToast.show(msg: t.audiobook_import_success);
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderHoshi.srtBookAudioPicker', e, stack);
+      debugPrint('[ReaderHoshi] srtBookAudioPicker failed: $e');
+      if (mounted) HibikiToast.show(msg: t.audiobook_import_error);
+    }
   }
 
   int _tocHrefToChapterIndex(String? href) {
@@ -2925,6 +3040,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       onThemeChanged: _onThemeChanged,
       extractDir: _extractDir,
       onReloadChapter: _reloadWithCurrentSettings,
+      onAudioImport: _srtBookUid != null ? _openAudioImportDialog : null,
       lyricsMode: _lyricsMode,
       onToggleLyricsMode: _toggleLyricsMode,
       showFloatingLyric: appModel.showFloatingLyric,
