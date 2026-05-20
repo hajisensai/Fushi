@@ -145,6 +145,22 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     }
   }
 
+  Future<void> _addTagToSrtBook(int srtBookId, BookTagRow tag) async {
+    final existing = ref.read(srtBookTagMapProvider).valueOrNull;
+    final alreadyHas =
+        existing?[srtBookId]?.any((t) => t.id == tag.id) ?? false;
+    if (alreadyHas) {
+      HibikiToast.show(msg: t.tag_already_on_book(name: tag.name));
+      return;
+    }
+    await ref.read(appProvider).database.addTagToSrtBook(srtBookId, tag.id);
+    ref.invalidate(srtBookTagMapProvider);
+    ref.invalidate(filteredSrtBookIdsProvider);
+    if (mounted) {
+      HibikiToast.show(msg: t.tag_added_to_book(name: tag.name));
+    }
+  }
+
   List<Widget> _buildTagLabels(int bookId) {
     final tagMap = ref.watch(bookTagMapProvider).valueOrNull;
     if (tagMap == null) return const [];
@@ -359,7 +375,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
   Widget _buildSrtCard(SrtBook book) {
     final tagLabels =
         book.id != null ? _buildSrtBookTagLabels(book.id!) : const <Widget>[];
-    return _bookCardShell(
+    final card = _bookCardShell(
       cardKey: ValueKey<String>('srt_entry_${book.ttuBookId}'),
       onTap: () => _openSrtBook(book),
       onLongPress: () => _showSrtBookDialog(book),
@@ -388,6 +404,12 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
             ),
         ],
       ),
+    );
+    if (book.id == null) return card;
+    return _BookDragTarget(
+      bookId: book.id!,
+      onTagDropped: (tag) => _addTagToSrtBook(book.id!, tag),
+      child: card,
     );
   }
 
