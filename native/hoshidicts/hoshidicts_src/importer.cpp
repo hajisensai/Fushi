@@ -568,8 +568,7 @@ ImportResult import_mdx(const std::string& mdx_path, const std::string& output_d
   entries.reserve(mdx.entries.size());
   for (auto& e : mdx.entries) {
     if (e.key.empty()) continue;
-    // REVIEW FIX I5: Skip @@@LINK= redirect entries - these are cross-references
-    // that point to other entries and should not be stored as definitions
+    // Unresolvable @@@LINK= (circular or dangling) — already attempted in mdx_reader
     if (e.definition.starts_with("@@@LINK=")) continue;
     entries.push_back({std::move(e.key), std::move(e.definition)});
   }
@@ -625,7 +624,7 @@ ImportResult import_stardict_from_zip(Zip& zip, const std::string& output_dir) {
     if (name.empty() || name.back() == '/') continue;
     std::string filename = std::filesystem::path(name).filename().string();
     std::string ext = std::filesystem::path(filename).extension().string();
-    if (ext == ".ifo" || ext == ".idx" || ext == ".dict" || filename.ends_with(".dict.dz")) {
+    if (ext == ".ifo" || ext == ".idx" || ext == ".dict" || ext == ".syn" || filename.ends_with(".dict.dz")) {
       std::string out_path = temp_dir + "/" + filename;
       std::string content = zip.read(static_cast<int>(i));
       std::ofstream out(out_path, std::ios::binary);

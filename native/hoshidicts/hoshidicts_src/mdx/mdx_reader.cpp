@@ -374,12 +374,10 @@ MdxResult mdx_reader::parse(const uint8_t* data, size_t size) {
 
     while (!definition.empty() && definition.back() == '\0') definition.pop_back();
 
-    // Skip @@@LINK= redirect entries — resolve after all entries are collected
     result.entries.push_back({std::move(keys[i].headword), std::move(definition)});
   }
 
-  // Resolve @@@LINK= redirects
-  // Build a map from headword to definition index for link resolution
+  // Resolve @@@LINK= redirects (follow chains up to 10 hops)
   std::unordered_map<std::string, size_t> key_map;
   key_map.reserve(result.entries.size());
   for (size_t i = 0; i < result.entries.size(); i++) {
@@ -387,16 +385,16 @@ MdxResult mdx_reader::parse(const uint8_t* data, size_t size) {
   }
 
   for (auto& entry : result.entries) {
-    if (entry.definition.starts_with("@@@LINK=")) {
+    int depth = 0;
+    while (entry.definition.starts_with("@@@LINK=") && depth < 10) {
       std::string target = entry.definition.substr(8);
-      // Trim trailing whitespace/newlines
       while (!target.empty() && (target.back() == '\r' || target.back() == '\n' || target.back() == ' ')) {
         target.pop_back();
       }
       auto it = key_map.find(target);
-      if (it != key_map.end() && !result.entries[it->second].definition.starts_with("@@@LINK=")) {
-        entry.definition = result.entries[it->second].definition;
-      }
+      if (it == key_map.end()) break;
+      entry.definition = result.entries[it->second].definition;
+      depth++;
     }
   }
 

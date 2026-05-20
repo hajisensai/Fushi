@@ -108,8 +108,37 @@ StardictResult stardict_reader::parse(const std::string& ifo_path) {
 
   std::string sametypesequence = parse_ifo_value(ifo_content, "sametypesequence");
 
-  return parse_from_data(bookname, idx_data.data(), idx_data.size(),
-                         dict_data.data(), dict_data.size(), sametypesequence);
+  auto result = parse_from_data(bookname, idx_data.data(), idx_data.size(),
+                                dict_data.data(), dict_data.size(), sametypesequence);
+
+  // Read .syn (synonym) file if present
+  auto syn_data = read_file(base + ".syn");
+  if (!syn_data.empty()) {
+    size_t pos = 0;
+    while (pos < syn_data.size()) {
+      const char* word_start = reinterpret_cast<const char*>(syn_data.data() + pos);
+      size_t word_len = 0;
+      while (pos + word_len < syn_data.size() && syn_data[pos + word_len] != 0) word_len++;
+      if (pos + word_len >= syn_data.size()) break;
+      std::string synonym(word_start, word_len);
+      pos += word_len + 1;
+
+      if (pos + 4 > syn_data.size()) break;
+      uint32_t target_idx = (uint32_t(syn_data[pos]) << 24) | (uint32_t(syn_data[pos + 1]) << 16) |
+                            (uint32_t(syn_data[pos + 2]) << 8) | syn_data[pos + 3];
+      pos += 4;
+
+      if (!synonym.empty() && target_idx < result.entries.size()) {
+        result.entries.push_back({std::move(synonym), result.entries[target_idx].definition});
+      }
+    }
+  }
+
+  std::erase_if(result.entries, [](const StardictEntry& e) {
+    return e.word.empty() || e.definition.empty();
+  });
+
+  return result;
 }
 
 StardictResult stardict_reader::parse_from_data(
@@ -206,9 +235,7 @@ StardictResult stardict_reader::parse_from_data(
 
     while (!definition.empty() && definition.back() == '\0') definition.pop_back();
 
-    if (!word.empty() && !definition.empty()) {
-      result.entries.push_back({std::move(word), std::move(definition)});
-    }
+    result.entries.push_back({std::move(word), std::move(definition)});
   }
 
   return result;
