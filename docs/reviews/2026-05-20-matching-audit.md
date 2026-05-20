@@ -95,6 +95,100 @@
 | 记录待重构 | 3 (M03-M05: sasayaki 重构范围) |
 | 测试验证 | 52/52 green |
 
-## Next Scope
+## Next Scope (Round 1)
 
 本轮完成匹配管线代码审查。下一轮建议审查：字幕解析器层 (`parsers/`) 的编码检测和边界处理。
+
+---
+
+## Round 2：修复验证 + 深度正确性审查
+
+### Scope
+
+- 验证 cf990a44 提交（M01/M02 修复）后代码正确性
+- 深度审查：算法边界、JS 镜像对齐、CuesToEpub、surrogate pair 行为
+- 测试验证：所有 sasayaki 相关测试
+
+### 修复验证
+
+**M01 (normalizer 全角转换)**: ✅ 已验证
+- `audio_text_normalizer.dart:21-39` 转换逻辑正确
+- `0xFF21 - 0xFEC0 = 0x0061` ('a') ✓
+- `0xFF41 - 0xFEE0 = 0x0061` ('a') ✓
+- `0xFF10 - 0xFEE0 = 0x0030` ('0') ✓
+
+**M02 (预归一化 cue 文本)**: ✅ 已验证
+- `match()` L150-161 预计算 `normCueTexts` 并传入 `_matchCore` ✓
+- `_matchEntrypoint` L563-574 同样预计算 ✓
+- `_probeEntrypoint` L626-629 共享 `normCueTexts` 跨多窗口探测 ✓
+
+### JS 镜像对齐
+
+**`__hoshiIsSkippable` vs `_isKeepable`**: ✅ 完全一致
+- 26 个字符范围逐条比对，无差异
+- 逻辑正确取反：`isSkippable = !isKeepable`
+
+### 深度审查发现
+
+#### HBK-AUDIT-M06: `_slidingDice` 使用 codeUnitAt 对 CJK Extension B+ 字符不精确
+
+- **severity**: TRIVIAL — 理论问题，实际不影响
+- **status**: 不修 — 已评估影响
+- **文件**: `epub_srt_matcher.dart` L340-421
+- **问题**: `_slidingDice` 用 `codeUnitAt` 构建 bigram key。BMP 以外字符（CJK Extension B-H, U+20000+）在 Dart String 中以 surrogate pair 存储（两个 code unit），bigram 会跨越或拆散 surrogate。
+- **实际影响**: (1) 精确 `indexOf` 路径不受影响。(2) 模糊路径中 needle 和 haystack 都用同样的 codeUnit 粒度，bigram 自我一致。(3) CJK Extension B+ 在现代日文有声书中极其罕见。
+- **结论**: 不修复。如果未来需要支持古典/学术文本中大量 Extension B+ 字符的模糊匹配，可以改用 runes-based bigram。
+
+#### HBK-AUDIT-M07: CuesToEpub 硬编码 `xml:lang="ja"`
+
+- **severity**: TRIVIAL
+- **status**: 不修 — 当前只服务日文内容
+- **文件**: `cues_to_epub.dart` L181
+- **问题**: OPF 中 `xml:lang` 硬编码为 `"ja"`。若未来支持其他语种的有声书，需参数化。
+- **结论**: 当前 Hibiki 只处理日文内容，无需修改。
+
+#### CuesToEpub 其他审查项：全部通过
+
+- XML 转义顺序（`&` 先于 `<`）✓
+- 五种 HTML 实体（`&amp; &lt; &gt; &quot; &apos;`）✓
+- ZIP 结构（mimetype 无压缩在首位）✓
+- 章节分割逻辑（500 cue / 10min 双阈值）✓
+- `data-cue-id` 用 sentenceIndex 不用 textFragmentId ✓
+- 空 cues 边界 ✓
+
+### 测试验证
+
+```
+57/57 tests passed ✅
+- epub_srt_matcher_test.dart: 20 tests
+- collection_audio_matcher_test.dart: 12 tests  
+- sasayaki_match_codec_test.dart: 10 tests
+- sasayaki_rematch_test.dart: 15 tests
+```
+
+### Round 2 结论
+
+| 分类 | 数量 |
+|------|------|
+| 已修复 bug 验证通过 | 2 (M01, M02) |
+| 新发现 — 不修 | 2 (M06: surrogate pair 理论问题, M07: 硬编码 lang) |
+| 待重构 (M03-M05) | 仍为 3，已记录到项目内存 |
+| JS 镜像 | 完全一致 ✓ |
+| 测试验证 | 57/57 green |
+| 代码正确性 | 无新 bug |
+
+### 匹配率方案总结
+
+Sasayaki 已有完整的匹配率方案：
+
+| 层级 | 机制 | 位置 |
+|------|------|------|
+| 单 cue 精度 | `CueMatch.score` (0.0~1.0) | `epub_srt_matcher.dart:48` |
+| 全局匹配率 | `MatchResult.matchRate` = matchedCues/totalCues | `epub_srt_matcher.dart:65` |
+| 存储反算 | `SasayakiMatchCodec.computeMatchRate()` | `sasayaki_match_codec.dart:105` |
+| UI 展示 | Toast + AudiobookHealth reason 字串 | `sasayaki_rematch.dart:297-304` |
+| 自动探测 | `probeInIsolate()` 多窗口取最优 | `epub_srt_matcher.dart:620-651` |
+
+## 终审判定
+
+🟢 **Sasayaki 匹配子系统代码健康，无未修复的 bug，测试全绿，可以停止审查循环。**
