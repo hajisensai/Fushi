@@ -47,6 +47,7 @@ import 'package:hibiki/i18n/strings.g.dart';
 final List<Field> globalFields = List<Field>.unmodifiable(
   [
     SentenceField.instance,
+    CueSentenceField.instance,
     TermField.instance,
     ReadingField.instance,
     MeaningField.instance,
@@ -657,6 +658,21 @@ class AppModel with ChangeNotifier {
     }
   }
 
+  JidoujishoTextSelection getCurrentCueSentence() {
+    if (isMediaOpen) {
+      return _currentMediaSource!.currentCueSentence;
+    } else {
+      MediaType mediaType = mediaTypes.values.toList()[currentHomeTabIndex];
+      if (mediaType is DictionaryMediaType) {
+        return JidoujishoTextSelection(text: '');
+      } else {
+        return (_currentMediaSource ??
+                (getCurrentSourceForMediaType(mediaType: mediaType)))
+            .currentCueSentence;
+      }
+    }
+  }
+
   /// This should all be refactored as part of [MediaItem] if possible. No
   /// reason to expose it here if not for card export functions. This is super
   /// cursed. Need to extract this to its own Provider at some point.
@@ -887,6 +903,10 @@ class AppModel with ChangeNotifier {
         SentencePickerEnhancement(field: SentenceField.instance),
         OpenStashEnhancement(field: SentenceField.instance),
         PopFromStashEnhancement(field: SentenceField.instance),
+      ],
+      CueSentenceField.instance: [
+        ClearFieldEnhancement(field: CueSentenceField.instance),
+        TextSegmentationEnhancement(field: CueSentenceField.instance),
       ],
       TermField.instance: [
         ClearFieldEnhancement(field: TermField.instance),
@@ -2367,10 +2387,15 @@ class AppModel with ChangeNotifier {
   /// deleted.
   final Map<String, DictionarySearchResult> _dictionarySearchCache = {};
 
+  /// Caches raw FFI lookup results by normalized search term so that
+  /// loadMore calls skip the expensive native query.
+  final Map<String, List<HoshiLookupResult>> _ffiLookupCache = {};
+
   /// Used when a dictionary is added or removed as those results may now be
   /// wrong.
   void clearDictionaryResultsCache() {
     _dictionarySearchCache.clear();
+    _ffiLookupCache.clear();
   }
 
   /// Gets the raw unprocessed entries straight from a dictionary database
@@ -2423,15 +2448,37 @@ class AppModel with ChangeNotifier {
       return DictionarySearchResult(searchTerm: searchTerm);
     }
 
-    final swLookup = Stopwatch()..start();
-    final result = targetLanguage.prepareSearchResultsDirect(
-      searchTerm: searchTerm,
-      maximumDictionarySearchResults: maximumDictionarySearchResults,
-      maximumDictionaryTermsInResult: effectiveMaxTerms,
-    );
-    swLookup.stop();
-    debugPrint(
-        '[dict-perf] prepareSearchResultsDirect: ${swLookup.elapsedMilliseconds}ms entries=${result?.entries.length ?? 0}');
+    List<HoshiLookupResult>? ffiResults = _ffiLookupCache[searchTerm];
+    DictionarySearchResult? result;
+
+    if (ffiResults != null) {
+      final swBuild = Stopwatch()..start();
+      result = buildResultFromLookup(
+        searchTerm: searchTerm,
+        results: ffiResults,
+        maximumTerms: effectiveMaxTerms,
+      );
+      swBuild.stop();
+      debugPrint(
+          '[dict-perf] FFI cache HIT, buildResultFromLookup: ${swBuild.elapsedMilliseconds}ms entries=${result.entries.length}');
+    } else {
+      final swLookup = Stopwatch()..start();
+      ffiResults = HoshiDicts.instance.lookup(
+        searchTerm,
+        maxResults: maximumDictionarySearchResults,
+      );
+      if (ffiResults.isNotEmpty) {
+        _ffiLookupCache[searchTerm] = ffiResults;
+        result = buildResultFromLookup(
+          searchTerm: searchTerm,
+          results: ffiResults,
+          maximumTerms: effectiveMaxTerms,
+        );
+      }
+      swLookup.stop();
+      debugPrint(
+          '[dict-perf] FFI lookup + build: ${swLookup.elapsedMilliseconds}ms entries=${result?.entries.length ?? 0}');
+    }
 
     swTotal.stop();
     debugPrint(

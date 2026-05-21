@@ -44,6 +44,8 @@ class DictionaryPopupWebViewState
     extends ConsumerState<DictionaryPopupWebView> {
   InAppWebViewController? _controller;
   bool _ready = false;
+  String? _lastSearchTerm;
+  int _lastEntryCount = 0;
 
   static const String _scrollCheckJs = '''
 (function(){
@@ -115,11 +117,17 @@ class DictionaryPopupWebViewState
     if (_controller == null || !_ready) return;
     if (widget.result.entries.isEmpty) return;
 
+    final bool isLoadMore =
+        _lastSearchTerm == widget.result.searchTerm &&
+        widget.result.entries.length > _lastEntryCount;
+    _lastSearchTerm = widget.result.searchTerm;
+    _lastEntryCount = widget.result.entries.length;
+
     final swJson = Stopwatch()..start();
     final entriesJson = buildLookupEntriesJson(widget.result);
     swJson.stop();
     debugPrint(
-        '[dict-perf] buildLookupEntriesJson: ${swJson.elapsedMilliseconds}ms len=${entriesJson.length}');
+        '[dict-perf] buildLookupEntriesJson: ${swJson.elapsedMilliseconds}ms len=${entriesJson.length} loadMore=$isLoadMore');
 
     final stylesJson = jsonEncode(HoshiDicts.dictionaryStyles);
     final ThemeData theme = Theme.of(context);
@@ -151,6 +159,8 @@ class DictionaryPopupWebViewState
     final String bgRgb = 'rgb($br, $bg, $bb)';
 
     final bool needsScrollCheck = widget.onScrolledToBottom != null;
+    final String renderCall =
+        isLoadMore ? 'window.renderPopup(true);' : 'window.renderPopup();';
     final swInject = Stopwatch()..start();
     _controller!.evaluateJavascript(source: '''
       document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
@@ -168,7 +178,7 @@ class DictionaryPopupWebViewState
       window.dictionaryStyles = $stylesJson;
       window.globalDictCSS = ${jsonEncode(appModel.globalDictCSS)};
       window.customDictCSS = ${jsonEncode(appModel.customDictCSS)};
-      window.renderPopup();
+      $renderCall
       ${needsScrollCheck ? _scrollCheckJs : ""}
     ''').then((_) {
       swInject.stop();
@@ -520,8 +530,8 @@ class DictionaryPopupWebViewState
       grouped[key]!['glossaries'].add({
         'dictionary': entry.dictionaryName,
         'content': contentValue,
-        'definitionTags': _getExtraField(entry, 'definitionTags'),
-        'termTags': _getExtraField(entry, 'termTags'),
+        'definitionTags': extraData?['definitionTags']?.toString() ?? '',
+        'termTags': extraData?['termTags']?.toString() ?? '',
       });
     }
 
@@ -584,17 +594,6 @@ class DictionaryPopupWebViewState
       if (seen.add(key)) {
         target.add(value);
       }
-    }
-  }
-
-  static String _getExtraField(DictionaryEntry entry, String field) {
-    if (entry.extra.isEmpty) return '';
-    try {
-      final data = jsonDecode(entry.extra) as Map<String, dynamic>;
-      return data[field]?.toString() ?? '';
-    } catch (e, stack) {
-      ErrorLogService.instance.log('DictPopupWebview.getExtraField', e, stack);
-      return '';
     }
   }
 

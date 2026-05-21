@@ -1595,83 +1595,60 @@ function createGlossarySection(dictName, contents, isFirst, entryIdx) {
     return details;
 }
 
-window.renderPopup = function() {
-    const container = document.getElementById('entries-container');
-    if (!container) return;
+function buildEntryElement(entry, idx) {
+    const entryDiv = el('div', { className: 'entry' });
+    entryDiv.appendChild(createEntryHeader(entry, idx));
 
-    if (!window.lookupEntries || !window.lookupEntries.length) {
-        container.innerHTML = '';
-        return;
+    const kanjiRow = createKanjiBreakdown(entry.expression);
+    if (kanjiRow) {
+        entryDiv.appendChild(kanjiRow);
     }
 
-    (async () => {
-        const fragment = document.createDocumentFragment();
+    const exprTags = createExpressionTagsSection(entry);
+    if (exprTags) {
+        entryDiv.appendChild(exprTags);
+    }
 
-        for (let idx = 0; idx < window.lookupEntries.length; idx++) {
-            const entry = window.lookupEntries[idx];
-            if (!entry) continue;
+    const deinflection = createDeinflectionSection(entry);
+    if (deinflection) {
+        entryDiv.appendChild(deinflection);
+    }
 
-            if (idx > 0) {
-                fragment.appendChild(document.createElement('hr'));
-            }
+    const freqSection = createFrequencySection(entry.frequencies);
+    if (freqSection) {
+        entryDiv.appendChild(freqSection);
+    }
 
-            const entryDiv = el('div', { className: 'entry' });
-            entryDiv.appendChild(createEntryHeader(entry, idx));
+    const pitchSection = createPitchSection(entry.pitches, entry.reading);
+    if (pitchSection) {
+        entryDiv.appendChild(pitchSection);
+    }
 
-            const kanjiRow = createKanjiBreakdown(entry.expression);
-            if (kanjiRow) {
-                entryDiv.appendChild(kanjiRow);
-            }
-
-            const exprTags = createExpressionTagsSection(entry);
-            if (exprTags) {
-                entryDiv.appendChild(exprTags);
-            }
-
-            const deinflection = createDeinflectionSection(entry);
-            if (deinflection) {
-                entryDiv.appendChild(deinflection);
-            }
-
-            const freqSection = createFrequencySection(entry.frequencies);
-            if (freqSection) {
-                entryDiv.appendChild(freqSection);
-            }
-
-            const pitchSection = createPitchSection(entry.pitches, entry.reading);
-            if (pitchSection) {
-                entryDiv.appendChild(pitchSection);
-            }
-
-            const glossaryWrapper = createGlossarySectionWrapper(entry);
-            if (glossaryWrapper) {
-                const { details, body, grouped, dictNames } = glossaryWrapper;
-                entryDiv.appendChild(details);
-                for (let dictIdx = 0; dictIdx < dictNames.length; dictIdx++) {
-                    body.appendChild(createGlossarySection(dictNames[dictIdx], grouped[dictNames[dictIdx]], dictIdx === 0, idx));
-                }
-            }
-
-            fragment.appendChild(entryDiv);
+    const glossaryWrapper = createGlossarySectionWrapper(entry);
+    if (glossaryWrapper) {
+        const { details, body, grouped, dictNames } = glossaryWrapper;
+        entryDiv.appendChild(details);
+        for (let dictIdx = 0; dictIdx < dictNames.length; dictIdx++) {
+            body.appendChild(createGlossarySection(dictNames[dictIdx], grouped[dictNames[dictIdx]], dictIdx === 0, idx));
         }
+    }
 
-        container.innerHTML = '';
-        container.appendChild(fragment);
+    return entryDiv;
+}
 
-        container.querySelectorAll('.glossary-content ruby').forEach(ruby => {
-            ruby.childNodes.forEach(node => {
-                if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) {
-                    const span = document.createElement('span');
-                    span.textContent = node.textContent;
-                    node.replaceWith(span);
-                }
-            });
+function postProcessRuby(container) {
+    container.querySelectorAll('.glossary-content ruby').forEach(ruby => {
+        ruby.childNodes.forEach(node => {
+            if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) {
+                const span = document.createElement('span');
+                span.textContent = node.textContent;
+                node.replaceWith(span);
+            }
         });
+    });
+}
 
-        window.flutter_inappwebview.callHandler('popupRendered',
-            document.body.scrollHeight);
-    })();
-
+function applyCustomCSS() {
     document.querySelectorAll('style.hoshi-custom-css').forEach(el => el.remove());
     if (window.globalDictCSS) {
         const style = document.createElement('style');
@@ -1688,6 +1665,48 @@ window.renderPopup = function() {
             document.body.appendChild(style);
         }
     }
+}
+
+window.renderPopup = function(preserveScroll) {
+    const container = document.getElementById('entries-container');
+    if (!container) return;
+
+    if (!window.lookupEntries || !window.lookupEntries.length) {
+        container.innerHTML = '';
+        window._renderedEntryCount = 0;
+        return;
+    }
+
+    const savedScroll = preserveScroll ? window.scrollY : 0;
+
+    (async () => {
+        const fragment = document.createDocumentFragment();
+
+        for (let idx = 0; idx < window.lookupEntries.length; idx++) {
+            const entry = window.lookupEntries[idx];
+            if (!entry) continue;
+
+            if (idx > 0) {
+                fragment.appendChild(document.createElement('hr'));
+            }
+
+            fragment.appendChild(buildEntryElement(entry, idx));
+        }
+
+        container.innerHTML = '';
+        container.appendChild(fragment);
+        window._renderedEntryCount = window.lookupEntries.length;
+
+        postProcessRuby(container);
+        applyCustomCSS();
+
+        if (preserveScroll) {
+            window.scrollTo(0, savedScroll);
+        }
+
+        window.flutter_inappwebview.callHandler('popupRendered',
+            document.body.scrollHeight);
+    })();
 };
 
 
