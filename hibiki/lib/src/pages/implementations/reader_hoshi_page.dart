@@ -1573,10 +1573,12 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       await HighlightBridge.applyHighlights(_controller!, chapterFavs,
           backgroundHex: _readerBackgroundHex,
           customHighlightCss: _customHighlightCss);
+      if (!mounted || _controller == null) return;
       await _controller!.evaluateJavascript(
         source:
             'if (!window.__hoshiCssHighlightsSupported) { window.hoshiReader && window.hoshiReader.buildNodeOffsets(); }',
       );
+      if (!mounted) return;
       await _settings!.setTheme(appModel.appThemeKey);
     }
   }

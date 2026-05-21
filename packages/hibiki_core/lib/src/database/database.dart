@@ -76,13 +76,18 @@ class HibikiDatabase extends _$HibikiDatabase {
           if (from > to) {
             if (_dbDirectory.isNotEmpty) {
               try {
-                final File dbFile = File(p.join(_dbDirectory, 'hibiki.db'));
-                if (await dbFile.exists()) {
-                  final String backupPath =
-                      p.join(_dbDirectory, 'hibiki.db.bak.$from');
-                  await dbFile.copy(backupPath);
+                final String base = p.join(_dbDirectory, 'hibiki.db');
+                final String suffix = '.bak.$from';
+                for (final String ext in ['', '-wal', '-shm']) {
+                  final File src = File('$base$ext');
+                  if (await src.exists()) {
+                    await src.copy('$base$ext$suffix');
+                  }
                 }
-              } catch (_) {}
+              } catch (e) {
+                print(
+                    '[HibikiDB] backup before downgrade failed: $e'); // ignore: avoid_print
+              }
             }
             for (final table in allTables) {
               await customStatement(
