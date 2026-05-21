@@ -112,6 +112,7 @@ class AudioSentenceField extends AudioExportField {
   int _audioLoadGeneration = 0;
   Future<void> _audioLoadQueue = Future<void>.value();
   final List<StreamSubscription<dynamic>> _audioSubscriptions = [];
+  StreamSubscription<void>? _noisySub;
 
   /// Set up audio for new file.
   Future<void> initialiseAudio(File file) {
@@ -165,6 +166,8 @@ class AudioSentenceField extends AudioExportField {
   }
 
   Future<void> _disposeAudioPlayer() async {
+    _noisySub?.cancel();
+    _noisySub = null;
     for (final subscription in _audioSubscriptions) {
       await subscription.cancel();
     }
@@ -232,7 +235,8 @@ class AudioSentenceField extends AudioExportField {
                 ),
               );
 
-              session.becomingNoisyEventStream.listen((event) async {
+              _noisySub?.cancel();
+              _noisySub = session.becomingNoisyEventStream.listen((event) async {
                 await _audioPlayer.pause();
                 session?.setActive(false);
               });

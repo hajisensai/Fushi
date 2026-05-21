@@ -64,9 +64,10 @@ class UpdateChecker {
   }) async {
     if (!Platform.isAndroid) return;
     if (neverRemind && !autoInstall) return;
+    HttpClient? client;
     try {
       await _cleanupOldApks(currentVersion);
-      final client = HttpClient();
+      client = HttpClient();
       client.connectionTimeout = const Duration(seconds: 10);
 
       final json = betaChannel
@@ -138,6 +139,8 @@ class UpdateChecker {
     } catch (e, stack) {
       ErrorLogService.instance.log('UpdateChecker.check', e, stack);
       debugPrint('[Hibiki] update check failed: $e');
+    } finally {
+      client?.close();
     }
   }
 
@@ -361,11 +364,12 @@ class UpdateChecker {
     final overlayState = Overlay.of(context);
     overlayState.insert(overlay);
 
+    HttpClient? client;
     try {
       final cacheDir = await getTemporaryDirectory();
       final apkFile = File('${cacheDir.path}/hibiki-$version.apk');
 
-      final client = HttpClient();
+      client = HttpClient();
       client.connectionTimeout = const Duration(seconds: 30);
       client.idleTimeout = const Duration(seconds: 60);
 
@@ -406,6 +410,7 @@ class UpdateChecker {
         );
       }
     } finally {
+      client?.close();
       overlay.remove();
       progress.dispose();
       status.dispose();

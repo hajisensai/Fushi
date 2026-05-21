@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:audio_session/audio_session.dart';
@@ -40,9 +41,11 @@ class _AudioRecorderDialogPageState
 
   bool _isRecording = false;
   bool _initialised = false;
+  StreamSubscription<void>? _noisySub;
 
   @override
   void dispose() {
+    _noisySub?.cancel();
     _audioPlayer.dispose();
     _positionNotifier.dispose();
     _durationNotifier.dispose();
@@ -149,7 +152,8 @@ class _AudioRecorderDialogPageState
                 ),
               );
 
-              session.becomingNoisyEventStream.listen((event) async {
+              _noisySub?.cancel();
+              _noisySub = session.becomingNoisyEventStream.listen((event) async {
                 await _audioPlayer.pause();
                 session?.setActive(false);
               });

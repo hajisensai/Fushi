@@ -14,7 +14,7 @@ void main() {
             children: [
               NavigationRail(
                 selectedIndex: 0,
-                destinations: [
+                destinations: const [
                   NavigationRailDestination(
                     icon: Icon(Icons.menu_book),
                     label: Text('Books'),
@@ -53,7 +53,7 @@ void main() {
         home: Scaffold(
           body: NavigationRail(
             selectedIndex: 0,
-            destinations: [
+            destinations: const [
               NavigationRailDestination(
                 icon: Icon(Icons.menu_book),
                 label: Text('Books'),
@@ -87,7 +87,7 @@ void main() {
         home: Scaffold(
           body: Center(child: Icon(Icons.search)),
           bottomNavigationBar: BottomNavigationBar(
-            items: [
+            items: const [
               BottomNavigationBarItem(
                 icon: Icon(Icons.menu_book),
                 label: 'Books',
@@ -115,7 +115,7 @@ void main() {
       MaterialApp(
         home: Scaffold(
           body: Column(
-            children: [
+            children: const [
               TextField(key: ValueKey<String>('unrelated_search_field')),
               TextField(key: ValueKey<String>('home_dictionary_search_field')),
             ],
@@ -136,7 +136,7 @@ void main() {
       MaterialApp(
         home: Scaffold(
           body: Column(
-            children: [
+            children: const [
               Card(child: Text('Unrelated card')),
               ListTile(title: Text('Unrelated tile')),
               ExpansionTile(title: Text('Unrelated expansion')),

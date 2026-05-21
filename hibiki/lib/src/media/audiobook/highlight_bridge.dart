@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 
 class HighlightBridge {
@@ -384,7 +385,10 @@ class HighlightBridge {
             });
             backfillCount++;
           }
-        } catch (_) {}
+        } catch (e, stack) {
+          ErrorLogService.instance
+              .log('HighlightBridge.backfillDecode', e, stack);
+        }
       }
     }
     if (backfillCount > 0) {

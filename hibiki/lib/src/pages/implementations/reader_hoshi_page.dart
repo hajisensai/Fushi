@@ -1723,7 +1723,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
             const Duration(seconds: 8),
             onTimeout: () => false,
           );
-        } catch (_) {}
+        } catch (e, stack) {
+          ErrorLogService.instance
+              .log('ReaderHoshi.lyricsRestore', e, stack);
+        }
       }
     } finally {
       if (mounted) setState(() => _lyricsModeTransition = false);
@@ -2421,7 +2424,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           if (cueIdx != null && cueIdx >= 0 && cueIdx < _lyricsCueList.length) {
             _lookupCue = _lyricsCueList[cueIdx];
           }
-        } catch (_) {}
+        } catch (e, stack) {
+          ErrorLogService.instance
+              .log('ReaderHoshi.lyricsCueContext', e, stack);
+        }
       }
       _lookupCue ??= _audiobookController?.currentCue;
       _syncCueSentence();

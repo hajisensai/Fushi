@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:audio_session/audio_session.dart';
@@ -23,6 +24,7 @@ class PlayAudioAction extends QuickAction {
         );
 
   final AudioPlayer _audioPlayer = AudioPlayer();
+  StreamSubscription<void>? _noisySub;
 
   /// Used to identify this enhancement and to allow a constant value for the
   /// default mappings value of [AnkiMapping].
@@ -93,7 +95,8 @@ class PlayAudioAction extends QuickAction {
               ),
             );
 
-            session.becomingNoisyEventStream.listen((event) async {
+            _noisySub?.cancel();
+            _noisySub = session.becomingNoisyEventStream.listen((event) async {
               await _audioPlayer.stop();
               session?.setActive(false);
             });

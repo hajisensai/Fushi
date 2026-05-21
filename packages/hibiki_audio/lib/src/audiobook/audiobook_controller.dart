@@ -31,6 +31,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   List<File> get audioFiles => _audioFiles;
 
   AudioPlayer? _clipPlayer;
+  StreamSubscription<PlayerState>? _clipStateSub;
 
   /// playCueOnce 用：播放到此全局 ms 后自动暂停；null = 不限制。
   int? _stopAtGlobalMs;
@@ -1040,6 +1041,8 @@ class AudiobookPlayerController extends ChangeNotifier {
     followAudio.dispose();
     delayMs.dispose();
     imagePauseSec.dispose();
+    _clipStateSub?.cancel();
+    _clipStateSub = null;
     _clipPlayer?.dispose();
     _clipPlayer = null;
     _player.dispose();
@@ -1074,7 +1077,8 @@ class AudiobookPlayerController extends ChangeNotifier {
     );
     await clip.setSpeed(_player.speed);
 
-    clip.playerStateStream.listen((state) {
+    _clipStateSub?.cancel();
+    _clipStateSub = clip.playerStateStream.listen((state) {
       if (state.processingState == ProcessingState.completed) {
         stopClip();
       }
@@ -1084,6 +1088,8 @@ class AudiobookPlayerController extends ChangeNotifier {
   }
 
   Future<void> stopClip({bool resumeMain = true}) async {
+    _clipStateSub?.cancel();
+    _clipStateSub = null;
     final AudioPlayer? old = _clipPlayer;
     if (old != null) {
       _clipPlayer = null;

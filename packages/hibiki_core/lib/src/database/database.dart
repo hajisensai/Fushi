@@ -58,32 +58,46 @@ class HibikiDatabase extends _$HibikiDatabase {
   @override
   MigrationStrategy get migration => MigrationStrategy(
         beforeOpen: (details) async {
-          await customStatement(
+          Future<void> indexIfTableExists(String table, String sql) async {
+            if (await _tableExists(table)) {
+              await customStatement(sql);
+            }
+          }
+
+          await indexIfTableExists(
+            'profile_settings',
             'CREATE INDEX IF NOT EXISTS idx_profile_settings_profile ON profile_settings (profile_id)',
           );
-          await customStatement(
+          await indexIfTableExists(
+            'media_type_profiles',
             'CREATE INDEX IF NOT EXISTS idx_media_type_profiles_profile ON media_type_profiles (profile_id)',
           );
-          await customStatement(
+          await indexIfTableExists(
+            'book_profiles',
             'CREATE INDEX IF NOT EXISTS idx_book_profiles_profile ON book_profiles (profile_id)',
           );
-          await customStatement(
+          await indexIfTableExists(
+            'bookmarks',
             'CREATE INDEX IF NOT EXISTS idx_bookmarks_ttu_book_id_created '
             'ON bookmarks (ttu_book_id, created_at DESC)',
           );
-          await customStatement(
+          await indexIfTableExists(
+            'media_items',
             'CREATE INDEX IF NOT EXISTS idx_media_items_type '
             'ON media_items (media_type_identifier)',
           );
-          await customStatement(
+          await indexIfTableExists(
+            'media_items',
             'CREATE INDEX IF NOT EXISTS idx_media_items_source '
             'ON media_items (media_source_identifier)',
           );
-          await customStatement(
+          await indexIfTableExists(
+            'audio_cues',
             'CREATE INDEX IF NOT EXISTS idx_audio_cues_book_uid '
             'ON audio_cues (book_uid)',
           );
-          await customStatement(
+          await indexIfTableExists(
+            'search_history_items',
             'CREATE INDEX IF NOT EXISTS idx_search_history_key '
             'ON search_history_items (history_key)',
           );
