@@ -71,6 +71,22 @@ class HibikiDatabase extends _$HibikiDatabase {
             'CREATE INDEX IF NOT EXISTS idx_bookmarks_ttu_book_id_created '
             'ON bookmarks (ttu_book_id, created_at DESC)',
           );
+          await customStatement(
+            'CREATE INDEX IF NOT EXISTS idx_media_items_type '
+            'ON media_items (media_type_identifier)',
+          );
+          await customStatement(
+            'CREATE INDEX IF NOT EXISTS idx_media_items_source '
+            'ON media_items (media_source_identifier)',
+          );
+          await customStatement(
+            'CREATE INDEX IF NOT EXISTS idx_audio_cues_book_uid '
+            'ON audio_cues (book_uid)',
+          );
+          await customStatement(
+            'CREATE INDEX IF NOT EXISTS idx_search_history_key '
+            'ON search_history_items (history_key)',
+          );
         },
         onUpgrade: (m, from, to) async {
           if (from > to) {
@@ -465,10 +481,11 @@ class HibikiDatabase extends _$HibikiDatabase {
       into(audiobooks).insert(ab,
           onConflict: DoUpdate((_) => ab, target: [audiobooks.bookUid]));
 
-  Future<int> deleteAudiobookByBookUid(String bookUid) async {
-    await (delete(audioCues)..where((t) => t.bookUid.equals(bookUid))).go();
-    return (delete(audiobooks)..where((t) => t.bookUid.equals(bookUid))).go();
-  }
+  Future<int> deleteAudiobookByBookUid(String bookUid) => transaction(() async {
+        await (delete(audioCues)..where((t) => t.bookUid.equals(bookUid))).go();
+        return (delete(audiobooks)..where((t) => t.bookUid.equals(bookUid)))
+            .go();
+      });
 
   // ── audio cues ──────────────────────────────────────────────────
   Future<List<AudioCueRow>> getCuesForChapter(
@@ -678,12 +695,13 @@ class HibikiDatabase extends _$HibikiDatabase {
       (update(epubBooks)..where((t) => t.id.equals(bookId)))
           .write(EpubBooksCompanion(epubPath: Value(epubPath)));
 
-  Future<int> deleteEpubBook(int id) async {
-    await (delete(readerPositions)..where((t) => t.ttuBookId.equals(id))).go();
-    await (delete(bookmarks)..where((t) => t.ttuBookId.equals(id))).go();
-    await (delete(srtBooks)..where((t) => t.ttuBookId.equals(id))).go();
-    return (delete(epubBooks)..where((t) => t.id.equals(id))).go();
-  }
+  Future<int> deleteEpubBook(int id) => transaction(() async {
+        await (delete(readerPositions)..where((t) => t.ttuBookId.equals(id)))
+            .go();
+        await (delete(bookmarks)..where((t) => t.ttuBookId.equals(id))).go();
+        await (delete(srtBooks)..where((t) => t.ttuBookId.equals(id))).go();
+        return (delete(epubBooks)..where((t) => t.id.equals(id))).go();
+      });
 
   // ── book tags ───────────────────────────────────────────────────
   Future<List<BookTagRow>> getAllTags() => (select(bookTags)

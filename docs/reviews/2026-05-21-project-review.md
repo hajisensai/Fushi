@@ -133,7 +133,7 @@ final String escaped = css
 ### HBK-AUDIT-005 — 字典 ZIP 解压无内存限制
 
 **Severity**: HIGH
-**Status**: open
+**Status**: fixed — 2026-05-21 Dart fallback 路径添加单文件 256MB 上限 + 总解压 2GB 上限，超限中止。FFI 快速路径仍无限制（需 native 层修复）。
 **文件**: `packages/hibiki_dictionary/lib/src/formats/yomichan_dictionary_format.dart:120-145`
 
 **根因**: Dart fallback 解压路径 `writeAsBytesSync(file.content as List<int>)` 将整个文件内容加载到内存。
@@ -331,7 +331,7 @@ void dispose() {
 ### HBK-AUDIT-021 — 数据库缺少关键查询索引
 
 **Severity**: MEDIUM
-**Status**: open
+**Status**: fixed — 2026-05-21 在 beforeOpen 中添加 4 个索引：media_items(media_type_identifier)、media_items(media_source_identifier)、audio_cues(book_uid)、search_history_items(history_key)。
 **文件**: `packages/hibiki_core/lib/src/database/database.dart`
 
 **现状**: 只有 4 个自定义索引（3 个 profile 相关 + 1 个 bookmarks）。
@@ -369,7 +369,7 @@ void dispose() {
 ### HBK-AUDIT-023 — 数据库查询缺少关键事务包裹
 
 **Severity**: MEDIUM
-**Status**: open
+**Status**: fixed — 2026-05-21 `deleteEpubBook` (4 DELETEs) 和 `deleteAudiobookByBookUid` (2 DELETEs) 包裹在 `transaction()` 中。
 **文件**: `packages/hibiki_core/lib/src/database/database.dart`
 
 **问题**: `deleteEpubBook` 执行 3 个 DELETE 操作但无显式事务：
@@ -548,7 +548,7 @@ return import(db: db, bytes: bytes, ...);           // 传给 isolate
 | ~~P0~~ | HBK-AUDIT-020 | ~~CreatorModel 无 dispose()~~ | **fixed** |
 | ~~P0~~ | HBK-AUDIT-025 | ~~_initBook() 异步间隙缺 mounted 检查~~ | **fixed** |
 | P1 | HBK-AUDIT-001 | AppModel 上帝对象 | 性能/可维护性/并发安全 |
-| P1 | HBK-AUDIT-005 | 字典 ZIP 解压无内存限制 | OOM 崩溃 |
+| ~~P1~~ | HBK-AUDIT-005 | ~~字典 ZIP 解压无内存限制~~ | **fixed** (Dart fallback) |
 | ~~P1~~ | HBK-AUDIT-004 | ~~JS 模板字符串转义不完整~~ | **fixed** |
 | P2 | HBK-AUDIT-007 | 阅读器多标志状态机 | 快速导航异常 |
 | P2 | HBK-AUDIT-008 | Stream/Timer 泄漏风险 | 内存泄漏 |
@@ -556,9 +556,9 @@ return import(db: db, bytes: bytes, ...);           // 传给 isolate
 | P2 | HBK-AUDIT-009 | Creator/Anki 代码重复 | 维护成本翻倍 |
 | P2 | HBK-AUDIT-011 | CI/CD 缺失 release build | 生产 bug 逃逸 |
 | P2 | HBK-AUDIT-014 | EPUB 导入内存峰值 | 大文件 OOM |
-| P2 | HBK-AUDIT-021 | 数据库缺少关键查询索引 | 查询性能退化 |
+| ~~P2~~ | HBK-AUDIT-021 | ~~数据库缺少关键查询索引~~ | **fixed** |
 | P2 | HBK-AUDIT-022 | 5 层偏好缓存无失效机制 | 偏好不一致 |
-| P2 | HBK-AUDIT-023 | 关键操作缺少事务包裹 | 数据不一致 |
+| ~~P2~~ | HBK-AUDIT-023 | ~~关键操作缺少事务包裹~~ | **fixed** |
 | P3 | HBK-AUDIT-006 | C++ 导入器无资源上限 | 恶意输入 OOM |
 | P3 | HBK-AUDIT-016 | 字幕 cue 无上限 | 数据库膨胀 |
 | P3 | HBK-AUDIT-015 | 错误日志同步 I/O | 微卡顿 |

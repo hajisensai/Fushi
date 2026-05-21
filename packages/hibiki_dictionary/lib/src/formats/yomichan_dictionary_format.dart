@@ -105,6 +105,12 @@ class YomichanFormat extends DictionaryFormat {
   }
 }
 
+/// Maximum total decompressed size (2 GB) to prevent ZIP bomb OOM.
+const int _maxDecompressedBytes = 2 * 1024 * 1024 * 1024;
+
+/// Maximum single file size inside ZIP (256 MB).
+const int _maxSingleFileBytes = 256 * 1024 * 1024;
+
 /// Top-level function for use in compute. See [DictionaryFormat] for details.
 Future<void> prepareDirectoryYomichanFormat(
     PrepareDirectoryParams params) async {
@@ -126,9 +132,17 @@ Future<void> prepareDirectoryYomichanFormat(
       final zip = archive.ZipDecoder().decodeBuffer(input);
       final total = zip.files.length;
       int n = 0;
+      int cumulativeBytes = 0;
       for (final file in zip.files) {
         final outPath = '$dirPath/${file.name}';
         if (file.isFile) {
+          final int size = file.size;
+          if (size > _maxSingleFileBytes) continue;
+          cumulativeBytes += size;
+          if (cumulativeBytes > _maxDecompressedBytes) {
+            throw StateError(
+                'ZIP extraction aborted: decompressed size exceeds 2 GB limit');
+          }
           final outFile = File(outPath);
           outFile.parent.createSync(recursive: true);
           outFile.writeAsBytesSync(file.content as List<int>);
