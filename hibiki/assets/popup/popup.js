@@ -1718,9 +1718,28 @@ window.updatePopupIncremental = function() {
 
         if (idx < prevCounts.length) {
             if (newCount !== prevCounts[idx]) {
-                const newElement = buildEntryElement(entry, idx);
-                existingEntries[idx].replaceWith(newElement);
-                postProcessRuby(newElement);
+                const entryDiv = existingEntries[idx];
+                const body = entryDiv.querySelector('.glossary-section .category-body');
+                if (body) {
+                    const existingDicts = new Set();
+                    body.querySelectorAll(':scope > .glossary-group > [data-dictionary]').forEach(
+                        node => existingDicts.add(node.getAttribute('data-dictionary')));
+                    const grouped = {};
+                    entry.glossaries.forEach(g => {
+                        (grouped[g.dictionary] ??= []).push({
+                            content: g.content,
+                            definitionTags: g.definitionTags,
+                            termTags: g.termTags,
+                        });
+                    });
+                    for (const dictName of Object.keys(grouped)) {
+                        if (!existingDicts.has(dictName)) {
+                            const section = createGlossarySection(dictName, grouped[dictName], false, idx);
+                            body.appendChild(section);
+                            postProcessRuby(section);
+                        }
+                    }
+                }
             }
         } else {
             if (container.children.length > 0) {
