@@ -1,232 +1,282 @@
-﻿# Hibiki 椤圭洰娣卞害璐ㄩ噺瀹℃煡鎶ュ憡
+# Hibiki 项目深度质量审查报告
 
-**鏃ユ湡**: 2026-05-21
-**瀹℃煡鑼冨洿**: 鍏ㄤ唬鐮佸簱 鈥?鏋舵瀯銆佸疄鐜般€佸伐绋嬭鑼冦€佸畨鍏ㄣ€佹€ц兘銆佸彲缁存姢鎬?
-**瀹℃煡鏂规硶**: 6 璺苟琛屾繁搴︽壂鎻?+ 鏍稿績鏂囦欢閫愯瀹¤
-**浠ｇ爜搴撹妯?*: ~200 Dart 鏂囦欢 / ~85K 琛岋紙涓诲簲鐢級+ 118 鏂囦欢锛坧ackages锛?
+**日期**: 2026-05-21
+**审查范围**: 全代码库 — 架构、实现、工程规范、安全、性能、可维护性
+**审查方法**: 6 路并行深度扫描 + 核心文件逐行审读
+**代码库规模**: ~200 Dart 文件 / ~85K 行（主应用）+ 118 文件（packages）
+
 ---
 
-## 绗竴杞細鍏ㄥ眬鏋舵瀯涓庤嚧鍛介闄?
+## 第一轮：全局架构与致命风险
+
 ### Scope
 
-鍏ㄤ唬鐮佸簱鏋舵瀯灞傞潰鎵弿锛歚app_model.dart`銆佹暟鎹簱灞傘€侀槄璇诲櫒 WebView銆佸瓧鍏?FFI銆丆reator/Anki銆佸紓姝?閿欒澶勭悊妯″紡銆?
+全代码库架构层面扫描：`app_model.dart`、数据库层、阅读器 WebView、字典 FFI、Creator/Anki、异步/错误处理模式。
+
 ---
 
 ## Findings
 
 ---
 
-### HBK-AUDIT-001 鈥?AppModel 涓婂笣瀵硅薄
+### HBK-AUDIT-001 — AppModel 上帝对象
 
-**Severity**: 馃敶 CRITICAL
+**Severity**: CRITICAL
 **Status**: open
-**鏂囦欢**: `hibiki/lib/src/models/app_model.dart` (4,045 琛?
+**文件**: `hibiki/lib/src/models/app_model.dart` (4,045 行)
 
-**鏍瑰洜**: `AppModel` 鏄竴涓吀鍨嬬殑涓婂笣瀵硅薄锛圙od Object锛夛紝鍗曚釜 `ChangeNotifier` 鎵胯浇浜嗘暣涓簲鐢ㄧ殑鎵€鏈夊叏灞€鐘舵€侊細
+**根因**: `AppModel` 是一个典型的上帝对象（God Object），单个 `ChangeNotifier` 承载了整个应用的所有全局状态：
 
-| 鑱岃矗 | 琛屾暟浼扮畻 |
+| 职责 | 行数估算 |
 |------|----------|
-| 涓婚/棰滆壊瀹氬埗 | ~300 琛?|
-| 鍋忓ソ瀛樺彇锛?0+ getter/setter 瀵癸級 | ~600 琛?|
-| 瀛楀吀绠＄悊锛堝鍏?鎺掑簭/鎼滅储/鍘嗗彶锛?| ~800 琛?|
-| 濯掍綋婧愮鐞?| ~300 琛?|
-| 鍒濆鍖?杩佺Щ | ~300 琛?|
-| 涔︽灦/MediaItem 缂撳瓨 | ~200 琛?|
-| 闊抽/TTS/鏈夊０涔︽ˉ鎺?| ~200 琛?|
-| 瀵煎嚭/鏂囦欢绠＄悊 | ~200 琛?|
-| Profile 绯荤粺 | ~100 琛?|
-| 鍗＄墖鍒涘缓杈呭姪 | ~150 琛?|
-| 鏉傞」 | ~800 琛?|
+| 主题/颜色定制 | ~300 行 |
+| 偏好存取（50+ getter/setter 对） | ~600 行 |
+| 字典管理（导入/排序/搜索/历史） | ~800 行 |
+| 媒体源管理 | ~300 行 |
+| 初始化/迁移 | ~300 行 |
+| 书架/MediaItem 缓存 | ~200 行 |
+| 音频/TTS/有声书桥接 | ~200 行 |
+| 导出/文件管理 | ~200 行 |
+| Profile 系统 | ~100 行 |
+| 卡片创建辅助 | ~150 行 |
+| 杂项 | ~800 行 |
 
-**鍏抽敭鎸囨爣**:
-- 31 涓?`late final` 澹版槑 鈥?涓ユ牸渚濊禆鍒濆鍖栭『搴?- 54 娆?`notifyListeners()` 璋冪敤 鈥?浠讳綍灞炴€у彉鏇撮兘瑙﹀彂鍏ㄦ爲閲嶅缓
-- 28 涓?`catch` 鍧楋紝鍏朵腑 3 涓?`catch (_) {}` 瀹屽叏鍚炲櫖寮傚父
-- 10 涓?`dynamic` 绫诲瀷浣跨敤
+**关键指标**:
+- 31 个 `late final` 声明 — 严格依赖初始化顺序
+- 54 次 `notifyListeners()` 调用 — 任何属性变更都触发全树重建
+- 28 个 `catch` 块，其中 3 个 `catch (_) {}` 完全吞噬异常
+- 10 个 `dynamic` 类型使用
 
-**褰卞搷**:
-1. **鎬ц兘**: 鏀逛竴涓亸濂藉氨 `notifyListeners()` 鈫?鍏ㄩ儴 `Consumer<AppModel>` 閲嶅缓锛屽寘鎷笌璇ュ亸濂芥棤鍏崇殑 widget
-2. **鍙祴璇曟€?*: 鏃犳硶鍗曠嫭娴嬭瘯瀛楀吀閫昏緫銆佷富棰橀€昏緫銆佸亸濂介€昏緫 鈥?蹇呴』瀹炰緥鍖栨暣涓?AppModel
-3. **骞跺彂瀹夊叏**: 澶氫釜寮傛鏂规硶鍚屾椂淇敼 `_prefCache`銆乣_dictionariesCache`銆乣_mediaItemsCache` 绛夊叡浜彲鍙樼姸鎬侊紝鏃犻攣鏃犲悓姝?4. **鐢熷懡鍛ㄦ湡**: 31 涓?`late final` 濡傛灉鍒濆鍖栭『搴忔墦涔?鈫?`LateInitializationError` 宕╂簝锛屼笖閿欒淇℃伅鏃犳硶瀹氫綅鏄摢涓瓧娈?
-**淇寤鸿**: 鎷嗗垎涓虹嫭绔嬬殑 Riverpod Provider/Notifier锛?- `ThemeNotifier` 鈥?涓婚/棰滆壊
-- `PreferencesRepository` 鈥?鍋忓ソ璇诲啓锛堝彲娉ㄥ叆 mock DB锛?- `DictionaryRepository` 鈥?瀛楀吀 CRUD + 鎼滅储
-- `MediaHistoryRepository` 鈥?濯掍綋鍘嗗彶
-- `ProfileRepository`锛堝凡瀛樺湪锛岄渶瀹屽叏瑙ｈ€︼級
+**影响**:
+1. **性能**: 改一个偏好就 `notifyListeners()` -> 全部 `Consumer<AppModel>` 重建，包括与该偏好无关的 widget
+2. **可测试性**: 无法单独测试字典逻辑、主题逻辑、偏好逻辑 — 必须实例化整个 AppModel
+3. **并发安全**: 多个异步方法同时修改 `_prefCache`、`_dictionariesCache`、`_mediaItemsCache` 等共享可变状态，无锁无同步
+4. **生命周期**: 31 个 `late final` 如果初始化顺序打乱 -> `LateInitializationError` 崩溃，且错误信息无法定位是哪个字段
 
-**楠岃瘉鏂瑰紡**: 鎷嗗垎鍚庡崟鍏冩祴璇曟瘡涓?Repository锛岄獙璇?`notifyListeners` 绮剧‘鍒板瓙妯″潡銆?
+**修复建议**: 拆分为独立的 Riverpod Provider/Notifier：
+- `ThemeNotifier` — 主题/颜色
+- `PreferencesRepository` — 偏好读写（可注入 mock DB）
+- `DictionaryRepository` — 字典 CRUD + 搜索
+- `MediaHistoryRepository` — 媒体历史
+- `ProfileRepository`（已存在，需完全解耦）
+
+**验证方式**: 拆分后单元测试每个 Repository，验证 `notifyListeners` 精确到子模块。
+
 ---
 
-### HBK-AUDIT-002 鈥?闃呰鍣ㄧ姸鎬佹満绔炴€佹潯浠讹紙浣嶇疆淇濆瓨 vs 瀵艰埅锛?
-**Severity**: 馃敶 CRITICAL
-**Status**: open
-**鏂囦欢**: `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart:2189-2551`
+### HBK-AUDIT-002 — 阅读器状态机竞态条件（位置保存 vs 导航）
 
-**鏍瑰洜**: 浣嶇疆淇濆瓨浣跨敤 500ms debounce Timer锛屽鑸搷浣滅洿鎺ヤ慨鏀?`_currentChapter`锛屼袱鑰呮棤鍚屾鏈哄埗銆?
-**绔炴€佸満鏅?*:
-1. 鐢ㄦ埛鍦ㄧ 3 绔?50% 浣嶇疆锛宒ebounce timer 寰呰Е鍙?2. 鐢ㄦ埛蹇€熻烦杞埌绗?5 绔?3. `_currentChapter = 5`锛宍_initialProgress` 鏇存柊
-4. 500ms 鍚?timer 瑙﹀彂 `_persistPosition()`锛屼娇鐢ㄥ凡琚慨鏀圭殑 `_currentChapter`
-5. 浣嶇疆琚敊璇繚瀛樹负绗?5 绔狅紙鐢ㄦ埛鍙槸鐭殏缁忚繃锛?
-**褰卞搷**: 鐢ㄦ埛闃呰浣嶇疆涓㈠け锛屼笅娆℃墦寮€涔︾洿鎺ヨ烦鍒伴敊璇珷鑺傘€?
-**淇寤鸿**: 鍦?`_debouncedSaveReaderPosition` 涓崟鑾峰綋鍓?section 鍜?progress 鍒伴棴鍖呭眬閮ㄥ彉閲忥紝鑰岄潪渚濊禆瀹炰緥鍙橀噺銆?
+**Severity**: CRITICAL
+**Status**: open
+**文件**: `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart:2189-2551`
+
+**根因**: 位置保存使用 500ms debounce Timer，导航操作直接修改 `_currentChapter`，两者无同步机制。
+
+**竞态场景**:
+1. 用户在第 3 章 50% 位置，debounce timer 待触发
+2. 用户快速跳转到第 5 章
+3. `_currentChapter = 5`，`_initialProgress` 更新
+4. 500ms 后 timer 触发 `_persistPosition()`，使用已被修改的 `_currentChapter`
+5. 位置被错误保存为第 5 章（用户只是短暂经过）
+
+**影响**: 用户阅读位置丢失，下次打开书直接跳到错误章节。
+
+**修复建议**: 在 `_debouncedSaveReaderPosition` 中捕获当前 section 和 progress 到闭包局部变量，而非依赖实例变量。
+
 ---
 
-### HBK-AUDIT-003 鈥?WebView Controller 鐢熷懡鍛ㄦ湡绔炴€?
-**Severity**: 馃敶 CRITICAL
-**Status**: open
-**鏂囦欢**: `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart:1091-1130`
+### HBK-AUDIT-003 — WebView Controller 生命周期竞态
 
-**鏍瑰洜**: `_applyStylesLive()` 绛夋柟娉曞厛妫€鏌?`_controller != null`锛岀劧鍚庢墽琛屽涓?`await`锛屾湡闂?`dispose()` 鍙兘琚皟鐢ㄣ€?
+**Severity**: CRITICAL
+**Status**: open
+**文件**: `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart:1091-1130`
+
+**根因**: `_applyStylesLive()` 等方法先检查 `_controller != null`，然后执行多个 `await`，期间 `dispose()` 可能被调用。
+
 ```
-_applyStylesLive() 寮€濮?鈫?_controller != null 鉁?    鈫?await _syncSettingsFromHive() (100+ ms)
-        鈫?鐢ㄦ埛杩斿洖 鈫?dispose() 琚皟鐢?鈫?_controller 澶辨晥
-    鈫?_controller!.evaluateJavascript() 鈫?CRASH
+_applyStylesLive() 开始 -> _controller != null (ok)
+    | await _syncSettingsFromHive() (100+ ms)
+        | 用户返回 -> dispose() 被调用 -> _controller 失效
+    | _controller!.evaluateJavascript() -> CRASH
 ```
 
-**褰卞搷**: 鐢ㄦ埛蹇€熼€€鍑洪槄璇诲櫒鏃跺穿婧冦€?
-**淇寤鸿**: 鎵€鏈?`evaluateJavascript()` 璋冪敤鍖呰９ try-catch 鎹曡幏 `PlatformException`锛坈ontroller disposed锛夛紝鎴栧湪姣忎釜 await 鐐瑰悗閲嶆柊妫€鏌?`mounted && _controller != null`銆?
+**影响**: 用户快速退出阅读器时崩溃。
+
+**修复建议**: 所有 `evaluateJavascript()` 调用包裹 try-catch 捕获 `PlatformException`（controller disposed），或在每个 await 点后重新检查 `mounted && _controller != null`。
+
 ---
 
-### HBK-AUDIT-004 鈥?JavaScript 妯℃澘瀛楃涓茶浆涔変笉瀹屾暣
+### HBK-AUDIT-004 — JavaScript 模板字符串转义不完整
 
-**Severity**: 馃敶 HIGH
+**Severity**: HIGH
 **Status**: open
-**鏂囦欢**: `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart:1113-1129`
+**文件**: `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart:1113-1129`
 
-**鏍瑰洜**: CSS 娉ㄥ叆鍒?JS 妯℃澘瀛楃涓叉椂鍙浆涔変簡 `\`, `` ` ``, `$`锛屼絾鏈鐞?`${}` 妯″紡銆?
+**根因**: CSS 注入到 JS 模板字符串时只转义了 `\`, `` ` ``, `$`，但未处理 `${}` 模式。
+
 ```dart
 final String escaped = css
     .replaceAll('\\', '\\\\')
     .replaceAll('`', '\\`')
     .replaceAll('\$', '\\\$');
-// 娉ㄥ叆鍒? el.textContent = `$escaped`;
+// 注入到: el.textContent = `$escaped`;
 ```
 
-濡傛灉 CSS 鍖呭惈 `${...}` 褰㈠紡鐨勫唴瀹癸紙铏界劧涓嶅父瑙侊紝浣嗚嚜瀹氫箟 CSS 鐢ㄦ埛鍙緭鍏ワ級锛屽彲鑳藉鑷?JS 鎵ц銆?
-**褰卞搷**: 鑷畾涔?CSS 鍔熻兘瀛樺湪 XSS 椋庨櫓锛堣櫧鐒舵槸鏈湴 WebView锛岄潪杩滅▼鏀诲嚮闈紝浣嗕粛鍙鑷撮槄璇诲櫒琛屼负寮傚父锛夈€?
-**淇寤鸿**: 浣跨敤 `JSON.encode(css)` 鐢熸垚瀹夊叏瀛楃涓诧紝鎴栫敤 Blob URL 鏇夸唬妯℃澘瀛楃涓叉敞鍏ャ€?
+如果 CSS 包含 `${...}` 形式的内容（虽然不常见，但自定义 CSS 用户可输入），可能导致 JS 执行。
+
+**影响**: 自定义 CSS 功能存在 XSS 风险（虽然是本地 WebView，非远程攻击面，但仍可导致阅读器行为异常）。
+
+**修复建议**: 使用 `JSON.encode(css)` 生成安全字符串，或用 Blob URL 替代模板字符串注入。
+
 ---
 
-### HBK-AUDIT-005 鈥?瀛楀吀 ZIP 瑙ｅ帇鏃犲唴瀛橀檺鍒?
-**Severity**: 馃敶 HIGH
-**Status**: open
-**鏂囦欢**: `packages/hibiki_dictionary/lib/src/formats/yomichan_dictionary_format.dart:120-145`
+### HBK-AUDIT-005 — 字典 ZIP 解压无内存限制
 
-**鏍瑰洜**: Dart fallback 瑙ｅ帇璺緞 `writeAsBytesSync(file.content as List<int>)` 灏嗘暣涓枃浠跺唴瀹瑰姞杞藉埌鍐呭瓨銆?
-**褰卞搷**: 瀵煎叆 1GB+ 瀛楀吀 ZIP 鏃?RAM 宄板€?2GB+锛屼腑绔墜鏈虹洿鎺?OOM 宕╂簝銆?
-**淇寤鸿**: 鏀圭敤娴佸紡瑙ｅ帇锛屾垨鑷冲皯鍦ㄨВ鍘嬪墠妫€鏌?`uncompressedSize` 骞舵嫆缁濊秴闄愭枃浠躲€?
+**Severity**: HIGH
+**Status**: open
+**文件**: `packages/hibiki_dictionary/lib/src/formats/yomichan_dictionary_format.dart:120-145`
+
+**根因**: Dart fallback 解压路径 `writeAsBytesSync(file.content as List<int>)` 将整个文件内容加载到内存。
+
+**影响**: 导入 1GB+ 字典 ZIP 时 RAM 峰值 2GB+，中端手机直接 OOM 崩溃。
+
+**修复建议**: 改用流式解压，或至少在解压前检查 `uncompressedSize` 并拒绝超限文件。
+
 ---
 
-### HBK-AUDIT-006 鈥?C++ 瀵煎叆鍣ㄦ棤璧勬簮涓婇檺
+### HBK-AUDIT-006 — C++ 导入器无资源上限
 
-**Severity**: 馃煛 MEDIUM
+**Severity**: MEDIUM
 **Status**: open
-**鏂囦欢**: `native/hoshidicts/hoshidicts_src/importer.cpp:200-250`
+**文件**: `native/hoshidicts/hoshidicts_src/importer.cpp:200-250`
 
-**鏍瑰洜**: 鏃犳渶澶ф潯鐩暟銆佹渶澶ф潯鐩ぇ灏忋€佹渶澶у瓧鍏告€诲ぇ灏忛檺鍒躲€俫lossary 鍜?frequency 鏁扮粍鏃犵晫銆?
-**褰卞搷**: 鎭舵剰鏋勯€犵殑瀛楀吀 ZIP 鍙€氳繃娴烽噺鏉＄洰瑙﹀彂 OOM銆?
-**淇寤鸿**: 娣诲姞纭檺鍒讹細鍗曟枃浠舵渶澶?100K 鏉＄洰锛屽崟鏉＄洰 expression 鏈€澶?64KB锛岄鐜囨潯鐩渶澶?1000/term銆?
+**根因**: 无最大条目数、最大条目大小、最大字典总大小限制。glossary 和 frequency 数组无界。
+
+**影响**: 恶意构造的字典 ZIP 可通过海量条目触发 OOM。
+
+**修复建议**: 添加硬限制：单文件最大 100K 条目，单条目 expression 最大 64KB，频率条目最大 1000/term。
+
 ---
 
-### HBK-AUDIT-007 鈥?闃呰鍣ㄥ鏍囧織鐘舵€佹満锛堥潪鍘熷瓙锛?
-**Severity**: 馃煛 MEDIUM
+### HBK-AUDIT-007 — 阅读器多标志状态机（非原子）
+
+**Severity**: MEDIUM
 **Status**: open
-**鏂囦欢**: `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart:1467-1617`
+**文件**: `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart:1467-1617`
 
-**鏍瑰洜**: 闃呰鍣ㄤ娇鐢ㄥ涓嫭绔嬪竷灏旀爣蹇楃鐞嗙姸鎬侊細`_readerContentReady`銆乣_hasEverLoaded`銆乣_restoreInFlight`銆乣_restoreExpectedGeneration`銆傝繖浜涙爣蹇椾箣闂存病鏈夊師瀛愭€т繚璇併€?
-蹇€熷鑸満鏅細
-1. 鍔犺浇绗?1 绔?(gen=1) 鈫?璁剧疆 `_restoreExpectedGeneration=1`
-2. 蹇€熻烦杞 2 绔?(gen=2) 鈫?璁剧疆 `_restoreExpectedGeneration=2`
-3. 绗?1 绔犵殑 `onLoadStop` 瑙﹀彂 (gen=1)锛屼絾 generation 涓嶅尮閰?鈫?闈欓粯璺宠繃
-4. 杩涘害杞鍦ㄩ敊璇姸鎬佷笅鍚姩/鍋滄
+**根因**: 阅读器使用多个独立布尔标志管理状态：`_readerContentReady`、`_hasEverLoaded`、`_restoreInFlight`、`_restoreExpectedGeneration`。这些标志之间没有原子性保证。
 
-**褰卞搷**: 蹇€熷鑸椂杩涘害杞涓嶇ǔ瀹氾紝鍙兘瀵艰嚧绔犺妭鍐呬綅缃笉鍑嗙‘銆?
-**淇寤鸿**: 鐢ㄦ灇涓剧姸鎬佹満鏇夸唬澶氬竷灏旀爣蹇楋細
+快速导航场景：
+1. 加载第 1 章 (gen=1) -> 设置 `_restoreExpectedGeneration=1`
+2. 快速跳转第 2 章 (gen=2) -> 设置 `_restoreExpectedGeneration=2`
+3. 第 1 章的 `onLoadStop` 触发 (gen=1)，但 generation 不匹配 -> 静默跳过
+4. 进度轮询在错误状态下启动/停止
+
+**影响**: 快速导航时进度轮询不稳定，可能导致章节内位置不准确。
+
+**修复建议**: 用枚举状态机替代多布尔标志：
 ```dart
 enum ReaderState { idle, loading, restoring, ready, error }
 ```
 
 ---
 
-### HBK-AUDIT-008 鈥?Stream/Timer 璧勬簮娉勬紡椋庨櫓
+### HBK-AUDIT-008 — Stream/Timer 资源泄漏风险
 
-**Severity**: 馃煛 MEDIUM
+**Severity**: MEDIUM
 **Status**: open
-**鏂囦欢**: `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart:2756-2773`
+**文件**: `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart:2756-2773`
 
-**鏍瑰洜**: `_subscribeNotificationStreams()` 姣忔琚皟鐢ㄦ椂鍒涘缓鏂拌闃咃紝浣嗗鏋?`_initAudioFeatures()` 琚娆¤皟鐢紙琛?667, 749锛夛紝鏃ц闃呯殑 `ctrl` 闂寘寮曠敤琚硠婕忋€?
-鍏ㄥ眬缁熻锛?- 15 澶?`catch (_) {}` 瀹屽叏鍚炲櫖寮傚父锛堣瑙侀檮褰?A锛?- 10 澶?`StreamSubscription` 澹版槑锛岄儴鍒嗙己灏戝搴?`cancel()`
-- `reader_hoshi_page.dart` 涓?4 澶?`catch (_) {}` 鈥?闃呰鍣ㄦ渶鍏抽敭璺緞涓婄殑闈欓粯澶辫触
+**根因**: `_subscribeNotificationStreams()` 每次被调用时创建新订阅，但如果 `_initAudioFeatures()` 被多次调用（行 667, 749），旧订阅的 `ctrl` 闭包引用被泄漏。
 
-**淇寤鸿**: 鍦ㄩ噸鏂拌闃呭墠鏂█鏃ц闃呭凡鍙栨秷銆傛坊鍔?`@mustCallSuper` dispose 妫€鏌ャ€?
+全局统计：
+- 15 处 `catch (_) {}` 完全吞噬异常（详见附录 A）
+- 10 处 `StreamSubscription` 声明，部分缺少对应 `cancel()`
+- `reader_hoshi_page.dart` 中 4 处 `catch (_) {}` — 阅读器最关键路径上的静默失败
+
+**修复建议**: 在重新订阅前断言旧订阅已取消。添加 `@mustCallSuper` dispose 检查。
+
 ---
 
-### HBK-AUDIT-009 鈥?Creator/Anki 澶ц妯′唬鐮侀噸澶?
-**Severity**: 馃煛 MEDIUM
-**Status**: open
-**鏂囦欢**: 澶氭枃浠?
-**閲嶅娓呭崟**:
+### HBK-AUDIT-009 — Creator/Anki 大规模代码重复
 
-| 閲嶅鍖哄煙 | 鏂囦欢 | 閲嶅琛屾暟 |
+**Severity**: MEDIUM
+**Status**: open
+**文件**: 多文件
+
+**重复清单**:
+
+| 重复区域 | 文件 | 重复行数 |
 |----------|------|----------|
-| AudioField 鈫?AudioSentenceField | `fields/audio_field.dart`, `fields/audio_sentence_field.dart` | **300+ 琛?(95%鐩稿悓)** |
-| AnkiConnect 鈫?AnkiDroid `mineEntry()` | `ankiconnect_repository.dart`, `anki_repository.dart` | **100+ 琛?(90%鐩稿悓)** |
-| 3 涓?Cloze 瀛楁 | `cloze_before_field.dart`, `cloze_after_field.dart`, `cloze_inside_field.dart` | **~40 琛岀粨鏋勭浉鍚?* |
-| 3 涓?Meaning 鍙樹綋瀛楁 | `collapsed_meaning_field.dart`, `expanded_meaning_field.dart`, `hidden_meaning_field.dart` | **~45 琛岄€昏緫鐩稿悓** |
-| PickImage 鈫?PickAudio 澧炲己 | `pick_image_enhancement.dart`, `pick_audio_enhancement.dart` | **~70 琛屾ā寮忕浉鍚?* |
+| AudioField / AudioSentenceField | `fields/audio_field.dart`, `fields/audio_sentence_field.dart` | **300+ 行 (95%相同)** |
+| AnkiConnect / AnkiDroid `mineEntry()` | `ankiconnect_repository.dart`, `anki_repository.dart` | **100+ 行 (90%相同)** |
+| 3 个 Cloze 字段 | `cloze_before_field.dart`, `cloze_after_field.dart`, `cloze_inside_field.dart` | **~40 行结构相同** |
+| 3 个 Meaning 变体字段 | `collapsed_meaning_field.dart`, `expanded_meaning_field.dart`, `hidden_meaning_field.dart` | **~45 行逻辑相同** |
+| PickImage / PickAudio 增强 | `pick_image_enhancement.dart`, `pick_audio_enhancement.dart` | **~70 行模式相同** |
 
-**鎬昏**: ~555+ 琛屽彲娑堥櫎鐨勯噸澶嶃€?
-**褰卞搷**: 淇涓€涓?bug 闇€瑕佸湪 2-3 涓枃浠朵腑鍚屾淇敼銆侫udioField 鍜?AudioSentenceField 灏ゅ叾鍗遍櫓 鈥?375 琛屽嚑涔庣浉鍚岀殑浠ｇ爜锛屼换浣曢煶棰戞挱鏀惧櫒鐨?bug 淇閮藉繀椤诲仛涓ゆ銆?
-**淇寤鸿**:
-1. 鎻愬彇 `AudioPlayerField` 鍩虹被锛孉udioField 鍜?AudioSentenceField 鍙繚鐣欐瀯閫犲嚱鏁板樊寮?2. 灏?`mineEntry()` 閫氱敤閫昏緫涓婃彁鍒?`BaseAnkiRepository`
-3. Cloze 瀛楁鏀逛负鍙傛暟鍖栧伐鍘?
+**总计**: ~555+ 行可消除的重复。
+
+**影响**: 修复一个 bug 需要在 2-3 个文件中同步修改。AudioField 和 AudioSentenceField 尤其危险 — 375 行几乎相同的代码，任何音频播放器的 bug 修复都必须做两次。
+
+**修复建议**:
+1. 提取 `AudioPlayerField` 基类，AudioField 和 AudioSentenceField 只保留构造函数差异
+2. 将 `mineEntry()` 通用逻辑上提到 `BaseAnkiRepository`
+3. Cloze 字段改为参数化工厂
+
 ---
 
-### HBK-AUDIT-010 鈥?鍋忓ソ绯荤粺绫诲瀷涓嶅畨鍏ㄧ殑瀛楃涓插簭鍒楀寲
+### HBK-AUDIT-010 — 偏好系统类型不安全的字符串序列化
 
-**Severity**: 馃煛 MEDIUM
+**Severity**: MEDIUM
 **Status**: open
-**鏂囦欢**: `hibiki/lib/src/media/media_source.dart:110-137`, `packages/hibiki_core/lib/src/database/database.dart:246-253`
+**文件**: `hibiki/lib/src/media/media_source.dart:110-137`, `packages/hibiki_core/lib/src/database/database.dart:246-253`
 
-**鏍瑰洜**: 鎵€鏈夊亸濂藉€奸€氳繃 `value.toString()` 瀛樺偍锛岃鍙栨椂閫氳繃鍚彂寮忕寽娴嬫仮澶嶇被鍨嬶細
+**根因**: 所有偏好值通过 `value.toString()` 存储，读取时通过启发式猜测恢复类型：
 
 ```dart
-if (raw == 'true') 鈫?bool
-else if (int.tryParse(raw) != null) 鈫?int
-else if (double.tryParse(raw) != null) 鈫?double
-else 鈫?String
+if (raw == 'true') -> bool
+else if (int.tryParse(raw) != null) -> int
+else if (double.tryParse(raw) != null) -> double
+else -> String
 ```
 
-**闂鍦烘櫙**:
-- 瀛楃涓插€?`"123"` 琚弽搴忓垪鍖栦负 `int 123`
-- 瀛楃涓插€?`"true"` 琚弽搴忓垪鍖栦负 `bool true`
-- `double` 鍊?`1.0` 缁?`toString()` 鍚庡彉涓?`"1.0"`锛岃鍥炴槸 `double`锛屼絾 `1` 鍙樹负 `int`
+**问题场景**:
+- 字符串值 `"123"` 被反序列化为 `int 123`
+- 字符串值 `"true"` 被反序列化为 `bool true`
+- `double` 值 `1.0` 经 `toString()` 后变为 `"1.0"`，读回是 `double`，但 `1` 变为 `int`
 
-**褰卞搷**: 绫诲瀷婕傜Щ瀵艰嚧 `getPreference<T>` 鍦ㄨ繍琛屾椂绫诲瀷妫€鏌ュけ璐ワ紝闈欓粯杩斿洖 `defaultValue`锛岀敤鎴疯缃涪澶变絾涓嶆姤閿欍€?
-**淇寤鸿**: 瀛樺偍鏃堕檮甯︾被鍨嬫爣璁帮紝濡?`"b:true"`, `"i:123"`, `"d:1.0"`, `"s:123"` 鎴栦娇鐢?JSON銆?
+**影响**: 类型漂移导致 `getPreference<T>` 在运行时类型检查失败，静默返回 `defaultValue`，用户设置丢失但不报错。
+
+**修复建议**: 存储时附带类型标记，如 `"b:true"`, `"i:123"`, `"d:1.0"`, `"s:123"` 或使用 JSON。
+
 ---
 
-### HBK-AUDIT-011 鈥?CI/CD 缂哄け鍏抽敭鐜妭
+### HBK-AUDIT-011 — CI/CD 缺失关键环节
 
-**Severity**: 馃煛 MEDIUM
+**Severity**: MEDIUM
 **Status**: open
-**鏂囦欢**: `.github/workflows/main.yml`
+**文件**: `.github/workflows/main.yml`
 
-**鐜扮姸**:
-- 鉁?`flutter analyze`
-- 鉁?`flutter test`锛?06 涓崟鍏冩祴璇曟枃浠?/ ~8,300 琛岋級
-- 鉂?鍙瀯寤?**debug** APK锛屼笉鏋勫缓 release
-- 鉂?鏃犱唬鐮佽鐩栫巼鎶ュ憡
-- 鉂?鏃犻泦鎴愭祴璇曪紙4 涓泦鎴愭祴璇曟枃浠舵湭鍦?CI 杩愯锛?- 鉂?鏃?release signing 楠岃瘉
-- 鉂?鏃?dependency audit / vulnerability scan
+**现状**:
+- `flutter analyze` (ok)
+- `flutter test`（106 个单元测试文件 / ~8,300 行）(ok)
+- 只构建 **debug** APK，不构建 release (missing)
+- 无代码覆盖率报告 (missing)
+- 无集成测试（4 个集成测试文件未在 CI 运行）(missing)
+- 无 release signing 验证 (missing)
+- 无 dependency audit / vulnerability scan (missing)
 
-**褰卞搷**: release-only 鐨?bug锛堝 tree-shaking 绉婚櫎琚弽灏勫紩鐢ㄧ殑浠ｇ爜銆丳roGuard 闂锛夊湪 CI 涓嶄細琚崟鑾枫€?
-**淇寤鸿**: 娣诲姞 `flutter build apk --release`锛堥渶瑕?CI 涓婇厤缃鍚嶅瘑閽ワ級锛屾坊鍔?`flutter test --coverage`锛屾坊鍔?`dart pub outdated` 妫€鏌ャ€?
+**影响**: release-only 的 bug（如 tree-shaking 移除被反射引用的代码、ProGuard 问题）在 CI 不会被捕获。
+
+**修复建议**: 添加 `flutter build apk --release`（需要 CI 上配置签名密钥），添加 `flutter test --coverage`，添加 `dart pub outdated` 检查。
+
 ---
 
-### HBK-AUDIT-012 鈥?鏁版嵁搴撻檷绾х瓥鐣ユ槸鍏ㄥ垹閲嶅缓
+### HBK-AUDIT-012 — 数据库降级策略是全删重建
 
-**Severity**: 馃煛 MEDIUM
+**Severity**: MEDIUM
 **Status**: open
-**鏂囦欢**: `packages/hibiki_core/lib/src/database/database.dart:73-80`
+**文件**: `packages/hibiki_core/lib/src/database/database.dart:73-80`
 
 ```dart
 if (from > to) {
@@ -240,26 +290,32 @@ if (from > to) {
 }
 ```
 
-**鏍瑰洜**: schema 鐗堟湰闄嶇骇鏃讹紙濡傜敤鎴峰畨瑁呮棫鐗堟湰 APK锛夛紝鐩存帴 DROP ALL TABLES 閲嶅缓銆?
-**褰卞搷**: 鐢ㄦ埛鍥為€€鐗堟湰鍚?**鎵€鏈夋暟鎹涪澶?* 鈥?涔︽灦銆侀槄璇讳綅缃€佸瓧鍏稿巻鍙层€佸亸濂藉叏娌′簡銆傛病鏈夎鍛婏紝娌℃湁澶囦唤銆?
-**淇寤鸿**: 闄嶇骇鏃惰嚦灏戝厛澶囦唤 `hibiki.db` 涓?`hibiki.db.bak.{version}`锛屾垨鎷掔粷闄嶇骇骞舵彁绀虹敤鎴枫€?
+**根因**: schema 版本降级时（如用户安装旧版本 APK），直接 DROP ALL TABLES 重建。
+
+**影响**: 用户回退版本后 **所有数据丢失** — 书架、阅读位置、字典历史、偏好全没了。没有警告，没有备份。
+
+**修复建议**: 降级时至少先备份 `hibiki.db` 为 `hibiki.db.bak.{version}`，或拒绝降级并提示用户。
+
 ---
 
-### HBK-AUDIT-020 鈥?CreatorModel 鏃?dispose()锛堝唴瀛樻硠婕忥級
+### HBK-AUDIT-020 — CreatorModel 无 dispose()（内存泄漏）
 
-**Severity**: 馃敶 CRITICAL
+**Severity**: CRITICAL
 **Status**: open
-**鏂囦欢**: `hibiki/lib/src/models/creator_model.dart:27-42`
+**文件**: `hibiki/lib/src/models/creator_model.dart:27-42`
 
-**鏍瑰洜**: `CreatorModel` 缁ф壙 `ChangeNotifier` 浣?*娌℃湁瀹炵幇 `dispose()` 鏂规硶**銆?
-瀹炰緥鍐呮寔鏈夛細
-- ~20 涓?`TextEditingController`锛堟瘡涓?Field 涓€涓級
-- ~20 涓?`ValueNotifier<bool>`锛堥攣瀹氱姸鎬侊級
-- 1 涓?`ScrollController`
+**根因**: `CreatorModel` 继承 `ChangeNotifier` 但**没有实现 `dispose()` 方法**。
 
-杩欎簺鎺у埗鍣ㄥ湪 `CreatorModel` 琚?Riverpod `ChangeNotifierProvider` 閿€姣佹椂涓嶄細琚竻鐞嗐€?
-**褰卞搷**: 姣忔 Provider 閲嶅缓閮芥硠婕?~40 涓?Flutter 鎺у埗鍣ㄥ璞°€傝櫧鐒?Provider 涓嶉绻侀噸寤猴紝浣嗚繖鏄‘瀹氭€х殑鍐呭瓨娉勬紡銆?
-**淇寤鸿**:
+实例内持有：
+- ~20 个 `TextEditingController`（每个 Field 一个）
+- ~20 个 `ValueNotifier<bool>`（锁定状态）
+- 1 个 `ScrollController`
+
+这些控制器在 `CreatorModel` 被 Riverpod `ChangeNotifierProvider` 销毁时不会被清理。
+
+**影响**: 每次 Provider 重建都泄漏 ~40 个 Flutter 控制器对象。虽然 Provider 不频繁重建，但这是确定性的内存泄漏。
+
+**修复建议**:
 ```dart
 @override
 void dispose() {
@@ -272,344 +328,420 @@ void dispose() {
 
 ---
 
-### HBK-AUDIT-021 鈥?鏁版嵁搴撶己灏戝叧閿煡璇㈢储寮?
-**Severity**: 馃煛 MEDIUM
+### HBK-AUDIT-021 — 数据库缺少关键查询索引
+
+**Severity**: MEDIUM
 **Status**: open
-**鏂囦欢**: `packages/hibiki_core/lib/src/database/database.dart`
+**文件**: `packages/hibiki_core/lib/src/database/database.dart`
 
-**鐜扮姸**: 鍙湁 4 涓嚜瀹氫箟绱㈠紩锛? 涓?profile 鐩稿叧 + 1 涓?bookmarks锛夈€?
-**缂哄け绱㈠紩**:
-- `media_items.media_type_identifier` 鈥?`getMediaItemsByType()` 鍏ㄨ〃鎵弿
-- `media_items.media_source_identifier` 鈥?`getMediaItemsBySource()` 鍏ㄨ〃鎵弿
-- `audio_cues.book_uid` 鈥?cue 鏌ヨ鍏ㄨ〃鎵弿
-- `search_history_items.history_key` 鈥?鎼滅储鍘嗗彶鏌ヨ鍏ㄨ〃鎵弿
+**现状**: 只有 4 个自定义索引（3 个 profile 相关 + 1 个 bookmarks）。
 
-**褰卞搷**: 鏁版嵁閲忓皯鏃朵笉鏄庢樉锛屼絾 media_items 鍜?audio_cues 闅忎娇鐢ㄥ闀匡紝鏌ヨ鎬ц兘浼氱嚎鎬ч€€鍖栥€?
+**缺失索引**:
+- `media_items.media_type_identifier` — `getMediaItemsByType()` 全表扫描
+- `media_items.media_source_identifier` — `getMediaItemsBySource()` 全表扫描
+- `audio_cues.book_uid` — cue 查询全表扫描
+- `search_history_items.history_key` — 搜索历史查询全表扫描
+
+**影响**: 数据量少时不明显，但 media_items 和 audio_cues 随使用增长，查询性能会线性退化。
+
 ---
 
-### HBK-AUDIT-022 鈥?5 灞傚亸濂界紦瀛橈紝鏃犲け鏁堟満鍒?
-**Severity**: 馃煛 MEDIUM
+### HBK-AUDIT-022 — 5 层偏好缓存，无失效机制
+
+**Severity**: MEDIUM
 **Status**: open
-**鏂囦欢**: `app_model.dart:216`, `media_source.dart:92`, `database.dart:234`
+**文件**: `app_model.dart:216`, `media_source.dart:92`, `database.dart:234`
 
-**鐜扮姸**: 鍋忓ソ鏁版嵁瀛樺湪 5 涓嫭绔嬪瓨鍌?缂撳瓨灞傦細
+**现状**: 偏好数据存在 5 个独立存储/缓存层：
 
-| 灞?| 浣嶇疆 | 鍚屾鏈哄埗 |
+| 层 | 位置 | 同步机制 |
 |----|------|----------|
-| 1. Drift `preferences` 琛?| `database.dart` | 鍦伴潰鐪熺浉 |
-| 2. AppModel `_prefCache` | `app_model.dart:216` | 鍚姩鍔犺浇涓€娆★紝`_setPref` 鍚屾鏇存柊 |
-| 3. MediaSource `_preferences` | `media_source.dart:92` | 姣忎釜 source 鐙珛缂撳瓨锛屽垵濮嬪寲鏃跺姞杞?|
-| 4. Profile `profile_settings` 琛?| `database.dart` | 鐙珛琛紝涓嶈蛋 `_prefCache` |
-| 5. SharedPreferences | `ttu_migration.dart` | 浠呰縼绉荤敤 |
+| 1. Drift `preferences` 表 | `database.dart` | 地面真相 |
+| 2. AppModel `_prefCache` | `app_model.dart:216` | 启动加载一次，`_setPref` 同步更新 |
+| 3. MediaSource `_preferences` | `media_source.dart:92` | 每个 source 独立缓存，初始化时加载 |
+| 4. Profile `profile_settings` 表 | `database.dart` | 独立表，不走 `_prefCache` |
+| 5. SharedPreferences | `ttu_migration.dart` | 仅迁移用 |
 
-**闂**: `_setPref()` 鏇存柊灞?1 鍜屽眰 2锛屼絾涓嶈Е鍙戝眰 3 鐨?`MediaSource._preferences` 鏇存柊銆侾rofile 鍒囨崲闇€瑕佹墜鍔ㄨ皟鐢?`refreshPreferencesFromDb()`锛屽鏋滈仐婕忥紝source 璇诲埌鏃у亸濂姐€?
+**问题**: `_setPref()` 更新层 1 和层 2，但不触发层 3 的 `MediaSource._preferences` 更新。Profile 切换需要手动调用 `refreshPreferencesFromDb()`，如果遗漏，source 读到旧偏好。
+
 ---
 
-### HBK-AUDIT-023 鈥?鏁版嵁搴撴煡璇㈢己灏戝叧閿簨鍔″寘瑁?
-**Severity**: 馃煛 MEDIUM
-**Status**: open
-**鏂囦欢**: `packages/hibiki_core/lib/src/database/database.dart`
+### HBK-AUDIT-023 — 数据库查询缺少关键事务包裹
 
-**闂**: `deleteEpubBook` 鎵ц 3 涓?DELETE 鎿嶄綔浣嗘棤鏄惧紡浜嬪姟锛?
+**Severity**: MEDIUM
+**Status**: open
+**文件**: `packages/hibiki_core/lib/src/database/database.dart`
+
+**问题**: `deleteEpubBook` 执行 3 个 DELETE 操作但无显式事务：
+
 ```dart
 await _database.deleteMediaItemByUniqueKey(item.uniqueKey);
 await _database.upsertMediaItem(_mediaItemToCompanion(item));
 await _database.trimMediaHistory(...);
 ```
 
-濡傛灉涓棿姝ラ澶辫触锛屾暟鎹簱澶勪簬涓嶄竴鑷寸姸鎬併€傝縼绉?v10/v12 鐨?orphan cleanup 鍚屾牱鏈寘瑁瑰湪浜嬪姟涓€?
+如果中间步骤失败，数据库处于不一致状态。迁移 v10/v12 的 orphan cleanup 同样未包裹在事务中。
+
 ---
 
-### HBK-AUDIT-025 鈥?闃呰鍣?_initBook() fire-and-forget + 寮傛闂撮殭缂?mounted 妫€鏌?
-**Severity**: 馃敶 CRITICAL
-**Status**: open
-**鏂囦欢**: `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart:155, 220-294`
+### HBK-AUDIT-025 — 阅读器 _initBook() fire-and-forget + 异步间隙缺 mounted 检查
 
-**鏍瑰洜**: `_initBook()` 鍦?`initState()` 涓璋冪敤浣嗕笉 await銆傝鏂规硶鍐呴儴鏈?10+ 涓?`await` 鐐癸紙`_resolveAndApplyProfile`銆乣EpubStorage` 鎿嶄綔銆乣_resolveAudioSlot` 绛夛級锛屽叾闂村彧鍦ㄦ渶鏈熬锛堣 296锛夊仛浜?`if (mounted)` 妫€鏌ャ€?
+**Severity**: CRITICAL
+**Status**: open
+**文件**: `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart:155, 220-294`
+
+**根因**: `_initBook()` 在 `initState()` 中被调用但不 await。该方法内部有 10+ 个 `await` 点（`_resolveAndApplyProfile`、`EpubStorage` 操作、`_resolveAudioSlot` 等），其间只在最末尾（行 296）做了 `if (mounted)` 检查。
+
 ```dart
 @override
 void initState() {
   super.initState();
-  _initBook();  // 鈫?fire-and-forget, 鏃?await
+  _initBook();  // <- fire-and-forget, 无 await
 }
 
 Future<void> _initBook() async {
-  // 10+ await 鎿嶄綔...
-  // 琛?220-294: 澶ч噺鐘舵€佷慨鏀癸紝鏃?mounted 妫€鏌?  if (mounted) { setState(() {}); }  // 鈫?浠呮渶鍚庢鏌?}
+  // 10+ await 操作...
+  // 行 220-294: 大量状态修改，无 mounted 检查
+  if (mounted) { setState(() {}); }  // <- 仅最后检查
+}
 ```
 
-**褰卞搷**: 濡傛灉鐢ㄦ埛鍦ㄩ槄璇诲櫒鍒濆鍖栬繃绋嬩腑蹇€熻繑鍥烇紙dispose 琚皟鐢級锛屼腑闂寸殑 `await` 鎭㈠鍚庝細淇敼宸查噴鏀剧殑 widget 鐘舵€?鈫?`setState() called after dispose()` 宕╂簝銆?
-**淇寤鸿**: 鍦ㄦ瘡涓?`await` 涔嬪悗娣诲姞 `if (!mounted) return;` 瀹堝崼锛屾垨灏嗘暣涓垵濮嬪寲閫昏緫鎻愬彇鍒伴潪 Widget 鐨?Controller 涓€?
+**影响**: 如果用户在阅读器初始化过程中快速返回（dispose 被调用），中间的 `await` 恢复后会修改已释放的 widget 状态 -> `setState() called after dispose()` 崩溃。
+
+**修复建议**: 在每个 `await` 之后添加 `if (!mounted) return;` 守卫，或将整个初始化逻辑提取到非 Widget 的 Controller 中。
+
 ---
 
-### HBK-AUDIT-024 鈥?911 涓?null assertion (`!`) 鍒嗗竷鍏ㄤ唬鐮?
-**Severity**: 馃煝 LOW
-**Status**: open
-**鏂囦欢**: 鍏ㄤ唬鐮佸簱
+### HBK-AUDIT-024 — 911 个 null assertion (`!`) 分布全代码
 
-**缁熻**:
-- 911 涓?`!` null assertion
-- 573 涓?`as` 绫诲瀷杞崲
-- 66 涓枃浠朵娇鐢?`dynamic` 鍏抽敭瀛?
-**鐑偣**: `reader_hoshi_page.dart` 鍜?`audiobook_controller.dart` 涓?`!` 瀵嗗害鏈€楂樸€俙ttu_migration.dart` 涓?`as` 杞崲鏈€瀵嗛泦锛?3 澶勶紝閬楃暀 JSON 澶勭悊锛屽彲鎺ュ彈锛夈€?
-**褰卞搷**: null assertion 澶辫触浼氬鑷?`TypeError` 宕╂簝锛屼笖閿欒淇℃伅鍙樉绀?`Null check operator used on a null value`锛屾棤娉曞畾浣嶆槸鍝釜鍙橀噺銆備絾澶ч儴鍒嗕娇鐢ㄥ満鏅湁閫昏緫淇濊瘉闈?null锛屽睘浜?Dart 绫诲瀷绯荤粺鐨勪娇鐢ㄤ範鎯€?
+**Severity**: LOW
+**Status**: open
+**文件**: 全代码库
+
+**统计**:
+- 911 个 `!` null assertion
+- 573 个 `as` 类型转换
+- 66 个文件使用 `dynamic` 关键字
+
+**热点**: `reader_hoshi_page.dart` 和 `audiobook_controller.dart` 中 `!` 密度最高。`ttu_migration.dart` 中 `as` 转换最密集（33 处，遗留 JSON 处理，可接受）。
+
+**影响**: null assertion 失败会导致 `TypeError` 崩溃，且错误信息只显示 `Null check operator used on a null value`，无法定位是哪个变量。但大部分使用场景有逻辑保证非 null，属于 Dart 类型系统的使用习惯。
+
 ---
 
-### HBK-AUDIT-013 鈥?`jidoujisho` 閬楃暀鍛藉悕涓?`hibiki` 娣锋潅
+### HBK-AUDIT-013 — `jidoujisho` 遗留命名与 `hibiki` 混杂
 
-**Severity**: 馃煝 LOW
+**Severity**: LOW
 **Status**: open
-**鏂囦欢**: 鍏ㄤ唬鐮佸簱
+**文件**: 全代码库
 
-**鐜扮姸**: UI 缁勪欢灞備娇鐢?`Jidoujisho*` 鍓嶇紑锛堝 `JidoujishoBottomSheet`銆乣JidoujishoDropdown`銆乣JidoujishoSelectableText` 绛?8+ 涓枃浠讹級锛屾暟鎹ā鍨嬩娇鐢?`JidoujishoTextSelection`锛岃€屽簲鐢ㄥ眰浣跨敤 `Hibiki*`/`Hoshi*` 鍓嶇紑銆?
-**褰卞搷**: 鏂拌础鐚€呭洶鎯戯紝涓や釜鍛藉悕绌洪棿鐨勮涔夎竟鐣屼笉娓呮櫚銆備笉褰卞搷鍔熻兘锛屼絾褰卞搷浠ｇ爜鑰冨彜鏁堢巼銆?
-**淇寤鸿**: 浣庝紭鍏堢骇銆傚湪涓嬩竴娆℃秹鍙婅繖浜涚粍浠剁殑閲嶆瀯鏃剁粺涓€鍛藉悕銆?
+**现状**: UI 组件层使用 `Jidoujisho*` 前缀（如 `JidoujishoBottomSheet`、`JidoujishoDropdown`、`JidoujishoSelectableText` 等 8+ 个文件），数据模型使用 `JidoujishoTextSelection`，而应用层使用 `Hibiki*`/`Hoshi*` 前缀。
+
+**影响**: 新贡献者困惑，两个命名空间的语义边界不清晰。不影响功能，但影响代码考古效率。
+
+**修复建议**: 低优先级。在下一次涉及这些组件的重构时统一命名。
+
 ---
 
-### HBK-AUDIT-014 鈥?EPUB 瀵煎叆鍐呭瓨宄板€?
-**Severity**: 馃煛 MEDIUM
-**Status**: open
-**鏂囦欢**: `hibiki/lib/src/epub/epub_parser.dart:98-121`, `epub_importer.dart:138`
+### HBK-AUDIT-014 — EPUB 导入内存峰值
 
-**鏍瑰洜**: `readAsBytes()` 灏嗘暣涓?EPUB 鍔犺浇鍒板唴瀛橈紝鐒跺悗浼犵粰 compute isolate锛?
+**Severity**: MEDIUM
+**Status**: open
+**文件**: `hibiki/lib/src/epub/epub_parser.dart:98-121`, `epub_importer.dart:138`
+
+**根因**: `readAsBytes()` 将整个 EPUB 加载到内存，然后传给 compute isolate：
+
 ```dart
-final Uint8List bytes = await file.readAsBytes();  // 鍏ㄩ噺璇诲彇
-return import(db: db, bytes: bytes, ...);           // 浼犵粰 isolate
+final Uint8List bytes = await file.readAsBytes();  // 全量读取
+return import(db: db, bytes: bytes, ...);           // 传给 isolate
 ```
 
-**褰卞搷**: 500MB EPUB 瀵煎叆鏃?RAM 宄板€?500MB+銆備腑绔墜鏈?RAM 閫氬父 4-6GB锛岀郴缁?+ Flutter 寮曟搸宸插崰 2-3GB锛屽彲瑙﹀彂 OOM killer銆?
-**淇寤鸿**: 浣跨敤鏂囦欢璺緞鑰岄潪瀛楄妭鏁扮粍浼犵粰 isolate锛屽湪 isolate 鍐呮祦寮忓鐞嗐€?
+**影响**: 500MB EPUB 导入时 RAM 峰值 500MB+。中端手机 RAM 通常 4-6GB，系统 + Flutter 引擎已占 2-3GB，可触发 OOM killer。
+
+**修复建议**: 使用文件路径而非字节数组传给 isolate，在 isolate 内流式处理。
+
 ---
 
-### HBK-AUDIT-015 鈥?閿欒鏃ュ織绯荤粺闄愬埗
+### HBK-AUDIT-015 — 错误日志系统限制
 
-**Severity**: 馃煝 LOW
+**Severity**: LOW
 **Status**: open
-**鏂囦欢**: `hibiki/lib/src/utils/misc/error_log_service.dart`
+**文件**: `hibiki/lib/src/utils/misc/error_log_service.dart`
 
-**鐜扮姸**:
-- 鉁?鏈夐泦涓紡閿欒鏃ュ織锛坄ErrorLogService.instance.log()`锛?- 鉁?鍐呭瓨闄愬埗 200 鏉★紝鏂囦欢闄愬埗 512KB
-- 鉂?绾枃鏈牸寮忥紝鏃犵粨鏋勫寲瀛楁锛堟棤 device info銆佹棤 app version銆佹棤 user action context锛?- 鉂?鏃犺繙绋嬩笂鎶ワ紙鏃?Crashlytics/Sentry锛?- 鉂?`_appendToFile` 浣跨敤 `writeAsStringSync` 鈥?涓荤嚎绋嬪悓姝?I/O
-- 鉂?4 澶?`catch (_) {}` 鈥?鏃ュ織绯荤粺鏈韩鐨勯敊璇鍚炲櫖
+**现状**:
+- 有集中式错误日志（`ErrorLogService.instance.log()`）(ok)
+- 内存限制 200 条，文件限制 512KB (ok)
+- 纯文本格式，无结构化字段（无 device info、无 app version、无 user action context）(missing)
+- 无远程上报（无 Crashlytics/Sentry）(missing)
+- `_appendToFile` 使用 `writeAsStringSync` — 主线程同步 I/O (issue)
+- 4 处 `catch (_) {}` — 日志系统本身的错误被吞噬 (issue)
 
-**褰卞搷**: 鐢熶骇鐜鐢ㄦ埛閬囧埌宕╂簝鏃讹紝寮€鍙戣€呭彧鑳介潬鐢ㄦ埛鎵嬪姩瀵煎嚭鏃ュ織銆傛棩蹇楀啓鍏ュ鏋滃彂鐢熷湪鍏抽敭璺緞锛堝闃呰鍣ㄧ炕椤碉級锛屽悓姝?I/O 鍙兘閫犳垚鐭殏鍗￠】銆?
+**影响**: 生产环境用户遇到崩溃时，开发者只能靠用户手动导出日志。日志写入如果发生在关键路径（如阅读器翻页），同步 I/O 可能造成短暂卡顿。
+
 ---
 
-### HBK-AUDIT-016 鈥?鏈夊０涔﹀瓧骞?cue 鏁伴噺鏃犱笂闄?
-**Severity**: 馃煝 LOW
-**Status**: open
-**鏂囦欢**: `hibiki/lib/src/media/audiobook/audiobook_import_dialog.dart:570`
+### HBK-AUDIT-016 — 有声书字幕 cue 数量无上限
 
-**鏍瑰洜**: 瑙ｆ瀽瀛楀箷鏂囦欢鍚?`cues.length` 鏃犳牎楠屻€?
-**褰卞搷**: 鎹熷潖鐨勫瓧骞曟枃浠跺彲鑳戒骇鐢?100K+ cue 鏉＄洰锛屽叏閮ㄥ啓鍏?SQLite `audio_cues` 琛紝瀵艰嚧鍚庣画鏌ヨ鍙樻參銆?
+**Severity**: LOW
+**Status**: open
+**文件**: `hibiki/lib/src/media/audiobook/audiobook_import_dialog.dart:570`
+
+**根因**: 解析字幕文件后 `cues.length` 无校验。
+
+**影响**: 损坏的字幕文件可能产生 100K+ cue 条目，全部写入 SQLite `audio_cues` 表，导致后续查询变慢。
+
 ---
 
-### HBK-AUDIT-017 鈥?闈欐€佸彲鍙樺瓧鍏告牱寮忕紦瀛樻棤椹遍€?
-**Severity**: 馃煝 LOW
-**Status**: open
-**鏂囦欢**: `packages/hibiki_dictionary/lib/src/engine/hoshidicts.dart:185`
+### HBK-AUDIT-017 — 静态可变字典样式缓存无驱逐
 
-**鏍瑰洜**: `_stylesCache` 鏄?static Map锛岄殢瀛楀吀鏁伴噺绾挎€у闀匡紝鏃?LRU 椹遍€愩€?
-**褰卞搷**: 瀵煎叆 100+ 瀛楀吀鏃讹紙鏋佺鍦烘櫙锛夛紝缂撳瓨鍙兘鍗犵敤鏁扮櫨 MB銆傛甯镐娇鐢ㄥ満鏅紙5-20 瀛楀吀锛夊奖鍝嶅彲蹇界暐銆?
+**Severity**: LOW
+**Status**: open
+**文件**: `packages/hibiki_dictionary/lib/src/engine/hoshidicts.dart:185`
+
+**根因**: `_stylesCache` 是 static Map，随字典数量线性增长，无 LRU 驱逐。
+
+**影响**: 导入 100+ 字典时（极端场景），缓存可能占用数百 MB。正常使用场景（5-20 字典）影响可忽略。
+
 ---
 
-### HBK-AUDIT-018 鈥?娴嬭瘯瑕嗙洊鍒嗘瀽
+### HBK-AUDIT-018 — 测试覆盖分析
 
 **Status**: open
 
-**鐜扮姸**:
-- 106 涓崟鍏冩祴璇曟枃浠?/ ~8,300 琛?鈥?鏁版嵁搴撳眰瑕嗙洊**鑹ソ**锛坢igration銆丆RUD銆佸苟鍙戝啓鍏ャ€佸閿€乸rofile 绛夊叏鏈夛級
-- 4 涓泦鎴愭祴璇曟枃浠?鈥?瀛樺湪浣嗘湭鍦?CI 杩愯
-- 鉂?**鏃?* AppModel 鍗曞厓娴嬭瘯锛?,045 琛屾牳蹇冮€昏緫闆舵祴璇曪級
-- 鉂?**鏃?* 闃呰鍣ㄧ姸鎬佹満娴嬭瘯锛?,849 琛屽鏉傞€昏緫闆舵祴璇曪級
-- 鉂?**鏃?* 瀛楀吀鎼滅储/瀵煎叆闆嗘垚娴嬭瘯
-- 鉂?**鏃?* Creator/Anki 瀵煎嚭闆嗘垚娴嬭瘯
-- 鉂?**鏃?* WebView JS 浜や簰娴嬭瘯
+**现状**:
+- 106 个单元测试文件 / ~8,300 行 — 数据库层覆盖**良好**（migration、CRUD、并发写入、外键、profile 等全有）
+- 4 个集成测试文件 — 存在但未在 CI 运行
+- **无** AppModel 单元测试（4,045 行核心逻辑零测试）(missing)
+- **无** 阅读器状态机测试（3,849 行复杂逻辑零测试）(missing)
+- **无** 字典搜索/导入集成测试 (missing)
+- **无** Creator/Anki 导出集成测试 (missing)
+- **无** WebView JS 交互测试 (missing)
 
-**椋庨櫓**: 鏁版嵁搴撳眰鏄敮涓€鏈変俊蹇冪殑鍖哄煙銆傞槄璇诲櫒銆丄ppModel銆佸瓧鍏哥郴缁熺殑浠讳綍閲嶆瀯閮芥槸鍦ㄦ病鏈夊畨鍏ㄧ綉鐨勬儏鍐典笅璧伴挗涓濄€?
+**风险**: 数据库层是唯一有信心的区域。阅读器、AppModel、字典系统的任何重构都是在没有安全网的情况下走钢丝。
+
 ---
 
-### HBK-AUDIT-019 鈥?渚濊禆椋庨櫓
+### HBK-AUDIT-019 — 依赖风险
 
 **Status**: open
-**鏂囦欢**: `hibiki/pubspec.yaml`
+**文件**: `hibiki/pubspec.yaml`
 
-| 椋庨櫓椤?| 璇︽儏 |
+| 风险项 | 详情 |
 |--------|------|
-| 6 涓?git 渚濊禆 | `blurrycontainer`, `material_floating_search_bar`, `receive_intent`, `ruby_text`, `spaces` 鈥?鍥哄畾 commit hash锛屼絾涓婃父椤圭洰鍧囦负涓汉 fork锛屾棤缁存姢淇濊瘉 |
-| 5 涓?dependency_overrides | `ffi`, `freezed_annotation`, `gap`, `logging`, `wakelock_plus_platform_interface` 鈥?鐗堟湰鍐茬獊閫氳繃 override 鍘嬪埗鑰岄潪瑙ｅ喅 |
-| `flutter_html: ^3.0.0-beta.2` | 浣跨敤 beta 鐗堜緷璧?|
-| `dart_mappable: ^4.0.0-dev.1` | 浣跨敤 dev 鐗堜緷璧?|
-| 2 涓湰鍦?package override | `file_picker`, `flutter_inappwebview_windows` 鈥?鎰忓懗鐫€涓婃父鐗堟湰鏈?bug锛岀淮鎶や簡鏈湴 fork |
+| 6 个 git 依赖 | `blurrycontainer`, `material_floating_search_bar`, `receive_intent`, `ruby_text`, `spaces` — 固定 commit hash，但上游项目均为个人 fork，无维护保证 |
+| 5 个 dependency_overrides | `ffi`, `freezed_annotation`, `gap`, `logging`, `wakelock_plus_platform_interface` — 版本冲突通过 override 压制而非解决 |
+| `flutter_html: ^3.0.0-beta.2` | 使用 beta 版依赖 |
+| `dart_mappable: ^4.0.0-dev.1` | 使用 dev 版依赖 |
+| 2 个本地 package override | `file_picker`, `flutter_inappwebview_windows` — 意味着上游版本有 bug，维护了本地 fork |
 
-**褰卞搷**: 5 涓?override 鎰忓懗鐫€ `pub upgrade` 鏃犳硶姝ｅ父宸ヤ綔锛屼緷璧栨洿鏂伴渶瑕佹墜鍔ㄩ€愪釜楠岃瘉銆俠eta/dev 渚濊禆鍦?Flutter 鍗囩骇鏃跺彲鑳界巼鍏堢牬鍧忋€?
+**影响**: 5 个 override 意味着 `pub upgrade` 无法正常工作，依赖更新需要手动逐个验证。beta/dev 依赖在 Flutter 升级时可能率先破坏。
+
 ---
 
-## 楂橀闄╅棶棰樺垪琛紙鎸変紭鍏堢骇鎺掑簭锛?
-| 浼樺厛绾?| 缂栧彿 | 闂 | 褰卞搷 |
+## 高风险问题列表（按优先级排序）
+
+| 优先级 | 编号 | 问题 | 影响 |
 |--------|------|------|------|
-| P0 | HBK-AUDIT-002 | 闃呰鍣ㄤ綅缃繚瀛樼珵鎬?| 鐢ㄦ埛鏁版嵁涓㈠け |
-| P0 | HBK-AUDIT-003 | WebView controller 鐢熷懡鍛ㄦ湡绔炴€?| 宕╂簝 |
-| P0 | HBK-AUDIT-012 | 鏁版嵁搴撻檷绾у叏鍒犻噸寤?| 鐢ㄦ埛鏁版嵁涓㈠け |
-| P0 | HBK-AUDIT-020 | CreatorModel 鏃?dispose() | 纭畾鎬у唴瀛樻硠婕?|
-| P0 | HBK-AUDIT-025 | _initBook() 寮傛闂撮殭缂?mounted 妫€鏌?| setState-after-dispose 宕╂簝 |
-| P1 | HBK-AUDIT-001 | AppModel 涓婂笣瀵硅薄 | 鎬ц兘/鍙淮鎶ゆ€?骞跺彂瀹夊叏 |
-| P1 | HBK-AUDIT-005 | 瀛楀吀 ZIP 瑙ｅ帇鏃犲唴瀛橀檺鍒?| OOM 宕╂簝 |
-| P1 | HBK-AUDIT-004 | JS 妯℃澘瀛楃涓茶浆涔変笉瀹屾暣 | XSS/琛屼负寮傚父 |
-| P2 | HBK-AUDIT-007 | 闃呰鍣ㄥ鏍囧織鐘舵€佹満 | 蹇€熷鑸紓甯?|
-| P2 | HBK-AUDIT-008 | Stream/Timer 娉勬紡椋庨櫓 | 鍐呭瓨娉勬紡 |
-| P2 | HBK-AUDIT-010 | 鍋忓ソ绫诲瀷涓嶅畨鍏ㄥ簭鍒楀寲 | 璁剧疆闈欓粯涓㈠け |
-| P2 | HBK-AUDIT-009 | Creator/Anki 浠ｇ爜閲嶅 | 缁存姢鎴愭湰缈诲€?|
-| P2 | HBK-AUDIT-011 | CI/CD 缂哄け release build | 鐢熶骇 bug 閫冮€?|
-| P2 | HBK-AUDIT-014 | EPUB 瀵煎叆鍐呭瓨宄板€?| 澶ф枃浠?OOM |
-| P2 | HBK-AUDIT-021 | 鏁版嵁搴撶己灏戝叧閿煡璇㈢储寮?| 鏌ヨ鎬ц兘閫€鍖?|
-| P2 | HBK-AUDIT-022 | 5 灞傚亸濂界紦瀛樻棤澶辨晥鏈哄埗 | 鍋忓ソ涓嶄竴鑷?|
-| P2 | HBK-AUDIT-023 | 鍏抽敭鎿嶄綔缂哄皯浜嬪姟鍖呰９ | 鏁版嵁涓嶄竴鑷?|
-| P3 | HBK-AUDIT-006 | C++ 瀵煎叆鍣ㄦ棤璧勬簮涓婇檺 | 鎭舵剰杈撳叆 OOM |
-| P3 | HBK-AUDIT-016 | 瀛楀箷 cue 鏃犱笂闄?| 鏁版嵁搴撹啫鑳€ |
-| P3 | HBK-AUDIT-015 | 閿欒鏃ュ織鍚屾 I/O | 寰崱椤?|
-| P3 | HBK-AUDIT-017 | 瀛楀吀鏍峰紡缂撳瓨鏃犻┍閫?| 鏋佺鍦烘櫙鍐呭瓨 |
-| P3 | HBK-AUDIT-024 | 911 涓?null assertion | 宕╂簝鏃堕毦瀹氫綅 |
-| P3 | HBK-AUDIT-013 | 鍛藉悕涓嶄竴鑷?| 鍙鎬?|
-| P3 | HBK-AUDIT-019 | 渚濊禆椋庨櫓 | 鍗囩骇鍥伴毦 |
-| 鈥?| HBK-AUDIT-018 | 娴嬭瘯瑕嗙洊缂哄彛 | 閲嶆瀯鏃犲畨鍏ㄧ綉 |
+| P0 | HBK-AUDIT-002 | 阅读器位置保存竞态 | 用户数据丢失 |
+| P0 | HBK-AUDIT-003 | WebView controller 生命周期竞态 | 崩溃 |
+| P0 | HBK-AUDIT-012 | 数据库降级全删重建 | 用户数据丢失 |
+| P0 | HBK-AUDIT-020 | CreatorModel 无 dispose() | 确定性内存泄漏 |
+| P0 | HBK-AUDIT-025 | _initBook() 异步间隙缺 mounted 检查 | setState-after-dispose 崩溃 |
+| P1 | HBK-AUDIT-001 | AppModel 上帝对象 | 性能/可维护性/并发安全 |
+| P1 | HBK-AUDIT-005 | 字典 ZIP 解压无内存限制 | OOM 崩溃 |
+| P1 | HBK-AUDIT-004 | JS 模板字符串转义不完整 | XSS/行为异常 |
+| P2 | HBK-AUDIT-007 | 阅读器多标志状态机 | 快速导航异常 |
+| P2 | HBK-AUDIT-008 | Stream/Timer 泄漏风险 | 内存泄漏 |
+| P2 | HBK-AUDIT-010 | 偏好类型不安全序列化 | 设置静默丢失 |
+| P2 | HBK-AUDIT-009 | Creator/Anki 代码重复 | 维护成本翻倍 |
+| P2 | HBK-AUDIT-011 | CI/CD 缺失 release build | 生产 bug 逃逸 |
+| P2 | HBK-AUDIT-014 | EPUB 导入内存峰值 | 大文件 OOM |
+| P2 | HBK-AUDIT-021 | 数据库缺少关键查询索引 | 查询性能退化 |
+| P2 | HBK-AUDIT-022 | 5 层偏好缓存无失效机制 | 偏好不一致 |
+| P2 | HBK-AUDIT-023 | 关键操作缺少事务包裹 | 数据不一致 |
+| P3 | HBK-AUDIT-006 | C++ 导入器无资源上限 | 恶意输入 OOM |
+| P3 | HBK-AUDIT-016 | 字幕 cue 无上限 | 数据库膨胀 |
+| P3 | HBK-AUDIT-015 | 错误日志同步 I/O | 微卡顿 |
+| P3 | HBK-AUDIT-017 | 字典样式缓存无驱逐 | 极端场景内存 |
+| P3 | HBK-AUDIT-024 | 911 个 null assertion | 崩溃时难定位 |
+| P3 | HBK-AUDIT-013 | 命名不一致 | 可读性 |
+| P3 | HBK-AUDIT-019 | 依赖风险 | 升级困难 |
+| — | HBK-AUDIT-018 | 测试覆盖缺口 | 重构无安全网 |
 
 ---
 
-## 涓暱鏈熸灦鏋勯闄?
-### 1. AppModel 鎷嗗垎鎴愭湰鎸囨暟澧為暱
-AppModel 姣忓鍔犱竴涓姛鑳藉氨澶氫竴瀵?getter/setter + notifyListeners銆傚綋鍓?54 娆?notify 鎰忓懗鐫€ UI 宸茬粡琚繃搴﹂噸寤恒€? 涓湀鍚庡鏋滆揪鍒?80+ notify锛屾€ц兘闂灏嗕粠銆屽伓灏斿崱銆嶅彉鎴愩€屾寔缁崱銆嶃€?*鎷嗗垎绐楀彛姝ｅ湪鍏抽棴** 鈥?鐜板湪鎷嗘垚鏈害 1 鍛紝6 涓湀鍚庣害 3 鍛ㄣ€?
-### 2. 闃呰鍣?3,849 琛屽崟鏂囦欢涓嶅彲鎸佺画
-`reader_hoshi_page.dart` 闆嗘垚浜?WebView 绠＄悊銆佺姸鎬佹満銆侀煶棰戞ˉ鎺ャ€佷綅缃仮澶嶃€佹牱寮忔敞鍏ャ€佽祫婧愭嫤鎴€佹墜鍔垮鐞嗐€備换浣曞崟涓€鍔熻兘鐨勪慨鏀归兘闇€瑕佺悊瑙ｆ暣涓?3,849 琛岀殑涓婁笅鏂囥€?*宸茶繘鍏ャ€岀涓€澶勫潖涓夊銆嶇殑鍖洪棿**銆?
-### 3. 澶氬钩鍙版墿灞曠殑闅愭€ч殰纰?worktree 涓凡鏈?`phase2-3-multiplatform` 鍒嗘敮銆備絾褰撳墠浠ｇ爜涓?~20 澶?`Platform.isAndroid` / `Platform.isIOS` 鍒嗘敮鏁ｅ竷鍦?AppModel銆乵ain.dart銆乵edia_source.dart 涓€俻ackages 灞傦紙hibiki_core, hibiki_dictionary 绛夛級铏藉凡鍒嗙锛屼絾 AppModel 浠嶇洿鎺ュ紩鐢ㄥ钩鍙扮壒瀹?API锛圗xternalPath銆丏eviceInfoPlugin銆乄akelockPlus锛夈€傚骞冲彴闇€瑕佸厛瑙ｅ喅 AppModel 鎷嗗垎銆?
-### 4. WebView 鈫?Dart 鐘舵€佸悓姝ヨ剢寮?褰撳墠渚濊禆 JS handler 鍥炶皟 + generation number 鍖归厤鏉ュ悓姝?WebView 鍜?Dart 鐘舵€併€傛病鏈夊舰寮忓寲鐨勬秷鎭崗璁垨 ACK 鏈哄埗銆傜綉缁滃欢杩燂紙鏈湴 WebView 涓嶆秹鍙婄綉缁滐紝浣?JS 鎵ц寤惰繜锛夋垨 GC 鏆傚仠閮藉彲鑳藉鑷?generation 涓嶅尮閰嶃€?
+## 中长期架构风险
+
+### 1. AppModel 拆分成本指数增长
+AppModel 每增加一个功能就多一对 getter/setter + notifyListeners。当前 54 次 notify 意味着 UI 已经被过度重建。6 个月后如果达到 80+ notify，性能问题将从「偶尔卡」变成「持续卡」。**拆分窗口正在关闭** — 现在拆成本约 1 周，6 个月后约 3 周。
+
+### 2. 阅读器 3,849 行单文件不可持续
+`reader_hoshi_page.dart` 集成了 WebView 管理、状态机、音频桥接、位置恢复、样式注入、资源拦截、手势处理。任何单一功能的修改都需要理解整个 3,849 行的上下文。**已进入「碰一处坏三处」的区间**。
+
+### 3. 多平台扩展的隐性障碍
+worktree 中已有 `phase2-3-multiplatform` 分支。但当前代码中 ~20 处 `Platform.isAndroid` / `Platform.isIOS` 分支散布在 AppModel、main.dart、media_source.dart 中。packages 层（hibiki_core, hibiki_dictionary 等）虽已分离，但 AppModel 仍直接引用平台特定 API（ExternalPath、DeviceInfoPlugin、WakelockPlus）。多平台需要先解决 AppModel 拆分。
+
+### 4. WebView <-> Dart 状态同步脆弱
+当前依赖 JS handler 回调 + generation number 匹配来同步 WebView 和 Dart 状态。没有形式化的消息协议或 ACK 机制。网络延迟（本地 WebView 不涉及网络，但 JS 执行延迟）或 GC 暂停都可能导致 generation 不匹配。
+
 ---
 
-## 鎶€鏈€哄湴鍥?
+## 技术债地图
+
 ```
 hibiki/
-鈹溾攢鈹€ lib/
-鈹?  鈹溾攢鈹€ src/models/
-鈹?  鈹?  鈹溾攢鈹€ app_model.dart ............ 馃敶 4,045 琛屼笂甯濆璞?[P1: 鎷嗗垎]
-鈹?  鈹?  鈹斺攢鈹€ creator_model.dart ........ 馃敶 鏃?dispose() [P0: 淇]
-鈹?  鈹溾攢鈹€ src/pages/implementations/
-鈹?  鈹?  鈹斺攢鈹€ reader_hoshi_page.dart .... 馃敶 3,849 琛? 绔炴€?+ 寮傛闂撮殭 [P0+P1]
-鈹?  鈹溾攢鈹€ src/creator/fields/
-鈹?  鈹?  鈹溾攢鈹€ audio_field.dart .......... 馃煛 涓?audio_sentence_field 95% 閲嶅
-鈹?  鈹?  鈹斺攢鈹€ audio_sentence_field.dart . 馃煛 [P2: 鎻愬彇鍩虹被]
-鈹?  鈹溾攢鈹€ src/media/media_source.dart ... 馃煛 鍋忓ソ搴忓垪鍖栫被鍨嬩笉瀹夊叏 [P2]
-鈹?  鈹斺攢鈹€ src/utils/misc/
-鈹?      鈹斺攢鈹€ error_log_service.dart .... 馃煝 鍚屾 I/O + 鍚炲紓甯?[P3]
-鈹溾攢鈹€ pubspec.yaml ...................... 馃煛 6 git 渚濊禆 + 5 override [P3]
-鈹?packages/
-鈹溾攢鈹€ hibiki_core/src/database/
-鈹?  鈹斺攢鈹€ database.dart ................. 馃敶 闄嶇骇鍏ㄥ垹 [P0] + 缂虹储寮?[P2]
-鈹溾攢鈹€ hibiki_dictionary/src/
-鈹?  鈹溾攢鈹€ formats/*.dart ................ 馃煛 ZIP 瑙ｅ帇鏃犲唴瀛橀檺鍒?[P1]
-鈹?  鈹斺攢鈹€ engine/hoshidicts.dart ........ 馃煝 鏍峰紡缂撳瓨鏃犻┍閫?[P3]
-鈹斺攢鈹€ hibiki_anki/src/
-    鈹溾攢鈹€ ankiconnect/ .................. 馃煛 mineEntry 涓?ankidroid 閲嶅
-    鈹斺攢鈹€ ankidroid/ .................... 馃煛 [P2: 涓婃彁鍒?base]
+  lib/
+    src/models/
+      app_model.dart ............ [CRITICAL] 4,045 行上帝对象 [P1: 拆分]
+      creator_model.dart ........ [CRITICAL] 无 dispose() [P0: 修复]
+    src/pages/implementations/
+      reader_hoshi_page.dart .... [CRITICAL] 3,849 行: 竞态 + 异步间隙 [P0+P1]
+    src/creator/fields/
+      audio_field.dart .......... [MEDIUM] 与 audio_sentence_field 95% 重复
+      audio_sentence_field.dart . [MEDIUM] [P2: 提取基类]
+    src/media/media_source.dart . [MEDIUM] 偏好序列化类型不安全 [P2]
+    src/utils/misc/
+      error_log_service.dart .... [LOW] 同步 I/O + 吞异常 [P3]
+  pubspec.yaml .................. [MEDIUM] 6 git 依赖 + 5 override [P3]
+
+packages/
+  hibiki_core/src/database/
+    database.dart ............... [CRITICAL] 降级全删 [P0] + 缺索引 [P2]
+  hibiki_dictionary/src/
+    formats/*.dart .............. [MEDIUM] ZIP 解压无内存限制 [P1]
+    engine/hoshidicts.dart ...... [LOW] 样式缓存无驱逐 [P3]
+  hibiki_anki/src/
+    ankiconnect/ ................ [MEDIUM] mineEntry 与 ankidroid 重复
+    ankidroid/ .................. [MEDIUM] [P2: 上提到 base]
 ```
 
 ---
 
-## 鍙淮鎶ゆ€ц瘎鍒?
-| 缁村害 | 璇勫垎 | 璇存槑 |
+## 可维护性评分
+
+| 维度 | 评分 | 说明 |
 |------|------|------|
-| 浠ｇ爜缁勭粐 | 5/10 | package 鍒嗙鎬濊矾姝ｇ‘锛屼絾 AppModel 涓婂笣瀵硅薄涓ラ噸鎷栧悗鑵?|
-| 绫诲瀷瀹夊叏 | 7/10 | Dart 寮虹被鍨嬩綋绯讳娇鐢ㄨ緝濂斤紝`dynamic` 鐢ㄩ噺浣庯紙10 澶勶級锛屼絾鍋忓ソ搴忓垪鍖栧瓨鍦ㄧ被鍨嬫紓绉?|
-| 閿欒澶勭悊 | 4/10 | 鏈夐泦涓紡鏃ュ織锛屼絾 15 澶?`catch (_) {}` + 6 澶?`.catchError((_) {})` 鏄畾鏃剁偢寮?|
-| 璧勬簮绠＄悊 | 5/10 | 澶ч儴鍒?dispose 姝ｇ‘锛屼絾闃呰鍣ㄥ拰闊抽妗ユ帴瀛樺湪娉勬紡璺緞 |
-| 娴嬭瘯瑕嗙洊 | 4/10 | 鏁版嵁搴撳眰浼樼锛屼絾鏍稿績涓氬姟閫昏緫锛圓ppModel銆侀槄璇诲櫒銆丆reator锛夐浂瑕嗙洊 |
-| 渚濊禆鍋ュ悍 | 4/10 | 6 涓?git fork + 5 涓?override + 2 涓?beta/dev 渚濊禆 |
-| CI/CD | 3/10 | 鍙湁 analyze + test + debug build锛屾棤 release 楠岃瘉/瑕嗙洊鐜?瀹夊叏鎵弿 |
-| 鏂囨。 | 6/10 | CLAUDE.md + AGENTS.md 瑙勫垯璇﹀敖锛屼唬鐮佸唴娉ㄩ噴閫傞噺 |
-| 鎬ц兘鎰忚瘑 | 6/10 | FFI 瀛楀吀鏌ヨ銆乄ebView 棰勭儹绛夊仛寰楀ソ锛屼絾 AppModel 鍏ㄦ爲 rebuild 鍜屽唴瀛樺嘲鍊兼槸鐩茬偣 |
-| 瀹夊叏 | 5/10 | EPUB 璺緞閬嶅巻闃叉姢浼樼锛屼絾 JS 娉ㄥ叆銆佽祫婧愰檺鍒躲€侀檷绾ф暟鎹涪澶卞瓨鍦ㄧ己鍙?|
+| 代码组织 | 5/10 | package 分离思路正确，但 AppModel 上帝对象严重拖后腿 |
+| 类型安全 | 7/10 | Dart 强类型体系使用较好，`dynamic` 用量低（10 处），但偏好序列化存在类型漂移 |
+| 错误处理 | 4/10 | 有集中式日志，但 15 处 `catch (_) {}` + 6 处 `.catchError((_) {})` 是定时炸弹 |
+| 资源管理 | 5/10 | 大部分 dispose 正确，但阅读器和音频桥接存在泄漏路径 |
+| 测试覆盖 | 4/10 | 数据库层优秀，但核心业务逻辑（AppModel、阅读器、Creator）零覆盖 |
+| 依赖健康 | 4/10 | 6 个 git fork + 5 个 override + 2 个 beta/dev 依赖 |
+| CI/CD | 3/10 | 只有 analyze + test + debug build，无 release 验证/覆盖率/安全扫描 |
+| 文档 | 6/10 | CLAUDE.md + AGENTS.md 规则详尽，代码内注释适量 |
+| 性能意识 | 6/10 | FFI 字典查询、WebView 预热等做得好，但 AppModel 全树 rebuild 和内存峰值是盲点 |
+| 安全 | 5/10 | EPUB 路径遍历防护优秀，但 JS 注入、资源限制、降级数据丢失存在缺口 |
 
-**缁煎悎鍙淮鎶ゆ€? 4.9/10** 鈥?銆屽崟浜虹淮鎶ゆ湡鐨勯」鐩紝鏈夎壇濂界殑鍩虹璁炬柦鎰忚瘑锛屼絾鏍稿績妯″潡锛圓ppModel銆侀槄璇诲櫒锛夌殑澶嶆潅搴﹀凡缁忚秴杩囦簡瀹夊叏缁存姢鐨勯槇鍊笺€傘€?
----
-
-## 鏋舵瀯鍋ュ悍搴﹁瘎浠?
-**鏋舵瀯鎴愮啛搴? Early Growth (鎴愰暱鍒濇湡)**
-
-**浼樺娍**:
-- Package 鍒嗙鏂瑰悜姝ｇ‘锛坔ibiki_core/dictionary/anki/audio/platform锛?- Drift SQLite 浣跨敤瑙勮寖锛圵AL銆佸閿€佺储寮曘€佽縼绉荤増鏈彿锛?- 鏁版嵁搴撴祴璇曡鐩栫巼楂橈紙migration銆乧oncurrent銆乫oreign key 鍏ㄦ湁锛?- FFI 鍐呭瓨绠＄悊鎬讳綋瑙勮寖锛坒inally 閲婃斁銆乮solate 闅旂锛?- EPUB 璺緞閬嶅巻闃叉姢鍒颁綅
-
-**鍔ｅ娍**:
-- AppModel 涓婂笣瀵硅薄闃荤浜?package 鍒嗙鐨勪环鍊煎彂鎸?- 闃呰鍣ㄥ崟鏂囦欢 3,849 琛岋紝鐘舵€佹満鏃犲舰寮忓寲
-- 寮傛閿欒鍚炲櫖妯″紡骞挎硾鍒嗗竷
-- CI 鍙仛鏈€浣庨檺搴﹂獙璇?- 鏍稿績閫昏緫闆舵祴璇曡鐩?
-**姝ｉ潰鍙戠幇锛堝紓姝?璧勬簮瀹℃煡纭锛?*:
-- 鉁?鎵€鏈?`StreamSubscription` 鍦?`dispose()` 涓纭彇娑?- 鉁?鎵€鏈?`Timer` / `Timer.periodic` 鍦?`dispose()` 涓纭彇娑?- 鉁?`FocusNode`銆乣ScrollController`銆乣TextEditingController` 閲婃斁鎬讳綋姝ｇ‘
-- 鉁?`addListener` / `removeListener` 閰嶅姝ｇ‘
-- 鉁?`Completer` 浣跨敤姝ｇ‘锛屾湁 `isCompleted` 瀹堝崼闃叉鍙岄噸瀹屾垚
-- 鉁?`runZonedGuarded` + `FlutterError.onError` 鍏ㄥ眬閿欒杈圭晫瀹屽杽
-- 鉁?EPUB 璺緞閬嶅巻闃叉姢锛坄p.isWithin()` 妫€鏌ワ級浼樼
-- 鉁?FFI 鍐呭瓨绠＄悊浣跨敤 `try-finally` + `calloc.free()` 瑙勮寖
-- 鉁?AudiobookController dispose 瀹屾暣锛? 涓?stream subscription + player锛?
-**缁撹**: 椤圭洰鏈夎壇濂界殑鎶€鏈洿瑙夛紙閫夋嫨 Drift 鑰岄潪 SharedPreferences銆佺敤 Isolate 鍋氶噸璁＄畻銆佺敤 C++ FFI 鍋氬瓧鍏告煡璇級锛屼絾**鎵ц绾緥涓嶄竴鑷?* 鈥?鏁版嵁搴撳眰鍜岃祫婧愰噴鏀剧殑涓ヨ皑绋嬪害杩滈珮浜?AppModel 鍜岄槄璇诲櫒鐘舵€佺鐞嗗眰銆傝繖鏄吀鍨嬬殑銆孉I 杈呭姪寮€鍙?+ 鍗曚汉缁存姢銆嶆ā寮忥細鍩虹璁炬柦灞傦紙琚粩缁嗗鏌ヨ繃鐨勶級璐ㄩ噺楂橈紝涓氬姟閫昏緫灞傦紙蹇€熻凯浠ｇ殑锛夎川閲忎綆銆?
----
-
-## 鎺ㄨ崘閲嶆瀯椤哄簭
-
-### Phase 0: 绱ф€ヤ慨澶嶏紙2-3 澶╋級
-1. **HBK-AUDIT-002**: 淇浣嶇疆淇濆瓨绔炴€侊紙闂寘鎹曡幏灞€閮ㄥ彉閲忥級
-2. **HBK-AUDIT-003**: WebView controller 璋冪敤鍖呰９ try-catch
-3. **HBK-AUDIT-012**: 鏁版嵁搴撻檷绾у墠澶囦唤
-4. **HBK-AUDIT-020**: CreatorModel 娣诲姞 dispose()锛? 琛屼慨澶嶏級
-5. **HBK-AUDIT-025**: _initBook() 寮傛闂撮殭娣诲姞 mounted 瀹堝崼
-
-### Phase 1: 瀹夊叏鍔犲浐锛?-5 澶╋級
-4. **HBK-AUDIT-004**: JS 娉ㄥ叆鏀圭敤 JSON 缂栫爜
-5. **HBK-AUDIT-005**: ZIP 瑙ｅ帇娣诲姞澶у皬妫€鏌?6. **HBK-AUDIT-011**: CI 娣诲姞 release build + coverage
-
-### Phase 2: 缁撴瀯鎬ц繕鍊猴紙1-2 鍛級
-7. **HBK-AUDIT-001**: AppModel 鎷嗗垎锛圱hemeNotifier銆丳referencesRepo銆丏ictionaryRepo锛?8. **HBK-AUDIT-009**: Creator 瀛楁鎻愬彇鍩虹被锛孉nki mineEntry 涓婃彁
-9. **HBK-AUDIT-010**: 鍋忓ソ搴忓垪鍖栨坊鍔犵被鍨嬫爣璁?
-### Phase 3: 闃呰鍣ㄦ不鐞嗭紙2-3 鍛級
-10. **HBK-AUDIT-007**: 鐘舵€佹満褰㈠紡鍖栵紙enum + 杞崲鍑芥暟锛?11. 鎷嗗垎 `reader_hoshi_page.dart` 涓猴細
-    - `ReaderHoshiPage` (鐢熷懡鍛ㄦ湡/璺敱)
-    - `ReaderWebViewController` (WebView 绠＄悊)
-    - `ReaderPositionManager` (浣嶇疆淇濆瓨/鎭㈠)
-    - `ReaderAudioBridge` (鏈夊０涔﹂泦鎴?
-    - `ReaderStyleInjector` (CSS/鏍峰紡绠＄悊)
+**综合可维护性: 4.9/10** — 「单人维护期的项目，有良好的基础设施意识，但核心模块（AppModel、阅读器）的复杂度已经超过了安全维护的阈值。」
 
 ---
 
-## 濡傛灉缁х画褰撳墠妯″紡锛屾湭鏉?3-6 涓湀鏈€鍙兘鍑虹幇鐨勯棶棰?
-1. **AppModel 鎬ц兘鍧嶅** (2-3 涓湀): 闅忕潃鍔熻兘澧炲姞锛宍notifyListeners()` 棰戠巼涓婂崌锛孶I 閲嶅缓寮€閿€浠庡彲蹇界暐鍙樹负鍙劅鐭ャ€傜敤鎴蜂細鎶ュ憡銆屽垏鎹㈠亸濂藉悗鍏ㄩ儴鍗′竴涓嬨€嶃€?
-2. **闃呰鍣ㄤ慨涓嶅姩** (1-2 涓湀): `reader_hoshi_page.dart` 姣忔淇?bug 閮芥湁 30%+ 姒傜巼寮曞叆鏂?bug锛屽洜涓?3,849 琛屼唬鐮佺殑鐘舵€佷氦浜掕矾寰勮秴鍑轰汉鑴戠紦瀛樸€傛煇娆°€屼慨澶嶇炕椤点€嶄細瀵艰嚧銆屼綅缃仮澶嶅潖浜嗐€嶃€?
-3. **澶у瓧鍏稿鍏?OOM** (宸插彲澶嶇幇): 鐢ㄦ埛瀵煎叆 1GB+ 瀛楀吀 ZIP 鏃?OOM 宕╂簝銆傚綋鍓嶅彧鍦ㄥ皬瀛楀吀涓婃祴璇曢€氳繃銆?
-4. **渚濊禆閿佹** (3-6 涓湀): Flutter 3.41.6 鈫?涓嬩竴涓ぇ鐗堟湰鍗囩骇鏃讹紝6 涓?git fork + 5 涓?override 浼氬鑷磋嚦灏?2-3 澶╃殑渚濊禆瑙ｅ啿绐佸伐浣溿€俙dart_mappable: ^4.0.0-dev.1` 杩涘叆 stable 鍚?API 鍙兘鍙樺寲銆?
-5. **澶氬钩鍙拌鍒掑彈闃?* (姝ｅ湪鍙戠敓): Windows 閫傞厤宸插湪 worktree 涓繘琛岋紝浣?AppModel 瀵?Android API 鐨勭‖渚濊禆鎰忓懗鐫€姣忎釜鍋忓ソ閮介渶瑕佹坊鍔犲钩鍙板垎鏀紝宸ヤ綔閲忕嚎鎬у闀裤€?
-6. **鍥炲綊澶辨帶** (鎸佺画): 鏃犻槄璇诲櫒/Creator 鑷姩鍖栨祴璇曟剰鍛崇潃姣忔鍙戠増閮芥槸鎵嬪姩鍥炲綊銆傞殢鐫€鍔熻兘澧炲姞锛屾墜鍔ㄦ祴璇曡鐩栫巼鎸佺画涓嬮檷銆?
+## 架构健康度评价
+
+**架构成熟度: Early Growth (成长初期)**
+
+**优势**:
+- Package 分离方向正确（hibiki_core/dictionary/anki/audio/platform）
+- Drift SQLite 使用规范（WAL、外键、索引、迁移版本号）
+- 数据库测试覆盖率高（migration、concurrent、foreign key 全有）
+- FFI 内存管理总体规范（finally 释放、isolate 隔离）
+- EPUB 路径遍历防护到位
+
+**劣势**:
+- AppModel 上帝对象阻碍了 package 分离的价值发挥
+- 阅读器单文件 3,849 行，状态机无形式化
+- 异步错误吞噬模式广泛分布
+- CI 只做最低限度验证
+- 核心逻辑零测试覆盖
+
+**正面发现（异步/资源审查确认）**:
+- 所有 `StreamSubscription` 在 `dispose()` 中正确取消
+- 所有 `Timer` / `Timer.periodic` 在 `dispose()` 中正确取消
+- `FocusNode`、`ScrollController`、`TextEditingController` 释放总体正确
+- `addListener` / `removeListener` 配对正确
+- `Completer` 使用正确，有 `isCompleted` 守卫防止双重完成
+- `runZonedGuarded` + `FlutterError.onError` 全局错误边界完善
+- EPUB 路径遍历防护（`p.isWithin()` 检查）优秀
+- FFI 内存管理使用 `try-finally` + `calloc.free()` 规范
+- AudiobookController dispose 完整（3 个 stream subscription + player）
+
+**结论**: 项目有良好的技术直觉（选择 Drift 而非 SharedPreferences、用 Isolate 做重计算、用 C++ FFI 做字典查询），但**执行纪律不一致** — 数据库层和资源释放的严谨程度远高于 AppModel 和阅读器状态管理层。这是典型的「AI 辅助开发 + 单人维护」模式：基础设施层（被仔细审查过的）质量高，业务逻辑层（快速迭代的）质量低。
+
+---
+
+## 推荐重构顺序
+
+### Phase 0: 紧急修复（2-3 天）
+1. **HBK-AUDIT-002**: 修复位置保存竞态（闭包捕获局部变量）
+2. **HBK-AUDIT-003**: WebView controller 调用包裹 try-catch
+3. **HBK-AUDIT-012**: 数据库降级前备份
+4. **HBK-AUDIT-020**: CreatorModel 添加 dispose()（5 行修复）
+5. **HBK-AUDIT-025**: _initBook() 异步间隙添加 mounted 守卫
+
+### Phase 1: 安全加固（3-5 天）
+4. **HBK-AUDIT-004**: JS 注入改用 JSON 编码
+5. **HBK-AUDIT-005**: ZIP 解压添加大小检查
+6. **HBK-AUDIT-011**: CI 添加 release build + coverage
+
+### Phase 2: 结构性还债（1-2 周）
+7. **HBK-AUDIT-001**: AppModel 拆分（ThemeNotifier、PreferencesRepo、DictionaryRepo）
+8. **HBK-AUDIT-009**: Creator 字段提取基类，Anki mineEntry 上提
+9. **HBK-AUDIT-010**: 偏好序列化添加类型标记
+
+### Phase 3: 阅读器治理（2-3 周）
+10. **HBK-AUDIT-007**: 状态机形式化（enum + 转换函数）
+11. 拆分 `reader_hoshi_page.dart` 为：
+    - `ReaderHoshiPage` (生命周期/路由)
+    - `ReaderWebViewController` (WebView 管理)
+    - `ReaderPositionManager` (位置保存/恢复)
+    - `ReaderAudioBridge` (有声书集成)
+    - `ReaderStyleInjector` (CSS/样式管理)
+
+---
+
+## 如果继续当前模式，未来 3-6 个月最可能出现的问题
+
+1. **AppModel 性能坍塌** (2-3 个月): 随着功能增加，`notifyListeners()` 频率上升，UI 重建开销从可忽略变为可感知。用户会报告「切换偏好后全部卡一下」。
+
+2. **阅读器修不动** (1-2 个月): `reader_hoshi_page.dart` 每次修 bug 都有 30%+ 概率引入新 bug，因为 3,849 行代码的状态交互路径超出人脑缓存。某次「修复翻页」会导致「位置恢复坏了」。
+
+3. **大字典导入 OOM** (已可复现): 用户导入 1GB+ 字典 ZIP 时 OOM 崩溃。当前只在小字典上测试通过。
+
+4. **依赖锁死** (3-6 个月): Flutter 3.41.6 -> 下一个大版本升级时，6 个 git fork + 5 个 override 会导致至少 2-3 天的依赖解冲突工作。`dart_mappable: ^4.0.0-dev.1` 进入 stable 后 API 可能变化。
+
+5. **多平台计划受阻** (正在发生): Windows 适配已在 worktree 中进行，但 AppModel 对 Android API 的硬依赖意味着每个偏好都需要添加平台分支，工作量线性增长。
+
+6. **回归失控** (持续): 无阅读器/Creator 自动化测试意味着每次发版都是手动回归。随着功能增加，手动测试覆盖率持续下降。
+
 ---
 
 ## Next Scope
 
-涓嬩竴杞鏌ュ皢鑱氱劍锛?1. `reader_hoshi_page.dart` 閫愬嚱鏁板鏌ワ紙WebView 璧勬簮鎷︽埅銆乷nLoadStop 瀹屾暣璺緞锛?2. Profile 绯荤粺锛坄profile_repository.dart`銆乣profile_view_model.dart`锛夆€?澶?Profile 鍒囨崲鐨勭姸鎬佷竴鑷存€?3. 鏈夊０涔︽挱鏀炬爮锛坄audiobook_play_bar.dart` 2,151 琛岋級鈥?鍙︿竴涓ぇ鏂囦欢鐑偣
-4. 瀛楀吀鎼滅储鎬ц兘璺緞锛圚oshiDicts FFI 鈫?UI 娓叉煋瀹屾暣閾捐矾锛?
+下一轮审查将聚焦：
+1. `reader_hoshi_page.dart` 逐函数审查（WebView 资源拦截、onLoadStop 完整路径）
+2. Profile 系统（`profile_repository.dart`、`profile_view_model.dart`）— 多 Profile 切换的状态一致性
+3. 有声书播放栏（`audiobook_play_bar.dart` 2,151 行）— 另一个大文件热点
+4. 字典搜索性能路径（HoshiDicts FFI -> UI 渲染完整链路）
+
 ---
 
-## 闄勫綍 A: 寮傚父鍚炲櫖娓呭崟
+## 附录 A: 异常吞噬清单
 
-| 鏂囦欢 | 琛屽彿 | 妯″紡 | 椋庨櫓 |
+| 文件 | 行号 | 模式 | 风险 |
 |------|------|------|------|
-| `app_model.dart` | 2748 | `catch (_) {}` | 鏈煡鎿嶄綔闈欓粯澶辫触 |
-| `app_model.dart` | 2796 | `catch (_) {}` | 鏈煡鎿嶄綔闈欓粯澶辫触 |
-| `app_model.dart` | 3749 | `catch (_) {}` | 鏈煡鎿嶄綔闈欓粯澶辫触 |
-| `reader_hoshi_page.dart` | 277 | `catch (_) {}` | WebView 鍒濆鍖栧け璐ヨ鍚?|
-| `reader_hoshi_page.dart` | 811 | `catch (_) {}` | 闃呰鍣ㄦ搷浣滃け璐ヨ鍚?|
-| `reader_hoshi_page.dart` | 1720 | `catch (_) {}` | 鏍峰紡搴旂敤澶辫触琚悶 |
-| `reader_hoshi_page.dart` | 2418 | `catch (_) {}` | 浣嶇疆鐩稿叧鎿嶄綔澶辫触琚悶 |
-| `error_log_service.dart` | 58, 78, 114 | `catch (_) {}` | 鏃ュ織绯荤粺鑷韩閿欒琚悶 |
-| `audiobook_play_bar.dart` | 1214 | `catch (_) {}` | 鎾斁鎺у埗澶辫触琚悶 |
-| `highlight_bridge.dart` | 387 | `catch (_) {}` | 楂樹寒鎿嶄綔澶辫触琚悶 |
-| `hoshi_settings_page.dart` | 239 | `catch (_) {}` | 璁剧疆鎿嶄綔澶辫触琚悶 |
-| `update_checker.dart` | 52, 55 | `catch (_) {}` | 鏇存柊妫€鏌ュけ璐ヨ鍚?|
-| `profile_view_model.dart` | 50 | `.catchError((_) {})` | Profile 蹇収澶辫触琚悶 |
-| `app_model.dart` | 1791 | `.catchError((_) {})` | splash 棰滆壊璁剧疆澶辫触琚悶 |
-| `audio_field.dart` | 118, 370 | `.catchError((Object _) {})` | 闊抽鎿嶄綔澶辫触琚悶 |
-| `audio_sentence_field.dart` | 120, 372 | `.catchError((Object _) {})` | 闊抽鎿嶄綔澶辫触琚悶 |
+| `app_model.dart` | 2748 | `catch (_) {}` | 未知操作静默失败 |
+| `app_model.dart` | 2796 | `catch (_) {}` | 未知操作静默失败 |
+| `app_model.dart` | 3749 | `catch (_) {}` | 未知操作静默失败 |
+| `reader_hoshi_page.dart` | 277 | `catch (_) {}` | WebView 初始化失败被吞 |
+| `reader_hoshi_page.dart` | 811 | `catch (_) {}` | 阅读器操作失败被吞 |
+| `reader_hoshi_page.dart` | 1720 | `catch (_) {}` | 样式应用失败被吞 |
+| `reader_hoshi_page.dart` | 2418 | `catch (_) {}` | 位置相关操作失败被吞 |
+| `error_log_service.dart` | 58, 78, 114 | `catch (_) {}` | 日志系统自身错误被吞 |
+| `audiobook_play_bar.dart` | 1214 | `catch (_) {}` | 播放控制失败被吞 |
+| `highlight_bridge.dart` | 387 | `catch (_) {}` | 高亮操作失败被吞 |
+| `hoshi_settings_page.dart` | 239 | `catch (_) {}` | 设置操作失败被吞 |
+| `update_checker.dart` | 52, 55 | `catch (_) {}` | 更新检查失败被吞 |
+| `profile_view_model.dart` | 50 | `.catchError((_) {})` | Profile 快照失败被吞 |
+| `app_model.dart` | 1791 | `.catchError((_) {})` | splash 颜色设置失败被吞 |
+| `audio_field.dart` | 118, 370 | `.catchError((Object _) {})` | 音频操作失败被吞 |
+| `audio_sentence_field.dart` | 120, 372 | `.catchError((Object _) {})` | 音频操作失败被吞 |
