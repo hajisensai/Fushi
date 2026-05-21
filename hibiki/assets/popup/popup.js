@@ -1667,17 +1667,15 @@ function applyCustomCSS() {
     }
 }
 
-window.renderPopup = function(preserveScroll) {
+window.renderPopup = function() {
     const container = document.getElementById('entries-container');
     if (!container) return;
 
     if (!window.lookupEntries || !window.lookupEntries.length) {
         container.innerHTML = '';
-        window._renderedEntryCount = 0;
+        window._renderedGlossaryCounts = [];
         return;
     }
-
-    const savedScroll = preserveScroll ? window.scrollY : 0;
 
     (async () => {
         const fragment = document.createDocumentFragment();
@@ -1695,18 +1693,50 @@ window.renderPopup = function(preserveScroll) {
 
         container.innerHTML = '';
         container.appendChild(fragment);
-        window._renderedEntryCount = window.lookupEntries.length;
+        window._renderedGlossaryCounts = window.lookupEntries.map(
+            e => e.glossaries.length);
 
         postProcessRuby(container);
         applyCustomCSS();
 
-        if (preserveScroll) {
-            window.scrollTo(0, savedScroll);
-        }
-
         window.flutter_inappwebview.callHandler('popupRendered',
             document.body.scrollHeight);
     })();
+};
+
+window.updatePopupIncremental = function() {
+    const container = document.getElementById('entries-container');
+    if (!container || !window.lookupEntries?.length) return;
+
+    const entries = window.lookupEntries;
+    const prevCounts = window._renderedGlossaryCounts || [];
+    const existingEntries = container.querySelectorAll(':scope > .entry');
+
+    for (let idx = 0; idx < entries.length; idx++) {
+        const entry = entries[idx];
+        const newCount = entry.glossaries.length;
+
+        if (idx < prevCounts.length) {
+            if (newCount !== prevCounts[idx]) {
+                const newElement = buildEntryElement(entry, idx);
+                existingEntries[idx].replaceWith(newElement);
+                postProcessRuby(newElement);
+            }
+        } else {
+            if (container.children.length > 0) {
+                container.appendChild(document.createElement('hr'));
+            }
+            const newElement = buildEntryElement(entry, idx);
+            container.appendChild(newElement);
+            postProcessRuby(newElement);
+        }
+    }
+
+    window._renderedGlossaryCounts = entries.map(e => e.glossaries.length);
+    applyCustomCSS();
+
+    window.flutter_inappwebview.callHandler('popupRendered',
+        document.body.scrollHeight);
 };
 
 

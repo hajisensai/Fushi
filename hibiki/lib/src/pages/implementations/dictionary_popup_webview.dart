@@ -159,8 +159,9 @@ class DictionaryPopupWebViewState
     final String bgRgb = 'rgb($br, $bg, $bb)';
 
     final bool needsScrollCheck = widget.onScrolledToBottom != null;
-    final String renderCall =
-        isLoadMore ? 'window.renderPopup(true);' : 'window.renderPopup();';
+    final String renderCall = isLoadMore
+        ? 'window.updatePopupIncremental();'
+        : 'window.renderPopup();';
     final swInject = Stopwatch()..start();
     _controller!.evaluateJavascript(source: '''
       document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
