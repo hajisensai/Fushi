@@ -143,6 +143,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       (_readerContentReady && _showChrome) ? _readerBottomReserve : 0;
 
   @override
+  double get popupTopReserve => _stableTopInset;
+
+  @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
@@ -197,21 +200,23 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final HibikiDatabase db = appModelNoUpdate.database;
 
     await _resolveAndApplyProfile(db);
+    if (!mounted) return;
 
     _settings = ReaderHoshiSource.readerSettings ?? ReaderSettings(db);
     ReaderHoshiSource.readerSettings = _settings;
     await _settings!.ready;
+    if (!mounted) return;
 
     final bool exists = await EpubStorage.bookExists(widget.bookId);
+    if (!mounted) return;
     if (!exists) {
       debugPrint('[ReaderHoshi] book ${widget.bookId} not found on disk');
-      if (mounted) {
-        Navigator.of(context).pop();
-      }
+      Navigator.of(context).pop();
       return;
     }
 
     final String extractDir = await EpubStorage.bookDirectory(widget.bookId);
+    if (!mounted) return;
     _extractDir = extractDir;
 
     try {
@@ -221,6 +226,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     } on FormatException catch (e) {
       debugPrint('[ReaderHoshi] EPUB parse failed ($e), trying DB metadata');
       _book = await _buildBookFromDb(db, widget.bookId, extractDir);
+      if (!mounted) return;
       _book ??= _buildLegacyBook(extractDir);
     }
 
@@ -239,6 +245,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     }
 
     await _resolveAudioSlot();
+    if (!mounted) return;
 
     final Bookmark? bm = widget.initialBookmarkJump;
     if (bm != null &&
@@ -253,6 +260,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     } else {
       final ReaderPositionRepository repo = ReaderPositionRepository(db);
       final ReaderPosition? saved = await repo.findByTtuBookId(widget.bookId);
+      if (!mounted) return;
       debugPrint('[ReaderHoshi] restore lookup: bookId=${widget.bookId} '
           'saved=$saved section=${saved?.sectionIndex} '
           'offset=${saved?.normCharOffset}');
@@ -286,13 +294,12 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _lyricsMode = savedLyricsMode;
     if (!savedLyricsMode) {
       await ReaderHoshiSource.instance.setLyricsMode(false);
+      if (!mounted) return;
     }
 
     _audioSlotResolved = true;
 
-    if (mounted) {
-      setState(() {});
-    }
+    setState(() {});
   }
 
   void _setupVolumeKeyHandlers() {
@@ -835,6 +842,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       final dynamic result = await _controller!.evaluateJavascript(
         source: ReaderPaginationScripts.progressInvocation(),
       );
+      if (!mounted || _controller == null) return;
       final double? progress = ReaderPaginationScripts.doubleResult(result);
       if (progress != null && progress > 0) {
         _displayedProgress = progress;
@@ -1088,6 +1096,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   Future<void> _applyStylesLive() async {
     if (_controller == null || _settings == null) return;
     await _syncSettingsFromHive();
+    if (!mounted || _controller == null) return;
     if (_lyricsMode) {
       await _updateLyricsStyleLive();
       return;
@@ -1107,10 +1116,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           ? _colorToCssRgba(appModel.customThemeLinkColor)
           : null,
     );
-    final String escaped = css
-        .replaceAll('\\', '\\\\')
-        .replaceAll('`', '\\`')
-        .replaceAll('\$', '\\\$');
+    final String jsonCss = jsonEncode(css);
     await _controller!.evaluateJavascript(
       source: '''
 (function(){
@@ -1120,11 +1126,11 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     el.id = 'hoshi-reader-style';
     document.head.appendChild(el);
   }
-  el.textContent = `$escaped`;
+  el.textContent = $jsonCss;
 })();
 ''',
     );
-    setState(() {});
+    if (mounted) setState(() {});
   }
 
   static bool _isValidFontData(Uint8List data) {
@@ -1431,17 +1437,6 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         );
 
         controller.addJavaScriptHandler(
-          handlerName: 'onLyricsCueTap',
-          callback: (List<dynamic> args) {
-            if (args.isEmpty || _audiobookController == null) return;
-            final int index = (args[0] as num).toInt();
-            if (index >= 0 && index < _lyricsCueList.length) {
-              _audiobookController!.playCueAndContinue(_lyricsCueList[index]);
-            }
-          },
-        );
-
-        controller.addJavaScriptHandler(
           handlerName: 'onCueTap',
           callback: (List<dynamic> args) {
             if (args.isEmpty || _audiobookController == null) return;
@@ -1564,6 +1559,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final FavoriteSentenceRepository repo =
         FavoriteSentenceRepository(appModel.database);
     final List<FavoriteSentence> all = await repo.getAll();
+    if (!mounted || _controller == null) return;
     final List<FavoriteSentence> chapterFavs = all
         .where((s) =>
             s.ttuBookId == widget.bookId && s.sectionIndex == _currentChapter)
@@ -1780,7 +1776,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   }
 
   Future<void> _updateLyricsStyleLive() async {
-    if (_controller == null || !_lyricsPageReady) return;
+    if (!mounted || _controller == null || !_lyricsPageReady) return;
     final Color bg = _themeBackgroundColor();
     final Color fg = _themeTextColor();
     final Color accent = _isReaderThemeDark
@@ -1804,7 +1800,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       source: 'window.__lyricsUpdateStyle && window.__lyricsUpdateStyle('
           "'$bgCss','$fgCss','$accentCss',$fontSize,$mt,$mb,$ml,$mr);",
     );
-    setState(() {});
+    if (mounted) setState(() {});
   }
 
   void _showLyricsModeHintIfNeeded() {
@@ -1957,6 +1953,15 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   ({int offset, int length})? _cachedSentenceRange;
   bool _currentSentenceIsFavorited = false;
 
+  int get _lookupSectionIndex {
+    if (_lyricsMode && _lookupCue != null) {
+      final SasayakiFragment? frag =
+          SasayakiMatchCodec.tryDecode(_lookupCue!.textFragmentId);
+      if (frag != null) return frag.sectionIndex;
+    }
+    return _currentChapter;
+  }
+
   AudioCue? _findCueForOffset(int normalizedOffset) {
     final AudiobookPlayerController? ctrl = _audiobookController;
     if (ctrl == null) return null;
@@ -2003,12 +2008,24 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     return null;
   }
 
+  void _syncCueSentence() {
+    final String cueText = _lookupCue?.text ?? '';
+    if (cueText.isNotEmpty) {
+      appModel.currentMediaSource?.setCurrentCueSentence(
+        selection: JidoujishoTextSelection(text: cueText),
+      );
+    } else {
+      appModel.currentMediaSource?.clearCurrentCueSentence();
+    }
+  }
+
   @override
   void clearDictionaryResult() {
     _lookupCue = null;
     _cachedSelectionRange = null;
     _cachedSentenceRange = null;
     _currentSentenceIsFavorited = false;
+    appModel.currentMediaSource?.clearCurrentCueSentence();
     super.clearDictionaryResult();
   }
 
@@ -2041,8 +2058,12 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       );
     }
 
+    final String cueSentence =
+        appModel.currentMediaSource?.currentCueSentence.text ?? '';
+
     final AnkiMiningContext miningContext = AnkiMiningContext(
       sentence: sentence,
+      cueSentence: cueSentence.isNotEmpty ? cueSentence : null,
       documentTitle: _book?.title,
       coverPath: coverPath,
       sasayakiAudioPath: sasayakiAudioPath,
@@ -2401,6 +2422,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         } catch (_) {}
       }
       _lookupCue ??= _audiobookController?.currentCue;
+      _syncCueSentence();
       final int highlightCount = await searchDictionaryResult(
         searchTerm: data.text,
         selectionRect: selectionRect,
@@ -2417,6 +2439,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (_lookupCue == null && _srtBookUid != null) {
       _lookupCue = _findCueForSentence(data.sentence);
     }
+    _syncCueSentence();
 
     final int highlightCount = await searchDictionaryResult(
       searchTerm: data.text,
@@ -2466,7 +2489,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         await FavoriteSentenceRepository(appModel.database).isFavorited(
       text: sentence,
       ttuBookId: widget.bookId,
-      sectionIndex: _currentChapter,
+      sectionIndex: _lookupSectionIndex,
       normCharOffset: sentenceRange?.offset,
     );
     if (mounted && favorited != _currentSentenceIsFavorited) {
@@ -2667,6 +2690,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       final dynamic result = await _controller!.evaluateJavascript(
         source: ReaderPaginationScripts.paginateInvocation(direction),
       );
+      if (!mounted || _controller == null) return;
       if (!_didScroll(result)) {
         _handlePageTurnLimit(direction.jsValue);
       }
@@ -2675,6 +2699,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final dynamic result = await _controller!.evaluateJavascript(
       source: ReaderPaginationScripts.paginateInvocation(direction),
     );
+    if (!mounted || _controller == null) return;
     if (_didScroll(result)) {
       _refreshProgress();
     } else {
@@ -3417,6 +3442,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final dynamic result = await _controller!.evaluateJavascript(
       source: ReaderPaginationScripts.progressInvocation(),
     );
+    if (!mounted || _controller == null) return;
     final double? progress = _toDouble(result);
     _initialProgress = progress ?? 0.0;
     _lastProgressSection = _currentChapter;
@@ -3633,6 +3659,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       return;
     }
 
+    final int section = _lookupSectionIndex;
     final sentenceRange = _cachedSentenceRange ??
         (_cachedSelectionRange != null
             ? (
@@ -3651,7 +3678,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       await repo.removeByContent(
         text: sentence,
         ttuBookId: widget.bookId,
-        sectionIndex: _currentChapter,
+        sectionIndex: section,
         normCharOffset: sentenceRange?.offset,
       );
       setState(() => _currentSentenceIsFavorited = false);
@@ -3661,8 +3688,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         final List<FavoriteSentence> all = await repo.getAll();
         final List<FavoriteSentence> chapterFavs = all
             .where((s) =>
-                s.ttuBookId == widget.bookId &&
-                s.sectionIndex == _currentChapter)
+                s.ttuBookId == widget.bookId && s.sectionIndex == section)
             .toList();
         await HighlightBridge.applyHighlights(_controller!, chapterFavs,
             backgroundHex: _readerBackgroundHex,
@@ -3679,12 +3705,12 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final FavoriteSentence fav = FavoriteSentence(
       text: sentence,
       bookTitle: _book!.title,
-      chapterLabel: _currentChapter < _book!.chapters.length
-          ? _book!.chapters[_currentChapter].href
+      chapterLabel: section < _book!.chapters.length
+          ? _book!.chapters[section].href
           : null,
       createdAt: DateTime.now(),
       ttuBookId: widget.bookId,
-      sectionIndex: _currentChapter,
+      sectionIndex: section,
       normCharOffset: sentenceRange?.offset,
       normCharLength: sentenceRange?.length,
     );
@@ -3695,8 +3721,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     } else if (sentenceRange != null) {
       final List<FavoriteSentence> all = await repo.getAll();
       final List<FavoriteSentence> chapterFavs = all
-          .where((s) =>
-              s.ttuBookId == widget.bookId && s.sectionIndex == _currentChapter)
+          .where(
+              (s) => s.ttuBookId == widget.bookId && s.sectionIndex == section)
           .toList();
       await HighlightBridge.applyHighlights(_controller!, chapterFavs,
           backgroundHex: _readerBackgroundHex,

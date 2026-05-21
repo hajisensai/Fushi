@@ -46,8 +46,11 @@ LazyDatabase _openDb(String dbDirectory) {
   BookProfiles,
 ])
 class HibikiDatabase extends _$HibikiDatabase {
-  HibikiDatabase(String dbDirectory) : super(_openDb(dbDirectory));
-  HibikiDatabase.forTesting(super.e);
+  final String _dbDirectory;
+  HibikiDatabase(String dbDirectory)
+      : _dbDirectory = dbDirectory,
+        super(_openDb(dbDirectory));
+  HibikiDatabase.forTesting(super.e) : _dbDirectory = '';
 
   @override
   int get schemaVersion => 13;
@@ -71,6 +74,16 @@ class HibikiDatabase extends _$HibikiDatabase {
         },
         onUpgrade: (m, from, to) async {
           if (from > to) {
+            if (_dbDirectory.isNotEmpty) {
+              try {
+                final File dbFile = File(p.join(_dbDirectory, 'hibiki.db'));
+                if (await dbFile.exists()) {
+                  final String backupPath =
+                      p.join(_dbDirectory, 'hibiki.db.bak.$from');
+                  await dbFile.copy(backupPath);
+                }
+              } catch (_) {}
+            }
             for (final table in allTables) {
               await customStatement(
                 'DROP TABLE IF EXISTS "${table.actualTableName}"',
@@ -812,16 +825,14 @@ class HibikiDatabase extends _$HibikiDatabase {
 
   Future<void> addTagToSrtBook(int srtBookId, int tagId) =>
       into(srtBookTagMappings).insert(
-        SrtBookTagMappingsCompanion.insert(
-            srtBookId: srtBookId, tagId: tagId),
+        SrtBookTagMappingsCompanion.insert(srtBookId: srtBookId, tagId: tagId),
         mode: InsertMode.insertOrIgnore,
       );
 
-  Future<void> removeTagFromSrtBook(int srtBookId, int tagId) =>
-      (delete(srtBookTagMappings)
-            ..where((t) =>
-                t.srtBookId.equals(srtBookId) & t.tagId.equals(tagId)))
-          .go();
+  Future<void> removeTagFromSrtBook(int srtBookId, int tagId) => (delete(
+          srtBookTagMappings)
+        ..where((t) => t.srtBookId.equals(srtBookId) & t.tagId.equals(tagId)))
+      .go();
 
   Future<void> setTagsForSrtBook(int srtBookId, Set<int> tagIds) =>
       transaction(() async {

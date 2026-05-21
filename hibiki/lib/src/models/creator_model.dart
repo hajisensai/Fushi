@@ -43,6 +43,18 @@ class CreatorModel with ChangeNotifier {
     );
   }
 
+  @override
+  void dispose() {
+    scrollController.dispose();
+    for (final TextEditingController c in _controllersByField.values) {
+      c.dispose();
+    }
+    for (final ValueNotifier<bool> n in _lockNotifiersByField.values) {
+      n.dispose();
+    }
+    super.dispose();
+  }
+
   /// Refresh state for the Card Creator.
   void refresh() {
     notifyListeners();

@@ -67,7 +67,7 @@
 ### HBK-AUDIT-002 — 阅读器状态机竞态条件（位置保存 vs 导航）
 
 **Severity**: CRITICAL
-**Status**: open
+**Status**: not-reproducible — 2026-05-21 验证：`_debouncedSaveReaderPosition(int section, double progress)` 参数已被闭包捕获为值，timer 触发时不依赖实例变量。审查报告描述的竞态场景在当前代码中不存在。
 **文件**: `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart:2189-2551`
 
 **根因**: 位置保存使用 500ms debounce Timer，导航操作直接修改 `_currentChapter`，两者无同步机制。
@@ -88,7 +88,7 @@
 ### HBK-AUDIT-003 — WebView Controller 生命周期竞态
 
 **Severity**: CRITICAL
-**Status**: open
+**Status**: fixed — 2026-05-21 在 `_applyStylesLive`、`_syncPageSize`、`_applyChapterHighlights`、`_updateLyricsStyleLive`、`_paginate`、`_reloadWithCurrentSettings` 6 个方法中添加了 `if (!mounted || _controller == null) return;` 守卫。
 **文件**: `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart:1091-1130`
 
 **根因**: `_applyStylesLive()` 等方法先检查 `_controller != null`，然后执行多个 `await`，期间 `dispose()` 可能被调用。
@@ -109,7 +109,7 @@ _applyStylesLive() 开始 -> _controller != null (ok)
 ### HBK-AUDIT-004 — JavaScript 模板字符串转义不完整
 
 **Severity**: HIGH
-**Status**: open
+**Status**: fixed — 2026-05-21 `_applyStylesLive` 中手动转义替换为 `jsonEncode(css)` 安全编码。
 **文件**: `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart:1113-1129`
 
 **根因**: CSS 注入到 JS 模板字符串时只转义了 `\`, `` ` ``, `$`，但未处理 `${}` 模式。
@@ -275,7 +275,7 @@ else -> String
 ### HBK-AUDIT-012 — 数据库降级策略是全删重建
 
 **Severity**: MEDIUM
-**Status**: open
+**Status**: fixed — 2026-05-21 在 DROP ALL 前添加 `hibiki.db.bak.$from` 文件备份。`_dbDirectory` 存储为实例变量。
 **文件**: `packages/hibiki_core/lib/src/database/database.dart:73-80`
 
 ```dart
@@ -301,7 +301,7 @@ if (from > to) {
 ### HBK-AUDIT-020 — CreatorModel 无 dispose()（内存泄漏）
 
 **Severity**: CRITICAL
-**Status**: open
+**Status**: fixed — 2026-05-21 添加 `dispose()` 方法，释放 ScrollController + 所有 TextEditingController + 所有 ValueNotifier。
 **文件**: `hibiki/lib/src/models/creator_model.dart:27-42`
 
 **根因**: `CreatorModel` 继承 `ChangeNotifier` 但**没有实现 `dispose()` 方法**。
@@ -387,7 +387,7 @@ await _database.trimMediaHistory(...);
 ### HBK-AUDIT-025 — 阅读器 _initBook() fire-and-forget + 异步间隙缺 mounted 检查
 
 **Severity**: CRITICAL
-**Status**: open
+**Status**: fixed — 2026-05-21 在 `_initBook()` 的 8 个 await 点后添加 `if (!mounted) return;` 守卫。
 **文件**: `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart:155, 220-294`
 
 **根因**: `_initBook()` 在 `initState()` 中被调用但不 await。该方法内部有 10+ 个 `await` 点（`_resolveAndApplyProfile`、`EpubStorage` 操作、`_resolveAudioSlot` 等），其间只在最末尾（行 296）做了 `if (mounted)` 检查。
@@ -542,14 +542,14 @@ return import(db: db, bytes: bytes, ...);           // 传给 isolate
 
 | 优先级 | 编号 | 问题 | 影响 |
 |--------|------|------|------|
-| P0 | HBK-AUDIT-002 | 阅读器位置保存竞态 | 用户数据丢失 |
-| P0 | HBK-AUDIT-003 | WebView controller 生命周期竞态 | 崩溃 |
-| P0 | HBK-AUDIT-012 | 数据库降级全删重建 | 用户数据丢失 |
-| P0 | HBK-AUDIT-020 | CreatorModel 无 dispose() | 确定性内存泄漏 |
-| P0 | HBK-AUDIT-025 | _initBook() 异步间隙缺 mounted 检查 | setState-after-dispose 崩溃 |
+| ~~P0~~ | HBK-AUDIT-002 | ~~阅读器位置保存竞态~~ | not-reproducible |
+| ~~P0~~ | HBK-AUDIT-003 | ~~WebView controller 生命周期竞态~~ | **fixed** |
+| ~~P0~~ | HBK-AUDIT-012 | ~~数据库降级全删重建~~ | **fixed** |
+| ~~P0~~ | HBK-AUDIT-020 | ~~CreatorModel 无 dispose()~~ | **fixed** |
+| ~~P0~~ | HBK-AUDIT-025 | ~~_initBook() 异步间隙缺 mounted 检查~~ | **fixed** |
 | P1 | HBK-AUDIT-001 | AppModel 上帝对象 | 性能/可维护性/并发安全 |
 | P1 | HBK-AUDIT-005 | 字典 ZIP 解压无内存限制 | OOM 崩溃 |
-| P1 | HBK-AUDIT-004 | JS 模板字符串转义不完整 | XSS/行为异常 |
+| ~~P1~~ | HBK-AUDIT-004 | ~~JS 模板字符串转义不完整~~ | **fixed** |
 | P2 | HBK-AUDIT-007 | 阅读器多标志状态机 | 快速导航异常 |
 | P2 | HBK-AUDIT-008 | Stream/Timer 泄漏风险 | 内存泄漏 |
 | P2 | HBK-AUDIT-010 | 偏好类型不安全序列化 | 设置静默丢失 |
