@@ -87,6 +87,8 @@ This file maps current Hibiki UI files to the design boards in this folder. It i
 
 | File | Primary board | Secondary board |
 | --- | --- | --- |
+| `app_model.dart` | `18-component-system.svg` | `14-profile-language-system.svg` |
+| `base_history_page.dart` | `02-reader-shelf.svg` | `16-empty-loading-error-states.svg` |
 | `base_media_search_bar.dart` | `18-component-system.svg` | `03-dictionary.svg` |
 | `base_page.dart` | `18-component-system.svg` | `16-empty-loading-error-states.svg` |
 | `base_source_page.dart` | `18-component-system.svg` | `03-dictionary.svg` |
@@ -94,16 +96,30 @@ This file maps current Hibiki UI files to the design boards in this folder. It i
 | `audiobook_import_dialog.dart` | `06-import-and-modals.svg` | `18-component-system.svg` |
 | `audiobook_play_bar.dart` | `04-reader.svg` | `18-component-system.svg` |
 | `book_import_dialog.dart` | `06-import-and-modals.svg` | `18-component-system.svg` |
+| `sasayaki_rematch.dart` | `06-import-and-modals.svg` | `04-reader.svg` |
+| `profile_selector.dart` | `14-profile-language-system.svg` | `18-component-system.svg` |
 | `jidoujisho_bottom_sheet.dart` | `18-component-system.svg` | `06-import-and-modals.svg` |
+| `jidoujisho_divider.dart` | `18-component-system.svg` | `05-settings.svg` |
 | `jidoujisho_dropdown.dart` | `18-component-system.svg` | `05-settings.svg` |
 | `jidoujisho_icon_button.dart` | `18-component-system.svg` | `01-home-navigation.svg` |
 | `jidoujisho_list_tile.dart` | `18-component-system.svg` | `05-settings.svg` |
+| `jidoujisho_marquee.dart` | `18-component-system.svg` | `12-media-and-sentences.svg` |
 | `jidoujisho_placeholder_message.dart` | `16-empty-loading-error-states.svg` | `18-component-system.svg` |
 | `jidoujisho_popup_position.dart` | `18-component-system.svg` | `03-dictionary.svg` |
 | `jidoujisho_search_history.dart` | `18-component-system.svg` | `03-dictionary.svg` |
 | `jidoujisho_selectable_text.dart` | `18-component-system.svg` | `03-dictionary.svg` |
 | `jidoujisho_tag.dart` | `13-tags-and-filters.svg` | `18-component-system.svg` |
+| `jidoujisho_text_selection_controls.dart` | `18-component-system.svg` | `03-dictionary.svg` |
+| `hibiki_toast.dart` | `18-component-system.svg` | `15-logs-and-debug.svg` |
+| `platform_utils.dart` | `18-component-system.svg` | `01-home-navigation.svg` |
+| `swipe_dismiss_wrapper.dart` | `18-component-system.svg` | `06-import-and-modals.svg` |
+| `update_checker.dart` | `14-profile-language-system.svg` | `15-logs-and-debug.svg` |
+| `blur_options.dart` | `11-reader-customization.svg` | `18-component-system.svg` |
+
+## Full UI scan audit
+
+See [UI_COVERAGE_AUDIT.md](UI_COVERAGE_AUDIT.md). The latest scan matched 78 UI-building Dart files under `hibiki/lib/src` and all 78 are mapped above.
 
 ## Current gap after this batch
 
-Every current file under `hibiki/lib/src/pages/implementations/` now has a board-level design reference. The reusable UI components that drive search, rows, popups, placeholders, bottom sheets, and audiobook chrome also have a component-system board. The next real missing piece is the user choice pass and then a written implementation spec that converts the selected A/B/C directions into shared Flutter components, route-by-route behavior, and verification gates.
+Every current file under `hibiki/lib/src/pages/implementations/` now has a board-level design reference. The reusable UI components that drive search, rows, popups, placeholders, bottom sheets, toasts, text selection, update overlays, adaptive layout, and audiobook chrome also have board mappings. The next real missing piece is the user choice pass and then a written implementation spec that converts the selected A/B/C directions into shared Flutter components, route-by-route behavior, and verification gates.

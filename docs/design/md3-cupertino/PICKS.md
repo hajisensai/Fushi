@@ -61,3 +61,5 @@ Notes:
 2. Write the implementation design spec with shared component tokens, page groups, migration risks, and verification gates.
 3. Review the spec with you before touching runtime Flutter code.
 4. Only after approval, turn the spec into an implementation plan.
+
+The current coverage audit maps all 78 UI-building Dart files matched under `hibiki/lib/src` to the boards above. See `UI_COVERAGE_AUDIT.md` for the scan.
