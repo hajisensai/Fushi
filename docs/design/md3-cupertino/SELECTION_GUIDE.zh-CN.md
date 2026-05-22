@@ -61,6 +61,8 @@ node .\generate-implementation-spec.mjs --pack hibiki-balanced --output .\IMPLEM
 ## 当前交付状态
 
 - [design-pack-gallery.html](design-pack-gallery.html): 4 套整包方案，每套 12 张代表图。
+- [recommended-selection-hibiki-balanced.html](recommended-selection-hibiki-balanced.html): 推荐 `Hibiki Balanced` 方案的 84 个界面可视化总览。
+- [RECOMMENDED_SELECTION_HIBIKI_BALANCED.zh-CN.md](RECOMMENDED_SELECTION_HIBIKI_BALANCED.zh-CN.md): 推荐 `Hibiki Balanced` 方案的逐界面中文表。
 - [interface-images/index.html](interface-images/index.html): 84 个界面/组件，每个 A/B/C 三张图，可逐项选择。
 - [INTERFACE_PICKS.md](INTERFACE_PICKS.md): 可复制填写的 84 行选择表。
 - [IMPLEMENTATION_SPEC_HIBIKI_BALANCED.md](IMPLEMENTATION_SPEC_HIBIKI_BALANCED.md): 当前推荐方案的实现规格草案。

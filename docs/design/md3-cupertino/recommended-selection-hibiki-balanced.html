@@ -1,0 +1,1071 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hibiki Balanced 逐界面推荐选择</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #1f2528;
+      --muted: #667277;
+      --line: #d7dddf;
+      --page: #f6f8f4;
+      --surface: #ffffff;
+      --surface-2: #eef5f1;
+      --accent: #2f6f61;
+      --accent-2: #365f8d;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--page);
+      color: var(--ink);
+    }
+
+    header {
+      padding: 28px clamp(18px, 5vw, 64px) 22px;
+      background: #fcfdfb;
+      border-bottom: 1px solid var(--line);
+    }
+
+    main {
+      padding: 22px clamp(14px, 4vw, 54px) 44px;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      max-width: 880px;
+      font-size: 3rem;
+      line-height: 1.08;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin-top: 28px;
+      font-size: 1.55rem;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      font-size: 1rem;
+      line-height: 1.25;
+      letter-spacing: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .lead {
+      max-width: 960px;
+      margin-top: 12px;
+      color: var(--muted);
+      line-height: 1.65;
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .toolbar a,
+    .alternatives a {
+      min-height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--ink);
+      font-weight: 800;
+      text-decoration: none;
+      padding: 8px 11px;
+    }
+
+    .toolbar a:hover,
+    .alternatives a:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .board-strip {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(138px, 1fr));
+      gap: 8px;
+      margin-top: 18px;
+      max-width: 1180px;
+    }
+
+    .board-strip span {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 6px;
+      align-items: center;
+      min-height: 44px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      padding: 8px;
+      font-size: 0.82rem;
+    }
+
+    .board-strip small {
+      grid-column: 2 / 4;
+      color: var(--muted);
+    }
+
+    .board-strip strong {
+      color: var(--accent);
+    }
+
+    .surface-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 14px;
+      margin-top: 14px;
+    }
+
+    .surface-card {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      min-width: 0;
+      border: 1px solid var(--line);
+      background: var(--surface);
+    }
+
+    .surface-card img {
+      display: block;
+      width: 100%;
+      aspect-ratio: 360 / 628;
+      object-fit: cover;
+      border-bottom: 1px solid var(--line);
+      background: #eef1ed;
+    }
+
+    .surface-body {
+      display: grid;
+      gap: 8px;
+      padding: 12px;
+    }
+
+    .surface-body p {
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .surface-body strong {
+      color: var(--ink);
+    }
+
+    .meta {
+      font-size: 0.78rem;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .alternatives {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 2px;
+    }
+
+    .alternatives a[aria-current="true"] {
+      background: var(--surface-2);
+      border-color: rgba(47, 111, 97, 0.6);
+      color: var(--accent);
+    }
+
+    @media (max-width: 820px) {
+      h1 {
+        font-size: 2.2rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Hibiki Balanced 逐界面推荐选择</h1>
+    <p class="lead">这是 Hibiki Balanced 展开到全部 84 个界面/支撑组件后的可视化默认值。每张卡显示推荐图，也保留 A/B/C 三个备选入口。</p>
+    <nav class="toolbar" aria-label="Related design documents">
+      <a href="SELECTION_GUIDE.zh-CN.md">中文选择指南</a>
+      <a href="interface-images/index.html">全部 A/B/C 图库</a>
+      <a href="IMPLEMENTATION_SPEC_HIBIKI_BALANCED.md">推荐实现规格</a>
+      <a href="design-pack-gallery.html">整包方案图库</a>
+    </nav>
+    <div class="board-strip" aria-label="Board choices for hibiki-balanced">
+      <span><b>01</b>首页和导航<strong>C</strong><small>0/0/3</small></span>
+<span><b>02</b>书架<strong>A</strong><small>3/0/0</small></span>
+<span><b>03</b>词典<strong>B</strong><small>0/14/0</small></span>
+<span><b>04</b>Hoshi 阅读器<strong>B</strong><small>0/3/0</small></span>
+<span><b>05</b>设置<strong>B</strong><small>0/2/0</small></span>
+<span><b>06</b>导入和弹窗<strong>A</strong><small>3/0/0</small></span>
+<span><b>07</b>制卡和 Anki<strong>C</strong><small>0/0/4</small></span>
+<span><b>08</b>收藏和统计<strong>A</strong><small>3/0/0</small></span>
+<span><b>09</b>系统和调试<strong>C</strong><small>0/0/0</small></span>
+<span><b>10</b>词典管理<strong>C</strong><small>0/0/5</small></span>
+<span><b>11</b>阅读自定义<strong>B</strong><small>0/6/0</small></span>
+<span><b>12</b>媒体和例句弹窗<strong>A</strong><small>5/0/0</small></span>
+<span><b>13</b>标签和筛选<strong>C</strong><small>0/0/4</small></span>
+<span><b>14</b>资料、语言、系统<strong>A</strong><small>6/0/0</small></span>
+<span><b>15</b>日志和调试<strong>A</strong><small>2/0/0</small></span>
+<span><b>16</b>空、加载、错误状态<strong>A</strong><small>3/0/0</small></span>
+<span><b>18</b>组件系统<strong>C</strong><small>0/0/18</small></span>
+    </div>
+  </header>
+  <main>
+    <h2>推荐界面图</h2>
+    <section class="surface-grid" aria-label="Recommended surface selections">
+      <article class="surface-card" data-section="Entry" data-choice="C">
+    <img src="interface-images/main-C.svg" alt="main.dart C recommended image">
+    <div class="surface-body">
+      <p class="meta">入口和外部壳层 / 首页和导航</p>
+      <h3>main.dart</h3>
+      <p><strong>C · 自适应手机/宽屏壳层</strong></p>
+      <p>手机保留底部导航，宽屏使用 rail/sidebar，后续桌面和平板不会变成拉伸手机页。</p>
+      <div class="alternatives" aria-label="main.dart alternatives"><a href="interface-images/main-A.svg" aria-current="false">A</a><a href="interface-images/main-B.svg" aria-current="false">B</a><a href="interface-images/main-C.svg" aria-current="true">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Entry" data-choice="B">
+    <img src="interface-images/popup-main-B.svg" alt="popup_main.dart B recommended image">
+    <div class="surface-body">
+      <p class="meta">入口和外部壳层 / 词典</p>
+      <h3>popup_main.dart</h3>
+      <p><strong>B · 可浏览结果</strong></p>
+      <p>Hibiki 的查词结果需要浏览和递归查找，不能总把焦点拉回输入框。</p>
+      <div class="alternatives" aria-label="popup_main.dart alternatives"><a href="interface-images/popup-main-A.svg" aria-current="false">A</a><a href="interface-images/popup-main-B.svg" aria-current="true">B</a><a href="interface-images/popup-main-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Entry" data-choice="B">
+    <img src="interface-images/floating-dict-main-B.svg" alt="floating_dict_main.dart B recommended image">
+    <div class="surface-body">
+      <p class="meta">入口和外部壳层 / 词典</p>
+      <h3>floating_dict_main.dart</h3>
+      <p><strong>B · 可浏览结果</strong></p>
+      <p>Hibiki 的查词结果需要浏览和递归查找，不能总把焦点拉回输入框。</p>
+      <div class="alternatives" aria-label="floating_dict_main.dart alternatives"><a href="interface-images/floating-dict-main-A.svg" aria-current="false">A</a><a href="interface-images/floating-dict-main-B.svg" aria-current="true">B</a><a href="interface-images/floating-dict-main-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="C">
+    <img src="interface-images/anki-settings-page-C.svg" alt="anki_settings_page.dart C recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 制卡和 Anki</p>
+      <h3>anki_settings_page.dart</h3>
+      <p><strong>C · 映射面板</strong></p>
+      <p>Anki 和字段映射是重复工作，密度、预览、映射面板比向导更实用。</p>
+      <div class="alternatives" aria-label="anki_settings_page.dart alternatives"><a href="interface-images/anki-settings-page-A.svg" aria-current="false">A</a><a href="interface-images/anki-settings-page-B.svg" aria-current="false">B</a><a href="interface-images/anki-settings-page-C.svg" aria-current="true">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="C">
+    <img src="interface-images/audio-recorder-page-C.svg" alt="audio_recorder_page.dart C recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 制卡和 Anki</p>
+      <h3>audio_recorder_page.dart</h3>
+      <p><strong>C · 映射面板</strong></p>
+      <p>Anki 和字段映射是重复工作，密度、预览、映射面板比向导更实用。</p>
+      <div class="alternatives" aria-label="audio_recorder_page.dart alternatives"><a href="interface-images/audio-recorder-page-A.svg" aria-current="false">A</a><a href="interface-images/audio-recorder-page-B.svg" aria-current="false">B</a><a href="interface-images/audio-recorder-page-C.svg" aria-current="true">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="B">
+    <img src="interface-images/blur-options-dialog-page-B.svg" alt="blur_options_dialog_page.dart B recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 阅读自定义</p>
+      <h3>blur_options_dialog_page.dart</h3>
+      <p><strong>B · 预览工作室</strong></p>
+      <p>阅读自定义必须边调边看，预览比纯设置列表更重要。</p>
+      <div class="alternatives" aria-label="blur_options_dialog_page.dart alternatives"><a href="interface-images/blur-options-dialog-page-A.svg" aria-current="false">A</a><a href="interface-images/blur-options-dialog-page-B.svg" aria-current="true">B</a><a href="interface-images/blur-options-dialog-page-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="B">
+    <img src="interface-images/book-css-editor-page-B.svg" alt="book_css_editor_page.dart B recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 阅读自定义</p>
+      <h3>book_css_editor_page.dart</h3>
+      <p><strong>B · 预览工作室</strong></p>
+      <p>阅读自定义必须边调边看，预览比纯设置列表更重要。</p>
+      <div class="alternatives" aria-label="book_css_editor_page.dart alternatives"><a href="interface-images/book-css-editor-page-A.svg" aria-current="false">A</a><a href="interface-images/book-css-editor-page-B.svg" aria-current="true">B</a><a href="interface-images/book-css-editor-page-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="A">
+    <img src="interface-images/collections-page-A.svg" alt="collections_page.dart A recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 收藏和统计</p>
+      <h3>collections_page.dart</h3>
+      <p><strong>A · 可扫列表</strong></p>
+      <p>收藏和统计需要快速扫描，不需要过多装饰。</p>
+      <div class="alternatives" aria-label="collections_page.dart alternatives"><a href="interface-images/collections-page-A.svg" aria-current="true">A</a><a href="interface-images/collections-page-B.svg" aria-current="false">B</a><a href="interface-images/collections-page-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="C">
+    <img src="interface-images/crop-image-dialog-page-C.svg" alt="crop_image_dialog_page.dart C recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 制卡和 Anki</p>
+      <h3>crop_image_dialog_page.dart</h3>
+      <p><strong>C · 映射面板</strong></p>
+      <p>Anki 和字段映射是重复工作，密度、预览、映射面板比向导更实用。</p>
+      <div class="alternatives" aria-label="crop_image_dialog_page.dart alternatives"><a href="interface-images/crop-image-dialog-page-A.svg" aria-current="false">A</a><a href="interface-images/crop-image-dialog-page-B.svg" aria-current="false">B</a><a href="interface-images/crop-image-dialog-page-C.svg" aria-current="true">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="B">
+    <img src="interface-images/custom-fonts-page-B.svg" alt="custom_fonts_page.dart B recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 阅读自定义</p>
+      <h3>custom_fonts_page.dart</h3>
+      <p><strong>B · 预览工作室</strong></p>
+      <p>阅读自定义必须边调边看，预览比纯设置列表更重要。</p>
+      <div class="alternatives" aria-label="custom_fonts_page.dart alternatives"><a href="interface-images/custom-fonts-page-A.svg" aria-current="false">A</a><a href="interface-images/custom-fonts-page-B.svg" aria-current="true">B</a><a href="interface-images/custom-fonts-page-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="B">
+    <img src="interface-images/custom-theme-page-B.svg" alt="custom_theme_page.dart B recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 阅读自定义</p>
+      <h3>custom_theme_page.dart</h3>
+      <p><strong>B · 预览工作室</strong></p>
+      <p>阅读自定义必须边调边看，预览比纯设置列表更重要。</p>
+      <div class="alternatives" aria-label="custom_theme_page.dart alternatives"><a href="interface-images/custom-theme-page-A.svg" aria-current="false">A</a><a href="interface-images/custom-theme-page-B.svg" aria-current="true">B</a><a href="interface-images/custom-theme-page-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="A">
+    <img src="interface-images/debug-log-page-A.svg" alt="debug_log_page.dart A recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 日志和调试</p>
+      <h3>debug_log_page.dart</h3>
+      <p><strong>A · 朴素日志查看</strong></p>
+      <p>日志页第一任务是诚实展示文本和时间，不要用装饰掩盖错误。</p>
+      <div class="alternatives" aria-label="debug_log_page.dart alternatives"><a href="interface-images/debug-log-page-A.svg" aria-current="true">A</a><a href="interface-images/debug-log-page-B.svg" aria-current="false">B</a><a href="interface-images/debug-log-page-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="C">
+    <img src="interface-images/dictionary-dialog-delete-page-C.svg" alt="dictionary_dialog_delete_page.dart C recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 词典管理</p>
+      <h3>dictionary_dialog_delete_page.dart</h3>
+      <p><strong>C · 管理工作区</strong></p>
+      <p>词典导入、排序、CSS、音频源是重操作，必须高密度、明确反馈。</p>
+      <div class="alternatives" aria-label="dictionary_dialog_delete_page.dart alternatives"><a href="interface-images/dictionary-dialog-delete-page-A.svg" aria-current="false">A</a><a href="interface-images/dictionary-dialog-delete-page-B.svg" aria-current="false">B</a><a href="interface-images/dictionary-dialog-delete-page-C.svg" aria-current="true">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="C">
+    <img src="interface-images/dictionary-dialog-import-page-C.svg" alt="dictionary_dialog_import_page.dart C recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 词典管理</p>
+      <h3>dictionary_dialog_import_page.dart</h3>
+      <p><strong>C · 管理工作区</strong></p>
+      <p>词典导入、排序、CSS、音频源是重操作，必须高密度、明确反馈。</p>
+      <div class="alternatives" aria-label="dictionary_dialog_import_page.dart alternatives"><a href="interface-images/dictionary-dialog-import-page-A.svg" aria-current="false">A</a><a href="interface-images/dictionary-dialog-import-page-B.svg" aria-current="false">B</a><a href="interface-images/dictionary-dialog-import-page-C.svg" aria-current="true">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="C">
+    <img src="interface-images/dictionary-dialog-page-C.svg" alt="dictionary_dialog_page.dart C recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 词典管理</p>
+      <h3>dictionary_dialog_page.dart</h3>
+      <p><strong>C · 管理工作区</strong></p>
+      <p>词典导入、排序、CSS、音频源是重操作，必须高密度、明确反馈。</p>
+      <div class="alternatives" aria-label="dictionary_dialog_page.dart alternatives"><a href="interface-images/dictionary-dialog-page-A.svg" aria-current="false">A</a><a href="interface-images/dictionary-dialog-page-B.svg" aria-current="false">B</a><a href="interface-images/dictionary-dialog-page-C.svg" aria-current="true">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="B">
+    <img src="interface-images/dictionary-entry-page-B.svg" alt="dictionary_entry_page.dart B recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 词典</p>
+      <h3>dictionary_entry_page.dart</h3>
+      <p><strong>B · 可浏览结果</strong></p>
+      <p>Hibiki 的查词结果需要浏览和递归查找，不能总把焦点拉回输入框。</p>
+      <div class="alternatives" aria-label="dictionary_entry_page.dart alternatives"><a href="interface-images/dictionary-entry-page-A.svg" aria-current="false">A</a><a href="interface-images/dictionary-entry-page-B.svg" aria-current="true">B</a><a href="interface-images/dictionary-entry-page-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="B">
+    <img src="interface-images/dictionary-page-mixin-B.svg" alt="dictionary_page_mixin.dart B recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 词典</p>
+      <h3>dictionary_page_mixin.dart</h3>
+      <p><strong>B · 可浏览结果</strong></p>
+      <p>Hibiki 的查词结果需要浏览和递归查找，不能总把焦点拉回输入框。</p>
+      <div class="alternatives" aria-label="dictionary_page_mixin.dart alternatives"><a href="interface-images/dictionary-page-mixin-A.svg" aria-current="false">A</a><a href="interface-images/dictionary-page-mixin-B.svg" aria-current="true">B</a><a href="interface-images/dictionary-page-mixin-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="B">
+    <img src="interface-images/dictionary-popup-layer-B.svg" alt="dictionary_popup_layer.dart B recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 词典</p>
+      <h3>dictionary_popup_layer.dart</h3>
+      <p><strong>B · 可浏览结果</strong></p>
+      <p>Hibiki 的查词结果需要浏览和递归查找，不能总把焦点拉回输入框。</p>
+      <div class="alternatives" aria-label="dictionary_popup_layer.dart alternatives"><a href="interface-images/dictionary-popup-layer-A.svg" aria-current="false">A</a><a href="interface-images/dictionary-popup-layer-B.svg" aria-current="true">B</a><a href="interface-images/dictionary-popup-layer-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="B">
+    <img src="interface-images/dictionary-popup-native-B.svg" alt="dictionary_popup_native.dart B recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 词典</p>
+      <h3>dictionary_popup_native.dart</h3>
+      <p><strong>B · 可浏览结果</strong></p>
+      <p>Hibiki 的查词结果需要浏览和递归查找，不能总把焦点拉回输入框。</p>
+      <div class="alternatives" aria-label="dictionary_popup_native.dart alternatives"><a href="interface-images/dictionary-popup-native-A.svg" aria-current="false">A</a><a href="interface-images/dictionary-popup-native-B.svg" aria-current="true">B</a><a href="interface-images/dictionary-popup-native-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="B">
+    <img src="interface-images/dictionary-popup-webview-B.svg" alt="dictionary_popup_webview.dart B recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 词典</p>
+      <h3>dictionary_popup_webview.dart</h3>
+      <p><strong>B · 可浏览结果</strong></p>
+      <p>Hibiki 的查词结果需要浏览和递归查找，不能总把焦点拉回输入框。</p>
+      <div class="alternatives" aria-label="dictionary_popup_webview.dart alternatives"><a href="interface-images/dictionary-popup-webview-A.svg" aria-current="false">A</a><a href="interface-images/dictionary-popup-webview-B.svg" aria-current="true">B</a><a href="interface-images/dictionary-popup-webview-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="C">
+    <img src="interface-images/dictionary-progress-dialog-content-C.svg" alt="dictionary_progress_dialog_content.dart C recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 词典管理</p>
+      <h3>dictionary_progress_dialog_content.dart</h3>
+      <p><strong>C · 管理工作区</strong></p>
+      <p>词典导入、排序、CSS、音频源是重操作，必须高密度、明确反馈。</p>
+      <div class="alternatives" aria-label="dictionary_progress_dialog_content.dart alternatives"><a href="interface-images/dictionary-progress-dialog-content-A.svg" aria-current="false">A</a><a href="interface-images/dictionary-progress-dialog-content-B.svg" aria-current="false">B</a><a href="interface-images/dictionary-progress-dialog-content-C.svg" aria-current="true">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="B">
+    <img src="interface-images/dictionary-result-page-B.svg" alt="dictionary_result_page.dart B recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 词典</p>
+      <h3>dictionary_result_page.dart</h3>
+      <p><strong>B · 可浏览结果</strong></p>
+      <p>Hibiki 的查词结果需要浏览和递归查找，不能总把焦点拉回输入框。</p>
+      <div class="alternatives" aria-label="dictionary_result_page.dart alternatives"><a href="interface-images/dictionary-result-page-A.svg" aria-current="false">A</a><a href="interface-images/dictionary-result-page-B.svg" aria-current="true">B</a><a href="interface-images/dictionary-result-page-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="C">
+    <img src="interface-images/dictionary-settings-dialog-page-C.svg" alt="dictionary_settings_dialog_page.dart C recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 词典管理</p>
+      <h3>dictionary_settings_dialog_page.dart</h3>
+      <p><strong>C · 管理工作区</strong></p>
+      <p>词典导入、排序、CSS、音频源是重操作，必须高密度、明确反馈。</p>
+      <div class="alternatives" aria-label="dictionary_settings_dialog_page.dart alternatives"><a href="interface-images/dictionary-settings-dialog-page-A.svg" aria-current="false">A</a><a href="interface-images/dictionary-settings-dialog-page-B.svg" aria-current="false">B</a><a href="interface-images/dictionary-settings-dialog-page-C.svg" aria-current="true">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="B">
+    <img src="interface-images/dictionary-structured-content-page-B.svg" alt="dictionary_structured_content_page.dart B recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 词典</p>
+      <h3>dictionary_structured_content_page.dart</h3>
+      <p><strong>B · 可浏览结果</strong></p>
+      <p>Hibiki 的查词结果需要浏览和递归查找，不能总把焦点拉回输入框。</p>
+      <div class="alternatives" aria-label="dictionary_structured_content_page.dart alternatives"><a href="interface-images/dictionary-structured-content-page-A.svg" aria-current="false">A</a><a href="interface-images/dictionary-structured-content-page-B.svg" aria-current="true">B</a><a href="interface-images/dictionary-structured-content-page-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="B">
+    <img src="interface-images/dictionary-term-page-B.svg" alt="dictionary_term_page.dart B recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 词典</p>
+      <h3>dictionary_term_page.dart</h3>
+      <p><strong>B · 可浏览结果</strong></p>
+      <p>Hibiki 的查词结果需要浏览和递归查找，不能总把焦点拉回输入框。</p>
+      <div class="alternatives" aria-label="dictionary_term_page.dart alternatives"><a href="interface-images/dictionary-term-page-A.svg" aria-current="false">A</a><a href="interface-images/dictionary-term-page-B.svg" aria-current="true">B</a><a href="interface-images/dictionary-term-page-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="B">
+    <img src="interface-images/dictionary-webview-media-B.svg" alt="dictionary_webview_media.dart B recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 词典</p>
+      <h3>dictionary_webview_media.dart</h3>
+      <p><strong>B · 可浏览结果</strong></p>
+      <p>Hibiki 的查词结果需要浏览和递归查找，不能总把焦点拉回输入框。</p>
+      <div class="alternatives" aria-label="dictionary_webview_media.dart alternatives"><a href="interface-images/dictionary-webview-media-A.svg" aria-current="false">A</a><a href="interface-images/dictionary-webview-media-B.svg" aria-current="true">B</a><a href="interface-images/dictionary-webview-media-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="B">
+    <img src="interface-images/display-settings-page-B.svg" alt="display_settings_page.dart B recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 阅读自定义</p>
+      <h3>display_settings_page.dart</h3>
+      <p><strong>B · 预览工作室</strong></p>
+      <p>阅读自定义必须边调边看，预览比纯设置列表更重要。</p>
+      <div class="alternatives" aria-label="display_settings_page.dart alternatives"><a href="interface-images/display-settings-page-A.svg" aria-current="false">A</a><a href="interface-images/display-settings-page-B.svg" aria-current="true">B</a><a href="interface-images/display-settings-page-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="A">
+    <img src="interface-images/error-log-page-A.svg" alt="error_log_page.dart A recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 日志和调试</p>
+      <h3>error_log_page.dart</h3>
+      <p><strong>A · 朴素日志查看</strong></p>
+      <p>日志页第一任务是诚实展示文本和时间，不要用装饰掩盖错误。</p>
+      <div class="alternatives" aria-label="error_log_page.dart alternatives"><a href="interface-images/error-log-page-A.svg" aria-current="true">A</a><a href="interface-images/error-log-page-B.svg" aria-current="false">B</a><a href="interface-images/error-log-page-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="A">
+    <img src="interface-images/example-sentences-dialog-page-A.svg" alt="example_sentences_dialog_page.dart A recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 媒体和例句弹窗</p>
+      <h3>example_sentences_dialog_page.dart</h3>
+      <p><strong>A · 手机动作 sheet</strong></p>
+      <p>媒体和例句弹窗要短路径完成动作，MD3/Cupertino sheet 都能安全收束。</p>
+      <div class="alternatives" aria-label="example_sentences_dialog_page.dart alternatives"><a href="interface-images/example-sentences-dialog-page-A.svg" aria-current="true">A</a><a href="interface-images/example-sentences-dialog-page-B.svg" aria-current="false">B</a><a href="interface-images/example-sentences-dialog-page-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="B">
+    <img src="interface-images/floating-dict-page-B.svg" alt="floating_dict_page.dart B recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 词典</p>
+      <h3>floating_dict_page.dart</h3>
+      <p><strong>B · 可浏览结果</strong></p>
+      <p>Hibiki 的查词结果需要浏览和递归查找，不能总把焦点拉回输入框。</p>
+      <div class="alternatives" aria-label="floating_dict_page.dart alternatives"><a href="interface-images/floating-dict-page-A.svg" aria-current="false">A</a><a href="interface-images/floating-dict-page-B.svg" aria-current="true">B</a><a href="interface-images/floating-dict-page-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="A">
+    <img src="interface-images/history-reader-page-A.svg" alt="history_reader_page.dart A recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 书架</p>
+      <h3>history_reader_page.dart</h3>
+      <p><strong>A · MD3 网格/列表书架</strong></p>
+      <p>书架要能扫封面、状态和选择模式，MD3 列表/网格最稳。</p>
+      <div class="alternatives" aria-label="history_reader_page.dart alternatives"><a href="interface-images/history-reader-page-A.svg" aria-current="true">A</a><a href="interface-images/history-reader-page-B.svg" aria-current="false">B</a><a href="interface-images/history-reader-page-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="B">
+    <img src="interface-images/home-dictionary-page-B.svg" alt="home_dictionary_page.dart B recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 词典</p>
+      <h3>home_dictionary_page.dart</h3>
+      <p><strong>B · 可浏览结果</strong></p>
+      <p>Hibiki 的查词结果需要浏览和递归查找，不能总把焦点拉回输入框。</p>
+      <div class="alternatives" aria-label="home_dictionary_page.dart alternatives"><a href="interface-images/home-dictionary-page-A.svg" aria-current="false">A</a><a href="interface-images/home-dictionary-page-B.svg" aria-current="true">B</a><a href="interface-images/home-dictionary-page-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="C">
+    <img src="interface-images/home-page-C.svg" alt="home_page.dart C recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 首页和导航</p>
+      <h3>home_page.dart</h3>
+      <p><strong>C · 自适应手机/宽屏壳层</strong></p>
+      <p>手机保留底部导航，宽屏使用 rail/sidebar，后续桌面和平板不会变成拉伸手机页。</p>
+      <div class="alternatives" aria-label="home_page.dart alternatives"><a href="interface-images/home-page-A.svg" aria-current="false">A</a><a href="interface-images/home-page-B.svg" aria-current="false">B</a><a href="interface-images/home-page-C.svg" aria-current="true">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="C">
+    <img src="interface-images/home-reader-page-C.svg" alt="home_reader_page.dart C recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 首页和导航</p>
+      <h3>home_reader_page.dart</h3>
+      <p><strong>C · 自适应手机/宽屏壳层</strong></p>
+      <p>手机保留底部导航，宽屏使用 rail/sidebar，后续桌面和平板不会变成拉伸手机页。</p>
+      <div class="alternatives" aria-label="home_reader_page.dart alternatives"><a href="interface-images/home-reader-page-A.svg" aria-current="false">A</a><a href="interface-images/home-reader-page-B.svg" aria-current="false">B</a><a href="interface-images/home-reader-page-C.svg" aria-current="true">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="B">
+    <img src="interface-images/hoshi-settings-page-B.svg" alt="hoshi_settings_page.dart B recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 设置</p>
+      <h3>hoshi_settings_page.dart</h3>
+      <p><strong>B · Cupertino 分组设置</strong></p>
+      <p>设置项很多时，分组卡住信息密度和节奏，读起来更安静。</p>
+      <div class="alternatives" aria-label="hoshi_settings_page.dart alternatives"><a href="interface-images/hoshi-settings-page-A.svg" aria-current="false">A</a><a href="interface-images/hoshi-settings-page-B.svg" aria-current="true">B</a><a href="interface-images/hoshi-settings-page-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="A">
+    <img src="interface-images/illustrations-viewer-page-A.svg" alt="illustrations_viewer_page.dart A recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 收藏和统计</p>
+      <h3>illustrations_viewer_page.dart</h3>
+      <p><strong>A · 可扫列表</strong></p>
+      <p>收藏和统计需要快速扫描，不需要过多装饰。</p>
+      <div class="alternatives" aria-label="illustrations_viewer_page.dart alternatives"><a href="interface-images/illustrations-viewer-page-A.svg" aria-current="true">A</a><a href="interface-images/illustrations-viewer-page-B.svg" aria-current="false">B</a><a href="interface-images/illustrations-viewer-page-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="A">
+    <img src="interface-images/language-dialog-page-A.svg" alt="language_dialog_page.dart A recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 资料、语言、系统</p>
+      <h3>language_dialog_page.dart</h3>
+      <p><strong>A · 设置中心</strong></p>
+      <p>资料、语言、系统入口要清楚可发现。</p>
+      <div class="alternatives" aria-label="language_dialog_page.dart alternatives"><a href="interface-images/language-dialog-page-A.svg" aria-current="true">A</a><a href="interface-images/language-dialog-page-B.svg" aria-current="false">B</a><a href="interface-images/language-dialog-page-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="A">
+    <img src="interface-images/loading-page-A.svg" alt="loading_page.dart A recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 空、加载、错误状态</p>
+      <h3>loading_page.dart</h3>
+      <p><strong>A · 可行动空状态</strong></p>
+      <p>空、加载、错误状态要短文案和明确恢复动作，别伪装成功。</p>
+      <div class="alternatives" aria-label="loading_page.dart alternatives"><a href="interface-images/loading-page-A.svg" aria-current="true">A</a><a href="interface-images/loading-page-B.svg" aria-current="false">B</a><a href="interface-images/loading-page-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="B">
+    <img src="interface-images/lyrics-dialog-page-B.svg" alt="lyrics_dialog_page.dart B recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / Hoshi 阅读器</p>
+      <h3>lyrics_dialog_page.dart</h3>
+      <p><strong>B · 沉浸安静阅读器</strong></p>
+      <p>正文优先，播放栏、查词、歌词只在需要时出现，最符合长时间阅读。</p>
+      <div class="alternatives" aria-label="lyrics_dialog_page.dart alternatives"><a href="interface-images/lyrics-dialog-page-A.svg" aria-current="false">A</a><a href="interface-images/lyrics-dialog-page-B.svg" aria-current="true">B</a><a href="interface-images/lyrics-dialog-page-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="A">
+    <img src="interface-images/media-item-dialog-page-A.svg" alt="media_item_dialog_page.dart A recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 媒体和例句弹窗</p>
+      <h3>media_item_dialog_page.dart</h3>
+      <p><strong>A · 手机动作 sheet</strong></p>
+      <p>媒体和例句弹窗要短路径完成动作，MD3/Cupertino sheet 都能安全收束。</p>
+      <div class="alternatives" aria-label="media_item_dialog_page.dart alternatives"><a href="interface-images/media-item-dialog-page-A.svg" aria-current="true">A</a><a href="interface-images/media-item-dialog-page-B.svg" aria-current="false">B</a><a href="interface-images/media-item-dialog-page-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="A">
+    <img src="interface-images/media-item-edit-dialog-page-A.svg" alt="media_item_edit_dialog_page.dart A recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 媒体和例句弹窗</p>
+      <h3>media_item_edit_dialog_page.dart</h3>
+      <p><strong>A · 手机动作 sheet</strong></p>
+      <p>媒体和例句弹窗要短路径完成动作，MD3/Cupertino sheet 都能安全收束。</p>
+      <div class="alternatives" aria-label="media_item_edit_dialog_page.dart alternatives"><a href="interface-images/media-item-edit-dialog-page-A.svg" aria-current="true">A</a><a href="interface-images/media-item-edit-dialog-page-B.svg" aria-current="false">B</a><a href="interface-images/media-item-edit-dialog-page-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="A">
+    <img src="interface-images/media-source-picker-dialog-page-A.svg" alt="media_source_picker_dialog_page.dart A recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 媒体和例句弹窗</p>
+      <h3>media_source_picker_dialog_page.dart</h3>
+      <p><strong>A · 手机动作 sheet</strong></p>
+      <p>媒体和例句弹窗要短路径完成动作，MD3/Cupertino sheet 都能安全收束。</p>
+      <div class="alternatives" aria-label="media_source_picker_dialog_page.dart alternatives"><a href="interface-images/media-source-picker-dialog-page-A.svg" aria-current="true">A</a><a href="interface-images/media-source-picker-dialog-page-B.svg" aria-current="false">B</a><a href="interface-images/media-source-picker-dialog-page-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="A">
+    <img src="interface-images/miscellaneous-settings-page-A.svg" alt="miscellaneous_settings_page.dart A recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 资料、语言、系统</p>
+      <h3>miscellaneous_settings_page.dart</h3>
+      <p><strong>A · 设置中心</strong></p>
+      <p>资料、语言、系统入口要清楚可发现。</p>
+      <div class="alternatives" aria-label="miscellaneous_settings_page.dart alternatives"><a href="interface-images/miscellaneous-settings-page-A.svg" aria-current="true">A</a><a href="interface-images/miscellaneous-settings-page-B.svg" aria-current="false">B</a><a href="interface-images/miscellaneous-settings-page-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="A">
+    <img src="interface-images/open-stash-dialog-page-A.svg" alt="open_stash_dialog_page.dart A recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 媒体和例句弹窗</p>
+      <h3>open_stash_dialog_page.dart</h3>
+      <p><strong>A · 手机动作 sheet</strong></p>
+      <p>媒体和例句弹窗要短路径完成动作，MD3/Cupertino sheet 都能安全收束。</p>
+      <div class="alternatives" aria-label="open_stash_dialog_page.dart alternatives"><a href="interface-images/open-stash-dialog-page-A.svg" aria-current="true">A</a><a href="interface-images/open-stash-dialog-page-B.svg" aria-current="false">B</a><a href="interface-images/open-stash-dialog-page-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="A">
+    <img src="interface-images/placeholder-source-page-A.svg" alt="placeholder_source_page.dart A recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 空、加载、错误状态</p>
+      <h3>placeholder_source_page.dart</h3>
+      <p><strong>A · 可行动空状态</strong></p>
+      <p>空、加载、错误状态要短文案和明确恢复动作，别伪装成功。</p>
+      <div class="alternatives" aria-label="placeholder_source_page.dart alternatives"><a href="interface-images/placeholder-source-page-A.svg" aria-current="true">A</a><a href="interface-images/placeholder-source-page-B.svg" aria-current="false">B</a><a href="interface-images/placeholder-source-page-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="B">
+    <img src="interface-images/popup-dictionary-page-B.svg" alt="popup_dictionary_page.dart B recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 词典</p>
+      <h3>popup_dictionary_page.dart</h3>
+      <p><strong>B · 可浏览结果</strong></p>
+      <p>Hibiki 的查词结果需要浏览和递归查找，不能总把焦点拉回输入框。</p>
+      <div class="alternatives" aria-label="popup_dictionary_page.dart alternatives"><a href="interface-images/popup-dictionary-page-A.svg" aria-current="false">A</a><a href="interface-images/popup-dictionary-page-B.svg" aria-current="true">B</a><a href="interface-images/popup-dictionary-page-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="A">
+    <img src="interface-images/profile-management-page-A.svg" alt="profile_management_page.dart A recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 资料、语言、系统</p>
+      <h3>profile_management_page.dart</h3>
+      <p><strong>A · 设置中心</strong></p>
+      <p>资料、语言、系统入口要清楚可发现。</p>
+      <div class="alternatives" aria-label="profile_management_page.dart alternatives"><a href="interface-images/profile-management-page-A.svg" aria-current="true">A</a><a href="interface-images/profile-management-page-B.svg" aria-current="false">B</a><a href="interface-images/profile-management-page-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="A">
+    <img src="interface-images/reader-hoshi-history-page-A.svg" alt="reader_hoshi_history_page.dart A recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 书架</p>
+      <h3>reader_hoshi_history_page.dart</h3>
+      <p><strong>A · MD3 网格/列表书架</strong></p>
+      <p>书架要能扫封面、状态和选择模式，MD3 列表/网格最稳。</p>
+      <div class="alternatives" aria-label="reader_hoshi_history_page.dart alternatives"><a href="interface-images/reader-hoshi-history-page-A.svg" aria-current="true">A</a><a href="interface-images/reader-hoshi-history-page-B.svg" aria-current="false">B</a><a href="interface-images/reader-hoshi-history-page-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="B">
+    <img src="interface-images/reader-hoshi-page-B.svg" alt="reader_hoshi_page.dart B recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / Hoshi 阅读器</p>
+      <h3>reader_hoshi_page.dart</h3>
+      <p><strong>B · 沉浸安静阅读器</strong></p>
+      <p>正文优先，播放栏、查词、歌词只在需要时出现，最符合长时间阅读。</p>
+      <div class="alternatives" aria-label="reader_hoshi_page.dart alternatives"><a href="interface-images/reader-hoshi-page-A.svg" aria-current="false">A</a><a href="interface-images/reader-hoshi-page-B.svg" aria-current="true">B</a><a href="interface-images/reader-hoshi-page-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="A">
+    <img src="interface-images/reading-statistics-page-A.svg" alt="reading_statistics_page.dart A recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 收藏和统计</p>
+      <h3>reading_statistics_page.dart</h3>
+      <p><strong>A · 可扫列表</strong></p>
+      <p>收藏和统计需要快速扫描，不需要过多装饰。</p>
+      <div class="alternatives" aria-label="reading_statistics_page.dart alternatives"><a href="interface-images/reading-statistics-page-A.svg" aria-current="true">A</a><a href="interface-images/reading-statistics-page-B.svg" aria-current="false">B</a><a href="interface-images/reading-statistics-page-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="B">
+    <img src="interface-images/switch-settings-page-B.svg" alt="switch_settings_page.dart B recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 设置</p>
+      <h3>switch_settings_page.dart</h3>
+      <p><strong>B · Cupertino 分组设置</strong></p>
+      <p>设置项很多时，分组卡住信息密度和节奏，读起来更安静。</p>
+      <div class="alternatives" aria-label="switch_settings_page.dart alternatives"><a href="interface-images/switch-settings-page-A.svg" aria-current="false">A</a><a href="interface-images/switch-settings-page-B.svg" aria-current="true">B</a><a href="interface-images/switch-settings-page-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="C">
+    <img src="interface-images/tag-filter-sheet-C.svg" alt="tag_filter_sheet.dart C recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 标签和筛选</p>
+      <h3>tag_filter_sheet.dart</h3>
+      <p><strong>C · 批量编辑器</strong></p>
+      <p>标签是库级操作，批量选择、清理、应用必须高效。</p>
+      <div class="alternatives" aria-label="tag_filter_sheet.dart alternatives"><a href="interface-images/tag-filter-sheet-A.svg" aria-current="false">A</a><a href="interface-images/tag-filter-sheet-B.svg" aria-current="false">B</a><a href="interface-images/tag-filter-sheet-C.svg" aria-current="true">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="C">
+    <img src="interface-images/tag-management-page-C.svg" alt="tag_management_page.dart C recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 标签和筛选</p>
+      <h3>tag_management_page.dart</h3>
+      <p><strong>C · 批量编辑器</strong></p>
+      <p>标签是库级操作，批量选择、清理、应用必须高效。</p>
+      <div class="alternatives" aria-label="tag_management_page.dart alternatives"><a href="interface-images/tag-management-page-A.svg" aria-current="false">A</a><a href="interface-images/tag-management-page-B.svg" aria-current="false">B</a><a href="interface-images/tag-management-page-C.svg" aria-current="true">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="C">
+    <img src="interface-images/tag-picker-page-C.svg" alt="tag_picker_page.dart C recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 标签和筛选</p>
+      <h3>tag_picker_page.dart</h3>
+      <p><strong>C · 批量编辑器</strong></p>
+      <p>标签是库级操作，批量选择、清理、应用必须高效。</p>
+      <div class="alternatives" aria-label="tag_picker_page.dart alternatives"><a href="interface-images/tag-picker-page-A.svg" aria-current="false">A</a><a href="interface-images/tag-picker-page-B.svg" aria-current="false">B</a><a href="interface-images/tag-picker-page-C.svg" aria-current="true">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="C">
+    <img src="interface-images/text-segmentation-dialog-page-C.svg" alt="text_segmentation_dialog_page.dart C recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 制卡和 Anki</p>
+      <h3>text_segmentation_dialog_page.dart</h3>
+      <p><strong>C · 映射面板</strong></p>
+      <p>Anki 和字段映射是重复工作，密度、预览、映射面板比向导更实用。</p>
+      <div class="alternatives" aria-label="text_segmentation_dialog_page.dart alternatives"><a href="interface-images/text-segmentation-dialog-page-A.svg" aria-current="false">A</a><a href="interface-images/text-segmentation-dialog-page-B.svg" aria-current="false">B</a><a href="interface-images/text-segmentation-dialog-page-C.svg" aria-current="true">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Pages" data-choice="A">
+    <img src="interface-images/websocket-dialog-page-A.svg" alt="websocket_dialog_page.dart A recommended image">
+    <div class="surface-body">
+      <p class="meta">页面 / 资料、语言、系统</p>
+      <h3>websocket_dialog_page.dart</h3>
+      <p><strong>A · 设置中心</strong></p>
+      <p>资料、语言、系统入口要清楚可发现。</p>
+      <div class="alternatives" aria-label="websocket_dialog_page.dart alternatives"><a href="interface-images/websocket-dialog-page-A.svg" aria-current="true">A</a><a href="interface-images/websocket-dialog-page-B.svg" aria-current="false">B</a><a href="interface-images/websocket-dialog-page-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Shared/support" data-choice="C">
+    <img src="interface-images/app-model-C.svg" alt="app_model.dart C recommended image">
+    <div class="surface-body">
+      <p class="meta">共享和支撑组件 / 组件系统</p>
+      <h3>app_model.dart</h3>
+      <p><strong>C · 混合密度组件</strong></p>
+      <p>共享组件必须同时服务阅读页和管理页，用混合密度避免页面各自发明样式。</p>
+      <div class="alternatives" aria-label="app_model.dart alternatives"><a href="interface-images/app-model-A.svg" aria-current="false">A</a><a href="interface-images/app-model-B.svg" aria-current="false">B</a><a href="interface-images/app-model-C.svg" aria-current="true">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Shared/support" data-choice="A">
+    <img src="interface-images/base-history-page-A.svg" alt="base_history_page.dart A recommended image">
+    <div class="surface-body">
+      <p class="meta">共享和支撑组件 / 书架</p>
+      <h3>base_history_page.dart</h3>
+      <p><strong>A · MD3 网格/列表书架</strong></p>
+      <p>书架要能扫封面、状态和选择模式，MD3 列表/网格最稳。</p>
+      <div class="alternatives" aria-label="base_history_page.dart alternatives"><a href="interface-images/base-history-page-A.svg" aria-current="true">A</a><a href="interface-images/base-history-page-B.svg" aria-current="false">B</a><a href="interface-images/base-history-page-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Shared/support" data-choice="C">
+    <img src="interface-images/base-media-search-bar-C.svg" alt="base_media_search_bar.dart C recommended image">
+    <div class="surface-body">
+      <p class="meta">共享和支撑组件 / 组件系统</p>
+      <h3>base_media_search_bar.dart</h3>
+      <p><strong>C · 混合密度组件</strong></p>
+      <p>共享组件必须同时服务阅读页和管理页，用混合密度避免页面各自发明样式。</p>
+      <div class="alternatives" aria-label="base_media_search_bar.dart alternatives"><a href="interface-images/base-media-search-bar-A.svg" aria-current="false">A</a><a href="interface-images/base-media-search-bar-B.svg" aria-current="false">B</a><a href="interface-images/base-media-search-bar-C.svg" aria-current="true">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Shared/support" data-choice="C">
+    <img src="interface-images/base-page-C.svg" alt="base_page.dart C recommended image">
+    <div class="surface-body">
+      <p class="meta">共享和支撑组件 / 组件系统</p>
+      <h3>base_page.dart</h3>
+      <p><strong>C · 混合密度组件</strong></p>
+      <p>共享组件必须同时服务阅读页和管理页，用混合密度避免页面各自发明样式。</p>
+      <div class="alternatives" aria-label="base_page.dart alternatives"><a href="interface-images/base-page-A.svg" aria-current="false">A</a><a href="interface-images/base-page-B.svg" aria-current="false">B</a><a href="interface-images/base-page-C.svg" aria-current="true">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Shared/support" data-choice="C">
+    <img src="interface-images/base-source-page-C.svg" alt="base_source_page.dart C recommended image">
+    <div class="surface-body">
+      <p class="meta">共享和支撑组件 / 组件系统</p>
+      <h3>base_source_page.dart</h3>
+      <p><strong>C · 混合密度组件</strong></p>
+      <p>共享组件必须同时服务阅读页和管理页，用混合密度避免页面各自发明样式。</p>
+      <div class="alternatives" aria-label="base_source_page.dart alternatives"><a href="interface-images/base-source-page-A.svg" aria-current="false">A</a><a href="interface-images/base-source-page-B.svg" aria-current="false">B</a><a href="interface-images/base-source-page-C.svg" aria-current="true">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Shared/support" data-choice="C">
+    <img src="interface-images/base-tab-page-C.svg" alt="base_tab_page.dart C recommended image">
+    <div class="surface-body">
+      <p class="meta">共享和支撑组件 / 组件系统</p>
+      <h3>base_tab_page.dart</h3>
+      <p><strong>C · 混合密度组件</strong></p>
+      <p>共享组件必须同时服务阅读页和管理页，用混合密度避免页面各自发明样式。</p>
+      <div class="alternatives" aria-label="base_tab_page.dart alternatives"><a href="interface-images/base-tab-page-A.svg" aria-current="false">A</a><a href="interface-images/base-tab-page-B.svg" aria-current="false">B</a><a href="interface-images/base-tab-page-C.svg" aria-current="true">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Shared/support" data-choice="A">
+    <img src="interface-images/audiobook-import-dialog-A.svg" alt="audiobook_import_dialog.dart A recommended image">
+    <div class="surface-body">
+      <p class="meta">共享和支撑组件 / 导入和弹窗</p>
+      <h3>audiobook_import_dialog.dart</h3>
+      <p><strong>A · MD3 步骤导入</strong></p>
+      <p>导入流程必须明确、可恢复、可解释，步骤流最不容易骗用户。</p>
+      <div class="alternatives" aria-label="audiobook_import_dialog.dart alternatives"><a href="interface-images/audiobook-import-dialog-A.svg" aria-current="true">A</a><a href="interface-images/audiobook-import-dialog-B.svg" aria-current="false">B</a><a href="interface-images/audiobook-import-dialog-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Shared/support" data-choice="B">
+    <img src="interface-images/audiobook-play-bar-B.svg" alt="audiobook_play_bar.dart B recommended image">
+    <div class="surface-body">
+      <p class="meta">共享和支撑组件 / Hoshi 阅读器</p>
+      <h3>audiobook_play_bar.dart</h3>
+      <p><strong>B · 沉浸安静阅读器</strong></p>
+      <p>正文优先，播放栏、查词、歌词只在需要时出现，最符合长时间阅读。</p>
+      <div class="alternatives" aria-label="audiobook_play_bar.dart alternatives"><a href="interface-images/audiobook-play-bar-A.svg" aria-current="false">A</a><a href="interface-images/audiobook-play-bar-B.svg" aria-current="true">B</a><a href="interface-images/audiobook-play-bar-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Shared/support" data-choice="A">
+    <img src="interface-images/book-import-dialog-A.svg" alt="book_import_dialog.dart A recommended image">
+    <div class="surface-body">
+      <p class="meta">共享和支撑组件 / 导入和弹窗</p>
+      <h3>book_import_dialog.dart</h3>
+      <p><strong>A · MD3 步骤导入</strong></p>
+      <p>导入流程必须明确、可恢复、可解释，步骤流最不容易骗用户。</p>
+      <div class="alternatives" aria-label="book_import_dialog.dart alternatives"><a href="interface-images/book-import-dialog-A.svg" aria-current="true">A</a><a href="interface-images/book-import-dialog-B.svg" aria-current="false">B</a><a href="interface-images/book-import-dialog-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Shared/support" data-choice="A">
+    <img src="interface-images/sasayaki-rematch-A.svg" alt="sasayaki_rematch.dart A recommended image">
+    <div class="surface-body">
+      <p class="meta">共享和支撑组件 / 导入和弹窗</p>
+      <h3>sasayaki_rematch.dart</h3>
+      <p><strong>A · MD3 步骤导入</strong></p>
+      <p>导入流程必须明确、可恢复、可解释，步骤流最不容易骗用户。</p>
+      <div class="alternatives" aria-label="sasayaki_rematch.dart alternatives"><a href="interface-images/sasayaki-rematch-A.svg" aria-current="true">A</a><a href="interface-images/sasayaki-rematch-B.svg" aria-current="false">B</a><a href="interface-images/sasayaki-rematch-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Shared/support" data-choice="A">
+    <img src="interface-images/profile-selector-A.svg" alt="profile_selector.dart A recommended image">
+    <div class="surface-body">
+      <p class="meta">共享和支撑组件 / 资料、语言、系统</p>
+      <h3>profile_selector.dart</h3>
+      <p><strong>A · 设置中心</strong></p>
+      <p>资料、语言、系统入口要清楚可发现。</p>
+      <div class="alternatives" aria-label="profile_selector.dart alternatives"><a href="interface-images/profile-selector-A.svg" aria-current="true">A</a><a href="interface-images/profile-selector-B.svg" aria-current="false">B</a><a href="interface-images/profile-selector-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Shared/support" data-choice="C">
+    <img src="interface-images/hibiki-bottom-sheet-C.svg" alt="hibiki_bottom_sheet.dart C recommended image">
+    <div class="surface-body">
+      <p class="meta">共享和支撑组件 / 组件系统</p>
+      <h3>hibiki_bottom_sheet.dart</h3>
+      <p><strong>C · 混合密度组件</strong></p>
+      <p>共享组件必须同时服务阅读页和管理页，用混合密度避免页面各自发明样式。</p>
+      <div class="alternatives" aria-label="hibiki_bottom_sheet.dart alternatives"><a href="interface-images/hibiki-bottom-sheet-A.svg" aria-current="false">A</a><a href="interface-images/hibiki-bottom-sheet-B.svg" aria-current="false">B</a><a href="interface-images/hibiki-bottom-sheet-C.svg" aria-current="true">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Shared/support" data-choice="C">
+    <img src="interface-images/hibiki-divider-C.svg" alt="hibiki_divider.dart C recommended image">
+    <div class="surface-body">
+      <p class="meta">共享和支撑组件 / 组件系统</p>
+      <h3>hibiki_divider.dart</h3>
+      <p><strong>C · 混合密度组件</strong></p>
+      <p>共享组件必须同时服务阅读页和管理页，用混合密度避免页面各自发明样式。</p>
+      <div class="alternatives" aria-label="hibiki_divider.dart alternatives"><a href="interface-images/hibiki-divider-A.svg" aria-current="false">A</a><a href="interface-images/hibiki-divider-B.svg" aria-current="false">B</a><a href="interface-images/hibiki-divider-C.svg" aria-current="true">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Shared/support" data-choice="C">
+    <img src="interface-images/hibiki-dropdown-C.svg" alt="hibiki_dropdown.dart C recommended image">
+    <div class="surface-body">
+      <p class="meta">共享和支撑组件 / 组件系统</p>
+      <h3>hibiki_dropdown.dart</h3>
+      <p><strong>C · 混合密度组件</strong></p>
+      <p>共享组件必须同时服务阅读页和管理页，用混合密度避免页面各自发明样式。</p>
+      <div class="alternatives" aria-label="hibiki_dropdown.dart alternatives"><a href="interface-images/hibiki-dropdown-A.svg" aria-current="false">A</a><a href="interface-images/hibiki-dropdown-B.svg" aria-current="false">B</a><a href="interface-images/hibiki-dropdown-C.svg" aria-current="true">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Shared/support" data-choice="C">
+    <img src="interface-images/hibiki-icon-button-C.svg" alt="hibiki_icon_button.dart C recommended image">
+    <div class="surface-body">
+      <p class="meta">共享和支撑组件 / 组件系统</p>
+      <h3>hibiki_icon_button.dart</h3>
+      <p><strong>C · 混合密度组件</strong></p>
+      <p>共享组件必须同时服务阅读页和管理页，用混合密度避免页面各自发明样式。</p>
+      <div class="alternatives" aria-label="hibiki_icon_button.dart alternatives"><a href="interface-images/hibiki-icon-button-A.svg" aria-current="false">A</a><a href="interface-images/hibiki-icon-button-B.svg" aria-current="false">B</a><a href="interface-images/hibiki-icon-button-C.svg" aria-current="true">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Shared/support" data-choice="C">
+    <img src="interface-images/hibiki-list-tile-C.svg" alt="hibiki_list_tile.dart C recommended image">
+    <div class="surface-body">
+      <p class="meta">共享和支撑组件 / 组件系统</p>
+      <h3>hibiki_list_tile.dart</h3>
+      <p><strong>C · 混合密度组件</strong></p>
+      <p>共享组件必须同时服务阅读页和管理页，用混合密度避免页面各自发明样式。</p>
+      <div class="alternatives" aria-label="hibiki_list_tile.dart alternatives"><a href="interface-images/hibiki-list-tile-A.svg" aria-current="false">A</a><a href="interface-images/hibiki-list-tile-B.svg" aria-current="false">B</a><a href="interface-images/hibiki-list-tile-C.svg" aria-current="true">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Shared/support" data-choice="C">
+    <img src="interface-images/hibiki-marquee-C.svg" alt="hibiki_marquee.dart C recommended image">
+    <div class="surface-body">
+      <p class="meta">共享和支撑组件 / 组件系统</p>
+      <h3>hibiki_marquee.dart</h3>
+      <p><strong>C · 混合密度组件</strong></p>
+      <p>共享组件必须同时服务阅读页和管理页，用混合密度避免页面各自发明样式。</p>
+      <div class="alternatives" aria-label="hibiki_marquee.dart alternatives"><a href="interface-images/hibiki-marquee-A.svg" aria-current="false">A</a><a href="interface-images/hibiki-marquee-B.svg" aria-current="false">B</a><a href="interface-images/hibiki-marquee-C.svg" aria-current="true">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Shared/support" data-choice="A">
+    <img src="interface-images/hibiki-placeholder-message-A.svg" alt="hibiki_placeholder_message.dart A recommended image">
+    <div class="surface-body">
+      <p class="meta">共享和支撑组件 / 空、加载、错误状态</p>
+      <h3>hibiki_placeholder_message.dart</h3>
+      <p><strong>A · 可行动空状态</strong></p>
+      <p>空、加载、错误状态要短文案和明确恢复动作，别伪装成功。</p>
+      <div class="alternatives" aria-label="hibiki_placeholder_message.dart alternatives"><a href="interface-images/hibiki-placeholder-message-A.svg" aria-current="true">A</a><a href="interface-images/hibiki-placeholder-message-B.svg" aria-current="false">B</a><a href="interface-images/hibiki-placeholder-message-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Shared/support" data-choice="C">
+    <img src="interface-images/hibiki-popup-position-C.svg" alt="hibiki_popup_position.dart C recommended image">
+    <div class="surface-body">
+      <p class="meta">共享和支撑组件 / 组件系统</p>
+      <h3>hibiki_popup_position.dart</h3>
+      <p><strong>C · 混合密度组件</strong></p>
+      <p>共享组件必须同时服务阅读页和管理页，用混合密度避免页面各自发明样式。</p>
+      <div class="alternatives" aria-label="hibiki_popup_position.dart alternatives"><a href="interface-images/hibiki-popup-position-A.svg" aria-current="false">A</a><a href="interface-images/hibiki-popup-position-B.svg" aria-current="false">B</a><a href="interface-images/hibiki-popup-position-C.svg" aria-current="true">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Shared/support" data-choice="C">
+    <img src="interface-images/hibiki-search-history-C.svg" alt="hibiki_search_history.dart C recommended image">
+    <div class="surface-body">
+      <p class="meta">共享和支撑组件 / 组件系统</p>
+      <h3>hibiki_search_history.dart</h3>
+      <p><strong>C · 混合密度组件</strong></p>
+      <p>共享组件必须同时服务阅读页和管理页，用混合密度避免页面各自发明样式。</p>
+      <div class="alternatives" aria-label="hibiki_search_history.dart alternatives"><a href="interface-images/hibiki-search-history-A.svg" aria-current="false">A</a><a href="interface-images/hibiki-search-history-B.svg" aria-current="false">B</a><a href="interface-images/hibiki-search-history-C.svg" aria-current="true">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Shared/support" data-choice="C">
+    <img src="interface-images/hibiki-selectable-text-C.svg" alt="hibiki_selectable_text.dart C recommended image">
+    <div class="surface-body">
+      <p class="meta">共享和支撑组件 / 组件系统</p>
+      <h3>hibiki_selectable_text.dart</h3>
+      <p><strong>C · 混合密度组件</strong></p>
+      <p>共享组件必须同时服务阅读页和管理页，用混合密度避免页面各自发明样式。</p>
+      <div class="alternatives" aria-label="hibiki_selectable_text.dart alternatives"><a href="interface-images/hibiki-selectable-text-A.svg" aria-current="false">A</a><a href="interface-images/hibiki-selectable-text-B.svg" aria-current="false">B</a><a href="interface-images/hibiki-selectable-text-C.svg" aria-current="true">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Shared/support" data-choice="C">
+    <img src="interface-images/hibiki-tag-C.svg" alt="hibiki_tag.dart C recommended image">
+    <div class="surface-body">
+      <p class="meta">共享和支撑组件 / 标签和筛选</p>
+      <h3>hibiki_tag.dart</h3>
+      <p><strong>C · 批量编辑器</strong></p>
+      <p>标签是库级操作，批量选择、清理、应用必须高效。</p>
+      <div class="alternatives" aria-label="hibiki_tag.dart alternatives"><a href="interface-images/hibiki-tag-A.svg" aria-current="false">A</a><a href="interface-images/hibiki-tag-B.svg" aria-current="false">B</a><a href="interface-images/hibiki-tag-C.svg" aria-current="true">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Shared/support" data-choice="C">
+    <img src="interface-images/hibiki-text-selection-controls-C.svg" alt="hibiki_text_selection_controls.dart C recommended image">
+    <div class="surface-body">
+      <p class="meta">共享和支撑组件 / 组件系统</p>
+      <h3>hibiki_text_selection_controls.dart</h3>
+      <p><strong>C · 混合密度组件</strong></p>
+      <p>共享组件必须同时服务阅读页和管理页，用混合密度避免页面各自发明样式。</p>
+      <div class="alternatives" aria-label="hibiki_text_selection_controls.dart alternatives"><a href="interface-images/hibiki-text-selection-controls-A.svg" aria-current="false">A</a><a href="interface-images/hibiki-text-selection-controls-B.svg" aria-current="false">B</a><a href="interface-images/hibiki-text-selection-controls-C.svg" aria-current="true">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Shared/support" data-choice="C">
+    <img src="interface-images/hibiki-toast-C.svg" alt="hibiki_toast.dart C recommended image">
+    <div class="surface-body">
+      <p class="meta">共享和支撑组件 / 组件系统</p>
+      <h3>hibiki_toast.dart</h3>
+      <p><strong>C · 混合密度组件</strong></p>
+      <p>共享组件必须同时服务阅读页和管理页，用混合密度避免页面各自发明样式。</p>
+      <div class="alternatives" aria-label="hibiki_toast.dart alternatives"><a href="interface-images/hibiki-toast-A.svg" aria-current="false">A</a><a href="interface-images/hibiki-toast-B.svg" aria-current="false">B</a><a href="interface-images/hibiki-toast-C.svg" aria-current="true">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Shared/support" data-choice="C">
+    <img src="interface-images/platform-utils-C.svg" alt="platform_utils.dart C recommended image">
+    <div class="surface-body">
+      <p class="meta">共享和支撑组件 / 组件系统</p>
+      <h3>platform_utils.dart</h3>
+      <p><strong>C · 混合密度组件</strong></p>
+      <p>共享组件必须同时服务阅读页和管理页，用混合密度避免页面各自发明样式。</p>
+      <div class="alternatives" aria-label="platform_utils.dart alternatives"><a href="interface-images/platform-utils-A.svg" aria-current="false">A</a><a href="interface-images/platform-utils-B.svg" aria-current="false">B</a><a href="interface-images/platform-utils-C.svg" aria-current="true">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Shared/support" data-choice="C">
+    <img src="interface-images/swipe-dismiss-wrapper-C.svg" alt="swipe_dismiss_wrapper.dart C recommended image">
+    <div class="surface-body">
+      <p class="meta">共享和支撑组件 / 组件系统</p>
+      <h3>swipe_dismiss_wrapper.dart</h3>
+      <p><strong>C · 混合密度组件</strong></p>
+      <p>共享组件必须同时服务阅读页和管理页，用混合密度避免页面各自发明样式。</p>
+      <div class="alternatives" aria-label="swipe_dismiss_wrapper.dart alternatives"><a href="interface-images/swipe-dismiss-wrapper-A.svg" aria-current="false">A</a><a href="interface-images/swipe-dismiss-wrapper-B.svg" aria-current="false">B</a><a href="interface-images/swipe-dismiss-wrapper-C.svg" aria-current="true">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Shared/support" data-choice="A">
+    <img src="interface-images/update-checker-A.svg" alt="update_checker.dart A recommended image">
+    <div class="surface-body">
+      <p class="meta">共享和支撑组件 / 资料、语言、系统</p>
+      <h3>update_checker.dart</h3>
+      <p><strong>A · 设置中心</strong></p>
+      <p>资料、语言、系统入口要清楚可发现。</p>
+      <div class="alternatives" aria-label="update_checker.dart alternatives"><a href="interface-images/update-checker-A.svg" aria-current="true">A</a><a href="interface-images/update-checker-B.svg" aria-current="false">B</a><a href="interface-images/update-checker-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+<article class="surface-card" data-section="Shared/support" data-choice="B">
+    <img src="interface-images/blur-options-B.svg" alt="blur_options.dart B recommended image">
+    <div class="surface-body">
+      <p class="meta">共享和支撑组件 / 阅读自定义</p>
+      <h3>blur_options.dart</h3>
+      <p><strong>B · 预览工作室</strong></p>
+      <p>阅读自定义必须边调边看，预览比纯设置列表更重要。</p>
+      <div class="alternatives" aria-label="blur_options.dart alternatives"><a href="interface-images/blur-options-A.svg" aria-current="false">A</a><a href="interface-images/blur-options-B.svg" aria-current="true">B</a><a href="interface-images/blur-options-C.svg" aria-current="false">C</a></div>
+    </div>
+  </article>
+    </section>
+  </main>
+</body>
+</html>
