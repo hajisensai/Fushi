@@ -963,6 +963,7 @@ class AppModel with ChangeNotifier {
       /// Load all preferences into memory for synchronous reads.
       prefsRepo = PreferencesRepository(_database);
       await prefsRepo.loadFromDb();
+      prefsRepo.addListener(notifyListeners);
       _applyMemoryPolicy();
 
       /// Create theme notifier (extracted subsystem).
@@ -1161,6 +1162,7 @@ class AppModel with ChangeNotifier {
 
       prefsRepo = PreferencesRepository(_database);
       await prefsRepo.loadFromDb();
+      prefsRepo.addListener(notifyListeners);
 
       dictRepo = DictionaryRepository(_database,
           onCacheRebuild: _rebuildDictPathsCache);
@@ -2826,6 +2828,7 @@ class AppModel with ChangeNotifier {
 
   @override
   void dispose() {
+    prefsRepo.removeListener(notifyListeners);
     dictionaryEntriesNotifier.dispose();
     dictionarySearchAgainNotifier.dispose();
     dictionaryMenuNotifier.dispose();
