@@ -1,6 +1,6 @@
 # Hibiki MD3 + Cupertino 最终选择模板
 
-把这个文件复制成 `my-final-selection.txt` 后填写。不要在这里写讨论文字；生成器现在会严格检查，拼错的界面名不会被悄悄吞掉。
+优先从 [interface-pack-comparison.html](interface-pack-comparison.html) 点选并复制最终选择文本；需要手写时，再把这个文件复制成 `my-final-selection.txt` 后填写。不要在这里写讨论文字；生成器现在会严格检查，拼错的界面名不会被悄悄吞掉。
 
 ## 推荐起点
 
@@ -20,7 +20,7 @@ debug_log_page.dart: A
 error_log_page.dart: A
 ```
 
-上面这些例外大多已经等于 `Hibiki Balanced` 默认值；保留它们是为了让审核时先看高风险界面。你可以删掉不想显式确认的行，也可以把 `B`/`C` 改成你在 [interface-pack-comparison.html](interface-pack-comparison.html) 里选中的方向。
+上面这些例外大多已经等于 `Hibiki Balanced` 默认值；保留它们是为了让审核时先看高风险界面。你可以删掉不想显式确认的行，也可以把 `B`/`C` 改成你在 [interface-pack-comparison.html](interface-pack-comparison.html) 里选中的方向。比较页顶部复制出来的文本已经是这个格式，可以直接保存成 `my-final-selection.txt`。
 
 ## 空白模板
 

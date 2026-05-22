@@ -4,7 +4,7 @@
 
 ## 先选整包方案
 
-先打开 [pack-selection-index.html](pack-selection-index.html)。它把 4 套整包都展开成 84 个界面/支撑组件的完整视图。想先快速扫风格，再打开 [design-pack-gallery.html](design-pack-gallery.html) 看每套 12 张代表图。想按单个界面横向对比 A/B/C 和四套整包默认选择，打开 [interface-pack-comparison.html](interface-pack-comparison.html)。
+先打开 [pack-selection-index.html](pack-selection-index.html)。它把 4 套整包都展开成 84 个界面/支撑组件的完整视图。想先快速扫风格，再打开 [design-pack-gallery.html](design-pack-gallery.html) 看每套 12 张代表图。想按单个界面横向对比 A/B/C、四套整包默认选择，并直接点选导出最终文本，打开 [interface-pack-comparison.html](interface-pack-comparison.html)。
 
 | 方案 | 适合场景 | 主要风险 |
 | --- | --- | --- |
@@ -17,7 +17,7 @@
 
 ## 再改关键例外
 
-打开 [interface-pack-comparison.html](interface-pack-comparison.html)，按下面顺序看。它会在同一张卡里显示该界面的 A/B/C 三张图，以及 `MD3 Practical`、`Reading Calm`、`Adaptive Power`、`Hibiki Balanced` 各自默认选哪张。需要逐项复制最终结果时，再打开 [interface-images/index.html](interface-images/index.html)。别从 84 行第一行一路机械点，那是浪费时间。
+打开 [interface-pack-comparison.html](interface-pack-comparison.html)，按下面顺序看。它会在同一张卡里显示该界面的 A/B/C 三张图，以及 `MD3 Practical`、`Reading Calm`、`Adaptive Power`、`Hibiki Balanced` 各自默认选哪张。先点页面顶部的整包按钮加载基准，再只在需要改的界面点 `选择 A/B/C`；本页会保存选择并生成可复制的最终文本。别从 84 行第一行一路机械点，那是浪费时间。
 
 | 优先级 | 先看这些界面 | 判断标准 |
 | --- | --- | --- |
@@ -32,7 +32,7 @@
 
 ## 输出给实现的格式
 
-推荐直接从 [FINAL_SELECTION_TEMPLATE.zh-CN.md](FINAL_SELECTION_TEMPLATE.zh-CN.md) 开始，把它复制成 `my-final-selection.txt` 后只保留你确认的整包和例外。生成器会严格检查未知行，拼错界面名会失败，不会静默生成假规格。
+推荐直接从 [interface-pack-comparison.html](interface-pack-comparison.html) 顶部复制最终选择文本，保存成 `my-final-selection.txt`。如果你更想手写，再从 [FINAL_SELECTION_TEMPLATE.zh-CN.md](FINAL_SELECTION_TEMPLATE.zh-CN.md) 开始。生成器会严格检查未知行，拼错界面名会失败，不会静默生成假规格。
 
 整包选择用下面这种：
 
@@ -63,7 +63,7 @@ node .\generate-implementation-spec.mjs --pack hibiki-balanced --output .\IMPLEM
 ## 当前交付状态
 
 - [pack-selection-index.html](pack-selection-index.html): 4 套整包方案的逐界面索引，每套都能跳到完整 84 图选择页。
-- [interface-pack-comparison.html](interface-pack-comparison.html): 按界面横向比较 A/B/C 三图，并显示四套整包默认选择。
+- [interface-pack-comparison.html](interface-pack-comparison.html): 按界面横向比较 A/B/C 三图，显示四套整包默认选择，并支持点选、保存和复制最终选择文本。
 - [FINAL_SELECTION_TEMPLATE.zh-CN.md](FINAL_SELECTION_TEMPLATE.zh-CN.md): 最终选择填写模板，可直接生成最终规格草案。
 - [selection-md3-practical.html](selection-md3-practical.html) / [SELECTION_MD3_PRACTICAL.zh-CN.md](SELECTION_MD3_PRACTICAL.zh-CN.md): `MD3 Practical` 的 84 个界面完整展开。
 - [selection-reading-calm.html](selection-reading-calm.html) / [SELECTION_READING_CALM.zh-CN.md](SELECTION_READING_CALM.zh-CN.md): `Reading Calm` 的 84 个界面完整展开。

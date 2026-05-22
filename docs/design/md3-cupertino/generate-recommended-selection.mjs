@@ -279,6 +279,19 @@ function escapeHtml(value) {
 }
 
 /**
+ * @param {unknown} value
+ * @returns {string}
+ */
+function escapeScriptJson(value) {
+  return JSON.stringify(value)
+    .replaceAll("<", "\\u003c")
+    .replaceAll(">", "\\u003e")
+    .replaceAll("&", "\\u0026")
+    .replaceAll("\u2028", "\\u2028")
+    .replaceAll("\u2029", "\\u2029");
+}
+
+/**
  * @param {string} value
  * @returns {string}
  */
@@ -1001,7 +1014,7 @@ function renderComparisonCard(surface, packs) {
       .filter((packId) => selectedChoice(surface, packs[packId]) === choice)
       .map((packId) => packs[packId].label);
     const chosenBy = packNames.length ? packNames.join(" / ") : "无整包默认选择";
-    return `<figure class="choice-card" data-choice="${choice}">
+    return `<figure class="choice-card" data-surface="${escapeHtml(surface.surface)}" data-choice="${choice}" aria-selected="false">
       <a href="interface-images/${escapeHtml(surface.files[choice])}" aria-label="${escapeHtml(surface.surface)} ${choice} full image">
         <img src="interface-images/${escapeHtml(surface.files[choice])}" alt="${escapeHtml(surface.surface)} ${choice} example">
       </a>
@@ -1009,14 +1022,15 @@ function renderComparisonCard(surface, packs) {
         <strong>${choice} · ${escapeHtml(copy.label)}</strong>
         <span>${escapeHtml(copy.why)}</span>
         <em>${escapeHtml(chosenBy)}</em>
+        <button type="button" data-role="choice-select" data-surface="${escapeHtml(surface.surface)}" data-choice="${choice}">选择 ${choice}</button>
       </figcaption>
     </figure>`;
   }).join("");
-  return `<article class="comparison-card" id="${escapeHtml(surface.slug)}" data-section="${escapeHtml(surface.section)}" data-board="${escapeHtml(surface.primary)}">
+  return `<article class="comparison-card" id="${escapeHtml(surface.slug)}" data-surface="${escapeHtml(surface.surface)}" data-section="${escapeHtml(surface.section)}" data-board="${escapeHtml(surface.primary)}">
     <div class="surface-head">
       <div>
         <p class="eyebrow">${escapeHtml(sectionLabels[surface.section] || surface.section)} / ${escapeHtml(boardLabels[surface.primary].label)}</p>
-        <h2>${escapeHtml(surface.surface)}</h2>
+        <h2>${escapeHtml(surface.surface)} <span class="selected-badge" data-role="selected-badge">未选</span></h2>
         <p>${escapeHtml(boardLabels[surface.primary].scope)}</p>
       </div>
       <div class="pack-pills" aria-label="${escapeHtml(surface.surface)} pack choices">
@@ -1039,6 +1053,13 @@ function renderInterfacePackComparison(surfaces, packs) {
     const count = surfaces.filter((surface) => surface.section === section).length;
     return `<a href="#section-${escapeHtml(section.replaceAll("/", "-").toLowerCase())}">${escapeHtml(sectionLabels[section] || section)} <b>${count}</b></a>`;
   }).join("");
+  const packButtons = packOrder.map((packId) => {
+    const pack = packs[packId];
+    if (!pack) {
+      throw new Error(`Unknown pack in packOrder: ${packId}`);
+    }
+    return `<button type="button" data-role="load-pack" data-pack-id="${escapeHtml(packId)}">${escapeHtml(pack.label)}</button>`;
+  }).join("");
   const sectionBlocks = [...new Set(surfaces.map((surface) => surface.section))].map((section) => {
     const sectionCards = surfaces.filter((surface) => surface.section === section).map((surface) => renderComparisonCard(surface, packs)).join("\n");
     const id = `section-${section.replaceAll("/", "-").toLowerCase()}`;
@@ -1047,6 +1068,24 @@ function renderInterfacePackComparison(surfaces, packs) {
       <div class="comparison-stack">${sectionCards}</div>
     </section>`;
   }).join("\n");
+  const comparisonData = {
+    defaultPackId,
+    surfaces: surfaces.map((surface) => ({
+      surface: surface.surface,
+      section: surface.section,
+      slug: surface.slug
+    })),
+    packs: Object.fromEntries(packOrder.map((packId) => {
+      const pack = packs[packId];
+      if (!pack) {
+        throw new Error(`Unknown pack in packOrder: ${packId}`);
+      }
+      return [packId, {
+        label: pack.label,
+        choices: Object.fromEntries(surfaces.map((surface) => [surface.surface, selectedChoice(surface, pack)]))
+      }];
+    }))
+  };
 
   return `<!doctype html>
 <html lang="zh-CN">
@@ -1132,20 +1171,25 @@ function renderInterfacePackComparison(surfaces, packs) {
     }
 
     .toolbar,
-    .section-jump {
+    .section-jump,
+    .selection-actions {
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
       margin-top: 14px;
     }
 
+    button,
     a {
+      font: inherit;
       color: inherit;
     }
 
     .toolbar a,
     .section-jump a,
-    .pack-pills a {
+    .pack-pills a,
+    .selection-actions button,
+    .choice-card button {
       min-height: 34px;
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -1154,13 +1198,58 @@ function renderInterfacePackComparison(surfaces, packs) {
       font-weight: 800;
       text-decoration: none;
       padding: 7px 10px;
+      cursor: pointer;
     }
 
     .toolbar a:hover,
     .section-jump a:hover,
-    .pack-pills a:hover {
+    .pack-pills a:hover,
+    .selection-actions button:hover,
+    .choice-card button:hover {
       border-color: var(--accent);
       color: var(--accent);
+    }
+
+    .selection-panel {
+      display: grid;
+      gap: 10px;
+      margin-top: 14px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      padding: 12px;
+    }
+
+    .selection-panel h2 {
+      font-size: 1rem;
+    }
+
+    .selection-summary {
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .selection-actions button[aria-pressed="true"] {
+      border-color: var(--accent);
+      background: var(--surface-2);
+      color: var(--accent);
+    }
+
+    .selection-output {
+      width: 100%;
+      min-height: 148px;
+      resize: vertical;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      color: var(--ink);
+      background: #fbfcfa;
+      font: 0.86rem/1.45 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+    }
+
+    .selection-status {
+      min-height: 20px;
+      color: var(--accent-2);
+      font-weight: 800;
     }
 
     .section-jump a {
@@ -1197,6 +1286,38 @@ function renderInterfacePackComparison(surfaces, packs) {
 
     .surface-head h2 {
       overflow-wrap: anywhere;
+    }
+
+    .selected-badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 26px;
+      margin-left: 6px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 3px 8px;
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 900;
+      vertical-align: middle;
+    }
+
+    .comparison-card[data-selected-choice="A"] .selected-badge {
+      color: var(--choice-a);
+      border-color: rgba(47, 111, 97, 0.35);
+      background: rgba(47, 111, 97, 0.08);
+    }
+
+    .comparison-card[data-selected-choice="B"] .selected-badge {
+      color: var(--choice-b);
+      border-color: rgba(54, 95, 141, 0.35);
+      background: rgba(54, 95, 141, 0.08);
+    }
+
+    .comparison-card[data-selected-choice="C"] .selected-badge {
+      color: var(--choice-c);
+      border-color: rgba(122, 90, 35, 0.35);
+      background: rgba(122, 90, 35, 0.08);
     }
 
     .surface-head p {
@@ -1271,6 +1392,11 @@ function renderInterfacePackComparison(surfaces, packs) {
       background: #fbfcfa;
     }
 
+    .choice-card[aria-selected="true"] {
+      border-color: var(--accent-2);
+      box-shadow: 0 0 0 3px rgba(54, 95, 141, 0.13);
+    }
+
     .choice-card img {
       display: block;
       width: 100%;
@@ -1301,6 +1427,19 @@ function renderInterfacePackComparison(surfaces, packs) {
     figcaption em {
       font-size: 0.82rem;
       font-weight: 800;
+    }
+
+    .choice-card button {
+      justify-self: start;
+      min-height: 32px;
+      margin-top: 2px;
+      padding: 6px 10px;
+    }
+
+    .choice-card button[aria-pressed="true"] {
+      color: #fff;
+      border-color: var(--accent-2);
+      background: var(--accent-2);
     }
 
     .choice-card[data-choice="A"] strong {
@@ -1350,6 +1489,19 @@ function renderInterfacePackComparison(surfaces, packs) {
       <a href="interface-images/index.html">全部 A/B/C 图库</a>
       <a href="INTERFACE_PICKS.md">逐界面填写表</a>
     </nav>
+    <section class="selection-panel" aria-label="Final selection exporter">
+      <h2>直接在本页挑最终方案</h2>
+      <p class="selection-summary" data-role="selection-summary">正在载入选择状态。</p>
+      <div class="selection-actions" aria-label="Load pack baseline">
+        ${packButtons}
+      </div>
+      <textarea id="selection-output" class="selection-output" readonly spellcheck="false" aria-label="Copyable final selection"></textarea>
+      <div class="selection-actions" aria-label="Selection actions">
+        <button type="button" data-role="copy-selection">复制最终选择文本</button>
+        <button type="button" data-role="reset-selection">重置为 Hibiki Balanced</button>
+      </div>
+      <p class="selection-status" data-role="selection-status" aria-live="polite"></p>
+    </section>
     <nav class="section-jump" aria-label="Jump to interface groups">
       ${sections}
     </nav>
@@ -1357,6 +1509,143 @@ function renderInterfacePackComparison(surfaces, packs) {
   <main>
     ${sectionBlocks}
   </main>
+  <script type="application/json" id="selection-data">${escapeScriptJson(comparisonData)}</script>
+  <script>
+    (() => {
+      const data = JSON.parse(document.getElementById("selection-data").textContent);
+      const storageKey = "hibiki-md3-cupertino-interface-comparison-v1";
+      const choices = new Set(["A", "B", "C"]);
+      const output = document.getElementById("selection-output");
+      const summary = document.querySelector("[data-role='selection-summary']");
+      const status = document.querySelector("[data-role='selection-status']");
+      const packButtons = Array.from(document.querySelectorAll("[data-role='load-pack']"));
+      const choiceButtons = Array.from(document.querySelectorAll("[data-role='choice-select']"));
+
+      let state = loadState();
+
+      function validPackId(packId) {
+        return Boolean(packId && data.packs[packId]);
+      }
+
+      function packChoices(packId) {
+        return data.packs[packId].choices;
+      }
+
+      function choicesForPack(packId) {
+        const baseline = packChoices(packId);
+        return Object.fromEntries(data.surfaces.map((surface) => [surface.surface, baseline[surface.surface]]));
+      }
+
+      function normalizeState(value) {
+        const packId = validPackId(value && value.packId) ? value.packId : data.defaultPackId;
+        const baseline = choicesForPack(packId);
+        const inputChoices = value && typeof value.choices === "object" && value.choices ? value.choices : {};
+        for (const surface of data.surfaces) {
+          const choice = inputChoices[surface.surface];
+          if (choices.has(choice)) {
+            baseline[surface.surface] = choice;
+          }
+        }
+        return { packId, choices: baseline };
+      }
+
+      function loadState() {
+        try {
+          const stored = localStorage.getItem(storageKey);
+          return normalizeState(stored ? JSON.parse(stored) : null);
+        } catch {
+          return normalizeState(null);
+        }
+      }
+
+      function saveState() {
+        localStorage.setItem(storageKey, JSON.stringify(state));
+      }
+
+      function setStatus(message) {
+        status.textContent = message;
+      }
+
+      function exceptionSurfaces() {
+        const baseline = packChoices(state.packId);
+        return data.surfaces.filter((surface) => state.choices[surface.surface] !== baseline[surface.surface]);
+      }
+
+      function exportedText() {
+        const exceptions = exceptionSurfaces();
+        const lines = ["Pack: " + state.packId, "例外:"];
+        if (exceptions.length === 0) {
+          lines.push("# 无例外，使用整包默认选择。");
+        } else {
+          for (const surface of exceptions) {
+            lines.push(surface.surface + ": " + state.choices[surface.surface]);
+          }
+        }
+        lines.push("", "Notes:", "- 从 interface-pack-comparison.html 导出。");
+        return lines.join("\\n");
+      }
+
+      function render() {
+        const exceptions = exceptionSurfaces();
+        output.value = exportedText();
+        summary.textContent = "当前基准：" + data.packs[state.packId].label + "；已选择 " + data.surfaces.length + " 个界面；相对基准有 " + exceptions.length + " 个例外。复制下面文本即可生成实现规格。";
+        for (const packButton of packButtons) {
+          packButton.setAttribute("aria-pressed", packButton.dataset.packId === state.packId ? "true" : "false");
+        }
+        for (const article of document.querySelectorAll(".comparison-card")) {
+          const selected = state.choices[article.dataset.surface];
+          article.dataset.selectedChoice = selected;
+          const badge = article.querySelector("[data-role='selected-badge']");
+          if (badge) {
+            badge.textContent = "当前 " + selected;
+          }
+          for (const card of article.querySelectorAll(".choice-card")) {
+            card.setAttribute("aria-selected", card.dataset.choice === selected ? "true" : "false");
+          }
+        }
+        for (const button of choiceButtons) {
+          const selected = state.choices[button.dataset.surface] === button.dataset.choice;
+          button.setAttribute("aria-pressed", selected ? "true" : "false");
+          button.textContent = selected ? "已选 " + button.dataset.choice : "选择 " + button.dataset.choice;
+        }
+      }
+
+      function loadPack(packId) {
+        state = { packId, choices: choicesForPack(packId) };
+        saveState();
+        render();
+        setStatus("已载入 " + data.packs[packId].label + " 作为基准。");
+      }
+
+      for (const packButton of packButtons) {
+        packButton.addEventListener("click", () => loadPack(packButton.dataset.packId));
+      }
+
+      for (const button of choiceButtons) {
+        button.addEventListener("click", () => {
+          state.choices[button.dataset.surface] = button.dataset.choice;
+          saveState();
+          render();
+          setStatus(button.dataset.surface + " 已选择 " + button.dataset.choice + "。");
+        });
+      }
+
+      document.querySelector("[data-role='reset-selection']").addEventListener("click", () => loadPack(data.defaultPackId));
+      document.querySelector("[data-role='copy-selection']").addEventListener("click", async () => {
+        output.focus();
+        output.select();
+        try {
+          await navigator.clipboard.writeText(output.value);
+          setStatus("已复制最终选择文本。");
+        } catch {
+          document.execCommand("copy");
+          setStatus("已选中文本；如果浏览器阻止复制，请手动复制。");
+        }
+      });
+
+      render();
+    })();
+  </script>
 </body>
 </html>
 `;
