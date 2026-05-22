@@ -4,9 +4,6 @@ import 'dart:io';
 import 'dart:ui';
 
 import 'package:archive/archive_io.dart';
-import 'package:dynamic_color/dynamic_color.dart';
-import 'package:material_color_utilities/material_color_utilities.dart';
-
 import 'package:audio_service/audio_service.dart' as ag;
 import 'package:collection/collection.dart';
 import 'package:clipboard/clipboard.dart';
@@ -45,6 +42,8 @@ import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/media/floating_dict_channel.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/i18n/strings.g.dart';
+import 'package:hibiki/src/models/theme_notifier.dart' as theme_notifier;
+import 'package:hibiki/src/models/theme_notifier.dart' show ThemeNotifier;
 
 /// A list of fields that the app will support at runtime.
 final List<Field> globalFields = List<Field>.unmodifiable(
@@ -146,18 +145,8 @@ final pipSearchTermProvider = StateProvider<String>((ref) => '');
 /// A global [Provider] for listening to search term position changes in PIP mode.
 final pipSearchPositionProvider = StateProvider<int>((ref) => 0);
 
-Color _readableOnColor(Color color) {
-  return ThemeData.estimateBrightnessForColor(color) == Brightness.dark
-      ? Colors.white
-      : Colors.black;
-}
-
-Color _deriveContainer(Color role, Brightness brightness) {
-  final Color target =
-      brightness == Brightness.dark ? Colors.black : Colors.white;
-  return Color.lerp(role, target, brightness == Brightness.dark ? 0.7 : 0.85)!;
-}
-
+// Theme helper functions moved to theme_notifier.dart.
+// Re-export for backward compatibility.
 ColorScheme buildHibikiColorScheme({
   required Color seedColor,
   required Brightness brightness,
@@ -165,37 +154,15 @@ ColorScheme buildHibikiColorScheme({
   Color? secondary,
   Color? tertiary,
   Color? primaryContainer,
-}) {
-  final ColorScheme base = ColorScheme.fromSeed(
-    seedColor: seedColor,
-    brightness: brightness,
-  );
-  final Color? secContainer =
-      secondary != null ? _deriveContainer(secondary, brightness) : null;
-  final Color? terContainer =
-      tertiary != null ? _deriveContainer(tertiary, brightness) : null;
-  return base.copyWith(
-    primary: primary ?? base.primary,
-    onPrimary: primary != null ? _readableOnColor(primary) : base.onPrimary,
-    secondary: secondary ?? base.secondary,
-    onSecondary:
-        secondary != null ? _readableOnColor(secondary) : base.onSecondary,
-    secondaryContainer: secContainer ?? base.secondaryContainer,
-    onSecondaryContainer: secContainer != null
-        ? _readableOnColor(secContainer)
-        : base.onSecondaryContainer,
-    tertiary: tertiary ?? base.tertiary,
-    onTertiary: tertiary != null ? _readableOnColor(tertiary) : base.onTertiary,
-    tertiaryContainer: terContainer ?? base.tertiaryContainer,
-    onTertiaryContainer: terContainer != null
-        ? _readableOnColor(terContainer)
-        : base.onTertiaryContainer,
-    primaryContainer: primaryContainer ?? base.primaryContainer,
-    onPrimaryContainer: primaryContainer != null
-        ? _readableOnColor(primaryContainer)
-        : base.onPrimaryContainer,
-  );
-}
+}) =>
+    theme_notifier.buildHibikiColorScheme(
+      seedColor: seedColor,
+      brightness: brightness,
+      primary: primary,
+      secondary: secondary,
+      tertiary: tertiary,
+      primaryContainer: primaryContainer,
+    );
 
 /// A scoped model for parameters that affect the entire application.
 /// RiverPod is used for global state management across multiple layers,
@@ -215,6 +182,9 @@ class AppModel with ChangeNotifier {
   /// Persistent database (Drift/SQLite).
   late final HibikiDatabase _database;
 
+  /// Theme management, extracted from AppModel for testability.
+  late final ThemeNotifier themeNotifier;
+
   /// In-memory preference cache for synchronous reads.
   final Map<String, String> _prefCache = {};
 
@@ -227,20 +197,9 @@ class AppModel with ChangeNotifier {
   /// In-memory list of dictionary history results.
   final List<DictionarySearchResult> _dictionaryHistoryResults = [];
 
-  /// System dynamic color palette from Android 12+ Monet engine.
-  CorePalette? _systemPalette;
+  Color? get systemPrimaryColor => themeNotifier.systemPrimaryColor;
 
-  Color? get systemPrimaryColor =>
-      _systemPalette != null ? Color(_systemPalette!.primary.get(40)) : null;
-
-  Future<void> refreshSystemPalette() async {
-    try {
-      _systemPalette = await DynamicColorPlugin.getCorePalette();
-    } catch (_) {
-      _systemPalette = null;
-    }
-    if (appThemeKey == 'system-theme') notifyListeners();
-  }
+  Future<void> refreshSystemPalette() => themeNotifier.refreshSystemPalette();
 
   /// Used to get the versioning metadata of the app. See [initialise].
   PackageInfo get packageInfo => _packageInfo;
@@ -565,116 +524,12 @@ class AppModel with ChangeNotifier {
         labelSmall: textStyle,
       );
 
-  /// Material 3 主色种子 —— 深青 / 夜空蓝，贴近 Hoshi Reader iOS 的
-  /// 日式沉浸阅读调性。所有 surface / primary / secondary / 对比色都由
-  /// [ColorScheme.fromSeed] 推导出来，后续 PR 在组件级替换硬编码色时
-  /// 统一走 `colorScheme.*` token。
-  Color get _seedColor {
-    if (appThemeKey == 'custom-theme') return customThemeSeed;
-    return themePresets[appThemeKey]?.seed ?? const Color(0xFF1F4959);
-  }
+  ThemeMode get themeMode => themeNotifier.themeMode;
+  ThemeData get theme => themeNotifier.theme;
+  ThemeData get darkTheme => themeNotifier.darkTheme;
 
-  ThemeMode get themeMode {
-    switch (brightnessMode) {
-      case 'light':
-        return ThemeMode.light;
-      case 'dark':
-        return ThemeMode.dark;
-      default:
-        return ThemeMode.system;
-    }
-  }
-
-  ThemeData get theme => _buildThemeData(Brightness.light);
-  ThemeData get darkTheme => _buildThemeData(Brightness.dark);
-
-  ColorScheme _buildColorScheme(Brightness brightness) {
-    if (appThemeKey == 'system-theme' && _systemPalette != null) {
-      return _systemPalette!.toColorScheme(brightness: brightness);
-    }
-    final bool useCustomRoles = appThemeKey == 'custom-theme';
-    return buildHibikiColorScheme(
-      seedColor: _seedColor,
-      brightness: brightness,
-      primary: useCustomRoles ? customThemePrimaryColor : null,
-      secondary: useCustomRoles ? customThemeSecondaryColor : null,
-      tertiary: useCustomRoles ? customThemeTertiaryColor : null,
-      primaryContainer: useCustomRoles ? customThemeContainerColor : null,
-    );
-  }
-
-  ThemeData _buildThemeData(Brightness brightness) {
-    final cs = _buildColorScheme(brightness);
-    return ThemeData(
-      useMaterial3: true,
-      colorScheme: cs,
-      textTheme: textTheme,
-      appBarTheme: const AppBarTheme(
-        elevation: 0,
-        centerTitle: false,
-      ),
-      switchTheme: SwitchThemeData(
-        thumbColor: WidgetStateColor.resolveWith((states) {
-          return states.contains(WidgetState.selected)
-              ? cs.primary
-              : cs.onSurfaceVariant;
-        }),
-        trackColor: WidgetStateColor.resolveWith((states) {
-          return states.contains(WidgetState.selected)
-              ? cs.primaryContainer
-              : cs.surfaceContainerHighest;
-        }),
-        trackOutlineColor: WidgetStateColor.resolveWith((states) {
-          return states.contains(WidgetState.selected)
-              ? Colors.transparent
-              : cs.outline;
-        }),
-      ),
-      bottomNavigationBarTheme: BottomNavigationBarThemeData(
-        elevation: 0,
-        type: BottomNavigationBarType.fixed,
-        selectedLabelStyle: textTheme.labelSmall,
-        unselectedLabelStyle: textTheme.labelSmall,
-        showSelectedLabels: true,
-        showUnselectedLabels: true,
-      ),
-      popupMenuTheme: const PopupMenuThemeData(
-        shape: RoundedRectangleBorder(),
-      ),
-      dialogTheme: DialogThemeData(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-      ),
-      listTileTheme: const ListTileThemeData(
-        dense: true,
-        horizontalTitleGap: 0,
-      ),
-      inputDecorationTheme: InputDecorationTheme(
-        enabledBorder: UnderlineInputBorder(
-          borderSide: BorderSide(
-            color: cs.outline,
-          ),
-        ),
-        focusedBorder: UnderlineInputBorder(
-          borderSide: BorderSide(color: cs.primary),
-        ),
-      ),
-      scrollbarTheme: ScrollbarThemeData(
-        thickness:
-            brightness == Brightness.light ? WidgetStateProperty.all(3) : null,
-        thumbVisibility: WidgetStateProperty.all(true),
-      ),
-      sliderTheme: SliderThemeData(
-        thumbColor: cs.primary,
-        activeTrackColor: cs.primary,
-        inactiveTrackColor: cs.outlineVariant,
-        trackShape: const RectangularSliderTrackShape(),
-        trackHeight: 2,
-        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-      ),
-    );
-  }
+  ColorScheme buildColorScheme(Brightness brightness) =>
+      themeNotifier.buildColorScheme(brightness);
 
   /// Get the sentence to be used by the [SentenceField] upon card creation.
   HibikiTextSelection getCurrentSentence() {
@@ -1136,6 +991,9 @@ class AppModel with ChangeNotifier {
       _prefCache.addAll(await _database.getAllPrefs());
       _applyMemoryPolicy();
 
+      /// Create theme notifier (extracted subsystem).
+      themeNotifier = ThemeNotifier(_database, () => textTheme);
+
       /// Ensure default profile exists on first launch.
       final BaseAnkiRepository ankiRepo =
           Platform.isAndroid ? AnkiRepository() : AnkiConnectRepository();
@@ -1308,7 +1166,6 @@ class AppModel with ChangeNotifier {
       _isInitialised = true;
       _setupFloatingDictHandlers();
       if (showFloatingDict) setShowFloatingDict(false);
-      _persistSplashColor();
       notifyListeners();
     } catch (e, stack) {
       debugPrint('[Hibiki] init FAILED: $e\n$stack');
@@ -1435,6 +1292,7 @@ class AppModel with ChangeNotifier {
         await source.refreshPreferencesFromDb();
       }
     }
+    await themeNotifier.refreshFromDb();
     notifyListeners();
   }
 
@@ -1600,199 +1458,69 @@ class AppModel with ChangeNotifier {
     await _database.upsertDictionaryMeta(_dictionaryToCompanion(dictionary));
   }
 
-  // ── App-wide theme (6 presets matching ttu reader themes) ──────────────
+  // ── Theme delegates (logic moved to ThemeNotifier) ──────────────────
 
-  static const Map<String, ({Color seed, Brightness brightness})> themePresets =
-      {
-    'light-theme': (seed: Color(0xFF1F4959), brightness: Brightness.light),
-    'ecru-theme': (seed: Color(0xFF8B7355), brightness: Brightness.light),
-    'water-theme': (seed: Color(0xFF4A7C8F), brightness: Brightness.light),
-    'gray-theme': (seed: Color(0xFF5C6B73), brightness: Brightness.dark),
-    'dark-theme': (seed: Color(0xFF1F4959), brightness: Brightness.dark),
-    'black-theme': (seed: Color(0xFF263238), brightness: Brightness.dark),
-  };
+  static Map<String, ({Color seed, Brightness brightness})>
+      get themePresets => ThemeNotifier.themePresets;
 
-  static const _themeLabelKeys = {
-    'light-theme': 'theme_light',
-    'ecru-theme': 'theme_ecru',
-    'water-theme': 'theme_water',
-    'gray-theme': 'theme_gray',
-    'dark-theme': 'theme_dark',
-    'black-theme': 'theme_black',
-  };
+  static String themeLabel(String key) => ThemeNotifier.themeLabel(key);
 
-  static String themeLabel(String key) {
-    switch (_themeLabelKeys[key]) {
-      case 'theme_light':
-        return t.theme_light;
-      case 'theme_ecru':
-        return t.theme_ecru;
-      case 'theme_water':
-        return t.theme_water;
-      case 'theme_gray':
-        return t.theme_gray;
-      case 'theme_dark':
-        return t.theme_dark;
-      case 'theme_black':
-        return t.theme_black;
-      default:
-        return key;
-    }
-  }
+  String get appThemeKey => themeNotifier.appThemeKey;
+  Future<void> setAppThemeKey(String key) => themeNotifier.setAppThemeKey(key);
 
-  String get appThemeKey {
-    final String key = _getPref('app_theme_key', defaultValue: '');
-    if (key.isEmpty ||
-        (!themePresets.containsKey(key) &&
-            key != 'custom-theme' &&
-            key != 'system-theme')) {
-      return 'system-theme';
-    }
-    return key;
-  }
+  String get brightnessMode => themeNotifier.brightnessMode;
+  Future<void> setBrightnessMode(String mode) =>
+      themeNotifier.setBrightnessMode(mode);
 
-  Future<void> setAppThemeKey(String key) async {
-    await _setPref('app_theme_key', key);
-    if (key == 'system-theme') {
-      await setBrightnessMode('system');
-      return;
-    }
-    final preset = themePresets[key];
-    if (preset != null) {
-      await setBrightnessMode(
-          preset.brightness == Brightness.dark ? 'dark' : 'light');
-      return;
-    }
-    notifyListeners();
-    _persistSplashColor();
-  }
+  bool get isDarkMode => themeNotifier.isDarkMode;
 
-  /// Global brightness mode: 'light', 'dark', or 'system'.
-  String get brightnessMode {
-    final String mode = _getPref('brightness_mode', defaultValue: '');
-    if (mode.isNotEmpty) return mode;
-    final key = appThemeKey;
-    if (key == 'system-theme') return 'system';
-    if (key == 'custom-theme') return customThemeDark ? 'dark' : 'light';
-    final preset = themePresets[key];
-    if (preset != null) {
-      return preset.brightness == Brightness.dark ? 'dark' : 'light';
-    }
-    return 'system';
-  }
+  Color get customThemeSeed => themeNotifier.customThemeSeed;
+  Future<void> setCustomThemeSeed(Color c) => themeNotifier.setCustomThemeSeed(c);
 
-  Future<void> setBrightnessMode(String mode) async {
-    await _setPref('brightness_mode', mode);
-    notifyListeners();
-    _persistSplashColor();
-  }
+  bool get customThemeDark => themeNotifier.customThemeDark;
+  Future<void> setCustomThemeDark(bool v) => themeNotifier.setCustomThemeDark(v);
 
-  Color get customThemeSeed {
-    final int v = _getPref('custom_theme_seed', defaultValue: 0xFF1F4959);
-    return Color(v);
-  }
+  Color? get customThemeFontColor => themeNotifier.customThemeFontColor;
+  Future<void> setCustomThemeFontColor(Color? c) =>
+      themeNotifier.setCustomThemeFontColor(c);
 
-  Future<void> setCustomThemeSeed(Color color) async {
-    await _setPref('custom_theme_seed', color.toARGB32());
-  }
+  Color? get customThemeBackgroundColor =>
+      themeNotifier.customThemeBackgroundColor;
+  Future<void> setCustomThemeBackgroundColor(Color? c) =>
+      themeNotifier.setCustomThemeBackgroundColor(c);
 
-  bool get customThemeDark {
-    return _getPref('custom_theme_dark', defaultValue: false);
-  }
+  Color? get customThemeSelectionColor =>
+      themeNotifier.customThemeSelectionColor;
+  Future<void> setCustomThemeSelectionColor(Color? c) =>
+      themeNotifier.setCustomThemeSelectionColor(c);
 
-  Future<void> setCustomThemeDark(bool dark) async {
-    await _setPref('custom_theme_dark', dark);
-  }
+  Color? get customThemePrimaryColor => themeNotifier.customThemePrimaryColor;
+  Future<void> setCustomThemePrimaryColor(Color? c) =>
+      themeNotifier.setCustomThemePrimaryColor(c);
 
-  Color? get customThemeFontColor {
-    final int v = _getPref('custom_theme_font_color', defaultValue: 0);
-    if (v == 0) return null;
-    return Color(v);
-  }
+  Color? get customThemeSecondaryColor =>
+      themeNotifier.customThemeSecondaryColor;
+  Future<void> setCustomThemeSecondaryColor(Color? c) =>
+      themeNotifier.setCustomThemeSecondaryColor(c);
 
-  Future<void> setCustomThemeFontColor(Color? color) async {
-    await _setPref('custom_theme_font_color', color?.toARGB32() ?? 0);
-  }
+  Color? get customThemeTertiaryColor =>
+      themeNotifier.customThemeTertiaryColor;
+  Future<void> setCustomThemeTertiaryColor(Color? c) =>
+      themeNotifier.setCustomThemeTertiaryColor(c);
 
-  Color? get customThemeBackgroundColor {
-    final int v = _getPref('custom_theme_bg_color', defaultValue: 0);
-    if (v == 0) return null;
-    return Color(v);
-  }
+  Color? get customThemeContainerColor =>
+      themeNotifier.customThemeContainerColor;
+  Future<void> setCustomThemeContainerColor(Color? c) =>
+      themeNotifier.setCustomThemeContainerColor(c);
 
-  Future<void> setCustomThemeBackgroundColor(Color? color) async {
-    await _setPref('custom_theme_bg_color', color?.toARGB32() ?? 0);
-  }
+  Color? get customThemeSasayakiColor =>
+      themeNotifier.customThemeSasayakiColor;
+  Future<void> setCustomThemeSasayakiColor(Color? c) =>
+      themeNotifier.setCustomThemeSasayakiColor(c);
 
-  Color? get customThemeSelectionColor {
-    final int v = _getPref('custom_theme_selection_color', defaultValue: 0);
-    if (v == 0) return null;
-    return Color(v);
-  }
-
-  Future<void> setCustomThemeSelectionColor(Color? color) async {
-    await _setPref('custom_theme_selection_color', color?.toARGB32() ?? 0);
-  }
-
-  Color? get customThemePrimaryColor {
-    final int v = _getPref('custom_theme_primary_color', defaultValue: 0);
-    if (v == 0) return null;
-    return Color(v);
-  }
-
-  Future<void> setCustomThemePrimaryColor(Color? color) async {
-    await _setPref('custom_theme_primary_color', color?.toARGB32() ?? 0);
-  }
-
-  Color? get customThemeSecondaryColor {
-    final int v = _getPref('custom_theme_secondary_color', defaultValue: 0);
-    if (v == 0) return null;
-    return Color(v);
-  }
-
-  Future<void> setCustomThemeSecondaryColor(Color? color) async {
-    await _setPref('custom_theme_secondary_color', color?.toARGB32() ?? 0);
-  }
-
-  Color? get customThemeTertiaryColor {
-    final int v = _getPref('custom_theme_tertiary_color', defaultValue: 0);
-    if (v == 0) return null;
-    return Color(v);
-  }
-
-  Future<void> setCustomThemeTertiaryColor(Color? color) async {
-    await _setPref('custom_theme_tertiary_color', color?.toARGB32() ?? 0);
-  }
-
-  Color? get customThemeContainerColor {
-    final int v = _getPref('custom_theme_container_color', defaultValue: 0);
-    if (v == 0) return null;
-    return Color(v);
-  }
-
-  Future<void> setCustomThemeContainerColor(Color? color) async {
-    await _setPref('custom_theme_container_color', color?.toARGB32() ?? 0);
-  }
-
-  Color? get customThemeSasayakiColor {
-    final int v = _getPref('custom_theme_sasayaki_color', defaultValue: 0);
-    if (v == 0) return null;
-    return Color(v);
-  }
-
-  Future<void> setCustomThemeSasayakiColor(Color? color) async {
-    await _setPref('custom_theme_sasayaki_color', color?.toARGB32() ?? 0);
-  }
-
-  Color? get customThemeLinkColor {
-    final int v = _getPref('custom_theme_link_color', defaultValue: 0);
-    if (v == 0) return null;
-    return Color(v);
-  }
-
-  Future<void> setCustomThemeLinkColor(Color? color) async {
-    await _setPref('custom_theme_link_color', color?.toARGB32() ?? 0);
-  }
+  Color? get customThemeLinkColor => themeNotifier.customThemeLinkColor;
+  Future<void> setCustomThemeLinkColor(Color? c) =>
+      themeNotifier.setCustomThemeLinkColor(c);
 
   Future<void> applyCustomTheme({
     required Color seed,
@@ -1806,45 +1534,20 @@ class AppModel with ChangeNotifier {
     Color? containerColor,
     Color? sasayakiColor,
     Color? linkColor,
-  }) async {
-    await setCustomThemeSeed(seed);
-    await setCustomThemeDark(brightnessMode == 'dark');
-    await setCustomThemeFontColor(fontColor);
-    await setCustomThemeBackgroundColor(backgroundColor);
-    await setCustomThemeSelectionColor(selectionColor);
-    await setCustomThemePrimaryColor(primaryColor);
-    await setCustomThemeSecondaryColor(secondaryColor);
-    await setCustomThemeTertiaryColor(tertiaryColor);
-    await setCustomThemeContainerColor(containerColor);
-    await setCustomThemeSasayakiColor(sasayakiColor);
-    await setCustomThemeLinkColor(linkColor);
-    await _setPref('app_theme_key', 'custom-theme');
-    await setBrightnessMode(brightnessMode);
-  }
-
-  bool get isDarkMode {
-    switch (brightnessMode) {
-      case 'light':
-        return false;
-      case 'dark':
-        return true;
-      default:
-        return WidgetsBinding.instance.platformDispatcher.platformBrightness ==
-            Brightness.dark;
-    }
-  }
-
-  static const _splashChannel = HibikiChannels.splash;
-
-  void _persistSplashColor() {
-    if (!Platform.isAndroid && !Platform.isIOS) return;
-    final brightness = isDarkMode ? Brightness.dark : Brightness.light;
-    final surface = _buildColorScheme(brightness).surface;
-    _splashChannel.invokeMethod('setSplashColor', {
-      'color': surface.toARGB32(),
-      'isDark': isDarkMode,
-    }).catchError((_) {});
-  }
+  }) =>
+      themeNotifier.applyCustomTheme(
+        seed: seed,
+        brightnessMode: brightnessMode,
+        fontColor: fontColor,
+        backgroundColor: backgroundColor,
+        selectionColor: selectionColor,
+        primaryColor: primaryColor,
+        secondaryColor: secondaryColor,
+        tertiaryColor: tertiaryColor,
+        containerColor: containerColor,
+        sasayakiColor: sasayakiColor,
+        linkColor: linkColor,
+      );
 
   /// Get the target language from persisted preferences.
   Language get targetLanguage {
