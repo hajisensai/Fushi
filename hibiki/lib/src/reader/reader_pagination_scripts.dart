@@ -440,6 +440,10 @@ class ReaderPaginationScripts {
       var mark = function() {
         if (!isGaiji && (img.naturalWidth > 256 || img.naturalHeight > 256)) {
           img.classList.add('block-img');
+          var wrapper = document.createElement('div');
+          wrapper.className = 'block-img-wrapper';
+          img.parentNode.insertBefore(wrapper, img);
+          wrapper.appendChild(img);
         }
         resolve();
       };

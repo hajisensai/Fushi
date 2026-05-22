@@ -186,13 +186,21 @@ img.block-img {
   break-inside: avoid !important;
   -webkit-column-break-inside: avoid !important;
   object-fit: contain$readerStylePriority;
+  cursor: pointer;
+}
+.block-img-wrapper {
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  break-inside: avoid !important;
+  -webkit-column-break-inside: avoid !important;
 }
 img:not(.block-img) {
   max-width: 100%$readerStylePriority;
   max-height: var(--hoshi-image-max-height, $imageMaxHeight)$readerStylePriority;
   object-fit: contain$readerStylePriority;
 }
-p > img:only-child, div > img:only-child, section > img:only-child {
+p > img:only-child, div > img:only-child, section > img:only-child, figure > img:only-child {
   display: block;
   margin-left: auto;
   margin-right: auto;
