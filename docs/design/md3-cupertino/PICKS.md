@@ -63,7 +63,7 @@ Notes:
 
 1. Lock selected board directions and note any mixed details.
 2. Lock per-interface exceptions for screens that should not follow their board default.
-3. Write the implementation design spec with shared component tokens, page groups, migration risks, and verification gates.
+3. Generate the implementation design spec with `node .\generate-implementation-spec.mjs --picks .\my-picks.txt --output .\IMPLEMENTATION_SPEC_DRAFT.md`.
 4. Review the spec with you before touching runtime Flutter code.
 5. Only after approval, turn the spec into an implementation plan.
 

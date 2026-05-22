@@ -148,3 +148,5 @@ After you choose, the implementation spec should freeze both levels:
 1. Board defaults define the broad visual family.
 2. Interface picks define screen-specific exceptions.
 3. Shared/support picks define reusable Flutter components so pages do not drift.
+
+Use `generate-implementation-spec.mjs` to turn the copied choices into [IMPLEMENTATION_SPEC_DRAFT.md](IMPLEMENTATION_SPEC_DRAFT.md) before runtime planning begins.

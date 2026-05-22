@@ -20,6 +20,14 @@ You can also mix details, for example `Reader B, but use A's bottom bar`.
 
 For a complete board worksheet, use [PICKS.md](PICKS.md). For the file-by-file interface worksheet, use [INTERFACE_PICKS.md](INTERFACE_PICKS.md). For direct visual comparison, use [interface-gallery.html](interface-gallery.html), [interface-images/index.html](interface-images/index.html), or [variant-gallery.html](variant-gallery.html).
 
+After choices are copied back into a text file, generate the implementation spec draft with:
+
+```powershell
+node .\generate-implementation-spec.mjs --picks .\my-picks.txt --output .\IMPLEMENTATION_SPEC_DRAFT.md
+```
+
+Without `--picks`, the same command writes [IMPLEMENTATION_SPEC_DRAFT.md](IMPLEMENTATION_SPEC_DRAFT.md) from current defaults so the full implementation contract is visible before final choices.
+
 ## Selection images
 
 | Area | Image | What it covers |
