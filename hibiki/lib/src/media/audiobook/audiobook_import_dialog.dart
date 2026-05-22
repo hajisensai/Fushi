@@ -488,6 +488,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     'lrc',
     'vtt',
     'ass',
+    'ssa',
     'json',
   ];
 
@@ -502,7 +503,15 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       final PlatformFile? file = result?.files.single;
       final String? path = file?.path;
       if (path == null || file == null || !mounted) return;
-      const Set<String> allowed = {'smil', 'srt', 'lrc', 'vtt', 'ass', 'json'};
+      const Set<String> allowed = {
+        'smil',
+        'srt',
+        'lrc',
+        'vtt',
+        'ass',
+        'ssa',
+        'json'
+      };
       final String ext = p.extension(path).toLowerCase().replaceFirst('.', '');
       if (!allowed.contains(ext)) {
         HibikiToast.show(msg: t.import_unsupported_file_format(ext: '.$ext'));
@@ -620,7 +629,14 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
 
       if (!widget.audioOnly && _alignmentPath != null) {
         final String ext = _alignmentPath!.split('.').last.toLowerCase();
-        const Set<String> cueFormats = {'smil', 'srt', 'lrc', 'vtt', 'ass'};
+        const Set<String> cueFormats = {
+          'smil',
+          'srt',
+          'lrc',
+          'vtt',
+          'ass',
+          'ssa'
+        };
         final String format = cueFormats.contains(ext) ? ext : 'json';
 
         _reportProgress(0.05, t.import_step_persisting);
@@ -869,7 +885,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       );
       final AudiobookHealth health = await _matchCuesToTtu(cues);
       return (health: health, cues: cues);
-    } else if (format == 'ass') {
+    } else if (format == 'ass' || format == 'ssa') {
       final List<AudioCue> cues = await AssParser.parse(
         assFile: alignFile,
         bookUid: widget.bookUid,

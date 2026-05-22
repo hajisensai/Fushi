@@ -163,20 +163,12 @@ function setCue(index) {
 window.__lyricsSetCue = function(index) { setCue(index); };
 window.__lyricsGetCurrentIndex = function() { return _currentIdx; };
 
-// ── 点击：当前句子→查词，其他句子→跳转播放 ──
+// ── 点击：所有句子→查词 ──
 document.getElementById('lc').addEventListener('click', function(e) {
   var el = e.target.closest('.cue');
   if (!el) return;
-  var idx = parseInt(el.getAttribute('data-cue-index'), 10);
-  if (isNaN(idx)) return;
-  if (idx === _currentIdx) {
-    if (window.hoshiSelection) {
-      window.hoshiSelection.selectText(e.clientX, e.clientY, 400);
-    }
-    return;
-  }
-  if (window.flutter_inappwebview) {
-    window.flutter_inappwebview.callHandler('onLyricsCueTap', idx);
+  if (window.hoshiSelection) {
+    window.hoshiSelection.selectText(e.clientX, e.clientY, 400);
   }
 });
 

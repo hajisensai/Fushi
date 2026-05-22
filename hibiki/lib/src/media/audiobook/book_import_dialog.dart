@@ -219,11 +219,6 @@ class _BookImportDialogState extends State<BookImportDialog> {
           ),
         ),
         IconButton(
-          icon: const Icon(Icons.folder_open, size: 20),
-          tooltip: t.srt_import_pick_any_file,
-          onPressed: () => _pickEpub(anyFile: true),
-        ),
-        IconButton(
           icon: const Icon(Icons.menu_book, size: 20),
           tooltip: t.srt_import_pick_epub,
           onPressed: _pickEpub,
@@ -308,21 +303,9 @@ class _BookImportDialogState extends State<BookImportDialog> {
 
   // ── 文件/目录选择 ────────────────────────────────────────────────────────
 
-  static const List<String> _bookExtensions = [
+  static final List<String> _bookExtensions = [
     'epub',
-    'txt',
-    'html',
-    'htm',
-    'xhtml',
-    'md',
-    'markdown',
-    'rst',
-    'org',
-    'csv',
-    'tsv',
-    'log',
-    'json',
-    'xml',
+    ...TextToEpub.supportedExtensions,
   ];
 
   Future<void> _pickEpub({bool anyFile = false}) async {
