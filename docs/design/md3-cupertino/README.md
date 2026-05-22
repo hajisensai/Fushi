@@ -4,7 +4,7 @@ This folder is the design-selection board for the MD3 + Cupertino redesign goal.
 
 ## Pick format
 
-Open [design-pack-gallery.html](design-pack-gallery.html) first when you want to pick a whole-app baseline with representative images. Open [gallery.html](gallery.html) for a single-page visual gallery of all boards. Use its `A` / `B` / `C` controls to save board choices, then use the per-interface selector on the same page for screen-specific exceptions. Open [interface-gallery.html](interface-gallery.html) when you want every exact UI surface listed with three visible A/B/C images, open [interface-images/index.html](interface-images/index.html) when you want direct per-interface images with a review queue, clickable picks, and copyable output, and open [variant-gallery.html](variant-gallery.html) when you want board-level crops only.
+Open [SELECTION_GUIDE.zh-CN.md](SELECTION_GUIDE.zh-CN.md) first for the Chinese decision flow. Open [design-pack-gallery.html](design-pack-gallery.html) when you want to pick a whole-app baseline with representative images. Open [gallery.html](gallery.html) for a single-page visual gallery of all boards. Use its `A` / `B` / `C` controls to save board choices, then use the per-interface selector on the same page for screen-specific exceptions. Open [interface-gallery.html](interface-gallery.html) when you want every exact UI surface listed with three visible A/B/C images, open [interface-images/index.html](interface-images/index.html) when you want direct per-interface images with a review queue, clickable picks, and copyable output, and open [variant-gallery.html](variant-gallery.html) when you want board-level crops only.
 
 Reply with the copied result or with choices like:
 
@@ -26,7 +26,7 @@ After choices are copied back into a text file, generate the implementation spec
 node .\generate-implementation-spec.mjs --pack hibiki-balanced --picks .\my-picks.txt --output .\IMPLEMENTATION_SPEC_DRAFT.md
 ```
 
-Use `--pack hibiki-balanced` without `--picks` to generate the recommended hybrid spec directly. Omit both `--pack` and `--picks` only when you want [IMPLEMENTATION_SPEC_DRAFT.md](IMPLEMENTATION_SPEC_DRAFT.md) from manifest defaults before final choices.
+Use `--pack hibiki-balanced` without `--picks` to generate the recommended hybrid spec directly. The current recommended generated spec is [IMPLEMENTATION_SPEC_HIBIKI_BALANCED.md](IMPLEMENTATION_SPEC_HIBIKI_BALANCED.md). Omit both `--pack` and `--picks` only when you want [IMPLEMENTATION_SPEC_DRAFT.md](IMPLEMENTATION_SPEC_DRAFT.md) from manifest defaults before final choices.
 
 ## Selection images
 
