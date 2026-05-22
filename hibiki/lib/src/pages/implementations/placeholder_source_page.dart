@@ -28,7 +28,7 @@ class _PlaceholderSourcePage extends BaseSourcePageState {
   }
 
   Widget buildPlaceholder() {
-    return JidoujishoPlaceholderMessage(
+    return HibikiPlaceholderMessage(
       icon: Icons.construction,
       message: t.unimplemented_source,
     );

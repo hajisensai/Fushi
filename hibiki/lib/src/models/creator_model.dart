@@ -84,7 +84,7 @@ class CreatorModel with ChangeNotifier {
   }
 
   /// Set the sentence and cloze fields with a new selection.
-  void setSentenceAndCloze(JidoujishoTextSelection selection) {
+  void setSentenceAndCloze(HibikiTextSelection selection) {
     getFieldController(SentenceField.instance).text = selection.text;
     getFieldController(ClozeBeforeField.instance).text = selection.textBefore;
     getFieldController(ClozeInsideField.instance).text = selection.textInside;

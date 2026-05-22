@@ -301,7 +301,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     if (epubBooks.isEmpty && srtBooks.isEmpty) {
       return hasActiveFilter
           ? Center(
-              child: JidoujishoPlaceholderMessage(
+              child: HibikiPlaceholderMessage(
                 icon: Icons.filter_list_off,
                 message: t.tag_no_books_for_filter,
               ),
@@ -887,7 +887,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
   @override
   Widget buildPlaceholder() {
     return Center(
-      child: JidoujishoPlaceholderMessage(
+      child: HibikiPlaceholderMessage(
         icon: mediaSource.icon,
         message: t.ttu_no_books_added,
       ),

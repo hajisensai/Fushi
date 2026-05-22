@@ -81,7 +81,7 @@ class _WebsocketDialogPageState extends BasePageState<WebsocketDialogPage> {
                   hintText: 'wss://',
                   floatingLabelBehavior: FloatingLabelBehavior.always,
                   labelText: t.server_address,
-                  suffixIcon: JidoujishoIconButton(
+                  suffixIcon: HibikiIconButton(
                     size: 18,
                     tooltip: t.clear,
                     onTap: _addressController.clear,

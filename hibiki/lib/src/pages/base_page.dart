@@ -60,7 +60,7 @@ class BasePageState<T extends BasePage> extends ConsumerState<T> {
 
   /// Get the selection controls for a [SelectableText].
   MaterialTextSelectionControls get selectionControls =>
-      JidoujishoTextSelectionControls(
+      HibikiTextSelectionControls(
         searchAction: onSearch,
         stashAction: onStash,
         shareAction: onShare,
@@ -98,7 +98,7 @@ class BasePageState<T extends BasePage> extends ConsumerState<T> {
     Function()? refresh,
   }) {
     return Center(
-      child: JidoujishoPlaceholderMessage(
+      child: HibikiPlaceholderMessage(
         icon: Icons.error,
         message: '$error',
       ),

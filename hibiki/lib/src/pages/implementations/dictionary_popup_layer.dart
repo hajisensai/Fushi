@@ -154,7 +154,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(8),
-        child: JidoujishoPlaceholderMessage(
+        child: HibikiPlaceholderMessage(
           icon: Icons.search_off,
           message: t.no_search_results,
           iconSize: 20,

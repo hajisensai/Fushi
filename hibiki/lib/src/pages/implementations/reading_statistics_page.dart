@@ -174,7 +174,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
               ? buildError(error: _error)
               : _allStats.isEmpty
                   ? Center(
-                      child: JidoujishoPlaceholderMessage(
+                      child: HibikiPlaceholderMessage(
                         icon: Icons.bar_chart,
                         message: t.stat_no_data,
                       ),

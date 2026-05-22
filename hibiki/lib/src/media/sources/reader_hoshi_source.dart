@@ -172,7 +172,7 @@ class ReaderHoshiSource extends ReaderMediaSource {
   }) {
     return FloatingSearchBarAction(
       showIfOpened: true,
-      child: JidoujishoIconButton(
+      child: HibikiIconButton(
         size: Theme.of(context).textTheme.titleLarge?.fontSize,
         tooltip: t.srt_import,
         icon: Icons.library_add_outlined,
@@ -200,7 +200,7 @@ class ReaderHoshiSource extends ReaderMediaSource {
     required AppModel appModel,
   }) {
     return FloatingSearchBarAction(
-      child: JidoujishoIconButton(
+      child: HibikiIconButton(
         size: Theme.of(context).textTheme.titleLarge?.fontSize,
         tooltip: t.tweaks,
         icon: Icons.tune,

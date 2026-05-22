@@ -129,7 +129,7 @@ class _DisplaySettingsPageState extends BasePageState {
                 _update(() => _source.setTtuPageColumns(v.round())),
           ),
           const Space.small(),
-          const JidoujishoDivider(),
+          const HibikiDivider(),
           const Space.small(),
           _settingRow(
             theme,
@@ -215,7 +215,7 @@ class _DisplaySettingsPageState extends BasePageState {
             ),
           ),
           const Space.small(),
-          const JidoujishoDivider(),
+          const HibikiDivider(),
           const Space.small(),
           _settingRow(
             theme,

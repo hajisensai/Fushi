@@ -14,7 +14,7 @@ class CustomThemePage extends BasePage {
 
 class _CustomThemePageState extends BasePageState {
   late Color _seed;
-  late bool _dark;
+  late String _brightnessMode;
   Color? _fontColor;
   bool _useFontColor = false;
   Color? _bgColor;
@@ -40,7 +40,7 @@ class _CustomThemePageState extends BasePageState {
   void initState() {
     super.initState();
     _seed = appModelNoUpdate.customThemeSeed;
-    _dark = appModelNoUpdate.customThemeDark;
+    _brightnessMode = appModelNoUpdate.brightnessMode;
     _fontColor = appModelNoUpdate.customThemeFontColor;
     _useFontColor = _fontColor != null;
     _fontColor ??= Colors.black;
@@ -65,7 +65,7 @@ class _CustomThemePageState extends BasePageState {
     _containerColor ??= generated.primaryContainer;
     _sasayakiColor = appModelNoUpdate.customThemeSasayakiColor;
     _useSasayakiColor = _sasayakiColor != null;
-    _sasayakiColor ??= JidoujishoColor.defaultSasayakiColor;
+    _sasayakiColor ??= HibikiColor.defaultSasayakiColor;
     _linkColor = appModelNoUpdate.customThemeLinkColor;
     _useLinkColor = _linkColor != null;
     _linkColor ??= generated.primary;
@@ -77,12 +77,23 @@ class _CustomThemePageState extends BasePageState {
     super.dispose();
   }
 
-  ColorScheme get _generatedScheme => ColorScheme.fromSeed(
-      seedColor: _seed, brightness: _dark ? Brightness.dark : Brightness.light);
+  Brightness get _previewBrightness {
+    switch (_brightnessMode) {
+      case 'light':
+        return Brightness.light;
+      case 'dark':
+        return Brightness.dark;
+      default:
+        return WidgetsBinding.instance.platformDispatcher.platformBrightness;
+    }
+  }
+
+  ColorScheme get _generatedScheme =>
+      ColorScheme.fromSeed(seedColor: _seed, brightness: _previewBrightness);
 
   ColorScheme get _preview => buildHibikiColorScheme(
         seedColor: _seed,
-        brightness: _dark ? Brightness.dark : Brightness.light,
+        brightness: _previewBrightness,
         primary: _usePrimaryColor ? _primaryColor : null,
         secondary: _useSecondaryColor ? _secondaryColor : null,
         tertiary: _useTertiaryColor ? _tertiaryColor : null,
@@ -105,9 +116,9 @@ class _CustomThemePageState extends BasePageState {
     });
   }
 
-  void _setDark(bool value) {
+  void _setBrightnessMode(String mode) {
     setState(() {
-      _dark = value;
+      _brightnessMode = mode;
       _refreshInactiveRoleColors();
     });
   }
@@ -124,7 +135,7 @@ class _CustomThemePageState extends BasePageState {
 
   String _encodeTheme() {
     final hex = _seed.toARGB32().toRadixString(16).padLeft(8, '0');
-    var code = 'hibiki-theme:$hex:${_dark ? "dark" : "light"}';
+    var code = 'hibiki-theme:$hex:$_brightnessMode';
     if (_useFontColor && _fontColor != null) {
       final fontHex = _fontColor!.toARGB32().toRadixString(16).padLeft(8, '0');
       code += ':fc$fontHex';
@@ -172,7 +183,7 @@ class _CustomThemePageState extends BasePageState {
 
   static ({
     Color seed,
-    bool dark,
+    String brightnessMode,
     Color? fontColor,
     Color? bgColor,
     Color? selectionColor,
@@ -187,8 +198,15 @@ class _CustomThemePageState extends BasePageState {
     if (parts.length < 3 || parts[0] != 'hibiki-theme') return null;
     final colorVal = int.tryParse(parts[1], radix: 16);
     if (colorVal == null) return null;
-    final dark = parts[2] == 'dark';
-    if (parts[2] != 'dark' && parts[2] != 'light') return null;
+    final String brightnessMode;
+    switch (parts[2]) {
+      case 'dark':
+      case 'light':
+      case 'system':
+        brightnessMode = parts[2];
+      default:
+        return null;
+    }
     Color? fontColor;
     Color? bgColor;
     Color? selectionColor;
@@ -230,7 +248,7 @@ class _CustomThemePageState extends BasePageState {
     }
     return (
       seed: Color(colorVal),
-      dark: dark,
+      brightnessMode: brightnessMode,
       fontColor: fontColor,
       bgColor: bgColor,
       selectionColor: selectionColor,
@@ -275,16 +293,26 @@ class _CustomThemePageState extends BasePageState {
               Navigator.pop(ctx);
               setState(() {
                 _seed = result.seed;
-                _dark = result.dark;
+                _brightnessMode = result.brightnessMode;
                 _fontColor = result.fontColor ?? Colors.black;
                 _useFontColor = result.fontColor != null;
                 _bgColor = result.bgColor ?? Colors.white;
                 _useBgColor = result.bgColor != null;
                 _selectionColor = result.selectionColor ?? Colors.grey;
                 _useSelectionColor = result.selectionColor != null;
+                final Brightness brightness;
+                switch (result.brightnessMode) {
+                  case 'dark':
+                    brightness = Brightness.dark;
+                  case 'light':
+                    brightness = Brightness.light;
+                  default:
+                    brightness = WidgetsBinding
+                        .instance.platformDispatcher.platformBrightness;
+                }
                 final ColorScheme generated = buildHibikiColorScheme(
                   seedColor: result.seed,
-                  brightness: result.dark ? Brightness.dark : Brightness.light,
+                  brightness: brightness,
                 );
                 _primaryColor = result.primaryColor ?? generated.primary;
                 _usePrimaryColor = result.primaryColor != null;
@@ -296,7 +324,7 @@ class _CustomThemePageState extends BasePageState {
                     result.containerColor ?? generated.primaryContainer;
                 _useContainerColor = result.containerColor != null;
                 _sasayakiColor = result.sasayakiColor ??
-                    JidoujishoColor.defaultSasayakiColor;
+                    HibikiColor.defaultSasayakiColor;
                 _useSasayakiColor = result.sasayakiColor != null;
                 _linkColor = result.linkColor ?? generated.primary;
                 _useLinkColor = result.linkColor != null;
@@ -350,9 +378,29 @@ class _CustomThemePageState extends BasePageState {
           Row(
             children: [
               Expanded(child: Text(t.dark_mode)),
-              Switch(
-                value: _dark,
-                onChanged: _setDark,
+              SegmentedButton<String>(
+                showSelectedIcon: false,
+                style: const ButtonStyle(
+                  visualDensity: VisualDensity.compact,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                segments: const [
+                  ButtonSegment(
+                    value: 'light',
+                    icon: Icon(Icons.light_mode, size: 16),
+                  ),
+                  ButtonSegment(
+                    value: 'system',
+                    icon: Icon(Icons.brightness_auto, size: 16),
+                  ),
+                  ButtonSegment(
+                    value: 'dark',
+                    icon: Icon(Icons.dark_mode, size: 16),
+                  ),
+                ],
+                selected: {_brightnessMode},
+                onSelectionChanged: (selected) =>
+                    _setBrightnessMode(selected.first),
               ),
             ],
           ),
@@ -556,7 +604,7 @@ class _CustomThemePageState extends BasePageState {
               final NavigatorState navigator = Navigator.of(context);
               await appModel.applyCustomTheme(
                 seed: _seed,
-                dark: _dark,
+                brightnessMode: _brightnessMode,
                 fontColor: _useFontColor ? _fontColor : null,
                 backgroundColor: _useBgColor ? _bgColor : null,
                 selectionColor: _useSelectionColor ? _selectionColor : null,
@@ -644,7 +692,7 @@ class _CustomThemePageState extends BasePageState {
                     decoration: BoxDecoration(
                       color: _useSasayakiColor
                           ? _sasayakiColor
-                          : JidoujishoColor.defaultSasayakiColor,
+                          : HibikiColor.defaultSasayakiColor,
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
@@ -663,7 +711,7 @@ class _CustomThemePageState extends BasePageState {
                           style: TextStyle(
                             backgroundColor: _useSasayakiColor
                                 ? _sasayakiColor
-                                : JidoujishoColor.defaultSasayakiColor,
+                                : HibikiColor.defaultSasayakiColor,
                           ),
                         ),
                         const TextSpan(text: 'テスト　'),
@@ -885,7 +933,7 @@ class _CustomThemePageState extends BasePageState {
     final Color bg = _useBgColor ? _bgColor! : cs.surfaceContainerLow;
     final Color sas = _useSasayakiColor
         ? _sasayakiColor!
-        : JidoujishoColor.defaultSasayakiColor;
+        : HibikiColor.defaultSasayakiColor;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(

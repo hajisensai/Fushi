@@ -40,7 +40,7 @@ abstract class BaseHistoryPageState<T extends BaseHistoryPage>
   /// This is shown as the body when [shouldPlaceholderBeShown] is true.
   Widget buildPlaceholder() {
     return Center(
-      child: JidoujishoPlaceholderMessage(
+      child: HibikiPlaceholderMessage(
         icon: mediaType.outlinedIcon,
         message: t.info_empty_home_tab,
       ),

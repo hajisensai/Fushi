@@ -1,0 +1,93 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hibiki/models.dart';
+
+/// An option to show in a bottom sheet.
+class HibikiBottomSheetOption {
+  /// Defines an option in a bottom sheet.
+  HibikiBottomSheetOption({
+    required this.label,
+    required this.icon,
+    required this.action,
+    this.active = false,
+  });
+
+  /// Label to display in the option.
+  String label;
+
+  /// Icon to display left of the label.
+  IconData icon;
+
+  /// Whether or not the option is available.
+  bool active;
+
+  /// Action to perform upon selecting the option.
+  FutureOr<void> Function() action;
+}
+
+///
+class HibikiBottomSheet extends ConsumerWidget {
+  /// Initialise a bottom sheet.
+  const HibikiBottomSheet({
+    required this.options,
+    this.scrollToExtent = true,
+    super.key,
+  });
+
+  /// Options to show in the bottom sheet.
+  final List<HibikiBottomSheetOption> options;
+
+  /// Whether or not to scroll to bottom.
+  final bool scrollToExtent;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    AppModel appModel = ref.watch(appProvider);
+
+    ScrollController scrollController = ScrollController();
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (scrollController.hasClients && scrollToExtent) {
+        scrollController.jumpTo(
+          scrollController.position.maxScrollExtent,
+        );
+      }
+    });
+
+    return ListView.builder(
+      controller: scrollController,
+      shrinkWrap: true,
+      itemCount: options.length,
+      itemBuilder: (context, i) {
+        HibikiBottomSheetOption option = options[i];
+
+        return ListTile(
+          tileColor: Theme.of(context).cardColor,
+          dense: true,
+          leading: Icon(
+            option.icon,
+            size: 20,
+            color: Colors.red,
+          ),
+          title: Text(
+            option.label,
+            maxLines: 1,
+            style: TextStyle(
+              color: (option.active)
+                  ? Colors.red
+                  : appModel.isDarkMode
+                      ? Colors.white
+                      : Colors.black,
+            ),
+          ),
+          onTap: () async {
+            Navigator.of(context).pop();
+            await option.action();
+          },
+        );
+      },
+    );
+  }
+}

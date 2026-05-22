@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:hibiki/utils.dart';
-import 'package:hibiki/src/utils/components/jidoujisho_text_selection_controls.dart';
+import 'package:hibiki/src/utils/components/Hibiki_text_selection_controls.dart';
 
 class ErrorLogPage extends StatelessWidget {
   const ErrorLogPage({super.key});
@@ -63,7 +63,7 @@ class ErrorLogPage extends StatelessWidget {
         child: SelectableText(
           log,
           style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-          selectionControls: JidoujishoTextSelectionControls(
+          selectionControls: HibikiTextSelectionControls(
             shareAction: (text) => Share.share(text),
             allowCopy: true,
             allowCut: false,

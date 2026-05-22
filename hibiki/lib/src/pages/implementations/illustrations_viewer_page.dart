@@ -130,7 +130,7 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
 
     if (_images.isEmpty) {
       return Center(
-        child: JidoujishoPlaceholderMessage(
+        child: HibikiPlaceholderMessage(
           icon: Icons.image_not_supported_outlined,
           message: t.no_illustrations_found,
         ),

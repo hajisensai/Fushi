@@ -61,11 +61,11 @@ class _LanguageDialogPageState extends BasePageState<LanguageDialogPage> {
                   ),
                 ),
               ),
-              JidoujishoDropdown<String>(
-                options: JidoujishoLocalisations.localeNames.keys.toList(),
+              HibikiDropdown<String>(
+                options: HibikiLocalisations.localeNames.keys.toList(),
                 initialOption: appModel.appLocale.toLanguageTag(),
                 generateLabel: (languageTag) =>
-                    JidoujishoLocalisations.localeNames[languageTag]!,
+                    HibikiLocalisations.localeNames[languageTag]!,
                 onChanged: (languageTag) {
                   appModel.setAppLocale(languageTag!);
                   setState(() {});

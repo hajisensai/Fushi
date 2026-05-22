@@ -229,7 +229,7 @@ class _DictionaryTermActionsRowState
           colors[quickAction.uniqueKey] ?? scheme.onSurface;
       final Widget button = Padding(
         padding: Spacing.of(context).insets.onlyLeft.semiSmall,
-        child: JidoujishoIconButton(
+        child: HibikiIconButton(
           busy: true,
           enabledColor: enabledColor,
           disabledColor: enabledColor.withOpacity(0.5),

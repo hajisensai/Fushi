@@ -87,7 +87,7 @@ class _LyricsDialogPageState extends BasePageState<LyricsDialogPage> {
                 decoration: InputDecoration(
                   floatingLabelBehavior: FloatingLabelBehavior.always,
                   labelText: t.lyrics_title,
-                  suffixIcon: JidoujishoIconButton(
+                  suffixIcon: HibikiIconButton(
                     size: 18,
                     tooltip: t.clear,
                     onTap: _titleController.clear,
@@ -100,7 +100,7 @@ class _LyricsDialogPageState extends BasePageState<LyricsDialogPage> {
                 decoration: InputDecoration(
                   floatingLabelBehavior: FloatingLabelBehavior.always,
                   labelText: t.lyrics_artist,
-                  suffixIcon: JidoujishoIconButton(
+                  suffixIcon: HibikiIconButton(
                     size: 18,
                     tooltip: t.clear,
                     onTap: _artistController.clear,

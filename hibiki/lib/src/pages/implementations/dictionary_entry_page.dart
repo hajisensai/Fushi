@@ -90,7 +90,7 @@ class _DictionaryEntryHeaderWrap extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     String dictionaryName = entry.dictionaryName;
     List<Widget> children = [
-      JidoujishoTag(
+      HibikiTag(
         text: dictionaryName,
         backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
       ),

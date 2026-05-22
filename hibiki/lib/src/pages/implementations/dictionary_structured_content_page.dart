@@ -248,10 +248,10 @@ class DictionarySelectionDelegate
     required this.onTextSelectionGuessLength,
   });
 
-  /// Callback with a [JidoujishoTextSelection] which contains the text of all
+  /// Callback with a [HibikiTextSelection] which contains the text of all
   /// selectables as well as a [TextRange] representing the substring to use
   /// for dictionary search. Returns the guess length of the text selection.
-  final JidoujishoTextSelection Function(JidoujishoTextSelection)
+  final HibikiTextSelection Function(HibikiTextSelection)
       onTextSelectionGuessLength;
 
   // This method is called when newly added selectable is in the current
@@ -259,9 +259,9 @@ class DictionarySelectionDelegate
   @override
   void ensureChildUpdated(Selectable selectable) {}
 
-  /// Handles a [JidoujishoTextSelection].
+  /// Handles a [HibikiTextSelection].
   SelectionResult handleTextSelection(
-      SelectWordSelectionEvent event, JidoujishoTextSelection selection) {
+      SelectWordSelectionEvent event, HibikiTextSelection selection) {
     handleClearSelection(const ClearSelectionEvent());
 
     super.handleSelectWord(event);
@@ -291,8 +291,8 @@ class DictionarySelectionDelegate
   }
 
   SelectionEvent? _lastEvent;
-  JidoujishoTextSelection? _guessSelection;
-  JidoujishoTextSelection? _searchSelection;
+  HibikiTextSelection? _guessSelection;
+  HibikiTextSelection? _searchSelection;
 
   @override
   SelectionResult handleSelectWord(SelectWordSelectionEvent event) {
@@ -360,7 +360,7 @@ class DictionarySelectionDelegate
 
     final text = '$textBefore$textAfter';
 
-    final eventSelection = JidoujishoTextSelection(
+    final eventSelection = HibikiTextSelection(
       text: text,
       range: TextRange(
         start: textBefore.length,

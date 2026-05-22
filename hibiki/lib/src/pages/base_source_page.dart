@@ -447,7 +447,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
   /// Placeholder when there are no search results.
   Widget buildNoSearchResultsPlaceholderMessage() {
     return Center(
-      child: JidoujishoPlaceholderMessage(
+      child: HibikiPlaceholderMessage(
         icon: Icons.search_off,
         message: t.no_search_results,
       ),

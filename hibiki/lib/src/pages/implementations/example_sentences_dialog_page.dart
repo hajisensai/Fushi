@@ -68,7 +68,7 @@ class _ExampleSentencesDialogPageState
       padding: EdgeInsets.only(
         bottom: Spacing.of(context).spaces.normal,
       ),
-      child: JidoujishoPlaceholderMessage(
+      child: HibikiPlaceholderMessage(
         icon: Icons.search_off,
         message: t.no_sentences_found,
       ),

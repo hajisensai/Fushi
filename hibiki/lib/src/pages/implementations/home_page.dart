@@ -316,12 +316,12 @@ class _HomePageState extends BasePageState<HomePage>
 
   List<Widget> buildSettingsActions() {
     return [
-      JidoujishoIconButton(
+      HibikiIconButton(
         tooltip: t.options_language,
         icon: Icons.translate,
         onTap: appModel.showLanguageMenu,
       ),
-      JidoujishoIconButton(
+      HibikiIconButton(
         tooltip: t.options_github,
         icon: Icons.public,
         onTap: () {
@@ -335,7 +335,7 @@ class _HomePageState extends BasePageState<HomePage>
   }
 
   Widget buildImportButton() {
-    return JidoujishoIconButton(
+    return HibikiIconButton(
       tooltip: t.import_book,
       icon: Icons.add,
       onTap: () async {
@@ -357,7 +357,7 @@ class _HomePageState extends BasePageState<HomePage>
     return Consumer(
       builder: (context, ref, _) {
         final selectedIds = ref.watch(selectedTagIdsProvider);
-        return JidoujishoIconButton(
+        return HibikiIconButton(
           tooltip: t.tag_filter,
           icon: selectedIds.isEmpty ? Icons.filter_list : Icons.filter_list_off,
           onTap: () {
@@ -388,7 +388,7 @@ class _HomePageState extends BasePageState<HomePage>
   }
 
   Widget buildCollectionsButton() {
-    return JidoujishoIconButton(
+    return HibikiIconButton(
       tooltip: t.collections,
       icon: Icons.collections_bookmark,
       onTap: () {
@@ -401,7 +401,7 @@ class _HomePageState extends BasePageState<HomePage>
   }
 
   Widget buildStatisticsButton() {
-    return JidoujishoIconButton(
+    return HibikiIconButton(
       tooltip: t.reading_statistics,
       icon: Icons.bar_chart,
       onTap: () {

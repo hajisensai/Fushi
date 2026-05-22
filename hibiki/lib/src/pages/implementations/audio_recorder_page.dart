@@ -11,7 +11,7 @@ import 'package:spaces/spaces.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/utils/misc/hibiki_toast.dart';
 import 'package:hibiki/pages.dart';
-import 'package:hibiki/src/utils/misc/jidoujisho_time_format.dart';
+import 'package:hibiki/src/utils/misc/Hibiki_time_format.dart';
 
 /// The content of the dialog used for selecting segmented units of a source
 /// text.
@@ -153,7 +153,8 @@ class _AudioRecorderDialogPageState
               );
 
               _noisySub?.cancel();
-              _noisySub = session.becomingNoisyEventStream.listen((event) async {
+              _noisySub =
+                  session.becomingNoisyEventStream.listen((event) async {
                 await _audioPlayer.pause();
                 session?.setActive(false);
               });
@@ -203,11 +204,11 @@ class _AudioRecorderDialogPageState
             position = Duration.zero;
           }
 
-          return JidoujishoTimeFormat.getVideoDurationText(position).trim();
+          return HibikiTimeFormat.getVideoDurationText(position).trim();
         }
 
         String getDurationText() {
-          return JidoujishoTimeFormat.getVideoDurationText(duration).trim();
+          return HibikiTimeFormat.getVideoDurationText(duration).trim();
         }
 
         return Text(

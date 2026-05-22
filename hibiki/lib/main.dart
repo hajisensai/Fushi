@@ -17,7 +17,7 @@ import 'package:hibiki/pages.dart';
 import 'package:hibiki/popup_main.dart' as popup_entrypoint;
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/utils.dart';
-import 'package:hibiki/src/utils/components/jidoujisho_text_selection_controls.dart';
+import 'package:hibiki/src/utils/components/Hibiki_text_selection_controls.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:hibiki/src/utils/misc/hibiki_toast.dart';
 
@@ -245,6 +245,13 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      ref.read(appProvider).refreshSystemPalette();
+    }
+  }
+
+  @override
   void dispose() {
     _intentsSubscription?.cancel();
     WidgetsBinding.instance.removeObserver(this);
@@ -312,7 +319,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
                         color: isDark ? Colors.white70 : Colors.black87,
                       ),
                       textAlign: TextAlign.center,
-                      selectionControls: JidoujishoTextSelectionControls(
+                      selectionControls: HibikiTextSelectionControls(
                         shareAction: (text) => Share.share(text),
                         allowCopy: true,
                         allowCut: false,
@@ -376,10 +383,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
   /// The application will open to this page upon startup.
   Widget get home => _isMainIntent ? const HomePage() : const Scaffold();
 
-  /// The current theme mode, which by default is based on system setting
-  /// and toggleable.
-  ThemeMode get themeMode =>
-      appModel.isDarkMode ? ThemeMode.dark : ThemeMode.light;
+  ThemeMode get themeMode => appModel.themeMode;
 
   /// The current locale, dependent on the active target language.
   Locale get locale => appModel.targetLanguage.locale;

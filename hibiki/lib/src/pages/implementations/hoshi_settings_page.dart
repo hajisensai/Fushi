@@ -356,6 +356,23 @@ Widget _buildThemeSelector(AppModel appModel,
         spacing: 6,
         runSpacing: 6,
         children: [
+          _buildThemeChip(
+            context: navContext,
+            label: t.theme_system,
+            selected: appModel.appThemeKey == 'system-theme',
+            avatar: Icon(
+              Icons.wallpaper,
+              size: 18,
+              color: appModel.appThemeKey == 'system-theme'
+                  ? Theme.of(navContext).colorScheme.onPrimaryContainer
+                  : null,
+            ),
+            onSelected: (on) {
+              if (!on) return;
+              appModel.setAppThemeKey('system-theme');
+              ReaderHoshiSource.onSettingsChangedLive?.call();
+            },
+          ),
           ...AppModel.themePresets.entries.map((e) {
             final bool selected = appModel.appThemeKey == e.key;
             return _buildThemeChip(
@@ -392,6 +409,43 @@ Widget _buildThemeSelector(AppModel appModel,
             },
           ),
         ],
+      ),
+      const SizedBox(height: 12),
+      _buildBrightnessSelector(appModel, navContext: navContext),
+    ],
+  );
+}
+
+Widget _buildBrightnessSelector(AppModel appModel,
+    {required BuildContext navContext}) {
+  return Row(
+    children: [
+      Expanded(child: Text(t.dark_mode)),
+      SegmentedButton<String>(
+        showSelectedIcon: false,
+        style: const ButtonStyle(
+          visualDensity: VisualDensity.compact,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        segments: const [
+          ButtonSegment(
+            value: 'light',
+            icon: Icon(Icons.light_mode, size: 16),
+          ),
+          ButtonSegment(
+            value: 'system',
+            icon: Icon(Icons.brightness_auto, size: 16),
+          ),
+          ButtonSegment(
+            value: 'dark',
+            icon: Icon(Icons.dark_mode, size: 16),
+          ),
+        ],
+        selected: {appModel.brightnessMode},
+        onSelectionChanged: (selected) {
+          appModel.setBrightnessMode(selected.first);
+          ReaderHoshiSource.onSettingsChangedLive?.call();
+        },
       ),
     ],
   );
@@ -454,7 +508,7 @@ class _HoshiSettingsDialogPageState extends BasePageState {
             children: [
               _buildThemeSelector(appModel, navContext: context),
               const Space.small(),
-              const JidoujishoDivider(),
+              const HibikiDivider(),
               const Space.small(),
               _buildFontEntry(context),
               _buildTapRow(
@@ -470,12 +524,12 @@ class _HoshiSettingsDialogPageState extends BasePageState {
                 },
               ),
               const Space.small(),
-              const JidoujishoDivider(),
+              const HibikiDivider(),
               const Space.small(),
               ..._buildReaderOnlySwitches(() => setState(() {}),
                   appModel: appModel),
               const Space.small(),
-              const JidoujishoDivider(),
+              const HibikiDivider(),
               _buildPageTurningSpeed(() => setState(() {})),
             ],
           ),
@@ -504,7 +558,7 @@ class _HoshiSettingsContentState extends BasePageState {
         children: [
           _buildThemeSelector(appModel, navContext: context),
           const Space.small(),
-          const JidoujishoDivider(),
+          const HibikiDivider(),
           const Space.small(),
           ListTile(
             dense: true,
@@ -652,12 +706,12 @@ class _ReaderBehaviorSettingsPageState extends BasePageState {
             },
           ),
           const Space.small(),
-          const JidoujishoDivider(),
+          const HibikiDivider(),
           const Space.small(),
           ..._buildReaderOnlySwitches(() => setState(() {}),
               appModel: appModel),
           const Space.small(),
-          const JidoujishoDivider(),
+          const HibikiDivider(),
           _buildPageTurningSpeed(() => setState(() {})),
         ],
       ),

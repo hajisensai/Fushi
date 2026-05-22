@@ -79,7 +79,7 @@ class _MediaItemEditDialogPageState
             controller: _nameOverrideController,
             maxLines: null,
             decoration: InputDecoration(
-              suffixIcon: JidoujishoIconButton(
+              suffixIcon: HibikiIconButton(
                 tooltip: t.undo,
                 isWideTapArea: true,
                 icon: Icons.undo,
@@ -236,13 +236,13 @@ class MediaItemCoverOverrideField extends StatelessWidget {
                 ),
               ),
             ),
-            JidoujishoIconButton(
+            HibikiIconButton(
               tooltip: t.pick_image,
               isWideTapArea: true,
               icon: Icons.file_upload,
               onTap: onPickImage,
             ),
-            JidoujishoIconButton(
+            HibikiIconButton(
               tooltip: t.undo,
               isWideTapArea: true,
               icon: Icons.undo,

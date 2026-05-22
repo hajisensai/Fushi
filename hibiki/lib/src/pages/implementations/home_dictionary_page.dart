@@ -194,7 +194,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
                 ),
               ),
             ),
-            JidoujishoIconButton(
+            HibikiIconButton(
               size: textTheme.titleLarge?.fontSize,
               tooltip: t.dictionary_settings,
               icon: Icons.settings,
@@ -209,7 +209,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
                 }
               },
             ),
-            JidoujishoIconButton(
+            HibikiIconButton(
               size: textTheme.titleLarge?.fontSize,
               tooltip: t.clear_dictionary_title,
               icon: Icons.delete_sweep,
@@ -239,7 +239,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
       return const Center(child: CircularProgressIndicator());
     }
     return Center(
-      child: JidoujishoPlaceholderMessage(
+      child: HibikiPlaceholderMessage(
         icon: Icons.search_off,
         message: t.no_search_results,
       ),
@@ -252,7 +252,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          JidoujishoPlaceholderMessage(
+          HibikiPlaceholderMessage(
             icon: mediaType.outlinedIcon,
             message: noDictionaries
                 ? t.dictionaries_menu_empty

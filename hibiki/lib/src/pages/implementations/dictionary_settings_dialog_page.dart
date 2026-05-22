@@ -80,7 +80,7 @@ class _DictionaryDialogPageState extends BasePageState {
               _buildDictionaryManageRow(),
               _buildCustomCssRow(),
               const Space.small(),
-              const JidoujishoDivider(),
+              const HibikiDivider(),
               const Space.small(),
               buildAutoSearchSwitch(),
               const Space.small(),
@@ -94,7 +94,7 @@ class _DictionaryDialogPageState extends BasePageState {
               const Space.small(),
               buildShowExpressionTagsSwitch(),
               const Space.small(),
-              const JidoujishoDivider(),
+              const HibikiDivider(),
               buildDebounceDelayField(),
               buildDictionaryFontSizeField(),
               buildMaximumTermsField(),
@@ -329,7 +329,7 @@ class _DictionaryDialogPageState extends BasePageState {
       decoration: InputDecoration(
         floatingLabelBehavior: FloatingLabelBehavior.always,
         suffixText: t.unit_milliseconds,
-        suffixIcon: JidoujishoIconButton(
+        suffixIcon: HibikiIconButton(
           tooltip: t.reset,
           size: 18,
           onTap: () async {
@@ -363,7 +363,7 @@ class _DictionaryDialogPageState extends BasePageState {
       decoration: InputDecoration(
         floatingLabelBehavior: FloatingLabelBehavior.always,
         suffixText: t.unit_pixels,
-        suffixIcon: JidoujishoIconButton(
+        suffixIcon: HibikiIconButton(
           tooltip: t.reset,
           size: 18,
           onTap: () async {
@@ -396,7 +396,7 @@ class _DictionaryDialogPageState extends BasePageState {
       keyboardType: TextInputType.number,
       decoration: InputDecoration(
         floatingLabelBehavior: FloatingLabelBehavior.always,
-        suffixIcon: JidoujishoIconButton(
+        suffixIcon: HibikiIconButton(
           tooltip: t.reset,
           size: 18,
           onTap: () async {
@@ -507,7 +507,7 @@ class _DictionaryDialogPageState extends BasePageState {
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          JidoujishoIconButton(
+          HibikiIconButton(
             tooltip: enabled ? t.options_hide : t.options_show,
             size: 18,
             icon: enabled ? Icons.check_circle_outline : Icons.block,
@@ -517,7 +517,7 @@ class _DictionaryDialogPageState extends BasePageState {
             },
           ),
           if (index > 0)
-            JidoujishoIconButton(
+            HibikiIconButton(
               tooltip: '↑',
               size: 18,
               icon: Icons.arrow_upward,
@@ -527,7 +527,7 @@ class _DictionaryDialogPageState extends BasePageState {
               },
             ),
           if (index < dbs.length - 1)
-            JidoujishoIconButton(
+            HibikiIconButton(
               tooltip: '↓',
               size: 18,
               icon: Icons.arrow_downward,
@@ -536,7 +536,7 @@ class _DictionaryDialogPageState extends BasePageState {
                 setState(() {});
               },
             ),
-          JidoujishoIconButton(
+          HibikiIconButton(
             tooltip: t.dialog_delete,
             size: 18,
             icon: Icons.delete_outline,

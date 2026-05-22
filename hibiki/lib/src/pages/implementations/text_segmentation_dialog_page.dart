@@ -24,10 +24,10 @@ class TextSegmentationDialogPage extends BasePage {
   final List<String> segmentedText;
 
   /// The callback to be called for a selection to extract from the text.
-  final Function(JidoujishoTextSelection)? onSelect;
+  final Function(HibikiTextSelection)? onSelect;
 
   /// The callback to be called for a selection to perform a search on.
-  final Function(JidoujishoTextSelection)? onSearch;
+  final Function(HibikiTextSelection)? onSearch;
 
   @override
   BasePageState createState() => _TextSegmentationDialogPage();
@@ -187,7 +187,7 @@ class _TextSegmentationDialogPage
     );
   }
 
-  JidoujishoTextSelection get selection {
+  HibikiTextSelection get selection {
     StringBuffer buffer = StringBuffer();
     int? start;
     int? end;
@@ -205,7 +205,7 @@ class _TextSegmentationDialogPage
       range = TextRange(start: start, end: end);
     }
 
-    return JidoujishoTextSelection(
+    return HibikiTextSelection(
       text: widget.sourceText,
       range: range,
     );

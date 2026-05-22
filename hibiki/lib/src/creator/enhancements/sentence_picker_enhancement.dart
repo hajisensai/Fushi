@@ -50,7 +50,7 @@ class SentencePickerEnhancement extends Enhancement {
           .toList(),
       onSelect: (selection) {
         creatorModel.setSentenceAndCloze(
-          JidoujishoTextSelection(
+          HibikiTextSelection(
             text: selection
                 .join(appModel.targetLanguage.isSpaceDelimited ? ' ' : '')
                 .trim(),

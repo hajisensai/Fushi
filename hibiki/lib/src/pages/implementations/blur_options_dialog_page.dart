@@ -87,7 +87,7 @@ class _BlurOptionsDialogPageState extends BasePageState<BlurOptionsDialogPage> {
                   decoration: InputDecoration(
                     floatingLabelBehavior: FloatingLabelBehavior.always,
                     suffixText: t.unit_pixels,
-                    suffixIcon: JidoujishoIconButton(
+                    suffixIcon: HibikiIconButton(
                       tooltip: t.reset,
                       size: 18,
                       onTap: () async {

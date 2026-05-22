@@ -153,7 +153,7 @@ abstract class BaseMediaSearchBarState<T extends BaseMediaSearchBar>
     return FloatingSearchBarAction(
       showIfOpened: true,
       showIfClosed: false,
-      child: JidoujishoIconButton(
+      child: HibikiIconButton(
         size: textTheme.titleLarge?.fontSize,
         tooltip: t.clear_search_title,
         icon: Icons.manage_search,
@@ -212,7 +212,7 @@ abstract class BaseMediaSearchBarState<T extends BaseMediaSearchBar>
       if (searchHistory.isEmpty) {
         return buildEnterSearchTermPlaceholderMessage();
       } else {
-        return JidoujishoSearchHistory(
+        return HibikiSearchHistory(
           uniqueKey: mediaSource.uniqueKey,
           onSearchTermSelect: (searchTerm) {
             setState(() {
@@ -227,7 +227,7 @@ abstract class BaseMediaSearchBarState<T extends BaseMediaSearchBar>
     }
 
     if (_isSearching || pagingController == null) {
-      return JidoujishoSearchHistory(
+      return HibikiSearchHistory(
         uniqueKey: mediaSource.uniqueKey,
         searchSuggestions: _searchSuggestions,
         onSearchTermSelect: (searchTerm) {
@@ -261,7 +261,7 @@ abstract class BaseMediaSearchBarState<T extends BaseMediaSearchBar>
   /// Shows when the search term is empty and there is nothing in search history.
   Widget buildEnterSearchTermPlaceholderMessage() {
     return Center(
-      child: JidoujishoPlaceholderMessage(
+      child: HibikiPlaceholderMessage(
         icon: Icons.search,
         message: t.enter_search_term,
       ),
@@ -271,7 +271,7 @@ abstract class BaseMediaSearchBarState<T extends BaseMediaSearchBar>
   /// Shows when the media item search has returned no items.
   Widget buildNoSearchResultsPlaceholderMessage() {
     return Center(
-      child: JidoujishoPlaceholderMessage(
+      child: HibikiPlaceholderMessage(
         icon: Icons.search_off,
         message: t.no_search_results,
       ),

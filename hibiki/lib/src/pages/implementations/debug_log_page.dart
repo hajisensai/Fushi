@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:hibiki/utils.dart';
-import 'package:hibiki/src/utils/components/jidoujisho_text_selection_controls.dart';
+import 'package:hibiki/src/utils/components/Hibiki_text_selection_controls.dart';
 
 class DebugLogPage extends StatefulWidget {
   const DebugLogPage({super.key});
@@ -84,7 +84,7 @@ class _DebugLogPageState extends State<DebugLogPage> {
         child: SelectableText(
           _log,
           style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
-          selectionControls: JidoujishoTextSelectionControls(
+          selectionControls: HibikiTextSelectionControls(
             shareAction: (text) => Share.share(text),
             allowCopy: true,
             allowCut: false,

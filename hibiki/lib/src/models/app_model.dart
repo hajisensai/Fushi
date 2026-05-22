@@ -674,13 +674,13 @@ class AppModel with ChangeNotifier {
   }
 
   /// Get the sentence to be used by the [SentenceField] upon card creation.
-  JidoujishoTextSelection getCurrentSentence() {
+  HibikiTextSelection getCurrentSentence() {
     if (isMediaOpen) {
       return _currentMediaSource!.currentSentence;
     } else {
       MediaType mediaType = mediaTypes.values.toList()[currentHomeTabIndex];
       if (mediaType is DictionaryMediaType) {
-        return JidoujishoTextSelection(
+        return HibikiTextSelection(
           text: '',
         );
       } else {
@@ -691,13 +691,13 @@ class AppModel with ChangeNotifier {
     }
   }
 
-  JidoujishoTextSelection getCurrentCueSentence() {
+  HibikiTextSelection getCurrentCueSentence() {
     if (isMediaOpen) {
       return _currentMediaSource!.currentCueSentence;
     } else {
       MediaType mediaType = mediaTypes.values.toList()[currentHomeTabIndex];
       if (mediaType is DictionaryMediaType) {
-        return JidoujishoTextSelection(text: '');
+        return HibikiTextSelection(text: '');
       } else {
         return (_currentMediaSource ??
                 (getCurrentSourceForMediaType(mediaType: mediaType)))
@@ -2951,8 +2951,8 @@ class AppModel with ChangeNotifier {
   Future<void> openTextSegmentationDialog({
     required String sourceText,
     List<String>? segmentedText,
-    Function(JidoujishoTextSelection)? onSelect,
-    Function(JidoujishoTextSelection)? onSearch,
+    Function(HibikiTextSelection)? onSelect,
+    Function(HibikiTextSelection)? onSearch,
   }) async {
     if (sourceText.trim().isEmpty) {
       return;
@@ -3478,8 +3478,8 @@ class AppModel with ChangeNotifier {
       StreamController.broadcast();
 
   /// For managing audio session events.
-  JidoujishoAudioHandler? get audioHandler => _audioHandler;
-  JidoujishoAudioHandler? _audioHandler;
+  HibikiAudioHandler? get audioHandler => _audioHandler;
+  HibikiAudioHandler? _audioHandler;
 
   /// Initialises the audio service.
   Future<void> initialiseAudioHandler() async {
@@ -3488,8 +3488,8 @@ class AppModel with ChangeNotifier {
     }
 
     try {
-      _audioHandler = await ag.AudioService.init<JidoujishoAudioHandler>(
-        builder: () => JidoujishoAudioHandler(
+      _audioHandler = await ag.AudioService.init<HibikiAudioHandler>(
+        builder: () => HibikiAudioHandler(
           onPlayPause: () {
             _playStreamController.add(null);
           },
@@ -3520,7 +3520,7 @@ class AppModel with ChangeNotifier {
       );
     } catch (e) {
       debugPrint('[Hibiki] AudioService.init failed (non-fatal): $e');
-      _audioHandler = JidoujishoAudioHandler(
+      _audioHandler = HibikiAudioHandler(
         onPlayPause: () => _playStreamController.add(null),
         onSeek: (position) => _seekStreamController.add(position),
         onRewind: () => _rewindStreamController.add(null),

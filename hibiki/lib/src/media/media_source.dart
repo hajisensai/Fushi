@@ -241,39 +241,39 @@ abstract class MediaSource {
   /// Supplies a sentence that can be used for the sentence field when making
   /// a card while this source is active. Can be set with [setCurrentSentence]
   /// and [clearCurrentSentence] in a source page.
-  JidoujishoTextSelection get currentSentence => _currentSentence;
-  JidoujishoTextSelection _currentSentence = JidoujishoTextSelection(
+  HibikiTextSelection get currentSentence => _currentSentence;
+  HibikiTextSelection _currentSentence = HibikiTextSelection(
     text: '',
   );
 
   /// Update the current sentence.
   void setCurrentSentence({
-    required JidoujishoTextSelection selection,
+    required HibikiTextSelection selection,
   }) {
     _currentSentence = selection;
   }
 
   /// Clear the current sentence.
   void clearCurrentSentence() {
-    _currentSentence = JidoujishoTextSelection(
+    _currentSentence = HibikiTextSelection(
       text: '',
     );
   }
 
   /// Full subtitle-cue text (not punctuation-segmented).
-  JidoujishoTextSelection get currentCueSentence => _currentCueSentence;
-  JidoujishoTextSelection _currentCueSentence = JidoujishoTextSelection(
+  HibikiTextSelection get currentCueSentence => _currentCueSentence;
+  HibikiTextSelection _currentCueSentence = HibikiTextSelection(
     text: '',
   );
 
   void setCurrentCueSentence({
-    required JidoujishoTextSelection selection,
+    required HibikiTextSelection selection,
   }) {
     _currentCueSentence = selection;
   }
 
   void clearCurrentCueSentence() {
-    _currentCueSentence = JidoujishoTextSelection(
+    _currentCueSentence = HibikiTextSelection(
       text: '',
     );
   }

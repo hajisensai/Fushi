@@ -781,7 +781,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
                     dictionaries: pitchDicts,
                   ),
                 ],
-                const JidoujishoDivider(),
+                const HibikiDivider(),
               ],
             ),
           ),
@@ -820,7 +820,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
       padding: EdgeInsets.only(
         bottom: Spacing.of(context).spaces.normal,
       ),
-      child: JidoujishoPlaceholderMessage(
+      child: HibikiPlaceholderMessage(
         icon: DictionaryMediaType.instance.outlinedIcon,
         message: t.dictionaries_menu_empty,
       ),
@@ -908,7 +908,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
                 Expanded(
                   child: Column(
                     children: [
-                      JidoujishoMarquee(
+                      HibikiMarquee(
                         text: dictionary.name,
                         style: TextStyle(
                           fontSize: textTheme.bodyMedium?.fontSize,
@@ -917,7 +917,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
                               : null,
                         ),
                       ),
-                      JidoujishoMarquee(
+                      HibikiMarquee(
                         text: dictionaryFormat.name,
                         style: TextStyle(
                           fontSize: textTheme.bodySmall?.fontSize,
@@ -1086,7 +1086,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
           children: [
             ChangeNotifierBuilder(
               notifier: _formatNotifier,
-              builder: (_, __, ___) => JidoujishoDropdown<DictionaryFormat>(
+              builder: (_, __, ___) => HibikiDropdown<DictionaryFormat>(
                 options: appModel.dictionaryFormats.values.toList(),
                 initialOption: appModel.lastSelectedDictionaryFormat,
                 generateLabel: (format) => format.name,

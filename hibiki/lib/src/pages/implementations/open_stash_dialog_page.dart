@@ -52,7 +52,7 @@ class _OpenStashDialogPage extends BasePageState<OpenStashDialogPage> {
       padding: EdgeInsets.only(
         bottom: Spacing.of(context).spaces.normal,
       ),
-      child: JidoujishoPlaceholderMessage(
+      child: HibikiPlaceholderMessage(
         icon: Icons.inventory_2,
         message: t.stash_placeholder,
       ),

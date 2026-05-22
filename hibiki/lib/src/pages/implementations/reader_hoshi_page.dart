@@ -38,7 +38,7 @@ import 'package:hibiki/src/utils/misc/tts_channel.dart';
 import 'package:hibiki/src/utils/misc/volume_key_channel.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:hibiki/src/utils/misc/platform_utils.dart';
-import 'package:hibiki/src/utils/misc/jidoujisho_color.dart';
+import 'package:hibiki/src/utils/misc/Hibiki_color.dart';
 import 'package:hibiki/src/utils/misc/show_app_dialog.dart';
 
 class ReaderHoshiPage extends BaseSourcePage {
@@ -1764,7 +1764,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final Color bg = _themeBackgroundColor();
     final Color fg = _themeTextColor();
     final Color accent = _isReaderThemeDark
-        ? JidoujishoColor.defaultHighlightYellow
+        ? HibikiColor.defaultHighlightYellow
         : Theme.of(context).colorScheme.primary;
 
     String colorToCss(Color c) =>
@@ -1796,7 +1796,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final Color bg = _themeBackgroundColor();
     final Color fg = _themeTextColor();
     final Color accent = _isReaderThemeDark
-        ? JidoujishoColor.defaultHighlightYellow
+        ? HibikiColor.defaultHighlightYellow
         : Theme.of(context).colorScheme.primary;
     final double fontSize = ReaderHoshiSource.instance.lyricsFontSize;
 
@@ -2028,7 +2028,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final String cueText = _lookupCue?.text ?? '';
     if (cueText.isNotEmpty) {
       appModel.currentMediaSource?.setCurrentCueSentence(
-        selection: JidoujishoTextSelection(text: cueText),
+        selection: HibikiTextSelection(text: cueText),
       );
     } else {
       appModel.currentMediaSource?.clearCurrentCueSentence();
@@ -2404,7 +2404,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           );
 
     appModel.currentMediaSource?.setCurrentSentence(
-      selection: JidoujishoTextSelection(text: data.sentence),
+      selection: HibikiTextSelection(text: data.sentence),
     );
 
     if (_lyricsMode) {
@@ -3578,9 +3578,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         return const Color(0x663C78AA);
       case 'custom-theme':
         return appModel.customThemeSasayakiColor ??
-            JidoujishoColor.defaultSasayakiColor;
+            HibikiColor.defaultSasayakiColor;
       default:
-        return JidoujishoColor.defaultSasayakiColor;
+        return HibikiColor.defaultSasayakiColor;
     }
   }
 

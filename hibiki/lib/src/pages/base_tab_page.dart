@@ -69,7 +69,7 @@ abstract class BaseTabPageState<T extends BaseTabPage> extends BasePageState {
 
   Widget buildChangeSourceButton() {
     return FloatingSearchBarAction(
-      child: JidoujishoIconButton(
+      child: HibikiIconButton(
         size: textTheme.titleLarge?.fontSize,
         tooltip: t.change_source,
         icon: mediaSource.icon,
@@ -90,7 +90,7 @@ abstract class BaseTabPageState<T extends BaseTabPage> extends BasePageState {
     return FloatingSearchBarAction(
       showIfOpened: true,
       showIfClosed: false,
-      child: JidoujishoIconButton(
+      child: HibikiIconButton(
         size: textTheme.titleLarge?.fontSize,
         tooltip: t.back,
         icon: Icons.arrow_back,
