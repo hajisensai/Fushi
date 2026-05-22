@@ -13,9 +13,11 @@ const coveragePath = join(designDir, "COVERAGE.md");
 const galleryPath = join(designDir, "interface-gallery.html");
 const manifestPath = join(designDir, "interface-images", "manifest.json");
 const decisionMatrixPath = join(designDir, "INTERFACE_DECISION_MATRIX.zh-CN.md");
+const auditPath = join(designDir, "UI_COVERAGE_AUDIT.md");
 const imageDir = join(designDir, "interface-images");
 
 const uiPattern = /Widget\s+build\s*\(|extends\s+(?:StatelessWidget|StatefulWidget|ConsumerWidget|ConsumerStatefulWidget|BasePage|BaseSourcePage|BaseTabPage)|showDialog\s*\(|showModal|AlertDialog\s*\(|BottomSheet|ListTile\s*\(/u;
+const broadUiAdjacentPattern = /\b(?:Widget|BuildContext|Scaffold|AppBar|NavigationBar|NavigationRail|ListView|GridView|CustomScrollView|showDialog|showModal|AlertDialog|BottomSheet|ListTile|ConsumerWidget|StatefulWidget|StatelessWidget|HookWidget|BasePage|BaseSourcePage|BaseTabPage)\b/u;
 const surfaceRegex = /\{ section: "([^"]+)", surface: "([^"]+)", primary: "([^"]+)", file: "([^"]+)", secondary: "([^"]+)", secondaryFile: "([^"]+)", defaultChoice: "([ABC])" \}/gu;
 const coverageRowRegex = /^\| `([^`]+\.dart)` \| `([^`]+\.svg)` \| `([^`]+\.svg)` \|$/gmu;
 const decisionMatrixRowRegex = /^\| `([^`]+\.dart)` \| [^|]+ \| \[A\]\(interface-images\/([^)]+)\) \[B\]\(interface-images\/([^)]+)\) \[C\]\(interface-images\/([^)]+)\) \|/gmu;
@@ -113,11 +115,12 @@ function failIf(failures, message) {
  * @returns {Promise<void>}
  */
 async function main() {
-  const [coverageMarkdown, galleryHtml, manifestRaw, decisionMatrixMarkdown, imageEntries, dartFiles] = await Promise.all([
+  const [coverageMarkdown, galleryHtml, manifestRaw, decisionMatrixMarkdown, auditMarkdown, imageEntries, dartFiles] = await Promise.all([
     readFile(coveragePath, "utf8"),
     readFile(galleryPath, "utf8"),
     readFile(manifestPath, "utf8"),
     readFile(decisionMatrixPath, "utf8"),
+    readFile(auditPath, "utf8"),
     readdir(imageDir, { withFileTypes: true }),
     listDartFiles(libDir)
   ]);
@@ -130,13 +133,19 @@ async function main() {
 
   /** @type {{ name: string, path: string }[]} */
   const uiFiles = [];
+  /** @type {{ name: string, path: string }[]} */
+  const broadUiAdjacentFiles = [];
   for (const file of dartFiles) {
     const content = await readFile(file, "utf8");
+    const item = {
+      name: file.split(sep).at(-1) || file,
+      path: relative(repoRoot, file)
+    };
     if (uiPattern.test(content)) {
-      uiFiles.push({
-        name: file.split(sep).at(-1) || file,
-        path: relative(repoRoot, file)
-      });
+      uiFiles.push(item);
+    }
+    if (broadUiAdjacentPattern.test(content)) {
+      broadUiAdjacentFiles.push(item);
     }
   }
 
@@ -163,6 +172,12 @@ async function main() {
   const unmappedUiFiles = uiFiles.filter((file) => !mappedNames.has(file.name));
   for (const file of unmappedUiFiles) {
     failIf(failures, `Unmapped UI-building file: ${file.path}`);
+  }
+
+  for (const file of broadUiAdjacentFiles) {
+    if (!mappedNames.has(file.name) && !auditMarkdown.includes(file.path.replaceAll("\\", "/")) && !auditMarkdown.includes(file.name)) {
+      failIf(failures, `Unclassified broad UI-adjacent file: ${file.path}`);
+    }
   }
 
   const galleryKeys = new Set(gallerySurfaces.map(surfaceKey));
@@ -230,6 +245,7 @@ async function main() {
 
   console.log(`nonGeneratedDart=${dartFiles.length}`);
   console.log(`uiMatched=${uiFiles.length}`);
+  console.log(`broadUiAdjacentMatched=${broadUiAdjacentFiles.length}`);
   console.log(`coverageRows=${coverageRows.size}`);
   console.log(`gallerySurfaces=${gallerySurfaces.length}`);
   console.log(`manifestSurfaces=${manifest.surfaces.length}`);

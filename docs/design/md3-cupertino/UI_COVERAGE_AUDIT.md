@@ -17,11 +17,13 @@ node docs\design\md3-cupertino\verify-interface-coverage.mjs
 Latest verifier output:
 
 ```text
-nonGeneratedDart=198
+nonGeneratedDart=201
 uiMatched=81
+broadUiAdjacentMatched=113
 coverageRows=84
 gallerySurfaces=84
 manifestSurfaces=84
+decisionMatrixRows=84
 svgImages=252
 unmappedUiFiles=0
 interfaceCoverage=ok
@@ -29,8 +31,9 @@ interfaceCoverage=ok
 
 ## Current scan result
 
-- Total non-generated Dart files under `hibiki/lib`: 198
+- Total non-generated Dart files under `hibiki/lib`: 201
 - UI-building files matched by scan: 81
+- Broad UI-adjacent files matched by scan: 113
 - Entry UI files mapped in `COVERAGE.md`: 3
 - Page implementation files mapped in `COVERAGE.md`: 53
 - Shared/base/support UI files mapped in `COVERAGE.md`: 25
@@ -64,5 +67,20 @@ interfaceCoverage=ok
 ## Interpretation
 
 No new design board is needed for these files. They are not independent screens; they are shared surfaces or helpers whose visual decisions are controlled by the existing component, modal, reader customization, system, debug, shelf, and dictionary boards.
+
+## Wider candidate audit
+
+The strict verifier intentionally matches files that build concrete Flutter surfaces. A wider heuristic also flags files that merely carry `BuildContext`, icons, media-source factories, or field fragments. These are not all independent screens. They are still documented here so the coverage claim does not hide UI-adjacent code.
+
+| Candidate family | Files | Decision |
+| --- | --- | --- |
+| Creator quick actions | `creator/actions/add_to_stash_action.dart`, `copy_to_clipboard_action.dart`, `play_audio_action.dart`, `share_action.dart`, `creator/quick_action.dart` | Not standalone screens. Their visible shape is the dictionary/creator quick-action icon grammar covered by `07-creator-anki.svg`, `03-dictionary.svg`, `12-media-and-sentences.svg`, and `18-component-system.svg`. |
+| Creator enhancement commands | `creator/enhancement.dart`, `audio_enhancement.dart`, `enhancements/audio_recorder_enhancement.dart`, `camera_enhancement.dart`, `clear_field_enhancement.dart`, `crop_image_enhancement.dart`, `local_audio_enhancement.dart`, `pick_audio_enhancement.dart`, `pick_from_stash_enhancement.dart`, `pick_image_enhancement.dart`, `pop_from_stash_enhancement.dart`, `save_tags_enhancement.dart`, `search_dictionary_enhancement.dart`, `sentence_picker_enhancement.dart`, `text_segmentation_enhancement.dart` | Mostly command objects. Dialog-launching cases delegate to already mapped dialog pages such as `audio_recorder_page.dart`, `crop_image_dialog_page.dart`, `open_stash_dialog_page.dart`, and `text_segmentation_dialog_page.dart`; toast/error feedback inherits `18-component-system.svg` and `16-empty-loading-error-states.svg`. |
+| Creator visible fields | `creator/audio_export_field.dart`, `creator/fields/base_audio_field.dart`, `creator/image_export_field.dart`, `creator/fields/image_field.dart` | Visible creator fragments, but not routes. They are governed by the Creator/Anki and media-dialog boards: `07-creator-anki.svg`, `12-media-and-sentences.svg`, and `18-component-system.svg`. Implementation must treat audio/image field previews as shared creator components, not page-local decoration. |
+| Media source factories | `media/media_source.dart`, `media/media_type.dart`, `media/source_types/reader_media_source.dart`, `media/types/dictionary_media_type.dart`, `media/types/reader_media_type.dart` | They return already mapped homes/history pages and define icons/source metadata. Covered through `home_dictionary_page.dart`, `home_reader_page.dart`, `history_reader_page.dart`, `reader_hoshi_history_page.dart`, and `18-component-system.svg`. |
+| Hoshi reader source actions | `media/sources/reader_hoshi_source.dart` | Source-level import/tweaks buttons and history factory. Current reader remains Hoshi; visual decisions are covered by `ReaderHoshiPage`, `ReaderHoshiSource` consumers, `book_import_dialog.dart`, `reader_hoshi_history_page.dart`, `04-reader.svg`, `02-reader-shelf.svg`, and `06-import-and-modals.svg`. |
+| Dialog helper | `utils/misc/show_app_dialog.dart` | Wrapper around `showDialog`. Not a surface by itself; governed by `06-import-and-modals.svg` and shared component tokens. |
+
+Verifier rule: if the wider heuristic finds new UI-adjacent files, either map them in `COVERAGE.md` when they are independent surfaces, or add them to this wider candidate audit with a concrete parent board decision.
 
 The next gate is still user choice. Once A/B/C directions are selected, the implementation spec must translate the selected boards into concrete Flutter tokens/components and route-by-route behavior.
