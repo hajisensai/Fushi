@@ -17,7 +17,7 @@
 
 ## 再改关键例外
 
-打开 [interface-pack-comparison.html](interface-pack-comparison.html)，按下面顺序看。它会在同一张卡里显示该界面的 A/B/C 三张图，以及 `MD3 Practical`、`Reading Calm`、`Adaptive Power`、`Hibiki Balanced` 各自默认选哪张。先点页面顶部的整包按钮加载基准，再只在需要改的界面点 `选择 A/B/C`；本页会保存选择并生成可复制的最终文本。别从 84 行第一行一路机械点，那是浪费时间。
+打开 [interface-pack-comparison.html](interface-pack-comparison.html)，按下面顺序看。它会在同一张卡里显示该界面的 A/B/C 三张图，以及 `MD3 Practical`、`Reading Calm`、`Adaptive Power`、`Hibiki Balanced` 各自默认选哪张。先点页面顶部的整包按钮加载基准，再只在需要改的界面点 `选择 A/B/C`；本页会自动标记该界面已审、保存选择、支持 `只看未审` 和 `跳到下一个未审`，并生成可复制的最终文本。别从 84 行第一行一路机械点，那是浪费时间。
 
 | 优先级 | 先看这些界面 | 判断标准 |
 | --- | --- | --- |
@@ -63,7 +63,7 @@ node .\generate-implementation-spec.mjs --pack hibiki-balanced --output .\IMPLEM
 ## 当前交付状态
 
 - [pack-selection-index.html](pack-selection-index.html): 4 套整包方案的逐界面索引，每套都能跳到完整 84 图选择页。
-- [interface-pack-comparison.html](interface-pack-comparison.html): 按界面横向比较 A/B/C 三图，显示四套整包默认选择，并支持点选、保存和复制最终选择文本。
+- [interface-pack-comparison.html](interface-pack-comparison.html): 按界面横向比较 A/B/C 三图，显示四套整包默认选择，并支持点选、已审/未审队列、保存和复制最终选择文本。
 - [INTERFACE_DECISION_MATRIX.zh-CN.md](INTERFACE_DECISION_MATRIX.zh-CN.md): 84 个界面的 Markdown 总表，逐行列出三张候选图、四套整包默认和推荐选择。
 - [FINAL_SELECTION_TEMPLATE.zh-CN.md](FINAL_SELECTION_TEMPLATE.zh-CN.md): 最终选择填写模板，可直接生成最终规格草案。
 - [selection-md3-practical.html](selection-md3-practical.html) / [SELECTION_MD3_PRACTICAL.zh-CN.md](SELECTION_MD3_PRACTICAL.zh-CN.md): `MD3 Practical` 的 84 个界面完整展开。

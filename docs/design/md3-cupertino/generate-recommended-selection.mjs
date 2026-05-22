@@ -1030,7 +1030,7 @@ function renderComparisonCard(surface, packs) {
     <div class="surface-head">
       <div>
         <p class="eyebrow">${escapeHtml(sectionLabels[surface.section] || surface.section)} / ${escapeHtml(boardLabels[surface.primary].label)}</p>
-        <h2>${escapeHtml(surface.surface)} <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>${escapeHtml(surface.surface)} <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>${escapeHtml(boardLabels[surface.primary].scope)}</p>
       </div>
       <div class="pack-pills" aria-label="${escapeHtml(surface.surface)} pack choices">
@@ -1302,6 +1302,30 @@ function renderInterfacePackComparison(surfaces, packs) {
       vertical-align: middle;
     }
 
+    .review-badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 26px;
+      margin-left: 4px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 3px 8px;
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 900;
+      vertical-align: middle;
+    }
+
+    .comparison-card[data-reviewed="true"] .review-badge {
+      color: var(--accent);
+      border-color: rgba(47, 111, 97, 0.35);
+      background: rgba(47, 111, 97, 0.08);
+    }
+
+    .comparison-card[data-review-filter-hidden="true"] {
+      display: none;
+    }
+
     .comparison-card[data-selected-choice="A"] .selected-badge {
       color: var(--choice-a);
       border-color: rgba(47, 111, 97, 0.35);
@@ -1497,6 +1521,9 @@ function renderInterfacePackComparison(surfaces, packs) {
       </div>
       <textarea id="selection-output" class="selection-output" readonly spellcheck="false" aria-label="Copyable final selection"></textarea>
       <div class="selection-actions" aria-label="Selection actions">
+        <button type="button" data-role="mark-reviewed">标记当前界面已审</button>
+        <button type="button" data-role="next-unreviewed">跳到下一个未审</button>
+        <button type="button" data-role="only-unreviewed" aria-pressed="false">只看未审</button>
         <button type="button" data-role="copy-selection">复制最终选择文本</button>
         <button type="button" data-role="reset-selection">重置为 Hibiki Balanced</button>
       </div>
@@ -1520,7 +1547,12 @@ function renderInterfacePackComparison(surfaces, packs) {
       const status = document.querySelector("[data-role='selection-status']");
       const packButtons = Array.from(document.querySelectorAll("[data-role='load-pack']"));
       const choiceButtons = Array.from(document.querySelectorAll("[data-role='choice-select']"));
+      const markReviewedButton = document.querySelector("[data-role='mark-reviewed']");
+      const nextUnreviewedButton = document.querySelector("[data-role='next-unreviewed']");
+      const onlyUnreviewedButton = document.querySelector("[data-role='only-unreviewed']");
 
+      let activeSurface = data.surfaces[0] ? data.surfaces[0].surface : "";
+      let onlyUnreviewed = false;
       let state = loadState();
 
       function validPackId(packId) {
@@ -1540,13 +1572,14 @@ function renderInterfacePackComparison(surfaces, packs) {
         const packId = validPackId(value && value.packId) ? value.packId : data.defaultPackId;
         const baseline = choicesForPack(packId);
         const inputChoices = value && typeof value.choices === "object" && value.choices ? value.choices : {};
+        const reviewed = new Set(Array.isArray(value && value.reviewed) ? value.reviewed.filter((surface) => baseline[surface]) : []);
         for (const surface of data.surfaces) {
           const choice = inputChoices[surface.surface];
           if (choices.has(choice)) {
             baseline[surface.surface] = choice;
           }
         }
-        return { packId, choices: baseline };
+        return { packId, choices: baseline, reviewed: Array.from(reviewed) };
       }
 
       function loadState() {
@@ -1571,6 +1604,28 @@ function renderInterfacePackComparison(surfaces, packs) {
         return data.surfaces.filter((surface) => state.choices[surface.surface] !== baseline[surface.surface]);
       }
 
+      function reviewedSet() {
+        return new Set(Array.isArray(state.reviewed) ? state.reviewed : []);
+      }
+
+      function reviewedCount() {
+        return reviewedSet().size;
+      }
+
+      function isReviewed(surfaceName) {
+        return reviewedSet().has(surfaceName);
+      }
+
+      function setReviewed(surfaceName, reviewed) {
+        const next = reviewedSet();
+        if (reviewed) {
+          next.add(surfaceName);
+        } else {
+          next.delete(surfaceName);
+        }
+        state.reviewed = Array.from(next);
+      }
+
       function exportedText() {
         const exceptions = exceptionSurfaces();
         const lines = ["Pack: " + state.packId, "例外:"];
@@ -1582,22 +1637,51 @@ function renderInterfacePackComparison(surfaces, packs) {
           }
         }
         lines.push("", "Notes:", "- 从 interface-pack-comparison.html 导出。");
+        lines.push("- 已审界面：" + reviewedCount() + " / " + data.surfaces.length + "。");
         return lines.join("\\n");
+      }
+
+      function currentSurfaceName() {
+        if (activeSurface && data.surfaces.some((surface) => surface.surface === activeSurface)) {
+          return activeSurface;
+        }
+        return data.surfaces[0] ? data.surfaces[0].surface : "";
+      }
+
+      function visibleArticles() {
+        return Array.from(document.querySelectorAll(".comparison-card")).filter((article) => article.dataset.reviewFilterHidden !== "true");
+      }
+
+      function focusArticle(article) {
+        if (!article) {
+          return;
+        }
+        activeSurface = article.dataset.surface;
+        article.scrollIntoView({ behavior: "smooth", block: "start" });
+        render();
       }
 
       function render() {
         const exceptions = exceptionSurfaces();
+        const reviewed = reviewedSet();
         output.value = exportedText();
-        summary.textContent = "当前基准：" + data.packs[state.packId].label + "；已选择 " + data.surfaces.length + " 个界面；相对基准有 " + exceptions.length + " 个例外。复制下面文本即可生成实现规格。";
+        summary.textContent = "当前基准：" + data.packs[state.packId].label + "；已选择 " + data.surfaces.length + " 个界面；已审 " + reviewed.size + " / " + data.surfaces.length + "；相对基准有 " + exceptions.length + " 个例外。复制下面文本即可生成实现规格。";
         for (const packButton of packButtons) {
           packButton.setAttribute("aria-pressed", packButton.dataset.packId === state.packId ? "true" : "false");
         }
         for (const article of document.querySelectorAll(".comparison-card")) {
           const selected = state.choices[article.dataset.surface];
+          const articleReviewed = reviewed.has(article.dataset.surface);
           article.dataset.selectedChoice = selected;
+          article.dataset.reviewed = articleReviewed ? "true" : "false";
+          article.dataset.reviewFilterHidden = onlyUnreviewed && articleReviewed ? "true" : "false";
           const badge = article.querySelector("[data-role='selected-badge']");
           if (badge) {
             badge.textContent = "当前 " + selected;
+          }
+          const reviewBadge = article.querySelector("[data-role='review-badge']");
+          if (reviewBadge) {
+            reviewBadge.textContent = articleReviewed ? "已审" : "未审";
           }
           for (const card of article.querySelectorAll(".choice-card")) {
             card.setAttribute("aria-selected", card.dataset.choice === selected ? "true" : "false");
@@ -1608,10 +1692,12 @@ function renderInterfacePackComparison(surfaces, packs) {
           button.setAttribute("aria-pressed", selected ? "true" : "false");
           button.textContent = selected ? "已选 " + button.dataset.choice : "选择 " + button.dataset.choice;
         }
+        onlyUnreviewedButton.setAttribute("aria-pressed", onlyUnreviewed ? "true" : "false");
+        markReviewedButton.textContent = isReviewed(currentSurfaceName()) ? "当前界面取消已审" : "标记当前界面已审";
       }
 
       function loadPack(packId) {
-        state = { packId, choices: choicesForPack(packId) };
+        state = { packId, choices: choicesForPack(packId), reviewed: [] };
         saveState();
         render();
         setStatus("已载入 " + data.packs[packId].label + " 作为基准。");
@@ -1623,13 +1709,58 @@ function renderInterfacePackComparison(surfaces, packs) {
 
       for (const button of choiceButtons) {
         button.addEventListener("click", () => {
+          activeSurface = button.dataset.surface;
           state.choices[button.dataset.surface] = button.dataset.choice;
+          setReviewed(button.dataset.surface, true);
           saveState();
           render();
           setStatus(button.dataset.surface + " 已选择 " + button.dataset.choice + "。");
         });
       }
 
+      for (const article of document.querySelectorAll(".comparison-card")) {
+        article.addEventListener("focusin", () => {
+          activeSurface = article.dataset.surface;
+          render();
+        });
+        article.addEventListener("click", (event) => {
+          if (event.target.closest("a, button")) {
+            return;
+          }
+          activeSurface = article.dataset.surface;
+          render();
+        });
+      }
+
+      markReviewedButton.addEventListener("click", () => {
+        const surfaceName = currentSurfaceName();
+        setReviewed(surfaceName, !isReviewed(surfaceName));
+        saveState();
+        render();
+        setStatus(surfaceName + (isReviewed(surfaceName) ? " 已标记为已审。" : " 已取消已审。"));
+      });
+      nextUnreviewedButton.addEventListener("click", () => {
+        const articles = Array.from(document.querySelectorAll(".comparison-card"));
+        const startIndex = Math.max(0, articles.findIndex((article) => article.dataset.surface === currentSurfaceName()));
+        const ordered = articles.slice(startIndex + 1).concat(articles.slice(0, startIndex + 1));
+        const next = ordered.find((article) => !isReviewed(article.dataset.surface));
+        if (!next) {
+          setStatus("全部界面都已审。");
+          return;
+        }
+        focusArticle(next);
+        setStatus("已跳到未审界面：" + next.dataset.surface + "。");
+      });
+      onlyUnreviewedButton.addEventListener("click", () => {
+        onlyUnreviewed = !onlyUnreviewed;
+        render();
+        const first = visibleArticles()[0];
+        if (first) {
+          activeSurface = first.dataset.surface;
+          render();
+        }
+        setStatus(onlyUnreviewed ? "现在只显示未审界面。" : "已显示全部界面。");
+      });
       document.querySelector("[data-role='reset-selection']").addEventListener("click", () => loadPack(data.defaultPackId));
       document.querySelector("[data-role='copy-selection']").addEventListener("click", async () => {
         output.focus();

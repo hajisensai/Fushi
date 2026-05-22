@@ -213,6 +213,30 @@
       vertical-align: middle;
     }
 
+    .review-badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 26px;
+      margin-left: 4px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 3px 8px;
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 900;
+      vertical-align: middle;
+    }
+
+    .comparison-card[data-reviewed="true"] .review-badge {
+      color: var(--accent);
+      border-color: rgba(47, 111, 97, 0.35);
+      background: rgba(47, 111, 97, 0.08);
+    }
+
+    .comparison-card[data-review-filter-hidden="true"] {
+      display: none;
+    }
+
     .comparison-card[data-selected-choice="A"] .selected-badge {
       color: var(--choice-a);
       border-color: rgba(47, 111, 97, 0.35);
@@ -408,6 +432,9 @@
       </div>
       <textarea id="selection-output" class="selection-output" readonly spellcheck="false" aria-label="Copyable final selection"></textarea>
       <div class="selection-actions" aria-label="Selection actions">
+        <button type="button" data-role="mark-reviewed">标记当前界面已审</button>
+        <button type="button" data-role="next-unreviewed">跳到下一个未审</button>
+        <button type="button" data-role="only-unreviewed" aria-pressed="false">只看未审</button>
         <button type="button" data-role="copy-selection">复制最终选择文本</button>
         <button type="button" data-role="reset-selection">重置为 Hibiki Balanced</button>
       </div>
@@ -424,7 +451,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">入口和外部壳层 / 首页和导航</p>
-        <h2>main.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>main.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>主壳层、底部导航、宽屏导航栏、顶部动作。</p>
       </div>
       <div class="pack-pills" aria-label="main.dart pack choices">
@@ -469,7 +496,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">入口和外部壳层 / 词典</p>
-        <h2>popup_main.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>popup_main.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>搜索、历史、结果浏览、弹出查词栈。</p>
       </div>
       <div class="pack-pills" aria-label="popup_main.dart pack choices">
@@ -514,7 +541,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">入口和外部壳层 / 词典</p>
-        <h2>floating_dict_main.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>floating_dict_main.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>搜索、历史、结果浏览、弹出查词栈。</p>
       </div>
       <div class="pack-pills" aria-label="floating_dict_main.dart pack choices">
@@ -562,7 +589,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 制卡和 Anki</p>
-        <h2>anki_settings_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>anki_settings_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>挖卡字段、Anki 设置、录音、裁剪、分词。</p>
       </div>
       <div class="pack-pills" aria-label="anki_settings_page.dart pack choices">
@@ -607,7 +634,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 制卡和 Anki</p>
-        <h2>audio_recorder_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>audio_recorder_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>挖卡字段、Anki 设置、录音、裁剪、分词。</p>
       </div>
       <div class="pack-pills" aria-label="audio_recorder_page.dart pack choices">
@@ -652,7 +679,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 阅读自定义</p>
-        <h2>blur_options_dialog_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>blur_options_dialog_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>显示设置、自定义字体、自定义主题、书籍 CSS、模糊选项。</p>
       </div>
       <div class="pack-pills" aria-label="blur_options_dialog_page.dart pack choices">
@@ -697,7 +724,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 阅读自定义</p>
-        <h2>book_css_editor_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>book_css_editor_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>显示设置、自定义字体、自定义主题、书籍 CSS、模糊选项。</p>
       </div>
       <div class="pack-pills" aria-label="book_css_editor_page.dart pack choices">
@@ -742,7 +769,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 收藏和统计</p>
-        <h2>collections_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>collections_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>书签、收藏句、阅读统计、插图查看。</p>
       </div>
       <div class="pack-pills" aria-label="collections_page.dart pack choices">
@@ -787,7 +814,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 制卡和 Anki</p>
-        <h2>crop_image_dialog_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>crop_image_dialog_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>挖卡字段、Anki 设置、录音、裁剪、分词。</p>
       </div>
       <div class="pack-pills" aria-label="crop_image_dialog_page.dart pack choices">
@@ -832,7 +859,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 阅读自定义</p>
-        <h2>custom_fonts_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>custom_fonts_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>显示设置、自定义字体、自定义主题、书籍 CSS、模糊选项。</p>
       </div>
       <div class="pack-pills" aria-label="custom_fonts_page.dart pack choices">
@@ -877,7 +904,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 阅读自定义</p>
-        <h2>custom_theme_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>custom_theme_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>显示设置、自定义字体、自定义主题、书籍 CSS、模糊选项。</p>
       </div>
       <div class="pack-pills" aria-label="custom_theme_page.dart pack choices">
@@ -922,7 +949,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 日志和调试</p>
-        <h2>debug_log_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>debug_log_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>调试日志、错误日志、诊断、低内存和导入消息。</p>
       </div>
       <div class="pack-pills" aria-label="debug_log_page.dart pack choices">
@@ -967,7 +994,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 词典管理</p>
-        <h2>dictionary_dialog_delete_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>dictionary_dialog_delete_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>已安装词典、导入进度、排序、CSS、音频源。</p>
       </div>
       <div class="pack-pills" aria-label="dictionary_dialog_delete_page.dart pack choices">
@@ -1012,7 +1039,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 词典管理</p>
-        <h2>dictionary_dialog_import_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>dictionary_dialog_import_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>已安装词典、导入进度、排序、CSS、音频源。</p>
       </div>
       <div class="pack-pills" aria-label="dictionary_dialog_import_page.dart pack choices">
@@ -1057,7 +1084,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 词典管理</p>
-        <h2>dictionary_dialog_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>dictionary_dialog_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>已安装词典、导入进度、排序、CSS、音频源。</p>
       </div>
       <div class="pack-pills" aria-label="dictionary_dialog_page.dart pack choices">
@@ -1102,7 +1129,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 词典</p>
-        <h2>dictionary_entry_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>dictionary_entry_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>搜索、历史、结果浏览、弹出查词栈。</p>
       </div>
       <div class="pack-pills" aria-label="dictionary_entry_page.dart pack choices">
@@ -1147,7 +1174,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 词典</p>
-        <h2>dictionary_page_mixin.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>dictionary_page_mixin.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>搜索、历史、结果浏览、弹出查词栈。</p>
       </div>
       <div class="pack-pills" aria-label="dictionary_page_mixin.dart pack choices">
@@ -1192,7 +1219,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 词典</p>
-        <h2>dictionary_popup_layer.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>dictionary_popup_layer.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>搜索、历史、结果浏览、弹出查词栈。</p>
       </div>
       <div class="pack-pills" aria-label="dictionary_popup_layer.dart pack choices">
@@ -1237,7 +1264,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 词典</p>
-        <h2>dictionary_popup_native.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>dictionary_popup_native.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>搜索、历史、结果浏览、弹出查词栈。</p>
       </div>
       <div class="pack-pills" aria-label="dictionary_popup_native.dart pack choices">
@@ -1282,7 +1309,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 词典</p>
-        <h2>dictionary_popup_webview.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>dictionary_popup_webview.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>搜索、历史、结果浏览、弹出查词栈。</p>
       </div>
       <div class="pack-pills" aria-label="dictionary_popup_webview.dart pack choices">
@@ -1327,7 +1354,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 词典管理</p>
-        <h2>dictionary_progress_dialog_content.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>dictionary_progress_dialog_content.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>已安装词典、导入进度、排序、CSS、音频源。</p>
       </div>
       <div class="pack-pills" aria-label="dictionary_progress_dialog_content.dart pack choices">
@@ -1372,7 +1399,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 词典</p>
-        <h2>dictionary_result_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>dictionary_result_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>搜索、历史、结果浏览、弹出查词栈。</p>
       </div>
       <div class="pack-pills" aria-label="dictionary_result_page.dart pack choices">
@@ -1417,7 +1444,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 词典管理</p>
-        <h2>dictionary_settings_dialog_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>dictionary_settings_dialog_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>已安装词典、导入进度、排序、CSS、音频源。</p>
       </div>
       <div class="pack-pills" aria-label="dictionary_settings_dialog_page.dart pack choices">
@@ -1462,7 +1489,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 词典</p>
-        <h2>dictionary_structured_content_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>dictionary_structured_content_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>搜索、历史、结果浏览、弹出查词栈。</p>
       </div>
       <div class="pack-pills" aria-label="dictionary_structured_content_page.dart pack choices">
@@ -1507,7 +1534,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 词典</p>
-        <h2>dictionary_term_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>dictionary_term_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>搜索、历史、结果浏览、弹出查词栈。</p>
       </div>
       <div class="pack-pills" aria-label="dictionary_term_page.dart pack choices">
@@ -1552,7 +1579,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 词典</p>
-        <h2>dictionary_webview_media.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>dictionary_webview_media.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>搜索、历史、结果浏览、弹出查词栈。</p>
       </div>
       <div class="pack-pills" aria-label="dictionary_webview_media.dart pack choices">
@@ -1597,7 +1624,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 阅读自定义</p>
-        <h2>display_settings_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>display_settings_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>显示设置、自定义字体、自定义主题、书籍 CSS、模糊选项。</p>
       </div>
       <div class="pack-pills" aria-label="display_settings_page.dart pack choices">
@@ -1642,7 +1669,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 日志和调试</p>
-        <h2>error_log_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>error_log_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>调试日志、错误日志、诊断、低内存和导入消息。</p>
       </div>
       <div class="pack-pills" aria-label="error_log_page.dart pack choices">
@@ -1687,7 +1714,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 媒体和例句弹窗</p>
-        <h2>example_sentences_dialog_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>example_sentences_dialog_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>媒体条目、编辑弹窗、来源选择、例句、stash、录音。</p>
       </div>
       <div class="pack-pills" aria-label="example_sentences_dialog_page.dart pack choices">
@@ -1732,7 +1759,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 词典</p>
-        <h2>floating_dict_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>floating_dict_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>搜索、历史、结果浏览、弹出查词栈。</p>
       </div>
       <div class="pack-pills" aria-label="floating_dict_page.dart pack choices">
@@ -1777,7 +1804,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 书架</p>
-        <h2>history_reader_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>history_reader_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>书库、历史、封面、选择模式、导入入口。</p>
       </div>
       <div class="pack-pills" aria-label="history_reader_page.dart pack choices">
@@ -1822,7 +1849,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 词典</p>
-        <h2>home_dictionary_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>home_dictionary_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>搜索、历史、结果浏览、弹出查词栈。</p>
       </div>
       <div class="pack-pills" aria-label="home_dictionary_page.dart pack choices">
@@ -1867,7 +1894,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 首页和导航</p>
-        <h2>home_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>home_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>主壳层、底部导航、宽屏导航栏、顶部动作。</p>
       </div>
       <div class="pack-pills" aria-label="home_page.dart pack choices">
@@ -1912,7 +1939,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 首页和导航</p>
-        <h2>home_reader_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>home_reader_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>主壳层、底部导航、宽屏导航栏、顶部动作。</p>
       </div>
       <div class="pack-pills" aria-label="home_reader_page.dart pack choices">
@@ -1957,7 +1984,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 设置</p>
-        <h2>hoshi_settings_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>hoshi_settings_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>个人资料、主题、阅读设置、显示、Anki、更新、日志。</p>
       </div>
       <div class="pack-pills" aria-label="hoshi_settings_page.dart pack choices">
@@ -2002,7 +2029,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 收藏和统计</p>
-        <h2>illustrations_viewer_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>illustrations_viewer_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>书签、收藏句、阅读统计、插图查看。</p>
       </div>
       <div class="pack-pills" aria-label="illustrations_viewer_page.dart pack choices">
@@ -2047,7 +2074,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 资料、语言、系统</p>
-        <h2>language_dialog_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>language_dialog_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>资料、语言、杂项设置、WebSocket、应用图标选择。</p>
       </div>
       <div class="pack-pills" aria-label="language_dialog_page.dart pack choices">
@@ -2092,7 +2119,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 空、加载、错误状态</p>
-        <h2>loading_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>loading_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>共享空状态、加载、错误、占位页面。</p>
       </div>
       <div class="pack-pills" aria-label="loading_page.dart pack choices">
@@ -2137,7 +2164,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / Hoshi 阅读器</p>
-        <h2>lyrics_dialog_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>lyrics_dialog_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>阅读 chrome、查词浮层、有声书播放栏、歌词模式。</p>
       </div>
       <div class="pack-pills" aria-label="lyrics_dialog_page.dart pack choices">
@@ -2182,7 +2209,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 媒体和例句弹窗</p>
-        <h2>media_item_dialog_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>media_item_dialog_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>媒体条目、编辑弹窗、来源选择、例句、stash、录音。</p>
       </div>
       <div class="pack-pills" aria-label="media_item_dialog_page.dart pack choices">
@@ -2227,7 +2254,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 媒体和例句弹窗</p>
-        <h2>media_item_edit_dialog_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>media_item_edit_dialog_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>媒体条目、编辑弹窗、来源选择、例句、stash、录音。</p>
       </div>
       <div class="pack-pills" aria-label="media_item_edit_dialog_page.dart pack choices">
@@ -2272,7 +2299,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 媒体和例句弹窗</p>
-        <h2>media_source_picker_dialog_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>media_source_picker_dialog_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>媒体条目、编辑弹窗、来源选择、例句、stash、录音。</p>
       </div>
       <div class="pack-pills" aria-label="media_source_picker_dialog_page.dart pack choices">
@@ -2317,7 +2344,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 资料、语言、系统</p>
-        <h2>miscellaneous_settings_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>miscellaneous_settings_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>资料、语言、杂项设置、WebSocket、应用图标选择。</p>
       </div>
       <div class="pack-pills" aria-label="miscellaneous_settings_page.dart pack choices">
@@ -2362,7 +2389,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 媒体和例句弹窗</p>
-        <h2>open_stash_dialog_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>open_stash_dialog_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>媒体条目、编辑弹窗、来源选择、例句、stash、录音。</p>
       </div>
       <div class="pack-pills" aria-label="open_stash_dialog_page.dart pack choices">
@@ -2407,7 +2434,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 空、加载、错误状态</p>
-        <h2>placeholder_source_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>placeholder_source_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>共享空状态、加载、错误、占位页面。</p>
       </div>
       <div class="pack-pills" aria-label="placeholder_source_page.dart pack choices">
@@ -2452,7 +2479,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 词典</p>
-        <h2>popup_dictionary_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>popup_dictionary_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>搜索、历史、结果浏览、弹出查词栈。</p>
       </div>
       <div class="pack-pills" aria-label="popup_dictionary_page.dart pack choices">
@@ -2497,7 +2524,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 资料、语言、系统</p>
-        <h2>profile_management_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>profile_management_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>资料、语言、杂项设置、WebSocket、应用图标选择。</p>
       </div>
       <div class="pack-pills" aria-label="profile_management_page.dart pack choices">
@@ -2542,7 +2569,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 书架</p>
-        <h2>reader_hoshi_history_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>reader_hoshi_history_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>书库、历史、封面、选择模式、导入入口。</p>
       </div>
       <div class="pack-pills" aria-label="reader_hoshi_history_page.dart pack choices">
@@ -2587,7 +2614,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / Hoshi 阅读器</p>
-        <h2>reader_hoshi_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>reader_hoshi_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>阅读 chrome、查词浮层、有声书播放栏、歌词模式。</p>
       </div>
       <div class="pack-pills" aria-label="reader_hoshi_page.dart pack choices">
@@ -2632,7 +2659,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 收藏和统计</p>
-        <h2>reading_statistics_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>reading_statistics_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>书签、收藏句、阅读统计、插图查看。</p>
       </div>
       <div class="pack-pills" aria-label="reading_statistics_page.dart pack choices">
@@ -2677,7 +2704,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 设置</p>
-        <h2>switch_settings_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>switch_settings_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>个人资料、主题、阅读设置、显示、Anki、更新、日志。</p>
       </div>
       <div class="pack-pills" aria-label="switch_settings_page.dart pack choices">
@@ -2722,7 +2749,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 标签和筛选</p>
-        <h2>tag_filter_sheet.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>tag_filter_sheet.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>标签管理、标签选择、筛选 sheet、批量标签操作。</p>
       </div>
       <div class="pack-pills" aria-label="tag_filter_sheet.dart pack choices">
@@ -2767,7 +2794,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 标签和筛选</p>
-        <h2>tag_management_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>tag_management_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>标签管理、标签选择、筛选 sheet、批量标签操作。</p>
       </div>
       <div class="pack-pills" aria-label="tag_management_page.dart pack choices">
@@ -2812,7 +2839,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 标签和筛选</p>
-        <h2>tag_picker_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>tag_picker_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>标签管理、标签选择、筛选 sheet、批量标签操作。</p>
       </div>
       <div class="pack-pills" aria-label="tag_picker_page.dart pack choices">
@@ -2857,7 +2884,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 制卡和 Anki</p>
-        <h2>text_segmentation_dialog_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>text_segmentation_dialog_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>挖卡字段、Anki 设置、录音、裁剪、分词。</p>
       </div>
       <div class="pack-pills" aria-label="text_segmentation_dialog_page.dart pack choices">
@@ -2902,7 +2929,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">页面 / 资料、语言、系统</p>
-        <h2>websocket_dialog_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>websocket_dialog_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>资料、语言、杂项设置、WebSocket、应用图标选择。</p>
       </div>
       <div class="pack-pills" aria-label="websocket_dialog_page.dart pack choices">
@@ -2950,7 +2977,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">共享和支撑组件 / 组件系统</p>
-        <h2>app_model.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>app_model.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>按钮、行、搜索、sheet、占位、弹窗、选择语法。</p>
       </div>
       <div class="pack-pills" aria-label="app_model.dart pack choices">
@@ -2995,7 +3022,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">共享和支撑组件 / 书架</p>
-        <h2>base_history_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>base_history_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>书库、历史、封面、选择模式、导入入口。</p>
       </div>
       <div class="pack-pills" aria-label="base_history_page.dart pack choices">
@@ -3040,7 +3067,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">共享和支撑组件 / 组件系统</p>
-        <h2>base_media_search_bar.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>base_media_search_bar.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>按钮、行、搜索、sheet、占位、弹窗、选择语法。</p>
       </div>
       <div class="pack-pills" aria-label="base_media_search_bar.dart pack choices">
@@ -3085,7 +3112,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">共享和支撑组件 / 组件系统</p>
-        <h2>base_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>base_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>按钮、行、搜索、sheet、占位、弹窗、选择语法。</p>
       </div>
       <div class="pack-pills" aria-label="base_page.dart pack choices">
@@ -3130,7 +3157,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">共享和支撑组件 / 组件系统</p>
-        <h2>base_source_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>base_source_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>按钮、行、搜索、sheet、占位、弹窗、选择语法。</p>
       </div>
       <div class="pack-pills" aria-label="base_source_page.dart pack choices">
@@ -3175,7 +3202,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">共享和支撑组件 / 组件系统</p>
-        <h2>base_tab_page.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>base_tab_page.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>按钮、行、搜索、sheet、占位、弹窗、选择语法。</p>
       </div>
       <div class="pack-pills" aria-label="base_tab_page.dart pack choices">
@@ -3220,7 +3247,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">共享和支撑组件 / 导入和弹窗</p>
-        <h2>audiobook_import_dialog.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>audiobook_import_dialog.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>图书导入、有声书导入、词典导入、选择器弹窗。</p>
       </div>
       <div class="pack-pills" aria-label="audiobook_import_dialog.dart pack choices">
@@ -3265,7 +3292,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">共享和支撑组件 / Hoshi 阅读器</p>
-        <h2>audiobook_play_bar.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>audiobook_play_bar.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>阅读 chrome、查词浮层、有声书播放栏、歌词模式。</p>
       </div>
       <div class="pack-pills" aria-label="audiobook_play_bar.dart pack choices">
@@ -3310,7 +3337,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">共享和支撑组件 / 导入和弹窗</p>
-        <h2>book_import_dialog.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>book_import_dialog.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>图书导入、有声书导入、词典导入、选择器弹窗。</p>
       </div>
       <div class="pack-pills" aria-label="book_import_dialog.dart pack choices">
@@ -3355,7 +3382,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">共享和支撑组件 / 导入和弹窗</p>
-        <h2>sasayaki_rematch.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>sasayaki_rematch.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>图书导入、有声书导入、词典导入、选择器弹窗。</p>
       </div>
       <div class="pack-pills" aria-label="sasayaki_rematch.dart pack choices">
@@ -3400,7 +3427,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">共享和支撑组件 / 资料、语言、系统</p>
-        <h2>profile_selector.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>profile_selector.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>资料、语言、杂项设置、WebSocket、应用图标选择。</p>
       </div>
       <div class="pack-pills" aria-label="profile_selector.dart pack choices">
@@ -3445,7 +3472,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">共享和支撑组件 / 组件系统</p>
-        <h2>hibiki_bottom_sheet.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>hibiki_bottom_sheet.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>按钮、行、搜索、sheet、占位、弹窗、选择语法。</p>
       </div>
       <div class="pack-pills" aria-label="hibiki_bottom_sheet.dart pack choices">
@@ -3490,7 +3517,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">共享和支撑组件 / 组件系统</p>
-        <h2>hibiki_divider.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>hibiki_divider.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>按钮、行、搜索、sheet、占位、弹窗、选择语法。</p>
       </div>
       <div class="pack-pills" aria-label="hibiki_divider.dart pack choices">
@@ -3535,7 +3562,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">共享和支撑组件 / 组件系统</p>
-        <h2>hibiki_dropdown.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>hibiki_dropdown.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>按钮、行、搜索、sheet、占位、弹窗、选择语法。</p>
       </div>
       <div class="pack-pills" aria-label="hibiki_dropdown.dart pack choices">
@@ -3580,7 +3607,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">共享和支撑组件 / 组件系统</p>
-        <h2>hibiki_icon_button.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>hibiki_icon_button.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>按钮、行、搜索、sheet、占位、弹窗、选择语法。</p>
       </div>
       <div class="pack-pills" aria-label="hibiki_icon_button.dart pack choices">
@@ -3625,7 +3652,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">共享和支撑组件 / 组件系统</p>
-        <h2>hibiki_list_tile.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>hibiki_list_tile.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>按钮、行、搜索、sheet、占位、弹窗、选择语法。</p>
       </div>
       <div class="pack-pills" aria-label="hibiki_list_tile.dart pack choices">
@@ -3670,7 +3697,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">共享和支撑组件 / 组件系统</p>
-        <h2>hibiki_marquee.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>hibiki_marquee.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>按钮、行、搜索、sheet、占位、弹窗、选择语法。</p>
       </div>
       <div class="pack-pills" aria-label="hibiki_marquee.dart pack choices">
@@ -3715,7 +3742,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">共享和支撑组件 / 空、加载、错误状态</p>
-        <h2>hibiki_placeholder_message.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>hibiki_placeholder_message.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>共享空状态、加载、错误、占位页面。</p>
       </div>
       <div class="pack-pills" aria-label="hibiki_placeholder_message.dart pack choices">
@@ -3760,7 +3787,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">共享和支撑组件 / 组件系统</p>
-        <h2>hibiki_popup_position.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>hibiki_popup_position.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>按钮、行、搜索、sheet、占位、弹窗、选择语法。</p>
       </div>
       <div class="pack-pills" aria-label="hibiki_popup_position.dart pack choices">
@@ -3805,7 +3832,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">共享和支撑组件 / 组件系统</p>
-        <h2>hibiki_search_history.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>hibiki_search_history.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>按钮、行、搜索、sheet、占位、弹窗、选择语法。</p>
       </div>
       <div class="pack-pills" aria-label="hibiki_search_history.dart pack choices">
@@ -3850,7 +3877,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">共享和支撑组件 / 组件系统</p>
-        <h2>hibiki_selectable_text.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>hibiki_selectable_text.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>按钮、行、搜索、sheet、占位、弹窗、选择语法。</p>
       </div>
       <div class="pack-pills" aria-label="hibiki_selectable_text.dart pack choices">
@@ -3895,7 +3922,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">共享和支撑组件 / 标签和筛选</p>
-        <h2>hibiki_tag.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>hibiki_tag.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>标签管理、标签选择、筛选 sheet、批量标签操作。</p>
       </div>
       <div class="pack-pills" aria-label="hibiki_tag.dart pack choices">
@@ -3940,7 +3967,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">共享和支撑组件 / 组件系统</p>
-        <h2>hibiki_text_selection_controls.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>hibiki_text_selection_controls.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>按钮、行、搜索、sheet、占位、弹窗、选择语法。</p>
       </div>
       <div class="pack-pills" aria-label="hibiki_text_selection_controls.dart pack choices">
@@ -3985,7 +4012,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">共享和支撑组件 / 组件系统</p>
-        <h2>hibiki_toast.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>hibiki_toast.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>按钮、行、搜索、sheet、占位、弹窗、选择语法。</p>
       </div>
       <div class="pack-pills" aria-label="hibiki_toast.dart pack choices">
@@ -4030,7 +4057,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">共享和支撑组件 / 组件系统</p>
-        <h2>platform_utils.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>platform_utils.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>按钮、行、搜索、sheet、占位、弹窗、选择语法。</p>
       </div>
       <div class="pack-pills" aria-label="platform_utils.dart pack choices">
@@ -4075,7 +4102,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">共享和支撑组件 / 组件系统</p>
-        <h2>swipe_dismiss_wrapper.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>swipe_dismiss_wrapper.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>按钮、行、搜索、sheet、占位、弹窗、选择语法。</p>
       </div>
       <div class="pack-pills" aria-label="swipe_dismiss_wrapper.dart pack choices">
@@ -4120,7 +4147,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">共享和支撑组件 / 资料、语言、系统</p>
-        <h2>update_checker.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>update_checker.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>资料、语言、杂项设置、WebSocket、应用图标选择。</p>
       </div>
       <div class="pack-pills" aria-label="update_checker.dart pack choices">
@@ -4165,7 +4192,7 @@
     <div class="surface-head">
       <div>
         <p class="eyebrow">共享和支撑组件 / 阅读自定义</p>
-        <h2>blur_options.dart <span class="selected-badge" data-role="selected-badge">未选</span></h2>
+        <h2>blur_options.dart <span class="selected-badge" data-role="selected-badge">未选</span> <span class="review-badge" data-role="review-badge">未审</span></h2>
         <p>显示设置、自定义字体、自定义主题、书籍 CSS、模糊选项。</p>
       </div>
       <div class="pack-pills" aria-label="blur_options.dart pack choices">
@@ -4219,7 +4246,12 @@
       const status = document.querySelector("[data-role='selection-status']");
       const packButtons = Array.from(document.querySelectorAll("[data-role='load-pack']"));
       const choiceButtons = Array.from(document.querySelectorAll("[data-role='choice-select']"));
+      const markReviewedButton = document.querySelector("[data-role='mark-reviewed']");
+      const nextUnreviewedButton = document.querySelector("[data-role='next-unreviewed']");
+      const onlyUnreviewedButton = document.querySelector("[data-role='only-unreviewed']");
 
+      let activeSurface = data.surfaces[0] ? data.surfaces[0].surface : "";
+      let onlyUnreviewed = false;
       let state = loadState();
 
       function validPackId(packId) {
@@ -4239,13 +4271,14 @@
         const packId = validPackId(value && value.packId) ? value.packId : data.defaultPackId;
         const baseline = choicesForPack(packId);
         const inputChoices = value && typeof value.choices === "object" && value.choices ? value.choices : {};
+        const reviewed = new Set(Array.isArray(value && value.reviewed) ? value.reviewed.filter((surface) => baseline[surface]) : []);
         for (const surface of data.surfaces) {
           const choice = inputChoices[surface.surface];
           if (choices.has(choice)) {
             baseline[surface.surface] = choice;
           }
         }
-        return { packId, choices: baseline };
+        return { packId, choices: baseline, reviewed: Array.from(reviewed) };
       }
 
       function loadState() {
@@ -4270,6 +4303,28 @@
         return data.surfaces.filter((surface) => state.choices[surface.surface] !== baseline[surface.surface]);
       }
 
+      function reviewedSet() {
+        return new Set(Array.isArray(state.reviewed) ? state.reviewed : []);
+      }
+
+      function reviewedCount() {
+        return reviewedSet().size;
+      }
+
+      function isReviewed(surfaceName) {
+        return reviewedSet().has(surfaceName);
+      }
+
+      function setReviewed(surfaceName, reviewed) {
+        const next = reviewedSet();
+        if (reviewed) {
+          next.add(surfaceName);
+        } else {
+          next.delete(surfaceName);
+        }
+        state.reviewed = Array.from(next);
+      }
+
       function exportedText() {
         const exceptions = exceptionSurfaces();
         const lines = ["Pack: " + state.packId, "例外:"];
@@ -4281,22 +4336,51 @@
           }
         }
         lines.push("", "Notes:", "- 从 interface-pack-comparison.html 导出。");
+        lines.push("- 已审界面：" + reviewedCount() + " / " + data.surfaces.length + "。");
         return lines.join("\n");
+      }
+
+      function currentSurfaceName() {
+        if (activeSurface && data.surfaces.some((surface) => surface.surface === activeSurface)) {
+          return activeSurface;
+        }
+        return data.surfaces[0] ? data.surfaces[0].surface : "";
+      }
+
+      function visibleArticles() {
+        return Array.from(document.querySelectorAll(".comparison-card")).filter((article) => article.dataset.reviewFilterHidden !== "true");
+      }
+
+      function focusArticle(article) {
+        if (!article) {
+          return;
+        }
+        activeSurface = article.dataset.surface;
+        article.scrollIntoView({ behavior: "smooth", block: "start" });
+        render();
       }
 
       function render() {
         const exceptions = exceptionSurfaces();
+        const reviewed = reviewedSet();
         output.value = exportedText();
-        summary.textContent = "当前基准：" + data.packs[state.packId].label + "；已选择 " + data.surfaces.length + " 个界面；相对基准有 " + exceptions.length + " 个例外。复制下面文本即可生成实现规格。";
+        summary.textContent = "当前基准：" + data.packs[state.packId].label + "；已选择 " + data.surfaces.length + " 个界面；已审 " + reviewed.size + " / " + data.surfaces.length + "；相对基准有 " + exceptions.length + " 个例外。复制下面文本即可生成实现规格。";
         for (const packButton of packButtons) {
           packButton.setAttribute("aria-pressed", packButton.dataset.packId === state.packId ? "true" : "false");
         }
         for (const article of document.querySelectorAll(".comparison-card")) {
           const selected = state.choices[article.dataset.surface];
+          const articleReviewed = reviewed.has(article.dataset.surface);
           article.dataset.selectedChoice = selected;
+          article.dataset.reviewed = articleReviewed ? "true" : "false";
+          article.dataset.reviewFilterHidden = onlyUnreviewed && articleReviewed ? "true" : "false";
           const badge = article.querySelector("[data-role='selected-badge']");
           if (badge) {
             badge.textContent = "当前 " + selected;
+          }
+          const reviewBadge = article.querySelector("[data-role='review-badge']");
+          if (reviewBadge) {
+            reviewBadge.textContent = articleReviewed ? "已审" : "未审";
           }
           for (const card of article.querySelectorAll(".choice-card")) {
             card.setAttribute("aria-selected", card.dataset.choice === selected ? "true" : "false");
@@ -4307,10 +4391,12 @@
           button.setAttribute("aria-pressed", selected ? "true" : "false");
           button.textContent = selected ? "已选 " + button.dataset.choice : "选择 " + button.dataset.choice;
         }
+        onlyUnreviewedButton.setAttribute("aria-pressed", onlyUnreviewed ? "true" : "false");
+        markReviewedButton.textContent = isReviewed(currentSurfaceName()) ? "当前界面取消已审" : "标记当前界面已审";
       }
 
       function loadPack(packId) {
-        state = { packId, choices: choicesForPack(packId) };
+        state = { packId, choices: choicesForPack(packId), reviewed: [] };
         saveState();
         render();
         setStatus("已载入 " + data.packs[packId].label + " 作为基准。");
@@ -4322,13 +4408,58 @@
 
       for (const button of choiceButtons) {
         button.addEventListener("click", () => {
+          activeSurface = button.dataset.surface;
           state.choices[button.dataset.surface] = button.dataset.choice;
+          setReviewed(button.dataset.surface, true);
           saveState();
           render();
           setStatus(button.dataset.surface + " 已选择 " + button.dataset.choice + "。");
         });
       }
 
+      for (const article of document.querySelectorAll(".comparison-card")) {
+        article.addEventListener("focusin", () => {
+          activeSurface = article.dataset.surface;
+          render();
+        });
+        article.addEventListener("click", (event) => {
+          if (event.target.closest("a, button")) {
+            return;
+          }
+          activeSurface = article.dataset.surface;
+          render();
+        });
+      }
+
+      markReviewedButton.addEventListener("click", () => {
+        const surfaceName = currentSurfaceName();
+        setReviewed(surfaceName, !isReviewed(surfaceName));
+        saveState();
+        render();
+        setStatus(surfaceName + (isReviewed(surfaceName) ? " 已标记为已审。" : " 已取消已审。"));
+      });
+      nextUnreviewedButton.addEventListener("click", () => {
+        const articles = Array.from(document.querySelectorAll(".comparison-card"));
+        const startIndex = Math.max(0, articles.findIndex((article) => article.dataset.surface === currentSurfaceName()));
+        const ordered = articles.slice(startIndex + 1).concat(articles.slice(0, startIndex + 1));
+        const next = ordered.find((article) => !isReviewed(article.dataset.surface));
+        if (!next) {
+          setStatus("全部界面都已审。");
+          return;
+        }
+        focusArticle(next);
+        setStatus("已跳到未审界面：" + next.dataset.surface + "。");
+      });
+      onlyUnreviewedButton.addEventListener("click", () => {
+        onlyUnreviewed = !onlyUnreviewed;
+        render();
+        const first = visibleArticles()[0];
+        if (first) {
+          activeSurface = first.dataset.surface;
+          render();
+        }
+        setStatus(onlyUnreviewed ? "现在只显示未审界面。" : "已显示全部界面。");
+      });
       document.querySelector("[data-role='reset-selection']").addEventListener("click", () => loadPack(data.defaultPackId));
       document.querySelector("[data-role='copy-selection']").addEventListener("click", async () => {
         output.focus();
