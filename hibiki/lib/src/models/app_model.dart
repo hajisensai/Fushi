@@ -42,6 +42,7 @@ import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/media/floating_dict_channel.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/i18n/strings.g.dart';
+import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/models/theme_notifier.dart' as theme_notifier;
 import 'package:hibiki/src/models/theme_notifier.dart' show ThemeNotifier;
 
@@ -185,8 +186,8 @@ class AppModel with ChangeNotifier {
   /// Theme management, extracted from AppModel for testability.
   late final ThemeNotifier themeNotifier;
 
-  /// In-memory preference cache for synchronous reads.
-  final Map<String, String> _prefCache = {};
+  /// Preference management, extracted from AppModel for testability.
+  late final PreferencesRepository prefsRepo;
 
   /// In-memory cache of search history items (historyKey → list of terms).
   final Map<String, List<String>> _searchHistoryCache = {};
@@ -988,7 +989,8 @@ class AppModel with ChangeNotifier {
       _database = HibikiDatabase(_databaseDirectory.path);
 
       /// Load all preferences into memory for synchronous reads.
-      _prefCache.addAll(await _database.getAllPrefs());
+      prefsRepo = PreferencesRepository(_database);
+      await prefsRepo.loadFromDb();
       _applyMemoryPolicy();
 
       /// Create theme notifier (extracted subsystem).
@@ -1207,7 +1209,8 @@ class AppModel with ChangeNotifier {
       debugPrint('[Hibiki-popup] init: Drift database');
       _database = HibikiDatabase(_databaseDirectory.path);
 
-      _prefCache.addAll(await _database.getAllPrefs());
+      prefsRepo = PreferencesRepository(_database);
+      await prefsRepo.loadFromDb();
 
       final dictRows = await _database.getAllDictionaryMetadata();
       _dictionariesCache = dictRows.map(_rowToDictionary).toList()
@@ -1283,10 +1286,7 @@ class AppModel with ChangeNotifier {
   /// Reload the preference cache from the database, e.g. after a profile
   /// switch has written new values.
   Future<void> refreshPrefCache() async {
-    final allPrefs = await _database.getAllPrefs();
-    _prefCache
-      ..clear()
-      ..addAll(allPrefs);
+    await prefsRepo.refreshFromDb();
     for (final sourceMap in mediaSources.values) {
       for (final source in sourceMap.values) {
         await source.refreshPreferencesFromDb();
@@ -1296,27 +1296,16 @@ class AppModel with ChangeNotifier {
     notifyListeners();
   }
 
-  // ── sync pref helpers (backed by in-memory cache) ───────────────────
+  // ── sync pref helpers (delegated to PreferencesRepository) ──────────
 
-  dynamic _getPref(String key, {dynamic defaultValue}) {
-    final raw = _prefCache[key];
-    if (raw == null) {
-      if (defaultValue != null) {
-        _setPref(key, defaultValue);
-      }
-      return defaultValue;
-    }
-    return PrefCodec.decode(raw, defaultValue);
-  }
+  dynamic _getPref(String key, {dynamic defaultValue}) =>
+      prefsRepo.getPref(key, defaultValue: defaultValue);
 
-  Future<void> _setPref(String key, dynamic value) async {
-    final String strVal = PrefCodec.encode(value);
-    _prefCache[key] = strVal;
-    await _database.setPref(key, strVal);
-  }
+  Future<void> _setPref(String key, dynamic value) =>
+      prefsRepo.setPref(key, value);
 
   Future<void> _seedBuiltInTags() async {
-    if (_prefCache.containsKey('builtInTagsSeeded')) return;
+    if (prefsRepo.containsKey('builtInTagsSeeded')) return;
     final existing = await _database.getAllTags();
     if (existing.isEmpty) {
       const int blue = 0xFF42A5F5;
@@ -1460,8 +1449,8 @@ class AppModel with ChangeNotifier {
 
   // ── Theme delegates (logic moved to ThemeNotifier) ──────────────────
 
-  static Map<String, ({Color seed, Brightness brightness})>
-      get themePresets => ThemeNotifier.themePresets;
+  static Map<String, ({Color seed, Brightness brightness})> get themePresets =>
+      ThemeNotifier.themePresets;
 
   static String themeLabel(String key) => ThemeNotifier.themeLabel(key);
 
@@ -1475,10 +1464,12 @@ class AppModel with ChangeNotifier {
   bool get isDarkMode => themeNotifier.isDarkMode;
 
   Color get customThemeSeed => themeNotifier.customThemeSeed;
-  Future<void> setCustomThemeSeed(Color c) => themeNotifier.setCustomThemeSeed(c);
+  Future<void> setCustomThemeSeed(Color c) =>
+      themeNotifier.setCustomThemeSeed(c);
 
   bool get customThemeDark => themeNotifier.customThemeDark;
-  Future<void> setCustomThemeDark(bool v) => themeNotifier.setCustomThemeDark(v);
+  Future<void> setCustomThemeDark(bool v) =>
+      themeNotifier.setCustomThemeDark(v);
 
   Color? get customThemeFontColor => themeNotifier.customThemeFontColor;
   Future<void> setCustomThemeFontColor(Color? c) =>
@@ -1503,8 +1494,7 @@ class AppModel with ChangeNotifier {
   Future<void> setCustomThemeSecondaryColor(Color? c) =>
       themeNotifier.setCustomThemeSecondaryColor(c);
 
-  Color? get customThemeTertiaryColor =>
-      themeNotifier.customThemeTertiaryColor;
+  Color? get customThemeTertiaryColor => themeNotifier.customThemeTertiaryColor;
   Future<void> setCustomThemeTertiaryColor(Color? c) =>
       themeNotifier.setCustomThemeTertiaryColor(c);
 
@@ -1513,8 +1503,7 @@ class AppModel with ChangeNotifier {
   Future<void> setCustomThemeContainerColor(Color? c) =>
       themeNotifier.setCustomThemeContainerColor(c);
 
-  Color? get customThemeSasayakiColor =>
-      themeNotifier.customThemeSasayakiColor;
+  Color? get customThemeSasayakiColor => themeNotifier.customThemeSasayakiColor;
   Future<void> setCustomThemeSasayakiColor(Color? c) =>
       themeNotifier.setCustomThemeSasayakiColor(c);
 
@@ -1558,11 +1547,7 @@ class AppModel with ChangeNotifier {
     return languages[localeTag]!;
   }
 
-  /// Get the last selected deck from persisted preferences.
-  String get lastSelectedDeckName {
-    String deckName = _getPref('last_selected_deck', defaultValue: 'Default');
-    return deckName;
-  }
+  String get lastSelectedDeckName => prefsRepo.lastSelectedDeckName;
 
   /// Get the target language from persisted preferences.
   DictionaryFormat get lastSelectedDictionaryFormat {
@@ -1599,11 +1584,7 @@ class AppModel with ChangeNotifier {
     return locales.values.first;
   }
 
-  /// Get the last selected model from persisted preferences.
-  String? get lastSelectedModel {
-    String? modelName = _getPref('last_selected_model');
-    return modelName;
-  }
+  String? get lastSelectedModel => prefsRepo.lastSelectedModel;
 
   /// Persist a new target language in preferences.
   Future<void> setTargetLanguage(Language language) async {
@@ -1636,28 +1617,16 @@ class AppModel with ChangeNotifier {
     await _setPref('last_selected_dictionary_format', lastDictionaryFormatName);
   }
 
-  /// Persist a new last selected model name. This is called when the user
-  /// changes the selected model to map in the profiles menu.
-  Future<void> setLastSelectedModelName(String modelName) async {
-    await _setPref('last_selected_model', modelName);
-    notifyListeners();
-  }
+  Future<void> setLastSelectedModelName(String modelName) =>
+      prefsRepo.setLastSelectedModelName(modelName);
 
-  /// Persist a new last selected deck name. This is called when the user
-  /// changes the selected deck to map in the creator.
-  Future<void> setLastSelectedDeck(String deckName) async {
-    await _setPref('last_selected_deck', deckName);
-  }
+  Future<void> setLastSelectedDeck(String deckName) =>
+      prefsRepo.setLastSelectedDeck(deckName);
 
-  /// Get the current home tab index. The order of the tab indexes are based on
-  /// the ordering in [mediaTypes].
-  int get currentHomeTabIndex =>
-      _getPref('current_home_tab_index', defaultValue: 0);
+  int get currentHomeTabIndex => prefsRepo.currentHomeTabIndex;
 
-  /// Persist the new tab after switching home tabs.
-  Future<void> setCurrentHomeTabIndex(int index) async {
-    await _setPref('current_home_tab_index', index);
-  }
+  Future<void> setCurrentHomeTabIndex(int index) =>
+      prefsRepo.setCurrentHomeTabIndex(index);
 
   /// Show the dictionary menu. This should be callable from many parts of the
   /// app, so it is appropriately handled by the model.
@@ -3001,142 +2970,47 @@ class AppModel with ChangeNotifier {
     return directories;
   }
 
-  /// Get the blur options used in the player.
-  BlurOptions get blurOptions {
-    double width = _getPref('blur_width', defaultValue: 200.0);
-    double height = _getPref('blur_height', defaultValue: 200.0);
-    double left = _getPref('blur_left', defaultValue: -1.0);
-    double top = _getPref('blur_top', defaultValue: -1.0);
+  // ── blur options & audio index (delegated) ───────────────────────────
 
-    int red =
-        _getPref('blur_red', defaultValue: Colors.black.withOpacity(0).red);
-    int green =
-        _getPref('blur_green', defaultValue: Colors.black.withOpacity(0).green);
-    int blue =
-        _getPref('blur_blue', defaultValue: Colors.black.withOpacity(0).blue);
-    double opacity = _getPref('blur_opacity',
-        defaultValue: Colors.black.withOpacity(0).opacity);
+  BlurOptions get blurOptions => prefsRepo.blurOptions;
+  Future<void> setBlurOptions(BlurOptions options) =>
+      prefsRepo.setBlurOptions(options);
 
-    Color color = Color.fromRGBO(red, green, blue, opacity);
+  int getMediaItemPreferredAudioIndex(MediaItem item) =>
+      prefsRepo.getMediaItemPreferredAudioIndex(item.uniqueKey);
 
-    double blurRadius = _getPref('blur_radius', defaultValue: 5.0);
-    bool visible = _getPref('blur_visible', defaultValue: false);
+  void setMediaItemPreferredAudioIndex(MediaItem item, int index) =>
+      prefsRepo.setMediaItemPreferredAudioIndex(item.uniqueKey, index);
 
-    return BlurOptions(
-      width: width,
-      height: height,
-      left: left,
-      top: top,
-      color: color,
-      blurRadius: blurRadius,
-      visible: visible,
-    );
-  }
+  // ── player preferences (delegated to PreferencesRepository) ─────────
 
-  /// Set the blur options used in the player.
-  Future<void> setBlurOptions(BlurOptions options) async {
-    await _setPref('blur_width', options.width);
-    await _setPref('blur_height', options.height);
-    await _setPref('blur_left', options.left);
-    await _setPref('blur_top', options.top);
+  bool get isPlayerListeningComprehensionMode =>
+      prefsRepo.isPlayerListeningComprehensionMode;
+  void togglePlayerListeningComprehensionMode() =>
+      prefsRepo.togglePlayerListeningComprehensionMode();
 
-    await _setPref('blur_red', options.color.red);
-    await _setPref('blur_green', options.color.green);
-    await _setPref('blur_blue', options.color.blue);
-    await _setPref('blur_opacity', options.color.opacity);
+  bool get isPlayerOrientationPortrait => prefsRepo.isPlayerOrientationPortrait;
+  void togglePlayerOrientationPortrait() =>
+      prefsRepo.togglePlayerOrientationPortrait();
 
-    await _setPref('blur_radius', options.blurRadius);
-    await _setPref('blur_visible', options.visible);
-    notifyListeners();
-  }
+  bool get isStretchToFill => prefsRepo.isStretchToFill;
+  void toggleStretchToFill() => prefsRepo.toggleStretchToFill();
 
-  /// Gets the last used audio index of a given media item.
-  int getMediaItemPreferredAudioIndex(MediaItem item) {
-    return _getPref('audio_index/${item.uniqueKey}', defaultValue: 0);
-  }
+  bool get playerHardwareAcceleration => prefsRepo.playerHardwareAcceleration;
+  void setPlayerHardwareAcceleration({required bool value}) =>
+      prefsRepo.setPlayerHardwareAcceleration(value: value);
 
-  /// Sets the last used audio index of a given media item.
-  void setMediaItemPreferredAudioIndex(MediaItem item, int index) {
-    _setPref('audio_index/${item.uniqueKey}', index);
-  }
+  bool get playerBackgroundPlay => prefsRepo.playerBackgroundPlay;
+  void setPlayerBackgroundPlay({required bool value}) =>
+      prefsRepo.setPlayerBackgroundPlay(value: value);
 
-  /// Get definition focus mode for player.
-  bool get isPlayerListeningComprehensionMode {
-    return _getPref('player_listening_comprehension_mode', defaultValue: false);
-  }
+  bool get showSubtitlesInNotification => prefsRepo.showSubtitlesInNotification;
+  void setShowSubtitlesInNotification({required bool value}) =>
+      prefsRepo.setShowSubtitlesInNotification(value: value);
 
-  /// Toggle definition focus mode for player.
-  void togglePlayerListeningComprehensionMode() async {
-    await _setPref('player_listening_comprehension_mode',
-        !isPlayerListeningComprehensionMode);
-    notifyListeners();
-  }
-
-  /// Get orientation for player.
-  bool get isPlayerOrientationPortrait {
-    return _getPref('player_orientation_portrait', defaultValue: false);
-  }
-
-  /// Toggle orientation for player.
-  void togglePlayerOrientationPortrait() async {
-    await _setPref('player_orientation_portrait', !isPlayerOrientationPortrait);
-    notifyListeners();
-  }
-
-  /// Get whether or not to stretch to fill screen.
-  bool get isStretchToFill {
-    return _getPref('stretch_to_fill_screen', defaultValue: false);
-  }
-
-  /// Toggle stretch to fill screen.
-  void toggleStretchToFill() async {
-    await _setPref('stretch_to_fill_screen', !isStretchToFill);
-    notifyListeners();
-  }
-
-  /// Whether or not the player should use hardware acceleration.
-  bool get playerHardwareAcceleration {
-    return _getPref('player_hardware_acceleration', defaultValue: true);
-  }
-
-  /// Set whether or not the player should use hardware acceleration.
-  void setPlayerHardwareAcceleration({required bool value}) async {
-    await _setPref('player_hardware_acceleration', value);
-    notifyListeners();
-  }
-
-  /// Whether or not the player should allow background play.
-  bool get playerBackgroundPlay {
-    return _getPref('player_background_play', defaultValue: true);
-  }
-
-  /// Set whether or not the player should allow background play.
-  void setPlayerBackgroundPlay({required bool value}) async {
-    await _setPref('player_background_play', value);
-    notifyListeners();
-  }
-
-  /// Whether or not the player should show subtitles in notifications.
-  bool get showSubtitlesInNotification {
-    return _getPref('player_subtitle_notification', defaultValue: true);
-  }
-
-  /// Set whether or not the player should show subtitles in notifications.
-  void setShowSubtitlesInNotification({required bool value}) async {
-    await _setPref('player_subtitle_notification', value);
-    notifyListeners();
-  }
-
-  /// Whether or not the player should use hardware acceleration.
-  bool get playerUseOpenSLES {
-    return _getPref('player_use_opensles', defaultValue: true);
-  }
-
-  /// Set whether or not the player should use OpenSL ES.
-  void setPlayerUseOpenSLES({required bool value}) async {
-    await _setPref('player_use_opensles', value);
-    notifyListeners();
-  }
+  bool get playerUseOpenSLES => prefsRepo.playerUseOpenSLES;
+  void setPlayerUseOpenSLES({required bool value}) =>
+      prefsRepo.setPlayerUseOpenSLES(value: value);
 
   /// Allows the player screen to listen to play/pause changes.
   Stream<void> get playStream => _playStreamController.stream;
@@ -3220,102 +3094,36 @@ class AppModel with ChangeNotifier {
     }
   }
 
-  /// Whether or not searching in the app is performed without hitting the
-  /// submit button.
-  bool get autoSearchEnabled {
-    return _getPref('auto_search', defaultValue: true);
-  }
+  // ── search & dictionary display (delegated to PreferencesRepository) ─
 
-  /// Toggle auto search option.
-  void toggleAutoSearchEnabled() async {
-    await _setPref('auto_search', !autoSearchEnabled);
-    notifyListeners();
-  }
+  bool get autoSearchEnabled => prefsRepo.autoSearchEnabled;
+  void toggleAutoSearchEnabled() => prefsRepo.toggleAutoSearchEnabled();
 
-  /// Search debounce delay in milliseconds by default.
-  final int defaultSearchDebounceDelay = 100;
+  int get defaultSearchDebounceDelay => prefsRepo.defaultSearchDebounceDelay;
+  int get searchDebounceDelay => prefsRepo.searchDebounceDelay;
+  void setSearchDebounceDelay(int debounceDelay) =>
+      prefsRepo.setSearchDebounceDelay(debounceDelay);
 
-  /// The search debounce delay in milliseconds.
-  int get searchDebounceDelay {
-    return _getPref('auto_search_debounce_delay',
-        defaultValue: defaultSearchDebounceDelay);
-  }
+  double get defaultDictionaryFontSize => prefsRepo.defaultDictionaryFontSize;
+  double get dictionaryFontSize => prefsRepo.dictionaryFontSize;
+  void setDictionaryFontSize(double fontSize) =>
+      prefsRepo.setDictionaryFontSize(fontSize);
 
-  /// Sets the search debounce delay in milliseconds.
-  void setSearchDebounceDelay(int debounceDelay) async {
-    await _setPref('auto_search_debounce_delay', debounceDelay);
-    notifyListeners();
-  }
+  double get defaultPopupMaxWidth => prefsRepo.defaultPopupMaxWidth;
+  double get popupMaxWidth => prefsRepo.popupMaxWidth;
+  void setPopupMaxWidth(double width) => prefsRepo.setPopupMaxWidth(width);
 
-  /// Default dictionary font size for meanings.
-  final double defaultDictionaryFontSize = 16;
+  int get defaultDoubleTapSeekDuration =>
+      prefsRepo.defaultDoubleTapSeekDuration;
+  int get doubleTapSeekDuration => prefsRepo.doubleTapSeekDuration;
+  void setDoubleTapSeekDuration(int value) =>
+      prefsRepo.setDoubleTapSeekDuration(value);
 
-  /// The dictionary entry font size.
-  double get dictionaryFontSize {
-    return _getPref('dictionary_entry_font_size',
-        defaultValue: defaultDictionaryFontSize);
-  }
+  bool get isFirstTimeSetup => prefsRepo.isFirstTimeSetup;
+  void setFirstTimeSetupFlag() => prefsRepo.setFirstTimeSetupFlag();
 
-  /// Sets the dictionary entry font size.
-  void setDictionaryFontSize(double fontSize) async {
-    await _setPref('dictionary_entry_font_size', fontSize);
-    notifyListeners();
-  }
-
-  /// Default popup max width in dp.
-  final double defaultPopupMaxWidth = 400;
-
-  /// The popup max width in dp.
-  double get popupMaxWidth {
-    return _getPref('popup_max_width', defaultValue: defaultPopupMaxWidth);
-  }
-
-  /// Sets the popup max width in dp.
-  void setPopupMaxWidth(double width) async {
-    await _setPref('popup_max_width', width);
-    notifyListeners();
-  }
-
-  /// Default value of [doubleTapSeekDuration].
-  final int defaultDoubleTapSeekDuration = 5000;
-
-  /// The default duration that the video player will seek forward or backward
-  /// when double tapped by the user.
-  int get doubleTapSeekDuration {
-    return _getPref('double_tap_seek_duration',
-        defaultValue: defaultDoubleTapSeekDuration);
-  }
-
-  /// Sets the default duration that the video player will seek forward or
-  /// backward when double tapped by the user.
-  void setDoubleTapSeekDuration(int value) async {
-    await _setPref('double_tap_seek_duration', value);
-    notifyListeners();
-  }
-
-  /// Whether or not it is the app's first time setup to show the languages
-  /// dialog.
-  bool get isFirstTimeSetup {
-    return _getPref('first_time_setup', defaultValue: true);
-  }
-
-  /// Sets the first time setup flag so the first time message does not show
-  /// again.
-  void setFirstTimeSetupFlag() async {
-    await _setPref('first_time_setup', false);
-  }
-
-  /// The maximum dictionary terms in a result.
-  int get maximumTerms {
-    return _getPref('maximum_terms',
-        defaultValue: defaultMaximumDictionaryTermsInResult);
-  }
-
-  /// Sets the maximum dictionary terms in a result.
-  void setMaximumTerms(int value) async {
-    await _setPref('maximum_terms', value);
-    notifyListeners();
-  }
+  int get maximumTerms => prefsRepo.maximumTerms;
+  void setMaximumTerms(int value) => prefsRepo.setMaximumTerms(value);
 
   /// Adds a [DictionarySearchResult] to dictionary history.
   void addToDictionaryHistory({required DictionarySearchResult result}) async {
@@ -3401,162 +3209,52 @@ class AppModel with ChangeNotifier {
     }
   }
 
-  /// Get whether or not the transcript should show play/pause.
-  bool get isTranscriptPlayerMode {
-    return _getPref('is_transcript_player_mode', defaultValue: false);
-  }
+  // ── transcript, tags, card export, CSS (delegated) ──────────────────
 
-  /// Toggle transcript player mode.
-  void toggleTranscriptPlayerMode() async {
-    await _setPref(
-      'is_transcript_player_mode',
-      !isTranscriptPlayerMode,
-    );
-    notifyListeners();
-  }
+  bool get isTranscriptPlayerMode => prefsRepo.isTranscriptPlayerMode;
+  void toggleTranscriptPlayerMode() => prefsRepo.toggleTranscriptPlayerMode();
 
-  /// Get whether or not the transcript should have a background.
-  bool get isTranscriptOpaque {
-    return _getPref('is_transcript_opaque', defaultValue: false);
-  }
+  bool get isTranscriptOpaque => prefsRepo.isTranscriptOpaque;
+  void toggleTranscriptOpaque() => prefsRepo.toggleTranscriptOpaque();
 
-  /// Toggle transcript background.
-  void toggleTranscriptOpaque() async {
-    await _setPref(
-      'is_transcript_opaque',
-      !isTranscriptOpaque,
-    );
-    notifyListeners();
-  }
+  bool get subtitleTimingsShown => prefsRepo.subtitleTimingsShown;
+  void toggleSubtitleTimingsShown() => prefsRepo.toggleSubtitleTimingsShown();
 
-  /// Get whether or not subtitle timings are shown.
-  bool get subtitleTimingsShown {
-    return _getPref('subtitle_timings_shown', defaultValue: true);
-  }
+  String get savedTags => prefsRepo.savedTags;
+  void setSavedTags(String value) => prefsRepo.setSavedTags(value);
 
-  /// Toggle subtitle timings shown.
-  void toggleSubtitleTimingsShown() async {
-    await _setPref(
-      'subtitle_timings_shown',
-      !subtitleTimingsShown,
-    );
-    notifyListeners();
-  }
+  bool get autoAddBookNameToTags => prefsRepo.autoAddBookNameToTags;
+  void toggleAutoAddBookNameToTags() => prefsRepo.toggleAutoAddBookNameToTags();
 
-  /// Get the saved value that the user has set for the [TagsField].
-  String get savedTags {
-    return _getPref('saved_tags', defaultValue: '');
-  }
+  bool get deduplicatePitchAccents => prefsRepo.deduplicatePitchAccents;
+  void toggleDeduplicatePitchAccents() =>
+      prefsRepo.toggleDeduplicatePitchAccents();
 
-  /// Set the saved value that the user has set for the [TagsField].
-  void setSavedTags(String value) async {
-    await _setPref('saved_tags', value);
-  }
+  bool get harmonicFrequency => prefsRepo.harmonicFrequency;
+  void toggleHarmonicFrequency() => prefsRepo.toggleHarmonicFrequency();
 
-  /// Whether to automatically add the current book name to the Tags field
-  /// when creating cards.
-  bool get autoAddBookNameToTags {
-    return _getPref('auto_add_book_name_to_tags', defaultValue: true);
-  }
+  bool get showExpressionTags => prefsRepo.showExpressionTags;
+  void toggleShowExpressionTags() => prefsRepo.toggleShowExpressionTags();
 
-  /// Toggle auto-adding of book name to tags.
-  void toggleAutoAddBookNameToTags() async {
-    await _setPref('auto_add_book_name_to_tags', !autoAddBookNameToTags);
-    notifyListeners();
-  }
+  bool get collapseDictionaries => prefsRepo.collapseDictionaries;
+  void toggleCollapseDictionaries() => prefsRepo.toggleCollapseDictionaries();
 
-  /// Whether to deduplicate pitch accent values across dictionaries.
-  bool get deduplicatePitchAccents {
-    return _getPref('deduplicate_pitch_accents', defaultValue: true);
-  }
+  Map<String, String> get customDictCSS => prefsRepo.customDictCSS;
+  String getCustomCSSForDict(String dictName) =>
+      prefsRepo.getCustomCSSForDict(dictName);
+  Future<void> setCustomCSSForDict(String dictName, String css) =>
+      prefsRepo.setCustomCSSForDict(dictName, css);
 
-  /// Toggle pitch accent deduplication.
-  void toggleDeduplicatePitchAccents() async {
-    await _setPref('deduplicate_pitch_accents', !deduplicatePitchAccents);
-    notifyListeners();
-  }
+  String get globalDictCSS => prefsRepo.globalDictCSS;
+  Future<void> setGlobalDictCSS(String css) => prefsRepo.setGlobalDictCSS(css);
 
-  /// Whether to show harmonic mean frequency aggregation.
-  bool get harmonicFrequency {
-    return _getPref('harmonic_frequency', defaultValue: true);
-  }
+  // ── audio sources (delegated) ────────────────────────────────────────
 
-  /// Toggle harmonic frequency aggregation.
-  void toggleHarmonicFrequency() async {
-    await _setPref('harmonic_frequency', !harmonicFrequency);
-    notifyListeners();
-  }
+  static const List<String> defaultAudioSources =
+      PreferencesRepository.defaultAudioSources;
 
-  /// Whether to show expression and reading as tags above deinflection info.
-  bool get showExpressionTags {
-    return _getPref('show_expression_tags', defaultValue: false);
-  }
+  List<String> get audioSources => prefsRepo.audioSources;
 
-  /// Toggle expression/reading tag display.
-  void toggleShowExpressionTags() async {
-    await _setPref('show_expression_tags', !showExpressionTags);
-    notifyListeners();
-  }
-
-  /// Whether to auto-collapse dictionaries (only expand the first one).
-  bool get collapseDictionaries {
-    return _getPref('collapse_dictionaries', defaultValue: true);
-  }
-
-  /// Toggle dictionary auto-collapse.
-  void toggleCollapseDictionaries() async {
-    await _setPref('collapse_dictionaries', !collapseDictionaries);
-    notifyListeners();
-  }
-
-  Map<String, String> get customDictCSS {
-    final raw = _getPref('custom_dict_css', defaultValue: '') as String;
-    if (raw.isEmpty) return {};
-    try {
-      final decoded = jsonDecode(raw);
-      if (decoded is Map) {
-        return decoded.map((k, v) => MapEntry(k.toString(), v.toString()));
-      }
-    } catch (e, stack) {
-      ErrorLogService.instance.log('AppModel.customDictCSS.decode', e, stack);
-    }
-    return {};
-  }
-
-  String getCustomCSSForDict(String dictName) {
-    return customDictCSS[dictName] ?? '';
-  }
-
-  Future<void> setCustomCSSForDict(String dictName, String css) async {
-    final map = customDictCSS;
-    if (css.isEmpty) {
-      map.remove(dictName);
-    } else {
-      map[dictName] = css;
-    }
-    await _setPref('custom_dict_css', jsonEncode(map));
-  }
-
-  String get globalDictCSS {
-    return _getPref('global_dict_css', defaultValue: '') as String;
-  }
-
-  Future<void> setGlobalDictCSS(String css) async {
-    await _setPref('global_dict_css', css);
-  }
-
-  /// Default audio source templates for word pronunciation.
-  static const List<String> defaultAudioSources = [
-    'https://hoshi-reader.manhhaoo-do.workers.dev/?term={term}&reading={reading}',
-  ];
-
-  /// Get the list of audio source URL templates.
-  List<String> get audioSources {
-    return _getPref('audio_sources', defaultValue: defaultAudioSources);
-  }
-
-  /// Hoshi-compatible enabled audio sources. Local audio is represented as the
-  /// first source instead of a separate fallback path.
   List<String> get enabledAudioSources {
     final List<String> sources = audioSources
         .where((source) => source != WordAudioResolver.localAudioUrl)
@@ -3569,11 +3267,8 @@ class AppModel with ChangeNotifier {
     ];
   }
 
-  /// Set the list of audio source URL templates.
-  void setAudioSources(List<String> sources) async {
-    await _setPref('audio_sources', sources);
-    notifyListeners();
-  }
+  void setAudioSources(List<String> sources) =>
+      prefsRepo.setAudioSources(sources);
 
   /// All local audio database entries (multi-DB support).
   List<LocalAudioDbEntry> get localAudioDbs {
@@ -3701,54 +3396,29 @@ class AppModel with ChangeNotifier {
     notifyListeners();
   }
 
-  bool get showPlayBar {
-    return _getPref('show_play_bar', defaultValue: true);
-  }
+  // ── UI visibility (delegated) ────────────────────────────────────────
 
-  void toggleShowPlayBar() async {
-    await _setPref('show_play_bar', !showPlayBar);
-    notifyListeners();
-  }
+  bool get showPlayBar => prefsRepo.showPlayBar;
+  void toggleShowPlayBar() => prefsRepo.toggleShowPlayBar();
 
-  bool get showMediaNotification {
-    return _getPref('show_media_notification', defaultValue: true);
-  }
+  bool get showMediaNotification => prefsRepo.showMediaNotification;
+  void toggleShowMediaNotification() => prefsRepo.toggleShowMediaNotification();
+  Future<void> setShowMediaNotification(bool value) =>
+      prefsRepo.setShowMediaNotification(value);
 
-  void toggleShowMediaNotification() async {
-    await _setPref('show_media_notification', !showMediaNotification);
-    notifyListeners();
-  }
+  bool get showFloatingLyric => prefsRepo.showFloatingLyric;
+  Future<void> setShowFloatingLyric(bool value) =>
+      prefsRepo.setShowFloatingLyric(value);
 
-  Future<void> setShowMediaNotification(bool value) async {
-    await _setPref('show_media_notification', value);
-    notifyListeners();
-  }
+  double get floatingLyricFontSize => prefsRepo.floatingLyricFontSize;
+  Future<void> setFloatingLyricFontSize(double value) =>
+      prefsRepo.setFloatingLyricFontSize(value);
 
-  bool get showFloatingLyric {
-    return _getPref('show_floating_lyric', defaultValue: false);
-  }
-
-  Future<void> setShowFloatingLyric(bool value) async {
-    await _setPref('show_floating_lyric', value);
-    notifyListeners();
-  }
-
-  double get floatingLyricFontSize {
-    return _getPref('floating_lyric_font_size', defaultValue: 20.0);
-  }
-
-  Future<void> setFloatingLyricFontSize(double value) async {
-    await _setPref('floating_lyric_font_size', value.clamp(8, 64).toDouble());
-    notifyListeners();
-  }
-
-  bool get showFloatingDict {
-    return _getPref('show_floating_dict', defaultValue: false);
-  }
+  bool get showFloatingDict => prefsRepo.showFloatingDict;
 
   Future<void> setShowFloatingDict(bool value) async {
-    await _setPref('show_floating_dict', value);
-    notifyListeners();
+    await prefsRepo.setPref('show_floating_dict', value);
+    prefsRepo.notifyListeners();
   }
 
   void _setupFloatingDictHandlers() {
@@ -3770,59 +3440,33 @@ class AppModel with ChangeNotifier {
     );
   }
 
-  bool get updateNeverRemind {
-    return _getPref('update_never_remind', defaultValue: false);
-  }
+  // ── update preferences (delegated) ───────────────────────────────────
 
-  Future<void> setUpdateNeverRemind(bool value) async {
-    await _setPref('update_never_remind', value);
-    notifyListeners();
-  }
+  bool get updateNeverRemind => prefsRepo.updateNeverRemind;
+  Future<void> setUpdateNeverRemind(bool value) =>
+      prefsRepo.setUpdateNeverRemind(value);
 
-  bool get updateAutoInstall {
-    return _getPref('update_auto_install', defaultValue: false);
-  }
+  bool get updateAutoInstall => prefsRepo.updateAutoInstall;
+  Future<void> setUpdateAutoInstall(bool value) =>
+      prefsRepo.setUpdateAutoInstall(value);
 
-  Future<void> setUpdateAutoInstall(bool value) async {
-    await _setPref('update_auto_install', value);
-    notifyListeners();
-  }
+  bool get updateBetaChannel => prefsRepo.updateBetaChannel;
+  Future<void> setUpdateBetaChannel(bool value) =>
+      prefsRepo.setUpdateBetaChannel(value);
 
-  bool get updateBetaChannel {
-    return _getPref('update_beta_channel', defaultValue: false);
-  }
+  bool get updateDebugChannel => prefsRepo.updateDebugChannel;
+  Future<void> setUpdateDebugChannel(bool value) =>
+      prefsRepo.setUpdateDebugChannel(value);
 
-  Future<void> setUpdateBetaChannel(bool value) async {
-    await _setPref('update_beta_channel', value);
-    notifyListeners();
-  }
+  bool get populateBookmarksFlag => prefsRepo.populateBookmarksFlag;
+  void setPopulateBookmarksFlag() => prefsRepo.setPopulateBookmarksFlag();
 
-  bool get updateDebugChannel {
-    return _getPref('update_debug_channel', defaultValue: false);
-  }
+  // ── low memory mode (side effect stays here) ─────────────────────────
 
-  Future<void> setUpdateDebugChannel(bool value) async {
-    await _setPref('update_debug_channel', value);
-    notifyListeners();
-  }
-
-  /// Get whether or not bookmarks have been populated.
-  bool get populateBookmarksFlag {
-    return _getPref('populate_bookmarks', defaultValue: false);
-  }
-
-  /// Sets the populate bookmarks flag so bookmarks don't get added again.
-  void setPopulateBookmarksFlag() async {
-    await _setPref('populate_bookmarks', true);
-  }
-
-  // ── low memory mode ──────────────────────────────────────────────────
-
-  bool get lowMemoryMode =>
-      _getPref('low_memory_mode', defaultValue: false) as bool;
+  bool get lowMemoryMode => prefsRepo.lowMemoryMode;
 
   Future<void> setLowMemoryMode(bool v) async {
-    await _setPref('low_memory_mode', v);
+    await prefsRepo.setPref('low_memory_mode', v);
     _applyMemoryPolicy();
     notifyListeners();
   }
