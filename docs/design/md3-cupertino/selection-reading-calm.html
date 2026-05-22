@@ -199,6 +199,7 @@
     <nav class="toolbar" aria-label="Related design documents">
       <a href="SELECTION_GUIDE.zh-CN.md">中文选择指南</a>
       <a href="pack-selection-index.html">整包逐界面索引</a>
+      <a href="interface-pack-comparison.html">按界面横向比较</a>
       <a href="SELECTION_READING_CALM.zh-CN.md">中文逐界面表</a>
       <a href="interface-images/index.html">全部 A/B/C 图库</a>
       <a href="IMPLEMENTATION_SPEC_HIBIKI_BALANCED.md">推荐实现规格</a>
@@ -227,7 +228,7 @@
   <main>
     <h2>推荐界面图</h2>
     <section class="surface-grid" aria-label="Recommended surface selections">
-      <article class="surface-card" data-section="Entry" data-choice="B">
+      <article class="surface-card" id="main" data-section="Entry" data-choice="B">
     <img src="interface-images/main-B.svg" alt="main.dart B recommended image">
     <div class="surface-body">
       <p class="meta">入口和外部壳层 / 首页和导航</p>
@@ -237,7 +238,7 @@
       <div class="alternatives" aria-label="main.dart alternatives"><a href="interface-images/main-A.svg" aria-current="false">A</a><a href="interface-images/main-B.svg" aria-current="true">B</a><a href="interface-images/main-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Entry" data-choice="B">
+<article class="surface-card" id="popup-main" data-section="Entry" data-choice="B">
     <img src="interface-images/popup-main-B.svg" alt="popup_main.dart B recommended image">
     <div class="surface-body">
       <p class="meta">入口和外部壳层 / 词典</p>
@@ -247,7 +248,7 @@
       <div class="alternatives" aria-label="popup_main.dart alternatives"><a href="interface-images/popup-main-A.svg" aria-current="false">A</a><a href="interface-images/popup-main-B.svg" aria-current="true">B</a><a href="interface-images/popup-main-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Entry" data-choice="B">
+<article class="surface-card" id="floating-dict-main" data-section="Entry" data-choice="B">
     <img src="interface-images/floating-dict-main-B.svg" alt="floating_dict_main.dart B recommended image">
     <div class="surface-body">
       <p class="meta">入口和外部壳层 / 词典</p>
@@ -257,7 +258,7 @@
       <div class="alternatives" aria-label="floating_dict_main.dart alternatives"><a href="interface-images/floating-dict-main-A.svg" aria-current="false">A</a><a href="interface-images/floating-dict-main-B.svg" aria-current="true">B</a><a href="interface-images/floating-dict-main-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="anki-settings-page" data-section="Pages" data-choice="B">
     <img src="interface-images/anki-settings-page-B.svg" alt="anki_settings_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 制卡和 Anki</p>
@@ -267,7 +268,7 @@
       <div class="alternatives" aria-label="anki_settings_page.dart alternatives"><a href="interface-images/anki-settings-page-A.svg" aria-current="false">A</a><a href="interface-images/anki-settings-page-B.svg" aria-current="true">B</a><a href="interface-images/anki-settings-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="audio-recorder-page" data-section="Pages" data-choice="B">
     <img src="interface-images/audio-recorder-page-B.svg" alt="audio_recorder_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 制卡和 Anki</p>
@@ -277,7 +278,7 @@
       <div class="alternatives" aria-label="audio_recorder_page.dart alternatives"><a href="interface-images/audio-recorder-page-A.svg" aria-current="false">A</a><a href="interface-images/audio-recorder-page-B.svg" aria-current="true">B</a><a href="interface-images/audio-recorder-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="blur-options-dialog-page" data-section="Pages" data-choice="B">
     <img src="interface-images/blur-options-dialog-page-B.svg" alt="blur_options_dialog_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 阅读自定义</p>
@@ -287,7 +288,7 @@
       <div class="alternatives" aria-label="blur_options_dialog_page.dart alternatives"><a href="interface-images/blur-options-dialog-page-A.svg" aria-current="false">A</a><a href="interface-images/blur-options-dialog-page-B.svg" aria-current="true">B</a><a href="interface-images/blur-options-dialog-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="book-css-editor-page" data-section="Pages" data-choice="B">
     <img src="interface-images/book-css-editor-page-B.svg" alt="book_css_editor_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 阅读自定义</p>
@@ -297,7 +298,7 @@
       <div class="alternatives" aria-label="book_css_editor_page.dart alternatives"><a href="interface-images/book-css-editor-page-A.svg" aria-current="false">A</a><a href="interface-images/book-css-editor-page-B.svg" aria-current="true">B</a><a href="interface-images/book-css-editor-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="collections-page" data-section="Pages" data-choice="B">
     <img src="interface-images/collections-page-B.svg" alt="collections_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 收藏和统计</p>
@@ -307,7 +308,7 @@
       <div class="alternatives" aria-label="collections_page.dart alternatives"><a href="interface-images/collections-page-A.svg" aria-current="false">A</a><a href="interface-images/collections-page-B.svg" aria-current="true">B</a><a href="interface-images/collections-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="crop-image-dialog-page" data-section="Pages" data-choice="B">
     <img src="interface-images/crop-image-dialog-page-B.svg" alt="crop_image_dialog_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 制卡和 Anki</p>
@@ -317,7 +318,7 @@
       <div class="alternatives" aria-label="crop_image_dialog_page.dart alternatives"><a href="interface-images/crop-image-dialog-page-A.svg" aria-current="false">A</a><a href="interface-images/crop-image-dialog-page-B.svg" aria-current="true">B</a><a href="interface-images/crop-image-dialog-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="custom-fonts-page" data-section="Pages" data-choice="B">
     <img src="interface-images/custom-fonts-page-B.svg" alt="custom_fonts_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 阅读自定义</p>
@@ -327,7 +328,7 @@
       <div class="alternatives" aria-label="custom_fonts_page.dart alternatives"><a href="interface-images/custom-fonts-page-A.svg" aria-current="false">A</a><a href="interface-images/custom-fonts-page-B.svg" aria-current="true">B</a><a href="interface-images/custom-fonts-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="custom-theme-page" data-section="Pages" data-choice="B">
     <img src="interface-images/custom-theme-page-B.svg" alt="custom_theme_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 阅读自定义</p>
@@ -337,7 +338,7 @@
       <div class="alternatives" aria-label="custom_theme_page.dart alternatives"><a href="interface-images/custom-theme-page-A.svg" aria-current="false">A</a><a href="interface-images/custom-theme-page-B.svg" aria-current="true">B</a><a href="interface-images/custom-theme-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="debug-log-page" data-section="Pages" data-choice="B">
     <img src="interface-images/debug-log-page-B.svg" alt="debug_log_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 日志和调试</p>
@@ -347,7 +348,7 @@
       <div class="alternatives" aria-label="debug_log_page.dart alternatives"><a href="interface-images/debug-log-page-A.svg" aria-current="false">A</a><a href="interface-images/debug-log-page-B.svg" aria-current="true">B</a><a href="interface-images/debug-log-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="dictionary-dialog-delete-page" data-section="Pages" data-choice="B">
     <img src="interface-images/dictionary-dialog-delete-page-B.svg" alt="dictionary_dialog_delete_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 词典管理</p>
@@ -357,7 +358,7 @@
       <div class="alternatives" aria-label="dictionary_dialog_delete_page.dart alternatives"><a href="interface-images/dictionary-dialog-delete-page-A.svg" aria-current="false">A</a><a href="interface-images/dictionary-dialog-delete-page-B.svg" aria-current="true">B</a><a href="interface-images/dictionary-dialog-delete-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="dictionary-dialog-import-page" data-section="Pages" data-choice="B">
     <img src="interface-images/dictionary-dialog-import-page-B.svg" alt="dictionary_dialog_import_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 词典管理</p>
@@ -367,7 +368,7 @@
       <div class="alternatives" aria-label="dictionary_dialog_import_page.dart alternatives"><a href="interface-images/dictionary-dialog-import-page-A.svg" aria-current="false">A</a><a href="interface-images/dictionary-dialog-import-page-B.svg" aria-current="true">B</a><a href="interface-images/dictionary-dialog-import-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="dictionary-dialog-page" data-section="Pages" data-choice="B">
     <img src="interface-images/dictionary-dialog-page-B.svg" alt="dictionary_dialog_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 词典管理</p>
@@ -377,7 +378,7 @@
       <div class="alternatives" aria-label="dictionary_dialog_page.dart alternatives"><a href="interface-images/dictionary-dialog-page-A.svg" aria-current="false">A</a><a href="interface-images/dictionary-dialog-page-B.svg" aria-current="true">B</a><a href="interface-images/dictionary-dialog-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="dictionary-entry-page" data-section="Pages" data-choice="B">
     <img src="interface-images/dictionary-entry-page-B.svg" alt="dictionary_entry_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 词典</p>
@@ -387,7 +388,7 @@
       <div class="alternatives" aria-label="dictionary_entry_page.dart alternatives"><a href="interface-images/dictionary-entry-page-A.svg" aria-current="false">A</a><a href="interface-images/dictionary-entry-page-B.svg" aria-current="true">B</a><a href="interface-images/dictionary-entry-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="dictionary-page-mixin" data-section="Pages" data-choice="B">
     <img src="interface-images/dictionary-page-mixin-B.svg" alt="dictionary_page_mixin.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 词典</p>
@@ -397,7 +398,7 @@
       <div class="alternatives" aria-label="dictionary_page_mixin.dart alternatives"><a href="interface-images/dictionary-page-mixin-A.svg" aria-current="false">A</a><a href="interface-images/dictionary-page-mixin-B.svg" aria-current="true">B</a><a href="interface-images/dictionary-page-mixin-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="dictionary-popup-layer" data-section="Pages" data-choice="B">
     <img src="interface-images/dictionary-popup-layer-B.svg" alt="dictionary_popup_layer.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 词典</p>
@@ -407,7 +408,7 @@
       <div class="alternatives" aria-label="dictionary_popup_layer.dart alternatives"><a href="interface-images/dictionary-popup-layer-A.svg" aria-current="false">A</a><a href="interface-images/dictionary-popup-layer-B.svg" aria-current="true">B</a><a href="interface-images/dictionary-popup-layer-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="dictionary-popup-native" data-section="Pages" data-choice="B">
     <img src="interface-images/dictionary-popup-native-B.svg" alt="dictionary_popup_native.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 词典</p>
@@ -417,7 +418,7 @@
       <div class="alternatives" aria-label="dictionary_popup_native.dart alternatives"><a href="interface-images/dictionary-popup-native-A.svg" aria-current="false">A</a><a href="interface-images/dictionary-popup-native-B.svg" aria-current="true">B</a><a href="interface-images/dictionary-popup-native-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="dictionary-popup-webview" data-section="Pages" data-choice="B">
     <img src="interface-images/dictionary-popup-webview-B.svg" alt="dictionary_popup_webview.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 词典</p>
@@ -427,7 +428,7 @@
       <div class="alternatives" aria-label="dictionary_popup_webview.dart alternatives"><a href="interface-images/dictionary-popup-webview-A.svg" aria-current="false">A</a><a href="interface-images/dictionary-popup-webview-B.svg" aria-current="true">B</a><a href="interface-images/dictionary-popup-webview-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="dictionary-progress-dialog-content" data-section="Pages" data-choice="B">
     <img src="interface-images/dictionary-progress-dialog-content-B.svg" alt="dictionary_progress_dialog_content.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 词典管理</p>
@@ -437,7 +438,7 @@
       <div class="alternatives" aria-label="dictionary_progress_dialog_content.dart alternatives"><a href="interface-images/dictionary-progress-dialog-content-A.svg" aria-current="false">A</a><a href="interface-images/dictionary-progress-dialog-content-B.svg" aria-current="true">B</a><a href="interface-images/dictionary-progress-dialog-content-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="dictionary-result-page" data-section="Pages" data-choice="B">
     <img src="interface-images/dictionary-result-page-B.svg" alt="dictionary_result_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 词典</p>
@@ -447,7 +448,7 @@
       <div class="alternatives" aria-label="dictionary_result_page.dart alternatives"><a href="interface-images/dictionary-result-page-A.svg" aria-current="false">A</a><a href="interface-images/dictionary-result-page-B.svg" aria-current="true">B</a><a href="interface-images/dictionary-result-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="dictionary-settings-dialog-page" data-section="Pages" data-choice="B">
     <img src="interface-images/dictionary-settings-dialog-page-B.svg" alt="dictionary_settings_dialog_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 词典管理</p>
@@ -457,7 +458,7 @@
       <div class="alternatives" aria-label="dictionary_settings_dialog_page.dart alternatives"><a href="interface-images/dictionary-settings-dialog-page-A.svg" aria-current="false">A</a><a href="interface-images/dictionary-settings-dialog-page-B.svg" aria-current="true">B</a><a href="interface-images/dictionary-settings-dialog-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="dictionary-structured-content-page" data-section="Pages" data-choice="B">
     <img src="interface-images/dictionary-structured-content-page-B.svg" alt="dictionary_structured_content_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 词典</p>
@@ -467,7 +468,7 @@
       <div class="alternatives" aria-label="dictionary_structured_content_page.dart alternatives"><a href="interface-images/dictionary-structured-content-page-A.svg" aria-current="false">A</a><a href="interface-images/dictionary-structured-content-page-B.svg" aria-current="true">B</a><a href="interface-images/dictionary-structured-content-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="dictionary-term-page" data-section="Pages" data-choice="B">
     <img src="interface-images/dictionary-term-page-B.svg" alt="dictionary_term_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 词典</p>
@@ -477,7 +478,7 @@
       <div class="alternatives" aria-label="dictionary_term_page.dart alternatives"><a href="interface-images/dictionary-term-page-A.svg" aria-current="false">A</a><a href="interface-images/dictionary-term-page-B.svg" aria-current="true">B</a><a href="interface-images/dictionary-term-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="dictionary-webview-media" data-section="Pages" data-choice="B">
     <img src="interface-images/dictionary-webview-media-B.svg" alt="dictionary_webview_media.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 词典</p>
@@ -487,7 +488,7 @@
       <div class="alternatives" aria-label="dictionary_webview_media.dart alternatives"><a href="interface-images/dictionary-webview-media-A.svg" aria-current="false">A</a><a href="interface-images/dictionary-webview-media-B.svg" aria-current="true">B</a><a href="interface-images/dictionary-webview-media-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="display-settings-page" data-section="Pages" data-choice="B">
     <img src="interface-images/display-settings-page-B.svg" alt="display_settings_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 阅读自定义</p>
@@ -497,7 +498,7 @@
       <div class="alternatives" aria-label="display_settings_page.dart alternatives"><a href="interface-images/display-settings-page-A.svg" aria-current="false">A</a><a href="interface-images/display-settings-page-B.svg" aria-current="true">B</a><a href="interface-images/display-settings-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="error-log-page" data-section="Pages" data-choice="B">
     <img src="interface-images/error-log-page-B.svg" alt="error_log_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 日志和调试</p>
@@ -507,7 +508,7 @@
       <div class="alternatives" aria-label="error_log_page.dart alternatives"><a href="interface-images/error-log-page-A.svg" aria-current="false">A</a><a href="interface-images/error-log-page-B.svg" aria-current="true">B</a><a href="interface-images/error-log-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="example-sentences-dialog-page" data-section="Pages" data-choice="B">
     <img src="interface-images/example-sentences-dialog-page-B.svg" alt="example_sentences_dialog_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 媒体和例句弹窗</p>
@@ -517,7 +518,7 @@
       <div class="alternatives" aria-label="example_sentences_dialog_page.dart alternatives"><a href="interface-images/example-sentences-dialog-page-A.svg" aria-current="false">A</a><a href="interface-images/example-sentences-dialog-page-B.svg" aria-current="true">B</a><a href="interface-images/example-sentences-dialog-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="floating-dict-page" data-section="Pages" data-choice="B">
     <img src="interface-images/floating-dict-page-B.svg" alt="floating_dict_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 词典</p>
@@ -527,7 +528,7 @@
       <div class="alternatives" aria-label="floating_dict_page.dart alternatives"><a href="interface-images/floating-dict-page-A.svg" aria-current="false">A</a><a href="interface-images/floating-dict-page-B.svg" aria-current="true">B</a><a href="interface-images/floating-dict-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="history-reader-page" data-section="Pages" data-choice="B">
     <img src="interface-images/history-reader-page-B.svg" alt="history_reader_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 书架</p>
@@ -537,7 +538,7 @@
       <div class="alternatives" aria-label="history_reader_page.dart alternatives"><a href="interface-images/history-reader-page-A.svg" aria-current="false">A</a><a href="interface-images/history-reader-page-B.svg" aria-current="true">B</a><a href="interface-images/history-reader-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="home-dictionary-page" data-section="Pages" data-choice="B">
     <img src="interface-images/home-dictionary-page-B.svg" alt="home_dictionary_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 词典</p>
@@ -547,7 +548,7 @@
       <div class="alternatives" aria-label="home_dictionary_page.dart alternatives"><a href="interface-images/home-dictionary-page-A.svg" aria-current="false">A</a><a href="interface-images/home-dictionary-page-B.svg" aria-current="true">B</a><a href="interface-images/home-dictionary-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="home-page" data-section="Pages" data-choice="B">
     <img src="interface-images/home-page-B.svg" alt="home_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 首页和导航</p>
@@ -557,7 +558,7 @@
       <div class="alternatives" aria-label="home_page.dart alternatives"><a href="interface-images/home-page-A.svg" aria-current="false">A</a><a href="interface-images/home-page-B.svg" aria-current="true">B</a><a href="interface-images/home-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="home-reader-page" data-section="Pages" data-choice="B">
     <img src="interface-images/home-reader-page-B.svg" alt="home_reader_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 首页和导航</p>
@@ -567,7 +568,7 @@
       <div class="alternatives" aria-label="home_reader_page.dart alternatives"><a href="interface-images/home-reader-page-A.svg" aria-current="false">A</a><a href="interface-images/home-reader-page-B.svg" aria-current="true">B</a><a href="interface-images/home-reader-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="hoshi-settings-page" data-section="Pages" data-choice="B">
     <img src="interface-images/hoshi-settings-page-B.svg" alt="hoshi_settings_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 设置</p>
@@ -577,7 +578,7 @@
       <div class="alternatives" aria-label="hoshi_settings_page.dart alternatives"><a href="interface-images/hoshi-settings-page-A.svg" aria-current="false">A</a><a href="interface-images/hoshi-settings-page-B.svg" aria-current="true">B</a><a href="interface-images/hoshi-settings-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="illustrations-viewer-page" data-section="Pages" data-choice="B">
     <img src="interface-images/illustrations-viewer-page-B.svg" alt="illustrations_viewer_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 收藏和统计</p>
@@ -587,7 +588,7 @@
       <div class="alternatives" aria-label="illustrations_viewer_page.dart alternatives"><a href="interface-images/illustrations-viewer-page-A.svg" aria-current="false">A</a><a href="interface-images/illustrations-viewer-page-B.svg" aria-current="true">B</a><a href="interface-images/illustrations-viewer-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="language-dialog-page" data-section="Pages" data-choice="B">
     <img src="interface-images/language-dialog-page-B.svg" alt="language_dialog_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 资料、语言、系统</p>
@@ -597,7 +598,7 @@
       <div class="alternatives" aria-label="language_dialog_page.dart alternatives"><a href="interface-images/language-dialog-page-A.svg" aria-current="false">A</a><a href="interface-images/language-dialog-page-B.svg" aria-current="true">B</a><a href="interface-images/language-dialog-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="loading-page" data-section="Pages" data-choice="B">
     <img src="interface-images/loading-page-B.svg" alt="loading_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 空、加载、错误状态</p>
@@ -607,7 +608,7 @@
       <div class="alternatives" aria-label="loading_page.dart alternatives"><a href="interface-images/loading-page-A.svg" aria-current="false">A</a><a href="interface-images/loading-page-B.svg" aria-current="true">B</a><a href="interface-images/loading-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="lyrics-dialog-page" data-section="Pages" data-choice="B">
     <img src="interface-images/lyrics-dialog-page-B.svg" alt="lyrics_dialog_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / Hoshi 阅读器</p>
@@ -617,7 +618,7 @@
       <div class="alternatives" aria-label="lyrics_dialog_page.dart alternatives"><a href="interface-images/lyrics-dialog-page-A.svg" aria-current="false">A</a><a href="interface-images/lyrics-dialog-page-B.svg" aria-current="true">B</a><a href="interface-images/lyrics-dialog-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="media-item-dialog-page" data-section="Pages" data-choice="B">
     <img src="interface-images/media-item-dialog-page-B.svg" alt="media_item_dialog_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 媒体和例句弹窗</p>
@@ -627,7 +628,7 @@
       <div class="alternatives" aria-label="media_item_dialog_page.dart alternatives"><a href="interface-images/media-item-dialog-page-A.svg" aria-current="false">A</a><a href="interface-images/media-item-dialog-page-B.svg" aria-current="true">B</a><a href="interface-images/media-item-dialog-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="media-item-edit-dialog-page" data-section="Pages" data-choice="B">
     <img src="interface-images/media-item-edit-dialog-page-B.svg" alt="media_item_edit_dialog_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 媒体和例句弹窗</p>
@@ -637,7 +638,7 @@
       <div class="alternatives" aria-label="media_item_edit_dialog_page.dart alternatives"><a href="interface-images/media-item-edit-dialog-page-A.svg" aria-current="false">A</a><a href="interface-images/media-item-edit-dialog-page-B.svg" aria-current="true">B</a><a href="interface-images/media-item-edit-dialog-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="media-source-picker-dialog-page" data-section="Pages" data-choice="B">
     <img src="interface-images/media-source-picker-dialog-page-B.svg" alt="media_source_picker_dialog_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 媒体和例句弹窗</p>
@@ -647,7 +648,7 @@
       <div class="alternatives" aria-label="media_source_picker_dialog_page.dart alternatives"><a href="interface-images/media-source-picker-dialog-page-A.svg" aria-current="false">A</a><a href="interface-images/media-source-picker-dialog-page-B.svg" aria-current="true">B</a><a href="interface-images/media-source-picker-dialog-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="miscellaneous-settings-page" data-section="Pages" data-choice="B">
     <img src="interface-images/miscellaneous-settings-page-B.svg" alt="miscellaneous_settings_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 资料、语言、系统</p>
@@ -657,7 +658,7 @@
       <div class="alternatives" aria-label="miscellaneous_settings_page.dart alternatives"><a href="interface-images/miscellaneous-settings-page-A.svg" aria-current="false">A</a><a href="interface-images/miscellaneous-settings-page-B.svg" aria-current="true">B</a><a href="interface-images/miscellaneous-settings-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="open-stash-dialog-page" data-section="Pages" data-choice="B">
     <img src="interface-images/open-stash-dialog-page-B.svg" alt="open_stash_dialog_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 媒体和例句弹窗</p>
@@ -667,7 +668,7 @@
       <div class="alternatives" aria-label="open_stash_dialog_page.dart alternatives"><a href="interface-images/open-stash-dialog-page-A.svg" aria-current="false">A</a><a href="interface-images/open-stash-dialog-page-B.svg" aria-current="true">B</a><a href="interface-images/open-stash-dialog-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="placeholder-source-page" data-section="Pages" data-choice="B">
     <img src="interface-images/placeholder-source-page-B.svg" alt="placeholder_source_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 空、加载、错误状态</p>
@@ -677,7 +678,7 @@
       <div class="alternatives" aria-label="placeholder_source_page.dart alternatives"><a href="interface-images/placeholder-source-page-A.svg" aria-current="false">A</a><a href="interface-images/placeholder-source-page-B.svg" aria-current="true">B</a><a href="interface-images/placeholder-source-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="popup-dictionary-page" data-section="Pages" data-choice="B">
     <img src="interface-images/popup-dictionary-page-B.svg" alt="popup_dictionary_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 词典</p>
@@ -687,7 +688,7 @@
       <div class="alternatives" aria-label="popup_dictionary_page.dart alternatives"><a href="interface-images/popup-dictionary-page-A.svg" aria-current="false">A</a><a href="interface-images/popup-dictionary-page-B.svg" aria-current="true">B</a><a href="interface-images/popup-dictionary-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="profile-management-page" data-section="Pages" data-choice="B">
     <img src="interface-images/profile-management-page-B.svg" alt="profile_management_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 资料、语言、系统</p>
@@ -697,7 +698,7 @@
       <div class="alternatives" aria-label="profile_management_page.dart alternatives"><a href="interface-images/profile-management-page-A.svg" aria-current="false">A</a><a href="interface-images/profile-management-page-B.svg" aria-current="true">B</a><a href="interface-images/profile-management-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="reader-hoshi-history-page" data-section="Pages" data-choice="B">
     <img src="interface-images/reader-hoshi-history-page-B.svg" alt="reader_hoshi_history_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 书架</p>
@@ -707,7 +708,7 @@
       <div class="alternatives" aria-label="reader_hoshi_history_page.dart alternatives"><a href="interface-images/reader-hoshi-history-page-A.svg" aria-current="false">A</a><a href="interface-images/reader-hoshi-history-page-B.svg" aria-current="true">B</a><a href="interface-images/reader-hoshi-history-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="reader-hoshi-page" data-section="Pages" data-choice="B">
     <img src="interface-images/reader-hoshi-page-B.svg" alt="reader_hoshi_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / Hoshi 阅读器</p>
@@ -717,7 +718,7 @@
       <div class="alternatives" aria-label="reader_hoshi_page.dart alternatives"><a href="interface-images/reader-hoshi-page-A.svg" aria-current="false">A</a><a href="interface-images/reader-hoshi-page-B.svg" aria-current="true">B</a><a href="interface-images/reader-hoshi-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="reading-statistics-page" data-section="Pages" data-choice="B">
     <img src="interface-images/reading-statistics-page-B.svg" alt="reading_statistics_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 收藏和统计</p>
@@ -727,7 +728,7 @@
       <div class="alternatives" aria-label="reading_statistics_page.dart alternatives"><a href="interface-images/reading-statistics-page-A.svg" aria-current="false">A</a><a href="interface-images/reading-statistics-page-B.svg" aria-current="true">B</a><a href="interface-images/reading-statistics-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="switch-settings-page" data-section="Pages" data-choice="B">
     <img src="interface-images/switch-settings-page-B.svg" alt="switch_settings_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 设置</p>
@@ -737,7 +738,7 @@
       <div class="alternatives" aria-label="switch_settings_page.dart alternatives"><a href="interface-images/switch-settings-page-A.svg" aria-current="false">A</a><a href="interface-images/switch-settings-page-B.svg" aria-current="true">B</a><a href="interface-images/switch-settings-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="tag-filter-sheet" data-section="Pages" data-choice="B">
     <img src="interface-images/tag-filter-sheet-B.svg" alt="tag_filter_sheet.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 标签和筛选</p>
@@ -747,7 +748,7 @@
       <div class="alternatives" aria-label="tag_filter_sheet.dart alternatives"><a href="interface-images/tag-filter-sheet-A.svg" aria-current="false">A</a><a href="interface-images/tag-filter-sheet-B.svg" aria-current="true">B</a><a href="interface-images/tag-filter-sheet-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="tag-management-page" data-section="Pages" data-choice="B">
     <img src="interface-images/tag-management-page-B.svg" alt="tag_management_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 标签和筛选</p>
@@ -757,7 +758,7 @@
       <div class="alternatives" aria-label="tag_management_page.dart alternatives"><a href="interface-images/tag-management-page-A.svg" aria-current="false">A</a><a href="interface-images/tag-management-page-B.svg" aria-current="true">B</a><a href="interface-images/tag-management-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="tag-picker-page" data-section="Pages" data-choice="B">
     <img src="interface-images/tag-picker-page-B.svg" alt="tag_picker_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 标签和筛选</p>
@@ -767,7 +768,7 @@
       <div class="alternatives" aria-label="tag_picker_page.dart alternatives"><a href="interface-images/tag-picker-page-A.svg" aria-current="false">A</a><a href="interface-images/tag-picker-page-B.svg" aria-current="true">B</a><a href="interface-images/tag-picker-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="text-segmentation-dialog-page" data-section="Pages" data-choice="B">
     <img src="interface-images/text-segmentation-dialog-page-B.svg" alt="text_segmentation_dialog_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 制卡和 Anki</p>
@@ -777,7 +778,7 @@
       <div class="alternatives" aria-label="text_segmentation_dialog_page.dart alternatives"><a href="interface-images/text-segmentation-dialog-page-A.svg" aria-current="false">A</a><a href="interface-images/text-segmentation-dialog-page-B.svg" aria-current="true">B</a><a href="interface-images/text-segmentation-dialog-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Pages" data-choice="B">
+<article class="surface-card" id="websocket-dialog-page" data-section="Pages" data-choice="B">
     <img src="interface-images/websocket-dialog-page-B.svg" alt="websocket_dialog_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">页面 / 资料、语言、系统</p>
@@ -787,7 +788,7 @@
       <div class="alternatives" aria-label="websocket_dialog_page.dart alternatives"><a href="interface-images/websocket-dialog-page-A.svg" aria-current="false">A</a><a href="interface-images/websocket-dialog-page-B.svg" aria-current="true">B</a><a href="interface-images/websocket-dialog-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Shared/support" data-choice="B">
+<article class="surface-card" id="app-model" data-section="Shared/support" data-choice="B">
     <img src="interface-images/app-model-B.svg" alt="app_model.dart B recommended image">
     <div class="surface-body">
       <p class="meta">共享和支撑组件 / 组件系统</p>
@@ -797,7 +798,7 @@
       <div class="alternatives" aria-label="app_model.dart alternatives"><a href="interface-images/app-model-A.svg" aria-current="false">A</a><a href="interface-images/app-model-B.svg" aria-current="true">B</a><a href="interface-images/app-model-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Shared/support" data-choice="B">
+<article class="surface-card" id="base-history-page" data-section="Shared/support" data-choice="B">
     <img src="interface-images/base-history-page-B.svg" alt="base_history_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">共享和支撑组件 / 书架</p>
@@ -807,7 +808,7 @@
       <div class="alternatives" aria-label="base_history_page.dart alternatives"><a href="interface-images/base-history-page-A.svg" aria-current="false">A</a><a href="interface-images/base-history-page-B.svg" aria-current="true">B</a><a href="interface-images/base-history-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Shared/support" data-choice="B">
+<article class="surface-card" id="base-media-search-bar" data-section="Shared/support" data-choice="B">
     <img src="interface-images/base-media-search-bar-B.svg" alt="base_media_search_bar.dart B recommended image">
     <div class="surface-body">
       <p class="meta">共享和支撑组件 / 组件系统</p>
@@ -817,7 +818,7 @@
       <div class="alternatives" aria-label="base_media_search_bar.dart alternatives"><a href="interface-images/base-media-search-bar-A.svg" aria-current="false">A</a><a href="interface-images/base-media-search-bar-B.svg" aria-current="true">B</a><a href="interface-images/base-media-search-bar-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Shared/support" data-choice="B">
+<article class="surface-card" id="base-page" data-section="Shared/support" data-choice="B">
     <img src="interface-images/base-page-B.svg" alt="base_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">共享和支撑组件 / 组件系统</p>
@@ -827,7 +828,7 @@
       <div class="alternatives" aria-label="base_page.dart alternatives"><a href="interface-images/base-page-A.svg" aria-current="false">A</a><a href="interface-images/base-page-B.svg" aria-current="true">B</a><a href="interface-images/base-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Shared/support" data-choice="B">
+<article class="surface-card" id="base-source-page" data-section="Shared/support" data-choice="B">
     <img src="interface-images/base-source-page-B.svg" alt="base_source_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">共享和支撑组件 / 组件系统</p>
@@ -837,7 +838,7 @@
       <div class="alternatives" aria-label="base_source_page.dart alternatives"><a href="interface-images/base-source-page-A.svg" aria-current="false">A</a><a href="interface-images/base-source-page-B.svg" aria-current="true">B</a><a href="interface-images/base-source-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Shared/support" data-choice="B">
+<article class="surface-card" id="base-tab-page" data-section="Shared/support" data-choice="B">
     <img src="interface-images/base-tab-page-B.svg" alt="base_tab_page.dart B recommended image">
     <div class="surface-body">
       <p class="meta">共享和支撑组件 / 组件系统</p>
@@ -847,7 +848,7 @@
       <div class="alternatives" aria-label="base_tab_page.dart alternatives"><a href="interface-images/base-tab-page-A.svg" aria-current="false">A</a><a href="interface-images/base-tab-page-B.svg" aria-current="true">B</a><a href="interface-images/base-tab-page-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Shared/support" data-choice="B">
+<article class="surface-card" id="audiobook-import-dialog" data-section="Shared/support" data-choice="B">
     <img src="interface-images/audiobook-import-dialog-B.svg" alt="audiobook_import_dialog.dart B recommended image">
     <div class="surface-body">
       <p class="meta">共享和支撑组件 / 导入和弹窗</p>
@@ -857,7 +858,7 @@
       <div class="alternatives" aria-label="audiobook_import_dialog.dart alternatives"><a href="interface-images/audiobook-import-dialog-A.svg" aria-current="false">A</a><a href="interface-images/audiobook-import-dialog-B.svg" aria-current="true">B</a><a href="interface-images/audiobook-import-dialog-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Shared/support" data-choice="B">
+<article class="surface-card" id="audiobook-play-bar" data-section="Shared/support" data-choice="B">
     <img src="interface-images/audiobook-play-bar-B.svg" alt="audiobook_play_bar.dart B recommended image">
     <div class="surface-body">
       <p class="meta">共享和支撑组件 / Hoshi 阅读器</p>
@@ -867,7 +868,7 @@
       <div class="alternatives" aria-label="audiobook_play_bar.dart alternatives"><a href="interface-images/audiobook-play-bar-A.svg" aria-current="false">A</a><a href="interface-images/audiobook-play-bar-B.svg" aria-current="true">B</a><a href="interface-images/audiobook-play-bar-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Shared/support" data-choice="B">
+<article class="surface-card" id="book-import-dialog" data-section="Shared/support" data-choice="B">
     <img src="interface-images/book-import-dialog-B.svg" alt="book_import_dialog.dart B recommended image">
     <div class="surface-body">
       <p class="meta">共享和支撑组件 / 导入和弹窗</p>
@@ -877,7 +878,7 @@
       <div class="alternatives" aria-label="book_import_dialog.dart alternatives"><a href="interface-images/book-import-dialog-A.svg" aria-current="false">A</a><a href="interface-images/book-import-dialog-B.svg" aria-current="true">B</a><a href="interface-images/book-import-dialog-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Shared/support" data-choice="B">
+<article class="surface-card" id="sasayaki-rematch" data-section="Shared/support" data-choice="B">
     <img src="interface-images/sasayaki-rematch-B.svg" alt="sasayaki_rematch.dart B recommended image">
     <div class="surface-body">
       <p class="meta">共享和支撑组件 / 导入和弹窗</p>
@@ -887,7 +888,7 @@
       <div class="alternatives" aria-label="sasayaki_rematch.dart alternatives"><a href="interface-images/sasayaki-rematch-A.svg" aria-current="false">A</a><a href="interface-images/sasayaki-rematch-B.svg" aria-current="true">B</a><a href="interface-images/sasayaki-rematch-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Shared/support" data-choice="B">
+<article class="surface-card" id="profile-selector" data-section="Shared/support" data-choice="B">
     <img src="interface-images/profile-selector-B.svg" alt="profile_selector.dart B recommended image">
     <div class="surface-body">
       <p class="meta">共享和支撑组件 / 资料、语言、系统</p>
@@ -897,7 +898,7 @@
       <div class="alternatives" aria-label="profile_selector.dart alternatives"><a href="interface-images/profile-selector-A.svg" aria-current="false">A</a><a href="interface-images/profile-selector-B.svg" aria-current="true">B</a><a href="interface-images/profile-selector-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Shared/support" data-choice="B">
+<article class="surface-card" id="hibiki-bottom-sheet" data-section="Shared/support" data-choice="B">
     <img src="interface-images/hibiki-bottom-sheet-B.svg" alt="hibiki_bottom_sheet.dart B recommended image">
     <div class="surface-body">
       <p class="meta">共享和支撑组件 / 组件系统</p>
@@ -907,7 +908,7 @@
       <div class="alternatives" aria-label="hibiki_bottom_sheet.dart alternatives"><a href="interface-images/hibiki-bottom-sheet-A.svg" aria-current="false">A</a><a href="interface-images/hibiki-bottom-sheet-B.svg" aria-current="true">B</a><a href="interface-images/hibiki-bottom-sheet-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Shared/support" data-choice="B">
+<article class="surface-card" id="hibiki-divider" data-section="Shared/support" data-choice="B">
     <img src="interface-images/hibiki-divider-B.svg" alt="hibiki_divider.dart B recommended image">
     <div class="surface-body">
       <p class="meta">共享和支撑组件 / 组件系统</p>
@@ -917,7 +918,7 @@
       <div class="alternatives" aria-label="hibiki_divider.dart alternatives"><a href="interface-images/hibiki-divider-A.svg" aria-current="false">A</a><a href="interface-images/hibiki-divider-B.svg" aria-current="true">B</a><a href="interface-images/hibiki-divider-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Shared/support" data-choice="B">
+<article class="surface-card" id="hibiki-dropdown" data-section="Shared/support" data-choice="B">
     <img src="interface-images/hibiki-dropdown-B.svg" alt="hibiki_dropdown.dart B recommended image">
     <div class="surface-body">
       <p class="meta">共享和支撑组件 / 组件系统</p>
@@ -927,7 +928,7 @@
       <div class="alternatives" aria-label="hibiki_dropdown.dart alternatives"><a href="interface-images/hibiki-dropdown-A.svg" aria-current="false">A</a><a href="interface-images/hibiki-dropdown-B.svg" aria-current="true">B</a><a href="interface-images/hibiki-dropdown-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Shared/support" data-choice="B">
+<article class="surface-card" id="hibiki-icon-button" data-section="Shared/support" data-choice="B">
     <img src="interface-images/hibiki-icon-button-B.svg" alt="hibiki_icon_button.dart B recommended image">
     <div class="surface-body">
       <p class="meta">共享和支撑组件 / 组件系统</p>
@@ -937,7 +938,7 @@
       <div class="alternatives" aria-label="hibiki_icon_button.dart alternatives"><a href="interface-images/hibiki-icon-button-A.svg" aria-current="false">A</a><a href="interface-images/hibiki-icon-button-B.svg" aria-current="true">B</a><a href="interface-images/hibiki-icon-button-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Shared/support" data-choice="B">
+<article class="surface-card" id="hibiki-list-tile" data-section="Shared/support" data-choice="B">
     <img src="interface-images/hibiki-list-tile-B.svg" alt="hibiki_list_tile.dart B recommended image">
     <div class="surface-body">
       <p class="meta">共享和支撑组件 / 组件系统</p>
@@ -947,7 +948,7 @@
       <div class="alternatives" aria-label="hibiki_list_tile.dart alternatives"><a href="interface-images/hibiki-list-tile-A.svg" aria-current="false">A</a><a href="interface-images/hibiki-list-tile-B.svg" aria-current="true">B</a><a href="interface-images/hibiki-list-tile-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Shared/support" data-choice="B">
+<article class="surface-card" id="hibiki-marquee" data-section="Shared/support" data-choice="B">
     <img src="interface-images/hibiki-marquee-B.svg" alt="hibiki_marquee.dart B recommended image">
     <div class="surface-body">
       <p class="meta">共享和支撑组件 / 组件系统</p>
@@ -957,7 +958,7 @@
       <div class="alternatives" aria-label="hibiki_marquee.dart alternatives"><a href="interface-images/hibiki-marquee-A.svg" aria-current="false">A</a><a href="interface-images/hibiki-marquee-B.svg" aria-current="true">B</a><a href="interface-images/hibiki-marquee-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Shared/support" data-choice="B">
+<article class="surface-card" id="hibiki-placeholder-message" data-section="Shared/support" data-choice="B">
     <img src="interface-images/hibiki-placeholder-message-B.svg" alt="hibiki_placeholder_message.dart B recommended image">
     <div class="surface-body">
       <p class="meta">共享和支撑组件 / 空、加载、错误状态</p>
@@ -967,7 +968,7 @@
       <div class="alternatives" aria-label="hibiki_placeholder_message.dart alternatives"><a href="interface-images/hibiki-placeholder-message-A.svg" aria-current="false">A</a><a href="interface-images/hibiki-placeholder-message-B.svg" aria-current="true">B</a><a href="interface-images/hibiki-placeholder-message-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Shared/support" data-choice="B">
+<article class="surface-card" id="hibiki-popup-position" data-section="Shared/support" data-choice="B">
     <img src="interface-images/hibiki-popup-position-B.svg" alt="hibiki_popup_position.dart B recommended image">
     <div class="surface-body">
       <p class="meta">共享和支撑组件 / 组件系统</p>
@@ -977,7 +978,7 @@
       <div class="alternatives" aria-label="hibiki_popup_position.dart alternatives"><a href="interface-images/hibiki-popup-position-A.svg" aria-current="false">A</a><a href="interface-images/hibiki-popup-position-B.svg" aria-current="true">B</a><a href="interface-images/hibiki-popup-position-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Shared/support" data-choice="B">
+<article class="surface-card" id="hibiki-search-history" data-section="Shared/support" data-choice="B">
     <img src="interface-images/hibiki-search-history-B.svg" alt="hibiki_search_history.dart B recommended image">
     <div class="surface-body">
       <p class="meta">共享和支撑组件 / 组件系统</p>
@@ -987,7 +988,7 @@
       <div class="alternatives" aria-label="hibiki_search_history.dart alternatives"><a href="interface-images/hibiki-search-history-A.svg" aria-current="false">A</a><a href="interface-images/hibiki-search-history-B.svg" aria-current="true">B</a><a href="interface-images/hibiki-search-history-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Shared/support" data-choice="B">
+<article class="surface-card" id="hibiki-selectable-text" data-section="Shared/support" data-choice="B">
     <img src="interface-images/hibiki-selectable-text-B.svg" alt="hibiki_selectable_text.dart B recommended image">
     <div class="surface-body">
       <p class="meta">共享和支撑组件 / 组件系统</p>
@@ -997,7 +998,7 @@
       <div class="alternatives" aria-label="hibiki_selectable_text.dart alternatives"><a href="interface-images/hibiki-selectable-text-A.svg" aria-current="false">A</a><a href="interface-images/hibiki-selectable-text-B.svg" aria-current="true">B</a><a href="interface-images/hibiki-selectable-text-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Shared/support" data-choice="B">
+<article class="surface-card" id="hibiki-tag" data-section="Shared/support" data-choice="B">
     <img src="interface-images/hibiki-tag-B.svg" alt="hibiki_tag.dart B recommended image">
     <div class="surface-body">
       <p class="meta">共享和支撑组件 / 标签和筛选</p>
@@ -1007,7 +1008,7 @@
       <div class="alternatives" aria-label="hibiki_tag.dart alternatives"><a href="interface-images/hibiki-tag-A.svg" aria-current="false">A</a><a href="interface-images/hibiki-tag-B.svg" aria-current="true">B</a><a href="interface-images/hibiki-tag-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Shared/support" data-choice="B">
+<article class="surface-card" id="hibiki-text-selection-controls" data-section="Shared/support" data-choice="B">
     <img src="interface-images/hibiki-text-selection-controls-B.svg" alt="hibiki_text_selection_controls.dart B recommended image">
     <div class="surface-body">
       <p class="meta">共享和支撑组件 / 组件系统</p>
@@ -1017,7 +1018,7 @@
       <div class="alternatives" aria-label="hibiki_text_selection_controls.dart alternatives"><a href="interface-images/hibiki-text-selection-controls-A.svg" aria-current="false">A</a><a href="interface-images/hibiki-text-selection-controls-B.svg" aria-current="true">B</a><a href="interface-images/hibiki-text-selection-controls-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Shared/support" data-choice="B">
+<article class="surface-card" id="hibiki-toast" data-section="Shared/support" data-choice="B">
     <img src="interface-images/hibiki-toast-B.svg" alt="hibiki_toast.dart B recommended image">
     <div class="surface-body">
       <p class="meta">共享和支撑组件 / 组件系统</p>
@@ -1027,7 +1028,7 @@
       <div class="alternatives" aria-label="hibiki_toast.dart alternatives"><a href="interface-images/hibiki-toast-A.svg" aria-current="false">A</a><a href="interface-images/hibiki-toast-B.svg" aria-current="true">B</a><a href="interface-images/hibiki-toast-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Shared/support" data-choice="B">
+<article class="surface-card" id="platform-utils" data-section="Shared/support" data-choice="B">
     <img src="interface-images/platform-utils-B.svg" alt="platform_utils.dart B recommended image">
     <div class="surface-body">
       <p class="meta">共享和支撑组件 / 组件系统</p>
@@ -1037,7 +1038,7 @@
       <div class="alternatives" aria-label="platform_utils.dart alternatives"><a href="interface-images/platform-utils-A.svg" aria-current="false">A</a><a href="interface-images/platform-utils-B.svg" aria-current="true">B</a><a href="interface-images/platform-utils-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Shared/support" data-choice="B">
+<article class="surface-card" id="swipe-dismiss-wrapper" data-section="Shared/support" data-choice="B">
     <img src="interface-images/swipe-dismiss-wrapper-B.svg" alt="swipe_dismiss_wrapper.dart B recommended image">
     <div class="surface-body">
       <p class="meta">共享和支撑组件 / 组件系统</p>
@@ -1047,7 +1048,7 @@
       <div class="alternatives" aria-label="swipe_dismiss_wrapper.dart alternatives"><a href="interface-images/swipe-dismiss-wrapper-A.svg" aria-current="false">A</a><a href="interface-images/swipe-dismiss-wrapper-B.svg" aria-current="true">B</a><a href="interface-images/swipe-dismiss-wrapper-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Shared/support" data-choice="B">
+<article class="surface-card" id="update-checker" data-section="Shared/support" data-choice="B">
     <img src="interface-images/update-checker-B.svg" alt="update_checker.dart B recommended image">
     <div class="surface-body">
       <p class="meta">共享和支撑组件 / 资料、语言、系统</p>
@@ -1057,7 +1058,7 @@
       <div class="alternatives" aria-label="update_checker.dart alternatives"><a href="interface-images/update-checker-A.svg" aria-current="false">A</a><a href="interface-images/update-checker-B.svg" aria-current="true">B</a><a href="interface-images/update-checker-C.svg" aria-current="false">C</a></div>
     </div>
   </article>
-<article class="surface-card" data-section="Shared/support" data-choice="B">
+<article class="surface-card" id="blur-options" data-section="Shared/support" data-choice="B">
     <img src="interface-images/blur-options-B.svg" alt="blur_options.dart B recommended image">
     <div class="surface-body">
       <p class="meta">共享和支撑组件 / 阅读自定义</p>

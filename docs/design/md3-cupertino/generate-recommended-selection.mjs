@@ -12,6 +12,7 @@ const manifestPath = join(__dirname, "interface-images", "manifest.json");
 const packsPath = join(__dirname, "design-packs.json");
 const defaultPackId = "hibiki-balanced";
 const packIndexFile = "pack-selection-index.html";
+const interfacePackComparisonFile = "interface-pack-comparison.html";
 const packOrder = ["md3-practical", "reading-calm", "adaptive-power", "hibiki-balanced"];
 const boardOrder = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13", "14", "15", "16", "18"];
 
@@ -220,7 +221,7 @@ function readFlagValue(args, index, flag) {
 
 /**
  * @param {string[]} args
- * @returns {{ allPacks: boolean, packId: string, markdownPath?: string, htmlPath?: string, indexPath: string }}
+ * @returns {{ allPacks: boolean, packId: string, markdownPath?: string, htmlPath?: string, indexPath: string, comparisonPath: string }}
  */
 function parseArgs(args) {
   const result = {
@@ -230,7 +231,8 @@ function parseArgs(args) {
     markdownPath: undefined,
     /** @type {string | undefined} */
     htmlPath: undefined,
-    indexPath: join(__dirname, packIndexFile)
+    indexPath: join(__dirname, packIndexFile),
+    comparisonPath: join(__dirname, interfacePackComparisonFile)
   };
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -248,8 +250,11 @@ function parseArgs(args) {
     } else if (arg === "--index") {
       result.indexPath = readFlagValue(args, index, arg);
       index += 1;
+    } else if (arg === "--comparison") {
+      result.comparisonPath = readFlagValue(args, index, arg);
+      index += 1;
     } else if (arg === "--help") {
-      console.log("Usage: node generate-recommended-selection.mjs [--all-packs] [--pack hibiki-balanced] [--markdown output.md] [--html output.html] [--index output.html]");
+      console.log("Usage: node generate-recommended-selection.mjs [--all-packs] [--pack hibiki-balanced] [--markdown output.md] [--html output.html] [--index output.html] [--comparison output.html]");
       process.exit(0);
     } else {
       throw new Error(`Unknown argument: ${arg}`);
@@ -420,6 +425,7 @@ function renderMarkdown(surfaces, pack, packId) {
 - Selection source: [design-packs.json](design-packs.json)
 - Full visual page: [${output.htmlFile}](${output.htmlFile})
 - Pack index: [${packIndexFile}](${packIndexFile})
+- Interface pack comparison: [${interfacePackComparisonFile}](${interfacePackComparisonFile})
 - All A/B/C choices: [interface-images/index.html](interface-images/index.html)
 
 ## 整体规则
@@ -473,7 +479,7 @@ function renderSurfaceCard(surface, pack) {
     const active = choice === copy.choice ? "true" : "false";
     return `<a href="interface-images/${escapeHtml(surface.files[choice])}" aria-current="${active}">${choice}</a>`;
   }).join("");
-  return `<article class="surface-card" data-section="${escapeHtml(surface.section)}" data-choice="${copy.choice}">
+  return `<article class="surface-card" id="${escapeHtml(surface.slug)}" data-section="${escapeHtml(surface.section)}" data-choice="${copy.choice}">
     <img src="interface-images/${escapeHtml(selectedImage)}" alt="${escapeHtml(surface.surface)} ${copy.choice} recommended image">
     <div class="surface-body">
       <p class="meta">${escapeHtml(sectionLabels[surface.section] || surface.section)} / ${escapeHtml(boardLabels[surface.primary].label)}</p>
@@ -701,6 +707,7 @@ function renderHtml(surfaces, pack, packId) {
     <nav class="toolbar" aria-label="Related design documents">
       <a href="SELECTION_GUIDE.zh-CN.md">中文选择指南</a>
       <a href="${packIndexFile}">整包逐界面索引</a>
+      <a href="${interfacePackComparisonFile}">按界面横向比较</a>
       <a href="${escapeHtml(output.markdownFile)}">中文逐界面表</a>
       <a href="interface-images/index.html">全部 A/B/C 图库</a>
       <a href="IMPLEMENTATION_SPEC_HIBIKI_BALANCED.md">推荐实现规格</a>
@@ -952,6 +959,7 @@ function renderPackIndex(surfaces, packs) {
     <p class="lead">四套整包都已展开成完整 84 界面视图。先选一个整包，再去对应页面看每个界面的当前选择图；需要例外时，再回到全部 A/B/C 图库逐项替换。</p>
     <nav class="toolbar" aria-label="Related design documents">
       <a href="SELECTION_GUIDE.zh-CN.md">中文选择指南</a>
+      <a href="${interfacePackComparisonFile}">按界面横向比较</a>
       <a href="design-pack-gallery.html">12 图整包速览</a>
       <a href="interface-images/index.html">全部 A/B/C 图库</a>
       <a href="INTERFACE_PICKS.md">逐界面填写表</a>
@@ -961,6 +969,393 @@ function renderPackIndex(surfaces, packs) {
     <section class="pack-grid" aria-label="Pack selection pages">
       ${cards}
     </section>
+  </main>
+</body>
+</html>
+`;
+}
+
+/**
+ * @param {ManifestSurface} surface
+ * @param {Record<string, DesignPack>} packs
+ * @returns {string}
+ */
+function renderComparisonCard(surface, packs) {
+  /** @type {Choice[]} */
+  const choices = ["A", "B", "C"];
+  const packPills = packOrder.map((packId) => {
+    const pack = packs[packId];
+    if (!pack) {
+      throw new Error(`Unknown pack in packOrder: ${packId}`);
+    }
+    const choice = selectedChoice(surface, pack);
+    const output = outputForPack(packId);
+    return `<span data-choice="${choice}"><b>${choice}</b>${escapeHtml(pack.label)}<a href="${escapeHtml(output.htmlFile)}#${escapeHtml(surface.slug)}">pack 页</a></span>`;
+  }).join("");
+  const optionCards = choices.map((choice) => {
+    const copy = choiceCopy[surface.primary]?.[choice];
+    if (!copy) {
+      throw new Error(`Missing choice copy for board ${surface.primary} choice ${choice}.`);
+    }
+    const packNames = packOrder
+      .filter((packId) => selectedChoice(surface, packs[packId]) === choice)
+      .map((packId) => packs[packId].label);
+    const chosenBy = packNames.length ? packNames.join(" / ") : "无整包默认选择";
+    return `<figure class="choice-card" data-choice="${choice}">
+      <a href="interface-images/${escapeHtml(surface.files[choice])}" aria-label="${escapeHtml(surface.surface)} ${choice} full image">
+        <img src="interface-images/${escapeHtml(surface.files[choice])}" alt="${escapeHtml(surface.surface)} ${choice} example">
+      </a>
+      <figcaption>
+        <strong>${choice} · ${escapeHtml(copy.label)}</strong>
+        <span>${escapeHtml(copy.why)}</span>
+        <em>${escapeHtml(chosenBy)}</em>
+      </figcaption>
+    </figure>`;
+  }).join("");
+  return `<article class="comparison-card" id="${escapeHtml(surface.slug)}" data-section="${escapeHtml(surface.section)}" data-board="${escapeHtml(surface.primary)}">
+    <div class="surface-head">
+      <div>
+        <p class="eyebrow">${escapeHtml(sectionLabels[surface.section] || surface.section)} / ${escapeHtml(boardLabels[surface.primary].label)}</p>
+        <h2>${escapeHtml(surface.surface)}</h2>
+        <p>${escapeHtml(boardLabels[surface.primary].scope)}</p>
+      </div>
+      <div class="pack-pills" aria-label="${escapeHtml(surface.surface)} pack choices">
+        ${packPills}
+      </div>
+    </div>
+    <div class="choice-grid" aria-label="${escapeHtml(surface.surface)} A B C images">
+      ${optionCards}
+    </div>
+  </article>`;
+}
+
+/**
+ * @param {ManifestSurface[]} surfaces
+ * @param {Record<string, DesignPack>} packs
+ * @returns {string}
+ */
+function renderInterfacePackComparison(surfaces, packs) {
+  const sections = [...new Set(surfaces.map((surface) => surface.section))].map((section) => {
+    const count = surfaces.filter((surface) => surface.section === section).length;
+    return `<a href="#section-${escapeHtml(section.replaceAll("/", "-").toLowerCase())}">${escapeHtml(sectionLabels[section] || section)} <b>${count}</b></a>`;
+  }).join("");
+  const sectionBlocks = [...new Set(surfaces.map((surface) => surface.section))].map((section) => {
+    const sectionCards = surfaces.filter((surface) => surface.section === section).map((surface) => renderComparisonCard(surface, packs)).join("\n");
+    const id = `section-${section.replaceAll("/", "-").toLowerCase()}`;
+    return `<section id="${escapeHtml(id)}">
+      <h2>${escapeHtml(sectionLabels[section] || section)}</h2>
+      <div class="comparison-stack">${sectionCards}</div>
+    </section>`;
+  }).join("\n");
+
+  return `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hibiki MD3 + Cupertino 按界面横向比较</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #202528;
+      --muted: #657076;
+      --line: #d9dee0;
+      --page: #f7f8f4;
+      --surface: #ffffff;
+      --surface-2: #eef5f1;
+      --accent: #2f6f61;
+      --accent-2: #365f8d;
+      --choice-a: #2f6f61;
+      --choice-b: #365f8d;
+      --choice-c: #7a5a23;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background: var(--page);
+      color: var(--ink);
+    }
+
+    header,
+    main {
+      padding-inline: clamp(14px, 4vw, 54px);
+    }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      padding-block: 22px 16px;
+      background: rgba(252, 253, 251, 0.96);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(18px);
+    }
+
+    main {
+      padding-block: 22px 48px;
+    }
+
+    h1,
+    h2,
+    h3,
+    p,
+    figure {
+      margin: 0;
+    }
+
+    h1 {
+      max-width: 960px;
+      font-size: 2.65rem;
+      line-height: 1.08;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      font-size: 1.35rem;
+      letter-spacing: 0;
+    }
+
+    .lead {
+      max-width: 1040px;
+      margin-top: 10px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .toolbar,
+    .section-jump {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    a {
+      color: inherit;
+    }
+
+    .toolbar a,
+    .section-jump a,
+    .pack-pills a {
+      min-height: 34px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--ink);
+      font-weight: 800;
+      text-decoration: none;
+      padding: 7px 10px;
+    }
+
+    .toolbar a:hover,
+    .section-jump a:hover,
+    .pack-pills a:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .section-jump a {
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+      color: var(--muted);
+    }
+
+    main > section + section {
+      margin-top: 28px;
+    }
+
+    .comparison-stack {
+      display: grid;
+      gap: 18px;
+      margin-top: 12px;
+    }
+
+    .comparison-card {
+      display: grid;
+      gap: 14px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      padding: 14px;
+    }
+
+    .surface-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(260px, 420px);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .surface-head h2 {
+      overflow-wrap: anywhere;
+    }
+
+    .surface-head p {
+      margin-top: 6px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .eyebrow {
+      margin-top: 0 !important;
+      color: var(--accent) !important;
+      font-size: 0.78rem;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .pack-pills {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .pack-pills span {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 7px;
+      align-items: center;
+      min-height: 40px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 7px;
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.2;
+    }
+
+    .pack-pills b {
+      color: var(--ink);
+      font-size: 1rem;
+    }
+
+    .pack-pills span[data-choice="A"] b {
+      color: var(--choice-a);
+    }
+
+    .pack-pills span[data-choice="B"] b {
+      color: var(--choice-b);
+    }
+
+    .pack-pills span[data-choice="C"] b {
+      color: var(--choice-c);
+    }
+
+    .pack-pills a {
+      min-height: 28px;
+      padding: 5px 7px;
+      font-size: 0.75rem;
+      white-space: nowrap;
+    }
+
+    .choice-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .choice-card {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      min-width: 0;
+      border: 1px solid var(--line);
+      background: #fbfcfa;
+    }
+
+    .choice-card img {
+      display: block;
+      width: 100%;
+      aspect-ratio: 360 / 628;
+      object-fit: cover;
+      border-bottom: 1px solid var(--line);
+      background: #eef1ed;
+    }
+
+    figcaption {
+      display: grid;
+      gap: 6px;
+      padding: 10px;
+    }
+
+    figcaption strong {
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+    }
+
+    figcaption span,
+    figcaption em {
+      color: var(--muted);
+      font-style: normal;
+      line-height: 1.42;
+    }
+
+    figcaption em {
+      font-size: 0.82rem;
+      font-weight: 800;
+    }
+
+    .choice-card[data-choice="A"] strong {
+      color: var(--choice-a);
+    }
+
+    .choice-card[data-choice="B"] strong {
+      color: var(--choice-b);
+    }
+
+    .choice-card[data-choice="C"] strong {
+      color: var(--choice-c);
+    }
+
+    @media (max-width: 1180px) {
+      .surface-head {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 860px) {
+      header {
+        position: static;
+      }
+
+      h1 {
+        font-size: 2.05rem;
+      }
+
+      .choice-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .pack-pills {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Hibiki MD3 + Cupertino 按界面横向比较</h1>
+    <p class="lead">每个界面一张卡：左侧是界面名和设计板块，右侧标出四套整包各自选 A/B/C，下方并排展示该界面的三张候选图。用它来快速决定例外，不需要在四个整包页面之间来回跳。</p>
+    <nav class="toolbar" aria-label="Related design documents">
+      <a href="SELECTION_GUIDE.zh-CN.md">中文选择指南</a>
+      <a href="${packIndexFile}">整包逐界面索引</a>
+      <a href="interface-images/index.html">全部 A/B/C 图库</a>
+      <a href="INTERFACE_PICKS.md">逐界面填写表</a>
+    </nav>
+    <nav class="section-jump" aria-label="Jump to interface groups">
+      ${sections}
+    </nav>
+  </header>
+  <main>
+    ${sectionBlocks}
   </main>
 </body>
 </html>
@@ -990,6 +1385,8 @@ async function main() {
   if (args.allPacks) {
     await writeFile(args.indexPath, renderPackIndex(surfaces, packs), "utf8");
     console.log(`Wrote ${relative(__dirname, args.indexPath)}.`);
+    await writeFile(args.comparisonPath, renderInterfacePackComparison(surfaces, packs), "utf8");
+    console.log(`Wrote ${relative(__dirname, args.comparisonPath)}.`);
   }
 }
 

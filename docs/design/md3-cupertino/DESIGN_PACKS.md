@@ -1,6 +1,6 @@
 # MD3 + Cupertino design packs
 
-These packs give a fast first choice before reviewing all 84 individual surfaces. Open [pack-selection-index.html](pack-selection-index.html) when you want every pack expanded across all mapped interfaces, or [design-pack-gallery.html](design-pack-gallery.html) when you want a representative-image comparison first. Pick one pack as the baseline, then override any interface in [interface-images/index.html](interface-images/index.html) or [INTERFACE_PICKS.md](INTERFACE_PICKS.md).
+These packs give a fast first choice before reviewing all 84 individual surfaces. Open [pack-selection-index.html](pack-selection-index.html) when you want every pack expanded across all mapped interfaces, [interface-pack-comparison.html](interface-pack-comparison.html) when you want A/B/C images and pack defaults side by side per interface, or [design-pack-gallery.html](design-pack-gallery.html) when you want a representative-image comparison first. Pick one pack as the baseline, then override any interface in [interface-images/index.html](interface-images/index.html) or [INTERFACE_PICKS.md](INTERFACE_PICKS.md).
 
 The canonical pack data lives in [design-packs.json](design-packs.json). `generate-implementation-spec.mjs` and `generate-design-pack-gallery.mjs` both read that file, so pack choices have one source of truth.
 
@@ -10,7 +10,7 @@ You can generate a spec directly from any pack:
 node .\generate-implementation-spec.mjs --pack hibiki-balanced --output .\IMPLEMENTATION_SPEC_DRAFT.md
 ```
 
-You can regenerate the per-pack 84-surface selection pages with:
+You can regenerate the per-pack 84-surface selection pages and the interface comparison with:
 
 ```powershell
 node .\generate-recommended-selection.mjs --all-packs

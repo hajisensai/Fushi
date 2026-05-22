@@ -10,6 +10,7 @@
 - Selection source: [design-packs.json](design-packs.json)
 - Full visual page: [selection-adaptive-power.html](selection-adaptive-power.html)
 - Pack index: [pack-selection-index.html](pack-selection-index.html)
+- Interface pack comparison: [interface-pack-comparison.html](interface-pack-comparison.html)
 - All A/B/C choices: [interface-images/index.html](interface-images/index.html)
 
 ## 整体规则
