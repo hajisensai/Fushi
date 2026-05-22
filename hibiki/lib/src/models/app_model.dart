@@ -33,6 +33,7 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/epub/ttu_migration.dart';
 import 'package:hibiki/src/epub/ttu_migration_server.dart';
@@ -365,7 +366,7 @@ class AppModel with ChangeNotifier {
   final int maximumMediaHistoryItems = 100;
 
   /// Maximum number of dictionary history items.
-  final int maximumDictionaryHistoryItems = 10;
+  int get maximumDictionaryHistoryItems => lowMemoryMode ? 5 : 10;
 
   /// Maximum number of dictionary search results stored in the database.
   final int maximumDictionarySearchResults = 200;
@@ -1098,6 +1099,7 @@ class AppModel with ChangeNotifier {
 
       /// Load all preferences into memory for synchronous reads.
       _prefCache.addAll(await _database.getAllPrefs());
+      _applyMemoryPolicy();
 
       /// Ensure default profile exists on first launch.
       final BaseAnkiRepository ankiRepo =
@@ -2020,6 +2022,7 @@ class AppModel with ChangeNotifier {
     required ValueNotifier<int?> countNotifier,
     required ValueNotifier<int?> totalNotifier,
     required Function() onImportSuccess,
+    VoidCallback? onMemoryError,
   }) async {
     final entities = directory.listSync();
     final zipFiles = entities.whereType<File>().where((f) {
@@ -2059,6 +2062,7 @@ class AppModel with ChangeNotifier {
             cssFiles: cssFiles,
             fontDirs: fontDirs,
             onImportSuccess: onImportSuccess,
+            onMemoryError: onMemoryError,
           );
         } catch (e, stack) {
           ErrorLogService.instance.log('AppModel.importDictZip', e, stack);
@@ -2165,6 +2169,11 @@ class AppModel with ChangeNotifier {
       ErrorLogService.instance.log('DictionaryImport(dir)', e, stack);
       progressNotifier.value = '$e';
       await Future.delayed(const Duration(seconds: 3), () {});
+      if (_isMemoryError(e) && !lowMemoryMode) {
+        progressNotifier.value = t.low_memory_mode_suggestion;
+        await Future.delayed(const Duration(seconds: 3), () {});
+        onMemoryError?.call();
+      }
       progressNotifier.value = t.import_failed;
       await Future.delayed(const Duration(seconds: 1), () {});
     }
@@ -2209,6 +2218,7 @@ class AppModel with ChangeNotifier {
     required Function() onImportSuccess,
     List<File> cssFiles = const [],
     List<Directory> fontDirs = const [],
+    VoidCallback? onMemoryError,
   }) async {
     clearDictionaryResultsCache();
 
@@ -2305,6 +2315,11 @@ class AppModel with ChangeNotifier {
       ErrorLogService.instance.log('DictionaryImport(file)', e, stack);
       progressNotifier.value = '$e';
       await Future.delayed(const Duration(seconds: 3), () {});
+      if (_isMemoryError(e) && !lowMemoryMode) {
+        progressNotifier.value = t.low_memory_mode_suggestion;
+        await Future.delayed(const Duration(seconds: 3), () {});
+        onMemoryError?.call();
+      }
       progressNotifier.value = t.import_failed;
       await Future.delayed(const Duration(seconds: 1), () {});
     }
@@ -3746,7 +3761,9 @@ class AppModel with ChangeNotifier {
       if (decoded is Map) {
         return decoded.map((k, v) => MapEntry(k.toString(), v.toString()));
       }
-    } catch (_) {}
+    } catch (e, stack) {
+      ErrorLogService.instance.log('AppModel.customDictCSS.decode', e, stack);
+    }
     return {};
   }
 
@@ -4041,5 +4058,32 @@ class AppModel with ChangeNotifier {
   /// Sets the populate bookmarks flag so bookmarks don't get added again.
   void setPopulateBookmarksFlag() async {
     await _setPref('populate_bookmarks', true);
+  }
+
+  // ── low memory mode ──────────────────────────────────────────────────
+
+  bool get lowMemoryMode =>
+      _getPref('low_memory_mode', defaultValue: false) as bool;
+
+  Future<void> setLowMemoryMode(bool v) async {
+    await _setPref('low_memory_mode', v);
+    _applyMemoryPolicy();
+    notifyListeners();
+  }
+
+  void _applyMemoryPolicy() {
+    final imageCache = PaintingBinding.instance.imageCache;
+    if (lowMemoryMode) {
+      imageCache.maximumSize = 50;
+      imageCache.maximumSizeBytes = 20 << 20; // 20 MB
+    } else {
+      imageCache.maximumSize = 1000;
+      imageCache.maximumSizeBytes = 100 << 20; // 100 MB
+    }
+  }
+
+  static bool _isMemoryError(Object e) {
+    final msg = e.toString().toLowerCase();
+    return e is OutOfMemoryError || msg.contains('out of memory');
   }
 }

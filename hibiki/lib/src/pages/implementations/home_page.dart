@@ -90,6 +90,8 @@ class _HomePageState extends BasePageState<HomePage>
         searchWithWildcards: false,
         useCache: false,
       );
+    } else if (AppLifecycleState.paused == state && appModel.lowMemoryMode) {
+      PaintingBinding.instance.imageCache.clear();
     }
   }
 
@@ -346,6 +348,7 @@ class _HomePageState extends BasePageState<HomePage>
           ),
         );
         ref.invalidate(hoshiBooksProvider(appModel.targetLanguage));
+        ref.invalidate(srtBooksProvider);
       },
     );
   }

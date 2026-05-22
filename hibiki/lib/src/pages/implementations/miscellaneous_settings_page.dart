@@ -137,6 +137,17 @@ class _MiscellaneousSettingsPageState
               setState(() {});
             },
           ),
+          SwitchListTile(
+            dense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+            title: Text(t.low_memory_mode),
+            subtitle: Text(t.low_memory_mode_hint),
+            value: appModel.lowMemoryMode,
+            onChanged: (v) async {
+              await appModel.setLowMemoryMode(v);
+              setState(() {});
+            },
+          ),
           if (Platform.isAndroid) ...[
             const Divider(),
             const SizedBox(height: 8),

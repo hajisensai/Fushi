@@ -151,7 +151,7 @@ void main() {
     // 用户还在看主页/书架时就把冷启动成本吃掉：~500-1500ms。
     // Desktop: HeadlessInAppWebView may crash WebView2 if called before the
     // Flutter view is attached, so only warm up on mobile.
-    if (Platform.isAndroid || Platform.isIOS) {
+    if ((Platform.isAndroid || Platform.isIOS) && !appModel.lowMemoryMode) {
       unawaited(Future(() async {
         try {
           late final HeadlessInAppWebView warmup;
