@@ -2,6 +2,8 @@
 
 Use this worksheet to choose the direction for each board. Pick `A`, `B`, or `C`; add notes when you want a mix such as `B with A bottom bar`.
 
+For visual review, open [gallery.html](gallery.html) in this folder. It shows all boards on one page.
+
 ## Recommended baseline
 
 If you want the shortest path to a coherent implementation, start from this baseline and override only the rows you dislike:

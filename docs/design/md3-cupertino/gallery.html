@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hibiki MD3 + Cupertino Design Gallery</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f4;
+      --panel: #ffffff;
+      --ink: #172126;
+      --muted: #66747c;
+      --line: #dfe5e1;
+      --brand: #214f5f;
+      --brand-soft: #d6e9e7;
+      --warn: #6b4b18;
+      --shadow: 0 18px 44px rgba(23, 33, 38, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, "Segoe UI", system-ui, sans-serif;
+      letter-spacing: 0;
+    }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: rgba(246, 247, 244, 0.94);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(18px);
+    }
+
+    .bar {
+      display: flex;
+      gap: 18px;
+      align-items: center;
+      justify-content: space-between;
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 18px 22px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 28px;
+      line-height: 1.15;
+    }
+
+    .subhead {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .jump {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 6px;
+      max-width: 560px;
+    }
+
+    .jump a,
+    .copy-link {
+      display: inline-flex;
+      align-items: center;
+      min-height: 32px;
+      padding: 0 10px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--panel);
+      color: var(--brand);
+      font-size: 12px;
+      font-weight: 650;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 24px 22px 56px;
+    }
+
+    .intro {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+      gap: 18px;
+      margin-bottom: 22px;
+    }
+
+    .panel,
+    .board {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    .panel {
+      padding: 18px;
+    }
+
+    .panel h2,
+    .board h2 {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.25;
+    }
+
+    .panel p {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .baseline {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .pick {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: #f8faf8;
+      border: 1px solid var(--line);
+      font-size: 12px;
+    }
+
+    .pick strong {
+      color: var(--brand);
+    }
+
+    pre {
+      margin: 12px 0 0;
+      overflow: auto;
+      padding: 14px;
+      border-radius: 8px;
+      background: #172126;
+      color: #d8f2e6;
+      font: 12px/1.55 Consolas, "SFMono-Regular", monospace;
+    }
+
+    .grid {
+      display: grid;
+      gap: 18px;
+    }
+
+    .board {
+      overflow: hidden;
+      scroll-margin-top: 104px;
+    }
+
+    .board-head {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 18px 14px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .board-meta {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .badge {
+      flex: 0 0 auto;
+      padding: 7px 10px;
+      border-radius: 16px;
+      background: var(--brand-soft);
+      color: var(--brand);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .image-wrap {
+      padding: 14px;
+      background: #eef2ef;
+    }
+
+    .image-wrap img {
+      display: block;
+      width: 100%;
+      height: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .notes {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      padding: 14px 18px 18px;
+    }
+
+    .note {
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcf7;
+      min-height: 74px;
+    }
+
+    .note strong {
+      color: var(--brand);
+    }
+
+    .note p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    @media (max-width: 820px) {
+      .bar,
+      .intro,
+      .notes {
+        display: block;
+      }
+
+      .jump {
+        justify-content: flex-start;
+        margin-top: 14px;
+      }
+
+      .panel + .panel,
+      .note + .note {
+        margin-top: 10px;
+      }
+
+      .baseline {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="bar">
+      <div>
+        <h1>Hibiki MD3 + Cupertino Design Gallery</h1>
+        <p class="subhead">Open this page locally, inspect each board, then copy the pick template into chat.</p>
+      </div>
+      <nav class="jump" aria-label="Design boards">
+        <a href="#board-01">01</a>
+        <a href="#board-02">02</a>
+        <a href="#board-03">03</a>
+        <a href="#board-04">04</a>
+        <a href="#board-05">05</a>
+        <a href="#board-06">06</a>
+        <a href="#board-07">07</a>
+        <a href="#board-08">08</a>
+        <a href="#board-09">09</a>
+        <a href="#board-10">10</a>
+        <a href="#board-11">11</a>
+        <a href="#board-12">12</a>
+        <a href="#board-13">13</a>
+        <a href="#board-14">14</a>
+        <a href="#board-15">15</a>
+        <a href="#board-16">16</a>
+        <a href="#board-17">17</a>
+        <a href="#board-18">18</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="intro" aria-label="How to pick">
+      <div class="panel">
+        <h2>How to use this</h2>
+        <p>Each board has A, B, and C directions. Pick one per board, or mix details like "04 B with A bottom bar". Board 17 is documentation-only; pick it only if you prefer a different map layout.</p>
+        <p>The current design package covers 53 page implementation files and 16 shared UI components. Runtime Flutter code is intentionally untouched until the choices are locked.</p>
+        <a class="copy-link" href="PICKS.md">Open PICKS.md</a>
+      </div>
+      <div class="panel">
+        <h2>Recommended baseline</h2>
+        <div class="baseline" aria-label="Recommended choices">
+          <span class="pick">01 <strong>C</strong></span>
+          <span class="pick">02 <strong>A</strong></span>
+          <span class="pick">03 <strong>B</strong></span>
+          <span class="pick">04 <strong>B</strong></span>
+          <span class="pick">05 <strong>B</strong></span>
+          <span class="pick">06 <strong>A</strong></span>
+          <span class="pick">07 <strong>C</strong></span>
+          <span class="pick">08 <strong>A</strong></span>
+          <span class="pick">09 <strong>C</strong></span>
+          <span class="pick">10 <strong>C</strong></span>
+          <span class="pick">11 <strong>B</strong></span>
+          <span class="pick">12 <strong>A</strong></span>
+          <span class="pick">13 <strong>C</strong></span>
+          <span class="pick">14 <strong>A</strong></span>
+          <span class="pick">15 <strong>A</strong></span>
+          <span class="pick">16 <strong>A</strong></span>
+          <span class="pick">17 <strong>B</strong></span>
+          <span class="pick">18 <strong>C</strong></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" aria-label="Pick template">
+      <h2>Pick template</h2>
+      <pre>01:
+02:
+03:
+04:
+05:
+06:
+07:
+08:
+09:
+10:
+11:
+12:
+13:
+14:
+15:
+16:
+17:
+18:
+Notes:</pre>
+    </section>
+
+    <section class="grid" aria-label="Boards">
+      <article class="board" id="board-01">
+        <div class="board-head"><div><h2>01 Home and navigation</h2><div class="board-meta">Main app shell, bottom tabs, navigation rail, top actions.</div></div><span class="badge">Recommended C</span></div>
+        <div class="image-wrap"><img src="01-home-navigation.svg" alt="Home and navigation design board"></div>
+        <div class="notes"><div class="note"><strong>A</strong><p>Quiet MD3 mobile shell.</p></div><div class="note"><strong>B</strong><p>Calmer Cupertino large-title home.</p></div><div class="note"><strong>C</strong><p>Adaptive workspace for tablet and desktop.</p></div></div>
+      </article>
+      <article class="board" id="board-02">
+        <div class="board-head"><div><h2>02 Reader shelf</h2><div class="board-meta">Book library, tag filters, audiobook state, selection mode.</div></div><span class="badge">Recommended A</span></div>
+        <div class="image-wrap"><img src="02-reader-shelf.svg" alt="Reader shelf design board"></div>
+        <div class="notes"><div class="note"><strong>A</strong><p>Library grid/list default.</p></div><div class="note"><strong>B</strong><p>Reading-first calm shelf.</p></div><div class="note"><strong>C</strong><p>Dense management workspace.</p></div></div>
+      </article>
+      <article class="board" id="board-03">
+        <div class="board-head"><div><h2>03 Dictionary</h2><div class="board-meta">Search, history, result browsing, popup lookup stack.</div></div><span class="badge">Recommended B</span></div>
+        <div class="image-wrap"><img src="03-dictionary.svg" alt="Dictionary design board"></div>
+        <div class="notes"><div class="note"><strong>A</strong><p>Fast MD3 search.</p></div><div class="note"><strong>B</strong><p>Readable result browsing.</p></div><div class="note"><strong>C</strong><p>Power-user split view.</p></div></div>
+      </article>
+      <article class="board" id="board-04">
+        <div class="board-head"><div><h2>04 Hoshi reader</h2><div class="board-meta">Reading chrome, lookup overlay, audiobook bar, lyrics mode.</div></div><span class="badge">Recommended B</span></div>
+        <div class="image-wrap"><img src="04-reader.svg" alt="Hoshi reader design board"></div>
+        <div class="notes"><div class="note"><strong>A</strong><p>Visible MD3 reader chrome.</p></div><div class="note"><strong>B</strong><p>Quiet reading-first controls.</p></div><div class="note"><strong>C</strong><p>Tool-rich reader workspace.</p></div></div>
+      </article>
+      <article class="board" id="board-05">
+        <div class="board-head"><div><h2>05 Settings</h2><div class="board-meta">Profile, theme, reader settings, display, Anki, updates, logs.</div></div><span class="badge">Recommended B</span></div>
+        <div class="image-wrap"><img src="05-settings.svg" alt="Settings design board"></div>
+        <div class="notes"><div class="note"><strong>A</strong><p>MD3 settings list.</p></div><div class="note"><strong>B</strong><p>Cupertino grouped settings.</p></div><div class="note"><strong>C</strong><p>Desktop settings console.</p></div></div>
+      </article>
+      <article class="board" id="board-06">
+        <div class="board-head"><div><h2>06 Import and modals</h2><div class="board-meta">Book import, audiobook import, dictionary import, picker dialogs.</div></div><span class="badge">Recommended A</span></div>
+        <div class="image-wrap"><img src="06-import-and-modals.svg" alt="Import and modals design board"></div>
+        <div class="notes"><div class="note"><strong>A</strong><p>Clear MD3 step flow.</p></div><div class="note"><strong>B</strong><p>Light Cupertino sheet flow.</p></div><div class="note"><strong>C</strong><p>Detailed import inspector.</p></div></div>
+      </article>
+      <article class="board" id="board-07">
+        <div class="board-head"><div><h2>07 Creator and Anki</h2><div class="board-meta">Card mining fields, Anki settings, recorder, crop, segmentation.</div></div><span class="badge">Recommended C</span></div>
+        <div class="image-wrap"><img src="07-creator-anki.svg" alt="Creator and Anki design board"></div>
+        <div class="notes"><div class="note"><strong>A</strong><p>Simple field form.</p></div><div class="note"><strong>B</strong><p>Guided creator flow.</p></div><div class="note"><strong>C</strong><p>Power-user mapping panel.</p></div></div>
+      </article>
+      <article class="board" id="board-08">
+        <div class="board-head"><div><h2>08 Collections and stats</h2><div class="board-meta">Bookmarks, favorite sentences, reading statistics, illustration viewer.</div></div><span class="badge">Recommended A</span></div>
+        <div class="image-wrap"><img src="08-collections-stats.svg" alt="Collections and stats design board"></div>
+        <div class="notes"><div class="note"><strong>A</strong><p>Scannable list and stats.</p></div><div class="note"><strong>B</strong><p>Media-forward gallery feel.</p></div><div class="note"><strong>C</strong><p>Dense analytics workspace.</p></div></div>
+      </article>
+      <article class="board" id="board-09">
+        <div class="board-head"><div><h2>09 System and debug</h2><div class="board-meta">Language, profile management, miscellaneous settings, logs, websocket.</div></div><span class="badge">Recommended C</span></div>
+        <div class="image-wrap"><img src="09-system-debug.svg" alt="System and debug design board"></div>
+        <div class="notes"><div class="note"><strong>A</strong><p>Plain system settings.</p></div><div class="note"><strong>B</strong><p>Grouped profile feel.</p></div><div class="note"><strong>C</strong><p>Operational debug console.</p></div></div>
+      </article>
+      <article class="board" id="board-10">
+        <div class="board-head"><div><h2>10 Dictionary management</h2><div class="board-meta">Installed dictionaries, import progress, ordering, CSS, audio sources.</div></div><span class="badge">Recommended C</span></div>
+        <div class="image-wrap"><img src="10-dictionary-management.svg" alt="Dictionary management design board"></div>
+        <div class="notes"><div class="note"><strong>A</strong><p>MD3 inventory list.</p></div><div class="note"><strong>B</strong><p>Grouped dictionary inspector.</p></div><div class="note"><strong>C</strong><p>Desktop admin workspace.</p></div></div>
+      </article>
+      <article class="board" id="board-11">
+        <div class="board-head"><div><h2>11 Reader customization</h2><div class="board-meta">Display settings, custom fonts, custom theme, book CSS, blur options.</div></div><span class="badge">Recommended B</span></div>
+        <div class="image-wrap"><img src="11-reader-customization.svg" alt="Reader customization design board"></div>
+        <div class="notes"><div class="note"><strong>A</strong><p>Controls-first tuning.</p></div><div class="note"><strong>B</strong><p>Preview-led reader studio.</p></div><div class="note"><strong>C</strong><p>Split CSS/theme editor.</p></div></div>
+      </article>
+      <article class="board" id="board-12">
+        <div class="board-head"><div><h2>12 Media and sentence dialogs</h2><div class="board-meta">Media item dialog, edit dialog, source picker, examples, stash, recorder.</div></div><span class="badge">Recommended A</span></div>
+        <div class="image-wrap"><img src="12-media-and-sentences.svg" alt="Media and sentence dialogs design board"></div>
+        <div class="notes"><div class="note"><strong>A</strong><p>Mobile action sheet.</p></div><div class="note"><strong>B</strong><p>Nested modal stack.</p></div><div class="note"><strong>C</strong><p>Workspace bottom panel.</p></div></div>
+      </article>
+      <article class="board" id="board-13">
+        <div class="board-head"><div><h2>13 Tags and filters</h2><div class="board-meta">Tag filter sheet, tag picker, tag management, batch tag assignment.</div></div><span class="badge">Recommended C</span></div>
+        <div class="image-wrap"><img src="13-tags-and-filters.svg" alt="Tags and filters design board"></div>
+        <div class="notes"><div class="note"><strong>A</strong><p>Chip filter console.</p></div><div class="note"><strong>B</strong><p>Grouped tag manager.</p></div><div class="note"><strong>C</strong><p>Batch editor for library work.</p></div></div>
+      </article>
+      <article class="board" id="board-14">
+        <div class="board-head"><div><h2>14 Profile, language, system</h2><div class="board-meta">Profiles, language, miscellaneous settings, websocket, app icon choices.</div></div><span class="badge">Recommended A</span></div>
+        <div class="image-wrap"><img src="14-profile-language-system.svg" alt="Profile language and system design board"></div>
+        <div class="notes"><div class="note"><strong>A</strong><p>Discoverable settings hub.</p></div><div class="note"><strong>B</strong><p>Account-like profiles.</p></div><div class="note"><strong>C</strong><p>Utility console.</p></div></div>
+      </article>
+      <article class="board" id="board-15">
+        <div class="board-head"><div><h2>15 Logs and debug</h2><div class="board-meta">Debug log, error log, diagnostics, low-memory and import messages.</div></div><span class="badge">Recommended A</span></div>
+        <div class="image-wrap"><img src="15-logs-and-debug.svg" alt="Logs and debug design board"></div>
+        <div class="notes"><div class="note"><strong>A</strong><p>Plain log viewer.</p></div><div class="note"><strong>B</strong><p>Error inbox cards.</p></div><div class="note"><strong>C</strong><p>Diagnostics split view.</p></div></div>
+      </article>
+      <article class="board" id="board-16">
+        <div class="board-head"><div><h2>16 Empty, loading, and error states</h2><div class="board-meta">Shared state model for empty, loading, error, placeholder pages.</div></div><span class="badge">Recommended A</span></div>
+        <div class="image-wrap"><img src="16-empty-loading-error-states.svg" alt="Empty loading and error states design board"></div>
+        <div class="notes"><div class="note"><strong>A</strong><p>Actionable empty states.</p></div><div class="note"><strong>B</strong><p>Quiet loading skeletons.</p></div><div class="note"><strong>C</strong><p>Recoverable error layout.</p></div></div>
+      </article>
+      <article class="board" id="board-17">
+        <div class="board-head"><div><h2>17 Full coverage map</h2><div class="board-meta">Visual map from page families to design boards.</div></div><span class="badge">Recommended B</span></div>
+        <div class="image-wrap"><img src="17-full-coverage-map.svg" alt="Full coverage map design board"></div>
+        <div class="notes"><div class="note"><strong>A</strong><p>Documentation map only.</p></div><div class="note"><strong>B</strong><p>Use current grouping.</p></div><div class="note"><strong>C</strong><p>No runtime UI impact.</p></div></div>
+      </article>
+      <article class="board" id="board-18">
+        <div class="board-head"><div><h2>18 Component system</h2><div class="board-meta">Shared buttons, rows, search, sheets, placeholders, popups, and selection grammar.</div></div><span class="badge">Recommended C</span></div>
+        <div class="image-wrap"><img src="18-component-system.svg" alt="Component system design board"></div>
+        <div class="notes"><div class="note"><strong>A</strong><p>MD3 token kit.</p></div><div class="note"><strong>B</strong><p>Cupertino surface kit.</p></div><div class="note"><strong>C</strong><p>Hybrid density kit.</p></div></div>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

@@ -4,6 +4,8 @@ This folder is the design-selection board for the MD3 + Cupertino redesign goal.
 
 ## Pick format
 
+Open [gallery.html](gallery.html) for a single-page visual gallery of all boards.
+
 Reply with choices like:
 
 ```text
