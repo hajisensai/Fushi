@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1260" height="760" viewBox="0 0 1260 760">
+  <rect width="1260" height="760" fill="#f6f7f4"/>
+  <text x="48" y="54" font-family="Inter, Segoe UI, sans-serif" font-size="26" font-weight="700" fill="#172126">Tags and Filters</text>
+  <text x="48" y="84" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#58666d">Covers tag filter sheet, tag picker, tag management, batch tag picker, book profile tags.</text>
+
+  <g transform="translate(48 122)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">A. Chip Console</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#66747c">Fast filtering with MD3 filter chips and selected count.</text>
+    <rect x="0" y="48" width="340" height="560" rx="28" fill="#11181c"/>
+    <rect x="14" y="62" width="312" height="532" rx="22" fill="#fbfcf7"/>
+    <text x="34" y="108" font-family="Inter, Segoe UI, sans-serif" font-size="24" font-weight="700" fill="#172126">Filter Tags</text>
+    <rect x="34" y="138" width="84" height="34" rx="17" fill="#214f5f"/>
+    <text x="58" y="160" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#ffffff">Novel</text>
+    <rect x="128" y="138" width="100" height="34" rx="17" fill="#e7f0ef" stroke="#b9cfcc"/>
+    <text x="152" y="160" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#214f5f">Audio</text>
+    <rect x="34" y="188" width="118" height="34" rx="17" fill="#ffffff" stroke="#dfe5e1"/>
+    <text x="58" y="210" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#66747c">Finished</text>
+    <rect x="162" y="188" width="126" height="34" rx="17" fill="#ffffff" stroke="#dfe5e1"/>
+    <text x="184" y="210" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#66747c">Grammar</text>
+    <rect x="34" y="270" width="272" height="68" rx="8" fill="#ffffff" stroke="#dfe5e1"/>
+    <text x="54" y="298" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#172126">Matching books</text>
+    <text x="238" y="298" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#214f5f">18</text>
+    <text x="54" y="320" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#66747c">Tap Apply to keep current filters.</text>
+    <rect x="34" y="486" width="126" height="40" rx="20" fill="#ffffff" stroke="#dfe5e1"/>
+    <text x="82" y="511" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#214f5f">Clear</text>
+    <rect x="180" y="486" width="126" height="40" rx="20" fill="#214f5f"/>
+    <text x="226" y="511" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#ffffff">Apply</text>
+  </g>
+
+  <g transform="translate(460 122)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">B. Grouped Manager</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#66747c">Cupertino grouped rows for create, rename, reorder, delete.</text>
+    <rect x="0" y="48" width="340" height="560" rx="28" fill="#11181c"/>
+    <rect x="14" y="62" width="312" height="532" rx="22" fill="#f8fafb"/>
+    <text x="34" y="118" font-family="Inter, Segoe UI, sans-serif" font-size="30" font-weight="700" fill="#101820">Tags</text>
+    <rect x="34" y="150" width="272" height="222" rx="8" fill="#ffffff" stroke="#e1e5e8"/>
+    <text x="54" y="182" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#172126">Novel</text>
+    <text x="244" y="182" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#66747c">42</text>
+    <line x1="54" y1="204" x2="286" y2="204" stroke="#edf0f2"/>
+    <text x="54" y="236" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#172126">Audio</text>
+    <text x="244" y="236" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#66747c">11</text>
+    <line x1="54" y1="258" x2="286" y2="258" stroke="#edf0f2"/>
+    <text x="54" y="290" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#172126">Grammar</text>
+    <text x="244" y="290" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#66747c">7</text>
+    <rect x="34" y="410" width="272" height="44" rx="22" fill="#214f5f"/>
+    <text x="136" y="438" font-family="Inter, Segoe UI, sans-serif" font-size="13" font-weight="700" fill="#ffffff">New Tag</text>
+  </g>
+
+  <g transform="translate(872 122)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">C. Batch Editor</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#66747c">Designed for multi-book selection and tag assignment.</text>
+    <rect x="0" y="48" width="340" height="560" rx="16" fill="#f9faf8" stroke="#dfe5e1"/>
+    <rect x="24" y="84" width="292" height="68" rx="8" fill="#ffffff" stroke="#dfe5e1"/>
+    <text x="44" y="112" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">18 books selected</text>
+    <text x="44" y="132" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#66747c">Add or remove tags in one pass.</text>
+    <rect x="24" y="178" width="292" height="270" rx="8" fill="#ffffff" stroke="#dfe5e1"/>
+    <rect x="44" y="206" width="76" height="30" rx="15" fill="#214f5f"/>
+    <text x="66" y="226" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#ffffff">Novel</text>
+    <rect x="132" y="206" width="76" height="30" rx="15" fill="#e7f0ef"/>
+    <text x="154" y="226" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#214f5f">Audio</text>
+    <rect x="44" y="252" width="98" height="30" rx="15" fill="#ffffff" stroke="#dfe5e1"/>
+    <text x="66" y="272" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#66747c">Finished</text>
+    <rect x="154" y="252" width="98" height="30" rx="15" fill="#ffffff" stroke="#dfe5e1"/>
+    <text x="176" y="272" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#66747c">Grammar</text>
+    <rect x="24" y="486" width="136" height="36" rx="18" fill="#ffffff" stroke="#dfe5e1"/>
+    <text x="76" y="509" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#214f5f">Cancel</text>
+    <rect x="180" y="486" width="136" height="36" rx="18" fill="#214f5f"/>
+    <text x="230" y="509" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#ffffff">Apply</text>
+  </g>
+</svg>

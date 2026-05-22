@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1260" height="760" viewBox="0 0 1260 760">
+  <rect width="1260" height="760" fill="#f6f7f4"/>
+  <text x="48" y="54" font-family="Inter, Segoe UI, sans-serif" font-size="26" font-weight="700" fill="#172126">Dictionary Management</text>
+  <text x="48" y="84" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#58666d">Covers installed dictionaries, import progress, ordering, delete, per-dictionary CSS, audio source setup.</text>
+
+  <g transform="translate(48 122)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">A. MD3 Inventory</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#66747c">Dense list, explicit status chips, clear import action.</text>
+    <rect x="0" y="48" width="340" height="560" rx="28" fill="#11181c"/>
+    <rect x="14" y="62" width="312" height="532" rx="22" fill="#fbfcf7"/>
+    <text x="34" y="108" font-family="Inter, Segoe UI, sans-serif" font-size="24" font-weight="700" fill="#172126">Dictionaries</text>
+    <rect x="236" y="84" width="54" height="32" rx="16" fill="#d6e9e7"/>
+    <text x="250" y="105" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#214f5f">Import</text>
+    <rect x="34" y="138" width="272" height="36" rx="18" fill="#edf3f1"/>
+    <text x="56" y="161" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#66747c">Search dictionary names</text>
+    <rect x="34" y="198" width="272" height="74" rx="8" fill="#ffffff" stroke="#dfe5e1"/>
+    <rect x="52" y="216" width="38" height="38" rx="8" fill="#d6e9e7"/>
+    <text x="104" y="229" font-family="Inter, Segoe UI, sans-serif" font-size="14" font-weight="700" fill="#172126">JMdict</text>
+    <text x="104" y="249" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#66747c">Term - 254k entries</text>
+    <rect x="230" y="218" width="50" height="22" rx="11" fill="#eef7e9"/>
+    <text x="244" y="233" font-family="Inter, Segoe UI, sans-serif" font-size="10" fill="#477034">On</text>
+    <rect x="34" y="286" width="272" height="74" rx="8" fill="#ffffff" stroke="#dfe5e1"/>
+    <rect x="52" y="304" width="38" height="38" rx="8" fill="#efe2cf"/>
+    <text x="104" y="317" font-family="Inter, Segoe UI, sans-serif" font-size="14" font-weight="700" fill="#172126">Pitch Accent</text>
+    <text x="104" y="337" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#66747c">Pitch - 48k entries</text>
+    <rect x="34" y="384" width="272" height="70" rx="8" fill="#fff8ed" stroke="#ead8b8"/>
+    <text x="56" y="410" font-family="Inter, Segoe UI, sans-serif" font-size="13" font-weight="700" fill="#6b4b18">Importing frequency.zip</text>
+    <rect x="56" y="426" width="210" height="8" rx="4" fill="#ead8b8"/>
+    <rect x="56" y="426" width="132" height="8" rx="4" fill="#a9792b"/>
+  </g>
+
+  <g transform="translate(460 122)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">B. Cupertino Inspector</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#66747c">Grouped rows plus a details pane for settings and CSS.</text>
+    <rect x="0" y="48" width="340" height="560" rx="28" fill="#11181c"/>
+    <rect x="14" y="62" width="312" height="532" rx="22" fill="#f8fafb"/>
+    <text x="34" y="118" font-family="Inter, Segoe UI, sans-serif" font-size="30" font-weight="700" fill="#101820">Lexicons</text>
+    <rect x="34" y="146" width="272" height="150" rx="8" fill="#ffffff" stroke="#e1e5e8"/>
+    <text x="54" y="177" font-family="Inter, Segoe UI, sans-serif" font-size="14" font-weight="700" fill="#172126">JMdict</text>
+    <text x="54" y="198" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#66747c">Default search order: 1</text>
+    <line x1="54" y1="220" x2="286" y2="220" stroke="#edf0f2"/>
+    <text x="54" y="250" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#172126">CSS preview</text>
+    <rect x="210" y="230" width="60" height="26" rx="13" fill="#e7f0ef"/>
+    <text x="228" y="248" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#214f5f">Edit</text>
+    <rect x="34" y="320" width="272" height="84" rx="8" fill="#ffffff" stroke="#e1e5e8"/>
+    <text x="54" y="352" font-family="Inter, Segoe UI, sans-serif" font-size="14" font-weight="700" fill="#172126">Local audio DB</text>
+    <text x="54" y="374" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#66747c">3 sources enabled</text>
+    <rect x="34" y="430" width="272" height="58" rx="17" fill="#214f5f"/>
+    <text x="119" y="466" font-family="Inter, Segoe UI, sans-serif" font-size="14" font-weight="700" fill="#ffffff">Add Dictionary</text>
+  </g>
+
+  <g transform="translate(872 122)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">C. Admin Workspace</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#66747c">Desktop-first management with table, details, and log panel.</text>
+    <rect x="0" y="48" width="340" height="560" rx="16" fill="#f9faf8" stroke="#dfe5e1"/>
+    <rect x="24" y="84" width="292" height="44" rx="8" fill="#ffffff" stroke="#dfe5e1"/>
+    <text x="42" y="112" font-family="Inter, Segoe UI, sans-serif" font-size="20" font-weight="700" fill="#172126">Dictionary Admin</text>
+    <rect x="24" y="150" width="188" height="330" rx="8" fill="#ffffff" stroke="#dfe5e1"/>
+    <rect x="212" y="150" width="104" height="330" rx="8" fill="#eef4f1"/>
+    <text x="42" y="180" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#66747c">Name</text>
+    <text x="142" y="180" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#66747c">Type</text>
+    <line x1="42" y1="198" x2="192" y2="198" stroke="#edf0f2"/>
+    <text x="42" y="226" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#172126">JMdict</text>
+    <text x="142" y="226" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#172126">Term</text>
+    <text x="42" y="266" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#172126">Frequency</text>
+    <text x="142" y="266" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#172126">Freq</text>
+    <text x="232" y="184" font-family="Inter, Segoe UI, sans-serif" font-size="14" font-weight="700" fill="#172126">Actions</text>
+    <rect x="232" y="210" width="64" height="28" rx="14" fill="#214f5f"/>
+    <text x="250" y="229" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#ffffff">Import</text>
+    <rect x="232" y="252" width="64" height="28" rx="14" fill="#ffffff" stroke="#dfe5e1"/>
+    <text x="250" y="271" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#214f5f">Order</text>
+    <rect x="24" y="500" width="292" height="42" rx="8" fill="#172126"/>
+    <text x="44" y="526" font-family="Consolas, monospace" font-size="11" fill="#d8f2e6">import ok - 254082 entries</text>
+  </g>
+</svg>

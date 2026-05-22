@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1260" height="760" viewBox="0 0 1260 760">
+  <rect width="1260" height="760" fill="#f6f7f4"/>
+  <text x="48" y="54" font-family="Inter, Segoe UI, sans-serif" font-size="26" font-weight="700" fill="#172126">Empty, Loading, and Error States</text>
+  <text x="48" y="84" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#58666d">Shared states for shelf, dictionary, reader, imports, settings subpages, and placeholder source pages.</text>
+
+  <g transform="translate(48 122)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">A. Actionable Empty</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#66747c">Empty states name the missing data and offer one primary action.</text>
+    <rect x="0" y="48" width="340" height="560" rx="28" fill="#11181c"/>
+    <rect x="14" y="62" width="312" height="532" rx="22" fill="#fbfcf7"/>
+    <circle cx="170" cy="220" r="54" fill="#d6e9e7"/>
+    <rect x="138" y="188" width="64" height="84" rx="8" fill="#ffffff" stroke="#b9cfcc"/>
+    <text x="82" y="328" font-family="Inter, Segoe UI, sans-serif" font-size="20" font-weight="700" fill="#172126">No books yet</text>
+    <text x="78" y="354" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#66747c">Import EPUB files to start reading.</text>
+    <rect x="92" y="392" width="156" height="42" rx="21" fill="#214f5f"/>
+    <text x="131" y="419" font-family="Inter, Segoe UI, sans-serif" font-size="13" font-weight="700" fill="#ffffff">Import Book</text>
+  </g>
+
+  <g transform="translate(460 122)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">B. Quiet Loading</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#66747c">Skeletons preserve layout and reduce false blank-screen panic.</text>
+    <rect x="0" y="48" width="340" height="560" rx="28" fill="#11181c"/>
+    <rect x="14" y="62" width="312" height="532" rx="22" fill="#f8fafb"/>
+    <text x="34" y="118" font-family="Inter, Segoe UI, sans-serif" font-size="30" font-weight="700" fill="#101820">Loading</text>
+    <rect x="34" y="160" width="272" height="70" rx="8" fill="#edf1f2"/>
+    <rect x="54" y="182" width="120" height="12" rx="6" fill="#dfe5e7"/>
+    <rect x="54" y="204" width="190" height="10" rx="5" fill="#dfe5e7"/>
+    <rect x="34" y="248" width="272" height="70" rx="8" fill="#edf1f2"/>
+    <rect x="54" y="270" width="146" height="12" rx="6" fill="#dfe5e7"/>
+    <rect x="54" y="292" width="174" height="10" rx="5" fill="#dfe5e7"/>
+    <rect x="34" y="336" width="272" height="70" rx="8" fill="#edf1f2"/>
+    <rect x="54" y="358" width="100" height="12" rx="6" fill="#dfe5e7"/>
+    <rect x="54" y="380" width="210" height="10" rx="5" fill="#dfe5e7"/>
+  </g>
+
+  <g transform="translate(872 122)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">C. Recoverable Error</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#66747c">Errors separate cause, retry, details, and report actions.</text>
+    <rect x="0" y="48" width="340" height="560" rx="28" fill="#11181c"/>
+    <rect x="14" y="62" width="312" height="532" rx="22" fill="#fbfcf7"/>
+    <circle cx="170" cy="210" r="50" fill="#fff4f1" stroke="#f0d2ca"/>
+    <text x="154" y="226" font-family="Inter, Segoe UI, sans-serif" font-size="38" font-weight="700" fill="#9a3d2f">!</text>
+    <text x="92" y="308" font-family="Inter, Segoe UI, sans-serif" font-size="20" font-weight="700" fill="#172126">Could not import</text>
+    <text x="70" y="334" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#66747c">The file was not a supported dictionary.</text>
+    <rect x="62" y="372" width="104" height="38" rx="19" fill="#214f5f"/>
+    <text x="94" y="396" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#ffffff">Retry</text>
+    <rect x="176" y="372" width="104" height="38" rx="19" fill="#ffffff" stroke="#dfe5e1"/>
+    <text x="210" y="396" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#214f5f">Details</text>
+  </g>
+</svg>

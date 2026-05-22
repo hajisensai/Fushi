@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1260" height="760" viewBox="0 0 1260 760">
+  <rect width="1260" height="760" fill="#f6f7f4"/>
+  <text x="48" y="54" font-family="Inter, Segoe UI, sans-serif" font-size="26" font-weight="700" fill="#172126">Reader Customization</text>
+  <text x="48" y="84" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#58666d">Covers display settings, custom fonts, book CSS editor, custom theme, blur options.</text>
+
+  <g transform="translate(48 122)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">A. Controls First</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#66747c">MD3 sliders and segmented controls, optimized for precise tuning.</text>
+    <rect x="0" y="48" width="340" height="560" rx="28" fill="#11181c"/>
+    <rect x="14" y="62" width="312" height="532" rx="22" fill="#fbfcf7"/>
+    <text x="34" y="108" font-family="Inter, Segoe UI, sans-serif" font-size="24" font-weight="700" fill="#172126">Display</text>
+    <rect x="34" y="138" width="272" height="84" rx="8" fill="#ffffff" stroke="#dfe5e1"/>
+    <text x="54" y="168" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#172126">Writing mode</text>
+    <rect x="54" y="184" width="104" height="28" rx="14" fill="#214f5f"/>
+    <text x="76" y="203" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#ffffff">Vertical</text>
+    <rect x="164" y="184" width="104" height="28" rx="14" fill="#edf3f1"/>
+    <text x="185" y="203" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#66747c">Horizontal</text>
+    <rect x="34" y="242" width="272" height="74" rx="8" fill="#ffffff" stroke="#dfe5e1"/>
+    <text x="54" y="270" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#172126">Font size</text>
+    <line x1="54" y1="294" x2="268" y2="294" stroke="#b6c7c7" stroke-width="6" stroke-linecap="round"/>
+    <line x1="54" y1="294" x2="178" y2="294" stroke="#214f5f" stroke-width="6" stroke-linecap="round"/>
+    <circle cx="178" cy="294" r="10" fill="#214f5f"/>
+    <rect x="34" y="336" width="272" height="138" rx="8" fill="#ffffff" stroke="#dfe5e1"/>
+    <text x="54" y="364" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#172126">Preview</text>
+    <rect x="54" y="382" width="212" height="70" rx="6" fill="#f5f1e8"/>
+    <text x="74" y="412" font-family="Inter, Segoe UI, serif" font-size="16" fill="#24201b">Reading sample text</text>
+    <text x="74" y="438" font-family="Inter, Segoe UI, serif" font-size="13" fill="#675f55">line height and margin</text>
+  </g>
+
+  <g transform="translate(460 122)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">B. Cupertino Studio</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#66747c">Grouped settings with persistent preview and calm visual hierarchy.</text>
+    <rect x="0" y="48" width="340" height="560" rx="28" fill="#11181c"/>
+    <rect x="14" y="62" width="312" height="532" rx="22" fill="#f8fafb"/>
+    <text x="34" y="118" font-family="Inter, Segoe UI, sans-serif" font-size="30" font-weight="700" fill="#101820">Reader</text>
+    <rect x="34" y="146" width="272" height="138" rx="8" fill="#fff9f0" stroke="#eadfce"/>
+    <text x="58" y="184" font-family="Georgia, serif" font-size="18" fill="#2b251d">A quieter page</text>
+    <text x="58" y="214" font-family="Georgia, serif" font-size="13" fill="#6c6258">Theme preview follows every edit.</text>
+    <rect x="34" y="310" width="272" height="148" rx="8" fill="#ffffff" stroke="#e1e5e8"/>
+    <text x="54" y="340" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#172126">Font family</text>
+    <text x="236" y="340" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#214f5f">Serif</text>
+    <line x1="54" y1="360" x2="286" y2="360" stroke="#edf0f2"/>
+    <text x="54" y="390" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#172126">Margins</text>
+    <text x="236" y="390" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#214f5f">Wide</text>
+    <line x1="54" y1="410" x2="286" y2="410" stroke="#edf0f2"/>
+    <text x="54" y="440" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#172126">Theme</text>
+    <text x="228" y="440" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#214f5f">Warm</text>
+  </g>
+
+  <g transform="translate(872 122)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">C. Split Editor</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#66747c">Best for CSS and custom themes: editor left, preview right.</text>
+    <rect x="0" y="48" width="340" height="560" rx="16" fill="#f9faf8" stroke="#dfe5e1"/>
+    <text x="24" y="100" font-family="Inter, Segoe UI, sans-serif" font-size="22" font-weight="700" fill="#172126">Book CSS</text>
+    <rect x="24" y="126" width="292" height="34" rx="17" fill="#edf3f1"/>
+    <rect x="34" y="132" width="88" height="22" rx="11" fill="#214f5f"/>
+    <text x="58" y="147" font-family="Inter, Segoe UI, sans-serif" font-size="10" fill="#ffffff">base.css</text>
+    <text x="144" y="147" font-family="Inter, Segoe UI, sans-serif" font-size="10" fill="#66747c">chapter.css</text>
+    <rect x="24" y="184" width="138" height="276" rx="8" fill="#172126"/>
+    <text x="38" y="214" font-family="Consolas, monospace" font-size="11" fill="#d8f2e6">body {</text>
+    <text x="50" y="236" font-family="Consolas, monospace" font-size="11" fill="#d8f2e6">font-size: 18px;</text>
+    <text x="50" y="258" font-family="Consolas, monospace" font-size="11" fill="#d8f2e6">line-height: 1.8;</text>
+    <text x="38" y="280" font-family="Consolas, monospace" font-size="11" fill="#d8f2e6">}</text>
+    <rect x="178" y="184" width="138" height="276" rx="8" fill="#fff9f0" stroke="#eadfce"/>
+    <text x="198" y="230" font-family="Georgia, serif" font-size="15" fill="#2b251d">Preview page</text>
+    <text x="198" y="258" font-family="Georgia, serif" font-size="12" fill="#6c6258">Before saving.</text>
+    <rect x="24" y="486" width="138" height="36" rx="18" fill="#ffffff" stroke="#dfe5e1"/>
+    <text x="76" y="509" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#214f5f">Revert</text>
+    <rect x="178" y="486" width="138" height="36" rx="18" fill="#214f5f"/>
+    <text x="226" y="509" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#ffffff">Save</text>
+  </g>
+</svg>

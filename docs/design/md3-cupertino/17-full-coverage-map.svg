@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1260" height="760" viewBox="0 0 1260 760">
+  <rect width="1260" height="760" fill="#f6f7f4"/>
+  <text x="48" y="54" font-family="Inter, Segoe UI, sans-serif" font-size="26" font-weight="700" fill="#172126">Coverage Map</text>
+  <text x="48" y="84" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#58666d">How the current Flutter pages map to the design boards. This is the implementation checklist, not a decoration.</text>
+
+  <g transform="translate(48 126)">
+    <rect x="0" y="0" width="360" height="520" rx="10" fill="#ffffff" stroke="#dfe5e1"/>
+    <text x="22" y="34" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">Primary flows</text>
+    <text x="22" y="70" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#214f5f">01 Home and navigation</text>
+    <text x="42" y="94" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#66747c">home_page, home_reader_page, home_dictionary_page</text>
+    <text x="22" y="132" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#214f5f">02 Reader shelf</text>
+    <text x="42" y="156" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#66747c">reader_hoshi_history, history_reader, tag filter</text>
+    <text x="22" y="194" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#214f5f">03 Dictionary search</text>
+    <text x="42" y="218" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#66747c">result, term, entry, structured content, popup</text>
+    <text x="22" y="256" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#214f5f">04 Hoshi reader</text>
+    <text x="42" y="280" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#66747c">reader_hoshi, play bar, lyrics dialog</text>
+    <text x="22" y="318" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#214f5f">05 Settings hub</text>
+    <text x="42" y="342" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#66747c">hoshi settings, behavior, audiobook, update</text>
+  </g>
+
+  <g transform="translate(450 126)">
+    <rect x="0" y="0" width="360" height="520" rx="10" fill="#ffffff" stroke="#dfe5e1"/>
+    <text x="22" y="34" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">Specialized flows</text>
+    <text x="22" y="70" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#214f5f">06 Import and modals</text>
+    <text x="42" y="94" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#66747c">book, audiobook, dictionary import and progress</text>
+    <text x="22" y="132" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#214f5f">07 Creator and Anki</text>
+    <text x="42" y="156" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#66747c">anki settings, segmentation, crop, recorder</text>
+    <text x="22" y="194" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#214f5f">08 Collections and stats</text>
+    <text x="42" y="218" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#66747c">collections, stats, illustrations viewer</text>
+    <text x="22" y="256" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#214f5f">10 Dictionary management</text>
+    <text x="42" y="280" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#66747c">dictionary dialog, settings, CSS, audio sources</text>
+    <text x="22" y="318" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#214f5f">11 Reader customization</text>
+    <text x="42" y="342" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#66747c">display, fonts, theme, CSS, blur</text>
+  </g>
+
+  <g transform="translate(852 126)">
+    <rect x="0" y="0" width="360" height="520" rx="10" fill="#ffffff" stroke="#dfe5e1"/>
+    <text x="22" y="34" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">Support flows</text>
+    <text x="22" y="70" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#214f5f">12 Media and sentences</text>
+    <text x="42" y="94" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#66747c">media item, edit, picker, examples, stash</text>
+    <text x="22" y="132" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#214f5f">13 Tags and filters</text>
+    <text x="42" y="156" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#66747c">tag manager, picker, batch assignment</text>
+    <text x="22" y="194" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#214f5f">14 Profile, language, system</text>
+    <text x="42" y="218" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#66747c">profile, language, miscellaneous, websocket</text>
+    <text x="22" y="256" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#214f5f">15 Logs and debug</text>
+    <text x="42" y="280" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#66747c">debug log, error log, diagnostic messages</text>
+    <text x="22" y="318" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#214f5f">16 Shared states</text>
+    <text x="42" y="342" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#66747c">empty, loading, error, placeholder source</text>
+  </g>
+</svg>

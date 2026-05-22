@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1260" height="760" viewBox="0 0 1260 760">
+  <rect width="1260" height="760" fill="#f6f7f4"/>
+  <text x="48" y="54" font-family="Inter, Segoe UI, sans-serif" font-size="26" font-weight="700" fill="#172126">Media and Sentence Dialogs</text>
+  <text x="48" y="84" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#58666d">Covers media item dialog, edit dialog, media source picker, open stash, examples, audio recorder.</text>
+
+  <g transform="translate(48 122)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">A. Action Sheet Card</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#66747c">Good mobile default: art, title, quick chips, action rows.</text>
+    <rect x="0" y="48" width="340" height="560" rx="28" fill="#11181c"/>
+    <rect x="14" y="62" width="312" height="532" rx="22" fill="#fbfcf7"/>
+    <rect x="34" y="96" width="272" height="180" rx="10" fill="#d7e5e5"/>
+    <text x="66" y="310" font-family="Inter, Segoe UI, sans-serif" font-size="20" font-weight="700" fill="#172126">Selected sentence</text>
+    <text x="66" y="334" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#66747c">Audio ready - image attached</text>
+    <rect x="66" y="362" width="68" height="30" rx="15" fill="#214f5f"/>
+    <text x="88" y="382" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#ffffff">Play</text>
+    <rect x="144" y="362" width="68" height="30" rx="15" fill="#edf3f1"/>
+    <text x="164" y="382" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#214f5f">Mine</text>
+    <rect x="66" y="414" width="214" height="42" rx="8" fill="#ffffff" stroke="#dfe5e1"/>
+    <text x="86" y="441" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#172126">Edit fields</text>
+    <rect x="66" y="466" width="214" height="42" rx="8" fill="#fff4f1" stroke="#f0d2ca"/>
+    <text x="86" y="493" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#9a3d2f">Remove media</text>
+  </g>
+
+  <g transform="translate(460 122)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">B. Cupertino Modal Stack</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#66747c">Best for nested pickers and edit forms.</text>
+    <rect x="0" y="48" width="340" height="560" rx="28" fill="#11181c"/>
+    <rect x="14" y="62" width="312" height="532" rx="22" fill="#f8fafb"/>
+    <text x="34" y="118" font-family="Inter, Segoe UI, sans-serif" font-size="30" font-weight="700" fill="#101820">Media</text>
+    <rect x="34" y="148" width="272" height="84" rx="8" fill="#ffffff" stroke="#e1e5e8"/>
+    <text x="54" y="180" font-family="Inter, Segoe UI, sans-serif" font-size="14" font-weight="700" fill="#172126">Choose source</text>
+    <text x="54" y="202" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#66747c">Book, clipboard, file, recorder</text>
+    <rect x="34" y="258" width="272" height="190" rx="8" fill="#ffffff" stroke="#e1e5e8"/>
+    <text x="54" y="292" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#172126">Name override</text>
+    <rect x="54" y="310" width="232" height="36" rx="8" fill="#f5f7f8"/>
+    <text x="70" y="333" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#66747c">Optional title</text>
+    <text x="54" y="378" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#172126">Cover override</text>
+    <rect x="54" y="394" width="232" height="36" rx="18" fill="#e7f0ef"/>
+    <text x="118" y="417" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#214f5f">Pick image</text>
+  </g>
+
+  <g transform="translate(872 122)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">C. Workspace Bottom Panel</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#66747c">Best for desktop and repeated sentence mining.</text>
+    <rect x="0" y="48" width="340" height="560" rx="16" fill="#f9faf8" stroke="#dfe5e1"/>
+    <rect x="24" y="82" width="292" height="306" rx="8" fill="#fff9f0" stroke="#eadfce"/>
+    <text x="46" y="130" font-family="Georgia, serif" font-size="18" fill="#2b251d">Example sentence result</text>
+    <text x="46" y="162" font-family="Georgia, serif" font-size="13" fill="#6c6258">Use this area for preview and context.</text>
+    <rect x="24" y="410" width="292" height="148" rx="10" fill="#ffffff" stroke="#dfe5e1"/>
+    <text x="46" y="444" font-family="Inter, Segoe UI, sans-serif" font-size="14" font-weight="700" fill="#172126">Quick actions</text>
+    <rect x="46" y="468" width="74" height="32" rx="16" fill="#214f5f"/>
+    <text x="70" y="489" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#ffffff">Play</text>
+    <rect x="130" y="468" width="74" height="32" rx="16" fill="#edf3f1"/>
+    <text x="154" y="489" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#214f5f">Crop</text>
+    <rect x="214" y="468" width="74" height="32" rx="16" fill="#edf3f1"/>
+    <text x="236" y="489" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#214f5f">Record</text>
+  </g>
+</svg>

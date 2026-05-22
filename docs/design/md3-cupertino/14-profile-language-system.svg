@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1260" height="760" viewBox="0 0 1260 760">
+  <rect width="1260" height="760" fill="#f6f7f4"/>
+  <text x="48" y="54" font-family="Inter, Segoe UI, sans-serif" font-size="26" font-weight="700" fill="#172126">Profile, Language, and System</text>
+  <text x="48" y="84" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#58666d">Covers profiles, language picker, miscellaneous settings, websocket, launcher/icon options.</text>
+
+  <g transform="translate(48 122)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">A. Settings Hub</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#66747c">One landing surface with grouped destination cards.</text>
+    <rect x="0" y="48" width="340" height="560" rx="28" fill="#11181c"/>
+    <rect x="14" y="62" width="312" height="532" rx="22" fill="#fbfcf7"/>
+    <text x="34" y="108" font-family="Inter, Segoe UI, sans-serif" font-size="24" font-weight="700" fill="#172126">System</text>
+    <rect x="34" y="142" width="272" height="70" rx="8" fill="#ffffff" stroke="#dfe5e1"/>
+    <text x="58" y="174" font-family="Inter, Segoe UI, sans-serif" font-size="14" font-weight="700" fill="#172126">Profiles</text>
+    <text x="58" y="194" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#66747c">Default active, 3 total</text>
+    <rect x="34" y="228" width="272" height="70" rx="8" fill="#ffffff" stroke="#dfe5e1"/>
+    <text x="58" y="260" font-family="Inter, Segoe UI, sans-serif" font-size="14" font-weight="700" fill="#172126">Language</text>
+    <text x="58" y="280" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#66747c">Chinese Simplified</text>
+    <rect x="34" y="314" width="272" height="70" rx="8" fill="#ffffff" stroke="#dfe5e1"/>
+    <text x="58" y="346" font-family="Inter, Segoe UI, sans-serif" font-size="14" font-weight="700" fill="#172126">Connection</text>
+    <text x="58" y="366" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#66747c">Websocket and integrations</text>
+  </g>
+
+  <g transform="translate(460 122)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">B. Cupertino Account</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#66747c">Profile management feels like account switching, not debug UI.</text>
+    <rect x="0" y="48" width="340" height="560" rx="28" fill="#11181c"/>
+    <rect x="14" y="62" width="312" height="532" rx="22" fill="#f8fafb"/>
+    <text x="34" y="118" font-family="Inter, Segoe UI, sans-serif" font-size="30" font-weight="700" fill="#101820">Profiles</text>
+    <rect x="34" y="150" width="272" height="222" rx="8" fill="#ffffff" stroke="#e1e5e8"/>
+    <circle cx="68" cy="188" r="15" fill="#214f5f"/>
+    <text x="100" y="184" font-family="Inter, Segoe UI, sans-serif" font-size="14" font-weight="700" fill="#172126">Default</text>
+    <text x="100" y="204" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#66747c">Active now</text>
+    <line x1="54" y1="226" x2="286" y2="226" stroke="#edf0f2"/>
+    <circle cx="68" cy="264" r="15" fill="#d7e5e5"/>
+    <text x="100" y="270" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#172126">Study</text>
+    <line x1="54" y1="304" x2="286" y2="304" stroke="#edf0f2"/>
+    <circle cx="68" cy="342" r="15" fill="#efe2cf"/>
+    <text x="100" y="348" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#172126">Test</text>
+    <rect x="34" y="410" width="272" height="44" rx="22" fill="#214f5f"/>
+    <text x="126" y="438" font-family="Inter, Segoe UI, sans-serif" font-size="13" font-weight="700" fill="#ffffff">Create Profile</text>
+  </g>
+
+  <g transform="translate(872 122)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">C. Utility Console</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#66747c">Dense operational panel for language, icons, websocket, platform state.</text>
+    <rect x="0" y="48" width="340" height="560" rx="16" fill="#f9faf8" stroke="#dfe5e1"/>
+    <text x="24" y="100" font-family="Inter, Segoe UI, sans-serif" font-size="22" font-weight="700" fill="#172126">Utilities</text>
+    <rect x="24" y="126" width="292" height="86" rx="8" fill="#ffffff" stroke="#dfe5e1"/>
+    <text x="44" y="158" font-family="Inter, Segoe UI, sans-serif" font-size="14" font-weight="700" fill="#172126">Language</text>
+    <rect x="204" y="144" width="82" height="28" rx="14" fill="#e7f0ef"/>
+    <text x="230" y="163" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#214f5f">zh-CN</text>
+    <text x="44" y="184" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#66747c">Picker opens as modal sheet.</text>
+    <rect x="24" y="234" width="292" height="86" rx="8" fill="#ffffff" stroke="#dfe5e1"/>
+    <text x="44" y="266" font-family="Inter, Segoe UI, sans-serif" font-size="14" font-weight="700" fill="#172126">App icon</text>
+    <text x="44" y="292" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#66747c">Preset, shortcut, custom image paths.</text>
+    <rect x="24" y="342" width="292" height="86" rx="8" fill="#172126"/>
+    <text x="44" y="374" font-family="Inter, Segoe UI, sans-serif" font-size="14" font-weight="700" fill="#ffffff">Websocket</text>
+    <text x="44" y="400" font-family="Consolas, monospace" font-size="11" fill="#d8f2e6">ws://127.0.0.1:8765</text>
+  </g>
+</svg>
