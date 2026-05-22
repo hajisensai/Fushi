@@ -1,0 +1,2706 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hibiki Interface Images</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f4;
+      --panel: #ffffff;
+      --ink: #172126;
+      --muted: #66747c;
+      --line: #dfe5e1;
+      --brand: #214f5f;
+      --brand-soft: #d6e9e7;
+      --shadow: 0 18px 44px rgba(23, 33, 38, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, "Segoe UI", system-ui, sans-serif;
+      letter-spacing: 0;
+    }
+
+    header.top {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      border-bottom: 1px solid var(--line);
+      background: rgba(246, 247, 244, 0.94);
+      backdrop-filter: blur(18px);
+    }
+
+    .bar, main {
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 18px 22px;
+    }
+
+    .bar {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    h1, h2, p { margin: 0; }
+    h1 { font-size: 28px; line-height: 1.1; }
+    h2 { font-size: 18px; line-height: 1.2; }
+    p { color: var(--muted); font-size: 13px; line-height: 1.5; }
+    a { color: var(--brand); font-weight: 800; text-decoration: none; }
+
+    .nav, .filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    .nav a, .filters button, .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 32px;
+      padding: 0 10px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--panel);
+      color: var(--brand);
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .filters {
+      justify-content: flex-start;
+      margin: 16px 0;
+    }
+
+    .filters button {
+      cursor: pointer;
+    }
+
+    .filters button[aria-pressed="true"] {
+      border-color: var(--brand);
+      background: var(--brand-soft);
+      box-shadow: inset 0 0 0 1px var(--brand);
+    }
+
+    .search {
+      flex: 1 1 280px;
+      min-height: 34px;
+      padding: 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 17px;
+      color: var(--ink);
+      font: inherit;
+    }
+
+    .summary, .surface-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    .summary {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 20px;
+      align-items: center;
+      padding: 18px;
+    }
+
+    .counts {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(90px, 1fr));
+      gap: 8px;
+    }
+
+    .count {
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcf7;
+    }
+
+    .count strong {
+      display: block;
+      color: var(--brand);
+      font-size: 24px;
+      line-height: 1;
+    }
+
+    .gallery {
+      display: grid;
+      gap: 18px;
+      margin-top: 18px;
+    }
+
+    .surface-card {
+      overflow: hidden;
+      scroll-margin-top: 96px;
+    }
+
+    .surface-card > header {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      justify-content: space-between;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .variants {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      padding: 14px;
+      background: #eef2ef;
+    }
+
+    .variant {
+      margin: 0;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .variant img {
+      display: block;
+      width: 100%;
+      height: auto;
+      background: #f6f7f4;
+    }
+
+    figcaption {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 12px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    figcaption strong {
+      color: var(--ink);
+    }
+
+    .hidden { display: none; }
+
+    @media (max-width: 980px) {
+      .bar, .summary { display: block; }
+      .nav, .counts { justify-content: flex-start; margin-top: 12px; }
+      .variants { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <div class="bar">
+      <div>
+        <h1>Hibiki Interface Images</h1>
+        <p>Standalone A/B/C image files for every mapped UI surface.</p>
+      </div>
+      <nav class="nav" aria-label="Design navigation">
+        <a href="../gallery.html">Main picker</a>
+        <a href="../interface-gallery.html">Interface gallery</a>
+        <a href="../INTERFACE_PICKS.md">Interface picks</a>
+      </nav>
+    </div>
+  </header>
+  <main>
+    <section class="summary" aria-label="Image pack summary">
+      <div>
+        <h2>One interface, three concrete images</h2>
+        <p>These files are generated from the same board mappings as the picker. Use this pack when you want direct image links instead of scrolling the full gallery.</p>
+      </div>
+      <div class="counts">
+        <div class="count"><strong>84</strong><p>UI surfaces</p></div>
+        <div class="count"><strong>252</strong><p>image files</p></div>
+        <div class="count"><strong>3</strong><p>choices each</p></div>
+      </div>
+    </section>
+    <section class="filters" aria-label="Interface filters">
+      <button type="button" data-section="all" aria-pressed="true">All</button>
+      <button type="button" data-section="Entry" aria-pressed="false">Entry</button>
+      <button type="button" data-section="Pages" aria-pressed="false">Pages</button>
+      <button type="button" data-section="Shared/support" aria-pressed="false">Shared/support</button>
+      <input class="search" id="search" type="search" placeholder="Filter surfaces or boards" aria-label="Filter surfaces or boards">
+    </section>
+    <section class="gallery" id="gallery" aria-label="Generated interface images">
+      <article class="surface-card" data-section="Entry" data-search="main.dart entry home and navigation empty, loading, error states">
+        <header>
+          <div>
+            <h2>main.dart</h2>
+            <p>Entry / Primary: Home and navigation / Supports: Empty, loading, error states</p>
+          </div>
+          <span class="pill">Default C</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="main-A.svg">
+              <img src="main-A.svg" alt="main.dart A Quiet MD3">
+            </a>
+            <figcaption><strong>A. Quiet MD3</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="main-B.svg">
+              <img src="main-B.svg" alt="main.dart B Cupertino Calm">
+            </a>
+            <figcaption><strong>B. Cupertino Calm</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="main-C.svg">
+              <img src="main-C.svg" alt="main.dart C Adaptive Workspace">
+            </a>
+            <figcaption><strong>C. Adaptive Workspace</strong><span>default</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Entry" data-search="popup_main.dart entry dictionary empty, loading, error states">
+        <header>
+          <div>
+            <h2>popup_main.dart</h2>
+            <p>Entry / Primary: Dictionary / Supports: Empty, loading, error states</p>
+          </div>
+          <span class="pill">Default B</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="popup-main-A.svg">
+              <img src="popup-main-A.svg" alt="popup_main.dart A Fast MD3 Search">
+            </a>
+            <figcaption><strong>A. Fast MD3 Search</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="popup-main-B.svg">
+              <img src="popup-main-B.svg" alt="popup_main.dart B Readable Results">
+            </a>
+            <figcaption><strong>B. Readable Results</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="popup-main-C.svg">
+              <img src="popup-main-C.svg" alt="popup_main.dart C Power Split View">
+            </a>
+            <figcaption><strong>C. Power Split View</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Entry" data-search="floating_dict_main.dart entry dictionary component system">
+        <header>
+          <div>
+            <h2>floating_dict_main.dart</h2>
+            <p>Entry / Primary: Dictionary / Supports: Component system</p>
+          </div>
+          <span class="pill">Default B</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="floating-dict-main-A.svg">
+              <img src="floating-dict-main-A.svg" alt="floating_dict_main.dart A Fast MD3 Search">
+            </a>
+            <figcaption><strong>A. Fast MD3 Search</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="floating-dict-main-B.svg">
+              <img src="floating-dict-main-B.svg" alt="floating_dict_main.dart B Readable Results">
+            </a>
+            <figcaption><strong>B. Readable Results</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="floating-dict-main-C.svg">
+              <img src="floating-dict-main-C.svg" alt="floating_dict_main.dart C Power Split View">
+            </a>
+            <figcaption><strong>C. Power Split View</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="anki_settings_page.dart pages creator and anki settings">
+        <header>
+          <div>
+            <h2>anki_settings_page.dart</h2>
+            <p>Pages / Primary: Creator and Anki / Supports: Settings</p>
+          </div>
+          <span class="pill">Default C</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="anki-settings-page-A.svg">
+              <img src="anki-settings-page-A.svg" alt="anki_settings_page.dart A Simple Field Form">
+            </a>
+            <figcaption><strong>A. Simple Field Form</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="anki-settings-page-B.svg">
+              <img src="anki-settings-page-B.svg" alt="anki_settings_page.dart B Guided Creator">
+            </a>
+            <figcaption><strong>B. Guided Creator</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="anki-settings-page-C.svg">
+              <img src="anki-settings-page-C.svg" alt="anki_settings_page.dart C Mapping Panel">
+            </a>
+            <figcaption><strong>C. Mapping Panel</strong><span>default</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="audio_recorder_page.dart pages creator and anki media and sentence dialogs">
+        <header>
+          <div>
+            <h2>audio_recorder_page.dart</h2>
+            <p>Pages / Primary: Creator and Anki / Supports: Media and sentence dialogs</p>
+          </div>
+          <span class="pill">Default C</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="audio-recorder-page-A.svg">
+              <img src="audio-recorder-page-A.svg" alt="audio_recorder_page.dart A Simple Field Form">
+            </a>
+            <figcaption><strong>A. Simple Field Form</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="audio-recorder-page-B.svg">
+              <img src="audio-recorder-page-B.svg" alt="audio_recorder_page.dart B Guided Creator">
+            </a>
+            <figcaption><strong>B. Guided Creator</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="audio-recorder-page-C.svg">
+              <img src="audio-recorder-page-C.svg" alt="audio_recorder_page.dart C Mapping Panel">
+            </a>
+            <figcaption><strong>C. Mapping Panel</strong><span>default</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="blur_options_dialog_page.dart pages reader customization import and modals">
+        <header>
+          <div>
+            <h2>blur_options_dialog_page.dart</h2>
+            <p>Pages / Primary: Reader customization / Supports: Import and modals</p>
+          </div>
+          <span class="pill">Default B</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="blur-options-dialog-page-A.svg">
+              <img src="blur-options-dialog-page-A.svg" alt="blur_options_dialog_page.dart A Controls First">
+            </a>
+            <figcaption><strong>A. Controls First</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="blur-options-dialog-page-B.svg">
+              <img src="blur-options-dialog-page-B.svg" alt="blur_options_dialog_page.dart B Preview Studio">
+            </a>
+            <figcaption><strong>B. Preview Studio</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="blur-options-dialog-page-C.svg">
+              <img src="blur-options-dialog-page-C.svg" alt="blur_options_dialog_page.dart C Theme Editor">
+            </a>
+            <figcaption><strong>C. Theme Editor</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="book_css_editor_page.dart pages reader customization hoshi reader">
+        <header>
+          <div>
+            <h2>book_css_editor_page.dart</h2>
+            <p>Pages / Primary: Reader customization / Supports: Hoshi reader</p>
+          </div>
+          <span class="pill">Default B</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="book-css-editor-page-A.svg">
+              <img src="book-css-editor-page-A.svg" alt="book_css_editor_page.dart A Controls First">
+            </a>
+            <figcaption><strong>A. Controls First</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="book-css-editor-page-B.svg">
+              <img src="book-css-editor-page-B.svg" alt="book_css_editor_page.dart B Preview Studio">
+            </a>
+            <figcaption><strong>B. Preview Studio</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="book-css-editor-page-C.svg">
+              <img src="book-css-editor-page-C.svg" alt="book_css_editor_page.dart C Theme Editor">
+            </a>
+            <figcaption><strong>C. Theme Editor</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="collections_page.dart pages collections and stats media and sentence dialogs">
+        <header>
+          <div>
+            <h2>collections_page.dart</h2>
+            <p>Pages / Primary: Collections and stats / Supports: Media and sentence dialogs</p>
+          </div>
+          <span class="pill">Default A</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="collections-page-A.svg">
+              <img src="collections-page-A.svg" alt="collections_page.dart A Scannable Lists">
+            </a>
+            <figcaption><strong>A. Scannable Lists</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="collections-page-B.svg">
+              <img src="collections-page-B.svg" alt="collections_page.dart B Media Gallery">
+            </a>
+            <figcaption><strong>B. Media Gallery</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="collections-page-C.svg">
+              <img src="collections-page-C.svg" alt="collections_page.dart C Analytics Workspace">
+            </a>
+            <figcaption><strong>C. Analytics Workspace</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="crop_image_dialog_page.dart pages creator and anki media and sentence dialogs">
+        <header>
+          <div>
+            <h2>crop_image_dialog_page.dart</h2>
+            <p>Pages / Primary: Creator and Anki / Supports: Media and sentence dialogs</p>
+          </div>
+          <span class="pill">Default C</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="crop-image-dialog-page-A.svg">
+              <img src="crop-image-dialog-page-A.svg" alt="crop_image_dialog_page.dart A Simple Field Form">
+            </a>
+            <figcaption><strong>A. Simple Field Form</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="crop-image-dialog-page-B.svg">
+              <img src="crop-image-dialog-page-B.svg" alt="crop_image_dialog_page.dart B Guided Creator">
+            </a>
+            <figcaption><strong>B. Guided Creator</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="crop-image-dialog-page-C.svg">
+              <img src="crop-image-dialog-page-C.svg" alt="crop_image_dialog_page.dart C Mapping Panel">
+            </a>
+            <figcaption><strong>C. Mapping Panel</strong><span>default</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="custom_fonts_page.dart pages reader customization settings">
+        <header>
+          <div>
+            <h2>custom_fonts_page.dart</h2>
+            <p>Pages / Primary: Reader customization / Supports: Settings</p>
+          </div>
+          <span class="pill">Default B</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="custom-fonts-page-A.svg">
+              <img src="custom-fonts-page-A.svg" alt="custom_fonts_page.dart A Controls First">
+            </a>
+            <figcaption><strong>A. Controls First</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="custom-fonts-page-B.svg">
+              <img src="custom-fonts-page-B.svg" alt="custom_fonts_page.dart B Preview Studio">
+            </a>
+            <figcaption><strong>B. Preview Studio</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="custom-fonts-page-C.svg">
+              <img src="custom-fonts-page-C.svg" alt="custom_fonts_page.dart C Theme Editor">
+            </a>
+            <figcaption><strong>C. Theme Editor</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="custom_theme_page.dart pages reader customization settings">
+        <header>
+          <div>
+            <h2>custom_theme_page.dart</h2>
+            <p>Pages / Primary: Reader customization / Supports: Settings</p>
+          </div>
+          <span class="pill">Default B</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="custom-theme-page-A.svg">
+              <img src="custom-theme-page-A.svg" alt="custom_theme_page.dart A Controls First">
+            </a>
+            <figcaption><strong>A. Controls First</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="custom-theme-page-B.svg">
+              <img src="custom-theme-page-B.svg" alt="custom_theme_page.dart B Preview Studio">
+            </a>
+            <figcaption><strong>B. Preview Studio</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="custom-theme-page-C.svg">
+              <img src="custom-theme-page-C.svg" alt="custom_theme_page.dart C Theme Editor">
+            </a>
+            <figcaption><strong>C. Theme Editor</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="debug_log_page.dart pages logs and debug system and debug">
+        <header>
+          <div>
+            <h2>debug_log_page.dart</h2>
+            <p>Pages / Primary: Logs and debug / Supports: System and debug</p>
+          </div>
+          <span class="pill">Default A</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="debug-log-page-A.svg">
+              <img src="debug-log-page-A.svg" alt="debug_log_page.dart A Plain Log Viewer">
+            </a>
+            <figcaption><strong>A. Plain Log Viewer</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="debug-log-page-B.svg">
+              <img src="debug-log-page-B.svg" alt="debug_log_page.dart B Error Inbox">
+            </a>
+            <figcaption><strong>B. Error Inbox</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="debug-log-page-C.svg">
+              <img src="debug-log-page-C.svg" alt="debug_log_page.dart C Diagnostics Split">
+            </a>
+            <figcaption><strong>C. Diagnostics Split</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="dictionary_dialog_delete_page.dart pages dictionary management import and modals">
+        <header>
+          <div>
+            <h2>dictionary_dialog_delete_page.dart</h2>
+            <p>Pages / Primary: Dictionary management / Supports: Import and modals</p>
+          </div>
+          <span class="pill">Default C</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="dictionary-dialog-delete-page-A.svg">
+              <img src="dictionary-dialog-delete-page-A.svg" alt="dictionary_dialog_delete_page.dart A Inventory List">
+            </a>
+            <figcaption><strong>A. Inventory List</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="dictionary-dialog-delete-page-B.svg">
+              <img src="dictionary-dialog-delete-page-B.svg" alt="dictionary_dialog_delete_page.dart B Dictionary Inspector">
+            </a>
+            <figcaption><strong>B. Dictionary Inspector</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="dictionary-dialog-delete-page-C.svg">
+              <img src="dictionary-dialog-delete-page-C.svg" alt="dictionary_dialog_delete_page.dart C Admin Workspace">
+            </a>
+            <figcaption><strong>C. Admin Workspace</strong><span>default</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="dictionary_dialog_import_page.dart pages dictionary management import and modals">
+        <header>
+          <div>
+            <h2>dictionary_dialog_import_page.dart</h2>
+            <p>Pages / Primary: Dictionary management / Supports: Import and modals</p>
+          </div>
+          <span class="pill">Default C</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="dictionary-dialog-import-page-A.svg">
+              <img src="dictionary-dialog-import-page-A.svg" alt="dictionary_dialog_import_page.dart A Inventory List">
+            </a>
+            <figcaption><strong>A. Inventory List</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="dictionary-dialog-import-page-B.svg">
+              <img src="dictionary-dialog-import-page-B.svg" alt="dictionary_dialog_import_page.dart B Dictionary Inspector">
+            </a>
+            <figcaption><strong>B. Dictionary Inspector</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="dictionary-dialog-import-page-C.svg">
+              <img src="dictionary-dialog-import-page-C.svg" alt="dictionary_dialog_import_page.dart C Admin Workspace">
+            </a>
+            <figcaption><strong>C. Admin Workspace</strong><span>default</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="dictionary_dialog_page.dart pages dictionary management dictionary">
+        <header>
+          <div>
+            <h2>dictionary_dialog_page.dart</h2>
+            <p>Pages / Primary: Dictionary management / Supports: Dictionary</p>
+          </div>
+          <span class="pill">Default C</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="dictionary-dialog-page-A.svg">
+              <img src="dictionary-dialog-page-A.svg" alt="dictionary_dialog_page.dart A Inventory List">
+            </a>
+            <figcaption><strong>A. Inventory List</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="dictionary-dialog-page-B.svg">
+              <img src="dictionary-dialog-page-B.svg" alt="dictionary_dialog_page.dart B Dictionary Inspector">
+            </a>
+            <figcaption><strong>B. Dictionary Inspector</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="dictionary-dialog-page-C.svg">
+              <img src="dictionary-dialog-page-C.svg" alt="dictionary_dialog_page.dart C Admin Workspace">
+            </a>
+            <figcaption><strong>C. Admin Workspace</strong><span>default</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="dictionary_entry_page.dart pages dictionary dictionary management">
+        <header>
+          <div>
+            <h2>dictionary_entry_page.dart</h2>
+            <p>Pages / Primary: Dictionary / Supports: Dictionary management</p>
+          </div>
+          <span class="pill">Default B</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="dictionary-entry-page-A.svg">
+              <img src="dictionary-entry-page-A.svg" alt="dictionary_entry_page.dart A Fast MD3 Search">
+            </a>
+            <figcaption><strong>A. Fast MD3 Search</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="dictionary-entry-page-B.svg">
+              <img src="dictionary-entry-page-B.svg" alt="dictionary_entry_page.dart B Readable Results">
+            </a>
+            <figcaption><strong>B. Readable Results</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="dictionary-entry-page-C.svg">
+              <img src="dictionary-entry-page-C.svg" alt="dictionary_entry_page.dart C Power Split View">
+            </a>
+            <figcaption><strong>C. Power Split View</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="dictionary_page_mixin.dart pages dictionary hoshi reader">
+        <header>
+          <div>
+            <h2>dictionary_page_mixin.dart</h2>
+            <p>Pages / Primary: Dictionary / Supports: Hoshi reader</p>
+          </div>
+          <span class="pill">Default B</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="dictionary-page-mixin-A.svg">
+              <img src="dictionary-page-mixin-A.svg" alt="dictionary_page_mixin.dart A Fast MD3 Search">
+            </a>
+            <figcaption><strong>A. Fast MD3 Search</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="dictionary-page-mixin-B.svg">
+              <img src="dictionary-page-mixin-B.svg" alt="dictionary_page_mixin.dart B Readable Results">
+            </a>
+            <figcaption><strong>B. Readable Results</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="dictionary-page-mixin-C.svg">
+              <img src="dictionary-page-mixin-C.svg" alt="dictionary_page_mixin.dart C Power Split View">
+            </a>
+            <figcaption><strong>C. Power Split View</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="dictionary_popup_layer.dart pages dictionary hoshi reader">
+        <header>
+          <div>
+            <h2>dictionary_popup_layer.dart</h2>
+            <p>Pages / Primary: Dictionary / Supports: Hoshi reader</p>
+          </div>
+          <span class="pill">Default B</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="dictionary-popup-layer-A.svg">
+              <img src="dictionary-popup-layer-A.svg" alt="dictionary_popup_layer.dart A Fast MD3 Search">
+            </a>
+            <figcaption><strong>A. Fast MD3 Search</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="dictionary-popup-layer-B.svg">
+              <img src="dictionary-popup-layer-B.svg" alt="dictionary_popup_layer.dart B Readable Results">
+            </a>
+            <figcaption><strong>B. Readable Results</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="dictionary-popup-layer-C.svg">
+              <img src="dictionary-popup-layer-C.svg" alt="dictionary_popup_layer.dart C Power Split View">
+            </a>
+            <figcaption><strong>C. Power Split View</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="dictionary_popup_native.dart pages dictionary hoshi reader">
+        <header>
+          <div>
+            <h2>dictionary_popup_native.dart</h2>
+            <p>Pages / Primary: Dictionary / Supports: Hoshi reader</p>
+          </div>
+          <span class="pill">Default B</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="dictionary-popup-native-A.svg">
+              <img src="dictionary-popup-native-A.svg" alt="dictionary_popup_native.dart A Fast MD3 Search">
+            </a>
+            <figcaption><strong>A. Fast MD3 Search</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="dictionary-popup-native-B.svg">
+              <img src="dictionary-popup-native-B.svg" alt="dictionary_popup_native.dart B Readable Results">
+            </a>
+            <figcaption><strong>B. Readable Results</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="dictionary-popup-native-C.svg">
+              <img src="dictionary-popup-native-C.svg" alt="dictionary_popup_native.dart C Power Split View">
+            </a>
+            <figcaption><strong>C. Power Split View</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="dictionary_popup_webview.dart pages dictionary hoshi reader">
+        <header>
+          <div>
+            <h2>dictionary_popup_webview.dart</h2>
+            <p>Pages / Primary: Dictionary / Supports: Hoshi reader</p>
+          </div>
+          <span class="pill">Default B</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="dictionary-popup-webview-A.svg">
+              <img src="dictionary-popup-webview-A.svg" alt="dictionary_popup_webview.dart A Fast MD3 Search">
+            </a>
+            <figcaption><strong>A. Fast MD3 Search</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="dictionary-popup-webview-B.svg">
+              <img src="dictionary-popup-webview-B.svg" alt="dictionary_popup_webview.dart B Readable Results">
+            </a>
+            <figcaption><strong>B. Readable Results</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="dictionary-popup-webview-C.svg">
+              <img src="dictionary-popup-webview-C.svg" alt="dictionary_popup_webview.dart C Power Split View">
+            </a>
+            <figcaption><strong>C. Power Split View</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="dictionary_progress_dialog_content.dart pages dictionary management empty, loading, error states">
+        <header>
+          <div>
+            <h2>dictionary_progress_dialog_content.dart</h2>
+            <p>Pages / Primary: Dictionary management / Supports: Empty, loading, error states</p>
+          </div>
+          <span class="pill">Default C</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="dictionary-progress-dialog-content-A.svg">
+              <img src="dictionary-progress-dialog-content-A.svg" alt="dictionary_progress_dialog_content.dart A Inventory List">
+            </a>
+            <figcaption><strong>A. Inventory List</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="dictionary-progress-dialog-content-B.svg">
+              <img src="dictionary-progress-dialog-content-B.svg" alt="dictionary_progress_dialog_content.dart B Dictionary Inspector">
+            </a>
+            <figcaption><strong>B. Dictionary Inspector</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="dictionary-progress-dialog-content-C.svg">
+              <img src="dictionary-progress-dialog-content-C.svg" alt="dictionary_progress_dialog_content.dart C Admin Workspace">
+            </a>
+            <figcaption><strong>C. Admin Workspace</strong><span>default</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="dictionary_result_page.dart pages dictionary media and sentence dialogs">
+        <header>
+          <div>
+            <h2>dictionary_result_page.dart</h2>
+            <p>Pages / Primary: Dictionary / Supports: Media and sentence dialogs</p>
+          </div>
+          <span class="pill">Default B</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="dictionary-result-page-A.svg">
+              <img src="dictionary-result-page-A.svg" alt="dictionary_result_page.dart A Fast MD3 Search">
+            </a>
+            <figcaption><strong>A. Fast MD3 Search</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="dictionary-result-page-B.svg">
+              <img src="dictionary-result-page-B.svg" alt="dictionary_result_page.dart B Readable Results">
+            </a>
+            <figcaption><strong>B. Readable Results</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="dictionary-result-page-C.svg">
+              <img src="dictionary-result-page-C.svg" alt="dictionary_result_page.dart C Power Split View">
+            </a>
+            <figcaption><strong>C. Power Split View</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="dictionary_settings_dialog_page.dart pages dictionary management settings">
+        <header>
+          <div>
+            <h2>dictionary_settings_dialog_page.dart</h2>
+            <p>Pages / Primary: Dictionary management / Supports: Settings</p>
+          </div>
+          <span class="pill">Default C</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="dictionary-settings-dialog-page-A.svg">
+              <img src="dictionary-settings-dialog-page-A.svg" alt="dictionary_settings_dialog_page.dart A Inventory List">
+            </a>
+            <figcaption><strong>A. Inventory List</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="dictionary-settings-dialog-page-B.svg">
+              <img src="dictionary-settings-dialog-page-B.svg" alt="dictionary_settings_dialog_page.dart B Dictionary Inspector">
+            </a>
+            <figcaption><strong>B. Dictionary Inspector</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="dictionary-settings-dialog-page-C.svg">
+              <img src="dictionary-settings-dialog-page-C.svg" alt="dictionary_settings_dialog_page.dart C Admin Workspace">
+            </a>
+            <figcaption><strong>C. Admin Workspace</strong><span>default</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="dictionary_structured_content_page.dart pages dictionary dictionary management">
+        <header>
+          <div>
+            <h2>dictionary_structured_content_page.dart</h2>
+            <p>Pages / Primary: Dictionary / Supports: Dictionary management</p>
+          </div>
+          <span class="pill">Default B</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="dictionary-structured-content-page-A.svg">
+              <img src="dictionary-structured-content-page-A.svg" alt="dictionary_structured_content_page.dart A Fast MD3 Search">
+            </a>
+            <figcaption><strong>A. Fast MD3 Search</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="dictionary-structured-content-page-B.svg">
+              <img src="dictionary-structured-content-page-B.svg" alt="dictionary_structured_content_page.dart B Readable Results">
+            </a>
+            <figcaption><strong>B. Readable Results</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="dictionary-structured-content-page-C.svg">
+              <img src="dictionary-structured-content-page-C.svg" alt="dictionary_structured_content_page.dart C Power Split View">
+            </a>
+            <figcaption><strong>C. Power Split View</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="dictionary_term_page.dart pages dictionary creator and anki">
+        <header>
+          <div>
+            <h2>dictionary_term_page.dart</h2>
+            <p>Pages / Primary: Dictionary / Supports: Creator and Anki</p>
+          </div>
+          <span class="pill">Default B</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="dictionary-term-page-A.svg">
+              <img src="dictionary-term-page-A.svg" alt="dictionary_term_page.dart A Fast MD3 Search">
+            </a>
+            <figcaption><strong>A. Fast MD3 Search</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="dictionary-term-page-B.svg">
+              <img src="dictionary-term-page-B.svg" alt="dictionary_term_page.dart B Readable Results">
+            </a>
+            <figcaption><strong>B. Readable Results</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="dictionary-term-page-C.svg">
+              <img src="dictionary-term-page-C.svg" alt="dictionary_term_page.dart C Power Split View">
+            </a>
+            <figcaption><strong>C. Power Split View</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="dictionary_webview_media.dart pages dictionary dictionary management">
+        <header>
+          <div>
+            <h2>dictionary_webview_media.dart</h2>
+            <p>Pages / Primary: Dictionary / Supports: Dictionary management</p>
+          </div>
+          <span class="pill">Default B</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="dictionary-webview-media-A.svg">
+              <img src="dictionary-webview-media-A.svg" alt="dictionary_webview_media.dart A Fast MD3 Search">
+            </a>
+            <figcaption><strong>A. Fast MD3 Search</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="dictionary-webview-media-B.svg">
+              <img src="dictionary-webview-media-B.svg" alt="dictionary_webview_media.dart B Readable Results">
+            </a>
+            <figcaption><strong>B. Readable Results</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="dictionary-webview-media-C.svg">
+              <img src="dictionary-webview-media-C.svg" alt="dictionary_webview_media.dart C Power Split View">
+            </a>
+            <figcaption><strong>C. Power Split View</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="display_settings_page.dart pages reader customization hoshi reader">
+        <header>
+          <div>
+            <h2>display_settings_page.dart</h2>
+            <p>Pages / Primary: Reader customization / Supports: Hoshi reader</p>
+          </div>
+          <span class="pill">Default B</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="display-settings-page-A.svg">
+              <img src="display-settings-page-A.svg" alt="display_settings_page.dart A Controls First">
+            </a>
+            <figcaption><strong>A. Controls First</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="display-settings-page-B.svg">
+              <img src="display-settings-page-B.svg" alt="display_settings_page.dart B Preview Studio">
+            </a>
+            <figcaption><strong>B. Preview Studio</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="display-settings-page-C.svg">
+              <img src="display-settings-page-C.svg" alt="display_settings_page.dart C Theme Editor">
+            </a>
+            <figcaption><strong>C. Theme Editor</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="error_log_page.dart pages logs and debug empty, loading, error states">
+        <header>
+          <div>
+            <h2>error_log_page.dart</h2>
+            <p>Pages / Primary: Logs and debug / Supports: Empty, loading, error states</p>
+          </div>
+          <span class="pill">Default A</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="error-log-page-A.svg">
+              <img src="error-log-page-A.svg" alt="error_log_page.dart A Plain Log Viewer">
+            </a>
+            <figcaption><strong>A. Plain Log Viewer</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="error-log-page-B.svg">
+              <img src="error-log-page-B.svg" alt="error_log_page.dart B Error Inbox">
+            </a>
+            <figcaption><strong>B. Error Inbox</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="error-log-page-C.svg">
+              <img src="error-log-page-C.svg" alt="error_log_page.dart C Diagnostics Split">
+            </a>
+            <figcaption><strong>C. Diagnostics Split</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="example_sentences_dialog_page.dart pages media and sentence dialogs dictionary">
+        <header>
+          <div>
+            <h2>example_sentences_dialog_page.dart</h2>
+            <p>Pages / Primary: Media and sentence dialogs / Supports: Dictionary</p>
+          </div>
+          <span class="pill">Default A</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="example-sentences-dialog-page-A.svg">
+              <img src="example-sentences-dialog-page-A.svg" alt="example_sentences_dialog_page.dart A Action Sheet">
+            </a>
+            <figcaption><strong>A. Action Sheet</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="example-sentences-dialog-page-B.svg">
+              <img src="example-sentences-dialog-page-B.svg" alt="example_sentences_dialog_page.dart B Modal Stack">
+            </a>
+            <figcaption><strong>B. Modal Stack</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="example-sentences-dialog-page-C.svg">
+              <img src="example-sentences-dialog-page-C.svg" alt="example_sentences_dialog_page.dart C Bottom Workspace">
+            </a>
+            <figcaption><strong>C. Bottom Workspace</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="floating_dict_page.dart pages dictionary profile, language, system">
+        <header>
+          <div>
+            <h2>floating_dict_page.dart</h2>
+            <p>Pages / Primary: Dictionary / Supports: Profile, language, system</p>
+          </div>
+          <span class="pill">Default B</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="floating-dict-page-A.svg">
+              <img src="floating-dict-page-A.svg" alt="floating_dict_page.dart A Fast MD3 Search">
+            </a>
+            <figcaption><strong>A. Fast MD3 Search</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="floating-dict-page-B.svg">
+              <img src="floating-dict-page-B.svg" alt="floating_dict_page.dart B Readable Results">
+            </a>
+            <figcaption><strong>B. Readable Results</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="floating-dict-page-C.svg">
+              <img src="floating-dict-page-C.svg" alt="floating_dict_page.dart C Power Split View">
+            </a>
+            <figcaption><strong>C. Power Split View</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="history_reader_page.dart pages reader shelf tags and filters">
+        <header>
+          <div>
+            <h2>history_reader_page.dart</h2>
+            <p>Pages / Primary: Reader shelf / Supports: Tags and filters</p>
+          </div>
+          <span class="pill">Default A</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="history-reader-page-A.svg">
+              <img src="history-reader-page-A.svg" alt="history_reader_page.dart A Library Grid/List">
+            </a>
+            <figcaption><strong>A. Library Grid/List</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="history-reader-page-B.svg">
+              <img src="history-reader-page-B.svg" alt="history_reader_page.dart B Reading-First Shelf">
+            </a>
+            <figcaption><strong>B. Reading-First Shelf</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="history-reader-page-C.svg">
+              <img src="history-reader-page-C.svg" alt="history_reader_page.dart C Management Workspace">
+            </a>
+            <figcaption><strong>C. Management Workspace</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="home_dictionary_page.dart pages dictionary home and navigation">
+        <header>
+          <div>
+            <h2>home_dictionary_page.dart</h2>
+            <p>Pages / Primary: Dictionary / Supports: Home and navigation</p>
+          </div>
+          <span class="pill">Default B</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="home-dictionary-page-A.svg">
+              <img src="home-dictionary-page-A.svg" alt="home_dictionary_page.dart A Fast MD3 Search">
+            </a>
+            <figcaption><strong>A. Fast MD3 Search</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="home-dictionary-page-B.svg">
+              <img src="home-dictionary-page-B.svg" alt="home_dictionary_page.dart B Readable Results">
+            </a>
+            <figcaption><strong>B. Readable Results</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="home-dictionary-page-C.svg">
+              <img src="home-dictionary-page-C.svg" alt="home_dictionary_page.dart C Power Split View">
+            </a>
+            <figcaption><strong>C. Power Split View</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="home_page.dart pages home and navigation settings">
+        <header>
+          <div>
+            <h2>home_page.dart</h2>
+            <p>Pages / Primary: Home and navigation / Supports: Settings</p>
+          </div>
+          <span class="pill">Default C</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="home-page-A.svg">
+              <img src="home-page-A.svg" alt="home_page.dart A Quiet MD3">
+            </a>
+            <figcaption><strong>A. Quiet MD3</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="home-page-B.svg">
+              <img src="home-page-B.svg" alt="home_page.dart B Cupertino Calm">
+            </a>
+            <figcaption><strong>B. Cupertino Calm</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="home-page-C.svg">
+              <img src="home-page-C.svg" alt="home_page.dart C Adaptive Workspace">
+            </a>
+            <figcaption><strong>C. Adaptive Workspace</strong><span>default</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="home_reader_page.dart pages home and navigation reader shelf">
+        <header>
+          <div>
+            <h2>home_reader_page.dart</h2>
+            <p>Pages / Primary: Home and navigation / Supports: Reader shelf</p>
+          </div>
+          <span class="pill">Default C</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="home-reader-page-A.svg">
+              <img src="home-reader-page-A.svg" alt="home_reader_page.dart A Quiet MD3">
+            </a>
+            <figcaption><strong>A. Quiet MD3</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="home-reader-page-B.svg">
+              <img src="home-reader-page-B.svg" alt="home_reader_page.dart B Cupertino Calm">
+            </a>
+            <figcaption><strong>B. Cupertino Calm</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="home-reader-page-C.svg">
+              <img src="home-reader-page-C.svg" alt="home_reader_page.dart C Adaptive Workspace">
+            </a>
+            <figcaption><strong>C. Adaptive Workspace</strong><span>default</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="hoshi_settings_page.dart pages settings reader customization">
+        <header>
+          <div>
+            <h2>hoshi_settings_page.dart</h2>
+            <p>Pages / Primary: Settings / Supports: Reader customization</p>
+          </div>
+          <span class="pill">Default B</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="hoshi-settings-page-A.svg">
+              <img src="hoshi-settings-page-A.svg" alt="hoshi_settings_page.dart A MD3 Settings List">
+            </a>
+            <figcaption><strong>A. MD3 Settings List</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="hoshi-settings-page-B.svg">
+              <img src="hoshi-settings-page-B.svg" alt="hoshi_settings_page.dart B Grouped Cupertino Settings">
+            </a>
+            <figcaption><strong>B. Grouped Cupertino Settings</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="hoshi-settings-page-C.svg">
+              <img src="hoshi-settings-page-C.svg" alt="hoshi_settings_page.dart C Settings Console">
+            </a>
+            <figcaption><strong>C. Settings Console</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="illustrations_viewer_page.dart pages collections and stats media and sentence dialogs">
+        <header>
+          <div>
+            <h2>illustrations_viewer_page.dart</h2>
+            <p>Pages / Primary: Collections and stats / Supports: Media and sentence dialogs</p>
+          </div>
+          <span class="pill">Default A</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="illustrations-viewer-page-A.svg">
+              <img src="illustrations-viewer-page-A.svg" alt="illustrations_viewer_page.dart A Scannable Lists">
+            </a>
+            <figcaption><strong>A. Scannable Lists</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="illustrations-viewer-page-B.svg">
+              <img src="illustrations-viewer-page-B.svg" alt="illustrations_viewer_page.dart B Media Gallery">
+            </a>
+            <figcaption><strong>B. Media Gallery</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="illustrations-viewer-page-C.svg">
+              <img src="illustrations-viewer-page-C.svg" alt="illustrations_viewer_page.dart C Analytics Workspace">
+            </a>
+            <figcaption><strong>C. Analytics Workspace</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="language_dialog_page.dart pages profile, language, system import and modals">
+        <header>
+          <div>
+            <h2>language_dialog_page.dart</h2>
+            <p>Pages / Primary: Profile, language, system / Supports: Import and modals</p>
+          </div>
+          <span class="pill">Default A</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="language-dialog-page-A.svg">
+              <img src="language-dialog-page-A.svg" alt="language_dialog_page.dart A Settings Hub">
+            </a>
+            <figcaption><strong>A. Settings Hub</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="language-dialog-page-B.svg">
+              <img src="language-dialog-page-B.svg" alt="language_dialog_page.dart B Account-Like Profiles">
+            </a>
+            <figcaption><strong>B. Account-Like Profiles</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="language-dialog-page-C.svg">
+              <img src="language-dialog-page-C.svg" alt="language_dialog_page.dart C Utility Console">
+            </a>
+            <figcaption><strong>C. Utility Console</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="loading_page.dart pages empty, loading, error states home and navigation">
+        <header>
+          <div>
+            <h2>loading_page.dart</h2>
+            <p>Pages / Primary: Empty, loading, error states / Supports: Home and navigation</p>
+          </div>
+          <span class="pill">Default A</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="loading-page-A.svg">
+              <img src="loading-page-A.svg" alt="loading_page.dart A Actionable Empty">
+            </a>
+            <figcaption><strong>A. Actionable Empty</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="loading-page-B.svg">
+              <img src="loading-page-B.svg" alt="loading_page.dart B Quiet Skeletons">
+            </a>
+            <figcaption><strong>B. Quiet Skeletons</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="loading-page-C.svg">
+              <img src="loading-page-C.svg" alt="loading_page.dart C Recoverable Error">
+            </a>
+            <figcaption><strong>C. Recoverable Error</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="lyrics_dialog_page.dart pages hoshi reader media and sentence dialogs">
+        <header>
+          <div>
+            <h2>lyrics_dialog_page.dart</h2>
+            <p>Pages / Primary: Hoshi reader / Supports: Media and sentence dialogs</p>
+          </div>
+          <span class="pill">Default B</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="lyrics-dialog-page-A.svg">
+              <img src="lyrics-dialog-page-A.svg" alt="lyrics_dialog_page.dart A Paper Chrome">
+            </a>
+            <figcaption><strong>A. Paper Chrome</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="lyrics-dialog-page-B.svg">
+              <img src="lyrics-dialog-page-B.svg" alt="lyrics_dialog_page.dart B Immersive Glass">
+            </a>
+            <figcaption><strong>B. Immersive Glass</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="lyrics-dialog-page-C.svg">
+              <img src="lyrics-dialog-page-C.svg" alt="lyrics_dialog_page.dart C Lyrics and Lookup">
+            </a>
+            <figcaption><strong>C. Lyrics and Lookup</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="media_item_dialog_page.dart pages media and sentence dialogs collections and stats">
+        <header>
+          <div>
+            <h2>media_item_dialog_page.dart</h2>
+            <p>Pages / Primary: Media and sentence dialogs / Supports: Collections and stats</p>
+          </div>
+          <span class="pill">Default A</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="media-item-dialog-page-A.svg">
+              <img src="media-item-dialog-page-A.svg" alt="media_item_dialog_page.dart A Action Sheet">
+            </a>
+            <figcaption><strong>A. Action Sheet</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="media-item-dialog-page-B.svg">
+              <img src="media-item-dialog-page-B.svg" alt="media_item_dialog_page.dart B Modal Stack">
+            </a>
+            <figcaption><strong>B. Modal Stack</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="media-item-dialog-page-C.svg">
+              <img src="media-item-dialog-page-C.svg" alt="media_item_dialog_page.dart C Bottom Workspace">
+            </a>
+            <figcaption><strong>C. Bottom Workspace</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="media_item_edit_dialog_page.dart pages media and sentence dialogs creator and anki">
+        <header>
+          <div>
+            <h2>media_item_edit_dialog_page.dart</h2>
+            <p>Pages / Primary: Media and sentence dialogs / Supports: Creator and Anki</p>
+          </div>
+          <span class="pill">Default A</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="media-item-edit-dialog-page-A.svg">
+              <img src="media-item-edit-dialog-page-A.svg" alt="media_item_edit_dialog_page.dart A Action Sheet">
+            </a>
+            <figcaption><strong>A. Action Sheet</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="media-item-edit-dialog-page-B.svg">
+              <img src="media-item-edit-dialog-page-B.svg" alt="media_item_edit_dialog_page.dart B Modal Stack">
+            </a>
+            <figcaption><strong>B. Modal Stack</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="media-item-edit-dialog-page-C.svg">
+              <img src="media-item-edit-dialog-page-C.svg" alt="media_item_edit_dialog_page.dart C Bottom Workspace">
+            </a>
+            <figcaption><strong>C. Bottom Workspace</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="media_source_picker_dialog_page.dart pages media and sentence dialogs import and modals">
+        <header>
+          <div>
+            <h2>media_source_picker_dialog_page.dart</h2>
+            <p>Pages / Primary: Media and sentence dialogs / Supports: Import and modals</p>
+          </div>
+          <span class="pill">Default A</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="media-source-picker-dialog-page-A.svg">
+              <img src="media-source-picker-dialog-page-A.svg" alt="media_source_picker_dialog_page.dart A Action Sheet">
+            </a>
+            <figcaption><strong>A. Action Sheet</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="media-source-picker-dialog-page-B.svg">
+              <img src="media-source-picker-dialog-page-B.svg" alt="media_source_picker_dialog_page.dart B Modal Stack">
+            </a>
+            <figcaption><strong>B. Modal Stack</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="media-source-picker-dialog-page-C.svg">
+              <img src="media-source-picker-dialog-page-C.svg" alt="media_source_picker_dialog_page.dart C Bottom Workspace">
+            </a>
+            <figcaption><strong>C. Bottom Workspace</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="miscellaneous_settings_page.dart pages profile, language, system settings">
+        <header>
+          <div>
+            <h2>miscellaneous_settings_page.dart</h2>
+            <p>Pages / Primary: Profile, language, system / Supports: Settings</p>
+          </div>
+          <span class="pill">Default A</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="miscellaneous-settings-page-A.svg">
+              <img src="miscellaneous-settings-page-A.svg" alt="miscellaneous_settings_page.dart A Settings Hub">
+            </a>
+            <figcaption><strong>A. Settings Hub</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="miscellaneous-settings-page-B.svg">
+              <img src="miscellaneous-settings-page-B.svg" alt="miscellaneous_settings_page.dart B Account-Like Profiles">
+            </a>
+            <figcaption><strong>B. Account-Like Profiles</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="miscellaneous-settings-page-C.svg">
+              <img src="miscellaneous-settings-page-C.svg" alt="miscellaneous_settings_page.dart C Utility Console">
+            </a>
+            <figcaption><strong>C. Utility Console</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="open_stash_dialog_page.dart pages media and sentence dialogs creator and anki">
+        <header>
+          <div>
+            <h2>open_stash_dialog_page.dart</h2>
+            <p>Pages / Primary: Media and sentence dialogs / Supports: Creator and Anki</p>
+          </div>
+          <span class="pill">Default A</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="open-stash-dialog-page-A.svg">
+              <img src="open-stash-dialog-page-A.svg" alt="open_stash_dialog_page.dart A Action Sheet">
+            </a>
+            <figcaption><strong>A. Action Sheet</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="open-stash-dialog-page-B.svg">
+              <img src="open-stash-dialog-page-B.svg" alt="open_stash_dialog_page.dart B Modal Stack">
+            </a>
+            <figcaption><strong>B. Modal Stack</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="open-stash-dialog-page-C.svg">
+              <img src="open-stash-dialog-page-C.svg" alt="open_stash_dialog_page.dart C Bottom Workspace">
+            </a>
+            <figcaption><strong>C. Bottom Workspace</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="placeholder_source_page.dart pages empty, loading, error states hoshi reader">
+        <header>
+          <div>
+            <h2>placeholder_source_page.dart</h2>
+            <p>Pages / Primary: Empty, loading, error states / Supports: Hoshi reader</p>
+          </div>
+          <span class="pill">Default A</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="placeholder-source-page-A.svg">
+              <img src="placeholder-source-page-A.svg" alt="placeholder_source_page.dart A Actionable Empty">
+            </a>
+            <figcaption><strong>A. Actionable Empty</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="placeholder-source-page-B.svg">
+              <img src="placeholder-source-page-B.svg" alt="placeholder_source_page.dart B Quiet Skeletons">
+            </a>
+            <figcaption><strong>B. Quiet Skeletons</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="placeholder-source-page-C.svg">
+              <img src="placeholder-source-page-C.svg" alt="placeholder_source_page.dart C Recoverable Error">
+            </a>
+            <figcaption><strong>C. Recoverable Error</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="popup_dictionary_page.dart pages dictionary profile, language, system">
+        <header>
+          <div>
+            <h2>popup_dictionary_page.dart</h2>
+            <p>Pages / Primary: Dictionary / Supports: Profile, language, system</p>
+          </div>
+          <span class="pill">Default B</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="popup-dictionary-page-A.svg">
+              <img src="popup-dictionary-page-A.svg" alt="popup_dictionary_page.dart A Fast MD3 Search">
+            </a>
+            <figcaption><strong>A. Fast MD3 Search</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="popup-dictionary-page-B.svg">
+              <img src="popup-dictionary-page-B.svg" alt="popup_dictionary_page.dart B Readable Results">
+            </a>
+            <figcaption><strong>B. Readable Results</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="popup-dictionary-page-C.svg">
+              <img src="popup-dictionary-page-C.svg" alt="popup_dictionary_page.dart C Power Split View">
+            </a>
+            <figcaption><strong>C. Power Split View</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="profile_management_page.dart pages profile, language, system settings">
+        <header>
+          <div>
+            <h2>profile_management_page.dart</h2>
+            <p>Pages / Primary: Profile, language, system / Supports: Settings</p>
+          </div>
+          <span class="pill">Default A</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="profile-management-page-A.svg">
+              <img src="profile-management-page-A.svg" alt="profile_management_page.dart A Settings Hub">
+            </a>
+            <figcaption><strong>A. Settings Hub</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="profile-management-page-B.svg">
+              <img src="profile-management-page-B.svg" alt="profile_management_page.dart B Account-Like Profiles">
+            </a>
+            <figcaption><strong>B. Account-Like Profiles</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="profile-management-page-C.svg">
+              <img src="profile-management-page-C.svg" alt="profile_management_page.dart C Utility Console">
+            </a>
+            <figcaption><strong>C. Utility Console</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="reader_hoshi_history_page.dart pages reader shelf tags and filters">
+        <header>
+          <div>
+            <h2>reader_hoshi_history_page.dart</h2>
+            <p>Pages / Primary: Reader shelf / Supports: Tags and filters</p>
+          </div>
+          <span class="pill">Default A</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="reader-hoshi-history-page-A.svg">
+              <img src="reader-hoshi-history-page-A.svg" alt="reader_hoshi_history_page.dart A Library Grid/List">
+            </a>
+            <figcaption><strong>A. Library Grid/List</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="reader-hoshi-history-page-B.svg">
+              <img src="reader-hoshi-history-page-B.svg" alt="reader_hoshi_history_page.dart B Reading-First Shelf">
+            </a>
+            <figcaption><strong>B. Reading-First Shelf</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="reader-hoshi-history-page-C.svg">
+              <img src="reader-hoshi-history-page-C.svg" alt="reader_hoshi_history_page.dart C Management Workspace">
+            </a>
+            <figcaption><strong>C. Management Workspace</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="reader_hoshi_page.dart pages hoshi reader reader customization">
+        <header>
+          <div>
+            <h2>reader_hoshi_page.dart</h2>
+            <p>Pages / Primary: Hoshi reader / Supports: Reader customization</p>
+          </div>
+          <span class="pill">Default B</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="reader-hoshi-page-A.svg">
+              <img src="reader-hoshi-page-A.svg" alt="reader_hoshi_page.dart A Paper Chrome">
+            </a>
+            <figcaption><strong>A. Paper Chrome</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="reader-hoshi-page-B.svg">
+              <img src="reader-hoshi-page-B.svg" alt="reader_hoshi_page.dart B Immersive Glass">
+            </a>
+            <figcaption><strong>B. Immersive Glass</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="reader-hoshi-page-C.svg">
+              <img src="reader-hoshi-page-C.svg" alt="reader_hoshi_page.dart C Lyrics and Lookup">
+            </a>
+            <figcaption><strong>C. Lyrics and Lookup</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="reading_statistics_page.dart pages collections and stats empty, loading, error states">
+        <header>
+          <div>
+            <h2>reading_statistics_page.dart</h2>
+            <p>Pages / Primary: Collections and stats / Supports: Empty, loading, error states</p>
+          </div>
+          <span class="pill">Default A</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="reading-statistics-page-A.svg">
+              <img src="reading-statistics-page-A.svg" alt="reading_statistics_page.dart A Scannable Lists">
+            </a>
+            <figcaption><strong>A. Scannable Lists</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="reading-statistics-page-B.svg">
+              <img src="reading-statistics-page-B.svg" alt="reading_statistics_page.dart B Media Gallery">
+            </a>
+            <figcaption><strong>B. Media Gallery</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="reading-statistics-page-C.svg">
+              <img src="reading-statistics-page-C.svg" alt="reading_statistics_page.dart C Analytics Workspace">
+            </a>
+            <figcaption><strong>C. Analytics Workspace</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="switch_settings_page.dart pages settings profile, language, system">
+        <header>
+          <div>
+            <h2>switch_settings_page.dart</h2>
+            <p>Pages / Primary: Settings / Supports: Profile, language, system</p>
+          </div>
+          <span class="pill">Default B</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="switch-settings-page-A.svg">
+              <img src="switch-settings-page-A.svg" alt="switch_settings_page.dart A MD3 Settings List">
+            </a>
+            <figcaption><strong>A. MD3 Settings List</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="switch-settings-page-B.svg">
+              <img src="switch-settings-page-B.svg" alt="switch_settings_page.dart B Grouped Cupertino Settings">
+            </a>
+            <figcaption><strong>B. Grouped Cupertino Settings</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="switch-settings-page-C.svg">
+              <img src="switch-settings-page-C.svg" alt="switch_settings_page.dart C Settings Console">
+            </a>
+            <figcaption><strong>C. Settings Console</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="tag_filter_sheet.dart pages tags and filters reader shelf">
+        <header>
+          <div>
+            <h2>tag_filter_sheet.dart</h2>
+            <p>Pages / Primary: Tags and filters / Supports: Reader shelf</p>
+          </div>
+          <span class="pill">Default C</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="tag-filter-sheet-A.svg">
+              <img src="tag-filter-sheet-A.svg" alt="tag_filter_sheet.dart A Chip Console">
+            </a>
+            <figcaption><strong>A. Chip Console</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="tag-filter-sheet-B.svg">
+              <img src="tag-filter-sheet-B.svg" alt="tag_filter_sheet.dart B Grouped Tag Manager">
+            </a>
+            <figcaption><strong>B. Grouped Tag Manager</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="tag-filter-sheet-C.svg">
+              <img src="tag-filter-sheet-C.svg" alt="tag_filter_sheet.dart C Batch Editor">
+            </a>
+            <figcaption><strong>C. Batch Editor</strong><span>default</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="tag_management_page.dart pages tags and filters settings">
+        <header>
+          <div>
+            <h2>tag_management_page.dart</h2>
+            <p>Pages / Primary: Tags and filters / Supports: Settings</p>
+          </div>
+          <span class="pill">Default C</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="tag-management-page-A.svg">
+              <img src="tag-management-page-A.svg" alt="tag_management_page.dart A Chip Console">
+            </a>
+            <figcaption><strong>A. Chip Console</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="tag-management-page-B.svg">
+              <img src="tag-management-page-B.svg" alt="tag_management_page.dart B Grouped Tag Manager">
+            </a>
+            <figcaption><strong>B. Grouped Tag Manager</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="tag-management-page-C.svg">
+              <img src="tag-management-page-C.svg" alt="tag_management_page.dart C Batch Editor">
+            </a>
+            <figcaption><strong>C. Batch Editor</strong><span>default</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="tag_picker_page.dart pages tags and filters import and modals">
+        <header>
+          <div>
+            <h2>tag_picker_page.dart</h2>
+            <p>Pages / Primary: Tags and filters / Supports: Import and modals</p>
+          </div>
+          <span class="pill">Default C</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="tag-picker-page-A.svg">
+              <img src="tag-picker-page-A.svg" alt="tag_picker_page.dart A Chip Console">
+            </a>
+            <figcaption><strong>A. Chip Console</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="tag-picker-page-B.svg">
+              <img src="tag-picker-page-B.svg" alt="tag_picker_page.dart B Grouped Tag Manager">
+            </a>
+            <figcaption><strong>B. Grouped Tag Manager</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="tag-picker-page-C.svg">
+              <img src="tag-picker-page-C.svg" alt="tag_picker_page.dart C Batch Editor">
+            </a>
+            <figcaption><strong>C. Batch Editor</strong><span>default</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="text_segmentation_dialog_page.dart pages creator and anki media and sentence dialogs">
+        <header>
+          <div>
+            <h2>text_segmentation_dialog_page.dart</h2>
+            <p>Pages / Primary: Creator and Anki / Supports: Media and sentence dialogs</p>
+          </div>
+          <span class="pill">Default C</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="text-segmentation-dialog-page-A.svg">
+              <img src="text-segmentation-dialog-page-A.svg" alt="text_segmentation_dialog_page.dart A Simple Field Form">
+            </a>
+            <figcaption><strong>A. Simple Field Form</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="text-segmentation-dialog-page-B.svg">
+              <img src="text-segmentation-dialog-page-B.svg" alt="text_segmentation_dialog_page.dart B Guided Creator">
+            </a>
+            <figcaption><strong>B. Guided Creator</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="text-segmentation-dialog-page-C.svg">
+              <img src="text-segmentation-dialog-page-C.svg" alt="text_segmentation_dialog_page.dart C Mapping Panel">
+            </a>
+            <figcaption><strong>C. Mapping Panel</strong><span>default</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Pages" data-search="websocket_dialog_page.dart pages profile, language, system logs and debug">
+        <header>
+          <div>
+            <h2>websocket_dialog_page.dart</h2>
+            <p>Pages / Primary: Profile, language, system / Supports: Logs and debug</p>
+          </div>
+          <span class="pill">Default A</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="websocket-dialog-page-A.svg">
+              <img src="websocket-dialog-page-A.svg" alt="websocket_dialog_page.dart A Settings Hub">
+            </a>
+            <figcaption><strong>A. Settings Hub</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="websocket-dialog-page-B.svg">
+              <img src="websocket-dialog-page-B.svg" alt="websocket_dialog_page.dart B Account-Like Profiles">
+            </a>
+            <figcaption><strong>B. Account-Like Profiles</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="websocket-dialog-page-C.svg">
+              <img src="websocket-dialog-page-C.svg" alt="websocket_dialog_page.dart C Utility Console">
+            </a>
+            <figcaption><strong>C. Utility Console</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Shared/support" data-search="app_model.dart shared/support component system profile, language, system">
+        <header>
+          <div>
+            <h2>app_model.dart</h2>
+            <p>Shared/support / Primary: Component system / Supports: Profile, language, system</p>
+          </div>
+          <span class="pill">Default C</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="app-model-A.svg">
+              <img src="app-model-A.svg" alt="app_model.dart A MD3 Token Kit">
+            </a>
+            <figcaption><strong>A. MD3 Token Kit</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="app-model-B.svg">
+              <img src="app-model-B.svg" alt="app_model.dart B Cupertino Surface Kit">
+            </a>
+            <figcaption><strong>B. Cupertino Surface Kit</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="app-model-C.svg">
+              <img src="app-model-C.svg" alt="app_model.dart C Hybrid Density Kit">
+            </a>
+            <figcaption><strong>C. Hybrid Density Kit</strong><span>default</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Shared/support" data-search="base_history_page.dart shared/support reader shelf empty, loading, error states">
+        <header>
+          <div>
+            <h2>base_history_page.dart</h2>
+            <p>Shared/support / Primary: Reader shelf / Supports: Empty, loading, error states</p>
+          </div>
+          <span class="pill">Default A</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="base-history-page-A.svg">
+              <img src="base-history-page-A.svg" alt="base_history_page.dart A Library Grid/List">
+            </a>
+            <figcaption><strong>A. Library Grid/List</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="base-history-page-B.svg">
+              <img src="base-history-page-B.svg" alt="base_history_page.dart B Reading-First Shelf">
+            </a>
+            <figcaption><strong>B. Reading-First Shelf</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="base-history-page-C.svg">
+              <img src="base-history-page-C.svg" alt="base_history_page.dart C Management Workspace">
+            </a>
+            <figcaption><strong>C. Management Workspace</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Shared/support" data-search="base_media_search_bar.dart shared/support component system dictionary">
+        <header>
+          <div>
+            <h2>base_media_search_bar.dart</h2>
+            <p>Shared/support / Primary: Component system / Supports: Dictionary</p>
+          </div>
+          <span class="pill">Default C</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="base-media-search-bar-A.svg">
+              <img src="base-media-search-bar-A.svg" alt="base_media_search_bar.dart A MD3 Token Kit">
+            </a>
+            <figcaption><strong>A. MD3 Token Kit</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="base-media-search-bar-B.svg">
+              <img src="base-media-search-bar-B.svg" alt="base_media_search_bar.dart B Cupertino Surface Kit">
+            </a>
+            <figcaption><strong>B. Cupertino Surface Kit</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="base-media-search-bar-C.svg">
+              <img src="base-media-search-bar-C.svg" alt="base_media_search_bar.dart C Hybrid Density Kit">
+            </a>
+            <figcaption><strong>C. Hybrid Density Kit</strong><span>default</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Shared/support" data-search="base_page.dart shared/support component system empty, loading, error states">
+        <header>
+          <div>
+            <h2>base_page.dart</h2>
+            <p>Shared/support / Primary: Component system / Supports: Empty, loading, error states</p>
+          </div>
+          <span class="pill">Default C</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="base-page-A.svg">
+              <img src="base-page-A.svg" alt="base_page.dart A MD3 Token Kit">
+            </a>
+            <figcaption><strong>A. MD3 Token Kit</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="base-page-B.svg">
+              <img src="base-page-B.svg" alt="base_page.dart B Cupertino Surface Kit">
+            </a>
+            <figcaption><strong>B. Cupertino Surface Kit</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="base-page-C.svg">
+              <img src="base-page-C.svg" alt="base_page.dart C Hybrid Density Kit">
+            </a>
+            <figcaption><strong>C. Hybrid Density Kit</strong><span>default</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Shared/support" data-search="base_source_page.dart shared/support component system dictionary">
+        <header>
+          <div>
+            <h2>base_source_page.dart</h2>
+            <p>Shared/support / Primary: Component system / Supports: Dictionary</p>
+          </div>
+          <span class="pill">Default C</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="base-source-page-A.svg">
+              <img src="base-source-page-A.svg" alt="base_source_page.dart A MD3 Token Kit">
+            </a>
+            <figcaption><strong>A. MD3 Token Kit</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="base-source-page-B.svg">
+              <img src="base-source-page-B.svg" alt="base_source_page.dart B Cupertino Surface Kit">
+            </a>
+            <figcaption><strong>B. Cupertino Surface Kit</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="base-source-page-C.svg">
+              <img src="base-source-page-C.svg" alt="base_source_page.dart C Hybrid Density Kit">
+            </a>
+            <figcaption><strong>C. Hybrid Density Kit</strong><span>default</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Shared/support" data-search="base_tab_page.dart shared/support component system home and navigation">
+        <header>
+          <div>
+            <h2>base_tab_page.dart</h2>
+            <p>Shared/support / Primary: Component system / Supports: Home and navigation</p>
+          </div>
+          <span class="pill">Default C</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="base-tab-page-A.svg">
+              <img src="base-tab-page-A.svg" alt="base_tab_page.dart A MD3 Token Kit">
+            </a>
+            <figcaption><strong>A. MD3 Token Kit</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="base-tab-page-B.svg">
+              <img src="base-tab-page-B.svg" alt="base_tab_page.dart B Cupertino Surface Kit">
+            </a>
+            <figcaption><strong>B. Cupertino Surface Kit</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="base-tab-page-C.svg">
+              <img src="base-tab-page-C.svg" alt="base_tab_page.dart C Hybrid Density Kit">
+            </a>
+            <figcaption><strong>C. Hybrid Density Kit</strong><span>default</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Shared/support" data-search="audiobook_import_dialog.dart shared/support import and modals component system">
+        <header>
+          <div>
+            <h2>audiobook_import_dialog.dart</h2>
+            <p>Shared/support / Primary: Import and modals / Supports: Component system</p>
+          </div>
+          <span class="pill">Default A</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="audiobook-import-dialog-A.svg">
+              <img src="audiobook-import-dialog-A.svg" alt="audiobook_import_dialog.dart A Step Flow">
+            </a>
+            <figcaption><strong>A. Step Flow</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="audiobook-import-dialog-B.svg">
+              <img src="audiobook-import-dialog-B.svg" alt="audiobook_import_dialog.dart B Sheet Flow">
+            </a>
+            <figcaption><strong>B. Sheet Flow</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="audiobook-import-dialog-C.svg">
+              <img src="audiobook-import-dialog-C.svg" alt="audiobook_import_dialog.dart C Import Inspector">
+            </a>
+            <figcaption><strong>C. Import Inspector</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Shared/support" data-search="audiobook_play_bar.dart shared/support hoshi reader component system">
+        <header>
+          <div>
+            <h2>audiobook_play_bar.dart</h2>
+            <p>Shared/support / Primary: Hoshi reader / Supports: Component system</p>
+          </div>
+          <span class="pill">Default B</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="audiobook-play-bar-A.svg">
+              <img src="audiobook-play-bar-A.svg" alt="audiobook_play_bar.dart A Paper Chrome">
+            </a>
+            <figcaption><strong>A. Paper Chrome</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="audiobook-play-bar-B.svg">
+              <img src="audiobook-play-bar-B.svg" alt="audiobook_play_bar.dart B Immersive Glass">
+            </a>
+            <figcaption><strong>B. Immersive Glass</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="audiobook-play-bar-C.svg">
+              <img src="audiobook-play-bar-C.svg" alt="audiobook_play_bar.dart C Lyrics and Lookup">
+            </a>
+            <figcaption><strong>C. Lyrics and Lookup</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Shared/support" data-search="book_import_dialog.dart shared/support import and modals component system">
+        <header>
+          <div>
+            <h2>book_import_dialog.dart</h2>
+            <p>Shared/support / Primary: Import and modals / Supports: Component system</p>
+          </div>
+          <span class="pill">Default A</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="book-import-dialog-A.svg">
+              <img src="book-import-dialog-A.svg" alt="book_import_dialog.dart A Step Flow">
+            </a>
+            <figcaption><strong>A. Step Flow</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="book-import-dialog-B.svg">
+              <img src="book-import-dialog-B.svg" alt="book_import_dialog.dart B Sheet Flow">
+            </a>
+            <figcaption><strong>B. Sheet Flow</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="book-import-dialog-C.svg">
+              <img src="book-import-dialog-C.svg" alt="book_import_dialog.dart C Import Inspector">
+            </a>
+            <figcaption><strong>C. Import Inspector</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Shared/support" data-search="sasayaki_rematch.dart shared/support import and modals hoshi reader">
+        <header>
+          <div>
+            <h2>sasayaki_rematch.dart</h2>
+            <p>Shared/support / Primary: Import and modals / Supports: Hoshi reader</p>
+          </div>
+          <span class="pill">Default A</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="sasayaki-rematch-A.svg">
+              <img src="sasayaki-rematch-A.svg" alt="sasayaki_rematch.dart A Step Flow">
+            </a>
+            <figcaption><strong>A. Step Flow</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="sasayaki-rematch-B.svg">
+              <img src="sasayaki-rematch-B.svg" alt="sasayaki_rematch.dart B Sheet Flow">
+            </a>
+            <figcaption><strong>B. Sheet Flow</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="sasayaki-rematch-C.svg">
+              <img src="sasayaki-rematch-C.svg" alt="sasayaki_rematch.dart C Import Inspector">
+            </a>
+            <figcaption><strong>C. Import Inspector</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Shared/support" data-search="profile_selector.dart shared/support profile, language, system component system">
+        <header>
+          <div>
+            <h2>profile_selector.dart</h2>
+            <p>Shared/support / Primary: Profile, language, system / Supports: Component system</p>
+          </div>
+          <span class="pill">Default A</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="profile-selector-A.svg">
+              <img src="profile-selector-A.svg" alt="profile_selector.dart A Settings Hub">
+            </a>
+            <figcaption><strong>A. Settings Hub</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="profile-selector-B.svg">
+              <img src="profile-selector-B.svg" alt="profile_selector.dart B Account-Like Profiles">
+            </a>
+            <figcaption><strong>B. Account-Like Profiles</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="profile-selector-C.svg">
+              <img src="profile-selector-C.svg" alt="profile_selector.dart C Utility Console">
+            </a>
+            <figcaption><strong>C. Utility Console</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Shared/support" data-search="jidoujisho_bottom_sheet.dart shared/support component system import and modals">
+        <header>
+          <div>
+            <h2>jidoujisho_bottom_sheet.dart</h2>
+            <p>Shared/support / Primary: Component system / Supports: Import and modals</p>
+          </div>
+          <span class="pill">Default C</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="jidoujisho-bottom-sheet-A.svg">
+              <img src="jidoujisho-bottom-sheet-A.svg" alt="jidoujisho_bottom_sheet.dart A MD3 Token Kit">
+            </a>
+            <figcaption><strong>A. MD3 Token Kit</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="jidoujisho-bottom-sheet-B.svg">
+              <img src="jidoujisho-bottom-sheet-B.svg" alt="jidoujisho_bottom_sheet.dart B Cupertino Surface Kit">
+            </a>
+            <figcaption><strong>B. Cupertino Surface Kit</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="jidoujisho-bottom-sheet-C.svg">
+              <img src="jidoujisho-bottom-sheet-C.svg" alt="jidoujisho_bottom_sheet.dart C Hybrid Density Kit">
+            </a>
+            <figcaption><strong>C. Hybrid Density Kit</strong><span>default</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Shared/support" data-search="jidoujisho_divider.dart shared/support component system settings">
+        <header>
+          <div>
+            <h2>jidoujisho_divider.dart</h2>
+            <p>Shared/support / Primary: Component system / Supports: Settings</p>
+          </div>
+          <span class="pill">Default C</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="jidoujisho-divider-A.svg">
+              <img src="jidoujisho-divider-A.svg" alt="jidoujisho_divider.dart A MD3 Token Kit">
+            </a>
+            <figcaption><strong>A. MD3 Token Kit</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="jidoujisho-divider-B.svg">
+              <img src="jidoujisho-divider-B.svg" alt="jidoujisho_divider.dart B Cupertino Surface Kit">
+            </a>
+            <figcaption><strong>B. Cupertino Surface Kit</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="jidoujisho-divider-C.svg">
+              <img src="jidoujisho-divider-C.svg" alt="jidoujisho_divider.dart C Hybrid Density Kit">
+            </a>
+            <figcaption><strong>C. Hybrid Density Kit</strong><span>default</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Shared/support" data-search="jidoujisho_dropdown.dart shared/support component system settings">
+        <header>
+          <div>
+            <h2>jidoujisho_dropdown.dart</h2>
+            <p>Shared/support / Primary: Component system / Supports: Settings</p>
+          </div>
+          <span class="pill">Default C</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="jidoujisho-dropdown-A.svg">
+              <img src="jidoujisho-dropdown-A.svg" alt="jidoujisho_dropdown.dart A MD3 Token Kit">
+            </a>
+            <figcaption><strong>A. MD3 Token Kit</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="jidoujisho-dropdown-B.svg">
+              <img src="jidoujisho-dropdown-B.svg" alt="jidoujisho_dropdown.dart B Cupertino Surface Kit">
+            </a>
+            <figcaption><strong>B. Cupertino Surface Kit</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="jidoujisho-dropdown-C.svg">
+              <img src="jidoujisho-dropdown-C.svg" alt="jidoujisho_dropdown.dart C Hybrid Density Kit">
+            </a>
+            <figcaption><strong>C. Hybrid Density Kit</strong><span>default</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Shared/support" data-search="jidoujisho_icon_button.dart shared/support component system home and navigation">
+        <header>
+          <div>
+            <h2>jidoujisho_icon_button.dart</h2>
+            <p>Shared/support / Primary: Component system / Supports: Home and navigation</p>
+          </div>
+          <span class="pill">Default C</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="jidoujisho-icon-button-A.svg">
+              <img src="jidoujisho-icon-button-A.svg" alt="jidoujisho_icon_button.dart A MD3 Token Kit">
+            </a>
+            <figcaption><strong>A. MD3 Token Kit</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="jidoujisho-icon-button-B.svg">
+              <img src="jidoujisho-icon-button-B.svg" alt="jidoujisho_icon_button.dart B Cupertino Surface Kit">
+            </a>
+            <figcaption><strong>B. Cupertino Surface Kit</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="jidoujisho-icon-button-C.svg">
+              <img src="jidoujisho-icon-button-C.svg" alt="jidoujisho_icon_button.dart C Hybrid Density Kit">
+            </a>
+            <figcaption><strong>C. Hybrid Density Kit</strong><span>default</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Shared/support" data-search="jidoujisho_list_tile.dart shared/support component system settings">
+        <header>
+          <div>
+            <h2>jidoujisho_list_tile.dart</h2>
+            <p>Shared/support / Primary: Component system / Supports: Settings</p>
+          </div>
+          <span class="pill">Default C</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="jidoujisho-list-tile-A.svg">
+              <img src="jidoujisho-list-tile-A.svg" alt="jidoujisho_list_tile.dart A MD3 Token Kit">
+            </a>
+            <figcaption><strong>A. MD3 Token Kit</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="jidoujisho-list-tile-B.svg">
+              <img src="jidoujisho-list-tile-B.svg" alt="jidoujisho_list_tile.dart B Cupertino Surface Kit">
+            </a>
+            <figcaption><strong>B. Cupertino Surface Kit</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="jidoujisho-list-tile-C.svg">
+              <img src="jidoujisho-list-tile-C.svg" alt="jidoujisho_list_tile.dart C Hybrid Density Kit">
+            </a>
+            <figcaption><strong>C. Hybrid Density Kit</strong><span>default</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Shared/support" data-search="jidoujisho_marquee.dart shared/support component system media and sentence dialogs">
+        <header>
+          <div>
+            <h2>jidoujisho_marquee.dart</h2>
+            <p>Shared/support / Primary: Component system / Supports: Media and sentence dialogs</p>
+          </div>
+          <span class="pill">Default C</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="jidoujisho-marquee-A.svg">
+              <img src="jidoujisho-marquee-A.svg" alt="jidoujisho_marquee.dart A MD3 Token Kit">
+            </a>
+            <figcaption><strong>A. MD3 Token Kit</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="jidoujisho-marquee-B.svg">
+              <img src="jidoujisho-marquee-B.svg" alt="jidoujisho_marquee.dart B Cupertino Surface Kit">
+            </a>
+            <figcaption><strong>B. Cupertino Surface Kit</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="jidoujisho-marquee-C.svg">
+              <img src="jidoujisho-marquee-C.svg" alt="jidoujisho_marquee.dart C Hybrid Density Kit">
+            </a>
+            <figcaption><strong>C. Hybrid Density Kit</strong><span>default</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Shared/support" data-search="jidoujisho_placeholder_message.dart shared/support empty, loading, error states component system">
+        <header>
+          <div>
+            <h2>jidoujisho_placeholder_message.dart</h2>
+            <p>Shared/support / Primary: Empty, loading, error states / Supports: Component system</p>
+          </div>
+          <span class="pill">Default A</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="jidoujisho-placeholder-message-A.svg">
+              <img src="jidoujisho-placeholder-message-A.svg" alt="jidoujisho_placeholder_message.dart A Actionable Empty">
+            </a>
+            <figcaption><strong>A. Actionable Empty</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="jidoujisho-placeholder-message-B.svg">
+              <img src="jidoujisho-placeholder-message-B.svg" alt="jidoujisho_placeholder_message.dart B Quiet Skeletons">
+            </a>
+            <figcaption><strong>B. Quiet Skeletons</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="jidoujisho-placeholder-message-C.svg">
+              <img src="jidoujisho-placeholder-message-C.svg" alt="jidoujisho_placeholder_message.dart C Recoverable Error">
+            </a>
+            <figcaption><strong>C. Recoverable Error</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Shared/support" data-search="jidoujisho_popup_position.dart shared/support component system dictionary">
+        <header>
+          <div>
+            <h2>jidoujisho_popup_position.dart</h2>
+            <p>Shared/support / Primary: Component system / Supports: Dictionary</p>
+          </div>
+          <span class="pill">Default C</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="jidoujisho-popup-position-A.svg">
+              <img src="jidoujisho-popup-position-A.svg" alt="jidoujisho_popup_position.dart A MD3 Token Kit">
+            </a>
+            <figcaption><strong>A. MD3 Token Kit</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="jidoujisho-popup-position-B.svg">
+              <img src="jidoujisho-popup-position-B.svg" alt="jidoujisho_popup_position.dart B Cupertino Surface Kit">
+            </a>
+            <figcaption><strong>B. Cupertino Surface Kit</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="jidoujisho-popup-position-C.svg">
+              <img src="jidoujisho-popup-position-C.svg" alt="jidoujisho_popup_position.dart C Hybrid Density Kit">
+            </a>
+            <figcaption><strong>C. Hybrid Density Kit</strong><span>default</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Shared/support" data-search="jidoujisho_search_history.dart shared/support component system dictionary">
+        <header>
+          <div>
+            <h2>jidoujisho_search_history.dart</h2>
+            <p>Shared/support / Primary: Component system / Supports: Dictionary</p>
+          </div>
+          <span class="pill">Default C</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="jidoujisho-search-history-A.svg">
+              <img src="jidoujisho-search-history-A.svg" alt="jidoujisho_search_history.dart A MD3 Token Kit">
+            </a>
+            <figcaption><strong>A. MD3 Token Kit</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="jidoujisho-search-history-B.svg">
+              <img src="jidoujisho-search-history-B.svg" alt="jidoujisho_search_history.dart B Cupertino Surface Kit">
+            </a>
+            <figcaption><strong>B. Cupertino Surface Kit</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="jidoujisho-search-history-C.svg">
+              <img src="jidoujisho-search-history-C.svg" alt="jidoujisho_search_history.dart C Hybrid Density Kit">
+            </a>
+            <figcaption><strong>C. Hybrid Density Kit</strong><span>default</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Shared/support" data-search="jidoujisho_selectable_text.dart shared/support component system dictionary">
+        <header>
+          <div>
+            <h2>jidoujisho_selectable_text.dart</h2>
+            <p>Shared/support / Primary: Component system / Supports: Dictionary</p>
+          </div>
+          <span class="pill">Default C</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="jidoujisho-selectable-text-A.svg">
+              <img src="jidoujisho-selectable-text-A.svg" alt="jidoujisho_selectable_text.dart A MD3 Token Kit">
+            </a>
+            <figcaption><strong>A. MD3 Token Kit</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="jidoujisho-selectable-text-B.svg">
+              <img src="jidoujisho-selectable-text-B.svg" alt="jidoujisho_selectable_text.dart B Cupertino Surface Kit">
+            </a>
+            <figcaption><strong>B. Cupertino Surface Kit</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="jidoujisho-selectable-text-C.svg">
+              <img src="jidoujisho-selectable-text-C.svg" alt="jidoujisho_selectable_text.dart C Hybrid Density Kit">
+            </a>
+            <figcaption><strong>C. Hybrid Density Kit</strong><span>default</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Shared/support" data-search="jidoujisho_tag.dart shared/support tags and filters component system">
+        <header>
+          <div>
+            <h2>jidoujisho_tag.dart</h2>
+            <p>Shared/support / Primary: Tags and filters / Supports: Component system</p>
+          </div>
+          <span class="pill">Default C</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="jidoujisho-tag-A.svg">
+              <img src="jidoujisho-tag-A.svg" alt="jidoujisho_tag.dart A Chip Console">
+            </a>
+            <figcaption><strong>A. Chip Console</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="jidoujisho-tag-B.svg">
+              <img src="jidoujisho-tag-B.svg" alt="jidoujisho_tag.dart B Grouped Tag Manager">
+            </a>
+            <figcaption><strong>B. Grouped Tag Manager</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="jidoujisho-tag-C.svg">
+              <img src="jidoujisho-tag-C.svg" alt="jidoujisho_tag.dart C Batch Editor">
+            </a>
+            <figcaption><strong>C. Batch Editor</strong><span>default</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Shared/support" data-search="jidoujisho_text_selection_controls.dart shared/support component system dictionary">
+        <header>
+          <div>
+            <h2>jidoujisho_text_selection_controls.dart</h2>
+            <p>Shared/support / Primary: Component system / Supports: Dictionary</p>
+          </div>
+          <span class="pill">Default C</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="jidoujisho-text-selection-controls-A.svg">
+              <img src="jidoujisho-text-selection-controls-A.svg" alt="jidoujisho_text_selection_controls.dart A MD3 Token Kit">
+            </a>
+            <figcaption><strong>A. MD3 Token Kit</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="jidoujisho-text-selection-controls-B.svg">
+              <img src="jidoujisho-text-selection-controls-B.svg" alt="jidoujisho_text_selection_controls.dart B Cupertino Surface Kit">
+            </a>
+            <figcaption><strong>B. Cupertino Surface Kit</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="jidoujisho-text-selection-controls-C.svg">
+              <img src="jidoujisho-text-selection-controls-C.svg" alt="jidoujisho_text_selection_controls.dart C Hybrid Density Kit">
+            </a>
+            <figcaption><strong>C. Hybrid Density Kit</strong><span>default</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Shared/support" data-search="hibiki_toast.dart shared/support component system logs and debug">
+        <header>
+          <div>
+            <h2>hibiki_toast.dart</h2>
+            <p>Shared/support / Primary: Component system / Supports: Logs and debug</p>
+          </div>
+          <span class="pill">Default C</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="hibiki-toast-A.svg">
+              <img src="hibiki-toast-A.svg" alt="hibiki_toast.dart A MD3 Token Kit">
+            </a>
+            <figcaption><strong>A. MD3 Token Kit</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="hibiki-toast-B.svg">
+              <img src="hibiki-toast-B.svg" alt="hibiki_toast.dart B Cupertino Surface Kit">
+            </a>
+            <figcaption><strong>B. Cupertino Surface Kit</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="hibiki-toast-C.svg">
+              <img src="hibiki-toast-C.svg" alt="hibiki_toast.dart C Hybrid Density Kit">
+            </a>
+            <figcaption><strong>C. Hybrid Density Kit</strong><span>default</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Shared/support" data-search="platform_utils.dart shared/support component system home and navigation">
+        <header>
+          <div>
+            <h2>platform_utils.dart</h2>
+            <p>Shared/support / Primary: Component system / Supports: Home and navigation</p>
+          </div>
+          <span class="pill">Default C</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="platform-utils-A.svg">
+              <img src="platform-utils-A.svg" alt="platform_utils.dart A MD3 Token Kit">
+            </a>
+            <figcaption><strong>A. MD3 Token Kit</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="platform-utils-B.svg">
+              <img src="platform-utils-B.svg" alt="platform_utils.dart B Cupertino Surface Kit">
+            </a>
+            <figcaption><strong>B. Cupertino Surface Kit</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="platform-utils-C.svg">
+              <img src="platform-utils-C.svg" alt="platform_utils.dart C Hybrid Density Kit">
+            </a>
+            <figcaption><strong>C. Hybrid Density Kit</strong><span>default</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Shared/support" data-search="swipe_dismiss_wrapper.dart shared/support component system import and modals">
+        <header>
+          <div>
+            <h2>swipe_dismiss_wrapper.dart</h2>
+            <p>Shared/support / Primary: Component system / Supports: Import and modals</p>
+          </div>
+          <span class="pill">Default C</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="swipe-dismiss-wrapper-A.svg">
+              <img src="swipe-dismiss-wrapper-A.svg" alt="swipe_dismiss_wrapper.dart A MD3 Token Kit">
+            </a>
+            <figcaption><strong>A. MD3 Token Kit</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="swipe-dismiss-wrapper-B.svg">
+              <img src="swipe-dismiss-wrapper-B.svg" alt="swipe_dismiss_wrapper.dart B Cupertino Surface Kit">
+            </a>
+            <figcaption><strong>B. Cupertino Surface Kit</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="swipe-dismiss-wrapper-C.svg">
+              <img src="swipe-dismiss-wrapper-C.svg" alt="swipe_dismiss_wrapper.dart C Hybrid Density Kit">
+            </a>
+            <figcaption><strong>C. Hybrid Density Kit</strong><span>default</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Shared/support" data-search="update_checker.dart shared/support profile, language, system logs and debug">
+        <header>
+          <div>
+            <h2>update_checker.dart</h2>
+            <p>Shared/support / Primary: Profile, language, system / Supports: Logs and debug</p>
+          </div>
+          <span class="pill">Default A</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="update-checker-A.svg">
+              <img src="update-checker-A.svg" alt="update_checker.dart A Settings Hub">
+            </a>
+            <figcaption><strong>A. Settings Hub</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="update-checker-B.svg">
+              <img src="update-checker-B.svg" alt="update_checker.dart B Account-Like Profiles">
+            </a>
+            <figcaption><strong>B. Account-Like Profiles</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="update-checker-C.svg">
+              <img src="update-checker-C.svg" alt="update_checker.dart C Utility Console">
+            </a>
+            <figcaption><strong>C. Utility Console</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+      <article class="surface-card" data-section="Shared/support" data-search="blur_options.dart shared/support reader customization component system">
+        <header>
+          <div>
+            <h2>blur_options.dart</h2>
+            <p>Shared/support / Primary: Reader customization / Supports: Component system</p>
+          </div>
+          <span class="pill">Default B</span>
+        </header>
+        <div class="variants">
+          <figure class="variant" data-choice="A">
+            <a href="blur-options-A.svg">
+              <img src="blur-options-A.svg" alt="blur_options.dart A Controls First">
+            </a>
+            <figcaption><strong>A. Controls First</strong><span>option</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="B">
+            <a href="blur-options-B.svg">
+              <img src="blur-options-B.svg" alt="blur_options.dart B Preview Studio">
+            </a>
+            <figcaption><strong>B. Preview Studio</strong><span>default</span></figcaption>
+          </figure>
+          <figure class="variant" data-choice="C">
+            <a href="blur-options-C.svg">
+              <img src="blur-options-C.svg" alt="blur_options.dart C Theme Editor">
+            </a>
+            <figcaption><strong>C. Theme Editor</strong><span>option</span></figcaption>
+          </figure>
+        </div>
+      </article>
+    </section>
+  </main>
+  <script>
+    (() => {
+      const search = document.getElementById("search");
+      let activeSection = "all";
+
+      function applyFilters() {
+        const query = search.value.trim().toLowerCase();
+        document.querySelectorAll(".surface-card").forEach((card) => {
+          const sectionMatch = activeSection === "all" || card.dataset.section === activeSection;
+          const searchMatch = !query || card.dataset.search.includes(query);
+          card.classList.toggle("hidden", !(sectionMatch && searchMatch));
+        });
+      }
+
+      document.querySelectorAll("[data-section]").forEach((button) => {
+        button.addEventListener("click", () => {
+          activeSection = button.dataset.section;
+          document.querySelectorAll("[data-section]").forEach((candidate) => {
+            candidate.setAttribute("aria-pressed", String(candidate === button));
+          });
+          applyFilters();
+        });
+      });
+
+      search.addEventListener("input", applyFilters);
+    })();
+  </script>
+</body>
+</html>

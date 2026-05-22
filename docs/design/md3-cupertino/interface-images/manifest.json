@@ -1,0 +1,1265 @@
+{
+  "generatedFrom": "interface-gallery.html",
+  "surfaces": [
+    {
+      "section": "Entry",
+      "surface": "main.dart",
+      "primary": "01",
+      "file": "01-home-navigation.svg",
+      "secondary": "16",
+      "secondaryFile": "16-empty-loading-error-states.svg",
+      "defaultChoice": "C",
+      "slug": "main",
+      "files": {
+        "A": "main-A.svg",
+        "B": "main-B.svg",
+        "C": "main-C.svg"
+      }
+    },
+    {
+      "section": "Entry",
+      "surface": "popup_main.dart",
+      "primary": "03",
+      "file": "03-dictionary.svg",
+      "secondary": "16",
+      "secondaryFile": "16-empty-loading-error-states.svg",
+      "defaultChoice": "B",
+      "slug": "popup-main",
+      "files": {
+        "A": "popup-main-A.svg",
+        "B": "popup-main-B.svg",
+        "C": "popup-main-C.svg"
+      }
+    },
+    {
+      "section": "Entry",
+      "surface": "floating_dict_main.dart",
+      "primary": "03",
+      "file": "03-dictionary.svg",
+      "secondary": "18",
+      "secondaryFile": "18-component-system.svg",
+      "defaultChoice": "B",
+      "slug": "floating-dict-main",
+      "files": {
+        "A": "floating-dict-main-A.svg",
+        "B": "floating-dict-main-B.svg",
+        "C": "floating-dict-main-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "anki_settings_page.dart",
+      "primary": "07",
+      "file": "07-creator-anki.svg",
+      "secondary": "05",
+      "secondaryFile": "05-settings.svg",
+      "defaultChoice": "C",
+      "slug": "anki-settings-page",
+      "files": {
+        "A": "anki-settings-page-A.svg",
+        "B": "anki-settings-page-B.svg",
+        "C": "anki-settings-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "audio_recorder_page.dart",
+      "primary": "07",
+      "file": "07-creator-anki.svg",
+      "secondary": "12",
+      "secondaryFile": "12-media-and-sentences.svg",
+      "defaultChoice": "C",
+      "slug": "audio-recorder-page",
+      "files": {
+        "A": "audio-recorder-page-A.svg",
+        "B": "audio-recorder-page-B.svg",
+        "C": "audio-recorder-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "blur_options_dialog_page.dart",
+      "primary": "11",
+      "file": "11-reader-customization.svg",
+      "secondary": "06",
+      "secondaryFile": "06-import-and-modals.svg",
+      "defaultChoice": "B",
+      "slug": "blur-options-dialog-page",
+      "files": {
+        "A": "blur-options-dialog-page-A.svg",
+        "B": "blur-options-dialog-page-B.svg",
+        "C": "blur-options-dialog-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "book_css_editor_page.dart",
+      "primary": "11",
+      "file": "11-reader-customization.svg",
+      "secondary": "04",
+      "secondaryFile": "04-reader.svg",
+      "defaultChoice": "B",
+      "slug": "book-css-editor-page",
+      "files": {
+        "A": "book-css-editor-page-A.svg",
+        "B": "book-css-editor-page-B.svg",
+        "C": "book-css-editor-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "collections_page.dart",
+      "primary": "08",
+      "file": "08-collections-stats.svg",
+      "secondary": "12",
+      "secondaryFile": "12-media-and-sentences.svg",
+      "defaultChoice": "A",
+      "slug": "collections-page",
+      "files": {
+        "A": "collections-page-A.svg",
+        "B": "collections-page-B.svg",
+        "C": "collections-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "crop_image_dialog_page.dart",
+      "primary": "07",
+      "file": "07-creator-anki.svg",
+      "secondary": "12",
+      "secondaryFile": "12-media-and-sentences.svg",
+      "defaultChoice": "C",
+      "slug": "crop-image-dialog-page",
+      "files": {
+        "A": "crop-image-dialog-page-A.svg",
+        "B": "crop-image-dialog-page-B.svg",
+        "C": "crop-image-dialog-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "custom_fonts_page.dart",
+      "primary": "11",
+      "file": "11-reader-customization.svg",
+      "secondary": "05",
+      "secondaryFile": "05-settings.svg",
+      "defaultChoice": "B",
+      "slug": "custom-fonts-page",
+      "files": {
+        "A": "custom-fonts-page-A.svg",
+        "B": "custom-fonts-page-B.svg",
+        "C": "custom-fonts-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "custom_theme_page.dart",
+      "primary": "11",
+      "file": "11-reader-customization.svg",
+      "secondary": "05",
+      "secondaryFile": "05-settings.svg",
+      "defaultChoice": "B",
+      "slug": "custom-theme-page",
+      "files": {
+        "A": "custom-theme-page-A.svg",
+        "B": "custom-theme-page-B.svg",
+        "C": "custom-theme-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "debug_log_page.dart",
+      "primary": "15",
+      "file": "15-logs-and-debug.svg",
+      "secondary": "09",
+      "secondaryFile": "09-system-debug.svg",
+      "defaultChoice": "A",
+      "slug": "debug-log-page",
+      "files": {
+        "A": "debug-log-page-A.svg",
+        "B": "debug-log-page-B.svg",
+        "C": "debug-log-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "dictionary_dialog_delete_page.dart",
+      "primary": "10",
+      "file": "10-dictionary-management.svg",
+      "secondary": "06",
+      "secondaryFile": "06-import-and-modals.svg",
+      "defaultChoice": "C",
+      "slug": "dictionary-dialog-delete-page",
+      "files": {
+        "A": "dictionary-dialog-delete-page-A.svg",
+        "B": "dictionary-dialog-delete-page-B.svg",
+        "C": "dictionary-dialog-delete-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "dictionary_dialog_import_page.dart",
+      "primary": "10",
+      "file": "10-dictionary-management.svg",
+      "secondary": "06",
+      "secondaryFile": "06-import-and-modals.svg",
+      "defaultChoice": "C",
+      "slug": "dictionary-dialog-import-page",
+      "files": {
+        "A": "dictionary-dialog-import-page-A.svg",
+        "B": "dictionary-dialog-import-page-B.svg",
+        "C": "dictionary-dialog-import-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "dictionary_dialog_page.dart",
+      "primary": "10",
+      "file": "10-dictionary-management.svg",
+      "secondary": "03",
+      "secondaryFile": "03-dictionary.svg",
+      "defaultChoice": "C",
+      "slug": "dictionary-dialog-page",
+      "files": {
+        "A": "dictionary-dialog-page-A.svg",
+        "B": "dictionary-dialog-page-B.svg",
+        "C": "dictionary-dialog-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "dictionary_entry_page.dart",
+      "primary": "03",
+      "file": "03-dictionary.svg",
+      "secondary": "10",
+      "secondaryFile": "10-dictionary-management.svg",
+      "defaultChoice": "B",
+      "slug": "dictionary-entry-page",
+      "files": {
+        "A": "dictionary-entry-page-A.svg",
+        "B": "dictionary-entry-page-B.svg",
+        "C": "dictionary-entry-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "dictionary_page_mixin.dart",
+      "primary": "03",
+      "file": "03-dictionary.svg",
+      "secondary": "04",
+      "secondaryFile": "04-reader.svg",
+      "defaultChoice": "B",
+      "slug": "dictionary-page-mixin",
+      "files": {
+        "A": "dictionary-page-mixin-A.svg",
+        "B": "dictionary-page-mixin-B.svg",
+        "C": "dictionary-page-mixin-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "dictionary_popup_layer.dart",
+      "primary": "03",
+      "file": "03-dictionary.svg",
+      "secondary": "04",
+      "secondaryFile": "04-reader.svg",
+      "defaultChoice": "B",
+      "slug": "dictionary-popup-layer",
+      "files": {
+        "A": "dictionary-popup-layer-A.svg",
+        "B": "dictionary-popup-layer-B.svg",
+        "C": "dictionary-popup-layer-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "dictionary_popup_native.dart",
+      "primary": "03",
+      "file": "03-dictionary.svg",
+      "secondary": "04",
+      "secondaryFile": "04-reader.svg",
+      "defaultChoice": "B",
+      "slug": "dictionary-popup-native",
+      "files": {
+        "A": "dictionary-popup-native-A.svg",
+        "B": "dictionary-popup-native-B.svg",
+        "C": "dictionary-popup-native-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "dictionary_popup_webview.dart",
+      "primary": "03",
+      "file": "03-dictionary.svg",
+      "secondary": "04",
+      "secondaryFile": "04-reader.svg",
+      "defaultChoice": "B",
+      "slug": "dictionary-popup-webview",
+      "files": {
+        "A": "dictionary-popup-webview-A.svg",
+        "B": "dictionary-popup-webview-B.svg",
+        "C": "dictionary-popup-webview-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "dictionary_progress_dialog_content.dart",
+      "primary": "10",
+      "file": "10-dictionary-management.svg",
+      "secondary": "16",
+      "secondaryFile": "16-empty-loading-error-states.svg",
+      "defaultChoice": "C",
+      "slug": "dictionary-progress-dialog-content",
+      "files": {
+        "A": "dictionary-progress-dialog-content-A.svg",
+        "B": "dictionary-progress-dialog-content-B.svg",
+        "C": "dictionary-progress-dialog-content-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "dictionary_result_page.dart",
+      "primary": "03",
+      "file": "03-dictionary.svg",
+      "secondary": "12",
+      "secondaryFile": "12-media-and-sentences.svg",
+      "defaultChoice": "B",
+      "slug": "dictionary-result-page",
+      "files": {
+        "A": "dictionary-result-page-A.svg",
+        "B": "dictionary-result-page-B.svg",
+        "C": "dictionary-result-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "dictionary_settings_dialog_page.dart",
+      "primary": "10",
+      "file": "10-dictionary-management.svg",
+      "secondary": "05",
+      "secondaryFile": "05-settings.svg",
+      "defaultChoice": "C",
+      "slug": "dictionary-settings-dialog-page",
+      "files": {
+        "A": "dictionary-settings-dialog-page-A.svg",
+        "B": "dictionary-settings-dialog-page-B.svg",
+        "C": "dictionary-settings-dialog-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "dictionary_structured_content_page.dart",
+      "primary": "03",
+      "file": "03-dictionary.svg",
+      "secondary": "10",
+      "secondaryFile": "10-dictionary-management.svg",
+      "defaultChoice": "B",
+      "slug": "dictionary-structured-content-page",
+      "files": {
+        "A": "dictionary-structured-content-page-A.svg",
+        "B": "dictionary-structured-content-page-B.svg",
+        "C": "dictionary-structured-content-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "dictionary_term_page.dart",
+      "primary": "03",
+      "file": "03-dictionary.svg",
+      "secondary": "07",
+      "secondaryFile": "07-creator-anki.svg",
+      "defaultChoice": "B",
+      "slug": "dictionary-term-page",
+      "files": {
+        "A": "dictionary-term-page-A.svg",
+        "B": "dictionary-term-page-B.svg",
+        "C": "dictionary-term-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "dictionary_webview_media.dart",
+      "primary": "03",
+      "file": "03-dictionary.svg",
+      "secondary": "10",
+      "secondaryFile": "10-dictionary-management.svg",
+      "defaultChoice": "B",
+      "slug": "dictionary-webview-media",
+      "files": {
+        "A": "dictionary-webview-media-A.svg",
+        "B": "dictionary-webview-media-B.svg",
+        "C": "dictionary-webview-media-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "display_settings_page.dart",
+      "primary": "11",
+      "file": "11-reader-customization.svg",
+      "secondary": "04",
+      "secondaryFile": "04-reader.svg",
+      "defaultChoice": "B",
+      "slug": "display-settings-page",
+      "files": {
+        "A": "display-settings-page-A.svg",
+        "B": "display-settings-page-B.svg",
+        "C": "display-settings-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "error_log_page.dart",
+      "primary": "15",
+      "file": "15-logs-and-debug.svg",
+      "secondary": "16",
+      "secondaryFile": "16-empty-loading-error-states.svg",
+      "defaultChoice": "A",
+      "slug": "error-log-page",
+      "files": {
+        "A": "error-log-page-A.svg",
+        "B": "error-log-page-B.svg",
+        "C": "error-log-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "example_sentences_dialog_page.dart",
+      "primary": "12",
+      "file": "12-media-and-sentences.svg",
+      "secondary": "03",
+      "secondaryFile": "03-dictionary.svg",
+      "defaultChoice": "A",
+      "slug": "example-sentences-dialog-page",
+      "files": {
+        "A": "example-sentences-dialog-page-A.svg",
+        "B": "example-sentences-dialog-page-B.svg",
+        "C": "example-sentences-dialog-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "floating_dict_page.dart",
+      "primary": "03",
+      "file": "03-dictionary.svg",
+      "secondary": "14",
+      "secondaryFile": "14-profile-language-system.svg",
+      "defaultChoice": "B",
+      "slug": "floating-dict-page",
+      "files": {
+        "A": "floating-dict-page-A.svg",
+        "B": "floating-dict-page-B.svg",
+        "C": "floating-dict-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "history_reader_page.dart",
+      "primary": "02",
+      "file": "02-reader-shelf.svg",
+      "secondary": "13",
+      "secondaryFile": "13-tags-and-filters.svg",
+      "defaultChoice": "A",
+      "slug": "history-reader-page",
+      "files": {
+        "A": "history-reader-page-A.svg",
+        "B": "history-reader-page-B.svg",
+        "C": "history-reader-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "home_dictionary_page.dart",
+      "primary": "03",
+      "file": "03-dictionary.svg",
+      "secondary": "01",
+      "secondaryFile": "01-home-navigation.svg",
+      "defaultChoice": "B",
+      "slug": "home-dictionary-page",
+      "files": {
+        "A": "home-dictionary-page-A.svg",
+        "B": "home-dictionary-page-B.svg",
+        "C": "home-dictionary-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "home_page.dart",
+      "primary": "01",
+      "file": "01-home-navigation.svg",
+      "secondary": "05",
+      "secondaryFile": "05-settings.svg",
+      "defaultChoice": "C",
+      "slug": "home-page",
+      "files": {
+        "A": "home-page-A.svg",
+        "B": "home-page-B.svg",
+        "C": "home-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "home_reader_page.dart",
+      "primary": "01",
+      "file": "01-home-navigation.svg",
+      "secondary": "02",
+      "secondaryFile": "02-reader-shelf.svg",
+      "defaultChoice": "C",
+      "slug": "home-reader-page",
+      "files": {
+        "A": "home-reader-page-A.svg",
+        "B": "home-reader-page-B.svg",
+        "C": "home-reader-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "hoshi_settings_page.dart",
+      "primary": "05",
+      "file": "05-settings.svg",
+      "secondary": "11",
+      "secondaryFile": "11-reader-customization.svg",
+      "defaultChoice": "B",
+      "slug": "hoshi-settings-page",
+      "files": {
+        "A": "hoshi-settings-page-A.svg",
+        "B": "hoshi-settings-page-B.svg",
+        "C": "hoshi-settings-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "illustrations_viewer_page.dart",
+      "primary": "08",
+      "file": "08-collections-stats.svg",
+      "secondary": "12",
+      "secondaryFile": "12-media-and-sentences.svg",
+      "defaultChoice": "A",
+      "slug": "illustrations-viewer-page",
+      "files": {
+        "A": "illustrations-viewer-page-A.svg",
+        "B": "illustrations-viewer-page-B.svg",
+        "C": "illustrations-viewer-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "language_dialog_page.dart",
+      "primary": "14",
+      "file": "14-profile-language-system.svg",
+      "secondary": "06",
+      "secondaryFile": "06-import-and-modals.svg",
+      "defaultChoice": "A",
+      "slug": "language-dialog-page",
+      "files": {
+        "A": "language-dialog-page-A.svg",
+        "B": "language-dialog-page-B.svg",
+        "C": "language-dialog-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "loading_page.dart",
+      "primary": "16",
+      "file": "16-empty-loading-error-states.svg",
+      "secondary": "01",
+      "secondaryFile": "01-home-navigation.svg",
+      "defaultChoice": "A",
+      "slug": "loading-page",
+      "files": {
+        "A": "loading-page-A.svg",
+        "B": "loading-page-B.svg",
+        "C": "loading-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "lyrics_dialog_page.dart",
+      "primary": "04",
+      "file": "04-reader.svg",
+      "secondary": "12",
+      "secondaryFile": "12-media-and-sentences.svg",
+      "defaultChoice": "B",
+      "slug": "lyrics-dialog-page",
+      "files": {
+        "A": "lyrics-dialog-page-A.svg",
+        "B": "lyrics-dialog-page-B.svg",
+        "C": "lyrics-dialog-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "media_item_dialog_page.dart",
+      "primary": "12",
+      "file": "12-media-and-sentences.svg",
+      "secondary": "08",
+      "secondaryFile": "08-collections-stats.svg",
+      "defaultChoice": "A",
+      "slug": "media-item-dialog-page",
+      "files": {
+        "A": "media-item-dialog-page-A.svg",
+        "B": "media-item-dialog-page-B.svg",
+        "C": "media-item-dialog-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "media_item_edit_dialog_page.dart",
+      "primary": "12",
+      "file": "12-media-and-sentences.svg",
+      "secondary": "07",
+      "secondaryFile": "07-creator-anki.svg",
+      "defaultChoice": "A",
+      "slug": "media-item-edit-dialog-page",
+      "files": {
+        "A": "media-item-edit-dialog-page-A.svg",
+        "B": "media-item-edit-dialog-page-B.svg",
+        "C": "media-item-edit-dialog-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "media_source_picker_dialog_page.dart",
+      "primary": "12",
+      "file": "12-media-and-sentences.svg",
+      "secondary": "06",
+      "secondaryFile": "06-import-and-modals.svg",
+      "defaultChoice": "A",
+      "slug": "media-source-picker-dialog-page",
+      "files": {
+        "A": "media-source-picker-dialog-page-A.svg",
+        "B": "media-source-picker-dialog-page-B.svg",
+        "C": "media-source-picker-dialog-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "miscellaneous_settings_page.dart",
+      "primary": "14",
+      "file": "14-profile-language-system.svg",
+      "secondary": "05",
+      "secondaryFile": "05-settings.svg",
+      "defaultChoice": "A",
+      "slug": "miscellaneous-settings-page",
+      "files": {
+        "A": "miscellaneous-settings-page-A.svg",
+        "B": "miscellaneous-settings-page-B.svg",
+        "C": "miscellaneous-settings-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "open_stash_dialog_page.dart",
+      "primary": "12",
+      "file": "12-media-and-sentences.svg",
+      "secondary": "07",
+      "secondaryFile": "07-creator-anki.svg",
+      "defaultChoice": "A",
+      "slug": "open-stash-dialog-page",
+      "files": {
+        "A": "open-stash-dialog-page-A.svg",
+        "B": "open-stash-dialog-page-B.svg",
+        "C": "open-stash-dialog-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "placeholder_source_page.dart",
+      "primary": "16",
+      "file": "16-empty-loading-error-states.svg",
+      "secondary": "04",
+      "secondaryFile": "04-reader.svg",
+      "defaultChoice": "A",
+      "slug": "placeholder-source-page",
+      "files": {
+        "A": "placeholder-source-page-A.svg",
+        "B": "placeholder-source-page-B.svg",
+        "C": "placeholder-source-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "popup_dictionary_page.dart",
+      "primary": "03",
+      "file": "03-dictionary.svg",
+      "secondary": "14",
+      "secondaryFile": "14-profile-language-system.svg",
+      "defaultChoice": "B",
+      "slug": "popup-dictionary-page",
+      "files": {
+        "A": "popup-dictionary-page-A.svg",
+        "B": "popup-dictionary-page-B.svg",
+        "C": "popup-dictionary-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "profile_management_page.dart",
+      "primary": "14",
+      "file": "14-profile-language-system.svg",
+      "secondary": "05",
+      "secondaryFile": "05-settings.svg",
+      "defaultChoice": "A",
+      "slug": "profile-management-page",
+      "files": {
+        "A": "profile-management-page-A.svg",
+        "B": "profile-management-page-B.svg",
+        "C": "profile-management-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "reader_hoshi_history_page.dart",
+      "primary": "02",
+      "file": "02-reader-shelf.svg",
+      "secondary": "13",
+      "secondaryFile": "13-tags-and-filters.svg",
+      "defaultChoice": "A",
+      "slug": "reader-hoshi-history-page",
+      "files": {
+        "A": "reader-hoshi-history-page-A.svg",
+        "B": "reader-hoshi-history-page-B.svg",
+        "C": "reader-hoshi-history-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "reader_hoshi_page.dart",
+      "primary": "04",
+      "file": "04-reader.svg",
+      "secondary": "11",
+      "secondaryFile": "11-reader-customization.svg",
+      "defaultChoice": "B",
+      "slug": "reader-hoshi-page",
+      "files": {
+        "A": "reader-hoshi-page-A.svg",
+        "B": "reader-hoshi-page-B.svg",
+        "C": "reader-hoshi-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "reading_statistics_page.dart",
+      "primary": "08",
+      "file": "08-collections-stats.svg",
+      "secondary": "16",
+      "secondaryFile": "16-empty-loading-error-states.svg",
+      "defaultChoice": "A",
+      "slug": "reading-statistics-page",
+      "files": {
+        "A": "reading-statistics-page-A.svg",
+        "B": "reading-statistics-page-B.svg",
+        "C": "reading-statistics-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "switch_settings_page.dart",
+      "primary": "05",
+      "file": "05-settings.svg",
+      "secondary": "14",
+      "secondaryFile": "14-profile-language-system.svg",
+      "defaultChoice": "B",
+      "slug": "switch-settings-page",
+      "files": {
+        "A": "switch-settings-page-A.svg",
+        "B": "switch-settings-page-B.svg",
+        "C": "switch-settings-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "tag_filter_sheet.dart",
+      "primary": "13",
+      "file": "13-tags-and-filters.svg",
+      "secondary": "02",
+      "secondaryFile": "02-reader-shelf.svg",
+      "defaultChoice": "C",
+      "slug": "tag-filter-sheet",
+      "files": {
+        "A": "tag-filter-sheet-A.svg",
+        "B": "tag-filter-sheet-B.svg",
+        "C": "tag-filter-sheet-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "tag_management_page.dart",
+      "primary": "13",
+      "file": "13-tags-and-filters.svg",
+      "secondary": "05",
+      "secondaryFile": "05-settings.svg",
+      "defaultChoice": "C",
+      "slug": "tag-management-page",
+      "files": {
+        "A": "tag-management-page-A.svg",
+        "B": "tag-management-page-B.svg",
+        "C": "tag-management-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "tag_picker_page.dart",
+      "primary": "13",
+      "file": "13-tags-and-filters.svg",
+      "secondary": "06",
+      "secondaryFile": "06-import-and-modals.svg",
+      "defaultChoice": "C",
+      "slug": "tag-picker-page",
+      "files": {
+        "A": "tag-picker-page-A.svg",
+        "B": "tag-picker-page-B.svg",
+        "C": "tag-picker-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "text_segmentation_dialog_page.dart",
+      "primary": "07",
+      "file": "07-creator-anki.svg",
+      "secondary": "12",
+      "secondaryFile": "12-media-and-sentences.svg",
+      "defaultChoice": "C",
+      "slug": "text-segmentation-dialog-page",
+      "files": {
+        "A": "text-segmentation-dialog-page-A.svg",
+        "B": "text-segmentation-dialog-page-B.svg",
+        "C": "text-segmentation-dialog-page-C.svg"
+      }
+    },
+    {
+      "section": "Pages",
+      "surface": "websocket_dialog_page.dart",
+      "primary": "14",
+      "file": "14-profile-language-system.svg",
+      "secondary": "15",
+      "secondaryFile": "15-logs-and-debug.svg",
+      "defaultChoice": "A",
+      "slug": "websocket-dialog-page",
+      "files": {
+        "A": "websocket-dialog-page-A.svg",
+        "B": "websocket-dialog-page-B.svg",
+        "C": "websocket-dialog-page-C.svg"
+      }
+    },
+    {
+      "section": "Shared/support",
+      "surface": "app_model.dart",
+      "primary": "18",
+      "file": "18-component-system.svg",
+      "secondary": "14",
+      "secondaryFile": "14-profile-language-system.svg",
+      "defaultChoice": "C",
+      "slug": "app-model",
+      "files": {
+        "A": "app-model-A.svg",
+        "B": "app-model-B.svg",
+        "C": "app-model-C.svg"
+      }
+    },
+    {
+      "section": "Shared/support",
+      "surface": "base_history_page.dart",
+      "primary": "02",
+      "file": "02-reader-shelf.svg",
+      "secondary": "16",
+      "secondaryFile": "16-empty-loading-error-states.svg",
+      "defaultChoice": "A",
+      "slug": "base-history-page",
+      "files": {
+        "A": "base-history-page-A.svg",
+        "B": "base-history-page-B.svg",
+        "C": "base-history-page-C.svg"
+      }
+    },
+    {
+      "section": "Shared/support",
+      "surface": "base_media_search_bar.dart",
+      "primary": "18",
+      "file": "18-component-system.svg",
+      "secondary": "03",
+      "secondaryFile": "03-dictionary.svg",
+      "defaultChoice": "C",
+      "slug": "base-media-search-bar",
+      "files": {
+        "A": "base-media-search-bar-A.svg",
+        "B": "base-media-search-bar-B.svg",
+        "C": "base-media-search-bar-C.svg"
+      }
+    },
+    {
+      "section": "Shared/support",
+      "surface": "base_page.dart",
+      "primary": "18",
+      "file": "18-component-system.svg",
+      "secondary": "16",
+      "secondaryFile": "16-empty-loading-error-states.svg",
+      "defaultChoice": "C",
+      "slug": "base-page",
+      "files": {
+        "A": "base-page-A.svg",
+        "B": "base-page-B.svg",
+        "C": "base-page-C.svg"
+      }
+    },
+    {
+      "section": "Shared/support",
+      "surface": "base_source_page.dart",
+      "primary": "18",
+      "file": "18-component-system.svg",
+      "secondary": "03",
+      "secondaryFile": "03-dictionary.svg",
+      "defaultChoice": "C",
+      "slug": "base-source-page",
+      "files": {
+        "A": "base-source-page-A.svg",
+        "B": "base-source-page-B.svg",
+        "C": "base-source-page-C.svg"
+      }
+    },
+    {
+      "section": "Shared/support",
+      "surface": "base_tab_page.dart",
+      "primary": "18",
+      "file": "18-component-system.svg",
+      "secondary": "01",
+      "secondaryFile": "01-home-navigation.svg",
+      "defaultChoice": "C",
+      "slug": "base-tab-page",
+      "files": {
+        "A": "base-tab-page-A.svg",
+        "B": "base-tab-page-B.svg",
+        "C": "base-tab-page-C.svg"
+      }
+    },
+    {
+      "section": "Shared/support",
+      "surface": "audiobook_import_dialog.dart",
+      "primary": "06",
+      "file": "06-import-and-modals.svg",
+      "secondary": "18",
+      "secondaryFile": "18-component-system.svg",
+      "defaultChoice": "A",
+      "slug": "audiobook-import-dialog",
+      "files": {
+        "A": "audiobook-import-dialog-A.svg",
+        "B": "audiobook-import-dialog-B.svg",
+        "C": "audiobook-import-dialog-C.svg"
+      }
+    },
+    {
+      "section": "Shared/support",
+      "surface": "audiobook_play_bar.dart",
+      "primary": "04",
+      "file": "04-reader.svg",
+      "secondary": "18",
+      "secondaryFile": "18-component-system.svg",
+      "defaultChoice": "B",
+      "slug": "audiobook-play-bar",
+      "files": {
+        "A": "audiobook-play-bar-A.svg",
+        "B": "audiobook-play-bar-B.svg",
+        "C": "audiobook-play-bar-C.svg"
+      }
+    },
+    {
+      "section": "Shared/support",
+      "surface": "book_import_dialog.dart",
+      "primary": "06",
+      "file": "06-import-and-modals.svg",
+      "secondary": "18",
+      "secondaryFile": "18-component-system.svg",
+      "defaultChoice": "A",
+      "slug": "book-import-dialog",
+      "files": {
+        "A": "book-import-dialog-A.svg",
+        "B": "book-import-dialog-B.svg",
+        "C": "book-import-dialog-C.svg"
+      }
+    },
+    {
+      "section": "Shared/support",
+      "surface": "sasayaki_rematch.dart",
+      "primary": "06",
+      "file": "06-import-and-modals.svg",
+      "secondary": "04",
+      "secondaryFile": "04-reader.svg",
+      "defaultChoice": "A",
+      "slug": "sasayaki-rematch",
+      "files": {
+        "A": "sasayaki-rematch-A.svg",
+        "B": "sasayaki-rematch-B.svg",
+        "C": "sasayaki-rematch-C.svg"
+      }
+    },
+    {
+      "section": "Shared/support",
+      "surface": "profile_selector.dart",
+      "primary": "14",
+      "file": "14-profile-language-system.svg",
+      "secondary": "18",
+      "secondaryFile": "18-component-system.svg",
+      "defaultChoice": "A",
+      "slug": "profile-selector",
+      "files": {
+        "A": "profile-selector-A.svg",
+        "B": "profile-selector-B.svg",
+        "C": "profile-selector-C.svg"
+      }
+    },
+    {
+      "section": "Shared/support",
+      "surface": "jidoujisho_bottom_sheet.dart",
+      "primary": "18",
+      "file": "18-component-system.svg",
+      "secondary": "06",
+      "secondaryFile": "06-import-and-modals.svg",
+      "defaultChoice": "C",
+      "slug": "jidoujisho-bottom-sheet",
+      "files": {
+        "A": "jidoujisho-bottom-sheet-A.svg",
+        "B": "jidoujisho-bottom-sheet-B.svg",
+        "C": "jidoujisho-bottom-sheet-C.svg"
+      }
+    },
+    {
+      "section": "Shared/support",
+      "surface": "jidoujisho_divider.dart",
+      "primary": "18",
+      "file": "18-component-system.svg",
+      "secondary": "05",
+      "secondaryFile": "05-settings.svg",
+      "defaultChoice": "C",
+      "slug": "jidoujisho-divider",
+      "files": {
+        "A": "jidoujisho-divider-A.svg",
+        "B": "jidoujisho-divider-B.svg",
+        "C": "jidoujisho-divider-C.svg"
+      }
+    },
+    {
+      "section": "Shared/support",
+      "surface": "jidoujisho_dropdown.dart",
+      "primary": "18",
+      "file": "18-component-system.svg",
+      "secondary": "05",
+      "secondaryFile": "05-settings.svg",
+      "defaultChoice": "C",
+      "slug": "jidoujisho-dropdown",
+      "files": {
+        "A": "jidoujisho-dropdown-A.svg",
+        "B": "jidoujisho-dropdown-B.svg",
+        "C": "jidoujisho-dropdown-C.svg"
+      }
+    },
+    {
+      "section": "Shared/support",
+      "surface": "jidoujisho_icon_button.dart",
+      "primary": "18",
+      "file": "18-component-system.svg",
+      "secondary": "01",
+      "secondaryFile": "01-home-navigation.svg",
+      "defaultChoice": "C",
+      "slug": "jidoujisho-icon-button",
+      "files": {
+        "A": "jidoujisho-icon-button-A.svg",
+        "B": "jidoujisho-icon-button-B.svg",
+        "C": "jidoujisho-icon-button-C.svg"
+      }
+    },
+    {
+      "section": "Shared/support",
+      "surface": "jidoujisho_list_tile.dart",
+      "primary": "18",
+      "file": "18-component-system.svg",
+      "secondary": "05",
+      "secondaryFile": "05-settings.svg",
+      "defaultChoice": "C",
+      "slug": "jidoujisho-list-tile",
+      "files": {
+        "A": "jidoujisho-list-tile-A.svg",
+        "B": "jidoujisho-list-tile-B.svg",
+        "C": "jidoujisho-list-tile-C.svg"
+      }
+    },
+    {
+      "section": "Shared/support",
+      "surface": "jidoujisho_marquee.dart",
+      "primary": "18",
+      "file": "18-component-system.svg",
+      "secondary": "12",
+      "secondaryFile": "12-media-and-sentences.svg",
+      "defaultChoice": "C",
+      "slug": "jidoujisho-marquee",
+      "files": {
+        "A": "jidoujisho-marquee-A.svg",
+        "B": "jidoujisho-marquee-B.svg",
+        "C": "jidoujisho-marquee-C.svg"
+      }
+    },
+    {
+      "section": "Shared/support",
+      "surface": "jidoujisho_placeholder_message.dart",
+      "primary": "16",
+      "file": "16-empty-loading-error-states.svg",
+      "secondary": "18",
+      "secondaryFile": "18-component-system.svg",
+      "defaultChoice": "A",
+      "slug": "jidoujisho-placeholder-message",
+      "files": {
+        "A": "jidoujisho-placeholder-message-A.svg",
+        "B": "jidoujisho-placeholder-message-B.svg",
+        "C": "jidoujisho-placeholder-message-C.svg"
+      }
+    },
+    {
+      "section": "Shared/support",
+      "surface": "jidoujisho_popup_position.dart",
+      "primary": "18",
+      "file": "18-component-system.svg",
+      "secondary": "03",
+      "secondaryFile": "03-dictionary.svg",
+      "defaultChoice": "C",
+      "slug": "jidoujisho-popup-position",
+      "files": {
+        "A": "jidoujisho-popup-position-A.svg",
+        "B": "jidoujisho-popup-position-B.svg",
+        "C": "jidoujisho-popup-position-C.svg"
+      }
+    },
+    {
+      "section": "Shared/support",
+      "surface": "jidoujisho_search_history.dart",
+      "primary": "18",
+      "file": "18-component-system.svg",
+      "secondary": "03",
+      "secondaryFile": "03-dictionary.svg",
+      "defaultChoice": "C",
+      "slug": "jidoujisho-search-history",
+      "files": {
+        "A": "jidoujisho-search-history-A.svg",
+        "B": "jidoujisho-search-history-B.svg",
+        "C": "jidoujisho-search-history-C.svg"
+      }
+    },
+    {
+      "section": "Shared/support",
+      "surface": "jidoujisho_selectable_text.dart",
+      "primary": "18",
+      "file": "18-component-system.svg",
+      "secondary": "03",
+      "secondaryFile": "03-dictionary.svg",
+      "defaultChoice": "C",
+      "slug": "jidoujisho-selectable-text",
+      "files": {
+        "A": "jidoujisho-selectable-text-A.svg",
+        "B": "jidoujisho-selectable-text-B.svg",
+        "C": "jidoujisho-selectable-text-C.svg"
+      }
+    },
+    {
+      "section": "Shared/support",
+      "surface": "jidoujisho_tag.dart",
+      "primary": "13",
+      "file": "13-tags-and-filters.svg",
+      "secondary": "18",
+      "secondaryFile": "18-component-system.svg",
+      "defaultChoice": "C",
+      "slug": "jidoujisho-tag",
+      "files": {
+        "A": "jidoujisho-tag-A.svg",
+        "B": "jidoujisho-tag-B.svg",
+        "C": "jidoujisho-tag-C.svg"
+      }
+    },
+    {
+      "section": "Shared/support",
+      "surface": "jidoujisho_text_selection_controls.dart",
+      "primary": "18",
+      "file": "18-component-system.svg",
+      "secondary": "03",
+      "secondaryFile": "03-dictionary.svg",
+      "defaultChoice": "C",
+      "slug": "jidoujisho-text-selection-controls",
+      "files": {
+        "A": "jidoujisho-text-selection-controls-A.svg",
+        "B": "jidoujisho-text-selection-controls-B.svg",
+        "C": "jidoujisho-text-selection-controls-C.svg"
+      }
+    },
+    {
+      "section": "Shared/support",
+      "surface": "hibiki_toast.dart",
+      "primary": "18",
+      "file": "18-component-system.svg",
+      "secondary": "15",
+      "secondaryFile": "15-logs-and-debug.svg",
+      "defaultChoice": "C",
+      "slug": "hibiki-toast",
+      "files": {
+        "A": "hibiki-toast-A.svg",
+        "B": "hibiki-toast-B.svg",
+        "C": "hibiki-toast-C.svg"
+      }
+    },
+    {
+      "section": "Shared/support",
+      "surface": "platform_utils.dart",
+      "primary": "18",
+      "file": "18-component-system.svg",
+      "secondary": "01",
+      "secondaryFile": "01-home-navigation.svg",
+      "defaultChoice": "C",
+      "slug": "platform-utils",
+      "files": {
+        "A": "platform-utils-A.svg",
+        "B": "platform-utils-B.svg",
+        "C": "platform-utils-C.svg"
+      }
+    },
+    {
+      "section": "Shared/support",
+      "surface": "swipe_dismiss_wrapper.dart",
+      "primary": "18",
+      "file": "18-component-system.svg",
+      "secondary": "06",
+      "secondaryFile": "06-import-and-modals.svg",
+      "defaultChoice": "C",
+      "slug": "swipe-dismiss-wrapper",
+      "files": {
+        "A": "swipe-dismiss-wrapper-A.svg",
+        "B": "swipe-dismiss-wrapper-B.svg",
+        "C": "swipe-dismiss-wrapper-C.svg"
+      }
+    },
+    {
+      "section": "Shared/support",
+      "surface": "update_checker.dart",
+      "primary": "14",
+      "file": "14-profile-language-system.svg",
+      "secondary": "15",
+      "secondaryFile": "15-logs-and-debug.svg",
+      "defaultChoice": "A",
+      "slug": "update-checker",
+      "files": {
+        "A": "update-checker-A.svg",
+        "B": "update-checker-B.svg",
+        "C": "update-checker-C.svg"
+      }
+    },
+    {
+      "section": "Shared/support",
+      "surface": "blur_options.dart",
+      "primary": "11",
+      "file": "11-reader-customization.svg",
+      "secondary": "18",
+      "secondaryFile": "18-component-system.svg",
+      "defaultChoice": "B",
+      "slug": "blur-options",
+      "files": {
+        "A": "blur-options-A.svg",
+        "B": "blur-options-B.svg",
+        "C": "blur-options-C.svg"
+      }
+    }
+  ]
+}

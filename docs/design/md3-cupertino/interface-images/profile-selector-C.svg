@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="900" viewBox="0 0 520 900" role="img" aria-labelledby="profile-selector-C-title profile-selector-C-desc">
+  <title id="profile-selector-C-title">profile_selector.dart C design option</title>
+  <desc id="profile-selector-C-desc">Utility Console option for profile_selector.dart. Primary board: Profile, language, system. Secondary support: Component system.</desc>
+  <rect width="520" height="900" fill="#f6f7f4"/>
+  <rect x="22" y="22" width="476" height="856" rx="18" fill="#ffffff" stroke="#dfe5e1"/>
+  <text x="44" y="58" fill="#172126" font-family="Inter, Segoe UI, system-ui, sans-serif" font-size="22" font-weight="800">profile_selector.dart</text>
+  <text x="44" y="86" fill="#66747c" font-family="Inter, Segoe UI, system-ui, sans-serif" font-size="14">Shared/support / Profile, language, system</text>
+  <rect x="44" y="106" width="76" height="32" rx="16" fill="#eef2ef" stroke="#dfe5e1"/>
+  <text x="82" y="127" text-anchor="middle" fill="#214f5f" font-family="Inter, Segoe UI, system-ui, sans-serif" font-size="15" font-weight="800">C</text>
+  <text x="134" y="127" fill="#172126" font-family="Inter, Segoe UI, system-ui, sans-serif" font-size="16" font-weight="800">Utility Console</text>
+  <text x="44" y="158" fill="#66747c" font-family="Inter, Segoe UI, system-ui, sans-serif" font-size="13">Compact power-user system surface.</text>
+  <svg x="65" y="184" width="390" height="680" viewBox="862 108 360 628" preserveAspectRatio="xMidYMid meet">
+    <image href="../14-profile-language-system.svg" x="0" y="0" width="1260" height="760"/>
+  </svg>
+  <rect x="44" y="832" width="432" height="28" rx="14" fill="#fbfcf7" stroke="#dfe5e1"/>
+  <text x="260" y="851" text-anchor="middle" fill="#66747c" font-family="Inter, Segoe UI, system-ui, sans-serif" font-size="12">Supports Component system via 18-component-system.svg</text>
+</svg>

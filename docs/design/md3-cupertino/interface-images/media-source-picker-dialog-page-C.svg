@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="900" viewBox="0 0 520 900" role="img" aria-labelledby="media-source-picker-dialog-page-C-title media-source-picker-dialog-page-C-desc">
+  <title id="media-source-picker-dialog-page-C-title">media_source_picker_dialog_page.dart C design option</title>
+  <desc id="media-source-picker-dialog-page-C-desc">Bottom Workspace option for media_source_picker_dialog_page.dart. Primary board: Media and sentence dialogs. Secondary support: Import and modals.</desc>
+  <rect width="520" height="900" fill="#f6f7f4"/>
+  <rect x="22" y="22" width="476" height="856" rx="18" fill="#ffffff" stroke="#dfe5e1"/>
+  <text x="44" y="52" fill="#172126" font-family="Inter, Segoe UI, system-ui, sans-serif" font-size="22" font-weight="800">media_source_picker_dialog_page.da</text>
+  <text x="44" y="76" fill="#172126" font-family="Inter, Segoe UI, system-ui, sans-serif" font-size="22" font-weight="800">rt</text>
+  <text x="44" y="98" fill="#66747c" font-family="Inter, Segoe UI, system-ui, sans-serif" font-size="14">Pages / Media and sentence dialogs</text>
+  <rect x="44" y="118" width="76" height="32" rx="16" fill="#eef2ef" stroke="#dfe5e1"/>
+  <text x="82" y="139" text-anchor="middle" fill="#214f5f" font-family="Inter, Segoe UI, system-ui, sans-serif" font-size="15" font-weight="800">C</text>
+  <text x="134" y="139" fill="#172126" font-family="Inter, Segoe UI, system-ui, sans-serif" font-size="16" font-weight="800">Bottom Workspace</text>
+  <text x="44" y="170" fill="#66747c" font-family="Inter, Segoe UI, system-ui, sans-serif" font-size="13">Persistent panel for repeated sentence work.</text>
+  <svg x="65" y="202" width="390" height="644" viewBox="862 108 360 628" preserveAspectRatio="xMidYMid meet">
+    <image href="../12-media-and-sentences.svg" x="0" y="0" width="1260" height="760"/>
+  </svg>
+  <rect x="44" y="832" width="432" height="28" rx="14" fill="#fbfcf7" stroke="#dfe5e1"/>
+  <text x="260" y="851" text-anchor="middle" fill="#66747c" font-family="Inter, Segoe UI, system-ui, sans-serif" font-size="12">Supports Import and modals via 06-import-and-modals.svg</text>
+</svg>
