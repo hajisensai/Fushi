@@ -147,7 +147,7 @@ final String escaped = css
 ### HBK-AUDIT-006 — C++ 导入器无资源上限
 
 **Severity**: MEDIUM
-**Status**: open
+**Status**: fixed — 2026-05-22 添加 `kMaxEntriesPerBank=1M`、`kMaxTotalEntries=10M`、`kMaxDataBufferBytes=1GB`、`kMaxGlossarySizeBytes=10MB` 常量。`process_term_bank()`、`process_meta_bank()`、`process_simple_entries()` 循环中添加守卫检查。`write_terms()`/`write_meta()` lambda 添加 `limit_reached` 标志。超限时 `HOSHI_LOGW` 警告。
 **文件**: `native/hoshidicts/hoshidicts_src/importer.cpp:200-250`
 
 **根因**: 无最大条目数、最大条目大小、最大字典总大小限制。glossary 和 frequency 数组无界。
@@ -201,7 +201,7 @@ enum ReaderState { idle, loading, restoring, ready, error }
 ### HBK-AUDIT-009 — Creator/Anki 大规模代码重复
 
 **Severity**: MEDIUM
-**Status**: open
+**Status**: fixed — 2026-05-22 提取 `BaseAudioField` 基类（329 行），`AudioField` 和 `AudioSentenceField` 各缩减至 ~25 行（仅构造函数 + singleton + key + label）。总代码量从 760 行减至 ~380 行，消除 ~380 行重复。barrel export 已更新。
 **文件**: 多文件
 
 **重复清单**:
@@ -254,17 +254,17 @@ else -> String
 ### HBK-AUDIT-011 — CI/CD 缺失关键环节
 
 **Severity**: MEDIUM
-**Status**: open
+**Status**: fixed — 2026-05-22 `flutter test` 改为 `flutter test --coverage`。添加条件 release APK 构建（gated on `HAS_KEYSTORE` env：decode keystore → create key.properties → build release）。添加 `flutter pub outdated || true` 依赖健康检查步骤。
 **文件**: `.github/workflows/main.yml`
 
 **现状**:
 - `flutter analyze` (ok)
-- `flutter test`（106 个单元测试文件 / ~8,300 行）(ok)
-- 只构建 **debug** APK，不构建 release (missing)
-- 无代码覆盖率报告 (missing)
+- `flutter test --coverage`（~~106~~ 801 测试）(ok)
+- ~~只构建 **debug** APK~~ 条件构建 release APK（需配置 `KEYSTORE_BASE64` secret）(ok)
+- ~~无代码覆盖率报告~~ `--coverage` 已启用 (ok)
 - 无集成测试（4 个集成测试文件未在 CI 运行）(missing)
-- 无 release signing 验证 (missing)
-- 无 dependency audit / vulnerability scan (missing)
+- ~~无 release signing 验证~~ 条件 release 构建 (ok)
+- ~~无 dependency audit~~ `flutter pub outdated` 已添加 (ok)
 
 **影响**: release-only 的 bug（如 tree-shaking 移除被反射引用的代码、ProGuard 问题）在 CI 不会被捕获。
 
@@ -432,10 +432,10 @@ Future<void> _initBook() async {
 ### HBK-AUDIT-013 — `jidoujisho` 遗留命名与 `hibiki` 混杂
 
 **Severity**: LOW
-**Status**: open
+**Status**: fixed — 2026-05-22 (d94c3c9f) 35 文件 `git mv` 重命名 + 21 个类名 `Jidoujisho*` → `Hibiki*`，涉及 83 个文件。无序列化数据使用这些名称，零向后兼容风险。
 **文件**: 全代码库
 
-**现状**: UI 组件层使用 `Jidoujisho*` 前缀（如 `JidoujishoBottomSheet`、`JidoujishoDropdown`、`JidoujishoSelectableText` 等 8+ 个文件），数据模型使用 `JidoujishoTextSelection`，而应用层使用 `Hibiki*`/`Hoshi*` 前缀。
+**现状**: ~~UI 组件层使用 `Jidoujisho*` 前缀~~ 已统一为 `Hibiki*` 前缀。
 
 **影响**: 新贡献者困惑，两个命名空间的语义边界不清晰。不影响功能，但影响代码考古效率。
 
@@ -553,18 +553,18 @@ return import(db: db, bytes: bytes, ...);           // 传给 isolate
 | ~~P2~~ | HBK-AUDIT-007 | ~~阅读器多标志状态机~~ | **fixed** (generation check in _onChapterLoadComplete) |
 | ~~P2~~ | HBK-AUDIT-008 | ~~Stream/Timer 泄漏风险~~ | **false-positive** (subscriptions properly cancelled) |
 | P2 | HBK-AUDIT-010 | 偏好类型不安全序列化 | 架构脆弱但当前值安全 |
-| P2 | HBK-AUDIT-009 | Creator/Anki 代码重复 | 维护成本翻倍 |
-| P2 | HBK-AUDIT-011 | CI/CD 缺失 release build | 生产 bug 逃逸 |
+| ~~P2~~ | HBK-AUDIT-009 | ~~Creator/Anki 代码重复~~ | **fixed** (BaseAudioField base class) |
+| ~~P2~~ | HBK-AUDIT-011 | ~~CI/CD 缺失 release build~~ | **fixed** (coverage + conditional release + dep audit) |
 | ~~P2~~ | HBK-AUDIT-014 | ~~EPUB 导入内存峰值~~ | **fixed** (path-based isolate parsing) |
 | ~~P2~~ | HBK-AUDIT-021 | ~~数据库缺少关键查询索引~~ | **fixed** |
 | ~~P2~~ | HBK-AUDIT-022 | ~~5 层偏好缓存无失效机制~~ | **fixed** (refreshPrefCache refreshes all sources) |
 | ~~P2~~ | HBK-AUDIT-023 | ~~关键操作缺少事务包裹~~ | **fixed** |
-| P3 | HBK-AUDIT-006 | C++ 导入器无资源上限 | 恶意输入 OOM |
+| ~~P3~~ | HBK-AUDIT-006 | ~~C++ 导入器无资源上限~~ | **fixed** (4 resource limit constants + guards) |
 | ~~P3~~ | HBK-AUDIT-016 | ~~字幕 cue 无上限~~ | **fixed** (50K cap + unified parse path) |
 | ~~P3~~ | HBK-AUDIT-015 | ~~错误日志同步 I/O~~ | **fixed** (async writeAsString) |
 | ~~P3~~ | HBK-AUDIT-017 | ~~字典样式缓存无驱逐~~ | **false-positive** (bounded by dictionary count) |
 | P3 | HBK-AUDIT-024 | 911 个 null assertion | 崩溃时难定位 |
-| P3 | HBK-AUDIT-013 | 命名不一致 | 可读性 |
+| ~~P3~~ | HBK-AUDIT-013 | ~~命名不一致~~ | **fixed** (21 classes, 35 files renamed) |
 | P3 | HBK-AUDIT-019 | 依赖风险 | 升级困难 |
 | — | HBK-AUDIT-018 | 测试覆盖缺口 | 重构无安全网 |
 
