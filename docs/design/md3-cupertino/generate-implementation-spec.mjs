@@ -5,11 +5,12 @@ import { fileURLToPath } from "node:url";
 
 /** @typedef {"A" | "B" | "C"} Choice */
 /** @typedef {{ section: string, surface: string, primary: string, file: string, secondary: string, secondaryFile: string, defaultChoice: Choice, slug: string, files: Record<Choice, string> }} ManifestSurface */
-/** @typedef {"md3-practical" | "reading-calm" | "adaptive-power" | "hibiki-balanced"} PackName */
+/** @typedef {{ label: string, summary?: string, bestFor?: string, tradeoff?: string, choices: Record<string, Choice>, notes: string[] }} DesignPack */
 /** @typedef {{ choices: Map<string, Choice>, boardChoices: Map<string, Choice>, notes: string[] }} ParsedPicks */
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const manifestPath = join(__dirname, "interface-images", "manifest.json");
+const packsPath = join(__dirname, "design-packs.json");
 const defaultOutputPath = join(__dirname, "IMPLEMENTATION_SPEC_DRAFT.md");
 const boardOrder = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13", "14", "15", "16", "18"];
 
@@ -62,85 +63,37 @@ const groupContracts = {
   "Shared/support": "Shared and support surfaces define reusable Flutter components. They must prevent page-by-page styling drift and should be implemented before broad page rewrites."
 };
 
-/** @type {Record<PackName, { label: string, choices: Record<string, Choice>, notes: string[] }>} */
-const packs = {
-  "md3-practical": {
-    label: "MD3 Practical",
-    choices: Object.fromEntries(boardOrder.map((boardId) => [boardId, "A"])),
-    notes: [
-      "Baseline: MD3 Practical.",
-      "Use Material 3 components as the visible default.",
-      "Keep workflows direct and avoid decorative reader chrome."
-    ]
-  },
-  "reading-calm": {
-    label: "Reading Calm",
-    choices: Object.fromEntries(boardOrder.map((boardId) => [boardId, "B"])),
-    notes: [
-      "Baseline: Reading Calm.",
-      "Prefer grouped settings, large-title rhythm, and translucent reader/accessory chrome.",
-      "Keep dictionary results readable instead of input-focused."
-    ]
-  },
-  "adaptive-power": {
-    label: "Adaptive Power",
-    choices: Object.fromEntries(boardOrder.map((boardId) => [boardId, "C"])),
-    notes: [
-      "Baseline: Adaptive Power.",
-      "Favor navigation rail/sidebar, split panes, inspectors, persistent previews, and compact shared components.",
-      "Keep mobile layouts usable by collapsing dense panels into sheets."
-    ]
-  },
-  "hibiki-balanced": {
-    label: "Hibiki Balanced",
-    choices: {
-      "01": "C",
-      "02": "A",
-      "03": "B",
-      "04": "B",
-      "05": "B",
-      "06": "A",
-      "07": "C",
-      "08": "A",
-      "09": "C",
-      "10": "C",
-      "11": "B",
-      "12": "A",
-      "13": "C",
-      "14": "A",
-      "15": "A",
-      "16": "A",
-      "18": "C"
-    },
-    notes: [
-      "Baseline: Hibiki Balanced.",
-      "Reader stays calm; management surfaces stay dense.",
-      "Shared components use hybrid density so pages do not drift."
-    ]
+/**
+ * @param {string[]} args
+ * @param {number} index
+ * @param {string} flag
+ * @returns {string}
+ */
+function readFlagValue(args, index, flag) {
+  const value = args[index + 1];
+  if (!value || value.startsWith("--")) {
+    throw new Error(`Missing value for ${flag}.`);
   }
-};
+  return value;
+}
 
 /**
  * @param {string[]} args
- * @returns {{ picksPath?: string, outputPath: string, packName?: PackName }}
+ * @returns {{ picksPath?: string, outputPath: string, packName?: string }}
  */
 function parseArgs(args) {
-  /** @type {{ picksPath?: string, outputPath: string, packName?: PackName }} */
+  /** @type {{ picksPath?: string, outputPath: string, packName?: string }} */
   const result = { outputPath: defaultOutputPath };
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === "--picks") {
-      result.picksPath = args[index + 1];
+      result.picksPath = readFlagValue(args, index, arg);
       index += 1;
     } else if (arg === "--pack") {
-      const packName = args[index + 1];
-      if (!Object.hasOwn(packs, packName)) {
-        throw new Error(`Unknown pack: ${packName}. Valid packs: ${Object.keys(packs).join(", ")}`);
-      }
-      result.packName = /** @type {PackName} */ (packName);
+      result.packName = readFlagValue(args, index, arg);
       index += 1;
     } else if (arg === "--output") {
-      result.outputPath = args[index + 1];
+      result.outputPath = readFlagValue(args, index, arg);
       index += 1;
     } else if (arg === "--help") {
       console.log("Usage: node generate-implementation-spec.mjs [--pack md3-practical|reading-calm|adaptive-power|hibiki-balanced] [--picks picks.txt] [--output IMPLEMENTATION_SPEC.md]");
@@ -153,11 +106,41 @@ function parseArgs(args) {
 }
 
 /**
- * @param {PackName} packName
+ * @param {unknown} value
+ * @returns {value is Choice}
+ */
+function isChoice(value) {
+  return value === "A" || value === "B" || value === "C";
+}
+
+/**
+ * @returns {Promise<Record<string, DesignPack>>}
+ */
+async function loadPacks() {
+  const packs = /** @type {Record<string, DesignPack>} */ (JSON.parse(await readFile(packsPath, "utf8")));
+  for (const [packName, pack] of Object.entries(packs)) {
+    if (!pack.label || !pack.choices || !Array.isArray(pack.notes)) {
+      throw new Error(`Invalid pack shape: ${packName}`);
+    }
+    for (const boardId of boardOrder) {
+      if (!isChoice(pack.choices[boardId])) {
+        throw new Error(`Pack ${packName} has no valid choice for board ${boardId}.`);
+      }
+    }
+  }
+  return packs;
+}
+
+/**
+ * @param {string} packName
+ * @param {Record<string, DesignPack>} packs
  * @returns {ParsedPicks}
  */
-function picksFromPack(packName) {
+function picksFromPack(packName, packs) {
   const pack = packs[packName];
+  if (!pack) {
+    throw new Error(`Unknown pack: ${packName}. Valid packs: ${Object.keys(packs).join(", ")}`);
+  }
   return {
     choices: new Map(),
     boardChoices: new Map(Object.entries(pack.choices)),
@@ -365,12 +348,13 @@ Before claiming runtime completion:
  */
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  const packs = await loadPacks();
   const manifest = /** @type {{ generatedFrom: string, surfaces: ManifestSurface[] }} */ (JSON.parse(await readFile(manifestPath, "utf8")));
   if (manifest.generatedFrom !== "interface-gallery.html") {
     throw new Error(`Unexpected manifest source: ${manifest.generatedFrom}`);
   }
 
-  const packPicks = args.packName ? picksFromPack(args.packName) : { choices: new Map(), boardChoices: new Map(), notes: [] };
+  const packPicks = args.packName ? picksFromPack(args.packName, packs) : { choices: new Map(), boardChoices: new Map(), notes: [] };
   const filePicks = args.picksPath ? parsePicks(await readFile(args.picksPath, "utf8")) : { choices: new Map(), boardChoices: new Map(), notes: [] };
   const picks = mergePicks(packPicks, filePicks);
   const sources = [];

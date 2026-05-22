@@ -1008,182 +1008,182 @@
     },
     {
       "section": "Shared/support",
-      "surface": "jidoujisho_bottom_sheet.dart",
+      "surface": "hibiki_bottom_sheet.dart",
       "primary": "18",
       "file": "18-component-system.svg",
       "secondary": "06",
       "secondaryFile": "06-import-and-modals.svg",
       "defaultChoice": "C",
-      "slug": "jidoujisho-bottom-sheet",
+      "slug": "hibiki-bottom-sheet",
       "files": {
-        "A": "jidoujisho-bottom-sheet-A.svg",
-        "B": "jidoujisho-bottom-sheet-B.svg",
-        "C": "jidoujisho-bottom-sheet-C.svg"
+        "A": "hibiki-bottom-sheet-A.svg",
+        "B": "hibiki-bottom-sheet-B.svg",
+        "C": "hibiki-bottom-sheet-C.svg"
       }
     },
     {
       "section": "Shared/support",
-      "surface": "jidoujisho_divider.dart",
+      "surface": "hibiki_divider.dart",
       "primary": "18",
       "file": "18-component-system.svg",
       "secondary": "05",
       "secondaryFile": "05-settings.svg",
       "defaultChoice": "C",
-      "slug": "jidoujisho-divider",
+      "slug": "hibiki-divider",
       "files": {
-        "A": "jidoujisho-divider-A.svg",
-        "B": "jidoujisho-divider-B.svg",
-        "C": "jidoujisho-divider-C.svg"
+        "A": "hibiki-divider-A.svg",
+        "B": "hibiki-divider-B.svg",
+        "C": "hibiki-divider-C.svg"
       }
     },
     {
       "section": "Shared/support",
-      "surface": "jidoujisho_dropdown.dart",
+      "surface": "hibiki_dropdown.dart",
       "primary": "18",
       "file": "18-component-system.svg",
       "secondary": "05",
       "secondaryFile": "05-settings.svg",
       "defaultChoice": "C",
-      "slug": "jidoujisho-dropdown",
+      "slug": "hibiki-dropdown",
       "files": {
-        "A": "jidoujisho-dropdown-A.svg",
-        "B": "jidoujisho-dropdown-B.svg",
-        "C": "jidoujisho-dropdown-C.svg"
+        "A": "hibiki-dropdown-A.svg",
+        "B": "hibiki-dropdown-B.svg",
+        "C": "hibiki-dropdown-C.svg"
       }
     },
     {
       "section": "Shared/support",
-      "surface": "jidoujisho_icon_button.dart",
+      "surface": "hibiki_icon_button.dart",
       "primary": "18",
       "file": "18-component-system.svg",
       "secondary": "01",
       "secondaryFile": "01-home-navigation.svg",
       "defaultChoice": "C",
-      "slug": "jidoujisho-icon-button",
+      "slug": "hibiki-icon-button",
       "files": {
-        "A": "jidoujisho-icon-button-A.svg",
-        "B": "jidoujisho-icon-button-B.svg",
-        "C": "jidoujisho-icon-button-C.svg"
+        "A": "hibiki-icon-button-A.svg",
+        "B": "hibiki-icon-button-B.svg",
+        "C": "hibiki-icon-button-C.svg"
       }
     },
     {
       "section": "Shared/support",
-      "surface": "jidoujisho_list_tile.dart",
+      "surface": "hibiki_list_tile.dart",
       "primary": "18",
       "file": "18-component-system.svg",
       "secondary": "05",
       "secondaryFile": "05-settings.svg",
       "defaultChoice": "C",
-      "slug": "jidoujisho-list-tile",
+      "slug": "hibiki-list-tile",
       "files": {
-        "A": "jidoujisho-list-tile-A.svg",
-        "B": "jidoujisho-list-tile-B.svg",
-        "C": "jidoujisho-list-tile-C.svg"
+        "A": "hibiki-list-tile-A.svg",
+        "B": "hibiki-list-tile-B.svg",
+        "C": "hibiki-list-tile-C.svg"
       }
     },
     {
       "section": "Shared/support",
-      "surface": "jidoujisho_marquee.dart",
+      "surface": "hibiki_marquee.dart",
       "primary": "18",
       "file": "18-component-system.svg",
       "secondary": "12",
       "secondaryFile": "12-media-and-sentences.svg",
       "defaultChoice": "C",
-      "slug": "jidoujisho-marquee",
+      "slug": "hibiki-marquee",
       "files": {
-        "A": "jidoujisho-marquee-A.svg",
-        "B": "jidoujisho-marquee-B.svg",
-        "C": "jidoujisho-marquee-C.svg"
+        "A": "hibiki-marquee-A.svg",
+        "B": "hibiki-marquee-B.svg",
+        "C": "hibiki-marquee-C.svg"
       }
     },
     {
       "section": "Shared/support",
-      "surface": "jidoujisho_placeholder_message.dart",
+      "surface": "hibiki_placeholder_message.dart",
       "primary": "16",
       "file": "16-empty-loading-error-states.svg",
       "secondary": "18",
       "secondaryFile": "18-component-system.svg",
       "defaultChoice": "A",
-      "slug": "jidoujisho-placeholder-message",
+      "slug": "hibiki-placeholder-message",
       "files": {
-        "A": "jidoujisho-placeholder-message-A.svg",
-        "B": "jidoujisho-placeholder-message-B.svg",
-        "C": "jidoujisho-placeholder-message-C.svg"
+        "A": "hibiki-placeholder-message-A.svg",
+        "B": "hibiki-placeholder-message-B.svg",
+        "C": "hibiki-placeholder-message-C.svg"
       }
     },
     {
       "section": "Shared/support",
-      "surface": "jidoujisho_popup_position.dart",
+      "surface": "hibiki_popup_position.dart",
       "primary": "18",
       "file": "18-component-system.svg",
       "secondary": "03",
       "secondaryFile": "03-dictionary.svg",
       "defaultChoice": "C",
-      "slug": "jidoujisho-popup-position",
+      "slug": "hibiki-popup-position",
       "files": {
-        "A": "jidoujisho-popup-position-A.svg",
-        "B": "jidoujisho-popup-position-B.svg",
-        "C": "jidoujisho-popup-position-C.svg"
+        "A": "hibiki-popup-position-A.svg",
+        "B": "hibiki-popup-position-B.svg",
+        "C": "hibiki-popup-position-C.svg"
       }
     },
     {
       "section": "Shared/support",
-      "surface": "jidoujisho_search_history.dart",
+      "surface": "hibiki_search_history.dart",
       "primary": "18",
       "file": "18-component-system.svg",
       "secondary": "03",
       "secondaryFile": "03-dictionary.svg",
       "defaultChoice": "C",
-      "slug": "jidoujisho-search-history",
+      "slug": "hibiki-search-history",
       "files": {
-        "A": "jidoujisho-search-history-A.svg",
-        "B": "jidoujisho-search-history-B.svg",
-        "C": "jidoujisho-search-history-C.svg"
+        "A": "hibiki-search-history-A.svg",
+        "B": "hibiki-search-history-B.svg",
+        "C": "hibiki-search-history-C.svg"
       }
     },
     {
       "section": "Shared/support",
-      "surface": "jidoujisho_selectable_text.dart",
+      "surface": "hibiki_selectable_text.dart",
       "primary": "18",
       "file": "18-component-system.svg",
       "secondary": "03",
       "secondaryFile": "03-dictionary.svg",
       "defaultChoice": "C",
-      "slug": "jidoujisho-selectable-text",
+      "slug": "hibiki-selectable-text",
       "files": {
-        "A": "jidoujisho-selectable-text-A.svg",
-        "B": "jidoujisho-selectable-text-B.svg",
-        "C": "jidoujisho-selectable-text-C.svg"
+        "A": "hibiki-selectable-text-A.svg",
+        "B": "hibiki-selectable-text-B.svg",
+        "C": "hibiki-selectable-text-C.svg"
       }
     },
     {
       "section": "Shared/support",
-      "surface": "jidoujisho_tag.dart",
+      "surface": "hibiki_tag.dart",
       "primary": "13",
       "file": "13-tags-and-filters.svg",
       "secondary": "18",
       "secondaryFile": "18-component-system.svg",
       "defaultChoice": "C",
-      "slug": "jidoujisho-tag",
+      "slug": "hibiki-tag",
       "files": {
-        "A": "jidoujisho-tag-A.svg",
-        "B": "jidoujisho-tag-B.svg",
-        "C": "jidoujisho-tag-C.svg"
+        "A": "hibiki-tag-A.svg",
+        "B": "hibiki-tag-B.svg",
+        "C": "hibiki-tag-C.svg"
       }
     },
     {
       "section": "Shared/support",
-      "surface": "jidoujisho_text_selection_controls.dart",
+      "surface": "hibiki_text_selection_controls.dart",
       "primary": "18",
       "file": "18-component-system.svg",
       "secondary": "03",
       "secondaryFile": "03-dictionary.svg",
       "defaultChoice": "C",
-      "slug": "jidoujisho-text-selection-controls",
+      "slug": "hibiki-text-selection-controls",
       "files": {
-        "A": "jidoujisho-text-selection-controls-A.svg",
-        "B": "jidoujisho-text-selection-controls-B.svg",
-        "C": "jidoujisho-text-selection-controls-C.svg"
+        "A": "hibiki-text-selection-controls-A.svg",
+        "B": "hibiki-text-selection-controls-B.svg",
+        "C": "hibiki-text-selection-controls-C.svg"
       }
     },
     {

@@ -106,18 +106,18 @@ This file maps current Hibiki UI files to the design boards in this folder. It i
 | `book_import_dialog.dart` | `06-import-and-modals.svg` | `18-component-system.svg` |
 | `sasayaki_rematch.dart` | `06-import-and-modals.svg` | `04-reader.svg` |
 | `profile_selector.dart` | `14-profile-language-system.svg` | `18-component-system.svg` |
-| `jidoujisho_bottom_sheet.dart` | `18-component-system.svg` | `06-import-and-modals.svg` |
-| `jidoujisho_divider.dart` | `18-component-system.svg` | `05-settings.svg` |
-| `jidoujisho_dropdown.dart` | `18-component-system.svg` | `05-settings.svg` |
-| `jidoujisho_icon_button.dart` | `18-component-system.svg` | `01-home-navigation.svg` |
-| `jidoujisho_list_tile.dart` | `18-component-system.svg` | `05-settings.svg` |
-| `jidoujisho_marquee.dart` | `18-component-system.svg` | `12-media-and-sentences.svg` |
-| `jidoujisho_placeholder_message.dart` | `16-empty-loading-error-states.svg` | `18-component-system.svg` |
-| `jidoujisho_popup_position.dart` | `18-component-system.svg` | `03-dictionary.svg` |
-| `jidoujisho_search_history.dart` | `18-component-system.svg` | `03-dictionary.svg` |
-| `jidoujisho_selectable_text.dart` | `18-component-system.svg` | `03-dictionary.svg` |
-| `jidoujisho_tag.dart` | `13-tags-and-filters.svg` | `18-component-system.svg` |
-| `jidoujisho_text_selection_controls.dart` | `18-component-system.svg` | `03-dictionary.svg` |
+| `hibiki_bottom_sheet.dart` | `18-component-system.svg` | `06-import-and-modals.svg` |
+| `hibiki_divider.dart` | `18-component-system.svg` | `05-settings.svg` |
+| `hibiki_dropdown.dart` | `18-component-system.svg` | `05-settings.svg` |
+| `hibiki_icon_button.dart` | `18-component-system.svg` | `01-home-navigation.svg` |
+| `hibiki_list_tile.dart` | `18-component-system.svg` | `05-settings.svg` |
+| `hibiki_marquee.dart` | `18-component-system.svg` | `12-media-and-sentences.svg` |
+| `hibiki_placeholder_message.dart` | `16-empty-loading-error-states.svg` | `18-component-system.svg` |
+| `hibiki_popup_position.dart` | `18-component-system.svg` | `03-dictionary.svg` |
+| `hibiki_search_history.dart` | `18-component-system.svg` | `03-dictionary.svg` |
+| `hibiki_selectable_text.dart` | `18-component-system.svg` | `03-dictionary.svg` |
+| `hibiki_tag.dart` | `13-tags-and-filters.svg` | `18-component-system.svg` |
+| `hibiki_text_selection_controls.dart` | `18-component-system.svg` | `03-dictionary.svg` |
 | `hibiki_toast.dart` | `18-component-system.svg` | `15-logs-and-debug.svg` |
 | `platform_utils.dart` | `18-component-system.svg` | `01-home-navigation.svg` |
 | `swipe_dismiss_wrapper.dart` | `18-component-system.svg` | `06-import-and-modals.svg` |
@@ -126,7 +126,7 @@ This file maps current Hibiki UI files to the design boards in this folder. It i
 
 ## Full UI scan audit
 
-See [UI_COVERAGE_AUDIT.md](UI_COVERAGE_AUDIT.md). The latest scan matched 81 UI-building Dart files under `hibiki/lib` and all 81 are mapped above. The mapping table intentionally has 84 rows because it also keeps 3 manual UI support files in scope: `dictionary_page_mixin.dart`, `dictionary_webview_media.dart`, and `jidoujisho_popup_position.dart`.
+See [UI_COVERAGE_AUDIT.md](UI_COVERAGE_AUDIT.md). The latest scan matched 81 UI-building Dart files under `hibiki/lib` and all 81 are mapped above. The mapping table intentionally has 84 rows because it also keeps 3 manual UI support files in scope: `dictionary_page_mixin.dart`, `dictionary_webview_media.dart`, and `hibiki_popup_position.dart`.
 
 ## Current gap after this batch
 

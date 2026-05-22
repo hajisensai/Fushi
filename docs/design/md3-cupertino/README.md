@@ -4,7 +4,7 @@ This folder is the design-selection board for the MD3 + Cupertino redesign goal.
 
 ## Pick format
 
-Open [gallery.html](gallery.html) for a single-page visual gallery of all boards. Use its `A` / `B` / `C` controls to save board choices, then use the per-interface selector on the same page for screen-specific exceptions. Open [interface-gallery.html](interface-gallery.html) when you want every exact UI surface listed with three visible A/B/C images, open [interface-images/index.html](interface-images/index.html) when you want direct per-interface images with a review queue, clickable picks, and copyable output, and open [variant-gallery.html](variant-gallery.html) when you want board-level crops only.
+Open [design-pack-gallery.html](design-pack-gallery.html) first when you want to pick a whole-app baseline with representative images. Open [gallery.html](gallery.html) for a single-page visual gallery of all boards. Use its `A` / `B` / `C` controls to save board choices, then use the per-interface selector on the same page for screen-specific exceptions. Open [interface-gallery.html](interface-gallery.html) when you want every exact UI surface listed with three visible A/B/C images, open [interface-images/index.html](interface-images/index.html) when you want direct per-interface images with a review queue, clickable picks, and copyable output, and open [variant-gallery.html](variant-gallery.html) when you want board-level crops only.
 
 Reply with the copied result or with choices like:
 
@@ -18,7 +18,7 @@ Settings B
 
 You can also mix details, for example `Reader B, but use A's bottom bar`.
 
-For a complete board worksheet, use [PICKS.md](PICKS.md). For full baseline directions, start from [DESIGN_PACKS.md](DESIGN_PACKS.md), then use [INTERFACE_PICKS.md](INTERFACE_PICKS.md) for file-by-file exceptions. For direct visual comparison, use [interface-gallery.html](interface-gallery.html), [interface-images/index.html](interface-images/index.html), or [variant-gallery.html](variant-gallery.html).
+For a complete board worksheet, use [PICKS.md](PICKS.md). For full baseline directions, start from [DESIGN_PACKS.md](DESIGN_PACKS.md) or [design-pack-gallery.html](design-pack-gallery.html), then use [INTERFACE_PICKS.md](INTERFACE_PICKS.md) for file-by-file exceptions. For direct visual comparison, use [interface-gallery.html](interface-gallery.html), [interface-images/index.html](interface-images/index.html), or [variant-gallery.html](variant-gallery.html).
 
 After choices are copied back into a text file, generate the implementation spec draft with:
 
@@ -51,7 +51,7 @@ Use `--pack hibiki-balanced` without `--picks` to generate the recommended hybri
 | Full coverage map | [17-full-coverage-map.svg](17-full-coverage-map.svg) | Visual map from page families to design boards |
 | Component system | [18-component-system.svg](18-component-system.svg) | Shared buttons, rows, search, sheets, placeholders, popups, and selection grammar |
 
-The [variant gallery](variant-gallery.html) crops the runtime design boards into 51 standalone A/B/C examples. The [interface gallery](interface-gallery.html) expands those into 252 visible choices across 84 mapped UI surfaces. The [interface image pack](interface-images/index.html) writes the same 252 choices as individual SVG image files plus a manifest, and lets you move through the review queue, jump to the next unpicked surface, filter to only unpicked surfaces, and click choices directly before copying the result. Board 17 is excluded there because it is a coverage map, not a runtime interface style.
+The [design pack gallery](design-pack-gallery.html) compares the four whole-app baselines using representative interface images. The [variant gallery](variant-gallery.html) crops the runtime design boards into 51 standalone A/B/C examples. The [interface gallery](interface-gallery.html) expands those into 252 visible choices across 84 mapped UI surfaces. The [interface image pack](interface-images/index.html) writes the same 252 choices as individual SVG image files plus a manifest, and lets you move through the review queue, jump to the next unpicked surface, filter to only unpicked surfaces, and click choices directly before copying the result. Board 17 is excluded there because it is a coverage map, not a runtime interface style.
 
 See [COVERAGE.md](COVERAGE.md) for the file-by-file mapping from current Flutter UI files to these boards, [INTERFACE_PICKS.md](INTERFACE_PICKS.md) for per-interface choices, and [UI_COVERAGE_AUDIT.md](UI_COVERAGE_AUDIT.md) for the scan evidence.
 

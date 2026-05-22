@@ -1,0 +1,122 @@
+{
+  "md3-practical": {
+    "label": "MD3 Practical",
+    "summary": "Android-native clarity, predictable controls, and the lowest implementation risk.",
+    "bestFor": "Choose this when consistency and speed matter more than a softer reading mood.",
+    "tradeoff": "The reader and preference-heavy screens feel more utilitarian than the Cupertino-leaning pack.",
+    "choices": {
+      "01": "A",
+      "02": "A",
+      "03": "A",
+      "04": "A",
+      "05": "A",
+      "06": "A",
+      "07": "A",
+      "08": "A",
+      "09": "A",
+      "10": "A",
+      "11": "A",
+      "12": "A",
+      "13": "A",
+      "14": "A",
+      "15": "A",
+      "16": "A",
+      "18": "A"
+    },
+    "notes": [
+      "Baseline: MD3 Practical.",
+      "Use Material 3 components as the visible default.",
+      "Keep workflows direct and avoid decorative reader chrome."
+    ]
+  },
+  "reading-calm": {
+    "label": "Reading Calm",
+    "summary": "Grouped settings, quiet reader chrome, and softer mobile-first navigation.",
+    "bestFor": "Choose this when Hibiki should feel primarily like a long-session reading app.",
+    "tradeoff": "Management-heavy surfaces may need explicit overrides to stay dense enough.",
+    "choices": {
+      "01": "B",
+      "02": "B",
+      "03": "B",
+      "04": "B",
+      "05": "B",
+      "06": "B",
+      "07": "B",
+      "08": "B",
+      "09": "B",
+      "10": "B",
+      "11": "B",
+      "12": "B",
+      "13": "B",
+      "14": "B",
+      "15": "B",
+      "16": "B",
+      "18": "B"
+    },
+    "notes": [
+      "Baseline: Reading Calm.",
+      "Prefer grouped settings, large-title rhythm, and translucent reader/accessory chrome.",
+      "Keep dictionary results readable instead of input-focused."
+    ]
+  },
+  "adaptive-power": {
+    "label": "Adaptive Power",
+    "summary": "Dense workspaces, split panes, inspectors, and tablet or desktop readiness.",
+    "bestFor": "Choose this when dictionary management, creator mapping, tags, and diagnostics dominate.",
+    "tradeoff": "Casual mobile reading can feel too operational unless reader surfaces are overridden.",
+    "choices": {
+      "01": "C",
+      "02": "C",
+      "03": "C",
+      "04": "C",
+      "05": "C",
+      "06": "C",
+      "07": "C",
+      "08": "C",
+      "09": "C",
+      "10": "C",
+      "11": "C",
+      "12": "C",
+      "13": "C",
+      "14": "C",
+      "15": "C",
+      "16": "C",
+      "18": "C"
+    },
+    "notes": [
+      "Baseline: Adaptive Power.",
+      "Favor navigation rail/sidebar, split panes, inspectors, persistent previews, and compact shared components.",
+      "Keep mobile layouts usable by collapsing dense panels into sheets."
+    ]
+  },
+  "hibiki-balanced": {
+    "label": "Hibiki Balanced",
+    "summary": "Calm reader surfaces, dense management surfaces, and strict shared component tokens.",
+    "bestFor": "Choose this as the recommended baseline before making per-interface exceptions.",
+    "tradeoff": "It is less visually uniform than a pure A/B/C pack, so shared tokens must be strict.",
+    "choices": {
+      "01": "C",
+      "02": "A",
+      "03": "B",
+      "04": "B",
+      "05": "B",
+      "06": "A",
+      "07": "C",
+      "08": "A",
+      "09": "C",
+      "10": "C",
+      "11": "B",
+      "12": "A",
+      "13": "C",
+      "14": "A",
+      "15": "A",
+      "16": "A",
+      "18": "C"
+    },
+    "notes": [
+      "Baseline: Hibiki Balanced.",
+      "Reader stays calm; management surfaces stay dense.",
+      "Shared components use hybrid density so pages do not drift."
+    ]
+  }
+}

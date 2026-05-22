@@ -1,0 +1,850 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hibiki MD3 + Cupertino design pack gallery</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #1f2528;
+      --muted: #637076;
+      --line: #d7dddf;
+      --page: #f6f8f4;
+      --surface: #ffffff;
+      --surface-2: #eef5f1;
+      --accent: #2f6f61;
+      --accent-2: #365f8d;
+      --danger: #8a4a3a;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--page);
+      color: var(--ink);
+    }
+
+    header {
+      background: #fcfdfb;
+      border-bottom: 1px solid var(--line);
+      padding: 28px clamp(18px, 5vw, 64px) 22px;
+    }
+
+    main {
+      padding: 22px clamp(14px, 4vw, 54px) 44px;
+    }
+
+    h1,
+    h2,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      max-width: 820px;
+      font-size: 3rem;
+      line-height: 1.05;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      font-size: 2rem;
+      line-height: 1.1;
+      letter-spacing: 0;
+    }
+
+    .lead {
+      max-width: 920px;
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 1rem;
+      line-height: 1.65;
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-top: 20px;
+    }
+
+    .toolbar a,
+    button {
+      min-height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--ink);
+      font: inherit;
+      font-weight: 700;
+      text-decoration: none;
+      padding: 9px 12px;
+      cursor: pointer;
+    }
+
+    .toolbar a:hover,
+    button:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .selection {
+      margin-top: 18px;
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      background: var(--surface-2);
+      display: grid;
+      gap: 8px;
+      max-width: 980px;
+    }
+
+    .selection code,
+    .command-row code {
+      display: block;
+      overflow-wrap: anywhere;
+      color: #243a45;
+      font-size: 0.92rem;
+    }
+
+    .pack {
+      margin-top: 24px;
+      padding: clamp(18px, 3vw, 28px);
+      border: 1px solid var(--line);
+      border-radius: 0;
+      background: var(--surface);
+    }
+
+    .pack:target {
+      outline: 3px solid rgba(47, 111, 97, 0.24);
+      outline-offset: 4px;
+    }
+
+    .pack[data-selected] {
+      border-color: rgba(47, 111, 97, 0.72);
+    }
+    .pack-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      align-items: flex-start;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 16px;
+    }
+
+    .eyebrow {
+      color: var(--accent-2);
+      font-size: 0.78rem;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .summary {
+      max-width: 780px;
+      margin-top: 8px;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    .recommended {
+      flex: 0 0 auto;
+      border: 1px solid rgba(47, 111, 97, 0.28);
+      border-radius: 8px;
+      background: #e7f2ed;
+      color: var(--accent);
+      font-size: 0.82rem;
+      font-weight: 800;
+      padding: 8px 11px;
+    }
+
+    .pack-meta {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .pack-meta p {
+      border-left: 3px solid var(--line);
+      padding-left: 12px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .pack-meta strong {
+      display: block;
+      color: var(--ink);
+      margin-bottom: 4px;
+    }
+    .board-strip {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+      gap: 8px;
+      margin-top: 18px;
+    }
+
+    .board-chip {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 8px;
+      align-items: center;
+      min-height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #f9fbf8;
+      padding: 7px 9px;
+      font-size: 0.82rem;
+    }
+
+    .board-chip span {
+      color: var(--muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .board-chip strong {
+      color: var(--accent);
+    }
+
+    .command-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      margin-top: 18px;
+      border: 1px solid var(--line);
+      background: var(--surface-2);
+      padding: 10px;
+    }
+
+    .notes {
+      display: grid;
+      gap: 6px;
+      margin: 14px 0 0;
+      padding-left: 20px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .preview-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 14px;
+      margin-top: 18px;
+    }
+
+    .preview-tile {
+      margin: 0;
+      min-width: 0;
+      border: 1px solid var(--line);
+      background: #fcfdfb;
+    }
+
+    .preview-tile img {
+      display: block;
+      width: 100%;
+      aspect-ratio: 360 / 628;
+      object-fit: cover;
+      border-bottom: 1px solid var(--line);
+      background: #eef1ed;
+    }
+
+    .preview-tile figcaption {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 9px 10px;
+      color: var(--muted);
+      font-size: 0.83rem;
+      line-height: 1.3;
+    }
+
+    .preview-tile strong {
+      color: var(--ink);
+    }
+    @media (max-width: 820px) {
+      h1 {
+        font-size: 2.25rem;
+      }
+
+      h2 {
+        font-size: 1.55rem;
+      }
+
+      .pack-header,
+      .command-row,
+      .preview-tile figcaption {
+        display: grid;
+      }
+
+      .pack-meta {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Hibiki MD3 + Cupertino design pack gallery</h1>
+    <p class="lead">Pick a whole-app baseline first, then use the per-interface image picker for exceptions. The preview images below are pulled from the same 84-surface, 252-image manifest used by the implementation spec generator.</p>
+    <nav class="toolbar" aria-label="Pack navigation">
+      <a href="#md3-practical">MD3 Practical</a>
+<a href="#reading-calm">Reading Calm</a>
+<a href="#adaptive-power">Adaptive Power</a>
+<a href="#hibiki-balanced">Hibiki Balanced</a>
+      <a href="interface-images/index.html">Per-interface images</a>
+      <a href="IMPLEMENTATION_SPEC_DRAFT.md">Current spec draft</a>
+      <a href="DESIGN_PACKS.md">Pack notes</a>
+    </nav>
+    <div class="selection" aria-live="polite">
+      <strong id="selected-label">Selected pack: Hibiki Balanced</strong>
+      <code id="selected-command">node .\generate-implementation-spec.mjs --pack hibiki-balanced --output .\IMPLEMENTATION_SPEC_DRAFT.md</code>
+    </div>
+  </header>
+  <main>
+    <section class="pack" id="md3-practical" data-pack="md3-practical">
+    <div class="pack-header">
+      <div>
+        <p class="eyebrow">md3-practical</p>
+        <h2>MD3 Practical</h2>
+        <p class="summary">Android-native clarity, predictable controls, and the lowest implementation risk.</p>
+      </div>
+    </div>
+    <div class="pack-meta">
+      <p><strong>Best fit</strong>Choose this when consistency and speed matter more than a softer reading mood.</p>
+      <p><strong>Trade-off</strong>The reader and preference-heavy screens feel more utilitarian than the Cupertino-leaning pack.</p>
+      <p><strong>Mix</strong>A 17 / B 0 / C 0</p>
+    </div>
+    <div class="board-strip" aria-label="MD3 Practical board choices">
+      <span class="board-chip"><b>01</b><span>Shell</span><strong>A</strong></span>
+<span class="board-chip"><b>02</b><span>Shelf</span><strong>A</strong></span>
+<span class="board-chip"><b>03</b><span>Dictionary</span><strong>A</strong></span>
+<span class="board-chip"><b>04</b><span>Reader</span><strong>A</strong></span>
+<span class="board-chip"><b>05</b><span>Settings</span><strong>A</strong></span>
+<span class="board-chip"><b>06</b><span>Import</span><strong>A</strong></span>
+<span class="board-chip"><b>07</b><span>Creator</span><strong>A</strong></span>
+<span class="board-chip"><b>08</b><span>Collections</span><strong>A</strong></span>
+<span class="board-chip"><b>09</b><span>System</span><strong>A</strong></span>
+<span class="board-chip"><b>10</b><span>Dictionaries</span><strong>A</strong></span>
+<span class="board-chip"><b>11</b><span>Reader setup</span><strong>A</strong></span>
+<span class="board-chip"><b>12</b><span>Media</span><strong>A</strong></span>
+<span class="board-chip"><b>13</b><span>Tags</span><strong>A</strong></span>
+<span class="board-chip"><b>14</b><span>Profile</span><strong>A</strong></span>
+<span class="board-chip"><b>15</b><span>Logs</span><strong>A</strong></span>
+<span class="board-chip"><b>16</b><span>States</span><strong>A</strong></span>
+<span class="board-chip"><b>18</b><span>Components</span><strong>A</strong></span>
+    </div>
+    <div class="command-row">
+      <code>node .\generate-implementation-spec.mjs --pack md3-practical --output .\IMPLEMENTATION_SPEC_DRAFT.md</code>
+      <button type="button" data-pack-command="md3-practical">Use this pack</button>
+    </div>
+    <ul class="notes">
+      <li>Baseline: MD3 Practical.</li>
+<li>Use Material 3 components as the visible default.</li>
+<li>Keep workflows direct and avoid decorative reader chrome.</li>
+    </ul>
+    <div class="preview-grid" aria-label="MD3 Practical representative surface images">
+    <figure class="preview-tile" data-choice="A">
+      <img src="interface-images/home-page-A.svg" alt="MD3 Practical Home shell A">
+      <figcaption>
+        <strong>Home shell</strong>
+        <span>A from board 01</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="A">
+      <img src="interface-images/reader-hoshi-page-A.svg" alt="MD3 Practical Hoshi reader A">
+      <figcaption>
+        <strong>Hoshi reader</strong>
+        <span>A from board 04</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="A">
+      <img src="interface-images/home-dictionary-page-A.svg" alt="MD3 Practical Dictionary home A">
+      <figcaption>
+        <strong>Dictionary home</strong>
+        <span>A from board 03</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="A">
+      <img src="interface-images/dictionary-result-page-A.svg" alt="MD3 Practical Result browser A">
+      <figcaption>
+        <strong>Result browser</strong>
+        <span>A from board 03</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="A">
+      <img src="interface-images/dictionary-dialog-page-A.svg" alt="MD3 Practical Dictionary admin A">
+      <figcaption>
+        <strong>Dictionary admin</strong>
+        <span>A from board 10</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="A">
+      <img src="interface-images/display-settings-page-A.svg" alt="MD3 Practical Display settings A">
+      <figcaption>
+        <strong>Display settings</strong>
+        <span>A from board 11</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="A">
+      <img src="interface-images/custom-theme-page-A.svg" alt="MD3 Practical Theme studio A">
+      <figcaption>
+        <strong>Theme studio</strong>
+        <span>A from board 11</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="A">
+      <img src="interface-images/anki-settings-page-A.svg" alt="MD3 Practical Anki mapping A">
+      <figcaption>
+        <strong>Anki mapping</strong>
+        <span>A from board 07</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="A">
+      <img src="interface-images/collections-page-A.svg" alt="MD3 Practical Collections A">
+      <figcaption>
+        <strong>Collections</strong>
+        <span>A from board 08</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="A">
+      <img src="interface-images/tag-management-page-A.svg" alt="MD3 Practical Tags A">
+      <figcaption>
+        <strong>Tags</strong>
+        <span>A from board 13</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="A">
+      <img src="interface-images/debug-log-page-A.svg" alt="MD3 Practical Debug log A">
+      <figcaption>
+        <strong>Debug log</strong>
+        <span>A from board 15</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="A">
+      <img src="interface-images/base-tab-page-A.svg" alt="MD3 Practical Shared shell A">
+      <figcaption>
+        <strong>Shared shell</strong>
+        <span>A from board 18</span>
+      </figcaption>
+    </figure>
+    </div>
+  </section>
+<section class="pack" id="reading-calm" data-pack="reading-calm">
+    <div class="pack-header">
+      <div>
+        <p class="eyebrow">reading-calm</p>
+        <h2>Reading Calm</h2>
+        <p class="summary">Grouped settings, quiet reader chrome, and softer mobile-first navigation.</p>
+      </div>
+    </div>
+    <div class="pack-meta">
+      <p><strong>Best fit</strong>Choose this when Hibiki should feel primarily like a long-session reading app.</p>
+      <p><strong>Trade-off</strong>Management-heavy surfaces may need explicit overrides to stay dense enough.</p>
+      <p><strong>Mix</strong>A 0 / B 17 / C 0</p>
+    </div>
+    <div class="board-strip" aria-label="Reading Calm board choices">
+      <span class="board-chip"><b>01</b><span>Shell</span><strong>B</strong></span>
+<span class="board-chip"><b>02</b><span>Shelf</span><strong>B</strong></span>
+<span class="board-chip"><b>03</b><span>Dictionary</span><strong>B</strong></span>
+<span class="board-chip"><b>04</b><span>Reader</span><strong>B</strong></span>
+<span class="board-chip"><b>05</b><span>Settings</span><strong>B</strong></span>
+<span class="board-chip"><b>06</b><span>Import</span><strong>B</strong></span>
+<span class="board-chip"><b>07</b><span>Creator</span><strong>B</strong></span>
+<span class="board-chip"><b>08</b><span>Collections</span><strong>B</strong></span>
+<span class="board-chip"><b>09</b><span>System</span><strong>B</strong></span>
+<span class="board-chip"><b>10</b><span>Dictionaries</span><strong>B</strong></span>
+<span class="board-chip"><b>11</b><span>Reader setup</span><strong>B</strong></span>
+<span class="board-chip"><b>12</b><span>Media</span><strong>B</strong></span>
+<span class="board-chip"><b>13</b><span>Tags</span><strong>B</strong></span>
+<span class="board-chip"><b>14</b><span>Profile</span><strong>B</strong></span>
+<span class="board-chip"><b>15</b><span>Logs</span><strong>B</strong></span>
+<span class="board-chip"><b>16</b><span>States</span><strong>B</strong></span>
+<span class="board-chip"><b>18</b><span>Components</span><strong>B</strong></span>
+    </div>
+    <div class="command-row">
+      <code>node .\generate-implementation-spec.mjs --pack reading-calm --output .\IMPLEMENTATION_SPEC_DRAFT.md</code>
+      <button type="button" data-pack-command="reading-calm">Use this pack</button>
+    </div>
+    <ul class="notes">
+      <li>Baseline: Reading Calm.</li>
+<li>Prefer grouped settings, large-title rhythm, and translucent reader/accessory chrome.</li>
+<li>Keep dictionary results readable instead of input-focused.</li>
+    </ul>
+    <div class="preview-grid" aria-label="Reading Calm representative surface images">
+    <figure class="preview-tile" data-choice="B">
+      <img src="interface-images/home-page-B.svg" alt="Reading Calm Home shell B">
+      <figcaption>
+        <strong>Home shell</strong>
+        <span>B from board 01</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="B">
+      <img src="interface-images/reader-hoshi-page-B.svg" alt="Reading Calm Hoshi reader B">
+      <figcaption>
+        <strong>Hoshi reader</strong>
+        <span>B from board 04</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="B">
+      <img src="interface-images/home-dictionary-page-B.svg" alt="Reading Calm Dictionary home B">
+      <figcaption>
+        <strong>Dictionary home</strong>
+        <span>B from board 03</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="B">
+      <img src="interface-images/dictionary-result-page-B.svg" alt="Reading Calm Result browser B">
+      <figcaption>
+        <strong>Result browser</strong>
+        <span>B from board 03</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="B">
+      <img src="interface-images/dictionary-dialog-page-B.svg" alt="Reading Calm Dictionary admin B">
+      <figcaption>
+        <strong>Dictionary admin</strong>
+        <span>B from board 10</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="B">
+      <img src="interface-images/display-settings-page-B.svg" alt="Reading Calm Display settings B">
+      <figcaption>
+        <strong>Display settings</strong>
+        <span>B from board 11</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="B">
+      <img src="interface-images/custom-theme-page-B.svg" alt="Reading Calm Theme studio B">
+      <figcaption>
+        <strong>Theme studio</strong>
+        <span>B from board 11</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="B">
+      <img src="interface-images/anki-settings-page-B.svg" alt="Reading Calm Anki mapping B">
+      <figcaption>
+        <strong>Anki mapping</strong>
+        <span>B from board 07</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="B">
+      <img src="interface-images/collections-page-B.svg" alt="Reading Calm Collections B">
+      <figcaption>
+        <strong>Collections</strong>
+        <span>B from board 08</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="B">
+      <img src="interface-images/tag-management-page-B.svg" alt="Reading Calm Tags B">
+      <figcaption>
+        <strong>Tags</strong>
+        <span>B from board 13</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="B">
+      <img src="interface-images/debug-log-page-B.svg" alt="Reading Calm Debug log B">
+      <figcaption>
+        <strong>Debug log</strong>
+        <span>B from board 15</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="B">
+      <img src="interface-images/base-tab-page-B.svg" alt="Reading Calm Shared shell B">
+      <figcaption>
+        <strong>Shared shell</strong>
+        <span>B from board 18</span>
+      </figcaption>
+    </figure>
+    </div>
+  </section>
+<section class="pack" id="adaptive-power" data-pack="adaptive-power">
+    <div class="pack-header">
+      <div>
+        <p class="eyebrow">adaptive-power</p>
+        <h2>Adaptive Power</h2>
+        <p class="summary">Dense workspaces, split panes, inspectors, and tablet or desktop readiness.</p>
+      </div>
+    </div>
+    <div class="pack-meta">
+      <p><strong>Best fit</strong>Choose this when dictionary management, creator mapping, tags, and diagnostics dominate.</p>
+      <p><strong>Trade-off</strong>Casual mobile reading can feel too operational unless reader surfaces are overridden.</p>
+      <p><strong>Mix</strong>A 0 / B 0 / C 17</p>
+    </div>
+    <div class="board-strip" aria-label="Adaptive Power board choices">
+      <span class="board-chip"><b>01</b><span>Shell</span><strong>C</strong></span>
+<span class="board-chip"><b>02</b><span>Shelf</span><strong>C</strong></span>
+<span class="board-chip"><b>03</b><span>Dictionary</span><strong>C</strong></span>
+<span class="board-chip"><b>04</b><span>Reader</span><strong>C</strong></span>
+<span class="board-chip"><b>05</b><span>Settings</span><strong>C</strong></span>
+<span class="board-chip"><b>06</b><span>Import</span><strong>C</strong></span>
+<span class="board-chip"><b>07</b><span>Creator</span><strong>C</strong></span>
+<span class="board-chip"><b>08</b><span>Collections</span><strong>C</strong></span>
+<span class="board-chip"><b>09</b><span>System</span><strong>C</strong></span>
+<span class="board-chip"><b>10</b><span>Dictionaries</span><strong>C</strong></span>
+<span class="board-chip"><b>11</b><span>Reader setup</span><strong>C</strong></span>
+<span class="board-chip"><b>12</b><span>Media</span><strong>C</strong></span>
+<span class="board-chip"><b>13</b><span>Tags</span><strong>C</strong></span>
+<span class="board-chip"><b>14</b><span>Profile</span><strong>C</strong></span>
+<span class="board-chip"><b>15</b><span>Logs</span><strong>C</strong></span>
+<span class="board-chip"><b>16</b><span>States</span><strong>C</strong></span>
+<span class="board-chip"><b>18</b><span>Components</span><strong>C</strong></span>
+    </div>
+    <div class="command-row">
+      <code>node .\generate-implementation-spec.mjs --pack adaptive-power --output .\IMPLEMENTATION_SPEC_DRAFT.md</code>
+      <button type="button" data-pack-command="adaptive-power">Use this pack</button>
+    </div>
+    <ul class="notes">
+      <li>Baseline: Adaptive Power.</li>
+<li>Favor navigation rail/sidebar, split panes, inspectors, persistent previews, and compact shared components.</li>
+<li>Keep mobile layouts usable by collapsing dense panels into sheets.</li>
+    </ul>
+    <div class="preview-grid" aria-label="Adaptive Power representative surface images">
+    <figure class="preview-tile" data-choice="C">
+      <img src="interface-images/home-page-C.svg" alt="Adaptive Power Home shell C">
+      <figcaption>
+        <strong>Home shell</strong>
+        <span>C from board 01</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="C">
+      <img src="interface-images/reader-hoshi-page-C.svg" alt="Adaptive Power Hoshi reader C">
+      <figcaption>
+        <strong>Hoshi reader</strong>
+        <span>C from board 04</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="C">
+      <img src="interface-images/home-dictionary-page-C.svg" alt="Adaptive Power Dictionary home C">
+      <figcaption>
+        <strong>Dictionary home</strong>
+        <span>C from board 03</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="C">
+      <img src="interface-images/dictionary-result-page-C.svg" alt="Adaptive Power Result browser C">
+      <figcaption>
+        <strong>Result browser</strong>
+        <span>C from board 03</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="C">
+      <img src="interface-images/dictionary-dialog-page-C.svg" alt="Adaptive Power Dictionary admin C">
+      <figcaption>
+        <strong>Dictionary admin</strong>
+        <span>C from board 10</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="C">
+      <img src="interface-images/display-settings-page-C.svg" alt="Adaptive Power Display settings C">
+      <figcaption>
+        <strong>Display settings</strong>
+        <span>C from board 11</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="C">
+      <img src="interface-images/custom-theme-page-C.svg" alt="Adaptive Power Theme studio C">
+      <figcaption>
+        <strong>Theme studio</strong>
+        <span>C from board 11</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="C">
+      <img src="interface-images/anki-settings-page-C.svg" alt="Adaptive Power Anki mapping C">
+      <figcaption>
+        <strong>Anki mapping</strong>
+        <span>C from board 07</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="C">
+      <img src="interface-images/collections-page-C.svg" alt="Adaptive Power Collections C">
+      <figcaption>
+        <strong>Collections</strong>
+        <span>C from board 08</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="C">
+      <img src="interface-images/tag-management-page-C.svg" alt="Adaptive Power Tags C">
+      <figcaption>
+        <strong>Tags</strong>
+        <span>C from board 13</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="C">
+      <img src="interface-images/debug-log-page-C.svg" alt="Adaptive Power Debug log C">
+      <figcaption>
+        <strong>Debug log</strong>
+        <span>C from board 15</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="C">
+      <img src="interface-images/base-tab-page-C.svg" alt="Adaptive Power Shared shell C">
+      <figcaption>
+        <strong>Shared shell</strong>
+        <span>C from board 18</span>
+      </figcaption>
+    </figure>
+    </div>
+  </section>
+<section class="pack" id="hibiki-balanced" data-pack="hibiki-balanced">
+    <div class="pack-header">
+      <div>
+        <p class="eyebrow">hibiki-balanced</p>
+        <h2>Hibiki Balanced</h2>
+        <p class="summary">Calm reader surfaces, dense management surfaces, and strict shared component tokens.</p>
+      </div>
+      <span class="recommended">Recommended baseline</span>
+    </div>
+    <div class="pack-meta">
+      <p><strong>Best fit</strong>Choose this as the recommended baseline before making per-interface exceptions.</p>
+      <p><strong>Trade-off</strong>It is less visually uniform than a pure A/B/C pack, so shared tokens must be strict.</p>
+      <p><strong>Mix</strong>A 7 / B 4 / C 6</p>
+    </div>
+    <div class="board-strip" aria-label="Hibiki Balanced board choices">
+      <span class="board-chip"><b>01</b><span>Shell</span><strong>C</strong></span>
+<span class="board-chip"><b>02</b><span>Shelf</span><strong>A</strong></span>
+<span class="board-chip"><b>03</b><span>Dictionary</span><strong>B</strong></span>
+<span class="board-chip"><b>04</b><span>Reader</span><strong>B</strong></span>
+<span class="board-chip"><b>05</b><span>Settings</span><strong>B</strong></span>
+<span class="board-chip"><b>06</b><span>Import</span><strong>A</strong></span>
+<span class="board-chip"><b>07</b><span>Creator</span><strong>C</strong></span>
+<span class="board-chip"><b>08</b><span>Collections</span><strong>A</strong></span>
+<span class="board-chip"><b>09</b><span>System</span><strong>C</strong></span>
+<span class="board-chip"><b>10</b><span>Dictionaries</span><strong>C</strong></span>
+<span class="board-chip"><b>11</b><span>Reader setup</span><strong>B</strong></span>
+<span class="board-chip"><b>12</b><span>Media</span><strong>A</strong></span>
+<span class="board-chip"><b>13</b><span>Tags</span><strong>C</strong></span>
+<span class="board-chip"><b>14</b><span>Profile</span><strong>A</strong></span>
+<span class="board-chip"><b>15</b><span>Logs</span><strong>A</strong></span>
+<span class="board-chip"><b>16</b><span>States</span><strong>A</strong></span>
+<span class="board-chip"><b>18</b><span>Components</span><strong>C</strong></span>
+    </div>
+    <div class="command-row">
+      <code>node .\generate-implementation-spec.mjs --pack hibiki-balanced --output .\IMPLEMENTATION_SPEC_DRAFT.md</code>
+      <button type="button" data-pack-command="hibiki-balanced">Use this pack</button>
+    </div>
+    <ul class="notes">
+      <li>Baseline: Hibiki Balanced.</li>
+<li>Reader stays calm; management surfaces stay dense.</li>
+<li>Shared components use hybrid density so pages do not drift.</li>
+    </ul>
+    <div class="preview-grid" aria-label="Hibiki Balanced representative surface images">
+    <figure class="preview-tile" data-choice="C">
+      <img src="interface-images/home-page-C.svg" alt="Hibiki Balanced Home shell C">
+      <figcaption>
+        <strong>Home shell</strong>
+        <span>C from board 01</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="B">
+      <img src="interface-images/reader-hoshi-page-B.svg" alt="Hibiki Balanced Hoshi reader B">
+      <figcaption>
+        <strong>Hoshi reader</strong>
+        <span>B from board 04</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="B">
+      <img src="interface-images/home-dictionary-page-B.svg" alt="Hibiki Balanced Dictionary home B">
+      <figcaption>
+        <strong>Dictionary home</strong>
+        <span>B from board 03</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="B">
+      <img src="interface-images/dictionary-result-page-B.svg" alt="Hibiki Balanced Result browser B">
+      <figcaption>
+        <strong>Result browser</strong>
+        <span>B from board 03</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="C">
+      <img src="interface-images/dictionary-dialog-page-C.svg" alt="Hibiki Balanced Dictionary admin C">
+      <figcaption>
+        <strong>Dictionary admin</strong>
+        <span>C from board 10</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="B">
+      <img src="interface-images/display-settings-page-B.svg" alt="Hibiki Balanced Display settings B">
+      <figcaption>
+        <strong>Display settings</strong>
+        <span>B from board 11</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="B">
+      <img src="interface-images/custom-theme-page-B.svg" alt="Hibiki Balanced Theme studio B">
+      <figcaption>
+        <strong>Theme studio</strong>
+        <span>B from board 11</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="C">
+      <img src="interface-images/anki-settings-page-C.svg" alt="Hibiki Balanced Anki mapping C">
+      <figcaption>
+        <strong>Anki mapping</strong>
+        <span>C from board 07</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="A">
+      <img src="interface-images/collections-page-A.svg" alt="Hibiki Balanced Collections A">
+      <figcaption>
+        <strong>Collections</strong>
+        <span>A from board 08</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="C">
+      <img src="interface-images/tag-management-page-C.svg" alt="Hibiki Balanced Tags C">
+      <figcaption>
+        <strong>Tags</strong>
+        <span>C from board 13</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="A">
+      <img src="interface-images/debug-log-page-A.svg" alt="Hibiki Balanced Debug log A">
+      <figcaption>
+        <strong>Debug log</strong>
+        <span>A from board 15</span>
+      </figcaption>
+    </figure>
+<figure class="preview-tile" data-choice="C">
+      <img src="interface-images/base-tab-page-C.svg" alt="Hibiki Balanced Shared shell C">
+      <figcaption>
+        <strong>Shared shell</strong>
+        <span>C from board 18</span>
+      </figcaption>
+    </figure>
+    </div>
+  </section>
+  </main>
+  <script>
+    const label = document.getElementById("selected-label");
+    const command = document.getElementById("selected-command");
+    const packLabels = {"md3-practical":"MD3 Practical","reading-calm":"Reading Calm","adaptive-power":"Adaptive Power","hibiki-balanced":"Hibiki Balanced"};
+    const commands = {"md3-practical":"node .\\generate-implementation-spec.mjs --pack md3-practical --output .\\IMPLEMENTATION_SPEC_DRAFT.md","reading-calm":"node .\\generate-implementation-spec.mjs --pack reading-calm --output .\\IMPLEMENTATION_SPEC_DRAFT.md","adaptive-power":"node .\\generate-implementation-spec.mjs --pack adaptive-power --output .\\IMPLEMENTATION_SPEC_DRAFT.md","hibiki-balanced":"node .\\generate-implementation-spec.mjs --pack hibiki-balanced --output .\\IMPLEMENTATION_SPEC_DRAFT.md"};
+
+    function selectPack(packId) {
+      localStorage.setItem("hibiki-md3-cupertino-pack", packId);
+      label.textContent = "Selected pack: " + packLabels[packId];
+      command.textContent = commands[packId];
+      document.querySelectorAll(".pack").forEach((section) => {
+        section.toggleAttribute("data-selected", section.dataset.pack === packId);
+      });
+    }
+
+    document.querySelectorAll("[data-pack-command]").forEach((button) => {
+      button.addEventListener("click", () => {
+        selectPack(button.dataset.packCommand);
+      });
+    });
+
+    const savedPack = localStorage.getItem("hibiki-md3-cupertino-pack");
+    selectPack(packLabels[savedPack] ? savedPack : "hibiki-balanced");
+  </script>
+</body>
+</html>

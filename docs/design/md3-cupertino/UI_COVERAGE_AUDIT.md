@@ -17,7 +17,7 @@ node docs\design\md3-cupertino\verify-interface-coverage.mjs
 Latest verifier output:
 
 ```text
-nonGeneratedDart=197
+nonGeneratedDart=198
 uiMatched=81
 coverageRows=84
 gallerySurfaces=84
@@ -29,7 +29,7 @@ interfaceCoverage=ok
 
 ## Current scan result
 
-- Total non-generated Dart files under `hibiki/lib`: 197
+- Total non-generated Dart files under `hibiki/lib`: 198
 - UI-building files matched by scan: 81
 - Entry UI files mapped in `COVERAGE.md`: 3
 - Page implementation files mapped in `COVERAGE.md`: 53
@@ -52,9 +52,9 @@ interfaceCoverage=ok
 | `base_history_page.dart` | Base media history layout and placeholder behavior. | `02-reader-shelf.svg`, `16-empty-loading-error-states.svg` |
 | `sasayaki_rematch.dart` | Audiobook rematch dialog, bottom sheet, sliders, and toast feedback. | `06-import-and-modals.svg`, `04-reader.svg` |
 | `profile_selector.dart` | Inline active-profile selector. | `14-profile-language-system.svg`, `18-component-system.svg` |
-| `jidoujisho_divider.dart` | Shared divider token. | `18-component-system.svg`, `05-settings.svg` |
-| `jidoujisho_marquee.dart` | Shared overflow title/text behavior. | `18-component-system.svg`, `12-media-and-sentences.svg` |
-| `jidoujisho_text_selection_controls.dart` | Text-selection toolbar and search/stash/share actions. | `18-component-system.svg`, `03-dictionary.svg` |
+| `hibiki_divider.dart` | Shared divider token. | `18-component-system.svg`, `05-settings.svg` |
+| `hibiki_marquee.dart` | Shared overflow title/text behavior. | `18-component-system.svg`, `12-media-and-sentences.svg` |
+| `hibiki_text_selection_controls.dart` | Text-selection toolbar and search/stash/share actions. | `18-component-system.svg`, `03-dictionary.svg` |
 | `hibiki_toast.dart` | Desktop and mobile toast surface. | `18-component-system.svg`, `15-logs-and-debug.svg` |
 | `platform_utils.dart` | Desktop content constraints and adaptive layout utilities. | `18-component-system.svg`, `01-home-navigation.svg` |
 | `swipe_dismiss_wrapper.dart` | Shared gesture dismissal wrapper for transient surfaces. | `18-component-system.svg`, `06-import-and-modals.svg` |

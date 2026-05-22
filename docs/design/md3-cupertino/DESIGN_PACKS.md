@@ -1,6 +1,8 @@
 # MD3 + Cupertino design packs
 
-These packs give a fast first choice before reviewing all 84 individual surfaces. Pick one pack as the baseline, then override any interface in [interface-images/index.html](interface-images/index.html) or [INTERFACE_PICKS.md](INTERFACE_PICKS.md).
+These packs give a fast first choice before reviewing all 84 individual surfaces. Open [design-pack-gallery.html](design-pack-gallery.html) for the visual comparison page, pick one pack as the baseline, then override any interface in [interface-images/index.html](interface-images/index.html) or [INTERFACE_PICKS.md](INTERFACE_PICKS.md).
+
+The canonical pack data lives in [design-packs.json](design-packs.json). `generate-implementation-spec.mjs` and `generate-design-pack-gallery.mjs` both read that file, so pack choices have one source of truth.
 
 You can generate a spec directly from any pack:
 

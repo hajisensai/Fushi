@@ -143,18 +143,18 @@ Shared and support surfaces define reusable Flutter components. They must preven
 | `book_import_dialog.dart` | A | [image](interface-images/book-import-dialog-A.svg) | default | 06 Import and modals | 18 Component system |
 | `sasayaki_rematch.dart` | A | [image](interface-images/sasayaki-rematch-A.svg) | default | 06 Import and modals | 04 Hoshi reader |
 | `profile_selector.dart` | A | [image](interface-images/profile-selector-A.svg) | default | 14 Profile, language, system | 18 Component system |
-| `jidoujisho_bottom_sheet.dart` | C | [image](interface-images/jidoujisho-bottom-sheet-C.svg) | default | 18 Component system | 06 Import and modals |
-| `jidoujisho_divider.dart` | C | [image](interface-images/jidoujisho-divider-C.svg) | default | 18 Component system | 05 Settings |
-| `jidoujisho_dropdown.dart` | C | [image](interface-images/jidoujisho-dropdown-C.svg) | default | 18 Component system | 05 Settings |
-| `jidoujisho_icon_button.dart` | C | [image](interface-images/jidoujisho-icon-button-C.svg) | default | 18 Component system | 01 Home and navigation |
-| `jidoujisho_list_tile.dart` | C | [image](interface-images/jidoujisho-list-tile-C.svg) | default | 18 Component system | 05 Settings |
-| `jidoujisho_marquee.dart` | C | [image](interface-images/jidoujisho-marquee-C.svg) | default | 18 Component system | 12 Media and sentence dialogs |
-| `jidoujisho_placeholder_message.dart` | A | [image](interface-images/jidoujisho-placeholder-message-A.svg) | default | 16 Empty, loading, error states | 18 Component system |
-| `jidoujisho_popup_position.dart` | C | [image](interface-images/jidoujisho-popup-position-C.svg) | default | 18 Component system | 03 Dictionary |
-| `jidoujisho_search_history.dart` | C | [image](interface-images/jidoujisho-search-history-C.svg) | default | 18 Component system | 03 Dictionary |
-| `jidoujisho_selectable_text.dart` | C | [image](interface-images/jidoujisho-selectable-text-C.svg) | default | 18 Component system | 03 Dictionary |
-| `jidoujisho_tag.dart` | C | [image](interface-images/jidoujisho-tag-C.svg) | default | 13 Tags and filters | 18 Component system |
-| `jidoujisho_text_selection_controls.dart` | C | [image](interface-images/jidoujisho-text-selection-controls-C.svg) | default | 18 Component system | 03 Dictionary |
+| `hibiki_bottom_sheet.dart` | C | [image](interface-images/hibiki-bottom-sheet-C.svg) | default | 18 Component system | 06 Import and modals |
+| `hibiki_divider.dart` | C | [image](interface-images/hibiki-divider-C.svg) | default | 18 Component system | 05 Settings |
+| `hibiki_dropdown.dart` | C | [image](interface-images/hibiki-dropdown-C.svg) | default | 18 Component system | 05 Settings |
+| `hibiki_icon_button.dart` | C | [image](interface-images/hibiki-icon-button-C.svg) | default | 18 Component system | 01 Home and navigation |
+| `hibiki_list_tile.dart` | C | [image](interface-images/hibiki-list-tile-C.svg) | default | 18 Component system | 05 Settings |
+| `hibiki_marquee.dart` | C | [image](interface-images/hibiki-marquee-C.svg) | default | 18 Component system | 12 Media and sentence dialogs |
+| `hibiki_placeholder_message.dart` | A | [image](interface-images/hibiki-placeholder-message-A.svg) | default | 16 Empty, loading, error states | 18 Component system |
+| `hibiki_popup_position.dart` | C | [image](interface-images/hibiki-popup-position-C.svg) | default | 18 Component system | 03 Dictionary |
+| `hibiki_search_history.dart` | C | [image](interface-images/hibiki-search-history-C.svg) | default | 18 Component system | 03 Dictionary |
+| `hibiki_selectable_text.dart` | C | [image](interface-images/hibiki-selectable-text-C.svg) | default | 18 Component system | 03 Dictionary |
+| `hibiki_tag.dart` | C | [image](interface-images/hibiki-tag-C.svg) | default | 13 Tags and filters | 18 Component system |
+| `hibiki_text_selection_controls.dart` | C | [image](interface-images/hibiki-text-selection-controls-C.svg) | default | 18 Component system | 03 Dictionary |
 | `hibiki_toast.dart` | C | [image](interface-images/hibiki-toast-C.svg) | default | 18 Component system | 15 Logs and debug |
 | `platform_utils.dart` | C | [image](interface-images/platform-utils-C.svg) | default | 18 Component system | 01 Home and navigation |
 | `swipe_dismiss_wrapper.dart` | C | [image](interface-images/swipe-dismiss-wrapper-C.svg) | default | 18 Component system | 06 Import and modals |
