@@ -86,6 +86,11 @@
       white-space: nowrap;
     }
 
+    button {
+      font: inherit;
+      letter-spacing: 0;
+    }
+
     main {
       max-width: 1180px;
       margin: 0 auto;
@@ -157,6 +162,55 @@
       font: 12px/1.55 Consolas, "SFMono-Regular", monospace;
     }
 
+    .pick-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .primary-action,
+    .ghost-action {
+      min-height: 36px;
+      padding: 0 14px;
+      border-radius: 18px;
+      border: 1px solid var(--brand);
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .primary-action {
+      background: var(--brand);
+      color: #fff;
+    }
+
+    .ghost-action {
+      background: #fff;
+      color: var(--brand);
+    }
+
+    .selection-output {
+      width: 100%;
+      min-height: 260px;
+      margin-top: 12px;
+      padding: 14px;
+      resize: vertical;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #172126;
+      color: #d8f2e6;
+      font: 12px/1.55 Consolas, "SFMono-Regular", monospace;
+    }
+
+    .status {
+      min-height: 20px;
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
     .grid {
       display: grid;
       gap: 18px;
@@ -191,6 +245,43 @@
       color: var(--brand);
       font-size: 12px;
       font-weight: 700;
+    }
+
+    .choice-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--line);
+      background: #fbfcf7;
+    }
+
+    .choice-label {
+      margin-right: 2px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .choice-button {
+      min-width: 44px;
+      min-height: 32px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: #fff;
+      color: var(--brand);
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .choice-button[aria-pressed="true"] {
+      border-color: var(--brand);
+      background: var(--brand-soft);
+      color: var(--brand);
+      box-shadow: inset 0 0 0 1px var(--brand);
     }
 
     .image-wrap {
@@ -253,6 +344,10 @@
       .baseline {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
+
+      .selection-output {
+        min-height: 320px;
+      }
     }
   </style>
 </head>
@@ -290,7 +385,7 @@
     <section class="intro" aria-label="How to pick">
       <div class="panel">
         <h2>How to use this</h2>
-        <p>Each board has A, B, and C directions. Pick one per board, or mix details like "04 B with A bottom bar". Board 17 is documentation-only; pick it only if you prefer a different map layout.</p>
+        <p>Each board has A, B, and C directions. Use the pick buttons under each board, or mix details like "04 B with A bottom bar". Board 17 is documentation-only; pick it only if you prefer a different map layout.</p>
         <p>The current design package covers 53 page implementation files and 16 shared UI components. Runtime Flutter code is intentionally untouched until the choices are locked.</p>
         <a class="copy-link" href="PICKS.md">Open PICKS.md</a>
       </div>
@@ -320,26 +415,15 @@
     </section>
 
     <section class="panel" aria-label="Pick template">
-      <h2>Pick template</h2>
-      <pre>01:
-02:
-03:
-04:
-05:
-06:
-07:
-08:
-09:
-10:
-11:
-12:
-13:
-14:
-15:
-16:
-17:
-18:
-Notes:</pre>
+      <h2>Interactive picks</h2>
+      <p>Use the controls below, then copy the generated result into chat. Choices are saved in this browser.</p>
+      <div class="pick-actions">
+        <button type="button" class="primary-action" id="use-recommended">Use recommended baseline</button>
+        <button type="button" class="ghost-action" id="clear-picks">Clear picks</button>
+        <button type="button" class="ghost-action" id="copy-picks">Copy result</button>
+      </div>
+      <textarea class="selection-output" id="selection-output" readonly aria-label="Generated pick result"></textarea>
+      <p class="status" id="copy-status" aria-live="polite"></p>
     </section>
 
     <section class="grid" aria-label="Boards">
@@ -435,5 +519,162 @@ Notes:</pre>
       </article>
     </section>
   </main>
+  <script>
+    (() => {
+      const storageKey = "hibiki-md3-cupertino-picks";
+      const recommended = {
+        "01": "C",
+        "02": "A",
+        "03": "B",
+        "04": "B",
+        "05": "B",
+        "06": "A",
+        "07": "C",
+        "08": "A",
+        "09": "C",
+        "10": "C",
+        "11": "B",
+        "12": "A",
+        "13": "C",
+        "14": "A",
+        "15": "A",
+        "16": "A",
+        "17": "B",
+        "18": "C"
+      };
+      const labels = {
+        "01": "Home and navigation",
+        "02": "Reader shelf",
+        "03": "Dictionary",
+        "04": "Hoshi reader",
+        "05": "Settings",
+        "06": "Import and modals",
+        "07": "Creator and Anki",
+        "08": "Collections and stats",
+        "09": "System and debug",
+        "10": "Dictionary management",
+        "11": "Reader customization",
+        "12": "Media and sentence dialogs",
+        "13": "Tags and filters",
+        "14": "Profile, language, system",
+        "15": "Logs and debug",
+        "16": "Empty, loading, and error states",
+        "17": "Full coverage map",
+        "18": "Component system"
+      };
+      const boardIds = Object.keys(labels);
+      const output = document.getElementById("selection-output");
+      const status = document.getElementById("copy-status");
+      let picks = loadPicks();
+
+      function loadPicks() {
+        try {
+          const raw = window.localStorage.getItem(storageKey);
+          return raw ? JSON.parse(raw) : {};
+        } catch (_error) {
+          return {};
+        }
+      }
+
+      function savePicks() {
+        try {
+          window.localStorage.setItem(storageKey, JSON.stringify(picks));
+        } catch (_error) {
+          status.textContent = "Could not save choices in this browser.";
+        }
+      }
+
+      function renderOutput() {
+        const lines = boardIds.map((id) => {
+          const value = picks[id] || "";
+          const suffix = labels[id] ? ` - ${labels[id]}` : "";
+          return `${id}: ${value}${suffix}`;
+        });
+        output.value = `${lines.join("\n")}\nNotes:`;
+      }
+
+      function updateButtons() {
+        document.querySelectorAll(".choice-button").forEach((button) => {
+          const pressed = picks[button.dataset.board] === button.dataset.choice;
+          button.setAttribute("aria-pressed", String(pressed));
+        });
+      }
+
+      function setPick(boardId, choice) {
+        picks = { ...picks, [boardId]: choice };
+        savePicks();
+        updateButtons();
+        renderOutput();
+        status.textContent = `Saved ${boardId} as ${choice}.`;
+      }
+
+      function createControls() {
+        document.querySelectorAll(".board").forEach((board) => {
+          const boardId = board.id.replace("board-", "");
+          const row = document.createElement("div");
+          row.className = "choice-row";
+
+          const label = document.createElement("span");
+          label.className = "choice-label";
+          label.textContent = "Pick";
+          row.append(label);
+
+          ["A", "B", "C"].forEach((choice) => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "choice-button";
+            button.dataset.board = boardId;
+            button.dataset.choice = choice;
+            button.setAttribute("aria-pressed", "false");
+            button.textContent = choice;
+            button.addEventListener("click", () => setPick(boardId, choice));
+            row.append(button);
+          });
+
+          const recommendedChoice = recommended[boardId];
+          if (recommendedChoice) {
+            const hint = document.createElement("span");
+            hint.className = "choice-label";
+            hint.textContent = `Recommended ${recommendedChoice}`;
+            row.append(hint);
+          }
+
+          const head = board.querySelector(".board-head");
+          head.insertAdjacentElement("afterend", row);
+        });
+      }
+
+      document.getElementById("use-recommended").addEventListener("click", () => {
+        picks = { ...recommended };
+        savePicks();
+        updateButtons();
+        renderOutput();
+        status.textContent = "Recommended baseline applied.";
+      });
+
+      document.getElementById("clear-picks").addEventListener("click", () => {
+        picks = {};
+        savePicks();
+        updateButtons();
+        renderOutput();
+        status.textContent = "Picks cleared.";
+      });
+
+      document.getElementById("copy-picks").addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(output.value);
+          status.textContent = "Copied.";
+        } catch (_error) {
+          output.focus();
+          output.select();
+          status.textContent = "Copy failed. The result is selected.";
+        }
+      });
+
+      createControls();
+      updateButtons();
+      renderOutput();
+    })();
+  </script>
 </body>
 </html>

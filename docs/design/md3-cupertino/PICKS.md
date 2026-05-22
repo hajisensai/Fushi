@@ -2,7 +2,7 @@
 
 Use this worksheet to choose the direction for each board. Pick `A`, `B`, or `C`; add notes when you want a mix such as `B with A bottom bar`.
 
-For visual review, open [gallery.html](gallery.html) in this folder. It shows all boards on one page.
+For visual review, open [gallery.html](gallery.html) in this folder. It shows all boards on one page and now has clickable `A` / `B` / `C` pick controls with a copyable result.
 
 ## Recommended baseline
 
@@ -31,7 +31,7 @@ If you want the shortest path to a coherent implementation, start from this base
 
 ## Your picks
 
-Copy this block into chat and edit the choices:
+The fastest path is to use [gallery.html](gallery.html), click one option per board, then press `Copy result`. If you prefer editing manually, copy this block into chat and fill the choices:
 
 ```text
 01:

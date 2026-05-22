@@ -4,9 +4,9 @@ This folder is the design-selection board for the MD3 + Cupertino redesign goal.
 
 ## Pick format
 
-Open [gallery.html](gallery.html) for a single-page visual gallery of all boards.
+Open [gallery.html](gallery.html) for a single-page visual gallery of all boards. Use its `A` / `B` / `C` controls to save choices locally and copy the result back into chat.
 
-Reply with choices like:
+Reply with the copied result or with choices like:
 
 ```text
 Home A
