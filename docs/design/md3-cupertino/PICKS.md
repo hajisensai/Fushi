@@ -2,7 +2,9 @@
 
 Use this worksheet to choose the direction for each board. Pick `A`, `B`, or `C`; add notes when you want a mix such as `B with A bottom bar`.
 
-For visual review, open [gallery.html](gallery.html) in this folder. It shows all boards on one page and now has clickable `A` / `B` / `C` pick controls with a copyable result.
+For visual review, open [gallery.html](gallery.html) in this folder. It shows all boards on one page, has clickable board-level `A` / `B` / `C` controls, and includes a per-interface selector for screen-specific exceptions.
+
+Use [INTERFACE_PICKS.md](INTERFACE_PICKS.md) when you want to review every mapped UI surface as a table instead of clicking through the gallery.
 
 ## Recommended baseline
 
@@ -58,8 +60,9 @@ Notes:
 ## What happens after picks
 
 1. Lock selected board directions and note any mixed details.
-2. Write the implementation design spec with shared component tokens, page groups, migration risks, and verification gates.
-3. Review the spec with you before touching runtime Flutter code.
-4. Only after approval, turn the spec into an implementation plan.
+2. Lock per-interface exceptions for screens that should not follow their board default.
+3. Write the implementation design spec with shared component tokens, page groups, migration risks, and verification gates.
+4. Review the spec with you before touching runtime Flutter code.
+5. Only after approval, turn the spec into an implementation plan.
 
-The current coverage audit maps all 78 UI-building Dart files matched under `hibiki/lib/src` to the boards above. See `UI_COVERAGE_AUDIT.md` for the scan.
+The current coverage audit maps all 78 UI-building Dart files matched under `hibiki/lib/src` to the boards above. `INTERFACE_PICKS.md` expands that into 81 design surfaces, including 3 manual UI support files already listed in `COVERAGE.md`. See `UI_COVERAGE_AUDIT.md` for the scan.

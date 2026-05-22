@@ -284,6 +284,90 @@
       box-shadow: inset 0 0 0 1px var(--brand);
     }
 
+    .interface-groups {
+      display: grid;
+      gap: 12px;
+      margin-top: 14px;
+    }
+
+    .interface-group {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcf7;
+      overflow: hidden;
+    }
+
+    .interface-group summary {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 14px;
+      cursor: pointer;
+      font-weight: 800;
+    }
+
+    .interface-group summary span {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .interface-table-wrap {
+      overflow: auto;
+      border-top: 1px solid var(--line);
+    }
+
+    .interface-table {
+      width: 100%;
+      min-width: 780px;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    .interface-table th,
+    .interface-table td {
+      padding: 9px 10px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: middle;
+    }
+
+    .interface-table th {
+      color: var(--muted);
+      background: #f2f5f1;
+      font-size: 11px;
+      text-transform: uppercase;
+    }
+
+    .interface-table code {
+      font: 12px/1.4 Consolas, "SFMono-Regular", monospace;
+    }
+
+    .surface-choice-group {
+      display: inline-flex;
+      gap: 4px;
+      align-items: center;
+    }
+
+    .surface-choice-button {
+      min-width: 34px;
+      min-height: 28px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #fff;
+      color: var(--brand);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .surface-choice-button[aria-pressed="true"] {
+      border-color: var(--brand);
+      background: var(--brand-soft);
+      box-shadow: inset 0 0 0 1px var(--brand);
+    }
+
     .image-wrap {
       padding: 14px;
       background: #eef2ef;
@@ -359,6 +443,7 @@
         <p class="subhead">Open this page locally, inspect each board, then copy the pick template into chat.</p>
       </div>
       <nav class="jump" aria-label="Design boards">
+        <a href="#interface-picks">Interfaces</a>
         <a href="#board-01">01</a>
         <a href="#board-02">02</a>
         <a href="#board-03">03</a>
@@ -386,8 +471,9 @@
       <div class="panel">
         <h2>How to use this</h2>
         <p>Each board has A, B, and C directions. Use the pick buttons under each board, or mix details like "04 B with A bottom bar". Board 17 is documentation-only; pick it only if you prefer a different map layout.</p>
-        <p>The current design package covers 53 page implementation files and 16 shared UI components. Runtime Flutter code is intentionally untouched until the choices are locked.</p>
+        <p>The current design package covers 53 page surfaces and 28 shared/support UI surfaces. Runtime Flutter code is intentionally untouched until the choices are locked.</p>
         <a class="copy-link" href="PICKS.md">Open PICKS.md</a>
+        <a class="copy-link" href="INTERFACE_PICKS.md">Open interface picks</a>
       </div>
       <div class="panel">
         <h2>Recommended baseline</h2>
@@ -424,6 +510,19 @@
       </div>
       <textarea class="selection-output" id="selection-output" readonly aria-label="Generated pick result"></textarea>
       <p class="status" id="copy-status" aria-live="polite"></p>
+    </section>
+
+    <section class="panel" id="interface-picks" aria-label="Per-interface picks">
+      <h2>Per-interface selector</h2>
+      <p>Every current UI surface is listed below. Each row uses its primary board image for A/B/C options and keeps the secondary board as supporting style. Leave rows on their default unless a screen needs a specific exception.</p>
+      <div class="pick-actions">
+        <button type="button" class="primary-action" id="use-interface-defaults">Use interface defaults</button>
+        <button type="button" class="ghost-action" id="clear-interface-picks">Clear interface picks</button>
+        <button type="button" class="ghost-action" id="copy-interface-picks">Copy interface result</button>
+      </div>
+      <textarea class="selection-output" id="interface-output" readonly aria-label="Generated interface pick result"></textarea>
+      <p class="status" id="interface-status" aria-live="polite"></p>
+      <div class="interface-groups" id="interface-groups"></div>
     </section>
 
     <section class="grid" aria-label="Boards">
@@ -565,7 +664,95 @@
       const boardIds = Object.keys(labels);
       const output = document.getElementById("selection-output");
       const status = document.getElementById("copy-status");
+      const interfaceStorageKey = "hibiki-md3-cupertino-interface-picks";
+      const interfaceOutput = document.getElementById("interface-output");
+      const interfaceStatus = document.getElementById("interface-status");
+      const interfaceGroups = document.getElementById("interface-groups");
+      const surfaces = [
+        { section: "Pages", surface: "anki_settings_page.dart", primary: "07", secondary: "05" },
+        { section: "Pages", surface: "audio_recorder_page.dart", primary: "07", secondary: "12" },
+        { section: "Pages", surface: "blur_options_dialog_page.dart", primary: "11", secondary: "06" },
+        { section: "Pages", surface: "book_css_editor_page.dart", primary: "11", secondary: "04" },
+        { section: "Pages", surface: "collections_page.dart", primary: "08", secondary: "12" },
+        { section: "Pages", surface: "crop_image_dialog_page.dart", primary: "07", secondary: "12" },
+        { section: "Pages", surface: "custom_fonts_page.dart", primary: "11", secondary: "05" },
+        { section: "Pages", surface: "custom_theme_page.dart", primary: "11", secondary: "05" },
+        { section: "Pages", surface: "debug_log_page.dart", primary: "15", secondary: "09" },
+        { section: "Pages", surface: "dictionary_dialog_delete_page.dart", primary: "10", secondary: "06" },
+        { section: "Pages", surface: "dictionary_dialog_import_page.dart", primary: "10", secondary: "06" },
+        { section: "Pages", surface: "dictionary_dialog_page.dart", primary: "10", secondary: "03" },
+        { section: "Pages", surface: "dictionary_entry_page.dart", primary: "03", secondary: "10" },
+        { section: "Pages", surface: "dictionary_page_mixin.dart", primary: "03", secondary: "04" },
+        { section: "Pages", surface: "dictionary_popup_layer.dart", primary: "03", secondary: "04" },
+        { section: "Pages", surface: "dictionary_popup_native.dart", primary: "03", secondary: "04" },
+        { section: "Pages", surface: "dictionary_popup_webview.dart", primary: "03", secondary: "04" },
+        { section: "Pages", surface: "dictionary_progress_dialog_content.dart", primary: "10", secondary: "16" },
+        { section: "Pages", surface: "dictionary_result_page.dart", primary: "03", secondary: "12" },
+        { section: "Pages", surface: "dictionary_settings_dialog_page.dart", primary: "10", secondary: "05" },
+        { section: "Pages", surface: "dictionary_structured_content_page.dart", primary: "03", secondary: "10" },
+        { section: "Pages", surface: "dictionary_term_page.dart", primary: "03", secondary: "07" },
+        { section: "Pages", surface: "dictionary_webview_media.dart", primary: "03", secondary: "10" },
+        { section: "Pages", surface: "display_settings_page.dart", primary: "11", secondary: "04" },
+        { section: "Pages", surface: "error_log_page.dart", primary: "15", secondary: "16" },
+        { section: "Pages", surface: "example_sentences_dialog_page.dart", primary: "12", secondary: "03" },
+        { section: "Pages", surface: "floating_dict_page.dart", primary: "03", secondary: "14" },
+        { section: "Pages", surface: "history_reader_page.dart", primary: "02", secondary: "13" },
+        { section: "Pages", surface: "home_dictionary_page.dart", primary: "03", secondary: "01" },
+        { section: "Pages", surface: "home_page.dart", primary: "01", secondary: "05" },
+        { section: "Pages", surface: "home_reader_page.dart", primary: "01", secondary: "02" },
+        { section: "Pages", surface: "hoshi_settings_page.dart", primary: "05", secondary: "11" },
+        { section: "Pages", surface: "illustrations_viewer_page.dart", primary: "08", secondary: "12" },
+        { section: "Pages", surface: "language_dialog_page.dart", primary: "14", secondary: "06" },
+        { section: "Pages", surface: "loading_page.dart", primary: "16", secondary: "01" },
+        { section: "Pages", surface: "lyrics_dialog_page.dart", primary: "04", secondary: "12" },
+        { section: "Pages", surface: "media_item_dialog_page.dart", primary: "12", secondary: "08" },
+        { section: "Pages", surface: "media_item_edit_dialog_page.dart", primary: "12", secondary: "07" },
+        { section: "Pages", surface: "media_source_picker_dialog_page.dart", primary: "12", secondary: "06" },
+        { section: "Pages", surface: "miscellaneous_settings_page.dart", primary: "14", secondary: "05" },
+        { section: "Pages", surface: "open_stash_dialog_page.dart", primary: "12", secondary: "07" },
+        { section: "Pages", surface: "placeholder_source_page.dart", primary: "16", secondary: "04" },
+        { section: "Pages", surface: "popup_dictionary_page.dart", primary: "03", secondary: "14" },
+        { section: "Pages", surface: "profile_management_page.dart", primary: "14", secondary: "05" },
+        { section: "Pages", surface: "reader_hoshi_history_page.dart", primary: "02", secondary: "13" },
+        { section: "Pages", surface: "reader_hoshi_page.dart", primary: "04", secondary: "11" },
+        { section: "Pages", surface: "reading_statistics_page.dart", primary: "08", secondary: "16" },
+        { section: "Pages", surface: "switch_settings_page.dart", primary: "05", secondary: "14" },
+        { section: "Pages", surface: "tag_filter_sheet.dart", primary: "13", secondary: "02" },
+        { section: "Pages", surface: "tag_management_page.dart", primary: "13", secondary: "05" },
+        { section: "Pages", surface: "tag_picker_page.dart", primary: "13", secondary: "06" },
+        { section: "Pages", surface: "text_segmentation_dialog_page.dart", primary: "07", secondary: "12" },
+        { section: "Pages", surface: "websocket_dialog_page.dart", primary: "14", secondary: "15" },
+        { section: "Shared/support", surface: "app_model.dart", primary: "18", secondary: "14" },
+        { section: "Shared/support", surface: "base_history_page.dart", primary: "02", secondary: "16" },
+        { section: "Shared/support", surface: "base_media_search_bar.dart", primary: "18", secondary: "03" },
+        { section: "Shared/support", surface: "base_page.dart", primary: "18", secondary: "16" },
+        { section: "Shared/support", surface: "base_source_page.dart", primary: "18", secondary: "03" },
+        { section: "Shared/support", surface: "base_tab_page.dart", primary: "18", secondary: "01" },
+        { section: "Shared/support", surface: "audiobook_import_dialog.dart", primary: "06", secondary: "18" },
+        { section: "Shared/support", surface: "audiobook_play_bar.dart", primary: "04", secondary: "18" },
+        { section: "Shared/support", surface: "book_import_dialog.dart", primary: "06", secondary: "18" },
+        { section: "Shared/support", surface: "sasayaki_rematch.dart", primary: "06", secondary: "04" },
+        { section: "Shared/support", surface: "profile_selector.dart", primary: "14", secondary: "18" },
+        { section: "Shared/support", surface: "jidoujisho_bottom_sheet.dart", primary: "18", secondary: "06" },
+        { section: "Shared/support", surface: "jidoujisho_divider.dart", primary: "18", secondary: "05" },
+        { section: "Shared/support", surface: "jidoujisho_dropdown.dart", primary: "18", secondary: "05" },
+        { section: "Shared/support", surface: "jidoujisho_icon_button.dart", primary: "18", secondary: "01" },
+        { section: "Shared/support", surface: "jidoujisho_list_tile.dart", primary: "18", secondary: "05" },
+        { section: "Shared/support", surface: "jidoujisho_marquee.dart", primary: "18", secondary: "12" },
+        { section: "Shared/support", surface: "jidoujisho_placeholder_message.dart", primary: "16", secondary: "18" },
+        { section: "Shared/support", surface: "jidoujisho_popup_position.dart", primary: "18", secondary: "03" },
+        { section: "Shared/support", surface: "jidoujisho_search_history.dart", primary: "18", secondary: "03" },
+        { section: "Shared/support", surface: "jidoujisho_selectable_text.dart", primary: "18", secondary: "03" },
+        { section: "Shared/support", surface: "jidoujisho_tag.dart", primary: "13", secondary: "18" },
+        { section: "Shared/support", surface: "jidoujisho_text_selection_controls.dart", primary: "18", secondary: "03" },
+        { section: "Shared/support", surface: "hibiki_toast.dart", primary: "18", secondary: "15" },
+        { section: "Shared/support", surface: "platform_utils.dart", primary: "18", secondary: "01" },
+        { section: "Shared/support", surface: "swipe_dismiss_wrapper.dart", primary: "18", secondary: "06" },
+        { section: "Shared/support", surface: "update_checker.dart", primary: "14", secondary: "15" },
+        { section: "Shared/support", surface: "blur_options.dart", primary: "11", secondary: "18" }
+      ];
       let picks = loadPicks();
+      let interfacePicks = loadInterfacePicks();
 
       function loadPicks() {
         try {
@@ -584,6 +771,23 @@
         }
       }
 
+      function loadInterfacePicks() {
+        try {
+          const raw = window.localStorage.getItem(interfaceStorageKey);
+          return raw ? JSON.parse(raw) : {};
+        } catch (_error) {
+          return {};
+        }
+      }
+
+      function saveInterfacePicks() {
+        try {
+          window.localStorage.setItem(interfaceStorageKey, JSON.stringify(interfacePicks));
+        } catch (_error) {
+          interfaceStatus.textContent = "Could not save interface choices in this browser.";
+        }
+      }
+
       function renderOutput() {
         const lines = boardIds.map((id) => {
           const value = picks[id] || "";
@@ -598,6 +802,40 @@
           const pressed = picks[button.dataset.board] === button.dataset.choice;
           button.setAttribute("aria-pressed", String(pressed));
         });
+      }
+
+      function defaultForSurface(surface) {
+        return recommended[surface.primary] || "";
+      }
+
+      function boardLabel(boardId) {
+        return `${boardId} - ${labels[boardId] || "Unknown board"}`;
+      }
+
+      function renderInterfaceOutput() {
+        const lines = surfaces.map((surface) => {
+          const value = interfacePicks[surface.surface] || "";
+          const fallback = defaultForSurface(surface);
+          const shownValue = value || fallback;
+          return `${surface.surface}: ${shownValue} (${boardLabel(surface.primary)}; supports ${boardLabel(surface.secondary)})`;
+        });
+        interfaceOutput.value = `Interface picks:\n${lines.join("\n")}\nNotes:`;
+      }
+
+      function updateInterfaceButtons() {
+        document.querySelectorAll(".surface-choice-button").forEach((button) => {
+          const surface = button.dataset.surface;
+          const selected = interfacePicks[surface] || button.dataset.default;
+          button.setAttribute("aria-pressed", String(selected === button.dataset.choice));
+        });
+      }
+
+      function setInterfacePick(surface, choice) {
+        interfacePicks = { ...interfacePicks, [surface]: choice };
+        saveInterfacePicks();
+        updateInterfaceButtons();
+        renderInterfaceOutput();
+        interfaceStatus.textContent = `Saved ${surface} as ${choice}.`;
       }
 
       function setPick(boardId, choice) {
@@ -644,6 +882,65 @@
         });
       }
 
+      function createInterfaceControls() {
+        const byPrimary = surfaces.reduce((groups, surface) => {
+          groups[surface.primary] = groups[surface.primary] || [];
+          groups[surface.primary].push(surface);
+          return groups;
+        }, {});
+
+        Object.keys(byPrimary).sort().forEach((boardId) => {
+          const details = document.createElement("details");
+          details.className = "interface-group";
+          details.open = true;
+
+          const summary = document.createElement("summary");
+          summary.innerHTML = `${boardLabel(boardId)} <span>${byPrimary[boardId].length} surfaces</span>`;
+          details.append(summary);
+
+          const wrap = document.createElement("div");
+          wrap.className = "interface-table-wrap";
+          const table = document.createElement("table");
+          table.className = "interface-table";
+          table.innerHTML = "<thead><tr><th>Surface</th><th>Section</th><th>Primary image</th><th>Secondary image</th><th>Default</th><th>Pick</th></tr></thead>";
+          const tbody = document.createElement("tbody");
+
+          byPrimary[boardId].forEach((surface) => {
+            const row = document.createElement("tr");
+            const defaultChoice = defaultForSurface(surface);
+            row.innerHTML = `
+              <td><code>${surface.surface}</code></td>
+              <td>${surface.section}</td>
+              <td><a href="#board-${surface.primary}">${boardLabel(surface.primary)}</a></td>
+              <td><a href="#board-${surface.secondary}">${boardLabel(surface.secondary)}</a></td>
+              <td><strong>${defaultChoice}</strong></td>
+              <td><span class="surface-choice-group"></span></td>
+            `;
+
+            const choiceGroup = row.querySelector(".surface-choice-group");
+            ["A", "B", "C"].forEach((choice) => {
+              const button = document.createElement("button");
+              button.type = "button";
+              button.className = "surface-choice-button";
+              button.dataset.surface = surface.surface;
+              button.dataset.choice = choice;
+              button.dataset.default = defaultChoice;
+              button.setAttribute("aria-pressed", "false");
+              button.textContent = choice;
+              button.addEventListener("click", () => setInterfacePick(surface.surface, choice));
+              choiceGroup.append(button);
+            });
+
+            tbody.append(row);
+          });
+
+          table.append(tbody);
+          wrap.append(table);
+          details.append(wrap);
+          interfaceGroups.append(details);
+        });
+      }
+
       document.getElementById("use-recommended").addEventListener("click", () => {
         picks = { ...recommended };
         savePicks();
@@ -671,9 +968,42 @@
         }
       });
 
+      document.getElementById("use-interface-defaults").addEventListener("click", () => {
+        interfacePicks = surfaces.reduce((defaults, surface) => {
+          defaults[surface.surface] = defaultForSurface(surface);
+          return defaults;
+        }, {});
+        saveInterfacePicks();
+        updateInterfaceButtons();
+        renderInterfaceOutput();
+        interfaceStatus.textContent = "Interface defaults applied.";
+      });
+
+      document.getElementById("clear-interface-picks").addEventListener("click", () => {
+        interfacePicks = {};
+        saveInterfacePicks();
+        updateInterfaceButtons();
+        renderInterfaceOutput();
+        interfaceStatus.textContent = "Interface picks cleared. Output still shows board defaults.";
+      });
+
+      document.getElementById("copy-interface-picks").addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(interfaceOutput.value);
+          interfaceStatus.textContent = "Copied interface result.";
+        } catch (_error) {
+          interfaceOutput.focus();
+          interfaceOutput.select();
+          interfaceStatus.textContent = "Copy failed. The interface result is selected.";
+        }
+      });
+
       createControls();
+      createInterfaceControls();
       updateButtons();
+      updateInterfaceButtons();
       renderOutput();
+      renderInterfaceOutput();
     })();
   </script>
 </body>

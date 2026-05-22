@@ -4,7 +4,7 @@ This folder is the design-selection board for the MD3 + Cupertino redesign goal.
 
 ## Pick format
 
-Open [gallery.html](gallery.html) for a single-page visual gallery of all boards. Use its `A` / `B` / `C` controls to save choices locally and copy the result back into chat.
+Open [gallery.html](gallery.html) for a single-page visual gallery of all boards. Use its `A` / `B` / `C` controls to save board choices, then use the per-interface selector on the same page for screen-specific exceptions.
 
 Reply with the copied result or with choices like:
 
@@ -18,7 +18,7 @@ Settings B
 
 You can also mix details, for example `Reader B, but use A's bottom bar`.
 
-For a complete worksheet, use [PICKS.md](PICKS.md).
+For a complete board worksheet, use [PICKS.md](PICKS.md). For the file-by-file interface worksheet, use [INTERFACE_PICKS.md](INTERFACE_PICKS.md).
 
 ## Selection images
 
@@ -43,7 +43,7 @@ For a complete worksheet, use [PICKS.md](PICKS.md).
 | Full coverage map | [17-full-coverage-map.svg](17-full-coverage-map.svg) | Visual map from page families to design boards |
 | Component system | [18-component-system.svg](18-component-system.svg) | Shared buttons, rows, search, sheets, placeholders, popups, and selection grammar |
 
-See [COVERAGE.md](COVERAGE.md) for the file-by-file mapping from current Flutter UI files to these boards, and [UI_COVERAGE_AUDIT.md](UI_COVERAGE_AUDIT.md) for the scan evidence.
+See [COVERAGE.md](COVERAGE.md) for the file-by-file mapping from current Flutter UI files to these boards, [INTERFACE_PICKS.md](INTERFACE_PICKS.md) for per-interface choices, and [UI_COVERAGE_AUDIT.md](UI_COVERAGE_AUDIT.md) for the scan evidence.
 
 ## Current interface groups
 
@@ -71,4 +71,4 @@ See [COVERAGE.md](COVERAGE.md) for the file-by-file mapping from current Flutter
 
 ## Coverage status
 
-Every current UI-building file matched under `hibiki/lib/src` now has a board-level design reference in `COVERAGE.md`, and reusable UI components have a component-system board. After choices are made, the next step is a precise implementation spec with shared Flutter components, route-by-route behavior, and verification gates. More pictures are useful only when a selected board still has unresolved variants.
+Every current UI-building file matched under `hibiki/lib/src` now has a board-level design reference in `COVERAGE.md`, and reusable/support UI surfaces have a component-system board. `INTERFACE_PICKS.md` and the gallery's per-interface selector now cover 81 design surfaces: 53 page-level surfaces and 28 shared/support surfaces. After choices are made, the next step is a precise implementation spec with shared Flutter components, route-by-route behavior, and verification gates. More pictures are useful only when a selected board still has unresolved variants.
