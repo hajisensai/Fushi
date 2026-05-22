@@ -316,7 +316,7 @@ function renderVariantSvg(surface, choice) {
  * @returns {string}
  */
 function renderIndexHtml(manifestSurfaces) {
-  const cards = manifestSurfaces.map((surface) => {
+  const cards = manifestSurfaces.map((surface, index) => {
     const board = boardLabels[surface.primary];
     const secondary = boardLabels[surface.secondary];
     const variants = /** @type {("A" | "B" | "C")[]} */ (["A", "B", "C"]).map((choice) => {
@@ -332,7 +332,7 @@ function renderIndexHtml(manifestSurfaces) {
     }).join("");
 
     return `
-      <article class="surface-card" data-surface="${escapeHtml(surface.surface)}" data-section="${escapeHtml(surface.section)}" data-default="${surface.defaultChoice}" data-primary="${escapeHtml(board)}" data-secondary="${escapeHtml(secondary)}" data-search="${escapeHtml(`${surface.surface} ${surface.section} ${board} ${secondary}`.toLowerCase())}">
+      <article class="surface-card" data-index="${index}" data-active="false" data-surface="${escapeHtml(surface.surface)}" data-section="${escapeHtml(surface.section)}" data-default="${surface.defaultChoice}" data-primary="${escapeHtml(board)}" data-secondary="${escapeHtml(secondary)}" data-search="${escapeHtml(`${surface.surface} ${surface.section} ${board} ${secondary}`.toLowerCase())}">
         <header>
           <div>
             <h2>${escapeHtml(surface.surface)}</h2>
@@ -402,14 +402,14 @@ function renderIndexHtml(manifestSurfaces) {
     p { color: var(--muted); font-size: 13px; line-height: 1.5; }
     a { color: var(--brand); font-weight: 800; text-decoration: none; }
 
-    .nav, .filters, .pick-actions {
+    .nav, .filters, .pick-actions, .review-actions {
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
       justify-content: flex-end;
     }
 
-    .nav a, .filters button, .pick-actions button, .pill, .image-link {
+    .nav a, .filters button, .pick-actions button, .review-actions button, .pill, .image-link {
       display: inline-flex;
       align-items: center;
       min-height: 32px;
@@ -423,16 +423,16 @@ function renderIndexHtml(manifestSurfaces) {
       white-space: nowrap;
     }
 
-    .filters, .pick-actions {
+    .filters, .pick-actions, .review-actions {
       justify-content: flex-start;
       margin: 16px 0;
     }
 
-    .filters button, .pick-actions button {
+    .filters button, .pick-actions button, .review-actions button {
       cursor: pointer;
     }
 
-    .filters button[aria-pressed="true"], .pick-actions button[aria-pressed="true"] {
+    .filters button[aria-pressed="true"], .pick-actions button[aria-pressed="true"], .review-actions button[aria-pressed="true"] {
       border-color: var(--brand);
       background: var(--brand-soft);
       box-shadow: inset 0 0 0 1px var(--brand);
@@ -518,6 +518,11 @@ function renderIndexHtml(manifestSurfaces) {
     .surface-card {
       overflow: hidden;
       scroll-margin-top: 96px;
+    }
+
+    .surface-card[data-active="true"] {
+      border-color: var(--brand);
+      box-shadow: 0 20px 54px rgba(33, 79, 95, 0.18);
     }
 
     .surface-card > header {
@@ -624,7 +629,7 @@ function renderIndexHtml(manifestSurfaces) {
     <section class="summary" aria-label="Image pack summary">
       <div>
         <h2>One interface, three concrete images</h2>
-        <p>These files are generated from the same board mappings as the picker. Pick one image per interface, copy the result, or open individual image files for closer inspection.</p>
+        <p>These files are generated from the same board mappings as the picker. Pick one image per interface, use the review queue to move through every surface, then copy the result.</p>
       </div>
       <div class="counts">
         <div class="count"><strong>84</strong><p>UI surfaces</p></div>
@@ -640,6 +645,13 @@ function renderIndexHtml(manifestSurfaces) {
       <input class="search" id="search" type="search" placeholder="Filter surfaces or boards" aria-label="Filter surfaces or boards">
     </section>
     <section class="copy-panel" aria-label="Generated picks">
+      <div class="review-actions" aria-label="Review queue controls">
+        <button type="button" id="previous-surface">Previous surface</button>
+        <button type="button" id="next-surface">Next surface</button>
+        <button type="button" id="next-unpicked">Next unpicked</button>
+        <button type="button" id="only-unpicked" aria-pressed="false">Only unpicked</button>
+        <span class="status" id="review-status">Review queue ready.</span>
+      </div>
       <div class="pick-actions">
         <button type="button" id="use-defaults">Use defaults</button>
         <button type="button" id="clear-picks">Clear picks</button>
@@ -657,7 +669,11 @@ function renderIndexHtml(manifestSurfaces) {
       const search = document.getElementById("search");
       const output = document.getElementById("output");
       const status = document.getElementById("status");
+      const reviewStatus = document.getElementById("review-status");
+      const onlyUnpickedButton = document.getElementById("only-unpicked");
       let activeSection = "all";
+      let activeIndex = 0;
+      let onlyUnpicked = false;
       let picks = loadPicks();
 
       function loadPicks() {
@@ -680,8 +696,20 @@ function renderIndexHtml(manifestSurfaces) {
         return picks[card.dataset.surface] || card.dataset.default;
       }
 
+      function surfaceCards() {
+        return Array.from(document.querySelectorAll(".surface-card"));
+      }
+
+      function explicitPicked(card) {
+        return Boolean(picks[card.dataset.surface]);
+      }
+
+      function visibleCards() {
+        return surfaceCards().filter((card) => !card.classList.contains("hidden"));
+      }
+
       function updateOutput() {
-        const cards = Array.from(document.querySelectorAll(".surface-card"));
+        const cards = surfaceCards();
         const chosen = cards.filter((card) => Boolean(picks[card.dataset.surface])).length;
         const lines = cards.map((card) => {
           const choice = selectedChoice(card);
@@ -692,28 +720,136 @@ function renderIndexHtml(manifestSurfaces) {
       }
 
       function updateCards() {
-        document.querySelectorAll(".surface-card").forEach((card) => {
+        surfaceCards().forEach((card) => {
           const selected = selectedChoice(card);
+          card.dataset.active = String(Number(card.dataset.index) === activeIndex);
           card.querySelectorAll(".variant").forEach((variant) => {
             variant.setAttribute("aria-pressed", String(variant.dataset.choice === selected));
           });
         });
+        updateReviewStatus();
       }
 
       function setPick(card, choice) {
         picks = { ...picks, [card.dataset.surface]: choice };
         savePicks();
+        applyFilters({ keepFocus: true });
         updateCards();
         updateOutput();
       }
 
-      function applyFilters() {
+      function surfaceMatchesFilter(card, query) {
+        const sectionMatch = activeSection === "all" || card.dataset.section === activeSection;
+        const searchMatch = !query || card.dataset.search.includes(query);
+        const unpickedMatch = !onlyUnpicked || !explicitPicked(card);
+        return sectionMatch && searchMatch && unpickedMatch;
+      }
+
+      function focusCard(index, options = {}) {
+        const cards = surfaceCards();
+        if (!cards.length) {
+          return;
+        }
+
+        const clamped = Math.max(0, Math.min(cards.length - 1, index));
+        activeIndex = clamped;
+        updateCards();
+
+        if (options.scroll !== false) {
+          cards[activeIndex].scrollIntoView({ behavior: options.smooth ? "smooth" : "auto", block: "start" });
+        }
+      }
+
+      function focusFirstVisible() {
+        const firstVisible = visibleCards()[0];
+        if (!firstVisible) {
+          updateReviewStatus();
+          return;
+        }
+
+        const index = Number(firstVisible.dataset.index);
+        if (Number.isFinite(index) && index !== activeIndex) {
+          focusCard(index, { scroll: false });
+          return;
+        }
+
+        updateCards();
+      }
+
+      function focusNearestVisible(startIndex) {
+        const cards = surfaceCards();
+        for (let step = 0; step < cards.length; step += 1) {
+          const candidate = cards[(startIndex + step) % cards.length];
+          if (!candidate.classList.contains("hidden")) {
+            focusCard(Number(candidate.dataset.index), { scroll: false });
+            return;
+          }
+        }
+
+        updateReviewStatus();
+      }
+
+      function nextVisible(delta) {
+        const cards = visibleCards();
+        if (!cards.length) {
+          updateReviewStatus();
+          return;
+        }
+
+        const currentVisibleIndex = Math.max(0, cards.findIndex((card) => Number(card.dataset.index) === activeIndex));
+        const nextIndex = (currentVisibleIndex + delta + cards.length) % cards.length;
+        focusCard(Number(cards[nextIndex].dataset.index), { smooth: true });
+      }
+
+      function nextUnpicked() {
+        const cards = surfaceCards();
+        if (!cards.length) {
+          updateReviewStatus();
+          return;
+        }
+
+        for (let step = 1; step <= cards.length; step += 1) {
+          const candidate = cards[(activeIndex + step) % cards.length];
+          if (!explicitPicked(candidate) && !candidate.classList.contains("hidden")) {
+            focusCard(Number(candidate.dataset.index), { smooth: true });
+            return;
+          }
+        }
+
+        reviewStatus.textContent = "No unpicked surfaces are visible under the current filters.";
+      }
+
+      function updateReviewStatus() {
+        const cards = surfaceCards();
+        const visible = visibleCards();
+        const activeCard = cards[activeIndex];
+        const picked = cards.filter(explicitPicked).length;
+        const visiblePicked = visible.filter(explicitPicked).length;
+        if (!activeCard) {
+          reviewStatus.textContent = "No surfaces available.";
+          return;
+        }
+
+        const visiblePosition = visible.findIndex((card) => Number(card.dataset.index) === activeIndex) + 1;
+        const queuePosition = visiblePosition > 0 ? \`\${visiblePosition} / \${visible.length} visible\` : "outside current filter";
+        reviewStatus.textContent = \`Reviewing \${Number(activeCard.dataset.index) + 1} / \${cards.length}: \${activeCard.dataset.surface} (\${queuePosition}; \${visiblePicked} / \${visible.length} visible picked; \${picked} / \${cards.length} total picked).\`;
+      }
+
+      function applyFilters(options = {}) {
         const query = search.value.trim().toLowerCase();
-        document.querySelectorAll(".surface-card").forEach((card) => {
-          const sectionMatch = activeSection === "all" || card.dataset.section === activeSection;
-          const searchMatch = !query || card.dataset.search.includes(query);
-          card.classList.toggle("hidden", !(sectionMatch && searchMatch));
+        surfaceCards().forEach((card) => {
+          card.classList.toggle("hidden", !surfaceMatchesFilter(card, query));
         });
+        onlyUnpickedButton.setAttribute("aria-pressed", String(onlyUnpicked));
+        if (!options.keepFocus) {
+          focusFirstVisible();
+          return;
+        }
+        if (surfaceCards()[activeIndex]?.classList.contains("hidden")) {
+          focusNearestVisible(activeIndex);
+          return;
+        }
+        updateCards();
       }
 
       document.querySelectorAll("[data-section]").forEach((button) => {
@@ -728,7 +864,18 @@ function renderIndexHtml(manifestSurfaces) {
 
       search.addEventListener("input", applyFilters);
 
-      document.querySelectorAll(".surface-card").forEach((card) => {
+      document.getElementById("previous-surface").addEventListener("click", () => nextVisible(-1));
+
+      document.getElementById("next-surface").addEventListener("click", () => nextVisible(1));
+
+      document.getElementById("next-unpicked").addEventListener("click", nextUnpicked);
+
+      onlyUnpickedButton.addEventListener("click", () => {
+        onlyUnpicked = !onlyUnpicked;
+        applyFilters();
+      });
+
+      surfaceCards().forEach((card) => {
         card.querySelectorAll(".variant button").forEach((button) => {
           button.addEventListener("click", () => setPick(card, button.closest(".variant").dataset.choice));
         });
@@ -736,10 +883,11 @@ function renderIndexHtml(manifestSurfaces) {
 
       document.getElementById("use-defaults").addEventListener("click", () => {
         picks = {};
-        document.querySelectorAll(".surface-card").forEach((card) => {
+        surfaceCards().forEach((card) => {
           picks[card.dataset.surface] = card.dataset.default;
         });
         savePicks();
+        applyFilters({ keepFocus: true });
         updateCards();
         updateOutput();
       });
@@ -747,6 +895,7 @@ function renderIndexHtml(manifestSurfaces) {
       document.getElementById("clear-picks").addEventListener("click", () => {
         picks = {};
         savePicks();
+        applyFilters({ keepFocus: true });
         updateCards();
         updateOutput();
       });
@@ -760,7 +909,7 @@ function renderIndexHtml(manifestSurfaces) {
         }
       });
 
-      updateCards();
+      applyFilters({ keepFocus: true });
       updateOutput();
     })();
   </script>
@@ -813,6 +962,7 @@ function renderReadme() {
 This folder contains generated A/B/C image choices for every mapped MD3 + Cupertino UI surface.
 
 - \`index.html\` shows all 84 surfaces with three standalone images each, saves picks in the browser, and copies a complete \`Interface image picks\` result.
+- The \`index.html\` review queue can step to the previous surface, next surface, next unpicked surface, or filter down to only unpicked surfaces.
 - \`manifest.json\` records the surface-to-file mapping.
 - \`*-A.svg\`, \`*-B.svg\`, and \`*-C.svg\` are the direct image choices.
 

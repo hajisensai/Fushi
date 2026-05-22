@@ -55,14 +55,14 @@
     p { color: var(--muted); font-size: 13px; line-height: 1.5; }
     a { color: var(--brand); font-weight: 800; text-decoration: none; }
 
-    .nav, .filters, .pick-actions {
+    .nav, .filters, .pick-actions, .review-actions {
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
       justify-content: flex-end;
     }
 
-    .nav a, .filters button, .pick-actions button, .pill, .image-link {
+    .nav a, .filters button, .pick-actions button, .review-actions button, .pill, .image-link {
       display: inline-flex;
       align-items: center;
       min-height: 32px;
@@ -76,16 +76,16 @@
       white-space: nowrap;
     }
 
-    .filters, .pick-actions {
+    .filters, .pick-actions, .review-actions {
       justify-content: flex-start;
       margin: 16px 0;
     }
 
-    .filters button, .pick-actions button {
+    .filters button, .pick-actions button, .review-actions button {
       cursor: pointer;
     }
 
-    .filters button[aria-pressed="true"], .pick-actions button[aria-pressed="true"] {
+    .filters button[aria-pressed="true"], .pick-actions button[aria-pressed="true"], .review-actions button[aria-pressed="true"] {
       border-color: var(--brand);
       background: var(--brand-soft);
       box-shadow: inset 0 0 0 1px var(--brand);
@@ -171,6 +171,11 @@
     .surface-card {
       overflow: hidden;
       scroll-margin-top: 96px;
+    }
+
+    .surface-card[data-active="true"] {
+      border-color: var(--brand);
+      box-shadow: 0 20px 54px rgba(33, 79, 95, 0.18);
     }
 
     .surface-card > header {
@@ -277,7 +282,7 @@
     <section class="summary" aria-label="Image pack summary">
       <div>
         <h2>One interface, three concrete images</h2>
-        <p>These files are generated from the same board mappings as the picker. Pick one image per interface, copy the result, or open individual image files for closer inspection.</p>
+        <p>These files are generated from the same board mappings as the picker. Pick one image per interface, use the review queue to move through every surface, then copy the result.</p>
       </div>
       <div class="counts">
         <div class="count"><strong>84</strong><p>UI surfaces</p></div>
@@ -293,6 +298,13 @@
       <input class="search" id="search" type="search" placeholder="Filter surfaces or boards" aria-label="Filter surfaces or boards">
     </section>
     <section class="copy-panel" aria-label="Generated picks">
+      <div class="review-actions" aria-label="Review queue controls">
+        <button type="button" id="previous-surface">Previous surface</button>
+        <button type="button" id="next-surface">Next surface</button>
+        <button type="button" id="next-unpicked">Next unpicked</button>
+        <button type="button" id="only-unpicked" aria-pressed="false">Only unpicked</button>
+        <span class="status" id="review-status">Review queue ready.</span>
+      </div>
       <div class="pick-actions">
         <button type="button" id="use-defaults">Use defaults</button>
         <button type="button" id="clear-picks">Clear picks</button>
@@ -302,7 +314,7 @@
       <textarea class="output" id="output" readonly aria-label="Generated image picks"></textarea>
     </section>
     <section class="gallery" id="gallery" aria-label="Generated interface images">
-      <article class="surface-card" data-surface="main.dart" data-section="Entry" data-default="C" data-primary="Home and navigation" data-secondary="Empty, loading, error states" data-search="main.dart entry home and navigation empty, loading, error states">
+      <article class="surface-card" data-index="0" data-active="false" data-surface="main.dart" data-section="Entry" data-default="C" data-primary="Home and navigation" data-secondary="Empty, loading, error states" data-search="main.dart entry home and navigation empty, loading, error states">
         <header>
           <div>
             <h2>main.dart</h2>
@@ -334,7 +346,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="popup_main.dart" data-section="Entry" data-default="B" data-primary="Dictionary" data-secondary="Empty, loading, error states" data-search="popup_main.dart entry dictionary empty, loading, error states">
+      <article class="surface-card" data-index="1" data-active="false" data-surface="popup_main.dart" data-section="Entry" data-default="B" data-primary="Dictionary" data-secondary="Empty, loading, error states" data-search="popup_main.dart entry dictionary empty, loading, error states">
         <header>
           <div>
             <h2>popup_main.dart</h2>
@@ -366,7 +378,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="floating_dict_main.dart" data-section="Entry" data-default="B" data-primary="Dictionary" data-secondary="Component system" data-search="floating_dict_main.dart entry dictionary component system">
+      <article class="surface-card" data-index="2" data-active="false" data-surface="floating_dict_main.dart" data-section="Entry" data-default="B" data-primary="Dictionary" data-secondary="Component system" data-search="floating_dict_main.dart entry dictionary component system">
         <header>
           <div>
             <h2>floating_dict_main.dart</h2>
@@ -398,7 +410,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="anki_settings_page.dart" data-section="Pages" data-default="C" data-primary="Creator and Anki" data-secondary="Settings" data-search="anki_settings_page.dart pages creator and anki settings">
+      <article class="surface-card" data-index="3" data-active="false" data-surface="anki_settings_page.dart" data-section="Pages" data-default="C" data-primary="Creator and Anki" data-secondary="Settings" data-search="anki_settings_page.dart pages creator and anki settings">
         <header>
           <div>
             <h2>anki_settings_page.dart</h2>
@@ -430,7 +442,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="audio_recorder_page.dart" data-section="Pages" data-default="C" data-primary="Creator and Anki" data-secondary="Media and sentence dialogs" data-search="audio_recorder_page.dart pages creator and anki media and sentence dialogs">
+      <article class="surface-card" data-index="4" data-active="false" data-surface="audio_recorder_page.dart" data-section="Pages" data-default="C" data-primary="Creator and Anki" data-secondary="Media and sentence dialogs" data-search="audio_recorder_page.dart pages creator and anki media and sentence dialogs">
         <header>
           <div>
             <h2>audio_recorder_page.dart</h2>
@@ -462,7 +474,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="blur_options_dialog_page.dart" data-section="Pages" data-default="B" data-primary="Reader customization" data-secondary="Import and modals" data-search="blur_options_dialog_page.dart pages reader customization import and modals">
+      <article class="surface-card" data-index="5" data-active="false" data-surface="blur_options_dialog_page.dart" data-section="Pages" data-default="B" data-primary="Reader customization" data-secondary="Import and modals" data-search="blur_options_dialog_page.dart pages reader customization import and modals">
         <header>
           <div>
             <h2>blur_options_dialog_page.dart</h2>
@@ -494,7 +506,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="book_css_editor_page.dart" data-section="Pages" data-default="B" data-primary="Reader customization" data-secondary="Hoshi reader" data-search="book_css_editor_page.dart pages reader customization hoshi reader">
+      <article class="surface-card" data-index="6" data-active="false" data-surface="book_css_editor_page.dart" data-section="Pages" data-default="B" data-primary="Reader customization" data-secondary="Hoshi reader" data-search="book_css_editor_page.dart pages reader customization hoshi reader">
         <header>
           <div>
             <h2>book_css_editor_page.dart</h2>
@@ -526,7 +538,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="collections_page.dart" data-section="Pages" data-default="A" data-primary="Collections and stats" data-secondary="Media and sentence dialogs" data-search="collections_page.dart pages collections and stats media and sentence dialogs">
+      <article class="surface-card" data-index="7" data-active="false" data-surface="collections_page.dart" data-section="Pages" data-default="A" data-primary="Collections and stats" data-secondary="Media and sentence dialogs" data-search="collections_page.dart pages collections and stats media and sentence dialogs">
         <header>
           <div>
             <h2>collections_page.dart</h2>
@@ -558,7 +570,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="crop_image_dialog_page.dart" data-section="Pages" data-default="C" data-primary="Creator and Anki" data-secondary="Media and sentence dialogs" data-search="crop_image_dialog_page.dart pages creator and anki media and sentence dialogs">
+      <article class="surface-card" data-index="8" data-active="false" data-surface="crop_image_dialog_page.dart" data-section="Pages" data-default="C" data-primary="Creator and Anki" data-secondary="Media and sentence dialogs" data-search="crop_image_dialog_page.dart pages creator and anki media and sentence dialogs">
         <header>
           <div>
             <h2>crop_image_dialog_page.dart</h2>
@@ -590,7 +602,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="custom_fonts_page.dart" data-section="Pages" data-default="B" data-primary="Reader customization" data-secondary="Settings" data-search="custom_fonts_page.dart pages reader customization settings">
+      <article class="surface-card" data-index="9" data-active="false" data-surface="custom_fonts_page.dart" data-section="Pages" data-default="B" data-primary="Reader customization" data-secondary="Settings" data-search="custom_fonts_page.dart pages reader customization settings">
         <header>
           <div>
             <h2>custom_fonts_page.dart</h2>
@@ -622,7 +634,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="custom_theme_page.dart" data-section="Pages" data-default="B" data-primary="Reader customization" data-secondary="Settings" data-search="custom_theme_page.dart pages reader customization settings">
+      <article class="surface-card" data-index="10" data-active="false" data-surface="custom_theme_page.dart" data-section="Pages" data-default="B" data-primary="Reader customization" data-secondary="Settings" data-search="custom_theme_page.dart pages reader customization settings">
         <header>
           <div>
             <h2>custom_theme_page.dart</h2>
@@ -654,7 +666,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="debug_log_page.dart" data-section="Pages" data-default="A" data-primary="Logs and debug" data-secondary="System and debug" data-search="debug_log_page.dart pages logs and debug system and debug">
+      <article class="surface-card" data-index="11" data-active="false" data-surface="debug_log_page.dart" data-section="Pages" data-default="A" data-primary="Logs and debug" data-secondary="System and debug" data-search="debug_log_page.dart pages logs and debug system and debug">
         <header>
           <div>
             <h2>debug_log_page.dart</h2>
@@ -686,7 +698,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="dictionary_dialog_delete_page.dart" data-section="Pages" data-default="C" data-primary="Dictionary management" data-secondary="Import and modals" data-search="dictionary_dialog_delete_page.dart pages dictionary management import and modals">
+      <article class="surface-card" data-index="12" data-active="false" data-surface="dictionary_dialog_delete_page.dart" data-section="Pages" data-default="C" data-primary="Dictionary management" data-secondary="Import and modals" data-search="dictionary_dialog_delete_page.dart pages dictionary management import and modals">
         <header>
           <div>
             <h2>dictionary_dialog_delete_page.dart</h2>
@@ -718,7 +730,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="dictionary_dialog_import_page.dart" data-section="Pages" data-default="C" data-primary="Dictionary management" data-secondary="Import and modals" data-search="dictionary_dialog_import_page.dart pages dictionary management import and modals">
+      <article class="surface-card" data-index="13" data-active="false" data-surface="dictionary_dialog_import_page.dart" data-section="Pages" data-default="C" data-primary="Dictionary management" data-secondary="Import and modals" data-search="dictionary_dialog_import_page.dart pages dictionary management import and modals">
         <header>
           <div>
             <h2>dictionary_dialog_import_page.dart</h2>
@@ -750,7 +762,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="dictionary_dialog_page.dart" data-section="Pages" data-default="C" data-primary="Dictionary management" data-secondary="Dictionary" data-search="dictionary_dialog_page.dart pages dictionary management dictionary">
+      <article class="surface-card" data-index="14" data-active="false" data-surface="dictionary_dialog_page.dart" data-section="Pages" data-default="C" data-primary="Dictionary management" data-secondary="Dictionary" data-search="dictionary_dialog_page.dart pages dictionary management dictionary">
         <header>
           <div>
             <h2>dictionary_dialog_page.dart</h2>
@@ -782,7 +794,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="dictionary_entry_page.dart" data-section="Pages" data-default="B" data-primary="Dictionary" data-secondary="Dictionary management" data-search="dictionary_entry_page.dart pages dictionary dictionary management">
+      <article class="surface-card" data-index="15" data-active="false" data-surface="dictionary_entry_page.dart" data-section="Pages" data-default="B" data-primary="Dictionary" data-secondary="Dictionary management" data-search="dictionary_entry_page.dart pages dictionary dictionary management">
         <header>
           <div>
             <h2>dictionary_entry_page.dart</h2>
@@ -814,7 +826,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="dictionary_page_mixin.dart" data-section="Pages" data-default="B" data-primary="Dictionary" data-secondary="Hoshi reader" data-search="dictionary_page_mixin.dart pages dictionary hoshi reader">
+      <article class="surface-card" data-index="16" data-active="false" data-surface="dictionary_page_mixin.dart" data-section="Pages" data-default="B" data-primary="Dictionary" data-secondary="Hoshi reader" data-search="dictionary_page_mixin.dart pages dictionary hoshi reader">
         <header>
           <div>
             <h2>dictionary_page_mixin.dart</h2>
@@ -846,7 +858,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="dictionary_popup_layer.dart" data-section="Pages" data-default="B" data-primary="Dictionary" data-secondary="Hoshi reader" data-search="dictionary_popup_layer.dart pages dictionary hoshi reader">
+      <article class="surface-card" data-index="17" data-active="false" data-surface="dictionary_popup_layer.dart" data-section="Pages" data-default="B" data-primary="Dictionary" data-secondary="Hoshi reader" data-search="dictionary_popup_layer.dart pages dictionary hoshi reader">
         <header>
           <div>
             <h2>dictionary_popup_layer.dart</h2>
@@ -878,7 +890,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="dictionary_popup_native.dart" data-section="Pages" data-default="B" data-primary="Dictionary" data-secondary="Hoshi reader" data-search="dictionary_popup_native.dart pages dictionary hoshi reader">
+      <article class="surface-card" data-index="18" data-active="false" data-surface="dictionary_popup_native.dart" data-section="Pages" data-default="B" data-primary="Dictionary" data-secondary="Hoshi reader" data-search="dictionary_popup_native.dart pages dictionary hoshi reader">
         <header>
           <div>
             <h2>dictionary_popup_native.dart</h2>
@@ -910,7 +922,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="dictionary_popup_webview.dart" data-section="Pages" data-default="B" data-primary="Dictionary" data-secondary="Hoshi reader" data-search="dictionary_popup_webview.dart pages dictionary hoshi reader">
+      <article class="surface-card" data-index="19" data-active="false" data-surface="dictionary_popup_webview.dart" data-section="Pages" data-default="B" data-primary="Dictionary" data-secondary="Hoshi reader" data-search="dictionary_popup_webview.dart pages dictionary hoshi reader">
         <header>
           <div>
             <h2>dictionary_popup_webview.dart</h2>
@@ -942,7 +954,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="dictionary_progress_dialog_content.dart" data-section="Pages" data-default="C" data-primary="Dictionary management" data-secondary="Empty, loading, error states" data-search="dictionary_progress_dialog_content.dart pages dictionary management empty, loading, error states">
+      <article class="surface-card" data-index="20" data-active="false" data-surface="dictionary_progress_dialog_content.dart" data-section="Pages" data-default="C" data-primary="Dictionary management" data-secondary="Empty, loading, error states" data-search="dictionary_progress_dialog_content.dart pages dictionary management empty, loading, error states">
         <header>
           <div>
             <h2>dictionary_progress_dialog_content.dart</h2>
@@ -974,7 +986,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="dictionary_result_page.dart" data-section="Pages" data-default="B" data-primary="Dictionary" data-secondary="Media and sentence dialogs" data-search="dictionary_result_page.dart pages dictionary media and sentence dialogs">
+      <article class="surface-card" data-index="21" data-active="false" data-surface="dictionary_result_page.dart" data-section="Pages" data-default="B" data-primary="Dictionary" data-secondary="Media and sentence dialogs" data-search="dictionary_result_page.dart pages dictionary media and sentence dialogs">
         <header>
           <div>
             <h2>dictionary_result_page.dart</h2>
@@ -1006,7 +1018,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="dictionary_settings_dialog_page.dart" data-section="Pages" data-default="C" data-primary="Dictionary management" data-secondary="Settings" data-search="dictionary_settings_dialog_page.dart pages dictionary management settings">
+      <article class="surface-card" data-index="22" data-active="false" data-surface="dictionary_settings_dialog_page.dart" data-section="Pages" data-default="C" data-primary="Dictionary management" data-secondary="Settings" data-search="dictionary_settings_dialog_page.dart pages dictionary management settings">
         <header>
           <div>
             <h2>dictionary_settings_dialog_page.dart</h2>
@@ -1038,7 +1050,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="dictionary_structured_content_page.dart" data-section="Pages" data-default="B" data-primary="Dictionary" data-secondary="Dictionary management" data-search="dictionary_structured_content_page.dart pages dictionary dictionary management">
+      <article class="surface-card" data-index="23" data-active="false" data-surface="dictionary_structured_content_page.dart" data-section="Pages" data-default="B" data-primary="Dictionary" data-secondary="Dictionary management" data-search="dictionary_structured_content_page.dart pages dictionary dictionary management">
         <header>
           <div>
             <h2>dictionary_structured_content_page.dart</h2>
@@ -1070,7 +1082,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="dictionary_term_page.dart" data-section="Pages" data-default="B" data-primary="Dictionary" data-secondary="Creator and Anki" data-search="dictionary_term_page.dart pages dictionary creator and anki">
+      <article class="surface-card" data-index="24" data-active="false" data-surface="dictionary_term_page.dart" data-section="Pages" data-default="B" data-primary="Dictionary" data-secondary="Creator and Anki" data-search="dictionary_term_page.dart pages dictionary creator and anki">
         <header>
           <div>
             <h2>dictionary_term_page.dart</h2>
@@ -1102,7 +1114,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="dictionary_webview_media.dart" data-section="Pages" data-default="B" data-primary="Dictionary" data-secondary="Dictionary management" data-search="dictionary_webview_media.dart pages dictionary dictionary management">
+      <article class="surface-card" data-index="25" data-active="false" data-surface="dictionary_webview_media.dart" data-section="Pages" data-default="B" data-primary="Dictionary" data-secondary="Dictionary management" data-search="dictionary_webview_media.dart pages dictionary dictionary management">
         <header>
           <div>
             <h2>dictionary_webview_media.dart</h2>
@@ -1134,7 +1146,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="display_settings_page.dart" data-section="Pages" data-default="B" data-primary="Reader customization" data-secondary="Hoshi reader" data-search="display_settings_page.dart pages reader customization hoshi reader">
+      <article class="surface-card" data-index="26" data-active="false" data-surface="display_settings_page.dart" data-section="Pages" data-default="B" data-primary="Reader customization" data-secondary="Hoshi reader" data-search="display_settings_page.dart pages reader customization hoshi reader">
         <header>
           <div>
             <h2>display_settings_page.dart</h2>
@@ -1166,7 +1178,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="error_log_page.dart" data-section="Pages" data-default="A" data-primary="Logs and debug" data-secondary="Empty, loading, error states" data-search="error_log_page.dart pages logs and debug empty, loading, error states">
+      <article class="surface-card" data-index="27" data-active="false" data-surface="error_log_page.dart" data-section="Pages" data-default="A" data-primary="Logs and debug" data-secondary="Empty, loading, error states" data-search="error_log_page.dart pages logs and debug empty, loading, error states">
         <header>
           <div>
             <h2>error_log_page.dart</h2>
@@ -1198,7 +1210,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="example_sentences_dialog_page.dart" data-section="Pages" data-default="A" data-primary="Media and sentence dialogs" data-secondary="Dictionary" data-search="example_sentences_dialog_page.dart pages media and sentence dialogs dictionary">
+      <article class="surface-card" data-index="28" data-active="false" data-surface="example_sentences_dialog_page.dart" data-section="Pages" data-default="A" data-primary="Media and sentence dialogs" data-secondary="Dictionary" data-search="example_sentences_dialog_page.dart pages media and sentence dialogs dictionary">
         <header>
           <div>
             <h2>example_sentences_dialog_page.dart</h2>
@@ -1230,7 +1242,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="floating_dict_page.dart" data-section="Pages" data-default="B" data-primary="Dictionary" data-secondary="Profile, language, system" data-search="floating_dict_page.dart pages dictionary profile, language, system">
+      <article class="surface-card" data-index="29" data-active="false" data-surface="floating_dict_page.dart" data-section="Pages" data-default="B" data-primary="Dictionary" data-secondary="Profile, language, system" data-search="floating_dict_page.dart pages dictionary profile, language, system">
         <header>
           <div>
             <h2>floating_dict_page.dart</h2>
@@ -1262,7 +1274,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="history_reader_page.dart" data-section="Pages" data-default="A" data-primary="Reader shelf" data-secondary="Tags and filters" data-search="history_reader_page.dart pages reader shelf tags and filters">
+      <article class="surface-card" data-index="30" data-active="false" data-surface="history_reader_page.dart" data-section="Pages" data-default="A" data-primary="Reader shelf" data-secondary="Tags and filters" data-search="history_reader_page.dart pages reader shelf tags and filters">
         <header>
           <div>
             <h2>history_reader_page.dart</h2>
@@ -1294,7 +1306,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="home_dictionary_page.dart" data-section="Pages" data-default="B" data-primary="Dictionary" data-secondary="Home and navigation" data-search="home_dictionary_page.dart pages dictionary home and navigation">
+      <article class="surface-card" data-index="31" data-active="false" data-surface="home_dictionary_page.dart" data-section="Pages" data-default="B" data-primary="Dictionary" data-secondary="Home and navigation" data-search="home_dictionary_page.dart pages dictionary home and navigation">
         <header>
           <div>
             <h2>home_dictionary_page.dart</h2>
@@ -1326,7 +1338,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="home_page.dart" data-section="Pages" data-default="C" data-primary="Home and navigation" data-secondary="Settings" data-search="home_page.dart pages home and navigation settings">
+      <article class="surface-card" data-index="32" data-active="false" data-surface="home_page.dart" data-section="Pages" data-default="C" data-primary="Home and navigation" data-secondary="Settings" data-search="home_page.dart pages home and navigation settings">
         <header>
           <div>
             <h2>home_page.dart</h2>
@@ -1358,7 +1370,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="home_reader_page.dart" data-section="Pages" data-default="C" data-primary="Home and navigation" data-secondary="Reader shelf" data-search="home_reader_page.dart pages home and navigation reader shelf">
+      <article class="surface-card" data-index="33" data-active="false" data-surface="home_reader_page.dart" data-section="Pages" data-default="C" data-primary="Home and navigation" data-secondary="Reader shelf" data-search="home_reader_page.dart pages home and navigation reader shelf">
         <header>
           <div>
             <h2>home_reader_page.dart</h2>
@@ -1390,7 +1402,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="hoshi_settings_page.dart" data-section="Pages" data-default="B" data-primary="Settings" data-secondary="Reader customization" data-search="hoshi_settings_page.dart pages settings reader customization">
+      <article class="surface-card" data-index="34" data-active="false" data-surface="hoshi_settings_page.dart" data-section="Pages" data-default="B" data-primary="Settings" data-secondary="Reader customization" data-search="hoshi_settings_page.dart pages settings reader customization">
         <header>
           <div>
             <h2>hoshi_settings_page.dart</h2>
@@ -1422,7 +1434,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="illustrations_viewer_page.dart" data-section="Pages" data-default="A" data-primary="Collections and stats" data-secondary="Media and sentence dialogs" data-search="illustrations_viewer_page.dart pages collections and stats media and sentence dialogs">
+      <article class="surface-card" data-index="35" data-active="false" data-surface="illustrations_viewer_page.dart" data-section="Pages" data-default="A" data-primary="Collections and stats" data-secondary="Media and sentence dialogs" data-search="illustrations_viewer_page.dart pages collections and stats media and sentence dialogs">
         <header>
           <div>
             <h2>illustrations_viewer_page.dart</h2>
@@ -1454,7 +1466,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="language_dialog_page.dart" data-section="Pages" data-default="A" data-primary="Profile, language, system" data-secondary="Import and modals" data-search="language_dialog_page.dart pages profile, language, system import and modals">
+      <article class="surface-card" data-index="36" data-active="false" data-surface="language_dialog_page.dart" data-section="Pages" data-default="A" data-primary="Profile, language, system" data-secondary="Import and modals" data-search="language_dialog_page.dart pages profile, language, system import and modals">
         <header>
           <div>
             <h2>language_dialog_page.dart</h2>
@@ -1486,7 +1498,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="loading_page.dart" data-section="Pages" data-default="A" data-primary="Empty, loading, error states" data-secondary="Home and navigation" data-search="loading_page.dart pages empty, loading, error states home and navigation">
+      <article class="surface-card" data-index="37" data-active="false" data-surface="loading_page.dart" data-section="Pages" data-default="A" data-primary="Empty, loading, error states" data-secondary="Home and navigation" data-search="loading_page.dart pages empty, loading, error states home and navigation">
         <header>
           <div>
             <h2>loading_page.dart</h2>
@@ -1518,7 +1530,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="lyrics_dialog_page.dart" data-section="Pages" data-default="B" data-primary="Hoshi reader" data-secondary="Media and sentence dialogs" data-search="lyrics_dialog_page.dart pages hoshi reader media and sentence dialogs">
+      <article class="surface-card" data-index="38" data-active="false" data-surface="lyrics_dialog_page.dart" data-section="Pages" data-default="B" data-primary="Hoshi reader" data-secondary="Media and sentence dialogs" data-search="lyrics_dialog_page.dart pages hoshi reader media and sentence dialogs">
         <header>
           <div>
             <h2>lyrics_dialog_page.dart</h2>
@@ -1550,7 +1562,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="media_item_dialog_page.dart" data-section="Pages" data-default="A" data-primary="Media and sentence dialogs" data-secondary="Collections and stats" data-search="media_item_dialog_page.dart pages media and sentence dialogs collections and stats">
+      <article class="surface-card" data-index="39" data-active="false" data-surface="media_item_dialog_page.dart" data-section="Pages" data-default="A" data-primary="Media and sentence dialogs" data-secondary="Collections and stats" data-search="media_item_dialog_page.dart pages media and sentence dialogs collections and stats">
         <header>
           <div>
             <h2>media_item_dialog_page.dart</h2>
@@ -1582,7 +1594,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="media_item_edit_dialog_page.dart" data-section="Pages" data-default="A" data-primary="Media and sentence dialogs" data-secondary="Creator and Anki" data-search="media_item_edit_dialog_page.dart pages media and sentence dialogs creator and anki">
+      <article class="surface-card" data-index="40" data-active="false" data-surface="media_item_edit_dialog_page.dart" data-section="Pages" data-default="A" data-primary="Media and sentence dialogs" data-secondary="Creator and Anki" data-search="media_item_edit_dialog_page.dart pages media and sentence dialogs creator and anki">
         <header>
           <div>
             <h2>media_item_edit_dialog_page.dart</h2>
@@ -1614,7 +1626,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="media_source_picker_dialog_page.dart" data-section="Pages" data-default="A" data-primary="Media and sentence dialogs" data-secondary="Import and modals" data-search="media_source_picker_dialog_page.dart pages media and sentence dialogs import and modals">
+      <article class="surface-card" data-index="41" data-active="false" data-surface="media_source_picker_dialog_page.dart" data-section="Pages" data-default="A" data-primary="Media and sentence dialogs" data-secondary="Import and modals" data-search="media_source_picker_dialog_page.dart pages media and sentence dialogs import and modals">
         <header>
           <div>
             <h2>media_source_picker_dialog_page.dart</h2>
@@ -1646,7 +1658,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="miscellaneous_settings_page.dart" data-section="Pages" data-default="A" data-primary="Profile, language, system" data-secondary="Settings" data-search="miscellaneous_settings_page.dart pages profile, language, system settings">
+      <article class="surface-card" data-index="42" data-active="false" data-surface="miscellaneous_settings_page.dart" data-section="Pages" data-default="A" data-primary="Profile, language, system" data-secondary="Settings" data-search="miscellaneous_settings_page.dart pages profile, language, system settings">
         <header>
           <div>
             <h2>miscellaneous_settings_page.dart</h2>
@@ -1678,7 +1690,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="open_stash_dialog_page.dart" data-section="Pages" data-default="A" data-primary="Media and sentence dialogs" data-secondary="Creator and Anki" data-search="open_stash_dialog_page.dart pages media and sentence dialogs creator and anki">
+      <article class="surface-card" data-index="43" data-active="false" data-surface="open_stash_dialog_page.dart" data-section="Pages" data-default="A" data-primary="Media and sentence dialogs" data-secondary="Creator and Anki" data-search="open_stash_dialog_page.dart pages media and sentence dialogs creator and anki">
         <header>
           <div>
             <h2>open_stash_dialog_page.dart</h2>
@@ -1710,7 +1722,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="placeholder_source_page.dart" data-section="Pages" data-default="A" data-primary="Empty, loading, error states" data-secondary="Hoshi reader" data-search="placeholder_source_page.dart pages empty, loading, error states hoshi reader">
+      <article class="surface-card" data-index="44" data-active="false" data-surface="placeholder_source_page.dart" data-section="Pages" data-default="A" data-primary="Empty, loading, error states" data-secondary="Hoshi reader" data-search="placeholder_source_page.dart pages empty, loading, error states hoshi reader">
         <header>
           <div>
             <h2>placeholder_source_page.dart</h2>
@@ -1742,7 +1754,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="popup_dictionary_page.dart" data-section="Pages" data-default="B" data-primary="Dictionary" data-secondary="Profile, language, system" data-search="popup_dictionary_page.dart pages dictionary profile, language, system">
+      <article class="surface-card" data-index="45" data-active="false" data-surface="popup_dictionary_page.dart" data-section="Pages" data-default="B" data-primary="Dictionary" data-secondary="Profile, language, system" data-search="popup_dictionary_page.dart pages dictionary profile, language, system">
         <header>
           <div>
             <h2>popup_dictionary_page.dart</h2>
@@ -1774,7 +1786,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="profile_management_page.dart" data-section="Pages" data-default="A" data-primary="Profile, language, system" data-secondary="Settings" data-search="profile_management_page.dart pages profile, language, system settings">
+      <article class="surface-card" data-index="46" data-active="false" data-surface="profile_management_page.dart" data-section="Pages" data-default="A" data-primary="Profile, language, system" data-secondary="Settings" data-search="profile_management_page.dart pages profile, language, system settings">
         <header>
           <div>
             <h2>profile_management_page.dart</h2>
@@ -1806,7 +1818,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="reader_hoshi_history_page.dart" data-section="Pages" data-default="A" data-primary="Reader shelf" data-secondary="Tags and filters" data-search="reader_hoshi_history_page.dart pages reader shelf tags and filters">
+      <article class="surface-card" data-index="47" data-active="false" data-surface="reader_hoshi_history_page.dart" data-section="Pages" data-default="A" data-primary="Reader shelf" data-secondary="Tags and filters" data-search="reader_hoshi_history_page.dart pages reader shelf tags and filters">
         <header>
           <div>
             <h2>reader_hoshi_history_page.dart</h2>
@@ -1838,7 +1850,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="reader_hoshi_page.dart" data-section="Pages" data-default="B" data-primary="Hoshi reader" data-secondary="Reader customization" data-search="reader_hoshi_page.dart pages hoshi reader reader customization">
+      <article class="surface-card" data-index="48" data-active="false" data-surface="reader_hoshi_page.dart" data-section="Pages" data-default="B" data-primary="Hoshi reader" data-secondary="Reader customization" data-search="reader_hoshi_page.dart pages hoshi reader reader customization">
         <header>
           <div>
             <h2>reader_hoshi_page.dart</h2>
@@ -1870,7 +1882,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="reading_statistics_page.dart" data-section="Pages" data-default="A" data-primary="Collections and stats" data-secondary="Empty, loading, error states" data-search="reading_statistics_page.dart pages collections and stats empty, loading, error states">
+      <article class="surface-card" data-index="49" data-active="false" data-surface="reading_statistics_page.dart" data-section="Pages" data-default="A" data-primary="Collections and stats" data-secondary="Empty, loading, error states" data-search="reading_statistics_page.dart pages collections and stats empty, loading, error states">
         <header>
           <div>
             <h2>reading_statistics_page.dart</h2>
@@ -1902,7 +1914,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="switch_settings_page.dart" data-section="Pages" data-default="B" data-primary="Settings" data-secondary="Profile, language, system" data-search="switch_settings_page.dart pages settings profile, language, system">
+      <article class="surface-card" data-index="50" data-active="false" data-surface="switch_settings_page.dart" data-section="Pages" data-default="B" data-primary="Settings" data-secondary="Profile, language, system" data-search="switch_settings_page.dart pages settings profile, language, system">
         <header>
           <div>
             <h2>switch_settings_page.dart</h2>
@@ -1934,7 +1946,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="tag_filter_sheet.dart" data-section="Pages" data-default="C" data-primary="Tags and filters" data-secondary="Reader shelf" data-search="tag_filter_sheet.dart pages tags and filters reader shelf">
+      <article class="surface-card" data-index="51" data-active="false" data-surface="tag_filter_sheet.dart" data-section="Pages" data-default="C" data-primary="Tags and filters" data-secondary="Reader shelf" data-search="tag_filter_sheet.dart pages tags and filters reader shelf">
         <header>
           <div>
             <h2>tag_filter_sheet.dart</h2>
@@ -1966,7 +1978,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="tag_management_page.dart" data-section="Pages" data-default="C" data-primary="Tags and filters" data-secondary="Settings" data-search="tag_management_page.dart pages tags and filters settings">
+      <article class="surface-card" data-index="52" data-active="false" data-surface="tag_management_page.dart" data-section="Pages" data-default="C" data-primary="Tags and filters" data-secondary="Settings" data-search="tag_management_page.dart pages tags and filters settings">
         <header>
           <div>
             <h2>tag_management_page.dart</h2>
@@ -1998,7 +2010,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="tag_picker_page.dart" data-section="Pages" data-default="C" data-primary="Tags and filters" data-secondary="Import and modals" data-search="tag_picker_page.dart pages tags and filters import and modals">
+      <article class="surface-card" data-index="53" data-active="false" data-surface="tag_picker_page.dart" data-section="Pages" data-default="C" data-primary="Tags and filters" data-secondary="Import and modals" data-search="tag_picker_page.dart pages tags and filters import and modals">
         <header>
           <div>
             <h2>tag_picker_page.dart</h2>
@@ -2030,7 +2042,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="text_segmentation_dialog_page.dart" data-section="Pages" data-default="C" data-primary="Creator and Anki" data-secondary="Media and sentence dialogs" data-search="text_segmentation_dialog_page.dart pages creator and anki media and sentence dialogs">
+      <article class="surface-card" data-index="54" data-active="false" data-surface="text_segmentation_dialog_page.dart" data-section="Pages" data-default="C" data-primary="Creator and Anki" data-secondary="Media and sentence dialogs" data-search="text_segmentation_dialog_page.dart pages creator and anki media and sentence dialogs">
         <header>
           <div>
             <h2>text_segmentation_dialog_page.dart</h2>
@@ -2062,7 +2074,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="websocket_dialog_page.dart" data-section="Pages" data-default="A" data-primary="Profile, language, system" data-secondary="Logs and debug" data-search="websocket_dialog_page.dart pages profile, language, system logs and debug">
+      <article class="surface-card" data-index="55" data-active="false" data-surface="websocket_dialog_page.dart" data-section="Pages" data-default="A" data-primary="Profile, language, system" data-secondary="Logs and debug" data-search="websocket_dialog_page.dart pages profile, language, system logs and debug">
         <header>
           <div>
             <h2>websocket_dialog_page.dart</h2>
@@ -2094,7 +2106,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="app_model.dart" data-section="Shared/support" data-default="C" data-primary="Component system" data-secondary="Profile, language, system" data-search="app_model.dart shared/support component system profile, language, system">
+      <article class="surface-card" data-index="56" data-active="false" data-surface="app_model.dart" data-section="Shared/support" data-default="C" data-primary="Component system" data-secondary="Profile, language, system" data-search="app_model.dart shared/support component system profile, language, system">
         <header>
           <div>
             <h2>app_model.dart</h2>
@@ -2126,7 +2138,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="base_history_page.dart" data-section="Shared/support" data-default="A" data-primary="Reader shelf" data-secondary="Empty, loading, error states" data-search="base_history_page.dart shared/support reader shelf empty, loading, error states">
+      <article class="surface-card" data-index="57" data-active="false" data-surface="base_history_page.dart" data-section="Shared/support" data-default="A" data-primary="Reader shelf" data-secondary="Empty, loading, error states" data-search="base_history_page.dart shared/support reader shelf empty, loading, error states">
         <header>
           <div>
             <h2>base_history_page.dart</h2>
@@ -2158,7 +2170,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="base_media_search_bar.dart" data-section="Shared/support" data-default="C" data-primary="Component system" data-secondary="Dictionary" data-search="base_media_search_bar.dart shared/support component system dictionary">
+      <article class="surface-card" data-index="58" data-active="false" data-surface="base_media_search_bar.dart" data-section="Shared/support" data-default="C" data-primary="Component system" data-secondary="Dictionary" data-search="base_media_search_bar.dart shared/support component system dictionary">
         <header>
           <div>
             <h2>base_media_search_bar.dart</h2>
@@ -2190,7 +2202,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="base_page.dart" data-section="Shared/support" data-default="C" data-primary="Component system" data-secondary="Empty, loading, error states" data-search="base_page.dart shared/support component system empty, loading, error states">
+      <article class="surface-card" data-index="59" data-active="false" data-surface="base_page.dart" data-section="Shared/support" data-default="C" data-primary="Component system" data-secondary="Empty, loading, error states" data-search="base_page.dart shared/support component system empty, loading, error states">
         <header>
           <div>
             <h2>base_page.dart</h2>
@@ -2222,7 +2234,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="base_source_page.dart" data-section="Shared/support" data-default="C" data-primary="Component system" data-secondary="Dictionary" data-search="base_source_page.dart shared/support component system dictionary">
+      <article class="surface-card" data-index="60" data-active="false" data-surface="base_source_page.dart" data-section="Shared/support" data-default="C" data-primary="Component system" data-secondary="Dictionary" data-search="base_source_page.dart shared/support component system dictionary">
         <header>
           <div>
             <h2>base_source_page.dart</h2>
@@ -2254,7 +2266,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="base_tab_page.dart" data-section="Shared/support" data-default="C" data-primary="Component system" data-secondary="Home and navigation" data-search="base_tab_page.dart shared/support component system home and navigation">
+      <article class="surface-card" data-index="61" data-active="false" data-surface="base_tab_page.dart" data-section="Shared/support" data-default="C" data-primary="Component system" data-secondary="Home and navigation" data-search="base_tab_page.dart shared/support component system home and navigation">
         <header>
           <div>
             <h2>base_tab_page.dart</h2>
@@ -2286,7 +2298,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="audiobook_import_dialog.dart" data-section="Shared/support" data-default="A" data-primary="Import and modals" data-secondary="Component system" data-search="audiobook_import_dialog.dart shared/support import and modals component system">
+      <article class="surface-card" data-index="62" data-active="false" data-surface="audiobook_import_dialog.dart" data-section="Shared/support" data-default="A" data-primary="Import and modals" data-secondary="Component system" data-search="audiobook_import_dialog.dart shared/support import and modals component system">
         <header>
           <div>
             <h2>audiobook_import_dialog.dart</h2>
@@ -2318,7 +2330,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="audiobook_play_bar.dart" data-section="Shared/support" data-default="B" data-primary="Hoshi reader" data-secondary="Component system" data-search="audiobook_play_bar.dart shared/support hoshi reader component system">
+      <article class="surface-card" data-index="63" data-active="false" data-surface="audiobook_play_bar.dart" data-section="Shared/support" data-default="B" data-primary="Hoshi reader" data-secondary="Component system" data-search="audiobook_play_bar.dart shared/support hoshi reader component system">
         <header>
           <div>
             <h2>audiobook_play_bar.dart</h2>
@@ -2350,7 +2362,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="book_import_dialog.dart" data-section="Shared/support" data-default="A" data-primary="Import and modals" data-secondary="Component system" data-search="book_import_dialog.dart shared/support import and modals component system">
+      <article class="surface-card" data-index="64" data-active="false" data-surface="book_import_dialog.dart" data-section="Shared/support" data-default="A" data-primary="Import and modals" data-secondary="Component system" data-search="book_import_dialog.dart shared/support import and modals component system">
         <header>
           <div>
             <h2>book_import_dialog.dart</h2>
@@ -2382,7 +2394,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="sasayaki_rematch.dart" data-section="Shared/support" data-default="A" data-primary="Import and modals" data-secondary="Hoshi reader" data-search="sasayaki_rematch.dart shared/support import and modals hoshi reader">
+      <article class="surface-card" data-index="65" data-active="false" data-surface="sasayaki_rematch.dart" data-section="Shared/support" data-default="A" data-primary="Import and modals" data-secondary="Hoshi reader" data-search="sasayaki_rematch.dart shared/support import and modals hoshi reader">
         <header>
           <div>
             <h2>sasayaki_rematch.dart</h2>
@@ -2414,7 +2426,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="profile_selector.dart" data-section="Shared/support" data-default="A" data-primary="Profile, language, system" data-secondary="Component system" data-search="profile_selector.dart shared/support profile, language, system component system">
+      <article class="surface-card" data-index="66" data-active="false" data-surface="profile_selector.dart" data-section="Shared/support" data-default="A" data-primary="Profile, language, system" data-secondary="Component system" data-search="profile_selector.dart shared/support profile, language, system component system">
         <header>
           <div>
             <h2>profile_selector.dart</h2>
@@ -2446,7 +2458,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="jidoujisho_bottom_sheet.dart" data-section="Shared/support" data-default="C" data-primary="Component system" data-secondary="Import and modals" data-search="jidoujisho_bottom_sheet.dart shared/support component system import and modals">
+      <article class="surface-card" data-index="67" data-active="false" data-surface="jidoujisho_bottom_sheet.dart" data-section="Shared/support" data-default="C" data-primary="Component system" data-secondary="Import and modals" data-search="jidoujisho_bottom_sheet.dart shared/support component system import and modals">
         <header>
           <div>
             <h2>jidoujisho_bottom_sheet.dart</h2>
@@ -2478,7 +2490,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="jidoujisho_divider.dart" data-section="Shared/support" data-default="C" data-primary="Component system" data-secondary="Settings" data-search="jidoujisho_divider.dart shared/support component system settings">
+      <article class="surface-card" data-index="68" data-active="false" data-surface="jidoujisho_divider.dart" data-section="Shared/support" data-default="C" data-primary="Component system" data-secondary="Settings" data-search="jidoujisho_divider.dart shared/support component system settings">
         <header>
           <div>
             <h2>jidoujisho_divider.dart</h2>
@@ -2510,7 +2522,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="jidoujisho_dropdown.dart" data-section="Shared/support" data-default="C" data-primary="Component system" data-secondary="Settings" data-search="jidoujisho_dropdown.dart shared/support component system settings">
+      <article class="surface-card" data-index="69" data-active="false" data-surface="jidoujisho_dropdown.dart" data-section="Shared/support" data-default="C" data-primary="Component system" data-secondary="Settings" data-search="jidoujisho_dropdown.dart shared/support component system settings">
         <header>
           <div>
             <h2>jidoujisho_dropdown.dart</h2>
@@ -2542,7 +2554,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="jidoujisho_icon_button.dart" data-section="Shared/support" data-default="C" data-primary="Component system" data-secondary="Home and navigation" data-search="jidoujisho_icon_button.dart shared/support component system home and navigation">
+      <article class="surface-card" data-index="70" data-active="false" data-surface="jidoujisho_icon_button.dart" data-section="Shared/support" data-default="C" data-primary="Component system" data-secondary="Home and navigation" data-search="jidoujisho_icon_button.dart shared/support component system home and navigation">
         <header>
           <div>
             <h2>jidoujisho_icon_button.dart</h2>
@@ -2574,7 +2586,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="jidoujisho_list_tile.dart" data-section="Shared/support" data-default="C" data-primary="Component system" data-secondary="Settings" data-search="jidoujisho_list_tile.dart shared/support component system settings">
+      <article class="surface-card" data-index="71" data-active="false" data-surface="jidoujisho_list_tile.dart" data-section="Shared/support" data-default="C" data-primary="Component system" data-secondary="Settings" data-search="jidoujisho_list_tile.dart shared/support component system settings">
         <header>
           <div>
             <h2>jidoujisho_list_tile.dart</h2>
@@ -2606,7 +2618,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="jidoujisho_marquee.dart" data-section="Shared/support" data-default="C" data-primary="Component system" data-secondary="Media and sentence dialogs" data-search="jidoujisho_marquee.dart shared/support component system media and sentence dialogs">
+      <article class="surface-card" data-index="72" data-active="false" data-surface="jidoujisho_marquee.dart" data-section="Shared/support" data-default="C" data-primary="Component system" data-secondary="Media and sentence dialogs" data-search="jidoujisho_marquee.dart shared/support component system media and sentence dialogs">
         <header>
           <div>
             <h2>jidoujisho_marquee.dart</h2>
@@ -2638,7 +2650,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="jidoujisho_placeholder_message.dart" data-section="Shared/support" data-default="A" data-primary="Empty, loading, error states" data-secondary="Component system" data-search="jidoujisho_placeholder_message.dart shared/support empty, loading, error states component system">
+      <article class="surface-card" data-index="73" data-active="false" data-surface="jidoujisho_placeholder_message.dart" data-section="Shared/support" data-default="A" data-primary="Empty, loading, error states" data-secondary="Component system" data-search="jidoujisho_placeholder_message.dart shared/support empty, loading, error states component system">
         <header>
           <div>
             <h2>jidoujisho_placeholder_message.dart</h2>
@@ -2670,7 +2682,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="jidoujisho_popup_position.dart" data-section="Shared/support" data-default="C" data-primary="Component system" data-secondary="Dictionary" data-search="jidoujisho_popup_position.dart shared/support component system dictionary">
+      <article class="surface-card" data-index="74" data-active="false" data-surface="jidoujisho_popup_position.dart" data-section="Shared/support" data-default="C" data-primary="Component system" data-secondary="Dictionary" data-search="jidoujisho_popup_position.dart shared/support component system dictionary">
         <header>
           <div>
             <h2>jidoujisho_popup_position.dart</h2>
@@ -2702,7 +2714,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="jidoujisho_search_history.dart" data-section="Shared/support" data-default="C" data-primary="Component system" data-secondary="Dictionary" data-search="jidoujisho_search_history.dart shared/support component system dictionary">
+      <article class="surface-card" data-index="75" data-active="false" data-surface="jidoujisho_search_history.dart" data-section="Shared/support" data-default="C" data-primary="Component system" data-secondary="Dictionary" data-search="jidoujisho_search_history.dart shared/support component system dictionary">
         <header>
           <div>
             <h2>jidoujisho_search_history.dart</h2>
@@ -2734,7 +2746,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="jidoujisho_selectable_text.dart" data-section="Shared/support" data-default="C" data-primary="Component system" data-secondary="Dictionary" data-search="jidoujisho_selectable_text.dart shared/support component system dictionary">
+      <article class="surface-card" data-index="76" data-active="false" data-surface="jidoujisho_selectable_text.dart" data-section="Shared/support" data-default="C" data-primary="Component system" data-secondary="Dictionary" data-search="jidoujisho_selectable_text.dart shared/support component system dictionary">
         <header>
           <div>
             <h2>jidoujisho_selectable_text.dart</h2>
@@ -2766,7 +2778,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="jidoujisho_tag.dart" data-section="Shared/support" data-default="C" data-primary="Tags and filters" data-secondary="Component system" data-search="jidoujisho_tag.dart shared/support tags and filters component system">
+      <article class="surface-card" data-index="77" data-active="false" data-surface="jidoujisho_tag.dart" data-section="Shared/support" data-default="C" data-primary="Tags and filters" data-secondary="Component system" data-search="jidoujisho_tag.dart shared/support tags and filters component system">
         <header>
           <div>
             <h2>jidoujisho_tag.dart</h2>
@@ -2798,7 +2810,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="jidoujisho_text_selection_controls.dart" data-section="Shared/support" data-default="C" data-primary="Component system" data-secondary="Dictionary" data-search="jidoujisho_text_selection_controls.dart shared/support component system dictionary">
+      <article class="surface-card" data-index="78" data-active="false" data-surface="jidoujisho_text_selection_controls.dart" data-section="Shared/support" data-default="C" data-primary="Component system" data-secondary="Dictionary" data-search="jidoujisho_text_selection_controls.dart shared/support component system dictionary">
         <header>
           <div>
             <h2>jidoujisho_text_selection_controls.dart</h2>
@@ -2830,7 +2842,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="hibiki_toast.dart" data-section="Shared/support" data-default="C" data-primary="Component system" data-secondary="Logs and debug" data-search="hibiki_toast.dart shared/support component system logs and debug">
+      <article class="surface-card" data-index="79" data-active="false" data-surface="hibiki_toast.dart" data-section="Shared/support" data-default="C" data-primary="Component system" data-secondary="Logs and debug" data-search="hibiki_toast.dart shared/support component system logs and debug">
         <header>
           <div>
             <h2>hibiki_toast.dart</h2>
@@ -2862,7 +2874,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="platform_utils.dart" data-section="Shared/support" data-default="C" data-primary="Component system" data-secondary="Home and navigation" data-search="platform_utils.dart shared/support component system home and navigation">
+      <article class="surface-card" data-index="80" data-active="false" data-surface="platform_utils.dart" data-section="Shared/support" data-default="C" data-primary="Component system" data-secondary="Home and navigation" data-search="platform_utils.dart shared/support component system home and navigation">
         <header>
           <div>
             <h2>platform_utils.dart</h2>
@@ -2894,7 +2906,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="swipe_dismiss_wrapper.dart" data-section="Shared/support" data-default="C" data-primary="Component system" data-secondary="Import and modals" data-search="swipe_dismiss_wrapper.dart shared/support component system import and modals">
+      <article class="surface-card" data-index="81" data-active="false" data-surface="swipe_dismiss_wrapper.dart" data-section="Shared/support" data-default="C" data-primary="Component system" data-secondary="Import and modals" data-search="swipe_dismiss_wrapper.dart shared/support component system import and modals">
         <header>
           <div>
             <h2>swipe_dismiss_wrapper.dart</h2>
@@ -2926,7 +2938,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="update_checker.dart" data-section="Shared/support" data-default="A" data-primary="Profile, language, system" data-secondary="Logs and debug" data-search="update_checker.dart shared/support profile, language, system logs and debug">
+      <article class="surface-card" data-index="82" data-active="false" data-surface="update_checker.dart" data-section="Shared/support" data-default="A" data-primary="Profile, language, system" data-secondary="Logs and debug" data-search="update_checker.dart shared/support profile, language, system logs and debug">
         <header>
           <div>
             <h2>update_checker.dart</h2>
@@ -2958,7 +2970,7 @@
           </figure>
         </div>
       </article>
-      <article class="surface-card" data-surface="blur_options.dart" data-section="Shared/support" data-default="B" data-primary="Reader customization" data-secondary="Component system" data-search="blur_options.dart shared/support reader customization component system">
+      <article class="surface-card" data-index="83" data-active="false" data-surface="blur_options.dart" data-section="Shared/support" data-default="B" data-primary="Reader customization" data-secondary="Component system" data-search="blur_options.dart shared/support reader customization component system">
         <header>
           <div>
             <h2>blur_options.dart</h2>
@@ -2998,7 +3010,11 @@
       const search = document.getElementById("search");
       const output = document.getElementById("output");
       const status = document.getElementById("status");
+      const reviewStatus = document.getElementById("review-status");
+      const onlyUnpickedButton = document.getElementById("only-unpicked");
       let activeSection = "all";
+      let activeIndex = 0;
+      let onlyUnpicked = false;
       let picks = loadPicks();
 
       function loadPicks() {
@@ -3021,8 +3037,20 @@
         return picks[card.dataset.surface] || card.dataset.default;
       }
 
+      function surfaceCards() {
+        return Array.from(document.querySelectorAll(".surface-card"));
+      }
+
+      function explicitPicked(card) {
+        return Boolean(picks[card.dataset.surface]);
+      }
+
+      function visibleCards() {
+        return surfaceCards().filter((card) => !card.classList.contains("hidden"));
+      }
+
       function updateOutput() {
-        const cards = Array.from(document.querySelectorAll(".surface-card"));
+        const cards = surfaceCards();
         const chosen = cards.filter((card) => Boolean(picks[card.dataset.surface])).length;
         const lines = cards.map((card) => {
           const choice = selectedChoice(card);
@@ -3033,28 +3061,136 @@
       }
 
       function updateCards() {
-        document.querySelectorAll(".surface-card").forEach((card) => {
+        surfaceCards().forEach((card) => {
           const selected = selectedChoice(card);
+          card.dataset.active = String(Number(card.dataset.index) === activeIndex);
           card.querySelectorAll(".variant").forEach((variant) => {
             variant.setAttribute("aria-pressed", String(variant.dataset.choice === selected));
           });
         });
+        updateReviewStatus();
       }
 
       function setPick(card, choice) {
         picks = { ...picks, [card.dataset.surface]: choice };
         savePicks();
+        applyFilters({ keepFocus: true });
         updateCards();
         updateOutput();
       }
 
-      function applyFilters() {
+      function surfaceMatchesFilter(card, query) {
+        const sectionMatch = activeSection === "all" || card.dataset.section === activeSection;
+        const searchMatch = !query || card.dataset.search.includes(query);
+        const unpickedMatch = !onlyUnpicked || !explicitPicked(card);
+        return sectionMatch && searchMatch && unpickedMatch;
+      }
+
+      function focusCard(index, options = {}) {
+        const cards = surfaceCards();
+        if (!cards.length) {
+          return;
+        }
+
+        const clamped = Math.max(0, Math.min(cards.length - 1, index));
+        activeIndex = clamped;
+        updateCards();
+
+        if (options.scroll !== false) {
+          cards[activeIndex].scrollIntoView({ behavior: options.smooth ? "smooth" : "auto", block: "start" });
+        }
+      }
+
+      function focusFirstVisible() {
+        const firstVisible = visibleCards()[0];
+        if (!firstVisible) {
+          updateReviewStatus();
+          return;
+        }
+
+        const index = Number(firstVisible.dataset.index);
+        if (Number.isFinite(index) && index !== activeIndex) {
+          focusCard(index, { scroll: false });
+          return;
+        }
+
+        updateCards();
+      }
+
+      function focusNearestVisible(startIndex) {
+        const cards = surfaceCards();
+        for (let step = 0; step < cards.length; step += 1) {
+          const candidate = cards[(startIndex + step) % cards.length];
+          if (!candidate.classList.contains("hidden")) {
+            focusCard(Number(candidate.dataset.index), { scroll: false });
+            return;
+          }
+        }
+
+        updateReviewStatus();
+      }
+
+      function nextVisible(delta) {
+        const cards = visibleCards();
+        if (!cards.length) {
+          updateReviewStatus();
+          return;
+        }
+
+        const currentVisibleIndex = Math.max(0, cards.findIndex((card) => Number(card.dataset.index) === activeIndex));
+        const nextIndex = (currentVisibleIndex + delta + cards.length) % cards.length;
+        focusCard(Number(cards[nextIndex].dataset.index), { smooth: true });
+      }
+
+      function nextUnpicked() {
+        const cards = surfaceCards();
+        if (!cards.length) {
+          updateReviewStatus();
+          return;
+        }
+
+        for (let step = 1; step <= cards.length; step += 1) {
+          const candidate = cards[(activeIndex + step) % cards.length];
+          if (!explicitPicked(candidate) && !candidate.classList.contains("hidden")) {
+            focusCard(Number(candidate.dataset.index), { smooth: true });
+            return;
+          }
+        }
+
+        reviewStatus.textContent = "No unpicked surfaces are visible under the current filters.";
+      }
+
+      function updateReviewStatus() {
+        const cards = surfaceCards();
+        const visible = visibleCards();
+        const activeCard = cards[activeIndex];
+        const picked = cards.filter(explicitPicked).length;
+        const visiblePicked = visible.filter(explicitPicked).length;
+        if (!activeCard) {
+          reviewStatus.textContent = "No surfaces available.";
+          return;
+        }
+
+        const visiblePosition = visible.findIndex((card) => Number(card.dataset.index) === activeIndex) + 1;
+        const queuePosition = visiblePosition > 0 ? `${visiblePosition} / ${visible.length} visible` : "outside current filter";
+        reviewStatus.textContent = `Reviewing ${Number(activeCard.dataset.index) + 1} / ${cards.length}: ${activeCard.dataset.surface} (${queuePosition}; ${visiblePicked} / ${visible.length} visible picked; ${picked} / ${cards.length} total picked).`;
+      }
+
+      function applyFilters(options = {}) {
         const query = search.value.trim().toLowerCase();
-        document.querySelectorAll(".surface-card").forEach((card) => {
-          const sectionMatch = activeSection === "all" || card.dataset.section === activeSection;
-          const searchMatch = !query || card.dataset.search.includes(query);
-          card.classList.toggle("hidden", !(sectionMatch && searchMatch));
+        surfaceCards().forEach((card) => {
+          card.classList.toggle("hidden", !surfaceMatchesFilter(card, query));
         });
+        onlyUnpickedButton.setAttribute("aria-pressed", String(onlyUnpicked));
+        if (!options.keepFocus) {
+          focusFirstVisible();
+          return;
+        }
+        if (surfaceCards()[activeIndex]?.classList.contains("hidden")) {
+          focusNearestVisible(activeIndex);
+          return;
+        }
+        updateCards();
       }
 
       document.querySelectorAll("[data-section]").forEach((button) => {
@@ -3069,7 +3205,18 @@
 
       search.addEventListener("input", applyFilters);
 
-      document.querySelectorAll(".surface-card").forEach((card) => {
+      document.getElementById("previous-surface").addEventListener("click", () => nextVisible(-1));
+
+      document.getElementById("next-surface").addEventListener("click", () => nextVisible(1));
+
+      document.getElementById("next-unpicked").addEventListener("click", nextUnpicked);
+
+      onlyUnpickedButton.addEventListener("click", () => {
+        onlyUnpicked = !onlyUnpicked;
+        applyFilters();
+      });
+
+      surfaceCards().forEach((card) => {
         card.querySelectorAll(".variant button").forEach((button) => {
           button.addEventListener("click", () => setPick(card, button.closest(".variant").dataset.choice));
         });
@@ -3077,10 +3224,11 @@
 
       document.getElementById("use-defaults").addEventListener("click", () => {
         picks = {};
-        document.querySelectorAll(".surface-card").forEach((card) => {
+        surfaceCards().forEach((card) => {
           picks[card.dataset.surface] = card.dataset.default;
         });
         savePicks();
+        applyFilters({ keepFocus: true });
         updateCards();
         updateOutput();
       });
@@ -3088,6 +3236,7 @@
       document.getElementById("clear-picks").addEventListener("click", () => {
         picks = {};
         savePicks();
+        applyFilters({ keepFocus: true });
         updateCards();
         updateOutput();
       });
@@ -3101,7 +3250,7 @@
         }
       });
 
-      updateCards();
+      applyFilters({ keepFocus: true });
       updateOutput();
     })();
   </script>

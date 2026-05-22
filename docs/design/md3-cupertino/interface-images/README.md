@@ -3,6 +3,7 @@
 This folder contains generated A/B/C image choices for every mapped MD3 + Cupertino UI surface.
 
 - `index.html` shows all 84 surfaces with three standalone images each, saves picks in the browser, and copies a complete `Interface image picks` result.
+- The `index.html` review queue can step to the previous surface, next surface, next unpicked surface, or filter down to only unpicked surfaces.
 - `manifest.json` records the surface-to-file mapping.
 - `*-A.svg`, `*-B.svg`, and `*-C.svg` are the direct image choices.
 

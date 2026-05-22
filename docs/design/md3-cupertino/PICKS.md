@@ -6,7 +6,7 @@ For visual review, open [gallery.html](gallery.html) in this folder. It shows al
 
 Use [INTERFACE_PICKS.md](INTERFACE_PICKS.md) when you want to review every mapped UI surface as a table instead of clicking through the gallery.
 
-Use [interface-gallery.html](interface-gallery.html) when you want each exact interface surface to show three A/B/C mockup images. Use [interface-images/index.html](interface-images/index.html) when you want those exact choices as standalone image files with clickable picks and copyable output. Use [variant-gallery.html](variant-gallery.html) when you want each board direction as a separate crop instead of reading a dense three-column board.
+Use [interface-gallery.html](interface-gallery.html) when you want each exact interface surface to show three A/B/C mockup images. Use [interface-images/index.html](interface-images/index.html) when you want those exact choices as standalone image files with a review queue, clickable picks, `Next unpicked`, `Only unpicked`, and copyable output. Use [variant-gallery.html](variant-gallery.html) when you want each board direction as a separate crop instead of reading a dense three-column board.
 
 ## Recommended baseline
 
@@ -67,4 +67,4 @@ Notes:
 4. Review the spec with you before touching runtime Flutter code.
 5. Only after approval, turn the spec into an implementation plan.
 
-The current coverage audit maps all 81 UI-building Dart files matched under `hibiki/lib` to the boards above. `INTERFACE_PICKS.md` and `interface-images/manifest.json` expand that into 84 design surfaces and 252 standalone image choices, including 3 manual UI support files already listed in `COVERAGE.md`. See `UI_COVERAGE_AUDIT.md` for the scan.
+The current coverage audit maps all 81 UI-building Dart files matched under `hibiki/lib` to the boards above. `INTERFACE_PICKS.md` and `interface-images/manifest.json` expand that into 84 design surfaces and 252 standalone image choices, including 3 manual UI support files already listed in `COVERAGE.md`. The image-pack review queue is the safest way to walk every interface without losing unpicked rows. See `UI_COVERAGE_AUDIT.md` for the scan.
