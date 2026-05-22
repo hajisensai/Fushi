@@ -32,6 +32,8 @@
 
 ## 输出给实现的格式
 
+推荐直接从 [FINAL_SELECTION_TEMPLATE.zh-CN.md](FINAL_SELECTION_TEMPLATE.zh-CN.md) 开始，把它复制成 `my-final-selection.txt` 后只保留你确认的整包和例外。生成器会严格检查未知行，拼错界面名会失败，不会静默生成假规格。
+
 整包选择用下面这种：
 
 ```text
@@ -49,7 +51,7 @@ home_page.dart: C
 然后生成规格：
 
 ```powershell
-node .\generate-implementation-spec.mjs --pack hibiki-balanced --picks .\my-exceptions.txt --output .\IMPLEMENTATION_SPEC_DRAFT.md
+node .\generate-implementation-spec.mjs --picks .\my-final-selection.txt --output .\IMPLEMENTATION_SPEC_FINAL_DRAFT.md
 ```
 
 如果暂时没有例外，直接用推荐规格：
@@ -62,6 +64,7 @@ node .\generate-implementation-spec.mjs --pack hibiki-balanced --output .\IMPLEM
 
 - [pack-selection-index.html](pack-selection-index.html): 4 套整包方案的逐界面索引，每套都能跳到完整 84 图选择页。
 - [interface-pack-comparison.html](interface-pack-comparison.html): 按界面横向比较 A/B/C 三图，并显示四套整包默认选择。
+- [FINAL_SELECTION_TEMPLATE.zh-CN.md](FINAL_SELECTION_TEMPLATE.zh-CN.md): 最终选择填写模板，可直接生成最终规格草案。
 - [selection-md3-practical.html](selection-md3-practical.html) / [SELECTION_MD3_PRACTICAL.zh-CN.md](SELECTION_MD3_PRACTICAL.zh-CN.md): `MD3 Practical` 的 84 个界面完整展开。
 - [selection-reading-calm.html](selection-reading-calm.html) / [SELECTION_READING_CALM.zh-CN.md](SELECTION_READING_CALM.zh-CN.md): `Reading Calm` 的 84 个界面完整展开。
 - [selection-adaptive-power.html](selection-adaptive-power.html) / [SELECTION_ADAPTIVE_POWER.zh-CN.md](SELECTION_ADAPTIVE_POWER.zh-CN.md): `Adaptive Power` 的 84 个界面完整展开。

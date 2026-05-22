@@ -18,7 +18,7 @@ Settings B
 
 You can also mix details, for example `Reader B, but use A's bottom bar`.
 
-For a complete board worksheet, use [PICKS.md](PICKS.md). For full baseline directions, start from [DESIGN_PACKS.md](DESIGN_PACKS.md) or [design-pack-gallery.html](design-pack-gallery.html), then use [INTERFACE_PICKS.md](INTERFACE_PICKS.md) for file-by-file exceptions. For direct visual comparison, use [interface-gallery.html](interface-gallery.html), [interface-images/index.html](interface-images/index.html), or [variant-gallery.html](variant-gallery.html).
+For a complete board worksheet, use [PICKS.md](PICKS.md). For the final implementation input, start from [FINAL_SELECTION_TEMPLATE.zh-CN.md](FINAL_SELECTION_TEMPLATE.zh-CN.md). For full baseline directions, start from [DESIGN_PACKS.md](DESIGN_PACKS.md) or [design-pack-gallery.html](design-pack-gallery.html), then use [INTERFACE_PICKS.md](INTERFACE_PICKS.md) for file-by-file exceptions. For direct visual comparison, use [interface-pack-comparison.html](interface-pack-comparison.html), [interface-gallery.html](interface-gallery.html), [interface-images/index.html](interface-images/index.html), or [variant-gallery.html](variant-gallery.html).
 
 After choices are copied back into a text file, generate the implementation spec draft with:
 
@@ -26,7 +26,7 @@ After choices are copied back into a text file, generate the implementation spec
 node .\generate-implementation-spec.mjs --pack hibiki-balanced --picks .\my-picks.txt --output .\IMPLEMENTATION_SPEC_DRAFT.md
 ```
 
-Use `--pack hibiki-balanced` without `--picks` to generate the recommended hybrid spec directly. The current recommended generated spec is [IMPLEMENTATION_SPEC_HIBIKI_BALANCED.md](IMPLEMENTATION_SPEC_HIBIKI_BALANCED.md). Omit both `--pack` and `--picks` only when you want [IMPLEMENTATION_SPEC_DRAFT.md](IMPLEMENTATION_SPEC_DRAFT.md) from manifest defaults before final choices.
+Use `--pack hibiki-balanced` without `--picks` to generate the recommended hybrid spec directly. A picks file may also contain `Pack: hibiki-balanced`, so a final selection can be generated with only `--picks`. The current recommended generated spec is [IMPLEMENTATION_SPEC_HIBIKI_BALANCED.md](IMPLEMENTATION_SPEC_HIBIKI_BALANCED.md). Omit both `--pack` and `--picks` only when you want [IMPLEMENTATION_SPEC_DRAFT.md](IMPLEMENTATION_SPEC_DRAFT.md) from manifest defaults before final choices.
 
 ## Selection images
 

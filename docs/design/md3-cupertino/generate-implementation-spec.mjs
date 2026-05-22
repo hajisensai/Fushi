@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 /** @typedef {"A" | "B" | "C"} Choice */
 /** @typedef {{ section: string, surface: string, primary: string, file: string, secondary: string, secondaryFile: string, defaultChoice: Choice, slug: string, files: Record<Choice, string> }} ManifestSurface */
 /** @typedef {{ label: string, summary?: string, bestFor?: string, tradeoff?: string, choices: Record<string, Choice>, notes: string[] }} DesignPack */
-/** @typedef {{ choices: Map<string, Choice>, boardChoices: Map<string, Choice>, notes: string[] }} ParsedPicks */
+/** @typedef {{ choices: Map<string, Choice>, boardChoices: Map<string, Choice>, notes: string[], packName?: string }} ParsedPicks */
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const manifestPath = join(__dirname, "interface-images", "manifest.json");
@@ -144,7 +144,8 @@ function picksFromPack(packName, packs) {
   return {
     choices: new Map(),
     boardChoices: new Map(Object.entries(pack.choices)),
-    notes: [...pack.notes]
+    notes: [...pack.notes],
+    packName
   };
 }
 
@@ -157,7 +158,8 @@ function mergePicks(base, override) {
   return {
     choices: new Map([...base.choices, ...override.choices]),
     boardChoices: new Map([...base.boardChoices, ...override.boardChoices]),
-    notes: [...base.notes, ...override.notes]
+    notes: [...base.notes, ...override.notes],
+    packName: override.packName || base.packName
   };
 }
 
@@ -169,9 +171,15 @@ function parsePicks(raw) {
   /** @type {ParsedPicks} */
   const parsed = { choices: new Map(), boardChoices: new Map(), notes: [] };
   let inNotes = false;
-  for (const line of raw.split(/\r?\n/u)) {
+  for (const [lineIndex, line] of raw.split(/\r?\n/u).entries()) {
     const trimmed = line.trim();
-    if (!trimmed) {
+    if (!trimmed || trimmed.startsWith("#") || trimmed === "```" || trimmed === "```text") {
+      continue;
+    }
+    const lineNumber = lineIndex + 1;
+    const packMatch = trimmed.match(/^(?:我选\s*)?Pack\s*:\s*([a-z0-9-]+)\b/iu);
+    if (packMatch) {
+      parsed.packName = packMatch[1];
       continue;
     }
     if (/^notes\s*:?$/iu.test(trimmed)) {
@@ -179,7 +187,10 @@ function parsePicks(raw) {
       continue;
     }
     if (inNotes) {
-      parsed.notes.push(trimmed);
+      parsed.notes.push(trimmed.replace(/^-\s*/u, ""));
+      continue;
+    }
+    if (/^(?:例外|exceptions?)\s*:?$/iu.test(trimmed)) {
       continue;
     }
 
@@ -192,7 +203,9 @@ function parsePicks(raw) {
     const boardMatch = trimmed.match(/^`?(\d{2})`?\s*:\s*([ABC])\b/iu);
     if (boardMatch) {
       parsed.boardChoices.set(boardMatch[1], /** @type {Choice} */ (boardMatch[2].toUpperCase()));
+      continue;
     }
+    throw new Error(`Unrecognized picks line ${lineNumber}: ${trimmed}`);
   }
   return parsed;
 }
@@ -354,12 +367,16 @@ async function main() {
     throw new Error(`Unexpected manifest source: ${manifest.generatedFrom}`);
   }
 
-  const packPicks = args.packName ? picksFromPack(args.packName, packs) : { choices: new Map(), boardChoices: new Map(), notes: [] };
   const filePicks = args.picksPath ? parsePicks(await readFile(args.picksPath, "utf8")) : { choices: new Map(), boardChoices: new Map(), notes: [] };
+  if (args.packName && filePicks.packName && args.packName !== filePicks.packName) {
+    throw new Error(`Conflicting pack choices: --pack ${args.packName} but picks file says Pack: ${filePicks.packName}.`);
+  }
+  const packName = args.packName || filePicks.packName;
+  const packPicks = packName ? picksFromPack(packName, packs) : { choices: new Map(), boardChoices: new Map(), notes: [] };
   const picks = mergePicks(packPicks, filePicks);
   const sources = [];
-  if (args.packName) {
-    sources.push(`${packs[args.packName].label} pack`);
+  if (packName) {
+    sources.push(`${packs[packName].label} pack`);
   }
   if (args.picksPath) {
     sources.push(relative(__dirname, args.picksPath));
