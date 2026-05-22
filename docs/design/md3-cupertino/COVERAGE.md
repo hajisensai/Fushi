@@ -25,6 +25,14 @@ This file maps current Hibiki UI files to the design boards in this folder. It i
 | `17-full-coverage-map.svg` | Visual map of the board-to-page coverage |
 | `18-component-system.svg` | Shared components for buttons, rows, search, bottom sheets, placeholders, popups, and selection |
 
+## Entry surface mapping
+
+| File | Primary board | Secondary board |
+| --- | --- | --- |
+| `main.dart` | `01-home-navigation.svg` | `16-empty-loading-error-states.svg` |
+| `popup_main.dart` | `03-dictionary.svg` | `16-empty-loading-error-states.svg` |
+| `floating_dict_main.dart` | `03-dictionary.svg` | `18-component-system.svg` |
+
 ## Page mapping
 
 | File | Primary board | Secondary board |
@@ -118,8 +126,8 @@ This file maps current Hibiki UI files to the design boards in this folder. It i
 
 ## Full UI scan audit
 
-See [UI_COVERAGE_AUDIT.md](UI_COVERAGE_AUDIT.md). The latest scan matched 78 UI-building Dart files under `hibiki/lib/src` and all 78 are mapped above. The mapping table intentionally has 81 rows because it also keeps 3 manual UI support files in scope: `dictionary_page_mixin.dart`, `dictionary_webview_media.dart`, and `jidoujisho_popup_position.dart`.
+See [UI_COVERAGE_AUDIT.md](UI_COVERAGE_AUDIT.md). The latest scan matched 81 UI-building Dart files under `hibiki/lib` and all 81 are mapped above. The mapping table intentionally has 84 rows because it also keeps 3 manual UI support files in scope: `dictionary_page_mixin.dart`, `dictionary_webview_media.dart`, and `jidoujisho_popup_position.dart`.
 
 ## Current gap after this batch
 
-Every current file under `hibiki/lib/src/pages/implementations/` now has a board-level design reference. The reusable UI components that drive search, rows, popups, placeholders, bottom sheets, toasts, text selection, update overlays, adaptive layout, and audiobook chrome also have board mappings. `INTERFACE_PICKS.md` and the gallery's per-interface selector now turn this coverage map into a file-by-file choice pass. The next real missing piece is the user choice pass and then a written implementation spec that converts the selected A/B/C directions into shared Flutter components, route-by-route behavior, and verification gates.
+Every current file under `hibiki/lib/src/pages/implementations/` now has a board-level design reference, and the root app entry surfaces under `hibiki/lib` are covered too. The reusable UI components that drive search, rows, popups, placeholders, bottom sheets, toasts, text selection, update overlays, adaptive layout, and audiobook chrome also have board mappings. `INTERFACE_PICKS.md` and the gallery's per-interface selector now turn this coverage map into a file-by-file choice pass. The next real missing piece is the user choice pass and then a written implementation spec that converts the selected A/B/C directions into shared Flutter components, route-by-route behavior, and verification gates.

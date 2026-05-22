@@ -9,7 +9,7 @@ Use [gallery.html](gallery.html) for the compact clickable version. It contains 
 - Pick one `A`, `B`, or `C` for every row, or accept the default from the primary board.
 - Override individual rows only when a screen needs to differ from its board family.
 - Board `17-full-coverage-map.svg` is documentation-only and is not assigned to runtime interfaces.
-- The table covers 81 design surfaces: 53 page-level surfaces and 28 shared/support surfaces. The UI audit matched 78 build files; the extra 3 rows are manual UI support files already mapped in `COVERAGE.md`.
+- The table covers 84 design surfaces: 3 entry surfaces, 53 page-level surfaces, and 28 shared/support surfaces. The UI audit matched 81 build files; the extra 3 rows are manual UI support files already mapped in `COVERAGE.md`.
 
 ## Board defaults
 
@@ -32,6 +32,14 @@ Use [gallery.html](gallery.html) for the compact clickable version. It contains 
 | `15-logs-and-debug.svg` | A |
 | `16-empty-loading-error-states.svg` | A |
 | `18-component-system.svg` | C |
+
+## Entry surfaces
+
+| Surface | Primary image | Secondary image | Default | Pick |
+| --- | --- | --- | --- | --- |
+| `main.dart` | [01](01-home-navigation.svg) | [16](16-empty-loading-error-states.svg) | C |  |
+| `popup_main.dart` | [03](03-dictionary.svg) | [16](16-empty-loading-error-states.svg) | B |  |
+| `floating_dict_main.dart` | [03](03-dictionary.svg) | [18](18-component-system.svg) | B |  |
 
 ## Page surfaces
 

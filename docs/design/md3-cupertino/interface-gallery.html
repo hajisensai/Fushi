@@ -334,14 +334,15 @@
         <p>Repeated images across related surfaces are intentional: shared screens should inherit one visual grammar unless you explicitly pick exceptions.</p>
       </div>
       <div class="counts">
-        <div class="count"><strong>81</strong><p>UI surfaces</p></div>
-        <div class="count"><strong>243</strong><p>visible choices</p></div>
+        <div class="count"><strong>84</strong><p>UI surfaces</p></div>
+        <div class="count"><strong>252</strong><p>visible choices</p></div>
         <div class="count"><strong>17</strong><p>runtime source boards</p></div>
       </div>
     </section>
 
     <section class="controls" aria-label="Interface filters">
       <button type="button" class="choice-button" data-section="all" aria-pressed="true">All</button>
+      <button type="button" class="choice-button" data-section="Entry" aria-pressed="false">Entry</button>
       <button type="button" class="choice-button" data-section="Pages" aria-pressed="false">Pages</button>
       <button type="button" class="choice-button" data-section="Shared/support" aria-pressed="false">Shared/support</button>
       <button type="button" class="choice-button" id="use-defaults">Use defaults</button>
@@ -390,6 +391,9 @@
         C: "Dense/adaptive direction"
       };
       const surfaces = [
+        { section: "Entry", surface: "main.dart", primary: "01", file: "01-home-navigation.svg", secondary: "16", secondaryFile: "16-empty-loading-error-states.svg", defaultChoice: "C" },
+        { section: "Entry", surface: "popup_main.dart", primary: "03", file: "03-dictionary.svg", secondary: "16", secondaryFile: "16-empty-loading-error-states.svg", defaultChoice: "B" },
+        { section: "Entry", surface: "floating_dict_main.dart", primary: "03", file: "03-dictionary.svg", secondary: "18", secondaryFile: "18-component-system.svg", defaultChoice: "B" },
         { section: "Pages", surface: "anki_settings_page.dart", primary: "07", file: "07-creator-anki.svg", secondary: "05", secondaryFile: "05-settings.svg", defaultChoice: "C" },
         { section: "Pages", surface: "audio_recorder_page.dart", primary: "07", file: "07-creator-anki.svg", secondary: "12", secondaryFile: "12-media-and-sentences.svg", defaultChoice: "C" },
         { section: "Pages", surface: "blur_options_dialog_page.dart", primary: "11", file: "11-reader-customization.svg", secondary: "06", secondaryFile: "06-import-and-modals.svg", defaultChoice: "B" },

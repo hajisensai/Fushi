@@ -67,4 +67,4 @@ Notes:
 4. Review the spec with you before touching runtime Flutter code.
 5. Only after approval, turn the spec into an implementation plan.
 
-The current coverage audit maps all 78 UI-building Dart files matched under `hibiki/lib/src` to the boards above. `INTERFACE_PICKS.md` expands that into 81 design surfaces, including 3 manual UI support files already listed in `COVERAGE.md`. See `UI_COVERAGE_AUDIT.md` for the scan.
+The current coverage audit maps all 81 UI-building Dart files matched under `hibiki/lib` to the boards above. `INTERFACE_PICKS.md` expands that into 84 design surfaces, including 3 manual UI support files already listed in `COVERAGE.md`. See `UI_COVERAGE_AUDIT.md` for the scan.

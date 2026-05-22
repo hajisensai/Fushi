@@ -5,16 +5,25 @@ This audit checks whether the MD3 + Cupertino design boards cover current UI-bui
 ## Scan command
 
 ```powershell
-rg -l "(Widget\s+build\s*\(|extends\s+(StatelessWidget|StatefulWidget|ConsumerWidget|ConsumerStatefulWidget|BasePage|BaseSourcePage|BaseTabPage)|showDialog\s*\(|showModal|AlertDialog\s*\(|BottomSheet|ListTile\s*\()" hibiki/lib/src -g "*.dart" -g "!*.g.dart"
+rg -l "(Widget\s+build\s*\(|extends\s+(StatelessWidget|StatefulWidget|ConsumerWidget|ConsumerStatefulWidget|BasePage|BaseSourcePage|BaseTabPage)|showDialog\s*\(|showModal|AlertDialog\s*\(|BottomSheet|ListTile\s*\()" hibiki/lib -g "*.dart" -g "!*.g.dart"
 ```
 
 ## Current scan result
 
-- Total Dart files under `hibiki/lib/src`: 189
-- UI-building files matched by scan: 78
+- Total non-generated Dart files under `hibiki/lib`: 197
+- UI-building files matched by scan: 81
+- Entry UI files mapped in `COVERAGE.md`: 3
 - Page implementation files mapped in `COVERAGE.md`: 53
 - Shared/base/support UI files mapped in `COVERAGE.md`: 25
 - Unmapped UI-building files after this audit: 0
+
+## Entry files covered by this audit
+
+| File | Why it matters | Board mapping |
+| --- | --- | --- |
+| `main.dart` | Main `MaterialApp`, loading shell, initialization error surface, global theme and app entry behavior. | `01-home-navigation.svg`, `16-empty-loading-error-states.svg` |
+| `popup_main.dart` | Android process-text dictionary popup app, transparent loading/error shell, popup dictionary entry. | `03-dictionary.svg`, `16-empty-loading-error-states.svg` |
+| `floating_dict_main.dart` | Floating dictionary overlay app, transparent loading shell, floating dictionary entry. | `03-dictionary.svg`, `18-component-system.svg` |
 
 ## New non-page files covered by this audit
 

@@ -471,7 +471,7 @@
       <div class="panel">
         <h2>How to use this</h2>
         <p>Each board has A, B, and C directions. Use the pick buttons under each board, or mix details like "04 B with A bottom bar". Board 17 is documentation-only; pick it only if you prefer a different map layout.</p>
-        <p>The current design package covers 53 page surfaces and 28 shared/support UI surfaces. Runtime Flutter code is intentionally untouched until the choices are locked.</p>
+        <p>The current design package covers 3 entry surfaces, 53 page surfaces, and 28 shared/support UI surfaces. Runtime Flutter code is intentionally untouched until the choices are locked.</p>
         <p>If the full board image is too dense, open the variant gallery to inspect each A/B/C mockup as its own crop. If you want every exact interface listed with three images, open the interface gallery.</p>
         <a class="copy-link" href="PICKS.md">Open PICKS.md</a>
         <a class="copy-link" href="INTERFACE_PICKS.md">Open interface picks</a>
@@ -672,6 +672,9 @@
       const interfaceStatus = document.getElementById("interface-status");
       const interfaceGroups = document.getElementById("interface-groups");
       const surfaces = [
+        { section: "Entry", surface: "main.dart", primary: "01", secondary: "16" },
+        { section: "Entry", surface: "popup_main.dart", primary: "03", secondary: "16" },
+        { section: "Entry", surface: "floating_dict_main.dart", primary: "03", secondary: "18" },
         { section: "Pages", surface: "anki_settings_page.dart", primary: "07", secondary: "05" },
         { section: "Pages", surface: "audio_recorder_page.dart", primary: "07", secondary: "12" },
         { section: "Pages", surface: "blur_options_dialog_page.dart", primary: "11", secondary: "06" },

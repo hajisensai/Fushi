@@ -43,7 +43,7 @@ For a complete board worksheet, use [PICKS.md](PICKS.md). For the file-by-file i
 | Full coverage map | [17-full-coverage-map.svg](17-full-coverage-map.svg) | Visual map from page families to design boards |
 | Component system | [18-component-system.svg](18-component-system.svg) | Shared buttons, rows, search, sheets, placeholders, popups, and selection grammar |
 
-The [variant gallery](variant-gallery.html) crops the runtime design boards into 51 standalone A/B/C examples. The [interface gallery](interface-gallery.html) expands those into 243 visible choices across 81 mapped UI surfaces. Board 17 is excluded there because it is a coverage map, not a runtime interface style.
+The [variant gallery](variant-gallery.html) crops the runtime design boards into 51 standalone A/B/C examples. The [interface gallery](interface-gallery.html) expands those into 252 visible choices across 84 mapped UI surfaces. Board 17 is excluded there because it is a coverage map, not a runtime interface style.
 
 See [COVERAGE.md](COVERAGE.md) for the file-by-file mapping from current Flutter UI files to these boards, [INTERFACE_PICKS.md](INTERFACE_PICKS.md) for per-interface choices, and [UI_COVERAGE_AUDIT.md](UI_COVERAGE_AUDIT.md) for the scan evidence.
 
@@ -73,4 +73,4 @@ See [COVERAGE.md](COVERAGE.md) for the file-by-file mapping from current Flutter
 
 ## Coverage status
 
-Every current UI-building file matched under `hibiki/lib/src` now has a board-level design reference in `COVERAGE.md`, and reusable/support UI surfaces have a component-system board. `INTERFACE_PICKS.md` and the gallery's per-interface selector now cover 81 design surfaces: 53 page-level surfaces and 28 shared/support surfaces. After choices are made, the next step is a precise implementation spec with shared Flutter components, route-by-route behavior, and verification gates. More pictures are useful only when a selected board still has unresolved variants.
+Every current UI-building file matched under `hibiki/lib` now has a board-level design reference in `COVERAGE.md`, and reusable/support UI surfaces have a component-system board. `INTERFACE_PICKS.md` and the gallery's per-interface selector now cover 84 design surfaces: 3 entry surfaces, 53 page-level surfaces, and 28 shared/support surfaces. After choices are made, the next step is a precise implementation spec with shared Flutter components, route-by-route behavior, and verification gates. More pictures are useful only when a selected board still has unresolved variants.
