@@ -260,6 +260,24 @@ abstract class MediaSource {
     );
   }
 
+  /// Full subtitle-cue text (not punctuation-segmented).
+  JidoujishoTextSelection get currentCueSentence => _currentCueSentence;
+  JidoujishoTextSelection _currentCueSentence = JidoujishoTextSelection(
+    text: '',
+  );
+
+  void setCurrentCueSentence({
+    required JidoujishoTextSelection selection,
+  }) {
+    _currentCueSentence = selection;
+  }
+
+  void clearCurrentCueSentence() {
+    _currentCueSentence = JidoujishoTextSelection(
+      text: '',
+    );
+  }
+
   /// This is used to hold data for generating images and audio.
   String? get currentExtraData => _currentExtraData;
   String? _currentExtraData;

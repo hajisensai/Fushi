@@ -236,12 +236,14 @@ class DictionaryMedia {
 class AnkiMiningContext {
   const AnkiMiningContext({
     required this.sentence,
+    this.cueSentence,
     this.documentTitle,
     this.coverPath,
     this.sasayakiAudioPath,
     this.sentenceOffset,
   });
   final String sentence;
+  final String? cueSentence;
   final String? documentTitle;
   final String? coverPath;
   final String? sasayakiAudioPath;
@@ -292,6 +294,8 @@ class AnkiHandlebarRenderer {
         return payload.popupSelectionText;
       case '{sentence}':
         return _sentenceValue(payload, context);
+      case '{cue-sentence}':
+        return _cueSentenceValue(payload, context);
       case '{frequencies}':
         return payload.frequenciesHtml;
       case '{frequency-harmonic-rank}':
@@ -346,6 +350,16 @@ class AnkiHandlebarRenderer {
     }
     return context.sentence.replaceFirst(matched, '<b>$matched</b>');
   }
+
+  static String _cueSentenceValue(
+    AnkiMiningPayload payload,
+    AnkiMiningContext context,
+  ) {
+    final String text = context.cueSentence ?? context.sentence;
+    final String matched = payload.matched;
+    if (matched.isEmpty) return text;
+    return text.replaceFirst(matched, '<b>$matched</b>');
+  }
 }
 
 class AnkiHandlebarOptions {
@@ -360,6 +374,7 @@ class AnkiHandlebarOptions {
     '{selected-glossary}',
     '{popup-selection-text}',
     '{sentence}',
+    '{cue-sentence}',
     '{frequencies}',
     '{frequency-harmonic-rank}',
     '{pitch-accent-positions}',

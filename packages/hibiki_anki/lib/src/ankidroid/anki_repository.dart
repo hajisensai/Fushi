@@ -124,6 +124,7 @@ class AnkiRepository extends BaseAnkiRepository {
 
     final mediaContext = AnkiMiningContext(
       sentence: context.sentence,
+      cueSentence: context.cueSentence,
       documentTitle: context.documentTitle,
       coverPath: context.coverPath != null
           ? await _addCoverImage(context.coverPath!)

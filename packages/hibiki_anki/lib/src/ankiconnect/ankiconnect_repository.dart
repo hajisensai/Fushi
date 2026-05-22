@@ -114,6 +114,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
 
     final mediaContext = AnkiMiningContext(
       sentence: context.sentence,
+      cueSentence: context.cueSentence,
       documentTitle: context.documentTitle,
       coverPath: coverMediaRef != null ? '<img src="$coverMediaRef">' : null,
       sasayakiAudioPath:

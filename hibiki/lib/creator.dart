@@ -30,6 +30,7 @@ export 'src/creator/enhancements/text_segmentation_enhancement.dart';
 export 'src/creator/enhancements/save_tags_enhancement.dart';
 
 export 'src/creator/fields/sentence_field.dart';
+export 'src/creator/fields/cue_sentence_field.dart';
 export 'src/creator/fields/meaning_field.dart';
 export 'src/creator/fields/reading_field.dart';
 export 'src/creator/fields/term_field.dart';
