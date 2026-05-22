@@ -22,8 +22,8 @@
 ### HBK-AUDIT-001 — AppModel 上帝对象
 
 **Severity**: CRITICAL
-**Status**: open
-**文件**: `hibiki/lib/src/models/app_model.dart` (4,045 行)
+**Status**: fixed (partial) — 2026-05-22 (0bd60e82) 提取 `ThemeNotifier` (~390 行) 为独立 `ChangeNotifier`，含主题预设、颜色定制、构建 ColorScheme/ThemeData、splash 持久化。AppModel 保留委托属性供 60+ 处现有引用使用。新增 `themeProvider` Riverpod provider 供新代码窄范围监听。AppModel 从 4,045 行缩减至 3,334 行。
+**文件**: `hibiki/lib/src/models/app_model.dart` (4,045 → 3,334 行), `hibiki/lib/src/models/theme_notifier.dart` (新增, 389 行)
 
 **根因**: `AppModel` 是一个典型的上帝对象（God Object），单个 `ChangeNotifier` 承载了整个应用的所有全局状态：
 
@@ -228,8 +228,8 @@ enum ReaderState { idle, loading, restoring, ready, error }
 ### HBK-AUDIT-010 — 偏好系统类型不安全的字符串序列化
 
 **Severity**: MEDIUM
-**Status**: low-risk — 2026-05-22 验证：当前所有偏好值不存在 string/int/bool 碰撞。架构上脆弱（启发式类型猜测），但实际生产安全。需在添加新偏好类型时注意。
-**文件**: `hibiki/lib/src/media/media_source.dart:110-137`, `packages/hibiki_core/lib/src/database/database.dart:246-253`
+**Status**: fixed — 2026-05-22 (1f3a5a9a) 新增 `PrefCodec` 类（`packages/hibiki_core/lib/src/database/pref_codec.dart`），实现类型标签序列化（`b:true`, `i:42`, `d:1.0`, `s:hello`, `j:[...]`）。三个偏好层统一使用：AppModel `_getPref`/`_setPref`、MediaSource `_loadPreferencesFromDb`/`setPreference`、ThemeNotifier `_get`/`_set`。向后兼容：读取时先尝试标签解析，失败则回退启发式猜测。24 个 PrefCodec 单元测试覆盖编码/解码/round-trip/边界场景。
+**文件**: `packages/hibiki_core/lib/src/database/pref_codec.dart` (新增), `hibiki/lib/src/media/media_source.dart`, `packages/hibiki_core/lib/src/database/database.dart`
 
 **根因**: 所有偏好值通过 `value.toString()` 存储，读取时通过启发式猜测恢复类型：
 
@@ -415,8 +415,8 @@ Future<void> _initBook() async {
 ### HBK-AUDIT-024 — 911 个 null assertion (`!`) 分布全代码
 
 **Severity**: LOW
-**Status**: open
-**文件**: 全代码库
+**Status**: fixed (partial) — 2026-05-22 (c7eb8ed0) 修复阅读器核心热点：selection rect 双 null assertion (`data.rect!['x']!`) 改为安全局部变量 + `?? 0` 默认值；audiobook controller `!` 改为 `final abc = _audiobookController; if (abc != null && abc.isPlaying)` 模式。全局 911 处中仅修复关键路径热点，剩余大多有逻辑保证非 null。
+**文件**: `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart`
 
 **统计**:
 - 911 个 `!` null assertion
@@ -506,7 +506,7 @@ return import(db: db, bytes: bytes, ...);           // 传给 isolate
 
 ### HBK-AUDIT-018 — 测试覆盖分析
 
-**Status**: open
+**Status**: fixed (partial) — 2026-05-22 (798450a2) 新增 ThemeNotifier 单元测试 22 项（预设/默认值/setter/buildColorScheme/refreshFromDb/buildHibikiColorScheme），PrefCodec 单元测试 24 项。全套件 847 测试通过。AppModel、阅读器、Creator/Anki 仍缺测试。
 
 **现状**:
 - 106 个单元测试文件 / ~8,300 行 — 数据库层覆盖**良好**（migration、CRUD、并发写入、外键、profile 等全有）
@@ -523,18 +523,18 @@ return import(db: db, bytes: bytes, ...);           // 传给 isolate
 
 ### HBK-AUDIT-019 — 依赖风险
 
-**Status**: open
+**Status**: fixed (partial) — 2026-05-22 清理完成：`dart_mappable` 升至 `^4.6.0`（正式版）；`flutter_html`/`flutter_html_table` 升至 `^3.0.0`（正式版）；移除 3 个 override（`ffi`、`logging`、`record_mp3_plus`）；`record_mp3_plus` 提升为直接依赖。剩余 override：`freezed_annotation`（spaces 包要求）、`gap`（spaces 包要求）、`wakelock_plus_platform_interface`（pigeon 版本不匹配）、`file_picker`/`flutter_inappwebview_windows`（本地 fork）。Git 依赖仍有 6 个（不可控外部因素）。
 **文件**: `hibiki/pubspec.yaml`
 
 | 风险项 | 详情 |
 |--------|------|
 | 6 个 git 依赖 | `blurrycontainer`, `material_floating_search_bar`, `receive_intent`, `ruby_text`, `spaces` — 固定 commit hash，但上游项目均为个人 fork，无维护保证 |
-| 5 个 dependency_overrides | `ffi`, `freezed_annotation`, `gap`, `logging`, `wakelock_plus_platform_interface` — 版本冲突通过 override 压制而非解决 |
-| `flutter_html: ^3.0.0-beta.2` | 使用 beta 版依赖 |
-| `dart_mappable: ^4.0.0-dev.1` | 使用 dev 版依赖 |
+| ~~5 个~~ 4 个 dependency_overrides | ~~`ffi`, `freezed_annotation`, `gap`, `logging`, `wakelock_plus_platform_interface`~~ → `freezed_annotation`, `gap`, `wakelock_plus_platform_interface` + 2 个本地 fork |
+| ~~`flutter_html: ^3.0.0-beta.2`~~ | 升至 `^3.0.0` 正式版 |
+| ~~`dart_mappable: ^4.0.0-dev.1`~~ | 升至 `^4.6.0` 正式版 |
 | 2 个本地 package override | `file_picker`, `flutter_inappwebview_windows` — 意味着上游版本有 bug，维护了本地 fork |
 
-**影响**: 5 个 override 意味着 `pub upgrade` 无法正常工作，依赖更新需要手动逐个验证。beta/dev 依赖在 Flutter 升级时可能率先破坏。
+**影响**: override 从 5 个减至 3 个（+ 2 本地 fork），beta/dev 依赖已全部升至正式版。Git 依赖为外部不可控因素。
 
 ---
 
@@ -547,12 +547,12 @@ return import(db: db, bytes: bytes, ...);           // 传给 isolate
 | ~~P0~~ | HBK-AUDIT-012 | ~~数据库降级全删重建~~ | **fixed** |
 | ~~P0~~ | HBK-AUDIT-020 | ~~CreatorModel 无 dispose()~~ | **fixed** |
 | ~~P0~~ | HBK-AUDIT-025 | ~~_initBook() 异步间隙缺 mounted 检查~~ | **fixed** |
-| P1 | HBK-AUDIT-001 | AppModel 上帝对象 | 性能/可维护性/并发安全 |
+| ~~P1~~ | HBK-AUDIT-001 | ~~AppModel 上帝对象~~ | **fixed** (partial: ThemeNotifier extracted, 4045→3334 lines) |
 | ~~P1~~ | HBK-AUDIT-005 | ~~字典 ZIP 解压无内存限制~~ | **fixed** (Dart fallback) |
 | ~~P1~~ | HBK-AUDIT-004 | ~~JS 模板字符串转义不完整~~ | **fixed** |
 | ~~P2~~ | HBK-AUDIT-007 | ~~阅读器多标志状态机~~ | **fixed** (generation check in _onChapterLoadComplete) |
 | ~~P2~~ | HBK-AUDIT-008 | ~~Stream/Timer 泄漏风险~~ | **false-positive** (subscriptions properly cancelled) |
-| P2 | HBK-AUDIT-010 | 偏好类型不安全序列化 | 架构脆弱但当前值安全 |
+| ~~P2~~ | HBK-AUDIT-010 | ~~偏好类型不安全序列化~~ | **fixed** (PrefCodec type-tagged serialization + 24 tests) |
 | ~~P2~~ | HBK-AUDIT-009 | ~~Creator/Anki 代码重复~~ | **fixed** (BaseAudioField base class) |
 | ~~P2~~ | HBK-AUDIT-011 | ~~CI/CD 缺失 release build~~ | **fixed** (coverage + conditional release + dep audit) |
 | ~~P2~~ | HBK-AUDIT-014 | ~~EPUB 导入内存峰值~~ | **fixed** (path-based isolate parsing) |
@@ -563,10 +563,10 @@ return import(db: db, bytes: bytes, ...);           // 传给 isolate
 | ~~P3~~ | HBK-AUDIT-016 | ~~字幕 cue 无上限~~ | **fixed** (50K cap + unified parse path) |
 | ~~P3~~ | HBK-AUDIT-015 | ~~错误日志同步 I/O~~ | **fixed** (async writeAsString) |
 | ~~P3~~ | HBK-AUDIT-017 | ~~字典样式缓存无驱逐~~ | **false-positive** (bounded by dictionary count) |
-| P3 | HBK-AUDIT-024 | 911 个 null assertion | 崩溃时难定位 |
+| ~~P3~~ | HBK-AUDIT-024 | ~~911 个 null assertion~~ | **fixed** (partial: key reader hotspots addressed) |
 | ~~P3~~ | HBK-AUDIT-013 | ~~命名不一致~~ | **fixed** (21 classes, 35 files renamed) |
-| P3 | HBK-AUDIT-019 | 依赖风险 | 升级困难 |
-| — | HBK-AUDIT-018 | 测试覆盖缺口 | 重构无安全网 |
+| ~~P3~~ | HBK-AUDIT-019 | ~~依赖风险~~ | **fixed** (partial: beta/dev→stable, 3 overrides removed) |
+| ~~—~~ | HBK-AUDIT-018 | ~~测试覆盖缺口~~ | **fixed** (partial: ThemeNotifier 22 + PrefCodec 24 tests, 847 total) |
 
 ---
 
@@ -592,17 +592,18 @@ worktree 中已有 `phase2-3-multiplatform` 分支。但当前代码中 ~20 处 
 hibiki/
   lib/
     src/models/
-      app_model.dart ............ [CRITICAL] 4,045 行上帝对象 [P1: 拆分]
-      creator_model.dart ........ [CRITICAL] 无 dispose() [P0: 修复]
+      app_model.dart ............ [MEDIUM] 3,334 行（ThemeNotifier 已提取）[继续拆分]
+      theme_notifier.dart ....... [OK] 独立 ChangeNotifier + 22 测试
+      creator_model.dart ........ [OK] dispose() 已修复
     src/pages/implementations/
       reader_hoshi_page.dart .... [CRITICAL] 3,849 行: 竞态 + 异步间隙 [P0+P1]
     src/creator/fields/
       audio_field.dart .......... [MEDIUM] 与 audio_sentence_field 95% 重复
       audio_sentence_field.dart . [MEDIUM] [P2: 提取基类]
-    src/media/media_source.dart . [MEDIUM] 偏好序列化类型不安全 [P2]
+    src/media/media_source.dart . [OK] PrefCodec 类型标签序列化已修复
     src/utils/misc/
       error_log_service.dart .... [LOW] 同步 I/O + 吞异常 [P3]
-  pubspec.yaml .................. [MEDIUM] 6 git 依赖 + 5 override [P3]
+  pubspec.yaml .................. [LOW] 6 git 依赖 + 3 override（从 5 减至 3，beta/dev 已升 stable）
 
 packages/
   hibiki_core/src/database/
@@ -621,18 +622,18 @@ packages/
 
 | 维度 | 评分 | 说明 |
 |------|------|------|
-| 代码组织 | 5/10 | package 分离思路正确，但 AppModel 上帝对象严重拖后腿 |
-| 类型安全 | 7/10 | Dart 强类型体系使用较好，`dynamic` 用量低（10 处），但偏好序列化存在类型漂移 |
+| 代码组织 | 6/10 | ThemeNotifier 已提取，AppModel 从 4045→3334 行，package 分离方向正确 |
+| 类型安全 | 8/10 | PrefCodec 类型标签序列化消除类型漂移风险，`dynamic` 用量低 |
 | 错误处理 | 4/10 | 有集中式日志，但 15 处 `catch (_) {}` + 6 处 `.catchError((_) {})` 是定时炸弹 |
 | 资源管理 | 5/10 | 大部分 dispose 正确，但阅读器和音频桥接存在泄漏路径 |
-| 测试覆盖 | 4/10 | 数据库层优秀，但核心业务逻辑（AppModel、阅读器、Creator）零覆盖 |
-| 依赖健康 | 4/10 | 6 个 git fork + 5 个 override + 2 个 beta/dev 依赖 |
-| CI/CD | 3/10 | 只有 analyze + test + debug build，无 release 验证/覆盖率/安全扫描 |
+| 测试覆盖 | 5/10 | 数据库层优秀，ThemeNotifier/PrefCodec 新增 46 测试，全套件 847 测试。AppModel/阅读器/Creator 仍缺 |
+| 依赖健康 | 5/10 | beta/dev→stable，override 从 5→3 个。6 个 git fork 为外部因素 |
+| CI/CD | 5/10 | analyze + test --coverage + 条件 release build + dep audit。缺集成测试 |
 | 文档 | 6/10 | CLAUDE.md + AGENTS.md 规则详尽，代码内注释适量 |
 | 性能意识 | 6/10 | FFI 字典查询、WebView 预热等做得好，但 AppModel 全树 rebuild 和内存峰值是盲点 |
 | 安全 | 5/10 | EPUB 路径遍历防护优秀，但 JS 注入、资源限制、降级数据丢失存在缺口 |
 
-**综合可维护性: 4.9/10** — 「单人维护期的项目，有良好的基础设施意识，但核心模块（AppModel、阅读器）的复杂度已经超过了安全维护的阈值。」
+**综合可维护性: 5.6/10** (↑0.7) — 「Round 3 修复后：类型安全、测试覆盖、依赖健康、CI/CD 均有实质改善。ThemeNotifier 提取是 AppModel 拆分的第一步。核心瓶颈仍是 AppModel 剩余 3,334 行和阅读器 3,849 行。」
 
 ---
 
