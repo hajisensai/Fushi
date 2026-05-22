@@ -2821,6 +2821,7 @@ class AppModel with ChangeNotifier {
   }
 
   Future<void> closeForPopup() async {
+    prefsRepo.removeListener(notifyListeners);
     databaseCloseNotifier.notifyListeners();
     await _database.close();
     HoshiDicts.disposeInstance();
