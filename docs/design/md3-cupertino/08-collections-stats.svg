@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1260" height="760" viewBox="0 0 1260 760">
+  <rect width="1260" height="760" fill="#f4f6f7"/>
+  <text x="48" y="54" font-family="Inter, Segoe UI, sans-serif" font-size="26" font-weight="700" fill="#172126">Collections, Stats, Gallery</text>
+  <text x="48" y="84" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#637178">Bookmarks, favorite sentences, reading statistics, illustration viewer.</text>
+
+  <g transform="translate(48 120)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">A. Timeline</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#637178">Best for collections. Newest saved items first, with quick audio/read actions.</text>
+    <rect x="0" y="48" width="340" height="560" rx="28" fill="#11181c"/>
+    <rect x="14" y="62" width="312" height="532" rx="22" fill="#fbfcf8"/>
+    <text x="34" y="108" font-family="Inter, Segoe UI, sans-serif" font-size="26" font-weight="700" fill="#172126">Collections</text>
+    <rect x="34" y="138" width="272" height="92" rx="8" fill="#ffffff" stroke="#dfe4e6"/>
+    <circle cx="58" cy="166" r="13" fill="#f0e4cc"/>
+    <text x="86" y="166" font-family="Inter, Segoe UI, sans-serif" font-size="13" font-weight="700" fill="#172126">Bookmark</text>
+    <text x="86" y="190" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#637178">Kagami no Kojo - Chapter 9</text>
+    <rect x="238" y="174" width="48" height="28" rx="14" fill="#d8ebe8"/>
+    <text x="254" y="193" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#204f5a">Read</text>
+    <rect x="34" y="248" width="272" height="108" rx="8" fill="#ffffff" stroke="#dfe4e6"/>
+    <circle cx="58" cy="276" r="13" fill="#d8ebe8"/>
+    <text x="86" y="276" font-family="Inter, Segoe UI, sans-serif" font-size="13" font-weight="700" fill="#172126">Favorite sentence</text>
+    <text x="86" y="300" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#637178">Light fell into a quiet room.</text>
+    <rect x="86" y="316" width="56" height="24" rx="12" fill="#eef4f2"/>
+    <text x="104" y="332" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#204f5a">Audio</text>
+  </g>
+
+  <g transform="translate(460 120)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">B. Reading Stats</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#637178">Dashboard layout with calm charts and compact summaries.</text>
+    <rect x="0" y="48" width="340" height="560" rx="28" fill="#11181c"/>
+    <rect x="14" y="62" width="312" height="532" rx="22" fill="#fbfcf8"/>
+    <text x="34" y="108" font-family="Inter, Segoe UI, sans-serif" font-size="26" font-weight="700" fill="#172126">Statistics</text>
+    <rect x="34" y="136" width="124" height="86" rx="8" fill="#d8ebe8"/>
+    <text x="54" y="168" font-family="Inter, Segoe UI, sans-serif" font-size="24" font-weight="700" fill="#204f5a">12h</text>
+    <text x="54" y="194" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#204f5a">This week</text>
+    <rect x="172" y="136" width="124" height="86" rx="8" fill="#f0e4cc"/>
+    <text x="192" y="168" font-family="Inter, Segoe UI, sans-serif" font-size="24" font-weight="700" fill="#765630">8k</text>
+    <text x="192" y="194" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#765630">Characters</text>
+    <rect x="34" y="254" width="262" height="166" rx="8" fill="#ffffff" stroke="#dfe4e6"/>
+    <text x="54" y="286" font-family="Inter, Segoe UI, sans-serif" font-size="13" font-weight="700" fill="#172126">Daily reading</text>
+    <rect x="70" y="366" width="14" height="30" rx="4" fill="#d8ebe8"/>
+    <rect x="104" y="336" width="14" height="60" rx="4" fill="#d8ebe8"/>
+    <rect x="138" y="318" width="14" height="78" rx="4" fill="#245260"/>
+    <rect x="172" y="350" width="14" height="46" rx="4" fill="#d8ebe8"/>
+    <rect x="206" y="302" width="14" height="94" rx="4" fill="#245260"/>
+    <rect x="240" y="328" width="14" height="68" rx="4" fill="#d8ebe8"/>
+  </g>
+
+  <g transform="translate(872 120)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">C. Gallery Detail</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#637178">Illustrations and saved media. Full-bleed viewer with minimal controls.</text>
+    <rect x="0" y="48" width="340" height="560" rx="28" fill="#11181c"/>
+    <rect x="14" y="62" width="312" height="532" rx="22" fill="#fbfcf8"/>
+    <rect x="34" y="92" width="272" height="350" rx="12" fill="#d8dfe7"/>
+    <rect x="62" y="128" width="216" height="278" rx="8" fill="#eef2f5"/>
+    <text x="34" y="486" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">Illustration 3 of 12</text>
+    <text x="34" y="514" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#637178">Swipe between images; tap for fullscreen chrome.</text>
+    <rect x="34" y="536" width="82" height="32" rx="16" fill="#ffffff" stroke="#dfe4e6"/>
+    <text x="58" y="557" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#315e68">Share</text>
+    <rect x="126" y="536" width="82" height="32" rx="16" fill="#245260"/>
+    <text x="152" y="557" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#ffffff">Save</text>
+  </g>
+</svg>

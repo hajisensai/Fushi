@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1260" height="760" viewBox="0 0 1260 760">
+  <rect width="1260" height="760" fill="#f6f3ed"/>
+  <text x="48" y="54" font-family="Inter, Segoe UI, sans-serif" font-size="26" font-weight="700" fill="#1e2224">Hoshi Reader</text>
+  <text x="48" y="84" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#677176">Reading, lookup overlay, audiobook bar, settings sheet, lyrics mode.</text>
+
+  <g transform="translate(48 120)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#1e2224">A. Paper Chrome</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#677176">Quiet controls. Good for default reading and vertical text.</text>
+    <rect x="0" y="48" width="340" height="560" rx="28" fill="#11181c"/>
+    <rect x="14" y="62" width="312" height="532" rx="22" fill="#fffaf0"/>
+    <text x="154" y="92" text-anchor="middle" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#8a8174">45% - chapter 9</text>
+    <rect x="56" y="122" width="228" height="320" rx="8" fill="#fffdf8"/>
+    <text x="76" y="166" font-family="serif" font-size="18" fill="#25231f">Spring light fell</text>
+    <text x="76" y="206" font-family="serif" font-size="18" fill="#25231f">into the quiet room</text>
+    <text x="76" y="246" font-family="serif" font-size="18" fill="#25231f">slowly and softly.</text>
+    <rect x="74" y="268" width="108" height="26" rx="5" fill="#f5dd73"/>
+    <text x="82" y="287" font-family="serif" font-size="18" fill="#25231f">quiet</text>
+    <rect x="34" y="482" width="272" height="64" rx="8" fill="#ffffff" stroke="#e3ded3"/>
+    <text x="54" y="508" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#677176">Current sentence</text>
+    <circle cx="72" cy="528" r="13" fill="#eef0eb"/>
+    <circle cx="108" cy="528" r="18" fill="#315e68"/>
+    <circle cx="144" cy="528" r="13" fill="#eef0eb"/>
+    <text x="245" y="532" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#315e68">Tune</text>
+  </g>
+
+  <g transform="translate(460 120)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#1e2224">B. Immersive Glass</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#677176">Reader content gets priority; controls float only when needed.</text>
+    <rect x="0" y="48" width="340" height="560" rx="28" fill="#11181c"/>
+    <rect x="14" y="62" width="312" height="532" rx="22" fill="#f7f1e8"/>
+    <rect x="36" y="92" width="268" height="396" rx="8" fill="#fbf5eb"/>
+    <text x="64" y="150" font-family="serif" font-size="20" fill="#24211d">Past the night street,</text>
+    <text x="64" y="200" font-family="serif" font-size="20" fill="#24211d">she searched for an answer</text>
+    <text x="64" y="250" font-family="serif" font-size="20" fill="#24211d">in a small voice.</text>
+    <rect x="52" y="428" width="236" height="72" rx="22" fill="#ffffff" fill-opacity="0.86" stroke="#e1d9cb"/>
+    <circle cx="82" cy="464" r="12" fill="#eef0eb"/>
+    <circle cx="124" cy="464" r="20" fill="#315e68"/>
+    <circle cx="166" cy="464" r="12" fill="#eef0eb"/>
+    <text x="206" y="460" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#677176">Follow</text>
+    <text x="206" y="478" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#315e68">03:42</text>
+    <rect x="112" y="526" width="116" height="32" rx="16" fill="#ffffff" fill-opacity="0.88" stroke="#e1d9cb"/>
+    <text x="142" y="547" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#315e68">Settings</text>
+  </g>
+
+  <g transform="translate(872 120)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#1e2224">C. Lyrics + Lookup</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#677176">For audiobook-heavy users. Cue list, current line, dictionary panel.</text>
+    <rect x="0" y="48" width="340" height="560" rx="28" fill="#11181c"/>
+    <rect x="14" y="62" width="312" height="532" rx="22" fill="#fbfcf8"/>
+    <text x="34" y="106" font-family="Inter, Segoe UI, sans-serif" font-size="22" font-weight="700" fill="#1e2224">Lyrics</text>
+    <rect x="34" y="132" width="272" height="44" rx="8" fill="#eef4f2"/>
+    <text x="54" y="158" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#677176">previous cue line</text>
+    <rect x="34" y="188" width="272" height="58" rx="8" fill="#d8ebe8"/>
+    <text x="54" y="222" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#204f5a">current cue selected</text>
+    <rect x="34" y="258" width="272" height="44" rx="8" fill="#eef4f2"/>
+    <text x="54" y="284" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#677176">next cue line</text>
+    <rect x="34" y="330" width="272" height="172" rx="14" fill="#ffffff" stroke="#dfe5e1"/>
+    <text x="54" y="362" font-family="Inter, Segoe UI, sans-serif" font-size="17" font-weight="700" fill="#1e2224">selected</text>
+    <text x="54" y="386" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#677176">Dictionary result stays readable over current line color.</text>
+    <rect x="54" y="420" width="68" height="28" rx="14" fill="#d8ebe8"/>
+    <text x="72" y="439" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#204f5a">Mine</text>
+    <rect x="132" y="420" width="72" height="28" rx="14" fill="#f0e4cc"/>
+    <text x="150" y="439" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#7b5834">Audio</text>
+  </g>
+</svg>

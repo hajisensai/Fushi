@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1260" height="760" viewBox="0 0 1260 760">
+  <rect width="1260" height="760" fill="#f6f7f5"/>
+  <text x="48" y="54" font-family="Inter, Segoe UI, sans-serif" font-size="26" font-weight="700" fill="#172126">Settings</text>
+  <text x="48" y="84" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#637178">Reader behavior, display, theme, Anki, updates, logs, profiles.</text>
+
+  <g transform="translate(48 120)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">A. Grouped List</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#637178">Most native-feeling. Compact rows, clear groups, few custom widgets.</text>
+    <rect x="0" y="48" width="340" height="560" rx="28" fill="#11181c"/>
+    <rect x="14" y="62" width="312" height="532" rx="22" fill="#f7f8fa"/>
+    <text x="34" y="110" font-family="Inter, Segoe UI, sans-serif" font-size="30" font-weight="700" fill="#172126">Settings</text>
+    <text x="34" y="150" font-family="Inter, Segoe UI, sans-serif" font-size="12" font-weight="700" fill="#637178">Profile</text>
+    <rect x="34" y="164" width="272" height="58" rx="8" fill="#ffffff" stroke="#dfe4e6"/>
+    <circle cx="62" cy="193" r="14" fill="#d8ebe8"/>
+    <text x="90" y="198" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#172126">Default profile</text>
+    <text x="286" y="198" font-family="Inter, Segoe UI, sans-serif" font-size="16" fill="#8a949a">&gt;</text>
+    <text x="34" y="258" font-family="Inter, Segoe UI, sans-serif" font-size="12" font-weight="700" fill="#637178">Reader</text>
+    <rect x="34" y="272" width="272" height="164" rx="8" fill="#ffffff" stroke="#dfe4e6"/>
+    <text x="62" y="306" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#172126">Display</text>
+    <line x1="62" y1="326" x2="286" y2="326" stroke="#edf0f1"/>
+    <text x="62" y="360" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#172126">Fonts</text>
+    <line x1="62" y1="380" x2="286" y2="380" stroke="#edf0f1"/>
+    <text x="62" y="414" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#172126">Audiobook</text>
+    <text x="34" y="474" font-family="Inter, Segoe UI, sans-serif" font-size="12" font-weight="700" fill="#637178">System</text>
+    <rect x="34" y="488" width="272" height="58" rx="8" fill="#ffffff" stroke="#dfe4e6"/>
+    <text x="62" y="522" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#172126">Updates and logs</text>
+  </g>
+
+  <g transform="translate(460 120)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">B. Control Dashboard</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#637178">Best for power users. Exposes high-value controls without deep drilling.</text>
+    <rect x="0" y="48" width="340" height="560" rx="28" fill="#11181c"/>
+    <rect x="14" y="62" width="312" height="532" rx="22" fill="#fbfcf8"/>
+    <text x="34" y="108" font-family="Inter, Segoe UI, sans-serif" font-size="26" font-weight="700" fill="#172126">Tune</text>
+    <rect x="34" y="132" width="124" height="92" rx="8" fill="#d8ebe8"/>
+    <text x="52" y="164" font-family="Inter, Segoe UI, sans-serif" font-size="13" font-weight="700" fill="#204f5a">Theme</text>
+    <text x="52" y="190" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#204f5a">Custom colors</text>
+    <rect x="172" y="132" width="124" height="92" rx="8" fill="#f0e4cc"/>
+    <text x="190" y="164" font-family="Inter, Segoe UI, sans-serif" font-size="13" font-weight="700" fill="#775630">Display</text>
+    <text x="190" y="190" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#775630">Font, margins</text>
+    <rect x="34" y="244" width="262" height="58" rx="8" fill="#ffffff" stroke="#dfe4e6"/>
+    <text x="58" y="278" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#172126">Keep screen awake</text>
+    <rect x="250" y="264" width="34" height="20" rx="10" fill="#204f5a"/>
+    <circle cx="274" cy="274" r="8" fill="#ffffff"/>
+    <rect x="34" y="318" width="262" height="58" rx="8" fill="#ffffff" stroke="#dfe4e6"/>
+    <text x="58" y="352" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#172126">Floating lyric</text>
+    <rect x="250" y="338" width="34" height="20" rx="10" fill="#d4dbdd"/>
+    <circle cx="260" cy="348" r="8" fill="#ffffff"/>
+    <rect x="34" y="398" width="262" height="98" rx="8" fill="#ffffff" stroke="#dfe4e6"/>
+    <text x="58" y="430" font-family="Inter, Segoe UI, sans-serif" font-size="14" font-weight="700" fill="#172126">Advanced</text>
+    <text x="58" y="454" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#637178">Anki, updates, logs, low memory</text>
+    <rect x="58" y="466" width="92" height="24" rx="12" fill="#edf3f4"/>
+    <text x="78" y="482" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#204f5a">Open</text>
+  </g>
+
+  <g transform="translate(872 120)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">C. Split Settings</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#637178">Best for desktop/tablet. Sidebar categories plus live detail pane.</text>
+    <rect x="0" y="48" width="340" height="560" rx="16" fill="#fbfcf8" stroke="#dfe4e6"/>
+    <rect x="0" y="48" width="126" height="560" rx="16" fill="#eef4f2"/>
+    <text x="20" y="96" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">Settings</text>
+    <rect x="16" y="124" width="94" height="36" rx="8" fill="#d8ebe8"/>
+    <text x="32" y="147" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#204f5a">Reader</text>
+    <text x="32" y="198" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#637178">Display</text>
+    <text x="32" y="248" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#637178">Anki</text>
+    <text x="32" y="298" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#637178">System</text>
+    <text x="154" y="102" font-family="Inter, Segoe UI, sans-serif" font-size="24" font-weight="700" fill="#172126">Reader</text>
+    <rect x="154" y="132" width="152" height="54" rx="8" fill="#ffffff" stroke="#dfe4e6"/>
+    <text x="170" y="164" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#172126">Highlight on tap</text>
+    <rect x="154" y="204" width="152" height="54" rx="8" fill="#ffffff" stroke="#dfe4e6"/>
+    <text x="170" y="236" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#172126">Volume buttons</text>
+    <rect x="154" y="276" width="152" height="80" rx="8" fill="#ffffff" stroke="#dfe4e6"/>
+    <text x="170" y="306" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#172126">Page speed</text>
+    <rect x="170" y="326" width="108" height="4" rx="2" fill="#d4dcdd"/>
+    <rect x="170" y="326" width="70" height="4" rx="2" fill="#204f5a"/>
+  </g>
+</svg>

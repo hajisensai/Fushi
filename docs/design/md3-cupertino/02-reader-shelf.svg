@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1260" height="760" viewBox="0 0 1260 760">
+  <rect width="1260" height="760" fill="#f7f5f0"/>
+  <text x="48" y="54" font-family="Inter, Segoe UI, sans-serif" font-size="26" font-weight="700" fill="#1b2326">Reader Shelf</text>
+  <text x="48" y="84" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#647177">Book grid, audiobook status, tag filtering, multi-select actions.</text>
+
+  <g transform="translate(48 120)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#1b2326">A. Cover Grid</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#647177">Visual shelf first. Good for EPUB covers and quick resume.</text>
+    <rect x="0" y="48" width="340" height="560" rx="28" fill="#11181c"/>
+    <rect x="14" y="62" width="312" height="532" rx="22" fill="#fbfcf8"/>
+    <text x="34" y="108" font-family="Inter, Segoe UI, sans-serif" font-size="25" font-weight="700" fill="#1b2326">Books</text>
+    <rect x="34" y="130" width="62" height="26" rx="13" fill="#d9ebe8"/>
+    <text x="50" y="148" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#245260">All</text>
+    <rect x="104" y="130" width="76" height="26" rx="13" fill="#ffffff" stroke="#dfe4e1"/>
+    <text x="118" y="148" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#647177">Audio</text>
+    <rect x="188" y="130" width="68" height="26" rx="13" fill="#ffffff" stroke="#dfe4e1"/>
+    <text x="203" y="148" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#647177">JLPT</text>
+    <rect x="34" y="184" width="124" height="176" rx="8" fill="#c9dedd"/>
+    <rect x="48" y="204" width="96" height="112" rx="6" fill="#315d68"/>
+    <text x="48" y="342" font-family="Inter, Segoe UI, sans-serif" font-size="13" font-weight="700" fill="#1b2326">Kagami no Kojo</text>
+    <rect x="48" y="352" width="72" height="5" rx="3" fill="#2f6c74"/>
+    <rect x="172" y="184" width="124" height="176" rx="8" fill="#f0e2c8"/>
+    <rect x="186" y="204" width="96" height="112" rx="6" fill="#a86e44"/>
+    <text x="186" y="342" font-family="Inter, Segoe UI, sans-serif" font-size="13" font-weight="700" fill="#1b2326">Essays</text>
+    <rect x="186" y="352" width="38" height="5" rx="3" fill="#a86e44"/>
+    <rect x="34" y="384" width="124" height="130" rx="8" fill="#e5e9f0"/>
+    <rect x="172" y="384" width="124" height="130" rx="8" fill="#eadfeb"/>
+  </g>
+
+  <g transform="translate(460 120)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#1b2326">B. Reading Queue</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#647177">Information dense. Better for long libraries and tags.</text>
+    <rect x="0" y="48" width="340" height="560" rx="28" fill="#11181c"/>
+    <rect x="14" y="62" width="312" height="532" rx="22" fill="#fafbf8"/>
+    <text x="34" y="108" font-family="Inter, Segoe UI, sans-serif" font-size="25" font-weight="700" fill="#1b2326">Library</text>
+    <rect x="34" y="128" width="272" height="40" rx="20" fill="#eef3f1"/>
+    <text x="58" y="153" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#647177">Search title, author, tag</text>
+    <rect x="34" y="190" width="272" height="88" rx="8" fill="#ffffff" stroke="#dfe4e1"/>
+    <rect x="50" y="206" width="48" height="56" rx="6" fill="#c9dedd"/>
+    <text x="112" y="222" font-family="Inter, Segoe UI, sans-serif" font-size="14" font-weight="700" fill="#1b2326">Kagami no Kojo</text>
+    <text x="112" y="242" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#647177">82% - 18h audio - 4 bookmarks</text>
+    <rect x="112" y="252" width="42" height="18" rx="9" fill="#d9ebe8"/>
+    <text x="123" y="265" font-family="Inter, Segoe UI, sans-serif" font-size="9" fill="#245260">N2</text>
+    <rect x="34" y="292" width="272" height="88" rx="8" fill="#ffffff" stroke="#dfe4e1"/>
+    <rect x="50" y="308" width="48" height="56" rx="6" fill="#f0e2c8"/>
+    <text x="112" y="324" font-family="Inter, Segoe UI, sans-serif" font-size="14" font-weight="700" fill="#1b2326">Japanese Essays</text>
+    <text x="112" y="344" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#647177">23% - text only - 1 bookmark</text>
+    <rect x="34" y="394" width="272" height="88" rx="8" fill="#ffffff" stroke="#dfe4e1"/>
+    <rect x="50" y="410" width="48" height="56" rx="6" fill="#e5e9f0"/>
+    <text x="112" y="426" font-family="Inter, Segoe UI, sans-serif" font-size="14" font-weight="700" fill="#1b2326">Grammar Notes</text>
+    <text x="112" y="446" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#647177">Unread - imported today</text>
+  </g>
+
+  <g transform="translate(872 120)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#1b2326">C. Shelf + Detail</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#647177">Tablet/desktop pattern. Select once, inspect before opening.</text>
+    <rect x="0" y="48" width="340" height="560" rx="16" fill="#fbfcf8" stroke="#dfe4e1"/>
+    <rect x="0" y="48" width="118" height="560" rx="16" fill="#eef4f1"/>
+    <text x="20" y="96" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#1b2326">Books</text>
+    <rect x="18" y="124" width="82" height="28" rx="14" fill="#ffffff" stroke="#dfe4e1"/>
+    <text x="32" y="143" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#647177">Tags</text>
+    <rect x="18" y="180" width="82" height="112" rx="8" fill="#c9dedd"/>
+    <rect x="18" y="308" width="82" height="112" rx="8" fill="#f0e2c8"/>
+    <text x="148" y="102" font-family="Inter, Segoe UI, sans-serif" font-size="24" font-weight="700" fill="#1b2326">Kagami no Kojo</text>
+    <text x="148" y="128" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#647177">Tsujimura Mizuki - audiobook linked</text>
+    <rect x="148" y="158" width="154" height="8" rx="4" fill="#dce8e6"/>
+    <rect x="148" y="158" width="118" height="8" rx="4" fill="#2f6c74"/>
+    <text x="148" y="194" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#1b2326">Continue from chapter 9</text>
+    <rect x="148" y="222" width="80" height="34" rx="17" fill="#245260"/>
+    <text x="170" y="244" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#ffffff">Read</text>
+    <rect x="238" y="222" width="70" height="34" rx="17" fill="#ffffff" stroke="#dfe4e1"/>
+    <text x="256" y="244" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#245260">Edit</text>
+    <rect x="148" y="298" width="154" height="72" rx="8" fill="#ffffff" stroke="#dfe4e1"/>
+    <text x="164" y="322" font-family="Inter, Segoe UI, sans-serif" font-size="13" font-weight="700" fill="#1b2326">Tags</text>
+    <rect x="164" y="336" width="36" height="18" rx="9" fill="#d9ebe8"/>
+    <rect x="206" y="336" width="42" height="18" rx="9" fill="#eadfeb"/>
+  </g>
+</svg>

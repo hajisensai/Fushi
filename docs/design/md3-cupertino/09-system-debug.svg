@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1260" height="760" viewBox="0 0 1260 760">
+  <rect width="1260" height="760" fill="#f5f6f6"/>
+  <text x="48" y="54" font-family="Inter, Segoe UI, sans-serif" font-size="26" font-weight="700" fill="#172126">System, Profile, Debug</text>
+  <text x="48" y="84" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#637178">Language, profile management, miscellaneous settings, error log, debug log, websocket.</text>
+
+  <g transform="translate(48 120)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">A. Utility List</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#637178">Plain, boring, maintainable. Good for low-frequency settings.</text>
+    <rect x="0" y="48" width="340" height="560" rx="28" fill="#11181c"/>
+    <rect x="14" y="62" width="312" height="532" rx="22" fill="#f7f8fa"/>
+    <text x="34" y="110" font-family="Inter, Segoe UI, sans-serif" font-size="28" font-weight="700" fill="#172126">System</text>
+    <rect x="34" y="146" width="272" height="220" rx="8" fill="#ffffff" stroke="#dfe4e6"/>
+    <text x="62" y="182" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#172126">Language</text>
+    <line x1="62" y1="204" x2="286" y2="204" stroke="#edf0f1"/>
+    <text x="62" y="238" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#172126">Profiles</text>
+    <line x1="62" y1="260" x2="286" y2="260" stroke="#edf0f1"/>
+    <text x="62" y="294" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#172126">Low memory mode</text>
+    <line x1="62" y1="316" x2="286" y2="316" stroke="#edf0f1"/>
+    <text x="62" y="350" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#172126">Websocket</text>
+    <rect x="34" y="398" width="272" height="86" rx="8" fill="#fff8f7" stroke="#f1d5d1"/>
+    <text x="62" y="430" font-family="Inter, Segoe UI, sans-serif" font-size="14" font-weight="700" fill="#9a3d36">Error log</text>
+    <text x="62" y="454" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#9a3d36">3 entries need review</text>
+  </g>
+
+  <g transform="translate(460 120)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">B. Profile Center</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#637178">Profile switching is high-impact; give it a dedicated management surface.</text>
+    <rect x="0" y="48" width="340" height="560" rx="28" fill="#11181c"/>
+    <rect x="14" y="62" width="312" height="532" rx="22" fill="#fbfcf8"/>
+    <text x="34" y="108" font-family="Inter, Segoe UI, sans-serif" font-size="26" font-weight="700" fill="#172126">Profiles</text>
+    <rect x="34" y="142" width="272" height="76" rx="8" fill="#d8ebe8"/>
+    <circle cx="64" cy="180" r="16" fill="#245260"/>
+    <text x="92" y="176" font-family="Inter, Segoe UI, sans-serif" font-size="15" font-weight="700" fill="#204f5a">Default</text>
+    <text x="92" y="196" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#204f5a">Active for current book</text>
+    <rect x="34" y="236" width="272" height="76" rx="8" fill="#ffffff" stroke="#dfe4e6"/>
+    <circle cx="64" cy="274" r="16" fill="#eef2f2"/>
+    <text x="92" y="270" font-family="Inter, Segoe UI, sans-serif" font-size="15" font-weight="700" fill="#172126">Japanese mining</text>
+    <text x="92" y="290" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#637178">Reader and Anki prefs</text>
+    <rect x="34" y="340" width="272" height="44" rx="22" fill="#245260"/>
+    <text x="126" y="368" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#ffffff">New profile</text>
+  </g>
+
+  <g transform="translate(872 120)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">C. Log Inspector</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#637178">Debug screens should be dense, searchable, and copy-friendly.</text>
+    <rect x="0" y="48" width="340" height="560" rx="28" fill="#11181c"/>
+    <rect x="14" y="62" width="312" height="532" rx="22" fill="#fbfcf8"/>
+    <text x="34" y="108" font-family="Inter, Segoe UI, sans-serif" font-size="26" font-weight="700" fill="#172126">Error log</text>
+    <rect x="34" y="134" width="272" height="38" rx="19" fill="#eef3f4"/>
+    <text x="58" y="158" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#637178">Filter logs</text>
+    <rect x="34" y="198" width="272" height="112" rx="8" fill="#ffffff" stroke="#dfe4e6"/>
+    <text x="54" y="226" font-family="Inter, Segoe UI, sans-serif" font-size="13" font-weight="700" fill="#9a3d36">ReaderHoshi.loadAudiobook</text>
+    <text x="54" y="250" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#637178">File not found - 22:18</text>
+    <rect x="54" y="270" width="62" height="24" rx="12" fill="#f7dedc"/>
+    <text x="72" y="286" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#9a3d36">Copy</text>
+    <rect x="34" y="330" width="272" height="112" rx="8" fill="#ffffff" stroke="#dfe4e6"/>
+    <text x="54" y="358" font-family="Inter, Segoe UI, sans-serif" font-size="13" font-weight="700" fill="#172126">Dictionary import</text>
+    <text x="54" y="382" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#637178">Warning - skipped malformed entry</text>
+  </g>
+</svg>

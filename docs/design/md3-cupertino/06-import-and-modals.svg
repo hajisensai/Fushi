@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1260" height="760" viewBox="0 0 1260 760">
+  <rect width="1260" height="760" fill="#f6f7f5"/>
+  <text x="48" y="54" font-family="Inter, Segoe UI, sans-serif" font-size="26" font-weight="700" fill="#172126">Import and Modal Flows</text>
+  <text x="48" y="84" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#637178">Book import, audiobook import, dictionary import, media picker, tag picker, crop dialogs.</text>
+
+  <g transform="translate(48 120)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">A. Step Sheet</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#637178">Mobile-first bottom sheet. Keeps DocumentsUI-style imports simple.</text>
+    <rect x="0" y="48" width="340" height="560" rx="28" fill="#11181c"/>
+    <rect x="14" y="62" width="312" height="532" rx="22" fill="#fbfcf8"/>
+    <rect x="14" y="256" width="312" height="338" rx="26" fill="#ffffff" stroke="#dfe4e6"/>
+    <rect x="142" y="272" width="56" height="5" rx="3" fill="#d5dcde"/>
+    <text x="34" y="322" font-family="Inter, Segoe UI, sans-serif" font-size="24" font-weight="700" fill="#172126">Import book</text>
+    <rect x="34" y="354" width="272" height="58" rx="8" fill="#eef4f2"/>
+    <circle cx="64" cy="383" r="14" fill="#d8ebe8"/>
+    <text x="90" y="388" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#172126">Choose EPUB</text>
+    <rect x="34" y="426" width="272" height="58" rx="8" fill="#ffffff" stroke="#dfe4e6"/>
+    <circle cx="64" cy="455" r="14" fill="#f0e4cc"/>
+    <text x="90" y="460" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#172126">Attach audiobook</text>
+    <rect x="34" y="512" width="128" height="38" rx="19" fill="#ffffff" stroke="#dfe4e6"/>
+    <text x="78" y="536" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#315e68">Cancel</text>
+    <rect x="178" y="512" width="128" height="38" rx="19" fill="#245260"/>
+    <text x="222" y="536" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#ffffff">Next</text>
+  </g>
+
+  <g transform="translate(460 120)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">B. Progress Dialog</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#637178">For long dictionary/book imports. Clear states, no fake completion.</text>
+    <rect x="0" y="48" width="340" height="560" rx="28" fill="#11181c"/>
+    <rect x="14" y="62" width="312" height="532" rx="22" fill="#eef1f2"/>
+    <rect x="44" y="182" width="252" height="284" rx="18" fill="#ffffff" stroke="#dfe4e6"/>
+    <text x="70" y="232" font-family="Inter, Segoe UI, sans-serif" font-size="22" font-weight="700" fill="#172126">Importing</text>
+    <text x="70" y="260" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#637178">dictionary.zip</text>
+    <rect x="70" y="302" width="200" height="8" rx="4" fill="#d9e0e2"/>
+    <rect x="70" y="302" width="138" height="8" rx="4" fill="#245260"/>
+    <text x="70" y="340" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#637178">Indexing entries - 68%</text>
+    <rect x="70" y="378" width="96" height="34" rx="17" fill="#ffffff" stroke="#dfe4e6"/>
+    <text x="96" y="400" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#315e68">Details</text>
+    <rect x="174" y="378" width="96" height="34" rx="17" fill="#f7dedc"/>
+    <text x="204" y="400" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#9a3d36">Stop</text>
+  </g>
+
+  <g transform="translate(872 120)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">C. Desktop Wizard</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#637178">Best for tablet/desktop import. Left steps, right validation.</text>
+    <rect x="0" y="48" width="340" height="560" rx="16" fill="#fbfcf8" stroke="#dfe4e6"/>
+    <rect x="0" y="48" width="112" height="560" rx="16" fill="#eef4f2"/>
+    <text x="20" y="96" font-family="Inter, Segoe UI, sans-serif" font-size="16" font-weight="700" fill="#172126">Import</text>
+    <rect x="16" y="128" width="80" height="34" rx="8" fill="#d8ebe8"/>
+    <text x="28" y="150" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#204f5a">1 Files</text>
+    <text x="28" y="202" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#637178">2 Match</text>
+    <text x="28" y="252" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#637178">3 Review</text>
+    <text x="142" y="104" font-family="Inter, Segoe UI, sans-serif" font-size="24" font-weight="700" fill="#172126">Files</text>
+    <rect x="142" y="136" width="160" height="56" rx="8" fill="#ffffff" stroke="#dfe4e6"/>
+    <text x="158" y="170" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#172126">kagami.epub</text>
+    <rect x="142" y="210" width="160" height="56" rx="8" fill="#ffffff" stroke="#dfe4e6"/>
+    <text x="158" y="244" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#172126">kagami.m4b</text>
+    <rect x="142" y="284" width="160" height="56" rx="8" fill="#ffffff" stroke="#dfe4e6"/>
+    <text x="158" y="318" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#172126">kagami.srt</text>
+    <rect x="202" y="528" width="100" height="38" rx="19" fill="#245260"/>
+    <text x="234" y="552" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#ffffff">Import</text>
+  </g>
+</svg>

@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1260" height="760" viewBox="0 0 1260 760">
+  <rect width="1260" height="760" fill="#f4f7f8"/>
+  <text x="48" y="54" font-family="Inter, Segoe UI, sans-serif" font-size="26" font-weight="700" fill="#162126">Dictionary</text>
+  <text x="48" y="84" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#607077">Search, history, nested popup results, quick actions, audio.</text>
+
+  <g transform="translate(48 120)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#162126">A. Search First</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#607077">A true MD3 search surface with action icons kept outside the field.</text>
+    <rect x="0" y="48" width="340" height="560" rx="28" fill="#11181c"/>
+    <rect x="14" y="62" width="312" height="532" rx="22" fill="#fbfcf7"/>
+    <rect x="34" y="92" width="226" height="46" rx="23" fill="#eef3f4"/>
+    <text x="62" y="121" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#607077">Search word</text>
+    <circle cx="286" cy="115" r="20" fill="#ffffff" stroke="#dfe5e6"/>
+    <text x="278" y="121" font-family="Inter, Segoe UI Symbol, sans-serif" font-size="16" fill="#315c69">*</text>
+    <text x="34" y="178" font-family="Inter, Segoe UI, sans-serif" font-size="13" font-weight="700" fill="#607077">Recent</text>
+    <rect x="34" y="196" width="272" height="78" rx="8" fill="#ffffff" stroke="#dfe5e6"/>
+    <text x="54" y="224" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#162126">kotoba</text>
+    <text x="54" y="248" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#607077">word - 3 dictionaries</text>
+    <circle cx="280" cy="235" r="14" fill="#e1eeee"/>
+    <text x="276" y="240" font-family="Inter, Segoe UI Symbol, sans-serif" font-size="12" fill="#315c69">&gt;</text>
+    <rect x="34" y="286" width="272" height="112" rx="8" fill="#ffffff" stroke="#dfe5e6"/>
+    <text x="54" y="316" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#162126">benkyou</text>
+    <text x="54" y="340" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#607077">study - diligence</text>
+    <rect x="54" y="358" width="64" height="24" rx="12" fill="#e4eef0"/>
+    <text x="72" y="375" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#315c69">Mine</text>
+    <rect x="126" y="358" width="66" height="24" rx="12" fill="#f0e7d7"/>
+    <text x="142" y="375" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#7a5832">Audio</text>
+  </g>
+
+  <g transform="translate(460 120)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#162126">B. Result Reader</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#607077">Best for long entries. Results become a scrollable reading page.</text>
+    <rect x="0" y="48" width="340" height="560" rx="28" fill="#11181c"/>
+    <rect x="14" y="62" width="312" height="532" rx="22" fill="#fbfcf7"/>
+    <text x="34" y="108" font-family="Inter, Segoe UI, sans-serif" font-size="28" font-weight="700" fill="#162126">benkyou</text>
+    <text x="34" y="132" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#607077">study - noun, suru verb</text>
+    <rect x="34" y="158" width="272" height="34" rx="17" fill="#eef3f4"/>
+    <text x="58" y="180" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#607077">Jump within result</text>
+    <rect x="34" y="218" width="272" height="134" rx="8" fill="#ffffff" stroke="#dfe5e6"/>
+    <text x="54" y="246" font-family="Inter, Segoe UI, sans-serif" font-size="13" font-weight="700" fill="#315c69">Daijirin</text>
+    <text x="54" y="274" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#162126">Learning; study; work done to understand a subject.</text>
+    <rect x="54" y="302" width="74" height="24" rx="12" fill="#e1eeee"/>
+    <text x="74" y="319" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#315c69">Add card</text>
+    <rect x="34" y="370" width="272" height="134" rx="8" fill="#ffffff" stroke="#dfe5e6"/>
+    <text x="54" y="398" font-family="Inter, Segoe UI, sans-serif" font-size="13" font-weight="700" fill="#315c69">Pitch</text>
+    <path d="M54 446 C86 410 114 476 146 438 S204 424 242 458" fill="none" stroke="#b06d42" stroke-width="3"/>
+  </g>
+
+  <g transform="translate(872 120)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#162126">C. Popup Stack</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#607077">Matches reader lookup. Nested cards show depth without losing context.</text>
+    <rect x="0" y="48" width="340" height="560" rx="28" fill="#11181c"/>
+    <rect x="14" y="62" width="312" height="532" rx="22" fill="#fbfcf7"/>
+    <rect x="34" y="94" width="272" height="170" rx="8" fill="#eef3f4"/>
+    <text x="54" y="124" font-family="Inter, Segoe UI, sans-serif" font-size="15" font-weight="700" fill="#162126">Reader text behind popup</text>
+    <text x="54" y="156" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#607077">Selected word keeps highlight while lookup layers open.</text>
+    <rect x="54" y="186" width="86" height="28" rx="14" fill="#f5de78"/>
+    <text x="72" y="205" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#162126">study</text>
+    <rect x="48" y="286" width="244" height="246" rx="14" fill="#ffffff" stroke="#dfe5e6"/>
+    <rect x="64" y="304" width="212" height="34" rx="17" fill="#eef3f4"/>
+    <text x="86" y="326" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#607077">study</text>
+    <text x="64" y="368" font-family="Inter, Segoe UI, sans-serif" font-size="20" font-weight="700" fill="#162126">benkyou</text>
+    <text x="64" y="394" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#607077">nested lookup level 1</text>
+    <rect x="64" y="418" width="212" height="72" rx="8" fill="#fbfcf7" stroke="#e4e8e7"/>
+    <text x="82" y="448" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#162126">Study; learning; diligence.</text>
+  </g>
+</svg>

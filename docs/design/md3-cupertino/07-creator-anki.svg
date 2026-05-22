@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1260" height="760" viewBox="0 0 1260 760">
+  <rect width="1260" height="760" fill="#f7f5f3"/>
+  <text x="48" y="54" font-family="Inter, Segoe UI, sans-serif" font-size="26" font-weight="700" fill="#172126">Creator and Anki</text>
+  <text x="48" y="84" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#637178">Mining fields, quick actions, Anki settings, audio recorder, image crop, segmentation.</text>
+
+  <g transform="translate(48 120)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">A. Field Cards</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#637178">Simple MD3 forms. Each field is readable and reorderable.</text>
+    <rect x="0" y="48" width="340" height="560" rx="28" fill="#11181c"/>
+    <rect x="14" y="62" width="312" height="532" rx="22" fill="#fbfcf8"/>
+    <text x="34" y="108" font-family="Inter, Segoe UI, sans-serif" font-size="26" font-weight="700" fill="#172126">Create card</text>
+    <rect x="34" y="138" width="272" height="72" rx="8" fill="#ffffff" stroke="#dfe4e6"/>
+    <text x="54" y="166" font-family="Inter, Segoe UI, sans-serif" font-size="12" font-weight="700" fill="#637178">Term</text>
+    <text x="54" y="190" font-family="Inter, Segoe UI, sans-serif" font-size="18" fill="#172126">shizuka</text>
+    <rect x="34" y="224" width="272" height="90" rx="8" fill="#ffffff" stroke="#dfe4e6"/>
+    <text x="54" y="252" font-family="Inter, Segoe UI, sans-serif" font-size="12" font-weight="700" fill="#637178">Meaning</text>
+    <text x="54" y="278" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#172126">quiet; calm; still</text>
+    <rect x="34" y="328" width="272" height="72" rx="8" fill="#ffffff" stroke="#dfe4e6"/>
+    <text x="54" y="356" font-family="Inter, Segoe UI, sans-serif" font-size="12" font-weight="700" fill="#637178">Audio</text>
+    <circle cx="66" cy="378" r="14" fill="#d8ebe8"/>
+    <text x="90" y="383" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#172126">sentence.mp3</text>
+    <rect x="34" y="480" width="272" height="44" rx="22" fill="#245260"/>
+    <text x="128" y="508" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#ffffff">Add to Anki</text>
+  </g>
+
+  <g transform="translate(460 120)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">B. Split Mine Panel</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#637178">Best when opened from reader/lookup. Source on top, card below.</text>
+    <rect x="0" y="48" width="340" height="560" rx="28" fill="#11181c"/>
+    <rect x="14" y="62" width="312" height="532" rx="22" fill="#fbfcf8"/>
+    <rect x="34" y="92" width="272" height="144" rx="12" fill="#eef4f2"/>
+    <text x="54" y="124" font-family="Inter, Segoe UI, sans-serif" font-size="13" font-weight="700" fill="#204f5a">Source sentence</text>
+    <text x="54" y="156" font-family="Inter, Segoe UI, sans-serif" font-size="15" fill="#172126">Light fell into a quiet room.</text>
+    <rect x="54" y="184" width="70" height="24" rx="12" fill="#ffffff"/>
+    <text x="74" y="201" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#204f5a">Lookup</text>
+    <text x="34" y="282" font-family="Inter, Segoe UI, sans-serif" font-size="22" font-weight="700" fill="#172126">Fields</text>
+    <rect x="34" y="308" width="272" height="54" rx="8" fill="#ffffff" stroke="#dfe4e6"/>
+    <text x="54" y="340" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#172126">Term - shizuka</text>
+    <rect x="34" y="376" width="272" height="54" rx="8" fill="#ffffff" stroke="#dfe4e6"/>
+    <text x="54" y="408" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#172126">Sentence - selected text</text>
+    <rect x="34" y="462" width="124" height="40" rx="20" fill="#ffffff" stroke="#dfe4e6"/>
+    <text x="72" y="487" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#315e68">Preview</text>
+    <rect x="174" y="462" width="132" height="40" rx="20" fill="#245260"/>
+    <text x="218" y="487" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#ffffff">Save</text>
+  </g>
+
+  <g transform="translate(872 120)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">C. Anki Settings</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#637178">Dense settings page with native-looking grouped controls.</text>
+    <rect x="0" y="48" width="340" height="560" rx="28" fill="#11181c"/>
+    <rect x="14" y="62" width="312" height="532" rx="22" fill="#f7f8fa"/>
+    <text x="34" y="110" font-family="Inter, Segoe UI, sans-serif" font-size="28" font-weight="700" fill="#172126">Anki</text>
+    <rect x="34" y="146" width="272" height="112" rx="8" fill="#ffffff" stroke="#dfe4e6"/>
+    <text x="54" y="176" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#172126">Deck</text>
+    <text x="250" y="176" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#637178">Mining</text>
+    <line x1="54" y1="198" x2="286" y2="198" stroke="#edf0f1"/>
+    <text x="54" y="230" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#172126">Model</text>
+    <text x="242" y="230" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#637178">Hibiki</text>
+    <rect x="34" y="286" width="272" height="154" rx="8" fill="#ffffff" stroke="#dfe4e6"/>
+    <text x="54" y="318" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#172126">Field mapping</text>
+    <text x="54" y="348" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#637178">Term -> Expression</text>
+    <text x="54" y="376" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#637178">Meaning -> Definition</text>
+    <text x="54" y="404" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#637178">Audio -> SentenceAudio</text>
+    <rect x="34" y="480" width="272" height="40" rx="20" fill="#245260"/>
+    <text x="124" y="505" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#ffffff">Test connection</text>
+  </g>
+</svg>
