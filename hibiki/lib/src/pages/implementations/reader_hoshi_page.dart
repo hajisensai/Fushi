@@ -2380,19 +2380,19 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     }
 
     final bool shouldPause = ReaderHoshiSource.instance.pauseOnLookup;
-    if (shouldPause &&
-        _audiobookController != null &&
-        _audiobookController!.isPlaying) {
-      _audiobookController!.pause();
+    final AudiobookPlayerController? abc = _audiobookController;
+    if (shouldPause && abc != null && abc.isPlaying) {
+      abc.pause();
       _pausedForLookup = true;
     }
 
-    final Rect selectionRect = data.rect != null
+    final Map<String, double>? rect = data.rect;
+    final Rect selectionRect = rect != null
         ? Rect.fromLTWH(
-            data.rect!['x']!,
-            data.rect!['y']! + _readerTopOffset,
-            data.rect!['width']!,
-            data.rect!['height']!,
+            rect['x'] ?? 0,
+            (rect['y'] ?? 0) + _readerTopOffset,
+            rect['width'] ?? 0,
+            rect['height'] ?? 0,
           )
         : Rect.fromCenter(
             center: Offset(

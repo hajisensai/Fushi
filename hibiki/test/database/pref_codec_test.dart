@@ -62,13 +62,15 @@ void main() {
     });
 
     test('string "123" stays string when tagged', () {
-      expect(PrefCodec.decode<String>('s:123', ''), '123');
-      expect(PrefCodec.decode<String>('s:123', '') is String, true);
+      final dynamic result = PrefCodec.decode<String>('s:123', '');
+      expect(result, '123');
+      expect(result is String, true);
     });
 
     test('string "true" stays string when tagged', () {
-      expect(PrefCodec.decode<String>('s:true', ''), 'true');
-      expect(PrefCodec.decode<String>('s:true', '') is String, true);
+      final dynamic result = PrefCodec.decode<String>('s:true', '');
+      expect(result, 'true');
+      expect(result is String, true);
     });
   });
 
