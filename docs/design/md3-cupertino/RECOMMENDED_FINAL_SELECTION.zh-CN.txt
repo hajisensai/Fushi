@@ -1,0 +1,42 @@
+# Recommended Hibiki Balanced final-selection seed.
+# Review this file, edit any A/B/C choices, then generate:
+# node .\generate-implementation-spec.mjs --picks .\RECOMMENDED_FINAL_SELECTION.zh-CN.txt --output .\IMPLEMENTATION_SPEC_FINAL_DRAFT.md
+
+Pack: hibiki-balanced
+例外:
+reader_hoshi_page.dart: B
+reader_hoshi_history_page.dart: A
+home_page.dart: C
+home_reader_page.dart: C
+home_dictionary_page.dart: B
+popup_main.dart: B
+floating_dict_main.dart: B
+display_settings_page.dart: B
+audiobook_play_bar.dart: B
+lyrics_dialog_page.dart: B
+dictionary_result_page.dart: B
+dictionary_popup_layer.dart: B
+dictionary_popup_webview.dart: B
+dictionary_dialog_page.dart: C
+dictionary_dialog_import_page.dart: C
+dictionary_settings_dialog_page.dart: C
+dictionary_progress_dialog_content.dart: C
+anki_settings_page.dart: C
+audio_recorder_page.dart: C
+text_segmentation_dialog_page.dart: C
+crop_image_dialog_page.dart: C
+tag_management_page.dart: C
+tag_picker_page.dart: C
+tag_filter_sheet.dart: C
+debug_log_page.dart: A
+error_log_page.dart: A
+hibiki_bottom_sheet.dart: C
+hibiki_list_tile.dart: C
+hibiki_icon_button.dart: C
+hibiki_placeholder_message.dart: A
+
+Notes:
+- 推荐基准：Hibiki Balanced。
+- 阅读器、词典、词典管理、Anki/制卡、标签、日志和共享组件是高风险界面，先显式列出来方便逐项审。
+- 未列出的界面继承 Hibiki Balanced 的 board 默认选择；如果比较页里改了例外，把对应行加到这里再生成最终规格。
+- 这不是用户最终确认；最终实现前必须由用户确认 Pack 和例外。

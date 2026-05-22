@@ -32,7 +32,7 @@
 
 ## 输出给实现的格式
 
-推荐直接从 [interface-pack-comparison.html](interface-pack-comparison.html) 顶部复制最终选择文本，保存成 `my-final-selection.txt`。如果你更想手写，再从 [FINAL_SELECTION_TEMPLATE.zh-CN.md](FINAL_SELECTION_TEMPLATE.zh-CN.md) 开始。生成器会严格检查未知行，拼错界面名会失败，不会静默生成假规格。
+推荐直接从 [interface-pack-comparison.html](interface-pack-comparison.html) 顶部复制最终选择文本，保存成 `my-final-selection.txt`。如果想先审推荐基准，从 [RECOMMENDED_FINAL_SELECTION.zh-CN.txt](RECOMMENDED_FINAL_SELECTION.zh-CN.txt) 开始；它已经写好 `Hibiki Balanced` 和高风险界面的显式选择。想从空白手写，再用 [FINAL_SELECTION_TEMPLATE.zh-CN.md](FINAL_SELECTION_TEMPLATE.zh-CN.md)。生成器会严格检查未知行，拼错界面名会失败，不会静默生成假规格。
 
 整包选择用下面这种：
 
@@ -60,12 +60,19 @@ node .\generate-implementation-spec.mjs --picks .\my-final-selection.txt --outpu
 node .\generate-implementation-spec.mjs --pack hibiki-balanced --output .\IMPLEMENTATION_SPEC_HIBIKI_BALANCED.md
 ```
 
+如果要从推荐选择种子生成可审的最终规格草案：
+
+```powershell
+node .\generate-implementation-spec.mjs --picks .\RECOMMENDED_FINAL_SELECTION.zh-CN.txt --output .\IMPLEMENTATION_SPEC_FINAL_DRAFT.md
+```
+
 ## 当前交付状态
 
 - [pack-selection-index.html](pack-selection-index.html): 4 套整包方案的逐界面索引，每套都能跳到完整 84 图选择页。
 - [interface-pack-comparison.html](interface-pack-comparison.html): 按界面横向比较 A/B/C 三图，显示四套整包默认选择，并支持点选、已审/未审队列、保存和复制最终选择文本。
 - [INTERFACE_DECISION_MATRIX.zh-CN.md](INTERFACE_DECISION_MATRIX.zh-CN.md): 84 个界面的 Markdown 总表，逐行列出三张候选图、四套整包默认和推荐选择。
 - [FINAL_SELECTION_TEMPLATE.zh-CN.md](FINAL_SELECTION_TEMPLATE.zh-CN.md): 最终选择填写模板，可直接生成最终规格草案。
+- [RECOMMENDED_FINAL_SELECTION.zh-CN.txt](RECOMMENDED_FINAL_SELECTION.zh-CN.txt): 推荐 `Hibiki Balanced` 选择种子，显式列出阅读器、词典、词典管理、Anki/制卡、标签、日志和共享组件这些高风险界面。
 - [selection-md3-practical.html](selection-md3-practical.html) / [SELECTION_MD3_PRACTICAL.zh-CN.md](SELECTION_MD3_PRACTICAL.zh-CN.md): `MD3 Practical` 的 84 个界面完整展开。
 - [selection-reading-calm.html](selection-reading-calm.html) / [SELECTION_READING_CALM.zh-CN.md](SELECTION_READING_CALM.zh-CN.md): `Reading Calm` 的 84 个界面完整展开。
 - [selection-adaptive-power.html](selection-adaptive-power.html) / [SELECTION_ADAPTIVE_POWER.zh-CN.md](SELECTION_ADAPTIVE_POWER.zh-CN.md): `Adaptive Power` 的 84 个界面完整展开。
