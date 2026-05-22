@@ -24,6 +24,11 @@ final hoshiBooksProvider =
   );
 });
 
+final srtBooksProvider = FutureProvider<List<SrtBook>>((ref) {
+  final db = ref.watch(appProvider).database;
+  return SrtBookRepository(db).listAll();
+});
+
 class ReaderHoshiSource extends ReaderMediaSource {
   ReaderHoshiSource._()
       : super(
@@ -182,6 +187,7 @@ class ReaderHoshiSource extends ReaderMediaSource {
           );
           if (imported == true) {
             ref.invalidate(hoshiBooksProvider(appModel.targetLanguage));
+            ref.invalidate(srtBooksProvider);
           }
         },
       ),

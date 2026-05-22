@@ -35,7 +35,6 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
   @override
   ReaderHoshiSource get mediaSource => ReaderHoshiSource.instance;
 
-  Future<List<SrtBook>>? _srtBooksFuture;
   final Map<String, Future<_AudiobookInfo>> _audiobookInfoCache = {};
 
   bool _selectionMode = false;
@@ -51,7 +50,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
   }
 
   void _refreshSrtBooks() {
-    _srtBooksFuture = SrtBookRepository(appModelNoUpdate.database).listAll();
+    ref.invalidate(srtBooksProvider);
     _audiobookInfoCache.clear();
   }
 
@@ -75,12 +74,6 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
         _selectedKeys.add(key);
       }
     });
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _refreshSrtBooks();
   }
 
   @override
@@ -272,13 +265,9 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
   }
 
   Widget buildBody(List<MediaItem> books) {
-    return FutureBuilder<List<SrtBook>>(
-      future: _srtBooksFuture,
-      builder: (context, srtSnapshot) {
-        final List<SrtBook> srtBooks = srtSnapshot.data ?? const [];
-        return _buildBodyWithSrtBooks(books, srtBooks);
-      },
-    );
+    final List<SrtBook> srtBooks =
+        ref.watch(srtBooksProvider).valueOrNull ?? const [];
+    return _buildBodyWithSrtBooks(books, srtBooks);
   }
 
   Widget _buildBodyWithSrtBooks(

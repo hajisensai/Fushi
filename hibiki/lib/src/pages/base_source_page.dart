@@ -236,6 +236,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
   double get popupMaxHeight => 360;
   double get popupPadding => 6;
   double get popupBottomReserve => 0;
+  double get popupTopReserve => 0;
   late final Listenable _popupListenable =
       Listenable.merge([_popupStack, _isSearchingNotifier]);
 
@@ -399,6 +400,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
       maxWidth: popupMaxWidth,
       maxHeight: popupMaxHeight,
       bottomReserve: popupBottomReserve,
+      topReserve: popupTopReserve,
     );
   }
 

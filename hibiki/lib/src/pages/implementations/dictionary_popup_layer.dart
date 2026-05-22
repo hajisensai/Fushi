@@ -12,28 +12,29 @@ Rect calcPopupPosition({
   double maxWidth = 360.0,
   double maxHeight = 480.0,
   double bottomReserve = 0.0,
+  double topReserve = 0.0,
 }) {
   final double reserve = bottomReserve.clamp(0, screen.height);
+  final double effectiveTop = topReserve.clamp(0, screen.height);
   final double effectiveBottom = screen.height - reserve;
   final double horizontalInset = padding.clamp(0, screen.width / 2);
   final double verticalInset = padding.clamp(0, effectiveBottom / 2);
   final double availableWidth =
       (screen.width - horizontalInset * 2).clamp(0, maxWidth);
-  final double availableHeight = (effectiveBottom - verticalInset * 2).clamp(
-    0,
-    maxHeight,
-  );
+  final double availableHeight =
+      (effectiveBottom - effectiveTop - verticalInset * 2).clamp(0, maxHeight);
   final double width = availableWidth;
-  final double height = (effectiveBottom * 0.5).clamp(0, availableHeight);
+  final double height =
+      ((effectiveBottom - effectiveTop) * 0.5).clamp(0, availableHeight);
 
   final double minLeft = horizontalInset;
   final double maxLeft = screen.width - width - horizontalInset;
-  final double minTop = verticalInset;
+  final double minTop = effectiveTop + verticalInset;
   final double maxTop = effectiveBottom - height - verticalInset;
 
   final double spaceBelow =
       effectiveBottom - selectionRect.bottom - verticalInset;
-  final double spaceAbove = selectionRect.top - verticalInset;
+  final double spaceAbove = selectionRect.top - effectiveTop - verticalInset;
   final bool showBelow = spaceBelow >= height || spaceBelow >= spaceAbove;
 
   double top;

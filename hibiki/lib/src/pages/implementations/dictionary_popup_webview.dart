@@ -117,8 +117,7 @@ class DictionaryPopupWebViewState
     if (_controller == null || !_ready) return;
     if (widget.result.entries.isEmpty) return;
 
-    final bool isLoadMore =
-        _lastSearchTerm == widget.result.searchTerm &&
+    final bool isLoadMore = _lastSearchTerm == widget.result.searchTerm &&
         widget.result.entries.length > _lastEntryCount;
     _lastSearchTerm = widget.result.searchTerm;
     _lastEntryCount = widget.result.entries.length;

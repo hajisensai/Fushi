@@ -317,8 +317,7 @@ class MediaItemDialogFrame extends StatelessWidget {
       spacing: 8,
       runSpacing: 8,
       children: [
-        for (final action in quickActions)
-          _QuickActionChip(action: action),
+        for (final action in quickActions) _QuickActionChip(action: action),
       ],
     );
   }
