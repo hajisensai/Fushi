@@ -2,7 +2,7 @@
 
 This file is the per-interface selector for the redesign. `COVERAGE.md` maps each current UI surface to design images; this file turns that map into a pick sheet.
 
-Use [gallery.html](gallery.html) for the compact clickable version. It contains the same interface list plus the visual boards. The primary image supplies the `A` / `B` / `C` options for that interface; the secondary image is the supporting style to preserve. Use [interface-gallery.html](interface-gallery.html) when you want every row to show three visible mockup images, [interface-images/index.html](interface-images/index.html) when you want standalone image files per interface, or [variant-gallery.html](variant-gallery.html) when you want board-level crops only.
+Use [gallery.html](gallery.html) for the compact clickable version. It contains the same interface list plus the visual boards. The primary image supplies the `A` / `B` / `C` options for that interface; the secondary image is the supporting style to preserve. Use [interface-gallery.html](interface-gallery.html) when you want every row to show three visible mockup images, [interface-images/index.html](interface-images/index.html) when you want standalone image files with clickable picks and copyable output, or [variant-gallery.html](variant-gallery.html) when you want board-level crops only.
 
 ## Pick rule
 
@@ -10,7 +10,7 @@ Use [gallery.html](gallery.html) for the compact clickable version. It contains 
 - Override individual rows only when a screen needs to differ from its board family.
 - Board `17-full-coverage-map.svg` is documentation-only and is not assigned to runtime interfaces.
 - The table covers 84 design surfaces: 3 entry surfaces, 53 page-level surfaces, and 28 shared/support surfaces. The UI audit matched 81 build files; the extra 3 rows are manual UI support files already mapped in `COVERAGE.md`.
-- The generated [interface image pack](interface-images/index.html) mirrors this table as 252 standalone SVG choices plus [manifest.json](interface-images/manifest.json).
+- The generated [interface image pack](interface-images/index.html) mirrors this table as 252 standalone SVG choices plus [manifest.json](interface-images/manifest.json), and can copy a full `Interface image picks` result.
 
 ## Board defaults
 

@@ -6,7 +6,7 @@ For visual review, open [gallery.html](gallery.html) in this folder. It shows al
 
 Use [INTERFACE_PICKS.md](INTERFACE_PICKS.md) when you want to review every mapped UI surface as a table instead of clicking through the gallery.
 
-Use [interface-gallery.html](interface-gallery.html) when you want each exact interface surface to show three A/B/C mockup images. Use [interface-images/index.html](interface-images/index.html) when you want those exact choices as standalone image files. Use [variant-gallery.html](variant-gallery.html) when you want each board direction as a separate crop instead of reading a dense three-column board.
+Use [interface-gallery.html](interface-gallery.html) when you want each exact interface surface to show three A/B/C mockup images. Use [interface-images/index.html](interface-images/index.html) when you want those exact choices as standalone image files with clickable picks and copyable output. Use [variant-gallery.html](variant-gallery.html) when you want each board direction as a separate crop instead of reading a dense three-column board.
 
 ## Recommended baseline
 

@@ -322,16 +322,17 @@ function renderIndexHtml(manifestSurfaces) {
     const variants = /** @type {("A" | "B" | "C")[]} */ (["A", "B", "C"]).map((choice) => {
       const copy = variantCopy[surface.primary][choice];
       return `
-          <figure class="variant" data-choice="${choice}">
-            <a href="${escapeHtml(surface.files[choice])}">
+          <figure class="variant" data-choice="${choice}" aria-pressed="false">
+            <button type="button" aria-label="Pick ${choice} for ${escapeHtml(surface.surface)}">
               <img src="${escapeHtml(surface.files[choice])}" alt="${escapeHtml(surface.surface)} ${choice} ${escapeHtml(copy.title)}">
-            </a>
-            <figcaption><strong>${choice}. ${escapeHtml(copy.title)}</strong><span>${choice === surface.defaultChoice ? "default" : "option"}</span></figcaption>
+              <figcaption><strong>${choice}. ${escapeHtml(copy.title)}</strong><span>${choice === surface.defaultChoice ? "default" : "option"}</span></figcaption>
+            </button>
+            <a class="image-link" href="${escapeHtml(surface.files[choice])}">Open image</a>
           </figure>`;
     }).join("");
 
     return `
-      <article class="surface-card" data-section="${escapeHtml(surface.section)}" data-search="${escapeHtml(`${surface.surface} ${surface.section} ${board} ${secondary}`.toLowerCase())}">
+      <article class="surface-card" data-surface="${escapeHtml(surface.surface)}" data-section="${escapeHtml(surface.section)}" data-default="${surface.defaultChoice}" data-primary="${escapeHtml(board)}" data-secondary="${escapeHtml(secondary)}" data-search="${escapeHtml(`${surface.surface} ${surface.section} ${board} ${secondary}`.toLowerCase())}">
         <header>
           <div>
             <h2>${escapeHtml(surface.surface)}</h2>
@@ -401,14 +402,14 @@ function renderIndexHtml(manifestSurfaces) {
     p { color: var(--muted); font-size: 13px; line-height: 1.5; }
     a { color: var(--brand); font-weight: 800; text-decoration: none; }
 
-    .nav, .filters {
+    .nav, .filters, .pick-actions {
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
       justify-content: flex-end;
     }
 
-    .nav a, .filters button, .pill {
+    .nav a, .filters button, .pick-actions button, .pill, .image-link {
       display: inline-flex;
       align-items: center;
       min-height: 32px;
@@ -422,16 +423,16 @@ function renderIndexHtml(manifestSurfaces) {
       white-space: nowrap;
     }
 
-    .filters {
+    .filters, .pick-actions {
       justify-content: flex-start;
       margin: 16px 0;
     }
 
-    .filters button {
+    .filters button, .pick-actions button {
       cursor: pointer;
     }
 
-    .filters button[aria-pressed="true"] {
+    .filters button[aria-pressed="true"], .pick-actions button[aria-pressed="true"] {
       border-color: var(--brand);
       background: var(--brand-soft);
       box-shadow: inset 0 0 0 1px var(--brand);
@@ -447,7 +448,7 @@ function renderIndexHtml(manifestSurfaces) {
       font: inherit;
     }
 
-    .summary, .surface-card {
+    .summary, .surface-card, .copy-panel {
       border: 1px solid var(--line);
       border-radius: 8px;
       background: var(--panel);
@@ -480,6 +481,32 @@ function renderIndexHtml(manifestSurfaces) {
       color: var(--brand);
       font-size: 24px;
       line-height: 1;
+    }
+
+    .copy-panel {
+      margin-top: 16px;
+      padding: 14px;
+    }
+
+    .output {
+      display: block;
+      width: 100%;
+      min-height: 150px;
+      margin-top: 10px;
+      padding: 12px;
+      resize: vertical;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #172126;
+      color: #d8f2e6;
+      font: 12px/1.55 Consolas, "SFMono-Regular", monospace;
+      letter-spacing: 0;
+    }
+
+    .status {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
     }
 
     .gallery {
@@ -518,6 +545,24 @@ function renderIndexHtml(manifestSurfaces) {
       background: #fff;
     }
 
+    .variant[aria-pressed="true"] {
+      border-color: var(--brand);
+      box-shadow: inset 0 0 0 2px var(--brand);
+    }
+
+    .variant button {
+      display: block;
+      width: 100%;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      text-align: left;
+      font: inherit;
+      letter-spacing: 0;
+    }
+
     .variant img {
       display: block;
       width: 100%;
@@ -536,8 +581,20 @@ function renderIndexHtml(manifestSurfaces) {
       font-size: 12px;
     }
 
+    .variant[aria-pressed="true"] figcaption {
+      background: var(--brand-soft);
+    }
+
     figcaption strong {
       color: var(--ink);
+    }
+
+    .image-link {
+      justify-content: center;
+      width: calc(100% - 20px);
+      margin: 0 10px 10px;
+      min-height: 30px;
+      background: #fbfcf7;
     }
 
     .hidden { display: none; }
@@ -567,7 +624,7 @@ function renderIndexHtml(manifestSurfaces) {
     <section class="summary" aria-label="Image pack summary">
       <div>
         <h2>One interface, three concrete images</h2>
-        <p>These files are generated from the same board mappings as the picker. Use this pack when you want direct image links instead of scrolling the full gallery.</p>
+        <p>These files are generated from the same board mappings as the picker. Pick one image per interface, copy the result, or open individual image files for closer inspection.</p>
       </div>
       <div class="counts">
         <div class="count"><strong>84</strong><p>UI surfaces</p></div>
@@ -582,13 +639,73 @@ function renderIndexHtml(manifestSurfaces) {
       <button type="button" data-section="Shared/support" aria-pressed="false">Shared/support</button>
       <input class="search" id="search" type="search" placeholder="Filter surfaces or boards" aria-label="Filter surfaces or boards">
     </section>
+    <section class="copy-panel" aria-label="Generated picks">
+      <div class="pick-actions">
+        <button type="button" id="use-defaults">Use defaults</button>
+        <button type="button" id="clear-picks">Clear picks</button>
+        <button type="button" id="copy-picks">Copy result</button>
+        <span class="status" id="status">No picks yet.</span>
+      </div>
+      <textarea class="output" id="output" readonly aria-label="Generated image picks"></textarea>
+    </section>
     <section class="gallery" id="gallery" aria-label="Generated interface images">${cards}
     </section>
   </main>
   <script>
     (() => {
+      const storageKey = "hibiki-md3-cupertino-interface-image-picks";
       const search = document.getElementById("search");
+      const output = document.getElementById("output");
+      const status = document.getElementById("status");
       let activeSection = "all";
+      let picks = loadPicks();
+
+      function loadPicks() {
+        try {
+          return JSON.parse(window.localStorage.getItem(storageKey) || "{}");
+        } catch (_error) {
+          return {};
+        }
+      }
+
+      function savePicks() {
+        try {
+          window.localStorage.setItem(storageKey, JSON.stringify(picks));
+        } catch (_error) {
+          status.textContent = "Could not save choices in this browser.";
+        }
+      }
+
+      function selectedChoice(card) {
+        return picks[card.dataset.surface] || card.dataset.default;
+      }
+
+      function updateOutput() {
+        const cards = Array.from(document.querySelectorAll(".surface-card"));
+        const chosen = cards.filter((card) => Boolean(picks[card.dataset.surface])).length;
+        const lines = cards.map((card) => {
+          const choice = selectedChoice(card);
+          return \`\${card.dataset.surface}: \${choice} (\${card.dataset.primary}; supports \${card.dataset.secondary})\`;
+        });
+        output.value = \`Interface image picks:\\n\${lines.join("\\n")}\\nNotes:\`;
+        status.textContent = \`\${chosen} explicit picks / \${cards.length} surfaces. Defaults fill the rest.\`;
+      }
+
+      function updateCards() {
+        document.querySelectorAll(".surface-card").forEach((card) => {
+          const selected = selectedChoice(card);
+          card.querySelectorAll(".variant").forEach((variant) => {
+            variant.setAttribute("aria-pressed", String(variant.dataset.choice === selected));
+          });
+        });
+      }
+
+      function setPick(card, choice) {
+        picks = { ...picks, [card.dataset.surface]: choice };
+        savePicks();
+        updateCards();
+        updateOutput();
+      }
 
       function applyFilters() {
         const query = search.value.trim().toLowerCase();
@@ -610,6 +727,41 @@ function renderIndexHtml(manifestSurfaces) {
       });
 
       search.addEventListener("input", applyFilters);
+
+      document.querySelectorAll(".surface-card").forEach((card) => {
+        card.querySelectorAll(".variant button").forEach((button) => {
+          button.addEventListener("click", () => setPick(card, button.closest(".variant").dataset.choice));
+        });
+      });
+
+      document.getElementById("use-defaults").addEventListener("click", () => {
+        picks = {};
+        document.querySelectorAll(".surface-card").forEach((card) => {
+          picks[card.dataset.surface] = card.dataset.default;
+        });
+        savePicks();
+        updateCards();
+        updateOutput();
+      });
+
+      document.getElementById("clear-picks").addEventListener("click", () => {
+        picks = {};
+        savePicks();
+        updateCards();
+        updateOutput();
+      });
+
+      document.getElementById("copy-picks").addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(output.value);
+          status.textContent = "Copied image picks.";
+        } catch (_error) {
+          status.textContent = "Clipboard unavailable; select and copy the text manually.";
+        }
+      });
+
+      updateCards();
+      updateOutput();
     })();
   </script>
 </body>
@@ -660,7 +812,7 @@ function renderReadme() {
 
 This folder contains generated A/B/C image choices for every mapped MD3 + Cupertino UI surface.
 
-- \`index.html\` shows all 84 surfaces with three standalone images each.
+- \`index.html\` shows all 84 surfaces with three standalone images each, saves picks in the browser, and copies a complete \`Interface image picks\` result.
 - \`manifest.json\` records the surface-to-file mapping.
 - \`*-A.svg\`, \`*-B.svg\`, and \`*-C.svg\` are the direct image choices.
 
