@@ -1,0 +1,638 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hibiki MD3 + Cupertino Interface Gallery</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f4;
+      --panel: #ffffff;
+      --ink: #172126;
+      --muted: #66747c;
+      --line: #dfe5e1;
+      --brand: #214f5f;
+      --brand-soft: #d6e9e7;
+      --shadow: 0 18px 44px rgba(23, 33, 38, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, "Segoe UI", system-ui, sans-serif;
+      letter-spacing: 0;
+    }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: rgba(246, 247, 244, 0.94);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(18px);
+    }
+
+    .bar {
+      display: flex;
+      gap: 18px;
+      align-items: center;
+      justify-content: space-between;
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 18px 22px;
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin: 0;
+      line-height: 1.2;
+    }
+
+    h1 {
+      font-size: 28px;
+    }
+
+    h2 {
+      font-size: 20px;
+    }
+
+    h3 {
+      font-size: 14px;
+    }
+
+    p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    a {
+      color: var(--brand);
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    button,
+    input,
+    textarea {
+      font: inherit;
+      letter-spacing: 0;
+    }
+
+    .subhead {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .nav {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 6px;
+      max-width: 620px;
+    }
+
+    .nav a,
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 32px;
+      padding: 0 10px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--panel);
+      color: var(--brand);
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    main {
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 24px 22px 56px;
+    }
+
+    .intro,
+    .controls,
+    .surface-card,
+    .copy-panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    .intro {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+      gap: 18px;
+      padding: 18px;
+    }
+
+    .counts {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .count {
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcf7;
+    }
+
+    .count strong {
+      display: block;
+      color: var(--brand);
+      font-size: 24px;
+      line-height: 1;
+    }
+
+    .controls,
+    .copy-panel {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-top: 16px;
+      padding: 14px;
+    }
+
+    .choice-button {
+      min-height: 34px;
+      padding: 0 14px;
+      border: 1px solid var(--line);
+      border-radius: 17px;
+      background: #fff;
+      color: var(--brand);
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .choice-button[aria-pressed="true"] {
+      border-color: var(--brand);
+      background: var(--brand-soft);
+      box-shadow: inset 0 0 0 1px var(--brand);
+    }
+
+    .search {
+      min-width: min(100%, 360px);
+      min-height: 36px;
+      padding: 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: #fff;
+      color: var(--ink);
+    }
+
+    .output {
+      flex: 1 1 100%;
+      min-height: 130px;
+      padding: 12px;
+      resize: vertical;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #172126;
+      color: #d8f2e6;
+      font: 12px/1.55 Consolas, "SFMono-Regular", monospace;
+    }
+
+    .gallery {
+      display: grid;
+      gap: 18px;
+      margin-top: 18px;
+    }
+
+    .surface-card {
+      overflow: hidden;
+      scroll-margin-top: 96px;
+    }
+
+    .surface-head {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      justify-content: space-between;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .surface-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .variants {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      padding: 14px;
+      background: #eef2ef;
+    }
+
+    .variant-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      overflow: hidden;
+    }
+
+    .variant-card[aria-pressed="true"] {
+      border-color: var(--brand);
+      box-shadow: inset 0 0 0 2px var(--brand);
+    }
+
+    .variant-button {
+      display: block;
+      width: 100%;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .variant-meta {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 12px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .variant-crop {
+      display: block;
+      width: 100%;
+      height: auto;
+      aspect-ratio: 360 / 620;
+      background: #f6f7f4;
+    }
+
+    .variant-note {
+      padding: 10px 12px 12px;
+      min-height: 70px;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    @media (max-width: 980px) {
+      .variants,
+      .intro {
+        grid-template-columns: 1fr;
+      }
+
+      .bar {
+        display: block;
+      }
+
+      .nav {
+        justify-content: flex-start;
+        margin-top: 12px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="bar">
+      <div>
+        <h1>Hibiki Interface Gallery</h1>
+        <p class="subhead">Every mapped UI surface gets three visible A/B/C mockup images.</p>
+      </div>
+      <nav class="nav" aria-label="Design navigation">
+        <a href="gallery.html">Main picker</a>
+        <a href="variant-gallery.html">Board variants</a>
+        <a href="INTERFACE_PICKS.md">Interface picks</a>
+        <a href="PICKS.md">Board picks</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="intro" aria-label="Interface gallery overview">
+      <div>
+        <h2>One screen, three image choices</h2>
+        <p>Each surface below uses its primary design board as the visual source, cropped into A, B, and C mockups. The secondary board is shown as context so implementation can preserve supporting behavior without inventing one-off styling.</p>
+        <p>Repeated images across related surfaces are intentional: shared screens should inherit one visual grammar unless you explicitly pick exceptions.</p>
+      </div>
+      <div class="counts">
+        <div class="count"><strong>81</strong><p>UI surfaces</p></div>
+        <div class="count"><strong>243</strong><p>visible choices</p></div>
+        <div class="count"><strong>17</strong><p>runtime source boards</p></div>
+      </div>
+    </section>
+
+    <section class="controls" aria-label="Interface filters">
+      <button type="button" class="choice-button" data-section="all" aria-pressed="true">All</button>
+      <button type="button" class="choice-button" data-section="Pages" aria-pressed="false">Pages</button>
+      <button type="button" class="choice-button" data-section="Shared/support" aria-pressed="false">Shared/support</button>
+      <button type="button" class="choice-button" id="use-defaults">Use defaults</button>
+      <button type="button" class="choice-button" id="clear-picks">Clear picks</button>
+      <button type="button" class="choice-button" id="copy-picks">Copy picks</button>
+      <input class="search" id="search" type="search" placeholder="Filter surfaces, boards, or sections" aria-label="Filter surfaces, boards, or sections">
+    </section>
+
+    <section class="copy-panel" aria-label="Generated picks">
+      <textarea class="output" id="output" readonly aria-label="Generated interface picks"></textarea>
+    </section>
+
+    <section class="gallery" id="gallery" aria-label="Interface design choices"></section>
+  </main>
+
+  <script>
+    (() => {
+      const storageKey = "hibiki-md3-cupertino-interface-gallery-picks";
+      const cropBoxes = {
+        A: { x: 38, y: 108, width: 360, height: 628 },
+        B: { x: 450, y: 108, width: 360, height: 628 },
+        C: { x: 862, y: 108, width: 360, height: 628 }
+      };
+      const boardLabels = {
+        "01": "Home and navigation",
+        "02": "Reader shelf",
+        "03": "Dictionary",
+        "04": "Hoshi reader",
+        "05": "Settings",
+        "06": "Import and modals",
+        "07": "Creator and Anki",
+        "08": "Collections and stats",
+        "09": "System and debug",
+        "10": "Dictionary management",
+        "11": "Reader customization",
+        "12": "Media and sentence dialogs",
+        "13": "Tags and filters",
+        "14": "Profile, language, system",
+        "15": "Logs and debug",
+        "16": "Empty, loading, error states",
+        "18": "Component system"
+      };
+      const variantLabels = {
+        A: "MD3-first direction",
+        B: "Cupertino-calm direction",
+        C: "Dense/adaptive direction"
+      };
+      const surfaces = [
+        { section: "Pages", surface: "anki_settings_page.dart", primary: "07", file: "07-creator-anki.svg", secondary: "05", secondaryFile: "05-settings.svg", defaultChoice: "C" },
+        { section: "Pages", surface: "audio_recorder_page.dart", primary: "07", file: "07-creator-anki.svg", secondary: "12", secondaryFile: "12-media-and-sentences.svg", defaultChoice: "C" },
+        { section: "Pages", surface: "blur_options_dialog_page.dart", primary: "11", file: "11-reader-customization.svg", secondary: "06", secondaryFile: "06-import-and-modals.svg", defaultChoice: "B" },
+        { section: "Pages", surface: "book_css_editor_page.dart", primary: "11", file: "11-reader-customization.svg", secondary: "04", secondaryFile: "04-reader.svg", defaultChoice: "B" },
+        { section: "Pages", surface: "collections_page.dart", primary: "08", file: "08-collections-stats.svg", secondary: "12", secondaryFile: "12-media-and-sentences.svg", defaultChoice: "A" },
+        { section: "Pages", surface: "crop_image_dialog_page.dart", primary: "07", file: "07-creator-anki.svg", secondary: "12", secondaryFile: "12-media-and-sentences.svg", defaultChoice: "C" },
+        { section: "Pages", surface: "custom_fonts_page.dart", primary: "11", file: "11-reader-customization.svg", secondary: "05", secondaryFile: "05-settings.svg", defaultChoice: "B" },
+        { section: "Pages", surface: "custom_theme_page.dart", primary: "11", file: "11-reader-customization.svg", secondary: "05", secondaryFile: "05-settings.svg", defaultChoice: "B" },
+        { section: "Pages", surface: "debug_log_page.dart", primary: "15", file: "15-logs-and-debug.svg", secondary: "09", secondaryFile: "09-system-debug.svg", defaultChoice: "A" },
+        { section: "Pages", surface: "dictionary_dialog_delete_page.dart", primary: "10", file: "10-dictionary-management.svg", secondary: "06", secondaryFile: "06-import-and-modals.svg", defaultChoice: "C" },
+        { section: "Pages", surface: "dictionary_dialog_import_page.dart", primary: "10", file: "10-dictionary-management.svg", secondary: "06", secondaryFile: "06-import-and-modals.svg", defaultChoice: "C" },
+        { section: "Pages", surface: "dictionary_dialog_page.dart", primary: "10", file: "10-dictionary-management.svg", secondary: "03", secondaryFile: "03-dictionary.svg", defaultChoice: "C" },
+        { section: "Pages", surface: "dictionary_entry_page.dart", primary: "03", file: "03-dictionary.svg", secondary: "10", secondaryFile: "10-dictionary-management.svg", defaultChoice: "B" },
+        { section: "Pages", surface: "dictionary_page_mixin.dart", primary: "03", file: "03-dictionary.svg", secondary: "04", secondaryFile: "04-reader.svg", defaultChoice: "B" },
+        { section: "Pages", surface: "dictionary_popup_layer.dart", primary: "03", file: "03-dictionary.svg", secondary: "04", secondaryFile: "04-reader.svg", defaultChoice: "B" },
+        { section: "Pages", surface: "dictionary_popup_native.dart", primary: "03", file: "03-dictionary.svg", secondary: "04", secondaryFile: "04-reader.svg", defaultChoice: "B" },
+        { section: "Pages", surface: "dictionary_popup_webview.dart", primary: "03", file: "03-dictionary.svg", secondary: "04", secondaryFile: "04-reader.svg", defaultChoice: "B" },
+        { section: "Pages", surface: "dictionary_progress_dialog_content.dart", primary: "10", file: "10-dictionary-management.svg", secondary: "16", secondaryFile: "16-empty-loading-error-states.svg", defaultChoice: "C" },
+        { section: "Pages", surface: "dictionary_result_page.dart", primary: "03", file: "03-dictionary.svg", secondary: "12", secondaryFile: "12-media-and-sentences.svg", defaultChoice: "B" },
+        { section: "Pages", surface: "dictionary_settings_dialog_page.dart", primary: "10", file: "10-dictionary-management.svg", secondary: "05", secondaryFile: "05-settings.svg", defaultChoice: "C" },
+        { section: "Pages", surface: "dictionary_structured_content_page.dart", primary: "03", file: "03-dictionary.svg", secondary: "10", secondaryFile: "10-dictionary-management.svg", defaultChoice: "B" },
+        { section: "Pages", surface: "dictionary_term_page.dart", primary: "03", file: "03-dictionary.svg", secondary: "07", secondaryFile: "07-creator-anki.svg", defaultChoice: "B" },
+        { section: "Pages", surface: "dictionary_webview_media.dart", primary: "03", file: "03-dictionary.svg", secondary: "10", secondaryFile: "10-dictionary-management.svg", defaultChoice: "B" },
+        { section: "Pages", surface: "display_settings_page.dart", primary: "11", file: "11-reader-customization.svg", secondary: "04", secondaryFile: "04-reader.svg", defaultChoice: "B" },
+        { section: "Pages", surface: "error_log_page.dart", primary: "15", file: "15-logs-and-debug.svg", secondary: "16", secondaryFile: "16-empty-loading-error-states.svg", defaultChoice: "A" },
+        { section: "Pages", surface: "example_sentences_dialog_page.dart", primary: "12", file: "12-media-and-sentences.svg", secondary: "03", secondaryFile: "03-dictionary.svg", defaultChoice: "A" },
+        { section: "Pages", surface: "floating_dict_page.dart", primary: "03", file: "03-dictionary.svg", secondary: "14", secondaryFile: "14-profile-language-system.svg", defaultChoice: "B" },
+        { section: "Pages", surface: "history_reader_page.dart", primary: "02", file: "02-reader-shelf.svg", secondary: "13", secondaryFile: "13-tags-and-filters.svg", defaultChoice: "A" },
+        { section: "Pages", surface: "home_dictionary_page.dart", primary: "03", file: "03-dictionary.svg", secondary: "01", secondaryFile: "01-home-navigation.svg", defaultChoice: "B" },
+        { section: "Pages", surface: "home_page.dart", primary: "01", file: "01-home-navigation.svg", secondary: "05", secondaryFile: "05-settings.svg", defaultChoice: "C" },
+        { section: "Pages", surface: "home_reader_page.dart", primary: "01", file: "01-home-navigation.svg", secondary: "02", secondaryFile: "02-reader-shelf.svg", defaultChoice: "C" },
+        { section: "Pages", surface: "hoshi_settings_page.dart", primary: "05", file: "05-settings.svg", secondary: "11", secondaryFile: "11-reader-customization.svg", defaultChoice: "B" },
+        { section: "Pages", surface: "illustrations_viewer_page.dart", primary: "08", file: "08-collections-stats.svg", secondary: "12", secondaryFile: "12-media-and-sentences.svg", defaultChoice: "A" },
+        { section: "Pages", surface: "language_dialog_page.dart", primary: "14", file: "14-profile-language-system.svg", secondary: "06", secondaryFile: "06-import-and-modals.svg", defaultChoice: "A" },
+        { section: "Pages", surface: "loading_page.dart", primary: "16", file: "16-empty-loading-error-states.svg", secondary: "01", secondaryFile: "01-home-navigation.svg", defaultChoice: "A" },
+        { section: "Pages", surface: "lyrics_dialog_page.dart", primary: "04", file: "04-reader.svg", secondary: "12", secondaryFile: "12-media-and-sentences.svg", defaultChoice: "B" },
+        { section: "Pages", surface: "media_item_dialog_page.dart", primary: "12", file: "12-media-and-sentences.svg", secondary: "08", secondaryFile: "08-collections-stats.svg", defaultChoice: "A" },
+        { section: "Pages", surface: "media_item_edit_dialog_page.dart", primary: "12", file: "12-media-and-sentences.svg", secondary: "07", secondaryFile: "07-creator-anki.svg", defaultChoice: "A" },
+        { section: "Pages", surface: "media_source_picker_dialog_page.dart", primary: "12", file: "12-media-and-sentences.svg", secondary: "06", secondaryFile: "06-import-and-modals.svg", defaultChoice: "A" },
+        { section: "Pages", surface: "miscellaneous_settings_page.dart", primary: "14", file: "14-profile-language-system.svg", secondary: "05", secondaryFile: "05-settings.svg", defaultChoice: "A" },
+        { section: "Pages", surface: "open_stash_dialog_page.dart", primary: "12", file: "12-media-and-sentences.svg", secondary: "07", secondaryFile: "07-creator-anki.svg", defaultChoice: "A" },
+        { section: "Pages", surface: "placeholder_source_page.dart", primary: "16", file: "16-empty-loading-error-states.svg", secondary: "04", secondaryFile: "04-reader.svg", defaultChoice: "A" },
+        { section: "Pages", surface: "popup_dictionary_page.dart", primary: "03", file: "03-dictionary.svg", secondary: "14", secondaryFile: "14-profile-language-system.svg", defaultChoice: "B" },
+        { section: "Pages", surface: "profile_management_page.dart", primary: "14", file: "14-profile-language-system.svg", secondary: "05", secondaryFile: "05-settings.svg", defaultChoice: "A" },
+        { section: "Pages", surface: "reader_hoshi_history_page.dart", primary: "02", file: "02-reader-shelf.svg", secondary: "13", secondaryFile: "13-tags-and-filters.svg", defaultChoice: "A" },
+        { section: "Pages", surface: "reader_hoshi_page.dart", primary: "04", file: "04-reader.svg", secondary: "11", secondaryFile: "11-reader-customization.svg", defaultChoice: "B" },
+        { section: "Pages", surface: "reading_statistics_page.dart", primary: "08", file: "08-collections-stats.svg", secondary: "16", secondaryFile: "16-empty-loading-error-states.svg", defaultChoice: "A" },
+        { section: "Pages", surface: "switch_settings_page.dart", primary: "05", file: "05-settings.svg", secondary: "14", secondaryFile: "14-profile-language-system.svg", defaultChoice: "B" },
+        { section: "Pages", surface: "tag_filter_sheet.dart", primary: "13", file: "13-tags-and-filters.svg", secondary: "02", secondaryFile: "02-reader-shelf.svg", defaultChoice: "C" },
+        { section: "Pages", surface: "tag_management_page.dart", primary: "13", file: "13-tags-and-filters.svg", secondary: "05", secondaryFile: "05-settings.svg", defaultChoice: "C" },
+        { section: "Pages", surface: "tag_picker_page.dart", primary: "13", file: "13-tags-and-filters.svg", secondary: "06", secondaryFile: "06-import-and-modals.svg", defaultChoice: "C" },
+        { section: "Pages", surface: "text_segmentation_dialog_page.dart", primary: "07", file: "07-creator-anki.svg", secondary: "12", secondaryFile: "12-media-and-sentences.svg", defaultChoice: "C" },
+        { section: "Pages", surface: "websocket_dialog_page.dart", primary: "14", file: "14-profile-language-system.svg", secondary: "15", secondaryFile: "15-logs-and-debug.svg", defaultChoice: "A" },
+        { section: "Shared/support", surface: "app_model.dart", primary: "18", file: "18-component-system.svg", secondary: "14", secondaryFile: "14-profile-language-system.svg", defaultChoice: "C" },
+        { section: "Shared/support", surface: "base_history_page.dart", primary: "02", file: "02-reader-shelf.svg", secondary: "16", secondaryFile: "16-empty-loading-error-states.svg", defaultChoice: "A" },
+        { section: "Shared/support", surface: "base_media_search_bar.dart", primary: "18", file: "18-component-system.svg", secondary: "03", secondaryFile: "03-dictionary.svg", defaultChoice: "C" },
+        { section: "Shared/support", surface: "base_page.dart", primary: "18", file: "18-component-system.svg", secondary: "16", secondaryFile: "16-empty-loading-error-states.svg", defaultChoice: "C" },
+        { section: "Shared/support", surface: "base_source_page.dart", primary: "18", file: "18-component-system.svg", secondary: "03", secondaryFile: "03-dictionary.svg", defaultChoice: "C" },
+        { section: "Shared/support", surface: "base_tab_page.dart", primary: "18", file: "18-component-system.svg", secondary: "01", secondaryFile: "01-home-navigation.svg", defaultChoice: "C" },
+        { section: "Shared/support", surface: "audiobook_import_dialog.dart", primary: "06", file: "06-import-and-modals.svg", secondary: "18", secondaryFile: "18-component-system.svg", defaultChoice: "A" },
+        { section: "Shared/support", surface: "audiobook_play_bar.dart", primary: "04", file: "04-reader.svg", secondary: "18", secondaryFile: "18-component-system.svg", defaultChoice: "B" },
+        { section: "Shared/support", surface: "book_import_dialog.dart", primary: "06", file: "06-import-and-modals.svg", secondary: "18", secondaryFile: "18-component-system.svg", defaultChoice: "A" },
+        { section: "Shared/support", surface: "sasayaki_rematch.dart", primary: "06", file: "06-import-and-modals.svg", secondary: "04", secondaryFile: "04-reader.svg", defaultChoice: "A" },
+        { section: "Shared/support", surface: "profile_selector.dart", primary: "14", file: "14-profile-language-system.svg", secondary: "18", secondaryFile: "18-component-system.svg", defaultChoice: "A" },
+        { section: "Shared/support", surface: "jidoujisho_bottom_sheet.dart", primary: "18", file: "18-component-system.svg", secondary: "06", secondaryFile: "06-import-and-modals.svg", defaultChoice: "C" },
+        { section: "Shared/support", surface: "jidoujisho_divider.dart", primary: "18", file: "18-component-system.svg", secondary: "05", secondaryFile: "05-settings.svg", defaultChoice: "C" },
+        { section: "Shared/support", surface: "jidoujisho_dropdown.dart", primary: "18", file: "18-component-system.svg", secondary: "05", secondaryFile: "05-settings.svg", defaultChoice: "C" },
+        { section: "Shared/support", surface: "jidoujisho_icon_button.dart", primary: "18", file: "18-component-system.svg", secondary: "01", secondaryFile: "01-home-navigation.svg", defaultChoice: "C" },
+        { section: "Shared/support", surface: "jidoujisho_list_tile.dart", primary: "18", file: "18-component-system.svg", secondary: "05", secondaryFile: "05-settings.svg", defaultChoice: "C" },
+        { section: "Shared/support", surface: "jidoujisho_marquee.dart", primary: "18", file: "18-component-system.svg", secondary: "12", secondaryFile: "12-media-and-sentences.svg", defaultChoice: "C" },
+        { section: "Shared/support", surface: "jidoujisho_placeholder_message.dart", primary: "16", file: "16-empty-loading-error-states.svg", secondary: "18", secondaryFile: "18-component-system.svg", defaultChoice: "A" },
+        { section: "Shared/support", surface: "jidoujisho_popup_position.dart", primary: "18", file: "18-component-system.svg", secondary: "03", secondaryFile: "03-dictionary.svg", defaultChoice: "C" },
+        { section: "Shared/support", surface: "jidoujisho_search_history.dart", primary: "18", file: "18-component-system.svg", secondary: "03", secondaryFile: "03-dictionary.svg", defaultChoice: "C" },
+        { section: "Shared/support", surface: "jidoujisho_selectable_text.dart", primary: "18", file: "18-component-system.svg", secondary: "03", secondaryFile: "03-dictionary.svg", defaultChoice: "C" },
+        { section: "Shared/support", surface: "jidoujisho_tag.dart", primary: "13", file: "13-tags-and-filters.svg", secondary: "18", secondaryFile: "18-component-system.svg", defaultChoice: "C" },
+        { section: "Shared/support", surface: "jidoujisho_text_selection_controls.dart", primary: "18", file: "18-component-system.svg", secondary: "03", secondaryFile: "03-dictionary.svg", defaultChoice: "C" },
+        { section: "Shared/support", surface: "hibiki_toast.dart", primary: "18", file: "18-component-system.svg", secondary: "15", secondaryFile: "15-logs-and-debug.svg", defaultChoice: "C" },
+        { section: "Shared/support", surface: "platform_utils.dart", primary: "18", file: "18-component-system.svg", secondary: "01", secondaryFile: "01-home-navigation.svg", defaultChoice: "C" },
+        { section: "Shared/support", surface: "swipe_dismiss_wrapper.dart", primary: "18", file: "18-component-system.svg", secondary: "06", secondaryFile: "06-import-and-modals.svg", defaultChoice: "C" },
+        { section: "Shared/support", surface: "update_checker.dart", primary: "14", file: "14-profile-language-system.svg", secondary: "15", secondaryFile: "15-logs-and-debug.svg", defaultChoice: "A" },
+        { section: "Shared/support", surface: "blur_options.dart", primary: "11", file: "11-reader-customization.svg", secondary: "18", secondaryFile: "18-component-system.svg", defaultChoice: "B" }
+      ];
+      const gallery = document.getElementById("gallery");
+      const output = document.getElementById("output");
+      const search = document.getElementById("search");
+      let activeSection = "all";
+      let picks = loadPicks();
+
+      function loadPicks() {
+        try {
+          const raw = window.localStorage.getItem(storageKey);
+          return raw ? JSON.parse(raw) : {};
+        } catch (_error) {
+          return {};
+        }
+      }
+
+      function savePicks() {
+        try {
+          window.localStorage.setItem(storageKey, JSON.stringify(picks));
+        } catch (_error) {
+          return;
+        }
+      }
+
+      function boardLabel(id) {
+        return `${id} ${boardLabels[id] || "Unknown board"}`;
+      }
+
+      function selectedChoice(surface) {
+        return picks[surface.surface] || surface.defaultChoice;
+      }
+
+      function renderOutput() {
+        const lines = surfaces.map((surface) => {
+          const value = selectedChoice(surface);
+          return `${surface.surface}: ${value} (${boardLabel(surface.primary)}; supports ${boardLabel(surface.secondary)})`;
+        });
+        output.value = `Interface image picks:\n${lines.join("\n")}\nNotes:`;
+      }
+
+      function updateCards() {
+        document.querySelectorAll(".variant-card").forEach((card) => {
+          const pressed = selectedChoice(surfaces[Number(card.dataset.index)]) === card.dataset.choice;
+          card.setAttribute("aria-pressed", String(pressed));
+        });
+      }
+
+      function setPick(surface, choice) {
+        picks = { ...picks, [surface.surface]: choice };
+        savePicks();
+        updateCards();
+        renderOutput();
+      }
+
+      function renderGallery() {
+        gallery.innerHTML = "";
+        surfaces.forEach((surface, index) => {
+          const card = document.createElement("article");
+          card.className = "surface-card";
+          card.dataset.section = surface.section;
+          card.dataset.search = `${surface.surface} ${surface.section} ${boardLabel(surface.primary)} ${boardLabel(surface.secondary)} ${surface.file} ${surface.secondaryFile}`.toLowerCase();
+          card.id = surface.surface.replace(/[^a-z0-9]+/gi, "-").replace(/-$/, "");
+
+          const head = document.createElement("div");
+          head.className = "surface-head";
+          head.innerHTML = `
+            <div>
+              <h2>${surface.surface}</h2>
+              <p>Choose one visual direction for this exact interface surface.</p>
+              <div class="surface-meta">
+                <span class="pill">${surface.section}</span>
+                <span class="pill">Primary: ${boardLabel(surface.primary)}</span>
+                <span class="pill">Supports: ${boardLabel(surface.secondary)}</span>
+                <span class="pill">Default ${surface.defaultChoice}</span>
+              </div>
+            </div>
+            <a class="pill" href="${surface.file}">Source board</a>
+          `;
+          card.append(head);
+
+          const variants = document.createElement("div");
+          variants.className = "variants";
+          ["A", "B", "C"].forEach((choice) => {
+            const crop = cropBoxes[choice];
+            const variant = document.createElement("div");
+            variant.className = "variant-card";
+            variant.dataset.choice = choice;
+            variant.dataset.index = String(index);
+            variant.setAttribute("aria-pressed", "false");
+            variant.innerHTML = `
+              <button type="button" class="variant-button" aria-label="Pick ${choice} for ${surface.surface}">
+                <div class="variant-meta">
+                  <div>
+                    <h3>${choice}. ${variantLabels[choice]}</h3>
+                    <p>${choice === surface.defaultChoice ? "Default for this surface" : "Optional exception"}</p>
+                  </div>
+                  <span class="pill">${choice}</span>
+                </div>
+                <svg class="variant-crop" viewBox="${crop.x} ${crop.y} ${crop.width} ${crop.height}" role="img" aria-label="${surface.surface} ${choice} variant">
+                  <image href="${surface.file}" x="0" y="0" width="1260" height="760"></image>
+                </svg>
+                <div class="variant-note">
+                  <p>Primary: ${boardLabel(surface.primary)}. Secondary context: ${boardLabel(surface.secondary)}.</p>
+                </div>
+              </button>
+            `;
+            variant.querySelector("button").addEventListener("click", () => setPick(surface, choice));
+            variants.append(variant);
+          });
+          card.append(variants);
+          gallery.append(card);
+        });
+        updateCards();
+        renderOutput();
+        applyFilters();
+      }
+
+      function applyFilters() {
+        const term = search.value.trim().toLowerCase();
+        document.querySelectorAll(".surface-card").forEach((card) => {
+          const matchesSection = activeSection === "all" || card.dataset.section === activeSection;
+          const matchesSearch = !term || card.dataset.search.includes(term);
+          card.classList.toggle("hidden", !matchesSection || !matchesSearch);
+        });
+      }
+
+      document.querySelectorAll("[data-section]").forEach((button) => {
+        button.addEventListener("click", () => {
+          activeSection = button.dataset.section;
+          document.querySelectorAll("[data-section]").forEach((item) => {
+            item.setAttribute("aria-pressed", String(item === button));
+          });
+          applyFilters();
+        });
+      });
+
+      document.getElementById("use-defaults").addEventListener("click", () => {
+        picks = surfaces.reduce((acc, surface) => ({ ...acc, [surface.surface]: surface.defaultChoice }), {});
+        savePicks();
+        updateCards();
+        renderOutput();
+      });
+
+      document.getElementById("clear-picks").addEventListener("click", () => {
+        picks = {};
+        savePicks();
+        updateCards();
+        renderOutput();
+      });
+
+      document.getElementById("copy-picks").addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(output.value);
+        } catch (_error) {
+          output.focus();
+          output.select();
+        }
+      });
+
+      search.addEventListener("input", applyFilters);
+      renderGallery();
+    })();
+  </script>
+</body>
+</html>
