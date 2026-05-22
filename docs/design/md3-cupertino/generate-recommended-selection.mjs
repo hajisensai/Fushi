@@ -11,9 +11,81 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const manifestPath = join(__dirname, "interface-images", "manifest.json");
 const packsPath = join(__dirname, "design-packs.json");
 const defaultPackId = "hibiki-balanced";
-const defaultMarkdownPath = join(__dirname, "RECOMMENDED_SELECTION_HIBIKI_BALANCED.zh-CN.md");
-const defaultHtmlPath = join(__dirname, "recommended-selection-hibiki-balanced.html");
+const packIndexFile = "pack-selection-index.html";
+const packOrder = ["md3-practical", "reading-calm", "adaptive-power", "hibiki-balanced"];
 const boardOrder = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13", "14", "15", "16", "18"];
+
+/** @type {Record<string, { title: string, markdownFile: string, htmlFile: string, kind: string }>} */
+const packOutputs = {
+  "md3-practical": {
+    title: "MD3 Practical 逐界面整包选择",
+    markdownFile: "SELECTION_MD3_PRACTICAL.zh-CN.md",
+    htmlFile: "selection-md3-practical.html",
+    kind: "整包基准"
+  },
+  "reading-calm": {
+    title: "Reading Calm 逐界面整包选择",
+    markdownFile: "SELECTION_READING_CALM.zh-CN.md",
+    htmlFile: "selection-reading-calm.html",
+    kind: "整包基准"
+  },
+  "adaptive-power": {
+    title: "Adaptive Power 逐界面整包选择",
+    markdownFile: "SELECTION_ADAPTIVE_POWER.zh-CN.md",
+    htmlFile: "selection-adaptive-power.html",
+    kind: "整包基准"
+  },
+  "hibiki-balanced": {
+    title: "Hibiki Balanced 逐界面推荐选择",
+    markdownFile: "RECOMMENDED_SELECTION_HIBIKI_BALANCED.zh-CN.md",
+    htmlFile: "recommended-selection-hibiki-balanced.html",
+    kind: "推荐基准"
+  }
+};
+
+/** @type {Record<string, { summary: string, bestFor: string, tradeoff: string, notes: string[] }>} */
+const packCopyZh = {
+  "md3-practical": {
+    summary: "Android 原生清晰度、可预期控件和最低实现风险。",
+    bestFor: "优先要一致、直接、快速落地，而不是更柔和的阅读氛围。",
+    tradeoff: "阅读器和偏好页会偏工具化，不如 Cupertino 倾向方案安静。",
+    notes: [
+      "基准：MD3 Practical。",
+      "视觉默认使用 Material 3 组件。",
+      "工作流保持直接，阅读器 chrome 不做装饰化处理。"
+    ]
+  },
+  "reading-calm": {
+    summary: "分组设置、安静阅读 chrome 和更柔和的移动端导航节奏。",
+    bestFor: "希望 Hibiki 首先像一个能长时间阅读的应用。",
+    tradeoff: "管理密集的页面可能需要显式例外，才能保持足够信息密度。",
+    notes: [
+      "基准：Reading Calm。",
+      "优先使用分组设置、大标题节奏和半透明阅读/附件 chrome。",
+      "词典结果保持可浏览，不把输入焦点当作唯一中心。"
+    ]
+  },
+  "adaptive-power": {
+    summary: "高密度工作区、分栏、检查器，以及平板/桌面就绪结构。",
+    bestFor: "词典管理、制卡映射、标签和诊断是主要使用场景。",
+    tradeoff: "手机 casual 阅读会显得偏重，阅读器通常需要改例外。",
+    notes: [
+      "基准：Adaptive Power。",
+      "优先使用导航栏/侧栏、分栏、检查器、持久预览和紧凑共享组件。",
+      "移动端必须把高密度面板折叠成 sheet，不能硬塞桌面布局。"
+    ]
+  },
+  "hibiki-balanced": {
+    summary: "阅读界面保持安静，管理界面保持密度，共享组件 token 严格统一。",
+    bestFor: "作为最终确认前的推荐默认基准，再按单界面改少量例外。",
+    tradeoff: "它不是纯 A/B/C 单一风格，所以实现时必须用严格 token 控住一致性。",
+    notes: [
+      "基准：Hibiki Balanced。",
+      "阅读保持安静，管理界面保持密度。",
+      "共享组件使用混合密度，避免页面各自漂移。"
+    ]
+  }
+};
 
 /** @type {Record<string, string>} */
 const sectionLabels = {
@@ -148,17 +220,23 @@ function readFlagValue(args, index, flag) {
 
 /**
  * @param {string[]} args
- * @returns {{ packId: string, markdownPath: string, htmlPath: string }}
+ * @returns {{ allPacks: boolean, packId: string, markdownPath?: string, htmlPath?: string, indexPath: string }}
  */
 function parseArgs(args) {
   const result = {
+    allPacks: false,
     packId: defaultPackId,
-    markdownPath: defaultMarkdownPath,
-    htmlPath: defaultHtmlPath
+    /** @type {string | undefined} */
+    markdownPath: undefined,
+    /** @type {string | undefined} */
+    htmlPath: undefined,
+    indexPath: join(__dirname, packIndexFile)
   };
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
-    if (arg === "--pack") {
+    if (arg === "--all-packs") {
+      result.allPacks = true;
+    } else if (arg === "--pack") {
       result.packId = readFlagValue(args, index, arg);
       index += 1;
     } else if (arg === "--markdown") {
@@ -167,12 +245,18 @@ function parseArgs(args) {
     } else if (arg === "--html") {
       result.htmlPath = readFlagValue(args, index, arg);
       index += 1;
+    } else if (arg === "--index") {
+      result.indexPath = readFlagValue(args, index, arg);
+      index += 1;
     } else if (arg === "--help") {
-      console.log("Usage: node generate-recommended-selection.mjs [--pack hibiki-balanced] [--markdown output.md] [--html output.html]");
+      console.log("Usage: node generate-recommended-selection.mjs [--all-packs] [--pack hibiki-balanced] [--markdown output.md] [--html output.html] [--index output.html]");
       process.exit(0);
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
+  }
+  if (result.allPacks && (result.markdownPath || result.htmlPath)) {
+    throw new Error("--markdown and --html can only be used with a single --pack.");
   }
   return result;
 }
@@ -235,6 +319,30 @@ function validatePacks(packs) {
 }
 
 /**
+ * @param {string} packId
+ * @returns {{ title: string, markdownFile: string, htmlFile: string, kind: string }}
+ */
+function outputForPack(packId) {
+  const output = packOutputs[packId];
+  if (!output) {
+    throw new Error(`Missing output config for pack ${packId}.`);
+  }
+  return output;
+}
+
+/**
+ * @param {string} packId
+ * @returns {{ summary: string, bestFor: string, tradeoff: string, notes: string[] }}
+ */
+function copyForPack(packId) {
+  const copy = packCopyZh[packId];
+  if (!copy) {
+    throw new Error(`Missing Chinese copy for pack ${packId}.`);
+  }
+  return copy;
+}
+
+/**
  * @param {ManifestSurface} surface
  * @param {DesignPack} pack
  * @returns {Choice}
@@ -276,10 +384,11 @@ function boardCounts(surfaces, pack) {
 /**
  * @param {ManifestSurface[]} surfaces
  * @param {DesignPack} pack
- * @param {string} packId
  * @returns {string}
  */
 function renderMarkdown(surfaces, pack, packId) {
+  const output = outputForPack(packId);
+  const packCopy = copyForPack(packId);
   const countsByBoard = boardCounts(surfaces, pack);
   const boardRows = boardOrder.map((boardId) => {
     const counts = countsByBoard.get(boardId) || { A: 0, B: 0, C: 0 };
@@ -294,30 +403,33 @@ function renderMarkdown(surfaces, pack, packId) {
       const copy = selectionCopy(surface, pack);
       const imageFile = surface.files[copy.choice];
       const alternatives = /** @type {Choice[]} */ (["A", "B", "C"]).map((choice) => `[${choice}](interface-images/${surface.files[choice]})`).join(" ");
-      return `| \`${surface.surface}\` | ${copy.choice} | [推荐图](interface-images/${imageFile}) | ${escapeMarkdown(copy.label)} | ${escapeMarkdown(copy.why)} | ${alternatives} |`;
+      return `| \`${surface.surface}\` | ${copy.choice} | [选择图](interface-images/${imageFile}) | ${escapeMarkdown(copy.label)} | ${escapeMarkdown(copy.why)} | ${alternatives} |`;
     }).join("\n");
-    return `## ${sectionLabels[section] || section}\n\n| 界面 | 推荐 | 推荐图 | 方向 | 为什么 | 其它图 |\n| --- | --- | --- | --- | --- | --- |\n${rows}`;
+    return `## ${sectionLabels[section] || section}\n\n| 界面 | 选择 | 选择图 | 方向 | 为什么 | 其它图 |\n| --- | --- | --- | --- | --- | --- |\n${rows}`;
   }).join("\n\n");
 
-  return `# Hibiki Balanced 逐界面推荐选择
+  return `# ${output.title}
 
-这份文件把推荐整包 \`${pack.label}\` 展开到全部 84 个界面/支撑组件。它不是最终用户确认；它是当前建议默认值，方便你逐行看图并指出例外。
+这份文件把 \`${pack.label}\` 展开到全部 84 个界面/支撑组件。它不是最终用户确认；它是 ${output.kind}，方便你逐行看图并指出例外。
 
-## 推荐结论
+## 选择结论
 
 - Pack: \`${packId}\`
 - Surfaces: ${surfaces.length}
 - Images available: ${surfaces.length * 3}
-- Recommended selection source: [design-packs.json](design-packs.json)
-- Full visual page: [recommended-selection-hibiki-balanced.html](recommended-selection-hibiki-balanced.html)
+- Selection source: [design-packs.json](design-packs.json)
+- Full visual page: [${output.htmlFile}](${output.htmlFile})
+- Pack index: [${packIndexFile}](${packIndexFile})
 - All A/B/C choices: [interface-images/index.html](interface-images/index.html)
 
 ## 整体规则
 
-- 阅读相关界面优先保持安静：Hoshi 阅读器、显示设置、歌词和查词浮层默认走 B。
-- 管理相关界面保持密度：词典管理、Anki 映射、标签和共享组件默认走 C。
-- 书架、收藏、导入、日志、系统入口走更直接的 A，减少装饰和状态误导。
-- 首页壳层走 C，让手机、平板、桌面都有明确结构。
+${packCopy.notes.map((note) => `- ${note}`).join("\n")}
+
+## 适用判断
+
+- 适合：${packCopy.bestFor}
+- 代价：${packCopy.tradeoff}
 
 ## Board 展开
 
@@ -334,13 +446,13 @@ ${sectionBlocks}
 如果接受这套默认值，回复：
 
 \`\`\`text
-Pack: hibiki-balanced
+Pack: ${packId}
 \`\`\`
 
 如果只改少量例外，回复：
 
 \`\`\`text
-Pack: hibiki-balanced
+Pack: ${packId}
 reader_hoshi_page.dart: B
 dictionary_dialog_page.dart: C
 \`\`\`
@@ -380,6 +492,7 @@ function renderSurfaceCard(surface, pack) {
  * @returns {string}
  */
 function renderHtml(surfaces, pack, packId) {
+  const output = outputForPack(packId);
   const cards = surfaces.map((surface) => renderSurfaceCard(surface, pack)).join("\n");
   const countsByBoard = boardCounts(surfaces, pack);
   const boardChips = boardOrder.map((boardId) => {
@@ -392,7 +505,7 @@ function renderHtml(surfaces, pack, packId) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Hibiki Balanced 逐界面推荐选择</title>
+  <title>${escapeHtml(output.title)}</title>
   <style>
     :root {
       color-scheme: light;
@@ -583,10 +696,12 @@ function renderHtml(surfaces, pack, packId) {
 </head>
 <body>
   <header>
-    <h1>Hibiki Balanced 逐界面推荐选择</h1>
-    <p class="lead">这是 ${escapeHtml(pack.label)} 展开到全部 ${surfaces.length} 个界面/支撑组件后的可视化默认值。每张卡显示推荐图，也保留 A/B/C 三个备选入口。</p>
+    <h1>${escapeHtml(output.title)}</h1>
+    <p class="lead">这是 ${escapeHtml(pack.label)} 展开到全部 ${surfaces.length} 个界面/支撑组件后的可视化 ${escapeHtml(output.kind)}。每张卡显示当前选择图，也保留 A/B/C 三个备选入口。</p>
     <nav class="toolbar" aria-label="Related design documents">
       <a href="SELECTION_GUIDE.zh-CN.md">中文选择指南</a>
+      <a href="${packIndexFile}">整包逐界面索引</a>
+      <a href="${escapeHtml(output.markdownFile)}">中文逐界面表</a>
       <a href="interface-images/index.html">全部 A/B/C 图库</a>
       <a href="IMPLEMENTATION_SPEC_HIBIKI_BALANCED.md">推荐实现规格</a>
       <a href="design-pack-gallery.html">整包方案图库</a>
@@ -607,19 +722,275 @@ function renderHtml(surfaces, pack, packId) {
 }
 
 /**
+ * @param {ManifestSurface[]} surfaces
+ * @param {Record<string, DesignPack>} packs
+ * @returns {string}
+ */
+function renderPackIndex(surfaces, packs) {
+  const cards = packOrder.map((packId) => {
+    const pack = packs[packId];
+    const output = outputForPack(packId);
+    const packCopy = copyForPack(packId);
+    if (!pack) {
+      throw new Error(`Unknown pack in packOrder: ${packId}`);
+    }
+    const countsByBoard = boardCounts(surfaces, pack);
+    const totalCounts = { A: 0, B: 0, C: 0 };
+    for (const counts of countsByBoard.values()) {
+      totalCounts.A += counts.A;
+      totalCounts.B += counts.B;
+      totalCounts.C += counts.C;
+    }
+    const boardSummary = boardOrder.map((boardId) => {
+      const choice = pack.choices[boardId];
+      return `<span><b>${boardId}</b>${escapeHtml(boardLabels[boardId].label)}<strong>${choice}</strong></span>`;
+    }).join("");
+    return `<article class="pack-card">
+      <div>
+        <p class="eyebrow">${escapeHtml(output.kind)}</p>
+        <h2>${escapeHtml(pack.label)}</h2>
+        <p>${escapeHtml(packCopy.summary)}</p>
+      </div>
+      <dl>
+        <div><dt>Pack</dt><dd>${escapeHtml(packId)}</dd></div>
+        <div><dt>界面</dt><dd>${surfaces.length}</dd></div>
+        <div><dt>A/B/C</dt><dd>${totalCounts.A}/${totalCounts.B}/${totalCounts.C}</dd></div>
+      </dl>
+      <p><strong>适合：</strong>${escapeHtml(packCopy.bestFor)}</p>
+      <p><strong>代价：</strong>${escapeHtml(packCopy.tradeoff)}</p>
+      <div class="links">
+        <a href="${escapeHtml(output.htmlFile)}">看 84 张当前选择图</a>
+        <a href="${escapeHtml(output.markdownFile)}">看中文逐界面表</a>
+      </div>
+      <div class="boards" aria-label="${escapeHtml(pack.label)} board choices">${boardSummary}</div>
+    </article>`;
+  }).join("\n");
+
+  return `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hibiki MD3 + Cupertino 整包逐界面索引</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #202528;
+      --muted: #667177;
+      --line: #d8dddf;
+      --page: #f7f8f4;
+      --surface: #ffffff;
+      --accent: #2f6f61;
+      --accent-2: #365f8d;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--page);
+      color: var(--ink);
+    }
+
+    header,
+    main {
+      padding-inline: clamp(16px, 5vw, 64px);
+    }
+
+    header {
+      padding-block: 30px 22px;
+      background: #fcfdfb;
+      border-bottom: 1px solid var(--line);
+    }
+
+    main {
+      padding-block: 22px 46px;
+    }
+
+    h1,
+    h2,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      max-width: 920px;
+      font-size: 3rem;
+      line-height: 1.08;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      font-size: 1.35rem;
+      letter-spacing: 0;
+    }
+
+    .lead {
+      max-width: 940px;
+      margin-top: 12px;
+      color: var(--muted);
+      line-height: 1.65;
+    }
+
+    .toolbar,
+    .links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .toolbar {
+      margin-top: 18px;
+    }
+
+    a {
+      min-height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--ink);
+      font-weight: 800;
+      text-decoration: none;
+      padding: 8px 11px;
+    }
+
+    a:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .pack-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+    }
+
+    .pack-card {
+      display: grid;
+      gap: 14px;
+      align-content: start;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      padding: 16px;
+    }
+
+    .pack-card p {
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    .pack-card strong {
+      color: var(--ink);
+    }
+
+    .eyebrow {
+      margin-bottom: 6px;
+      color: var(--accent) !important;
+      font-size: 0.78rem;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    dl {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin: 0;
+    }
+
+    dt {
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 800;
+    }
+
+    dd {
+      margin: 2px 0 0;
+      font-weight: 900;
+      overflow-wrap: anywhere;
+    }
+
+    .boards {
+      display: grid;
+      gap: 6px;
+    }
+
+    .boards span {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 6px;
+      align-items: center;
+      min-height: 34px;
+      border-top: 1px solid var(--line);
+      padding-top: 6px;
+      color: var(--muted);
+      font-size: 0.84rem;
+    }
+
+    .boards strong {
+      color: var(--accent-2);
+      font-size: 0.95rem;
+    }
+
+    @media (max-width: 820px) {
+      h1 {
+        font-size: 2.2rem;
+      }
+
+      dl {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Hibiki MD3 + Cupertino 整包逐界面索引</h1>
+    <p class="lead">四套整包都已展开成完整 84 界面视图。先选一个整包，再去对应页面看每个界面的当前选择图；需要例外时，再回到全部 A/B/C 图库逐项替换。</p>
+    <nav class="toolbar" aria-label="Related design documents">
+      <a href="SELECTION_GUIDE.zh-CN.md">中文选择指南</a>
+      <a href="design-pack-gallery.html">12 图整包速览</a>
+      <a href="interface-images/index.html">全部 A/B/C 图库</a>
+      <a href="INTERFACE_PICKS.md">逐界面填写表</a>
+    </nav>
+  </header>
+  <main>
+    <section class="pack-grid" aria-label="Pack selection pages">
+      ${cards}
+    </section>
+  </main>
+</body>
+</html>
+`;
+}
+
+/**
  * @returns {Promise<void>}
  */
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const { surfaces, packs } = await loadInputs();
   validatePacks(packs);
-  const pack = packs[args.packId];
-  if (!pack) {
-    throw new Error(`Unknown pack: ${args.packId}. Valid packs: ${Object.keys(packs).join(", ")}`);
+  const selectedPackIds = args.allPacks ? packOrder : [args.packId];
+  for (const packId of selectedPackIds) {
+    const pack = packs[packId];
+    if (!pack) {
+      throw new Error(`Unknown pack: ${packId}. Valid packs: ${Object.keys(packs).join(", ")}`);
+    }
+    const output = outputForPack(packId);
+    const markdownPath = args.markdownPath ? args.markdownPath : join(__dirname, output.markdownFile);
+    const htmlPath = args.htmlPath ? args.htmlPath : join(__dirname, output.htmlFile);
+    await writeFile(markdownPath, renderMarkdown(surfaces, pack, packId), "utf8");
+    await writeFile(htmlPath, renderHtml(surfaces, pack, packId), "utf8");
+    console.log(`Wrote ${relative(__dirname, markdownPath)} and ${relative(__dirname, htmlPath)} for ${surfaces.length} surfaces.`);
   }
-  await writeFile(args.markdownPath, renderMarkdown(surfaces, pack, args.packId), "utf8");
-  await writeFile(args.htmlPath, renderHtml(surfaces, pack, args.packId), "utf8");
-  console.log(`Wrote ${relative(__dirname, args.markdownPath)} and ${relative(__dirname, args.htmlPath)} for ${surfaces.length} surfaces.`);
+  if (args.allPacks) {
+    await writeFile(args.indexPath, renderPackIndex(surfaces, packs), "utf8");
+    console.log(`Wrote ${relative(__dirname, args.indexPath)}.`);
+  }
 }
 
 main().catch((error) => {
