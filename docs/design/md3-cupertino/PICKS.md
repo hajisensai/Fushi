@@ -6,6 +6,8 @@ For visual review, open [gallery.html](gallery.html) in this folder. It shows al
 
 Use [INTERFACE_PICKS.md](INTERFACE_PICKS.md) when you want to review every mapped UI surface as a table instead of clicking through the gallery.
 
+Use [variant-gallery.html](variant-gallery.html) when you want each A/B/C direction as a separate mockup image crop instead of reading a dense three-column board.
+
 ## Recommended baseline
 
 If you want the shortest path to a coherent implementation, start from this baseline and override only the rows you dislike:

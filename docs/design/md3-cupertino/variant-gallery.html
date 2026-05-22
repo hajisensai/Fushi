@@ -1,0 +1,580 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hibiki MD3 + Cupertino Variant Gallery</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f4;
+      --panel: #ffffff;
+      --ink: #172126;
+      --muted: #66747c;
+      --line: #dfe5e1;
+      --brand: #214f5f;
+      --brand-soft: #d6e9e7;
+      --shadow: 0 18px 44px rgba(23, 33, 38, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, "Segoe UI", system-ui, sans-serif;
+      letter-spacing: 0;
+    }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: rgba(246, 247, 244, 0.94);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(18px);
+    }
+
+    .bar {
+      display: flex;
+      gap: 18px;
+      align-items: center;
+      justify-content: space-between;
+      max-width: 1260px;
+      margin: 0 auto;
+      padding: 18px 22px;
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin: 0;
+      line-height: 1.2;
+    }
+
+    h1 {
+      font-size: 28px;
+    }
+
+    h2 {
+      font-size: 20px;
+    }
+
+    h3 {
+      font-size: 15px;
+    }
+
+    p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    a {
+      color: var(--brand);
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    button,
+    input {
+      font: inherit;
+      letter-spacing: 0;
+    }
+
+    .subhead {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .nav {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 6px;
+      max-width: 540px;
+    }
+
+    .nav a,
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 32px;
+      padding: 0 10px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--panel);
+      color: var(--brand);
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    main {
+      max-width: 1260px;
+      margin: 0 auto;
+      padding: 24px 22px 56px;
+    }
+
+    .intro,
+    .controls,
+    .board-section {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    .intro {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+      gap: 18px;
+      padding: 18px;
+    }
+
+    .counts {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .count {
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcf7;
+    }
+
+    .count strong {
+      display: block;
+      color: var(--brand);
+      font-size: 24px;
+      line-height: 1;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-top: 16px;
+      padding: 14px;
+    }
+
+    .choice-button {
+      min-height: 34px;
+      padding: 0 14px;
+      border: 1px solid var(--line);
+      border-radius: 17px;
+      background: #fff;
+      color: var(--brand);
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .choice-button[aria-pressed="true"] {
+      border-color: var(--brand);
+      background: var(--brand-soft);
+      box-shadow: inset 0 0 0 1px var(--brand);
+    }
+
+    .search {
+      min-width: min(100%, 320px);
+      min-height: 36px;
+      padding: 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: #fff;
+      color: var(--ink);
+    }
+
+    .gallery {
+      display: grid;
+      gap: 18px;
+      margin-top: 18px;
+    }
+
+    .board-section {
+      overflow: hidden;
+      scroll-margin-top: 96px;
+    }
+
+    .board-head {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .variants {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      padding: 14px;
+      background: #eef2ef;
+    }
+
+    .variant-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      overflow: hidden;
+    }
+
+    .variant-meta {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 12px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .variant-meta span {
+      flex: 0 0 auto;
+    }
+
+    .variant-crop {
+      display: block;
+      width: 100%;
+      height: auto;
+      aspect-ratio: 360 / 620;
+      background: #f6f7f4;
+    }
+
+    .variant-note {
+      padding: 10px 12px 12px;
+      min-height: 70px;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    @media (max-width: 980px) {
+      .variants,
+      .intro {
+        grid-template-columns: 1fr;
+      }
+
+      .bar {
+        display: block;
+      }
+
+      .nav {
+        justify-content: flex-start;
+        margin-top: 12px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="bar">
+      <div>
+        <h1>Hibiki Variant Gallery</h1>
+        <p class="subhead">Standalone A/B/C mockup crops for every runtime design board.</p>
+      </div>
+      <nav class="nav" aria-label="Design navigation">
+        <a href="gallery.html">Main picker</a>
+        <a href="INTERFACE_PICKS.md">Interface picks</a>
+        <a href="PICKS.md">Board picks</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="intro" aria-label="Variant gallery overview">
+      <div>
+        <h2>Use this when the full board is too dense</h2>
+        <p>The main board images remain the source of truth. This page crops each runtime board into separate A, B, and C examples so each interface can be reviewed against a single visible direction.</p>
+        <p>Board 17 is excluded because it is a coverage map, not a runtime interface style. No current UI surface uses it as a primary design.</p>
+      </div>
+      <div class="counts">
+        <div class="count"><strong>17</strong><p>runtime boards</p></div>
+        <div class="count"><strong>51</strong><p>standalone variants</p></div>
+        <div class="count"><strong>81</strong><p>mapped surfaces</p></div>
+      </div>
+    </section>
+
+    <section class="controls" aria-label="Variant filters">
+      <button type="button" class="choice-button" data-filter="all" aria-pressed="true">All</button>
+      <button type="button" class="choice-button" data-filter="A" aria-pressed="false">A only</button>
+      <button type="button" class="choice-button" data-filter="B" aria-pressed="false">B only</button>
+      <button type="button" class="choice-button" data-filter="C" aria-pressed="false">C only</button>
+      <input class="search" id="search" type="search" placeholder="Filter boards or variant names" aria-label="Filter boards or variant names">
+    </section>
+
+    <section class="gallery" id="gallery" aria-label="Runtime design variants"></section>
+  </main>
+
+  <script>
+    (() => {
+      const cropBoxes = {
+        A: { x: 38, y: 108, width: 360, height: 628 },
+        B: { x: 450, y: 108, width: 360, height: 628 },
+        C: { x: 862, y: 108, width: 360, height: 628 }
+      };
+      const boards = [
+        {
+          id: "01",
+          file: "01-home-navigation.svg",
+          title: "Home and navigation",
+          variants: {
+            A: ["Quiet MD3", "Stable Android shell, clear bottom destinations, visible action structure."],
+            B: ["Cupertino Calm", "Large title, lighter chrome, reading-app quietness."],
+            C: ["Adaptive Workspace", "Navigation rail and desktop/tablet structure while preserving mobile tabs."]
+          }
+        },
+        {
+          id: "02",
+          file: "02-reader-shelf.svg",
+          title: "Reader shelf",
+          variants: {
+            A: ["Library Grid/List", "Best default for book browsing and selection states."],
+            B: ["Reading-First Shelf", "Calmer shelf with recent reading emphasis."],
+            C: ["Management Workspace", "Denser library operations for tags, import, and batch work."]
+          }
+        },
+        {
+          id: "03",
+          file: "03-dictionary.svg",
+          title: "Dictionary",
+          variants: {
+            A: ["Fast MD3 Search", "Search-centric layout for quick lookup."],
+            B: ["Readable Results", "Calm result browsing that avoids input-focus noise."],
+            C: ["Power Split View", "Dense lookup workspace for history, details, and panels."]
+          }
+        },
+        {
+          id: "04",
+          file: "04-reader.svg",
+          title: "Hoshi reader",
+          variants: {
+            A: ["Paper Chrome", "Visible but quiet reading controls."],
+            B: ["Immersive Glass", "Content-first reader with floating controls only when needed."],
+            C: ["Lyrics and Lookup", "Audiobook-heavy layout with cue list and dictionary panel."]
+          }
+        },
+        {
+          id: "05",
+          file: "05-settings.svg",
+          title: "Settings",
+          variants: {
+            A: ["MD3 Settings List", "Straightforward settings sections with Android-native structure."],
+            B: ["Grouped Cupertino Settings", "Lower-noise grouped rows for preference-heavy screens."],
+            C: ["Settings Console", "Desktop-friendly settings and diagnostics layout."]
+          }
+        },
+        {
+          id: "06",
+          file: "06-import-and-modals.svg",
+          title: "Import and modals",
+          variants: {
+            A: ["Step Flow", "Clear MD3 import steps for file-heavy workflows."],
+            B: ["Sheet Flow", "Lightweight Cupertino sheet interaction."],
+            C: ["Import Inspector", "Detailed status and logs for complex import paths."]
+          }
+        },
+        {
+          id: "07",
+          file: "07-creator-anki.svg",
+          title: "Creator and Anki",
+          variants: {
+            A: ["Simple Field Form", "Clean direct form for card creation."],
+            B: ["Guided Creator", "Stepwise mining flow with more guardrails."],
+            C: ["Mapping Panel", "Power-user layout for fields, preview, and mapping."]
+          }
+        },
+        {
+          id: "08",
+          file: "08-collections-stats.svg",
+          title: "Collections and stats",
+          variants: {
+            A: ["Scannable Lists", "Lists and stats remain efficient and boring."],
+            B: ["Media Gallery", "More visual layout for illustrations and saved media."],
+            C: ["Analytics Workspace", "Dense metrics and comparison layout."]
+          }
+        },
+        {
+          id: "09",
+          file: "09-system-debug.svg",
+          title: "System and debug",
+          variants: {
+            A: ["Plain System Settings", "Simple utility surfaces."],
+            B: ["Grouped Profile Feel", "Profile and system items grouped more calmly."],
+            C: ["Debug Console", "Operational layout for logs, websocket, and system status."]
+          }
+        },
+        {
+          id: "10",
+          file: "10-dictionary-management.svg",
+          title: "Dictionary management",
+          variants: {
+            A: ["Inventory List", "Installed dictionaries as a direct MD3 list."],
+            B: ["Dictionary Inspector", "Grouped details with clearer dictionary metadata."],
+            C: ["Admin Workspace", "Table/details/log structure for heavy dictionary work."]
+          }
+        },
+        {
+          id: "11",
+          file: "11-reader-customization.svg",
+          title: "Reader customization",
+          variants: {
+            A: ["Controls First", "Sliders and switches up front."],
+            B: ["Preview Studio", "Persistent reader preview with grouped controls."],
+            C: ["Theme Editor", "Split CSS/theme editing workspace."]
+          }
+        },
+        {
+          id: "12",
+          file: "12-media-and-sentences.svg",
+          title: "Media and sentence dialogs",
+          variants: {
+            A: ["Action Sheet", "Mobile-safe media actions."],
+            B: ["Modal Stack", "Nested sentence/media inspection."],
+            C: ["Bottom Workspace", "Persistent panel for repeated sentence work."]
+          }
+        },
+        {
+          id: "13",
+          file: "13-tags-and-filters.svg",
+          title: "Tags and filters",
+          variants: {
+            A: ["Chip Console", "Fast filter chips and simple tag selection."],
+            B: ["Grouped Tag Manager", "Settings-like tag management."],
+            C: ["Batch Editor", "Library-scale tag assignment and cleanup."]
+          }
+        },
+        {
+          id: "14",
+          file: "14-profile-language-system.svg",
+          title: "Profile, language, system",
+          variants: {
+            A: ["Settings Hub", "Discoverable profile, language, system controls."],
+            B: ["Account-Like Profiles", "Cupertino profile-management rhythm."],
+            C: ["Utility Console", "Compact power-user system surface."]
+          }
+        },
+        {
+          id: "15",
+          file: "15-logs-and-debug.svg",
+          title: "Logs and debug",
+          variants: {
+            A: ["Plain Log Viewer", "Direct readable logs."],
+            B: ["Error Inbox", "Grouped errors and status cards."],
+            C: ["Diagnostics Split", "Dense diagnostic workspace."]
+          }
+        },
+        {
+          id: "16",
+          file: "16-empty-loading-error-states.svg",
+          title: "Empty, loading, error states",
+          variants: {
+            A: ["Actionable Empty", "Short copy with one clear next action."],
+            B: ["Quiet Skeletons", "Low-noise loading and placeholders."],
+            C: ["Recoverable Error", "Error state with visible recovery path."]
+          }
+        },
+        {
+          id: "18",
+          file: "18-component-system.svg",
+          title: "Component system",
+          variants: {
+            A: ["MD3 Token Kit", "Standard MD3 components with strict tokens."],
+            B: ["Cupertino Surface Kit", "Grouped rows and translucent accessory surfaces."],
+            C: ["Hybrid Density Kit", "Compact shared grammar for power-user pages."]
+          }
+        }
+      ];
+      const gallery = document.getElementById("gallery");
+      const search = document.getElementById("search");
+      let activeFilter = "all";
+
+      function renderGallery() {
+        gallery.innerHTML = "";
+        boards.forEach((board) => {
+          const section = document.createElement("article");
+          section.className = "board-section";
+          section.id = `board-${board.id}`;
+          section.dataset.search = `${board.id} ${board.title} ${Object.values(board.variants).flat().join(" ")}`.toLowerCase();
+
+          const head = document.createElement("div");
+          head.className = "board-head";
+          head.innerHTML = `
+            <div>
+              <h2>${board.id} ${board.title}</h2>
+              <p>Primary image: <a href="${board.file}">${board.file}</a></p>
+            </div>
+            <span class="pill">A/B/C</span>
+          `;
+          section.append(head);
+
+          const variants = document.createElement("div");
+          variants.className = "variants";
+          ["A", "B", "C"].forEach((choice) => {
+            const crop = cropBoxes[choice];
+            const [title, note] = board.variants[choice];
+            const card = document.createElement("div");
+            card.className = "variant-card";
+            card.dataset.choice = choice;
+            card.dataset.search = `${choice} ${title} ${note}`.toLowerCase();
+            card.innerHTML = `
+              <div class="variant-meta">
+                <div>
+                  <h3>${choice}. ${title}</h3>
+                  <p>${board.id} ${board.title}</p>
+                </div>
+                <span class="pill">${choice}</span>
+              </div>
+              <svg class="variant-crop" viewBox="${crop.x} ${crop.y} ${crop.width} ${crop.height}" role="img" aria-label="${board.title} ${choice} variant">
+                <image href="${board.file}" x="0" y="0" width="1260" height="760"></image>
+              </svg>
+              <div class="variant-note"><p>${note}</p></div>
+            `;
+            variants.append(card);
+          });
+          section.append(variants);
+          gallery.append(section);
+        });
+        applyFilters();
+      }
+
+      function applyFilters() {
+        const term = search.value.trim().toLowerCase();
+        document.querySelectorAll(".variant-card").forEach((card) => {
+          const matchesChoice = activeFilter === "all" || card.dataset.choice === activeFilter;
+          const board = card.closest(".board-section");
+          const matchesSearch = !term || board.dataset.search.includes(term) || card.dataset.search.includes(term);
+          card.classList.toggle("hidden", !matchesChoice || !matchesSearch);
+        });
+        document.querySelectorAll(".board-section").forEach((section) => {
+          const visible = section.querySelectorAll(".variant-card:not(.hidden)").length > 0;
+          section.classList.toggle("hidden", !visible);
+        });
+      }
+
+      document.querySelectorAll("[data-filter]").forEach((button) => {
+        button.addEventListener("click", () => {
+          activeFilter = button.dataset.filter;
+          document.querySelectorAll("[data-filter]").forEach((item) => {
+            item.setAttribute("aria-pressed", String(item === button));
+          });
+          applyFilters();
+        });
+      });
+
+      search.addEventListener("input", applyFilters);
+      renderGallery();
+    })();
+  </script>
+</body>
+</html>

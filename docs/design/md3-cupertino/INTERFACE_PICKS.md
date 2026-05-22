@@ -2,7 +2,7 @@
 
 This file is the per-interface selector for the redesign. `COVERAGE.md` maps each current UI surface to design images; this file turns that map into a pick sheet.
 
-Use [gallery.html](gallery.html) for the clickable version. It contains the same interface list plus the visual boards. The primary image supplies the `A` / `B` / `C` options for that interface; the secondary image is the supporting style to preserve.
+Use [gallery.html](gallery.html) for the clickable version. It contains the same interface list plus the visual boards. The primary image supplies the `A` / `B` / `C` options for that interface; the secondary image is the supporting style to preserve. Use [variant-gallery.html](variant-gallery.html) when you want each A/B/C option as its own visual crop.
 
 ## Pick rule
 

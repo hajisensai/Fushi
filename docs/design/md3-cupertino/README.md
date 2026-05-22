@@ -4,7 +4,7 @@ This folder is the design-selection board for the MD3 + Cupertino redesign goal.
 
 ## Pick format
 
-Open [gallery.html](gallery.html) for a single-page visual gallery of all boards. Use its `A` / `B` / `C` controls to save board choices, then use the per-interface selector on the same page for screen-specific exceptions.
+Open [gallery.html](gallery.html) for a single-page visual gallery of all boards. Use its `A` / `B` / `C` controls to save board choices, then use the per-interface selector on the same page for screen-specific exceptions. Open [variant-gallery.html](variant-gallery.html) when you want to inspect each A/B/C mockup as a separate image crop.
 
 Reply with the copied result or with choices like:
 
@@ -18,7 +18,7 @@ Settings B
 
 You can also mix details, for example `Reader B, but use A's bottom bar`.
 
-For a complete board worksheet, use [PICKS.md](PICKS.md). For the file-by-file interface worksheet, use [INTERFACE_PICKS.md](INTERFACE_PICKS.md).
+For a complete board worksheet, use [PICKS.md](PICKS.md). For the file-by-file interface worksheet, use [INTERFACE_PICKS.md](INTERFACE_PICKS.md). For direct visual comparison, use [variant-gallery.html](variant-gallery.html).
 
 ## Selection images
 
@@ -42,6 +42,8 @@ For a complete board worksheet, use [PICKS.md](PICKS.md). For the file-by-file i
 | Empty/loading/error states | [16-empty-loading-error-states.svg](16-empty-loading-error-states.svg) | Shared state model for empty, loading, error, placeholder pages |
 | Full coverage map | [17-full-coverage-map.svg](17-full-coverage-map.svg) | Visual map from page families to design boards |
 | Component system | [18-component-system.svg](18-component-system.svg) | Shared buttons, rows, search, sheets, placeholders, popups, and selection grammar |
+
+The [variant gallery](variant-gallery.html) crops the runtime design boards into 51 standalone A/B/C examples. Board 17 is excluded there because it is a coverage map, not a runtime interface style.
 
 See [COVERAGE.md](COVERAGE.md) for the file-by-file mapping from current Flutter UI files to these boards, [INTERFACE_PICKS.md](INTERFACE_PICKS.md) for per-interface choices, and [UI_COVERAGE_AUDIT.md](UI_COVERAGE_AUDIT.md) for the scan evidence.
 
