@@ -36,6 +36,7 @@ export 'src/creator/fields/reading_field.dart';
 export 'src/creator/fields/term_field.dart';
 export 'src/creator/fields/context_field.dart';
 export 'src/creator/fields/image_field.dart';
+export 'src/creator/fields/base_audio_field.dart';
 export 'src/creator/fields/audio_field.dart';
 export 'src/creator/fields/audio_sentence_field.dart';
 export 'src/creator/fields/notes_field.dart';

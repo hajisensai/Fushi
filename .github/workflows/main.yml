@@ -51,10 +51,42 @@ jobs:
       working-directory: hibiki
       run: flutter analyze
 
-    - name: Run unit tests
+    - name: Run unit tests with coverage
       working-directory: hibiki
-      run: flutter test
+      run: flutter test --coverage
 
     - name: Build debug APK
       working-directory: hibiki
       run: flutter build apk --debug
+
+    - name: Decode keystore
+      if: env.HAS_KEYSTORE == 'true'
+      run: |
+        echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > hibiki/android/hibiki-release.jks
+      env:
+        HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
+
+    - name: Create key.properties
+      if: env.HAS_KEYSTORE == 'true'
+      working-directory: hibiki/android
+      run: |
+        cat > key.properties <<EOF
+        storePassword=${{ secrets.KEYSTORE_PASSWORD }}
+        keyPassword=${{ secrets.KEY_PASSWORD }}
+        keyAlias=${{ secrets.KEY_ALIAS }}
+        storeFile=hibiki-release.jks
+        EOF
+      env:
+        HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
+
+    - name: Build release APK
+      if: env.HAS_KEYSTORE == 'true'
+      working-directory: hibiki
+      run: flutter build apk --release
+      env:
+        HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
+
+    - name: Check dependency health
+      working-directory: hibiki
+      run: |
+        flutter pub outdated || true

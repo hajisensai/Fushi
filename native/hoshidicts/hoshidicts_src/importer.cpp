@@ -34,6 +34,13 @@
 #include <utf8.h>
 
 namespace {
+
+// Resource limits to prevent OOM from malicious or huge dictionaries.
+static constexpr size_t kMaxEntriesPerBank = 1'000'000;
+static constexpr size_t kMaxTotalEntries = 10'000'000;
+static constexpr size_t kMaxDataBufferBytes = 1024 * 1024 * 1024;       // 1 GB
+static constexpr size_t kMaxGlossarySizeBytes = 10 * 1024 * 1024;       // 10 MB uncompressed
+
 struct Files {
   std::vector<int> term_banks;
   std::vector<int> kanji_banks;
@@ -215,7 +222,21 @@ ProcessedFile process_term_bank(const std::string& content) {
   }
 
   for (auto& term : out) {
+    if (processed.data.size() > kMaxDataBufferBytes) {
+      HOSHI_LOGW("term bank data buffer exceeded %zu bytes, stopping", kMaxDataBufferBytes);
+      break;
+    }
+    if (processed.count >= kMaxEntriesPerBank) {
+      HOSHI_LOGW("term bank entry count exceeded %zu, stopping", kMaxEntriesPerBank);
+      break;
+    }
+
     const std::string_view glossary = term.glossary.str;
+    if (glossary.size() > kMaxGlossarySizeBytes) {
+      HOSHI_LOGW("glossary too large (%zu bytes), skipping entry", glossary.size());
+      continue;
+    }
+
     uint64_t glossary_hash = XXH3_64bits(glossary.data(), glossary.size());
     auto it = processed.glossaries.find(glossary_hash);
     if (it == processed.glossaries.end()) {
@@ -287,6 +308,15 @@ ProcessedFile process_meta_bank(const std::string& content) {
   }
 
   for (auto& meta : out) {
+    if (processed.data.size() > kMaxDataBufferBytes) {
+      HOSHI_LOGW("meta bank data buffer exceeded %zu bytes, stopping", kMaxDataBufferBytes);
+      break;
+    }
+    if (processed.count >= kMaxEntriesPerBank) {
+      HOSHI_LOGW("meta bank entry count exceeded %zu, stopping", kMaxEntriesPerBank);
+      break;
+    }
+
     uint64_t offset = processed.data.size();
     std::string_view expr = meta.expression;
     std::string_view mode = meta.mode;
@@ -322,9 +352,15 @@ void write_terms(std::ofstream& file, std::vector<std::pair<uint64_t, uint64_t>>
       low_ram ? 2 : std::max<size_t>(4, static_cast<const unsigned long>(std::thread::hardware_concurrency()) + 4);
   std::deque<std::future<ProcessedFile>> threads;
 
+  bool limit_reached = false;
   ankerl::unordered_dense::map<uint64_t, uint64_t> glossaries;
   auto write_processed = [&](ProcessedFile&& processed) {
-    if (processed.data.empty()) {
+    if (processed.data.empty() || limit_reached) {
+      return;
+    }
+    if (result.term_count + processed.count > kMaxTotalEntries) {
+      HOSHI_LOGW("total term entries would exceed %zu, stopping import of further banks", kMaxTotalEntries);
+      limit_reached = true;
       return;
     }
 
@@ -379,11 +415,18 @@ void write_meta(std::ofstream& file, std::vector<std::pair<uint64_t, uint64_t>>&
 
   size_t max_threads =
       low_ram ? 2 : std::max<size_t>(4, static_cast<const unsigned long>(std::thread::hardware_concurrency()) + 4);
+  bool limit_reached = false;
   std::deque<std::future<ProcessedFile>> threads;
   auto write_processed = [&](ProcessedFile&& processed) {
-    if (processed.data.empty()) {
+    if (processed.data.empty() || limit_reached) {
       return;
     }
+    if (result.meta_count + processed.count > kMaxTotalEntries) {
+      HOSHI_LOGW("total meta entries would exceed %zu, stopping import of further banks", kMaxTotalEntries);
+      limit_reached = true;
+      return;
+    }
+
     file.write(processed.data.data(), static_cast<std::streamsize>(processed.data.size()));
 
     for (auto& [hash, offset] : processed.offsets) {
@@ -494,7 +537,21 @@ ProcessedFile process_simple_entries(const std::vector<SimpleEntry>& entries) {
   }
 
   for (const auto& entry : entries) {
+    if (processed.data.size() > kMaxDataBufferBytes) {
+      HOSHI_LOGW("simple entries data buffer exceeded %zu bytes, stopping", kMaxDataBufferBytes);
+      break;
+    }
+    if (processed.count >= kMaxEntriesPerBank) {
+      HOSHI_LOGW("simple entries count exceeded %zu, stopping", kMaxEntriesPerBank);
+      break;
+    }
+
     const std::string_view glossary = entry.definition;
+    if (glossary.size() > kMaxGlossarySizeBytes) {
+      HOSHI_LOGW("glossary too large (%zu bytes), skipping entry", glossary.size());
+      continue;
+    }
+
     uint64_t glossary_hash = XXH3_64bits(glossary.data(), glossary.size());
     auto it = processed.glossaries.find(glossary_hash);
     if (it == processed.glossaries.end()) {
