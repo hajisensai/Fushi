@@ -245,8 +245,8 @@ function parseSurfaces(html) {
  * @returns {void}
  */
 function assertSurfaceData(surfaces) {
-  if (surfaces.length !== 84) {
-    throw new Error(`Expected 84 surfaces, got ${surfaces.length}.`);
+  if (surfaces.length === 0) {
+    throw new Error("Expected at least one mapped surface.");
   }
 
   const seen = new Set();
@@ -316,6 +316,8 @@ function renderVariantSvg(surface, choice) {
  * @returns {string}
  */
 function renderIndexHtml(manifestSurfaces) {
+  const surfaceCount = manifestSurfaces.length;
+  const imageCount = surfaceCount * 3;
   const cards = manifestSurfaces.map((surface, index) => {
     const board = boardLabels[surface.primary];
     const secondary = boardLabels[surface.secondary];
@@ -632,8 +634,8 @@ function renderIndexHtml(manifestSurfaces) {
         <p>These files are generated from the same board mappings as the picker. Pick one image per interface, use the review queue to move through every surface, then copy the result.</p>
       </div>
       <div class="counts">
-        <div class="count"><strong>84</strong><p>UI surfaces</p></div>
-        <div class="count"><strong>252</strong><p>image files</p></div>
+        <div class="count"><strong>${surfaceCount}</strong><p>UI surfaces</p></div>
+        <div class="count"><strong>${imageCount}</strong><p>image files</p></div>
         <div class="count"><strong>3</strong><p>choices each</p></div>
       </div>
     </section>
@@ -948,23 +950,26 @@ async function main() {
 
   await writeFile(join(outputDir, "index.html"), renderIndexHtml(manifestSurfaces), "utf8");
   await writeFile(join(outputDir, "manifest.json"), `${JSON.stringify({ generatedFrom: "interface-gallery.html", surfaces: manifestSurfaces }, null, 2)}\n`, "utf8");
-  await writeFile(join(outputDir, "README.md"), renderReadme(), "utf8");
+  await writeFile(join(outputDir, "README.md"), renderReadme(manifestSurfaces.length), "utf8");
 
   console.log(`Generated ${manifestSurfaces.length * 3} interface images for ${manifestSurfaces.length} surfaces.`);
 }
 
 /**
+ * @param {number} surfaceCount
  * @returns {string}
  */
-function renderReadme() {
+function renderReadme(surfaceCount) {
+  const imageCount = surfaceCount * 3;
   return `# Hibiki interface image pack
 
 This folder contains generated A/B/C image choices for every mapped MD3 + Cupertino UI surface.
 
-- \`index.html\` shows all 84 surfaces with three standalone images each, saves picks in the browser, and copies a complete \`Interface image picks\` result.
+- \`index.html\` shows all ${surfaceCount} surfaces with three standalone images each, saves picks in the browser, and copies a complete \`Interface image picks\` result.
 - The \`index.html\` review queue can step to the previous surface, next surface, next unpicked surface, or filter down to only unpicked surfaces.
 - \`manifest.json\` records the surface-to-file mapping.
 - \`*-A.svg\`, \`*-B.svg\`, and \`*-C.svg\` are the direct image choices.
+- Current generated image count: ${imageCount}.
 
 Regenerate from the design folder with:
 
@@ -973,6 +978,12 @@ node .\\generate-interface-images.mjs
 \`\`\`
 
 The generator reads \`interface-gallery.html\`, so the gallery remains the source of truth for surface mappings and defaults.
+
+Verify the source-to-image coverage with:
+
+\`\`\`powershell
+node .\\verify-interface-coverage.mjs
+\`\`\`
 `;
 }
 

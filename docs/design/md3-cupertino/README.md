@@ -47,6 +47,16 @@ The [variant gallery](variant-gallery.html) crops the runtime design boards into
 
 See [COVERAGE.md](COVERAGE.md) for the file-by-file mapping from current Flutter UI files to these boards, [INTERFACE_PICKS.md](INTERFACE_PICKS.md) for per-interface choices, and [UI_COVERAGE_AUDIT.md](UI_COVERAGE_AUDIT.md) for the scan evidence.
 
+## Verification
+
+Run the coverage gate after changing UI files, board mappings, gallery surfaces, or generated images:
+
+```powershell
+node .\verify-interface-coverage.mjs
+```
+
+It scans current non-generated Dart files under `hibiki/lib`, finds UI-building files, checks that every matched UI file is mapped in `COVERAGE.md`, then verifies `interface-gallery.html`, `interface-images/manifest.json`, and the generated A/B/C SVG files agree.
+
 ## Current interface groups
 
 | Group | Representative files | Notes |

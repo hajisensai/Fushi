@@ -8,6 +8,25 @@ This audit checks whether the MD3 + Cupertino design boards cover current UI-bui
 rg -l "(Widget\s+build\s*\(|extends\s+(StatelessWidget|StatefulWidget|ConsumerWidget|ConsumerStatefulWidget|BasePage|BaseSourcePage|BaseTabPage)|showDialog\s*\(|showModal|AlertDialog\s*\(|BottomSheet|ListTile\s*\()" hibiki/lib -g "*.dart" -g "!*.g.dart"
 ```
 
+## Verification command
+
+```powershell
+node docs\design\md3-cupertino\verify-interface-coverage.mjs
+```
+
+Latest verifier output:
+
+```text
+nonGeneratedDart=197
+uiMatched=81
+coverageRows=84
+gallerySurfaces=84
+manifestSurfaces=84
+svgImages=252
+unmappedUiFiles=0
+interfaceCoverage=ok
+```
+
 ## Current scan result
 
 - Total non-generated Dart files under `hibiki/lib`: 197
