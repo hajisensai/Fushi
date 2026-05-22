@@ -17,7 +17,7 @@ node docs\design\md3-cupertino\verify-interface-coverage.mjs
 Latest verifier output:
 
 ```text
-nonGeneratedDart=201
+nonGeneratedDart=202
 uiMatched=81
 broadUiAdjacentMatched=113
 coverageRows=84
@@ -31,12 +31,12 @@ interfaceCoverage=ok
 
 ## Current scan result
 
-- Total non-generated Dart files under `hibiki/lib`: 201
+- Total non-generated Dart files under `hibiki/lib`: 202
 - UI-building files matched by scan: 81
 - Broad UI-adjacent files matched by scan: 113
 - Entry UI files mapped in `COVERAGE.md`: 3
 - Page implementation files mapped in `COVERAGE.md`: 53
-- Shared/base/support UI files mapped in `COVERAGE.md`: 25
+- Shared/base/support UI files mapped in `COVERAGE.md`: 28
 - Unmapped UI-building files after this audit: 0
 
 ## Entry files covered by this audit
