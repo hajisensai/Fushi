@@ -66,6 +66,8 @@ node .\generate-implementation-spec.mjs --pack hibiki-balanced --output .\IMPLEM
 node .\generate-implementation-spec.mjs --picks .\RECOMMENDED_FINAL_SELECTION.zh-CN.txt --output .\IMPLEMENTATION_SPEC_FINAL_DRAFT.md
 ```
 
+当前已经生成好的可审草案是 [IMPLEMENTATION_SPEC_FINAL_DRAFT.md](IMPLEMENTATION_SPEC_FINAL_DRAFT.md)。它仍然不是最终批准；确认前不要开始运行时代码改造。
+
 ## 当前交付状态
 
 - [pack-selection-index.html](pack-selection-index.html): 4 套整包方案的逐界面索引，每套都能跳到完整 84 图选择页。
@@ -81,6 +83,7 @@ node .\generate-implementation-spec.mjs --picks .\RECOMMENDED_FINAL_SELECTION.zh
 - [RECOMMENDED_SELECTION_HIBIKI_BALANCED.zh-CN.md](RECOMMENDED_SELECTION_HIBIKI_BALANCED.zh-CN.md): 推荐 `Hibiki Balanced` 方案的逐界面中文表。
 - [interface-images/index.html](interface-images/index.html): 84 个界面/组件，每个 A/B/C 三张图，可逐项选择。
 - [INTERFACE_PICKS.md](INTERFACE_PICKS.md): 可复制填写的 84 行选择表。
+- [IMPLEMENTATION_SPEC_FINAL_DRAFT.md](IMPLEMENTATION_SPEC_FINAL_DRAFT.md): 从推荐选择种子生成的可审最终规格草案，包含 84 个界面和 30 个显式高风险选择。
 - [IMPLEMENTATION_SPEC_HIBIKI_BALANCED.md](IMPLEMENTATION_SPEC_HIBIKI_BALANCED.md): 当前推荐方案的实现规格草案。
 - [IMPLEMENTATION_SPEC_DRAFT.md](IMPLEMENTATION_SPEC_DRAFT.md): manifest 默认选择的规格草案，等用户最终选择后会被重新生成。
 

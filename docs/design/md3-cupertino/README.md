@@ -26,13 +26,13 @@ After choices are copied back into a text file, generate the implementation spec
 node .\generate-implementation-spec.mjs --pack hibiki-balanced --picks .\my-picks.txt --output .\IMPLEMENTATION_SPEC_DRAFT.md
 ```
 
-To review the recommended Hibiki Balanced seed first:
+To regenerate the reviewable final draft from the recommended Hibiki Balanced seed:
 
 ```powershell
 node .\generate-implementation-spec.mjs --picks .\RECOMMENDED_FINAL_SELECTION.zh-CN.txt --output .\IMPLEMENTATION_SPEC_FINAL_DRAFT.md
 ```
 
-Use `--pack hibiki-balanced` without `--picks` to generate the recommended hybrid spec directly. A picks file may also contain `Pack: hibiki-balanced`, so a final selection can be generated with only `--picks`. The current recommended generated spec is [IMPLEMENTATION_SPEC_HIBIKI_BALANCED.md](IMPLEMENTATION_SPEC_HIBIKI_BALANCED.md). Omit both `--pack` and `--picks` only when you want [IMPLEMENTATION_SPEC_DRAFT.md](IMPLEMENTATION_SPEC_DRAFT.md) from manifest defaults before final choices.
+Use `--pack hibiki-balanced` without `--picks` to generate the recommended hybrid spec directly. A picks file may also contain `Pack: hibiki-balanced`, so a final selection can be generated with only `--picks`. The current reviewable final draft is [IMPLEMENTATION_SPEC_FINAL_DRAFT.md](IMPLEMENTATION_SPEC_FINAL_DRAFT.md), generated from [RECOMMENDED_FINAL_SELECTION.zh-CN.txt](RECOMMENDED_FINAL_SELECTION.zh-CN.txt). The pure pack-generated reference is [IMPLEMENTATION_SPEC_HIBIKI_BALANCED.md](IMPLEMENTATION_SPEC_HIBIKI_BALANCED.md). Omit both `--pack` and `--picks` only when you want [IMPLEMENTATION_SPEC_DRAFT.md](IMPLEMENTATION_SPEC_DRAFT.md) from manifest defaults before final choices.
 
 ## Selection images
 
