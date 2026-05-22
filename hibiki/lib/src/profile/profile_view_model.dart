@@ -52,7 +52,7 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
   }
 
   final ProfileRepository _repo;
-  final void Function() _onProfileApplied;
+  final Future<void> Function() _onProfileApplied;
 
   Future<void> _load() async {
     state = state.copyWith(isLoading: true);
@@ -74,7 +74,7 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
     await _repo.setActiveProfileId(profileId);
     await _repo.applyProfile(profileId);
     state = state.copyWith(activeProfileId: profileId);
-    _onProfileApplied();
+    await _onProfileApplied();
   }
 
   Future<void> createProfile(String name) async {
@@ -110,7 +110,7 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
     final activeId = await _repo.getActiveProfileId();
     state = state.copyWith(profiles: profiles, activeProfileId: activeId);
     if (activeId != previousActiveId) {
-      _onProfileApplied();
+      await _onProfileApplied();
     }
   }
 
@@ -144,10 +144,10 @@ final profileRepositoryProvider = Provider<ProfileRepository>((ref) {
 final profileViewModelProvider =
     StateNotifierProvider<ProfileViewModel, ProfileUiState>((ref) {
   final repo = ref.watch(profileRepositoryProvider);
-  void onApplied() {
+  Future<void> onApplied() async {
     ref.invalidate(ankiViewModelProvider);
     final appModel = ref.read(appProvider);
-    appModel.refreshPrefCache();
+    await appModel.refreshPrefCache();
     ReaderHoshiSource.readerSettings?.refreshFromDb();
   }
 
