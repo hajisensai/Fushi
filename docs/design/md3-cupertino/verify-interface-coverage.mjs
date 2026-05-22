@@ -12,11 +12,13 @@ const libDir = join(repoRoot, "hibiki", "lib");
 const coveragePath = join(designDir, "COVERAGE.md");
 const galleryPath = join(designDir, "interface-gallery.html");
 const manifestPath = join(designDir, "interface-images", "manifest.json");
+const decisionMatrixPath = join(designDir, "INTERFACE_DECISION_MATRIX.zh-CN.md");
 const imageDir = join(designDir, "interface-images");
 
 const uiPattern = /Widget\s+build\s*\(|extends\s+(?:StatelessWidget|StatefulWidget|ConsumerWidget|ConsumerStatefulWidget|BasePage|BaseSourcePage|BaseTabPage)|showDialog\s*\(|showModal|AlertDialog\s*\(|BottomSheet|ListTile\s*\(/u;
 const surfaceRegex = /\{ section: "([^"]+)", surface: "([^"]+)", primary: "([^"]+)", file: "([^"]+)", secondary: "([^"]+)", secondaryFile: "([^"]+)", defaultChoice: "([ABC])" \}/gu;
 const coverageRowRegex = /^\| `([^`]+\.dart)` \| `([^`]+\.svg)` \| `([^`]+\.svg)` \|$/gmu;
+const decisionMatrixRowRegex = /^\| `([^`]+\.dart)` \| [^|]+ \| \[A\]\(interface-images\/([^)]+)\) \[B\]\(interface-images\/([^)]+)\) \[C\]\(interface-images\/([^)]+)\) \|/gmu;
 
 /**
  * @param {string} directory
@@ -75,6 +77,22 @@ function parseCoverageRows(markdown) {
 }
 
 /**
+ * @param {string} markdown
+ * @returns {Map<string, Record<"A" | "B" | "C", string>>}
+ */
+function parseDecisionMatrixRows(markdown) {
+  /** @type {Map<string, Record<"A" | "B" | "C", string>>} */
+  const rows = new Map();
+  for (const match of markdown.matchAll(decisionMatrixRowRegex)) {
+    if (rows.has(match[1])) {
+      throw new Error(`Duplicate decision matrix row: ${match[1]}`);
+    }
+    rows.set(match[1], { A: match[2], B: match[3], C: match[4] });
+  }
+  return rows;
+}
+
+/**
  * @param {Surface} surface
  * @returns {string}
  */
@@ -95,10 +113,11 @@ function failIf(failures, message) {
  * @returns {Promise<void>}
  */
 async function main() {
-  const [coverageMarkdown, galleryHtml, manifestRaw, imageEntries, dartFiles] = await Promise.all([
+  const [coverageMarkdown, galleryHtml, manifestRaw, decisionMatrixMarkdown, imageEntries, dartFiles] = await Promise.all([
     readFile(coveragePath, "utf8"),
     readFile(galleryPath, "utf8"),
     readFile(manifestPath, "utf8"),
+    readFile(decisionMatrixPath, "utf8"),
     readdir(imageDir, { withFileTypes: true }),
     listDartFiles(libDir)
   ]);
@@ -106,6 +125,7 @@ async function main() {
   const coverageRows = parseCoverageRows(coverageMarkdown);
   const gallerySurfaces = parseGallerySurfaces(galleryHtml);
   const manifest = /** @type {{ generatedFrom: string, surfaces: ManifestSurface[] }} */ (JSON.parse(manifestRaw));
+  const decisionMatrixRows = parseDecisionMatrixRows(decisionMatrixMarkdown);
   const svgNames = new Set(imageEntries.filter((entry) => entry.isFile() && entry.name.endsWith(".svg")).map((entry) => entry.name));
 
   /** @type {{ name: string, path: string }[]} */
@@ -170,10 +190,17 @@ async function main() {
     if (!galleryKeys.has(surfaceKey(surface))) {
       failIf(failures, `Manifest surface is missing from interface-gallery.html: ${surface.surface}`);
     }
+    const matrixRow = decisionMatrixRows.get(surface.surface);
+    if (!matrixRow) {
+      failIf(failures, `Manifest surface is missing from INTERFACE_DECISION_MATRIX.zh-CN.md: ${surface.surface}`);
+    }
     for (const choice of /** @type {("A" | "B" | "C")[]} */ (["A", "B", "C"])) {
       const file = surface.files[choice];
       if (!file || !svgNames.has(file)) {
         failIf(failures, `Missing image for ${surface.surface} ${choice}: ${file || "(empty)"}`);
+      }
+      if (matrixRow && matrixRow[choice] !== file) {
+        failIf(failures, `Decision matrix image mismatch for ${surface.surface} ${choice}: matrix=${matrixRow[choice]}, manifest=${file}`);
       }
     }
   }
@@ -181,6 +208,12 @@ async function main() {
   for (const surface of gallerySurfaces) {
     if (!manifestKeys.has(surfaceKey(surface))) {
       failIf(failures, `Gallery surface is missing from manifest: ${surface.surface}`);
+    }
+  }
+
+  for (const surfaceName of decisionMatrixRows.keys()) {
+    if (!manifest.surfaces.some((surface) => surface.surface === surfaceName)) {
+      failIf(failures, `Decision matrix surface is missing from manifest: ${surfaceName}`);
     }
   }
 
@@ -200,6 +233,7 @@ async function main() {
   console.log(`coverageRows=${coverageRows.size}`);
   console.log(`gallerySurfaces=${gallerySurfaces.length}`);
   console.log(`manifestSurfaces=${manifest.surfaces.length}`);
+  console.log(`decisionMatrixRows=${decisionMatrixRows.size}`);
   console.log(`svgImages=${svgNames.size}`);
   console.log("unmappedUiFiles=0");
   console.log("interfaceCoverage=ok");

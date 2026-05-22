@@ -4,7 +4,7 @@
 
 ## 先选整包方案
 
-先打开 [pack-selection-index.html](pack-selection-index.html)。它把 4 套整包都展开成 84 个界面/支撑组件的完整视图。想先快速扫风格，再打开 [design-pack-gallery.html](design-pack-gallery.html) 看每套 12 张代表图。想按单个界面横向对比 A/B/C、四套整包默认选择，并直接点选导出最终文本，打开 [interface-pack-comparison.html](interface-pack-comparison.html)。
+先打开 [pack-selection-index.html](pack-selection-index.html)。它把 4 套整包都展开成 84 个界面/支撑组件的完整视图。想先快速扫风格，再打开 [design-pack-gallery.html](design-pack-gallery.html) 看每套 12 张代表图。想按单个界面横向对比 A/B/C、四套整包默认选择，并直接点选导出最终文本，打开 [interface-pack-comparison.html](interface-pack-comparison.html)。想用 Markdown 一页审完整 84 行，打开 [INTERFACE_DECISION_MATRIX.zh-CN.md](INTERFACE_DECISION_MATRIX.zh-CN.md)。
 
 | 方案 | 适合场景 | 主要风险 |
 | --- | --- | --- |
@@ -64,6 +64,7 @@ node .\generate-implementation-spec.mjs --pack hibiki-balanced --output .\IMPLEM
 
 - [pack-selection-index.html](pack-selection-index.html): 4 套整包方案的逐界面索引，每套都能跳到完整 84 图选择页。
 - [interface-pack-comparison.html](interface-pack-comparison.html): 按界面横向比较 A/B/C 三图，显示四套整包默认选择，并支持点选、保存和复制最终选择文本。
+- [INTERFACE_DECISION_MATRIX.zh-CN.md](INTERFACE_DECISION_MATRIX.zh-CN.md): 84 个界面的 Markdown 总表，逐行列出三张候选图、四套整包默认和推荐选择。
 - [FINAL_SELECTION_TEMPLATE.zh-CN.md](FINAL_SELECTION_TEMPLATE.zh-CN.md): 最终选择填写模板，可直接生成最终规格草案。
 - [selection-md3-practical.html](selection-md3-practical.html) / [SELECTION_MD3_PRACTICAL.zh-CN.md](SELECTION_MD3_PRACTICAL.zh-CN.md): `MD3 Practical` 的 84 个界面完整展开。
 - [selection-reading-calm.html](selection-reading-calm.html) / [SELECTION_READING_CALM.zh-CN.md](SELECTION_READING_CALM.zh-CN.md): `Reading Calm` 的 84 个界面完整展开。
