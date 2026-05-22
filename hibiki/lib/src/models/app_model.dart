@@ -230,6 +230,9 @@ class AppModel with ChangeNotifier {
   /// System dynamic color palette from Android 12+ Monet engine.
   CorePalette? _systemPalette;
 
+  Color? get systemPrimaryColor =>
+      _systemPalette != null ? Color(_systemPalette!.primary.get(40)) : null;
+
   Future<void> refreshSystemPalette() async {
     try {
       _systemPalette = await DynamicColorPlugin.getCorePalette();
@@ -1445,28 +1448,11 @@ class AppModel with ChangeNotifier {
       }
       return defaultValue;
     }
-    if (defaultValue is int) return int.tryParse(raw) ?? defaultValue;
-    if (defaultValue is double) return double.tryParse(raw) ?? defaultValue;
-    if (defaultValue is bool) return raw == 'true';
-    if (defaultValue is List) {
-      try {
-        return List<String>.from(jsonDecode(raw));
-      } catch (e, stack) {
-        ErrorLogService.instance
-            .log('AppModel.getPreference.jsonList', e, stack);
-        return defaultValue;
-      }
-    }
-    return raw;
+    return PrefCodec.decode(raw, defaultValue);
   }
 
   Future<void> _setPref(String key, dynamic value) async {
-    String strVal;
-    if (value is List) {
-      strVal = jsonEncode(value);
-    } else {
-      strVal = value.toString();
-    }
+    final String strVal = PrefCodec.encode(value);
     _prefCache[key] = strVal;
     await _database.setPref(key, strVal);
   }

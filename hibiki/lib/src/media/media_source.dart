@@ -115,24 +115,7 @@ abstract class MediaSource {
     for (final entry in all.entries) {
       if (entry.key.startsWith(prefix)) {
         final shortKey = entry.key.substring(prefix.length);
-        final raw = entry.value;
-        if (raw == 'true') {
-          _preferences[shortKey] = true;
-        } else if (raw == 'false') {
-          _preferences[shortKey] = false;
-        } else {
-          final asInt = int.tryParse(raw);
-          if (asInt != null) {
-            _preferences[shortKey] = asInt;
-          } else {
-            final asDouble = double.tryParse(raw);
-            if (asDouble != null) {
-              _preferences[shortKey] = asDouble;
-            } else {
-              _preferences[shortKey] = raw;
-            }
-          }
-        }
+        _preferences[shortKey] = PrefCodec.decodeUntyped(entry.value);
       }
     }
   }
@@ -157,7 +140,7 @@ abstract class MediaSource {
     final db = _sharedDb;
     if (db != null) {
       try {
-        await db.setPref(_dbPrefKey(key), value.toString());
+        await db.setPref(_dbPrefKey(key), PrefCodec.encode(value));
       } catch (e, stack) {
         ErrorLogService.instance.log('MediaSource.setPref', e, stack);
         debugPrint('[MediaSource] setPref write-through err: $e');

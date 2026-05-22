@@ -5,6 +5,7 @@ import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:path/path.dart' as p;
 
+import 'pref_codec.dart';
 import 'tables.dart';
 
 part 'database.g.dart';
@@ -294,14 +295,11 @@ class HibikiDatabase extends _$HibikiDatabase {
   Future<T> getPrefTyped<T>(String key, T defaultValue) async {
     final raw = await getPref(key);
     if (raw == null) return defaultValue;
-    if (T == int) return (int.tryParse(raw) ?? defaultValue) as T;
-    if (T == double) return (double.tryParse(raw) ?? defaultValue) as T;
-    if (T == bool) return (raw == 'true') as T;
-    return raw as T;
+    return PrefCodec.decode<T>(raw, defaultValue);
   }
 
   Future<void> setPrefTyped<T>(String key, T value) =>
-      setPref(key, value.toString());
+      setPref(key, PrefCodec.encode(value));
 
   Future<void> deletePref(String key) async {
     await (delete(preferences)..where((t) => t.key.equals(key))).go();
