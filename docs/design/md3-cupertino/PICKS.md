@@ -8,6 +8,8 @@ Use [INTERFACE_PICKS.md](INTERFACE_PICKS.md) when you want to review every mappe
 
 Use [interface-gallery.html](interface-gallery.html) when you want each exact interface surface to show three A/B/C mockup images. Use [interface-images/index.html](interface-images/index.html) when you want those exact choices as standalone image files with a review queue, clickable picks, `Next unpicked`, `Only unpicked`, and copyable output. Use [variant-gallery.html](variant-gallery.html) when you want each board direction as a separate crop instead of reading a dense three-column board.
 
+Use [DESIGN_PACKS.md](DESIGN_PACKS.md) when you want to choose a complete baseline first: MD3 Practical, Reading Calm, Adaptive Power, or the recommended Hibiki Balanced hybrid.
+
 ## Recommended baseline
 
 If you want the shortest path to a coherent implementation, start from this baseline and override only the rows you dislike:

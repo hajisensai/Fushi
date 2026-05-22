@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 /** @typedef {"A" | "B" | "C"} Choice */
 /** @typedef {{ section: string, surface: string, primary: string, file: string, secondary: string, secondaryFile: string, defaultChoice: Choice, slug: string, files: Record<Choice, string> }} ManifestSurface */
+/** @typedef {"md3-practical" | "reading-calm" | "adaptive-power" | "hibiki-balanced"} PackName */
 /** @typedef {{ choices: Map<string, Choice>, boardChoices: Map<string, Choice>, notes: string[] }} ParsedPicks */
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -61,29 +62,120 @@ const groupContracts = {
   "Shared/support": "Shared and support surfaces define reusable Flutter components. They must prevent page-by-page styling drift and should be implemented before broad page rewrites."
 };
 
+/** @type {Record<PackName, { label: string, choices: Record<string, Choice>, notes: string[] }>} */
+const packs = {
+  "md3-practical": {
+    label: "MD3 Practical",
+    choices: Object.fromEntries(boardOrder.map((boardId) => [boardId, "A"])),
+    notes: [
+      "Baseline: MD3 Practical.",
+      "Use Material 3 components as the visible default.",
+      "Keep workflows direct and avoid decorative reader chrome."
+    ]
+  },
+  "reading-calm": {
+    label: "Reading Calm",
+    choices: Object.fromEntries(boardOrder.map((boardId) => [boardId, "B"])),
+    notes: [
+      "Baseline: Reading Calm.",
+      "Prefer grouped settings, large-title rhythm, and translucent reader/accessory chrome.",
+      "Keep dictionary results readable instead of input-focused."
+    ]
+  },
+  "adaptive-power": {
+    label: "Adaptive Power",
+    choices: Object.fromEntries(boardOrder.map((boardId) => [boardId, "C"])),
+    notes: [
+      "Baseline: Adaptive Power.",
+      "Favor navigation rail/sidebar, split panes, inspectors, persistent previews, and compact shared components.",
+      "Keep mobile layouts usable by collapsing dense panels into sheets."
+    ]
+  },
+  "hibiki-balanced": {
+    label: "Hibiki Balanced",
+    choices: {
+      "01": "C",
+      "02": "A",
+      "03": "B",
+      "04": "B",
+      "05": "B",
+      "06": "A",
+      "07": "C",
+      "08": "A",
+      "09": "C",
+      "10": "C",
+      "11": "B",
+      "12": "A",
+      "13": "C",
+      "14": "A",
+      "15": "A",
+      "16": "A",
+      "18": "C"
+    },
+    notes: [
+      "Baseline: Hibiki Balanced.",
+      "Reader stays calm; management surfaces stay dense.",
+      "Shared components use hybrid density so pages do not drift."
+    ]
+  }
+};
+
 /**
  * @param {string[]} args
- * @returns {{ picksPath?: string, outputPath: string }}
+ * @returns {{ picksPath?: string, outputPath: string, packName?: PackName }}
  */
 function parseArgs(args) {
-  /** @type {{ picksPath?: string, outputPath: string }} */
+  /** @type {{ picksPath?: string, outputPath: string, packName?: PackName }} */
   const result = { outputPath: defaultOutputPath };
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === "--picks") {
       result.picksPath = args[index + 1];
       index += 1;
+    } else if (arg === "--pack") {
+      const packName = args[index + 1];
+      if (!Object.hasOwn(packs, packName)) {
+        throw new Error(`Unknown pack: ${packName}. Valid packs: ${Object.keys(packs).join(", ")}`);
+      }
+      result.packName = /** @type {PackName} */ (packName);
+      index += 1;
     } else if (arg === "--output") {
       result.outputPath = args[index + 1];
       index += 1;
     } else if (arg === "--help") {
-      console.log("Usage: node generate-implementation-spec.mjs [--picks picks.txt] [--output IMPLEMENTATION_SPEC.md]");
+      console.log("Usage: node generate-implementation-spec.mjs [--pack md3-practical|reading-calm|adaptive-power|hibiki-balanced] [--picks picks.txt] [--output IMPLEMENTATION_SPEC.md]");
       process.exit(0);
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
   }
   return result;
+}
+
+/**
+ * @param {PackName} packName
+ * @returns {ParsedPicks}
+ */
+function picksFromPack(packName) {
+  const pack = packs[packName];
+  return {
+    choices: new Map(),
+    boardChoices: new Map(Object.entries(pack.choices)),
+    notes: [...pack.notes]
+  };
+}
+
+/**
+ * @param {ParsedPicks} base
+ * @param {ParsedPicks} override
+ * @returns {ParsedPicks}
+ */
+function mergePicks(base, override) {
+  return {
+    choices: new Map([...base.choices, ...override.choices]),
+    boardChoices: new Map([...base.boardChoices, ...override.boardChoices]),
+    notes: [...base.notes, ...override.notes]
+  };
 }
 
 /**
@@ -278,8 +370,17 @@ async function main() {
     throw new Error(`Unexpected manifest source: ${manifest.generatedFrom}`);
   }
 
-  const picks = args.picksPath ? parsePicks(await readFile(args.picksPath, "utf8")) : { choices: new Map(), boardChoices: new Map(), notes: [] };
-  const sourceLabel = args.picksPath ? relative(__dirname, args.picksPath) : "manifest defaults; user choices pending";
+  const packPicks = args.packName ? picksFromPack(args.packName) : { choices: new Map(), boardChoices: new Map(), notes: [] };
+  const filePicks = args.picksPath ? parsePicks(await readFile(args.picksPath, "utf8")) : { choices: new Map(), boardChoices: new Map(), notes: [] };
+  const picks = mergePicks(packPicks, filePicks);
+  const sources = [];
+  if (args.packName) {
+    sources.push(`${packs[args.packName].label} pack`);
+  }
+  if (args.picksPath) {
+    sources.push(relative(__dirname, args.picksPath));
+  }
+  const sourceLabel = sources.length > 0 ? sources.join(" + ") : "manifest defaults; user choices pending";
   const spec = renderSpec(manifest.surfaces, picks, sourceLabel);
   await writeFile(args.outputPath, spec, "utf8");
   console.log(`Wrote ${relative(__dirname, args.outputPath)} for ${manifest.surfaces.length} surfaces.`);

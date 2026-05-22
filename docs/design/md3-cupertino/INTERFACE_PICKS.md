@@ -4,6 +4,8 @@ This file is the per-interface selector for the redesign. `COVERAGE.md` maps eac
 
 Use [gallery.html](gallery.html) for the compact clickable version. It contains the same interface list plus the visual boards. The primary image supplies the `A` / `B` / `C` options for that interface; the secondary image is the supporting style to preserve. Use [interface-gallery.html](interface-gallery.html) when you want every row to show three visible mockup images, [interface-images/index.html](interface-images/index.html) when you want standalone image files with a review queue, clickable picks, and copyable output, or [variant-gallery.html](variant-gallery.html) when you want board-level crops only.
 
+If 84 row-level choices are too much at first, pick a baseline from [DESIGN_PACKS.md](DESIGN_PACKS.md), then use this file only for exceptions.
+
 ## Pick rule
 
 - Pick one `A`, `B`, or `C` for every row, or accept the default from the primary board.
