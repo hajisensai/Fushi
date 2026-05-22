@@ -1215,6 +1215,12 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       }
     } else if (absDx < 20 && absDy < 20 && elapsed < 500) {
       var target = document.elementFromPoint(x, y);
+      if (target && target.tagName !== 'IMG') {
+        var img = target.classList && target.classList.contains('block-img-wrapper')
+          ? target.querySelector('img')
+          : target.querySelector(':scope > img.block-img');
+        if (img) target = img;
+      }
       if (target && target.tagName === 'IMG' && target.src) {
         window.flutter_inappwebview.callHandler('onImageTap', target.src);
       } else {
@@ -1529,23 +1535,29 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       await _applyLyricsFavorites();
       return;
     }
+    final int gen = _navigateGeneration;
     final int chapterSnapshot = _currentChapter;
     try {
       String? sasayakiCuesJson;
       if (_audiobookController != null) {
         sasayakiCuesJson = await _prepareSasayakiCuesJson();
       }
-      if (_currentChapter != chapterSnapshot) return;
+      if (_currentChapter != chapterSnapshot ||
+          _navigateGeneration != gen) {
+        return;
+      }
       await controller.evaluateJavascript(
         source: _buildReaderSetupScript(sasayakiCuesJson: sasayakiCuesJson),
       );
+      if (!mounted || _navigateGeneration != gen) return;
       _initialFragment = null;
       if (_audiobookController != null) {
         await _injectAudiobookBridge();
       }
+      if (!mounted || _navigateGeneration != gen) return;
       await HighlightBridge.inject(controller);
       await _applyChapterHighlights();
-      if (!mounted) return;
+      if (!mounted || _navigateGeneration != gen) return;
       _lastSyncedWidth = MediaQuery.of(context).size.width;
     } catch (e, stack) {
       ErrorLogService.instance
@@ -1724,8 +1736,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
             onTimeout: () => false,
           );
         } catch (e, stack) {
-          ErrorLogService.instance
-              .log('ReaderHoshi.lyricsRestore', e, stack);
+          ErrorLogService.instance.log('ReaderHoshi.lyricsRestore', e, stack);
         }
       }
     } finally {

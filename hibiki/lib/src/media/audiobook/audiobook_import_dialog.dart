@@ -857,6 +857,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     }
   }
 
+  static const int _maxCuesPerFile = 50000;
+
   /// 解析字幕文件并运行 matcher（如适用）。返回 cues 和 health，
   /// 但 **不写入数据库**——调用方在 saveAudiobook 之后再 saveCues，
   /// 避免中途失败留下孤立 cue。
@@ -864,58 +866,45 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       String format) async {
     final File alignFile = File(_alignmentPath!);
 
+    List<AudioCue> cues;
+    bool useFragmentHealth = false;
+    String formatLabel = format;
+
     if (format == 'srt') {
-      final List<AudioCue> cues = await SrtParser.parse(
-        srtFile: alignFile,
-        bookUid: widget.bookUid,
-      );
-      final AudiobookHealth health = await _matchCuesToTtu(cues);
-      return (health: health, cues: cues);
+      cues = await SrtParser.parse(srtFile: alignFile, bookUid: widget.bookUid);
     } else if (format == 'lrc') {
-      final List<AudioCue> cues = await LrcParser.parse(
-        lrcFile: alignFile,
-        bookUid: widget.bookUid,
-      );
-      final AudiobookHealth health = await _matchCuesToTtu(cues);
-      return (health: health, cues: cues);
+      cues = await LrcParser.parse(lrcFile: alignFile, bookUid: widget.bookUid);
     } else if (format == 'vtt') {
-      final List<AudioCue> cues = await VttParser.parse(
-        vttFile: alignFile,
-        bookUid: widget.bookUid,
-      );
-      final AudiobookHealth health = await _matchCuesToTtu(cues);
-      return (health: health, cues: cues);
+      cues = await VttParser.parse(vttFile: alignFile, bookUid: widget.bookUid);
     } else if (format == 'ass' || format == 'ssa') {
-      final List<AudioCue> cues = await AssParser.parse(
-        assFile: alignFile,
-        bookUid: widget.bookUid,
-      );
-      final AudiobookHealth health = await _matchCuesToTtu(cues);
-      return (health: health, cues: cues);
+      cues = await AssParser.parse(assFile: alignFile, bookUid: widget.bookUid);
     } else if (format == 'json') {
-      final List<AudioCue> cues = await JsonAlignmentParser.parse(
-        jsonFile: alignFile,
-        bookUid: widget.bookUid,
-      );
-      return (
-        health: _healthFromFragmentIntegrity(cues, formatLabel: 'json'),
-        cues: cues,
-      );
+      cues = await JsonAlignmentParser.parse(
+          jsonFile: alignFile, bookUid: widget.bookUid);
+      useFragmentHealth = true;
     } else {
       final String fileName =
           _alignmentPath!.split(Platform.pathSeparator).last;
       final String chapterHref = fileName.replaceAll(
           RegExp(r'\.smil$', caseSensitive: false), '.xhtml');
-      final List<AudioCue> cues = await SmilParser.parse(
-        smilFile: alignFile,
-        bookUid: widget.bookUid,
-        chapterHref: chapterHref,
-      );
-      return (
-        health: _healthFromFragmentIntegrity(cues, formatLabel: 'smil'),
-        cues: cues,
-      );
+      cues = await SmilParser.parse(
+          smilFile: alignFile,
+          bookUid: widget.bookUid,
+          chapterHref: chapterHref);
+      useFragmentHealth = true;
+      formatLabel = 'smil';
     }
+
+    if (cues.length > _maxCuesPerFile) {
+      debugPrint('[AudiobookImport] cue count ${cues.length} exceeds limit '
+          '$_maxCuesPerFile, truncating');
+      cues = cues.sublist(0, _maxCuesPerFile);
+    }
+
+    final AudiobookHealth health = useFragmentHealth
+        ? _healthFromFragmentIntegrity(cues, formatLabel: formatLabel)
+        : await _matchCuesToTtu(cues);
+    return (health: health, cues: cues);
   }
 
   /// SMIL/JSON 的静态健康度：基于 cue 自带的 textFragmentId 完整度。
@@ -952,7 +941,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       case HealthKind.partial:
       case HealthKind.failed:
         final int p = h.ratePct ?? 0;
-        return 'match $p%';
+        return t.health_match_summary(pct: p);
       case HealthKind.notApplicable:
       case HealthKind.unrun:
       case HealthKind.running:

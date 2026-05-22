@@ -4,6 +4,8 @@ import 'dart:io';
 import 'dart:ui';
 
 import 'package:archive/archive_io.dart';
+import 'package:dynamic_color/dynamic_color.dart';
+import 'package:material_color_utilities/material_color_utilities.dart';
 
 import 'package:audio_service/audio_service.dart' as ag;
 import 'package:collection/collection.dart';
@@ -224,6 +226,18 @@ class AppModel with ChangeNotifier {
 
   /// In-memory list of dictionary history results.
   final List<DictionarySearchResult> _dictionaryHistoryResults = [];
+
+  /// System dynamic color palette from Android 12+ Monet engine.
+  CorePalette? _systemPalette;
+
+  Future<void> refreshSystemPalette() async {
+    try {
+      _systemPalette = await DynamicColorPlugin.getCorePalette();
+    } catch (_) {
+      _systemPalette = null;
+    }
+    if (appThemeKey == 'system-theme') notifyListeners();
+  }
 
   /// Used to get the versioning metadata of the app. See [initialise].
   PackageInfo get packageInfo => _packageInfo;
@@ -557,12 +571,26 @@ class AppModel with ChangeNotifier {
     return themePresets[appThemeKey]?.seed ?? const Color(0xFF1F4959);
   }
 
+  ThemeMode get themeMode {
+    switch (brightnessMode) {
+      case 'light':
+        return ThemeMode.light;
+      case 'dark':
+        return ThemeMode.dark;
+      default:
+        return ThemeMode.system;
+    }
+  }
+
   ThemeData get theme => _buildThemeData(Brightness.light);
   ThemeData get darkTheme => _buildThemeData(Brightness.dark);
 
-  ThemeData _buildThemeData(Brightness brightness) {
+  ColorScheme _buildColorScheme(Brightness brightness) {
+    if (appThemeKey == 'system-theme' && _systemPalette != null) {
+      return _systemPalette!.toColorScheme(brightness: brightness);
+    }
     final bool useCustomRoles = appThemeKey == 'custom-theme';
-    final cs = buildHibikiColorScheme(
+    return buildHibikiColorScheme(
       seedColor: _seedColor,
       brightness: brightness,
       primary: useCustomRoles ? customThemePrimaryColor : null,
@@ -570,6 +598,10 @@ class AppModel with ChangeNotifier {
       tertiary: useCustomRoles ? customThemeTertiaryColor : null,
       primaryContainer: useCustomRoles ? customThemeContainerColor : null,
     );
+  }
+
+  ThemeData _buildThemeData(Brightness brightness) {
+    final cs = _buildColorScheme(brightness);
     return ThemeData(
       useMaterial3: true,
       colorScheme: cs,
@@ -1141,6 +1173,9 @@ class AppModel with ChangeNotifier {
       /// Permission requests are deferred to the point of use (file import,
       /// Anki export) so they do not block startup.
 
+      debugPrint('[Hibiki] init: system palette');
+      await refreshSystemPalette();
+
       debugPrint('[Hibiki] init: directories');
       _browserDirectory = Directory(path.join(appDirectory.path, 'browser'));
       _thumbnailsDirectory =
@@ -1392,6 +1427,11 @@ class AppModel with ChangeNotifier {
     _prefCache
       ..clear()
       ..addAll(allPrefs);
+    for (final sourceMap in mediaSources.values) {
+      for (final source in sourceMap.values) {
+        await source.refreshPreferencesFromDb();
+      }
+    }
     notifyListeners();
   }
 
@@ -1617,17 +1657,46 @@ class AppModel with ChangeNotifier {
   String get appThemeKey {
     final String key = _getPref('app_theme_key', defaultValue: '');
     if (key.isEmpty ||
-        (!themePresets.containsKey(key) && key != 'custom-theme')) {
-      final bool sysDark =
-          WidgetsBinding.instance.platformDispatcher.platformBrightness ==
-              Brightness.dark;
-      return sysDark ? 'dark-theme' : 'light-theme';
+        (!themePresets.containsKey(key) &&
+            key != 'custom-theme' &&
+            key != 'system-theme')) {
+      return 'system-theme';
     }
     return key;
   }
 
   Future<void> setAppThemeKey(String key) async {
     await _setPref('app_theme_key', key);
+    if (key == 'system-theme') {
+      await setBrightnessMode('system');
+      return;
+    }
+    final preset = themePresets[key];
+    if (preset != null) {
+      await setBrightnessMode(
+          preset.brightness == Brightness.dark ? 'dark' : 'light');
+      return;
+    }
+    notifyListeners();
+    _persistSplashColor();
+  }
+
+  /// Global brightness mode: 'light', 'dark', or 'system'.
+  String get brightnessMode {
+    final String mode = _getPref('brightness_mode', defaultValue: '');
+    if (mode.isNotEmpty) return mode;
+    final key = appThemeKey;
+    if (key == 'system-theme') return 'system';
+    if (key == 'custom-theme') return customThemeDark ? 'dark' : 'light';
+    final preset = themePresets[key];
+    if (preset != null) {
+      return preset.brightness == Brightness.dark ? 'dark' : 'light';
+    }
+    return 'system';
+  }
+
+  Future<void> setBrightnessMode(String mode) async {
+    await _setPref('brightness_mode', mode);
     notifyListeners();
     _persistSplashColor();
   }
@@ -1741,7 +1810,7 @@ class AppModel with ChangeNotifier {
 
   Future<void> applyCustomTheme({
     required Color seed,
-    required bool dark,
+    required String brightnessMode,
     Color? fontColor,
     Color? backgroundColor,
     Color? selectionColor,
@@ -1753,7 +1822,7 @@ class AppModel with ChangeNotifier {
     Color? linkColor,
   }) async {
     await setCustomThemeSeed(seed);
-    await setCustomThemeDark(dark);
+    await setCustomThemeDark(brightnessMode == 'dark');
     await setCustomThemeFontColor(fontColor);
     await setCustomThemeBackgroundColor(backgroundColor);
     await setCustomThemeSelectionColor(selectionColor);
@@ -1764,13 +1833,19 @@ class AppModel with ChangeNotifier {
     await setCustomThemeSasayakiColor(sasayakiColor);
     await setCustomThemeLinkColor(linkColor);
     await _setPref('app_theme_key', 'custom-theme');
-    notifyListeners();
-    _persistSplashColor();
+    await setBrightnessMode(brightnessMode);
   }
 
   bool get isDarkMode {
-    if (appThemeKey == 'custom-theme') return customThemeDark;
-    return themePresets[appThemeKey]?.brightness == Brightness.dark;
+    switch (brightnessMode) {
+      case 'light':
+        return false;
+      case 'dark':
+        return true;
+      default:
+        return WidgetsBinding.instance.platformDispatcher.platformBrightness ==
+            Brightness.dark;
+    }
   }
 
   static const _splashChannel = HibikiChannels.splash;
@@ -1778,15 +1853,7 @@ class AppModel with ChangeNotifier {
   void _persistSplashColor() {
     if (!Platform.isAndroid && !Platform.isIOS) return;
     final brightness = isDarkMode ? Brightness.dark : Brightness.light;
-    final bool useCustomRoles = appThemeKey == 'custom-theme';
-    final surface = buildHibikiColorScheme(
-      seedColor: _seedColor,
-      brightness: brightness,
-      primary: useCustomRoles ? customThemePrimaryColor : null,
-      secondary: useCustomRoles ? customThemeSecondaryColor : null,
-      tertiary: useCustomRoles ? customThemeTertiaryColor : null,
-      primaryContainer: useCustomRoles ? customThemeContainerColor : null,
-    ).surface;
+    final surface = _buildColorScheme(brightness).surface;
     _splashChannel.invokeMethod('setSplashColor', {
       'color': surface.toARGB32(),
       'isDark': isDarkMode,

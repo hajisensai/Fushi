@@ -148,7 +148,6 @@ final profileViewModelProvider =
     ref.invalidate(ankiViewModelProvider);
     final appModel = ref.read(appProvider);
     appModel.refreshPrefCache();
-    ReaderHoshiSource.instance.refreshPreferencesFromDb();
     ReaderHoshiSource.readerSettings?.refreshFromDb();
   }
 

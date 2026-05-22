@@ -27,6 +27,15 @@ class EpubParser {
     return parseFromExtracted(extractDir);
   }
 
+  /// Read file from [filePath] and parse — for isolate use to avoid
+  /// serializing large byte arrays across the isolate boundary.
+  static EpubBook parseSyncFromPath(String filePath, String extractDir) {
+    final Uint8List bytes = File(filePath).readAsBytesSync();
+    final Archive archive = ZipDecoder().decodeBytes(bytes);
+    _extractArchive(archive, extractDir);
+    return parseFromExtracted(extractDir);
+  }
+
   /// Parse an already-extracted EPUB directory.
   static EpubBook parseFromExtracted(String extractDir) {
     final File containerFile =

@@ -276,7 +276,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
                 Text(
                   _audioPaths.length == 1
                       ? p.basename(_audioPaths.first)
-                      : '${_audioPaths.length} files',
+                      : t.file_count(count: _audioPaths.length),
                   style: const TextStyle(fontSize: 11, color: Colors.grey),
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
@@ -587,10 +587,9 @@ class _BookImportDialogState extends State<BookImportDialog> {
           author: author,
         );
         _reportProgress(0.5, t.import_step_importing_epub);
-        final File epubFile = File(epubPath);
-        bookId = await EpubImporter.import(
+        bookId = await EpubImporter.importFromPath(
           db: widget.db,
-          bytes: await epubFile.readAsBytes(),
+          filePath: epubPath,
           fileName: '${title.replaceAll(RegExp(r'[^\w\s\-]'), '')}.epub',
         );
         debugPrint(
@@ -658,27 +657,31 @@ class _BookImportDialogState extends State<BookImportDialog> {
 
   Future<void> _importEpubOnly({required String title}) async {
     final File file = File(_epubPath!);
-    final Uint8List bytes;
-    final String filename;
 
     _reportProgress(0.2, t.import_step_reading);
     final String ext = p.extension(_epubPath!).toLowerCase();
+    final int bookId;
     if (TextToEpub.isSupported(_epubPath!) ||
         (ext != '.epub' && ext != '.zip')) {
       _reportProgress(0.3, t.import_step_converting_epub);
-      bytes = await TextToEpub.convert(file: file, title: title);
-      filename = '${title.replaceAll(RegExp(r'[^\w\s\-]'), '')}.epub';
+      final Uint8List bytes =
+          await TextToEpub.convert(file: file, title: title);
+      final String filename =
+          '${title.replaceAll(RegExp(r'[^\w\s\-]'), '')}.epub';
+      _reportProgress(0.5, t.import_step_importing_epub);
+      bookId = await EpubImporter.import(
+        db: widget.db,
+        bytes: bytes,
+        fileName: filename,
+      );
     } else {
-      bytes = await file.readAsBytes();
-      filename = _epubName ?? p.basename(_epubPath!);
+      _reportProgress(0.5, t.import_step_importing_epub);
+      bookId = await EpubImporter.importFromPath(
+        db: widget.db,
+        filePath: _epubPath!,
+        fileName: _epubName ?? p.basename(_epubPath!),
+      );
     }
-
-    _reportProgress(0.5, t.import_step_importing_epub);
-    final int bookId = await EpubImporter.import(
-      db: widget.db,
-      bytes: bytes,
-      fileName: filename,
-    );
 
     await _applyBestCoverToEpub(bookId);
     _reportProgress(1, t.import_step_done);
@@ -694,25 +697,29 @@ class _BookImportDialogState extends State<BookImportDialog> {
 
   Future<String?> _importEpubWithAlignment({required String title}) async {
     final File epubFile = File(_epubPath!);
-    final Uint8List importBytes;
-    final String importFilename;
 
     _reportProgress(0.05, t.import_step_reading);
+    final int bookId;
     if (TextToEpub.isSupported(_epubPath!)) {
       _reportProgress(0.1, t.import_step_converting_epub);
-      importBytes = await TextToEpub.convert(file: epubFile, title: title);
-      importFilename = '${title.replaceAll(RegExp(r'[^\w\s\-]'), '')}.epub';
+      final Uint8List importBytes =
+          await TextToEpub.convert(file: epubFile, title: title);
+      final String importFilename =
+          '${title.replaceAll(RegExp(r'[^\w\s\-]'), '')}.epub';
+      _reportProgress(0.2, t.import_step_importing_epub);
+      bookId = await EpubImporter.import(
+        db: widget.db,
+        bytes: importBytes,
+        fileName: importFilename,
+      );
     } else {
-      importBytes = await epubFile.readAsBytes();
-      importFilename = _epubName ?? p.basename(_epubPath!);
+      _reportProgress(0.2, t.import_step_importing_epub);
+      bookId = await EpubImporter.importFromPath(
+        db: widget.db,
+        filePath: _epubPath!,
+        fileName: _epubName ?? p.basename(_epubPath!),
+      );
     }
-
-    _reportProgress(0.2, t.import_step_importing_epub);
-    final int bookId = await EpubImporter.import(
-      db: widget.db,
-      bytes: importBytes,
-      fileName: importFilename,
-    );
 
     await _applyBestCoverToEpub(bookId);
 
@@ -839,7 +846,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
       case HealthKind.partial:
       case HealthKind.failed:
         final int p = h.ratePct ?? 0;
-        return 'match $p%';
+        return t.health_match_summary(pct: p);
       case HealthKind.notApplicable:
       case HealthKind.unrun:
       case HealthKind.running:

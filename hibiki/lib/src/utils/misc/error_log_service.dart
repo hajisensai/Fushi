@@ -72,9 +72,9 @@ class ErrorLogService {
     _appendToFile(entry);
   }
 
-  void _appendToFile(ErrorLogEntry entry) {
+  Future<void> _appendToFile(ErrorLogEntry entry) async {
     try {
-      _logFile?.writeAsStringSync(entry.format(), mode: FileMode.append);
+      await _logFile?.writeAsString(entry.format(), mode: FileMode.append);
     } catch (_) {}
   }
 

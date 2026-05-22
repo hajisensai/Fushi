@@ -161,7 +161,7 @@ final String escaped = css
 ### HBK-AUDIT-007 — 阅读器多标志状态机（非原子）
 
 **Severity**: MEDIUM
-**Status**: open
+**Status**: fixed — 2026-05-22 在 `_onChapterLoadComplete()` 入口捕获 `_navigateGeneration`，每个 `await` 点后校验 generation 变化，阻止过期加载完成处理。
 **文件**: `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart:1467-1617`
 
 **根因**: 阅读器使用多个独立布尔标志管理状态：`_readerContentReady`、`_hasEverLoaded`、`_restoreInFlight`、`_restoreExpectedGeneration`。这些标志之间没有原子性保证。
@@ -184,7 +184,7 @@ enum ReaderState { idle, loading, restoring, ready, error }
 ### HBK-AUDIT-008 — Stream/Timer 资源泄漏风险
 
 **Severity**: MEDIUM
-**Status**: open
+**Status**: false-positive — 2026-05-22 验证：所有 StreamSubscription 在重新创建前已正确 `cancel()`，所有 Timer 在 `dispose()` 中正确取消，`catch (_) {}` 仅用于 WakelockPlus 等可选平台功能。
 **文件**: `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart:2756-2773`
 
 **根因**: `_subscribeNotificationStreams()` 每次被调用时创建新订阅，但如果 `_initAudioFeatures()` 被多次调用（行 667, 749），旧订阅的 `ctrl` 闭包引用被泄漏。
@@ -228,7 +228,7 @@ enum ReaderState { idle, loading, restoring, ready, error }
 ### HBK-AUDIT-010 — 偏好系统类型不安全的字符串序列化
 
 **Severity**: MEDIUM
-**Status**: open
+**Status**: low-risk — 2026-05-22 验证：当前所有偏好值不存在 string/int/bool 碰撞。架构上脆弱（启发式类型猜测），但实际生产安全。需在添加新偏好类型时注意。
 **文件**: `hibiki/lib/src/media/media_source.dart:110-137`, `packages/hibiki_core/lib/src/database/database.dart:246-253`
 
 **根因**: 所有偏好值通过 `value.toString()` 存储，读取时通过启发式猜测恢复类型：
@@ -349,7 +349,7 @@ void dispose() {
 ### HBK-AUDIT-022 — 5 层偏好缓存，无失效机制
 
 **Severity**: MEDIUM
-**Status**: open
+**Status**: fixed — 2026-05-22 `AppModel.refreshPrefCache()` 现在遍历所有已注册 `mediaSources` 调用 `refreshPreferencesFromDb()`。`profile_view_model.dart` 的 `onApplied` 不再硬编码 Reader 专属刷新。新增 MediaSource 会自动参与 profile 切换刷新。
 **文件**: `app_model.dart:216`, `media_source.dart:92`, `database.dart:234`
 
 **现状**: 偏好数据存在 5 个独立存储/缓存层：
@@ -446,7 +446,7 @@ Future<void> _initBook() async {
 ### HBK-AUDIT-014 — EPUB 导入内存峰值
 
 **Severity**: MEDIUM
-**Status**: open
+**Status**: fixed — 2026-05-22 新增 `EpubImporter.importFromPath()` 和 `EpubParser.parseSyncFromPath()`，文件在 isolate 内读取，主 isolate 不再持有 ZIP 字节数组。三个 `book_import_dialog.dart` 调用方已迁移到 path-based API（TextToEpub 生成的内存 bytes 仍走旧 API）。
 **文件**: `hibiki/lib/src/epub/epub_parser.dart:98-121`, `epub_importer.dart:138`
 
 **根因**: `readAsBytes()` 将整个 EPUB 加载到内存，然后传给 compute isolate：
@@ -465,7 +465,7 @@ return import(db: db, bytes: bytes, ...);           // 传给 isolate
 ### HBK-AUDIT-015 — 错误日志系统限制
 
 **Severity**: LOW
-**Status**: open
+**Status**: fixed — 2026-05-22 `_appendToFile()` 从 `writeAsStringSync` 改为 `writeAsString` 异步写入，不再阻塞主线程。`init()` 和 `clear()` 的同步 I/O 保留（分别只在启动和用户操作时调用一次）。
 **文件**: `hibiki/lib/src/utils/misc/error_log_service.dart`
 
 **现状**:
@@ -483,7 +483,7 @@ return import(db: db, bytes: bytes, ...);           // 传给 isolate
 ### HBK-AUDIT-016 — 有声书字幕 cue 数量无上限
 
 **Severity**: LOW
-**Status**: open
+**Status**: fixed — 2026-05-22 在 `_parseCues()` 统一出口添加 `_maxCuesPerFile = 50000` 上限，超出时截断并 debugPrint 警告。同时重构 `_parseCues()` 消除 6 分支重复 return 模式。
 **文件**: `hibiki/lib/src/media/audiobook/audiobook_import_dialog.dart:570`
 
 **根因**: 解析字幕文件后 `cues.length` 无校验。
@@ -495,7 +495,7 @@ return import(db: db, bytes: bytes, ...);           // 传给 isolate
 ### HBK-AUDIT-017 — 静态可变字典样式缓存无驱逐
 
 **Severity**: LOW
-**Status**: open
+**Status**: false-positive — 2026-05-22 验证：`_stylesCache` 由字典数量约束（典型 5-20，极端 100），每条 1-10KB，总量 < 1MB。`disposeInstance()` 时清空。不需要 LRU 驱逐。
 **文件**: `packages/hibiki_dictionary/lib/src/engine/hoshidicts.dart:185`
 
 **根因**: `_stylesCache` 是 static Map，随字典数量线性增长，无 LRU 驱逐。
@@ -550,19 +550,19 @@ return import(db: db, bytes: bytes, ...);           // 传给 isolate
 | P1 | HBK-AUDIT-001 | AppModel 上帝对象 | 性能/可维护性/并发安全 |
 | ~~P1~~ | HBK-AUDIT-005 | ~~字典 ZIP 解压无内存限制~~ | **fixed** (Dart fallback) |
 | ~~P1~~ | HBK-AUDIT-004 | ~~JS 模板字符串转义不完整~~ | **fixed** |
-| P2 | HBK-AUDIT-007 | 阅读器多标志状态机 | 快速导航异常 |
-| P2 | HBK-AUDIT-008 | Stream/Timer 泄漏风险 | 内存泄漏 |
-| P2 | HBK-AUDIT-010 | 偏好类型不安全序列化 | 设置静默丢失 |
+| ~~P2~~ | HBK-AUDIT-007 | ~~阅读器多标志状态机~~ | **fixed** (generation check in _onChapterLoadComplete) |
+| ~~P2~~ | HBK-AUDIT-008 | ~~Stream/Timer 泄漏风险~~ | **false-positive** (subscriptions properly cancelled) |
+| P2 | HBK-AUDIT-010 | 偏好类型不安全序列化 | 架构脆弱但当前值安全 |
 | P2 | HBK-AUDIT-009 | Creator/Anki 代码重复 | 维护成本翻倍 |
 | P2 | HBK-AUDIT-011 | CI/CD 缺失 release build | 生产 bug 逃逸 |
-| P2 | HBK-AUDIT-014 | EPUB 导入内存峰值 | 大文件 OOM |
+| ~~P2~~ | HBK-AUDIT-014 | ~~EPUB 导入内存峰值~~ | **fixed** (path-based isolate parsing) |
 | ~~P2~~ | HBK-AUDIT-021 | ~~数据库缺少关键查询索引~~ | **fixed** |
-| P2 | HBK-AUDIT-022 | 5 层偏好缓存无失效机制 | 偏好不一致 |
+| ~~P2~~ | HBK-AUDIT-022 | ~~5 层偏好缓存无失效机制~~ | **fixed** (refreshPrefCache refreshes all sources) |
 | ~~P2~~ | HBK-AUDIT-023 | ~~关键操作缺少事务包裹~~ | **fixed** |
 | P3 | HBK-AUDIT-006 | C++ 导入器无资源上限 | 恶意输入 OOM |
-| P3 | HBK-AUDIT-016 | 字幕 cue 无上限 | 数据库膨胀 |
-| P3 | HBK-AUDIT-015 | 错误日志同步 I/O | 微卡顿 |
-| P3 | HBK-AUDIT-017 | 字典样式缓存无驱逐 | 极端场景内存 |
+| ~~P3~~ | HBK-AUDIT-016 | ~~字幕 cue 无上限~~ | **fixed** (50K cap + unified parse path) |
+| ~~P3~~ | HBK-AUDIT-015 | ~~错误日志同步 I/O~~ | **fixed** (async writeAsString) |
+| ~~P3~~ | HBK-AUDIT-017 | ~~字典样式缓存无驱逐~~ | **false-positive** (bounded by dictionary count) |
 | P3 | HBK-AUDIT-024 | 911 个 null assertion | 崩溃时难定位 |
 | P3 | HBK-AUDIT-013 | 命名不一致 | 可读性 |
 | P3 | HBK-AUDIT-019 | 依赖风险 | 升级困难 |
