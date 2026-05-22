@@ -16,7 +16,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_exit_app/flutter_exit_app.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:drift/drift.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as path;
 import 'package:package_info_plus/package_info_plus.dart';
@@ -42,6 +41,7 @@ import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/media/floating_dict_channel.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/i18n/strings.g.dart';
+import 'package:hibiki/src/models/dictionary_repository.dart';
 import 'package:hibiki/src/models/media_history_repository.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/models/theme_notifier.dart' as theme_notifier;
@@ -193,8 +193,8 @@ class AppModel with ChangeNotifier {
   /// Media history and search history, extracted for testability.
   late final MediaHistoryRepository mediaHistoryRepo;
 
-  /// In-memory list of dictionary history results.
-  final List<DictionarySearchResult> _dictionaryHistoryResults = [];
+  /// Dictionary metadata, history, and search caches.
+  late final DictionaryRepository dictRepo;
 
   Color? get systemPrimaryColor => themeNotifier.systemPrimaryColor;
 
@@ -334,7 +334,8 @@ class AppModel with ChangeNotifier {
   /// Maximum number of quick actions.
   final int maximumQuickActions = 6;
 
-  int get maximumSearchHistoryItems => mediaHistoryRepo.maximumSearchHistoryItems;
+  int get maximumSearchHistoryItems =>
+      mediaHistoryRepo.maximumSearchHistoryItems;
 
   int get maximumMediaHistoryItems => mediaHistoryRepo.maximumMediaHistoryItems;
 
@@ -353,30 +354,21 @@ class AppModel with ChangeNotifier {
   /// Used to check if the dictionary tab should be refreshed on switching tabs.
   bool shouldRefreshTabs = false;
 
-  /// In-memory cache of dictionaries, kept in sync with the database.
-  List<Dictionary> _dictionariesCache = [];
+  // ── dictionary delegates (DictionaryRepository) ────────────────────
 
-  /// Returns all dictionaries imported into the database. Sorted by the
-  /// user-defined order in the dictionary menu.
-  List<Dictionary> get dictionaries => List.unmodifiable(_dictionariesCache);
-
-  List<Dictionary> get termDictionaries =>
-      _dictionariesCache.where((d) => d.type == DictionaryType.term).toList();
-  List<Dictionary> get freqDictionaries => _dictionariesCache
-      .where((d) => d.type == DictionaryType.frequency)
-      .toList();
-  List<Dictionary> get pitchDictionaries =>
-      _dictionariesCache.where((d) => d.type == DictionaryType.pitch).toList();
-  List<Dictionary> get kanjiDictionaries =>
-      _dictionariesCache.where((d) => d.type == DictionaryType.kanji).toList();
+  List<Dictionary> get dictionaries => dictRepo.dictionaries;
+  List<Dictionary> get termDictionaries => dictRepo.termDictionaries;
+  List<Dictionary> get freqDictionaries => dictRepo.freqDictionaries;
+  List<Dictionary> get pitchDictionaries => dictRepo.pitchDictionaries;
+  List<Dictionary> get kanjiDictionaries => dictRepo.kanjiDictionaries;
 
   bool _dictTypesMigrated = false;
 
   void _migrateDictionaryTypes() {
     if (_dictTypesMigrated) return;
     _dictTypesMigrated = true;
-    for (int i = 0; i < _dictionariesCache.length; i++) {
-      final d = _dictionariesCache[i];
+    final dicts = dictRepo.dictionaries;
+    for (final d in dicts) {
       if (d.type != DictionaryType.term) continue;
 
       final blobsFile = File(
@@ -387,11 +379,9 @@ class AppModel with ChangeNotifier {
       try {
         if (raf.lengthSync() < 4) continue;
         final header = raf.readSync(4);
-        // type byte 0x00 = term record, 0x01 = meta record
         if (header[0] != 0x01) continue;
 
         final exprLen = header[1] | (header[2] << 8);
-        // skip expression bytes, then read mode_len(1B) + mode
         raf.setPositionSync(3 + exprLen);
         final modeLenBuf = raf.readSync(1);
         if (modeLenBuf.isEmpty) continue;
@@ -409,7 +399,7 @@ class AppModel with ChangeNotifier {
           continue;
         }
 
-        _dictionariesCache[i] = Dictionary(
+        final updated = Dictionary(
           name: d.name,
           formatKey: d.formatKey,
           order: d.order,
@@ -418,8 +408,7 @@ class AppModel with ChangeNotifier {
           hiddenLanguages: d.hiddenLanguages,
           collapsedLanguages: d.collapsedLanguages,
         );
-        _database.upsertDictionaryMeta(
-            _dictionaryToCompanion(_dictionariesCache[i]));
+        dictRepo.persistDictionary(updated);
         debugPrint('[Hibiki] migrated dict type: ${d.name} → ${detected.name}');
       } catch (e, stack) {
         ErrorLogService.instance.log('AppModel.dictTypeMigration', e, stack);
@@ -435,7 +424,7 @@ class AppModel with ChangeNotifier {
     final termPaths = <String>[];
     final freqPaths = <String>[];
     final pitchPaths = <String>[];
-    for (final d in _dictionariesCache) {
+    for (final d in dictRepo.dictionaries) {
       final p = path.join(dictionaryResourceDirectory.path, d.name);
       if (!Directory(p).existsSync()) continue;
       switch (d.type) {
@@ -457,9 +446,8 @@ class AppModel with ChangeNotifier {
     }
   }
 
-  /// Returns all dictionary history results. Oldest is first.
   List<DictionarySearchResult> get dictionaryHistory =>
-      List.unmodifiable(_dictionaryHistoryResults);
+      dictRepo.dictionaryHistory;
 
   /// For invoking pauses from media where needed.
   Stream<void> get currentMediaPauseStream =>
@@ -599,19 +587,8 @@ class AppModel with ChangeNotifier {
     _currentMediaSource = mediaItem.getMediaSource(appModel: this);
   }
 
-  /// Update the user-defined order of a given dictionary in the database.
-  /// See the dictionary dialog's [ReorderableListView] for usage.
-  void updateDictionaryOrder(List<Dictionary> newDictionaries) async {
-    final updatedNames = newDictionaries.map((d) => d.name).toSet();
-    final others =
-        _dictionariesCache.where((d) => !updatedNames.contains(d.name));
-    _dictionariesCache = [...others, ...newDictionaries]
-      ..sort((a, b) => a.order.compareTo(b.order));
-    _rebuildDictPathsCache();
-    for (final dictionary in newDictionaries) {
-      await _database.upsertDictionaryMeta(_dictionaryToCompanion(dictionary));
-    }
-  }
+  void updateDictionaryOrder(List<Dictionary> newDictionaries) =>
+      dictRepo.updateDictionaryOrder(newDictionaries);
 
   /// Populate maps for languages at startup to optimise performance.
   void populateLanguages() {
@@ -997,27 +974,14 @@ class AppModel with ChangeNotifier {
       final profileRepo = ProfileRepository(_database, ankiRepo);
       await profileRepo.ensureDefaultProfile();
 
-      /// Load dictionary metadata cache.
-      final dictRows = await _database.getAllDictionaryMetadata();
-      _dictionariesCache = dictRows.map(_rowToDictionary).toList()
-        ..sort((a, b) => a.order.compareTo(b.order));
+      /// Load dictionary metadata + history caches.
+      dictRepo = DictionaryRepository(_database,
+          onCacheRebuild: _rebuildDictPathsCache);
+      await dictRepo.loadFromDb();
 
       /// Load media items and search history caches.
       mediaHistoryRepo = MediaHistoryRepository(_database);
       await mediaHistoryRepo.loadFromDb();
-
-      /// Restore dictionary history from DB into memory.
-      _dictionaryHistoryResults.clear();
-      final histRows = await _database.getAllDictionaryHistory();
-      for (final row in histRows) {
-        try {
-          _dictionaryHistoryResults
-              .add(DictionarySearchResult.fromJson(row.resultJson));
-        } catch (e, stack) {
-          ErrorLogService.instance.log('AppModel.dictHistory', e, stack);
-          debugPrint('[Hibiki] skipping corrupted dictionary history: $e');
-        }
-      }
 
       /// Permission requests are deferred to the point of use (file import,
       /// Anki export) so they do not block startup.
@@ -1198,9 +1162,9 @@ class AppModel with ChangeNotifier {
       prefsRepo = PreferencesRepository(_database);
       await prefsRepo.loadFromDb();
 
-      final dictRows = await _database.getAllDictionaryMetadata();
-      _dictionariesCache = dictRows.map(_rowToDictionary).toList()
-        ..sort((a, b) => a.order.compareTo(b.order));
+      dictRepo = DictionaryRepository(_database,
+          onCacheRebuild: _rebuildDictPathsCache);
+      await dictRepo.loadFromDb();
 
       mediaHistoryRepo = MediaHistoryRepository(_database);
       await mediaHistoryRepo.loadFromDb();
@@ -1305,72 +1269,8 @@ class AppModel with ChangeNotifier {
     }
   }
 
-  // ── model / Drift row conversion helpers ──────────────────────────
-
-  static Dictionary _rowToDictionary(DictionaryMetaRow r) {
-    Map<String, String> metadata;
-    List<String> hiddenLanguages;
-    List<String> collapsedLanguages;
-    try {
-      metadata = Map<String, String>.from(jsonDecode(r.metadataJson));
-    } catch (e, stack) {
-      ErrorLogService.instance.log('_rowToDictionary.metadata', e, stack);
-      metadata = {};
-    }
-    try {
-      hiddenLanguages = List<String>.from(jsonDecode(r.hiddenLanguagesJson));
-    } catch (e, stack) {
-      ErrorLogService.instance
-          .log('_rowToDictionary.hiddenLanguages', e, stack);
-      hiddenLanguages = [];
-    }
-    try {
-      collapsedLanguages =
-          List<String>.from(jsonDecode(r.collapsedLanguagesJson));
-    } catch (e, stack) {
-      ErrorLogService.instance
-          .log('_rowToDictionary.collapsedLanguages', e, stack);
-      collapsedLanguages = [];
-    }
-    return Dictionary(
-      name: r.name,
-      formatKey: r.formatKey,
-      order: r.order,
-      type: DictionaryType.values.firstWhere(
-        (e) => e.name == r.type,
-        orElse: () => DictionaryType.term,
-      ),
-      metadata: metadata,
-      hiddenLanguages: hiddenLanguages,
-      collapsedLanguages: collapsedLanguages,
-    );
-  }
-
-  static DictionaryMetadataCompanion _dictionaryToCompanion(Dictionary d) {
-    return DictionaryMetadataCompanion(
-      name: Value(d.name),
-      formatKey: Value(d.formatKey),
-      order: Value(d.order),
-      type: Value(d.type.name),
-      metadataJson: Value(jsonEncode(d.metadata)),
-      hiddenLanguagesJson: Value(jsonEncode(d.hiddenLanguages)),
-      collapsedLanguagesJson: Value(jsonEncode(d.collapsedLanguages)),
-    );
-  }
-
-  // _rowToMediaItem and _mediaItemToCompanion moved to MediaHistoryRepository.
-
-  void _persistDictionary(Dictionary dictionary) async {
-    final idx = _dictionariesCache.indexWhere((d) => d.name == dictionary.name);
-    if (idx >= 0) {
-      _dictionariesCache[idx] = dictionary;
-    } else {
-      _dictionariesCache.add(dictionary);
-      _dictionariesCache.sort((a, b) => a.order.compareTo(b.order));
-    }
-    _rebuildDictPathsCache();
-    await _database.upsertDictionaryMeta(_dictionaryToCompanion(dictionary));
-  }
+  // _rowToDictionary, _dictionaryToCompanion, _persistDictionary
+  // moved to DictionaryRepository.
 
   // ── Theme delegates (logic moved to ThemeNotifier) ──────────────────
 
@@ -1766,7 +1666,7 @@ class AppModel with ChangeNotifier {
 
         progressNotifier.value = t.import_name(name: name);
 
-        if (_dictionariesCache.any((d) => d.name == name)) {
+        if (dictRepo.hasDictionaryNamed(name)) {
           throw Exception(t.import_duplicate(name: name));
         }
 
@@ -1808,7 +1708,7 @@ class AppModel with ChangeNotifier {
           type: detectedType,
         );
 
-        _persistDictionary(dictionary);
+        dictRepo.persistDictionary(dictionary);
 
         progressNotifier.value = t.import_complete;
         onImportSuccess();
@@ -1897,7 +1797,7 @@ class AppModel with ChangeNotifier {
 
       progressNotifier.value = t.import_name(name: name);
 
-      if (_dictionariesCache.any((d) => d.name == name)) {
+      if (dictRepo.hasDictionaryNamed(name)) {
         throw Exception(t.import_duplicate(name: name));
       }
 
@@ -1957,7 +1857,7 @@ class AppModel with ChangeNotifier {
         type: detectedType,
       );
 
-      _persistDictionary(dictionary);
+      dictRepo.persistDictionary(dictionary);
 
       progressNotifier.value = t.import_complete;
       onImportSuccess();
@@ -1975,35 +1875,11 @@ class AppModel with ChangeNotifier {
     }
   }
 
-  /// Toggle a dictionary's between collapsed and expanded state. This will
-  /// affect how a dictionary's search results are shown by default.
-  void toggleDictionaryCollapsed(Dictionary dictionary) {
-    if (dictionary.isCollapsed(targetLanguage)) {
-      dictionary.collapsedLanguages = [...dictionary.collapsedLanguages]
-        ..remove(targetLanguage.languageCode);
-    } else {
-      dictionary.collapsedLanguages = [
-        ...dictionary.collapsedLanguages,
-        targetLanguage.languageCode
-      ];
-    }
-    _persistDictionary(dictionary);
-  }
+  void toggleDictionaryCollapsed(Dictionary dictionary) => dictRepo
+      .toggleDictionaryCollapsed(dictionary, targetLanguage.languageCode);
 
-  /// Toggle a dictionary's between hidden and shown state. This will
-  /// affect how a dictionary's search results are shown by default.
-  void toggleDictionaryHidden(Dictionary dictionary) {
-    if (dictionary.isHidden(targetLanguage)) {
-      dictionary.hiddenLanguages = [...dictionary.hiddenLanguages]
-        ..remove(targetLanguage.languageCode);
-    } else {
-      dictionary.hiddenLanguages = [
-        ...dictionary.hiddenLanguages,
-        targetLanguage.languageCode
-      ];
-    }
-    _persistDictionary(dictionary);
-  }
+  void toggleDictionaryHidden(Dictionary dictionary) =>
+      dictRepo.toggleDictionaryHidden(dictionary, targetLanguage.languageCode);
 
   Future<void> deleteDictionaries() async {
     try {
@@ -2015,8 +1891,8 @@ class AppModel with ChangeNotifier {
         dictionaryResourceDirectory.createSync(recursive: true);
       }
 
-      _dictionariesCache.clear();
-      clearDictionaryResultsCache();
+      dictRepo.clearDictionariesCache();
+      dictRepo.clearDictionaryResultsCache();
     } catch (e, stack) {
       ErrorLogService.instance.log('deleteDictionaries', e, stack);
       HibikiToast.show(msg: 'Failed to delete dictionaries');
@@ -2037,9 +1913,9 @@ class AppModel with ChangeNotifier {
         directory.deleteSync(recursive: true);
       }
 
-      _dictionariesCache.removeWhere((d) => d.name == dictionary.name);
+      dictRepo.removeDictionaryFromCache(dictionary.name);
       _rebuildDictPathsCache();
-      clearDictionaryResultsCache();
+      dictRepo.clearDictionaryResultsCache();
     } catch (e, stack) {
       ErrorLogService.instance.log('deleteDictionary', e, stack);
       HibikiToast.show(msg: 'Failed to delete dictionary');
@@ -2048,20 +1924,7 @@ class AppModel with ChangeNotifier {
     }
   }
 
-  /// Used for caching search results. Cleared when a dictionary is added or
-  /// deleted.
-  final Map<String, DictionarySearchResult> _dictionarySearchCache = {};
-
-  /// Caches raw FFI lookup results by normalized search term so that
-  /// loadMore calls skip the expensive native query.
-  final Map<String, List<HoshiLookupResult>> _ffiLookupCache = {};
-
-  /// Used when a dictionary is added or removed as those results may now be
-  /// wrong.
-  void clearDictionaryResultsCache() {
-    _dictionarySearchCache.clear();
-    _ffiLookupCache.clear();
-  }
+  void clearDictionaryResultsCache() => dictRepo.clearDictionaryResultsCache();
 
   /// Gets the raw unprocessed entries straight from a dictionary database
   /// given a search term. This will be processed later for user viewing.
@@ -2103,17 +1966,19 @@ class AppModel with ChangeNotifier {
     final String cacheKey =
         '$searchTerm/$effectiveMaxTerms/$maximumDictionarySearchResults';
 
-    if (useCache && _dictionarySearchCache.containsKey(cacheKey)) {
+    final cached = dictRepo.getCachedSearch(cacheKey);
+    if (useCache && cached != null) {
       swTotal.stop();
       debugPrint('[dict-perf] cache HIT: ${swTotal.elapsedMilliseconds}ms');
-      return _dictionarySearchCache[cacheKey]!;
+      return cached;
     }
 
     if (!HoshiDicts.isInitialized) {
       return DictionarySearchResult(searchTerm: searchTerm);
     }
 
-    List<HoshiLookupResult>? ffiResults = _ffiLookupCache[searchTerm];
+    List<HoshiLookupResult>? ffiResults =
+        dictRepo.getCachedFfiLookup(searchTerm);
     DictionarySearchResult? result;
 
     if (ffiResults != null) {
@@ -2133,7 +1998,7 @@ class AppModel with ChangeNotifier {
         maxResults: maximumDictionarySearchResults,
       );
       if (ffiResults.isNotEmpty) {
-        _ffiLookupCache[searchTerm] = ffiResults;
+        dictRepo.cacheFfiLookup(searchTerm, ffiResults);
         result = buildResultFromLookup(
           searchTerm: searchTerm,
           results: ffiResults,
@@ -2150,7 +2015,7 @@ class AppModel with ChangeNotifier {
         '[dict-perf] searchDictionary total: ${swTotal.elapsedMilliseconds}ms');
 
     if (result != null && result.entries.isNotEmpty) {
-      _dictionarySearchCache[cacheKey] = result;
+      dictRepo.cacheSearchResult(cacheKey, result);
       return result;
     } else {
       return DictionarySearchResult(searchTerm: searchTerm);
@@ -2647,39 +2512,16 @@ class AppModel with ChangeNotifier {
     );
   }
 
-  /// Update the scroll index of a given [DictionarySearchResult] in memory.
   void updateDictionaryResultScrollIndex({
     required DictionarySearchResult result,
     required int newIndex,
-  }) {
-    result.scrollPosition = newIndex;
-    _persistDictionaryHistory();
-  }
+  }) =>
+      dictRepo.updateDictionaryResultScrollIndex(
+          result: result, newIndex: newIndex);
 
-  /// Clear the entire dictionary history. This must be performed when a
-  /// dictionary is deleted, otherwise history data cannot be viewed without
-  /// the necessary dictionary metadata.
   Future<void> clearDictionaryHistory() async {
-    await _database.clearDictionaryHistory();
-    _dictionaryHistoryResults.clear();
-
+    await dictRepo.clearDictionaryHistory();
     dictionaryEntriesNotifier.notifyListeners();
-  }
-
-  void _persistDictionaryHistory() async {
-    final swPersist = Stopwatch()..start();
-    final items = <DictionaryHistoryCompanion>[];
-    for (int i = 0; i < _dictionaryHistoryResults.length; i++) {
-      items.add(DictionaryHistoryCompanion.insert(
-        position: i,
-        resultJson: _dictionaryHistoryResults[i].toJson(),
-      ));
-    }
-    final swSerialize = swPersist.elapsedMilliseconds;
-    await _database.replaceAllDictionaryHistory(items);
-    swPersist.stop();
-    debugPrint(
-        '[dict-perf] persistHistory: serialize=${swSerialize}ms dbWrite=${swPersist.elapsedMilliseconds - swSerialize}ms total=${swPersist.elapsedMilliseconds}ms items=${items.length}');
   }
 
   // ── media item CRUD (delegated to MediaHistoryRepository) ───────────
@@ -2734,8 +2576,7 @@ class AppModel with ChangeNotifier {
   }
 
   List<MediaItem> getMediaTypeHistory({required MediaType mediaType}) =>
-      mediaHistoryRepo.getMediaTypeHistory(
-          mediaTypeKey: mediaType.uniqueKey);
+      mediaHistoryRepo.getMediaTypeHistory(mediaTypeKey: mediaType.uniqueKey);
 
   List<MediaItem> getMediaSourceHistory({required MediaSource mediaSource}) =>
       mediaHistoryRepo.getMediaSourceHistory(
@@ -2946,8 +2787,7 @@ class AppModel with ChangeNotifier {
   int get maximumTerms => prefsRepo.maximumTerms;
   void setMaximumTerms(int value) => prefsRepo.setMaximumTerms(value);
 
-  /// Adds a [DictionarySearchResult] to dictionary history.
-  void addToDictionaryHistory({required DictionarySearchResult result}) async {
+  void addToDictionaryHistory({required DictionarySearchResult result}) {
     MediaType mediaType = mediaTypes.values.toList()[currentHomeTabIndex];
     if (mediaType != DictionaryMediaType.instance) {
       shouldRefreshTabs = true;
@@ -2958,22 +2798,7 @@ class AppModel with ChangeNotifier {
       }
     }
 
-    if (result.entries.isEmpty || result.searchTerm.isEmpty) {
-      return;
-    }
-
-    /// Remove any existing entry with the same search term.
-    _dictionaryHistoryResults
-        .removeWhere((r) => r.searchTerm == result.searchTerm);
-
-    _dictionaryHistoryResults.add(result);
-
-    /// Cap the history to the maximum number of items.
-    while (_dictionaryHistoryResults.length > maximumDictionaryHistoryItems) {
-      _dictionaryHistoryResults.removeAt(0);
-    }
-
-    _persistDictionaryHistory();
+    dictRepo.addHistoryResult(result, maximumDictionaryHistoryItems);
   }
 
   /// Check if the database is still open.
