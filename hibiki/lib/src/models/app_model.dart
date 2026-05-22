@@ -42,6 +42,7 @@ import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/media/floating_dict_channel.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/i18n/strings.g.dart';
+import 'package:hibiki/src/models/media_history_repository.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/models/theme_notifier.dart' as theme_notifier;
 import 'package:hibiki/src/models/theme_notifier.dart' show ThemeNotifier;
@@ -189,11 +190,8 @@ class AppModel with ChangeNotifier {
   /// Preference management, extracted from AppModel for testability.
   late final PreferencesRepository prefsRepo;
 
-  /// In-memory cache of search history items (historyKey → list of terms).
-  final Map<String, List<String>> _searchHistoryCache = {};
-
-  /// In-memory cache of media items for sync access.
-  List<MediaItem> _mediaItemsCache = [];
+  /// Media history and search history, extracted for testability.
+  late final MediaHistoryRepository mediaHistoryRepo;
 
   /// In-memory list of dictionary history results.
   final List<DictionarySearchResult> _dictionaryHistoryResults = [];
@@ -336,11 +334,9 @@ class AppModel with ChangeNotifier {
   /// Maximum number of quick actions.
   final int maximumQuickActions = 6;
 
-  /// Maximum number of search history items.
-  final int maximumSearchHistoryItems = 60;
+  int get maximumSearchHistoryItems => mediaHistoryRepo.maximumSearchHistoryItems;
 
-  /// Maximum number of media history items.
-  final int maximumMediaHistoryItems = 100;
+  int get maximumMediaHistoryItems => mediaHistoryRepo.maximumMediaHistoryItems;
 
   /// Maximum number of dictionary history items.
   int get maximumDictionaryHistoryItems => lowMemoryMode ? 5 : 10;
@@ -352,8 +348,7 @@ class AppModel with ChangeNotifier {
   /// performance purposes.
   final int defaultMaximumDictionaryTermsInResult = 10;
 
-  /// Used as the history key used for the Stash.
-  final String stashKey = 'stash';
+  String get stashKey => mediaHistoryRepo.stashKey;
 
   /// Used to check if the dictionary tab should be refreshed on switching tabs.
   bool shouldRefreshTabs = false;
@@ -1007,18 +1002,9 @@ class AppModel with ChangeNotifier {
       _dictionariesCache = dictRows.map(_rowToDictionary).toList()
         ..sort((a, b) => a.order.compareTo(b.order));
 
-      /// Load media items cache.
-      final miRows = await _database.getAllMediaItems();
-      _mediaItemsCache = miRows.map(_rowToMediaItem).toList();
-
-      /// Load search history cache (grouped by historyKey).
-      _searchHistoryCache.clear();
-      final shRows = await _database.getAllSearchHistoryItems();
-      for (final row in shRows) {
-        _searchHistoryCache
-            .putIfAbsent(row.historyKey, () => [])
-            .add(row.searchTerm);
-      }
+      /// Load media items and search history caches.
+      mediaHistoryRepo = MediaHistoryRepository(_database);
+      await mediaHistoryRepo.loadFromDb();
 
       /// Restore dictionary history from DB into memory.
       _dictionaryHistoryResults.clear();
@@ -1216,26 +1202,8 @@ class AppModel with ChangeNotifier {
       _dictionariesCache = dictRows.map(_rowToDictionary).toList()
         ..sort((a, b) => a.order.compareTo(b.order));
 
-      _searchHistoryCache.clear();
-      final shRows = await _database.getAllSearchHistoryItems();
-      for (final row in shRows) {
-        _searchHistoryCache
-            .putIfAbsent(row.historyKey, () => [])
-            .add(row.searchTerm);
-      }
-
-      _dictionaryHistoryResults.clear();
-      final histRows = await _database.getAllDictionaryHistory();
-      for (final row in histRows) {
-        try {
-          _dictionaryHistoryResults
-              .add(DictionarySearchResult.fromJson(row.resultJson));
-        } catch (e, stack) {
-          ErrorLogService.instance.log('AppModel.popupDictHistory', e, stack);
-          debugPrint(
-              '[Hibiki-popup] skipping corrupted dictionary history: $e');
-        }
-      }
+      mediaHistoryRepo = MediaHistoryRepository(_database);
+      await mediaHistoryRepo.loadFromDb();
 
       _browserDirectory = Directory(path.join(appDirectory.path, 'browser'));
       _thumbnailsDirectory =
@@ -1390,50 +1358,7 @@ class AppModel with ChangeNotifier {
     );
   }
 
-  static MediaItem _rowToMediaItem(MediaItemRow r) {
-    return MediaItem(
-      id: r.id,
-      mediaIdentifier: r.mediaIdentifier,
-      title: r.title,
-      mediaTypeIdentifier: r.mediaTypeIdentifier,
-      mediaSourceIdentifier: r.mediaSourceIdentifier,
-      position: r.position,
-      duration: r.duration,
-      canDelete: r.canDelete,
-      canEdit: r.canEdit,
-      base64Image: r.base64Image,
-      imageUrl: r.imageUrl,
-      audioUrl: r.audioUrl,
-      author: r.author,
-      authorIdentifier: r.authorIdentifier,
-      extraUrl: r.extraUrl,
-      extra: r.extra,
-      sourceMetadata: r.sourceMetadata,
-    );
-  }
-
-  static MediaItemsCompanion _mediaItemToCompanion(MediaItem item) {
-    return MediaItemsCompanion(
-      uniqueKey: Value(item.uniqueKey),
-      mediaIdentifier: Value(item.mediaIdentifier),
-      title: Value(item.title),
-      mediaTypeIdentifier: Value(item.mediaTypeIdentifier),
-      mediaSourceIdentifier: Value(item.mediaSourceIdentifier),
-      position: Value(item.position),
-      duration: Value(item.duration),
-      canDelete: Value(item.canDelete),
-      canEdit: Value(item.canEdit),
-      base64Image: Value(item.base64Image),
-      imageUrl: Value(item.imageUrl),
-      audioUrl: Value(item.audioUrl),
-      author: Value(item.author),
-      authorIdentifier: Value(item.authorIdentifier),
-      extraUrl: Value(item.extraUrl),
-      extra: Value(item.extra),
-      sourceMetadata: Value(item.sourceMetadata),
-      importedAt: Value(DateTime.now().millisecondsSinceEpoch),
-    );
-  }
+  // _rowToMediaItem and _mediaItemToCompanion moved to MediaHistoryRepository.
 
   void _persistDictionary(Dictionary dictionary) async {
     final idx = _dictionariesCache.indexWhere((d) => d.name == dictionary.name);
@@ -2648,93 +2573,40 @@ class AppModel with ChangeNotifier {
     );
   }
 
-  /// Add the [searchTerm] to a search history with the given [historyKey]. If
-  /// there are already a maximum number of items in history, this will be
-  /// capped. Oldest items will be discarded in that scenario.
+  // ── search history & stash (delegated to MediaHistoryRepository) ────
+
   void addToSearchHistory({
     required String historyKey,
     required String searchTerm,
-  }) async {
-    if (searchTerm.trim().isEmpty) {
-      return;
-    }
+  }) =>
+      mediaHistoryRepo.addToSearchHistory(
+          historyKey: historyKey, searchTerm: searchTerm);
 
-    final uk = '$historyKey/$searchTerm';
-
-    // Update cache: remove existing, add to end
-    final list = _searchHistoryCache.putIfAbsent(historyKey, () => []);
-    list.remove(searchTerm);
-    list.add(searchTerm);
-
-    // Trim cache
-    while (list.length > maximumSearchHistoryItems) {
-      list.removeAt(0);
-    }
-
-    // Persist (upsert targets unique_key, no need to delete first)
-    await _database.upsertSearchHistoryItem(SearchHistoryItemsCompanion.insert(
-      historyKey: historyKey,
-      searchTerm: searchTerm,
-      uniqueKey: uk,
-    ));
-    await _database.trimSearchHistory(historyKey, maximumSearchHistoryItems);
-  }
-
-  /// Remove the [searchTerm] from a search history with the given [historyKey].
   Future<void> removeFromSearchHistory({
     required String historyKey,
     required String searchTerm,
-  }) async {
-    _searchHistoryCache[historyKey]?.remove(searchTerm);
-    final uk = '$historyKey/$searchTerm';
-    await _database.deleteSearchHistoryByUniqueKey(uk);
-  }
+  }) =>
+      mediaHistoryRepo.removeFromSearchHistory(
+          historyKey: historyKey, searchTerm: searchTerm);
 
-  /// Clear the search history with the given [historyKey].
-  void clearSearchHistory({
-    required String historyKey,
-  }) async {
-    _searchHistoryCache.remove(historyKey);
-    await _database.clearSearchHistory(historyKey);
-  }
+  void clearSearchHistory({required String historyKey}) =>
+      mediaHistoryRepo.clearSearchHistory(historyKey: historyKey);
 
-  /// Get the search history for a given collection named [historyKey].
-  List<String> getSearchHistory({required String historyKey}) {
-    return List.unmodifiable(_searchHistoryCache[historyKey] ?? []);
-  }
+  List<String> getSearchHistory({required String historyKey}) =>
+      mediaHistoryRepo.getSearchHistory(historyKey: historyKey);
 
-  /// Get whether or not a certain [searchTerm] is in a certain history.
   bool isTermInSearchHistory({
     required String historyKey,
     required String searchTerm,
-  }) {
-    return _searchHistoryCache[historyKey]?.contains(searchTerm) ?? false;
-  }
+  }) =>
+      mediaHistoryRepo.isTermInSearchHistory(
+          historyKey: historyKey, searchTerm: searchTerm);
 
-  /// Adds the [terms] to the Stash and shows a message indicating the addition.
-  void addToStash({
-    required List<String> terms,
-  }) async {
-    if (terms.isEmpty) {
-      return;
-    }
+  void addToStash({required List<String> terms}) {
+    if (terms.isEmpty) return;
+    if (!terms.any((t) => t.trim().isNotEmpty)) return;
 
-    bool hasNonEmpty = false;
-    for (String term in terms) {
-      if (term.trim().isNotEmpty) {
-        hasNonEmpty = true;
-      }
-    }
-    if (!hasNonEmpty) {
-      return;
-    }
-
-    for (String term in terms) {
-      addToSearchHistory(
-        historyKey: stashKey,
-        searchTerm: term,
-      );
-    }
+    mediaHistoryRepo.addToStashData(terms: terms);
 
     if (terms.length == 1) {
       HibikiToast.show(
@@ -2751,15 +2623,8 @@ class AppModel with ChangeNotifier {
     }
   }
 
-  /// Remove a certain [term] from the Stash.
-  Future<void> removeFromStash({
-    required String term,
-  }) async {
-    removeFromSearchHistory(
-      historyKey: stashKey,
-      searchTerm: term,
-    );
-
+  Future<void> removeFromStash({required String term}) async {
+    await mediaHistoryRepo.removeFromStashData(term: term);
     HibikiToast.show(
       msg: t.stash_clear_single(term: term),
       toastLength: Toast.LENGTH_SHORT,
@@ -2767,20 +2632,10 @@ class AppModel with ChangeNotifier {
     );
   }
 
-  /// Clear the contents of the Stash.
-  void clearStash() {
-    clearSearchHistory(historyKey: stashKey);
-  }
-
-  /// Get the contents of the Stash.
-  List<String> getStash() {
-    return getSearchHistory(historyKey: stashKey);
-  }
-
-  /// Get the contents of the Stash.
-  bool isTermInStash(String searchTerm) {
-    return isTermInSearchHistory(historyKey: stashKey, searchTerm: searchTerm);
-  }
+  void clearStash() => mediaHistoryRepo.clearStash();
+  List<String> getStash() => mediaHistoryRepo.getStash();
+  bool isTermInStash(String searchTerm) =>
+      mediaHistoryRepo.isTermInStash(searchTerm);
 
   /// Shown when a query fails to be made to an online service. For example,
   /// when there is no internet connection.
@@ -2827,49 +2682,21 @@ class AppModel with ChangeNotifier {
         '[dict-perf] persistHistory: serialize=${swSerialize}ms dbWrite=${swPersist.elapsedMilliseconds - swSerialize}ms total=${swPersist.elapsedMilliseconds}ms items=${items.length}');
   }
 
-  /// Add a [MediaItem] to history. This should be called at startup
-  /// when the media item is launched.
-  void addMediaItem(MediaItem item) async {
-    _mediaItemsCache.removeWhere((m) => m.uniqueKey == item.uniqueKey);
-    item.id = null;
-    _mediaItemsCache.insert(0, item);
+  // ── media item CRUD (delegated to MediaHistoryRepository) ───────────
 
-    await _database.deleteMediaItemByUniqueKey(item.uniqueKey);
-    await _database.upsertMediaItem(_mediaItemToCompanion(item));
-    await _database.trimMediaHistory(
-        item.mediaTypeIdentifier, maximumMediaHistoryItems);
+  void addMediaItem(MediaItem item) => mediaHistoryRepo.addMediaItem(item);
 
-    // Refresh cache with DB-assigned IDs
-    final rows = await _database.getAllMediaItems();
-    _mediaItemsCache = rows.map(_rowToMediaItem).toList();
-  }
+  void updateMediaItem(MediaItem item) =>
+      mediaHistoryRepo.updateMediaItem(item);
 
-  /// Update a media item, without performing any deletion or mutation
-  /// operations. This is useful when updating constantly, for example,
-  /// with the player where the position needs to be constantly updated.
-  void updateMediaItem(MediaItem item) async {
-    final idx =
-        _mediaItemsCache.indexWhere((m) => m.uniqueKey == item.uniqueKey);
-    if (idx >= 0) _mediaItemsCache[idx] = item;
-    await _database.upsertMediaItem(_mediaItemToCompanion(item));
-  }
+  void removeFromReadingList(String mediaIdentifier) =>
+      mediaHistoryRepo.removeFromReadingList(mediaIdentifier);
 
-  /// Deletes a [MediaItem] from the reading list by media identifier.
-  void removeFromReadingList(String mediaIdentifier) async {
-    _mediaItemsCache.removeWhere((m) => m.mediaIdentifier == mediaIdentifier);
-    await _database.deleteMediaItemsByIdentifier(mediaIdentifier);
-  }
-
-  /// Deletes a [MediaItem] from history and also rids of override values.
   Future<void> deleteMediaItem(MediaItem item) async {
     MediaSource mediaSource = item.getMediaSource(appModel: this);
     await mediaSource.clearOverrideValues(appModel: this, item: item);
     await mediaSource.onMediaItemClear(item);
-
-    _mediaItemsCache.removeWhere((m) => m.id == item.id);
-    if (item.id != null) {
-      await _database.deleteMediaItemById(item.id!);
-    }
+    await mediaHistoryRepo.deleteMediaItemById(item);
   }
 
   /// Copies a [term] to clipboard and shows an appropriate toast.
@@ -2906,19 +2733,13 @@ class AppModel with ChangeNotifier {
     _setPref('current_source/${mediaType.uniqueKey}', mediaSource.uniqueKey);
   }
 
-  /// Get the history of [MediaItem] for a particular [MediaType].
-  List<MediaItem> getMediaTypeHistory({required MediaType mediaType}) {
-    return _mediaItemsCache
-        .where((m) => m.mediaTypeIdentifier == mediaType.uniqueKey)
-        .toList();
-  }
+  List<MediaItem> getMediaTypeHistory({required MediaType mediaType}) =>
+      mediaHistoryRepo.getMediaTypeHistory(
+          mediaTypeKey: mediaType.uniqueKey);
 
-  /// Get the history of [MediaItem] for a particular [MediaSource].
-  List<MediaItem> getMediaSourceHistory({required MediaSource mediaSource}) {
-    return _mediaItemsCache
-        .where((m) => m.mediaSourceIdentifier == mediaSource.uniqueKey)
-        .toList();
-  }
+  List<MediaItem> getMediaSourceHistory({required MediaSource mediaSource}) =>
+      mediaHistoryRepo.getMediaSourceHistory(
+          mediaSourceKey: mediaSource.uniqueKey);
 
   /// Returns the last navigated directory the user used for picking a file for a
   /// certain media type.
