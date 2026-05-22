@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1260" height="760" viewBox="0 0 1260 760">
+  <rect width="1260" height="760" fill="#f6f7f4"/>
+  <text x="48" y="54" font-family="Inter, Segoe UI, sans-serif" font-size="26" font-weight="700" fill="#172126">Component System</text>
+  <text x="48" y="84" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#58666d">Shared grammar for buttons, rows, search, bottom sheets, placeholders, popups, selection, and audiobook controls.</text>
+
+  <g transform="translate(48 122)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">A. MD3 Token Kit</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#66747c">Best if implementation speed matters. Use standard MD3 components with strict tokens.</text>
+    <rect x="0" y="48" width="340" height="560" rx="28" fill="#11181c"/>
+    <rect x="14" y="62" width="312" height="532" rx="22" fill="#fbfcf7"/>
+    <text x="34" y="108" font-family="Inter, Segoe UI, sans-serif" font-size="24" font-weight="700" fill="#172126">Components</text>
+    <rect x="34" y="138" width="128" height="40" rx="20" fill="#214f5f"/>
+    <text x="68" y="164" font-family="Inter, Segoe UI, sans-serif" font-size="13" font-weight="700" fill="#ffffff">Primary</text>
+    <rect x="178" y="138" width="128" height="40" rx="20" fill="#ffffff" stroke="#b9cfcc"/>
+    <text x="216" y="164" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#214f5f">Tonal</text>
+    <rect x="34" y="202" width="272" height="42" rx="21" fill="#edf3f1"/>
+    <text x="58" y="229" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#66747c">Search with history and suggestions</text>
+    <rect x="34" y="268" width="272" height="72" rx="8" fill="#ffffff" stroke="#dfe5e1"/>
+    <circle cx="66" cy="304" r="16" fill="#d6e9e7"/>
+    <text x="100" y="300" font-family="Inter, Segoe UI, sans-serif" font-size="14" font-weight="700" fill="#172126">List row title</text>
+    <text x="100" y="320" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#66747c">Subtitle, metadata, trailing action</text>
+    <rect x="34" y="366" width="272" height="100" rx="8" fill="#ffffff" stroke="#dfe5e1"/>
+    <text x="54" y="398" font-family="Inter, Segoe UI, sans-serif" font-size="13" font-weight="700" fill="#172126">Bottom sheet</text>
+    <rect x="54" y="420" width="84" height="30" rx="15" fill="#e7f0ef"/>
+    <text x="77" y="440" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#214f5f">Action</text>
+    <rect x="148" y="420" width="84" height="30" rx="15" fill="#f2ece3"/>
+    <text x="171" y="440" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#6b4b18">Warn</text>
+  </g>
+
+  <g transform="translate(460 122)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">B. Cupertino Surface Kit</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#66747c">Best for a calmer reading app. Grouped rows, translucent panels, minimal outlines.</text>
+    <rect x="0" y="48" width="340" height="560" rx="28" fill="#11181c"/>
+    <rect x="14" y="62" width="312" height="532" rx="22" fill="#f8fafb"/>
+    <text x="34" y="118" font-family="Inter, Segoe UI, sans-serif" font-size="30" font-weight="700" fill="#101820">Controls</text>
+    <rect x="34" y="152" width="272" height="142" rx="8" fill="#ffffff" stroke="#e1e5e8"/>
+    <text x="54" y="184" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#172126">Grouped row</text>
+    <text x="244" y="184" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#66747c">On</text>
+    <line x1="54" y1="206" x2="286" y2="206" stroke="#edf0f2"/>
+    <text x="54" y="238" font-family="Inter, Segoe UI, sans-serif" font-size="14" fill="#172126">Picker row</text>
+    <text x="224" y="238" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#214f5f">Value</text>
+    <rect x="34" y="322" width="272" height="56" rx="18" fill="#ffffff" fill-opacity="0.92" stroke="#dfe5e7"/>
+    <text x="58" y="356" font-family="Inter, Segoe UI, sans-serif" font-size="13" fill="#66747c">Floating accessory bar</text>
+    <rect x="34" y="408" width="272" height="88" rx="8" fill="#ffffff" stroke="#e1e5e8"/>
+    <text x="54" y="440" font-family="Inter, Segoe UI, sans-serif" font-size="13" font-weight="700" fill="#172126">Placeholder</text>
+    <text x="54" y="464" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#66747c">Short copy, one clear action.</text>
+  </g>
+
+  <g transform="translate(872 122)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#172126">C. Hybrid Density Kit</text>
+    <text x="0" y="24" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#66747c">Best for power users. MD3 controls plus compact Cupertino grouping.</text>
+    <rect x="0" y="48" width="340" height="560" rx="16" fill="#f9faf8" stroke="#dfe5e1"/>
+    <rect x="24" y="84" width="292" height="52" rx="8" fill="#ffffff" stroke="#dfe5e1"/>
+    <text x="44" y="116" font-family="Inter, Segoe UI, sans-serif" font-size="20" font-weight="700" fill="#172126">Hybrid Kit</text>
+    <rect x="24" y="164" width="292" height="90" rx="8" fill="#ffffff" stroke="#dfe5e1"/>
+    <rect x="44" y="188" width="72" height="28" rx="14" fill="#214f5f"/>
+    <text x="64" y="207" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#ffffff">Save</text>
+    <rect x="126" y="188" width="72" height="28" rx="14" fill="#edf3f1"/>
+    <text x="147" y="207" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#214f5f">Edit</text>
+    <rect x="208" y="188" width="72" height="28" rx="14" fill="#fff4f1"/>
+    <text x="226" y="207" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#9a3d2f">Delete</text>
+    <rect x="24" y="282" width="138" height="180" rx="8" fill="#ffffff" stroke="#dfe5e1"/>
+    <text x="44" y="314" font-family="Inter, Segoe UI, sans-serif" font-size="13" font-weight="700" fill="#172126">Compact list</text>
+    <line x1="44" y1="340" x2="142" y2="340" stroke="#edf0f2"/>
+    <text x="44" y="368" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#172126">Primary data</text>
+    <text x="44" y="394" font-family="Inter, Segoe UI, sans-serif" font-size="12" fill="#172126">Secondary data</text>
+    <rect x="178" y="282" width="138" height="180" rx="8" fill="#172126"/>
+    <text x="198" y="314" font-family="Consolas, monospace" font-size="11" fill="#d8f2e6">popup</text>
+    <text x="198" y="342" font-family="Consolas, monospace" font-size="11" fill="#d8f2e6">sheet</text>
+    <text x="198" y="370" font-family="Consolas, monospace" font-size="11" fill="#d8f2e6">search</text>
+  </g>
+</svg>

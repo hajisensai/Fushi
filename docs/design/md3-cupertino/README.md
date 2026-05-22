@@ -16,6 +16,8 @@ Settings B
 
 You can also mix details, for example `Reader B, but use A's bottom bar`.
 
+For a complete worksheet, use [PICKS.md](PICKS.md).
+
 ## Selection images
 
 | Area | Image | What it covers |
@@ -37,6 +39,7 @@ You can also mix details, for example `Reader B, but use A's bottom bar`.
 | Logs and debug | [15-logs-and-debug.svg](15-logs-and-debug.svg) | Debug log, error log, diagnostics, low-memory and import messages |
 | Empty/loading/error states | [16-empty-loading-error-states.svg](16-empty-loading-error-states.svg) | Shared state model for empty, loading, error, placeholder pages |
 | Full coverage map | [17-full-coverage-map.svg](17-full-coverage-map.svg) | Visual map from page families to design boards |
+| Component system | [18-component-system.svg](18-component-system.svg) | Shared buttons, rows, search, sheets, placeholders, popups, and selection grammar |
 
 See [COVERAGE.md](COVERAGE.md) for the file-by-file mapping from current Flutter pages to these boards.
 
@@ -62,7 +65,8 @@ See [COVERAGE.md](COVERAGE.md) for the file-by-file mapping from current Flutter
 - Borrow Cupertino behavior where it improves reading feel: large titles, quiet translucent chrome, grouped settings, bottom accessory bars, stable tab destinations.
 - Do not rename persisted TTU/Hoshi compatibility keys during design implementation unless migration is explicitly designed and tested.
 - Treat reader, dictionary lookup, and audiobook controls as shared interaction surfaces, not one-off styling jobs.
+- Pick the shared component system before implementation so pages do not drift into one-off styling.
 
 ## Coverage status
 
-Every current file under `hibiki/lib/src/pages/implementations/` now has a board-level design reference in `COVERAGE.md`. After choices are made, the next step is a precise implementation spec with shared Flutter components, route-by-route behavior, and verification gates. More pictures are useful only when a selected board still has unresolved variants.
+Every current file under `hibiki/lib/src/pages/implementations/` now has a board-level design reference in `COVERAGE.md`, and reusable UI components have a component-system board. After choices are made, the next step is a precise implementation spec with shared Flutter components, route-by-route behavior, and verification gates. More pictures are useful only when a selected board still has unresolved variants.
