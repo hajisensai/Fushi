@@ -9,6 +9,7 @@ enum DictionaryCategory {
   jaEn,
   jaJa,
   jaOther,
+  grammar,
   kanji,
   frequency,
   names,
@@ -50,6 +51,95 @@ const String _wtyBase =
 class DictionaryDownloader {
   DictionaryDownloader._();
 
+  /// All target languages with at least one available dictionary.
+  /// Keys are ISO 639-1 codes, values are native display names.
+  static const Map<String, String> availableLanguages = {
+    'ja': '日本語',
+    'en': 'English',
+    'zh': '中文',
+    'ko': '한국어',
+    'de': 'Deutsch',
+    'es': 'Español',
+    'fr': 'Français',
+    'ru': 'Русский',
+    'nl': 'Nederlands',
+    'hu': 'Magyar',
+    'sl': 'Slovenščina',
+    'sv': 'Svenska',
+    'it': 'Italiano',
+    'pt': 'Português',
+    'vi': 'Tiếng Việt',
+    'th': 'ไทย',
+    'id': 'Bahasa Indonesia',
+    'pl': 'Polski',
+    'mn': 'Монгол',
+    'tr': 'Türkçe',
+    'cs': 'Čeština',
+    'el': 'Ελληνικά',
+    'ms': 'Bahasa Melayu',
+  };
+
+  /// Language codes where a main wty-ja-{lang}.zip exists.
+  static const Set<String> _wtyMainLanguages = {
+    'en',
+    'zh',
+    'ko',
+    'it',
+    'pt',
+    'vi',
+    'th',
+    'id',
+    'pl',
+    'de',
+    'fr',
+    'es',
+    'ru',
+    'nl',
+    'tr',
+    'cs',
+    'el',
+    'ms',
+  };
+
+  /// Creates a Wiktionary bilingual entry for [langCode].
+  /// Returns null if already in [catalog] or unsupported.
+  static RecommendedDictionary? wtyDictForLang(String langCode) {
+    if (!_wtyMainLanguages.contains(langCode) || langCode == 'ja') return null;
+    final String prefix = 'wty-ja-$langCode';
+    if (catalog.any((d) => d.matchPrefix == prefix)) return null;
+    final String name = availableLanguages[langCode] ?? langCode.toUpperCase();
+    return RecommendedDictionary(
+      name: 'Wiktionary JA-${langCode.toUpperCase()} ($name)',
+      url: '$_wtyBase/ja/$langCode/wty-ja-$langCode.zip',
+      description: 'Wiktionary Japanese–$name',
+      matchPrefix: prefix,
+      category: DictionaryCategory.jaOther,
+      sizeEstimate: '~10 MB',
+      langCode: langCode,
+    );
+  }
+
+  /// Returns [catalog] extended with a dynamic wty entry for [langCode].
+  static List<RecommendedDictionary> catalogForLang(String langCode) {
+    final List<RecommendedDictionary> result = catalog.toList();
+    final RecommendedDictionary? wty = wtyDictForLang(langCode);
+    if (wty != null) result.add(wty);
+    return result;
+  }
+
+  /// Groups [items] by category.
+  static Map<DictionaryCategory, List<RecommendedDictionary>> byCategoryFrom(
+    List<RecommendedDictionary> items,
+  ) {
+    final Map<DictionaryCategory, List<RecommendedDictionary>> map = {};
+    for (final DictionaryCategory cat in DictionaryCategory.values) {
+      final List<RecommendedDictionary> catItems =
+          items.where((d) => d.category == cat).toList();
+      if (catItems.isNotEmpty) map[cat] = catItems;
+    }
+    return map;
+  }
+
   static const List<RecommendedDictionary> catalog = [
     // ── JA-EN ──
     RecommendedDictionary(
@@ -78,6 +168,17 @@ class DictionaryDownloader {
       matchPrefix: 'Jitendex',
       category: DictionaryCategory.jaEn,
       sizeEstimate: '~37 MB',
+      langCode: 'en',
+    ),
+
+    // ── JA-EN (additional) ──
+    RecommendedDictionary(
+      name: 'Wiktionary JA-EN',
+      url: '$_wtyBase/ja/en/wty-ja-en.zip',
+      description: 'Wiktionary-based JA-EN dictionary',
+      matchPrefix: 'wty-ja-en',
+      category: DictionaryCategory.jaEn,
+      sizeEstimate: '~15 MB',
       langCode: 'en',
     ),
 
@@ -202,6 +303,99 @@ class DictionaryDownloader {
       sizeEstimate: '~15 MB',
       langCode: 'sv',
     ),
+    RecommendedDictionary(
+      name: 'Wiktionary JA-ZH (中文)',
+      url: '$_wtyBase/ja/zh/wty-ja-zh.zip',
+      description: '维基词典 日中词典',
+      matchPrefix: 'wty-ja-zh',
+      category: DictionaryCategory.jaOther,
+      sizeEstimate: '~10 MB',
+      langCode: 'zh',
+    ),
+    RecommendedDictionary(
+      name: 'Wiktionary JA-KO (한국어)',
+      url: '$_wtyBase/ja/ko/wty-ja-ko.zip',
+      description: '위키낱말사전 일한사전',
+      matchPrefix: 'wty-ja-ko',
+      category: DictionaryCategory.jaOther,
+      sizeEstimate: '~10 MB',
+      langCode: 'ko',
+    ),
+    RecommendedDictionary(
+      name: 'Wiktionary JA-IT (Italiano)',
+      url: '$_wtyBase/ja/it/wty-ja-it.zip',
+      description: 'Dizionario giapponese-italiano da Wiktionary',
+      matchPrefix: 'wty-ja-it',
+      category: DictionaryCategory.jaOther,
+      sizeEstimate: '~10 MB',
+      langCode: 'it',
+    ),
+    RecommendedDictionary(
+      name: 'Wiktionary JA-PT (Português)',
+      url: '$_wtyBase/ja/pt/wty-ja-pt.zip',
+      description: 'Dicionário japonês-português do Wiktionary',
+      matchPrefix: 'wty-ja-pt',
+      category: DictionaryCategory.jaOther,
+      sizeEstimate: '~10 MB',
+      langCode: 'pt',
+    ),
+    RecommendedDictionary(
+      name: 'Wiktionary JA-VI (Tiếng Việt)',
+      url: '$_wtyBase/ja/vi/wty-ja-vi.zip',
+      description: 'Từ điển Nhật-Việt từ Wiktionary',
+      matchPrefix: 'wty-ja-vi',
+      category: DictionaryCategory.jaOther,
+      sizeEstimate: '~10 MB',
+      langCode: 'vi',
+    ),
+    RecommendedDictionary(
+      name: 'Wiktionary JA-TH (ไทย)',
+      url: '$_wtyBase/ja/th/wty-ja-th.zip',
+      description: 'พจนานุกรมญี่ปุ่น-ไทย จาก Wiktionary',
+      matchPrefix: 'wty-ja-th',
+      category: DictionaryCategory.jaOther,
+      sizeEstimate: '~10 MB',
+      langCode: 'th',
+    ),
+    RecommendedDictionary(
+      name: 'Wiktionary JA-ID (Indonesia)',
+      url: '$_wtyBase/ja/id/wty-ja-id.zip',
+      description: 'Kamus Jepang-Indonesia dari Wiktionary',
+      matchPrefix: 'wty-ja-id',
+      category: DictionaryCategory.jaOther,
+      sizeEstimate: '~10 MB',
+      langCode: 'id',
+    ),
+    RecommendedDictionary(
+      name: 'Wiktionary JA-PL (Polski)',
+      url: '$_wtyBase/ja/pl/wty-ja-pl.zip',
+      description: 'Słownik japońsko-polski z Wiktionary',
+      matchPrefix: 'wty-ja-pl',
+      category: DictionaryCategory.jaOther,
+      sizeEstimate: '~10 MB',
+      langCode: 'pl',
+    ),
+    RecommendedDictionary(
+      name: '日・モ辞典 (Mongolian)',
+      url:
+          '$_marvBase/%5BJP-Mongolian%5D%20Japanese-Mongolian%20%E6%97%A5%E3%83%BB%E3%83%A2%E8%BE%9E%E5%85%B8%20(No%20Sentences).zip',
+      description: 'Японо-монгольский словарь',
+      matchPrefix: '日・モ辞典',
+      category: DictionaryCategory.jaOther,
+      sizeEstimate: '~5 MB',
+      langCode: 'mn',
+    ),
+
+    // ── Grammar ──
+    RecommendedDictionary(
+      name: '日本語文型辞典',
+      url:
+          'https://github.com/HuangAntimony/Nihongo-Bunkei-Jiten/releases/latest/download/Nihongo-Bunkei-Jiten.zip',
+      description: 'Japanese grammar patterns — 文法パターン辞典',
+      matchPrefix: 'Nihongo-Bunkei-Jiten',
+      category: DictionaryCategory.grammar,
+      sizeEstimate: '~5 MB',
+    ),
 
     // ── Kanji ──
     RecommendedDictionary(
@@ -299,6 +493,22 @@ class DictionaryDownloader {
       category: DictionaryCategory.frequency,
       sizeEstimate: '~1 MB',
     ),
+    RecommendedDictionary(
+      name: 'Wikipedia Kanji Frequency',
+      url: '$_marvBase/%5BKanji%20Frequency%5D%20Wikipedia.zip',
+      description: 'Kanji frequency from Wikipedia',
+      matchPrefix: 'Wikipedia',
+      category: DictionaryCategory.frequency,
+      sizeEstimate: '~1 MB',
+    ),
+    RecommendedDictionary(
+      name: 'H Frequency',
+      url: '$_kuuuubeBase/H_Freq.zip',
+      description: 'Word frequency from voice work scripts',
+      matchPrefix: 'H Freq',
+      category: DictionaryCategory.frequency,
+      sizeEstimate: '~1 MB',
+    ),
 
     // ── Names ──
     RecommendedDictionary(
@@ -337,45 +547,39 @@ class DictionaryDownloader {
     ),
   ];
 
-  static Map<DictionaryCategory, List<RecommendedDictionary>> get byCategory {
-    final map = <DictionaryCategory, List<RecommendedDictionary>>{};
-    for (final cat in DictionaryCategory.values) {
-      final items = catalog.where((d) => d.category == cat).toList();
-      if (items.isNotEmpty) map[cat] = items;
-    }
-    return map;
-  }
+  static Map<DictionaryCategory, List<RecommendedDictionary>> get byCategory =>
+      byCategoryFrom(catalog);
 
   /// Returns indices into [catalog] that should be pre-checked for a locale.
-  /// Logic: match the user's language to a JMdict variant + JPDB frequency.
-  /// Chinese/Korean users get JMdict English as fallback (most complete).
-  static Set<int> defaultSelectionFor(Locale locale) {
-    final lang = locale.languageCode;
-    final selected = <int>{};
+  static Set<int> defaultSelectionFor(Locale locale) =>
+      defaultSelectionForLang(locale.languageCode, catalog);
 
-    // Always include JPDB Frequency.
-    for (int i = 0; i < catalog.length; i++) {
-      if (catalog[i].matchPrefix == 'JPDB Frequency') {
+  /// Returns pre-checked indices for [lang] within [workingCatalog].
+  static Set<int> defaultSelectionForLang(
+    String lang,
+    List<RecommendedDictionary> workingCatalog,
+  ) {
+    final Set<int> selected = {};
+
+    for (int i = 0; i < workingCatalog.length; i++) {
+      if (workingCatalog[i].matchPrefix == 'JPDB Frequency') {
         selected.add(i);
         break;
       }
     }
 
-    // For Japanese locale → recommend Wiktionary JA-JA (proper dictionary).
-    // Skip 百科事典/補助 entries by default — users can add them manually.
     if (lang == 'ja') {
-      for (int i = 0; i < catalog.length; i++) {
-        if (catalog[i].matchPrefix == 'wty-ja-ja') {
+      for (int i = 0; i < workingCatalog.length; i++) {
+        if (workingCatalog[i].matchPrefix == 'wty-ja-ja') {
           selected.add(i);
         }
       }
       return selected;
     }
 
-    // Try to find a JMdict matching the user's language.
     bool foundMatch = false;
-    for (int i = 0; i < catalog.length; i++) {
-      final d = catalog[i];
+    for (int i = 0; i < workingCatalog.length; i++) {
+      final RecommendedDictionary d = workingCatalog[i];
       if (d.langCode == lang &&
           d.name.startsWith('JMdict') &&
           d.category != DictionaryCategory.jaEn) {
@@ -385,19 +589,30 @@ class DictionaryDownloader {
       }
     }
 
-    // Always include JMdict English for non-JA users.
-    for (int i = 0; i < catalog.length; i++) {
-      if (catalog[i].name == 'JMdict (English)') {
+    for (int i = 0; i < workingCatalog.length; i++) {
+      if (workingCatalog[i].name == 'JMdict (English)') {
         selected.add(i);
         break;
       }
     }
 
-    // For Chinese/Korean users without a dedicated JMdict,
-    // also recommend Wiktionary JA-JA (proper dictionary resource).
-    if (!foundMatch && (lang == 'zh' || lang == 'ko')) {
-      for (int i = 0; i < catalog.length; i++) {
-        if (catalog[i].matchPrefix == 'wty-ja-ja') {
+    if (!foundMatch && lang != 'en') {
+      final String wtyPrefix = 'wty-ja-$lang';
+      for (int i = 0; i < workingCatalog.length; i++) {
+        if (workingCatalog[i].matchPrefix == wtyPrefix) {
+          selected.add(i);
+          foundMatch = true;
+          break;
+        }
+      }
+    }
+
+    if (!foundMatch) {
+      for (int i = 0; i < workingCatalog.length; i++) {
+        final RecommendedDictionary d = workingCatalog[i];
+        if (d.langCode == lang &&
+            d.category == DictionaryCategory.jaOther &&
+            !d.name.startsWith('JMdict')) {
           selected.add(i);
           break;
         }

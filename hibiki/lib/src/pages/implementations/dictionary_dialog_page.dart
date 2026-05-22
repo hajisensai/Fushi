@@ -219,6 +219,8 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
         .map((f) => File(f.path!))
         .toList();
 
+    bool hadMemoryError = false;
+
     totalNotifier.value = dictFiles.length;
     for (int i = 0; i < dictFiles.length; i++) {
       countNotifier.value = i + 1;
@@ -235,6 +237,9 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
           _selectedOrder = appModel.dictionaries.last.order;
           setState(() {});
         },
+        onMemoryError: () {
+          hadMemoryError = true;
+        },
       );
     }
 
@@ -242,6 +247,22 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
 
     if (mounted) {
       Navigator.pop(context);
+    }
+
+    if (hadMemoryError && mounted) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(t.low_memory_mode),
+          content: Text(t.low_memory_mode_suggestion),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(t.dialog_close),
+            ),
+          ],
+        ),
+      );
     }
   }
 
@@ -260,6 +281,8 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
         return t.dict_category_ja_ja;
       case DictionaryCategory.jaOther:
         return t.dict_category_ja_other;
+      case DictionaryCategory.grammar:
+        return t.dict_category_grammar;
       case DictionaryCategory.kanji:
         return t.dict_category_kanji;
       case DictionaryCategory.frequency:
@@ -277,28 +300,35 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
     );
   }
 
+  Set<int> _computeInstalledIndices(List<RecommendedDictionary> cat) {
+    final Set<int> indices = {};
+    for (int i = 0; i < cat.length; i++) {
+      if (_isDictInstalled(cat[i])) indices.add(i);
+    }
+    return indices;
+  }
+
   Future<void> _showDownloadSelectionDialog() async {
     if (_isDownloading) return;
-    const catalog = DictionaryDownloader.catalog;
-    final byCategory = DictionaryDownloader.byCategory;
-    final defaults =
-        DictionaryDownloader.defaultSelectionFor(appModel.appLocale);
 
-    final installedIndices = <int>{};
-    for (int i = 0; i < catalog.length; i++) {
-      if (_isDictInstalled(catalog[i])) installedIndices.add(i);
+    var selectedLang = appModel.appLocale.languageCode;
+    if (!DictionaryDownloader.availableLanguages.containsKey(selectedLang)) {
+      selectedLang = 'en';
     }
-
-    // Pre-check defaults that are not already installed.
-    final initialChecked = defaults.difference(installedIndices);
+    var workingCatalog = DictionaryDownloader.catalogForLang(selectedLang);
+    var installedIndices = _computeInstalledIndices(workingCatalog);
+    var defaults = DictionaryDownloader.defaultSelectionForLang(
+        selectedLang, workingCatalog);
+    var checked = Set<int>.from(defaults.difference(installedIndices));
 
     final selected = await showDialog<Set<int>>(
       context: context,
       builder: (ctx) {
-        var checked = Set<int>.from(initialChecked);
         return StatefulBuilder(
           builder: (ctx, setDialogState) {
-            final downloadCount =
+            final byCategory =
+                DictionaryDownloader.byCategoryFrom(workingCatalog);
+            final int downloadCount =
                 checked.where((i) => !installedIndices.contains(i)).length;
             return AlertDialog(
               title: Text(t.dict_download_select_title),
@@ -308,12 +338,30 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      _buildLanguageSelector(
+                        selectedLang: selectedLang,
+                        onChanged: (String lang) {
+                          setDialogState(() {
+                            selectedLang = lang;
+                            workingCatalog =
+                                DictionaryDownloader.catalogForLang(lang);
+                            installedIndices =
+                                _computeInstalledIndices(workingCatalog);
+                            defaults =
+                                DictionaryDownloader.defaultSelectionForLang(
+                                    lang, workingCatalog);
+                            checked = Set<int>.from(
+                                defaults.difference(installedIndices));
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 8),
                       for (final cat in DictionaryCategory.values)
                         if (byCategory.containsKey(cat))
                           _buildCategoryTile(
                             cat: cat,
                             items: byCategory[cat]!,
-                            catalog: catalog,
+                            catalog: workingCatalog,
                             checked: checked,
                             installedIndices: installedIndices,
                             initiallyExpanded: cat == DictionaryCategory.jaEn ||
@@ -355,11 +403,38 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
 
     final toDownload = selected
         .where((i) => !installedIndices.contains(i))
-        .map((i) => catalog[i])
+        .map((i) => workingCatalog[i])
         .toList();
 
     if (toDownload.isEmpty) return;
     await _downloadSelectedDictionaries(toDownload);
+  }
+
+  Widget _buildLanguageSelector({
+    required String selectedLang,
+    required ValueChanged<String> onChanged,
+  }) {
+    const Map<String, String> langs = DictionaryDownloader.availableLanguages;
+    return Row(
+      children: [
+        Text(t.dict_download_language,
+            style: TextStyle(fontSize: textTheme.bodyMedium?.fontSize)),
+        const SizedBox(width: 8),
+        Expanded(
+          child: DropdownButton<String>(
+            value: selectedLang,
+            isExpanded: true,
+            isDense: true,
+            items: langs.entries.map((e) {
+              return DropdownMenuItem(value: e.key, child: Text(e.value));
+            }).toList(),
+            onChanged: (String? val) {
+              if (val != null) onChanged(val);
+            },
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _buildCategoryTile({
@@ -548,6 +623,8 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
           );
         }
 
+        bool hadMemoryError = false;
+
         try {
           await appModel.importDictionaryFromDirectory(
             directory: tempDir,
@@ -558,6 +635,9 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
               if (!mounted) return;
               _selectedOrder = appModel.dictionaries.last.order;
               setState(() {});
+            },
+            onMemoryError: () {
+              hadMemoryError = true;
             },
           );
         } catch (e, stack) {
@@ -574,6 +654,22 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
 
         if (mounted) {
           Navigator.pop(context);
+        }
+
+        if (hadMemoryError && mounted) {
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: Text(t.low_memory_mode),
+              content: Text(t.low_memory_mode_suggestion),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text(t.dialog_close),
+                ),
+              ],
+            ),
+          );
         }
       },
     );
