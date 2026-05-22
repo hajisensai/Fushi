@@ -41,6 +41,8 @@ Notes:
 
 - 整包：`Pack: hibiki-balanced`
 - 单界面：`reader_hoshi_page.dart: B`
+- 图库导出：`Interface image picks:` / `Interface picks:` 标题行可以直接保留
+- 图库注释：`reader_hoshi_page.dart: B (04; supports 11)` 会按 `B` 解析，括号里的 board 说明只作人工参考
 - Board：`04: B`
 - 注释：以 `#` 开头的整行会被忽略
 - Notes：`Notes:` 后面的行会进入规格草案
@@ -64,4 +66,4 @@ Notes:
 node .\generate-implementation-spec.mjs --picks .\my-final-selection.txt --output .\IMPLEMENTATION_SPEC_FINAL_DRAFT.md
 ```
 
-如果命令报 `Unrecognized picks line`，说明文件里有一行不是有效选择。修掉那行再生成，别让错误输入混进实现计划。
+如果命令报 `Unrecognized picks line`、`Unknown surface picks` 或 `Unknown board picks`，说明文件里有一行不是有效选择，或者界面名/board 编号拼错了。修掉那行再生成，别让错误输入混进实现计划。

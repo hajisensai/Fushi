@@ -182,6 +182,9 @@ function parsePicks(raw) {
       parsed.packName = packMatch[1];
       continue;
     }
+    if (/^(?:interface(?:\s+image)?\s+picks?|board\s+picks?)\s*:?$/iu.test(trimmed)) {
+      continue;
+    }
     if (/^notes\s*:?$/iu.test(trimmed)) {
       inNotes = true;
       continue;
@@ -194,7 +197,7 @@ function parsePicks(raw) {
       continue;
     }
 
-    const surfaceMatch = trimmed.match(/^`?([^`:]+\.dart)`?\s*:\s*([ABC])\b/iu);
+    const surfaceMatch = trimmed.match(/^`?([^`:]+\.dart)`?\s*:\s*([ABC])(?:\b|\s*\()/iu);
     if (surfaceMatch) {
       parsed.choices.set(surfaceMatch[1], /** @type {Choice} */ (surfaceMatch[2].toUpperCase()));
       continue;
@@ -251,6 +254,25 @@ function boardChoiceCounts(surfaces, picks) {
     counts.set(surface.primary, current);
   }
   return counts;
+}
+
+/**
+ * @param {ParsedPicks} picks
+ * @param {ManifestSurface[]} surfaces
+ * @returns {void}
+ */
+function validatePicks(picks, surfaces) {
+  const validSurfaces = new Set(surfaces.map((surface) => surface.surface));
+  const unknownSurfaces = [...picks.choices.keys()].filter((surface) => !validSurfaces.has(surface));
+  if (unknownSurfaces.length > 0) {
+    throw new Error(`Unknown surface picks: ${unknownSurfaces.join(", ")}`);
+  }
+
+  const validBoards = new Set(boardOrder);
+  const unknownBoards = [...picks.boardChoices.keys()].filter((boardId) => !validBoards.has(boardId));
+  if (unknownBoards.length > 0) {
+    throw new Error(`Unknown board picks: ${unknownBoards.join(", ")}`);
+  }
 }
 
 /**
@@ -374,6 +396,7 @@ async function main() {
   const packName = args.packName || filePicks.packName;
   const packPicks = packName ? picksFromPack(packName, packs) : { choices: new Map(), boardChoices: new Map(), notes: [] };
   const picks = mergePicks(packPicks, filePicks);
+  validatePicks(picks, manifest.surfaces);
   const sources = [];
   if (packName) {
     sources.push(`${packs[packName].label} pack`);
