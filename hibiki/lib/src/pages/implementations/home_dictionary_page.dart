@@ -194,11 +194,10 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
                 ),
               ),
             ),
-            HibikiIconButton(
-              size: textTheme.titleLarge?.fontSize,
+            IconButton(
               tooltip: t.dictionary_settings,
-              icon: Icons.settings_outlined,
-              onTap: () async {
+              icon: const Icon(Icons.settings_outlined),
+              onPressed: () async {
                 double oldFontSize = appModel.dictionaryFontSize;
                 await showAppDialog(
                   context: context,
@@ -209,11 +208,10 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
                 }
               },
             ),
-            HibikiIconButton(
-              size: textTheme.titleLarge?.fontSize,
+            IconButton(
               tooltip: t.clear_dictionary_title,
-              icon: Icons.delete_sweep_outlined,
-              onTap: _showDeleteDictionaryHistoryPrompt,
+              icon: const Icon(Icons.delete_sweep_outlined),
+              onPressed: _showDeleteDictionaryHistoryPrompt,
             ),
           ],
         ),

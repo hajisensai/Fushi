@@ -301,15 +301,15 @@ class _HomePageState extends BasePageState<HomePage>
 
   List<Widget> buildSettingsActions() {
     return [
-      HibikiIconButton(
+      IconButton(
         tooltip: t.options_language,
-        icon: Icons.translate_outlined,
-        onTap: appModel.showLanguageMenu,
+        icon: const Icon(Icons.translate_outlined),
+        onPressed: appModel.showLanguageMenu,
       ),
-      HibikiIconButton(
+      IconButton(
         tooltip: t.options_github,
-        icon: Icons.public_outlined,
-        onTap: () {
+        icon: const Icon(Icons.public_outlined),
+        onPressed: () {
           launchUrl(
             Uri.parse('https://github.com/hdjsadgfwtg/hibiki'),
             mode: LaunchMode.externalApplication,
@@ -320,10 +320,10 @@ class _HomePageState extends BasePageState<HomePage>
   }
 
   Widget buildImportButton() {
-    return HibikiIconButton(
+    return IconButton(
       tooltip: t.import_book,
-      icon: Icons.add,
-      onTap: () async {
+      icon: const Icon(Icons.add),
+      onPressed: () async {
         await showAppDialog(
           context: context,
           builder: (_) => BookImportDialog(
@@ -372,10 +372,10 @@ class _HomePageState extends BasePageState<HomePage>
   }
 
   Widget buildCollectionsButton() {
-    return HibikiIconButton(
+    return IconButton(
       tooltip: t.collections,
-      icon: Icons.collections_bookmark_outlined,
-      onTap: () {
+      icon: const Icon(Icons.collections_bookmark_outlined),
+      onPressed: () {
         Navigator.push(
           context,
           adaptivePageRoute(builder: (_) => const CollectionsPage()),
@@ -385,10 +385,10 @@ class _HomePageState extends BasePageState<HomePage>
   }
 
   Widget buildStatisticsButton() {
-    return HibikiIconButton(
+    return IconButton(
       tooltip: t.reading_statistics,
-      icon: Icons.bar_chart_outlined,
-      onTap: () {
+      icon: const Icon(Icons.bar_chart_outlined),
+      onPressed: () {
         Navigator.push(
           context,
           adaptivePageRoute(builder: (_) => const ReadingStatisticsPage()),
