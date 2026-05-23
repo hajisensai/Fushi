@@ -38,7 +38,7 @@ class _BookCssEditorPageState extends State<BookCssEditorPage> {
     _selectedIndex = 0;
 
     for (int i = 0; i < _entries.length; i++) {
-      final String content = _repo.readCss(_entries[i]);
+      final String content = _repo.readCssSync(_entries[i]);
       _diskContent[i] = content;
       final TextEditingController controller =
           TextEditingController(text: content);
@@ -164,7 +164,7 @@ class _BookCssEditorPageState extends State<BookCssEditorPage> {
     if (hasBackup) {
       _repo.resetFile(_entries[idx]);
     }
-    final String restored = _repo.readCss(_entries[idx]);
+    final String restored = _repo.readCssSync(_entries[idx]);
     _diskContent[idx] = restored;
     _textControllers[idx]!.text = restored;
     _entries = _repo.discoverCssFiles();

@@ -322,7 +322,8 @@ class _AudioRecorderDialogPageState
                     child: adaptiveSlider(
                       context: context,
                       value: 0,
-                      thumbColor: Theme.of(context).colorScheme.onSurfaceVariant,
+                      thumbColor:
+                          Theme.of(context).colorScheme.onSurfaceVariant,
                       onChanged: (value) {},
                     ),
                   ),

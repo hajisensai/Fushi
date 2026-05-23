@@ -102,8 +102,8 @@ class _OpenStashDialogPage extends BasePageState<OpenStashDialogPage> {
                 right: Spacing.of(context).spaces.normal,
               ),
               color: index == _selectionNotifier.value
-                  ? theme.colorScheme.primary.withValues(alpha:0.3)
-                  : theme.colorScheme.onSurfaceVariant.withValues(alpha:0.1),
+                  ? theme.colorScheme.primary.withValues(alpha: 0.3)
+                  : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.1),
               child: SizedBox(
                 child: Text(
                   segment,

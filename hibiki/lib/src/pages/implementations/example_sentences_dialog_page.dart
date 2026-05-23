@@ -120,8 +120,8 @@ class _ExampleSentencesDialogPageState
                   right: Spacing.of(context).spaces.normal,
                 ),
                 color: _valuesSelected[index]!.value
-                    ? theme.colorScheme.primary.withValues(alpha:0.3)
-                    : theme.colorScheme.onSurfaceVariant.withValues(alpha:0.1),
+                    ? theme.colorScheme.primary.withValues(alpha: 0.3)
+                    : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.1),
                 child: Text(
                   sentence,
                   style: TextStyle(

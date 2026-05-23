@@ -12,7 +12,8 @@ EpubBook _makeBook({
     title: 'test',
     renditionSpread: renditionSpread,
     chapters: List<EpubChapter>.generate(count, (int i) {
-      final bool isImage = imageOnly != null && i < imageOnly.length && imageOnly[i];
+      final bool isImage =
+          imageOnly != null && i < imageOnly.length && imageOnly[i];
       return EpubChapter(
         id: 'ch$i',
         href: 'ch$i.xhtml',
@@ -32,7 +33,8 @@ EpubBook _makeBook({
 void main() {
   group('EpubSpreadMap', () {
     test('off mode produces identity map', () {
-      final EpubBook book = _makeBook(count: 5, imageOnly: [true, true, true, true, true]);
+      final EpubBook book =
+          _makeBook(count: 5, imageOnly: [true, true, true, true, true]);
       final EpubSpreadMap map = EpubSpreadMap.build(
         book: book,
         spreadMode: 'off',
@@ -46,7 +48,8 @@ void main() {
       }
     });
 
-    test('on mode pairs adjacent image-only chapters, chapter 0 stays single', () {
+    test('on mode pairs adjacent image-only chapters, chapter 0 stays single',
+        () {
       final EpubBook book = _makeBook(
         count: 6,
         imageOnly: [true, true, true, true, true, true],

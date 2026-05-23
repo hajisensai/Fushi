@@ -51,7 +51,8 @@ class HibikiPlaceholderMessage extends StatelessWidget {
           style: messageStyle ??
               Theme.of(context).textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.normal,
-                    color: color ?? Theme.of(context).colorScheme.onSurfaceVariant,
+                    color:
+                        color ?? Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
         ),
       ],

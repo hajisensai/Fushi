@@ -179,7 +179,8 @@ Widget adaptiveSegmentedButton<T extends Object>({
         if (v != null) onSelectionChanged({v});
       },
       children: {
-        for (final seg in segments) seg.value: seg.label ?? seg.icon ?? Text('$seg'),
+        for (final seg in segments)
+          seg.value: seg.label ?? seg.icon ?? Text('$seg'),
       },
     );
   }

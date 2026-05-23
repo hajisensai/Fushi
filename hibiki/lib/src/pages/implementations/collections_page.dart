@@ -433,7 +433,8 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
   Widget _buildItem(_CollectionItem item) {
     final isBookmark = item.type == _CollectionType.bookmark;
-    final icon = isBookmark ? Icons.bookmark_outline : Icons.format_quote_outlined;
+    final icon =
+        isBookmark ? Icons.bookmark_outline : Icons.format_quote_outlined;
     final typeLabel =
         isBookmark ? t.collection_bookmark : t.collection_sentence;
 
@@ -464,7 +465,8 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 20),
         color: Theme.of(context).colorScheme.error,
-        child: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.onError),
+        child: Icon(Icons.delete_outline,
+            color: Theme.of(context).colorScheme.onError),
       ),
       confirmDismiss: (_) async {
         final String message = isBookmark
@@ -518,7 +520,9 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
             if (_hasAudio(item))
               IconButton(
                 icon: Icon(
-                  _playingAudio ? Icons.hourglass_top : Icons.volume_up_outlined,
+                  _playingAudio
+                      ? Icons.hourglass_top
+                      : Icons.volume_up_outlined,
                   size: 18,
                 ),
                 onPressed: _playingAudio ? null : () => _playItemAudio(item),

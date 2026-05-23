@@ -81,8 +81,8 @@ class DictionaryTermPage extends ConsumerWidget {
       children: [
         SliverPositioned.fill(
           child: Card(
-            color: cardColor?.withValues(alpha:opacity) ??
-                scheme.surfaceContainerHigh.withValues(alpha:opacity),
+            color: cardColor?.withValues(alpha: opacity) ??
+                scheme.surfaceContainerHigh.withValues(alpha: opacity),
             elevation: 0,
             shape: const RoundedRectangleBorder(),
           ),
@@ -232,7 +232,7 @@ class _DictionaryTermActionsRowState
         child: HibikiIconButton(
           busy: true,
           enabledColor: enabledColor,
-          disabledColor: enabledColor.withValues(alpha:0.5),
+          disabledColor: enabledColor.withValues(alpha: 0.5),
           shapeBorder: const RoundedRectangleBorder(),
           backgroundColor: scheme.surfaceContainerHighest,
           size: Spacing.of(context).spaces.semiBig,
