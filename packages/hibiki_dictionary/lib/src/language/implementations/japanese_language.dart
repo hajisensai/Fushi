@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 
 import 'package:flutter/material.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -42,13 +43,29 @@ class JapaneseLanguage extends Language {
 
   /// Used to cache furigana segments for already generated [DictionaryEntry]
   /// items.
-  final Map<DictionaryEntry, List<RubyTextData>?> segmentsCache = {};
+  static const int _maxSegmentsCacheSize = 500;
+  final LinkedHashMap<DictionaryEntry, List<RubyTextData>?> segmentsCache =
+      LinkedHashMap<DictionaryEntry, List<RubyTextData>?>();
+
+  static const int _maxMatchCache = 2000;
+  static final LinkedHashMap<String, int> _matchLengthCache =
+      LinkedHashMap<String, int>();
 
   static int _lookupMatchedLength(String text) {
     if (!HoshiDicts.isInitialized) return 0;
+    final String key = text.length > 20 ? text.substring(0, 20) : text;
+    final cached = _matchLengthCache.remove(key);
+    if (cached != null) {
+      _matchLengthCache[key] = cached;
+      return cached;
+    }
     final results = HoshiDicts.instance.lookup(text, maxResults: 1);
-    if (results.isEmpty) return 0;
-    return results.first.matched.length;
+    final int len = results.isEmpty ? 0 : results.first.matched.length;
+    _matchLengthCache[key] = len;
+    while (_matchLengthCache.length > _maxMatchCache) {
+      _matchLengthCache.remove(_matchLengthCache.keys.first);
+    }
+    return len;
   }
 
   @override
@@ -184,13 +201,18 @@ class JapaneseLanguage extends Language {
   }
 
   List<RubyTextData>? fetchFurigana({required DictionaryEntry entry}) {
-    if (segmentsCache.containsKey(entry)) {
-      return segmentsCache[entry];
+    final cached = segmentsCache.remove(entry);
+    if (cached != null) {
+      segmentsCache[entry] = cached;
+      return cached;
     }
     List<RubyTextData> furigana =
         LanguageUtils.distributeFurigana(entry: entry);
 
     segmentsCache[entry] = furigana;
+    while (segmentsCache.length > _maxSegmentsCacheSize) {
+      segmentsCache.remove(segmentsCache.keys.first);
+    }
 
     return furigana;
   }

@@ -6,6 +6,7 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:hibiki/src/utils/misc/lru_cache.dart';
 
 class DictionaryRepository extends ChangeNotifier {
   DictionaryRepository(this._db, {VoidCallback? onCacheRebuild})
@@ -16,8 +17,10 @@ class DictionaryRepository extends ChangeNotifier {
 
   List<Dictionary> _dictionariesCache = [];
   final List<DictionarySearchResult> _dictionaryHistoryResults = [];
-  final Map<String, DictionarySearchResult> _dictionarySearchCache = {};
-  final Map<String, List<HoshiLookupResult>> _ffiLookupCache = {};
+  final LruCache<String, DictionarySearchResult> _dictionarySearchCache =
+      LruCache<String, DictionarySearchResult>(500);
+  final LruCache<String, List<HoshiLookupResult>> _ffiLookupCache =
+      LruCache<String, List<HoshiLookupResult>>(500);
 
   // ── getters ──────────────────────────────────────────────────────────
 
