@@ -1,7 +1,6 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:spaces/spaces.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
@@ -47,9 +46,7 @@ class _DictionaryDialogPageState extends BasePageState {
   Widget build(BuildContext context) {
     return adaptiveAlertDialog(
       context: context,
-      contentPadding: MediaQuery.of(context).orientation == Orientation.portrait
-          ? Spacing.of(context).insets.exceptBottom.big
-          : Spacing.of(context).insets.exceptBottom.normal,
+      contentPadding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       content: buildContent(),
       actions: actions,
     );
@@ -74,46 +71,50 @@ class _DictionaryDialogPageState extends BasePageState {
         thickness: 3,
         thumbVisibility: true,
         controller: _contentScrollController,
-        child: SingleChildScrollView(
+        child: ListView(
           controller: _contentScrollController,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildDictionaryManageRow(),
-              _buildCustomCssRow(),
-              const Space.small(),
-              const HibikiDivider(),
-              const Space.small(),
-              buildAutoSearchSwitch(),
-              const Space.small(),
-              buildAutoAddBookNameToTagsSwitch(),
-              const Space.small(),
-              buildCollapseDictionariesSwitch(),
-              const Space.small(),
-              buildDeduplicatePitchAccentsSwitch(),
-              const Space.small(),
-              buildHarmonicFrequencySwitch(),
-              const Space.small(),
-              buildShowExpressionTagsSwitch(),
-              const Space.small(),
-              const HibikiDivider(),
-              buildDebounceDelayField(),
-              buildDictionaryFontSizeField(),
-              buildMaximumTermsField(),
-              const Space.normal(),
-              buildManageAudioSources(),
-              const Space.normal(),
-              buildLocalAudioSwitch(),
-              buildLocalAudioDbList(),
-            ],
-          ),
+          shrinkWrap: true,
+          children: [
+            AdaptiveSettingsSection(
+              children: [
+                _buildDictionaryManageRow(),
+                _buildCustomCssRow(),
+              ],
+            ),
+            AdaptiveSettingsSection(
+              children: [
+                buildAutoSearchSwitch(),
+                buildAutoAddBookNameToTagsSwitch(),
+                buildCollapseDictionariesSwitch(),
+                buildDeduplicatePitchAccentsSwitch(),
+                buildHarmonicFrequencySwitch(),
+                buildShowExpressionTagsSwitch(),
+              ],
+            ),
+            AdaptiveSettingsSection(
+              children: [
+                buildDebounceDelayField(),
+                buildDictionaryFontSizeField(),
+                buildMaximumTermsField(),
+              ],
+            ),
+            AdaptiveSettingsSection(
+              children: [
+                buildManageAudioSources(),
+                buildLocalAudioSwitch(),
+                buildLocalAudioDbList(),
+              ],
+            ),
+          ],
         ),
       ),
     );
   }
 
   Widget _buildDictionaryManageRow() {
-    return InkWell(
+    return AdaptiveSettingsNavigationRow(
+      title: t.dictionaries,
+      icon: Icons.auto_stories_outlined,
       onTap: () {
         showAppDialog(
           context: context,
@@ -122,206 +123,90 @@ class _DictionaryDialogPageState extends BasePageState {
           if (mounted) setState(() {});
         });
       },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Row(
-          children: [
-            Icon(Icons.auto_stories_outlined, size: textTheme.bodyMedium?.fontSize),
-            const SizedBox(width: 8),
-            Text(t.dictionaries),
-            const Spacer(),
-            Icon(Icons.chevron_right,
-                size: 20,
-                color: Theme.of(context).colorScheme.onSurfaceVariant),
-          ],
-        ),
-      ),
     );
   }
 
   Widget _buildCustomCssRow() {
-    return InkWell(
+    return AdaptiveSettingsNavigationRow(
+      title: t.custom_dict_css,
+      icon: Icons.code_outlined,
       onTap: () {
         showAppDialog(
           context: context,
           builder: (_) => const _DictCssEditorDialog(),
         );
       },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Row(
-          children: [
-            Icon(Icons.code_outlined, size: textTheme.bodyMedium?.fontSize),
-            const SizedBox(width: 8),
-            Text(t.custom_dict_css),
-            const Spacer(),
-            Icon(Icons.chevron_right,
-                size: 20,
-                color: Theme.of(context).colorScheme.onSurfaceVariant),
-          ],
-        ),
-      ),
     );
   }
 
   Widget buildAutoSearchSwitch() {
-    ValueNotifier<bool> notifier =
-        ValueNotifier<bool>(appModel.autoSearchEnabled);
-
-    return Row(
-      children: [
-        Expanded(
-          child: Text(t.auto_search),
-        ),
-        ValueListenableBuilder<bool>(
-          valueListenable: notifier,
-          builder: (context, value, __) {
-            return adaptiveSwitch(
-              context: context,
-              value: value,
-              onChanged: (value) {
-                appModel.toggleAutoSearchEnabled();
-                notifier.value = appModel.autoSearchEnabled;
-              },
-            );
-          },
-        )
-      ],
+    return _buildSwitchRow(
+      title: t.auto_search,
+      value: appModel.autoSearchEnabled,
+      onChanged: appModel.toggleAutoSearchEnabled,
     );
   }
 
   Widget buildAutoAddBookNameToTagsSwitch() {
-    ValueNotifier<bool> notifier =
-        ValueNotifier<bool>(appModel.autoAddBookNameToTags);
-
-    return Row(
-      children: [
-        Expanded(
-          child: Text(t.auto_add_book_name_to_tags),
-        ),
-        ValueListenableBuilder<bool>(
-          valueListenable: notifier,
-          builder: (context, value, __) {
-            return adaptiveSwitch(
-              context: context,
-              value: value,
-              onChanged: (value) {
-                appModel.toggleAutoAddBookNameToTags();
-                notifier.value = appModel.autoAddBookNameToTags;
-              },
-            );
-          },
-        )
-      ],
+    return _buildSwitchRow(
+      title: t.auto_add_book_name_to_tags,
+      value: appModel.autoAddBookNameToTags,
+      onChanged: appModel.toggleAutoAddBookNameToTags,
     );
   }
 
   Widget buildCollapseDictionariesSwitch() {
-    ValueNotifier<bool> notifier =
-        ValueNotifier<bool>(appModel.collapseDictionaries);
-
-    return Row(
-      children: [
-        Expanded(
-          child: Text(t.collapse_dictionaries),
-        ),
-        ValueListenableBuilder<bool>(
-          valueListenable: notifier,
-          builder: (context, value, __) {
-            return adaptiveSwitch(
-              context: context,
-              value: value,
-              onChanged: (value) {
-                appModel.toggleCollapseDictionaries();
-                notifier.value = appModel.collapseDictionaries;
-              },
-            );
-          },
-        )
-      ],
+    return _buildSwitchRow(
+      title: t.collapse_dictionaries,
+      value: appModel.collapseDictionaries,
+      onChanged: appModel.toggleCollapseDictionaries,
     );
   }
 
   Widget buildDeduplicatePitchAccentsSwitch() {
-    ValueNotifier<bool> notifier =
-        ValueNotifier<bool>(appModel.deduplicatePitchAccents);
-
-    return Row(
-      children: [
-        Expanded(
-          child: Text(t.deduplicate_pitch_accents),
-        ),
-        ValueListenableBuilder<bool>(
-          valueListenable: notifier,
-          builder: (context, value, __) {
-            return adaptiveSwitch(
-              context: context,
-              value: value,
-              onChanged: (value) {
-                appModel.toggleDeduplicatePitchAccents();
-                notifier.value = appModel.deduplicatePitchAccents;
-              },
-            );
-          },
-        )
-      ],
+    return _buildSwitchRow(
+      title: t.deduplicate_pitch_accents,
+      value: appModel.deduplicatePitchAccents,
+      onChanged: appModel.toggleDeduplicatePitchAccents,
     );
   }
 
   Widget buildHarmonicFrequencySwitch() {
-    ValueNotifier<bool> notifier =
-        ValueNotifier<bool>(appModel.harmonicFrequency);
-
-    return Row(
-      children: [
-        Expanded(
-          child: Text(t.harmonic_frequency),
-        ),
-        ValueListenableBuilder<bool>(
-          valueListenable: notifier,
-          builder: (context, value, __) {
-            return adaptiveSwitch(
-              context: context,
-              value: value,
-              onChanged: (value) {
-                appModel.toggleHarmonicFrequency();
-                notifier.value = appModel.harmonicFrequency;
-              },
-            );
-          },
-        )
-      ],
+    return _buildSwitchRow(
+      title: t.harmonic_frequency,
+      value: appModel.harmonicFrequency,
+      onChanged: appModel.toggleHarmonicFrequency,
     );
   }
 
   Widget buildShowExpressionTagsSwitch() {
-    ValueNotifier<bool> notifier =
-        ValueNotifier<bool>(appModel.showExpressionTags);
+    return _buildSwitchRow(
+      title: t.show_expression_tags,
+      value: appModel.showExpressionTags,
+      onChanged: appModel.toggleShowExpressionTags,
+    );
+  }
 
-    return Row(
-      children: [
-        Expanded(
-          child: Text(t.show_expression_tags),
-        ),
-        ValueListenableBuilder<bool>(
-          valueListenable: notifier,
-          builder: (context, value, __) {
-            return adaptiveSwitch(
-              context: context,
-              value: value,
-              onChanged: (value) {
-                appModel.toggleShowExpressionTags();
-                notifier.value = appModel.showExpressionTags;
-              },
-            );
-          },
-        )
-      ],
+  Widget _buildSwitchRow({
+    required String title,
+    required bool value,
+    required VoidCallback onChanged,
+  }) {
+    return AdaptiveSettingsSwitchRow(
+      title: title,
+      value: value,
+      onChanged: (_) {
+        onChanged();
+        setState(() {});
+      },
     );
   }
 
   Widget buildDebounceDelayField() {
-    return TextField(
+    return _buildNumberTextField(
+      title: t.auto_search_debounce_delay,
+      controller: _debounceDelayController,
+      suffixText: t.unit_milliseconds,
       onChanged: (value) {
         int newDelay =
             int.tryParse(value) ?? appModel.defaultSearchDebounceDelay;
@@ -329,33 +214,21 @@ class _DictionaryDialogPageState extends BasePageState {
           newDelay = appModel.defaultSearchDebounceDelay;
           _debounceDelayController.text = newDelay.toString();
         }
-
         appModel.setSearchDebounceDelay(newDelay);
       },
-      controller: _debounceDelayController,
-      keyboardType: TextInputType.number,
-      decoration: InputDecoration(
-        floatingLabelBehavior: FloatingLabelBehavior.always,
-        suffixText: t.unit_milliseconds,
-        suffixIcon: HibikiIconButton(
-          tooltip: t.reset,
-          size: 18,
-          onTap: () async {
-            _debounceDelayController.text =
-                appModel.defaultSearchDebounceDelay.toString();
-            appModel
-                .setSearchDebounceDelay(appModel.defaultSearchDebounceDelay);
-            FocusScope.of(context).unfocus();
-          },
-          icon: Icons.undo_outlined,
-        ),
-        labelText: t.auto_search_debounce_delay,
-      ),
+      onReset: () {
+        _debounceDelayController.text =
+            appModel.defaultSearchDebounceDelay.toString();
+        appModel.setSearchDebounceDelay(appModel.defaultSearchDebounceDelay);
+      },
     );
   }
 
   Widget buildDictionaryFontSizeField() {
-    return TextField(
+    return _buildNumberTextField(
+      title: t.dictionary_font_size,
+      controller: _dictionaryFontSizeController,
+      suffixText: t.unit_pixels,
       onChanged: (value) {
         double newSize =
             double.tryParse(value) ?? appModel.defaultDictionaryFontSize;
@@ -363,32 +236,20 @@ class _DictionaryDialogPageState extends BasePageState {
           newSize = appModel.defaultDictionaryFontSize;
           _dictionaryFontSizeController.text = newSize.toString();
         }
-
         appModel.setDictionaryFontSize(newSize);
       },
-      controller: _dictionaryFontSizeController,
-      keyboardType: TextInputType.number,
-      decoration: InputDecoration(
-        floatingLabelBehavior: FloatingLabelBehavior.always,
-        suffixText: t.unit_pixels,
-        suffixIcon: HibikiIconButton(
-          tooltip: t.reset,
-          size: 18,
-          onTap: () async {
-            _dictionaryFontSizeController.text =
-                appModel.defaultDictionaryFontSize.toString();
-            appModel.setDictionaryFontSize(appModel.defaultDictionaryFontSize);
-            FocusScope.of(context).unfocus();
-          },
-          icon: Icons.undo_outlined,
-        ),
-        labelText: t.dictionary_font_size,
-      ),
+      onReset: () {
+        _dictionaryFontSizeController.text =
+            appModel.defaultDictionaryFontSize.toString();
+        appModel.setDictionaryFontSize(appModel.defaultDictionaryFontSize);
+      },
     );
   }
 
   Widget buildMaximumTermsField() {
-    return TextField(
+    return _buildNumberTextField(
+      title: t.maximum_terms,
+      controller: _maximumTermsController,
       onChanged: (value) {
         int newAmount = int.tryParse(value) ??
             appModel.defaultMaximumDictionaryTermsInResult;
@@ -396,87 +257,88 @@ class _DictionaryDialogPageState extends BasePageState {
           newAmount = appModel.defaultMaximumDictionaryTermsInResult;
           _maximumTermsController.text = newAmount.toString();
         }
-
         appModel.setMaximumTerms(newAmount);
         appModel.clearDictionaryResultsCache();
       },
-      controller: _maximumTermsController,
-      keyboardType: TextInputType.number,
-      decoration: InputDecoration(
-        floatingLabelBehavior: FloatingLabelBehavior.always,
-        suffixIcon: HibikiIconButton(
-          tooltip: t.reset,
-          size: 18,
-          onTap: () async {
-            _maximumTermsController.text =
-                appModel.defaultMaximumDictionaryTermsInResult.toString();
-            appModel.setMaximumTerms(
-                appModel.defaultMaximumDictionaryTermsInResult);
-            FocusScope.of(context).unfocus();
-          },
-          icon: Icons.undo_outlined,
+      onReset: () {
+        _maximumTermsController.text =
+            appModel.defaultMaximumDictionaryTermsInResult.toString();
+        appModel
+            .setMaximumTerms(appModel.defaultMaximumDictionaryTermsInResult);
+      },
+    );
+  }
+
+  Widget _buildNumberTextField({
+    required String title,
+    required TextEditingController controller,
+    required ValueChanged<String> onChanged,
+    required VoidCallback onReset,
+    String? suffixText,
+  }) {
+    return AdaptiveSettingsRow(
+      title: title,
+      controlBelow: true,
+      trailing: TextField(
+        onChanged: onChanged,
+        controller: controller,
+        keyboardType: TextInputType.number,
+        decoration: InputDecoration(
+          floatingLabelBehavior: FloatingLabelBehavior.always,
+          suffixText: suffixText,
+          suffixIcon: HibikiIconButton(
+            tooltip: t.reset,
+            size: 18,
+            onTap: () {
+              onReset();
+              FocusScope.of(context).unfocus();
+            },
+            icon: Icons.undo_outlined,
+          ),
+          labelText: title,
         ),
-        labelText: t.maximum_terms,
       ),
     );
   }
 
-  Color get activeButtonColor =>
-      Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha:0.1);
-  Color get inactiveButtonColor =>
-      Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha:0.05);
   Color get activeTextColor => Theme.of(context).colorScheme.onSurface;
   Color get inactiveTextColor => Theme.of(context).colorScheme.onSurfaceVariant;
 
   Widget buildLocalAudioSwitch() {
-    ValueNotifier<bool> notifier =
-        ValueNotifier<bool>(appModel.localAudioEnabled);
-
-    return Row(
-      children: [
-        Expanded(
-          child: Text(t.local_audio),
-        ),
-        ValueListenableBuilder<bool>(
-          valueListenable: notifier,
-          builder: (context, value, __) {
-            return adaptiveSwitch(
-              context: context,
-              value: value,
-              onChanged: (value) {
-                appModel.toggleLocalAudio();
-                notifier.value = appModel.localAudioEnabled;
-              },
-            );
-          },
-        )
-      ],
+    return _buildSwitchRow(
+      title: t.local_audio,
+      value: appModel.localAudioEnabled,
+      onChanged: appModel.toggleLocalAudio,
     );
   }
 
   Widget buildLocalAudioDbList() {
     final List<LocalAudioDbEntry> dbs = appModel.localAudioDbs;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (dbs.isEmpty)
-          Padding(
-            padding: Spacing.of(context).insets.vertical.small,
-            child: Text(
-              t.local_audio_not_set,
-              style: textTheme.bodySmall?.copyWith(color: inactiveTextColor),
+    return AdaptiveSettingsRow(
+      title: t.local_audio_add_db,
+      controlBelow: true,
+      trailing: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (dbs.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Text(
+                t.local_audio_not_set,
+                style: textTheme.bodySmall?.copyWith(color: inactiveTextColor),
+              ),
             ),
+          for (int index = 0; index < dbs.length; index++)
+            _buildDbTile(dbs, index),
+          const SizedBox(height: 4),
+          TextButton.icon(
+            icon: Icon(Icons.add, size: textTheme.bodyMedium?.fontSize),
+            label: Text(t.local_audio_add_db, style: textTheme.bodyMedium),
+            onPressed: _pickAndAddAudioDb,
           ),
-        for (int index = 0; index < dbs.length; index++)
-          _buildDbTile(dbs, index),
-        const SizedBox(height: 4),
-        TextButton.icon(
-          icon: Icon(Icons.add, size: textTheme.bodyMedium?.fontSize),
-          label: Text(t.local_audio_add_db, style: textTheme.bodyMedium),
-          onPressed: _pickAndAddAudioDb,
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -487,34 +349,15 @@ class _DictionaryDialogPageState extends BasePageState {
         : entry.path.split('/').last;
     final bool enabled = entry.enabled;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
+    return AdaptiveSettingsRow(
+      title: label,
+      icon: enabled ? Icons.storage_outlined : Icons.block,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          SizedBox(
-            width: 24,
-            child: Text(
-              '${index + 1}',
-              style: textTheme.bodyMedium?.copyWith(color: inactiveTextColor),
-              textAlign: TextAlign.center,
-            ),
-          ),
-          const SizedBox(width: 6),
-          Icon(
-            enabled ? Icons.storage_outlined : Icons.block,
-            size: textTheme.bodyMedium?.fontSize,
-            color: enabled ? activeTextColor : inactiveTextColor,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              label,
-              style: textTheme.bodyMedium?.copyWith(
-                color: enabled ? null : inactiveTextColor,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
+          Text(
+            '${index + 1}',
+            style: textTheme.bodySmall?.copyWith(color: inactiveTextColor),
           ),
           HibikiIconButton(
             tooltip: enabled ? t.options_hide : t.options_show,
@@ -637,32 +480,10 @@ class _DictionaryDialogPageState extends BasePageState {
   }
 
   Widget buildManageAudioSources() {
-    return InkWell(
+    return AdaptiveSettingsNavigationRow(
+      title: t.manage_audio_sources,
+      icon: Icons.volume_up_outlined,
       onTap: showAudioSourcesPage,
-      child: Container(
-        padding: Spacing.of(context).insets.vertical.normal,
-        alignment: Alignment.center,
-        width: double.infinity,
-        color: activeButtonColor,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.volume_up_outlined,
-              size: textTheme.titleSmall?.fontSize,
-              color: activeTextColor,
-            ),
-            const Space.small(),
-            Text(
-              t.manage_audio_sources,
-              style: textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: activeTextColor,
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -746,17 +567,10 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
                   });
                 },
                 itemBuilder: (context, index) {
-                  return ListTile(
+                  return AdaptiveSettingsRow(
                     key: ValueKey('audio_src_$index'),
-                    dense: true,
-                    minVerticalPadding: 0,
-                    visualDensity: VisualDensity.compact,
-                    title: Text(
-                      _sources[index],
-                      style: Theme.of(context).textTheme.bodySmall,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    title: _sources[index],
+                    icon: Icons.drag_handle,
                     trailing: IconButton(
                       visualDensity: VisualDensity.compact,
                       icon: const Icon(Icons.delete_outline, size: 18),

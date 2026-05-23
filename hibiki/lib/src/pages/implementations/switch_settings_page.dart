@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:spaces/spaces.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 
@@ -59,9 +58,7 @@ class _SwitchSettingsPageState<T> extends BasePageState<SwitchSettingsPage<T>> {
   Widget build(BuildContext context) {
     return adaptiveAlertDialog(
       context: context,
-      contentPadding: MediaQuery.of(context).orientation == Orientation.portrait
-          ? Spacing.of(context).insets.all.big
-          : Spacing.of(context).insets.all.normal,
+      contentPadding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       content: buildContent(),
       actions: actions,
     );
@@ -74,39 +71,33 @@ class _SwitchSettingsPageState<T> extends BasePageState<SwitchSettingsPage<T>> {
         thickness: 3,
         thumbVisibility: true,
         controller: _scrollController,
-        child: SingleChildScrollView(
+        child: ListView(
           controller: _scrollController,
-          child: Wrap(
-            children: List.generate(
-              _valuesSelected.length,
-              (index) {
-                MapEntry<T, ValueNotifier<bool>> item =
-                    _valuesSelected.entries.elementAt(index);
-                T key = item.key;
-                ValueNotifier<bool> notifier = item.value;
+          shrinkWrap: true,
+          children: [
+            AdaptiveSettingsSection(
+              children: List.generate(
+                _valuesSelected.length,
+                (index) {
+                  MapEntry<T, ValueNotifier<bool>> item =
+                      _valuesSelected.entries.elementAt(index);
+                  T key = item.key;
+                  ValueNotifier<bool> notifier = item.value;
 
-                return Row(
-                  children: [
-                    Expanded(
-                      child: Text(widget.generateLabel(key)),
-                    ),
-                    ValueListenableBuilder<bool>(
-                      valueListenable: notifier,
-                      builder: (context, value, __) {
-                        return adaptiveSwitch(
-                          context: context,
-                          value: value,
-                          onChanged: (value) {
-                            notifier.value = !notifier.value;
-                          },
-                        );
-                      },
-                    )
-                  ],
-                );
-              },
+                  return ValueListenableBuilder<bool>(
+                    valueListenable: notifier,
+                    builder: (context, value, __) {
+                      return AdaptiveSettingsSwitchRow(
+                        title: widget.generateLabel(key),
+                        value: value,
+                        onChanged: (_) => notifier.value = !notifier.value,
+                      );
+                    },
+                  );
+                },
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );

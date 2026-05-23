@@ -20,86 +20,76 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
     final vm = ref.read(ankiViewModelProvider.notifier);
     final settings = uiState.settings;
 
-    return Scaffold(
-      appBar:
-          adaptiveAppBar(context: context, title: Text(t.anki_settings_label)),
-      body: ListView(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).padding.bottom + 16,
-        ),
-        children: [
-          const ListTile(
-            leading: Icon(Icons.person_outline),
-            title: ProfileSelector(),
-          ),
-          const HibikiDivider(),
-          _buildFetchTile(uiState, vm),
-          if (uiState.errorMessage != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Text(
-                uiState.errorMessage!,
-                style: textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.error),
-              ),
+    return AdaptiveSettingsScaffold(
+      title: Text(t.anki_settings_label),
+      children: [
+        AdaptiveSettingsSection(
+          children: [
+            AdaptiveSettingsRow(
+              title: t.profile_label,
+              icon: Icons.person_outline,
+              trailing: const ProfileSelector(),
             ),
-          if (!uiState.isConfigured && uiState.errorMessage == null)
-            Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(
-                t.anki_not_configured,
-                textAlign: TextAlign.center,
-                style: textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-          if (uiState.isConfigured) ...[
-            const HibikiDivider(),
-            _buildDeckDropdown(settings, vm),
-            const HibikiDivider(),
-            _buildNoteTypeDropdown(settings, vm),
-            const HibikiDivider(),
-            SettingsSectionHeader(
-              t.anki_field_mappings,
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-            ),
-            _buildFieldMappings(settings, vm),
-            const HibikiDivider(),
-            _buildTagsInput(settings, vm),
-            const HibikiDivider(),
-            SwitchListTile.adaptive(
-              title: Text(t.anki_allow_duplicates),
-              subtitle: Text(
-                t.anki_allow_duplicates_hint,
-                style: textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-              ),
-              value: settings.allowDupes,
-              onChanged: vm.updateAllowDupes,
-            ),
-            SwitchListTile.adaptive(
-              title: Text(t.anki_compact_glossaries),
-              subtitle: Text(
-                t.anki_compact_glossaries_hint,
-                style: textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-              ),
-              value: settings.compactGlossaries,
-              onChanged: vm.updateCompactGlossaries,
-            ),
+            _buildFetchTile(uiState, vm),
           ],
+        ),
+        if (uiState.errorMessage != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            child: Text(
+              uiState.errorMessage!,
+              style:
+                  textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
+            ),
+          ),
+        if (!uiState.isConfigured && uiState.errorMessage == null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+            child: Text(
+              t.anki_not_configured,
+              textAlign: TextAlign.center,
+              style: textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        if (uiState.isConfigured) ...[
+          AdaptiveSettingsSection(
+            children: [
+              _buildDeckDropdown(settings, vm),
+              _buildNoteTypeDropdown(settings, vm),
+            ],
+          ),
+          AdaptiveSettingsSection(
+            title: t.anki_field_mappings,
+            children: _buildFieldMappings(settings, vm),
+          ),
+          AdaptiveSettingsSection(
+            children: [
+              _buildTagsInput(settings, vm),
+              AdaptiveSettingsSwitchRow(
+                title: t.anki_allow_duplicates,
+                subtitle: t.anki_allow_duplicates_hint,
+                value: settings.allowDupes,
+                onChanged: vm.updateAllowDupes,
+              ),
+              AdaptiveSettingsSwitchRow(
+                title: t.anki_compact_glossaries,
+                subtitle: t.anki_compact_glossaries_hint,
+                value: settings.compactGlossaries,
+                onChanged: vm.updateCompactGlossaries,
+              ),
+            ],
+          ),
         ],
-      ),
+      ],
     );
   }
 
   Widget _buildFetchTile(AnkiUiState uiState, AnkiViewModel vm) {
-    return ListTile(
-      leading: const Icon(Icons.sync_outlined),
-      title: Text(
-        uiState.isFetching ? t.anki_fetching : t.anki_fetch,
-      ),
+    return AdaptiveSettingsRow(
+      icon: Icons.sync_outlined,
+      title: uiState.isFetching ? t.anki_fetching : t.anki_fetch,
       trailing: uiState.isFetching
           ? SizedBox(
               width: 20,
@@ -115,9 +105,10 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
     final decks = settings.availableDecks;
     final selectedId = settings.selectedDeckId;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: DropdownMenu<int>(
+    return AdaptiveSettingsRow(
+      title: t.anki_deck,
+      controlBelow: true,
+      trailing: DropdownMenu<int>(
         label: Text(t.anki_deck),
         expandedInsets: EdgeInsets.zero,
         initialSelection:
@@ -138,9 +129,10 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
     final noteTypes = settings.availableNoteTypes;
     final selectedId = settings.selectedNoteTypeId;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: DropdownMenu<int>(
+    return AdaptiveSettingsRow(
+      title: t.anki_note_type,
+      controlBelow: true,
+      trailing: DropdownMenu<int>(
         label: Text(t.anki_note_type),
         expandedInsets: EdgeInsets.zero,
         initialSelection:
@@ -157,28 +149,19 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
     );
   }
 
-  Widget _buildFieldMappings(AnkiSettings settings, AnkiViewModel vm) {
+  List<Widget> _buildFieldMappings(AnkiSettings settings, AnkiViewModel vm) {
     final noteType = settings.selectedNoteType;
-    if (noteType == null) return const SizedBox.shrink();
+    if (noteType == null) return const <Widget>[];
 
-    return Column(
-      children: noteType.fields.map((field) {
-        final value = settings.fieldMappings[field] ?? '';
-        return ListTile(
-          title: Text(field),
-          subtitle: Text(
-            value.isEmpty ? t.anki_field_not_mapped : value,
-            style: textTheme.bodySmall?.copyWith(
-              color: value.isEmpty
-                  ? theme.colorScheme.onSurfaceVariant
-                  : theme.colorScheme.onSurface,
-            ),
-          ),
-          trailing: const Icon(Icons.edit_outlined, size: 18),
-          onTap: () => _showHandlebarPicker(field, value, vm),
-        );
-      }).toList(),
-    );
+    return noteType.fields.map((field) {
+      final value = settings.fieldMappings[field] ?? '';
+      return AdaptiveSettingsNavigationRow(
+        title: field,
+        subtitle: value.isEmpty ? t.anki_field_not_mapped : value,
+        icon: Icons.edit_outlined,
+        onTap: () => _showHandlebarPicker(field, value, vm),
+      );
+    }).toList();
   }
 
   Future<void> _showHandlebarPicker(
@@ -205,9 +188,10 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
   }
 
   Widget _buildTagsInput(AnkiSettings settings, AnkiViewModel vm) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: TextFormField(
+    return AdaptiveSettingsRow(
+      title: t.anki_tags,
+      controlBelow: true,
+      trailing: TextFormField(
         initialValue: settings.tags,
         decoration: InputDecoration(
           labelText: t.anki_tags,
@@ -299,16 +283,14 @@ class _AnkiHandlebarPickerDialogState extends State<AnkiHandlebarPickerDialog> {
                   final opt = widget.options[i];
                   if (opt == '-') return const Divider(height: 1);
                   final isSelected = widget.initialValue == opt;
-                  return ListTile(
-                    dense: true,
-                    minVerticalPadding: 0,
-                    visualDensity: VisualDensity.compact,
-                    title: Text(
-                      opt,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    selected: isSelected,
+                  return AdaptiveSettingsRow(
+                    title: opt,
+                    trailing: isSelected
+                        ? Icon(
+                            Icons.check,
+                            color: Theme.of(context).colorScheme.primary,
+                          )
+                        : null,
                     onTap: () => Navigator.pop(context, opt),
                   );
                 },

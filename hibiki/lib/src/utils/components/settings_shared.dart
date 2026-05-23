@@ -281,6 +281,93 @@ class AdaptiveSettingsSwitchRow extends StatelessWidget {
   }
 }
 
+class AdaptiveSettingsSwitchActionRow extends StatelessWidget {
+  const AdaptiveSettingsSwitchActionRow({
+    required this.title,
+    required this.value,
+    required this.onChanged,
+    super.key,
+    this.subtitle,
+    this.icon,
+    this.body,
+    this.actions = const <Widget>[],
+    this.panel,
+    this.controlBelow = false,
+  });
+
+  final String title;
+  final String? subtitle;
+  final IconData? icon;
+  final bool value;
+  final ValueChanged<bool>? onChanged;
+  final Widget? body;
+  final List<Widget> actions;
+  final Widget? panel;
+  final bool controlBelow;
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget switchControl = adaptiveSwitch(
+      context: context,
+      value: value,
+      onChanged: onChanged,
+    );
+    final bool stacked = controlBelow || body != null || panel != null;
+    return AdaptiveSettingsRow(
+      title: title,
+      subtitle: subtitle,
+      icon: icon,
+      controlBelow: stacked,
+      trailing: stacked
+          ? _buildStackedTrailing(switchControl)
+          : _buildInlineTrailing(switchControl),
+      onTap: onChanged == null ? null : () => onChanged!(!value),
+    );
+  }
+
+  Widget _buildInlineTrailing(Widget switchControl) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ..._spacedActions(),
+        if (actions.isNotEmpty) const SizedBox(width: 6),
+        switchControl,
+      ],
+    );
+  }
+
+  Widget _buildStackedTrailing(Widget switchControl) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            if (body != null) Expanded(child: body!) else const Spacer(),
+            ..._spacedActions(),
+            if (actions.isNotEmpty) const SizedBox(width: 6),
+            switchControl,
+          ],
+        ),
+        if (panel != null) ...[
+          const SizedBox(height: 8),
+          panel!,
+        ],
+      ],
+    );
+  }
+
+  List<Widget> _spacedActions() {
+    final List<Widget> spaced = <Widget>[];
+    for (int i = 0; i < actions.length; i++) {
+      spaced.add(Padding(
+        padding: EdgeInsets.only(left: i == 0 ? 0 : 4),
+        child: actions[i],
+      ));
+    }
+    return spaced;
+  }
+}
+
 class AdaptiveSettingsSegmentedRow<T extends Object> extends StatelessWidget {
   const AdaptiveSettingsSegmentedRow({
     required this.title,

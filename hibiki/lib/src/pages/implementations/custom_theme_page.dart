@@ -344,289 +344,272 @@ class _CustomThemePageState extends BasePageState {
 
   @override
   Widget build(BuildContext context) {
-    final TextStyle? hintStyle = Theme.of(context)
-        .textTheme
-        .bodySmall
-        ?.copyWith(color: Theme.of(context).hintColor);
     final ColorScheme cs = _preview;
 
-    return Scaffold(
-      appBar: adaptiveAppBar(
-        context: context,
-        title: Text(t.custom_theme),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.content_paste_outlined),
-            tooltip: t.import_theme,
-            onPressed: _importTheme,
-          ),
-          IconButton(
-            icon: const Icon(Icons.share_outlined),
-            tooltip: t.share_theme,
-            onPressed: _shareTheme,
-          ),
-        ],
+    return AdaptiveSettingsScaffold(
+      title: Text(t.custom_theme),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        12,
+        16,
+        12 +
+            MediaQuery.of(context).padding.bottom +
+            MediaQuery.of(context).viewInsets.bottom,
       ),
-      resizeToAvoidBottomInset: true,
-      body: ListView(
-        padding: EdgeInsets.fromLTRB(
-          16,
-          12,
-          16,
-          12 +
-              MediaQuery.of(context).padding.bottom +
-              MediaQuery.of(context).viewInsets.bottom,
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.content_paste_outlined),
+          tooltip: t.import_theme,
+          onPressed: _importTheme,
         ),
-        children: [
-          _buildPreviewCard(cs),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(child: Text(t.dark_mode)),
-              adaptiveSegmentedButton<String>(
-                context: context,
-                segments: const [
-                  ButtonSegment(
-                    value: 'light',
-                    icon: Icon(Icons.light_mode_outlined, size: 16),
-                  ),
-                  ButtonSegment(
-                    value: 'system',
-                    icon: Icon(Icons.brightness_auto_outlined, size: 16),
-                  ),
-                  ButtonSegment(
-                    value: 'dark',
-                    icon: Icon(Icons.dark_mode_outlined, size: 16),
-                  ),
-                ],
-                selected: {_brightnessMode},
-                onSelectionChanged: (selected) =>
-                    _setBrightnessMode(selected.first),
-                style: kSettingsSegmentedStyle,
-              ),
-            ],
-          ),
-          // ── 种子色 ──
-          const SizedBox(height: 8),
-          Text(t.seed_color, style: Theme.of(context).textTheme.titleSmall),
-          Text(t.seed_color_desc, style: hintStyle),
-          const SizedBox(height: 8),
-          LayoutBuilder(
-            builder: (layoutContext, constraints) {
-              final pickerWidth = constraints.maxWidth
-                  .clamp(0.0, MediaQuery.of(layoutContext).size.width - 64);
-              final isLandscape = MediaQuery.of(layoutContext).orientation ==
-                  Orientation.landscape;
-              return Listener(
-                onPointerDown: (_) => _holdScroll(layoutContext),
-                onPointerUp: (_) => _releaseScroll(),
-                onPointerCancel: (_) => _releaseScroll(),
-                child: ColorPicker(
-                  pickerColor: _seed,
-                  onColorChanged: _setSeed,
-                  colorPickerWidth: pickerWidth,
-                  pickerAreaHeightPercent: isLandscape ? 0.4 : 0.6,
-                  enableAlpha: false,
-                  displayThumbColor: true,
-                  hexInputBar: true,
-                  labelTypes: const [],
+        IconButton(
+          icon: const Icon(Icons.share_outlined),
+          tooltip: t.share_theme,
+          onPressed: _shareTheme,
+        ),
+      ],
+      children: [
+        _buildPreviewCard(cs),
+        const SizedBox(height: 16),
+        AdaptiveSettingsSection(
+          children: [
+            AdaptiveSettingsSegmentedRow<String>(
+              title: t.dark_mode,
+              icon: Icons.dark_mode_outlined,
+              controlBelow: true,
+              segments: const [
+                ButtonSegment<String>(
+                  value: 'light',
+                  icon: Icon(Icons.light_mode_outlined, size: 16),
                 ),
-              );
-            },
-          ),
-          // ── 主色（音频高亮、按钮、链接等全局强调色）──
-          const SizedBox(height: 20),
-          _buildOptionalColorPicker(
-            label: t.color_primary,
-            description: t.color_primary_desc,
-            preview: _buildPrimaryPreview(cs),
-            hintStyle: hintStyle,
-            enabled: _usePrimaryColor,
-            onEnabledChanged: (value) {
-              setState(() {
-                _usePrimaryColor = value;
-                if (value) {
-                  _primaryColor ??= _generatedScheme.primary;
-                } else {
-                  _primaryColor = _generatedScheme.primary;
-                }
-              });
-            },
-            color: _primaryColor!,
-            onChanged: (color) => setState(() => _primaryColor = color),
-            enableAlpha: false,
-          ),
-          // ── 阅读器颜色 ──
-          const SizedBox(height: 20),
-          Text(t.section_reader_colors,
-              style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          _buildOptionalColorPicker(
-            label: t.font_color,
-            description: t.font_color_desc,
-            preview: _buildFontColorPreview(cs),
-            hintStyle: hintStyle,
-            enabled: _useFontColor,
-            onEnabledChanged: (v) => setState(() => _useFontColor = v),
-            color: _fontColor!,
-            onChanged: (c) => setState(() => _fontColor = c),
-            enableAlpha: true,
-          ),
-          const SizedBox(height: 12),
-          _buildOptionalColorPicker(
-            label: t.background_color,
-            description: t.background_color_desc,
-            preview: _buildBgColorPreview(cs),
-            hintStyle: hintStyle,
-            enabled: _useBgColor,
-            onEnabledChanged: (v) => setState(() => _useBgColor = v),
-            color: _bgColor!,
-            onChanged: (c) => setState(() => _bgColor = c),
-            enableAlpha: false,
-          ),
-          const SizedBox(height: 12),
-          _buildOptionalColorPicker(
-            label: t.selection_color,
-            description: t.selection_color_desc,
-            preview: _buildSelectionPreview(cs),
-            hintStyle: hintStyle,
-            enabled: _useSelectionColor,
-            onEnabledChanged: (v) => setState(() => _useSelectionColor = v),
-            color: _selectionColor!,
-            onChanged: (c) => setState(() => _selectionColor = c),
-            enableAlpha: true,
-          ),
-          const SizedBox(height: 12),
-          _buildOptionalColorPicker(
-            label: t.color_link,
-            description: t.color_link_desc,
-            preview: _buildLinkPreview(cs),
-            hintStyle: hintStyle,
-            enabled: _useLinkColor,
-            onEnabledChanged: (value) {
-              setState(() {
-                _useLinkColor = value;
-                if (value) {
-                  _linkColor ??= _generatedScheme.primary;
-                } else {
-                  _linkColor = _generatedScheme.primary;
-                }
-              });
-            },
-            color: _linkColor!,
-            onChanged: (color) => setState(() => _linkColor = color),
-            enableAlpha: false,
-          ),
-          const SizedBox(height: 12),
-          _buildOptionalColorPicker(
-            label: t.color_sasayaki,
-            description: t.color_sasayaki_desc,
-            preview: _buildSasayakiPreview(cs),
-            hintStyle: hintStyle,
-            enabled: _useSasayakiColor,
-            onEnabledChanged: (v) => setState(() => _useSasayakiColor = v),
-            color: _sasayakiColor!,
-            onChanged: (c) => setState(() => _sasayakiColor = c),
-            enableAlpha: true,
-          ),
-          // ── 高级选项 ──
-          const SizedBox(height: 8),
-          ExpansionTile(
-            title: Text(t.section_advanced_colors),
-            tilePadding: EdgeInsets.zero,
-            childrenPadding: const EdgeInsets.only(bottom: 8),
-            children: [
-              _buildOptionalColorPicker(
-                label: t.color_secondary,
-                description: t.color_secondary_desc,
-                preview: _buildSecondaryPreview(cs),
-                hintStyle: hintStyle,
-                enabled: _useSecondaryColor,
-                onEnabledChanged: (value) {
-                  setState(() {
-                    _useSecondaryColor = value;
-                    if (value) {
-                      _secondaryColor ??= _generatedScheme.secondary;
-                    } else {
-                      _secondaryColor = _generatedScheme.secondary;
-                    }
-                  });
+                ButtonSegment<String>(
+                  value: 'system',
+                  icon: Icon(Icons.brightness_auto_outlined, size: 16),
+                ),
+                ButtonSegment<String>(
+                  value: 'dark',
+                  icon: Icon(Icons.dark_mode_outlined, size: 16),
+                ),
+              ],
+              selected: _brightnessMode,
+              onChanged: _setBrightnessMode,
+            ),
+          ],
+        ),
+        // ── 种子色 ──
+        AdaptiveSettingsSection(
+          children: [
+            AdaptiveSettingsRow(
+              title: t.seed_color,
+              subtitle: t.seed_color_desc,
+              icon: Icons.palette_outlined,
+              controlBelow: true,
+              trailing: LayoutBuilder(
+                builder: (layoutContext, constraints) {
+                  final double pickerWidth = constraints.maxWidth.clamp(
+                    0.0,
+                    MediaQuery.of(layoutContext).size.width - 64,
+                  );
+                  final bool isLandscape =
+                      MediaQuery.of(layoutContext).orientation ==
+                          Orientation.landscape;
+                  return Listener(
+                    onPointerDown: (_) => _holdScroll(layoutContext),
+                    onPointerUp: (_) => _releaseScroll(),
+                    onPointerCancel: (_) => _releaseScroll(),
+                    child: ColorPicker(
+                      pickerColor: _seed,
+                      onColorChanged: _setSeed,
+                      colorPickerWidth: pickerWidth,
+                      pickerAreaHeightPercent: isLandscape ? 0.4 : 0.6,
+                      enableAlpha: false,
+                      displayThumbColor: true,
+                      hexInputBar: true,
+                      labelTypes: const [],
+                    ),
+                  );
                 },
-                color: _secondaryColor!,
-                onChanged: (color) => setState(() => _secondaryColor = color),
-                enableAlpha: false,
               ),
-              const SizedBox(height: 12),
-              _buildOptionalColorPicker(
-                label: t.color_tertiary,
-                description: t.color_tertiary_desc,
-                preview: _buildTertiaryPreview(cs),
-                hintStyle: hintStyle,
-                enabled: _useTertiaryColor,
-                onEnabledChanged: (value) {
-                  setState(() {
-                    _useTertiaryColor = value;
-                    if (value) {
-                      _tertiaryColor ??= _generatedScheme.tertiary;
-                    } else {
-                      _tertiaryColor = _generatedScheme.tertiary;
-                    }
-                  });
-                },
-                color: _tertiaryColor!,
-                onChanged: (color) => setState(() => _tertiaryColor = color),
-                enableAlpha: false,
-              ),
-              const SizedBox(height: 12),
-              _buildOptionalColorPicker(
-                label: t.color_container,
-                description: t.color_container_desc,
-                preview: _buildContainerPreview(cs),
-                hintStyle: hintStyle,
-                enabled: _useContainerColor,
-                onEnabledChanged: (value) {
-                  setState(() {
-                    _useContainerColor = value;
-                    if (value) {
-                      _containerColor ??= _generatedScheme.primaryContainer;
-                    } else {
-                      _containerColor = _generatedScheme.primaryContainer;
-                    }
-                  });
-                },
-                color: _containerColor!,
-                onChanged: (color) => setState(() => _containerColor = color),
-                enableAlpha: false,
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          FilledButton.icon(
-            onPressed: () async {
-              final NavigatorState navigator = Navigator.of(context);
-              await appModel.applyCustomTheme(
-                seed: _seed,
-                brightnessMode: _brightnessMode,
-                fontColor: _useFontColor ? _fontColor : null,
-                backgroundColor: _useBgColor ? _bgColor : null,
-                selectionColor: _useSelectionColor ? _selectionColor : null,
-                primaryColor: _usePrimaryColor ? _primaryColor : null,
-                secondaryColor: _useSecondaryColor ? _secondaryColor : null,
-                tertiaryColor: _useTertiaryColor ? _tertiaryColor : null,
-                containerColor: _useContainerColor ? _containerColor : null,
-                sasayakiColor: _useSasayakiColor ? _sasayakiColor : null,
-                linkColor: _useLinkColor ? _linkColor : null,
-              );
-              if (!mounted) {
-                return;
-              }
-              navigator.pop();
-            },
-            icon: const Icon(Icons.check),
-            label: Text(t.apply_theme),
-          ),
-        ],
-      ),
+            ),
+          ],
+        ),
+        // ── 主色（音频高亮、按钮、链接等全局强调色）──
+        AdaptiveSettingsSection(
+          children: [
+            _buildOptionalColorPicker(
+              label: t.color_primary,
+              description: t.color_primary_desc,
+              preview: _buildPrimaryPreview(cs),
+              enabled: _usePrimaryColor,
+              onEnabledChanged: (bool value) {
+                setState(() {
+                  _usePrimaryColor = value;
+                  _primaryColor = value
+                      ? _primaryColor ?? _generatedScheme.primary
+                      : _generatedScheme.primary;
+                });
+              },
+              color: _primaryColor!,
+              onChanged: (Color color) => setState(() => _primaryColor = color),
+              enableAlpha: false,
+            ),
+          ],
+        ),
+        // ── 阅读器颜色 ──
+        AdaptiveSettingsSection(
+          title: t.section_reader_colors,
+          children: [
+            _buildOptionalColorPicker(
+              label: t.font_color,
+              description: t.font_color_desc,
+              preview: _buildFontColorPreview(cs),
+              enabled: _useFontColor,
+              onEnabledChanged: (bool value) =>
+                  setState(() => _useFontColor = value),
+              color: _fontColor!,
+              onChanged: (Color color) => setState(() => _fontColor = color),
+              enableAlpha: true,
+            ),
+            _buildOptionalColorPicker(
+              label: t.background_color,
+              description: t.background_color_desc,
+              preview: _buildBgColorPreview(cs),
+              enabled: _useBgColor,
+              onEnabledChanged: (bool value) =>
+                  setState(() => _useBgColor = value),
+              color: _bgColor!,
+              onChanged: (Color color) => setState(() => _bgColor = color),
+              enableAlpha: false,
+            ),
+            _buildOptionalColorPicker(
+              label: t.selection_color,
+              description: t.selection_color_desc,
+              preview: _buildSelectionPreview(cs),
+              enabled: _useSelectionColor,
+              onEnabledChanged: (bool value) =>
+                  setState(() => _useSelectionColor = value),
+              color: _selectionColor!,
+              onChanged: (Color color) =>
+                  setState(() => _selectionColor = color),
+              enableAlpha: true,
+            ),
+            _buildOptionalColorPicker(
+              label: t.color_link,
+              description: t.color_link_desc,
+              preview: _buildLinkPreview(cs),
+              enabled: _useLinkColor,
+              onEnabledChanged: (bool value) {
+                setState(() {
+                  _useLinkColor = value;
+                  _linkColor = value
+                      ? _linkColor ?? _generatedScheme.primary
+                      : _generatedScheme.primary;
+                });
+              },
+              color: _linkColor!,
+              onChanged: (Color color) => setState(() => _linkColor = color),
+              enableAlpha: false,
+            ),
+            _buildOptionalColorPicker(
+              label: t.color_sasayaki,
+              description: t.color_sasayaki_desc,
+              preview: _buildSasayakiPreview(cs),
+              enabled: _useSasayakiColor,
+              onEnabledChanged: (bool value) =>
+                  setState(() => _useSasayakiColor = value),
+              color: _sasayakiColor!,
+              onChanged: (Color color) =>
+                  setState(() => _sasayakiColor = color),
+              enableAlpha: true,
+            ),
+          ],
+        ),
+        // ── 高级选项 ──
+        AdaptiveSettingsSection(
+          title: t.section_advanced_colors,
+          children: [
+            _buildOptionalColorPicker(
+              label: t.color_secondary,
+              description: t.color_secondary_desc,
+              preview: _buildSecondaryPreview(cs),
+              enabled: _useSecondaryColor,
+              onEnabledChanged: (bool value) {
+                setState(() {
+                  _useSecondaryColor = value;
+                  _secondaryColor = value
+                      ? _secondaryColor ?? _generatedScheme.secondary
+                      : _generatedScheme.secondary;
+                });
+              },
+              color: _secondaryColor!,
+              onChanged: (Color color) =>
+                  setState(() => _secondaryColor = color),
+              enableAlpha: false,
+            ),
+            _buildOptionalColorPicker(
+              label: t.color_tertiary,
+              description: t.color_tertiary_desc,
+              preview: _buildTertiaryPreview(cs),
+              enabled: _useTertiaryColor,
+              onEnabledChanged: (bool value) {
+                setState(() {
+                  _useTertiaryColor = value;
+                  _tertiaryColor = value
+                      ? _tertiaryColor ?? _generatedScheme.tertiary
+                      : _generatedScheme.tertiary;
+                });
+              },
+              color: _tertiaryColor!,
+              onChanged: (Color color) =>
+                  setState(() => _tertiaryColor = color),
+              enableAlpha: false,
+            ),
+            _buildOptionalColorPicker(
+              label: t.color_container,
+              description: t.color_container_desc,
+              preview: _buildContainerPreview(cs),
+              enabled: _useContainerColor,
+              onEnabledChanged: (bool value) {
+                setState(() {
+                  _useContainerColor = value;
+                  _containerColor = value
+                      ? _containerColor ?? _generatedScheme.primaryContainer
+                      : _generatedScheme.primaryContainer;
+                });
+              },
+              color: _containerColor!,
+              onChanged: (Color color) =>
+                  setState(() => _containerColor = color),
+              enableAlpha: false,
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        FilledButton.icon(
+          onPressed: () async {
+            final NavigatorState navigator = Navigator.of(context);
+            await appModel.applyCustomTheme(
+              seed: _seed,
+              brightnessMode: _brightnessMode,
+              fontColor: _useFontColor ? _fontColor : null,
+              backgroundColor: _useBgColor ? _bgColor : null,
+              selectionColor: _useSelectionColor ? _selectionColor : null,
+              primaryColor: _usePrimaryColor ? _primaryColor : null,
+              secondaryColor: _useSecondaryColor ? _secondaryColor : null,
+              tertiaryColor: _useTertiaryColor ? _tertiaryColor : null,
+              containerColor: _useContainerColor ? _containerColor : null,
+              sasayakiColor: _useSasayakiColor ? _sasayakiColor : null,
+              linkColor: _useLinkColor ? _linkColor : null,
+            );
+            if (!mounted) {
+              return;
+            }
+            navigator.pop();
+          },
+          icon: const Icon(Icons.check),
+          label: Text(t.apply_theme),
+        ),
+      ],
     );
   }
 
@@ -1011,57 +994,40 @@ class _CustomThemePageState extends BasePageState {
     required bool enableAlpha,
     String? description,
     Widget? preview,
-    TextStyle? hintStyle,
   }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Container(
-              width: 20,
-              height: 20,
-              decoration: BoxDecoration(
-                color: color,
-                shape: BoxShape.circle,
-                border: Border.all(color: Theme.of(context).dividerColor),
-              ),
-            ),
+    return AdaptiveSettingsSwitchActionRow(
+      title: label,
+      subtitle: description,
+      value: enabled,
+      onChanged: onEnabledChanged,
+      body: Row(
+        children: [
+          _colorDot(color),
+          if (preview != null) ...[
             const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(label),
-                  if (description != null) Text(description, style: hintStyle),
-                ],
-              ),
-            ),
-            Builder(
-              builder: (BuildContext context) => adaptiveSwitch(
-                context: context,
-                value: enabled,
-                onChanged: onEnabledChanged,
-              ),
-            ),
+            Expanded(child: preview),
           ],
-        ),
-        if (preview != null) ...[
-          const SizedBox(height: 6),
-          Padding(
-            padding: const EdgeInsets.only(left: 28),
-            child: preview,
-          ),
         ],
-        if (enabled) ...[
-          const SizedBox(height: 8),
-          _buildCompactColorPicker(
-            color: color,
-            onChanged: onChanged,
-            enableAlpha: enableAlpha,
-          ),
-        ],
-      ],
+      ),
+      panel: enabled
+          ? _buildCompactColorPicker(
+              color: color,
+              onChanged: onChanged,
+              enableAlpha: enableAlpha,
+            )
+          : null,
+    );
+  }
+
+  Widget _colorDot(Color color) {
+    return Container(
+      width: 20,
+      height: 20,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(color: Theme.of(context).dividerColor),
+      ),
     );
   }
 

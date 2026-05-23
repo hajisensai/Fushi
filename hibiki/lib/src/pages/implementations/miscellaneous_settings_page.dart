@@ -120,54 +120,47 @@ class _MiscellaneousSettingsPageState
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: adaptiveAppBar(
-          context: context, title: Text(t.miscellaneous_settings)),
-      body: ListView(
-        padding: EdgeInsets.fromLTRB(
-          16,
-          8,
-          16,
-          8 + MediaQuery.of(context).padding.bottom,
-        ),
-        children: [
-          SwitchListTile.adaptive(
-            dense: true,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-            title: Text(t.debug_log_toggle),
-            value: DebugLogService.instance.enabled,
-            onChanged: (v) async {
-              await DebugLogService.instance.setEnabled(v);
-              setState(() {});
-            },
-          ),
-          SwitchListTile.adaptive(
-            dense: true,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-            title: Text(t.low_memory_mode),
-            subtitle: Text(t.low_memory_mode_hint),
-            value: appModel.lowMemoryMode,
-            onChanged: (v) async {
-              await appModel.setLowMemoryMode(v);
-              setState(() {});
-            },
-          ),
-          if (Platform.isAndroid) ...[
-            const HibikiDivider(),
-            SettingsSectionHeader(t.app_icon_label),
-            _buildIconGrid(),
-            if (_customSupported) ...[
-              const SizedBox(height: 8),
-              Text(
-                t.icon_custom_hint,
-                style: textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
+    return AdaptiveSettingsScaffold(
+      title: Text(t.miscellaneous_settings),
+      children: [
+        AdaptiveSettingsSection(
+          children: [
+            AdaptiveSettingsSwitchRow(
+              title: t.debug_log_toggle,
+              value: DebugLogService.instance.enabled,
+              onChanged: (bool v) async {
+                await DebugLogService.instance.setEnabled(v);
+                setState(() {});
+              },
+            ),
+            AdaptiveSettingsSwitchRow(
+              title: t.low_memory_mode,
+              subtitle: t.low_memory_mode_hint,
+              value: appModel.lowMemoryMode,
+              onChanged: (bool v) async {
+                await appModel.setLowMemoryMode(v);
+                setState(() {});
+              },
+            ),
           ],
-        ],
-      ),
+        ),
+        if (Platform.isAndroid)
+          AdaptiveSettingsSection(
+            title: t.app_icon_label,
+            children: [
+              AdaptiveSettingsRow(
+                title: t.app_icon_label,
+                controlBelow: true,
+                trailing: _buildIconGrid(),
+              ),
+              if (_customSupported) ...[
+                AdaptiveSettingsRow(
+                  title: t.icon_custom_hint,
+                ),
+              ],
+            ],
+          ),
+      ],
     );
   }
 

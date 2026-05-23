@@ -280,56 +280,70 @@ class _SystemFontPickerPageState extends State<_SystemFontPickerPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: adaptiveAppBar(
-        context: context,
-        title: Text(t.custom_fonts_add_system),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(56),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: t.custom_fonts_search_hint,
-                prefixIcon: const Icon(Icons.search),
-                isDense: true,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(28),
-                ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-              ),
-              onChanged: _onSearch,
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final List<Widget> fontRows = _loading
+        ? <Widget>[
+            AdaptiveSettingsRow(
+              title: t.custom_fonts_downloading,
+              icon: Icons.hourglass_empty,
+              trailing: adaptiveIndicator(context: context),
             ),
-          ),
-        ),
-      ),
-      body: _loading
-          ? Center(child: adaptiveIndicator(context: context))
-          : _filtered.isEmpty
-              ? Center(child: Text(t.custom_fonts_empty))
-              : ListView.builder(
-                  itemCount: _filtered.length,
-                  itemBuilder: (context, index) {
-                    final name = _filtered[index];
-                    final added = widget.alreadyAdded.contains(name);
-                    return ListTile(
-                      leading: Icon(
-                        Icons.font_download_outlined,
-                        color: added
-                            ? Theme.of(context).colorScheme.outline
-                            : Theme.of(context).colorScheme.primary,
-                      ),
-                      title: Text(name),
-                      trailing: added
-                          ? Icon(Icons.check,
-                              color: Theme.of(context).colorScheme.outline)
-                          : null,
-                      enabled: !added,
-                      onTap: () => Navigator.pop(context, name),
-                    );
-                  },
+          ]
+        : _filtered.isEmpty
+            ? <Widget>[
+                AdaptiveSettingsRow(
+                  title: t.custom_fonts_empty,
+                  icon: Icons.font_download_outlined,
                 ),
+              ]
+            : _filtered.map((String name) {
+                final bool added = widget.alreadyAdded.contains(name);
+                if (added) {
+                  return AdaptiveSettingsRow(
+                    title: name,
+                    icon: Icons.font_download_outlined,
+                    trailing: Icon(Icons.check, color: scheme.outline),
+                  );
+                }
+                return AdaptiveSettingsNavigationRow(
+                  title: name,
+                  icon: Icons.font_download_outlined,
+                  onTap: () => Navigator.pop(context, name),
+                );
+              }).toList();
+
+    return AdaptiveSettingsScaffold(
+      title: Text(t.custom_fonts_add_system),
+      children: [
+        AdaptiveSettingsSection(
+          children: [
+            AdaptiveSettingsRow(
+              title: t.custom_fonts_search_hint,
+              icon: Icons.search,
+              controlBelow: true,
+              trailing: SizedBox(
+                width: double.infinity,
+                child: TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: t.custom_fonts_search_hint,
+                    isDense: true,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(28),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
+                  ),
+                  onChanged: _onSearch,
+                ),
+              ),
+            ),
+          ],
+        ),
+        AdaptiveSettingsSection(children: fontRows),
+      ],
     );
   }
 }
@@ -809,114 +823,115 @@ class _CustomFontsPageState extends BasePageState {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: adaptiveAppBar(
-        context: context,
-        title: Text(t.custom_fonts),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.star_outline),
-            tooltip: t.custom_fonts_recommended,
-            onPressed: _openRecommended,
-          ),
-          PopupMenuButton<VoidCallback>(
-            icon: const Icon(Icons.add),
-            onSelected: (fn) => fn(),
-            itemBuilder: (_) => [
-              PopupMenuItem(
-                value: _addSystemFont,
-                child: ListTile(
-                  leading: const Icon(Icons.text_fields),
-                  title: Text(t.custom_fonts_add_system),
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                ),
+    return AdaptiveSettingsScaffold(
+      title: Text(t.custom_fonts),
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.star_outline),
+          tooltip: t.custom_fonts_recommended,
+          onPressed: _openRecommended,
+        ),
+        PopupMenuButton<VoidCallback>(
+          icon: const Icon(Icons.add),
+          onSelected: (VoidCallback fn) => fn(),
+          itemBuilder: (_) => [
+            PopupMenuItem(
+              value: _addSystemFont,
+              child: _PopupActionLabel(
+                icon: Icons.text_fields,
+                label: t.custom_fonts_add_system,
               ),
-              PopupMenuItem(
-                value: _importFontFile,
-                child: ListTile(
-                  leading: const Icon(Icons.file_open_outlined),
-                  title: Text(t.custom_fonts_import_file),
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                ),
+            ),
+            PopupMenuItem(
+              value: _importFontFile,
+              child: _PopupActionLabel(
+                icon: Icons.file_open_outlined,
+                label: t.custom_fonts_import_file,
               ),
-              PopupMenuItem(
-                value: _importFromUrl,
-                child: ListTile(
-                  leading: const Icon(Icons.link),
-                  title: Text(t.custom_fonts_import_url),
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
+            ),
+            PopupMenuItem(
+              value: _importFromUrl,
+              child: _PopupActionLabel(
+                icon: Icons.link,
+                label: t.custom_fonts_import_url,
+              ),
+            ),
+          ],
+        ),
+      ],
+      children: [
+        AdaptiveSettingsSection(
+          children: [
+            AdaptiveSettingsNavigationRow(
+              title: t.custom_fonts_recommended,
+              icon: Icons.star_outline,
+              onTap: _openRecommended,
+            ),
+            AdaptiveSettingsNavigationRow(
+              title: t.custom_fonts_add_system,
+              icon: Icons.text_fields,
+              onTap: _addSystemFont,
+            ),
+            AdaptiveSettingsNavigationRow(
+              title: t.custom_fonts_import_file,
+              icon: Icons.file_open_outlined,
+              onTap: _importFontFile,
+            ),
+            AdaptiveSettingsNavigationRow(
+              title: t.custom_fonts_import_url,
+              icon: Icons.link,
+              onTap: _importFromUrl,
+            ),
+          ],
+        ),
+        if (_fonts.isEmpty)
+          AdaptiveSettingsSection(
+            title: t.custom_fonts_manage,
+            children: [
+              AdaptiveSettingsRow(
+                title: t.custom_fonts_empty,
+                icon: Icons.font_download_outlined,
+              ),
+            ],
+          )
+        else
+          AdaptiveSettingsSection(
+            title: t.custom_fonts_manage,
+            children: [
+              AdaptiveSettingsRow(
+                title: t.custom_fonts_drag_hint,
+                icon: Icons.info_outline,
+              ),
+              AdaptiveSettingsRow(
+                title: t.custom_fonts_manage,
+                icon: Icons.format_size,
+                controlBelow: true,
+                trailing: ReorderableListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  padding: EdgeInsets.zero,
+                  itemCount: _fonts.length,
+                  onReorder: _onReorder,
+                  itemBuilder: (context, index) {
+                    final Map<String, dynamic> entry = _fonts[index];
+                    final String name = entry['name'] as String;
+                    final bool isFile = entry['path'] != null;
+                    final bool enabled = entry['enabled'] as bool? ?? true;
+                    return _FontTile(
+                      key: ValueKey('$name-$index'),
+                      name: name,
+                      isFile: isFile,
+                      enabled: enabled,
+                      index: index,
+                      onToggle: () => _toggleFont(index),
+                      onDelete: () => _removeFont(index),
+                    );
+                  },
                 ),
               ),
             ],
           ),
-        ],
-      ),
-      body: _fonts.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.font_download_outlined,
-                      size: 64, color: Theme.of(context).colorScheme.outline),
-                  const SizedBox(height: 16),
-                  Text(t.custom_fonts_empty,
-                      style: Theme.of(context).textTheme.bodyLarge),
-                  const SizedBox(height: 24),
-                  FilledButton.icon(
-                    onPressed: _openRecommended,
-                    icon: const Icon(Icons.star_outline),
-                    label: Text(t.custom_fonts_recommended),
-                  ),
-                ],
-              ),
-            )
-          : Column(
-              children: [
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Row(
-                    children: [
-                      Icon(Icons.info_outline,
-                          size: 16,
-                          color: Theme.of(context).colorScheme.outline),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          t.custom_fonts_drag_hint,
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: ReorderableListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    itemCount: _fonts.length,
-                    onReorder: _onReorder,
-                    itemBuilder: (context, index) {
-                      final entry = _fonts[index];
-                      final name = entry['name'] as String;
-                      final isFile = entry['path'] != null;
-                      final enabled = entry['enabled'] as bool? ?? true;
-                      return _FontTile(
-                        key: ValueKey('$name-$index'),
-                        name: name,
-                        isFile: isFile,
-                        enabled: enabled,
-                        index: index,
-                        onToggle: () => _toggleFont(index),
-                        onDelete: () => _removeFont(index),
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
+      ],
     );
   }
 }
@@ -1045,50 +1060,49 @@ class _RecommendedFontsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Scaffold(
-      appBar: adaptiveAppBar(
-          context: context, title: Text(t.custom_fonts_recommended)),
-      body: ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        itemCount: _recommendedFonts.length,
-        itemBuilder: (context, index) {
-          final font = _recommendedFonts[index];
-          final added = alreadyAdded.any(
-            (n) => n.toLowerCase() == font.name.toLowerCase(),
-          );
-          return Card(
-            margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            child: ListTile(
-              leading: Icon(
-                Icons.font_download_outlined,
-                color: added ? cs.outline : cs.primary,
-              ),
-              title: Text(font.name),
-              subtitle: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(font.nameJa,
-                      style:
-                          TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
-                  const SizedBox(height: 2),
-                  Text(font.description,
-                      style: Theme.of(context).textTheme.bodySmall),
-                  Text(font.license,
-                      style: TextStyle(fontSize: 10, color: cs.outline)),
-                ],
-              ),
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return AdaptiveSettingsScaffold(
+      title: Text(t.custom_fonts_recommended),
+      children: [
+        AdaptiveSettingsSection(
+          children: _recommendedFonts.map((font) {
+            final bool added = alreadyAdded.any(
+              (String name) => name.toLowerCase() == font.name.toLowerCase(),
+            );
+            return AdaptiveSettingsRow(
+              title: font.name,
+              subtitle: '${font.nameJa}\n${font.description}',
+              icon: Icons.font_download_outlined,
               trailing: added
-                  ? Icon(Icons.check, color: cs.outline)
-                  : FilledButton.tonal(
+                  ? Icon(Icons.check, color: scheme.outline)
+                  : IconButton.filledTonal(
+                      icon: const Icon(Icons.download_outlined, size: 20),
+                      tooltip: t.dialog_import,
                       onPressed: () => Navigator.pop(context, font),
-                      child: const Icon(Icons.download_outlined, size: 20),
                     ),
-              isThreeLine: true,
-            ),
-          );
-        },
-      ),
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+}
+
+class _PopupActionLabel extends StatelessWidget {
+  const _PopupActionLabel({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 20),
+        const SizedBox(width: 12),
+        Flexible(child: Text(label)),
+      ],
     );
   }
 }
@@ -1113,50 +1127,24 @@ class _FontTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
-      child: ListTile(
-        leading: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ReorderableDragStartListener(
-              index: index,
-              child: const Icon(Icons.drag_handle),
-            ),
-            const SizedBox(width: 8),
-            Icon(
-              isFile ? Icons.file_present_outlined : Icons.phone_android_outlined,
-              color: cs.primary,
-            ),
-          ],
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return AdaptiveSettingsSwitchActionRow(
+      title: name,
+      subtitle: isFile ? t.font_source_file : t.font_source_system,
+      icon: isFile ? Icons.file_present_outlined : Icons.phone_android_outlined,
+      value: enabled,
+      onChanged: (_) => onToggle(),
+      actions: [
+        ReorderableDragStartListener(
+          index: index,
+          child: const Icon(Icons.drag_handle),
         ),
-        title: Text(
-          name,
-          style: TextStyle(
-            color: enabled ? null : cs.outline,
-            decoration: enabled ? null : TextDecoration.lineThrough,
-          ),
+        IconButton(
+          icon: Icon(Icons.delete_outline, color: scheme.error),
+          tooltip: t.custom_fonts_removed,
+          onPressed: onDelete,
         ),
-        subtitle: Text(
-          isFile ? t.font_source_file : t.font_source_system,
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            adaptiveSwitch(
-              context: context,
-              value: enabled,
-              onChanged: (_) => onToggle(),
-            ),
-            IconButton(
-              icon: Icon(Icons.delete_outline, color: cs.error),
-              onPressed: onDelete,
-            ),
-          ],
-        ),
-      ),
+      ],
     );
   }
 }
