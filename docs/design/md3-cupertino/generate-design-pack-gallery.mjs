@@ -142,7 +142,7 @@ function renderPreviewGrid(pack, surfaces) {
     const choice = pack.choices[surface.primary];
     const imageFile = surface.files[choice];
     return `<figure class="preview-tile" data-choice="${choice}">
-      <img src="interface-images/${escapeHtml(imageFile)}" alt="${escapeHtml(pack.label)} ${escapeHtml(preview.label)} ${choice}">
+      <object data="interface-images/${escapeHtml(imageFile)}" type="image/svg+xml" aria-label="${escapeHtml(pack.label)} ${escapeHtml(preview.label)} ${choice}"></object>
       <figcaption>
         <strong>${escapeHtml(preview.label)}</strong>
         <span>${choice} from board ${surface.primary}</span>
@@ -447,7 +447,8 @@ function renderHtml(packs, surfaces) {
       background: #fcfdfb;
     }
 
-    .preview-tile img {
+    .preview-tile img,
+    .preview-tile object {
       display: block;
       width: 100%;
       aspect-ratio: 360 / 628;

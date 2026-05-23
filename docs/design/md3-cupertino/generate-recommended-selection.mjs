@@ -493,7 +493,7 @@ function renderSurfaceCard(surface, pack) {
     return `<a href="interface-images/${escapeHtml(surface.files[choice])}" aria-current="${active}">${choice}</a>`;
   }).join("");
   return `<article class="surface-card" id="${escapeHtml(surface.slug)}" data-section="${escapeHtml(surface.section)}" data-choice="${copy.choice}">
-    <img src="interface-images/${escapeHtml(selectedImage)}" alt="${escapeHtml(surface.surface)} ${copy.choice} recommended image">
+    <object data="interface-images/${escapeHtml(selectedImage)}" type="image/svg+xml" aria-label="${escapeHtml(surface.surface)} ${copy.choice} recommended image"></object>
     <div class="surface-body">
       <p class="meta">${escapeHtml(sectionLabels[surface.section] || surface.section)} / ${escapeHtml(boardLabels[surface.primary].label)}</p>
       <h3>${escapeHtml(surface.surface)}</h3>
@@ -663,7 +663,8 @@ function renderHtml(surfaces, pack, packId) {
       background: var(--surface);
     }
 
-    .surface-card img {
+    .surface-card img,
+    .surface-card object {
       display: block;
       width: 100%;
       aspect-ratio: 360 / 628;
@@ -1016,7 +1017,7 @@ function renderComparisonCard(surface, packs) {
     const chosenBy = packNames.length ? packNames.join(" / ") : "无整包默认选择";
     return `<figure class="choice-card" data-surface="${escapeHtml(surface.surface)}" data-choice="${choice}" aria-selected="false">
       <a href="interface-images/${escapeHtml(surface.files[choice])}" aria-label="${escapeHtml(surface.surface)} ${choice} full image">
-        <img src="interface-images/${escapeHtml(surface.files[choice])}" alt="${escapeHtml(surface.surface)} ${choice} example">
+        <object data="interface-images/${escapeHtml(surface.files[choice])}" type="image/svg+xml" aria-label="${escapeHtml(surface.surface)} ${choice} example"></object>
       </a>
       <figcaption>
         <strong>${choice} · ${escapeHtml(copy.label)}</strong>
@@ -1421,7 +1422,8 @@ function renderInterfacePackComparison(surfaces, packs) {
       box-shadow: 0 0 0 3px rgba(54, 95, 141, 0.13);
     }
 
-    .choice-card img {
+    .choice-card img,
+    .choice-card object {
       display: block;
       width: 100%;
       aspect-ratio: 360 / 628;
