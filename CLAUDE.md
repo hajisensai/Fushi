@@ -35,6 +35,12 @@
 - 有声书/字幕相关核心路径在 `hibiki/lib/src/media/audiobook/`，当前导入入口包括 `book_import_dialog.dart` 和 `audiobook_import_dialog.dart`。
 - 旧 TTU 只保留迁移用途：`TtuMigrationServer` / `TtuIdbReader` / `assets/ttu-ebook-reader` 用来读取历史 IndexedDB 数据。当前阅读器问题不要去 `D:\ttu-fork` 修。
 
+## UI 标准
+
+### 平台自适应架构
+
+支持两种架构 Android 走 Material Design 3，iOS 走 Cupertino。架构分两层：
+
 ## 集成测试素材
 
 测试素材存放在仓库外固定路径，不纳入 git：
