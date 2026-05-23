@@ -43,15 +43,15 @@ class ErrorLogService {
     final dir = await getApplicationDocumentsDirectory();
     _logFile = File('${dir.path}/error_log.txt');
     try {
-      if (_logFile!.existsSync()) {
-        var content = _logFile!.readAsStringSync();
+      if (await _logFile!.exists()) {
+        var content = await _logFile!.readAsString();
         if (content.length > _maxFileBytes) {
           content = content.substring(content.length - _maxFileBytes);
           final firstSep = content.indexOf('─' * 60);
           if (firstSep != -1) {
             content = content.substring(firstSep + 60).trimLeft();
           }
-          _logFile!.writeAsStringSync(content);
+          await _logFile!.writeAsString(content);
         }
         _persistedLog = content;
       }
@@ -106,11 +106,11 @@ class ErrorLogService {
     }
   }
 
-  void clear() {
+  Future<void> clear() async {
     _entries.clear();
     _persistedLog = '';
     try {
-      _logFile?.writeAsStringSync('');
+      await _logFile?.writeAsString('');
     } catch (_) {}
   }
 }

@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+
 import '../audiobook/audiobook_model.dart';
 import 'srt_parser.dart';
 import 'text_file_io.dart';
@@ -44,11 +46,28 @@ class AssParser {
     int audioFileIndex = 0,
   }) async {
     final String content = await readTextWithEncoding(assFile);
+    if (content.length > 1024 * 1024) {
+      return compute(_parseStringIsolate, <String, dynamic>{
+        'content': content,
+        'bookUid': bookUid,
+        'chapterHref': chapterHref,
+        'audioFileIndex': audioFileIndex,
+      });
+    }
     return parseString(
       content: content,
       bookUid: bookUid,
       chapterHref: chapterHref,
       audioFileIndex: audioFileIndex,
+    );
+  }
+
+  static List<AudioCue> _parseStringIsolate(Map<String, dynamic> args) {
+    return parseString(
+      content: args['content'] as String,
+      bookUid: args['bookUid'] as String,
+      chapterHref: args['chapterHref'] as String,
+      audioFileIndex: args['audioFileIndex'] as int,
     );
   }
 
